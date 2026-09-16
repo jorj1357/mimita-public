@@ -240,3 +240,41 @@ namespace MimitaHotMovement {
 // The single post-step speed clamp/preservation implementation.
 void speedClamp(GameSpeedClampV1& io);
 }
+
+// ── Single movement tuning authority ───────────────────────────────────────
+// The hot module owns the editable Source tuning. Cold callers (server, NPC,
+// prediction setup, validation) request the active tuning through this event;
+// the hot handler fills it from the in-module Source preset. There is exactly
+// one tuning authority: the C++ table in modules/movement-system.cpp.
+// JSON movement presets are reference/archive data and are never consulted.
+struct GameMovementTuningV1 {
+    // C++ Source preset values (filled by the hot handler).
+    float walkSpeed;               // ground = air max speed
+    float groundAcceleration;
+    float airAcceleration;
+    float groundFriction;          // Source friction scalar
+    float stopspeed;               // friction floor
+    float airMaxWishspeed;         // 0 = no air projection cap
+    float airSpeedGainMultiplier;  // Source air residual gain scalar
+    float surfaceFriction;         // global surface friction scalar
+    float gravityMagnitude;        // positive; applied as -magnitude
+    float jumpSpeed;
+    float maxFallSpeed;
+    float jumpBufferSeconds;
+    float coyoteSeconds;
+    float dashImpulse;
+    float dashCooldownSeconds;
+    float downDashSpeed;
+    float dashGraceSeconds;
+    std::uint32_t maximumAirJumps;
+    std::uint32_t autoBhopEnabled;
+    std::uint32_t dashEnabled;
+    std::uint32_t downDashEnabled;
+    std::uint32_t freezeEnabled;
+    std::uint32_t sourceWalkMode;
+    // out
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+static constexpr std::uint64_t GAME_EVENT_MOVEMENT_TUNING =
+    gameHash("movement.tuning");

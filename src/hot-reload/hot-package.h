@@ -157,6 +157,16 @@ struct SchemaRegistrar {
         HotPackageBuilder::instance().addSchema(s);
     }
 };
+// Declares an activation-time migration for a dynamic component schema
+// (v1 -> v2). `migrate` is a DynamicMigrationFn-compatible function pointer.
+struct MigrationRegistrar {
+    MigrationRegistrar(std::uint64_t typeId, std::uint32_t fromVersion,
+                       std::uint32_t toVersion, void* migrate)
+    {
+        HotPackageBuilder::instance().addMigration(
+            GameMigrationDescriptorV1{typeId, fromVersion, toVersion, migrate});
+    }
+};
 struct CapabilityRegistrar {
     explicit CapabilityRegistrar(const GameCapabilityDescriptorV1& c)
     {

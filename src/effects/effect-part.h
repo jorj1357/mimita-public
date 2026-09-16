@@ -8,6 +8,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -49,6 +50,14 @@ struct EffectPart
     bool box = false;
     // Config-driven debris chunk count for debris_batch effects (0 = use default).
     int debrisCount = 0;
+
+    // Generic mesh primitive rendering (hot-driven): when meshResourceId != 0 the
+    // effect is drawn as a real mesh (sphere/cube/beam/hexagon) with per-axis
+    // scale instead of the legacy DebugVis shapes. textureResourceId == 0 means
+    // the model's own texture (or the `color` when untextured).
+    std::uint64_t meshResourceId = 0;
+    std::uint64_t textureResourceId = 0;
+    glm::vec3 scaleXYZ{1.0f};
 
     void resetStrings() {
         label.clear();
@@ -98,6 +107,11 @@ struct SurfaceDecal
     // Generic (hot-driven) mark: the renderer draws it from the requested
     // color/size only and does not interpret a feature kind. `kind` is ignored.
     bool generic = false;
+    // Optional explicit texture for a generic textured mark. When set it takes
+    // precedence over the kind-based JSON texture, so hot policy owns the decal
+    // appearance (bullet holes, cracks, blood splats) with no JSON dependency.
+    std::string texturePath;
+    float textureScale = 1.0f;
 };
 
 class EffectPartSystem

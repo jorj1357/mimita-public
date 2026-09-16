@@ -12,7 +12,9 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-projectile.h"
+#include "hot-reload/hot-tool-visual.h"
 
 #include <cmath>
 #include <cstdint>
@@ -21,8 +23,51 @@ namespace {
 
 const std::uint64_t kDomain = gameHash("projectiles.60");
 
+// Network projectile ids (network/packets.h): rocket launcher = 5, grenade
+// launcher = 7.
+constexpr std::uint64_t kRocketNetworkId = 5;
+constexpr std::uint64_t kGrenadeNetworkId = 7;
+
 using DamageApplyFn = bool (MIMITA_GAME_CALL *)(void*, GameDamageApplyV1*);
 using EffectSpawnFn = void (MIMITA_GAME_CALL *)(void*, const GameEffectSpawnV1*);
+
+// True when this process owns a local view (client / listen host). A dedicated
+// server has no local player and must not compose screen-only effects.
+bool hasLocalPresent(GameplayContextV1* ctx)
+{
+    if (!ctx || !ctx->permanentStorage ||
+        ctx->permanentStorageSize < sizeof(GameSharedStateV1))
+        return false;
+    const auto* shared =
+        reinterpret_cast<const GameSharedStateV1*>(ctx->permanentStorage);
+    return shared->magic == GAME_SHARED_MAGIC && shared->localPlayerEntity != 0;
+}
+
+// Materialize the projectile's generic presentation if replication did not
+// deliver it, so the client always has something to draw.
+void ensureProjectilePresentation(GameplayContextV1* ctx, std::uint64_t entity,
+                                  std::uint64_t typeId)
+{
+    if (!ctx->dynamicReadComponent || !ctx->dynamicWriteComponent)
+        return;
+    HotPresentationStateV1 existing{};
+    if (ctx->dynamicReadComponent(ctx->host, entity, HOT_PRESENTATION_COMPONENT,
+                                  &existing, sizeof(existing)))
+        return;
+    const ToolVisualRecipeV1* recipe = findProjectileVisual(typeId);
+    if (!recipe || recipe->projectile.meshId == 0)
+        return;
+    HotPresentationStateV1 present{};
+    present.meshResourceId = recipe->projectile.meshId;
+    present.textureResourceId = recipe->projectile.textureId;
+    present.scale = recipe->projectile.scale > 0.0f ? recipe->projectile.scale : 1.0f;
+    for (int k = 0; k < 3; ++k)
+        present.color[k] = recipe->projectile.color[k];
+    present.color[3] = recipe->projectile.color[3] > 0.0f
+                           ? recipe->projectile.color[3] : 1.0f;
+    ctx->dynamicWriteComponent(ctx->host, entity, HOT_PRESENTATION_COMPONENT,
+                               &present, sizeof(present));
+}
 
 void spawnImpactEffect(GameplayContextV1* ctx, const float pos[3])
 {
@@ -66,7 +111,21 @@ void applyDamageTo(GameplayContextV1* ctx, std::uint64_t victim,
 void explode(GameplayContextV1* ctx, const HotProjectileStateV1& s,
              const float at[3])
 {
-    spawnImpactEffect(ctx, at);
+    // Rocket/grenade detonations compose the shared explosion recipe so the
+    // flash/smoke/debris/sound appears where the projectile actually stopped.
+    // Only a process with a local view composes it (a dedicated server has no
+    // screen and must not author client-only effects). Other projectile types
+    // keep the generic impact effect.
+    if (hasLocalPresent(ctx) && (s.typeId == kRocketNetworkId ||
+                                 s.typeId == kGrenadeNetworkId)) {
+        hotComposeExplosion(ctx,
+                            s.typeId == kRocketNetworkId
+                                ? gameHash("effect.explosion.rocket")
+                                : gameHash("effect.explosion.grenade"),
+                            at, 1.0f);
+    } else {
+        spawnImpactEffect(ctx, at);
+    }
     if (s.splashRadius <= 0.0f) {
         // Direct-only damage is applied at the contact point below.
         return;
@@ -247,6 +306,9 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float d
         vl.linear[2] = s.velocity[2];
         ctx->writeComponent(ctx->host, entities[i], GAME_COMPONENT_VELOCITY, &vl,
                             sizeof(vl));
+        // Projectile visual: recipe-driven, filled in when replication did not
+        // carry the presentation component (client-side visibility guarantee).
+        ensureProjectilePresentation(ctx, entities[i], s.typeId);
     }
 }
 

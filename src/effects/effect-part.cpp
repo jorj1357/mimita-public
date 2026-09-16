@@ -9,6 +9,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/game-modules.h"
+#include "hot-reload/hot-animation-selftest.h"
 
 #include <algorithm>
 #include <cmath>
@@ -105,11 +106,26 @@ bool MIMITA_GAME_CALL gameSelfTest(GameSelfTestResult* out)
     const bool staysPut = sticky.position[0] == 0.0f;
 
     const bool ok = deterministic && finite && advanced && staysAlive && staysPut;
-    out->passed = ok ? 1u : 0u;
-    out->checksum = ok ? 0xEFFEC7001ull : 0ull;
-    std::snprintf(out->message, sizeof(out->message), "%s",
-                  ok ? "effect invariants ok" : "effect invariants invalid");
-    return ok;
+
+    // Animation candidate self-test: a malformed/inconsistent animation
+    // generation is rejected here before activation, so the previous animation
+    // generation keeps running.
+    char animMessage[MIMITA_GAME_SELFTEST_MESSAGE] = {0};
+    const bool animOk =
+        runAnimationSelfTest(animMessage, (std::uint32_t)sizeof(animMessage));
+    const bool allOk = ok && animOk;
+
+    out->passed = allOk ? 1u : 0u;
+    out->checksum = allOk ? 0xEFFEC7001ull : 0ull;
+    if (allOk)
+        std::snprintf(out->message, sizeof(out->message), "%s",
+                      "effect + animation invariants ok");
+    else if (!ok)
+        std::snprintf(out->message, sizeof(out->message), "%s",
+                      "effect invariants invalid");
+    else
+        std::snprintf(out->message, sizeof(out->message), "%s", animMessage);
+    return allOk;
 }
 
 }

@@ -2406,8 +2406,36 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     if (ctx.generationBootstrap.state == MimitaRuntime::BootstrapState::Ready &&
         mpGenerationWorldAllowed(ctx))
         ctx.generationBootstrap = MimitaRuntime::GenerationBootstrapV1{};
-    if (ctx.connected && ctx.localPlayerId && input && inputDue &&
-        mpGenerationWorldAllowed(ctx))
+    // Hot input-send policy: expose the exact gate facts so the decision (and why
+    // input is not being sent) is owned by the hot package.
+    bool sendInput = ctx.connected && ctx.localPlayerId && input && inputDue &&
+        mpGenerationWorldAllowed(ctx);
+    {
+        InputSendPolicyV1 sp{};
+        sp.localPlayerId = ctx.localPlayerId;
+        sp.due = inputDue ? 1u : 0u;
+        sp.dead = 0u;
+        sp.bootstrapState = (std::uint32_t)ctx.generationBootstrap.state;
+        sp.serverCodeGeneration = ctx.serverCodeGeneration;
+        sp.localGeneration =
+            (std::uint64_t)HotReloadSystem::instance().status().activeGeneration;
+        sp.gateFlags =
+            (ctx.connected ? GAME_INPUT_GATE_CONNECTED : 0u) |
+            (ctx.localPlayerId ? GAME_INPUT_GATE_LOCAL_PLAYER : 0u) |
+            (input ? GAME_INPUT_GATE_INPUT_PRESENT : 0u) |
+            (inputDue ? GAME_INPUT_GATE_DUE : 0u) |
+            (mpGenerationWorldAllowed(ctx) ? GAME_INPUT_GATE_GENERATION_ALLOWED : 0u);
+        if (input) {
+            sp.position[0] = input->position.x;
+            sp.position[1] = input->position.y;
+            sp.position[2] = input->position.z;
+        }
+        if (LiveBehavior::dispatchGameplayEvent64(
+                GAME_EVENT_INPUT_SEND_POLICY, &sp, sizeof(sp), 0, 0, 0) &&
+            sp.handled)
+            sendInput = sp.send != 0;
+    }
+    if (sendInput)
     {
         InputPacket in{};
         in.header.type = PACKET_INPUT;

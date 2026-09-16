@@ -18,6 +18,7 @@
 #include "npc/npc-navigation.h"
 #include "npc/npc-difficulty-config.h"
 #include "config/movement-config.h"
+#include "physics/movement/movement-conversion.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
 #include "physics/movement/physics-collision.h"
@@ -383,8 +384,8 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     }
 
     if (needPlan && consumePlanToken()) {
-        const MovementConfig& cfg = movement ? *movement
-                                             : MovementJsonConfig::instance().config();
+        const MovementConfig cfg = movement ? *movement
+                                            : makeCurrentRuntimeMovementConfig();
         std::vector<glm::vec3> plan;
         std::vector<uint8_t> planGaps;
         if (planLocalPath(npc, dest, world, cfg, plan, planGaps) && !plan.empty()) {

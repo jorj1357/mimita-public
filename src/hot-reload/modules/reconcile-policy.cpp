@@ -23,31 +23,36 @@ void MIMITA_GAME_CALL onReconcile(void* /*host*/, const GameEventV1* event)
         return;
 
     r->shouldCorrect = 0u;
-    r->correctionMode = 0u;
-    r->hardReset = 0u;
+    r->correctionMode = GAME_RECONCILE_MODE_NONE;
+    r->hardReset = GAME_RECONCILE_HARD_RESET_NONE;
     r->replayInputs = 0u;
+    r->reserved = GAME_RECONCILE_APPLY_NONE;
 
-    // Generation mismatch: never treat cross-generation error as normal drift.
-    if (r->predictedGeneration != r->authoritativeGeneration) {
-        r->shouldCorrect = 1u;
-        r->correctionMode = 4u;  // hard reset
-        r->hardReset = 1u;
+    // Generation mismatch: a hot-code sync/bootstrap condition, never a position
+    // correction. Signal bootstrap (no position change) and return without
+    // snapping so the client does not enter a repeated/fighting correction loop.
+    // A zero/unknown generation on either side is not treated as a mismatch.
+    if (r->predictedGeneration != 0 && r->authoritativeGeneration != 0 &&
+        r->predictedGeneration != r->authoritativeGeneration) {
+        r->hardReset = GAME_RECONCILE_HARD_RESET_BOOTSTRAP;
         r->handled = 1u;
         return;
     }
 
     const float e = r->positionError;
-    if (e <= r->smallDistance) {
-        r->correctionMode = 0u;  // ignore
-    } else if (e <= r->mediumDistance) {
-        r->correctionMode = 1u;  // small / smooth
+    // No correction at all for zero/tiny error (and for non-finite values).
+    if (!(e > 0.25f) || e < r->smallDistance) {
+        r->correctionMode = GAME_RECONCILE_MODE_NONE;
+        r->reserved = GAME_RECONCILE_APPLY_NONE;
+    } else if (e < r->majorDistance) {
+        r->correctionMode = GAME_RECONCILE_MODE_SMOOTH;
         r->shouldCorrect = 1u;
-    } else if (e <= r->majorDistance) {
-        r->correctionMode = 2u;  // medium
-        r->shouldCorrect = 1u;
+        // Apply the server state once (cold rate-limits to avoid a float loop).
+        r->reserved = GAME_RECONCILE_APPLY_SMOOTH_ONCE;
     } else {
-        r->correctionMode = 3u;  // major / snap
+        r->correctionMode = GAME_RECONCILE_MODE_SNAP;
         r->shouldCorrect = 1u;
+        r->reserved = GAME_RECONCILE_APPLY_SNAP;
     }
 
     r->handled = 1u;

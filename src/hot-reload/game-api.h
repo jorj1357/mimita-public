@@ -24,6 +24,13 @@ static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 8;
 static constexpr std::uint32_t MIMITA_GAME_MAX_MODULES = 8;
 static constexpr std::size_t MIMITA_GAME_SELFTEST_MESSAGE = 128;
 
+// Compile-time FNV-1a so the kernel and packages hash names identically without
+// a runtime table. Declared early so any constant below may use it.
+constexpr std::uint64_t gameHash(const char* s, std::uint64_t h = 1469598103934665603ull)
+{
+    return (*s == '\0') ? h : gameHash(s + 1, (h ^ (std::uint64_t)(unsigned char)*s) * 1099511628211ull);
+}
+
 // State type identifiers carried by GameEnvelope::stateType. Later phases add
 // the concrete plain-data structs; the identifier space is reserved here.
 enum GameStateType : std::uint32_t {
@@ -58,6 +65,7 @@ enum GameComponentType : std::uint32_t {
     GAME_COMPONENT_RAGDOLL_GRAB = 13,
     GAME_COMPONENT_BEHAVIOR_BINDINGS = 14,
     GAME_COMPONENT_MOVEMENT_RUNTIME_STATE = 15,
+    GAME_COMPONENT_CONTROL_SOURCE = 16,
 };
 
 struct GameTransformComponentV1 {
@@ -103,7 +111,30 @@ struct GameMovementRuntimeStateComponentV1 {
     float jumpIntentSeconds;
     float dashGraceSeconds;
     std::uint32_t freezePreviously;
+    // reserved[0] = tick of the last hot actor-movement simulation,
+    // reserved[1] = hot generation that produced it,
+    // reserved[2] bit0 = hot actor-movement authority is active for this actor.
+    // Cold server code yields its kernel movement when reserved[0] == server tick.
     std::uint32_t reserved[3];
+};
+
+// MovementRuntimeStateComponentV1.reserved indices (shared hot/cold contract).
+static constexpr int GAME_MOVEMENT_STAMP_TICK = 0;
+static constexpr int GAME_MOVEMENT_STAMP_GENERATION = 1;
+static constexpr int GAME_MOVEMENT_STAMP_FLAGS = 2;
+static constexpr std::uint32_t GAME_MOVEMENT_STAMP_FLAG_ACTIVE = 1u;
+
+// ControlSource projection: who decides for this actor. Mirrors ecs::ControlSource.
+enum GameControlSourceV1 : std::uint32_t {
+    GAME_CONTROL_LOCAL_HUMAN = 0,
+    GAME_CONTROL_SERVER_NPC = 1,
+    GAME_CONTROL_REMOTE_NETWORK = 2,
+    GAME_CONTROL_REPLAY = 3,
+    GAME_CONTROL_SCRIPTED = 4,
+};
+struct GameControlSourceComponentV1 {
+    std::uint32_t source;
+    std::uint32_t reserved;
 };
 
 struct GameAimIntentComponentV1 {
@@ -666,6 +697,9 @@ using GameResolveCapabilityFn = void* (MIMITA_GAME_CALL *)(
 // the resolved state back in place. This is a general capsule move, not a
 // movement-policy function; vehicles/swimming/climbing call the same primitive.
 static constexpr std::uint32_t GAME_PHYSICS_MOVE_FULL_PIPELINE = 1u;
+// Resolve against the server's HeadlessWorld collision instead of the client
+// render World. Hot movement sets this for authoritative server actors.
+static constexpr std::uint32_t GAME_PHYSICS_MOVE_HEADLESS = 2u;
 using GamePhysicsMoveFn = void (MIMITA_GAME_CALL *)(
     void* host, MovementStateV1* state, float dt, std::uint32_t flags);
 
@@ -673,6 +707,9 @@ using GamePhysicsMoveFn = void (MIMITA_GAME_CALL *)(
 // selects an emitter template (footstep, dash, freeze, spark, smoke, blood,
 // debris, muzzle flash, ...); the numeric fields tune it. Future effects use the
 // same mechanism and need no ABI change.
+// A `kind` of gameHash("light.dynamic") drives the EXISTING cold dynamic-light
+// manager through this same descriptor: position = light position, color =
+// light color, scale = intensity, endScale = radius, lifetime = lifetime.
 struct GameEffectSpawnV1 {
     std::uint64_t kind;         // gameHash("effect.footstep") etc.
     std::uint64_t ownerEntity;  // 0 = none
@@ -689,6 +726,48 @@ struct GameEffectSpawnV1 {
 };
 using GameEffectSpawnFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameEffectSpawnV1* desc);
+
+// effect.part: exposes the EXISTING pooled `EffectPart` primitive to hot code.
+// Hot policy builds the descriptor; the kernel owns the pool, lifetime, and
+// renderer. This is the same primitive the cold JSON hit/impact/blood path uses,
+// so a hot recipe reproduces that behavior exactly: textured camera-facing
+// billboards (replayType "hitfx_particle" + texturePath), sticky/flat decals,
+// beams, boxes, gravity, and tick-defined lifetimes. Fixed-size strings only.
+static constexpr std::uint32_t GAME_EFFECT_STRING = 96;
+struct GameEffectPartV1 {
+    float position[3];
+    float velocity[3];
+    float color[3];
+    float normal[3];
+    float rotation[3];
+    float endPosition[3];
+    float halfSize[3];
+    float scale;
+    float endScale;
+    float alpha;
+    float gravity;
+    float drag;
+    float thickness;
+    float endThickness;
+    float maxLifetime;          // seconds (1/60 = one tick)
+    std::uint32_t affectedByGravity;
+    std::uint32_t sticky;
+    std::uint32_t flatDecal;
+    std::uint32_t beam;
+    std::uint32_t box;
+    std::uint32_t billboardText;
+    char replayType[GAME_EFFECT_STRING];
+    char texturePath[GAME_EFFECT_STRING];
+    char label[GAME_EFFECT_STRING];
+    // Append-only: draw a real primitive mesh (sphere/cube/beam/hexagon) with
+    // per-axis scale instead of the legacy DebugVis shapes. 0 = legacy shape.
+    std::uint64_t meshResourceId;
+    std::uint64_t textureResourceId;   // 0 = model's own texture / solid color
+    float scaleXYZ[3];                 // per-axis scale multiplier (0 => 1)
+    std::uint32_t reserved;
+};
+using GameEffectPartFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameEffectPartV1* part);
 
 // skeleton.apply: apply a pose to an actor's skeleton. The kernel owns the
 // rest pose, hierarchy, and node mapping; the caller supplies per-part euler
@@ -708,6 +787,24 @@ struct GameSkeletonPoseV1 {
 };
 using GameSkeletonApplyFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameSkeletonPoseV1* pose);
+
+// skeleton.validate: verify that an actor's current skeleton exposes a set of
+// required part/bone name hashes. Generic mechanism for model-generation swaps
+// and candidate self-tests: a mesh/skeleton missing a required part is rejected
+// before it replaces the active resource. The caller owns which parts are
+// required; the kernel owns bone-name lookup. No new context field.
+static constexpr std::uint32_t GAME_MAX_VALIDATE_PARTS = 16;
+struct GameSkeletonValidateV1 {
+    std::uint64_t entity;
+    std::uint64_t requiredParts[GAME_MAX_VALIDATE_PARTS];
+    std::uint32_t requiredCount;
+    // out
+    std::uint32_t presentMask;   // bit i set when requiredParts[i] resolved
+    std::uint32_t missingCount;  // number of required parts not resolved
+    std::uint32_t valid;         // 1 = all required parts present
+};
+using GameSkeletonValidateFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameSkeletonValidateV1* request);
 
 // animation.update: TEMPORARY BRIDGE (allowed by the animation guidance). The
 // hot animation system owns when/how this runs; the kernel currently runs the
@@ -912,7 +1009,115 @@ struct MovementValidationV1 {
     // out
     std::uint32_t decision;
     std::uint32_t handled;
+    // reserved bit0 = GAME_MOVEMENT_VALIDATION_FORCE_ACTIVE: the hot policy
+    // proved this is a current-life report, so the cold server must clear the
+    // spawn wedge (activate the player) instead of holding it at spawn. Keeps
+    // the payload size stable for an already-running executable.
     std::uint32_t reserved;
+};
+
+static constexpr std::uint32_t GAME_MOVEMENT_VALIDATION_FORCE_ACTIVE = 1u;
+
+// ── Generic actor policy seams (bridge) ─────────────────────────────────────
+// These let the hot package own decisions that used to live only in cold code.
+// Every cold caller dispatches with facts; a handler that sets `handled` owns
+// the decision; otherwise the cold default behavior runs unchanged.
+
+// actor.spawn-policy: choose/suppress an actor spawn (startup NPCs and players).
+static constexpr std::uint64_t GAME_EVENT_ACTOR_SPAWN_POLICY =
+    gameHash("actor.spawn-policy");
+enum GameActorSpawnKindV1 : std::uint32_t {
+    GAME_ACTOR_SPAWN_PLAYER = 0,
+    GAME_ACTOR_SPAWN_NPC = 1,
+};
+struct ActorSpawnPolicyV1 {
+    // in
+    std::uint32_t kind;              // GameActorSpawnKindV1
+    std::uint32_t index;             // startup/actor index
+    std::uint32_t spawnPointCount;
+    std::uint32_t occupiedByActor;   // nearest non-self actor within a radius
+    std::uint32_t isRespawn;         // 0 initial/startup, 1 respawn
+    float chosenPosition[3];         // cold-picked candidate
+    float chosenYaw;
+    // in: candidate spawn points (up to 8) so the policy can relocate
+    std::uint32_t candidateCount;
+    std::uint32_t reservedIn;
+    float candidatePosition[8][3];
+    float candidateYaw[8];
+    // out
+    std::uint32_t suppress;          // 1 = do not spawn this actor
+    std::uint32_t handled;
+    float position[3];               // override spawn position (used if handled)
+    float yaw;
+};
+
+// input.send-policy: whether the client sends an InputPacket this frame and why.
+static constexpr std::uint64_t GAME_EVENT_INPUT_SEND_POLICY =
+    gameHash("input.send-policy");
+enum GameInputSendGateV1 : std::uint32_t {
+    GAME_INPUT_GATE_CONNECTED = 1u << 0,
+    GAME_INPUT_GATE_LOCAL_PLAYER = 1u << 1,
+    GAME_INPUT_GATE_INPUT_PRESENT = 1u << 2,
+    GAME_INPUT_GATE_DUE = 1u << 3,
+    GAME_INPUT_GATE_GENERATION_ALLOWED = 1u << 4,
+};
+struct InputSendPolicyV1 {
+    // in
+    std::uint32_t localPlayerId;
+    std::uint32_t due;
+    std::uint32_t dead;
+    std::uint32_t bootstrapState;    // generation bootstrap state
+    std::uint64_t serverCodeGeneration;
+    std::uint64_t localGeneration;
+    float position[3];
+    // out
+    std::uint32_t send;              // 1 = send this frame
+    std::uint32_t handled;
+    std::uint32_t gateFlags;         // GameInputSendGateV1 bits (filled in by cold)
+};
+
+// input.receive-policy: accept/reject a received InputPacket before processing.
+static constexpr std::uint64_t GAME_EVENT_INPUT_RECEIVE_POLICY =
+    gameHash("input.receive-policy");
+struct InputReceivePolicyV1 {
+    // in
+    std::uint32_t playerId;
+    std::uint32_t packetBytes;
+    std::uint32_t playerExists;
+    std::uint32_t playerActive;
+    std::uint32_t playerDead;
+    std::uint64_t inputPacketsSeen;
+    // in: accepted-report facts, so the policy can adopt client-authoritative
+    // ordinary movement (spec phase 1) or leave the server to simulate.
+    std::uint64_t playerEntity;
+    std::uint32_t serverTick;
+    std::uint32_t reportGrounded;
+    float reportPosition[3];
+    float reportVelocity[3];
+    // out
+    std::uint32_t accept;            // 0 = drop this InputPacket
+    std::uint32_t handled;
+    std::uint32_t adoptState;        // 1 = server adopts this report as authority
+};
+
+// actor.lifecycle-policy: decide respawn and spawn protection after death.
+static constexpr std::uint64_t GAME_EVENT_ACTOR_LIFECYCLE_POLICY =
+    gameHash("actor.lifecycle-policy");
+struct ActorLifecyclePolicyV1 {
+    // in
+    std::uint32_t playerId;
+    std::uint32_t dead;
+    std::uint32_t respawnsEnabled;
+    std::uint32_t pendingRespawn;
+    float respawnSeconds;
+    float chosenPosition[3];
+    float chosenYaw;
+    // out
+    std::uint32_t respawn;           // 1 = respawn now
+    std::uint32_t handled;
+    float position[3];
+    float yaw;
+    float spawnProtectionSeconds;
 };
 
 // ── Projectile presentation policy ─────────────────────────
@@ -1007,6 +1212,12 @@ struct GameSurfaceEffectV1 {
     std::uint64_t sourceEntity;
     std::uint32_t flags;    // bit0 = persistent (survives, fades)
     std::uint32_t reserved;
+    // Append-only: textured decal (bullet holes, cracks, blood splats). Empty =
+    // untextured generic mark.
+    char texture[GAME_EFFECT_STRING];
+    float textureScale;
+    // 0 = generic round mark, 1 = blood splat, 2 = bullet hole, 3 = crack strip.
+    std::uint32_t decalKind;
 };
 using GameSurfaceEffectFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameSurfaceEffectV1* request);
@@ -1029,6 +1240,24 @@ struct EffectRequestV1 {
     char text[64];           // optional logical name (e.g. a sound)
     std::uint32_t flags;
     std::uint32_t handled;
+    // Append-only (effect.request.v2): generic disagreement fact. The kernel
+    // forwards the server-disagreement event as plain data; a hot policy may own
+    // the whole presentation. No appearance value is read from JSON when handled.
+    float correction[3];     // predicted -> corrected delta
+    std::uint32_t reason;    // DisagreementReason value (plain number)
+    std::uint32_t sourcePlayerId;
+    std::uint32_t targetPlayerId;
+    std::uint32_t localIndicator;  // 1 = local-only correction indicator
+    // Append-only (effect.request.v3): hit-feedback fact so a hot hit recipe can
+    // reproduce the full cold HitEffects composition (blood, holes, cracks,
+    // impact spheres, damage numbers) with hot-owned appearance.
+    std::int32_t damage;
+    float directness;        // 0..1, shot alignment with the surface
+    float hitDistance;       // -1 = unknown
+    std::uint32_t hitEntity; // 1 = entity hit, 0 = world hit
+    char victimName[32];
+    std::uint32_t spawnDamageNumber;  // 1 = the cold owner would show a number
+    std::uint32_t reserved2;
 };
 
 // ── Actor death / respawn policy ───────────────────────────
@@ -1359,13 +1588,6 @@ struct GameEditorModuleV1 {
 // provider compatibility generically (no capability enum).
 static constexpr std::uint32_t MIMITA_PACKAGE_ABI_VERSION = 2;
 
-// Compile-time FNV-1a so the kernel and packages hash names identically without
-// a runtime table.
-constexpr std::uint64_t gameHash(const char* s, std::uint64_t h = 1469598103934665603ull)
-{
-    return (*s == '\0') ? h : gameHash(s + 1, (h ^ (std::uint64_t)(unsigned char)*s) * 1099511628211ull);
-}
-
 // Reserved domains the kernel times. Packages may register systems in these or
 // in their own hashed domains (which the kernel runs when it times that domain).
 static constexpr std::uint64_t GAME_DOMAIN_GAMEPLAY = gameHash("gameplay.60");
@@ -1375,13 +1597,92 @@ static constexpr std::uint64_t GAME_DOMAIN_RENDER = gameHash("render.frame");
 static constexpr std::uint64_t GAME_DOMAIN_UI = gameHash("ui.frame");
 // Runs once per fixed tick after movement (resolved generically by the kernel).
 static constexpr std::uint64_t GAME_DOMAIN_POST_MOVEMENT = gameHash("postmovement.60");
+// Client-only fixed 60 Hz domain. Run only from the client simulation tick, so
+// non-authoritative presentation (effect timelines, animations) is never
+// simulated on a dedicated server and is tick-rate-stable for everyone.
+static constexpr std::uint64_t GAME_DOMAIN_CLIENT_TICK = gameHash("client.tick");
 
 // Kernel primitive capability ids resolved through GameplayContextV1::
 // resolveCapability. Generic and reusable; adding a primitive never adds a
 // context field.
 static constexpr std::uint64_t GAME_CAP_PHYSICS_MOVE = gameHash("physics.move");
 static constexpr std::uint64_t GAME_CAP_EFFECT_SPAWN = gameHash("effect.spawn");
+// Existing pooled EffectPart primitive (textured billboard / decal / beam /
+// box / tick sphere). One descriptor, no feature enum.
+static constexpr std::uint64_t GAME_CAP_EFFECT_PART = gameHash("effect.part");
 static constexpr std::uint64_t GAME_CAP_SKELETON_APPLY = gameHash("skeleton.apply");
+static constexpr std::uint64_t GAME_CAP_SKELETON_VALIDATE = gameHash("skeleton.validate");
+
+// tool.definition: ONE generic tool/weapon query. A hot package provides the
+// definition (gameplay data + model + sounds + animation phases) for a stable
+// tool key; the cold weapon system resolves this capability and applies the
+// provided fields, so the hot C++ definition is authoritative and config JSON is
+// fallback only. Data is plain POD (fixed arrays, no pointers/STL). Adding a new
+// tool never adds an ABI field; it adds a provider entry.
+static constexpr std::uint64_t GAME_CAP_TOOL_DEFINITION = gameHash("tool.definition");
+
+enum GameToolFieldFlags : std::uint32_t {
+    GAME_TOOL_FIELD_DAMAGE     = 1u << 0,
+    GAME_TOOL_FIELD_BEHAVIOR   = 1u << 1,  // behaviorType/fireMode/networkMode/hitscan
+    GAME_TOOL_FIELD_TIMING     = 1u << 2,  // fireDelay/reloadTime/equip+unequip pose time
+    GAME_TOOL_FIELD_AMMO       = 1u << 3,  // magazine/reserve/pellets/spread/recoil
+    GAME_TOOL_FIELD_PROJECTILE = 1u << 4,  // projectileSpeed/radius/lifetime
+    GAME_TOOL_FIELD_MODEL      = 1u << 5,  // modelPath/scale/attachment
+    GAME_TOOL_FIELD_SOUNDS     = 1u << 6,
+    GAME_TOOL_FIELD_SLOT       = 1u << 7,
+};
+
+struct GameToolParamV1 {
+    char key[24];   // customParams key (e.g. "reserveAmmo", "minDamageFraction")
+    float value;
+};
+
+struct GameToolDefinitionV1 {
+    // in
+    std::uint64_t toolKey;       // gameHash(weaponId); 0 + enumerateIndex = list
+    std::uint32_t structSize;    // sizeof(GameToolDefinitionV1)
+    std::uint32_t enumerateIndex;// when toolKey == 0: Nth hot tool
+    // out
+    std::uint32_t found;         // 1 = a hot definition exists
+    std::uint32_t presentMask;   // GameToolFieldFlags authoritative groups
+    std::uint32_t behaviorType;  // WeaponBehaviorType numeric
+    std::uint32_t fireMode;      // WeaponFireMode numeric
+    std::uint32_t networkMode;   // WeaponNetworkMode numeric
+    std::uint32_t hitscan;       // 1 = hitscan execution
+    std::uint32_t slot;
+    float damage;
+    float headshotMultiplier;
+    float fireDelay;
+    float reloadTime;
+    float spread;
+    float recoil;
+    float equipPoseTime;
+    float unequipPoseTime;
+    float projectileSpeed;
+    float projectileRadius;
+    float projectileLifetime;
+    std::int32_t magazineSize;
+    std::int32_t reserveAmmo;
+    std::int32_t pelletCount;
+    std::uint32_t paramCount;    // number of valid entries in params[]
+    char id[32];                 // stable weapon id (registration key)
+    char displayName[48];
+    char modelPath[192];
+    std::uint64_t socket;
+    float attachmentPosition[3];
+    float attachmentRotation[3]; // euler degrees
+    float scale;
+    char soundShoot[64];
+    char soundReload[64];
+    char soundEquip[64];
+    char soundUnequip[64];
+    char soundHit[64];
+    char soundDryFire[64];
+    GameToolParamV1 params[8];   // extra gameplay customParams
+    std::uint32_t reserved2[8];
+};
+using GameToolDefinitionQueryFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameToolDefinitionV1* request);
 static constexpr std::uint64_t GAME_CAP_ANIMATION_UPDATE = gameHash("animation.update");
 // Generic authoritative server-context primitives. These let hot code mutate
 // authoritative world state through stable generic handles; the kernel keeps

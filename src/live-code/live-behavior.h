@@ -72,6 +72,11 @@ bool runBehaviorBindings(std::uint64_t entity, std::uint32_t eventType,
 // World used by the queryWorldRay capability while a dispatch is in flight.
 void setDispatchWorld(const void* world);
 
+// Server-side collision world (HeadlessWorld). When bound, the physics.move /
+// moveCapsule capabilities resolve against it, so hot movement works on the
+// dedicated/listen server with the same primitive as the client.
+void setDispatchHeadlessWorld(const void* world);
+
 // Flush generic presentation geometry submitted through the render.debug
 // capability during the render.frame domain run. Called once per frame by the
 // UI/render pass so hot presentation appears in the same frame.
@@ -80,6 +85,10 @@ void flushRenderDebug();
 // Total skeleton.apply invocations (headless evidence that hot pose generation
 // reached the generic skeleton mechanism).
 std::uint64_t skeletonApplyCount();
+
+// Total legacy procedural animation bridge invocations. Zero while hot
+// animation owns gameplay; non-zero only when the fallback switch is off.
+std::uint64_t animationUpdateCount();
 
 // Total audio.play invocations (headless evidence that hot audio policy reached
 // the cold audio backend).

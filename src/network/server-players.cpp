@@ -614,8 +614,24 @@ void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uin
     }
 }
 
-void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
+void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world, uint32_t serverTick)
 {
+    // Client-authoritative ordinary movement (spec phase 1): the hot
+    // input-receive policy accepted this report as authoritative. Write the
+    // accepted state to the generic components and skip kernel simulation so the
+    // server exactly tracks the client instead of drifting.
+    if (p.adoptClientMovement)
+    {
+        const EntityId adopted =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, p.id);
+        serverProjectActorSpatialToGeneric((std::uint64_t)adopted);
+        Ecs::setHealth(adopted, p.health, p.maxHealth, p.dead);
+        p.adoptClientMovement = false;
+        p.clientStateUpdated = false;
+        syncServerMovementRuntime(p, true);
+        return;
+    }
+
     // Entity/component slice: keep the server player entity, identity, authority,
     // and live state in sync for the migrated slice.
     const EntityId playerEntity =
@@ -707,6 +723,31 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             {
                 respawnPos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
             }
+            // Hot lifecycle policy: decide respawn and override the spawn
+            // position (e.g. spawn protection / avoid spawning on an NPC).
+            {
+                ActorLifecyclePolicyV1 lp{};
+                lp.playerId = p.id;
+                lp.dead = 1u;
+                lp.respawnsEnabled = serverMatchRespawnsEnabled() ? 1u : 0u;
+                lp.pendingRespawn = p.instantRespawnRequested ? 1u : 0u;
+                lp.respawnSeconds = p.respawnSeconds;
+                lp.chosenPosition[0] = respawnPos.x;
+                lp.chosenPosition[1] = respawnPos.y;
+                lp.chosenPosition[2] = respawnPos.z;
+                lp.chosenYaw = respawnYaw;
+                if (LiveBehavior::dispatchGameplayEvent64(
+                        GAME_EVENT_ACTOR_LIFECYCLE_POLICY, &lp, sizeof(lp), 0,
+                        p.id, 0) &&
+                    lp.handled)
+                {
+                    if (lp.respawn == 0)
+                        return;
+                    respawnPos = glm::vec3(lp.position[0], lp.position[1],
+                                           lp.position[2]);
+                    respawnYaw = lp.yaw;
+                }
+            }
             // The spawn yaw is the actor's valid look direction for this new
             // life. Compute the impulse after choosing it, not from the old
             // yaw left over from the previous life.
@@ -781,6 +822,24 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     // burst of commands in reverse order, kinking the simulated position and
     // making the broadcast stream jittery (visible as jitter to other clients).
     {
+        // Hot actor-movement yield: if the hot movement system already produced
+        // this tick's result for this actor, it owns the authoritative state.
+        // Project generic -> typed and do not run the kernel path.
+        {
+            const EntityId hotEntity =
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Player, p.id);
+            const MovementRuntimeStateComponent* hotState =
+                EntityRegistry::instance().tryGet<MovementRuntimeStateComponent>(hotEntity);
+            if (hotState && serverTick != 0 && hotState->lastSimTick == serverTick)
+            {
+                serverProjectActorSpatialFromGeneric((std::uint64_t)hotEntity);
+                p.onGround = hotState->grounded;
+                p.clientStateUpdated = false;
+                syncServerMovementRuntime(p, true);
+                return;
+            }
+        }
+
         // Find the oldest valid input command (FIFO replay). Redundant command
         // slots can insert out of ring order, so scan all slots for the lowest
         // sequence instead of relying on ring position.
@@ -814,13 +873,10 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 MovementLifecycleIdentity{p.spawnGeneration, p.transformEpoch});
         }
 
-        // Role movement preset (if any) drives the shared kernel for this
-        // actor; otherwise the global movement config applies.
-        const MovementConfig* roleMove =
-            RoleMovementCache::instance().get(p.movementProfileId);
-        const MovementConfig cfg = roleMove
-            ? applyRuntimeMovementTuning(*roleMove)
-            : makeCurrentRuntimeMovementConfig();
+        // Single C++ Source movement authority: the server simulates movement
+        // with the same policy and tuning as the client. Role movement presets
+        // and difficulty JSON no longer decide movement.
+        const MovementConfig cfg = makeCurrentRuntimeMovementConfig();
         MovementState state = movementStateFromServerPlayer(p);
 
         // Authoritative generic input: position/velocity/yaw come DIRECTLY from
@@ -882,6 +938,10 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         // (the cold collision mechanism mutates position/velocity + contact; it
         // does not require ServerPlayer). Typed fields are projected from it.
         {
+            // Integrate the position by the tick velocity before resolving
+            // contact. The shared kernel only owns velocity; the collide step
+            // owns position, so without this the server never advances.
+            state.position += state.baseVelocity * SERVER_DT;
             bool onGround = false;
             resolveCapsuleCollisionAgainstWorld(world, state.position,
                                                 state.baseVelocity, PLAYER_RADIUS,

@@ -181,6 +181,16 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         sim.npcSystem->update(*sim.world, *sim.player, TICK_DT, frame);
     }
 
+    // Hot actor-movement post pass: after NPC AI has written generic intent,
+    // one hot system owns movement for every non-local actor.
+    {
+        MimitaRuntime::GenericRuntime& runtime = MimitaRuntime::GenericRuntime::instance();
+        const std::uint64_t postTick = (std::uint64_t)sim.tick;
+        void* postHost = LiveBehavior::hostContext(postTick);
+        runtime.runDomain(GAME_DOMAIN_POST_MOVEMENT, postTick, TICK_DT, postHost);
+        LiveBehavior::drainEvents(64);
+    }
+
     // Resolve NPC vs Player collisions
     {
         MIMITA_PERF_SCOPE("NpcVsPlayerCollision");
@@ -241,6 +251,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         const std::uint64_t runtimeTick = (std::uint64_t)sim.tick;
         void* host = LiveBehavior::hostContext(runtimeTick);
         runtime.runRegisteredDomains(runtimeTick, TICK_DT, host);
+        // Client-only fixed 60 Hz presentation domain (effect timelines,
+        // animations). Never run on a dedicated server.
+        runtime.runDomain(GAME_DOMAIN_CLIENT_TICK, runtimeTick, TICK_DT, host);
         LiveBehavior::drainEvents(64);
     }
 

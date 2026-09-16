@@ -300,7 +300,8 @@ int runClient(const LaunchOptions& options)
                     p.currentHp = entity.health;
                     p.spawnGeneration = entity.spawnGeneration;
                     p.username = entity.displayName;
-                    p.updateProceduralAnimation(dt);
+                    if (!gHotAnimationOwnsGameplay)
+                        p.updateProceduralAnimation(dt);
                     (*seen)[entity.networkEntityId] = true;
                     if (!existsBefore || logSnapshot)
                         printf("[CLIENT ENTITY APPLY] entityId=%u type=%s isLocal=%d existsBefore=%d "

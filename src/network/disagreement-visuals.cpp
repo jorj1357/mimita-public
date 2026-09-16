@@ -4,6 +4,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "config/networking-config.h"
+#include "live-code/live-behavior.h"
 
 #include <algorithm>
 #include <chrono>
@@ -345,6 +346,30 @@ void spawnDisagreementEffect(const DisagreementEvent& event)
 {
     if (!NetworkingConfig::instance().data().disagreement.enabled)
         return;
+
+    // Generic hot presentation fact: forward the plain event data to the hot
+    // module, which owns the appearance. When it handles the fact, the cold JSON
+    // composition below yields (one owner). The JSON values remain the fallback.
+    {
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.disagreement");
+        req.position[0] = event.position.x;
+        req.position[1] = event.position.y;
+        req.position[2] = event.position.z;
+        req.correction[0] = event.correction.x;
+        req.correction[1] = event.correction.y;
+        req.correction[2] = event.correction.z;
+        req.reason = static_cast<std::uint32_t>(event.reason);
+        req.sourcePlayerId = event.sourcePlayerId;
+        req.targetPlayerId = event.targetPlayerId;
+        req.scale = glm::length(event.correction);
+        if (event.descriptionIsFinalLabel)
+            req.flags |= 1u;
+        std::snprintf(req.text, sizeof(req.text), "%s", event.description.c_str());
+        if (LiveBehavior::dispatchEffectRequest(req, 0))
+            return;
+    }
+
     const auto& cfg = gDisagreeConfig;
     // Uniform presentation: every disagreement uses the same small size,
     // lifetime, and dark-turquoise color. Only the text popup varies.
@@ -523,6 +548,27 @@ void spawnLocalDisagreementIndicator(const DisagreementEvent& event)
 {
     if (!NetworkingConfig::instance().data().disagreement.enabled)
         return;
+
+    // Hot presentation owns the local correction indicator when it handles the
+    // fact; otherwise the JSON composition below remains the fallback.
+    {
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.disagreement.local");
+        req.position[0] = event.position.x;
+        req.position[1] = event.position.y;
+        req.position[2] = event.position.z;
+        req.correction[0] = event.correction.x;
+        req.correction[1] = event.correction.y;
+        req.correction[2] = event.correction.z;
+        req.reason = static_cast<std::uint32_t>(event.reason);
+        req.sourcePlayerId = event.sourcePlayerId;
+        req.targetPlayerId = event.targetPlayerId;
+        req.scale = glm::length(event.correction);
+        req.localIndicator = 1u;
+        if (LiveBehavior::dispatchEffectRequest(req, 0))
+            return;
+    }
+
     const auto& li = gDisagreeConfig.localIndicator;
 
     // Correction arrow from predicted to corrected

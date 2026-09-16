@@ -15,6 +15,7 @@
 
 #include "npc/npc.h"
 #include "config/movement-config.h"
+#include "physics/movement/movement-conversion.h"
 #include "debug/debug-log.h"
 
 namespace {
@@ -149,8 +150,8 @@ NpcTraversalStep NpcTraversalExecutor::update(Npc& npc, const NpcNavResult& nav,
         return step;
     }
 
-    const MovementConfig& cfg = movement ? *movement
-                                         : MovementJsonConfig::instance().config();
+    const MovementConfig cfg = movement ? *movement
+                                         : makeCurrentRuntimeMovementConfig();
     const glm::vec3 target = nav.hasPath ? nav.waypoint : nav.destination;
     const float dx = target.x - npc.body.pos.x;
     const float dy = target.y - npc.body.pos.y;

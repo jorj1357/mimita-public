@@ -25,9 +25,19 @@ void moveCapsuleStep(MovementStateV1& state, const World* world, float dt)
     body.capsuleHalfHeight = state.halfHeight > 0.0f ? state.halfHeight : 0.5f;
     body.linearDamping = 0.0f;
     body.angularDamping = 0.0f;
+    // The caller supplies the velocity. This primitive must not impose the
+    // rigid-body default speed cap on policy-owned player movement, otherwise a
+    // fast fall (z velocity) would silently scale the horizontal velocity down
+    // and diverge from the server. Caller policy owns terminal speed.
+    body.maxLinearSpeed = 0.0f;
     setBodyMass(body, 1.0f);
 
-    const float gravityScale = state.gravityScale > 0.0f ? state.gravityScale : 1.0f;
+    // gravityScale: >0 multiplies 9.81; 0/absent means the default 1.0;
+    // negative means the caller already integrated gravity and the solver must
+    // not add any (used by movement.main, which owns gravity via its policy).
+    const float gravityScale = state.gravityScale < 0.0f
+        ? 0.0f
+        : (state.gravityScale > 0.0f ? state.gravityScale : 1.0f);
     const glm::vec3 gravity(0.0f, 0.0f, -9.81f * gravityScale);
     integrate(body, gravity, dt);
 

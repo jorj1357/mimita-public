@@ -52,3 +52,8 @@ struct WeaponViewModel {
     void render(const Camera& camera, const Player& player, int equippedSlot) const;
     void unload();
 };
+
+// True when hot tool-presentation owns the equipped tool AND the tool's logical
+// mesh actually resolves to a live handle. A claim alone never yields the cold
+// renderer. Exposed so focused tests can assert the ownership contract.
+bool weaponViewModelHotOwnsEquippedTool(const Player& player);

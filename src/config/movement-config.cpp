@@ -426,6 +426,11 @@ bool parsePresetFileInto(const std::string& path, MovementConfig& out)
 
 } // namespace
 
+MovementConfig movementRuntimeDefaults()
+{
+    return defaultMovementConfig();
+}
+
 MovementJsonConfig& MovementJsonConfig::instance()
 {
     static MovementJsonConfig config;

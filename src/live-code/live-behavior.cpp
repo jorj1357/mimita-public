@@ -15,6 +15,7 @@
 
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
+#include "debug/structured-log.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-reload-system.h"
 #include "hot-reload/generic-runtime.h"
@@ -26,6 +27,8 @@
 #include "render/skeleton-instances.h"
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
+#include "network/server.h"
+#include "network/server.h"
 #include "physics/movement/move-capsule.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
@@ -37,6 +40,7 @@
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
 #include "render/presentation-render.h"
+#include "render/dynamic-light.h"
 #include "renderer/renderer.h"
 #include "config/player-settings.h"
 
@@ -69,7 +73,12 @@ int gHead = 0;
 int gCount = 0;
 bool gDraining = false;
 const void* gDispatchWorld = nullptr;
+// Server-side collision world (HeadlessWorld). When bound, the physics.move
+// capability resolves against it so the same hot movement code runs on the
+// dedicated/listen server as on the client.
+const void* gDispatchHeadlessWorld = nullptr;
 std::uint64_t g_skeletonApplyCount = 0;
+std::uint64_t g_animationUpdateCount = 0;
 std::uint64_t g_audioPlayCount = 0;
 std::uint64_t g_surfaceEffectCount = 0;
 std::uint64_t g_cameraEffectCount = 0;
@@ -135,7 +144,16 @@ bool MIMITA_GAME_CALL capReadComponent(void*, std::uint64_t entity,
         o->jumpIntentSeconds=c->jumpIntentSeconds;
         o->dashGraceSeconds=c->dashGraceSeconds;
         o->freezePreviously=c->freezePreviously?1u:0u;
+        o->reserved[GAME_MOVEMENT_STAMP_TICK]=c->lastSimTick;
+        o->reserved[GAME_MOVEMENT_STAMP_GENERATION]=c->lastSimGeneration;
+        o->reserved[GAME_MOVEMENT_STAMP_FLAGS]=0u;
         return true; }
+    case GAME_COMPONENT_CONTROL_SOURCE: {
+        if (outSize < sizeof(GameControlSourceComponentV1)) return false;
+        const auto* c = registry.tryGet<ControlSourceComponent>(id);
+        if (!c) return false;
+        auto* o = static_cast<GameControlSourceComponentV1*>(out);
+        o->source = (std::uint32_t)c->source; o->reserved = 0u; return true; }
     case GAME_COMPONENT_AIM_INTENT: {
         if (outSize < sizeof(GameAimIntentComponentV1)) return false;
         const auto* c = registry.tryGet<AimIntentComponent>(id);
@@ -278,7 +296,14 @@ bool MIMITA_GAME_CALL capWriteComponent(void*, std::uint64_t entity,
         c.jumpIntentSeconds=i->jumpIntentSeconds;
         c.dashGraceSeconds=i->dashGraceSeconds;
         c.freezePreviously=i->freezePreviously!=0;
+        c.lastSimTick=i->reserved[GAME_MOVEMENT_STAMP_TICK];
+        c.lastSimGeneration=i->reserved[GAME_MOVEMENT_STAMP_GENERATION];
         return true; }
+    case GAME_COMPONENT_CONTROL_SOURCE: {
+        if (inSize < sizeof(GameControlSourceComponentV1)) return false;
+        const auto* i = static_cast<const GameControlSourceComponentV1*>(in);
+        auto& c = registry.add<ControlSourceComponent>(id);
+        c.source = (ControlSource)i->source; return true; }
     case GAME_COMPONENT_AIM_INTENT: {
         if (inSize < sizeof(GameAimIntentComponentV1)) return false;
         const auto* i = static_cast<const GameAimIntentComponentV1*>(in);
@@ -332,7 +357,13 @@ std::uint32_t MIMITA_GAME_CALL capFindEntities(void*, std::uint32_t domain,
         if (componentType != 0) {
             switch (componentType) {
             case GAME_COMPONENT_TRANSFORM: if (!registry.has<TransformComponent>(id)) continue; break;
+            case GAME_COMPONENT_VELOCITY: if (!registry.has<VelocityComponent>(id)) continue; break;
             case GAME_COMPONENT_HEALTH: if (!registry.has<HealthComponent>(id)) continue; break;
+            case GAME_COMPONENT_MOVEMENT_INTENT: if (!registry.has<MovementIntentComponent>(id)) continue; break;
+            case GAME_COMPONENT_MOVEMENT_RUNTIME_STATE: if (!registry.has<MovementRuntimeStateComponent>(id)) continue; break;
+            case GAME_COMPONENT_CONTROL_SOURCE: if (!registry.has<ControlSourceComponent>(id)) continue; break;
+            case GAME_COMPONENT_BODY: if (!registry.has<BodyComponent>(id)) continue; break;
+            case GAME_COMPONENT_AIM_INTENT: if (!registry.has<AimIntentComponent>(id)) continue; break;
             case GAME_COMPONENT_RAGDOLL_LIMB: if (!registry.has<Ragdoll::LimbComponent>(id)) continue; break;
             case GAME_COMPONENT_RAGDOLL_ROOT: if (!registry.has<Ragdoll::RagdollRootComponent>(id)) continue; break;
             case GAME_COMPONENT_PROJECTILE: if (!registry.has<ProjectileComponent>(id)) continue; break;
@@ -378,8 +409,21 @@ bool MIMITA_GAME_CALL capQueryWorldRay(void*, const float origin[3],
 
 void MIMITA_GAME_CALL capLog(void*, const char* message)
 {
-    if (message)
-        std::printf("[HOT] %s\n", message);
+    if (!message)
+        return;
+    std::printf("[HOT] %s\n", message);
+    // File-backed sink so hot diagnostics are saved with the rest of the
+    // categorized logs (logs/<date>/...), not just printed.
+    ::StructuredLogger::Entry e;
+    e.category = ::StructuredCategory::Network;
+    e.level = ::StructuredLevel::Verbose;
+    e.eventId = "hot.log";
+    e.reason = "hot";
+    e.sourceFile = "live-behavior";
+    e.sourceLine = 0;
+    e.functionName = "capLog";
+    e.message = message;
+    ::StructuredLogger::instance().write(e);
 }
 
 bool MIMITA_GAME_CALL capDynamicReadComponent(void*, std::uint64_t entity,
@@ -544,6 +588,41 @@ void MIMITA_GAME_CALL capRequestMovementOverride(void*, std::uint32_t flags,
         flags, position, velocity, yaw);
 }
 
+namespace {
+
+// Headless-server capsule step: integrates the caller-supplied velocity (the
+// caller owns gravity via gravityScale < 0), resolves against the HeadlessWorld
+// collision, and writes the result back. This is the server counterpart of
+// Physics::moveCapsuleStep so hot movement uses one primitive on both sides.
+void moveCapsuleStepHeadless(MovementStateV1* s, const MimitaNet::HeadlessWorld* world, float dt)
+{
+    if (!s || dt <= 0.0f)
+        return;
+    const float gravityScale = s->gravityScale < 0.0f
+        ? 0.0f
+        : (s->gravityScale > 0.0f ? s->gravityScale : 1.0f);
+    const float radius = s->radius > 0.0f ? s->radius : 0.4f;
+    const float halfHeight = s->halfHeight > 0.0f ? s->halfHeight : 0.9f;
+
+    glm::vec3 pos(s->position[0], s->position[1], s->position[2]);
+    glm::vec3 vel(s->velocity[0], s->velocity[1], s->velocity[2]);
+
+    vel.z -= 9.81f * gravityScale * dt;
+    pos += vel * dt;
+
+    bool onGround = false;
+    if (world)
+        MimitaNet::resolveCapsuleCollisionAgainstWorld(
+            *world, pos, vel, radius, halfHeight * 2.0f, onGround);
+
+    s->position[0] = pos.x; s->position[1] = pos.y; s->position[2] = pos.z;
+    s->velocity[0] = vel.x; s->velocity[1] = vel.y; s->velocity[2] = vel.z;
+    s->grounded = onGround ? 1u : 0u;
+    s->collided = 1u;
+}
+
+} // namespace
+
 void MIMITA_GAME_CALL capMoveCapsule(void*, MovementStateV1* state, float dt)
 {
     if (!state)
@@ -558,10 +637,20 @@ void MIMITA_GAME_CALL capMoveCapsule(void*, MovementStateV1* state, float dt)
 // pipeline (sweep/slide, step-up, floor recovery, contact-grounded) on the real
 // local player and writes the resolved state back. No movement-policy logic.
 void MIMITA_GAME_CALL capPhysicsMove(void*, MovementStateV1* s, float dt,
-                                     std::uint32_t /*flags*/)
+                                     std::uint32_t flags)
 {
     if (!s || dt <= 0.0f)
         return;
+
+    // Explicit headless-world selection: hot code sets this flag for server
+    // actors so the same primitive resolves against the authoritative server
+    // collision. Never implicit, so a listen host's client path is unaffected.
+    if ((flags & GAME_PHYSICS_MOVE_HEADLESS) && gDispatchHeadlessWorld)
+    {
+        moveCapsuleStepHeadless(s, static_cast<const MimitaNet::HeadlessWorld*>(gDispatchHeadlessWorld), dt);
+        return;
+    }
+
     const World* world = static_cast<const World*>(gDispatchWorld);
 
     // The full pipeline operates on the real local player. When there is no
@@ -603,7 +692,9 @@ void MIMITA_GAME_CALL capPhysicsMove(void*, MovementStateV1* s, float dt,
     s->velocity[1] = p.vel.y;
     s->velocity[2] = p.vel.z;
     s->grounded = grounded ? 1u : 0u;
-    s->collided = 1u;
+    // Any real world contact (ground, wall, ceiling, prop) — used by hot
+    // movement to reset abilities on touch, per the movement spec.
+    s->collided = (grounded || !p.movementContacts.empty()) ? 1u : 0u;
 }
 
 // effect.spawn: ONE generic effect descriptor. Known movement kinds map to the
@@ -623,6 +714,18 @@ void MIMITA_GAME_CALL capEffectSpawn(void*, const GameEffectSpawnV1* d)
     if (d->kind == gameHash("effect.freeze"))   { fx.spawnFreeze(pos, d->lifetime > 0.0f ? d->lifetime : 5.0f); return; }
     if (d->kind == gameHash("effect.freezeTrail")) { fx.spawnFreezeTrail(pos); return; }
 
+    // Generic dynamic light: hot policy drives the EXISTING cold light manager
+    // through this same descriptor. No new light subsystem, no per-weapon slot.
+    if (d->kind == gameHash("light.dynamic")) {
+        const glm::vec3 color(d->color[0], d->color[1], d->color[2]);
+        DynamicLightManager::instance().spawn(
+            pos, color,
+            d->scale > 0.0f ? d->scale : 1.0f,
+            d->endScale > 0.0f ? d->endScale : 5.0f,
+            d->lifetime > 0.0f ? d->lifetime : 0.1f);
+        return;
+    }
+
     EffectPart e;
     e.position = pos;
     e.velocity = glm::vec3(d->direction[0], d->direction[1], d->direction[2]) * d->speed;
@@ -636,14 +739,62 @@ void MIMITA_GAME_CALL capEffectSpawn(void*, const GameEffectSpawnV1* d)
     fx.spawn(e);
 }
 
+// effect.part: expose the EXISTING pooled EffectPart primitive to hot policy.
+// The kernel keeps the pool/lifetime/renderer; hot owns the descriptor, so a hot
+// recipe reproduces the cold hit/blood/impact look exactly (textured billboards,
+// sticky/flat decals, beams, boxes, tick-defined lifetimes).
+void MIMITA_GAME_CALL capEffectPart(void*, const GameEffectPartV1* d)
+{
+    if (!d)
+        return;
+    EffectPart e;
+    e.position = glm::vec3(d->position[0], d->position[1], d->position[2]);
+    e.velocity = glm::vec3(d->velocity[0], d->velocity[1], d->velocity[2]);
+    e.color = glm::vec3(d->color[0], d->color[1], d->color[2]);
+    e.normal = glm::vec3(d->normal[0], d->normal[1], d->normal[2]);
+    e.rotation = glm::vec3(d->rotation[0], d->rotation[1], d->rotation[2]);
+    e.endPosition = glm::vec3(d->endPosition[0], d->endPosition[1],
+                              d->endPosition[2]);
+    e.halfSize = glm::vec3(d->halfSize[0], d->halfSize[1], d->halfSize[2]);
+    e.scale = d->scale;
+    e.endScale = d->endScale > 0.0f ? d->endScale : d->scale;
+    e.alpha = d->alpha > 0.0f ? d->alpha : 1.0f;
+    e.gravity = d->gravity;
+    e.drag = d->drag;
+    e.thickness = d->thickness;
+    e.endThickness = d->endThickness;
+    e.maxLifetime = d->maxLifetime > 0.0f ? d->maxLifetime : 1.0f;
+    e.affectedByGravity = d->affectedByGravity != 0;
+    e.sticky = d->sticky != 0;
+    e.flatDecal = d->flatDecal != 0;
+    e.beam = d->beam != 0;
+    e.box = d->box != 0;
+    e.billboardText = d->billboardText != 0;
+    e.meshResourceId = d->meshResourceId;
+    e.textureResourceId = d->textureResourceId;
+    e.scaleXYZ = glm::vec3(d->scaleXYZ[0] > 0.0f ? d->scaleXYZ[0] : 1.0f,
+                          d->scaleXYZ[1] > 0.0f ? d->scaleXYZ[1] : 1.0f,
+                          d->scaleXYZ[2] > 0.0f ? d->scaleXYZ[2] : 1.0f);
+    if (d->replayType[0] != '\0')
+        e.replayType = d->replayType;
+    if (d->texturePath[0] != '\0')
+        e.texturePath = d->texturePath;
+    if (d->label[0] != '\0')
+        e.label = d->label;
+    EffectPartSystem::instance().spawn(e);
+}
+
+// GamePosePartV1.rotationEuler is the hot boundary unit: radians. The generic
+// skeleton mechanism (SkeletonInstances) already consumes radians, so the typed
+// body mirror uses the same unit here to keep one canonical convention.
 glm::mat4 poseOffsetMatrix(const GamePosePartV1& part)
 {
     glm::mat4 m(1.0f);
     m = glm::translate(m, glm::vec3(part.translation[0], part.translation[1],
                                     part.translation[2]));
-    m = glm::rotate(m, glm::radians(part.rotationEuler[0]), glm::vec3(1, 0, 0));
-    m = glm::rotate(m, glm::radians(part.rotationEuler[1]), glm::vec3(0, 1, 0));
-    m = glm::rotate(m, glm::radians(part.rotationEuler[2]), glm::vec3(0, 0, 1));
+    m = glm::rotate(m, part.rotationEuler[0], glm::vec3(1, 0, 0));
+    m = glm::rotate(m, part.rotationEuler[1], glm::vec3(0, 1, 0));
+    m = glm::rotate(m, part.rotationEuler[2], glm::vec3(0, 0, 1));
     return m;
 }
 
@@ -712,10 +863,66 @@ void MIMITA_GAME_CALL capSkeletonApply(void*, const GameSkeletonPoseV1* pose)
     p.updateModelWorldTransforms();
 }
 
+// skeleton.validate: generic required-part check against the actor's current
+// skeleton. Used by model-generation swaps and candidate self-tests; the hot
+// side decides which parts are required, the kernel performs the lookup.
+bool MIMITA_GAME_CALL capSkeletonValidate(void*, GameSkeletonValidateV1* q)
+{
+    if (!q)
+        return false;
+    q->presentMask = 0;
+    q->missingCount = 0;
+    q->valid = 0;
+    if (q->requiredCount == 0) {
+        q->valid = 1;
+        return true;
+    }
+    const EntityId entity = static_cast<EntityId>(q->entity);
+    const SkeletonInstances::Instance* inst =
+        entity != kInvalidEntityId ? SkeletonInstances::get(entity) : nullptr;
+
+    std::uint64_t localEntity = 0;
+    if (GameSharedStateV1* shared =
+            MimitaRuntime::GenericRuntime::instance().sharedState())
+        localEntity = shared->localPlayerEntity;
+    const Player* player =
+        (gpPlayer && entity != kInvalidEntityId &&
+         static_cast<std::uint64_t>(entity) == localEntity)
+            ? gpPlayer
+            : nullptr;
+
+    const std::uint32_t count = q->requiredCount < GAME_MAX_VALIDATE_PARTS
+                                    ? q->requiredCount
+                                    : GAME_MAX_VALIDATE_PARTS;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const std::uint64_t part = q->requiredParts[i];
+        if (part == 0)
+            continue;
+        bool found = inst && SkeletonInstances::findBone(inst, part) != nullptr;
+        if (!found && player) {
+            for (const TransformNode& node : player->perfectPoseSkeleton.nodes) {
+                if (gameHash(node.name.c_str()) == part) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (found)
+            q->presentMask |= (1u << i);
+        else
+            ++q->missingCount;
+    }
+    q->valid = q->missingCount == 0 ? 1u : 0u;
+    return true;
+}
+
 // animation.update: temporary hot-invokable bridge to the existing procedural
 // animator, with hot ability transitions synced in first.
 void MIMITA_GAME_CALL capAnimationUpdate(void*, float dt, std::uint32_t flags)
 {
+    if (gHotAnimationOwnsGameplay)
+        return;  // hot animation owns gameplay actors; legacy bridge is fallback
+    ++g_animationUpdateCount;
     if (!gpPlayer || !gpCamera)
         return;
     Player& p = THE_PLAYER;
@@ -883,7 +1090,11 @@ bool MIMITA_GAME_CALL capSocketQuery(void*, GameSocketQueryV1* q)
         if (t) {
             haveEntity = true;
             base = glm::translate(glm::mat4(1.0f), t->position);
-            const float cy = std::cos(t->yaw), sy = std::sin(t->yaw);
+            // TransformComponent.yaw is stored in DEGREES (from player.yaw);
+            // building the rotation matrix needs radians or an attached model
+            // spins ~57x per camera degree.
+            const float yawRad = glm::radians(t->yaw);
+            const float cy = std::cos(yawRad), sy = std::sin(yawRad);
             glm::mat4 rz(1.0f);   // world is Z-up; yaw rotates about Z
             rz[0][0] = cy;  rz[0][1] = sy;
             rz[1][0] = -sy; rz[1][1] = cy;
@@ -1080,6 +1291,10 @@ bool MIMITA_GAME_CALL capResourceRegister(void*, GameResourceRegisterV1* req)
     const bool ok = PresentationRender::registerLogicalResource(
         req->logicalId, req->kind, req->path, req->applyNow != 0,
         &req->generation);
+    // `ok` means the registration was accepted; `generation == 0` (with
+    // applyNow) is how a caller detects that no handle was produced (load
+    // failure, last-good preserved). Keeping them separate preserves the
+    // existing "registration accepted" contract.
     req->ok = ok ? 1u : 0u;
     return ok;
 }
@@ -1111,7 +1326,21 @@ void MIMITA_GAME_CALL capSurfaceEffect(void*, const GameSurfaceEffectV1* request
     d.height = request->height > 0.0f ? request->height : d.radius;
     d.lifetime = request->lifetime > 0.0f ? request->lifetime : 30.0f;
     d.fadeTime = request->fadeTime > 0.0f ? request->fadeTime : 5.0f;
-    d.generic = true;
+    switch (request->decalKind) {
+    case 2: d.kind = SurfaceDecalKind::BulletHole; break;
+    case 3: d.kind = SurfaceDecalKind::Crack; break;
+    default: d.kind = SurfaceDecalKind::Blood; break;
+    }
+    if (request->texture[0] != '\0') {
+        // Hot owns the decal texture (bullet holes, cracks, blood splats); the
+        // kernel still owns projection/storage/draw. Falls back to the
+        // kind-based JSON texture in the renderer only when untextured.
+        d.texturePath = request->texture;
+        d.textureScale = request->textureScale > 0.0f ? request->textureScale : 1.0f;
+        d.generic = false;
+    } else {
+        d.generic = true;
+    }
     EffectPartSystem::instance().spawnGenericSurfaceDecal(d);
 }
 
@@ -1311,10 +1540,18 @@ struct KernelCapabilityInit {
                                     gameHash("sig.effect.spawn.v1"), 0,
                                     reinterpret_cast<void*>(&capEffectSpawn),
                                     "effect.spawn");
+        rt.registerKernelCapability(GAME_CAP_EFFECT_PART,
+                                    gameHash("sig.effect.part.v1"), 0,
+                                    reinterpret_cast<void*>(&capEffectPart),
+                                    "effect.part");
         rt.registerKernelCapability(GAME_CAP_SKELETON_APPLY,
                                     gameHash("sig.skeleton.apply.v1"), 0,
                                     reinterpret_cast<void*>(&capSkeletonApply),
                                     "skeleton.apply");
+        rt.registerKernelCapability(GAME_CAP_SKELETON_VALIDATE,
+                                    gameHash("sig.skeleton.validate.v1"), 0,
+                                    reinterpret_cast<void*>(&capSkeletonValidate),
+                                    "skeleton.validate");
         rt.registerKernelCapability(GAME_CAP_ANIMATION_UPDATE,
                                     gameHash("sig.animation.update.v1"), 0,
                                     reinterpret_cast<void*>(&capAnimationUpdate),
@@ -1492,7 +1729,7 @@ bool dispatchEffectRequest(EffectRequestV1& payload, std::uint64_t tick)
     payload.handled = 0;
     GameEventV1 event{};
     event.typeId = gameHash("effect.request");
-    event.schemaHash = gameHash("effect.request.v1");
+    event.schemaHash = gameHash("effect.request.v3");
     event.payloadVersion = 1;
     event.payloadSize = sizeof(EffectRequestV1);
     event.sourceEntity = payload.sourceEntity;
@@ -1587,6 +1824,11 @@ void setDispatchWorld(const void* world)
     gDispatchWorld = world;
 }
 
+void setDispatchHeadlessWorld(const void* world)
+{
+    gDispatchHeadlessWorld = world;
+}
+
 void flushRenderDebug()
 {
     ::flushDebugLines(THE_CAMERA);
@@ -1595,6 +1837,11 @@ void flushRenderDebug()
 std::uint64_t skeletonApplyCount()
 {
     return g_skeletonApplyCount;
+}
+
+std::uint64_t animationUpdateCount()
+{
+    return g_animationUpdateCount;
 }
 
 std::uint64_t audioPlayCount()

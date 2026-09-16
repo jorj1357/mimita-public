@@ -1355,3 +1355,53 @@ Proves the GLB consumer gate end-to-end with a REAL object graph, headlessly:
   observed; retirement has no multi-thread fence; PNG/WAV consumers and resource
   late-join current-state sync remain. NEXT: PNG (`ui.menu.logo`), WAV
   (`audio.weapon.rocket.fire`), resource late join, cross-kind unresolved fallback.
+
+## 2026-09-16 — one hot tool-visual recipe + hot ownership + hot muzzle/disagreement
+
+- TOOL VISUALS: weapons are now `ToolVisualRecipeV1` recipes selected by
+  `gameHash(weaponId)` in `src/hot-reload/hot-tool-visual.h` +
+  `modules/presentation/tool-visuals.cpp` (revolver, shotgun, rocket launcher,
+  grenade launcher, spyknife, swordsword). No weapon enum, switch, or renderer
+  branch was added.
+- OWNERSHIP CONTRACT: `hot.tool-presentation` claims a tool only when the recipe
+  is complete AND its mesh resource actually resolved
+  (`resource.register` generation != 0; retries throttled). `HotToolClaimV1`
+  carries `toolEntity`/`meshResourceId`. Cold
+  `weaponViewModelHotOwnsEquippedTool` additionally requires the claimed tool's
+  `PresentationState` mesh to resolve via `handleOf`, so a claim alone can never
+  suppress the normal viewmodel. This fixes "missing revolver/shotgun/rocket
+  model" (claimed but unloadable -> drawn by neither path).
+- MUZZLE: the generic muzzle is a bright UNTEXTURED sphere (`mesh.sphere`,
+  registered generically by the cold renderer), lifetime one 60 Hz tick by
+  default, optional dynamic light driven through the existing
+  `effect.spawn` kind `light.dynamic`. The old blue textured cube is gone.
+- NEW GENERIC PRIMITIVES (cold, no feature slot): `mesh.sphere`, `mesh.beam`
+  (procedural, reuse existing loaders); `effect.request.v2` append-only fields
+  carry generic disagreement data. `capResourceRegister` keeps its
+  "registration accepted" contract; a load failure stays observable through
+  `generation == 0` (readiness uses the generation).
+- DISAGREEMENT: the cold kernel forwards the plain event to hot
+  (`effect.disagreement` / `effect.disagreement.local`); the hot recipe
+  (`makeServerDisagreementVisual`) owns pulse/beam/tracer/text/particles/sound.
+  `config/serverdisagree.json` remains the fallback and the
+  networking enable/disable + tick rate gates remain cold safety gates.
+- LIVE-PROOF DEBT: no rendered frame observed; hot custom-`ToolVisual` edits,
+  live dynamic-light change, and multiplayer muzzle/disagreement parity remain
+  human acceptance. JSON visual deprecation (Phase 4) and the full projectile
+  trail/impact recipe migration are not done.
+
+## 2026-09-16 (later) — first/third-person tool draw, explosions, hit effects
+
+- TOOL DRAW: tool attachments draw the socket's WORLD transform with the normal
+  world view (no longer mis-tagged camera-relative VIEW), so the model shows in
+  first and third person. Avatar UI preview still uses genuine view space.
+- EXPLOSIONS: the hot projectile simulation composes the shared
+  `effect.explosion.rocket/.grenade` recipe on the client/listen host and
+  materializes the projectile `PresentationState` from the recipe when
+  replication did not deliver it.
+- HIT EFFECTS: exposed the EXISTING cold `EffectPart` primitive to hot as
+  `GAME_CAP_EFFECT_PART` and textured/kinded `surface.effect` decals; a hot
+  `hit-visuals` recipe reproduces blood spray/splats, bullet holes, cracks,
+  impact spheres, damage numbers, and a tick-based impact burst. JSON is the
+  fallback. `EffectRequestV1` v3 carries the hit fact.
+- DEFERRED: `PresentationState` schema v2 + migration.

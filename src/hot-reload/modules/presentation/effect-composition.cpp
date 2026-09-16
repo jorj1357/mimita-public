@@ -13,7 +13,9 @@
 #include "hot-reload/hot-effect.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-presentation.h"
+#include "hot-reload/hot-tool-visual.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -55,11 +57,124 @@ void spawnEffect(GameplayContextV1* ctx, std::uint64_t meshId, std::uint64_t tex
     HotEffectLifetimeV1 life{};
     life.age = 0.0f;
     life.lifetime = lifetime;
-    life.scale0 = 1.0f;
+    // The lifecycle overwrites PresentationState.scale as
+    // `scale0 * (1 + growth * age)`, so the recipe scale must be scale0 (a value
+    // of 1.0 here silently discarded every recipe scale after the first tick).
+    life.scale0 = scale0;
     life.growth = growth;
     life.fadeStart = fadeStart;
     ctx->dynamicWriteComponent(ctx->host, entity, HOT_EFFECT_LIFETIME_COMPONENT,
                                &life, sizeof(life));
+}
+
+// A static, oriented effect (no motion integration): +Z is rotated to `dir`, and
+// per-axis scaleXYZ turns the generic cylinder into a beam/tracer of any length
+// and thickness.
+void spawnEffectOriented(GameplayContextV1* ctx, std::uint64_t meshId,
+                         std::uint64_t texId, const float pos[3],
+                         const float dir[3], float colorR, float colorG,
+                         float colorB, float scale, float sx, float sy, float sz,
+                         float lifetime, float fadeStart)
+{
+    std::uint64_t entity = 0;
+    if (!ctx->entityCreate(ctx->host, 0u, &entity) || entity == 0)
+        return;
+    GameTransformComponentV1 tf{};
+    for (int k = 0; k < 3; ++k) {
+        tf.position[k] = pos[k];
+        tf.look[k] = dir[k];
+    }
+    ctx->writeComponent(ctx->host, entity, GAME_COMPONENT_TRANSFORM, &tf,
+                        sizeof(tf));
+    HotPresentationStateV1 present{};
+    present.meshResourceId = meshId;
+    present.textureResourceId = texId;
+    present.scale = scale;
+    present.color[0] = colorR;
+    present.color[1] = colorG;
+    present.color[2] = colorB;
+    present.color[3] = 1.0f;
+    present.scaleXYZ[0] = sx;
+    present.scaleXYZ[1] = sy;
+    present.scaleXYZ[2] = sz;
+    ctx->dynamicWriteComponent(ctx->host, entity, HOT_PRESENTATION_COMPONENT,
+                               &present, sizeof(present));
+    HotEffectLifetimeV1 life{};
+    life.age = 0.0f;
+    life.lifetime = lifetime;
+    life.scale0 = 1.0f;
+    life.growth = 0.0f;
+    life.fadeStart = fadeStart;
+    ctx->dynamicWriteComponent(ctx->host, entity, HOT_EFFECT_LIFETIME_COMPONENT,
+                               &life, sizeof(life));
+}
+
+using AudioPlayFn = void (MIMITA_GAME_CALL *)(void*, const GameAudioCommandV1*);
+using EffectSpawnFn = void (MIMITA_GAME_CALL *)(void*, const GameEffectSpawnV1*);
+using RenderDebugFn = void (MIMITA_GAME_CALL *)(void*, const GameRenderDebugCommandV1*);
+
+void emitDynamicLight(GameplayContextV1* ctx, const float pos[3],
+                      const float color[3], const float offset[3], float intensity,
+                      float radius, float lifetime)
+{
+    if (!ctx || !ctx->resolveCapability)
+        return;
+    auto fx = reinterpret_cast<EffectSpawnFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_EFFECT_SPAWN));
+    if (!fx)
+        return;
+    GameEffectSpawnV1 d{};
+    d.kind = HOT_EFFECT_LIGHT;
+    for (int k = 0; k < 3; ++k)
+        d.position[k] = pos[k] + (offset ? offset[k] : 0.0f);
+    d.color[0] = color ? color[0] : 1.0f;
+    d.color[1] = color ? color[1] : 1.0f;
+    d.color[2] = color ? color[2] : 1.0f;
+    d.color[3] = 1.0f;
+    d.scale = intensity > 0.0f ? intensity : 1.0f;   // scale = intensity
+    d.endScale = radius > 0.0f ? radius : 5.0f;      // endScale = radius
+    d.lifetime = lifetime > 0.0f ? lifetime : 0.1f;
+    fx(ctx->host, &d);
+}
+
+void emitWorldSound(GameplayContextV1* ctx, const char* sound, const float pos[3],
+                    float volume, float pitch, float maxDistance)
+{
+    if (!ctx || !ctx->resolveCapability || !sound || !*sound)
+        return;
+    auto audio = reinterpret_cast<AudioPlayFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
+    if (!audio)
+        return;
+    GameAudioCommandV1 c{};
+    std::snprintf(c.sound, sizeof(c.sound), "%s", sound);
+    for (int k = 0; k < 3; ++k)
+        c.position[k] = pos[k];
+    c.volume = volume;
+    c.pitch = pitch;
+    c.maxDistance = maxDistance;
+    c.spatial = 1;
+    audio(ctx->host, &c);
+}
+
+void emitWorldLabel(GameplayContextV1* ctx, const float pos[3], const float color[4],
+                    float scale, const char* text)
+{
+    if (!ctx || !ctx->resolveCapability || !text || !*text)
+        return;
+    auto render = reinterpret_cast<RenderDebugFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_RENDER_DEBUG));
+    if (!render)
+        return;
+    GameRenderDebugCommandV1 cmd{};
+    cmd.shape = GAME_RENDER_DEBUG_WORLD_LABEL;
+    for (int k = 0; k < 3; ++k)
+        cmd.a[k] = pos[k];
+    cmd.radius = scale;
+    for (int k = 0; k < 4; ++k)
+        cmd.color[k] = color[k];
+    std::snprintf(cmd.text, sizeof(cmd.text), "%s", text);
+    render(ctx->host, &cmd);
 }
 
 using AudioPlayFn = void (MIMITA_GAME_CALL *)(void*, const GameAudioCommandV1*);
@@ -118,7 +233,8 @@ void emitSurfaceEffect(GameplayContextV1* ctx, const float pos[3],
 // Hot audio policy: choose the sound, volume, pitch, and spatial falloff. The
 // cold backend only plays the resulting command. Editing this changes the sound
 // without an EXE rebuild.
-void emitExplosionSound(GameplayContextV1* ctx, const EffectRequestV1& req)
+void emitExplosionSoundAt(GameplayContextV1* ctx, bool grenade,
+                          const float pos[3])
 {
     if (!ctx->resolveCapability)
         return;
@@ -126,19 +242,148 @@ void emitExplosionSound(GameplayContextV1* ctx, const EffectRequestV1& req)
         ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
     if (!audio)
         return;
-    const bool grenade = req.effectTypeId == gameHash("effect.explosion.grenade");
     GameAudioCommandV1 cmd{};
     std::snprintf(cmd.sound, sizeof(cmd.sound), "%s",
                   grenade ? "grenadelauncher/grenadelauncherexplode"
                           : "rocketlauncher/rocketlauncherexplode");
-    cmd.position[0] = req.position[0];
-    cmd.position[1] = req.position[1];
-    cmd.position[2] = req.position[2];
+    cmd.position[0] = pos[0];
+    cmd.position[1] = pos[1];
+    cmd.position[2] = pos[2];
     cmd.volume = 1.0f;
     cmd.pitch = 1.0f;
     cmd.maxDistance = 50.0f;
     cmd.spatial = 1;
     audio(ctx->host, &cmd);
+}
+
+// One explosion recipe: flash / smoke / debris + sound. Shared by the generic
+// effect.request path (typed cold callers) and the hot projectile simulation, so
+// a detonation looks identical wherever it is composed.
+void composeExplosion(GameplayContextV1* ctx, std::uint64_t effectTypeId,
+                      const float pos[3], float scale)
+{
+    const bool grenade = effectTypeId == gameHash("effect.explosion.grenade");
+    emitExplosionSoundAt(ctx, grenade, pos);
+    // The visual is a data-driven, client-only tick timeline (red sphere stages +
+    // smoke), defined in hit-visuals.cpp. No cubes, no JSON.
+    hotSpawnExplosionTimeline(ctx, pos, scale, grenade);
+}
+
+// ── Server-disagreement presentation (hot recipe; JSON is fallback only) ──
+// The cold kernel only forwards the plain event data; all appearance (pulse,
+// beam, tracer, text, particles, sound, severity) is owned here and can be edited
+// live. Reuses the generic effect/label/audio primitives; no disagreement-
+// specific renderer branch exists.
+void composeServerDisagreement(GameplayContextV1* ctx, const EffectRequestV1& req)
+{
+    const ServerDisagreementVisualV1 recipe = makeServerDisagreementVisual();
+    const float pos[3] = {req.position[0], req.position[1], req.position[2]};
+    const float mag = std::sqrt(req.correction[0] * req.correction[0] +
+                                req.correction[1] * req.correction[1] +
+                                req.correction[2] * req.correction[2]);
+    float t = 0.0f;
+    if (recipe.largeCorrectionMag > recipe.smallCorrectionMag &&
+        mag > recipe.smallCorrectionMag)
+        t = (mag - recipe.smallCorrectionMag) /
+            (recipe.largeCorrectionMag - recipe.smallCorrectionMag);
+    t = std::clamp(t, 0.0f, 1.0f);
+    const float radius = recipe.smallScale + (recipe.largeScale - recipe.smallScale) * t;
+    const float* color = serverDisagreementReasonColor(recipe, req.reason);
+    const float zero[3] = {0.0f, 0.0f, 0.0f};
+
+    emitWorldSound(ctx, recipe.sound, pos, recipe.soundVolumeMax, 1.0f,
+                   recipe.soundRange);
+
+    // Expanding pulse.
+    {
+        const float start = recipe.pulseStartScale > 0.0f ? recipe.pulseStartScale : 0.1f;
+        const float end = radius * (recipe.pulseEndScale > 0.0f ? recipe.pulseEndScale : 1.0f);
+        const float life = recipe.pulseLifetime > 0.0f ? recipe.pulseLifetime : 0.6f;
+        const float growth = (end / start - 1.0f) / life;
+        spawnEffect(ctx, HOT_MESH_SPHERE, 0, pos, zero, color[0], color[1],
+                    color[2], start, growth, life, 0.4f);
+    }
+
+    // Vertical beam.
+    if (recipe.beamHeight > 0.0f) {
+        const float dir[3] = {0.0f, 0.0f, 1.0f};
+        const float at[3] = {pos[0], pos[1], pos[2] + recipe.beamHeight * 0.5f};
+        const float thick = recipe.beamThickness > 0.0f ? recipe.beamThickness : 0.06f;
+        spawnEffectOriented(ctx, HOT_MESH_BEAM, 0, at, dir, color[0], color[1],
+                            color[2], 1.0f, thick / 0.18f, thick / 0.18f,
+                            recipe.beamHeight / 1.5f,
+                            recipe.beamLifetime > 0.0f ? recipe.beamLifetime : 0.36f,
+                            0.5f);
+    }
+
+    // Correction tracer.
+    if (mag > 0.01f) {
+        const float dir[3] = {req.correction[0] / mag, req.correction[1] / mag,
+                              req.correction[2] / mag};
+        const float at[3] = {pos[0] + dir[0] * mag * 0.5f,
+                             pos[1] + dir[1] * mag * 0.5f,
+                             pos[2] + dir[2] * mag * 0.5f};
+        const float thick = recipe.tracerThickness > 0.0f ? recipe.tracerThickness : 0.06f;
+        spawnEffectOriented(ctx, HOT_MESH_BEAM, 0, at, dir, recipe.tracerColor[0],
+                            recipe.tracerColor[1], recipe.tracerColor[2], 1.0f,
+                            thick / 0.18f, thick / 0.18f, mag / 1.5f,
+                            recipe.tracerLifetime > 0.0f ? recipe.tracerLifetime : 0.4f,
+                            0.5f);
+    }
+
+    // Text label.
+    {
+        char label[64] = {0};
+        if (req.flags & 1u)
+            std::snprintf(label, sizeof(label), "%s", req.text);
+        else if (req.text[0] != '\0')
+            std::snprintf(label, sizeof(label), "%s%s", recipe.textPrefix, req.text);
+        else
+            std::snprintf(label, sizeof(label), "%s", recipe.textPrefix);
+        const float at[3] = {pos[0], pos[1], pos[2] + recipe.textZOffset};
+        const float tc[4] = {color[0], color[1], color[2], 1.0f};
+        emitWorldLabel(ctx, at, tc, recipe.textScale, label);
+    }
+
+    // Particle burst.
+    for (std::uint32_t i = 0; i < recipe.particleCount; ++i) {
+        const float a = (float)i * (6.2831853f /
+                                    (float)(recipe.particleCount ? recipe.particleCount : 1u));
+        const float elev = 0.5f + 0.5f * std::sin((float)i * 2.3f);
+        const float speed = recipe.particleMinSpeed +
+            (recipe.particleMaxSpeed - recipe.particleMinSpeed) * 0.5f;
+        const float vel[3] = {std::cos(a) * speed, std::sin(a) * speed,
+                              elev * speed};
+        spawnEffect(ctx, HOT_MESH_SPHERE, 0, pos, vel, recipe.particleColor[0],
+                    recipe.particleColor[1], recipe.particleColor[2],
+                    recipe.particleScale > 0.0f ? recipe.particleScale : 0.1f,
+                    0.0f, recipe.particleLifetime > 0.0f ? recipe.particleLifetime : 0.8f,
+                    0.4f);
+    }
+}
+
+// Local-only correction indicator (arrow + label; not replicated).
+void composeLocalDisagreement(GameplayContextV1* ctx, const EffectRequestV1& req)
+{
+    const LocalDisagreementVisualV1 li = makeLocalDisagreementIndicatorVisual();
+    const float pos[3] = {req.position[0], req.position[1], req.position[2]};
+    const float mag = std::sqrt(req.correction[0] * req.correction[0] +
+                                req.correction[1] * req.correction[1] +
+                                req.correction[2] * req.correction[2]);
+    if (mag > 0.01f) {
+        const float dir[3] = {req.correction[0] / mag, req.correction[1] / mag,
+                              req.correction[2] / mag};
+        const float at[3] = {pos[0] + dir[0] * mag * 0.5f,
+                             pos[1] + dir[1] * mag * 0.5f,
+                             pos[2] + dir[2] * mag * 0.5f};
+        const float thick = li.arrowThickness > 0.0f ? li.arrowThickness : 0.06f;
+        spawnEffectOriented(ctx, HOT_MESH_BEAM, 0, at, dir, li.arrowColor[0],
+                            li.arrowColor[1], li.arrowColor[2], 1.0f,
+                            thick / 0.18f, thick / 0.18f, mag / 1.5f,
+                            li.arrowLifetime > 0.0f ? li.arrowLifetime : 1.2f, 0.5f);
+    }
+    const float at[3] = {pos[0], pos[1], pos[2] + li.textZOffset};
+    emitWorldLabel(ctx, at, li.textColor, li.textScale, li.textLabel);
 }
 
 void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
@@ -154,25 +399,14 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
     const float pos[3] = {req->position[0], req->position[1], req->position[2]};
     const float scale = req->scale > 0.0f ? req->scale : 1.0f;
 
-    // Hit impacts (blood/world): a small burst of generic effect entities.
+    // Hit feedback (blood/world): the hot hit recipe reproduces the full cold
+    // composition (textured blood spray/decals, bullet holes, cracks, impact
+    // spheres, damage numbers, tick burst) using the existing EffectPart/decal
+    // primitives. JSON stays the fallback when this handler is absent.
     if (req->effectTypeId == gameHash("effect.hit.blood") ||
         req->effectTypeId == gameHash("effect.hit.world")) {
         req->handled = 1;
-        const bool blood = req->effectTypeId == gameHash("effect.hit.blood");
-        for (int i = 0; i < 4; ++i) {
-            const float a = (float)i * 1.5708f;
-            const float vel[3] = {std::cos(a) * 1.5f * scale,
-                                  std::sin(a) * 1.5f * scale, 1.2f * scale};
-            spawnEffect(ctx, HOT_MESH_CUBE, HOT_TEX_DEFAULT, pos, vel,
-                        blood ? 0.7f : 0.9f, blood ? 0.05f : 0.7f,
-                        blood ? 0.05f : 0.4f, 0.12f * scale, 0.0f,
-                        blood ? 0.5f : 0.35f, 0.4f);
-        }
-        // Surface effect: hot policy picks color/size/lifetime; the cold
-        // backend puts a generic mark on the surface.
-        emitSurfaceEffect(ctx, pos, req->normal, blood ? 0.7f : 0.9f,
-                          blood ? 0.05f : 0.7f, blood ? 0.05f : 0.4f,
-                          0.15f * scale, blood ? 20.0f : 30.0f);
+        hotComposeHit(ctx, *req);
         return;
     }
 
@@ -287,42 +521,52 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
         return;
     }
 
-    // Muzzle flash: a bright, very short-lived generic effect. The tool/weapon
-    // key is carried in req->weaponNetworkId (a runtime hash), never a branch.
+    // Muzzle flash: a bright, very short-lived recipe-driven effect. The tool/
+    // weapon key is carried in req->weaponNetworkId (a runtime hash), never a
+    // branch. No blue default texture and no cube: the recipe picks the mesh and
+    // color, and may attach a dynamic light through the existing manager.
     if (req->effectTypeId == gameHash("effect.muzzle")) {
         req->handled = 1;
+        const ToolVisualRecipeV1* recipe = findToolVisual(req->weaponNetworkId);
+        const ToolMuzzleVisualV1* mz = recipe ? &recipe->muzzle : nullptr;
         const float vel[3] = {0.0f, 0.0f, 0.0f};
-        spawnEffect(ctx, HOT_MESH_CUBE, HOT_TEX_DEFAULT, pos, vel, 1.0f, 0.9f,
-                    0.4f, 0.35f * scale, 0.0f, 0.08f, 0.5f);
+        const std::uint64_t meshId =
+            (mz && mz->meshId) ? mz->meshId : HOT_MESH_SPHERE;
+        const std::uint64_t texId = mz ? mz->textureId : 0;
+        const float sc = (mz && mz->scale > 0.0f ? mz->scale : 0.16f) * scale;
+        const float life =
+            (mz && mz->lifetime > 0.0f) ? mz->lifetime : (1.0f / 60.0f);
+        spawnEffect(ctx, meshId, texId, pos, vel,
+                    mz ? mz->color[0] : 1.0f, mz ? mz->color[1] : 0.92f,
+                    mz ? mz->color[2] : 0.62f, sc, mz ? mz->growth : 0.0f, life,
+                    mz ? mz->fadeStart : 0.5f);
+        if (mz && mz->hasLight)
+            emitDynamicLight(ctx, pos, mz->lightColor, mz->lightOffset,
+                             mz->lightIntensity, mz->lightRadius,
+                             mz->lightLifetime);
+        return;
+    }
+
+    // Server disagreement: the hot recipe owns pulse/beam/tracer/text/particles/
+    // sound; the cold JSON composition only runs when this stays unhandled.
+    if (req->effectTypeId == gameHash("effect.disagreement")) {
+        req->handled = 1;
+        composeServerDisagreement(ctx, *req);
+        return;
+    }
+    if (req->effectTypeId == gameHash("effect.disagreement.local")) {
+        req->handled = 1;
+        composeLocalDisagreement(ctx, *req);
         return;
     }
 
     // Explosion: flash / smoke / debris + hot audio policy. Only the real
     // explosion kinds are handled; anything else stays unhandled (cold owner).
-    if (req->effectTypeId != gameHash("effect.explosion.rocket") &&
-        req->effectTypeId != gameHash("effect.explosion.grenade"))
+    if (req->effectTypeId == gameHash("effect.explosion.rocket") ||
+        req->effectTypeId == gameHash("effect.explosion.grenade")) {
+        req->handled = 1;
+        composeExplosion(ctx, req->effectTypeId, pos, scale);
         return;
-    req->handled = 1;
-    emitExplosionSound(ctx, *req);
-
-    // Flash: expanding, fast fade.
-    {
-        const float vel[3] = {0.0f, 0.0f, 0.0f};
-        spawnEffect(ctx, HOT_MESH_CUBE, HOT_TEX_DEFAULT, pos, vel, 1.0f, 0.75f,
-                    0.25f, 0.5f * scale, 3.0f, 0.35f, 0.2f);
-    }
-    // Smoke: rises while growing, slower fade.
-    {
-        const float vel[3] = {0.0f, 0.0f, 1.5f};
-        spawnEffect(ctx, HOT_MESH_CUBE, HOT_TEX_DEFAULT, pos, vel, 0.35f, 0.35f,
-                    0.35f, 0.6f * scale, 1.2f, 1.4f, 0.55f);
-    }
-    // Debris: small, upward, short.
-    for (int i = 0; i < 3; ++i) {
-        const float a = (float)i * 2.094f;
-        const float vel[3] = {std::cos(a) * 2.0f, std::sin(a) * 2.0f, 3.0f};
-        spawnEffect(ctx, HOT_MESH_CUBE, HOT_TEX_DEFAULT, pos, vel, 0.8f, 0.5f,
-                    0.2f, 0.25f * scale, 0.0f, 0.8f, 0.6f);
     }
 }
 
@@ -398,7 +642,7 @@ const MimitaHotPackage::CommandRegistrar s_hotScreenFx{
      hotScreenFxCommand}};
 
 const MimitaHotPackage::EventRegistrar s_effectRequest{
-    {gameHash("effect.request"), gameHash("effect.request.v1"), 0, onEffectRequest,
+    {gameHash("effect.request"), gameHash("effect.request.v3"), 0, onEffectRequest,
      "hot.effect-composition"}};
 const MimitaHotPackage::CommandRegistrar s_hotAudioTest{
     {"hotaudiotest", "hotaudiotest [logical sound] - play a runtime sound", 0,
@@ -433,5 +677,15 @@ const MimitaHotPackage::CommandRegistrar s_hotCameraFx{
      hotCameraFxCommand}};
 
 } // namespace
+
+// External entry for the hot projectile simulation: compose a detonation with
+// the same recipe the generic effect.request path uses. No cold call site.
+void hotComposeExplosion(GameplayContextV1* ctx, std::uint64_t effectTypeId,
+                         const float position[3], float scale)
+{
+    if (!ctx)
+        return;
+    composeExplosion(ctx, effectTypeId, position, scale);
+}
 
 #endif

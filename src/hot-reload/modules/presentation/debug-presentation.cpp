@@ -18,6 +18,7 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-action.h"
 #include "hot-reload/hot-animation.h"
 #include "hot-reload/hot-effect.h"
 #include "hot-reload/hot-package.h"
@@ -125,6 +126,11 @@ void MIMITA_GAME_CALL presentationMeshTick(void* host, std::uint64_t /*tick*/,
         // An attached entity follows a named socket on its parent. The resolved
         // presentation transform overrides the entity transform; the entity's
         // authoritative Transform is never written. Unresolved => hidden.
+        // The socket transform is a WORLD transform, so it is drawn with the
+        // normal world view (both first- and third-person). Tagging it as
+        // camera-relative VIEW space put the model at world coordinates in
+        // camera space, i.e. off-screen; the old cold viewmodel also drew the
+        // world rightArm transform with the world view.
         HotAttachmentStateV1 att{};
         const bool hasAtt = ctx->dynamicReadComponent(
             ctx->host, entities[i], HOT_ATTACHMENT_COMPONENT, &att, sizeof(att));
@@ -151,8 +157,8 @@ void MIMITA_GAME_CALL presentationMeshTick(void* host, std::uint64_t /*tick*/,
             cmd.rotation[2] = att.worldRotation[2];
             cmd.rotation[3] = att.worldRotation[3];
             scale *= att.worldScale[0] > 0.0f ? att.worldScale[0] : 1.0f;
-            if (att.context == HOT_ATTACHMENT_CONTEXT_VIEW)
-                cmd.flags |= GAME_RENDER_MESH_SPACE_VIEW;
+            // Drawn in world space (no GAME_RENDER_MESH_SPACE_VIEW): the
+            // resolved socket transform is a world transform.
         } else {
             float forward[3] = {tf.look[0], tf.look[1], tf.look[2]};
             GameVelocityComponentV1 vel{};
@@ -172,7 +178,12 @@ void MIMITA_GAME_CALL presentationMeshTick(void* host, std::uint64_t /*tick*/,
             cmd.position[2] = tf.position[2];
             quatFromForward(forward[0], forward[1], forward[2], cmd.rotation);
         }
-        cmd.scale[0] = cmd.scale[1] = cmd.scale[2] = scale;
+        const float sx = state.scaleXYZ[0] > 0.0f ? state.scaleXYZ[0] : 1.0f;
+        const float sy = state.scaleXYZ[1] > 0.0f ? state.scaleXYZ[1] : 1.0f;
+        const float sz = state.scaleXYZ[2] > 0.0f ? state.scaleXYZ[2] : 1.0f;
+        cmd.scale[0] = scale * sx;
+        cmd.scale[1] = scale * sy;
+        cmd.scale[2] = scale * sz;
         cmd.color[0] = state.color[0];
         cmd.color[1] = state.color[1];
         cmd.color[2] = state.color[2];
@@ -260,8 +271,10 @@ void MIMITA_GAME_CALL hotactorCommand(void* host, const char* /*args*/)
     vel.linear[0] = 2.0f;  // moving -> move clip
     ctx->writeComponent(ctx->host, entity, GAME_COMPONENT_VELOCITY, &vel,
                         sizeof(vel));
-    HotAnimationStateV1 anim{};
-    anim.clipId = HOT_ANIM_MOVE;
+    HotAnimationStateV2 anim{};
+    anim.version = HOT_ANIMATION_STATE_VERSION;
+    anim.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+    anim.actionId = HOT_ACTION_WALK;
     anim.playbackRate = 1.0f;
     anim.loop = 1;
     ctx->dynamicWriteComponent(ctx->host, entity, HOT_ANIMATION_STATE_COMPONENT,

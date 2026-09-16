@@ -43,6 +43,11 @@ namespace {
 const std::uint64_t kCubeMesh = gameHash("mesh.cube");
 const std::uint64_t kRocketMesh = gameHash("mesh.rocket");
 const std::uint64_t kGrenadeMesh = gameHash("mesh.grenade");
+// Generic primitive aliases: a sphere (flash/pulse) and a +Z cylinder (beam/
+// tracer/trail). Same procedural loaders; no feature-specific mesh concept.
+const std::uint64_t kSphereMesh = gameHash("mesh.sphere");
+const std::uint64_t kBeamMesh = gameHash("mesh.beam");
+const std::uint64_t kHexMesh = gameHash("mesh.hexagon");
 const std::uint64_t kGlbMesh = gameHash("mesh.demo.glb");
 const std::uint64_t kActorMesh = gameHash("mesh.actor");
 const char* const kGlbMeshPath =
@@ -65,6 +70,9 @@ struct GpuMesh {
     GLuint vbo = 0;
     GLuint ebo = 0;
     GLsizei indexCount = 0;
+    // Embedded base-color texture from the GLB (0 = none). Used when the caller
+    // passes textureResourceId 0, i.e. "use the model's own material".
+    GLuint texture = 0;
     std::vector<Part> parts;   // empty = static (non-skinned) mesh
     bool debugOnly = false;    // test hook: no GPU buffers
 };
@@ -182,11 +190,72 @@ void retireCubeMesh(void* /*user*/, void* handle)
     if (!mesh)
         return;
     if (gRenderer) {
+        if (mesh->texture) glDeleteTextures(1, &mesh->texture);
         if (mesh->ebo) glDeleteBuffers(1, &mesh->ebo);
         if (mesh->vbo) glDeleteBuffers(1, &mesh->vbo);
         if (mesh->vao) glDeleteVertexArrays(1, &mesh->vao);
     }
     delete mesh;
+}
+
+// Decode image bytes (PNG/JPEG, as embedded in a GLB) into a GL texture.
+GLuint uploadImageTexture(const std::vector<std::uint8_t>& bytes)
+{
+    if (!gRenderer || bytes.empty())
+        return 0;
+    int w = 0, h = 0, channels = 0;
+    stbi_uc* pixels = stbi_load_from_memory(bytes.data(), (int)bytes.size(), &w, &h,
+                                            &channels, 4);
+    if (!pixels || w <= 0 || h <= 0) {
+        if (pixels) stbi_image_free(pixels);
+        return 0;
+    }
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(pixels);
+    return tex;
+}
+
+// Extract the first material's base-color image bytes from a GLB. Ordinary
+// engines would bind per-material textures; the generic presentation path binds
+// one texture per logical mesh, so the first base-color image is the model
+// material (correct for the weapon GLBs).
+bool loadGlbBaseColorImage(const std::string& path,
+                           std::vector<std::uint8_t>& outBytes)
+{
+    tinygltf::TinyGLTF loader;
+    tinygltf::Model model;
+    std::string err, warn;
+    if (!loader.LoadBinaryFromFile(&model, &err, &warn, resolveAssetPath(path)))
+        return false;
+    for (const tinygltf::Mesh& m : model.meshes) {
+        for (const tinygltf::Primitive& p : m.primitives) {
+            if (p.material < 0 || p.material >= (int)model.materials.size())
+                continue;
+            const tinygltf::Material& mat = model.materials[p.material];
+            int texIndex = mat.pbrMetallicRoughness.baseColorTexture.index;
+            if (texIndex < 0 || texIndex >= (int)model.textures.size())
+                continue;
+            int imgIndex = model.textures[texIndex].source;
+            if (imgIndex < 0 || imgIndex >= (int)model.images.size())
+                continue;
+            const tinygltf::Image& img = model.images[imgIndex];
+            if (img.image.empty())
+                continue;
+            outBytes = img.image;
+            return true;
+        }
+    }
+    return false;
 }
 
 GpuMesh* uploadMesh(const std::vector<GpuVertex>& verts,
@@ -227,6 +296,33 @@ bool loadRocketMesh(void* /*user*/, void** outHandle)
     const float length = 1.5f;
     const float radius = 0.18f;
     const int seg = 16;
+    const float h = length * 0.5f;
+    std::vector<GpuVertex> verts;
+    std::vector<std::uint32_t> indices;
+    for (int i = 0; i <= seg; ++i) {
+        const float a = (float)i / (float)seg * 6.2831853f;
+        const float cx = std::cos(a) * radius;
+        const float cy = std::sin(a) * radius;
+        const glm::vec3 n = glm::normalize(glm::vec3(cx, cy, 0.0f));
+        verts.push_back({{cx, cy, -h}, {(float)i / seg, 0.0f}, n});
+        verts.push_back({{cx, cy, h}, {(float)i / seg, 1.0f}, n});
+    }
+    for (int i = 0; i < seg; ++i) {
+        const std::uint32_t a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
+        indices.insert(indices.end(), {a, c, b, b, c, d});
+    }
+    *outHandle = uploadMesh(verts, indices);
+    return true;
+}
+
+// Hexagonal prism along +Z: a generic effect primitive for shape variety.
+bool loadHexMesh(void* /*user*/, void** outHandle)
+{
+    if (!gRenderer)
+        return false;
+    const float length = 1.0f;
+    const float radius = 0.5f;
+    const int seg = 6;
     const float h = length * 0.5f;
     std::vector<GpuVertex> verts;
     std::vector<std::uint32_t> indices;
@@ -455,6 +551,9 @@ bool loadGlbMesh(void* user, void** outHandle)
             GpuMesh* mesh = uploadMesh(pv, pi);
             for (const GlbPartRange& r : pr)
                 mesh->parts.push_back({r.bone, r.firstIndex, r.indexCount, r.bind});
+            std::vector<std::uint8_t> texBytes;
+            if (loadGlbBaseColorImage(path, texBytes))
+                mesh->texture = uploadImageTexture(texBytes);
             *outHandle = mesh;
             return true;
         }
@@ -474,7 +573,11 @@ bool loadGlbMesh(void* user, void** outHandle)
     std::vector<std::uint32_t> indices(verts.size());
     for (std::size_t i = 0; i < indices.size(); ++i)
         indices[i] = static_cast<std::uint32_t>(i);
-    *outHandle = uploadMesh(verts, indices);
+    GpuMesh* fallbackMesh = uploadMesh(verts, indices);
+    std::vector<std::uint8_t> texBytes;
+    if (loadGlbBaseColorImage(path, texBytes))
+        fallbackMesh->texture = uploadImageTexture(texBytes);
+    *outHandle = fallbackMesh;
     return true;
 }
 
@@ -538,6 +641,9 @@ void init()
     provider.setLoader(kCubeMesh, &loadCubeMesh, &retireCubeMesh, nullptr);
     provider.setLoader(kRocketMesh, &loadRocketMesh, &retireCubeMesh, nullptr);
     provider.setLoader(kGrenadeMesh, &loadGrenadeMesh, &retireCubeMesh, nullptr);
+    provider.setLoader(kSphereMesh, &loadGrenadeMesh, &retireCubeMesh, nullptr);
+    provider.setLoader(kBeamMesh, &loadRocketMesh, &retireCubeMesh, nullptr);
+    provider.setLoader(kHexMesh, &loadHexMesh, &retireCubeMesh, nullptr);
     provider.setLoader(kGlbMesh, &loadGlbMesh, &retireCubeMesh,
                        const_cast<char*>(kGlbMeshPath));
     // Actor mesh: the same GLB loader, a distinct logical id used by generic
@@ -553,6 +659,9 @@ void init()
     provider.apply(kCubeMesh, gameHash("mesh.cube.v1"));
     provider.apply(kRocketMesh, gameHash("mesh.rocket.v1"));
     provider.apply(kGrenadeMesh, gameHash("mesh.grenade.v1"));
+    provider.apply(kSphereMesh, gameHash("mesh.sphere.v1"));
+    provider.apply(kBeamMesh, gameHash("mesh.beam.v1"));
+    provider.apply(kHexMesh, gameHash("mesh.hexagon.v1"));
     provider.apply(kGlbMesh, fileContentHash(kGlbMeshPath));
     provider.apply(kActorMesh, fileContentHash(kGlbMeshPath));
     provider.apply(kDefaultTexture, fileContentHash(kDefaultTexturePath));
@@ -590,6 +699,20 @@ bool registerLogicalResource(std::uint64_t logicalId, std::uint32_t kind,
         return false;
     MimitaRuntime::PresentationResourceProvider& provider =
         MimitaRuntime::PresentationResourceProvider::instance();
+
+    // Idempotent registration: a matching existing entry (same kind + path) does
+    // not need a new loader/path allocation. This matters because hot code may
+    // re-register the same logical resource on every DLL generation; without this
+    // guard each reload would grow g_dynamicPathStorage without bound.
+    for (const DynamicResource& r : g_dynamicResources) {
+        if (r.logicalId == logicalId && r.kind == kind && r.path == path) {
+            if (applyNow)
+                provider.apply(logicalId, fileContentHash(path));
+            if (outGeneration)
+                *outGeneration = provider.generationOf(logicalId);
+            return true;
+        }
+    }
 
     // Stable path storage for the loader's `user` pointer.
     const std::size_t len = std::strlen(path);
@@ -686,9 +809,12 @@ void submitMesh(const GameRenderMeshCommandV1& command)
         return;  // headless test hook: counters only
     if (!gRenderer || !gRenderer->shaderProgram || !gpCamera)
         return;
-    const GLuint texture = static_cast<GLuint>(reinterpret_cast<std::uintptr_t>(
+    GLuint texture = static_cast<GLuint>(reinterpret_cast<std::uintptr_t>(
         MimitaRuntime::PresentationResourceProvider::instance().handleOf(
             command.textureResourceId)));
+    // textureResourceId 0 = "use the model's own embedded material".
+    if (texture == 0 && mesh->texture != 0)
+        texture = mesh->texture;
 
     const Camera& camera = *gpCamera;
     const glm::vec3 position(command.position[0], command.position[1],
@@ -750,6 +876,18 @@ void submitMesh(const GameRenderMeshCommandV1& command)
                     break;
                 }
             }
+            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE,
+                               glm::value_ptr(partModel));
+            glDrawElements(GL_TRIANGLES, (GLsizei)part.indexCount, GL_UNSIGNED_INT,
+                           (void*)(std::uintptr_t)(part.indexOffset *
+                                                   sizeof(std::uint32_t)));
+        }
+    } else if (!mesh->parts.empty()) {
+        // Multipart GLB with no skeleton (weapon models): each part keeps its own
+        // node/bind transform, otherwise all parts collapse onto the origin (this
+        // is why multi-node weapons such as the RPG did not render).
+        for (const GpuMesh::Part& part : mesh->parts) {
+            const glm::mat4 partModel = model * part.bind;
             glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE,
                                glm::value_ptr(partModel));
             glDrawElements(GL_TRIANGLES, (GLsizei)part.indexCount, GL_UNSIGNED_INT,

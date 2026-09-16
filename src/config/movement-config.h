@@ -1,8 +1,10 @@
 // 08 02 2026, 00 00
 /* purpose
 * Declares the movement tuning preset loader (config/movement.json selector + config/movement/*.json presets).
-* Exposes the active MovementConfig so the shared movement kernel reads every tuning constant from one place.
-* Resolves a preset by its "name" field, falls back to the matching filename, then to built-in defaults.
+* REFERENCE / ARCHIVE ONLY: runtime movement tuning is owned by the hot C++
+* Source movement authority (movement.main / movement.tuning). The JSON loader
+* remains for terminal inspection and debug overlays and is NOT consulted by
+* any movement, collision, NPC, or validation simulation path.
 * Does NOT run movement simulation, poll input, or own the movement kernel formulas.
 * Does NOT serialize packets, render, play audio, or decide network authority.
 * Does NOT replace physics/config.h as the source of built-in default constants.
@@ -15,6 +17,11 @@
 #include <vector>
 
 #include "physics/movement/movement-types.h"
+
+// Built-in C++ movement defaults (no JSON). This is the base the single C++
+// Source movement authority tunes on top of. Preset JSON is reference/archive
+// material only and is never a runtime movement authority.
+MovementConfig movementRuntimeDefaults();
 
 class MovementJsonConfig {
 public:

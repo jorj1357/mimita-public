@@ -18,6 +18,8 @@ std::chrono::steady_clock::time_point gPlayerProceduralLastCheck{};
 
 PlayerProceduralConfig gPlayerProcedural{};
 
+bool gHotAnimationOwnsGameplay = true;
+
 template<typename T>
 void readJsonValue(
     const nlohmann::json& j,

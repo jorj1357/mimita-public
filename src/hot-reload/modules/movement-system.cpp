@@ -53,7 +53,18 @@ constexpr MovementMode kModes[] = {
     {"default", 20.0f, 55.0f, 22.0f, 1.00f, 58.0f, 18.0f, 400.0f, 100.0f, 0.5f, -100.0f, 12.0f},
 };
 constexpr int kModeCount = (int)(sizeof(kModes) / sizeof(kModes[0]));
-constexpr int kDefaultModeIndex = 0; // source
+constexpr int kSourceModeIndex = 0;
+constexpr int kDefaultModeIndex = kSourceModeIndex; // source
+
+// The one movement tuning authority. Every actor (human, NPC, future) and both
+// sides (client prediction, server authority) read this. JSON presets are
+// reference/archive material and never decide runtime movement.
+constexpr const MovementMode& kSourceMovement = kModes[kSourceModeIndex];
+
+const MovementMode& defaultMovementMode()
+{
+    return kSourceMovement;
+}
 
 int gModeIndex = kDefaultModeIndex;
 
@@ -62,6 +73,48 @@ const MovementMode& tune()
     if (gModeIndex < 0 || gModeIndex >= kModeCount)
         gModeIndex = kDefaultModeIndex;
     return kModes[gModeIndex];
+}
+
+// movement.tuning: cold callers (server, NPC, prediction setup, validation)
+// request the active tuning. The hot handler is the single authority.
+void MIMITA_GAME_CALL onMovementTuning(void* /*host*/, const GameEventV1* event)
+{
+    auto* t = event ? static_cast<GameMovementTuningV1*>(event->payload) : nullptr;
+    if (!t)
+        return;
+    const MovementMode& m = tune();
+    t->walkSpeed = m.walkSpeed;
+    t->groundAcceleration = m.groundAccel;
+    t->airAcceleration = m.airAccel;
+    t->groundFriction = m.groundFriction;
+    t->stopspeed = 0.0f;
+    t->airMaxWishspeed = 0.0f; // fast Source preset: no projection cap
+    t->airSpeedGainMultiplier = 1.0f;
+    t->surfaceFriction = 1.0f;
+    t->gravityMagnitude = m.gravity;
+    t->jumpSpeed = m.jumpSpeed;
+    t->maxFallSpeed = m.maxFallSpeed;
+    t->jumpBufferSeconds = 0.0f;
+    t->coyoteSeconds = 0.0f;
+    t->dashImpulse = m.dashImpulse;
+    t->dashCooldownSeconds = m.dashCooldown;
+    t->downDashSpeed = m.downDashSpeed;
+    t->dashGraceSeconds = 0.0f;
+    t->maximumAirJumps = 1u;
+    t->autoBhopEnabled = 1u;
+    t->dashEnabled = 1u;
+    t->downDashEnabled = 1u;
+    t->freezeEnabled = 1u;
+    t->sourceWalkMode = 1u;
+    t->handled = 1u;
+    t->reserved = 0u;
+
+    static const char* lastLoggedMode = nullptr;
+    if (lastLoggedMode != m.name) {
+        lastLoggedMode = m.name;
+        std::printf("[MOVEMENT TUNING] source=cpp mode=%s authority=shared-hot-movement\n",
+                    m.name);
+    }
 }
 
 // Captured each tick so terminal commands (host == nullptr) can reach shared
@@ -389,7 +442,9 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
         st.velocity[0] = vx;
         st.velocity[1] = vy;
         st.velocity[2] = vz;
-        st.gravityScale = 0.0f;
+        // Gravity is owned by the hot gravity policy above; tell the generic
+        // capsule solver not to add its own (negative = already integrated).
+        st.gravityScale = -1.0f;
         st.grounded = rs.grounded;
         resolveCollisions(ctx, &st, dt);
         rs.grounded = st.grounded;
@@ -469,6 +524,9 @@ const MimitaHotPackage::SystemRegistrar s_movementMain{
 const MimitaHotPackage::CommandRegistrar s_movementModeCmd{
     {"movementmode", "movementmode [source|default|0..N] - switch movement preset", 0,
      movementModeCommand}};
+
+const MimitaHotPackage::EventRegistrar s_movementTuningRegistration{
+    {GAME_EVENT_MOVEMENT_TUNING, 0, 0, onMovementTuning, "movement.tuning"}};
 
 } // namespace
 

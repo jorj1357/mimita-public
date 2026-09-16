@@ -970,6 +970,39 @@ void handleInputPacket(const char* buffer, int bytes,
         return;
 
     ServerPlayer& p = it->second;
+    // Hot input-receive policy: accept/reject and expose receive facts so a
+    // missing/dropped input stream is diagnosable and fixable live.
+    bool adoptClientState = false;
+    {
+        InputReceivePolicyV1 rp{};
+        rp.playerId = in->header.playerId;
+        rp.packetBytes = (std::uint32_t)bytes;
+        rp.playerExists = 1u;
+        rp.playerActive = (p.spawnState == ServerPlayer::Active) ? 1u : 0u;
+        rp.playerDead = p.dead ? 1u : 0u;
+        rp.inputPacketsSeen = p.inputPacketsSeen;
+        rp.playerEntity = (std::uint64_t)Ecs::ensure(
+            EntityRealm::Server, EntityDomain::Player, p.id);
+        rp.serverTick = serverTick;
+        rp.reportGrounded = 0u;
+        rp.reportPosition[0] = in->clientPx;
+        rp.reportPosition[1] = in->clientPy;
+        rp.reportPosition[2] = in->clientPz;
+        rp.reportVelocity[0] = in->clientVx;
+        rp.reportVelocity[1] = in->clientVy;
+        rp.reportVelocity[2] = in->clientVz;
+        if (LiveBehavior::dispatchGameplayEvent64(
+                GAME_EVENT_INPUT_RECEIVE_POLICY, &rp, sizeof(rp), serverTick,
+                p.id, 0) &&
+            rp.handled)
+        {
+            if (rp.accept == 0)
+                return;
+            adoptClientState = rp.adoptState != 0u;
+        }
+    }
+    ++p.inputPacketsSeen;
+    p.lastInputPacketMs = nowMs();
     const bool ownsConnection =
         playerOwnsConnectionSource(p, from, connectionId);
     const uint64_t currentMs = nowMs();
@@ -1113,6 +1146,19 @@ void handleInputPacket(const char* buffer, int bytes,
                                                           policy.suggestedVelocity[1],
                                                           policy.suggestedVelocity[2]);
         }
+        // Hot policy may prove this is a current-life report and request the
+        // cold server clear the spawn wedge (activate) instead of freezing.
+        if (policy.handled &&
+            (policy.reserved & GAME_MOVEMENT_VALIDATION_FORCE_ACTIVE) &&
+            p.spawnState == ServerPlayer::AwaitingSpawnAck)
+        {
+            p.spawnState = ServerPlayer::Active;
+            resetServerMovementForAuthoritativeLifecycle(
+                p, makeCurrentRuntimeMovementConfig());
+            Debug::warn(Debug::Category::Networking,
+                "[SERVER FORCE ACTIVE] playerId=%u spawnGen=%u epoch=%u\n",
+                p.id, p.spawnGeneration, (unsigned)p.transformEpoch);
+        }
     }
     applyMovementValidationCounters(p.movementValidation, result, report);
     logMovementValidation(p, report, result);
@@ -1213,6 +1259,22 @@ void handleInputPacket(const char* buffer, int bytes,
 
     const bool hadSimBroadcastPosition = p.hasSimBroadcastPos;
     applyMovementStateToServerPlayer(result.acceptedState, p);
+
+    // Publish the accepted input as the actor's generic movement intent so the
+    // hot actor-movement system (players + NPCs alike) reads one source. The
+    // cold inputCommandBuffer stays as validation history only.
+    {
+        const EntityId playerEntity =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, p.id);
+        const bool movingWish =
+            std::abs(in->wishX) > 0.001f || std::abs(in->wishY) > 0.001f;
+        Ecs::setMovementIntent(
+            playerEntity, in->wishX, in->wishY, movingWish,
+            (in->stateFlags & NET_STATE_JUMPING) != 0,
+            (in->stateFlags & NET_STATE_DASHING) != 0,
+            (in->stateFlags & NET_STATE_DOWN_DASHING) != 0,
+            (in->stateFlags & NET_STATE_FREEZING) != 0);
+    }
     // The first accepted current-life report after a duel teleport must become
     // visible to remote clients immediately. Otherwise server_sim broadcasting
     // can continue publishing the pre-duel spawn while local prediction moves.
@@ -1239,6 +1301,7 @@ void handleInputPacket(const char* buffer, int bytes,
     }
 
     p.clientStateUpdated = true;
+    p.adoptClientMovement = adoptClientState;
     p.lastAcceptedClientPosition = result.acceptedState.position;
     p.lastAcceptedClientVelocity =
         result.acceptedState.baseVelocity + result.acceptedState.externalImpulse;

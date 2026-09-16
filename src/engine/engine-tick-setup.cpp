@@ -109,7 +109,6 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     { MIMITA_PERF_SCOPE("Setup::ConfigPolling");
     if (shouldPoll) {
         GameplayConfig::instance().pollReload();
-        MovementJsonConfig::instance().pollReload();
         CrosshairConfig::instance().pollReload();
         pollWorldCrosshairConfig();
         pollCoolShotLineConfig();

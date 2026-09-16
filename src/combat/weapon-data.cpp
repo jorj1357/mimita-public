@@ -878,6 +878,10 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createGrenadeFireDefinition());
     Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, spyknife, grenade_smoke, grenade_frag, grenade_fire");
 
+    // Adopt any hot tool definitions that are not builtins (no cold edit needed
+    // to add a new weapon).
+    registerHotTools();
+
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file
     // is missing or unreachable).

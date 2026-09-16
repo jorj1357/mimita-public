@@ -6,6 +6,8 @@
 #include "network/hot-combat-selftest.h"
 
 #include <cstdio>
+#include <cmath>
+#include <cstring>
 #include <string>
 
 #include <unordered_map>
@@ -17,6 +19,8 @@
 #include "ecs/prediction-registry.h"
 #include "ecs/components.h"
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-action.h"
+#include "hot-reload/hot-animation-clips.h"
 #include "hot-reload/hot-animation.h"
 #include "hot-reload/hot-effect.h"
 #include "hot-reload/hot-pose.h"
@@ -33,10 +37,16 @@
 #include "render/presentation-entities.h"
 #include "render/presentation-render.h"
 #include "render/skeleton-instances.h"
+#include "entities/player.h"
+#include "network/packets.h"
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
 #include "network/server-weapon-state.h"
 #include "network/actor-state.h"
+#include "combat/weapon-data.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-types.h"
+#include "render/dynamic-light.h"
 #include "camera.h"
 
 extern Camera* gpCamera;
@@ -196,6 +206,8 @@ bool runHotCombatSelfTest(std::string& report)
             std::uint32_t flags;
             float scale;
             float color[4];
+            float scaleXYZ[3];   // append-only (per-axis scale)
+            std::uint32_t reserved2;
         };
         const std::uint64_t stateType = gameHash("PresentationState");
         std::uint64_t meshEntity = 0;
@@ -398,24 +410,36 @@ bool runHotCombatSelfTest(std::string& report)
         Ecs::setTransform(actor, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f), 0.0f,
                           0.0f);
         Ecs::setVelocity(actor, glm::vec3(5.0f, 0.0f, 0.0f), glm::vec3(0.0f));
-        HotAnimationStateV1 anim{};
-        anim.clipId = HOT_ANIM_IDLE;
+        HotAnimationStateV2 anim{};
+        anim.version = HOT_ANIMATION_STATE_VERSION;
+        anim.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+        anim.actionId = HOT_ACTION_IDLE;
         anim.playbackRate = 1.0f;
         DynamicComponentStore::instance().write(actor, HOT_ANIMATION_STATE_COMPONENT,
                                                  &anim, sizeof(anim));
+        HotActorActionStateV1 actorFacts{};
+        actorFacts.version = HOT_ACTION_STATE_VERSION;
+        actorFacts.byteSize = static_cast<std::uint32_t>(sizeof(HotActorActionStateV1));
+        actorFacts.flags = HOT_ACTION_FLAG_GROUNDED;
+        actorFacts.speed = 5.0f;
+        DynamicComponentStore::instance().write(actor, HOT_ACTOR_ACTION_COMPONENT,
+                                                 &actorFacts, sizeof(actorFacts));
         runtime.runDomain(GAME_DOMAIN_RENDER, 6, 0.016f,
                           LiveBehavior::hostContext(6));
         DynamicComponentStore::instance().read(actor, HOT_ANIMATION_STATE_COMPONENT,
                                                 &anim, sizeof(anim));
-        ok &= check(anim.clipId == HOT_ANIM_MOVE,
-                    "hot animation policy selects move for a moving actor", report);
+        ok &= check(anim.actionId == HOT_ACTION_WALK,
+                    "hot animation policy selects walk for a moving actor", report);
 
+        actorFacts.speed = 0.0f;
+        DynamicComponentStore::instance().write(actor, HOT_ACTOR_ACTION_COMPONENT,
+                                                 &actorFacts, sizeof(actorFacts));
         Ecs::setVelocity(actor, glm::vec3(0.0f), glm::vec3(0.0f));
         runtime.runDomain(GAME_DOMAIN_RENDER, 7, 0.016f,
                           LiveBehavior::hostContext(7));
         DynamicComponentStore::instance().read(actor, HOT_ANIMATION_STATE_COMPONENT,
                                                 &anim, sizeof(anim));
-        ok &= check(anim.clipId == HOT_ANIM_IDLE,
+        ok &= check(anim.actionId == HOT_ACTION_IDLE,
                     "hot animation policy selects idle for a still actor", report);
 
         HealthComponent hp{};
@@ -427,7 +451,7 @@ bool runHotCombatSelfTest(std::string& report)
                           LiveBehavior::hostContext(8));
         DynamicComponentStore::instance().read(actor, HOT_ANIMATION_STATE_COMPONENT,
                                                 &anim, sizeof(anim));
-        ok &= check(anim.clipId == HOT_ANIM_DEAD,
+        ok &= check(anim.actionId == HOT_ACTION_DEATH,
                     "hot animation policy selects death for a dead actor", report);
         EntityRegistry::instance().destroy(actor);
 
@@ -437,8 +461,10 @@ bool runHotCombatSelfTest(std::string& report)
         Ecs::setTransform(mover, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f), 0.0f,
                           0.0f);
         Ecs::setVelocity(mover, glm::vec3(5.0f, 0.0f, 0.0f), glm::vec3(0.0f));
-        HotAnimationStateV1 moverAnim{};
-        moverAnim.clipId = HOT_ANIM_MOVE;
+        HotAnimationStateV2 moverAnim{};
+        moverAnim.version = HOT_ANIMATION_STATE_VERSION;
+        moverAnim.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+        moverAnim.actionId = HOT_ACTION_WALK;
         moverAnim.playbackRate = 1.0f;
         DynamicComponentStore::instance().write(
             mover, HOT_ANIMATION_STATE_COMPONENT, &moverAnim, sizeof(moverAnim));
@@ -509,8 +535,10 @@ bool runHotCombatSelfTest(std::string& report)
         const EntityId localEntity = Ecs::ensureLocalPlayerEntity();
         ok &= check(localEntity != kInvalidEntityId,
                     "local player has a canonical generic entity", report);
-        HotAnimationStateV1 localAnim{};
-        localAnim.clipId = HOT_ANIM_MOVE;
+        HotAnimationStateV2 localAnim{};
+        localAnim.version = HOT_ANIMATION_STATE_VERSION;
+        localAnim.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+        localAnim.actionId = HOT_ACTION_WALK;
         localAnim.playbackRate = 1.0f;
         DynamicComponentStore::instance().write(
             localEntity, HOT_ANIMATION_STATE_COMPONENT, &localAnim,
@@ -520,6 +548,448 @@ bool runHotCombatSelfTest(std::string& report)
         SkeletonInstances::Instance* localInst = SkeletonInstances::get(localEntity);
         ok &= check(localInst != nullptr && localInst->version > 0,
                     "local player entity is driven by the hot pose path", report);
+
+        // AnimationState.v2 contract: explicit version/size, schema version 2,
+        // and the v1 -> v2 migration registered at activation.
+        ok &= check(localAnim.version == HOT_ANIMATION_STATE_VERSION &&
+                        localAnim.byteSize == sizeof(HotAnimationStateV2),
+                    "AnimationState.v2 carries explicit version and byte size",
+                    report);
+        const DynamicComponentSchema* animSchema =
+            DynamicComponentStore::instance().schema(HOT_ANIMATION_STATE_COMPONENT);
+        ok &= check(animSchema != nullptr && animSchema->version == 2,
+                    "AnimationState schema is registered at version 2", report);
+        ok &= check(DynamicComponentStore::instance().hasMigration(
+                        HOT_ANIMATION_STATE_COMPONENT, 1, 2),
+                    "AnimationState v1 -> v2 migration is registered", report);
+
+        // The legacy procedural bridge is not invoked while hot animation owns
+        // gameplay (fallback only).
+        ok &= check(LiveBehavior::animationUpdateCount() == 0,
+                    "legacy animation bridge is not invoked under hot ownership",
+                    report);
+
+        // Cold action-state bridge publishes generic facts on an actor EntityId
+        // without deciding the animation.
+        {
+            Player probe(false);
+            probe.pos = glm::vec3(2.0f, 0.0f, 3.0f);
+            probe.vel = glm::vec3(4.0f, 0.0f, 0.0f);
+            probe.ground.onGround = true;
+            probe.spawnGeneration = 7;
+            probe.equippedWeaponId = "revolver";
+            probe.networkWeaponState = MimitaNet::NET_WEAPON_STATE_RELOADING;
+            PresentationEntities::projectActorOverlayState(9001, true, probe);
+            const EntityId probeEntity =
+                static_cast<EntityId>(PresentationEntities::actorEntityFor(9001, true));
+            HotActorActionStateV1 action{};
+            const bool gotAction = DynamicComponentStore::instance().read(
+                probeEntity, HOT_ACTOR_ACTION_COMPONENT, &action, sizeof(action));
+            ok &= check(gotAction && action.version == HOT_ACTION_STATE_VERSION &&
+                            (action.flags & HOT_ACTION_FLAG_RELOADING) != 0 &&
+                            action.isReloading == 1 &&
+                            action.lifecycleGeneration == 7 &&
+                            action.weaponKey == gameHash("revolver"),
+                        "cold action-state bridge publishes generic action facts",
+                        report);
+            EntityRegistry::instance().destroy(probeEntity);
+        }
+
+        // ── Phase 2 state-machine transitions (deterministic, fact-driven) ──
+        {
+            const EntityId m = Ecs::ensure(EntityRealm::ClientReplicated,
+                                           EntityDomain::Npc, 8301);
+            Ecs::setTransform(m, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f), 0.0f,
+                              0.0f);
+            Ecs::setVelocity(m, glm::vec3(0.0f), glm::vec3(0.0f));
+            HotAnimationStateV2 st{};
+            st.version = HOT_ANIMATION_STATE_VERSION;
+            st.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+            st.blendWeight = 1.0f;
+            DynamicComponentStore::instance().write(
+                m, HOT_ANIMATION_STATE_COMPONENT, &st, sizeof(st));
+            HotActorActionStateV1 facts{};
+            facts.version = HOT_ACTION_STATE_VERSION;
+            facts.byteSize = static_cast<std::uint32_t>(sizeof(HotActorActionStateV1));
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            DynamicComponentStore::instance().write(
+                m, HOT_ACTOR_ACTION_COMPONENT, &facts, sizeof(facts));
+
+            auto setAction = [&](std::uint64_t action, float pb) {
+                st.actionId = action;
+                st.playbackTime = pb;
+                DynamicComponentStore::instance().write(
+                    m, HOT_ANIMATION_STATE_COMPONENT, &st, sizeof(st));
+            };
+            auto setFacts = [&]() {
+                DynamicComponentStore::instance().write(
+                    m, HOT_ACTOR_ACTION_COMPONENT, &facts, sizeof(facts));
+            };
+            std::uint64_t tickSeq = 900;
+            auto tickAction = [&]() -> std::uint64_t {
+                runtime.runDomain(GAME_DOMAIN_RENDER, tickSeq++, 0.016f,
+                                  LiveBehavior::hostContext(tickSeq));
+                HotAnimationStateV2 out{};
+                DynamicComponentStore::instance().read(
+                    m, HOT_ANIMATION_STATE_COMPONENT, &out, sizeof(out));
+                return out.actionId;
+            };
+
+            ok &= check(tickAction() == HOT_ACTION_IDLE,
+                        "phase2 idle at rest", report);
+            facts.speed = 5.0f;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_WALK,
+                        "phase2 idle -> walk on speed", report);
+            facts.flags = HOT_ACTION_FLAG_JUMPING;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_JUMP,
+                        "phase2 walk interrupted by jump", report);
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            facts.speed = 5.0f;
+            setFacts();
+            tickAction();  // settle back to walk
+            facts.flags = HOT_ACTION_FLAG_GROUNDED | HOT_ACTION_FLAG_DASHING;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_DASH,
+                        "phase2 dash interrupts locomotion", report);
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            setFacts();
+            setAction(HOT_ACTION_DASH, 0.10f);
+            ok &= check(tickAction() == HOT_ACTION_DASH,
+                        "phase2 dash one-shot holds until complete", report);
+            setAction(HOT_ACTION_DASH, 1.00f);
+            ok &= check(tickAction() == HOT_ACTION_WALK,
+                        "phase2 dash returns to walk", report);
+
+            facts.flags = HOT_ACTION_FLAG_GROUNDED | HOT_ACTION_FLAG_FREEZING;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_FREEZE,
+                        "phase2 freeze begin", report);
+            ok &= check(tickAction() == HOT_ACTION_FREEZE,
+                        "phase2 freeze hold", report);
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_WALK,
+                        "phase2 freeze end returns to walk", report);
+
+            facts.flags = HOT_ACTION_FLAG_GROUNDED | HOT_ACTION_FLAG_EQUIPPING;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_EQUIP,
+                        "phase2 equip", report);
+            setAction(HOT_ACTION_EQUIP, 1.00f);
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_WALK,
+                        "phase2 equip returns to walk", report);
+
+            facts.flags = HOT_ACTION_FLAG_GROUNDED | HOT_ACTION_FLAG_SHOOTING;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_SHOOT,
+                        "phase2 shooting", report);
+            setAction(HOT_ACTION_SHOOT, 1.00f);
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_WALK,
+                        "phase2 shooting returns to walk", report);
+
+            facts.flags = HOT_ACTION_FLAG_GROUNDED | HOT_ACTION_FLAG_RELOADING;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_RELOAD,
+                        "phase2 reload", report);
+            setAction(HOT_ACTION_RELOAD, 1.00f);
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            setFacts();
+            tickAction();
+
+            // Just-shot once the muzzle window closes (fireCooldown still > 0).
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            facts.fireCooldown = 0.05f;
+            facts.shootEffectTimer = 0.0f;
+            setFacts();
+            setAction(HOT_ACTION_WALK, 0.0f);
+            ok &= check(tickAction() == HOT_ACTION_JUST_SHOT,
+                        "phase2 just-shot", report);
+            facts.fireCooldown = 0.0f;
+            setFacts();
+
+            // Tool removal edge selects the departing tool's unequip phase.
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            facts.weaponKey = gameHash("revolver");
+            setFacts();
+            setAction(HOT_ACTION_WALK, 0.0f);
+            tickAction();
+            facts.weaponKey = 0;
+            facts.speed = 0.0f;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_UNEQUIP,
+                        "phase2 unequip on tool removal", report);
+            setAction(HOT_ACTION_UNEQUIP, 1.00f);
+            ok &= check(tickAction() == HOT_ACTION_IDLE,
+                        "phase2 unequip returns to idle", report);
+            facts.speed = 5.0f;
+            setFacts();
+
+            setAction(HOT_ACTION_WALK, 0.0f);
+            facts.flags = HOT_ACTION_FLAG_GROUNDED | HOT_ACTION_FLAG_MELEE;
+            facts.meleeAction = 1;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_SLASH,
+                        "phase2 slash", report);
+            setAction(HOT_ACTION_WALK, 0.0f);
+            facts.meleeAction = 2;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_LUNGE,
+                        "phase2 lunge", report);
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            facts.meleeAction = 0;
+            setFacts();
+            setAction(HOT_ACTION_WALK, 0.0f);
+            tickAction();
+
+            HealthComponent mhp{};
+            mhp.current = 0;
+            mhp.max = 100;
+            mhp.dead = true;
+            EntityRegistry::instance().add<HealthComponent>(m, mhp);
+            ok &= check(tickAction() == HOT_ACTION_DEATH,
+                        "phase2 death", report);
+            mhp.current = 100;
+            mhp.dead = false;
+            EntityRegistry::instance().add<HealthComponent>(m, mhp);
+            facts.lifecycleGeneration = 1;
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_RESPAWN,
+                        "phase2 respawn after death (lifecycle generation)", report);
+            setAction(HOT_ACTION_RESPAWN, 1.00f);
+            facts.speed = 0.0f;
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
+            setFacts();
+            ok &= check(tickAction() == HOT_ACTION_IDLE,
+                        "phase2 respawn returns to idle", report);
+            EntityRegistry::instance().destroy(m);
+        }
+
+        // ── Deterministic pose generation: identical input -> identical pose ──
+        {
+            const EntityId a = Ecs::ensure(EntityRealm::ClientReplicated,
+                                           EntityDomain::Npc, 8302);
+            const EntityId b = Ecs::ensure(EntityRealm::ClientReplicated,
+                                           EntityDomain::Npc, 8303);
+            HotAnimationStateV2 s{};
+            s.version = HOT_ANIMATION_STATE_VERSION;
+            s.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+            s.actionId = HOT_ACTION_WALK;
+            s.playbackTime = 0.25f;
+            s.blendWeight = 1.0f;
+            HotActorActionStateV1 f{};
+            f.version = HOT_ACTION_STATE_VERSION;
+            f.byteSize = static_cast<std::uint32_t>(sizeof(HotActorActionStateV1));
+            f.flags = HOT_ACTION_FLAG_GROUNDED;
+            f.speed = 5.0f;
+            for (EntityId e : {a, b}) {
+                Ecs::setVelocity(e, glm::vec3(5.0f, 0.0f, 0.0f), glm::vec3(0.0f));
+                DynamicComponentStore::instance().write(
+                    e, HOT_ANIMATION_STATE_COMPONENT, &s, sizeof(s));
+                DynamicComponentStore::instance().write(
+                    e, HOT_ACTOR_ACTION_COMPONENT, &f, sizeof(f));
+            }
+            runtime.runDomain(GAME_DOMAIN_RENDER, 960, 0.016f,
+                              LiveBehavior::hostContext(960));
+            HotPoseStateV1 pa{};
+            HotPoseStateV1 pb{};
+            const bool ra = DynamicComponentStore::instance().read(
+                a, HOT_POSE_STATE_COMPONENT, &pa, sizeof(pa));
+            const bool rb = DynamicComponentStore::instance().read(
+                b, HOT_POSE_STATE_COMPONENT, &pb, sizeof(pb));
+            ok &= check(ra && rb && pa.count == pb.count && pa.count > 0 &&
+                            std::memcmp(&pa, &pb, sizeof(pa)) == 0,
+                        "phase2 identical input produces identical pose", report);
+            EntityRegistry::instance().destroy(a);
+            EntityRegistry::instance().destroy(b);
+        }
+    }
+
+    // ── Phase 3: skeleton validation + versioned animation schemas ────
+    {
+        GameplayContextV1* vctx = LiveBehavior::hostContext(970);
+        auto validateFn =
+            (vctx && vctx->resolveCapability)
+                ? reinterpret_cast<GameSkeletonValidateFn>(vctx->resolveCapability(
+                      vctx->host, GAME_CAP_SKELETON_VALIDATE))
+                : nullptr;
+        ok &= check(validateFn != nullptr,
+                    "skeleton.validate capability resolves", report);
+        if (validateFn) {
+            auto runValidate = [&](EntityId e, GameSkeletonValidateV1& req) {
+                req = GameSkeletonValidateV1{};
+                req.entity = static_cast<std::uint64_t>(e);
+                req.requiredCount = HotAnim::kRequiredPartCount;
+                for (std::uint32_t i = 0; i < HotAnim::kRequiredPartCount; ++i)
+                    req.requiredParts[i] = HotAnim::requiredPartHash(i);
+                validateFn(vctx->host, &req);
+            };
+
+            const EntityId partial = Ecs::ensure(EntityRealm::ClientReplicated,
+                                                 EntityDomain::Npc, 8501);
+            GameSkeletonPoseV1 pp{};
+            pp.entity = static_cast<std::uint64_t>(partial);
+            pp.count = 2;
+            pp.parts[0].part = gameHash("torso");
+            pp.parts[1].part = gameHash("head");
+            SkeletonInstances::applyPose(partial, pp);
+            GameSkeletonValidateV1 reqPartial{};
+            runValidate(partial, reqPartial);
+            ok &= check(reqPartial.valid == 0 && reqPartial.missingCount == 4,
+                        "skeleton.validate reports missing required parts", report);
+
+            const EntityId whole = Ecs::ensure(EntityRealm::ClientReplicated,
+                                               EntityDomain::Npc, 8502);
+            GameSkeletonPoseV1 wp{};
+            wp.entity = static_cast<std::uint64_t>(whole);
+            wp.count = HotAnim::kRequiredPartCount;
+            for (std::uint32_t i = 0; i < HotAnim::kRequiredPartCount; ++i)
+                wp.parts[i].part = HotAnim::requiredPartHash(i);
+            SkeletonInstances::applyPose(whole, wp);
+            GameSkeletonValidateV1 reqWhole{};
+            runValidate(whole, reqWhole);
+            ok &= check(reqWhole.valid == 1 && reqWhole.missingCount == 0,
+                        "skeleton.validate accepts a complete skeleton", report);
+            EntityRegistry::instance().destroy(partial);
+            EntityRegistry::instance().destroy(whole);
+            SkeletonInstances::purgeDead();
+
+            // hot.animation-validate records the generic result per actor.
+            const EntityId v = Ecs::ensure(EntityRealm::ClientReplicated,
+                                           EntityDomain::Npc, 8503);
+            GameSkeletonPoseV1 vp{};
+            vp.entity = static_cast<std::uint64_t>(v);
+            vp.count = HotAnim::kRequiredPartCount;
+            for (std::uint32_t i = 0; i < HotAnim::kRequiredPartCount; ++i)
+                vp.parts[i].part = HotAnim::requiredPartHash(i);
+            SkeletonInstances::applyPose(v, vp);
+            HotAnimationStateV2 vs{};
+            vs.version = HOT_ANIMATION_STATE_VERSION;
+            vs.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+            vs.actionId = HOT_ACTION_IDLE;
+            vs.playbackRate = 1.0f;
+            vs.blendWeight = 1.0f;
+            DynamicComponentStore::instance().write(
+                v, HOT_ANIMATION_STATE_COMPONENT, &vs, sizeof(vs));
+            runtime.runDomain(GAME_DOMAIN_RENDER, 972, 0.016f,
+                              LiveBehavior::hostContext(972));
+            HotAnimationValidV1 validState{};
+            ok &= check(DynamicComponentStore::instance().read(
+                            v, HOT_ANIMATION_VALID_COMPONENT, &validState,
+                            sizeof(validState)) &&
+                            validState.validated == 1 && validState.valid == 1,
+                        "hot.animation-validate records a valid skeleton", report);
+            EntityRegistry::instance().destroy(v);
+            SkeletonInstances::purgeDead();
+        }
+
+        // Versioned schemas the animation contract depends on are registered.
+        const DynamicComponentSchema* actSchema =
+            DynamicComponentStore::instance().schema(HOT_ACTOR_ACTION_COMPONENT);
+        ok &= check(actSchema != nullptr &&
+                        actSchema->version == HOT_ACTION_STATE_VERSION,
+                    "ActorActionState schema registered", report);
+        const DynamicComponentSchema* memSchema =
+            DynamicComponentStore::instance().schema(
+                HOT_ANIMATION_MEMORY_COMPONENT);
+        ok &= check(memSchema != nullptr &&
+                        memSchema->version == HOT_ANIMATION_MEMORY_VERSION,
+                    "AnimationMemory schema registered", report);
+    }
+
+    // ── Hot tool definition authority + per-tool phases ───────────────
+    {
+        void* raw = MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_TOOL_DEFINITION);
+        auto queryFn = reinterpret_cast<GameToolDefinitionQueryFn>(raw);
+        ok &= check(queryFn != nullptr, "tool.definition provider resolves",
+                    report);
+        if (queryFn) {
+            GameToolDefinitionV1 q{};
+            q.structSize = sizeof(GameToolDefinitionV1);
+            q.toolKey = gameHash("revolver");
+            const bool okq = queryFn(nullptr, &q) && q.found == 1;
+            ok &= check(okq && q.damage == 9.0f && q.magazineSize == 6 &&
+                            q.behaviorType == static_cast<std::uint32_t>(
+                                                  WeaponBehaviorType::Hitscan),
+                        "hot definition provides revolver gameplay", report);
+            GameToolDefinitionV1 sw{};
+            sw.structSize = sizeof(GameToolDefinitionV1);
+            sw.toolKey = gameHash("swordsword");
+            const bool oks = queryFn(nullptr, &sw) && sw.found == 1 &&
+                             sw.behaviorType == static_cast<std::uint32_t>(
+                                                     WeaponBehaviorType::Swordsword);
+            ok &= check(oks, "hot definition provides swordsword behavior",
+                        report);
+        }
+
+        // Cold execution reads the hot definition through the generic capability.
+        WeaponData::registerBuiltinWeapons();
+        const WeaponDefinition* rev = WeaponRegistry::instance().get("revolver");
+        const WeaponDefinition* swd = WeaponRegistry::instance().get("swordsword");
+        ok &= check(rev && swd && rev->damage == 9.0f && swd->damage == 35.0f &&
+                        rev->behaviorType == WeaponBehaviorType::Hitscan &&
+                        swd->behaviorType == WeaponBehaviorType::Swordsword,
+                    "cold weapon registry reflects the hot definition", report);
+
+        // A hot-only tool id that has no cold builtin is adopted by the cold
+        // registry, proving a brand-new weapon needs no cold edit.
+        const WeaponDefinition* hotGun =
+            WeaponRegistry::instance().get("hot_selftest_gun");
+        ok &= check(hotGun != nullptr && hotGun->damage == 7.0f &&
+                        hotGun->magazineSize == 4,
+                    "brand-new hot weapon registered with no cold edit", report);
+    }
+
+    // Per-tool phases: identical facts with different tools yield different arms.
+    {
+        auto poseArmX = [&](std::uint64_t key, EntityId e,
+                            std::uint64_t seed) -> float {
+            HotAnimationStateV2 st{};
+            st.version = HOT_ANIMATION_STATE_VERSION;
+            st.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+            st.actionId = HOT_ACTION_EQUIPPED_IDLE;
+            st.playbackTime = 0.05f;
+            st.blendWeight = 1.0f;
+            DynamicComponentStore::instance().write(
+                e, HOT_ANIMATION_STATE_COMPONENT, &st, sizeof(st));
+            HotActorActionStateV1 f{};
+            f.version = HOT_ACTION_STATE_VERSION;
+            f.byteSize = static_cast<std::uint32_t>(sizeof(HotActorActionStateV1));
+            f.flags = HOT_ACTION_FLAG_GROUNDED;
+            f.weaponKey = key;
+            DynamicComponentStore::instance().write(
+                e, HOT_ACTOR_ACTION_COMPONENT, &f, sizeof(f));
+            runtime.runDomain(GAME_DOMAIN_RENDER, seed, 0.016f,
+                              LiveBehavior::hostContext(seed));
+            HotPoseStateV1 pose{};
+            if (!DynamicComponentStore::instance().read(
+                    e, HOT_POSE_STATE_COMPONENT, &pose, sizeof(pose)))
+                return 0.0f;
+            for (std::uint32_t i = 0; i < pose.count; ++i)
+                if (pose.part[i] == gameHash("rightArm"))
+                    return pose.rotationEuler[i][0];
+            return 0.0f;
+        };
+        const EntityId ra = Ecs::ensure(EntityRealm::ClientReplicated,
+                                        EntityDomain::Npc, 8701);
+        const EntityId sb = Ecs::ensure(EntityRealm::ClientReplicated,
+                                        EntityDomain::Npc, 8702);
+        Ecs::setVelocity(ra, glm::vec3(0.0f), glm::vec3(0.0f));
+        Ecs::setVelocity(sb, glm::vec3(0.0f), glm::vec3(0.0f));
+        const float revArm = poseArmX(gameHash("revolver"), ra, 981);
+        const float swordArm = poseArmX(gameHash("swordsword"), sb, 982);
+        ok &= check(std::fabs(revArm - swordArm) > 0.1f,
+                    "per-tool phase drives distinct arm poses", report);
+        EntityRegistry::instance().destroy(ra);
+        EntityRegistry::instance().destroy(sb);
+        SkeletonInstances::purgeDead();
     }
 
     // ── Hot generic effect ownership ──────────────────────────────────
@@ -583,23 +1053,20 @@ bool runHotCombatSelfTest(std::string& report)
                     "hot audio policy plays sounds via the generic command",
                     report);
 
-        // Real hit/blood fact reaches the hot effect owner.
-        std::uint64_t hitBefore[16] = {0};
-        const std::uint32_t hitBeforeCount =
-            DynamicComponentStore::instance().enumerate(
-                HOT_EFFECT_LIFETIME_COMPONENT, hitBefore, 16);
+        // Real hit/blood fact reaches the hot effect owner. The hot recipe
+        // composes textured decals + pooled EffectParts (no cubes), so the
+        // signal is the generic surface-effect (decal) count.
+        const std::uint64_t hitSurfBefore = LiveBehavior::surfaceEffectCount();
         EffectRequestV1 hitReq{};
         hitReq.effectTypeId = gameHash("effect.hit.blood");
         hitReq.position[0] = 2.0f;
         hitReq.position[1] = 2.0f;
         hitReq.position[2] = 2.0f;
+        hitReq.normal[2] = 1.0f;
         hitReq.scale = 1.0f;
         const bool hitHandled = LiveBehavior::dispatchEffectRequest(hitReq, 22);
-        std::uint64_t hitAfter[16] = {0};
-        const std::uint32_t hitAfterCount =
-            DynamicComponentStore::instance().enumerate(
-                HOT_EFFECT_LIFETIME_COMPONENT, hitAfter, 16);
-        ok &= check(hitHandled && hitAfterCount > hitBeforeCount,
+        ok &= check(hitHandled &&
+                        LiveBehavior::surfaceEffectCount() > hitSurfBefore,
                     "real hit/blood fact reaches the hot effect owner", report);
 
         // Generic surface-effect/decal primitive: the hit path emits a generic
@@ -773,10 +1240,10 @@ bool runHotCombatSelfTest(std::string& report)
         // Tool presentation runs in post-movement (before the cold render pass)
         // then the attachment/mesh systems run in the render domain; mirror the
         // real frame order.
-        auto runPresentation = [&](std::uint64_t t) {
-            runtime.runDomain(GAME_DOMAIN_POST_MOVEMENT, t, 0.016f,
+        auto runPresentation = [&](std::uint64_t t, float dt = 0.016f) {
+            runtime.runDomain(GAME_DOMAIN_POST_MOVEMENT, t, dt,
                               LiveBehavior::hostContext(t));
-            runtime.runDomain(GAME_DOMAIN_RENDER, t, 0.016f,
+            runtime.runDomain(GAME_DOMAIN_RENDER, t, dt,
                               LiveBehavior::hostContext(t));
         };
         ok &= check(runtime.hasCommand("hotmesh") && runtime.hasCommand("hottool"),
@@ -793,6 +1260,28 @@ bool runHotCombatSelfTest(std::string& report)
         ok &= check(sock != nullptr, "socket.query capability resolves", report);
         ok &= check(resReg != nullptr, "resource.register capability resolves",
                     report);
+
+        // Headless has no renderer, so the real GLB loader cannot produce a
+        // handle. Adopt a synthetic debug-only handle for each recipe mesh so the
+        // production resolution path (handleOf) behaves like a real frame. The
+        // hot registration that follows preserves the adopted last-good.
+        auto adoptMesh = [](std::uint64_t logicalId) {
+            PresentationResourceProvider& provider =
+                PresentationResourceProvider::instance();
+            if (provider.handleOf(logicalId) != nullptr)
+                return;
+            void* mesh = PresentationRender::debugCreateMesh();
+            if (mesh)
+                provider.adopt(logicalId, gameHash("selftest.mesh"), mesh);
+        };
+        adoptMesh(gameHash("mesh.runtime.tool"));
+        adoptMesh(gameHash("mesh.tool.swordsword"));
+        adoptMesh(gameHash("mesh.tool.revolver"));
+        adoptMesh(gameHash("mesh.tool.shotgun"));
+        adoptMesh(gameHash("mesh.tool.rocket_launcher"));
+        adoptMesh(gameHash("mesh.tool.spyknife"));
+        // mesh.tool.grenade_launcher intentionally NOT adopted: used below to
+        // prove a recipe with an unresolved mesh never claims ownership.
 
         // Non-skeletal parent: entity transform + caller local offset.
         std::uint64_t parent = 0;
@@ -883,7 +1372,9 @@ bool runHotCombatSelfTest(std::string& report)
                 shared->localPlayerEntity = 0;   // baseline: nothing skipped
         }
         const std::uint64_t base0 = PresentationRender::submittedMeshCount();
-        runPresentation(50);
+        // dt=0 so no transient effect ages out between the two compared frames:
+        // the only difference must be the local actor's own body.
+        runPresentation(50, 0.0f);
         const std::uint64_t withActorVisible =
             PresentationRender::submittedMeshCount() - base0;
         if (actx && actx->permanentStorage &&
@@ -894,12 +1385,14 @@ bool runHotCombatSelfTest(std::string& report)
                 shared->localPlayerEntity = localActor;
         }
         const std::uint64_t base1 = PresentationRender::submittedMeshCount();
-        runPresentation(51);
+        runPresentation(51, 0.0f);
         const std::uint64_t withActorSkipped =
             PresentationRender::submittedMeshCount() - base1;
         ok &= check(localActor != 0 && withActorVisible >= 1 &&
                         withActorVisible == withActorSkipped + 1,
-                    "local possessed body is submitted exactly once (generic path yields)",
+                    "local possessed body is submitted exactly once (generic path "
+                    "yields) [visible=" + std::to_string(withActorVisible) +
+                        " skipped=" + std::to_string(withActorSkipped) + "]",
                     report);
 
         // Runtime-unknown tool via the REAL equip substrate: the command only
@@ -954,8 +1447,15 @@ bool runHotCombatSelfTest(std::string& report)
         ok &= check(claimRead && claim.migrated == 1 && claim.toolKey != 0,
                     "hot tool claim declares single presentation owner", report);
 
-        ok &= check(PresentationRender::viewSpaceSubmissionCount() > viewBefore,
-                    "local equipped tool uses the generic view-space context",
+        // The resolved socket transform is a WORLD transform, so the tool must
+        // draw with the world view (visible in both first and third person), not
+        // as camera-relative VIEW space (which put it off-screen).
+        ok &= check(PresentationRender::viewSpaceSubmissionCount() == viewBefore &&
+                        equipped[0] != 0 &&
+                        PresentationRender::entityMeshResourceId(equipped[0]) ==
+                            gameHash("mesh.runtime.tool"),
+                    "local equipped tool draws in world space (visible 1st/3rd "
+                    "person)",
                     report);
 
         // REAL equip path: the cold generic equip API is the source of truth;
@@ -1051,6 +1551,75 @@ bool runHotCombatSelfTest(std::string& report)
                         revClaim.toolKey == gameHash("revolver"),
                     "second weapon (revolver) uses the same substrate (no new ABI)",
                     report);
+
+        // Spyknife recipe resolves to its existing model on the same registry.
+        {
+            std::uint64_t spyActor = 0, spyTool = 0;
+            if (actx && actx->entityCreate) {
+                actx->entityCreate(actx->host, 0u, &spyActor);
+                actx->entityCreate(actx->host, 0u, &spyTool);
+                MimitaNet::actorStateEquipTool(spyActor, spyTool,
+                                               gameHash("spyknife"));
+            }
+            if (actx && actx->permanentStorage &&
+                actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+                auto* shared =
+                    reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+                if (shared->magic == GAME_SHARED_MAGIC)
+                    shared->localPlayerEntity = spyActor;
+            }
+            runPresentation(65);
+            HotPresentationStateV1 spyPres{};
+            const bool spyRead = actx && spyTool != 0 &&
+                actx->dynamicReadComponent(actx->host, spyTool,
+                                           HOT_PRESENTATION_COMPONENT, &spyPres,
+                                           sizeof(spyPres));
+            HotToolClaimV1 spyClaim{};
+            const bool spyClaimRead = actx &&
+                actx->dynamicReadComponent(actx->host, spyActor,
+                                           HOT_TOOL_CLAIM_COMPONENT, &spyClaim,
+                                           sizeof(spyClaim));
+            ok &= check(spyRead &&
+                            spyPres.meshResourceId == gameHash("mesh.tool.spyknife") &&
+                            spyClaimRead && spyClaim.migrated == 1 &&
+                            spyClaim.toolEntity == spyTool,
+                        "spyknife recipe resolves to its model and claims ownership",
+                        report);
+        }
+
+        // A recipe whose mesh cannot resolve NEVER claims ownership: the cold
+        // renderer stays the owner (claim alone must not suppress it).
+        {
+            std::uint64_t glActor = 0, glTool = 0;
+            if (actx && actx->entityCreate) {
+                actx->entityCreate(actx->host, 0u, &glActor);
+                actx->entityCreate(actx->host, 0u, &glTool);
+                MimitaNet::actorStateEquipTool(glActor, glTool,
+                                               gameHash("grenade_launcher"));
+            }
+            if (actx && actx->permanentStorage &&
+                actx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+                auto* shared =
+                    reinterpret_cast<GameSharedStateV1*>(actx->permanentStorage);
+                if (shared->magic == GAME_SHARED_MAGIC)
+                    shared->localPlayerEntity = glActor;
+            }
+            runPresentation(66);
+            HotToolClaimV1 glClaim{};
+            const bool glClaimRead = actx &&
+                actx->dynamicReadComponent(actx->host, glActor,
+                                           HOT_TOOL_CLAIM_COMPONENT, &glClaim,
+                                           sizeof(glClaim));
+            HotPresentationStateV1 glPres{};
+            const bool glPresRead = actx && glTool != 0 &&
+                actx->dynamicReadComponent(actx->host, glTool,
+                                           HOT_PRESENTATION_COMPONENT, &glPres,
+                                           sizeof(glPres));
+            ok &= check(glClaimRead && glClaim.migrated == 0 && !glPresRead,
+                        "unresolved recipe mesh never claims ownership (cold stays "
+                        "the owner)",
+                        report);
+        }
 
         // Ordering safety: relationship present but the tool component state has
         // not arrived yet -> no crash, no false claim, cold stays the owner.
@@ -1189,6 +1758,165 @@ bool runHotCombatSelfTest(std::string& report)
                         EntityRegistry::instance().alive(
                             static_cast<EntityId>(swordTool2)),
                     "unequip removes the generic edge; no stale claim", report);
+    }
+
+    // ── Hot muzzle recipe + dynamic light + disagreement presentation ──
+    // Kept after the tool-presentation block: these create transient effect
+    // entities, and the earlier submission-delta checks are sensitive to effect
+    // expiry timing.
+    {
+        // Recipe muzzle is a bright UNTEXTURED sphere, never the old blue
+        // cubemap-textured cube.
+        std::uint64_t mzBefore[16] = {0};
+        const std::uint32_t mzBeforeCount =
+            DynamicComponentStore::instance().enumerate(
+                HOT_EFFECT_LIFETIME_COMPONENT, mzBefore, 16);
+        EffectRequestV1 mzReq{};
+        mzReq.effectTypeId = gameHash("effect.muzzle");
+        mzReq.weaponNetworkId = gameHash("runtime.tool.unknown");
+        mzReq.position[0] = 3.0f;
+        mzReq.position[1] = 1.0f;
+        mzReq.position[2] = 3.0f;
+        mzReq.scale = 1.0f;
+        const bool mzHandled = LiveBehavior::dispatchEffectRequest(mzReq, 200);
+        std::uint64_t mzAfter[16] = {0};
+        const std::uint32_t mzAfterCount =
+            DynamicComponentStore::instance().enumerate(
+                HOT_EFFECT_LIFETIME_COMPONENT, mzAfter, 16);
+        {
+            std::uint64_t newEntity = 0;
+            for (std::uint32_t i = 0; i < mzAfterCount; ++i) {
+                bool known = false;
+                for (std::uint32_t j = 0; j < mzBeforeCount; ++j)
+                    if (mzAfter[i] == mzBefore[j]) { known = true; break; }
+                if (!known)
+                    newEntity = mzAfter[i];
+            }
+            HotPresentationStateV1 mz{};
+            const bool mzRead = newEntity != 0 &&
+                DynamicComponentStore::instance().read(
+                    static_cast<EntityId>(newEntity), HOT_PRESENTATION_COMPONENT,
+                    &mz, sizeof(mz));
+            ok &= check(mzHandled && mzRead &&
+                            mz.meshResourceId == gameHash("mesh.sphere") &&
+                            mz.meshResourceId != gameHash("mesh.cube") &&
+                            mz.textureResourceId == 0,
+                        "muzzle is the bright untextured sphere (no blue cube)",
+                        report);
+        }
+
+        // The revolver recipe attaches a dynamic light through the existing
+        // effect.spawn light kind (no new light subsystem).
+        {
+            const int lightsBefore = DynamicLightManager::instance().activeCount();
+            EffectRequestV1 mz2{};
+            mz2.effectTypeId = gameHash("effect.muzzle");
+            mz2.weaponNetworkId = gameHash("revolver");
+            mz2.position[0] = 4.0f;
+            mz2.position[1] = 1.0f;
+            mz2.position[2] = 4.0f;
+            mz2.scale = 1.0f;
+            const bool handled2 = LiveBehavior::dispatchEffectRequest(mz2, 201);
+            ok &= check(handled2 && DynamicLightManager::instance().activeCount() >
+                                        lightsBefore,
+                        "revolver muzzle recipe emits a dynamic light", report);
+        }
+
+        // Server-disagreement presentation is hot-owned: pulse/beam/tracer/text/
+        // particles + sound are composed from the C++ recipe, not from JSON.
+        {
+            std::uint64_t dBefore[16] = {0};
+            const std::uint32_t dBeforeCount =
+                DynamicComponentStore::instance().enumerate(
+                    HOT_EFFECT_LIFETIME_COMPONENT, dBefore, 16);
+            const std::uint64_t audioBefore = LiveBehavior::audioPlayCount();
+            EffectRequestV1 de{};
+            de.effectTypeId = gameHash("effect.disagreement");
+            de.position[0] = 5.0f; de.position[1] = 1.0f; de.position[2] = 5.0f;
+            de.correction[0] = 0.0f; de.correction[1] = 0.0f; de.correction[2] = 0.8f;
+            de.reason = 3u;   // POSITION_CORRECTION
+            std::snprintf(de.text, sizeof(de.text), "%s", "selftest disagreement");
+            const bool dHandled = LiveBehavior::dispatchEffectRequest(de, 202);
+            std::uint64_t dAfter[16] = {0};
+            const std::uint32_t dAfterCount =
+                DynamicComponentStore::instance().enumerate(
+                    HOT_EFFECT_LIFETIME_COMPONENT, dAfter, 16);
+            ok &= check(dHandled && dAfterCount > dBeforeCount &&
+                            LiveBehavior::audioPlayCount() > audioBefore,
+                        "server disagreement presentation is hot-owned "
+                        "(pulse/beam/tracer/particles + audio)",
+                        report);
+
+            EffectRequestV1 dl{};
+            dl.effectTypeId = gameHash("effect.disagreement.local");
+            dl.correction[0] = 0.0f; dl.correction[1] = 0.0f; dl.correction[2] = 0.5f;
+            dl.localIndicator = 1u;
+            ok &= check(LiveBehavior::dispatchEffectRequest(dl, 203),
+                        "local correction indicator is hot-owned", report);
+        }
+    }
+
+    // ── Generic effect primitives + hot hit/explosion composition ──────
+    {
+        GameplayContextV1* fxctx = LiveBehavior::hostContext(300);
+        const bool hasPart = fxctx && fxctx->resolveCapability &&
+            fxctx->resolveCapability(fxctx->host, GAME_CAP_EFFECT_PART) != nullptr;
+        ok &= check(hasPart,
+                    "effect.part capability resolves (existing EffectPart primitive)",
+                    report);
+
+        // Explosion fact composes the shared flash/smoke/debris recipe.
+        std::uint64_t eBefore[128] = {0};
+        const std::uint32_t eBeforeCount =
+            DynamicComponentStore::instance().enumerate(
+                HOT_EFFECT_LIFETIME_COMPONENT, eBefore, 128);
+        EffectRequestV1 boom{};
+        boom.effectTypeId = gameHash("effect.explosion.rocket");
+        boom.position[0] = 6.0f;
+        boom.position[1] = 1.0f;
+        boom.position[2] = 6.0f;
+        boom.scale = 1.0f;
+        const bool boomHandled = LiveBehavior::dispatchEffectRequest(boom, 301);
+        std::uint64_t eAfter[128] = {0};
+        const std::uint32_t eAfterCount =
+            DynamicComponentStore::instance().enumerate(
+                HOT_EFFECT_LIFETIME_COMPONENT, eAfter, 128);
+        ok &= check(boomHandled && eAfterCount > eBeforeCount,
+                    "explosion fact composes flash/smoke/debris [before=" +
+                        std::to_string(eBeforeCount) + " after=" +
+                        std::to_string(eAfterCount) + " handled=" +
+                        std::to_string(boomHandled) + "]",
+                    report);
+
+        // Blood hit composes textured decals through surface.effect (no cubes).
+        const std::uint64_t surfBefore = LiveBehavior::surfaceEffectCount();
+        EffectRequestV1 hit{};
+        hit.effectTypeId = gameHash("effect.hit.blood");
+        hit.position[0] = 7.0f;
+        hit.position[1] = 1.0f;
+        hit.position[2] = 7.0f;
+        hit.normal[2] = 1.0f;
+        hit.scale = 1.0f;
+        hit.damage = 42;
+        hit.hitEntity = 1u;
+        hit.spawnDamageNumber = 1u;
+        std::snprintf(hit.victimName, sizeof(hit.victimName), "%s", "selftest");
+        const bool hitHandled = LiveBehavior::dispatchEffectRequest(hit, 302);
+        ok &= check(hitHandled && LiveBehavior::surfaceEffectCount() > surfBefore,
+                    "hot blood hit composes textured decals", report);
+
+        // World hit composes a bullet hole + cracks through the same path.
+        const std::uint64_t surfBeforeW = LiveBehavior::surfaceEffectCount();
+        EffectRequestV1 wh{};
+        wh.effectTypeId = gameHash("effect.hit.world");
+        wh.position[0] = 8.0f;
+        wh.position[1] = 1.0f;
+        wh.position[2] = 8.0f;
+        wh.normal[2] = 1.0f;
+        wh.scale = 1.0f;
+        const bool whHandled = LiveBehavior::dispatchEffectRequest(wh, 303);
+        ok &= check(whHandled && LiveBehavior::surfaceEffectCount() > surfBeforeW,
+                    "hot world hit composes a bullet hole + cracks", report);
     }
 
     // ── Generic world->screen projection + hot actor overlays ─────────

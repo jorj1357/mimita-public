@@ -1820,12 +1820,15 @@ void updateRenderedReplica(
     }
 
     // ── Procedural animation ───────────────────────────────────────
-    player.updateProceduralAnimation(
-        dt,
-        player.aimDirection,
-        player.pos,
-        remoteWalking
-    );
+    // Fallback only; the hot animation/pose path owns gameplay actors.
+    if (!gHotAnimationOwnsGameplay) {
+        player.updateProceduralAnimation(
+            dt,
+            player.aimDirection,
+            player.pos,
+            remoteWalking
+        );
+    }
 }
 
 glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t shooterId)

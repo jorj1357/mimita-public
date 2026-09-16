@@ -13,10 +13,12 @@
 #include <glm/glm.hpp>
 
 #include "ecs/actor-entities.h"
+#include "ecs/components.h"
 #include "ecs/dynamic-components.h"
 #include "ecs/entity-registry.h"
 #include "ecs/prediction-registry.h"
 #include "entities/player.h"
+#include "hot-reload/hot-action.h"
 #include "hot-reload/hot-animation.h"
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-presentation.h"
@@ -60,6 +62,99 @@ void ensureSchema()
     schema.networkPolicy = GAME_NET_ALL;
     schema.name = "PresentationState";
     MimitaRuntime::DynamicComponentStore::instance().registerSchema(schema);
+
+    // Generic action facts the hot animation state machine consumes. Cold side
+    // publishes facts only; the hot module owns the animation decision. The hot
+    // package (animation-policy) registers the identical schema at activation.
+    MimitaRuntime::DynamicComponentSchema actionSchema;
+    actionSchema.typeId = HOT_ACTOR_ACTION_COMPONENT;
+    actionSchema.schemaHash = gameHash("ActorActionState.v1");
+    actionSchema.version = HOT_ACTION_STATE_VERSION;
+    actionSchema.size = sizeof(HotActorActionStateV1);
+    actionSchema.align = 8;
+    actionSchema.copyPolicy = GAME_COPY_RUNTIME_ONLY;
+    actionSchema.networkPolicy = GAME_NET_ALL;
+    actionSchema.name = "ActorActionState";
+    MimitaRuntime::DynamicComponentStore::instance().registerSchema(actionSchema);
+}
+
+// Publish the generic action facts for one actor from existing cold state. This
+// is a bridge, not a policy owner: it never selects an animation.
+void writeActionState(EntityId entity, const ::Player& player)
+{
+    if (entity == kInvalidEntityId)
+        return;
+    ensureSchema();
+    HotActorActionStateV1 st{};
+    st.version = HOT_ACTION_STATE_VERSION;
+    st.byteSize = static_cast<std::uint32_t>(sizeof(HotActorActionStateV1));
+    st.lifecycleGeneration = player.spawnGeneration;
+    st.speed = std::sqrt(player.vel.x * player.vel.x +
+                         player.vel.y * player.vel.y);
+    if (player.ground.onGround)
+        st.flags |= HOT_ACTION_FLAG_GROUNDED;
+    if (player.dead)
+        st.flags |= HOT_ACTION_FLAG_DEAD;
+
+    // Generic movement intent/runtime facts when the shared components exist.
+    EntityRegistry& registry = EntityRegistry::instance();
+    if (const MovementIntentComponent* mi =
+            registry.tryGet<MovementIntentComponent>(entity)) {
+        if (mi->jump)
+            st.flags |= HOT_ACTION_FLAG_JUMPING;
+        if (mi->dash)
+            st.flags |= HOT_ACTION_FLAG_DASHING;
+        if (mi->downDash)
+            st.flags |= HOT_ACTION_FLAG_DOWN_DASH;
+        if (mi->freeze)
+            st.flags |= HOT_ACTION_FLAG_FREEZING;
+    }
+    if (const MovementRuntimeStateComponent* mr =
+            registry.tryGet<MovementRuntimeStateComponent>(entity)) {
+        if (mr->grounded)
+            st.flags |= HOT_ACTION_FLAG_GROUNDED;
+        else
+            st.flags &= ~HOT_ACTION_FLAG_GROUNDED;
+    }
+
+    // Replicated network weapon-state bits (the only action data remote actors
+    // currently carry; timers below are local-authoritative detail).
+    const std::uint8_t ns = player.networkWeaponState;
+    if (ns & MimitaNet::NET_WEAPON_STATE_FIRING)
+        st.flags |= HOT_ACTION_FLAG_SHOOTING;
+    if (ns & MimitaNet::NET_WEAPON_STATE_RELOADING)
+        st.flags |= HOT_ACTION_FLAG_RELOADING;
+    if (ns & MimitaNet::NET_WEAPON_STATE_EQUIPPING)
+        st.flags |= HOT_ACTION_FLAG_EQUIPPING;
+    st.isReloading = (ns & MimitaNet::NET_WEAPON_STATE_RELOADING) ? 1u : 0u;
+
+    if (player.runtimeToolId != 0)
+        st.weaponKey = player.runtimeToolId;
+    else if (!player.equippedWeaponId.empty())
+        st.weaponKey = gameHash(player.equippedWeaponId.c_str());
+
+    auto it = player.weaponRuntimes.find(player.equippedWeaponId);
+    if (it != player.weaponRuntimes.end()) {
+        const WeaponRuntime& rt = it->second;
+        st.reloadTimer = rt.reloadTimer;
+        st.fireCooldown = rt.fireCooldown;
+        st.shootEffectTimer = rt.shootEffectTimer;
+        st.ammo = rt.currentAmmo > 0 ? (std::uint32_t)rt.currentAmmo : 0u;
+        st.reserve = rt.reserveAmmo > 0 ? (std::uint32_t)rt.reserveAmmo : 0u;
+        if (rt.isReloading)
+            st.isReloading = 1u;
+        auto et = rt.customFloats.find("equipTimer");
+        if (et != rt.customFloats.end())
+            st.equipTimer = et->second;
+        auto sp = rt.customFloats.find("swordPoseState");
+        if (sp != rt.customFloats.end())
+            st.meleeAction = (std::uint32_t)(sp->second > 0.0f ? sp->second : 0.0f);
+        if (st.meleeAction != 0)
+            st.flags |= HOT_ACTION_FLAG_MELEE;
+    }
+
+    MimitaRuntime::DynamicComponentStore::instance().write(
+        entity, HOT_ACTOR_ACTION_COMPONENT, &st, sizeof(st));
 }
 
 glm::vec3 safeForward(const float velocity[3])
@@ -288,6 +383,7 @@ void projectActorOverlayState(std::uint32_t actorId, bool isPlayer,
     const glm::vec3 look(std::cos(player.yaw), std::sin(player.yaw), 0.0f);
     Ecs::setTransform(entity, player.pos, look, player.yaw, 0.0f);
     Ecs::setHealth(entity, player.currentHp, player.maxHp, player.dead);
+    writeActionState(entity, player);
     if (!player.username.empty())
         MimitaNet::actorStateWriteIdentity(static_cast<std::uint64_t>(entity),
                                            player.username.c_str());
@@ -339,12 +435,16 @@ void projectLocalPlayer(Player& player)
         store.write(entity, HOT_PRESENTATION_COMPONENT, &present, sizeof(present));
     }
     if (!store.has(entity, HOT_ANIMATION_STATE_COMPONENT)) {
-        HotAnimationStateV1 anim{};
-        anim.clipId = HOT_ANIM_IDLE;
+        HotAnimationStateV2 anim{};
+        anim.version = HOT_ANIMATION_STATE_VERSION;
+        anim.byteSize = static_cast<std::uint32_t>(sizeof(HotAnimationStateV2));
+        anim.actionId = HOT_ACTION_IDLE;
         anim.playbackRate = 1.0f;
         anim.loop = 1;
+        anim.blendWeight = 1.0f;
         store.write(entity, HOT_ANIMATION_STATE_COMPONENT, &anim, sizeof(anim));
     }
+    writeActionState(entity, player);
 
     // Generic actor identity for hot overlays/chat/scoreboard (no typed Player
     // needed downstream).
@@ -383,8 +483,10 @@ void applyHotPoseToPlayer(Player& player)
             continue;
         part.pose.translation = glm::vec3(bone->translation[0], bone->translation[1],
                                           bone->translation[2]);
-        part.pose.rotationEuler = glm::vec3(
-            bone->rotationEuler[0], bone->rotationEuler[1], bone->rotationEuler[2]);
+        // SkeletonInstances stores radians (hot boundary unit); the legacy
+        // typed field is degrees, so convert rather than copy.
+        part.pose.rotationEuler = glm::degrees(glm::vec3(
+            bone->rotationEuler[0], bone->rotationEuler[1], bone->rotationEuler[2]));
     }
 }
 

@@ -379,8 +379,9 @@ bool GenericRuntime::runRegisteredDomains(std::uint64_t tick, float dt, void* ho
 {
     bool ran = false;
     for (std::uint64_t domain : domains_) {
-        if (domain == GAME_DOMAIN_GAMEPLAY || domain == GAME_DOMAIN_RENDER)
-            continue;  // timed by the kernel
+        if (domain == GAME_DOMAIN_GAMEPLAY || domain == GAME_DOMAIN_RENDER ||
+            domain == GAME_DOMAIN_CLIENT_TICK)
+            continue;  // timed by the kernel / client tick
         if (std::find(modeDomains_.begin(), modeDomains_.end(), domain) !=
             modeDomains_.end())
             continue;  // mode domains run only while their mode is active

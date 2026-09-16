@@ -116,7 +116,6 @@ bool runAirMovementParitySelfTest(std::string& report)
     float maxDev = 0.0f;              // worst per-tick horizontal disagreement
     float earlyMaxDev = 0.0f;         // worst over the first 30 ticks
     constexpr float kTight = 1e-3f;
-    constexpr float kBound = 0.1f;    // FP-drift bound near the wish-speed cap
 
     for (int i = 0; i < kTicks; ++i) {
         // A) Server adapter: the real three-phase server movement sequence
@@ -168,17 +167,17 @@ bool runAirMovementParitySelfTest(std::string& report)
                 "server + prediction use the shared air function identically "
                 "(early agreement)", report);
 
-    // Full-sequence parity is NOT yet achieved: the two paths diverge as the
-    // projected speed approaches the wish-speed cap. Reported honestly (not
-    // hidden behind a loose tolerance) as a known integration gap.
+    // Full-sequence parity: the real server adapter and the real local
+    // prediction path must agree for the whole airborne run.
     {
         char buf[320];
         std::snprintf(buf, sizeof(buf),
-                      "full(%d)-tick air parity NOT achieved: maxDev=%.4f, "
-                      "first>1e-3 tick=%d serverVel=(%.4f,%.4f) clientVel=(%.4f,%.4f)",
+                      "full(%d)-tick air parity: maxDev=%.6f first>1e-3 tick=%d "
+                      "serverVel=(%.4f,%.4f) clientVel=(%.4f,%.4f)",
                       kTicks, maxDev, firstDivergence, divSx, divSy, divCx, divCy);
-        report += std::string("[warn] ") + buf + "\n";
-        (void)kBound;
+        const bool parity = maxDev < kTight;
+        report += std::string(parity ? "[ok] " : "[FAIL] ") + buf + "\n";
+        ok &= parity;
     }
 
     // The shared air function must actually have moved both (not a no-op).

@@ -4,6 +4,9 @@
 #include "weapon-registry.h"
 #include "../debug/debug-log.h"
 #include "../network/network-weapons.h"
+#include "hot-reload/game-api.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-reload-system.h"
 
 #include <algorithm>
 #include <cctype>
@@ -307,16 +310,141 @@ void loadWeaponJsonConfig()
     }
 }
 
+// Hot tool definition override. The hot C++ definition is authoritative; this
+// applies the fields it marks present and leaves everything else JSON/builtin.
+// A missing provider or unknown tool is a safe no-op.
+void applyHotToolDefinition(WeaponDefinition& def)
+{
+    void* raw = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_TOOL_DEFINITION);
+    if (!raw)
+        return;
+    auto fn = reinterpret_cast<GameToolDefinitionQueryFn>(raw);
+    GameToolDefinitionV1 q{};
+    q.structSize = sizeof(GameToolDefinitionV1);
+    q.toolKey = gameHash(def.id.c_str());
+    if (!fn(nullptr, &q) || q.found == 0)
+        return;
+
+    const std::uint32_t m = q.presentMask;
+    if (m & GAME_TOOL_FIELD_DAMAGE) {
+        def.damage = q.damage;
+        def.headshotMultiplier = q.headshotMultiplier;
+    }
+    if (m & GAME_TOOL_FIELD_BEHAVIOR) {
+        def.behaviorType = static_cast<WeaponBehaviorType>(q.behaviorType);
+        def.fireMode = static_cast<WeaponFireMode>(q.fireMode);
+        def.networkMode = static_cast<WeaponNetworkMode>(q.networkMode);
+        def.hitscan = q.hitscan != 0;
+    }
+    if (m & GAME_TOOL_FIELD_TIMING) {
+        def.fireDelay = q.fireDelay;
+        def.reloadTime = q.reloadTime;
+        if (q.equipPoseTime > 0.0f)
+            def.customParams["equipPoseTime"] = q.equipPoseTime;
+        if (q.unequipPoseTime > 0.0f)
+            def.customParams["unequipPoseTime"] = q.unequipPoseTime;
+    }
+    if (m & GAME_TOOL_FIELD_AMMO) {
+        def.magazineSize = q.magazineSize;
+        def.pelletCount = q.pelletCount;
+        def.spread = q.spread;
+        def.recoil = q.recoil;
+        if (q.reserveAmmo >= 0)
+            def.customParams["reserveAmmo"] = static_cast<float>(q.reserveAmmo);
+    }
+    if (m & GAME_TOOL_FIELD_PROJECTILE) {
+        def.projectileSpeed = q.projectileSpeed;
+        def.projectileRadius = q.projectileRadius;
+        def.projectileLifetime = q.projectileLifetime;
+    }
+    if (m & GAME_TOOL_FIELD_MODEL) {
+        if (q.modelPath[0])
+            def.modelPath = q.modelPath;
+        if (q.scale > 0.0f)
+            def.weaponScale = q.scale;
+        def.attachmentOffset = glm::vec3(q.attachmentPosition[0],
+                                         q.attachmentPosition[1],
+                                         q.attachmentPosition[2]);
+        def.attachmentRotation = glm::vec3(q.attachmentRotation[0],
+                                           q.attachmentRotation[1],
+                                           q.attachmentRotation[2]);
+    }
+    if (m & GAME_TOOL_FIELD_SOUNDS) {
+        if (q.soundShoot[0])
+            def.soundShoot = q.soundShoot;
+        if (q.soundReload[0])
+            def.soundReload = q.soundReload;
+        if (q.soundEquip[0])
+            def.soundEquip = q.soundEquip;
+    }
+    if (q.soundHit[0])
+        def.soundHit = q.soundHit;
+    if (q.soundDryFire[0])
+        def.soundDryFire = q.soundDryFire;
+    if (q.displayName[0])
+        def.displayName = q.displayName;
+    if (m & GAME_TOOL_FIELD_SLOT)
+        def.slot = static_cast<int>(q.slot);
+    const std::uint32_t paramCount = q.paramCount < 8 ? q.paramCount : 8u;
+    for (std::uint32_t i = 0; i < paramCount; ++i) {
+        if (q.params[i].key[0])
+            def.customParams[q.params[i].key] = q.params[i].value;
+    }
+    applyWeaponExecutionType(def);
+}
+
+// Register any hot tool definition that has no builtin/JSON counterpart. This is
+// what makes adding a brand-new weapon hot: the hot package enumerates its
+// recipes and the cold registry adopts unknown ids.
+void registerHotTools()
+{
+    void* raw = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_TOOL_DEFINITION);
+    if (!raw)
+        return;
+    auto fn = reinterpret_cast<GameToolDefinitionQueryFn>(raw);
+    for (std::uint32_t index = 0;; ++index) {
+        GameToolDefinitionV1 q{};
+        q.structSize = sizeof(GameToolDefinitionV1);
+        q.toolKey = 0;
+        q.enumerateIndex = index;
+        if (!fn(nullptr, &q) || q.found == 0)
+            break;
+        if (q.id[0] == '\0')
+            continue;
+        if (WeaponRegistry::instance().has(q.id))
+            continue;
+
+        WeaponDefinition def;
+        def.id = q.id;
+        def.displayName = q.displayName[0] ? q.displayName : q.id;
+        applyHotToolDefinition(def);
+        def.executionType = weaponExecutionTypeForBehavior(def.behaviorType);
+        def.usesPhysicsProjectile =
+            def.executionType == WeaponExecutionType::Projectile;
+        WeaponRegistry::instance().registerWeapon(def);
+        MimitaNet::registerWeaponDefNetworkId(def.id);
+        Debug::log(Debug::Category::Weapons,
+                   "[WEAPON] hot-registered tool id=%s behavior=%u",
+                   def.id.c_str(), static_cast<unsigned>(def.behaviorType));
+    }
+}
+
 void registerWeaponFromJson(WeaponDefinition def)
 {
     if (gWeaponConfigRoot.contains(def.id))
         applyWeaponJson(def, gWeaponConfigRoot[def.id]);
     else
         applyWeaponExecutionType(def);
+    applyHotToolDefinition(def);
     WeaponRegistry::instance().registerWeapon(def);
     // Assign a stable network ID for the generic AttackRequest pipeline
     MimitaNet::registerWeaponDefNetworkId(def.id);
 }
+
+// Last hot generation whose tool definitions were applied to the registry.
+std::uint32_t gLastWeaponHotGeneration = 0xFFFFFFFFu;
 
 bool reloadBuiltinWeaponsIfChanged()
 {
@@ -326,17 +454,33 @@ bool reloadBuiltinWeaponsIfChanged()
         return false;
     gWeaponConfigLastCheck = now;
 
+    // A new hot generation can change gameplay + presentation live; re-apply the
+    // hot tool definitions even when config/weapons.json did not change.
+    const std::uint32_t hotGeneration =
+        HotReloadSystem::instance().status().activeGeneration;
+    const bool hotChanged = hotGeneration != gLastWeaponHotGeneration;
+    gLastWeaponHotGeneration = hotGeneration;
+
     std::error_code ec;
-    if (!std::filesystem::exists(weaponConfigPath(), ec) || ec)
-        return false;
-    const auto writeTime = std::filesystem::last_write_time(weaponConfigPath(), ec);
-    if (ec || (gWeaponConfigHasWriteTime && writeTime == gWeaponConfigLastWrite))
+    bool jsonChanged = false;
+    if (std::filesystem::exists(weaponConfigPath(), ec) && !ec) {
+        const auto writeTime =
+            std::filesystem::last_write_time(weaponConfigPath(), ec);
+        if (!ec && !(gWeaponConfigHasWriteTime && writeTime == gWeaponConfigLastWrite)) {
+            gWeaponConfigLastWrite = writeTime;
+            gWeaponConfigHasWriteTime = true;
+            jsonChanged = true;
+        }
+    }
+
+    if (!hotChanged && !jsonChanged)
         return false;
 
-    gWeaponConfigLastWrite = writeTime;
-    gWeaponConfigHasWriteTime = true;
     registerBuiltinWeapons();
-    Debug::log(Debug::Category::Weapons, "[WEAPON] hot reloaded %s", weaponConfigPath().c_str());
+    Debug::log(Debug::Category::Weapons,
+               "[WEAPON] applied %s (hot generation %u)",
+               hotChanged ? "hot tool definitions" : "config/weapons.json",
+               hotGeneration);
     return true;
 }
 

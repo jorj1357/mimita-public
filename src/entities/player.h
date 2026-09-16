@@ -283,6 +283,11 @@ struct PlayerProceduralConfig
 
 extern PlayerProceduralConfig gPlayerProcedural;
 
+// Central animation ownership switch. When true (default), the hot animation
+// module owns visible gameplay animation and the legacy procedural animator is
+// not invoked for gameplay actors. Dev-only A/B fallback; toggled by `hotanim`.
+extern bool gHotAnimationOwnsGameplay;
+
 // Poll config/player-procedural.json for changes.
 // Call each frame from main loop to ensure hot reload works regardless of physics state.
 // Uses wall-clock 250ms throttle internally.

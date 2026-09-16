@@ -2382,3 +2382,32 @@ behavior in `src/hot-reload/modules/` stays hot.
    activation.
 7. Edit a `cold` file; confirm the periodic cold-restart notification and no
    relink.
+
+## 2026-09-16 — tool-visual / muzzle / disagreement migration
+
+- Implemented: `ToolVisualRecipeV1` registry (`hot-tool-visual.h`,
+  `modules/presentation/tool-visuals.cpp`) for revolver, shotgun, rocket
+  launcher, grenade launcher, spyknife, swordsword; readiness-gated ownership;
+  bright untextured-sphere muzzle with an optional generic dynamic light;
+  server-disagreement presentation moved to a hot recipe with the JSON path as
+  fallback.
+- Cold additions (require one intentional cold build/install): `effect.request.v2`
+  append-only disagreement fields; `mesh.sphere`/`mesh.beam` generic primitive
+  registration; `effect.spawn` kind `light.dynamic` bridging to the EXISTING
+  `DynamicLightManager`; `capResourceRegister` real-load-result reporting.
+- NEXT COLD OWNER: none new for ordinary weapon visuals. Remaining product debt:
+  PNG/WAV consumers, resource late join, full JSON visual deprecation, and the
+  projectile trail/impact recipe migration. Human live acceptance (model visible,
+  muzzle+light, no duplicate, hot-edit reload in the same world) is outstanding.
+
+## 2026-09-16 (later) — explosions + hit effects on existing primitives
+
+- Cold additions: `effect.part` capability (POD mirror of `EffectPart`, the
+  pre-existing pooled primitive), textured/kinded `surface.effect` decals,
+  `EffectRequestV1` v3 hit fields. `effect.request` schema is v3.
+- Hot: `hit-visuals.cpp` owns blood/bullet-hole/crack/impact-sphere/damage-number
+  appearance and the tick-based hit burst; projectile explosion composition lives
+  in `hot-projectiles.cpp` via `hotComposeExplosion`. `PresentationState` v2 +
+  migration remains deferred.
+- Human live acceptance for Phase 1/2/3 (models, projectile+explosion, hit
+  effects, live .cpp edit) is the outstanding step.

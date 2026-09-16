@@ -11,7 +11,7 @@
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
 #include "npc/npc-combat-log.h"
-#include "gamemode/match-roles.h"
+#include "physics/movement/movement-conversion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1017,10 +1017,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     // multi-node route is active, so local strafing/circling is preserved when
     // no detour is needed. Movement execution still flows through the same
     // situational checks, buildInputState, and shared kernel below.
-    const MovementConfig* navMovement =
-        RoleMovementCache::instance().get(npc.movementProfileId);
-    if (!navMovement)
-        navMovement = NpcDifficultyConfig::instance().npcMovementConfig();
+    // Single C++ Source movement authority: NPCs run the same movement policy
+    // and tuning as human actors. Role/difficulty JSON no longer decides
+    // movement (difficulty still drives AI choices such as dash chance).
+    const MovementConfig navMovementValue = makeCurrentRuntimeMovementConfig();
+    const MovementConfig* navMovement = &navMovementValue;
     if (!inMirrorPhase)
     {
         const NpcGoal navGoal = makeNavGoal(npc);

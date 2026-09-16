@@ -31,6 +31,34 @@
 
 namespace MimitaNet {
 
+namespace {
+
+// Separation of reconciliation causes. A hot-code generation mismatch is a
+// bootstrap, not a position correction; only genuine divergence or a lifecycle
+// event (spawn/respawn/teleport) may move the local player.
+enum class LocalReconcileReason {
+    None,
+    LifecycleSnap,
+    PositionDivergence,
+    GenerationBootstrap
+};
+
+const char* localReconcileReasonName(LocalReconcileReason reason)
+{
+    switch (reason) {
+    case LocalReconcileReason::LifecycleSnap: return "lifecycle-snap";
+    case LocalReconcileReason::PositionDivergence: return "position-divergence";
+    case LocalReconcileReason::GenerationBootstrap: return "generation-bootstrap";
+    default: return "none";
+    }
+}
+
+// Only error above this (a genuine major divergence) may hard-snap for a
+// distance reason, and only then may the disagreement effect be emitted.
+constexpr float kCorrectionEffectMinimum = 100.0f;
+
+} // namespace
+
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
 {
     (void)dt;
@@ -79,6 +107,8 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
 
     // Hot reconciliation policy: the hot handler owns the error metric,
     // thresholds, and snap/smooth/hard-reset decision. Cold code executes it.
+    bool hotNeedsBootstrap = false;
+    std::uint32_t hotApplyMode = GAME_RECONCILE_APPLY_NONE;
     {
         GameReconcileV1 rq{};
         rq.predictedPosition[0] = player.pos.x;
@@ -109,13 +139,27 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_RECONCILE, &rq,
                                                   sizeof(rq), 0, 0, 0) &&
             rq.handled) {
+            hotNeedsBootstrap =
+                rq.hardReset == GAME_RECONCILE_HARD_RESET_BOOTSTRAP;
+            hotApplyMode = rq.reserved;
             switch (rq.correctionMode) {
-            case 1u: correctionClass = MovementCorrectionClass::Small; break;
-            case 2u: correctionClass = MovementCorrectionClass::Medium; break;
-            case 3u:
-            case 4u: correctionClass = MovementCorrectionClass::Major; break;
+            case GAME_RECONCILE_MODE_SMOOTH:
+                correctionClass = MovementCorrectionClass::Small; break;
+            case GAME_RECONCILE_MODE_MEDIUM:
+                correctionClass = MovementCorrectionClass::Medium; break;
+            case GAME_RECONCILE_MODE_SNAP:
+            case GAME_RECONCILE_MODE_HARD_RESET:
+                correctionClass = MovementCorrectionClass::Major; break;
             default: correctionClass = MovementCorrectionClass::None; break;
             }
+        } else {
+            // No hot policy: fall back to the cold generation check so a
+            // mismatch is never mistaken for ordinary drift. Unknown (zero)
+            // generations are not a mismatch.
+            hotNeedsBootstrap =
+                rq.predictedGeneration != 0 &&
+                rq.authoritativeGeneration != 0 &&
+                rq.predictedGeneration != rq.authoritativeGeneration;
         }
     }
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
@@ -166,19 +210,18 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         !player.dead;
 
     // Post-blackout resync: after a snapshot gap (blackout/reconnect) the local
-    // prediction may have drifted Medium-far from the server's authoritative
-    // position. Snap it back so it self-corrects instead of sticking until the
-    // next death. Only fires when the divergence is real (> 1.5 units) and the
-    // authoritative epoch has been applied.
-    constexpr float POST_GAP_MIN_ERROR = 1.5f;
+    // prediction may have drifted far from the server's authoritative position.
+    // Only a genuinely large divergence may hard-snap; ordinary same-life drift
+    // keeps local prediction (quiet converge) instead of correcting every frame.
     const bool postGapResyncActive =
+        !hotNeedsBootstrap &&
         ctx.postGapResync &&
         currentMs < ctx.postGapResyncDeadlineMs &&
         ctx.localPlayerReconciled &&
         authoritativeEpochReady &&
         !ctx.awaitingTeleportAck &&
         !player.dead &&
-        error > POST_GAP_MIN_ERROR;
+        error >= correctionConfig.majorCorrectionDistance;
 
     const bool teleportCompletionResync =
         ctx.teleportResync && !ctx.awaitingTeleportAck;
@@ -189,6 +232,39 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     bool applyPosition =
         initialSpawn || serverRespawnedPlayer || catastrophicDivergence ||
         postGapResyncActive || teleportCompletionResync || epochChanged;
+
+    // Classify the single reason for any correction this frame. Distance-driven
+    // correction is only reached when the survival path is clear; generation
+    // bootstrap never becomes a position correction.
+    LocalReconcileReason reconcileReason = LocalReconcileReason::None;
+    if (hotNeedsBootstrap) {
+        reconcileReason = LocalReconcileReason::GenerationBootstrap;
+    } else if (initialSpawn || serverRespawnedPlayer ||
+               teleportCompletionResync || epochChanged) {
+        reconcileReason = LocalReconcileReason::LifecycleSnap;
+    } else if (applyPosition) {
+        reconcileReason = LocalReconcileReason::PositionDivergence;
+    }
+
+    // Hot correction application: the hot policy decides whether a divergence is
+    // corrected. SMOOTH_ONCE applies the server state once, rate-limited so it
+    // can never become a per-frame floating correction; SNAP applies immediately.
+    if (!hotNeedsBootstrap && hotApplyMode != GAME_RECONCILE_APPLY_NONE &&
+        error > 0.25f) {
+        static uint64_t sLastSmoothApplyMs = 0;
+        constexpr uint64_t kSmoothReapplyMs = 250;
+        bool doApply = hotApplyMode == GAME_RECONCILE_APPLY_SNAP;
+        if (hotApplyMode == GAME_RECONCILE_APPLY_SMOOTH_ONCE) {
+            doApply = (currentMs - sLastSmoothApplyMs) >= kSmoothReapplyMs;
+            if (doApply)
+                sLastSmoothApplyMs = currentMs;
+        }
+        if (doApply) {
+            applyPosition = true;
+            if (reconcileReason == LocalReconcileReason::None)
+                reconcileReason = LocalReconcileReason::PositionDivergence;
+        }
+    }
 
     if (applyPosition)
     {
@@ -239,17 +315,18 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.updateModelWorldTransforms();
         ctx.lastAppliedEpoch = ctx.localServerEpoch;
 
-        // Local-only correction indicator for the corrected player.
-        // Catastrophic divergence is the one applyPosition case that is a real
-        // client/server disagreement (not spawn, respawn, or a requested teleport).
-        if (catastrophicDivergence)
+        // Local-only correction indicator: emitted only for a genuinely applied
+        // position-divergence correction above the effect threshold, never for
+        // lifecycle snaps or generation bootstrap.
+        if (reconcileReason == LocalReconcileReason::PositionDivergence &&
+            error > kCorrectionEffectMinimum)
         {
             DisagreementEvent event;
             event.timeMs = currentMs;
             event.reason = DISAGREEMENT_POSITION_CORRECTION;
             event.position = predictedPosition;
             event.correction = ctx.localServerPosition - predictedPosition;
-            event.description = "catastrophic divergence";
+            event.description = "position divergence";
             spawnLocalDisagreementIndicator(event);
         }
     }
@@ -385,7 +462,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     {
         printf("[LOCAL CORRECTION] distance=%.3f class=%s "
                "serverPos=(%.2f,%.2f,%.2f) clientPos=(%.2f,%.2f,%.2f) "
-               "applied=%d reason=%s localEpoch=%u serverEpoch=%u lastAppliedEpoch=%u\n",
+               "applied=%d reason=%s bootstrap=%d localEpoch=%u serverEpoch=%u lastAppliedEpoch=%u\n",
                error,
                movementCorrectionClassName(correctionClass),
                ctx.localServerPosition.x,
@@ -395,11 +472,8 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
                clientPosition.y,
                clientPosition.z,
                (int)applyPosition,
-                initialSpawn ? "initial-spawn" :
-                serverRespawnedPlayer ? "server-respawn" :
-                catastrophicDivergence ? "catastrophic-divergence" :
-                epochChanged ? "epoch-changed" :
-                serverKilledPlayer ? "server-death" : "within-tolerance",
+               localReconcileReasonName(reconcileReason),
+               (int)hotNeedsBootstrap,
                ctx.transformEpoch,
                (uint32_t)ctx.localServerEpoch,
                (uint32_t)ctx.lastAppliedEpoch);

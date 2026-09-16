@@ -446,6 +446,15 @@ struct ServerPlayer
     uint8_t nextInputCommandSlot = 0;
     uint32_t lastInputCommandSequence = 0;
     uint32_t lastProcessedInputCommandSequence = 0;
+    // Diagnostics: how many InputPackets actually reached handleInputPacket and
+    // when. Distinguishes "client never sent" from "server dropped it".
+    uint64_t inputPacketsSeen = 0;
+    uint64_t lastInputPacketMs = 0;
+
+    // Client-authoritative ordinary movement (spec phase 1): when the hot
+    // input-receive policy adopts a validated report, the server writes that
+    // accepted state as authoritative and skips its own kernel simulation.
+    bool adoptClientMovement = false;
 
     // ── Shared movement parity and Stage 3A report validation ─────────
     MovementState movement;
@@ -829,7 +838,7 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
 void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                           std::unordered_map<uint32_t, ServerPlayer>& players,
                           uint32_t tick, uint64_t& totalPacketsOut);
-void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world);
+void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world, uint32_t serverTick);
 void pushPositionHistory(ServerPlayer& p, uint32_t tick);
 bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& outPos);
 bool getPlayerPoseAtTick(const ServerPlayer& p, uint32_t targetTick,

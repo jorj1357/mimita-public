@@ -17,6 +17,8 @@
 #include "config.h"
 #include "world/texture-store.h"
 #include "combat/projectile-render.h"
+#include "render/presentation-render.h"
+#include "hot-reload/game-api.h"
 #include <algorithm>
 #include <cstdio>
 #include <glm/glm.hpp>
@@ -323,6 +325,40 @@ void EffectPartSystem::render(const Camera& camera) const {
         
         glm::vec4 drawColor{effect.color.x, effect.color.y, effect.color.z, alpha};
 
+        // Generic mesh primitive (hot-driven): draw a real mesh with per-axis
+        // scale, depth-tested here in the world pass so effects are occluded by
+        // world geometry.
+        if (effect.meshResourceId != 0) {
+            GameRenderMeshCommandV1 cmd{};
+            cmd.meshResourceId = effect.meshResourceId;
+            cmd.textureResourceId = effect.textureResourceId;
+            for (int k = 0; k < 3; ++k)
+                cmd.position[k] = effect.position[k];
+            const glm::quat q(glm::vec3(effect.rotation));
+            cmd.rotation[0] = q.x;
+            cmd.rotation[1] = q.y;
+            cmd.rotation[2] = q.z;
+            cmd.rotation[3] = q.w;
+            const float sx = effect.scaleXYZ.x > 0.0f ? effect.scaleXYZ.x : 1.0f;
+            const float sy = effect.scaleXYZ.y > 0.0f ? effect.scaleXYZ.y : 1.0f;
+            const float sz = effect.scaleXYZ.z > 0.0f ? effect.scaleXYZ.z : 1.0f;
+            cmd.scale[0] = drawScale * sx;
+            cmd.scale[1] = drawScale * sy;
+            cmd.scale[2] = drawScale * sz;
+            cmd.color[0] = drawColor.x;
+            cmd.color[1] = drawColor.y;
+            cmd.color[2] = drawColor.z;
+            cmd.color[3] = drawColor.w;
+            const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
+            glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_FALSE);
+            PresentationRender::submitMesh(cmd);
+            glDepthMask(GL_TRUE);
+            if (!depthWas)
+                glDisable(GL_DEPTH_TEST);
+            continue;
+        }
+
         if (effect.replayType == "hitfx_particle" && !effect.texturePath.empty()) {
             if (!texturedHitParticlePath.empty() && texturedHitParticlePath != effect.texturePath) {
                 drawTexturedHitParticles(camera, texturedHitParticles, texturedHitParticlePath);
@@ -504,6 +540,11 @@ void EffectPartSystem::render(const Camera& camera) const {
     crackDecalVerts.clear();
 
     const std::string& bloodTexture = decalCfg.blood.texture;
+    // Per-kind decal textures for this frame. A hot-driven decal may override
+    // its kind's texture (hot owns the appearance); defaults stay the JSON paths.
+    std::string bloodDecalTex = decalCfg.blood.texture;
+    std::string holeDecalTex = decalCfg.bulletHoles.texture;
+    std::string crackDecalTex = decalCfg.worldCracks.texture;
 
     for (const BloodParticle& particle : mBloodParticles) {
         const float dist = glm::length(particle.position - camera.pos);
@@ -542,16 +583,29 @@ void EffectPartSystem::render(const Camera& camera) const {
             continue;
         }
 
-        const std::string& texture = decal.kind == SurfaceDecalKind::Blood
-            ? decalCfg.blood.texture
-            : (decal.kind == SurfaceDecalKind::BulletHole
-                ? decalCfg.bulletHoles.texture
-                : decalCfg.worldCracks.texture);
-        const float texScale = decal.kind == SurfaceDecalKind::Blood
-            ? decalCfg.blood.textureScale
-            : (decal.kind == SurfaceDecalKind::BulletHole
-                ? decalCfg.bulletHoles.textureScale
-                : decalCfg.worldCracks.textureScale);
+        const bool customTex = !decal.texturePath.empty();
+        if (customTex) {
+            if (decal.kind == SurfaceDecalKind::Blood)
+                bloodDecalTex = decal.texturePath;
+            else if (decal.kind == SurfaceDecalKind::BulletHole)
+                holeDecalTex = decal.texturePath;
+            else
+                crackDecalTex = decal.texturePath;
+        }
+        const std::string& texture = customTex
+            ? decal.texturePath
+            : (decal.kind == SurfaceDecalKind::Blood
+                ? decalCfg.blood.texture
+                : (decal.kind == SurfaceDecalKind::BulletHole
+                    ? decalCfg.bulletHoles.texture
+                    : decalCfg.worldCracks.texture));
+        const float texScale = customTex
+            ? (decal.textureScale > 0.0f ? decal.textureScale : 1.0f)
+            : (decal.kind == SurfaceDecalKind::Blood
+                ? decalCfg.blood.textureScale
+                : (decal.kind == SurfaceDecalKind::BulletHole
+                    ? decalCfg.bulletHoles.textureScale
+                    : decalCfg.worldCracks.textureScale));
 
         glm::vec3 tangent, bitangent;
         decalInPlaneBasis(n, decal.axis, glm::vec3(0.0f, 0.0f, 1.0f), tangent, bitangent);
@@ -583,11 +637,11 @@ void EffectPartSystem::render(const Camera& camera) const {
     if (!bloodSprayVerts.empty() && !bloodTexture.empty())
         drawTexturedHitParticles(camera, bloodSprayVerts, bloodTexture);
     if (!bloodDecalVerts.empty())
-        drawTexturedHitParticles(camera, bloodDecalVerts, decalCfg.blood.texture);
+        drawTexturedHitParticles(camera, bloodDecalVerts, bloodDecalTex);
     if (!holeDecalVerts.empty())
-        drawTexturedHitParticles(camera, holeDecalVerts, decalCfg.bulletHoles.texture);
+        drawTexturedHitParticles(camera, holeDecalVerts, holeDecalTex);
     if (!crackDecalVerts.empty())
-        drawTexturedHitParticles(camera, crackDecalVerts, decalCfg.worldCracks.texture);
+        drawTexturedHitParticles(camera, crackDecalVerts, crackDecalTex);
 
     // Particle debug logging
     if (DebugConfig::DEBUG_BLOOD_HITS || DebugConfig::DEBUG_BLOOD_RAYS) {

@@ -25,6 +25,11 @@ struct HotPresentationStateV1 {
     std::uint32_t flags;
     float scale;
     float color[4];
+    // Append-only: per-axis scale multiplier applied on top of `scale`. Zero
+    // components mean 1. Lets a generic cylinder mesh become an elongated beam/
+    // tracer (thickness != length) without a new renderer branch.
+    float scaleXYZ[3];
+    std::uint32_t reserved2;
 };
 
 // Generic attachment state. A presentation entity may carry it to follow a
@@ -76,6 +81,11 @@ struct HotToolClaimV1 {
     std::uint64_t toolKey;    // equipped tool identity (network id/hash)
     std::uint32_t context;    // HOT_ATTACHMENT_CONTEXT_*
     std::uint32_t migrated;   // 1 = hot presentation owns this tool
+    // Append-only: the claimed tool EntityId and its logical mesh. The cold
+    // renderer verifies the mesh actually resolves before yielding, so a claim
+    // alone can never suppress the normal viewmodel.
+    std::uint64_t toolEntity;
+    std::uint64_t meshResourceId;
 };
 
 // Logical resource ids registered by the cold presentation renderer through the
@@ -84,6 +94,12 @@ static constexpr std::uint64_t HOT_MESH_CUBE = gameHash("mesh.cube");
 static constexpr std::uint64_t HOT_MESH_ACTOR = gameHash("mesh.actor");
 static constexpr std::uint64_t HOT_MESH_ROCKET = gameHash("mesh.rocket");
 static constexpr std::uint64_t HOT_MESH_GRENADE = gameHash("mesh.grenade");
+// Generic primitive aliases registered by the cold renderer (no feature slot).
+static constexpr std::uint64_t HOT_MESH_SPHERE = gameHash("mesh.sphere");
+static constexpr std::uint64_t HOT_MESH_BEAM = gameHash("mesh.beam");
+static constexpr std::uint64_t HOT_MESH_HEXAGON = gameHash("mesh.hexagon");
+// Generic dynamic-light emitter kind for the existing effect.spawn descriptor.
+static constexpr std::uint64_t HOT_EFFECT_LIGHT = gameHash("light.dynamic");
 static constexpr std::uint64_t HOT_TEX_DEFAULT = gameHash("texture.default");
 static constexpr std::uint64_t HOT_TEX_ROCKET = gameHash("texture.rocket");
 static constexpr std::uint64_t HOT_TEX_GRENADE = gameHash("texture.grenade");

@@ -28,6 +28,7 @@
 #include "ecs/actor-entities.h"
 #include "ecs/dynamic-components.h"
 #include "hot-reload/hot-presentation.h"
+#include "project/presentation-resource.h"
 
 static float customParamOr(const WeaponDefinition* def, const char* key, float fallback)
 {
@@ -494,7 +495,11 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
 
 // One owner: if hot tool-presentation owns the currently equipped tool, the
 // cold viewmodel yields. Generic claim (tool key hash), never a weapon branch.
-static bool hotOwnsEquippedTool(const Player& player)
+// A claim alone is NOT sufficient: the claimed tool's logical mesh must actually
+// resolve to a live handle, otherwise the cold viewmodel stays the owner (this
+// is what prevents a claimed-but-unloadable tool from being drawn by neither
+// path).
+bool weaponViewModelHotOwnsEquippedTool(const Player& player)
 {
     const EntityId actor = Ecs::ensureLocalPlayerEntity();
     if (actor == kInvalidEntityId)
@@ -503,18 +508,31 @@ static bool hotOwnsEquippedTool(const Player& player)
     if (!MimitaRuntime::DynamicComponentStore::instance().read(
             actor, HOT_TOOL_CLAIM_COMPONENT, &claim, sizeof(claim)))
         return false;
-    if (claim.migrated == 0 || claim.toolKey == 0)
+    if (claim.migrated == 0 || claim.toolKey == 0 || claim.toolEntity == 0)
         return false;
-    if (player.runtimeToolId != 0 && claim.toolKey == player.runtimeToolId)
-        return true;
-    if (!player.equippedWeaponId.empty() &&
-        claim.toolKey == gameHash(player.equippedWeaponId.c_str()))
-        return true;
-    return false;
+    const bool matches =
+        (player.runtimeToolId != 0 && claim.toolKey == player.runtimeToolId) ||
+        (!player.equippedWeaponId.empty() &&
+         claim.toolKey == gameHash(player.equippedWeaponId.c_str()));
+    if (!matches)
+        return false;
+    // Require the tool's presentation mesh to actually resolve right now.
+    HotPresentationStateV1 present{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            static_cast<EntityId>(claim.toolEntity), HOT_PRESENTATION_COMPONENT,
+            &present, sizeof(present)))
+        return false;
+    const std::uint64_t meshId =
+        present.meshResourceId != 0 ? present.meshResourceId : claim.meshResourceId;
+    if (meshId == 0)
+        return false;
+    return MimitaRuntime::PresentationResourceProvider::instance().handleOf(
+               meshId) != nullptr;
 }
 
 void WeaponViewModel::render(const Camera& camera, const Player& player, int equippedSlot) const {
-    if (player.equippedSlot != equippedSlot || hotOwnsEquippedTool(player) ||
+    if (player.equippedSlot != equippedSlot ||
+        weaponViewModelHotOwnsEquippedTool(player) ||
         !gRenderer || !gRenderer->shaderProgram || !vao || heldMesh.verts.empty())
         return;
 

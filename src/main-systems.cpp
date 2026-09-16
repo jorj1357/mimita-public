@@ -255,7 +255,9 @@ void gameInitSubsystems(Engine& engine)
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
     npcLogSetProc("client");
-    MovementJsonConfig::instance().load("config/movement.json");
+    // Movement tuning is owned by the hot C++ Source movement authority
+    // (movement.main / movement.tuning). config/movement/*.json is reference
+    // and archive material only; it is not loaded as a runtime authority.
     CrosshairConfig::instance().load();
     AimBodyConfig::instance().load("config/aimbody.json");
     registerCrosshairCommands();

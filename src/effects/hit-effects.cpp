@@ -45,6 +45,11 @@ void HitEffects::onHit(const HitEvent& event)
     // Generic effect request: a hot effect behavior may own the hit/blood
     // composition. When handled, the cold composition below yields (one owner).
     // Cold code remains the renderer mechanism and the compatibility fallback.
+    const float reqDirectness = glm::length(event.direction) > 0.001f &&
+                                glm::length(event.normal) > 0.001f
+        ? std::clamp(std::fabs(glm::dot(glm::normalize(-event.direction),
+                                        glm::normalize(event.normal))), 0.0f, 1.0f)
+        : 1.0f;
     {
         EffectRequestV1 req{};
         req.effectTypeId = gameHash(event.hitWorld ? "effect.hit.world"
@@ -56,6 +61,15 @@ void HitEffects::onHit(const HitEvent& event)
         req.normal[1] = event.normal.y;
         req.normal[2] = event.normal.z;
         req.scale = 1.0f;
+        // Hit-feedback fact (effect.request.v3): lets a hot hit recipe reproduce
+        // the full cold composition with hot-owned appearance.
+        req.damage = event.damage;
+        req.directness = reqDirectness;
+        req.hitDistance = event.hitDistance;
+        req.hitEntity = event.hitEntity ? 1u : 0u;
+        std::snprintf(req.victimName, sizeof(req.victimName), "%s",
+                      event.victim.c_str());
+        req.spawnDamageNumber = event.spawnDamageNumber ? 1u : 0u;
         if (LiveBehavior::dispatchEffectRequest(req, 0))
             return;
     }

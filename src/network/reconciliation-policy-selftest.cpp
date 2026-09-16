@@ -1,8 +1,9 @@
 // 09 15 2026
 /* purpose
-* Implements the headless hot reconciliation-policy self-test: thresholds
-* (ignore/smooth/snap), major snap, and generation-mismatch hard reset. No
-* Player, client, or snapshot pointers; the payload is generic.
+* Implements the headless hot reconciliation-policy self-test: distance
+* thresholds (none/smooth/snap) and generation-mismatch bootstrap (never a
+* position correction). No Player, client, or snapshot pointers; the payload is
+* generic.
 * Does NOT own rendering/presentation or the network transport.
 */
 #include "network/reconciliation-policy-selftest.h"
@@ -59,6 +60,15 @@ bool runReconciliationPolicySelfTest(std::string& report)
                     tiny.shouldCorrect == 0u,
                 "tiny error -> no correction", report);
 
+    GameReconcileV1 zero = run([&] {
+        GameReconcileV1 r = makeBase();
+        r.positionError = 0.0f;
+        return r;
+    }());
+    ok &= check(zero.handled == 1u && zero.correctionMode == 0u &&
+                    zero.shouldCorrect == 0u,
+                "zero-distance error -> no correction", report);
+
     GameReconcileV1 med = run([&] {
         GameReconcileV1 r = makeBase();
         r.positionError = 2.0f;
@@ -73,8 +83,8 @@ bool runReconciliationPolicySelfTest(std::string& report)
         r.positionError = 50.0f;
         return r;
     }());
-    ok &= check(big.handled == 1u && big.correctionMode == 2u,
-                "large error -> medium correction", report);
+    ok &= check(big.handled == 1u && big.correctionMode == 1u,
+                "large error below major threshold -> smooth correction", report);
 
     GameReconcileV1 huge = run([&] {
         GameReconcileV1 r = makeBase();
@@ -91,9 +101,22 @@ bool runReconciliationPolicySelfTest(std::string& report)
         r.authoritativeGeneration = 8;
         return r;
     }());
-    ok &= check(gen.handled == 1u && gen.hardReset == 1u &&
-                    gen.correctionMode == 4u,
-                "generation mismatch -> explicit hard reset (not silent)", report);
+    ok &= check(gen.handled == 1u && gen.shouldCorrect == 0u &&
+                    gen.correctionMode == 0u &&
+                    gen.hardReset == GAME_RECONCILE_HARD_RESET_BOOTSTRAP,
+                "generation mismatch -> bootstrap, never a position correction",
+                report);
+
+    GameReconcileV1 genErr = run([&] {
+        GameReconcileV1 r = makeBase();
+        r.positionError = 40.0f;  // ordinary drift must not snap under mismatch
+        r.authoritativeGeneration = 8;
+        return r;
+    }());
+    ok &= check(genErr.correctionMode == 0u && genErr.shouldCorrect == 0u &&
+                    genErr.hardReset == GAME_RECONCILE_HARD_RESET_BOOTSTRAP,
+                "generation mismatch with ordinary error -> no repeated snap",
+                report);
 
     GameReconcileV1 d1 = run([&] {
         GameReconcileV1 r = makeBase();

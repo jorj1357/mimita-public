@@ -111,6 +111,11 @@ struct MovementRuntimeStateComponent {
     float jumpIntentSeconds = 0.0f;
     float dashGraceSeconds = 0.0f;
     bool freezePreviously = false;
+    // Hot actor-movement handshake: tick/generation of the last hot simulation
+    // that owned this actor. Cold server movement yields when lastSimTick equals
+    // the current server tick, so only one path moves an actor per tick.
+    std::uint32_t lastSimTick = 0;
+    std::uint32_t lastSimGeneration = 0;
 };
 
 struct AimIntentComponent {

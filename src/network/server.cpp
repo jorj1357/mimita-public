@@ -515,6 +515,35 @@ int runServer(const LaunchOptions& options)
                 size_t idx = i % world.spawnPoints.size();
                 npc.pos = effectiveServerSpawn(world.spawnPoints[idx].position);
                 npc.yaw = world.spawnPoints[idx].yaw;
+                // Hot spawn policy: allows suppressing/relocating startup NPCs
+                // (e.g. never spawn one on a player spawn point).
+                {
+                    ActorSpawnPolicyV1 sp{};
+                    sp.kind = GAME_ACTOR_SPAWN_NPC;
+                    sp.index = i;
+                    sp.spawnPointCount = (uint32_t)world.spawnPoints.size();
+                    sp.candidateCount = world.spawnPoints.size() < 8
+                        ? (uint32_t)world.spawnPoints.size() : 8u;
+                    for (uint32_t c = 0; c < sp.candidateCount; ++c) {
+                        sp.candidatePosition[c][0] = world.spawnPoints[c].position.x;
+                        sp.candidatePosition[c][1] = world.spawnPoints[c].position.y;
+                        sp.candidatePosition[c][2] = world.spawnPoints[c].position.z;
+                        sp.candidateYaw[c] = world.spawnPoints[c].yaw;
+                    }
+                    sp.chosenPosition[0] = npc.pos.x;
+                    sp.chosenPosition[1] = npc.pos.y;
+                    sp.chosenPosition[2] = npc.pos.z;
+                    sp.chosenYaw = npc.yaw;
+                    if (LiveBehavior::dispatchGameplayEvent64(
+                            GAME_EVENT_ACTOR_SPAWN_POLICY, &sp, sizeof(sp), 0, 0, 0) &&
+                        sp.handled)
+                    {
+                        if (sp.suppress)
+                            continue;
+                        npc.pos = glm::vec3(sp.position[0], sp.position[1], sp.position[2]);
+                        npc.yaw = sp.yaw;
+                    }
+                }
                 printf("%s [SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
                        "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
                        serverTimestamp(), npc.entityId, i, idx,
@@ -612,9 +641,8 @@ int runServer(const LaunchOptions& options)
         // changing spawnvelocity.json affects the next life without restart.
         SpawnVelocityConfig::instance().pollReload();
 
-        // Hot-reload the movement preset (config/movement.json + preset) so the
-        // server's movement-validation tolerances match the client's live tuning.
-        MovementJsonConfig::instance().pollReload();
+        // Movement tuning is owned by the hot C++ Source authority; the server
+        // reads it through movement.tuning, so movement JSON is not polled here.
 
         // Refresh cached role movement presets whose files changed on disk.
         RoleMovementCache::instance().pollReload();
@@ -859,6 +887,10 @@ int runServer(const LaunchOptions& options)
                 MimitaRuntime::GenericRuntime& runtime =
                     MimitaRuntime::GenericRuntime::instance();
                 void* runtimeHost = LiveBehavior::hostContext(tick);
+                // Bind the authoritative headless collision world so hot
+                // movement systems can resolve server actors with the shared
+                // physics.move primitive.
+                LiveBehavior::setDispatchHeadlessWorld(&world);
                 runtime.runDomain(GAME_DOMAIN_GAMEPLAY, tick, (float)SERVER_DT, runtimeHost);
                 // The active gamemode's own systems (data-driven domain routing).
                 runtime.runActiveModeDomain(tick, (float)SERVER_DT, runtimeHost);
@@ -879,7 +911,7 @@ int runServer(const LaunchOptions& options)
                 // alive for the reconnect grace window). No simulation, no death.
                 if (kv.second.connectionStale)
                     continue;
-                simulatePlayer(kv.second, world);
+                simulatePlayer(kv.second, world, tick);
                 updateServerBroadcastInterp(kv.second, tick);
                 pushPositionHistory(kv.second, tick);
                 if (kv.second.justRespawned)
@@ -901,6 +933,16 @@ int runServer(const LaunchOptions& options)
             simulateSharedNpcs(sock, players, npcs, npcSystem, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
+            // Hot actor-movement post pass: runs after NPC AI has written the
+            // generic intent, so one hot system can move players and NPCs.
+            {
+                MimitaRuntime::GenericRuntime& runtime =
+                    MimitaRuntime::GenericRuntime::instance();
+                void* postHost = LiveBehavior::hostContext(tick);
+                LiveBehavior::setDispatchHeadlessWorld(&world);
+                runtime.runDomain(GAME_DOMAIN_POST_MOVEMENT, tick, (float)SERVER_DT, postHost);
+                LiveBehavior::drainEvents(64);
+            }
             tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
 
             tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
@@ -1201,6 +1243,33 @@ bool startListenServer(ListenServerState& state, uint16_t port,
             size_t idx = i % state.world.spawnPoints.size();
             npc.pos = effectiveServerSpawn(state.world.spawnPoints[idx].position);
             npc.yaw = state.world.spawnPoints[idx].yaw;
+            {
+                ActorSpawnPolicyV1 sp{};
+                sp.kind = GAME_ACTOR_SPAWN_NPC;
+                sp.index = i;
+                sp.spawnPointCount = (uint32_t)state.world.spawnPoints.size();
+                sp.candidateCount = state.world.spawnPoints.size() < 8
+                    ? (uint32_t)state.world.spawnPoints.size() : 8u;
+                for (uint32_t c = 0; c < sp.candidateCount; ++c) {
+                    sp.candidatePosition[c][0] = state.world.spawnPoints[c].position.x;
+                    sp.candidatePosition[c][1] = state.world.spawnPoints[c].position.y;
+                    sp.candidatePosition[c][2] = state.world.spawnPoints[c].position.z;
+                    sp.candidateYaw[c] = state.world.spawnPoints[c].yaw;
+                }
+                sp.chosenPosition[0] = npc.pos.x;
+                sp.chosenPosition[1] = npc.pos.y;
+                sp.chosenPosition[2] = npc.pos.z;
+                sp.chosenYaw = npc.yaw;
+                if (LiveBehavior::dispatchGameplayEvent64(
+                        GAME_EVENT_ACTOR_SPAWN_POLICY, &sp, sizeof(sp), 0, 0, 0) &&
+                    sp.handled)
+                {
+                    if (sp.suppress)
+                        continue;
+                    npc.pos = glm::vec3(sp.position[0], sp.position[1], sp.position[2]);
+                    npc.yaw = sp.yaw;
+                }
+            }
             printf("[LISTEN SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
                    npc.entityId, i, idx,
@@ -1357,13 +1426,16 @@ static void simulateOneServerTick(ListenServerState& state)
         }
 
         handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
+        // Bind the authoritative headless collision world for server-side hot
+        // movement on this tick.
+        LiveBehavior::setDispatchHeadlessWorld(&state.world);
         for (auto& kv : state.players)
         {
             // Disconnected players freeze in place; their slot survives the
             // reconnect grace window so a returning client is restored.
             if (kv.second.connectionStale)
                 continue;
-            simulatePlayer(kv.second, state.world);
+            simulatePlayer(kv.second, state.world, state.tick);
             updateServerBroadcastInterp(kv.second, state.tick);
             pushPositionHistory(kv.second, state.tick);
             if (kv.second.justRespawned)
@@ -1379,6 +1451,16 @@ static void simulateOneServerTick(ListenServerState& state)
                            *state.npcSystem, *state.npcWorld, *state.mirrorPlayer,
                            state.npcIdsAlive, state.projectiles, state.nextProjectileId,
                            state.tick, state.totalPacketsOut);
+        // Hot actor-movement post pass (after NPC AI writes intent).
+        {
+            MimitaRuntime::GenericRuntime& runtime =
+                MimitaRuntime::GenericRuntime::instance();
+            void* postHost = LiveBehavior::hostContext(state.tick);
+            LiveBehavior::setDispatchHeadlessWorld(&state.world);
+            runtime.runDomain(GAME_DOMAIN_POST_MOVEMENT, state.tick,
+                              (float)SERVER_DT, postHost);
+            LiveBehavior::drainEvents(64);
+        }
         tickServerPhysicalContactWeapons(state.sock, state.players,
                                          state.world, SERVER_DT, state.tick,
                                          state.totalPacketsOut);
