@@ -157,7 +157,21 @@ static bool mpGenerationWorldAllowed(const MultiplayerContext& ctx)
     const std::uint64_t local = (std::uint64_t)
         HotReloadSystem::instance().status().activeGeneration;
     const std::uint64_t server = (std::uint64_t)ctx.serverCodeGeneration;
-    return b.worldParticipationAllowed(server, local);
+    bool allowed = b.worldParticipationAllowed(server, local);
+
+    // Hot generation policy: a mismatch is a decision, not a silent wedge. The
+    // hot handler can allow participation (so the session stays playable) or
+    // keep it blocked; editable live.
+    GenerationPolicyV1 gp{};
+    gp.localGeneration = local;
+    gp.serverGeneration = server;
+    gp.bootstrapState = (std::uint32_t)b.state;
+    gp.mismatch = (local != 0 && server != 0 && local != server) ? 1u : 0u;
+    if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_GENERATION_POLICY, &gp,
+                                              sizeof(gp), 0, 0, 0) &&
+        gp.handled)
+        allowed = gp.allowWorld != 0u;
+    return allowed;
 }
 
 static void processSnapshotEntities(

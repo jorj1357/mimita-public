@@ -28,6 +28,10 @@
 #include <cstdio>
 #include <cstring>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 namespace {
 
 const std::uint64_t kRightArm = gameHash("rightArm");
@@ -282,6 +286,9 @@ void MIMITA_GAME_CALL toolPresentationTick(void* host, std::uint64_t /*tick*/,
 }
 
 // ── Attachment resolution ────────────────────────────────────────────
+using SocketRawFn = bool (MIMITA_GAME_CALL *)(void*, GameSocketRawV1*);
+using MeshBoundsFn = bool (MIMITA_GAME_CALL *)(void*, GameMeshBoundsV1*);
+
 void MIMITA_GAME_CALL attachmentTick(void* host, std::uint64_t /*tick*/,
                                      float /*dt*/)
 {
@@ -289,10 +296,15 @@ void MIMITA_GAME_CALL attachmentTick(void* host, std::uint64_t /*tick*/,
     if (!ctx || !ctx->dynamicEnumerateComponent || !ctx->dynamicWriteComponent ||
         !ctx->resolveCapability)
         return;
+    // Hot-owned composition: base = actor transform (units are ours), raw =
+    // entity-local bone+bind, mount = recipe offset, recenter = model grip from
+    // bounds. The math (yaw units, grip, mount) is all editable here live.
+    auto rawFn = reinterpret_cast<SocketRawFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_SOCKET_RAW));
+    auto boundsFn = reinterpret_cast<MeshBoundsFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_MESH_BOUNDS));
     auto query = reinterpret_cast<SocketQueryFn>(
         ctx->resolveCapability(ctx->host, GAME_CAP_SOCKET_QUERY));
-    if (!query)
-        return;
 
     std::uint64_t entities[256];
     const std::uint32_t count = ctx->dynamicEnumerateComponent(
@@ -304,24 +316,103 @@ void MIMITA_GAME_CALL attachmentTick(void* host, std::uint64_t /*tick*/,
                                        sizeof(att)))
             continue;
         att.resolved = 0;
-        if (att.parentEntity != 0) {
-            GameSocketQueryV1 q{};
-            q.entity = att.parentEntity;
-            q.socket = att.socket;
-            for (int k = 0; k < 3; ++k)
-                q.localPosition[k] = att.localPosition[k];
-            for (int k = 0; k < 4; ++k)
-                q.localRotation[k] = att.localRotation[k];
-            for (int k = 0; k < 3; ++k)
-                q.localScale[k] = att.localScale[k];
-            if (query(ctx->host, &q) && q.valid) {
-                for (int k = 0; k < 3; ++k) {
-                    att.worldPosition[k] = q.position[k];
-                    att.worldScale[k] = q.scale[k];
+        if (att.parentEntity != 0 && ctx->readComponent) {
+            GameTransformComponentV1 tf{};
+            const bool haveTf = ctx->readComponent(
+                ctx->host, att.parentEntity, GAME_COMPONENT_TRANSFORM, &tf,
+                sizeof(tf));
+            if (haveTf && rawFn) {
+                GameSocketRawV1 r{};
+                r.entity = att.parentEntity;
+                r.socket = att.socket;
+                if (rawFn(ctx->host, &r) && r.valid) {
+                    glm::mat4 base = glm::translate(
+                        glm::mat4(1.0f),
+                        glm::vec3(tf.position[0], tf.position[1], tf.position[2]));
+                    base *= glm::rotate(glm::mat4(1.0f),
+                                        glm::radians((float)tf.yaw),
+                                        glm::vec3(0.0f, 0.0f, 1.0f));
+                    glm::quat br(r.rotation[3], r.rotation[0], r.rotation[1],
+                                 r.rotation[2]);
+                    glm::mat4 bone = glm::translate(
+                                         glm::mat4(1.0f),
+                                         glm::vec3(r.position[0], r.position[1],
+                                                   r.position[2])) *
+                                     glm::mat4_cast(glm::normalize(br));
+                    glm::quat lr(att.localRotation[3], att.localRotation[0],
+                                 att.localRotation[1], att.localRotation[2]);
+                    const float lrLen = lr.x * lr.x + lr.y * lr.y + lr.z * lr.z +
+                                        lr.w * lr.w;
+                    glm::mat4 mount = glm::translate(
+                        glm::mat4(1.0f),
+                        glm::vec3(att.localPosition[0], att.localPosition[1],
+                                  att.localPosition[2]));
+                    mount *= lrLen > 1e-6f ? glm::mat4_cast(glm::normalize(lr))
+                                           : glm::mat4(1.0f);
+                    mount *= glm::scale(
+                        glm::mat4(1.0f),
+                        glm::vec3(att.localScale[0] > 0.0f ? att.localScale[0] : 1.0f,
+                                  att.localScale[1] > 0.0f ? att.localScale[1] : 1.0f,
+                                  att.localScale[2] > 0.0f ? att.localScale[2] : 1.0f));
+                    // Re-centre the model so its grip (bounds centre) sits at the
+                    // mount point; the recipe mount then seats it.
+                    glm::mat4 recenter(1.0f);
+                    HotPresentationStateV1 ps{};
+                    if (boundsFn && ctx->dynamicReadComponent &&
+                        ctx->dynamicReadComponent(ctx->host, entities[i],
+                                                  HOT_PRESENTATION_COMPONENT, &ps,
+                                                  sizeof(ps)) &&
+                        ps.meshResourceId != 0) {
+                        GameMeshBoundsV1 mb{};
+                        mb.meshResourceId = ps.meshResourceId;
+                        if (boundsFn(ctx->host, &mb) && mb.valid) {
+                            const glm::vec3 grip(
+                                0.5f * (mb.boundsMin[0] + mb.boundsMax[0]),
+                                0.5f * (mb.boundsMin[1] + mb.boundsMax[1]),
+                                0.5f * (mb.boundsMin[2] + mb.boundsMax[2]));
+                            recenter = glm::translate(glm::mat4(1.0f), -grip);
+                        }
+                    }
+                    const glm::mat4 out = base * bone * mount * recenter;
+                    for (int k = 0; k < 3; ++k)
+                        att.worldPosition[k] = out[3][k];
+                    glm::mat3 m3(out);
+                    for (int c = 0; c < 3; ++c) {
+                        const float len = glm::length(m3[c]);
+                        if (len > 1e-6f)
+                            m3[c] /= len;
+                    }
+                    const glm::quat rq = glm::quat_cast(m3);
+                    att.worldRotation[0] = rq.x;
+                    att.worldRotation[1] = rq.y;
+                    att.worldRotation[2] = rq.z;
+                    att.worldRotation[3] = rq.w;
+                    for (int k = 0; k < 3; ++k)
+                        att.worldScale[k] = glm::length(glm::vec3(out[k]));
+                    att.resolved = 1;
                 }
+            }
+            // Fallback: the cold socket.query (already yaw-correct) when the raw
+            // seam is unavailable.
+            if (!att.resolved && query) {
+                GameSocketQueryV1 q{};
+                q.entity = att.parentEntity;
+                q.socket = att.socket;
+                for (int k = 0; k < 3; ++k)
+                    q.localPosition[k] = att.localPosition[k];
                 for (int k = 0; k < 4; ++k)
-                    att.worldRotation[k] = q.rotation[k];
-                att.resolved = 1;
+                    q.localRotation[k] = att.localRotation[k];
+                for (int k = 0; k < 3; ++k)
+                    q.localScale[k] = att.localScale[k];
+                if (query(ctx->host, &q) && q.valid) {
+                    for (int k = 0; k < 3; ++k) {
+                        att.worldPosition[k] = q.position[k];
+                        att.worldScale[k] = q.scale[k];
+                    }
+                    for (int k = 0; k < 4; ++k)
+                        att.worldRotation[k] = q.rotation[k];
+                    att.resolved = 1;
+                }
             }
         }
         ctx->dynamicWriteComponent(ctx->host, entities[i],

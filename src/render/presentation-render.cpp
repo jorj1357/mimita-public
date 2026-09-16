@@ -73,6 +73,10 @@ struct GpuMesh {
     // Embedded base-color texture from the GLB (0 = none). Used when the caller
     // passes textureResourceId 0, i.e. "use the model's own material".
     GLuint texture = 0;
+    // Model-local AABB (for hot grip/mount policy).
+    glm::vec3 boundsMin{0.0f};
+    glm::vec3 boundsMax{0.0f};
+    bool hasBounds = false;
     std::vector<Part> parts;   // empty = static (non-skinned) mesh
     bool debugOnly = false;    // test hook: no GPU buffers
 };
@@ -285,6 +289,15 @@ GpuMesh* uploadMesh(const std::vector<GpuVertex>& verts,
                           (void*)offsetof(GpuVertex, normal));
     glBindVertexArray(0);
     mesh->indexCount = (GLsizei)indices.size();
+    if (!verts.empty()) {
+        mesh->boundsMin = verts.front().pos;
+        mesh->boundsMax = verts.front().pos;
+        for (const GpuVertex& v : verts) {
+            mesh->boundsMin = glm::min(mesh->boundsMin, v.pos);
+            mesh->boundsMax = glm::max(mesh->boundsMax, v.pos);
+        }
+        mesh->hasBounds = true;
+    }
     return mesh;
 }
 
@@ -769,6 +782,28 @@ bool meshPartBind(std::uint64_t entity, std::uint64_t part, float outMat16[16])
         }
     }
     return false;
+}
+
+bool meshBounds(std::uint64_t logicalId, float outMin[3], float outMax[3])
+{
+    if (logicalId == 0)
+        return false;
+    GpuMesh* mesh = static_cast<GpuMesh*>(
+        MimitaRuntime::PresentationResourceProvider::instance().handleOf(logicalId));
+    if (!mesh) {
+        auto it = g_debugMeshes.find(logicalId);
+        if (it != g_debugMeshes.end())
+            mesh = it->second;
+    }
+    if (!mesh || !mesh->hasBounds)
+        return false;
+    if (outMin)
+        for (int k = 0; k < 3; ++k)
+            outMin[k] = mesh->boundsMin[k];
+    if (outMax)
+        for (int k = 0; k < 3; ++k)
+            outMax[k] = mesh->boundsMax[k];
+    return true;
 }
 
 void submitMesh(const GameRenderMeshCommandV1& command)

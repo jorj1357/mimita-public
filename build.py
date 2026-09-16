@@ -47,8 +47,14 @@ def stage_runtime_dlls():
             print("[RUNTIME] missing dependency: %s" % source)
             continue
         destination = os.path.join(ROOT, name)
-        shutil.copy2(source, destination)
-        print("[RUNTIME] staged %s" % name)
+        try:
+            shutil.copy2(source, destination)
+            print("[RUNTIME] staged %s" % name)
+        except PermissionError:
+            # A currently running game holds this shared runtime DLL. The copy
+            # already beside the executable is fine; skip without failing the
+            # build (each build targets a new uniquely named executable).
+            print("[RUNTIME] in use, kept existing %s" % name)
 
 try:
     COMPILER = compiler()

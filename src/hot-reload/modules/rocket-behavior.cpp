@@ -12,6 +12,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/game-modules.h"
+#include "hot-reload/hot-movement-policy.h"
 
 namespace {
 
@@ -151,6 +152,23 @@ void MIMITA_GAME_CALL onEvent(const GameEventV1* event, GameplayContextV1* conte
     DamagePolicyV1* policy = static_cast<DamagePolicyV1*>(event->payload);
     policy->handled = 1;
 
+    // Spawn protection (ticks): ignore damage to an actor whose protection
+    // window has not elapsed. Applies to every actor (players and NPCs) since
+    // the window is stored on the victim entity, not on an actor type.
+    if (context && context->dynamicReadComponent && policy->victimEntity != 0) {
+        HotSpawnProtectionV1 sp{};
+        if (context->dynamicReadComponent(
+                context->host, policy->victimEntity,
+                HOT_SPAWN_PROTECTION_COMPONENT, &sp, sizeof(sp)) &&
+            (std::uint32_t)context->tick < sp.untilTick) {
+            policy->outDamage = 0;
+            policy->knockbackX = 0.0f;
+            policy->knockbackY = 0.0f;
+            policy->knockbackZ = 0.0f;
+            return;
+        }
+    }
+
     // Creation/inspection mode disables damage entirely.
     if (creationMode) {
         policy->outDamage = 0;
@@ -160,12 +178,9 @@ void MIMITA_GAME_CALL onEvent(const GameEventV1* event, GameplayContextV1* conte
     // Baseline: keep the JSON-derived base damage.
     policy->outDamage = policy->baseDamage;
 
-    // Temporary live proof: explosion damage is intentionally enormous so the
-    // authoritative hot-policy path is unmistakable in the running game.
-    if (policy->source == GAME_DAMAGE_SOURCE_EXPLOSION)
-        policy->outDamage = 123;
-
-    (void)event;
+    // No blanket explosion damage override: the projectile/tool owns the damage
+    // and self-damage multiplier (see rocket-tool.cpp / hot-projectiles.cpp).
+    // Edit that multiplier live instead of forcing a lethal value here.
 }
 
 const GameGameplayModuleV1 gGameplayModuleV1 = {

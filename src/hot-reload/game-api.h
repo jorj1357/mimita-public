@@ -1109,6 +1109,7 @@ struct ActorLifecyclePolicyV1 {
     std::uint32_t dead;
     std::uint32_t respawnsEnabled;
     std::uint32_t pendingRespawn;
+    std::uint64_t actorEntity;       // server actor entity for this life
     float respawnSeconds;
     float chosenPosition[3];
     float chosenYaw;
@@ -1117,7 +1118,23 @@ struct ActorLifecyclePolicyV1 {
     std::uint32_t handled;
     float position[3];
     float yaw;
-    float spawnProtectionSeconds;
+    std::uint32_t spawnProtectionTicks; // 0 = none; 60 = 1 second at 60 Hz
+};
+
+// net.generation-policy: the hot decision when the client and server hot
+// generations differ. Keeps a mismatch from silently wedging world
+// participation, and is editable live.
+static constexpr std::uint64_t GAME_EVENT_GENERATION_POLICY =
+    gameHash("net.generation-policy");
+struct GenerationPolicyV1 {
+    // in
+    std::uint64_t localGeneration;
+    std::uint64_t serverGeneration;
+    std::uint32_t bootstrapState;
+    std::uint32_t mismatch;
+    // out
+    std::uint32_t allowWorld;    // 1 = participate even if generations differ
+    std::uint32_t handled;
 };
 
 // ── Projectile presentation policy ─────────────────────────
@@ -1736,6 +1753,40 @@ struct GameSocketQueryV1 {
 };
 using GameSocketQueryFn = bool (MIMITA_GAME_CALL *)(
     void* host, GameSocketQueryV1* query);
+
+// Generic RAW attachment query: the attachment point in the ENTITY-LOCAL frame
+// (skeleton bone pose + mesh bind), with NO entity transform and NO yaw. Lets hot
+// policy compose the final transform itself (units, grip, mount), so rotation and
+// grip bugs are fixable live in C++. Same inputs as socket.query minus the local
+// offset, which hot applies.
+static constexpr std::uint64_t GAME_CAP_SOCKET_RAW = gameHash("socket.raw");
+struct GameSocketRawV1 {
+    // in
+    std::uint64_t entity;
+    std::uint64_t socket;
+    // out (entity-local)
+    float position[3];
+    float rotation[4];             // quaternion xyzw
+    std::uint32_t found;
+    std::uint32_t valid;
+    std::uint32_t reserved[2];
+};
+using GameSocketRawFn = bool (MIMITA_GAME_CALL *)(void* host, GameSocketRawV1* q);
+
+// Generic local AABB for a logical presentation mesh. Hot policy computes grip
+// recentre / mount from the model bounds (the same data the cold viewmodel used).
+static constexpr std::uint64_t GAME_CAP_MESH_BOUNDS = gameHash("mesh.bounds");
+struct GameMeshBoundsV1 {
+    // in
+    std::uint64_t meshResourceId;
+    // out (model local space)
+    float boundsMin[3];
+    float boundsMax[3];
+    std::uint32_t valid;
+    std::uint32_t reserved;
+};
+using GameMeshBoundsFn = bool (MIMITA_GAME_CALL *)(void* host,
+                                                   GameMeshBoundsV1* q);
 
 // Generic setting access seam. Hot UI reads/writes real engine settings by
 // logical id; the kernel maps the id to the actual config field and applies

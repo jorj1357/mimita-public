@@ -59,7 +59,7 @@ void MIMITA_GAME_CALL grenadeUse(const ToolUsePolicyV1* use, GameplayContextV1* 
     proj.splashDamage = 90.0f;
     proj.splashExponent = 1.6f;
     proj.knockbackStrength = 10.0f;
-    proj.selfDamageMultiplier = 0.5f;
+    proj.selfDamageMultiplier = 0.2f;
     proj.fullDamageRadius = 1.2f;
     proj.restitution = 0.45f;
     proj.maxBounces = 3;

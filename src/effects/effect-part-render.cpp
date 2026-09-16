@@ -350,12 +350,17 @@ void EffectPartSystem::render(const Camera& camera) const {
             cmd.color[2] = drawColor.z;
             cmd.color[3] = drawColor.w;
             const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
+            const GLboolean blendWas = glIsEnabled(GL_BLEND);
             glEnable(GL_DEPTH_TEST);
             glDepthMask(GL_FALSE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             PresentationRender::submitMesh(cmd);
             glDepthMask(GL_TRUE);
             if (!depthWas)
                 glDisable(GL_DEPTH_TEST);
+            if (!blendWas)
+                glDisable(GL_BLEND);
             continue;
         }
 

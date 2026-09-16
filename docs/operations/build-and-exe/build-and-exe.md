@@ -7,14 +7,15 @@ This is a C++17 OpenGL game engine.
 ## Live-development invariant
 
 If `MiMITA.exe` is already running, it must remain running. Do not close,
-restart, relink, replace, or unlock it. Live iteration edits hot sources (see
-`docs/architecture/live-development/live-development.md`) and uses
-`python devscripts/live-build.py`, which never writes `mimita.exe`.
+restart, relink, replace, or unlock a running executable. Live iteration edits
+hot sources (see `docs/architecture/live-development/live-development.md`) and
+uses `python devscripts/live-build.py`, which never writes an EXE.
 
-`python build_agent.py` is a COLD BUILD: it relinks the executable and therefore
-refuses to run while `mimita.exe` is open. `MIMITA_FORCE_COLD=1` is a loud,
-last-resort override for an intentional cold build only; it is not part of the
-normal loop. Never run `taskkill` on `mimita.exe`.
+`python build_agent.py` (agents) and `python buildv3.py` (humans) are COLD BUILDS:
+they relink an executable. They never relink an executable that is currently
+running. `MIMITA_FORCE_COLD=1` is a loud, last-resort override for an intentional
+cold build that must overwrite a running target; it is not part of the normal
+loop. Never run `taskkill` on a running game process.
 
 ## Repository Workflow
 
@@ -42,61 +43,83 @@ Rules:
 
 If there is a TODO comment in the file you are working on, and it is easy enough to do, just do it and continue rather than skipping it.
 
-When building or testing the EXE, use build_agent.py instead of build.py, because build.py opens the EXE on the computer and may falsely appear to error when it has not.
+## Timestamped, non-colliding EXE output
 
-Build_agent.py is a cold build. It must not be used while the game is open. For
-all live iteration use `python devscripts/live-build.py`.
-
-## Single EXE Output
-
-All development builds must use the single canonical output:
+Every cold build links a **new, uniquely named** executable in the project root:
 
 ```
-C:\mimita-priv-v8\mimita.exe
+mimita-YYYYMMDDTHHMMSS.exe
 ```
 
-Run:
+For example, a build at 5:37:58 PM on Sep 16 2026 produces:
+
+```
+mimita-20260916T173758.exe
+```
+
+The name is generated per build, so:
+
+* Several agents and/or humans can each build and test their own changes without
+  being blocked by a different running `mimita*.exe`.
+* A running game never locks the next build's output.
+* Each executable is compiled from the same current source tree, just at a
+  different time; a build is a snapshot of that moment.
+
+Build entries:
+
+* Agents: `python build_agent.py`
+* Humans: `python buildv3.py`
+
+Both share the same build lock and pipeline (`build.py build-only`) and differ
+only in who calls them. Optionally, set `MIMITA_EXE_NAME` to force a specific
+output name (for example a fixed name for a deliberate test); if unset, the
+timestamped name is used.
+
+The previous "single canonical `mimita.exe`" rule is replaced by this
+timestamped rule. Do not create feature-specific *test* executables (for example
+`mimita-chat-test.exe`); use a normal timestamped build instead. The only fixed
+name that still exists is the historical `mimita.exe` from older builds, which
+may be running and must be left alone.
+
+## Build result
+
+After a build, read `build/build-result.json` (machine readable) or
+`build/changelog.txt`. Both include the produced executable name and path:
+
+```
+=== BUILD CHANGELOG ===
+Status: SUCCESS
+Executable: mimita-20260916T173758.exe
+```
+
+`Status: SUCCESS` means a new executable was linked. `Status: NOTHING_CHANGED`
+means the object files were already up to date; the referenced executable (if it
+exists) is the current one. If a build is expected to change code but reports
+`NOTHING_CHANGED`, that is still the current tree for the requested name.
+
+## Running a build
+
+Agents:
 
 ```
 python build_agent.py
 ```
 
-Do not set `MIMITA_EXE_NAME` and do not create alternate development
-executables such as `mimita-chat-test.exe`, `mimita-duel-handshake-test.exe`,
-or feature-specific test executables. Focused tests must use the canonical
-`mimita.exe` or a non-EXE test harness. Never kill a running `mimita.exe`; the
-cold build refuses to link while it is open and reports
-`HOT_RELOAD_BOUNDARY_VIOLATION`.
-
-After any build_agent.py invocation, check the build result status printed in the output:
+Humans:
 
 ```
-=== BUILD CHANGELOG ===
-Status: SUCCESS
+python buildv3.py
 ```
 
-or:
+Then launch the produced `mimita-<timestamp>.exe` from the project root so its
+relative asset paths resolve (the executable-directory resolution in
+`src/utils/path_utils.cpp` expects to sit beside `assets/`, `config/`, etc.).
 
-```
-Status: NOTHING_CHANGED
-```
+Do not set `MIMITA_EXE_NAME` to overwrite a running executable and do not create
+alternate test executables. Never kill a running `mimita*.exe`; a new timestamped
+build is how you get your own executable to test.
 
-If the status is NOTHING_CHANGED and you expected changes, the human may have built first. Read `build/changelog.txt` for the full build log. The changelog always reflects the most recent build_agent.py run.
-
-If you get NOTHING_CHANGED but changed source files, the human may have built first. Read `build/changelog.txt` for the full build log. The changelog always reflects the most recent build_agent.py run.
-
-If you get NOTHING_CHANGED but changed source files, force a rebuild by deleting the EXE:
-```powershell
-Remove-Item -Force "mimita.exe" -ErrorAction SilentlyContinue; python build_agent.py
-```
-
-The changelog at `build/changelog.txt` is written after every `build_agent.py` invocation. Its first three lines always show:
-
-```
-=== BUILD CHANGELOG ===
-Time: YYYY-MM-DD HH:MM:SS
-Status: SUCCESS|NOTHING_CHANGED|FAILED
-```
-
-Always check this status after building. If the human built between your source edits and your build_agent.py call, you will see NOTHING_CHANGED even though your edits should trigger a rebuild. Delete mimita.exe and rebuild in that case.
-
+After any build, check the status printed in the output and in
+`build/changelog.txt`. If the status is `NOTHING_CHANGED` but you expected a
+relink, delete the stale object for the file you changed (or the relevant
+`build/obj-*/` object) and rebuild.

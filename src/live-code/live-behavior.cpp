@@ -1131,6 +1131,70 @@ bool MIMITA_GAME_CALL capSocketQuery(void*, GameSocketQueryV1* q)
     return true;
 }
 
+// socket.raw: the attachment point in the ENTITY-LOCAL frame (skeleton bone pose
+// + mesh bind), with NO entity transform/yaw. Hot policy composes the final
+// transform itself so units/grip/mount are editable live.
+bool MIMITA_GAME_CALL capSocketRaw(void*, GameSocketRawV1* q)
+{
+    if (!q)
+        return false;
+    q->found = 0;
+    q->valid = 0;
+    const EntityId id = static_cast<EntityId>(q->entity);
+    if (id == kInvalidEntityId)
+        return false;
+    glm::mat4 socket(1.0f);
+    bool found = false;
+    if (q->socket != 0) {
+        const SkeletonInstances::BonePose* bone =
+            SkeletonInstances::findBone(SkeletonInstances::get(id), q->socket);
+        if (bone) {
+            socket = bone->world;
+            found = true;
+        }
+        float bind16[16];
+        if (PresentationRender::meshPartBind(q->entity, q->socket, bind16)) {
+            glm::mat4 bind(1.0f);
+            for (int c = 0; c < 4; ++c)
+                for (int r = 0; r < 4; ++r)
+                    bind[c][r] = bind16[c * 4 + r];
+            socket = socket * bind;
+            found = true;
+        }
+    }
+    if (!found)
+        return false;
+    for (int k = 0; k < 3; ++k)
+        q->position[k] = socket[3][k];
+    glm::mat3 m3(socket);
+    for (int c = 0; c < 3; ++c) {
+        const float len = glm::length(m3[c]);
+        if (len > 1e-6f)
+            m3[c] /= len;
+    }
+    const glm::quat rq = glm::quat_cast(m3);
+    q->rotation[0] = rq.x;
+    q->rotation[1] = rq.y;
+    q->rotation[2] = rq.z;
+    q->rotation[3] = rq.w;
+    q->found = 1;
+    q->valid = 1;
+    return true;
+}
+
+// mesh.bounds: model-local AABB for a logical mesh, for hot grip/mount policy.
+bool MIMITA_GAME_CALL capMeshBounds(void*, GameMeshBoundsV1* q)
+{
+    if (!q)
+        return false;
+    q->valid = 0;
+    if (!PresentationRender::meshBounds(q->meshResourceId, q->boundsMin,
+                                        q->boundsMax))
+        return false;
+    q->valid = 1;
+    return true;
+}
+
 // Generic setting access seam: hot UI reads/writes real engine settings by
 // logical id. The kernel owns the mapping + validity constraints.
 // Kernel-provided discrete option lists for option-type settings. Hot code owns
@@ -1490,6 +1554,14 @@ struct KernelCapabilityInit {
                                     gameHash("sig.socket.query.v1"), 0,
                                     reinterpret_cast<void*>(&capSocketQuery),
                                     "socket.query");
+        rt.registerKernelCapability(GAME_CAP_SOCKET_RAW,
+                                    gameHash("sig.socket.raw.v1"), 0,
+                                    reinterpret_cast<void*>(&capSocketRaw),
+                                    "socket.raw");
+        rt.registerKernelCapability(GAME_CAP_MESH_BOUNDS,
+                                    gameHash("sig.mesh.bounds.v1"), 0,
+                                    reinterpret_cast<void*>(&capMeshBounds),
+                                    "mesh.bounds");
         rt.registerKernelCapability(GAME_CAP_WORLD_PROJECT,
                                     gameHash("sig.world.project.v1"), 0,
                                     reinterpret_cast<void*>(&capWorldProject),

@@ -731,6 +731,8 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world, uint32_t server
                 lp.dead = 1u;
                 lp.respawnsEnabled = serverMatchRespawnsEnabled() ? 1u : 0u;
                 lp.pendingRespawn = p.instantRespawnRequested ? 1u : 0u;
+                lp.actorEntity = (std::uint64_t)Ecs::ensure(
+                    EntityRealm::Server, EntityDomain::Player, p.id);
                 lp.respawnSeconds = p.respawnSeconds;
                 lp.chosenPosition[0] = respawnPos.x;
                 lp.chosenPosition[1] = respawnPos.y;

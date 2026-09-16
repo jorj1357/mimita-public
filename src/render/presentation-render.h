@@ -56,6 +56,10 @@ bool registerLogicalResource(std::uint64_t logicalId, std::uint32_t kind,
 // call (never a raw handle), so a generation swap cannot leave a stale pointer.
 bool meshPartBind(std::uint64_t entity, std::uint64_t part, float outMat16[16]);
 
+// Model-local AABB of a logical presentation mesh (0 = unknown). Lets hot policy
+// compute grip recentre / mount from the model bounds.
+bool meshBounds(std::uint64_t logicalId, float outMin[3], float outMax[3]);
+
 // Generic skeleton consumption: a mesh whose parts carry bone hashes is drawn
 // per part using the entity's SkeletonInstances pose (looked up by EntityId).
 // Entities without an instance fall back to a single static draw.

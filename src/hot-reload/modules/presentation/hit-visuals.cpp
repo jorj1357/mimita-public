@@ -343,8 +343,13 @@ void spawnPrimitive(GameplayContextV1* ctx, std::uint64_t meshId,
     p.scale = radius;
     p.endScale = radius;
     p.alpha = alpha;
-    p.maxLifetime = lifetimeSec > 0.0f ? lifetimeSec : (1.0f / 60.0f);
+    // A part spawned by the client tick is aged by EffectPartSystem::update
+    // before the render pass; a 1-tick lifetime dies before it draws. Use at
+    // least two ticks so every layer is visible, and refresh each tick.
+    p.maxLifetime = lifetimeSec > 0.0f ? lifetimeSec : (2.0f / 60.0f);
     p.billboardText = 0u;
+    // Explosion replay type => long-range cull instead of the generic 40 m.
+    setStr(p.replayType, sizeof(p.replayType), "effect_explosion_sphere");
     spawnPart(ctx, p);
 }
 
@@ -363,6 +368,13 @@ void MIMITA_GAME_CALL explosionTimelineTick(void* host, std::uint64_t tick,
         if (!ctx->dynamicReadComponent(ctx->host, entities[i],
                                        HOT_EXPLOSION_COMPONENT, &e, sizeof(e)))
             continue;
+        // The cold `effect.request` path stamps tick 0; treat that as "starts
+        // now" so those detonations are not destroyed immediately.
+        if (e.spawnTick == 0) {
+            e.spawnTick = static_cast<std::uint32_t>(tick);
+            ctx->dynamicWriteComponent(ctx->host, entities[i],
+                                       HOT_EXPLOSION_COMPONENT, &e, sizeof(e));
+        }
         const std::uint32_t age = static_cast<std::uint32_t>(tick) - e.spawnTick;
         if (age > e.totalTicks) {
             ctx->entityDestroy(ctx->host, entities[i]);
@@ -386,7 +398,7 @@ void MIMITA_GAME_CALL explosionTimelineTick(void* host, std::uint64_t tick,
             spawnPrimitive(ctx, layer.meshId, pos, layer.rotation, layer.scaleXYZ,
                            lerpf(layer.radiusStart, layer.radiusEnd, u) * e.scale,
                            color, lerpf(layer.alphaStart, layer.alphaEnd, u),
-                           1.0f / 60.0f);
+                           2.0f / 60.0f);
         }
     }
 }

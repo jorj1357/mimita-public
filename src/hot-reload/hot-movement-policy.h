@@ -278,3 +278,15 @@ struct GameMovementTuningV1 {
 };
 static constexpr std::uint64_t GAME_EVENT_MOVEMENT_TUNING =
     gameHash("movement.tuning");
+
+// ── Spawn protection (shared hot state) ─────────────────────────────────────
+// Written on an actor entity at spawn/respawn and read by the hot damage policy.
+// The window is expressed in ticks at the fixed 60 Hz simulation rate so it is
+// independent of wall-clock and frame rate. Applies to every actor (players and
+// NPCs) because the damage policy sees the victim entity, not an actor type.
+static constexpr std::uint64_t HOT_SPAWN_PROTECTION_COMPONENT =
+    gameHash("SpawnProtection");
+struct HotSpawnProtectionV1 {
+    std::uint32_t untilTick;   // damage ignored while currentTick < untilTick
+    std::uint32_t reserved;
+};

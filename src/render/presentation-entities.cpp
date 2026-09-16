@@ -381,7 +381,8 @@ void projectActorOverlayState(std::uint32_t actorId, bool isPlayer,
         static_cast<EntityId>(actorEntityFor(actorId, isPlayer));
     if (entity == kInvalidEntityId)
         return;
-    const glm::vec3 look(std::cos(player.yaw), std::sin(player.yaw), 0.0f);
+    const float yawRad = glm::radians(player.yaw);
+    const glm::vec3 look(std::cos(yawRad), std::sin(yawRad), 0.0f);
     Ecs::setTransform(entity, player.pos, look, player.yaw, 0.0f);
     Ecs::setHealth(entity, player.currentHp, player.maxHp, player.dead);
     writeActionState(entity, player);
@@ -419,7 +420,8 @@ bool actorMeshReady()
 static void projectPlayerEntity(Player& player, EntityId entity)
 {
     ensureSchema();
-    const glm::vec3 look(std::cos(player.yaw), std::sin(player.yaw), 0.0f);
+    const float yawRad = glm::radians(player.yaw);
+    const glm::vec3 look(std::cos(yawRad), std::sin(yawRad), 0.0f);
     Ecs::setTransform(entity, player.pos, look, player.yaw, 0.0f);
     Ecs::setVelocity(entity, player.vel, player.externalImpulse);
     Ecs::setHealth(entity, player.currentHp, player.maxHp, player.dead);

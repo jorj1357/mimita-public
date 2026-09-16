@@ -350,3 +350,44 @@ contact-reset-only (no time cooldown).
 - Input send policy fixed `input=0` (`input=10762`).
 - Remaining: `[SERVER MOVEMENT DECISION] correct reason=blocking-geometry`
   with `serverPos` ~60 units from `reportPos` -> server simulation drift.
+
+---
+
+# Addendum 4 — generation-mismatch policy, spawn protection, self-damage (2026-09-16T17:45:00Z)
+
+## Confirmed cause of the current symptom
+- The jsonl showed the client pinned to hot generation 10 while the server built
+  77..83 with `result:"retry"`, plus
+  `cold_restart_pending file=src/live-code/live-behavior.cpp`. The two peers ran
+  different movement code, so the server never adopted the client's movement.
+- New regression record:
+  `docs/regressions/2026-09-16-server-client-generation-mismatch-spawn-lock.md`.
+
+## Hot module changes (editable live)
+- `net.generation-policy` (new `generation-policy.cpp`): a mismatch is now a hot
+  decision; default `allowWorld = 1` so it can never silently wedge. Cold
+  `mpGenerationWorldAllowed` dispatches it.
+- `lifecycle-policy.cpp`: spawn protection is **ticks** (60 = 1 s at 60 Hz),
+  armed on the actor entity as dynamic component `SpawnProtection { untilTick }`.
+  Applies to every actor (players and NPCs).
+- `rocket-behavior.cpp`: enforces spawn protection (zero damage/knockback while
+  `tick < untilTick`); removed the leftover "explosion damage = 123" override.
+- `tools/rocket-tool.cpp` + `tools/grenade-tool.cpp`: self-damage multiplier
+  `0.5f -> 0.2f` (field `hot-projectile.h:36`, applied `hot-projectiles.cpp`).
+
+## Cold bridge (this build)
+- `game-api.h`: `ActorLifecyclePolicyV1.actorEntity` + `spawnProtectionTicks`;
+  `GenerationPolicyV1` + event; `HotSpawnProtectionV1` in `hot-movement-policy.h`.
+- `multiplayer-tick.cpp`: generation policy dispatch in `mpGenerationWorldAllowed`.
+- `server-players.cpp`: fills `actorEntity` for the lifecycle policy.
+
+## Validation
+- Hot DLL build success (63 sources). Cold build success.
+- Selftests PASS: server-spatial-authority, movement-parity, air-movement-parity,
+  reconciliation-policy, movement-selftest.
+- Registered: `actor.lifecycle-policy`, `net.generation-policy`.
+
+## Notes
+- The build now emits timestamped exes; copied the newest to `mimita.exe`.
+- After this one relaunch, all movement/spawn/input/lifecycle/reconcile/
+  generation decisions are hot; no further cold restart is needed for those.

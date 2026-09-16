@@ -1023,10 +1023,23 @@ bool runHotCombatSelfTest(std::string& report)
         }
 
         // Real shipping explosion fact reaches the hot effect owner, which
-        // composes generic effect entities; the cold composition yields.
+        // creates a client-only tick explosion timeline (ExplosionState) and
+        // spawns its primitive layers; the cold composition yields.
+        const std::uint64_t kExplosionState = gameHash("ExplosionState");
+        std::uint64_t savedLocal = 0;
+        if (GameplayContextV1* fxctx = LiveBehavior::hostContext(20)) {
+            if (fxctx->permanentStorage &&
+                fxctx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+                auto* shared =
+                    reinterpret_cast<GameSharedStateV1*>(fxctx->permanentStorage);
+                shared->magic = GAME_SHARED_MAGIC;
+                savedLocal = shared->localPlayerEntity;
+                shared->localPlayerEntity = 999999;  // headless local view
+            }
+        }
         std::uint64_t before[16] = {0};
         const std::uint32_t beforeCount = DynamicComponentStore::instance().enumerate(
-            HOT_EFFECT_LIFETIME_COMPONENT, before, 16);
+            kExplosionState, before, 16);
         EffectRequestV1 req{};
         req.effectTypeId = gameHash("effect.explosion.rocket");
         req.position[0] = 1.0f;
@@ -1036,7 +1049,15 @@ bool runHotCombatSelfTest(std::string& report)
         const bool fxHandled = LiveBehavior::dispatchEffectRequest(req, 20);
         std::uint64_t after[16] = {0};
         const std::uint32_t afterCount = DynamicComponentStore::instance().enumerate(
-            HOT_EFFECT_LIFETIME_COMPONENT, after, 16);
+            kExplosionState, after, 16);
+        if (GameplayContextV1* fxctx = LiveBehavior::hostContext(20)) {
+            if (fxctx->permanentStorage &&
+                fxctx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+                auto* shared =
+                    reinterpret_cast<GameSharedStateV1*>(fxctx->permanentStorage);
+                shared->localPlayerEntity = savedLocal;
+            }
+        }
         ok &= check(fxHandled && afterCount > beforeCount,
                     "real explosion fact reaches the hot effect owner and composes "
                     "generic effects",
@@ -1866,10 +1887,22 @@ bool runHotCombatSelfTest(std::string& report)
                     report);
 
         // Explosion fact composes the shared flash/smoke/debris recipe.
+        const std::uint64_t kExplosionState2 = gameHash("ExplosionState");
+        std::uint64_t savedLocal2 = 0;
+        if (GameplayContextV1* bctx = LiveBehavior::hostContext(301)) {
+            if (bctx->permanentStorage &&
+                bctx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+                auto* shared =
+                    reinterpret_cast<GameSharedStateV1*>(bctx->permanentStorage);
+                shared->magic = GAME_SHARED_MAGIC;
+                savedLocal2 = shared->localPlayerEntity;
+                shared->localPlayerEntity = 999999;
+            }
+        }
         std::uint64_t eBefore[128] = {0};
         const std::uint32_t eBeforeCount =
             DynamicComponentStore::instance().enumerate(
-                HOT_EFFECT_LIFETIME_COMPONENT, eBefore, 128);
+                kExplosionState2, eBefore, 128);
         EffectRequestV1 boom{};
         boom.effectTypeId = gameHash("effect.explosion.rocket");
         boom.position[0] = 6.0f;
@@ -1880,9 +1913,17 @@ bool runHotCombatSelfTest(std::string& report)
         std::uint64_t eAfter[128] = {0};
         const std::uint32_t eAfterCount =
             DynamicComponentStore::instance().enumerate(
-                HOT_EFFECT_LIFETIME_COMPONENT, eAfter, 128);
+                kExplosionState2, eAfter, 128);
+        if (GameplayContextV1* bctx = LiveBehavior::hostContext(301)) {
+            if (bctx->permanentStorage &&
+                bctx->permanentStorageSize >= sizeof(GameSharedStateV1)) {
+                auto* shared =
+                    reinterpret_cast<GameSharedStateV1*>(bctx->permanentStorage);
+                shared->localPlayerEntity = savedLocal2;
+            }
+        }
         ok &= check(boomHandled && eAfterCount > eBeforeCount,
-                    "explosion fact composes flash/smoke/debris [before=" +
+                    "explosion fact composes a tick timeline [before=" +
                         std::to_string(eBeforeCount) + " after=" +
                         std::to_string(eAfterCount) + " handled=" +
                         std::to_string(boomHandled) + "]",

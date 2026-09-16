@@ -61,7 +61,7 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     proj.splashDamage = 120.0f;
     proj.splashExponent = 2.0f;
     proj.knockbackStrength = 12.0f;
-    proj.selfDamageMultiplier = 0.5f;
+    proj.selfDamageMultiplier = 0.2f;
     proj.fullDamageRadius = 1.0f;
     proj.ownerEntity = use->userEntity;
     proj.typeId = kRocketNetworkId;
