@@ -10,9 +10,12 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/packages/collision/collision-abi.h"
 
 namespace {
 
+// Bounce tuning is owned once by the hot collision kernel (single owner); the
+// cold response path reads it through this event instead of a second copy.
 void MIMITA_GAME_CALL onCollisionPolicy(void* /*host*/, const GameEventV1* event)
 {
     auto* p = event ? static_cast<CollisionPolicyV1*>(event->payload) : nullptr;
@@ -24,6 +27,12 @@ void MIMITA_GAME_CALL onCollisionPolicy(void* /*host*/, const GameEventV1* event
     p->outHalfHeight = p->halfHeight;
     p->outGroundedVelocityEpsilon = p->groundedVelocityEpsilon;
     p->outSkin = p->skin;
+    p->bounceEnabled = HotCollisionPackage::kBounceEnabled ? 1u : 0u;
+    p->bounceStrength = HotCollisionPackage::kBounceStrength;
+    p->bounceFriction = HotCollisionPackage::kBounceFriction;
+    p->bounceMinSpeed = HotCollisionPackage::kBounceMinSpeed;
+    p->bounceMaxSpeed = HotCollisionPackage::kBounceMaxSpeed;
+    p->bounceCooldown = HotCollisionPackage::kBounceCooldown;
 }
 
 } // namespace

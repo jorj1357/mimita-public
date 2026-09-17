@@ -15,10 +15,10 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
-#include "hot-reload/hot-movement-collision.h"
 #include "hot-reload/hot-movement-fired.h"
 #include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/packages/collision/collision-abi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -26,6 +26,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 // Jump input buffer window (seconds). Live-tunable constant.
 constexpr float kHotJumpBufferSeconds = 0.15f;
@@ -139,12 +142,111 @@ GameSharedStateV1* sharedState(GameplayContextV1* ctx)
 using PhysicsMoveFn = void (MIMITA_GAME_CALL *)(void*, MovementStateV1*, float, std::uint32_t);
 using EffectSpawnFn = void (MIMITA_GAME_CALL *)(void*, const GameEffectSpawnV1*);
 
-// Collision is a generic kernel primitive resolved by id. Falls back to the
-// older capsule-only solve when the primitive is unavailable.
-void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt)
+// The player collider list: the movement/smoothing capsule plus the head,
+// torso, arms, and legs resolved from the skeleton. The caller supplies the
+// generic shape description; the collision package owns the solve.
+void buildPlayerCollision(
+    GameplayContextV1* ctx, MovementStateV1* st, float dt, std::uint64_t entity,
+    std::uint64_t tick, HotCollisionPackage::CollisionSolveV1& q)
 {
-    // Hot capsule-vs-world collision is the single owner. No cold fallback.
-    HotCollision::hotMoveCapsule(ctx, st, dt);
+    using namespace HotCollisionPackage;
+    q = CollisionSolveV1{};
+    q.entityId = entity;
+    q.tick = tick;
+    q.dt = dt;
+    q.yaw = st->yaw;
+    q.sizeScale = st->sizeScale > 0.0f ? st->sizeScale : 1.0f;
+    q.mask = COLLISION_MASK_WORLD;
+    q.flags = COLLISION_SOLVE_SPAWN_IMPACTS;
+    for (int i = 0; i < 3; ++i) {
+        q.position[i] = st->position[i];
+        q.velocity[i] = st->velocity[i];
+    }
+
+    CollisionColliderV1& capsule = q.colliders[q.colliderCount++];
+    capsule.partId = COLLISION_PART_CAPSULE;
+    capsule.shape = COLLISION_SHAPE_CAPSULE;
+    capsule.policyId = COLLISION_POLICY_CAPSULE;
+    capsule.radius = st->radius;
+    capsule.halfHeight = st->halfHeight;
+    for (int i = 0; i < 3; ++i)
+        capsule.position[i] = st->position[i];
+
+    if (!ctx->resolveCapability ||
+        q.colliderCount >= COLLISION_MAX_COLLIDERS)
+        return;
+    auto rawFn = reinterpret_cast<GameSocketRawFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_SOCKET_RAW));
+    if (!rawFn)
+        return;
+
+    static const struct { std::uint32_t part; const char* name; float radius; }
+        kParts[] = {
+            {COLLISION_PART_HEAD, "head", 0.30f},
+            {COLLISION_PART_TORSO, "torso", 0.42f},
+            {COLLISION_PART_LEFT_ARM, "leftArm", 0.17f},
+            {COLLISION_PART_RIGHT_ARM, "rightArm", 0.17f},
+            {COLLISION_PART_LEFT_LEG, "leftLeg", 0.20f},
+            {COLLISION_PART_RIGHT_LEG, "rightLeg", 0.20f},
+        };
+    const float s = q.sizeScale;
+    glm::mat4 root = glm::translate(
+        glm::mat4(1.0f),
+        glm::vec3(st->position[0], st->position[1], st->position[2]));
+    root *= glm::rotate(glm::mat4(1.0f), glm::radians(st->yaw),
+                        glm::vec3(0.0f, 0.0f, 1.0f));
+    for (const auto& p : kParts) {
+        if (q.colliderCount >= COLLISION_MAX_COLLIDERS)
+            break;
+        GameSocketRawV1 r{};
+        r.entity = entity;
+        r.socket = gameHash(p.name);
+        if (!rawFn(ctx->host, &r) || !r.valid)
+            continue;
+        const glm::vec3 local(r.position[0] * s, r.position[1] * s,
+                              r.position[2] * s);
+        const glm::vec3 world = glm::vec3(root * glm::vec4(local, 1.0f));
+        CollisionColliderV1& c = q.colliders[q.colliderCount++];
+        c.partId = p.part;
+        c.shape = COLLISION_SHAPE_SPHERE;
+        c.policyId = COLLISION_POLICY_BODY;
+        c.radius = p.radius * s;
+        c.position[0] = world.x;
+        c.position[1] = world.y;
+        c.position[2] = world.z;
+    }
+}
+
+// Collision is owned by exactly one system: the collision package
+// (`collision.main`). There is no second in-DLL solver; if the package is not
+// available the actor keeps its plain-integrated velocity for one tick rather
+// than being mutated by a competing owner.
+void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
+                       std::uint64_t entity, std::uint64_t tick)
+{
+    using namespace HotCollisionPackage;
+    GameCollisionSolveFn fn = nullptr;
+    if (ctx->resolveCapability)
+        fn = reinterpret_cast<GameCollisionSolveFn>(
+            ctx->resolveCapability(ctx->host, GAME_CAP_COLLISION));
+    if (!fn) {
+        for (int i = 0; i < 3; ++i)
+            st->position[i] += st->velocity[i] * dt;
+        st->grounded = 0;
+        st->collided = 0;
+        return;
+    }
+    CollisionSolveV1 q;
+    buildPlayerCollision(ctx, st, dt, entity, tick, q);
+    fn(ctx->host, &q);
+    if (!q.handled)
+        return;   // package could not solve; do not invent a second result
+    for (int i = 0; i < 3; ++i) {
+        st->position[i] = q.outPosition[i];
+        st->velocity[i] = q.outVelocity[i];
+    }
+    st->grounded = q.grounded;
+    st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
 }
 
 // Effects are one generic spawn descriptor resolved by id; movement just emits
@@ -170,7 +272,7 @@ void spawnEffect(GameplayContextV1* ctx, std::uint64_t kind, const float pos[3],
     fn(ctx->host, &d);
 }
 
-void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float dt)
+void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
 {
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
     if (!ctx || ctx->structSize < sizeof(GameplayContextV1))
@@ -430,7 +532,10 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
 
         // GRAVITY: route through the ONE shared hot gravity policy (the same
         // implementation the server uses). physics.move no longer applies it.
-        if (!freezeNow) {
+        // A grounded actor rests on the ground: applying gravity every tick
+        // would feed the collision kernel a downward speed each tick and make
+        // it micro-bounce forever. Airborne actors get full gravity.
+        if (!freezeNow && !rs.grounded) {
             GameGravityV1 gv{};
             gv.velocityZ = vz;
             gv.gravityZ = -m.gravity;
@@ -448,7 +553,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
         // capsule solver not to add its own (negative = already integrated).
         st.gravityScale = -1.0f;
         st.grounded = rs.grounded;
-        resolveCollisions(ctx, &st, dt);
+        resolveCollisions(ctx, &st, dt, e, tick);
         rs.grounded = st.grounded;
         // Universal contact reset (movement spec): touching anything restores
         // every touch-reset ability. No time-based ability cooldowns.

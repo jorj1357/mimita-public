@@ -10,6 +10,7 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/game-modules.h"
 #include "hot-reload/hot-animation-selftest.h"
+#include "hot-reload/packages/collision/collision-abi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -141,18 +142,33 @@ bool MIMITA_GAME_CALL gameSelfTest(GameSelfTestResult* out)
     char animMessage[MIMITA_GAME_SELFTEST_MESSAGE] = {0};
     const bool animOk =
         runAnimationSelfTest(animMessage, (std::uint32_t)sizeof(animMessage));
-    const bool allOk = ok && animOk;
+
+    // Collision-kernel candidate self-test: policy response, contact merging,
+    // and impact-event shape. A broken kernel is rejected before activation so
+    // the previous collision generation keeps running.
+    // Collision-package candidate self-test: broadphase gather, narrowphase,
+    // swept-AABB fall capture, large-triangle indexing, cache rebuild, and
+    // invalid-geometry safety.
+    char collisionPackageMessage[MIMITA_GAME_SELFTEST_MESSAGE] = {0};
+    const bool collisionPackageOk =
+        HotCollisionPackage::collisionPackageSelfTest(
+            collisionPackageMessage,
+            (std::uint32_t)sizeof(collisionPackageMessage));
+    const bool allOk = ok && animOk && collisionPackageOk;
 
     out->passed = allOk ? 1u : 0u;
     out->checksum = allOk ? 0xEFFEC7001ull : 0ull;
     if (allOk)
         std::snprintf(out->message, sizeof(out->message), "%s",
-                      "effect + animation invariants ok");
+                      "effect + animation + collision-package invariants ok");
     else if (!ok)
         std::snprintf(out->message, sizeof(out->message), "%s",
                       "effect invariants invalid");
-    else
+    else if (!animOk)
         std::snprintf(out->message, sizeof(out->message), "%s", animMessage);
+    else
+        std::snprintf(out->message, sizeof(out->message), "%s",
+                      collisionPackageMessage);
     return allOk;
 }
 

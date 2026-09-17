@@ -1,42 +1,21 @@
-// 08 15 2026, 12 00
+// 09 17 2026
 /* purpose
-* Live-tunable collision response settings (bounce).
-* Reloads config/collision.json on change so bounce strength, min speed,
-* and cooldown tune at runtime without restarting.
+* Requests the hot collision-policy snapshot used by player/world response.
+* Bounce tuning is owned by the replaceable game DLL, not JSON.
 * Does NOT build collision meshes, own the world, or apply physics.
 */
 #pragma once
 
-#include <chrono>
-#include <filesystem>
-#include <string>
+#include <cstdint>
 
-class CollisionConfig {
-public:
-    static CollisionConfig& instance();
-
-    bool load(const std::string& path = "config/collision.json");
-    // Returns true when the file changed and settings were re-loaded.
-    bool pollHotReload();
-
-    bool bounceEnabled() const { return mBounceEnabled; }
-    float bounceStrength() const { return mBounceStrength; }
-    float bounceFriction() const { return mBounceFriction; }
-    float bounceMinSpeed() const { return mBounceMinSpeed; }
-    float bounceMaxSpeed() const { return mBounceMaxSpeed; }
-    float bounceCooldown() const { return mBounceCooldown; }
-
-private:
-    CollisionConfig();
-
-    bool mBounceEnabled = false;
-    float mBounceStrength = 0.0f;
-    float mBounceFriction = 0.5f;
-    float mBounceMinSpeed = 7.0f;
-    float mBounceMaxSpeed = 45.0f;
-    float mBounceCooldown = 0.05f;
-
-    std::string mPath;
-    std::filesystem::file_time_type mLastWrite{};
-    std::chrono::steady_clock::time_point mLastCheck{};
+struct CollisionBouncePolicy
+{
+    bool enabled = false;
+    float strength = 0.0f;
+    float friction = 0.5f;
+    float minSpeed = 7.0f;
+    float maxSpeed = 45.0f;
+    float cooldown = 0.05f;
 };
+
+const CollisionBouncePolicy& currentCollisionBouncePolicy(std::uint64_t simulationTick);

@@ -1,6 +1,6 @@
 // 09 16 2026
 /* purpose
-* Hot animation state machine. A render.frame system selects exactly one
+* Hot animation state machine. A postmovement.60 system selects exactly one
 * animation action per generic actor from generic actor state (Velocity, Health,
 * MovementIntent/RuntimeState, and the generic ActorActionState facts) and
 * advances AnimationState.v2. Documented precedence (highest first):
@@ -11,7 +11,10 @@
 * The cold renderer still owns skeleton/skinning/draw; this file owns the
 * "which animation / how fast / how long" decision. No Player/Npc/Monster type.
 * Owns the AnimationState.v2 schema, AnimationMemory, and the v1 -> v2
-* migration. Does NOT link into the EXE; only into the replaceable game DLL.
+* migration. The state machine advances once per client simulation tick;
+* pose generation may still run every render frame to display the latest state
+* without making animation phase depend on render FPS. Does NOT link into the
+* EXE; only into the replaceable game DLL.
 */
 #if defined(MIMITA_GAME_DLL)
 
@@ -416,7 +419,7 @@ const MimitaHotPackage::MigrationRegistrar s_animationMemoryMigration{
     HOT_ANIMATION_MEMORY_COMPONENT, 1, 2,
     reinterpret_cast<void*>(&migrateMemoryV1ToV2)};
 const MimitaHotPackage::SystemRegistrar s_animationPolicySystem{
-    {gameHash("hot.animation-policy"), GAME_DOMAIN_RENDER, 1, 0,
+    {gameHash("hot.animation-policy"), GAME_DOMAIN_POST_MOVEMENT, 1, 0,
      animationPolicyTick, "hot.animation-policy"}};
 
 } // namespace

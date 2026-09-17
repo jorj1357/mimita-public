@@ -308,6 +308,12 @@ struct CollisionPolicyV1 {
     float outHalfHeight;
     float outGroundedVelocityEpsilon;
     float outSkin;
+    std::uint32_t bounceEnabled;
+    float bounceStrength;
+    float bounceFriction;
+    float bounceMinSpeed;
+    float bounceMaxSpeed;
+    float bounceCooldown;
     std::uint32_t handled;
     std::uint32_t reserved;
 };

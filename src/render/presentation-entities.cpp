@@ -129,10 +129,18 @@ void writeActionState(EntityId entity, const ::Player& player)
         st.flags |= HOT_ACTION_FLAG_EQUIPPING;
     st.isReloading = (ns & MimitaNet::NET_WEAPON_STATE_RELOADING) ? 1u : 0u;
 
-    if (player.runtimeToolId != 0)
-        st.weaponKey = player.runtimeToolId;
-    else if (!player.equippedWeaponId.empty())
-        st.weaponKey = gameHash(player.equippedWeaponId.c_str());
+    // The generic equips-item relationship is the source of truth for whether
+    // a tool is actually in the actor's hands.  Typed Player fields can retain
+    // a previous weapon during spawn/unequip reconciliation; using them alone
+    // makes the hot pose path apply a weapon carry stance to an empty-handed
+    // actor.
+    std::uint64_t equippedToolEntity = 0;
+    std::uint64_t equippedToolKey = 0;
+    const bool hasEquippedTool = MimitaNet::actorStateGetEquippedTool(
+        static_cast<std::uint64_t>(entity), &equippedToolEntity,
+        &equippedToolKey);
+    if (hasEquippedTool && equippedToolEntity != 0 && equippedToolKey != 0)
+        st.weaponKey = equippedToolKey;
 
     auto it = player.weaponRuntimes.find(player.equippedWeaponId);
     if (it != player.weaponRuntimes.end()) {

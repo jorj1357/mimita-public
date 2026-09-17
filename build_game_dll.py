@@ -82,6 +82,14 @@ def load_dep_edges(obj_dir):
     return edges
 
 
+def source_stem(source):
+    """Unique per-source object stem derived from the relative path, so two
+    files with the same basename in different package directories never collide
+    on one object file."""
+    rel = source.replace("\\", "/")
+    return os.path.splitext(rel)[0].replace("/", "__")
+
+
 def affected_stems(obj_dir, changed_rel, sources):
     """Stems to recompile: changed sources plus any source whose .d lists a
     changed file (e.g. a header). Unknown/new sources are always rebuilt."""
@@ -90,13 +98,12 @@ def affected_stems(obj_dir, changed_rel, sources):
     edges = load_dep_edges(obj_dir)
     stems = set()
     for source in sources:
-        stem = os.path.basename(os.path.splitext(source)[0])
-        stems.add(stem)
+        stems.add(source_stem(source))
     # Baseline: recompile changed sources.
     for source in sources:
         rel = source.replace("\\", "/")
         if rel in changed or os.path.basename(rel) in changed_names:
-            stems.add(os.path.basename(os.path.splitext(source)[0]))
+            stems.add(source_stem(source))
     # Recompile any source whose dependency list contains a changed file.
     for stem, prereqs in edges.items():
         for prereq in prereqs:
@@ -124,7 +131,18 @@ def load_manifest(path):
             relative = os.path.relpath(match, ROOT).replace("\\", "/")
             if relative not in sources:
                 sources.append(relative)
-    return sources, list(manifest.get("headers", []))
+    # Header globs let a package's headers participate in change detection and
+    # code hashing without listing every file, so adding/renaming a header in a
+    # package directory still triggers a rebuild.
+    headers = list(manifest.get("headers", []))
+    for pattern in manifest.get("headerGlobs", []):
+        for match in sorted(glob.glob(os.path.join(ROOT, pattern), recursive=True)):
+            if not os.path.isfile(match):
+                continue
+            relative = os.path.relpath(match, ROOT).replace("\\", "/")
+            if relative not in headers:
+                headers.append(relative)
+    return sources, headers
 
 
 def sha256_file(path):
@@ -233,7 +251,7 @@ def main():
     started = time.time()
 
     for source in sources:
-        stem = os.path.splitext(os.path.basename(source))[0]
+        stem = source_stem(source)
         obj = os.path.join(obj_dir, stem + ".o")
         dep = obj + ".d"
         if recompile is not None and stem not in recompile and os.path.exists(obj):

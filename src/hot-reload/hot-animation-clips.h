@@ -175,17 +175,31 @@ inline void evaluateIdle(float t, bool equipped, Pose& out)
     const float breathe = std::sin(t * 1.1f);
     const float head = std::sin(t * 0.8f);
     // Clear, visible idle sway/breathing on every part.
-    out.part[PartTorso].rot[1] = sway * 5.0f;
-    out.part[PartTorso].rot[0] = breathe * 2.0f;
+    out.part[PartTorso].rot[2] = sway * 2.0f;
+    out.part[PartTorso].rot[0] = breathe * 1.1f;
     out.part[PartTorso].trans[1] = breathe * 0.03f;
-    out.part[PartHead].rot[0] = head * 6.0f;
-    out.part[PartHead].rot[1] = sway * 4.0f;
+    out.part[PartHead].rot[0] = head * 1.0f;
+    out.part[PartHead].rot[1] = sway * 1.1f;
+    // rot[0], rot[1], and rot[2] are the local X/Y/Z Euler axes, in degrees.
+    // In this model rot[2] is the arm front/back axis. Change the index on
+    // both arm assignments below if the model's imported axis convention is
+    // changed. Do not animate two rotation axes if the desired motion is a
+    // simple front/back swing: animating two axes at once makes a circle.
     const float armX = equipped ? -58.0f : 0.0f;
-    const float armSpread = equipped ? 10.0f : 8.0f;
-    out.part[PartLeftArm].rot[0] = armX + std::sin(t * 1.5f) * 8.0f;
-    out.part[PartRightArm].rot[0] = armX + std::sin(t * 1.5f + 1.4f) * 8.0f;
-    out.part[PartLeftArm].rot[2] = armSpread + sway * 3.0f;
-    out.part[PartRightArm].rot[2] = -armSpread - sway * 3.0f;
+    // This is the center pose on the other axes. Change -58.0f to alter the
+    // equipped carry angle; change 0.0f to give empty hands a fixed tilt.
+    out.part[PartLeftArm].rot[0] = armX;
+    out.part[PartRightArm].rot[0] = armX;
+
+    // std::sin(...) makes the smooth back-and-forth motion. The value inside
+    // sin is time * speed: increase 1.5f to move faster, decrease it to move
+    // slower. The multiplier outside sin controls range in degrees: increase
+    // 8.0f/10.0f for a larger front/back swing, or decrease it for a smaller
+    // swing. The right-arm minus sign makes the arms alternate; remove it if
+    // both arms should move toward the same side together.
+    const float frontBack = std::sin(t * 0.5f) * (equipped ? 10.0f : 8.0f);
+    out.part[PartLeftArm].rot[2] = frontBack;
+    out.part[PartRightArm].rot[2] = -frontBack;
     out.part[PartLeftLeg].rot[0] = std::sin(t * 1.5f + 0.6f) * 2.0f;
     out.part[PartRightLeg].rot[0] = std::sin(t * 1.5f + 2.0f) * 2.0f;
 }
@@ -196,19 +210,25 @@ inline void evaluateWalk(float t, float /*speed01*/, Pose& out)
 {
     out.clear();
     out.mask = MaskFull;
-    const float freq = 8.0f;
-    const float p = t * freq;
-    const float swing = std::sin(p);
-    const float amp = 38.0f;
-    out.part[PartLeftLeg].rot[0] = swing * amp;
-    out.part[PartRightLeg].rot[0] = -swing * amp;
-    out.part[PartLeftArm].rot[0] = -swing * amp * 0.7f;
-    out.part[PartRightArm].rot[0] = swing * amp * 0.7f;
-    out.part[PartLeftArm].rot[2] = 5.0f;
-    out.part[PartRightArm].rot[2] = -5.0f;
-    out.part[PartTorso].rot[1] = swing * 5.0f;
+    // rot[0], rot[1], rot[2] are local X/Y/Z Euler axes in degrees.  This
+    // model uses rot[2] for the visible arm/leg front-back swing. If the
+    // imported model uses a different axis, change only the rot[index] on
+    // both arm lines below (and the matching leg lines if needed).
+    const float freq = 2.0f; // walk-cycle speed: larger = faster, smaller = slower
+    const float p = t * freq; // phase: time multiplied by the cycle speed
+    const float swing = std::sin(p); // smooth -1..+1 back/forth movement
+    const float amp = 38.0f; // leg range in degrees; larger = longer stride
+    const float armAmp = 30.0f; // arm range in degrees; larger = more arm movement
+    out.part[PartLeftLeg].rot[2] = swing * amp;
+    out.part[PartRightLeg].rot[2] = -swing * amp;
+    // Arms alternate opposite to the legs. Change the minus sign to plus if
+    // both arms should move in the same direction. The old fixed 5/-5 values
+    // overwrote the animated arm pose, which is why walking arms barely moved.
+    out.part[PartLeftArm].rot[2] = -swing * armAmp;
+    out.part[PartRightArm].rot[2] = swing * armAmp;
+    out.part[PartTorso].rot[2] = swing * 1.1f;
     out.part[PartTorso].trans[1] = std::fabs(std::sin(p * 2.0f)) * 0.03f;
-    out.part[PartHead].rot[0] = -2.0f + std::sin(p * 2.0f) * 2.0f;
+    out.part[PartHead].rot[2] = -2.0f + std::sin(p * 2.0f) * 2.0f;
 }
 
 // Derive the locomotion base action from generic facts so the upper-body
@@ -377,21 +397,30 @@ inline constexpr Keyframe kLandFrames[] = {
 };
 
 inline constexpr Keyframe kDashFrames[] = {
-    {0.00f, {HA_PART(0,0,0, 30,0,0), HA_PART(0,0,0, -15,0,0),
-             HA_PART(0,0,0, 55,0,8), HA_PART(0,0,0, 55,0,-8),
-             HA_PART(0,0,0, -25,0,0), HA_PART(0,0,0, 35,0,0)}},
-    {0.30f, {HA_PART(0,0,0, 30,0,0), HA_PART(0,0,0, -15,0,0),
-             HA_PART(0,0,0, 55,0,8), HA_PART(0,0,0, 55,0,-8),
-             HA_PART(0,0,0, -25,0,0), HA_PART(0,0,0, 35,0,0)}},
+    // HA_PART arguments are tx,ty,tz, rx,ry,rz. These dash rotations are
+    // intentionally on Z: the old rx values are now the final rz values.
+    // Entry order in every frame: 1=torso, 2=head, 3=left arm,
+    // 4=right arm, 5=left leg, 6=right leg.
+    // To change a part's Z rotation, edit the LAST number in its HA_PART.
+    // The first three numbers are translation; the next two are X/Y rotation.
+    // Frame 0.00 values: torso=30, head=-15, left arm=55, right arm=-55,
+    // left leg=-25, right leg=35. Frame 0.30 uses the same body-part order.
+    {0.00f, {HA_PART(0,0,0, 0,0,-10), HA_PART(0,0,0, 0,0,-15),
+             HA_PART(0,0,0, 0,0,55), HA_PART(0,0,0, 0,0,-55),
+             HA_PART(0,0,0, 0,0,-25), HA_PART(0,0,0, 0,0,35)}},
+    {0.30f, {HA_PART(0,0,0, 0,0,-10), HA_PART(0,0,0, 0,0,-15),
+             HA_PART(0,0,0, 0,0,55), HA_PART(0,0,0, 0,0,-55),
+             HA_PART(0,0,0, 0,0,-25), HA_PART(0,0,0, 0,0,35)}},
 };
 
 inline constexpr Keyframe kDownDashFrames[] = {
-    {0.00f, {HA_ZERO, HA_PART(0,0,0, 15,0,0),
-             HA_PART(0,0,0, -20,0,6), HA_PART(0,0,0, -20,0,-6),
-             HA_PART(0,0,0, -5,0,0), HA_PART(0,0,0, 5,0,0)}},
-    {0.35f, {HA_ZERO, HA_PART(0,0,0, 15,0,0),
-             HA_PART(0,0,0, -20,0,6), HA_PART(0,0,0, -20,0,-6),
-             HA_PART(0,0,0, -5,0,0), HA_PART(0,0,0, 5,0,0)}},
+    // Down-dash is Z-only: every HA_PART has rx=0 and ry=0.
+    {0.00f, {HA_ZERO, HA_PART(0,0,0, 0,0,-15),
+             HA_PART(0,0,0, 0,0,-20), HA_PART(0,0,0, 0,0,-20),
+             HA_PART(0,0,0, 0,0,-25), HA_PART(0,0,0, 0,0,5)}},
+    {0.35f, {HA_ZERO, HA_PART(0,0,0, 0,0,-15),
+             HA_PART(0,0,0, 0,0,-20), HA_PART(0,0,0, 0,0,-20),
+             HA_PART(0,0,0, 0,0,-25), HA_PART(0,0,0, 0,0,5)}},
 };
 
 inline constexpr Keyframe kFreezeFrames[] = {

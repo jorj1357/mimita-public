@@ -69,7 +69,11 @@
     "src/hot-reload/modules/gamemodes/*.cpp",
     "src/hot-reload/modules/tools/*.cpp",
     "src/hot-reload/modules/presentation/*.cpp",
-    "src/hot-reload/modules/ui/*.cpp"
+    "src/hot-reload/modules/ui/*.cpp",
+    "src/hot-reload/packages/**/*.cpp"
+  ],
+  "headerGlobs": [
+    "src/hot-reload/packages/**/*.h"
   ],
   "cold": [
     "src/hot-reload/hot-reload-system.cpp",

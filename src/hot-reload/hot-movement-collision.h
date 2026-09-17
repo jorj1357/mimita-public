@@ -1,10 +1,10 @@
-// 09 16 2026
+// 09 17 2026
 /* purpose
-* Hot capsule-vs-world movement collision. Replaces the cold physics.move
-* pipeline for the hot movement system: it integrates gravity and resolves the
-* actor capsule against the world collision triangles (fetched from the
-* `world.collision` capability) with swept substepping, slide, and a grounded
-* heuristic. Fully live-editable: edit and save, no EXE rebuild.
+* Hot world-geometry helpers used by the ragdoll solver (and any hot consumer
+* that wants a simple grid cache). The movement/actor collision solve lives in
+* the `collision.main` package (`src/hot-reload/packages/collision/`), which owns
+* its own multi-resolution broadphase; this header is not that owner.
+* Fully live-editable: edit and save, no EXE rebuild.
 * The world triangle grid is cached hot-side and rebuilt when the map changes.
 * Does NOT link into the EXE; only into the replaceable game DLL.
 */
@@ -48,6 +48,9 @@ inline std::uint32_t& cachedTotal()
     return n;
 }
 
+// World grid cell size in world units. Shared by the index build and queries.
+inline constexpr float kCellSize = 2.0f;
+
 inline std::uint64_t cellKey(int x, int y, int z)
 {
     return ((std::uint64_t)(x + 4096) & 0x1fffff) |
@@ -84,7 +87,6 @@ inline bool ensureWorld(void* host)
     grid().clear();
     large().clear();
     cachedTotal() = probe.total;
-    constexpr float kCell = 2.0f;
     for (std::uint32_t off = 0; off < probe.total;) {
         GameWorldCollisionPageV1 q{};
         q.offset = off;
@@ -101,13 +103,14 @@ inline bool ensureWorld(void* host)
             tris().push_back(t);
             const glm::vec3 mn = glm::min(glm::min(t.a, t.b), t.c);
             const glm::vec3 mx = glm::max(glm::max(t.a, t.b), t.c);
-            if (mx.x - mn.x > kCell || mx.y - mn.y > kCell || mx.z - mn.z > kCell) {
+            if (mx.x - mn.x > kCellSize || mx.y - mn.y > kCellSize ||
+                mx.z - mn.z > kCellSize) {
                 large().push_back(idx);
             } else {
                 const glm::vec3 c = (t.a + t.b + t.c) / 3.0f;
-                grid()[cellKey((int)std::floor(c.x / kCell),
-                               (int)std::floor(c.y / kCell),
-                               (int)std::floor(c.z / kCell))]
+                grid()[cellKey((int)std::floor(c.x / kCellSize),
+                               (int)std::floor(c.y / kCellSize),
+                               (int)std::floor(c.z / kCellSize))]
                     .push_back(idx);
             }
         }
@@ -140,115 +143,52 @@ inline glm::vec3 closestPointOnTri(const glm::vec3& p, const Tri& t)
     return t.a + ab * (vb * denom) + ac * (vc * denom);
 }
 
-// Resolve one sphere sample against nearby triangles. Returns true on contact;
-// pushes the sphere out and returns the contact normal in `outNormal`.
-inline bool resolveSphere(glm::vec3& p, float r, glm::vec3& outNormal)
+// One sphere/triangle overlap: surface point, outward normal, and depth.
+struct TriContact {
+    int tri;
+    glm::vec3 point;
+    glm::vec3 normal;
+    float penetration;
+};
+
+// Append every triangle the sphere overlaps (deepest first is not required).
+// Returns the number of contacts written (capped at maxOut).
+inline int gatherSphereContacts(const glm::vec3& p, float r, TriContact* out,
+                                int maxOut)
 {
-    bool hit = false;
-    const glm::ivec3 c0((int)std::floor((p.x - r) / 2.0f),
-                        (int)std::floor((p.y - r) / 2.0f),
-                        (int)std::floor((p.z - r) / 2.0f));
-    const glm::ivec3 c1((int)std::floor((p.x + r) / 2.0f),
-                        (int)std::floor((p.y + r) / 2.0f),
-                        (int)std::floor((p.z + r) / 2.0f));
-    for (int x = c0.x; x <= c1.x; ++x)
-    for (int y = c0.y; y <= c1.y; ++y)
-    for (int z = c0.z; z <= c1.z; ++z) {
-        auto it = grid().find(cellKey(x, y, z));
-        if (it == grid().end()) continue;
-        for (std::uint32_t idx : it->second) {
-            const glm::vec3 cp = closestPointOnTri(p, tris()[idx]);
-            const glm::vec3 d = p - cp;
-            const float dist = glm::length(d);
-            if (dist >= r || dist < 1e-6f) continue;
-            const glm::vec3 n = d / dist;
-            p += n * (r - dist);
-            outNormal = n;
-            hit = true;
-        }
-    }
-    // Large triangles (e.g. floors) are not cell-indexed; always test them.
-    for (std::uint32_t idx : large()) {
+    int n = 0;
+    auto test = [&](std::uint32_t idx) {
+        if (n >= maxOut) return;
         const glm::vec3 cp = closestPointOnTri(p, tris()[idx]);
         const glm::vec3 d = p - cp;
         const float dist = glm::length(d);
-        if (dist >= r || dist < 1e-6f) continue;
-        const glm::vec3 n = d / dist;
-        p += n * (r - dist);
-        outNormal = n;
-        hit = true;
+        if (dist >= r || dist < 1e-6f) return;
+        out[n].tri = (int)idx;
+        out[n].point = cp;
+        out[n].normal = d / dist;
+        out[n].penetration = r - dist;
+        ++n;
+    };
+
+    const glm::ivec3 c0((int)std::floor((p.x - r) / kCellSize),
+                        (int)std::floor((p.y - r) / kCellSize),
+                        (int)std::floor((p.z - r) / kCellSize));
+    const glm::ivec3 c1((int)std::floor((p.x + r) / kCellSize),
+                        (int)std::floor((p.y + r) / kCellSize),
+                        (int)std::floor((p.z + r) / kCellSize));
+    for (int x = c0.x; x <= c1.x && n < maxOut; ++x)
+    for (int y = c0.y; y <= c1.y && n < maxOut; ++y)
+    for (int z = c0.z; z <= c1.z && n < maxOut; ++z) {
+        auto it = grid().find(cellKey(x, y, z));
+        if (it == grid().end()) continue;
+        for (std::uint32_t idx : it->second) test(idx);
     }
-    return hit;
-}
-
-// Hot replacement for physics.move on the actor capsule. Returns false when no
-// world collision data is available so the caller can fall back.
-inline bool hotMoveCapsule(void* host, MovementStateV1* st, float dt)
-{
-    if (!st || dt <= 0.0f)
-        return false;
-    if (!ensureWorld(host))
-        return false;
-
-    const float radius = st->radius > 0.0f ? st->radius : 0.4f;
-    const float tipHalf = st->halfHeight > 0.0f ? st->halfHeight : 0.5f;
-    const float segHalf = tipHalf > radius ? tipHalf - radius : 0.0f;
-
-    glm::vec3 pos(st->position[0], st->position[1], st->position[2]);
-    glm::vec3 vel(st->velocity[0], st->velocity[1], st->velocity[2]);
-
-    // gravityScale < 0 means the caller already integrated gravity.
-    const float gScale = st->gravityScale < 0.0f
-        ? 0.0f
-        : (st->gravityScale > 0.0f ? st->gravityScale : 1.0f);
-    vel.z -= 9.81f * gScale * dt;
-
-    const float speed = glm::length(vel);
-    const float maxStep = std::max(radius * 0.4f, 0.05f);
-    int steps = (int)std::ceil(speed * dt / maxStep);
-    if (steps < 1) steps = 1;
-    if (steps > 16) steps = 16;
-    const glm::vec3 move = vel * (dt / (float)steps);
-
-    bool contacted = false;
-    glm::vec3 contactNormal(0.0f);
-    for (int s = 0; s < steps; ++s) {
-        pos += move;
-        glm::vec3 n(0.0f);
-        bool hit = false;
-        // Sample the capsule as three spheres along its vertical axis.
-        const glm::vec3 samples[3] = {
-            pos + glm::vec3(0.0f, 0.0f, segHalf),
-            pos,
-            pos - glm::vec3(0.0f, 0.0f, segHalf)};
-        for (const glm::vec3& sp : samples) {
-            glm::vec3 p = sp;
-            glm::vec3 hn(0.0f);
-            if (resolveSphere(p, radius, hn)) {
-                pos += p - sp;  // apply the push-out to the capsule center
-                n = hn;
-                hit = true;
-            }
-        }
-        if (hit) {
-            // Slide: remove velocity into the surface.
-            const float vn = glm::dot(vel, n);
-            if (vn < 0.0f)
-                vel -= n * vn;
-            contactNormal = n;
-            contacted = true;
-        }
+    // Large triangles (e.g. floors) are not cell-indexed; always test them.
+    for (std::uint32_t idx : large()) {
+        if (n >= maxOut) break;
+        test(idx);
     }
-
-    st->position[0] = pos.x; st->position[1] = pos.y; st->position[2] = pos.z;
-    st->velocity[0] = vel.x; st->velocity[1] = vel.y; st->velocity[2] = vel.z;
-    st->collided = contacted ? 1u : 0u;
-    if (contacted && contactNormal.z > 0.5f &&
-        vel.z > -0.05f && vel.z < 0.05f)
-        st->grounded = 1u;
-    else if (!contacted)
-        st->grounded = 0u;
-    return true;
+    return n;
 }
 
 } // namespace HotCollision

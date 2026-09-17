@@ -1,100 +1,52 @@
-// 08 15 2026, 12 00
+// 09 17 2026
 /* purpose
-* Live-tunable collision response settings (bounce).
-* Reloads config/collision.json on change so bounce strength, min speed,
-* and cooldown tune at runtime without restarting.
-* Does NOT build collision meshes, own the world, or apply physics.
+* Requests the hot collision-policy snapshot used by player/world response.
+* Keeps a safe compiled fallback when no hot collision module handles it.
 */
 
 #include "config/collision-config.h"
 
 #include <algorithm>
-#include <exception>
-#include <fstream>
 
-#include <nlohmann/json.hpp>
+#include "hot-reload/hot-movement-policy.h"
+#include "live-code/live-behavior.h"
 
-#include "debug/debug-log.h"
+namespace {
 
-using json = nlohmann::json;
+CollisionBouncePolicy gPolicy{};
+std::uint64_t gPolicyTick = ~std::uint64_t{0};
 
-CollisionConfig& CollisionConfig::instance()
+} // namespace
+
+const CollisionBouncePolicy& currentCollisionBouncePolicy(std::uint64_t simulationTick)
 {
-    static CollisionConfig cfg;
-    return cfg;
-}
+    if (simulationTick == gPolicyTick)
+        return gPolicy;
 
-CollisionConfig::CollisionConfig()
-{
-    load();
-}
+    gPolicy = CollisionBouncePolicy{};
 
-bool CollisionConfig::load(const std::string& path)
-{
-    mPath = path;
+    CollisionPolicyV1 policy{};
+    policy.bounceEnabled = gPolicy.enabled ? 1u : 0u;
+    policy.bounceStrength = gPolicy.strength;
+    policy.bounceFriction = gPolicy.friction;
+    policy.bounceMinSpeed = gPolicy.minSpeed;
+    policy.bounceMaxSpeed = gPolicy.maxSpeed;
+    policy.bounceCooldown = gPolicy.cooldown;
 
-    std::ifstream file(path);
-    if (!file.is_open())
+    if (LiveBehavior::dispatchGameplayEvent64(
+            GAME_EVENT_COLLISION_POLICY,
+            &policy,
+            sizeof(policy),
+            simulationTick, 0, 0) && policy.handled)
     {
-        Debug::log(Debug::Category::Collision,
-            "[COLLISION CONFIG] No config at %s (bounce disabled)\n", path.c_str());
-        return false;
+        gPolicy.enabled = policy.bounceEnabled != 0;
+        gPolicy.strength = std::max(0.0f, policy.bounceStrength);
+        gPolicy.friction = std::clamp(policy.bounceFriction, 0.0f, 1.0f);
+        gPolicy.minSpeed = std::max(0.0f, policy.bounceMinSpeed);
+        gPolicy.maxSpeed = std::max(gPolicy.minSpeed, policy.bounceMaxSpeed);
+        gPolicy.cooldown = std::max(0.0f, policy.bounceCooldown);
     }
 
-    try
-    {
-        json j;
-        file >> j;
-
-        if (j.contains("bounce"))
-        {
-            const json& b = j["bounce"];
-            mBounceEnabled = b.value("enabled", false);
-            mBounceStrength = std::max(0.0f, b.value("strength", 0.0f));
-            mBounceFriction = std::clamp(b.value("friction", 0.5f), 0.0f, 1.0f);
-            mBounceMinSpeed = std::max(0.0f, b.value("minSpeed", 7.0f));
-            mBounceMaxSpeed = std::max(mBounceMinSpeed, b.value("maxSpeed", 45.0f));
-            mBounceCooldown = std::max(0.0f, b.value("cooldown", 0.05f));
-        }
-        else
-        {
-            mBounceEnabled = false;
-        }
-
-        std::error_code ec;
-        mLastWrite = std::filesystem::last_write_time(path, ec);
-        mLastCheck = std::chrono::steady_clock::now();
-
-        Debug::log(Debug::Category::Collision,
-            "[COLLISION CONFIG] bounce enabled=%d strength=%.3f friction=%.2f "
-            "minSpeed=%.2f maxSpeed=%.2f cooldown=%.3f\n",
-            (int)mBounceEnabled, mBounceStrength, mBounceFriction,
-            mBounceMinSpeed, mBounceMaxSpeed, mBounceCooldown);
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        Debug::log(Debug::Category::Collision,
-            "[COLLISION CONFIG ERROR] Failed to parse %s: %s\n", path.c_str(), e.what());
-        return false;
-    }
-}
-
-bool CollisionConfig::pollHotReload()
-{
-    const auto now = std::chrono::steady_clock::now();
-    if (mLastCheck.time_since_epoch().count() != 0 &&
-        now - mLastCheck < std::chrono::milliseconds(250))
-        return false;
-    mLastCheck = now;
-
-    std::error_code ec;
-    if (!std::filesystem::exists(mPath, ec) || ec)
-        return false;
-    const auto writeTime = std::filesystem::last_write_time(mPath, ec);
-    if (ec || writeTime == mLastWrite)
-        return false;
-
-    mLastWrite = writeTime;
-    return load(mPath);
+    gPolicyTick = simulationTick;
+    return gPolicy;
 }
