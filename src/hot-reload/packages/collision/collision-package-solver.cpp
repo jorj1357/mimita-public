@@ -30,8 +30,8 @@ namespace HotCollisionPackage {
 namespace {
 
 // ── Solve tuning (edit live) ────────────────────────────────────────────────
-constexpr float kGroundNormalZ = 0.35f;
-constexpr float kWalkableSlopeDot = 0.70f;
+// These are the hot owner's values; edit and save to retune while the EXE runs.
+constexpr float kWalkableSlopeDot = 0.80f;   // old cold MAX_WALKABLE_SLOPE_DOT
 constexpr float kSkin = 0.001f;
 constexpr int   kResolvePasses = 3;
 constexpr int   kMaxSubsteps = 8;
@@ -40,6 +40,17 @@ constexpr float kGroundSnapEpsilon = 0.05f;
 constexpr float kMaxCapsulePush = 1000.0f;
 constexpr float kMaxBodyPush = 0.5f;
 constexpr int   kMaxRawContacts = 64;
+// Contact tolerance: a sphere within this distance of a triangle is treated as
+// touching even when it is not penetrating. Without it a resting capsule sits at
+// exactly `radius`, the contact is discarded, grounding flickers off, gravity is
+// applied, and the actor can never jump. Live-editable: change and save.
+constexpr float kContactTolerance = 0.02f;
+// Ground must be a contact near the feet, matching the old cold rule, so a
+// ceiling/overhead contact with a walkable normal cannot ground the actor.
+constexpr float kGroundMaxHeightAboveFeet = 0.15f;
+// Old cold-path grounding stability values (preserved behavior).
+constexpr float kContactHysteresisSeconds = 0.033f;   // world contact memory
+constexpr float kStableGroundGraceSeconds = 0.08f;    // ground loss grace
 // Extra padding around the swept union AABB so geometry brushed at the very
 // edge of the sweep is still a candidate. Kept small: the sweep itself already
 // covers the full move.
@@ -57,6 +68,23 @@ constexpr std::uint32_t kBounceCooldownTicks =
 std::unordered_map<std::uint64_t, std::uint64_t>& bounceTickMap()
 {
     static std::unordered_map<std::uint64_t, std::uint64_t> m;
+    return m;
+}
+
+// Per-entity contact/ground memory, keyed by stable EntityId (never a pointer,
+// so it survives generation changes). Mirrors the old cold Player::GroundState
+// hysteresis: a real contact keeps `hasWorldContact` true for a short window,
+// and ground loss is only accepted after a grace window. Without this a slope
+// seam or a contact at exactly the tolerance boundary flickers grounded off.
+struct GroundMemory {
+    float worldContactLostTimer = 0.0f;
+    float groundLostTimer = 0.0f;
+    bool groundSticky = false;   // was grounded within the grace window
+    std::uint64_t lastSolveTick = 0;
+};
+std::unordered_map<std::uint64_t, GroundMemory>& groundMemoryMap()
+{
+    static std::unordered_map<std::uint64_t, GroundMemory> m;
     return m;
 }
 
@@ -99,6 +127,7 @@ struct ActorContact {
     std::uint32_t partId;
     std::uint32_t policyId;
     bool body;
+    bool touching;      // within tolerance but not penetrating: classify, no push
     std::int32_t tri;
     glm::vec3 point;
     glm::vec3 normal;
@@ -153,12 +182,13 @@ int gatherActorContacts(const glm::vec3& root, const ColliderRuntime* cols,
         const int sampleCount = col.halfHeight > col.radius ? 3 : 1;
         for (int s = 0; s < sampleCount && n < maxOut; ++s) {
             SphereHit hits[8];
-            const int hc = gatherSphereHits(samples[s], col.radius, candidates,
-                                            hits, 8);
+            const int hc = gatherSphereHits(samples[s], col.radius,
+                                            kContactTolerance, candidates, hits, 8);
             for (int h = 0; h < hc && n < maxOut; ++h) {
                 out[n].partId = col.partId;
                 out[n].policyId = col.policyId;
                 out[n].body = col.body;
+                out[n].touching = hits[h].touching != 0u;
                 out[n].tri = hits[h].triangle;
                 out[n].point = hits[h].point;
                 out[n].normal = hits[h].normal;
@@ -186,6 +216,8 @@ int mergeContacts(const ActorContact* raw, int rawCount, ActorContact* merged)
             merged[mc++] = raw[i];
             continue;
         }
+        // Merge key includes the touching flag so a penetrating contact and a
+        // touching-only contact on the same triangle stay distinguishable.
         if (raw[i].penetration > merged[found].penetration) {
             const std::uint32_t part = merged[found].partId;
             const std::uint32_t policy = merged[found].policyId;
@@ -202,6 +234,8 @@ int mergeContacts(const ActorContact* raw, int rawCount, ActorContact* merged)
             merged[found].partId = raw[i].partId;
             merged[found].policyId = raw[i].policyId;
         }
+        // Only touching if every contributor on this triangle is touching.
+        merged[found].touching = merged[found].touching && raw[i].touching;
     }
     return mc;
 }
@@ -292,17 +326,59 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
                                        raw, kMaxRawContacts);
     ActorContact merged[kMaxRawContacts];
     const int mc = mergeContacts(raw, rc, merged);
+
+    // Actor feet plane, in the same frame as `pos`, for the old cold rule that
+    // only a contact near the feet counts as ground.
+    float feetZ = pos.z;
+    for (int i = 0; i < colCount; ++i) {
+        if (cols[i].partId != COLLISION_PART_CAPSULE)
+            continue;
+        const glm::vec3 c = pos + cols[i].localOffset;
+        const float bottom = c.z - (cols[i].halfHeight > cols[i].radius
+                                        ? cols[i].halfHeight
+                                        : cols[i].radius);
+        feetZ = std::min(feetZ, bottom);
+    }
+
     for (int i = 0; i < mc; ++i) {
-        const float cap = merged[i].body ? kMaxBodyPush : kMaxCapsulePush;
-        const float push = std::min(merged[i].penetration + kSkin, cap);
-        pos += merged[i].normal * push;
-        collided = true;
-        worldContact = true;
-        if (merged[i].body)
-            bodyContact = true;
-        if (merged[i].normal.z >= kGroundNormalZ)
+        ActorContact& c = merged[i];
+        // Classify ground with the old cold rule: walkable normal and the
+        // contact point near the feet. A touching-only contact grounds the actor
+        // without pushing, so a resting capsule stays stable.
+        const bool walkable = c.normal.z > kWalkableSlopeDot;
+        const bool nearFeet = c.point.z <= feetZ + kGroundMaxHeightAboveFeet;
+        const bool isGround = walkable && nearFeet;
+        if (isGround)
             grounded = true;
-        applyVelocityResponse(vel, merged[i], entity, tick, bounced);
+
+        worldContact = true;
+        if (c.body)
+            bodyContact = true;
+        collided = true;
+
+        if (c.touching) {
+            // Touching-only: no depenetration and no velocity response. Still
+            // cancels into-surface velocity so a resting actor does not creep.
+            const float into = glm::dot(vel, c.normal);
+            if (into < 0.0f)
+                vel -= c.normal * into;
+            continue;
+        }
+
+        const float cap = c.body ? kMaxBodyPush : kMaxCapsulePush;
+        const float push = std::min(c.penetration + kSkin, cap);
+        pos += c.normal * push;
+
+        if (isGround) {
+            // Ground settles, it does not bounce: cancel the into-ground
+            // component and slide. This is the old cold ground response; the
+            // bounce policy is for walls, ceilings, and body parts.
+            const float into = glm::dot(vel, c.normal);
+            if (into < 0.0f)
+                vel -= c.normal * into;
+        } else {
+            applyVelocityResponse(vel, c, entity, tick, bounced);
+        }
     }
     recordContacts(merged, mc, contactAccum, contactAccumCount);
     recordImpacts(merged, mc, impactAccum, impactAccumCount);
@@ -431,6 +507,39 @@ void solve(void* host, CollisionSolveV1* q)
                         bodyContact, bounced, contactAccum, contactAccumCount,
                         impactAccum, impactAccumCount);
         }
+    }
+
+    // Contact/ground hysteresis, matching the old cold Player::GroundState:
+    //  - a real contact refreshes `worldContactLostTimer`, so worldContact stays
+    //    sticky for a short window across slope seams and sub-cell edges;
+    //  - `groundLostTimer` counts time since the last real ground contact, and
+    //    the actor stays grounded through a short grace window.
+    // This is what keeps the actor jump-eligible and the walk animation stable
+    // instead of flickering grounded off for one tick.
+    {
+        GroundMemory& gm = groundMemoryMap()[q->entityId];
+        const bool realContact = worldContact || bodyContact;
+        if (realContact)
+            gm.worldContactLostTimer = kContactHysteresisSeconds;
+        else
+            gm.worldContactLostTimer =
+                std::max(0.0f, gm.worldContactLostTimer - q->dt);
+
+        const bool realGround = grounded;
+        if (realGround) {
+            gm.groundLostTimer = 0.0f;
+            gm.groundSticky = true;
+        } else {
+            gm.groundLostTimer += q->dt;
+            if (gm.groundLostTimer >= kStableGroundGraceSeconds)
+                gm.groundSticky = false;
+        }
+
+        const bool hasWorldContact = gm.worldContactLostTimer > 0.0f;
+        // Persist ground only through the grace window after real ground; never
+        // let a wall contact alone keep the actor grounded.
+        grounded = realGround || gm.groundSticky;
+        worldContact = hasWorldContact;
     }
 
     if (grounded && !bounced && vel.z > -kGroundSnapEpsilon &&

@@ -60,14 +60,19 @@ const WorldTri& triangle(std::uint32_t index);
 // Closest point on a triangle to p (Ericson, Real-Time Collision Detection).
 glm::vec3 closestPointOnTri(const glm::vec3& p, const WorldTri& t);
 
-// Narrowphase: append every triangle in `candidates` the sphere overlaps.
+// Narrowphase: append every triangle in `candidates` the sphere overlaps OR
+// merely touches within `tolerance`. Touching-only hits carry penetration 0 and
+// a `touching` flag so the solver can classify ground without pushing out; this
+// is what keeps a resting capsule stably grounded instead of a = radius contact
+// being discarded and flickering.
 struct SphereHit {
     std::int32_t triangle;
     glm::vec3 point;
     glm::vec3 normal;
     float penetration;
+    std::uint32_t touching;   // 1 = contact within tolerance but not penetrating
 };
-int gatherSphereHits(const glm::vec3& center, float radius,
+int gatherSphereHits(const glm::vec3& center, float radius, float tolerance,
                      const std::vector<std::uint32_t>& candidates,
                      SphereHit* out, int maxOut);
 

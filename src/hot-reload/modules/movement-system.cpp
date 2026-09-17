@@ -239,8 +239,16 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
     CollisionSolveV1 q;
     buildPlayerCollision(ctx, st, dt, entity, tick, q);
     fn(ctx->host, &q);
-    if (!q.handled)
-        return;   // package could not solve; do not invent a second result
+    if (!q.handled) {
+        // Package could not solve (for example the world is not bound yet):
+        // integrate plainly and state the result explicitly, so grounded is
+        // never left undefined and no second owner invents a result.
+        for (int i = 0; i < 3; ++i)
+            st->position[i] += st->velocity[i] * dt;
+        st->grounded = 0;
+        st->collided = 0;
+        return;
+    }
     for (int i = 0; i < 3; ++i) {
         st->position[i] = q.outPosition[i];
         st->velocity[i] = q.outVelocity[i];

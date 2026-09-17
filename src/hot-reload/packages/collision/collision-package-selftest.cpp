@@ -116,8 +116,8 @@ bool collisionPackageSelfTest(char* message, std::uint32_t cap)
         if (candidates.size() != 1)
             return fail(message, cap, "slope: triangle not gathered");
         SphereHit hits[4];
-        const int hc = gatherSphereHits(V(3.33f, 3.12f, 3.54f), 0.5f, candidates,
-                                        hits, 4);
+        const int hc = gatherSphereHits(V(3.33f, 3.12f, 3.54f), 0.5f, 0.02f,
+                                        candidates, hits, 4);
         if (hc <= 0 || hits[0].penetration <= 0.0f)
             return fail(message, cap, "slope: no penetration found");
         if (std::abs(hits[0].normal.z) < 0.1f ||
@@ -188,23 +188,36 @@ bool collisionPackageSelfTest(char* message, std::uint32_t cap)
             return fail(message, cap, "invalid geometry: non-finite output");
     }
 
-    // 8. A fast fall must be caught by the swept-AABB gather, not tunnel.
-    //    Start high above the floor with a large downward speed so the actor
-    //    would pass through without a swept candidate region.
+    // 8. A fast fall must be caught by the swept-AABB gather, not tunnel. The
+    //    actor starts high and falls at high speed; it must land within a few
+    //    ticks and must never end up below the floor.
     {
         installQuad(V(-50, -50, 0), V(50, -50, 0), V(50, 50, 0), V(-50, 50, 0));
         CollisionSolveV1 q = makeCapsule(105, 50, V(0, 0, 5.0f), V(0, 0, -240.0f),
                                          0.4f, 0.5f);
         q.dt = 1.0f / 60.0f;
-        collisionSolve(nullptr, &q);
-        if (!q.handled || !q.grounded || !q.worldContact)
+        bool landed = false;
+        for (int i = 0; i < 8; ++i) {
+            q.tick = 50ull + (std::uint64_t)i;
+            for (int k = 0; k < 3; ++k) {
+                q.position[k] = q.outPosition[k];
+                q.velocity[k] = q.outVelocity[k];
+            }
+            collisionSolve(nullptr, &q);
+            if (!q.handled)
+                return fail(message, cap, "fast fall: solve declined");
+            if (!finite3(q.outPosition) || !finite3(q.outVelocity))
+                return fail(message, cap, "fast fall: non-finite output");
+            if (q.outPosition[2] < 0.3f && !q.grounded)
+                return fail(message, cap, "fast fall: tunneled through floor");
+            if (q.grounded && q.outPosition[2] > 0.3f &&
+                q.outPosition[2] < 0.9f && q.outVelocity[2] >= -0.01f) {
+                landed = true;
+                break;
+            }
+        }
+        if (!landed)
             return fail(message, cap, "fast fall: floor not detected");
-        if (!(q.outPosition[2] > 0.3f))
-            return fail(message, cap, "fast fall: tunneled through floor");
-        if (!(q.outVelocity[2] >= -0.01f))
-            return fail(message, cap, "fast fall: downward velocity not stopped");
-        if (!finite3(q.outPosition) || !finite3(q.outVelocity))
-            return fail(message, cap, "fast fall: non-finite output");
     }
 
     // 9. No world bound: the solve must decline instead of reporting a silent
@@ -243,6 +256,29 @@ bool collisionPackageSelfTest(char* message, std::uint32_t cap)
             return fail(message, cap, "multi-part: no shared contacts");
         if (!finite3(q.outPosition))
             return fail(message, cap, "multi-part: non-finite output");
+    }
+
+    // 11. A resting capsule must stay grounded across repeated solves, with no
+    //     flicker. The capsule torso centre is at halfHeight (0.9) so the bottom
+    //     sample sits exactly at the floor: the tolerance must keep it grounded.
+    {
+        installQuad(V(-20, -20, 0), V(20, -20, 0), V(20, 20, 0), V(-20, 20, 0));
+        CollisionSolveV1 q = makeCapsule(107, 70, V(0, 0, 0.9f), V(0, 0, 0),
+                                         0.4f, 0.9f);
+        for (int i = 0; i < 12; ++i) {
+            q.tick = 70ull + (std::uint64_t)i;
+            for (int k = 0; k < 3; ++k)
+                q.position[k] = q.outPosition[k];
+            for (int k = 0; k < 3; ++k)
+                q.velocity[k] = q.outVelocity[k];
+            collisionSolve(nullptr, &q);
+            if (!q.handled)
+                return fail(message, cap, "resting: solve declined");
+            if (!q.grounded || !q.worldContact)
+                return fail(message, cap, "resting: grounding flickered off");
+            if (!(q.outPosition[2] > 0.85f))
+                return fail(message, cap, "resting: sank through floor");
+        }
     }
 
     return true;

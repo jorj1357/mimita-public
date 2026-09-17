@@ -240,6 +240,18 @@ bool ensureWorld(void* host)
     h ^= hashTris(sample, last.count) * 31ull;
     c.sampleHash = h;
 
+    // A partial page-in (fewer triangles than the probe reported) means the
+    // world changed mid-read. Do not publish a short index as ready; the caller
+    // declines and retries next tick rather than colliding against missing
+    // geometry.
+    if ((std::uint32_t)c.tris.size() != total) {
+        c.tris.clear();
+        c.total = 0;
+        c.sampleHash = 0;
+        c.ready = false;
+        return false;
+    }
+
     rebuildIndex(c);
     c.ready = !c.tris.empty();
     return c.ready;
@@ -303,7 +315,7 @@ glm::vec3 closestPointOnTri(const glm::vec3& p, const WorldTri& t)
     return t.a + ab * (vb * denom) + ac * (vc * denom);
 }
 
-int gatherSphereHits(const glm::vec3& center, float radius,
+int gatherSphereHits(const glm::vec3& center, float radius, float tolerance,
                      const std::vector<std::uint32_t>& candidates,
                      SphereHit* out, int maxOut)
 {
@@ -317,12 +329,17 @@ int gatherSphereHits(const glm::vec3& center, float radius,
         const glm::vec3 cp = closestPointOnTri(center, c.tris[idx]);
         const glm::vec3 d = center - cp;
         const float dist = glm::length(d);
-        if (dist >= radius || dist < 1e-6f)
+        if (dist < 1e-6f)
+            continue;
+        const bool penetrating = dist < radius;
+        const bool touching = !penetrating && dist <= radius + tolerance;
+        if (!penetrating && !touching)
             continue;
         out[n].triangle = (std::int32_t)idx;
         out[n].point = cp;
         out[n].normal = d / dist;
-        out[n].penetration = radius - dist;
+        out[n].penetration = penetrating ? (radius - dist) : 0.0f;
+        out[n].touching = penetrating ? 0u : 1u;
         ++n;
     }
     return n;
