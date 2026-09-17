@@ -88,6 +88,18 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.yaw = ctx.localServerYaw;
         player.ground.onGround = ctx.localServerOnGround;
         player.externalImpulse = glm::vec3(0.0f);
+        // Any new authoritative epoch with health is a new life. Clear death
+        // state unconditionally here so instant respawn/explode can never leave
+        // the local player stuck on the death screen, invisible, or unmovable.
+        if (ctx.localServerHealth > 0) {
+            player.dead = false;
+            player.proceduralFrozen = false;
+            player.deathAnim = Player::DeathAnimState{};
+            player.respawnTimer = 0.0f;
+            player.killedBy.clear();
+            player.networkDeathPresented = false;
+            player.spawnFlashTimer = 10.0f;
+        }
         player.syncLegacyStateToLayers();
         player.updateModelWorldTransforms();
         ctx.lastAppliedEpoch = ctx.localServerEpoch;
@@ -109,6 +121,8 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     // thresholds, and snap/smooth/hard-reset decision. Cold code executes it.
     bool hotNeedsBootstrap = false;
     std::uint32_t hotApplyMode = GAME_RECONCILE_APPLY_NONE;
+    bool hotAllowPostGap = false;
+    bool hotAllowSnap = false;
     {
         GameReconcileV1 rq{};
         rq.predictedPosition[0] = player.pos.x;
@@ -141,7 +155,11 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
             rq.handled) {
             hotNeedsBootstrap =
                 rq.hardReset == GAME_RECONCILE_HARD_RESET_BOOTSTRAP;
-            hotApplyMode = rq.reserved;
+            hotApplyMode = rq.reserved & 0x3u;
+            hotAllowPostGap =
+                (rq.reserved & GAME_RECONCILE_FLAG_ALLOW_POSTGAP) != 0u;
+            hotAllowSnap =
+                (rq.reserved & GAME_RECONCILE_FLAG_ALLOW_SNAP) != 0u;
             switch (rq.correctionMode) {
             case GAME_RECONCILE_MODE_SMOOTH:
                 correctionClass = MovementCorrectionClass::Small; break;
@@ -203,6 +221,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.transformEpoch == ctx.localServerEpoch &&
         ctx.lastAppliedEpoch == ctx.localServerEpoch;
     const bool catastrophicDivergence =
+        hotAllowSnap &&
         authoritativeEpochReady &&
         ctx.localPlayerReconciled &&
         correctionClass == MovementCorrectionClass::Major &&
@@ -214,6 +233,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     // Only a genuinely large divergence may hard-snap; ordinary same-life drift
     // keeps local prediction (quiet converge) instead of correcting every frame.
     const bool postGapResyncActive =
+        hotAllowPostGap &&
         !hotNeedsBootstrap &&
         ctx.postGapResync &&
         currentMs < ctx.postGapResyncDeadlineMs &&

@@ -58,6 +58,12 @@ struct HotAttachmentStateV1 {
     float worldScale[3];
     std::uint32_t resolved;
     std::uint32_t reserved;
+    // Muzzle: local offset (in, from the recipe) and the resolved world point +
+    // barrel direction (out). The cold fire path reads the world muzzle so the
+    // shot/tracer/flash starts at the visible gun. Hot-owned.
+    float localMuzzle[3];
+    float muzzleWorldPosition[3];
+    float forward[3];
 };
 
 // Written by hot actor-overlay policy on an actor entity to declare that the

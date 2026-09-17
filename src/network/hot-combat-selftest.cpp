@@ -22,6 +22,7 @@
 #include "hot-reload/hot-action.h"
 #include "hot-reload/hot-animation-clips.h"
 #include "hot-reload/hot-animation.h"
+#include "hot-reload/hot-movement-fired.h"
 #include "hot-reload/hot-effect.h"
 #include "hot-reload/hot-pose.h"
 #include "hot-reload/hot-presentation.h"
@@ -643,14 +644,33 @@ bool runHotCombatSelfTest(std::string& report)
                         "phase2 idle -> walk on speed", report);
             facts.flags = HOT_ACTION_FLAG_JUMPING;
             setFacts();
+            {
+                HotMovementFiredV1 fired{};
+                fired.version = HOT_MOVEMENT_FIRED_VERSION;
+                fired.flags = HOT_FIRED_GROUND_JUMP;
+                const bool wrote = DynamicComponentStore::instance().write(
+                    m, HOT_MOVEMENT_FIRED_COMPONENT, &fired, sizeof(fired));
+                HotMovementFiredV1 rb{};
+                const bool readBack = DynamicComponentStore::instance().read(
+                    m, HOT_MOVEMENT_FIRED_COMPONENT, &rb, sizeof(rb));
+                ok &= check(wrote && readBack && rb.flags == HOT_FIRED_GROUND_JUMP,
+                            "movement fired pulse writable", report);
+            }
             ok &= check(tickAction() == HOT_ACTION_JUMP,
                         "phase2 walk interrupted by jump", report);
             facts.flags = HOT_ACTION_FLAG_GROUNDED;
             facts.speed = 5.0f;
             setFacts();
             tickAction();  // settle back to walk
-            facts.flags = HOT_ACTION_FLAG_GROUNDED | HOT_ACTION_FLAG_DASHING;
+            facts.flags = HOT_ACTION_FLAG_GROUNDED;
             setFacts();
+            {
+                HotMovementFiredV1 fired{};
+                fired.version = HOT_MOVEMENT_FIRED_VERSION;
+                fired.flags = HOT_FIRED_DASH;
+                DynamicComponentStore::instance().write(
+                    m, HOT_MOVEMENT_FIRED_COMPONENT, &fired, sizeof(fired));
+            }
             ok &= check(tickAction() == HOT_ACTION_DASH,
                         "phase2 dash interrupts locomotion", report);
             facts.flags = HOT_ACTION_FLAG_GROUNDED;

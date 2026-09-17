@@ -112,6 +112,10 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         const std::uint64_t runtimeTick = (std::uint64_t)sim.tick;
         // Expose the world to movement/query capabilities for this tick.
         LiveBehavior::setDispatchWorld(sim.world);
+        // Expose the current input + camera to hot code (input.read/camera.read).
+        InputState hotInput = inputStateFromFrame(frame);
+        LiveBehavior::setDispatchInput(&hotInput);
+        LiveBehavior::setDispatchCamera(&THE_CAMERA);
         void* host = LiveBehavior::hostContext(runtimeTick);
         runtime.beginMovementTick();
         runtime.runDomain(GAME_DOMAIN_GAMEPLAY, runtimeTick, TICK_DT, host);

@@ -19,6 +19,7 @@
 #include "hot-reload/hot-action.h"
 #include "hot-reload/hot-animation-clips.h"
 #include "hot-reload/hot-animation.h"
+#include "hot-reload/hot-movement-fired.h"
 #include "hot-reload/hot-package.h"
 
 #include <cmath>
@@ -87,6 +88,10 @@ struct ActionFacts {
     bool unequipping = false;
     bool melee = false;
     bool hurt = false;
+    bool moving = false;       // intent to move (not velocity)
+    bool dashFired = false;    // ability actually activated this frame
+    bool downDashFired = false;
+    bool jumpFired = false;
     std::uint32_t meleeAction = 0;
     float speed01 = 0.0f;
     float vy = 0.0f;
@@ -152,23 +157,25 @@ float blendSecondsFor(std::uint64_t a)
 
 std::uint64_t selectAction(const ActionFacts& f, bool justLanded)
 {
+    (void)justLanded;
     if (f.dead) return HOT_ACTION_DEATH;
     if (f.freezing) return HOT_ACTION_FREEZE;
-    if (f.dashing) return HOT_ACTION_DASH;
-    if (f.downDashing) return HOT_ACTION_DOWN_DASH;
+    if (f.dashFired) return HOT_ACTION_DASH;
+    if (f.downDashFired) return HOT_ACTION_DOWN_DASH;
     // Melee actions take priority over generic shooting so a weapon that also
     // sets a shoot-effect timer (quick-hit/sword) still plays slash/lunge.
     if (f.melee)
         return f.meleeAction == 2u ? HOT_ACTION_LUNGE : HOT_ACTION_SLASH;
     if (f.shooting) return HOT_ACTION_SHOOT;
     if (f.justShot) return HOT_ACTION_JUST_SHOT;
-    if (f.reloading) return HOT_ACTION_RELOAD;    if (f.equipping) return HOT_ACTION_EQUIP;
+    if (f.reloading) return HOT_ACTION_RELOAD;
+    if (f.equipping) return HOT_ACTION_EQUIP;
     if (f.unequipping) return HOT_ACTION_UNEQUIP;
     if (f.hurt) return HOT_ACTION_HURT;
-    if (!f.grounded)
-        return (f.jumping || f.vy > 0.5f) ? HOT_ACTION_JUMP : HOT_ACTION_FALL;
-    if (justLanded) return HOT_ACTION_LAND;
-    if (f.speed01 > 0.08f) return HOT_ACTION_WALK;
+    if (f.jumpFired) return HOT_ACTION_JUMP;
+    // Locomotion is intent-driven: walk whenever the actor intends to move,
+    // otherwise idle (including while airborne). No velocity/FALL gating.
+    if (f.moving) return HOT_ACTION_WALK;
     return f.weaponKey != 0 ? HOT_ACTION_EQUIPPED_IDLE : HOT_ACTION_IDLE;
 }
 
@@ -235,6 +242,37 @@ void MIMITA_GAME_CALL animationPolicyTick(void* host, std::uint64_t /*tick*/,
                                sizeof(runtime)))
             f.grounded = runtime.grounded != 0;
 
+        // Locomotion is intent-driven: walk whenever the actor intends to move.
+        // Remote actors without a replicated intent fall back to velocity.
+        bool hasIntent = false;
+        GameMovementIntentComponentV1 intent{};
+        if (ctx->readComponent(ctx->host, entity, GAME_COMPONENT_MOVEMENT_INTENT,
+                               &intent, sizeof(intent))) {
+            hasIntent = true;
+            const float wish =
+                std::fabs(intent.moveX) + std::fabs(intent.moveY);
+            f.moving = intent.pressed != 0 && wish > 1e-3f;
+        }
+
+        // Ability animations play only on an actual activation published by hot
+        // movement.main; consume the pulse after reading it.
+        if (ctx->dynamicReadComponent && ctx->dynamicWriteComponent) {
+            HotMovementFiredV1 fired{};
+            if (ctx->dynamicReadComponent(ctx->host, entity,
+                                          HOT_MOVEMENT_FIRED_COMPONENT, &fired,
+                                          sizeof(fired)) &&
+                fired.flags != 0u) {
+                f.dashFired = (fired.flags & HOT_FIRED_DASH) != 0;
+                f.downDashFired = (fired.flags & HOT_FIRED_DOWN_DASH) != 0;
+                f.jumpFired = (fired.flags & (HOT_FIRED_GROUND_JUMP |
+                                              HOT_FIRED_AIR_JUMP)) != 0;
+                fired.flags = 0;
+                ctx->dynamicWriteComponent(ctx->host, entity,
+                                           HOT_MOVEMENT_FIRED_COMPONENT, &fired,
+                                           sizeof(fired));
+            }
+        }
+
         GameHealthComponentV1 hp{};
         int healthCurrent = 0;
         bool hasHealth = false;
@@ -249,6 +287,8 @@ void MIMITA_GAME_CALL animationPolicyTick(void* host, std::uint64_t /*tick*/,
         f.speed01 = speed / kWalkSpeedRef;
         if (f.speed01 < 0.0f) f.speed01 = 0.0f;
         if (f.speed01 > 1.5f) f.speed01 = 1.5f;
+        if (!hasIntent)
+            f.moving = f.speed01 > 0.08f;  // remote fallback: velocity
 
         HotAnimationMemoryV2 mem{};
         mem.version = HOT_ANIMATION_MEMORY_VERSION;
@@ -363,6 +403,12 @@ const MimitaHotPackage::SchemaRegistrar s_animationMemorySchema{
     {HOT_ANIMATION_MEMORY_COMPONENT, gameHash("AnimationMemory.v2"),
      sizeof(HotAnimationMemoryV2), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
      "AnimationMemory", HOT_ANIMATION_MEMORY_VERSION, 0}};
+// Local-only ability-fired pulse, written by hot movement.main and consumed by
+// this system. Never replicated.
+const MimitaHotPackage::SchemaRegistrar s_movementFiredSchema{
+    {HOT_MOVEMENT_FIRED_COMPONENT, gameHash("MovementFired.v1"),
+     sizeof(HotMovementFiredV1), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
+     "MovementFired", HOT_MOVEMENT_FIRED_VERSION, 0}};
 const MimitaHotPackage::MigrationRegistrar s_animationStateMigration{
     HOT_ANIMATION_STATE_COMPONENT, 1, 2,
     reinterpret_cast<void*>(&migrateAnimationV1ToV2)};

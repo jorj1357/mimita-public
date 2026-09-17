@@ -130,8 +130,10 @@ void EffectPartSystem::update(float dt) {
 
     drainPendingWorldHits(6);
 
-    updateBloodParticles(dt);
-    updateSurfaceDecals(dt);
+    if (!mAgingClaimed) {
+        updateBloodParticles(dt);
+        updateSurfaceDecals(dt);
+    }
     updatePendingBloodDecals(dt);
     processDeferredBloodDecals();
 }

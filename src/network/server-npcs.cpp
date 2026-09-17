@@ -275,9 +275,39 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
 // snapshot pipeline re-admits it (rebuildServerNpcMap skips dead bodies).
 static void respawnServerNpc(Npc& npc)
 {
-    const glm::vec3 spawnPos = effectiveServerSpawn(npc.body.respawnPosition);
+    glm::vec3 spawnPos = effectiveServerSpawn(npc.body.respawnPosition);
+    float spawnYaw = npc.body.yaw;
+
+    // Hot lifecycle policy: the active mode/behavior may relocate the respawn,
+    // set the yaw, and arm spawn protection on the actor entity. Generic across
+    // players and NPCs; when unhandled (or no hot module) the cold spawn point
+    // above is used unchanged.
+    {
+        ActorLifecyclePolicyV1 lp{};
+        lp.playerId = npc.id;
+        lp.dead = 1u;
+        lp.respawnsEnabled = 1u;
+        lp.pendingRespawn = 0u;
+        lp.actorEntity = (std::uint64_t)Ecs::ensure(
+            EntityRealm::Server, EntityDomain::Npc, npc.id);
+        lp.respawnSeconds = 0.0f;
+        lp.chosenPosition[0] = spawnPos.x;
+        lp.chosenPosition[1] = spawnPos.y;
+        lp.chosenPosition[2] = spawnPos.z;
+        lp.chosenYaw = spawnYaw;
+        if (LiveBehavior::dispatchGameplayEvent64(
+                GAME_EVENT_ACTOR_LIFECYCLE_POLICY, &lp, sizeof(lp), 0,
+                npc.id, 0) &&
+            lp.handled)
+        {
+            spawnPos = glm::vec3(lp.position[0], lp.position[1], lp.position[2]);
+            spawnYaw = lp.yaw;
+        }
+    }
+
     npc.body.pos = spawnPos;
     npc.body.respawnPosition = spawnPos;
+    npc.body.yaw = spawnYaw;
     // New life: bump the lifecycle counter so clients detect the respawn.
     npc.transformEpoch = static_cast<uint16_t>((npc.transformEpoch % 65535) + 1);
     assignNpcAvatar(npc);

@@ -15,7 +15,6 @@
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/live-behavior.h"
-#include "physics/movement/move-capsule.h"
 #include "physics/physics-types.h"
 #include "world/world.h"
 
@@ -100,16 +99,11 @@ bool runMovementParitySelfTest(std::string& report)
     ok &= check(posA[2] > 0.5f, "hot movement lands on floor", report);
     ok &= check(std::fabs(velA[2]) < 0.5f, "hot movement vertical rest", report);
 
-    // Parity with the kernel capsule primitive from the same start/settle.
-    MovementStateV1 ref{};
-    ref.position[2] = 2.0f;
-    ref.radius = 0.4f;
-    ref.halfHeight = 0.9f;
-    ref.gravityScale = 1.0f;
-    for (int i = 0; i < 120; ++i)
-        Physics::moveCapsuleStep(ref, &world, kDt);
-    ok &= check(std::fabs(posA[2] - ref.position[2]) < 0.35f,
-                "hot landing within tolerance of capsule primitive", report);
+    // Landing height: the capsule center rests at radius + segment half, i.e.
+    // tipHalf = 0.9 for this test capsule (radius 0.4, halfHeight 0.9). The old
+    // cold capsule primitive is gone; this is a fixed expectation.
+    ok &= check(std::fabs(posA[2] - 0.9f) < 0.35f,
+                "hot landing near expected capsule rest height", report);
     ok &= check(std::isfinite(posA[2]), "hot result finite", report);
 
     HotReloadSystem::instance().unloadGameDLL();

@@ -706,6 +706,12 @@ int runServer(const LaunchOptions& options)
         ::StructuredLogger::instance().pollConfig();
         ::StructuredLogger::instance().tick();
 
+        // Send the coordinator heartbeat BEFORE the simulation/gameplay work so
+        // a long or starved tick cannot delay it past the room timeout (the room
+        // would expire and later joins would fail). Rate-limited to 500ms
+        // inside tickIceCoordinator, so the end-of-loop call is a no-op here.
+        tickIceCoordinator(dedicatedIceState, players.size());
+
         // Accumulator-based timing: run simulation ticks for accumulated debt
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
@@ -1424,6 +1430,11 @@ static void simulateOneServerTick(ListenServerState& state)
                                 state.totalPacketsOut, nullptr,
                                 &state.disagreementRetransmit);
         }
+
+        // Heartbeat before simulation so a long tick cannot let the room expire.
+        // Skip ICE coordinator for local-only servers.
+        if (state.serverCode.find("LOCAL-") != 0)
+            tickIceCoordinator(state, state.players.size());
 
         handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
         // Bind the authoritative headless collision world for server-side hot

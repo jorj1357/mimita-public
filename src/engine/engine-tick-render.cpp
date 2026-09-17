@@ -481,7 +481,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
                 Ragdoll::RagdollPresentation::instance().present(
-                    kv.first, kv.second, ragdollDelay);
+                    kv.first, kv.second, ragdollDelay, false);
                 // Generic overlay state on the shared actor EntityId so the hot
                 // overlay path can own this remote player's name/health.
                 PresentationEntities::projectActorOverlayState(kv.first, true,
@@ -501,7 +501,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
                 Ragdoll::RagdollPresentation::instance().present(
-                    kv.first, kv.second, ragdollDelay);
+                    kv.first, kv.second, ragdollDelay, true);
                 PresentationEntities::projectActorOverlayState(kv.first, false,
                                                                kv.second);
                 if (genericActors) {

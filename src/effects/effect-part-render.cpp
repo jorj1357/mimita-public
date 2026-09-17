@@ -626,27 +626,34 @@ void EffectPartSystem::render(const Camera& camera) const {
             up = bitangent * half;
         }
 
+        // Push flat decals off the surface along the normal so they do not
+        // z-fight with the world geometry they lie on (all decals, hot + cold).
+        const glm::vec3 decalPos = decal.position + n * 0.012f;
         if (texture.empty()) {
-            DebugVis::drawFilledDecal(camera, decal.position, n,
+            DebugVis::drawFilledDecal(camera, decalPos, n,
                 std::max(0.001f, decal.radius), color);
             continue;
         }
         if (decal.kind == SurfaceDecalKind::Blood)
-            appendTexturedQuad(bloodDecalVerts, decal.position, right, up, color);
+            appendTexturedQuad(bloodDecalVerts, decalPos, right, up, color);
         else if (decal.kind == SurfaceDecalKind::BulletHole)
-            appendTexturedQuad(holeDecalVerts, decal.position, right, up, color);
+            appendTexturedQuad(holeDecalVerts, decalPos, right, up, color);
         else
-            appendTexturedQuad(crackDecalVerts, decal.position, right, up, color);
+            appendTexturedQuad(crackDecalVerts, decalPos, right, up, color);
     }
 
     if (!bloodSprayVerts.empty() && !bloodTexture.empty())
         drawTexturedHitParticles(camera, bloodSprayVerts, bloodTexture);
+    // Slope-scaled depth bias for the coplanar textured decals.
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(-1.5f, -1.5f);
     if (!bloodDecalVerts.empty())
         drawTexturedHitParticles(camera, bloodDecalVerts, bloodDecalTex);
     if (!holeDecalVerts.empty())
         drawTexturedHitParticles(camera, holeDecalVerts, holeDecalTex);
     if (!crackDecalVerts.empty())
         drawTexturedHitParticles(camera, crackDecalVerts, crackDecalTex);
+    glDisable(GL_POLYGON_OFFSET_FILL);
 
     // Particle debug logging
     if (DebugConfig::DEBUG_BLOOD_HITS || DebugConfig::DEBUG_BLOOD_RAYS) {

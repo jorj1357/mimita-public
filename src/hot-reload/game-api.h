@@ -875,6 +875,10 @@ struct GameSharedStateV1 {
     // Kernel-owned match entity for the active match (0 = none). Package match
     // state attaches to this entity through the dynamic component capabilities.
     std::uint64_t matchEntity;
+    // Append-only: hot-owned aim mode, a hash of gameHash("crosshair" /
+    // "camforward" / "physical" / "farpoint" / "world_hit"). 0 = use the cold
+    // gameplay config. Hot policy writes it; the cold aim code reads it.
+    std::uint64_t aimModeHash;
 };
 static constexpr std::uint32_t GAME_MODE_FLAG_CREATION = 1u;
 static constexpr std::uint32_t GAME_MODE_FLAG_HOT_MOVEMENT = 2u;
@@ -896,7 +900,9 @@ struct DamagePolicyV1 {
     float knockbackY;
     float knockbackZ;
     std::uint32_t handled;
-    std::uint32_t reserved;
+    // Kernel safety cap filled from serverAuthoritativeDamageLimit(); a hot
+    // behavior may override it (0 = unlimited). Separate from gameplay tuning.
+    std::uint32_t outDamageLimit;
 };
 
 using GameBehaviorOnEventFn = void (MIMITA_GAME_CALL *)(
@@ -1134,6 +1140,42 @@ struct GenerationPolicyV1 {
     std::uint32_t mismatch;
     // out
     std::uint32_t allowWorld;    // 1 = participate even if generations differ
+    std::uint32_t handled;
+};
+
+// net.send-policy: hot decision for whether an outbound server update (snapshot)
+// is sent to a player this tick. The wire format stays kernel-owned.
+static constexpr std::uint64_t GAME_EVENT_NET_SEND_POLICY =
+    gameHash("net.send-policy");
+struct NetSendPolicyV1 {
+    // in
+    std::uint32_t playerId;
+    std::uint32_t tick;
+    std::uint32_t entityCount;
+    std::uint32_t reason;        // 0 snapshot
+    float intervalMs;
+    // out
+    std::uint32_t send;          // 1 = send
+    std::uint32_t handled;
+};
+
+// net.reliable-policy: hot decision for reliable-event delivery (whether an
+// event is queued reliably, retried, and whether a failure may drop the
+// connection). Parameters (retryMs/ttl/attempts) remain NetworkingConfig.
+static constexpr std::uint64_t GAME_EVENT_NET_RELIABLE_POLICY =
+    gameHash("net.reliable-policy");
+struct NetReliablePolicyV1 {
+    // in
+    std::uint32_t playerId;
+    std::uint32_t eventId;
+    std::uint32_t packetType;
+    std::uint32_t attempts;
+    std::uint32_t ttlExpired;
+    std::uint32_t attemptsExhausted;
+    // out
+    std::uint32_t reliable;      // 0 = send best-effort instead of reliable
+    std::uint32_t retry;         // 0 = do not retry this event
+    std::uint32_t keepConnection;// 0 = a failure may mark the connection unhealthy
     std::uint32_t handled;
 };
 
@@ -1623,6 +1665,17 @@ static constexpr std::uint64_t GAME_DOMAIN_CLIENT_TICK = gameHash("client.tick")
 // resolveCapability. Generic and reusable; adding a primitive never adds a
 // context field.
 static constexpr std::uint64_t GAME_CAP_PHYSICS_MOVE = gameHash("physics.move");
+// actor.move.npc: hot NPC movement ownership. A hot movement package provides
+// this; the cold NPC kernel calls it once per NPC after the AI has written the
+// movement intent. It consumes the generic Transform/Velocity/MovementIntent/
+// RuntimeState components and writes the moved result back, returning 1 when it
+// owns the actor (the cold kernel yields) or 0 to fall back. NPC movement and
+// routing become hot-reloadable with no per-actor ABI field.
+using GameNpcMoveFn = std::uint32_t (MIMITA_GAME_CALL *)(void* host,
+                                                         std::uint64_t entity,
+                                                         std::uint32_t tick,
+                                                         float dt);
+static constexpr std::uint64_t GAME_CAP_NPC_MOVE = gameHash("actor.move.npc");
 static constexpr std::uint64_t GAME_CAP_EFFECT_SPAWN = gameHash("effect.spawn");
 // Existing pooled EffectPart primitive (textured billboard / decal / beam /
 // box / tick sphere). One descriptor, no feature enum.
@@ -1701,6 +1754,328 @@ struct GameToolDefinitionV1 {
 using GameToolDefinitionQueryFn = bool (MIMITA_GAME_CALL *)(
     void* host, GameToolDefinitionV1* request);
 static constexpr std::uint64_t GAME_CAP_ANIMATION_UPDATE = gameHash("animation.update");
+
+// world.collision: paginated dump of the map's collision triangles. This is the
+// one cold geometry primitive that lets hot code build its own spatial index and
+// own broadphase/narrowphase, collision resolution, and the ragdoll solver so
+// those algorithms and live world edits are hot. The kernel keeps the map
+// triangle data; hot code owns everything above it.
+static constexpr std::uint64_t GAME_CAP_WORLD_COLLISION = gameHash("world.collision");
+static constexpr std::uint32_t GAME_MAX_COLLISION_TRIS = 4096;
+struct GameCollisionTriangleV1 {
+    float a[3];
+    float b[3];
+    float c[3];
+    float normal[3];
+};
+struct GameWorldCollisionPageV1 {
+    std::uint32_t offset;         // in: first triangle index
+    std::uint32_t maxTriangles;   // in: capacity of `out`
+    std::uint32_t total;          // out: total triangles in the map
+    std::uint32_t count;          // out: triangles written
+    GameCollisionTriangleV1* out; // in: caller buffer (maxTriangles)
+};
+using GameWorldCollisionFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                       GameWorldCollisionPageV1* page);
+
+// physics.capsuleSolve: optional hot provider that replaces the kernel capsule
+// solve. When a hot package registers a provider, the kernel calls it with the
+// capsule state instead of running Physics::moveCapsuleStep. The provider owns
+// broadphase/narrowphase over `world.collision` and writes the resolved state.
+// When no provider is registered, the kernel solve runs unchanged.
+static constexpr std::uint64_t GAME_CAP_PHYSICS_CAPSULE_SOLVE =
+    gameHash("physics.capsuleSolve");
+struct GameCapsuleSolveV1 {
+    // in
+    float position[3];
+    float velocity[3];
+    float yaw;
+    float radius;
+    float halfHeight;   // tip-to-tip half extent
+    float sizeScale;
+    float gravityScale; // negative = caller already integrated gravity
+    float dt;
+    // in: kernel geometry access. Call collisionFn(collisionHost, &page) only
+    // when actually solving; it is null when no world is bound.
+    GameWorldCollisionFn collisionFn;
+    void* collisionHost;
+    // out
+    float outPosition[3];
+    float outVelocity[3];
+    std::uint32_t grounded;
+    std::uint32_t collided;
+    std::uint32_t handled;   // 0 = provider declines; kernel solve runs
+    std::uint32_t reserved;
+};
+using GameCapsuleSolveFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                     GameCapsuleSolveV1* state);
+
+// physics.impulse: generic apply-impulse primitive for hot collision / ragdoll
+// solvers. Adds linear (and optional angular) velocity to an entity's body.
+static constexpr std::uint64_t GAME_CAP_PHYSICS_IMPULSE = gameHash("physics.impulse");
+struct GamePhysicsImpulseV1 {
+    std::uint64_t entity;
+    float linear[3];
+    float angular[3];
+    std::uint32_t applied;
+    std::uint32_t reserved;
+};
+using GamePhysicsImpulseFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                       GamePhysicsImpulseV1* request);
+
+// ragdoll.solve: ONE generic seam that lets a hot module own the ragdoll solver
+// algorithm. The cold host fills the limb/joint/grab snapshot each substep and
+// calls the capability; if the hot side sets `handled`, the host applies the
+// returned limb states and skips the cold solver (which stays as the fallback
+// until the hot solver is proven). Plain POD, fixed bounds, no pointers.
+static constexpr std::uint64_t GAME_CAP_RAGDOLL_SOLVE = gameHash("ragdoll.solve");
+static constexpr std::uint32_t GAME_MAX_RAGDOLL_LIMBS = 24;
+
+struct GameRagdollLimbStateV1 {
+    float position[3];
+    float orientation[4];      // quaternion, [0]=w
+    float linearVelocity[3];
+    float angularVelocity[3];
+};
+struct GameRagdollLimbStaticV1 {
+    std::uint32_t parentIndex;      // 0xffffffff = root
+    std::uint32_t hasRotationLimits;
+    float inverseMass;
+    float radius;
+    float halfHeight;
+    float parentLocalAnchor[3];
+    float childLocalAnchor[3];
+    float restLength;
+    float maxStretch;
+    float bindRotation[4];          // quaternion, [0]=w
+    float rotMinDeg[3];
+    float rotMaxDeg[3];
+};
+struct GameRagdollGrabV1 {
+    std::uint32_t active;
+    std::uint32_t limbIndex;
+    std::int32_t targetLimb;        // -1 = world anchor
+    float grabPoint[3];
+    float grabNormal[3];
+    float handLocalAnchor[3];
+    float targetLocalAnchor[3];
+    float strength;
+};
+struct GameRagdollSolveV1 {
+    // in
+    std::uint32_t structSize;
+    std::uint32_t limbCount;
+    float dt;
+    float gravityScale;
+    float stiffness;
+    float damping;
+    std::uint32_t iterations;
+    GameRagdollLimbStateV1 limbs[GAME_MAX_RAGDOLL_LIMBS];
+    GameRagdollLimbStaticV1 statics[GAME_MAX_RAGDOLL_LIMBS];
+    GameRagdollGrabV1 grabLeft;
+    GameRagdollGrabV1 grabRight;
+    // out
+    std::uint32_t handled;   // 1 = hot owned the solve; limbs[] are results
+    std::uint32_t applied;
+};
+using GameRagdollSolveFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                     GameRagdollSolveV1* solve);
+
+// input.read: hot code reads the current local input state (movement wish,
+// held/edge actions, ragdoll grab/extend). The kernel owns polling and the
+// key binding; the hot module owns what it does with the input.
+static constexpr std::uint64_t GAME_CAP_INPUT_READ = gameHash("input.read");
+struct GameInputStateV1 {
+    float wishMoveX;
+    float wishMoveY;
+    float camForward[3];
+    float movementHeldDuration;
+    std::uint32_t jumpHeld;
+    std::uint32_t jumpPressed;
+    std::uint32_t dashPressed;
+    std::uint32_t movementPressed;
+    std::uint32_t movementJustPressed;
+    std::uint32_t groundReturnPressed;
+    std::uint32_t downDashPressed;
+    std::uint32_t freezeHeld;
+    std::uint32_t freezePressed;
+    std::uint32_t ragdollTogglePressed;
+    std::uint32_t grabLeftHeld;
+    std::uint32_t grabRightHeld;
+    std::uint32_t extendLeftMouse;
+    std::uint32_t extendRightMouse;
+    std::uint32_t reserved;
+};
+using GameInputReadFn = bool (MIMITA_GAME_CALL *)(void* host, GameInputStateV1* out);
+
+// camera.read: hot code reads the current camera transform (position/axes/yaw/
+// pitch/fov). The kernel owns the camera; hot presentation/physics policy reads
+// it (e.g. ragdoll head aim, look motors).
+static constexpr std::uint64_t GAME_CAP_CAMERA_READ = gameHash("camera.read");
+struct GameCameraStateV1 {
+    float position[3];
+    float front[3];
+    float up[3];
+    float right[3];
+    float yaw;
+    float pitch;
+    float fov;
+    std::uint32_t valid;
+    std::uint32_t reserved[3];
+};
+using GameCameraReadFn = bool (MIMITA_GAME_CALL *)(void* host, GameCameraStateV1* out);
+
+// actor.skeleton.write: let a hot module (e.g. a hot ragdoll orchestrator) write
+// the authoritative actor root + skeleton node local transforms back to the
+// typed actor. The caller supplies final matrices (it owns the math); the kernel
+// owns the Player storage, node mapping, and world-transform update. Plain POD.
+static constexpr std::uint64_t GAME_CAP_ACTOR_SKELETON_WRITE =
+    gameHash("actor.skeleton.write");
+static constexpr std::uint32_t GAME_MAX_SKELETON_NODES = 64;
+struct GameActorSkeletonNodeV1 {
+    std::int32_t nodeIndex;
+    float local[16];
+};
+struct GameActorSkeletonWriteV1 {
+    std::uint64_t actorEntity;      // local player entity (from shared state)
+    float rootPosition[3];
+    float rootRotation[4];          // quaternion [0]=w
+    float rootVelocity[3];
+    std::uint32_t rootRotationActive;  // 1 = model root uses rootRotation
+    std::uint32_t ancestorCount;
+    std::int32_t ancestorNodes[8];  // neutralized (identity) non-part ancestors
+    std::uint32_t nodeCount;
+    GameActorSkeletonNodeV1 nodes[GAME_MAX_SKELETON_NODES];
+    std::uint32_t applied;
+    // Append-only: when ownerActorId != 0 the write targets that remote actor
+    // (from the multiplayer context); otherwise the local actor.
+    std::uint32_t ownerActorId;
+    std::uint32_t isNpc;
+    std::uint32_t reserved2;
+};
+using GameActorSkeletonWriteFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameActorSkeletonWriteV1* write);
+
+// ragdoll.snapshot: read/write the per-owner ragdoll limb snapshot (the same POD
+// the network codec uses) so a hot presenter can consume remote frames and a hot
+// sender can emit them. op 0 = read (kernel fills), op 1 = write (kernel
+// applies). Plain POD, fixed bounds.
+static constexpr std::uint64_t GAME_CAP_RAGDOLL_SNAPSHOT = gameHash("ragdoll.snapshot");
+static constexpr std::uint32_t GAME_MAX_RAGDOLL_SNAPSHOT_LIMBS = 24;
+struct GameRagdollSnapshotLimbV1 {
+    std::uint32_t limbIndex;
+    float position[3];
+    float rotation[4];   // quaternion [0]=w
+};
+struct GameRagdollSnapshotGrabV1 {
+    std::uint8_t active;
+    std::uint8_t hand;
+    std::uint16_t reserved;
+    std::uint32_t targetLimb;   // 0xffffffff = world
+    float anchor[3];
+    float handLocal[3];
+    float strength;
+};
+struct GameRagdollSnapshotV1 {
+    std::uint32_t op;            // 0 = read, 1 = write
+    std::uint32_t ownerActorId;
+    std::uint32_t limbCount;
+    std::uint32_t reserved;
+    std::uint64_t tick;
+    GameRagdollSnapshotLimbV1 limbs[GAME_MAX_RAGDOLL_SNAPSHOT_LIMBS];
+    GameRagdollSnapshotGrabV1 grabs[2];
+};
+using GameRagdollSnapshotFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameRagdollSnapshotV1* snapshot);
+
+// ragdoll.bind: build the ragdoll body template for an actor (limb -> skeleton
+// node mapping, mesh-local transforms, joint anchors, rotation limits, grab
+// indices). A hot presentation/orchestrator uses it to map solved limb
+// transforms onto the typed skeleton without seeing the cold body builder.
+static constexpr std::uint64_t GAME_CAP_RAGDOLL_BIND = gameHash("ragdoll.bind");
+static constexpr std::uint32_t GAME_MAX_RAGDOLL_PARTS = 24;
+struct GameRagdollPartV1 {
+    std::uint64_t nameHash;
+    std::int32_t nodeIndex;
+    std::int32_t skeletonParentPart;
+    std::int32_t parentIndex;
+    std::uint32_t hasRotationLimits;
+    float meshLocal[16];
+    float parentLocalAnchor[3];
+    float childLocalAnchor[3];
+    float restLength;
+    float maxStretch;
+    float bindRotation[4];
+    float rotMinDeg[3];
+    float rotMaxDeg[3];
+};
+struct GameRagdollTemplateV1 {
+    std::uint64_t actorEntity;
+    std::uint32_t partCount;
+    std::uint32_t ancestorNodeCount;
+    std::int32_t torsoIndex;
+    std::int32_t headIndex;
+    std::int32_t leftArmIndex;
+    std::int32_t rightArmIndex;
+    std::int32_t leftLegIndex;
+    std::int32_t rightLegIndex;
+    std::int32_t ancestorNodes[8];
+    float rootOffsetLocal[3];
+    std::uint32_t valid;
+    GameRagdollPartV1 parts[GAME_MAX_RAGDOLL_PARTS];
+};
+using GameRagdollBindFn = bool (MIMITA_GAME_CALL *)(void* host,
+                                                    GameRagdollTemplateV1* out);
+
+// ragdoll.presentation: hot remote-ragdoll presentation. The cold presenter
+// calls this per remote owner; a hot presenter interpolates the buffered
+// snapshots and writes the typed actor via actor.skeleton.write, returning
+// handled = 1 so the cold presenter yields. Plain POD.
+static constexpr std::uint64_t GAME_CAP_RAGDOLL_PRESENT =
+    gameHash("ragdoll.presentation");
+struct GameRagdollPresentV1 {
+    std::uint32_t ownerActorId;
+    std::uint32_t isNpc;
+    std::uint64_t actorEntity;
+    double delaySeconds;
+    double nowSeconds;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+using GameRagdollPresentFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                       GameRagdollPresentV1* present);
+// ragdoll.aim: hot alive-ragdoll motor policy. The cold orchestrator fills the
+// head/torso indices, the camera look basis, the per-limb aim offsets and the
+// current limb angular velocities; a hot module computes the damped aim response
+// and returns updated angular velocities (handled = 1) so the cold applyControls
+// yields. Plain POD, fixed bounds, no pointers.
+static constexpr std::uint64_t GAME_CAP_RAGDOLL_AIM = gameHash("ragdoll.aim");
+struct GameRagdollAimLimbV1 {
+    float orientation[4];    // quaternion, [0]=w
+    float angularVelocity[3];
+    float aimOffset[4];      // quaternion, [0]=w
+};
+struct GameRagdollAimV1 {
+    // in
+    std::uint32_t structSize;
+    std::uint32_t headIndex;      // 0xffffffff = none
+    std::uint32_t torsoIndex;     // 0xffffffff = none
+    float cameraFront[3];
+    float cameraUp[3];
+    float headStrength;
+    float headMaxSpeed;
+    float torsoStrength;
+    float torsoMaxSpeed;
+    float lookDamping;
+    float dt;
+    std::uint32_t limbCount;
+    GameRagdollAimLimbV1 limbs[GAME_MAX_RAGDOLL_LIMBS];
+    // out
+    std::uint32_t handled;   // 1 = hot owned the aim; limbs[] hold angularVel
+    std::uint32_t reserved;
+};
+using GameRagdollAimFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                   GameRagdollAimV1* aim);
 // Generic authoritative server-context primitives. These let hot code mutate
 // authoritative world state through stable generic handles; the kernel keeps
 // ownership of the players/projectiles containers and networking.
@@ -1772,6 +2147,52 @@ struct GameSocketRawV1 {
     std::uint32_t reserved[2];
 };
 using GameSocketRawFn = bool (MIMITA_GAME_CALL *)(void* host, GameSocketRawV1* q);
+
+// Generic effect-pool access. Hot policy reads/writes/ages the EXISTING pooled
+// effect storage (surface decals, blood particles) at a fixed tick, and can
+// claim aging so the kernel stops aging (one owner). Storage/draw stay in the
+// kernel; behavior is hot. No new feature slot.
+static constexpr std::uint64_t GAME_CAP_EFFECT_POOL = gameHash("effect.pool");
+enum GameEffectPoolKind : std::uint32_t {
+    GAME_EFFECT_POOL_PARTS = 0,
+    GAME_EFFECT_POOL_DECALS = 1,
+    GAME_EFFECT_POOL_BLOOD = 2,
+};
+enum GameEffectPoolOp : std::uint32_t {
+    GAME_EFFECT_POOL_COUNT = 0,
+    GAME_EFFECT_POOL_GET = 1,
+    GAME_EFFECT_POOL_SET = 2,
+    GAME_EFFECT_POOL_KILL = 3,
+    GAME_EFFECT_POOL_CLAIM = 4,   // count != 0 => hot owns aging
+};
+struct GameEffectPoolV1 {
+    std::uint32_t op;
+    std::uint32_t kind;
+    std::uint32_t index;
+    std::uint32_t count;      // out (COUNT)
+    std::uint32_t alive;      // out (GET)
+    std::uint32_t reserved;
+    float position[3];
+    float velocity[3];
+    float normal[3];
+    float axis[3];
+    float color[3];
+    float alpha;
+    float scale;              // decal radius / particle size
+    float height;             // decal strip height
+    float age;
+    float lifetime;
+    float fadeTime;
+    float gravity;
+    float drag;
+    float rotation;
+    float stretch;
+    float textureScale;
+    std::uint32_t decalKind;  // SurfaceDecalKind
+    std::uint32_t flags;      // bit0 = generic (untextured) mark
+    char texturePath[GAME_EFFECT_STRING];
+};
+using GameEffectPoolFn = bool (MIMITA_GAME_CALL *)(void*, GameEffectPoolV1*);
 
 // Generic local AABB for a logical presentation mesh. Hot policy computes grip
 // recentre / mount from the model bounds (the same data the cold viewmodel used).

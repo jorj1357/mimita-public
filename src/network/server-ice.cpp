@@ -172,6 +172,44 @@ void tickIceCoordinator(ListenServerState& state, size_t playerCount)
         return;
     state.lastIceCoordinatorPollMs = nowDbg;
 
+    // Heartbeat watchdog + self-heal: if the coordinator no longer knows our
+    // room (it expired because a heartbeat was missed, e.g. the tick loop was
+    // starved under heavy hot-reload/build load), re-register with the existing
+    // agent so the server stays joinable without a restart. Rate-limited so it
+    // cannot spam the coordinator.
+    {
+        static uint64_t s_lastRoomHealthMs = 0;
+        if (nowDbg - s_lastRoomHealthMs >= 10000) {
+            s_lastRoomHealthMs = nowDbg;
+            CoordinatorLookupResult lk = coordinatorIceLookup(state.serverCode);
+            if (lk.reachable && !lk.exists && state.iceListenerAgent) {
+                printf("[SERVER ICE HEARTBEAT] room %s no longer exists - re-registering\n",
+                    state.serverCode.c_str());
+                IceHostMetadata meta;
+                meta.serverName = state.serverName.empty() ? "MiMITA Server" : state.serverName;
+                meta.map = state.mapName.empty() ? "funworldv3" : state.mapName;
+                meta.gamemode = state.gameMode.empty() ? "sandbox" : state.gameMode;
+                meta.maxPlayers = (int)state.maxPlayers;
+                meta.passwordProtected = state.passwordProtected;
+                meta.discordNotification = state.discordNotification;
+                meta.hostPlayerName = state.hostPlayerName;
+                meta.port = state.port;
+                IceHostResult hr = coordinatorIceHost(
+                    state.iceSessionId, state.iceListenerAgent->localSdp(), meta);
+                if (hr.ok) {
+                    state.serverCode = hr.roomCode;
+                    state.joinToken = hr.joinToken;
+                    hostedRoomSession().roomCode = hr.roomCode;
+                    hostedRoomSession().hostToken = hr.joinToken;
+                    hostedRoomSession().joinToken = hr.joinToken;
+                    setServerCoordinatorState(hr.roomCode, hr.joinToken);
+                    printf("[SERVER ICE] re-registered expired room: new code=%s\n",
+                           hr.roomCode.c_str());
+                }
+            }
+        }
+    }
+
     // Non-blocking: poll coordinator for pending client requests
     auto pending = coordinatorIceHostPoll(state.serverCode, state.iceSessionId, (int)playerCount);
     if (pending.hasRequest)

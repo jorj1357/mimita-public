@@ -391,3 +391,234 @@ contact-reset-only (no time cooldown).
 - The build now emits timestamped exes; copied the newest to `mimita.exe`.
 - After this one relaunch, all movement/spawn/input/lifecycle/reconcile/
   generation decisions are hot; no further cold restart is needed for those.
+
+---
+
+# Addendum 5 — jump buffer, disabled divergence correction, Accept-all (2026-09-16T18:06:00Z)
+
+## Part 1 (hot)
+- `movement-system.cpp` / `actor-movement-system.cpp`: jump buffer now comes from
+  `hot-actor-movement.h` (`kJumpBufferMode`: 0=seconds default, 1=ticks;
+  `kJumpBufferSeconds=0.2`, `kJumpBufferTicks=12`). Fixes "cannot jump":
+  the buffer was 0 so the shared jump policy always early-returned. Held jump +
+  auto-bhop now jumps whenever a jump resource is available; any contact resets
+  the resource (wall climbing by touch).
+- `reconcile-policy.cpp`: position-divergence corrections disabled
+  (`MODE_NONE`/`APPLY_NONE`); server adopts client movement, so no rubberband.
+  Restore block left in comments.
+- `rocket-behavior.cpp`: movement-validation decision forced to Accept with a
+  restore comment (`policy->decision = policy->computedDecision;`).
+
+## Part 2 (bridge, this rebuild)
+- `hot-reconciliation.h`: `GAME_RECONCILE_FLAG_ALLOW_POSTGAP` / `ALLOW_SNAP`.
+- `multiplayer-reconcile.cpp`: honors the flags; post-gap and catastrophic snaps
+  default off. The 100 m snap is now hot-controlled.
+- `hot-modules.json`: tracks the physics/collision sources
+  (`move-capsule.cpp`, `movement-step.cpp`, `physics-mini.cpp`,
+  `movement-validation.cpp`) so a silent live edit is reported; added
+  `hot-actor-movement.h` to hashed headers.
+- `reconciliation-policy-selftest.cpp`: updated to the new policy (no divergence
+  correction).
+
+## Part 3 status (hot collision math)
+- NOT completed in this pass. The real gameplay collision lives in the client
+  `doCollisions` and the server `resolveCapsuleCollisionAgainstWorld`, both cold.
+  Making the algorithm itself hot requires a hot capability provider (e.g.
+  `physics.capsuleSolve`) that hot code implements against a generic world query;
+  the stable EXE keeps only the dispatcher. This is the remaining large item.
+
+## Regression record
+- `docs/regressions/2026-09-16-movement-authority-adopt-fixed-rubberband.md`
+  (fix direction confirmed, tuning remains).
+
+## Validation
+- Hot DLL current; cold build SUCCESS.
+- Selftests PASS: reconciliation-policy (new expectations), movement-parity,
+  air-movement-parity, server-spatial-authority, movement-selftest.
+
+---
+
+# Addendum 6 — spawn/death reliability + capsule fixes (2026-09-16T19:30:00Z)
+
+## Phase 2 (spawn / lifecycle / death)
+- `multiplayer-reconcile.cpp`: any new authoritative epoch with health > 0 now
+  clears death state (`dead`, `proceduralFrozen`, `deathAnim`, `respawnTimer`,
+  `killedBy`, `networkDeathPresented`) and sets a spawn flash. Fixes the sticky
+  "you died to ..." death screen and the invisible/unmovable body after instant
+  explode/auto-respawn, which previously depended on a Space-press serial or a
+  health<=0 snapshot that could be skipped.
+- `multiplayer-tick.cpp` `applyAuthoritativeSpawn`: refuses a (0,0,0) spawn
+  position and keeps the last known good position (logs `[SPAWN GUARD]`).
+- `config/gui/hud.json`: `deathOverlay` panel now `visible: false` and moved to
+  a real y (was y=99460 and drawn unconditionally by the HUD).
+
+## Phase 1 (capsule / float / stuck)
+- `physics/movement/move-capsule.cpp`: fixed the half-vs-segment conflation.
+  `MovementStateV1.halfHeight` is the tip-to-tip half extent; `RigidBody` wants
+  the cylinder segment half. The old code inflated the fallback capsule by one
+  radius per end (tip-to-tip 5.0 vs 3.6), a large constant float.
+- `network/server.h`: server `PLAYER_RADIUS/HEIGHT` unified to the client
+  capsule (0.7 / 3.6) so the two sides stop embedding each other at edges.
+- `entities/player.cpp`: drop the rendered model root by 0.138 so the mesh feet
+  meet the capsule bottom (model AABB feet at -1.662 vs capsule -1.8).
+
+## Phase 3 (packet send / reliability)
+- Added the networking/death sources to `hot-modules.json` `cold`
+  (`server.cpp`, `client.cpp`, `packets.h`, `reliable-gameplay-events.cpp`,
+  `snapshot-chunks.cpp`, `ice/ice-agent.cpp`, `death-system.h`) so a silent live
+  edit is now reported instead of lost.
+- The full hot `net.send` / `net.reliable` capability surface and hot collision
+  math remain (large, untested this pass). Documented as the next bridge.
+
+## Validation
+- Cold build SUCCESS; hot DLL unchanged this pass.
+- Selftests PASS: server-spatial-authority, movement-parity,
+  air-movement-parity, reconciliation-policy, movement-selftest,
+  entity-slice.
+
+---
+
+# Addendum 7 — Phase 3: hot send/reliability policy (2026-09-16T19:46:00Z)
+
+## Hot seams added
+- `game-api.h`: `GAME_EVENT_NET_SEND_POLICY` / `NetSendPolicyV1` and
+  `GAME_EVENT_NET_RELIABLE_POLICY` / `NetReliablePolicyV1`.
+- `reliable-gameplay-events.cpp`:
+  - `tickReliableGameplayEvents` dispatches `net.reliable-policy` at the
+    expiry/exhaustion branch (honors `keepConnection`, replacing the hardcoded
+    chat-only special case) and at the retry branch (honors `retry`).
+- `server-packets.cpp`: `buildAndSendSnapshot` dispatches `net.send-policy` per
+  viewer (honors `send`).
+- New hot modules:
+  - `modules/net-send-policy.cpp` — default `send = 1`.
+  - `modules/net-reliable-policy.cpp` — default `retry = 1`,
+    `keepConnection = 1` (reliable failures never drop the connection; editable).
+- Wire format (`packets.h`), chunking, and the transport sockets remain
+  kernel-owned; only the send/retry/keep decisions are hot.
+
+## Tracking
+- Added the networking/death sources to `hot-modules.json` `cold` in the previous
+  addendum so silent live edits are reported.
+
+## Validation
+- Hot DLL build success (67 sources, including the two new modules).
+- Cold build SUCCESS.
+- Selftests PASS: reconciliation-policy, movement-parity, air-movement-parity,
+  server-spatial-authority.
+- Registered: `net.send-policy`, `net.reliable-policy`.
+
+## Still remaining
+- Hot collision math (`physics.capsuleSolve`) — the actual sweep/slide algorithm
+  in a hot module over the existing `world.collision` triangle capability.
+- `net.reliable-policy.reliable` is carried but not yet honored at queue time
+  (best-effort downgrade path still cold).
+
+---
+
+# Addendum 8 — hot collision solver seam + reliable downgrade (2026-09-16T20:34:00Z)
+
+## Hot collision math (seam installed)
+- `game-api.h`: `GAME_CAP_PHYSICS_CAPSULE_SOLVE` (`physics.capsuleSolve`) +
+  `GameCapsuleSolveV1` (state in/out, `handled`).
+- `live-behavior.cpp`: `capMoveCapsule` / `capPhysicsMove` call the hot provider
+  when registered and it returns `handled = 1`; otherwise the kernel solve runs.
+  This is the seam that lets the collision algorithm be edited live.
+- `move-capsule.cpp` dispatches `movement.collision-policy`
+  (`CollisionPolicyV1`) and honors `outRadius` / `outHalfHeight` /
+  `outGroundedVelocityEpsilon`, so collision constants are hot.
+- New hot modules:
+  - `modules/collision-policy.cpp` — default keeps cold values (editable live).
+  - `modules/collision-solver.cpp` — registers the provider; declines by default
+    (`kHotCapsuleSolveEnabled = false`). Flip it on and implement the sweep over
+    the `world.collision` triangle capability to own the algorithm live.
+- Registered: event `movement.collision-policy`; capability
+  `physics.capsuleSolve`.
+
+## Reliable downgrade honored at queue time
+- `reliable-gameplay-events.cpp`: `queueReliableGameplayEventToPlayer` now
+  dispatches `net.reliable-policy` and, when the hot handler sets
+  `reliable = 0`, sends the packet best-effort once (no queue/retry) instead of
+  entering the reliable queue. This completes the carried-but-unused field.
+  Default hot handler keeps `reliable = 1`.
+
+## Validation
+- Hot DLL build success (70 sources).
+- Cold build SUCCESS.
+- Selftests PASS: server-spatial-authority, movement-parity,
+  air-movement-parity, reconciliation-policy, movement-selftest.
+
+## Remaining
+- The hot solver body itself (`collision-solver.cpp`) is a documented TODO: the
+  seam is live, but the algorithm must be implemented before enabling
+  `kHotCapsuleSolveEnabled`. The kernel solve remains authoritative until then.
+
+---
+
+# Addendum 9 — hot collision solver algorithm implemented (2026-09-16T20:42:00Z)
+
+## Implemented
+- `modules/collision-solver.cpp`: the `physics.capsuleSolve` provider now contains
+  a working capsule solve:
+  - integrates the caller velocity (gravity only when `gravityScale > 0`);
+  - fetches world triangles through the kernel `world.collision` capability
+    (added `collisionFn` / `collisionHost` to `GameCapsuleSolveV1`; populated in
+    `live-behavior.cpp` `tryHotCapsuleSolve`);
+  - closest-point-on-triangle depenetration + velocity projection over 3 passes
+    and 3 capsule samples (segment endpoints + center), sets grounded on
+    `normal.z > 0.35` and `collided`.
+- Activation is a single live-editable constant:
+  `kHotCapsuleSolveEnabled` in `modules/collision-solver.cpp`.
+  Default `false` (kernel solve stays authoritative) so the working movement
+  feel is unchanged; flip to `true` live to run the hot algorithm.
+
+## Cold
+- `game-api.h`: `GameCapsuleSolveV1` gained `collisionFn` / `collisionHost`.
+- `live-behavior.cpp`: passes `capWorldCollision` to the provider.
+
+## Validation
+- Hot DLL build success (70 sources).
+- Cold build SUCCESS.
+- Selftests PASS: server-spatial-authority, movement-parity,
+  air-movement-parity, reconciliation-policy, movement-selftest.
+- Registered: `physics.capsuleSolve` capability.
+
+## Notes / limits
+- The hot solver is depenetration-based (matches the server resolver), not the
+  client sweep/slide/step-up pipeline. Enabling it replaces the client solve, so
+  step/slope feel may differ; that is why it defaults off and is live-toggleable.
+- Triangle fetch is capped at 4096 per call (`world.collision` page limit).
+
+---
+
+# Addendum 10 — hot collision solver enabled + full pipeline (2026-09-16T20:55:00Z)
+
+## Enabled + implemented in the hot module
+- `modules/collision-solver.cpp`: `kHotCapsuleSolveEnabled = true`. The hot
+  solver now owns the full capsule pipeline (all constants hot / live-editable):
+  - integration + gravity (only when `gravityScale > 0`);
+  - **swept substepping** (`kMaxSubsteps`, `kMinSubstepMove`) so fast actors do
+    not tunnel;
+  - **slide**: per-contact depenetration + velocity projection over
+    `kResolvePasses` at 3 capsule samples;
+  - **slope classification**: `kWalkableSlopeDot` decides walkable floor;
+  - **step-up**: when horizontal progress is blocked (`kBlockedFraction`) on the
+    ground, retry the move lifted by `kStepHeight` and settle back down;
+  - **ground snap**: zero residual vertical velocity while grounded
+    (`kGroundSnapEpsilon`);
+  - geometry fetched through the kernel `world.collision` capability.
+- This runs for every `physics.move`/`moveCapsule` caller (client prediction and
+  any hot actor system), replacing the kernel solve.
+
+## Validation
+- Hot DLL build success (70 sources); no cold rebuild required (only a hot
+  module changed).
+- Selftests PASS with the hot solver active: movement-parity (hot movement lands
+  on floor + vertical rest), air-movement-parity, movement-selftest,
+  server-spatial-authority, reconciliation-policy.
+
+## Notes
+- Tuning is entirely in `modules/collision-solver.cpp` constants; edit and
+  hot-activate live. Flip `kHotCapsuleSolveEnabled = false` to return to the
+  kernel solve (also live).
+- `movement.collision-policy` (capsule radius/half-height/grounded epsilon)
+  still applies to the kernel fallback path.

@@ -521,6 +521,9 @@ static void applyHotPoseEntity(Player& player, EntityId entity)
 
 void applyHotPoseToPlayer(Player& player)
 {
+    // Ragdoll owns the local body while active; the hot pose must not overwrite.
+    if (player.ragdollModeActive)
+        return;
     applyHotPoseEntity(player, Ecs::ensureLocalPlayerEntity());
 }
 

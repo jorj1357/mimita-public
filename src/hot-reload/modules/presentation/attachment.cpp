@@ -166,6 +166,9 @@ void writeToolPresentation(GameplayContextV1* ctx, std::uint64_t toolEntity,
     att.context = context;
     att.flags = HOT_ATTACHMENT_FLAG_VISIBLE;
     att.localRotation[3] = 1.0f;
+    // Muzzle point in the tool's local space (hot-editable per recipe).
+    for (int k = 0; k < 3; ++k)
+        att.localMuzzle[k] = recipe.muzzleOffset[k];
     if (context == HOT_ATTACHMENT_CONTEXT_VIEW) {
         for (int k = 0; k < 3; ++k)
             att.localPosition[k] = recipe.viewPosition[k];
@@ -389,6 +392,21 @@ void MIMITA_GAME_CALL attachmentTick(void* host, std::uint64_t /*tick*/,
                     att.worldRotation[3] = rq.w;
                     for (int k = 0; k < 3; ++k)
                         att.worldScale[k] = glm::length(glm::vec3(out[k]));
+                    // Muzzle world point + barrel direction, so the cold fire
+                    // path starts the shot at the visible gun.
+                    const glm::vec3 mzLocal(att.localMuzzle[0], att.localMuzzle[1],
+                                            att.localMuzzle[2]);
+                    const glm::vec3 mzWorld =
+                        glm::vec3(out * glm::vec4(mzLocal, 1.0f));
+                    for (int k = 0; k < 3; ++k)
+                        att.muzzleWorldPosition[k] = mzWorld[k];
+                    glm::vec3 fwd = mzWorld - glm::vec3(out[3]);
+                    if (glm::length(fwd) < 1e-4f)
+                        fwd = glm::vec3(out * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f));
+                    if (glm::length(fwd) > 1e-4f)
+                        fwd = glm::normalize(fwd);
+                    for (int k = 0; k < 3; ++k)
+                        att.forward[k] = fwd[k];
                     att.resolved = 1;
                 }
             }

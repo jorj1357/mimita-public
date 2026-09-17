@@ -168,6 +168,20 @@ public:
     // projection/storage/draw; hot policy supplies color/size/lifetime.
     void spawnGenericSurfaceDecal(const SurfaceDecal& decal);
 
+    // ── Generic pool access for hot policy ───────────────────────────
+    // Storage/draw stay here; hot policy may read/write/age/kill entries and
+    // claim aging so the kernel stops aging (one owner).
+    std::uint32_t decalPoolCount() const;
+    bool decalPoolGet(std::uint32_t index, SurfaceDecal& out) const;
+    void decalPoolSet(std::uint32_t index, const SurfaceDecal& in);
+    void decalPoolKill(std::uint32_t index);
+    std::uint32_t bloodPoolCount() const;
+    bool bloodPoolGet(std::uint32_t index, BloodParticle& out) const;
+    void bloodPoolSet(std::uint32_t index, const BloodParticle& in);
+    void bloodPoolKill(std::uint32_t index);
+    void setEffectAgingClaimed(bool v) { mAgingClaimed = v; }
+    bool effectAgingClaimed() const { return mAgingClaimed; }
+
     // ── Per-frame caps and toggles ───────────────────────
     void beginFrame();  // call at start of engineTick to reset per-frame counters
     void setDecalsEnabled(bool v) { mDecalsEnabled = v; }
@@ -271,4 +285,6 @@ private:
     int mDecalCap = DEFAULT_DECAL_CAP;
     int mParticleCap = DEFAULT_PARTICLE_CAP;
     int mDecalWriteIdx = 0;
+    // When set by hot policy, the kernel stops aging decals/blood (hot owns it).
+    bool mAgingClaimed = false;
 };

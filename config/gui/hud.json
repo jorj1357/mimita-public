@@ -82,7 +82,8 @@
     },
     "deathOverlay": {
       "type": "panel",
-      "x": 690, "y": 99460, "width": 540, "height": 160,
+      "x": 690, "y": 470, "width": 540, "height": 160,
+      "visible": false,
       "backgroundColor": [0, 0, 0, 0.75]
     },
     "deathText": {

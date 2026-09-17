@@ -11,6 +11,8 @@
 #include "live-code/live-identity.h"
 #include "live-code/live-journal.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <string>
 
 int serverAuthoritativeDamageLimit()
@@ -36,6 +38,7 @@ int serverResolveDamagePolicy(const ServerDamagePolicyInput& input,
     payload.knockbackX = knockback.x;
     payload.knockbackY = knockback.y;
     payload.knockbackZ = knockback.z;
+    payload.outDamageLimit = (std::uint32_t)std::max(0, serverAuthoritativeDamageLimit());
 
     const bool handled = LiveBehavior::dispatchDamagePolicy(payload, input.tick);
     int finalDamage = handled ? payload.outDamage : baseDamage;
@@ -43,8 +46,12 @@ int serverResolveDamagePolicy(const ServerDamagePolicyInput& input,
         knockback = glm::vec3(payload.knockbackX, payload.knockbackY, payload.knockbackZ);
     }
 
-    // Explicit kernel safety bound, separate from gameplay tuning.
-    const int limit = serverAuthoritativeDamageLimit();
+    // Explicit kernel safety bound, separate from gameplay tuning. The active
+    // hot behavior may raise/lower it live; the cold default keeps it finite if
+    // the behavior leaves it untouched.
+    const int limit = handled
+        ? (int)payload.outDamageLimit
+        : serverAuthoritativeDamageLimit();
     if (finalDamage < 1)
         finalDamage = 1;
     if (limit > 0 && finalDamage > limit)

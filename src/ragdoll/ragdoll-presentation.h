@@ -42,7 +42,8 @@ public:
     // Interpolate the buffered frames to the delayed presentation time and
     // write the player's skeleton. Returns false when the owner is not an
     // active remote ragdoll (no frames, stale, or template not ready).
-    bool present(std::uint32_t ownerActorId, Player& player, double delaySeconds);
+    bool present(std::uint32_t ownerActorId, Player& player, double delaySeconds,
+                 bool isNpc);
 
     bool active(std::uint32_t ownerActorId) const;
     void clear(std::uint32_t ownerActorId);

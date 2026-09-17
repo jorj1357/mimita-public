@@ -102,8 +102,11 @@ void spawnDecal(GameplayContextV1* ctx, const float pos[3], const float nrm[3],
     if (!fn)
         return;
     GameSurfaceEffectV1 d{};
+    // Push the flat decal off the surface along its normal so it does not
+    // z-fight with the world geometry it lies on (hot-tunable).
+    const float decalNormalOffset = 0.02f;
     for (int k = 0; k < 3; ++k) {
-        d.position[k] = pos[k];
+        d.position[k] = pos[k] + nrm[k] * decalNormalOffset;
         d.normal[k] = nrm[k];
         d.axis[k] = axis ? axis[k] : 0.0f;
     }
@@ -257,6 +260,13 @@ void MIMITA_GAME_CALL hitBurstTick(void* host, std::uint64_t tick, float /*dt*/)
         if (!ctx->dynamicReadComponent(ctx->host, entities[i],
                                        HOT_HIT_BURST_COMPONENT, &b, sizeof(b)))
             continue;
+        // The cold `effect.request` path stamps tick 0; treat that as "starts
+        // now" so the burst is not destroyed immediately.
+        if (b.spawnTick == 0) {
+            b.spawnTick = static_cast<std::uint32_t>(tick);
+            ctx->dynamicWriteComponent(ctx->host, entities[i],
+                                       HOT_HIT_BURST_COMPONENT, &b, sizeof(b));
+        }
         const std::uint32_t age = static_cast<std::uint32_t>(tick) - b.spawnTick;
         if (age >= b.totalTicks) {
             ctx->entityDestroy(ctx->host, entities[i]);
@@ -270,8 +280,9 @@ void MIMITA_GAME_CALL hitBurstTick(void* host, std::uint64_t tick, float /*dt*/)
         const float color[3] = {b.hitEntity ? 1.0f : 0.55f,
                                 b.hitEntity ? 0.15f : 0.55f,
                                 b.hitEntity ? 0.1f : 0.55f};
+        // >= 2 ticks so the part survives the pre-render age step.
         spawnSphere(ctx, b.position, color, radius, radius,
-                    b.hitEntity ? 0.9f : 0.5f, 1.0f / 60.0f);
+                    b.hitEntity ? 0.9f : 0.5f, 2.0f / 60.0f);
     }
 }
 
@@ -550,7 +561,7 @@ const MimitaHotPackage::SchemaRegistrar s_hitBurstSchema{
      sizeof(HotHitBurstV1), 4, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
      "HitBurstState", 1, 0}};
 const MimitaHotPackage::SystemRegistrar s_hitBurstSystem{
-    {gameHash("hot.hit-burst"), GAME_DOMAIN_RENDER, 4, 0, hitBurstTick,
+    {gameHash("hot.hit-burst"), GAME_DOMAIN_CLIENT_TICK, 4, 0, hitBurstTick,
      "hot.hit-burst"}};
 
 // Tick-based explosion timeline: create the state entity; the client-only

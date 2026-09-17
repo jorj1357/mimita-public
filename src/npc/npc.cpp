@@ -35,6 +35,7 @@
 #include "audio/audio.h"
 #include "live-code/live-behavior.h"
 #include "hot-reload/game-api.h"
+#include "hot-reload/generic-runtime.h"
 #include <cstdio>
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
@@ -443,6 +444,15 @@ void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
     Ecs::setBody(entity, npc.body.sizeScale,
                  npc.body.movementCapsule.radius, npc.body.movementCapsule.height);
 
+    // Record this tick's intent/aim unconditionally so the hot actor-movement
+    // system (post-movement domain) always has fresh intent even when no hot
+    // decision module is active. A later write below refreshes it after the
+    // hot decision scales the movement.
+    Ecs::setMovementIntent(entity, input.wishMoveXY.x, input.wishMoveXY.y,
+                           input.movementPressed, input.jumpHeld, input.dashPressed,
+                           input.downDashPressed, input.freezeHeld);
+    Ecs::setAimIntent(entity, npc.currentFacing, npc.body.yaw, npc.body.aimBodyPitch);
+
     if (!LiveActor::available())
         return;
 
@@ -518,6 +528,27 @@ void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
                            input.movementPressed, input.jumpHeld, input.dashPressed,
                            input.downDashPressed, input.freezeHeld);
     Ecs::setAimIntent(entity, npc.currentFacing, npc.body.yaw, npc.body.aimBodyPitch);
+}
+
+// Project a hot-moved entity's generic Transform/Velocity/RuntimeState back onto
+// the typed NPC body, so the cold post-movement steps (fire, damage forwarding,
+// broadcast) observe the same position the hot solver produced this tick.
+void projectNpcBodyFromGeneric(Npc& npc, EntityId entity)
+{
+    auto& reg = EntityRegistry::instance();
+    if (const auto* gt = reg.tryGet<TransformComponent>(entity)) {
+        npc.body.pos = gt->position;
+        npc.body.yaw = gt->yaw;
+    }
+    if (const auto* gv = reg.tryGet<VelocityComponent>(entity)) {
+        npc.body.vel = gv->linear;
+        npc.body.externalImpulse = gv->externalImpulse;
+    }
+    if (const auto* rs = reg.tryGet<MovementRuntimeStateComponent>(entity)) {
+        npc.body.ground.onGround = rs->grounded;
+        npc.body.ground.hasWorldContact = rs->grounded;
+        npc.body.ground.stableOnGround = rs->grounded;
+    }
 }
 
 } // anonymous namespace
@@ -1229,6 +1260,40 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     applyLiveActorBehavior(npc, input, safeDt, currentTime);
 
     bool downDashAvailableBefore = npc.body.dash.downDashAvailable;
+    // Hot NPC movement ownership: a hot movement package may integrate this
+    // actor in place. The intent was recorded above; the hot solver consumes the
+    // generic components and writes the moved result back, which we project onto
+    // the typed body so this tick's post steps see the moved state. Returns 0
+    // (or no provider) falls back to the cold shared kernel.
+    bool hotNpcMovement = false;
+    {
+        const EntityId moveEntity =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id);
+        // Seed the persistent runtime state's grounded flag from the typed body
+        // so the hot solver starts from the same contact state the cold kernel
+        // would have; the other fields persist across ticks in the component.
+        {
+            auto& reg = EntityRegistry::instance();
+            auto* rs = reg.tryGet<MovementRuntimeStateComponent>(moveEntity);
+            if (!rs)
+                rs = &reg.add<MovementRuntimeStateComponent>(
+                    moveEntity, MovementRuntimeStateComponent{});
+            rs->grounded = npc.body.ground.onGround;
+        }
+        auto* moveFn = reinterpret_cast<GameNpcMoveFn>(
+            MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_NPC_MOVE));
+        if (moveFn)
+        {
+            const std::uint64_t moveTick = LiveIdentity::simulationTick();
+            if (moveFn(LiveBehavior::hostContext(moveTick), Ecs::raw(moveEntity),
+                       (std::uint32_t)moveTick, safeDt) != 0u)
+            {
+                hotNpcMovement = true;
+                projectNpcBodyFromGeneric(npc, moveEntity);
+            }
+        }
+    }
+    if (!hotNpcMovement)
     {
         Perf::ScopedTimer _npcCollision("NpcCollision");
         char entityLabel[32];
@@ -1281,6 +1346,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                     (int)input.jumpHeld, (int)input.dashPressed, (int)input.freezeHeld);
             }
         }
+    }
+    else
+    {
+        // Hot movement owns integration; keep the diagnostic inputs current.
+        npc.lastMoveInput = input.wishMoveXY;
     }
 
     if (input.dashPressed && npc.body.dash.didDash)

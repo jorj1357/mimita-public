@@ -51,6 +51,13 @@ enum GameReconcileApplyV1 : std::uint32_t {
     GAME_RECONCILE_APPLY_SNAP = 2         // hard apply server state + velocity
 };
 
+// Extra `GameReconcileV1.reserved` bits. Cold honors these so the post-gap and
+// snap policies are controlled by the hot reconcile policy.
+enum GameReconcileFlagsV1 : std::uint32_t {
+    GAME_RECONCILE_FLAG_ALLOW_POSTGAP = 1u << 2, // allow the post-gap resync snap
+    GAME_RECONCILE_FLAG_ALLOW_SNAP = 1u << 3     // allow any divergence snap
+};
+
 struct GameReconcileV1 {
     // in: facts
     float predictedPosition[3];

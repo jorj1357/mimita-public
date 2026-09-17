@@ -682,8 +682,24 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     // A duel teleport can reuse the same spawn generation while advancing the
     // transform epoch. Seed the complete authoritative transform here so the
     // very next input cannot report the pre-duel local position.
-    ctx.localServerPosition = {spawn->posX, spawn->posY, spawn->posZ};
-    ctx.localServerVelocity = {spawn->velX, spawn->velY, spawn->velZ};
+    // A spawn must never place the actor at the world origin. The server is
+    // supposed to always send a real spawn point; if a malformed/zero position
+    // arrives, keep the last known good position instead of snapping to (0,0,0).
+    const bool originSpawn =
+        std::fabs(spawn->posX) < 0.001f &&
+        std::fabs(spawn->posY) < 0.001f &&
+        std::fabs(spawn->posZ) < 0.001f;
+    if (originSpawn)
+    {
+        Debug::warn(Debug::Category::Networking,
+            "[SPAWN GUARD] refused origin spawn player=%u gen=%u epoch=%u; keeping previous position\n",
+            ctx.localPlayerId, spawn->spawnGeneration, spawn->transformEpoch);
+    }
+    else
+    {
+        ctx.localServerPosition = {spawn->posX, spawn->posY, spawn->posZ};
+        ctx.localServerVelocity = {spawn->velX, spawn->velY, spawn->velZ};
+    }
     ctx.localServerEpoch = spawn->transformEpoch;
     ctx.transformEpoch = spawn->transformEpoch;
     ctx.lastAppliedEpoch = 0;
@@ -934,10 +950,21 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         return;
     if (ctx.sock == INVALID_SOCKET && !ctx.transport)
     {
-        Debug::warn(Debug::Category::Networking,
-               "[NET TICK] sock=INVALID_SOCKET state=%s connected=%d active=%d transport=%d\n",
-               connectionStateName(ctx.connectionState), (int)ctx.connected, (int)ctx.active,
-               (int)(ctx.transport != nullptr));
+        // Throttle: this state can persist for the whole ICE negotiation, so
+        // only log on a state change or every 2 seconds instead of every tick.
+        static uint32_t s_lastState = 0xFFFFFFFFu;
+        static uint64_t s_lastLogMs = 0;
+        const uint32_t stateKey = (uint32_t)ctx.connectionState;
+        const uint64_t nowLog = nowMs();
+        if (stateKey != s_lastState || nowLog - s_lastLogMs >= 2000)
+        {
+            s_lastState = stateKey;
+            s_lastLogMs = nowLog;
+            Debug::warn(Debug::Category::Networking,
+                   "[NET TICK] sock=INVALID_SOCKET state=%s connected=%d active=%d transport=%d\n",
+                   connectionStateName(ctx.connectionState), (int)ctx.connected, (int)ctx.active,
+                   (int)(ctx.transport != nullptr));
+        }
         return;
     }
 

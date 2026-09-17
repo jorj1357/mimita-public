@@ -1,5 +1,6 @@
 #include "ragdoll/ragdoll-mode-config.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -84,6 +85,7 @@ bool RagdollModeConfig::load(const std::string& path)
             next.corpseSpawnVelocityMultiplier = c.value("spawn_velocity_multiplier", next.corpseSpawnVelocityMultiplier);
             next.corpseBloodIntervalSeconds = c.value("blood_interval_seconds", next.corpseBloodIntervalSeconds);
             next.corpseBloodEnabled = c.value("blood_enabled", next.corpseBloodEnabled);
+            next.maxCorpses = std::max(1, c.value("max_corpses", next.maxCorpses));
         }
 
         next.solverHz = root.value("solver_hz", next.solverHz);

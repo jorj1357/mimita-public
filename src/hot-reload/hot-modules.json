@@ -46,6 +46,8 @@
     "src/hot-reload/hot-action.h",
     "src/hot-reload/hot-animation-clips.h",
     "src/hot-reload/hot-animation-selftest.h",
+    "src/hot-reload/hot-movement-fired.h",
+    "src/hot-reload/hot-movement-collision.h",
     "src/hot-reload/hot-effect.h",
     "src/hot-reload/hot-pose.h",
     "src/hot-reload/hot-prediction.h",
@@ -53,6 +55,7 @@
     "src/hot-reload/hot-tool-visual.h",
     "src/hot-reload/hot-projectile.h",
     "src/hot-reload/hot-movement-policy.h",
+    "src/hot-reload/hot-actor-movement.h",
     "src/hot-reload/hot-ui.h",
     "src/network/match-lifecycle.h",
     "src/network/objective-events.h",
@@ -103,6 +106,17 @@
     "src/engine/engine-tick-render.cpp",
     "src/combat/death-system.cpp",
     "src/hot-reload/generic-runtime.cpp",
-    "src/project/capabilities.cpp"
+    "src/project/capabilities.cpp",
+    "src/physics/movement/move-capsule.cpp",
+    "src/physics/movement/movement-step.cpp",
+    "src/physics/physics-mini.cpp",
+    "src/network/movement-validation.cpp",
+    "src/network/server.cpp",
+    "src/network/client.cpp",
+    "src/network/packets.h",
+    "src/network/reliable-gameplay-events.cpp",
+    "src/network/snapshot-chunks.cpp",
+    "src/network/ice/ice-agent.cpp",
+    "src/combat/death-system.h"
   ]
 }

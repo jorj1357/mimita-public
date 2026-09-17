@@ -2668,6 +2668,18 @@ void buildAndSendSnapshot(SOCKET sock,
                 auto pit = players.find(viewerIds[v]);
                 if (pit == players.end() || perViewer[v].empty())
                     continue;
+                // Hot send policy: whether this viewer receives a snapshot this
+                // tick. Wire format and transport stay kernel-owned.
+                NetSendPolicyV1 sp{};
+                sp.playerId = pit->first;
+                sp.tick = tick;
+                sp.entityCount = (std::uint32_t)perViewer[v].size();
+                sp.reason = 0u;
+                if (LiveBehavior::dispatchGameplayEvent64(
+                        GAME_EVENT_NET_SEND_POLICY, &sp, sizeof(sp), tick,
+                        pit->first, 0) &&
+                    sp.handled && sp.send == 0u)
+                    continue;
                 std::vector<std::vector<uint8_t>> vchunks;
                 if (!buildSnapshotChunks(
                         perViewer[v].data(), (uint32_t)perViewer[v].size(), tick, 0,

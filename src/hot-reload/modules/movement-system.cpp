@@ -15,6 +15,8 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-movement-collision.h"
+#include "hot-reload/hot-movement-fired.h"
 #include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-package.h"
 
@@ -24,6 +26,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+// Jump input buffer window (seconds). Live-tunable constant.
+constexpr float kHotJumpBufferSeconds = 0.15f;
 
 namespace {
 
@@ -94,7 +99,7 @@ void MIMITA_GAME_CALL onMovementTuning(void* /*host*/, const GameEventV1* event)
     t->gravityMagnitude = m.gravity;
     t->jumpSpeed = m.jumpSpeed;
     t->maxFallSpeed = m.maxFallSpeed;
-    t->jumpBufferSeconds = 0.0f;
+    t->jumpBufferSeconds = kHotJumpBufferSeconds;
     t->coyoteSeconds = 0.0f;
     t->dashImpulse = m.dashImpulse;
     t->dashCooldownSeconds = m.dashCooldown;
@@ -138,16 +143,8 @@ using EffectSpawnFn = void (MIMITA_GAME_CALL *)(void*, const GameEffectSpawnV1*)
 // older capsule-only solve when the primitive is unavailable.
 void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt)
 {
-    if (ctx->resolveCapability) {
-        auto move = reinterpret_cast<PhysicsMoveFn>(
-            ctx->resolveCapability(ctx->host, GAME_CAP_PHYSICS_MOVE));
-        if (move) {
-            move(ctx->host, st, dt, GAME_PHYSICS_MOVE_FULL_PIPELINE);
-            return;
-        }
-    }
-    if (ctx->moveCapsule)
-        ctx->moveCapsule(ctx->host, st, dt);
+    // Hot capsule-vs-world collision is the single owner. No cold fallback.
+    HotCollision::hotMoveCapsule(ctx, st, dt);
 }
 
 // Effects are one generic spawn descriptor resolved by id; movement just emits
@@ -178,7 +175,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
     if (!ctx || ctx->structSize < sizeof(GameplayContextV1))
         return;
-    if (!ctx->readComponent || !ctx->writeComponent || !ctx->moveCapsule ||
+    if (!ctx->readComponent || !ctx->writeComponent ||
         !ctx->requestMovementOverride)
         return;
 
@@ -406,7 +403,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
             jp.jumpSpeed = m.jumpSpeed;
             jp.dt = dt;
             jp.coyoteSeconds = 0.0f;
-            jp.jumpBufferSeconds = 0.0f;
+            jp.jumpBufferSeconds = kHotJumpBufferSeconds;
             // Touch anything (ground/wall/ceiling/prop) and the jump is eligible.
             const bool contactLastTick =
                 (rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] & 2u) != 0u;
@@ -477,6 +474,25 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t /*tick*/, float
             spawnEffect(ctx, gameHash("effect.freeze"), st.position, nullptr, st.sizeScale, 0.0f);
         else if (freezeNow)
             spawnEffect(ctx, gameHash("effect.freezeTrail"), st.position, nullptr, st.sizeScale, 0.0f);
+
+        // Publish generic "ability actually fired" facts for the animation system.
+        // OR-accumulated until the hot animation policy reads and clears them.
+        const std::uint32_t fired =
+            (didDash ? HOT_FIRED_DASH : 0u) |
+            (didDownDash ? HOT_FIRED_DOWN_DASH : 0u) |
+            (freezeEdge ? HOT_FIRED_FREEZE : 0u) |
+            (jumpEdge && rs.grounded ? HOT_FIRED_GROUND_JUMP : 0u) |
+            (jumpEdge && !rs.grounded ? HOT_FIRED_AIR_JUMP : 0u);
+        if (fired != 0u && ctx->dynamicReadComponent &&
+            ctx->dynamicWriteComponent) {
+            HotMovementFiredV1 acc{};
+            ctx->dynamicReadComponent(ctx->host, e, HOT_MOVEMENT_FIRED_COMPONENT,
+                                      &acc, sizeof(acc));
+            acc.version = HOT_MOVEMENT_FIRED_VERSION;
+            acc.flags |= fired;
+            ctx->dynamicWriteComponent(ctx->host, e, HOT_MOVEMENT_FIRED_COMPONENT,
+                                       &acc, sizeof(acc));
+        }
     }
 
     rs.jumpHeldPreviously = mi.jump;

@@ -2,7 +2,9 @@
 #include "ragdoll/ragdoll-mode-config.h"
 #include "ragdoll/ragdoll-body.h"
 #include "ragdoll/ragdoll-entities.h"
-#include "ragdoll/ragdoll-solver.h"
+#include "hot-reload/game-api.h"
+#include "hot-reload/generic-runtime.h"
+#include "live-code/live-behavior.h"
 
 #include <algorithm>
 #include <cmath>
@@ -39,6 +41,125 @@
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
+
+// Hot ragdoll solver seam. Fills the POD snapshot and calls the hot
+// `ragdoll.solve` provider; returns true when the hot side owned the solve and
+// its results were applied. Returns false (cold solver runs) when no provider is
+// loaded or the provider declines (handled == 0) — the temporary fallback.
+static bool hotRagdollSolve(RagdollBody& b,
+                            const Ragdoll::SolveParams& params, float dt)
+{
+    auto fn = reinterpret_cast<GameRagdollSolveFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_RAGDOLL_SOLVE));
+    if (!fn)
+        return false;
+    GameRagdollSolveV1 s{};
+    s.structSize = sizeof(GameRagdollSolveV1);
+    const std::uint32_t n = static_cast<std::uint32_t>(
+        std::min<std::size_t>(b.parts.size(), GAME_MAX_RAGDOLL_LIMBS));
+    s.limbCount = n;
+    s.dt = dt;
+    s.gravityScale = params.gravityScale;
+    s.stiffness = params.stiffness;
+    s.damping = params.damping;
+    s.iterations = params.iterations > 0 ? (std::uint32_t)params.iterations : 1u;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        const RagdollModePart& p = b.parts[i];
+        GameRagdollLimbStateV1& d = s.limbs[i];
+        d.position[0] = p.body.position.x; d.position[1] = p.body.position.y; d.position[2] = p.body.position.z;
+        d.orientation[0] = p.body.orientation.w; d.orientation[1] = p.body.orientation.x;
+        d.orientation[2] = p.body.orientation.y; d.orientation[3] = p.body.orientation.z;
+        d.linearVelocity[0] = p.body.linearVelocity.x; d.linearVelocity[1] = p.body.linearVelocity.y; d.linearVelocity[2] = p.body.linearVelocity.z;
+        d.angularVelocity[0] = p.body.angularVelocity.x; d.angularVelocity[1] = p.body.angularVelocity.y; d.angularVelocity[2] = p.body.angularVelocity.z;
+        GameRagdollLimbStaticV1& st = s.statics[i];
+        st.parentIndex = p.parentIndex < 0 ? 0xffffffffu : (std::uint32_t)p.parentIndex;
+        st.hasRotationLimits = p.hasRotationLimits ? 1u : 0u;
+        st.inverseMass = p.body.invMass;
+        st.radius = p.body.capsuleRadius;
+        st.halfHeight = p.body.capsuleHalfHeight;
+        st.parentLocalAnchor[0] = p.parentLocalAnchor.x; st.parentLocalAnchor[1] = p.parentLocalAnchor.y; st.parentLocalAnchor[2] = p.parentLocalAnchor.z;
+        st.childLocalAnchor[0] = p.childLocalAnchor.x; st.childLocalAnchor[1] = p.childLocalAnchor.y; st.childLocalAnchor[2] = p.childLocalAnchor.z;
+        st.restLength = p.restLength;
+        st.maxStretch = p.maxStretch;
+        st.bindRotation[0] = p.bindRelativeRotation.w; st.bindRotation[1] = p.bindRelativeRotation.x;
+        st.bindRotation[2] = p.bindRelativeRotation.y; st.bindRotation[3] = p.bindRelativeRotation.z;
+        st.rotMinDeg[0] = p.rotMinDeg.x; st.rotMinDeg[1] = p.rotMinDeg.y; st.rotMinDeg[2] = p.rotMinDeg.z;
+        st.rotMaxDeg[0] = p.rotMaxDeg.x; st.rotMaxDeg[1] = p.rotMaxDeg.y; st.rotMaxDeg[2] = p.rotMaxDeg.z;
+    }
+    auto fillGrab = [](GameRagdollGrabV1& g, const RagdollGrabState& src) {
+        g.active = src.active ? 1u : 0u;
+        g.limbIndex = src.partIndex < 0 ? 0xffffffffu : (std::uint32_t)src.partIndex;
+        g.targetLimb = src.targetPart;
+        g.grabPoint[0] = src.grabPoint.x; g.grabPoint[1] = src.grabPoint.y; g.grabPoint[2] = src.grabPoint.z;
+        g.grabNormal[0] = src.grabNormal.x; g.grabNormal[1] = src.grabNormal.y; g.grabNormal[2] = src.grabNormal.z;
+        g.handLocalAnchor[0] = src.handLocalAnchor.x; g.handLocalAnchor[1] = src.handLocalAnchor.y; g.handLocalAnchor[2] = src.handLocalAnchor.z;
+        g.targetLocalAnchor[0] = src.targetLocalAnchor.x; g.targetLocalAnchor[1] = src.targetLocalAnchor.y; g.targetLocalAnchor[2] = src.targetLocalAnchor.z;
+        g.strength = src.strength;
+    };
+    fillGrab(s.grabLeft, b.leftGrab);
+    fillGrab(s.grabRight, b.rightGrab);
+    fn(LiveBehavior::hostContext(0), &s);
+    if (!s.handled)
+        return false;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        RagdollModePart& p = b.parts[i];
+        const GameRagdollLimbStateV1& d = s.limbs[i];
+        p.body.position = glm::vec3(d.position[0], d.position[1], d.position[2]);
+        p.body.orientation = glm::quat(d.orientation[0], d.orientation[1], d.orientation[2], d.orientation[3]);
+        p.body.linearVelocity = glm::vec3(d.linearVelocity[0], d.linearVelocity[1], d.linearVelocity[2]);
+        p.body.angularVelocity = glm::vec3(d.angularVelocity[0], d.angularVelocity[1], d.angularVelocity[2]);
+    }
+    return true;
+}
+
+// Hot alive-ragdoll aim seam. Fills the POD snapshot (head/torso indices, camera
+// look basis, per-limb orientation/angular velocity/aim offset) and calls the
+// hot `ragdoll.aim` provider; returns true when the hot side owned the aim and
+// its angular velocities were applied. Returns false (cold applyControls runs)
+// when no provider is loaded or the provider declines (handled == 0).
+static bool hotRagdollAim(RagdollBody& b, const Camera& camera, float dt)
+{
+    auto fn = reinterpret_cast<GameRagdollAimFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_RAGDOLL_AIM));
+    if (!fn)
+        return false;
+    const auto& cfg = RagdollModeConfig::instance().data();
+    GameRagdollAimV1 a{};
+    a.structSize = sizeof(GameRagdollAimV1);
+    a.headIndex = b.headIndex < 0 ? 0xffffffffu : (std::uint32_t)b.headIndex;
+    a.torsoIndex = b.torsoIndex < 0 ? 0xffffffffu : (std::uint32_t)b.torsoIndex;
+    a.cameraFront[0] = camera.front.x; a.cameraFront[1] = camera.front.y; a.cameraFront[2] = camera.front.z;
+    a.cameraUp[0] = camera.up.x; a.cameraUp[1] = camera.up.y; a.cameraUp[2] = camera.up.z;
+    a.headStrength = cfg.headRotationStrength;
+    a.headMaxSpeed = cfg.headRotationSpeed;
+    a.torsoStrength = cfg.torsoLookSpring;
+    a.torsoMaxSpeed = cfg.torsoMaxAngularStep;
+    a.lookDamping = cfg.lookDamping;
+    a.dt = dt;
+    const std::uint32_t n = static_cast<std::uint32_t>(
+        std::min<std::size_t>(b.parts.size(), GAME_MAX_RAGDOLL_LIMBS));
+    a.limbCount = n;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        const RagdollModePart& p = b.parts[i];
+        GameRagdollAimLimbV1& d = a.limbs[i];
+        d.orientation[0] = p.body.orientation.w; d.orientation[1] = p.body.orientation.x;
+        d.orientation[2] = p.body.orientation.y; d.orientation[3] = p.body.orientation.z;
+        d.angularVelocity[0] = p.body.angularVelocity.x; d.angularVelocity[1] = p.body.angularVelocity.y; d.angularVelocity[2] = p.body.angularVelocity.z;
+        d.aimOffset[0] = p.aimOffset.w; d.aimOffset[1] = p.aimOffset.x;
+        d.aimOffset[2] = p.aimOffset.y; d.aimOffset[3] = p.aimOffset.z;
+    }
+    fn(LiveBehavior::hostContext(0), &a);
+    if (!a.handled)
+        return false;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        const GameRagdollAimLimbV1& d = a.limbs[i];
+        b.parts[i].body.angularVelocity =
+            glm::vec3(d.angularVelocity[0], d.angularVelocity[1], d.angularVelocity[2]);
+    }
+    return true;
+}
 
 // Deterministic corpse seed: same world seed, owner, death tick, and event id
 // produce the same corpse on every client (FNV-1a over the identity, finalized
@@ -173,6 +294,11 @@ void RagdollModeSystem::activate(Player& player)
     initParts(player, mAlive);
     mAppliedConfigGeneration = cfg.generation;
 
+    // The entity component store is the canonical alive-ragdoll home. Drop any
+    // binding from a previous activation so the next update binds this fresh
+    // body as the new source of truth.
+    Ragdoll::RagdollEntities::instance().unbind(mOwnerActorId);
+
     Debug::warn(Debug::Category::Ragdoll,
         "[RAGDOLL MODE] Activated — %zu parts\n", mAlive.parts.size());
 
@@ -230,6 +356,9 @@ void RagdollModeSystem::deactivate(Player& player)
     mActive = false;
     mAlive = RagdollBody{};
     mCameraSmoothInit = false;
+
+    // Release the canonical alive-ragdoll state for this owner.
+    Ragdoll::RagdollEntities::instance().unbind(mOwnerActorId);
 
     Debug::warn(Debug::Category::Ragdoll,
         "[RAGDOLL MODE] Deactivated\n");
@@ -300,26 +429,39 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
 
     const auto& cfg = RagdollModeConfig::instance().data();
 
+    Ragdoll::RagdollEntities& entities = Ragdoll::RagdollEntities::instance();
+    const std::uint32_t owner = mOwnerActorId;
+
     // Live tuning: apply capsule/attachment geometry changes immediately while
     // preserving the current pose and momentum.
     if (cfg.generation != mAppliedConfigGeneration) {
         mAppliedConfigGeneration = cfg.generation;
         if (!b.parts.empty())
             reinitPreservingState(player, b);
+        // Geometry changed: rebuild the canonical limb set from the re-derived
+        // body on the next step below.
+        entities.unbind(owner);
     }
+
+    // The entity component store is the canonical, hot-reload-durable home for
+    // the alive ragdoll. Rehydrate the working body from it so the pose and
+    // momentum survive a generation switch instead of trusting the in-memory
+    // copy; bind fresh (component store -> body template) when unbound.
+    if (entities.bound(owner))
+        entities.syncToBody(owner, b);
+    else
+        entities.bind(owner, b);
 
     b.activationTime += dt;
 
     // Step 1: Inputs and physical controls (head aim, arm extension, grabs).
-    applyControls(dt, input, camera, b);
+    if (!hotRagdollAim(b, camera, dt))
+        applyControls(dt, input, camera, b);
     processGrab(input, camera, world, b);
     processExtend(input, camera, dt, b);
 
     // Publish the alive ragdoll into the entity components so the solver domain
     // reads and writes the canonical limb state.
-    Ragdoll::RagdollEntities& entities = Ragdoll::RagdollEntities::instance();
-    const std::uint32_t owner = mOwnerActorId;
-    entities.bind(owner, b);
     entities.syncFromBody(owner, b);
     entities.setGrab(owner, true, b.leftGrab);
     entities.setGrab(owner, false, b.rightGrab);
@@ -342,8 +484,8 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
         if (domain.name != "ragdoll.solver") return;
         MIMITA_TELEMETRY_SCOPE("RagdollSolverSubstep");
         entities.syncToBody(owner, b);
-        Ragdoll::Solver::solveSubstep(b, world,
-            (float)(1.0 / domain.tickRateHz), cfg, params);
+        const float subDt = (float)(1.0 / domain.tickRateHz);
+        hotRagdollSolve(b, params, subDt);
         entities.syncFromBody(owner, b);
         Telemetry::EntityCounters counters;
         counters.updates = b.parts.size();
@@ -791,9 +933,10 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
             victim.sizeScale);
     }
 
-    // Bounded corpse count keeps the solver cost predictable.
-    constexpr size_t kMaxCorpses = 12;
-    while (mCorpses.size() >= kMaxCorpses)
+    // Bounded corpse count keeps the solver cost predictable. The bound is a
+    // hot-reloadable config value (config/ragdoll.json corpse.max_corpses).
+    const size_t maxCorpses = static_cast<size_t>(std::max(1, cfg.maxCorpses));
+    while (mCorpses.size() >= maxCorpses)
         mCorpses.erase(mCorpses.begin());
 
     mCorpses.push_back(std::move(corpse));
@@ -862,7 +1005,7 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world)
         const int steps = std::max(1, (int)std::lround(cfg.solverHz / 60.0f));
         const float sub = dt / (float)steps;
         for (int s = 0; s < steps; ++s)
-            Ragdoll::Solver::solveSubstep(corpse.body, world, sub, cfg, params);
+            hotRagdollSolve(corpse.body, params, sub);
         syncToPlayer(corpse.actor, corpse.body);
 
         if (cfg.corpseBloodEnabled)

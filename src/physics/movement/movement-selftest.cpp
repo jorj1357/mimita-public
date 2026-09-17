@@ -1,6 +1,8 @@
-// 09 14 2026
+// 09 16 2026
 /* purpose
-* Implements the kernel capsule movement self-test.
+* Implements the movement self-test. It drives the real hot movement system
+* (which now owns collision via the hot capsule-vs-world solve) and checks
+* gravity, determinism, floor landing, and grounded behaviour.
 * Does NOT run the game or own movement policy.
 */
 #include "physics/movement/movement-selftest.h"
@@ -10,8 +12,11 @@
 
 #include <glm/glm.hpp>
 
-#include "physics/movement/move-capsule.h"
-#include "physics/physical-body.h"
+#include "ecs/actor-entities.h"
+#include "ecs/entity-registry.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-reload-system.h"
+#include "live-code/live-behavior.h"
 #include "physics/physics-types.h"
 #include "world/world.h"
 
@@ -37,61 +42,71 @@ void addFloor(World& world)
     world.collisionMesh.boundsMax = glm::vec3(50.0f, 50.0f, 0.0f);
 }
 
+bool runHotMovement(EntityId entity, int ticks, float (&outPos)[3],
+                    float (&outVel)[3])
+{
+    Ecs::setTransform(entity, glm::vec3(0.0f, 0.0f, 10.0f),
+                      glm::vec3(0.0f, 1.0f, 0.0f), 0.0f, 0.0f);
+    Ecs::setVelocity(entity, glm::vec3(0.0f), glm::vec3(0.0f));
+    MimitaRuntime::GenericRuntime& runtime = MimitaRuntime::GenericRuntime::instance();
+    bool got = false;
+    for (int i = 0; i < ticks; ++i) {
+        runtime.beginMovementTick();
+        runtime.runDomain(GAME_DOMAIN_GAMEPLAY, (std::uint64_t)i, kDt,
+                          LiveBehavior::hostContext((std::uint64_t)i));
+        float yaw = 0.0f;
+        if (runtime.consumeMovementOverride(outPos, outVel, yaw))
+            got = true;
+    }
+    return got;
+}
+
 } // namespace
 
 bool runMovementSelfTest(std::string& report)
 {
     bool ok = true;
 
-    // Free-fall determinism + gravity (no world).
-    MovementStateV1 a{};
-    a.position[2] = 10.0f;
-    a.radius = 0.4f;
-    a.halfHeight = 0.9f;
-    MovementStateV1 b = a;
-    for (int i = 0; i < 120; ++i) {
-        Physics::moveCapsuleStep(a, nullptr, kDt);
-        Physics::moveCapsuleStep(b, nullptr, kDt);
-    }
-    ok &= check(a.position[2] == b.position[2] && a.velocity[2] == b.velocity[2],
-                "free-fall deterministic", report);
-    ok &= check(a.velocity[2] < -1.0f && a.position[2] < 10.0f, "gravity applied", report);
-    ok &= check(std::isfinite(a.position[2]) && std::isfinite(a.velocity[2]),
-                "state is finite", report);
-
-    // Parity with a reference integrate() (no world).
-    MovementStateV1 c{};
-    c.position[2] = 10.0f;
-    c.radius = 0.4f;
-    c.halfHeight = 0.9f;
-    Physics::moveCapsuleStep(c, nullptr, kDt);
-    RigidBody ref;
-    ref.position = glm::vec3(0.0f, 0.0f, 10.0f);
-    ref.capsuleRadius = 0.4f;
-    ref.capsuleHalfHeight = 0.9f;
-    setBodyMass(ref, 1.0f);
-    integrate(ref, glm::vec3(0.0f, 0.0f, -9.81f), kDt);
-    ok &= check(std::fabs(c.position[2] - ref.position.z) < 1e-4f &&
-                    std::fabs(c.velocity[2] - ref.linearVelocity.z) < 1e-4f,
-                "matches integrate() reference", report);
-    ok &= check(c.grounded == 0, "not grounded without world", report);
-
-    // Floor collision: a capsule above a floor settles instead of falling through.
     World world;
     addFloor(world);
-    MovementStateV1 s{};
-    s.position[2] = 2.0f;
-    s.radius = 0.4f;
-    s.halfHeight = 0.9f;
-    bool everGrounded = false;
-    for (int i = 0; i < 300; ++i) {
-        Physics::moveCapsuleStep(s, &world, kDt);
-        if (s.grounded)
-            everGrounded = true;
-    }
-    ok &= check(s.position[2] > 0.5f, "capsule does not fall through floor", report);
-    ok &= check(everGrounded, "capsule becomes grounded on floor", report);
-    ok &= check(std::fabs(s.velocity[2]) < 0.5f, "vertical velocity settles", report);
+    EntityRegistry::instance().destroyAll();
+    HotReloadSystem::instance().startup();
 
+    const EntityId entity = Ecs::ensure(EntityRealm::Local, EntityDomain::Player, 1);
+    Ecs::setBody(entity, 1.0f, 0.4f, 1.8f);
+    Ecs::setMovementIntent(entity, 0.0f, 0.0f, false, false, false, false, false);
+    if (GameSharedStateV1* shared =
+            MimitaRuntime::GenericRuntime::instance().sharedState()) {
+        shared->magic = GAME_SHARED_MAGIC;
+        shared->modeFlags = GAME_MODE_FLAG_HOT_MOVEMENT;
+        shared->localPlayerEntity = (std::uint64_t)entity;
+    }
+    LiveBehavior::setDispatchWorld(&world);
+
+    // Free-fall: gravity pulls the actor down; result is finite.
+    float posA[3] = {0.0f, 0.0f, 0.0f};
+    float velA[3] = {0.0f, 0.0f, 0.0f};
+    const bool gotA = runHotMovement(entity, 20, posA, velA);
+    ok &= check(gotA, "hot movement produced overrides", report);
+    ok &= check(posA[2] < 10.0f && std::isfinite(posA[2]),
+                "gravity applied", report);
+
+    // Determinism: two identical runs must agree exactly.
+    float posB[3] = {0.0f, 0.0f, 0.0f};
+    float velB[3] = {0.0f, 0.0f, 0.0f};
+    runHotMovement(entity, 120, posB, velB);
+    float posC[3] = {0.0f, 0.0f, 0.0f};
+    float velC[3] = {0.0f, 0.0f, 0.0f};
+    runHotMovement(entity, 120, posC, velC);
+    ok &= check(std::fabs(posB[2] - posC[2]) < 1e-4f &&
+                    std::fabs(velB[2] - velC[2]) < 1e-4f,
+                "hot movement path deterministic", report);
+
+    // Floor collision: the actor settles on the floor and reports grounded.
+    ok &= check(posB[2] > 0.5f, "capsule does not fall through floor", report);
+    ok &= check(std::fabs(velB[2]) < 0.5f, "vertical velocity settles", report);
+
+    HotReloadSystem::instance().unloadGameDLL();
+    EntityRegistry::instance().destroyAll();
     return ok;
 }

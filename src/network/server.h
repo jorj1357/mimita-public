@@ -66,8 +66,10 @@ namespace MimitaNet {
 // Simulation rate shared with client via simulation-constants.h
 constexpr float SERVER_TICK_RATE = static_cast<float>(GAMEPLAY_SIMULATION_HZ);
 constexpr float SERVER_DT = GAMEPLAY_FIXED_DT;
-constexpr float PLAYER_RADIUS = 0.65f;
-constexpr float PLAYER_HEIGHT = 3.5f;
+// Must match the client capsule exactly (physics/config.h / character
+// manifest). A mismatch embeds one side in geometry at edges and slopes.
+constexpr float PLAYER_RADIUS = 0.7f;
+constexpr float PLAYER_HEIGHT = 3.6f;
 
 // Hit-rewind lookback: how many ticks before the attacker's fire-time snapshot
 // the server validates hits. In direct mode the attacker renders the newest

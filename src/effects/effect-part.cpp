@@ -13,7 +13,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+
+// Fixed 60 Hz tick counter owned by the hot `hot.effect-age` system. Parts are
+// stepped by elapsed ticks (not render-frame dt) so aging is tick-accurate and
+// editable live with no cold build.
+extern std::uint32_t g_hotEffectTick;
 
 namespace {
 
@@ -32,34 +38,56 @@ void MIMITA_GAME_CALL gameUpdateEffects(
     std::uint32_t effectCount,
     float dt)
 {
-    if (!effects || dt <= 0.0f)
+    if (!effects)
         return;
 
-    dt = (std::min)(dt, 0.1f);
+    // Tick-accurate stepping. When the hot client tick is running, advance by
+    // the number of 60 Hz ticks elapsed since the last call (frame-rate free);
+    // otherwise fall back to the render-frame dt.
+    static std::uint32_t sLastTick = 0;
+    std::uint32_t steps = 1;
+    float stepDt = (dt > 0.0f ? (std::min)(dt, 0.1f) : 0.0f);
+    const std::uint32_t now = g_hotEffectTick;
+    if (now != 0) {
+        steps = now - sLastTick;
+        sLastTick = now;
+        if (steps == 0)
+            return;                 // no tick elapsed this frame
+        if (steps > 8u)
+            steps = 8u;             // clamp after a stall/pause
+        stepDt = 1.0f / 60.0f;
+    }
+    if (stepDt <= 0.0f)
+        return;
+
     for (std::uint32_t i = 0; i < effectCount; ++i) {
         GameEffectPartState& effect = effects[i];
         if (!effect.alive)
             continue;
-
-        effect.lifetime += dt;
-        if (effect.lifetime < 0.0f)
-            continue;
-
-        if (!effect.sticky) {
-            effect.position[0] += effect.velocity[0] * dt;
-            effect.position[1] += effect.velocity[1] * dt;
-            effect.position[2] += effect.velocity[2] * dt;
+        for (std::uint32_t step = 0; step < steps; ++step) {
+            effect.lifetime += stepDt;
+            if (effect.lifetime < 0.0f)
+                continue;   // spawn delay
+            if (!effect.sticky) {
+                effect.position[0] += effect.velocity[0] * stepDt;
+                effect.position[1] += effect.velocity[1] * stepDt;
+                effect.position[2] += effect.velocity[2] * stepDt;
+            }
+            if (effect.affectedByGravity)
+                effect.velocity[2] -=
+                    (effect.gravity > 0.0f ? effect.gravity : 9.81f) * stepDt;
+            if (effect.drag > 0.0f) {
+                const float dragFactor = std::pow(
+                    std::max(0.0f, 1.0f - effect.drag), stepDt * 60.0f);
+                effect.velocity[0] *= dragFactor;
+                effect.velocity[1] *= dragFactor;
+                effect.velocity[2] *= dragFactor;
+            }
+            if (effect.lifetime >= effect.maxLifetime) {
+                effect.alive = 0;
+                break;
+            }
         }
-        if (effect.affectedByGravity)
-            effect.velocity[2] -= (effect.gravity > 0.0f ? effect.gravity : 9.81f) * dt;
-        if (effect.drag > 0.0f) {
-            const float dragFactor = std::pow(std::max(0.0f, 1.0f - effect.drag), dt * 60.0f);
-            effect.velocity[0] *= dragFactor;
-            effect.velocity[1] *= dragFactor;
-            effect.velocity[2] *= dragFactor;
-        }
-        if (effect.lifetime >= effect.maxLifetime)
-            effect.alive = 0;
     }
 }
 
@@ -519,6 +547,46 @@ void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount)
         mSurfaceDecals[mDecalWriteIdx % maxCount] = decal;
     }
     mDecalWriteIdx++;
+}
+
+std::uint32_t EffectPartSystem::decalPoolCount() const {
+    return static_cast<std::uint32_t>(mSurfaceDecals.size());
+}
+
+bool EffectPartSystem::decalPoolGet(std::uint32_t index, SurfaceDecal& out) const {
+    if (index >= mSurfaceDecals.size()) return false;
+    out = mSurfaceDecals[index];
+    return true;
+}
+
+void EffectPartSystem::decalPoolSet(std::uint32_t index, const SurfaceDecal& in) {
+    if (index < mSurfaceDecals.size()) mSurfaceDecals[index] = in;
+}
+
+void EffectPartSystem::decalPoolKill(std::uint32_t index) {
+    if (index >= mSurfaceDecals.size()) return;
+    mSurfaceDecals[index] = mSurfaceDecals.back();
+    mSurfaceDecals.pop_back();
+}
+
+std::uint32_t EffectPartSystem::bloodPoolCount() const {
+    return static_cast<std::uint32_t>(mBloodParticles.size());
+}
+
+bool EffectPartSystem::bloodPoolGet(std::uint32_t index, BloodParticle& out) const {
+    if (index >= mBloodParticles.size()) return false;
+    out = mBloodParticles[index];
+    return true;
+}
+
+void EffectPartSystem::bloodPoolSet(std::uint32_t index, const BloodParticle& in) {
+    if (index < mBloodParticles.size()) mBloodParticles[index] = in;
+}
+
+void EffectPartSystem::bloodPoolKill(std::uint32_t index) {
+    if (index >= mBloodParticles.size()) return;
+    mBloodParticles[index] = mBloodParticles.back();
+    mBloodParticles.pop_back();
 }
 
 EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim)

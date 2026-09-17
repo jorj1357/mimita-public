@@ -290,3 +290,24 @@ struct HotSpawnProtectionV1 {
     std::uint32_t untilTick;   // damage ignored while currentTick < untilTick
     std::uint32_t reserved;
 };
+
+// ── Collision policy (hot tunables) ─────────────────────────────────────────
+// Dispatched by the cold capsule solver so collision constants (skin, grounded
+// epsilon, capsule size) are editable live. The solve algorithm itself can be
+// replaced entirely via the `physics.capsuleSolve` capability.
+static constexpr std::uint64_t GAME_EVENT_COLLISION_POLICY =
+    gameHash("movement.collision-policy");
+struct CollisionPolicyV1 {
+    // in: cold-computed defaults
+    float radius;
+    float halfHeight;
+    float groundedVelocityEpsilon;
+    float skin;
+    // out
+    float outRadius;
+    float outHalfHeight;
+    float outGroundedVelocityEpsilon;
+    float outSkin;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};

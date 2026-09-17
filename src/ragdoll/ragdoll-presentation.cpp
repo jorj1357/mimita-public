@@ -10,6 +10,8 @@
 #include <cmath>
 
 #include "entities/player.h"
+#include "hot-reload/game-api.h"
+#include "live-code/live-behavior.h"
 #include "ragdoll/ragdoll-body.h"
 #include "ragdoll/ragdoll-mode-config.h"
 #include "telemetry/telemetry.h"
@@ -86,8 +88,27 @@ void RagdollPresentation::pushFrame(std::uint32_t ownerActorId, const Snapshot& 
 }
 
 bool RagdollPresentation::present(std::uint32_t ownerActorId, Player& player,
-                                  double delaySeconds)
+                                  double delaySeconds, bool isNpc)
 {
+    // A hot presenter owns remote ragdoll presentation when loaded; defer to it
+    // and yield the cold typed write when it handled the frame.
+    if (void* host = LiveBehavior::hostContext(0)) {
+        GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
+        if (ctx->resolveCapability) {
+            auto fn = reinterpret_cast<GameRagdollPresentFn>(
+                ctx->resolveCapability(ctx->host, GAME_CAP_RAGDOLL_PRESENT));
+            if (fn) {
+                GameRagdollPresentV1 req{};
+                req.ownerActorId = ownerActorId;
+                req.isNpc = isNpc ? 1u : 0u;
+                req.delaySeconds = delaySeconds;
+                fn(host, &req);
+                if (req.handled)
+                    return true;
+            }
+        }
+    }
+
     auto it = owners_.find(ownerActorId);
     if (it == owners_.end())
         return false;

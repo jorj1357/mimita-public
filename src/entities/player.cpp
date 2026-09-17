@@ -163,7 +163,13 @@ void Player::updateModelWorldTransforms()
     for (PhysicalBodyPart& part : physicalBody.parts)
         part.previousWorldTransform = part.worldTransform;
 
-    glm::mat4 rootWorld = transformMatrix(movementCapsule.position, movementCapsule.rotation);
+    // Align the rendered mesh feet with the collision capsule bottom. The
+    // character GLB's mesh bottom sits ~0.138 above the capsule bottom, which
+    // reads as a constant float; drop the model root to compensate.
+    constexpr float kModelFeetZOffset = -0.138f;
+    glm::vec3 modelRoot = movementCapsule.position;
+    modelRoot.z += kModelFeetZOffset;
+    glm::mat4 rootWorld = transformMatrix(modelRoot, movementCapsule.rotation);
 
     // Death animation: freeze position at death point, apply rotation lerp
     if (deathAnim.active) {

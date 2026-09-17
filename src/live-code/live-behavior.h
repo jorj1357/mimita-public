@@ -77,6 +77,11 @@ void setDispatchWorld(const void* world);
 // dedicated/listen server with the same primitive as the client.
 void setDispatchHeadlessWorld(const void* world);
 
+// Bind the current-frame input/camera so hot code can read them via the
+// input.read / camera.read capabilities. Pointers must outlive the domain run.
+void setDispatchInput(const void* input);
+void setDispatchCamera(const void* camera);
+
 // Flush generic presentation geometry submitted through the render.debug
 // capability during the render.frame domain run. Called once per frame by the
 // UI/render pass so hot presentation appears in the same frame.

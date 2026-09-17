@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "debug/debug-log.h"
 #include "config/networking-config.h"
+#include "live-code/live-behavior.h"
 
 #include <algorithm>
 #include <cstring>
@@ -265,6 +266,24 @@ ReliableGameplayEventQueueResult queueReliableGameplayEventToPlayer(
         return ReliableGameplayEventQueueResult::ConnectionUnavailable;
 
     (void)eventSessionId;
+
+    // Hot reliability policy: the handler can downgrade an event to best-effort
+    // (send once, never queue/retry). Wire format and transport stay cold.
+    NetReliablePolicyV1 rp{};
+    rp.playerId = player.id;
+    rp.eventId = eventId;
+    if (LiveBehavior::dispatchGameplayEvent64(
+            GAME_EVENT_NET_RELIABLE_POLICY, &rp, sizeof(rp), 0, player.id, 0) &&
+        rp.handled && rp.reliable == 0u)
+    {
+        if (serverSendToPlayer(sock, player, data, size))
+        {
+            ++totalPacketsOut;
+            return ReliableGameplayEventQueueResult::Queued;
+        }
+        return ReliableGameplayEventQueueResult::ConnectionUnavailable;
+    }
+
     return queueForOnePlayer(sock, player, data, size, eventId,
                              totalPacketsOut);
 }
@@ -319,16 +338,28 @@ void tickReliableGameplayEvents(SOCKET sock,
                     ++gFailureStats.attemptsExhausted;
                 ++expiredCount;
 
-                // Chat delivery is best-effort at the event-queue layer. The
-                // client continues retrying its idempotent request, and the
-                // normal server connection-health timer owns disconnects.
-                // Erasing the player here made badconn 8 look disconnected
-                // after 80 * 50 ms, long before the configured 60 s grace.
-                if (it->packetType == PACKET_CHAT_MESSAGE_EVENT)
+                // Hot reliability policy owns whether an expired/exhausted event
+                // may drop the connection. Chat is best-effort by default; the
+                // hot handler can change this live.
+                NetReliablePolicyV1 rp{};
+                rp.playerId = player.id;
+                rp.eventId = it->eventId;
+                rp.packetType = it->packetType;
+                rp.attempts = it->attempts;
+                rp.ttlExpired = ttlExpired ? 1u : 0u;
+                rp.attemptsExhausted = attemptsExhausted ? 1u : 0u;
+                bool keepConnection = (it->packetType == PACKET_CHAT_MESSAGE_EVENT);
+                if (LiveBehavior::dispatchGameplayEvent64(
+                        GAME_EVENT_NET_RELIABLE_POLICY, &rp, sizeof(rp), 0,
+                        player.id, 0) &&
+                    rp.handled)
+                    keepConnection = rp.keepConnection != 0u;
+
+                if (keepConnection)
                 {
                     Debug::logThrottled(Debug::Category::Networking,
                         "reliable-chat-event-expired", 1.0f,
-                        "[RELIABLE CHAT EVENT EXPIRED] playerId=%u eventId=%u reason=%s action=keep-connection\n",
+                        "[RELIABLE EVENT KEPT] playerId=%u eventId=%u reason=%s action=keep-connection\n",
                         player.id, it->eventId,
                         ttlExpired ? "ttl-expired" : "attempts-exhausted");
                     it = player.pendingReliableEvents.erase(it);
@@ -341,7 +372,21 @@ void tickReliableGameplayEvents(SOCKET sock,
                 disconnected = true;
                 break;
             }
-            if (now - it->lastSendMs >= (uint64_t)cfg.retryMs)
+            // Hot reliability policy owns whether this event is retried.
+            bool allowRetry = true;
+            {
+                NetReliablePolicyV1 rp{};
+                rp.playerId = player.id;
+                rp.eventId = it->eventId;
+                rp.packetType = it->packetType;
+                rp.attempts = it->attempts;
+                if (LiveBehavior::dispatchGameplayEvent64(
+                        GAME_EVENT_NET_RELIABLE_POLICY, &rp, sizeof(rp), 0,
+                        player.id, 0) &&
+                    rp.handled)
+                    allowRetry = rp.retry != 0u;
+            }
+            if (allowRetry && now - it->lastSendMs >= (uint64_t)cfg.retryMs)
             {
                 const bool sent = serverSendToPlayer(sock, player, it->bytes.data(), it->bytes.size());
                 if (!sent)

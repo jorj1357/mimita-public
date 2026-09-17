@@ -475,6 +475,46 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 // Sends PlayerRespawnedPacket with authoritative generation and inventory.
 void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn)
 {
+    // The client may have reported its pre-map-load position while the
+    // authoritative transform gate was still pending.  Do not let that
+    // mutable report replace the spawn selected by the server.  The stable
+    // lifecycle state owns the transform; the hot policy owns only the
+    // editable spawn decision.
+    glm::vec3 spawnPosition = player.authoritativeTransformPosition;
+    if (!movementIsFinite(spawnPosition) ||
+        (std::fabs(spawnPosition.x) < 0.001f &&
+         std::fabs(spawnPosition.y) < 0.001f &&
+         std::fabs(spawnPosition.z) < 0.001f))
+    {
+        spawnPosition = player.pos;
+    }
+    float spawnYaw = player.yaw;
+    ActorSpawnPolicyV1 spawnPolicy{};
+    spawnPolicy.kind = GAME_ACTOR_SPAWN_PLAYER;
+    spawnPolicy.index = player.id;
+    spawnPolicy.isRespawn = isInitialSpawn ? 0u : 1u;
+    spawnPolicy.chosenPosition[0] = spawnPosition.x;
+    spawnPolicy.chosenPosition[1] = spawnPosition.y;
+    spawnPolicy.chosenPosition[2] = spawnPosition.z;
+    spawnPolicy.chosenYaw = spawnYaw;
+    spawnPolicy.position[0] = spawnPosition.x;
+    spawnPolicy.position[1] = spawnPosition.y;
+    spawnPolicy.position[2] = spawnPosition.z;
+    spawnPolicy.yaw = spawnYaw;
+    if (LiveBehavior::dispatchGameplayEvent64(
+            GAME_EVENT_ACTOR_SPAWN_POLICY, &spawnPolicy, sizeof(spawnPolicy),
+            0, player.id, 0) && spawnPolicy.handled)
+    {
+        if (spawnPolicy.suppress)
+            return;
+        spawnPosition = glm::vec3(spawnPolicy.position[0],
+                                  spawnPolicy.position[1],
+                                  spawnPolicy.position[2]);
+        spawnYaw = spawnPolicy.yaw;
+    }
+    player.pos = spawnPosition;
+    player.yaw = spawnYaw;
+
     resetPlayerForSpawn(player, isInitialSpawn);
     player.spawnState = ServerPlayer::AwaitingSpawnAck;
     resetServerMovementForAuthoritativeLifecycle(

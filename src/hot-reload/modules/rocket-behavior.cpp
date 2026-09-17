@@ -63,11 +63,22 @@ void MIMITA_GAME_CALL onEvent(const GameEventV1* event, GameplayContextV1* conte
     {
         RagdollPolicyV1* policy = static_cast<RagdollPolicyV1*>(event->payload);
         policy->handled = 1;
-        policy->outStiffness = policy->baseStiffness;
-        policy->outDamping = policy->baseDamping;
-        policy->outIterations = policy->baseIterations;
-        policy->outGravityScale = policy->baseGravityScale;
-        // Live proof: change outStiffness/outIterations here and save.
+        // ── Hot ragdoll solver tuning table (live-editable, no JSON/restart) ──
+        // Edit these multipliers and save; the running client's ragdoll solver
+        // policy updates on the next generation switch. Defaults are 1.0 (exact
+        // current behavior). Lower stiffness/damping = floppier; higher =
+        // stiffer. iterations scales the joint solver passes.
+        constexpr float kStiffnessMultiplier = 1.0f;
+        constexpr float kDampingMultiplier = 1.0f;
+        constexpr float kGravityMultiplier = 1.0f;
+        constexpr float kIterationMultiplier = 1.0f;
+        policy->outStiffness = policy->baseStiffness * kStiffnessMultiplier;
+        policy->outDamping = policy->baseDamping * kDampingMultiplier;
+        policy->outGravityScale =
+            policy->baseGravityScale * kGravityMultiplier;
+        float iterations = (float)policy->baseIterations * kIterationMultiplier;
+        if (iterations < 1.0f) iterations = 1.0f;
+        policy->outIterations = (std::uint32_t)iterations;
         return;
     }
 
@@ -99,7 +110,31 @@ void MIMITA_GAME_CALL onEvent(const GameEventV1* event, GameplayContextV1* conte
     {
         MovementValidationV1* policy = static_cast<MovementValidationV1*>(event->payload);
         policy->handled = 1;
-        policy->decision = policy->computedDecision;
+        // Lifecycle and ownership gates remain authoritative.  The hot
+        // movement policy may tune ordinary movement, but it must never turn
+        // a pre-spawn, stale-generation, or stale-epoch report into an
+        // accepted transform.  Those reports commonly contain the client's
+        // old map position (or zero) and must not overwrite the server spawn.
+        switch (policy->computedReason)
+        {
+        case 4u:  // NotSpawned
+        case 5u:  // NotActive
+        case 7u:  // MovementDisabled
+        case 8u:  // SpawnGenerationMismatch
+        case 9u:  // TransformEpochMismatch
+            policy->decision = policy->computedDecision;
+            return;
+        default:
+            break;
+        }
+        // Server movement corrections are DISABLED by default: the server adopts
+        // the client's validated movement (spec phase 1 client-trusting), so the
+        // player may travel arbitrarily far per tick without being corrected or
+        // rubberbanded.
+        // TO RESTORE structural validation (bounds, blocking geometry, speed,
+        // trajectory), replace the next line with:
+        //   policy->decision = policy->computedDecision;
+        policy->decision = 0u; // MovementValidationDecision::Accept
         return;
     }
 
@@ -177,6 +212,13 @@ void MIMITA_GAME_CALL onEvent(const GameEventV1* event, GameplayContextV1* conte
 
     // Baseline: keep the JSON-derived base damage.
     policy->outDamage = policy->baseDamage;
+
+    // Hot kernel safety cap for the authoritative damage clamp (0 = unlimited).
+    // Cold fills it from serverAuthoritativeDamageLimit(); overriding it here
+    // keeps the bound editable live with the rest of the damage policy. Edit
+    // live.
+    constexpr std::uint32_t kDamageLimit = 0;
+    policy->outDamageLimit = kDamageLimit;
 
     // No blanket explosion damage override: the projectile/tool owns the damage
     // and self-damage multiplier (see rocket-tool.cpp / hot-projectiles.cpp).

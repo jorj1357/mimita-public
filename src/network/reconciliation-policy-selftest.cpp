@@ -1,9 +1,9 @@
 // 09 15 2026
 /* purpose
-* Implements the headless hot reconciliation-policy self-test: distance
-* thresholds (none/smooth/snap) and generation-mismatch bootstrap (never a
-* position correction). No Player, client, or snapshot pointers; the payload is
-* generic.
+* Implements the headless hot reconciliation-policy self-test: divergence
+* corrections are disabled (server adopts client movement), and generation
+* mismatch is a bootstrap rather than a position correction. No Player, client,
+* or snapshot pointers; the payload is generic.
 * Does NOT own rendering/presentation or the network transport.
 */
 #include "network/reconciliation-policy-selftest.h"
@@ -74,26 +74,29 @@ bool runReconciliationPolicySelfTest(std::string& report)
         r.positionError = 2.0f;
         return r;
     }());
-    ok &= check(med.handled == 1u && med.correctionMode == 1u &&
-                    med.shouldCorrect == 1u,
-                "medium error -> smooth correction", report);
+    ok &= check(med.handled == 1u && med.correctionMode == 0u &&
+                    med.shouldCorrect == 0u,
+                "medium error -> no correction (divergence corrections disabled)",
+                report);
 
     GameReconcileV1 big = run([&] {
         GameReconcileV1 r = makeBase();
         r.positionError = 50.0f;
         return r;
     }());
-    ok &= check(big.handled == 1u && big.correctionMode == 1u,
-                "large error below major threshold -> smooth correction", report);
+    ok &= check(big.handled == 1u && big.correctionMode == 0u,
+                "large error -> no correction (divergence corrections disabled)",
+                report);
 
     GameReconcileV1 huge = run([&] {
         GameReconcileV1 r = makeBase();
         r.positionError = 500.0f;
         return r;
     }());
-    ok &= check(huge.handled == 1u && huge.correctionMode == 3u &&
-                    huge.shouldCorrect == 1u,
-                "very large error -> snap correction", report);
+    ok &= check(huge.handled == 1u && huge.correctionMode == 0u &&
+                    huge.shouldCorrect == 0u,
+                "very large error -> no correction (server adopts client)",
+                report);
 
     GameReconcileV1 gen = run([&] {
         GameReconcileV1 r = makeBase();

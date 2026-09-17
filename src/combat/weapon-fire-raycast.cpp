@@ -19,6 +19,8 @@
 #include "network/multiplayer-context.h"
 #include "network/server.h"
 #include "physics/movement/physics-collision.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/game-api.h"
 
 namespace WeaponFire {
 
@@ -52,7 +54,20 @@ AimSolution computeAim(
     result.cameraDistance = kMaxShotDistance;
 
     const GameplayConfig& cfg = GameplayConfig::instance();
-    const GameplayAimMode mode = cfg.aimMode();
+    GameplayAimMode mode = cfg.aimMode();
+    // The aim mode is hot-owned when hot policy publishes it (edit it live in
+    // the replaceable game DLL, not in JSON). 0 = fall back to the cold config.
+    if (GameSharedStateV1* shared =
+            MimitaRuntime::GenericRuntime::instance().sharedState()) {
+        if (shared->magic == GAME_SHARED_MAGIC && shared->aimModeHash != 0) {
+            const std::uint64_t h = shared->aimModeHash;
+            if (h == gameHash("crosshair")) mode = GameplayAimMode::Crosshair;
+            else if (h == gameHash("camforward")) mode = GameplayAimMode::CamForward;
+            else if (h == gameHash("physical")) mode = GameplayAimMode::Physical;
+            else if (h == gameHash("farpoint")) mode = GameplayAimMode::Farpoint;
+            else mode = GameplayAimMode::WorldHit;
+        }
+    }
     if (mode == GameplayAimMode::Crosshair) {
         AimTarget target = computeAimTarget(camera, world, npcs, remotePlayers, remoteNpcs);
         result.aimPoint = target.worldPoint;

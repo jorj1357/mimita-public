@@ -23,6 +23,8 @@
 #include "network/packets.h"
 #include "debug/debug-visuals.h"
 #include "ecs/actor-entities.h"
+#include "ecs/dynamic-components.h"
+#include "hot-reload/hot-presentation.h"
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +65,42 @@ bool serverAuthHits()
 {
     if (!gpMpContext || !gpMpContext->active) return false;
     return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
+}
+
+// When hot tool-presentation owns the local equipped tool and has resolved its
+// muzzle, prefer that muzzle so the shot/tracer/flash starts at the visible gun
+// (one source of truth = the hot tool transform). Falls back to the cold
+// viewmodel muzzle when hot has not provided one.
+bool hotResolvedMuzzle(glm::vec3& outPos, glm::vec3& outFwd)
+{
+    const EntityId actor = Ecs::ensureLocalPlayerEntity();
+    if (actor == kInvalidEntityId)
+        return false;
+    HotToolClaimV1 claim{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            actor, HOT_TOOL_CLAIM_COMPONENT, &claim, sizeof(claim)))
+        return false;
+    if (claim.migrated == 0 || claim.toolEntity == 0)
+        return false;
+    HotAttachmentStateV1 att{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            static_cast<EntityId>(claim.toolEntity), HOT_ATTACHMENT_COMPONENT,
+            &att, sizeof(att)))
+        return false;
+    if (att.resolved == 0)
+        return false;
+    const float mpx = att.muzzleWorldPosition[0];
+    const float mpy = att.muzzleWorldPosition[1];
+    const float mpz = att.muzzleWorldPosition[2];
+    if (mpx * mpx + mpy * mpy + mpz * mpz < 1e-8f)
+        return false;   // hot has not written a muzzle yet
+    outPos = glm::vec3(mpx, mpy, mpz);
+    const float fx = att.forward[0];
+    const float fy = att.forward[1];
+    const float fz = att.forward[2];
+    if (fx * fx + fy * fy + fz * fz > 1e-8f)
+        outFwd = glm::normalize(glm::vec3(fx, fy, fz));
+    return true;
 }
 
 } // anonymous namespace
@@ -223,9 +261,11 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         int idx = slotIndex(def->slot);
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
+        glm::vec3 muzzleDir = vm.forward;
+        hotResolvedMuzzle(muzzlePos, muzzleDir);
 
         WeaponFire::AimSolution aim = WeaponFire::computeAim(
-            camera, world, npcs, muzzlePos, vm.forward, nullptr);
+            camera, world, npcs, muzzlePos, muzzleDir, nullptr);
         glm::vec3 shotDir = aim.direction;
 
         constexpr float MAX_DIST = 100.0f;
@@ -823,6 +863,7 @@ RevolverShotResult WeaponSystem::fire(
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;
         glm::vec3 muzzleDir = vm.forward;
+        hotResolvedMuzzle(muzzlePos, muzzleDir);
         WeaponFire::AimSolution aim = WeaponFire::computeAim(
             camera, world, npcs, muzzlePos, muzzleDir, nullptr);
         glm::vec3 dir = aim.direction;
@@ -890,6 +931,7 @@ RevolverShotResult WeaponSystem::fireHitscan(
     const WeaponViewModel& vm = mViewModels[idx];
     glm::vec3 muzzlePos = vm.muzzle;
     glm::vec3 muzzleDir = vm.forward;
+    hotResolvedMuzzle(muzzlePos, muzzleDir);
 
     RevolverShotResult result;
 
@@ -1025,6 +1067,7 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     const WeaponViewModel& vm = mViewModels[idx];
     glm::vec3 muzzlePos = vm.muzzle;
     glm::vec3 muzzleDir = vm.forward;
+    hotResolvedMuzzle(muzzlePos, muzzleDir);
 
     WeaponFire::AimSolution aim = WeaponFire::computeAim(
         camera, world, npcs, muzzlePos, muzzleDir, remotePlayers);

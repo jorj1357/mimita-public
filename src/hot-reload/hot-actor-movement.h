@@ -45,4 +45,20 @@ inline const MovementMode& defaultActorMovementMode()
 
 inline constexpr float kRadPerDegree = 0.01745329252f;
 
+// ── Jump buffer (hot, live-editable) ────────────────────────────────────────
+// Hold jump = jump whenever a jump resource is available. Touching the world
+// (any contact) resets the jump resource, so holding Space climbs walls.
+// The buffer only smooths the "pressed just before landing" case.
+// Mode 0 = seconds (default); mode 1 = ticks at the fixed 60 Hz step.
+inline constexpr int kJumpBufferMode = 0;
+inline constexpr float kJumpBufferSeconds = 0.2f;
+inline constexpr int kJumpBufferTicks = 12;
+
+inline float actorJumpBufferSeconds(float dt)
+{
+    return kJumpBufferMode == 1
+        ? (float)kJumpBufferTicks * dt
+        : kJumpBufferSeconds;
+}
+
 } // namespace MimitaHotMovement

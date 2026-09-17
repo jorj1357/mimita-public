@@ -172,34 +172,43 @@ inline void evaluateIdle(float t, bool equipped, Pose& out)
     out.clear();
     out.mask = MaskFull;
     const float sway = std::sin(t * 1.6f);
-    out.part[PartTorso].rot[1] = sway * 1.5f;
-    out.part[PartTorso].trans[1] = std::sin(t * 1.6f) * 0.01f;
-    out.part[PartHead].rot[0] = std::sin(t * 0.9f) * 2.0f;
+    const float breathe = std::sin(t * 1.1f);
+    const float head = std::sin(t * 0.8f);
+    // Clear, visible idle sway/breathing on every part.
+    out.part[PartTorso].rot[1] = sway * 5.0f;
+    out.part[PartTorso].rot[0] = breathe * 2.0f;
+    out.part[PartTorso].trans[1] = breathe * 0.03f;
+    out.part[PartHead].rot[0] = head * 6.0f;
+    out.part[PartHead].rot[1] = sway * 4.0f;
     const float armX = equipped ? -58.0f : 0.0f;
-    const float armSpread = equipped ? 6.0f : 4.0f;
-    out.part[PartLeftArm].rot[0] = armX + std::sin(t * 1.5f) * 2.5f;
-    out.part[PartRightArm].rot[0] = armX + std::sin(t * 1.5f + 1.4f) * 2.5f;
-    out.part[PartLeftArm].rot[2] = armSpread;
-    out.part[PartRightArm].rot[2] = -armSpread;
+    const float armSpread = equipped ? 10.0f : 8.0f;
+    out.part[PartLeftArm].rot[0] = armX + std::sin(t * 1.5f) * 8.0f;
+    out.part[PartRightArm].rot[0] = armX + std::sin(t * 1.5f + 1.4f) * 8.0f;
+    out.part[PartLeftArm].rot[2] = armSpread + sway * 3.0f;
+    out.part[PartRightArm].rot[2] = -armSpread - sway * 3.0f;
+    out.part[PartLeftLeg].rot[0] = std::sin(t * 1.5f + 0.6f) * 2.0f;
+    out.part[PartRightLeg].rot[0] = std::sin(t * 1.5f + 2.0f) * 2.0f;
 }
 
-inline void evaluateWalk(float t, float speed01, Pose& out)
+// Walking is intent-driven and always plays at the same procedural speed and
+// amplitude (no velocity scaling); the leg cycle keeps a readable stride.
+inline void evaluateWalk(float t, float /*speed01*/, Pose& out)
 {
     out.clear();
     out.mask = MaskFull;
-    const float freq = 6.0f + 5.0f * (speed01 < 0.0f ? 0.0f : (speed01 > 1.0f ? 1.0f : speed01));
+    const float freq = 8.0f;
     const float p = t * freq;
     const float swing = std::sin(p);
-    const float amp = 22.0f + 16.0f * speed01;
+    const float amp = 38.0f;
     out.part[PartLeftLeg].rot[0] = swing * amp;
     out.part[PartRightLeg].rot[0] = -swing * amp;
     out.part[PartLeftArm].rot[0] = -swing * amp * 0.7f;
     out.part[PartRightArm].rot[0] = swing * amp * 0.7f;
     out.part[PartLeftArm].rot[2] = 5.0f;
     out.part[PartRightArm].rot[2] = -5.0f;
-    out.part[PartTorso].rot[1] = swing * 4.0f;
-    out.part[PartTorso].trans[1] = std::fabs(std::sin(p * 2.0f)) * 0.02f;
-    out.part[PartHead].rot[0] = -2.0f + std::sin(p * 2.0f) * 1.5f;
+    out.part[PartTorso].rot[1] = swing * 5.0f;
+    out.part[PartTorso].trans[1] = std::fabs(std::sin(p * 2.0f)) * 0.03f;
+    out.part[PartHead].rot[0] = -2.0f + std::sin(p * 2.0f) * 2.0f;
 }
 
 // Derive the locomotion base action from generic facts so the upper-body

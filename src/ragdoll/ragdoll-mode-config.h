@@ -64,6 +64,8 @@ struct RagdollModeConfigData {
     float corpseSpawnVelocityMultiplier = 1.0f;
     float corpseBloodIntervalSeconds = 0.18f;
     bool corpseBloodEnabled = true;
+    // Maximum simultaneous corpse ragdolls. Hot-reloadable via config/ragdoll.json.
+    int maxCorpses = 12;
 
     // ── Editable simulation rates (primitives) ──────────────────────
     // solver_hz: fixed rate of the ragdoll.solver domain. The 60 Hz gameplay

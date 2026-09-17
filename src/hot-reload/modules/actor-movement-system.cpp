@@ -25,33 +25,45 @@ namespace {
 // client's validated movement (spec phase 1), the actor system must not fight
 // it. Set true to return to server-authoritative simulation live.
 constexpr bool kSimulateServerActors = false;
+// Server NPC ownership. When true the hot system exposes actor.move.npc, which
+// the cold NPC kernel calls inline after the AI writes intent, so NPC movement
+// and routing are hot-reloadable. Edit live.
+constexpr bool kSimulateServerNpcs = true;
 
 using PhysicsMoveFn = void (MIMITA_GAME_CALL *)(void*, MovementStateV1*, float,
                                                 std::uint32_t);
 
-void simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
-                      std::uint32_t tick)
+bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
+                      std::uint32_t tick, bool npcOnly)
 {
     GameControlSourceComponentV1 cs{};
     const bool hasControl =
         ctx->readComponent(ctx->host, e, GAME_COMPONENT_CONTROL_SOURCE, &cs,
                            sizeof(cs));
-    // Only authoritative remote-network actors (server human players). The local
-    // human is owned by movement.main; NPCs stay on the cold shared-policy path
-    // until their yield is wired. An absent component is treated as a server
-    // player (cold does not always stamp control source).
-    if (hasControl && cs.source != GAME_CONTROL_REMOTE_NETWORK)
-        return;
+    // Two disjoint ownership sets so players and NPCs never double-simulate:
+    // remote-network human players (gameplay domain) and server NPCs (called
+    // inline by the cold NPC kernel). An absent control component is treated as
+    // a server player because cold does not always stamp it.
+    if (npcOnly)
+    {
+        if (!hasControl || cs.source != GAME_CONTROL_SERVER_NPC)
+            return false;
+    }
+    else
+    {
+        if (hasControl && cs.source != GAME_CONTROL_REMOTE_NETWORK)
+            return false;
+    }
 
     GameMovementIntentComponentV1 mi{};
     if (!ctx->readComponent(ctx->host, e, GAME_COMPONENT_MOVEMENT_INTENT, &mi,
                             sizeof(mi)))
-        return;
+        return false;
 
     GameTransformComponentV1 tf{};
     if (!ctx->readComponent(ctx->host, e, GAME_COMPONENT_TRANSFORM, &tf,
                             sizeof(tf)))
-        return;
+        return false;
 
     GameVelocityComponentV1 vl{};
     ctx->readComponent(ctx->host, e, GAME_COMPONENT_VELOCITY, &vl, sizeof(vl));
@@ -176,7 +188,8 @@ void simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
         jp.jumpSpeed = m.jumpSpeed;
         jp.dt = dt;
         jp.coyoteSeconds = 0.0f;
-        jp.jumpBufferSeconds = 0.0f;
+        jp.jumpBufferSeconds =
+            MimitaHotMovement::actorJumpBufferSeconds(dt);
         jp.grounded = rs.grounded ? 1u : 0u;
         jp.jumpPressed = jumpEdge ? 1u : 0u;
         jp.jumpHeld = mi.jump ? 1u : 0u;
@@ -264,12 +277,11 @@ void simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] = GAME_MOVEMENT_STAMP_FLAG_ACTIVE;
     ctx->writeComponent(ctx->host, e, GAME_COMPONENT_MOVEMENT_RUNTIME_STATE,
                         &rs, sizeof(rs));
+    return true;
 }
 
-void MIMITA_GAME_CALL actorMovementTick(void* host, std::uint64_t tick, float dt)
+void actorMovementTickImpl(void* host, std::uint64_t tick, float dt, bool npcOnly)
 {
-    if (!kSimulateServerActors)
-        return;
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
     if (!ctx || ctx->structSize < sizeof(GameplayContextV1))
         return;
@@ -294,7 +306,31 @@ void MIMITA_GAME_CALL actorMovementTick(void* host, std::uint64_t tick, float dt
 
     for (std::uint32_t i = 0; i < count; ++i)
         if (entities[i] != localEntity)
-            simulateOneActor(ctx, entities[i], dt, (std::uint32_t)tick);
+            simulateOneActor(ctx, entities[i], dt, (std::uint32_t)tick, npcOnly);
+}
+
+void MIMITA_GAME_CALL actorMovementTick(void* host, std::uint64_t tick, float dt)
+{
+    if (!kSimulateServerActors)
+        return;
+    actorMovementTickImpl(host, tick, dt, false);
+}
+
+// actor.move.npc: called inline by the cold NPC kernel right after the AI has
+// written the movement intent, so integration happens in place and the moved
+// result is visible to the same tick's post steps. Returns 1 when this module
+// owns the actor; 0 lets the cold kernel integrate it instead.
+std::uint32_t MIMITA_GAME_CALL npcMove(void* host, std::uint64_t entity,
+                                       std::uint32_t tick, float dt)
+{
+    if (!kSimulateServerNpcs)
+        return 0u;
+    GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
+    if (!ctx || ctx->structSize < sizeof(GameplayContextV1))
+        return 0u;
+    if (!ctx->readComponent || !ctx->writeComponent || dt <= 0.0f)
+        return 0u;
+    return simulateOneActor(ctx, entity, dt, tick, true) ? 1u : 0u;
 }
 
 } // namespace
@@ -302,5 +338,9 @@ void MIMITA_GAME_CALL actorMovementTick(void* host, std::uint64_t tick, float dt
 const MimitaHotPackage::SystemRegistrar s_actorMovementRegistration{
     {gameHash("movement.actors"), GAME_DOMAIN_GAMEPLAY, 50, 0,
      actorMovementTick, "movement.actors"}};
+
+const MimitaHotPackage::CapabilityRegistrar s_npcMoveProvider{
+    {GAME_CAP_NPC_MOVE, gameHash("sig.actor.move.npc.v1"), 0,
+     reinterpret_cast<void*>(&npcMove), "actor.move.npc"}};
 
 #endif

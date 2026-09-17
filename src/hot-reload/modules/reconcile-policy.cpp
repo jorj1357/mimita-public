@@ -40,20 +40,25 @@ void MIMITA_GAME_CALL onReconcile(void* /*host*/, const GameEventV1* event)
     }
 
     const float e = r->positionError;
-    // No correction at all for zero/tiny error (and for non-finite values).
-    if (!(e > 0.25f) || e < r->smallDistance) {
-        r->correctionMode = GAME_RECONCILE_MODE_NONE;
-        r->reserved = GAME_RECONCILE_APPLY_NONE;
-    } else if (e < r->majorDistance) {
-        r->correctionMode = GAME_RECONCILE_MODE_SMOOTH;
-        r->shouldCorrect = 1u;
-        // Apply the server state once (cold rate-limits to avoid a float loop).
-        r->reserved = GAME_RECONCILE_APPLY_SMOOTH_ONCE;
-    } else {
-        r->correctionMode = GAME_RECONCILE_MODE_SNAP;
-        r->shouldCorrect = 1u;
-        r->reserved = GAME_RECONCILE_APPLY_SNAP;
-    }
+    // Position-divergence corrections are DISABLED by default: the server adopts
+    // the client's validated movement, so there is nothing to converge and the
+    // client must not rubberband. The error is still reported for diagnostics.
+    //
+    // TO RESTORE the previous distance-based correction, delete the two lines
+    // below and uncomment the block:
+    //   if (!(e > 0.25f) || e < r->smallDistance) {
+    //       r->correctionMode = GAME_RECONCILE_MODE_NONE;
+    //       r->reserved = GAME_RECONCILE_APPLY_NONE;
+    //   } else if (e < r->majorDistance) {
+    //       r->correctionMode = GAME_RECONCILE_MODE_SMOOTH;
+    //       r->reserved = GAME_RECONCILE_APPLY_SMOOTH_ONCE;
+    //   } else {
+    //       r->correctionMode = GAME_RECONCILE_MODE_SNAP;
+    //       r->reserved = GAME_RECONCILE_APPLY_SNAP;
+    //   }
+    r->correctionMode = GAME_RECONCILE_MODE_NONE;
+    r->reserved = GAME_RECONCILE_APPLY_NONE;
+    (void)e;
 
     r->handled = 1u;
 }
