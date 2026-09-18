@@ -53,8 +53,12 @@
     "src/hot-reload/hot-prediction.h",
     "src/hot-reload/hot-presentation.h",
     "src/hot-reload/hot-tool-visual.h",
+    "src/hot-reload/hot-tool-action.h",
+    "src/hot-reload/hot-tool-state.h",
     "src/hot-reload/hot-projectile.h",
     "src/hot-reload/hot-movement-policy.h",
+    "src/hot-reload/hot-movement-presets.h",
+    "src/hot-reload/hot-movement-preset-log.h",
     "src/hot-reload/hot-actor-movement.h",
     "src/hot-reload/hot-ui.h",
     "src/network/match-lifecycle.h",
@@ -73,7 +77,8 @@
     "src/hot-reload/packages/**/*.cpp"
   ],
   "headerGlobs": [
-    "src/hot-reload/packages/**/*.h"
+    "src/hot-reload/packages/**/*.h",
+    "src/hot-reload/generated/**/*.h"
   ],
   "cold": [
     "src/hot-reload/hot-reload-system.cpp",

@@ -484,19 +484,28 @@ void handleAttackRequest(
     // The weapon runtime state is read AFTER the cache check to avoid
     // mutating state for duplicate requests.
 
-    // ── Generic tool-use fact ──────────────────────────────────────────
-    // A hot behavior may own this use (for example a melee/contact tool). If it
-    // suppresses the built-in fire, report the shot as not fired.
+    // ── Generic tool-use fact (phase-0 hot-first gate) ────────────────
+    // Offered to hot code for EVERY execution family. A definition opts in by
+    // setting TOOL_FLAG_OWNS_EXECUTION; until then the hot router declines and
+    // the cold family dispatch below stays authoritative. When hot owns the use
+    // it has already applied the authoritative consequence, so report accepted.
     {
         ToolUsePolicyV1 use{};
         use.ownerId = shooter.id;
+        use.userEntity = static_cast<std::uint64_t>(
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id));
+        use.toolEntity = shooter.equippedToolEntity;
+        if (use.toolEntity == 0)
+            use.toolEntity = serverWeaponToolEntity(shooter, *wepId, false);
         use.toolNetworkId = req->weaponDefNetworkId;
-        use.toolId = networkWeaponTypeForDefinition(*def);
+        // Recipe/behavior key: the definition id hash. The hot router also
+        // accepts the numeric family id as a fallback.
+        use.toolId = gameHash(def->id.c_str());
         use.kind = 0;
         use.tick = tick;
         use.baseFire = 1;
         use.outFire = 1;
-        use.ammoCost = 1;
+        use.ammoCost = consumesAmmo ? 1u : 0u;
         use.origin[0] = req->muzzlePosX;
         use.origin[1] = req->muzzlePosY;
         use.origin[2] = req->muzzlePosZ;
@@ -509,9 +518,18 @@ void handleAttackRequest(
         LiveBehavior::dispatchToolUse(use, tick);
         if (use.handled && use.outFire == 0)
         {
-            sendAttackResult(sock, shooter, req, tick, false, 1, 0,
+            // The migrated tool owns its ammo/cooldown on the tool entity;
+            // refresh the legacy view and rate-limit through the shared cooldown.
+            serverWeaponStateLoad(shooter, *wepId);
+            rt.nextAllowedFireTick = cooldownTickFor(*def, tick);
+            rt.stateRevision++;
+            serverWeaponStateStore(shooter, *wepId);
+            sendAttackResult(sock, shooter, req, tick, true, 0, 0,
                              rt.magazineAmmo, rt.reserveAmmo,
                              rt.nextAllowedFireTick, rt.stateRevision);
+            Debug::log(Debug::Category::Weapons,
+                "[ATTACK HOT ACCEPT] playerId=%u weapon=%s ownedByHot=1\n",
+                shooter.id, def->id.c_str());
             return;
         }
     }
@@ -1200,9 +1218,6 @@ void handleAttackRequest(
          def->behaviorType == WeaponBehaviorType::GrenadeLauncher ||
          def->behaviorType == WeaponBehaviorType::Grenade))
     {
-        glm::vec3 origin(req->muzzlePosX, req->muzzlePosY, req->muzzlePosZ);
-        if (!finiteVec3(origin))
-            origin = glm::vec3(req->aimOriginX, req->aimOriginY, req->aimOriginZ);
         glm::vec3 direction(req->aimDirX, req->aimDirY, req->aimDirZ);
         direction = normalizedOrZero(direction);
         if (glm::length(direction) <= 0.0001f)
@@ -1213,45 +1228,14 @@ void handleAttackRequest(
             return;
         }
 
-        // Generic action routing: a hot/per-entity tool behavior may own the
-        // projectile attack. handled + outFire == 0 suppresses the kernel spawn,
-        // so rocket/grenade use the canonical hot projectile entity path.
-        {
-            ToolUsePolicyV1 use{};
-            use.userEntity = static_cast<std::uint64_t>(
-                Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id));
-            use.ownerId = shooter.id;
-            const std::uint8_t netWeapon = networkWeaponTypeForDefinition(*def);
-            use.toolId = static_cast<std::uint64_t>(netWeapon);
-            use.toolNetworkId = static_cast<std::uint32_t>(netWeapon);
-            use.kind = 0;
-            use.tick = tick;
-            use.baseFire = 1;
-            use.outFire = 1;
-            use.ammoCost = 1;
-            use.origin[0] = origin.x; use.origin[1] = origin.y; use.origin[2] = origin.z;
-            use.direction[0] = direction.x; use.direction[1] = direction.y; use.direction[2] = direction.z;
-            use.predictionKey = req->requestId;
-            LiveBehavior::dispatchToolUse(use, tick);
-            if (use.handled && use.outFire == 0)
-            {
-                sendAttackResult(sock, shooter, req, tick, true, 0, 0,
-                                 rt.magazineAmmo, rt.reserveAmmo,
-                                 rt.nextAllowedFireTick, rt.stateRevision);
-                Debug::log(Debug::Category::Weapons,
-                    "[ATTACK PROJECTILE HOT] playerId=%u weapon=%s ownedByHot=1\n",
-                    shooter.id, def->id.c_str());
-                return;
-            }
-        }
-
-        // A migrated projectile must never fall back to the kernel container.
-        // Missing hot behavior is a rejected action, not a second architecture.
+        // The phase-0 gate above already offered this use to hot; reaching here
+        // means the definition has not opted into hot execution. The kernel
+        // container spawn is retired, so reject rather than revive a second path.
         sendAttackResult(sock, shooter, req, tick, false, 7, 0,
                          rt.magazineAmmo, rt.reserveAmmo,
                          rt.nextAllowedFireTick, rt.stateRevision);
         Debug::log(Debug::Category::Weapons,
-            "[ATTACK PROJECTILE REJECT] playerId=%u requestId=%u weapon=%s reason=hot-behavior-unavailable ammo=%d/%d stateRev=%u\n",
+            "[ATTACK PROJECTILE REJECT] playerId=%u requestId=%u weapon=%s reason=cold-projectile-unsupported ammo=%d/%d stateRev=%u\n",
             shooter.id, req->requestId, def->id.c_str(),
             rt.magazineAmmo, rt.reserveAmmo, rt.stateRevision);
         return;

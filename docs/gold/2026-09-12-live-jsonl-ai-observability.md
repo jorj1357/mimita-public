@@ -197,3 +197,4 @@ validation, and confirmation into one continuous loop.
 - `src/live-code/live-code-events.*`
 - `docs/architecture/time-and-formatting/time-and-formatting.md`
 - `docs/regressions/regressions-v1.md`
+- `docs/gold/2026-09-18-live-editing-collisions-and-jsonl-observability.md`

@@ -39,7 +39,10 @@ constexpr int   kMaxSubsteps = 8;
 constexpr float kMinSubstepMove = 0.05f;
 constexpr float kGroundSnapEpsilon = 0.05f;
 constexpr float kMaxCapsulePush = 1000.0f;
-constexpr float kMaxBodyPush = 0.5f;
+// Limbs and weapons are authoritative over the actor position, exactly like the
+// capsule: a limb sunk into a wall pushes the body out instead of only nudging
+// it (so an arm on a ledge holds the player). Same cap as the capsule.
+constexpr float kMaxBodyPush = 1000.0f;
 constexpr int   kMaxRawContacts = 64;
 // Contact tolerance: a sphere within this distance of a triangle is treated as
 // touching even when it is not penetrating. Without it a resting capsule sits at
@@ -93,6 +96,12 @@ std::unordered_map<std::uint64_t, GroundMemory>& groundMemoryMap()
     static std::unordered_map<std::uint64_t, GroundMemory> m;
     return m;
 }
+
+// Per-contact logging switch. On by default so "am I touching anything" is
+// answerable from the stream alone; set false to reduce volume in a hot loop.
+// The kernel still aggregates identical repeats.
+constexpr bool kLogEveryContact = true;
+inline bool contactLogEnabled() { return kLogEveryContact; }
 
 // ── Throttled timing (edit live) ────────────────────────────────────────────
 // Accumulates per-tick phase timings and logs one summary at most once per
@@ -502,11 +511,25 @@ void logDecline(void* host, const CollisionSolveV1* q, const char* why)
                   why, c.total, (int)c.ready, q->position[0], q->position[1],
                   q->position[2], q->velocity[2],
                   (unsigned long long)(d.suppressed - 1));
-    collisionLogResult(reinterpret_cast<GameplayContextV1*>(host), 4u,
-                       "COLLISION", "collision.declined", msg, why,
-                       q->tick);
+    collisionLogFull(host, 4u, "COLLISION", "collision.declined", msg, why,
+                     q->entityId, q->entityId, q->actorKind, q->frame,
+                     q->serverTick, q->clientTick, q->tick);
     d.sinceLogSeconds = 0.0f;
     d.suppressed = 0;
+}
+
+// Emitted on the first solve of a new (entity, tick) run and whenever the
+// contact/no-contact verdict changes, so "the solver was never reached" is
+// distinguishable from "reached but found nothing".
+std::unordered_map<std::uint64_t, std::int32_t>& lastContactVerdict()
+{
+    static std::unordered_map<std::uint64_t, std::int32_t> m;
+    return m;
+}
+std::unordered_map<std::uint64_t, bool>& contactVerdictSeen()
+{
+    static std::unordered_map<std::uint64_t, bool> m;
+    return m;
 }
 
 void solve(void* host, CollisionSolveV1* q)
@@ -680,8 +703,10 @@ void solve(void* host, CollisionSolveV1* q)
                 (double)t.candidates * inv, (unsigned long long)t.large,
                 (double)t.contacts * inv, (unsigned long long)t.noContact,
                 (int)grounded);
-            collisionLog(reinterpret_cast<GameplayContextV1*>(host), 2u,
-                         "COLLISION", "collision.solve.summary", msg, q->tick);
+            collisionLogFull(host, 2u, "COLLISION", "collision.solve.summary",
+                             msg, collided ? "contact" : "no_contact",
+                             q->entityId, q->entityId, q->actorKind, q->frame,
+                             q->serverTick, q->clientTick, q->tick);
             t = TimingStats{};
         }
     }
@@ -715,6 +740,28 @@ void solve(void* host, CollisionSolveV1* q)
         c.incomingSpeed = contactAccum[i].incoming;
     }
 
+    // Per-contact record: names the actor, the collider/part, the world
+    // triangle index on the touched surface, the contact point, the normal, and
+    // the penetration. This is the "did the code think I touched anything"
+    // evidence, with the triangle that was actually touched.
+    if (q->contactCount > 0 && contactLogEnabled()) {
+        for (std::uint32_t i = 0; i < q->contactCount; ++i) {
+            const CollisionContactV1& c = q->contacts[i];
+            char msg[256];
+            std::snprintf(
+                msg, sizeof(msg),
+                "part=%u tri=%d point=(%.3f %.3f %.3f) n=(%.2f %.2f %.2f) "
+                "pen=%.4f incoming=%.2f colCount=%u",
+                c.sourcePart, c.triangle, c.point[0], c.point[1], c.point[2],
+                c.normal[0], c.normal[1], c.normal[2], c.penetration,
+                c.incomingSpeed, (unsigned)colCount);
+            collisionLogFull(host, 2u, "COLLISION", "collision.contact", msg,
+                             q->grounded ? "grounded" : "contact",
+                             q->entityId, q->entityId, q->actorKind, q->frame,
+                             q->serverTick, q->clientTick, q->tick);
+        }
+    }
+
     for (int i = 0; i < impactAccumCount &&
                     q->impactCount < COLLISION_MAX_IMPACTS; ++i) {
         CollisionImpactV1& ev = q->impacts[q->impactCount++];
@@ -746,9 +793,34 @@ void solve(void* host, CollisionSolveV1* q)
                       ev.partId, ev.position[0], ev.position[1], ev.position[2],
                       ev.normal[0], ev.normal[1], ev.normal[2],
                       contactAccumCount, (int)grounded, (int)bounced);
-        collisionLogResult(reinterpret_cast<GameplayContextV1*>(host), 2u,
-                           "COLLISION", "collision.impact", msg, "impact",
-                           q->tick);
+        collisionLogFull(host, 2u, "COLLISION", "collision.impact", msg,
+                         "impact", q->entityId, q->entityId, q->actorKind,
+                         q->frame, q->serverTick, q->clientTick, q->tick);
+    }
+
+    // Verdict change: emitted immediately whenever an entity flips between
+    // touching and not touching, so the first-ever tick and every transition is
+    // captured without waiting for the 1s summary.
+    {
+        const std::int32_t verdict = collided ? 1 : 0;
+        std::int32_t& last = lastContactVerdict()[q->entityId];
+        bool& s = contactVerdictSeen()[q->entityId];
+        if (!s || last != verdict) {
+            s = true;
+            last = verdict;
+            char msg[224];
+            std::snprintf(
+                msg, sizeof(msg),
+                "touch=%d worldContact=%d grounded=%d candidates=%u contacts=%u "
+                "colliders=%u pos=(%.2f %.2f %.2f) vz=%.2f",
+                (int)collided, (int)worldContact, (int)grounded,
+                (unsigned)candidates.size(), (unsigned)contactAccumCount,
+                (unsigned)colCount, pos.x, pos.y, pos.z, vel.z);
+            collisionLogFull(host, 2u, "COLLISION", "collision.touch", msg,
+                             collided ? "touch" : "none", q->entityId,
+                             q->entityId, q->actorKind, q->frame, q->serverTick,
+                             q->clientTick, q->tick);
+        }
     }
 
     q->handled = 1u;
@@ -770,6 +842,8 @@ void collisionResetRuntimeState()
 {
     bounceTickMap().clear();
     groundMemoryMap().clear();
+    lastContactVerdict().clear();
+    contactVerdictSeen().clear();
 }
 
 const MimitaHotPackage::CapabilityRegistrar s_collisionProvider{

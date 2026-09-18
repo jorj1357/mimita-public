@@ -8,8 +8,10 @@
 * the result through the movement-override capability (kernel applies it and
 * skips the built-in step).
 * It is the ONLY movement path: the kernel's built-in step no longer runs.
-* Movement modes live in the C++ table below and switch all tuning at once with
-* the live `movementmode` command (config JSON is reference data, not the owner).
+* Presets live in the hot C++ registry (hot-movement-presets.h): source,
+* default, heavy, retrograd_fast, counterstrike. The global active preset is a
+* C++ constant; per-actor presets come from the generic ActorProfileState
+* component. Config JSON is reference/comparison data, never the owner.
 * Does NOT own entity storage, collision, rendering, or authority.
 */
 #if defined(MIMITA_GAME_DLL)
@@ -18,6 +20,8 @@
 #include "hot-reload/hot-movement-fired.h"
 #include "hot-reload/packages/collision/collision-log.h"
 #include "hot-reload/hot-movement-policy.h"
+#include "hot-reload/hot-movement-preset-log.h"
+#include "hot-reload/hot-movement-presets.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/packages/collision/collision-abi.h"
 
@@ -31,99 +35,62 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-// Jump input buffer window (seconds). Live-tunable constant.
-constexpr float kHotJumpBufferSeconds = 0.15f;
-
 namespace {
 
-// ── Movement modes: one entry changes the whole tuning set at once ─────────
-// Values are ported from config/movement/movement-source.json ("source", the
-// default) and config/movement/movement-default.json ("default"). C++ is the
-// source of truth; the JSON files are reference data only.
-struct MovementMode {
-    const char* name;
-    float walkSpeed;       // horizontal target speed
-    float groundAccel;     // how fast ground velocity reaches target
-    float airAccel;        // air control strength
-    float groundFriction;  // applied when grounded and no wish input
-    float gravity;         // downward acceleration magnitude
-    float jumpSpeed;       // upward velocity on jump
-    float maxFallSpeed;    // terminal downward speed
-    float dashImpulse;     // additive horizontal dash boost
-    float dashCooldown;    // seconds before the next dash
-    float downDashSpeed;   // vertical velocity assigned by down-dash (negative)
-    float freeFlySpeed;    // creation/free-fly speed
-};
-
-constexpr MovementMode kModes[] = {
-    // source: fast Source/GoldSrc preset (active default)
-    {"source",  20.0f, 20.0f, 12.0f, 3.25f, 40.0f, 15.1f, 175.0f, 20.0f, 0.5f, -50.0f, 12.0f},
-    // default: instant-control MiMITA preset
-    {"default", 20.0f, 55.0f, 22.0f, 1.00f, 58.0f, 18.0f, 400.0f, 100.0f, 0.5f, -100.0f, 12.0f},
-};
-constexpr int kModeCount = (int)(sizeof(kModes) / sizeof(kModes[0]));
-constexpr int kSourceModeIndex = 0;
-constexpr int kDefaultModeIndex = kSourceModeIndex; // source
-
-// The one movement tuning authority. Every actor (human, NPC, future) and both
-// sides (client prediction, server authority) read this. JSON presets are
-// reference/archive material and never decide runtime movement.
-constexpr const MovementMode& kSourceMovement = kModes[kSourceModeIndex];
-
-const MovementMode& defaultMovementMode()
-{
-    return kSourceMovement;
-}
-
-int gModeIndex = kDefaultModeIndex;
-
-const MovementMode& tune()
-{
-    if (gModeIndex < 0 || gModeIndex >= kModeCount)
-        gModeIndex = kDefaultModeIndex;
-    return kModes[gModeIndex];
-}
-
 // movement.tuning: cold callers (server, NPC, prediction setup, validation)
-// request the active tuning. The hot handler is the single authority.
-void MIMITA_GAME_CALL onMovementTuning(void* /*host*/, const GameEventV1* event)
+// request a preset's tuning by id. The hot handler is the single authority and
+// fills the full preset; JSON is never consulted.
+void MIMITA_GAME_CALL onMovementTuning(void* host, const GameEventV1* event)
 {
     auto* t = event ? static_cast<GameMovementTuningV1*>(event->payload) : nullptr;
     if (!t)
         return;
-    const MovementMode& m = tune();
-    t->walkSpeed = m.walkSpeed;
-    t->groundAcceleration = m.groundAccel;
-    t->airAcceleration = m.airAccel;
-    t->groundFriction = m.groundFriction;
-    t->stopspeed = 0.0f;
-    t->airMaxWishspeed = 0.0f; // fast Source preset: no projection cap
-    t->airSpeedGainMultiplier = 1.0f;
-    t->surfaceFriction = 1.0f;
-    t->gravityMagnitude = m.gravity;
-    t->jumpSpeed = m.jumpSpeed;
-    t->maxFallSpeed = m.maxFallSpeed;
-    t->jumpBufferSeconds = kHotJumpBufferSeconds;
-    t->coyoteSeconds = 0.0f;
-    t->dashImpulse = m.dashImpulse;
-    t->dashCooldownSeconds = m.dashCooldown;
-    t->downDashSpeed = m.downDashSpeed;
-    t->dashGraceSeconds = 0.0f;
-    t->maximumAirJumps = 1u;
-    t->autoBhopEnabled = 1u;
-    t->dashEnabled = 1u;
-    t->downDashEnabled = 1u;
-    t->freezeEnabled = 1u;
-    t->sourceWalkMode = 1u;
+    const auto id = t->presetId < MimitaHotMovement::kMovementPresetCount
+                        ? static_cast<MimitaHotMovement::MovementPresetId>(t->presetId)
+                        : MimitaHotMovement::kActiveMovementPreset;
+    const MimitaHotMovement::MovementPreset& preset =
+        MimitaHotMovement::getMovementPreset(id);
+    *t = preset.tuning;
+    t->presetId = static_cast<std::uint32_t>(id);
     t->handled = 1u;
     t->reserved = 0u;
 
+    static MimitaHotMovement::MovementPresetTuningLogState sTuningLog;
+    const std::uint64_t tick = event->tick;
+    MimitaHotMovement::movementPresetLogTuning(host, sTuningLog, id, tick, tick);
+
     static const char* lastLoggedMode = nullptr;
-    if (lastLoggedMode != m.name) {
-        lastLoggedMode = m.name;
-        std::printf("[MOVEMENT TUNING] source=cpp mode=%s authority=shared-hot-movement\n",
-                    m.name);
+    if (lastLoggedMode != preset.name) {
+        lastLoggedMode = preset.name;
+        std::printf("[MOVEMENT TUNING] source=cpp preset=%s authority=shared-hot-movement\n",
+                    preset.name);
     }
+}
+
+// Reads the per-actor preset from the generic ActorProfileState component
+// (movementPresetHash = gameHash(preset name)). Absent/unknown -> active preset.
+MimitaHotMovement::MovementPresetId actorMovementPreset(GameplayContextV1* ctx,
+                                                        std::uint64_t entity,
+                                                        bool* outFromProfile = nullptr)
+{
+    if (outFromProfile)
+        *outFromProfile = false;
+    if (!ctx->dynamicReadComponent)
+        return MimitaHotMovement::kActiveMovementPreset;
+    struct ActorProfileStateV1 {
+        std::uint64_t movementPresetHash;
+        std::uint64_t behaviorProfileHash;
+        std::uint32_t flags;
+        std::uint32_t reserved;
+    };
+    ActorProfileStateV1 profile{};
+    if (!ctx->dynamicReadComponent(ctx->host, entity, gameHash("ActorProfileState"),
+                                   &profile, sizeof(profile)) ||
+        profile.movementPresetHash == 0u)
+        return MimitaHotMovement::kActiveMovementPreset;
+    if (outFromProfile)
+        *outFromProfile = true;
+    return MimitaHotMovement::movementPresetIdFromHash(profile.movementPresetHash);
 }
 
 // Captured each tick so terminal commands (host == nullptr) can reach shared
@@ -159,6 +126,12 @@ void buildPlayerCollision(
     q.sizeScale = st->sizeScale > 0.0f ? st->sizeScale : 1.0f;
     q.mask = COLLISION_MASK_WORLD;
     q.flags = COLLISION_SOLVE_SPAWN_IMPACTS;
+    // Identity/timing for live records. The local human is a player; the frame
+    // and client tick come from the kernel context when available.
+    q.actorKind = HotCollisionPackage::COLLISION_LOG_ACTOR_PLAYER;
+    q.frame = ctx->tick;
+    q.clientTick = ctx->tick;
+    q.serverTick = 0;
     for (int i = 0; i < 3; ++i) {
         q.position[i] = st->position[i];
         q.velocity[i] = st->velocity[i];
@@ -240,12 +213,14 @@ void logMovementBranch(GameplayContextV1* ctx, const char* why,
         return;
     char msg[224];
     std::snprintf(msg, sizeof(msg),
-                  "branch=%s entity=%llu pos=(%.2f %.2f %.2f) vz=%.2f",
+                  "branch=%s entity=%llu pos=(%.2f %.2f %.2f) vz=%.2f "
+                  "hasCapability=%d",
                   why, (unsigned long long)entity, st->position[0],
-                  st->position[1], st->position[2], st->velocity[2]);
-    HotCollisionPackage::collisionLogResult(ctx, 3u, "COLLISION",
-                                            "movement.collision", msg, why,
-                                            tick);
+                  st->position[1], st->position[2], st->velocity[2],
+                  (int)(ctx && ctx->resolveCapability != nullptr));
+    HotCollisionPackage::collisionLogFull(
+        ctx, 3u, "COLLISION", "movement.collision", msg, why, entity, entity,
+        HotCollisionPackage::COLLISION_LOG_ACTOR_PLAYER, tick, 0, tick, tick);
     b.sinceLogSeconds = 0.0f;
 }
 
@@ -294,19 +269,26 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
     st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
 
     // Throttled branch record: proves which owner ran and the collider count
-    // that was actually sent (capsule + resolved body parts).
+    // that was actually sent (capsule + resolved body parts), plus the actor
+    // identity and the frame/client/server tick.
     MovementBranchLog& b = movementBranchLog();
     b.sinceLogSeconds += dt;
     if (b.sinceLogSeconds >= 1.0f) {
-        char msg[224];
+        char msg[256];
         std::snprintf(msg, sizeof(msg),
                       "branch=solved colliders=%u parts=%u grounded=%u worldContact=%u "
-                      "pos=(%.2f %.2f %.2f) vz=%.2f",
+                      "contacts=%u pos=(%.2f %.2f %.2f) vz=%.2f",
                       q.colliderCount, q.colliderCount > 0 ? q.colliderCount - 1 : 0,
-                      q.grounded, q.worldContact, q.outPosition[0],
+                      q.grounded, q.worldContact, q.contactCount, q.outPosition[0],
                       q.outPosition[1], q.outPosition[2], q.outVelocity[2]);
-        collisionLogResult(ctx, 2u, "COLLISION", "movement.collision",
-                           msg, "solved", tick);
+        HotCollisionPackage::collisionLogFull(
+            ctx, 2u, "COLLISION", "movement.collision", msg,
+            q.grounded ? "grounded" : ((q.worldContact || q.bodyContact)
+                                           ? "contact"
+                                           : "no_contact"),
+            entity, entity,
+            HotCollisionPackage::COLLISION_LOG_ACTOR_PLAYER, ctx->tick, 0,
+            ctx->tick, tick);
         b.sinceLogSeconds = 0.0f;
     }
 }
@@ -387,7 +369,15 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
     st.halfHeight = body.height > 0.0f ? body.height * 0.5f : 0.9f;
     st.sizeScale = body.sizeScale;
 
-    const MovementMode& m = tune();
+    bool presetFromProfile = false;
+    const MimitaHotMovement::MovementPresetId presetId =
+        actorMovementPreset(ctx, e, &presetFromProfile);
+    const MimitaHotMovement::MovementPreset& preset =
+        MimitaHotMovement::getMovementPreset(presetId);
+    const GameMovementTuningV1& m = preset.tuning;
+    MimitaHotMovement::movementPresetLogActor(
+        ctx, e, MimitaHotMovement::MOVEMENT_LOG_ACTOR_PLAYER, presetId,
+        presetFromProfile ? "actor-profile" : "active", tick, tick);
 
     if (createMode) {
         // Free-fly / noclip: camera-relative movement, no gravity/collision.
@@ -442,15 +432,16 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         fp.velocity[1] = vy;
         fp.velocity[2] = vz;
         fp.dt = dt;
-        fp.durationSeconds = 0.0f;
+        fp.durationSeconds = m.freezeDurationSeconds;
         fp.freezePressed = freezeEdge ? 1u : 0u;
         fp.freezeHeld = freezeNow ? 1u : 0u;
         fp.freezeHeldPreviously = rs.freezePreviously ? 1u : 0u;
-        fp.freezeEnabled = 1u;
+        fp.freezeEnabled = m.freezeEnabled;
         fp.freezeActive = freezeNow ? 1u : 0u;
         fp.freezeAvailable = 1u;
-        fp.freezeTimerSeconds = 0.0f;
+        fp.freezeTimerSeconds = rs.freezeTimerSeconds;
         MimitaHotMovement::freezePolicy(fp);
+        rs.freezeTimerSeconds = fp.outFreezeTimerSeconds;
         if (fp.outFreezeActive != 0u) {
             // Frozen: velocity suppressed by the shared policy.
             vx = fp.outVelocity[0];
@@ -464,8 +455,9 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             sp.baseFallbackSpeed = m.walkSpeed;
             sp.sizeScale = body.sizeScale;
             sp.sizeExponent = 0.0f;
-            sp.speedLimit = 0.0f;
-            sp.airMaxWishspeed = 0.0f;
+            sp.speedLimit = m.speedLimitEnabled ? m.speedLimit : 0.0f;
+            sp.speedLimitFixed = (m.speedLimitMode == 1u) ? 1u : 0u;
+            sp.airMaxWishspeed = m.airMaxWishspeed;
             sp.rawWishSpeed = m.walkSpeed;
             float optMax = m.walkSpeed;
             float optWish = m.walkSpeed;
@@ -480,9 +472,11 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 g.wishDir[0] = wishDirX;
                 g.wishDir[1] = wishDirY;
                 g.wishSpeed = speed;
-                g.groundAcceleration = m.groundAccel;
-                g.frictionAmount = m.groundFriction;
-                g.stopspeed = 0.0f;
+                g.groundAcceleration = m.groundAcceleration;
+                g.frictionAmount = (m.walkMode == MimitaHotMovement::kWalkModeSource)
+                                       ? m.groundFriction
+                                       : m.groundFrictionAmount;
+                g.stopspeed = m.stopspeed;
                 g.dt = dt;
                 g.hasInput = hasWish ? 1u : 0u;
                 float out[2] = {vx, vy};
@@ -497,12 +491,12 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 air.velocity[1] = vy;
                 air.wishDir[0] = wishDirX;
                 air.wishDir[1] = wishDirY;
-                air.wishSpeed = speed;
-                air.wishspd = speed;
+                air.wishSpeed = m.sourceAirAccelerateBugCompatible ? speed : optWish;
+                air.wishspd = optWish;
                 air.maxSpeed = speed;
-                air.airAcceleration = m.airAccel;
-                air.surfaceFriction = 1.0f;
-                air.airSpeedGainMultiplier = 1.0f;
+                air.airAcceleration = m.airAcceleration;
+                air.surfaceFriction = m.surfaceFriction;
+                air.airSpeedGainMultiplier = m.airSpeedGainMultiplier;
                 air.dt = dt;
                 air.currentSpeed = vx * wishDirX + vy * wishDirY;
                 air.blendedAddSpeed = air.wishspd - air.currentSpeed;
@@ -527,8 +521,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 dp.moveAxes[1] = hasWish ? wishDirY : 0.0f;
                 dp.cameraForward[0] = std::cos(yawRad);
                 dp.cameraForward[1] = std::sin(yawRad);
-                dp.groundDashImpulse = m.dashImpulse;
-                dp.airDashImpulse = m.dashImpulse;
+                dp.groundDashImpulse = m.groundDashImpulse;
+                dp.airDashImpulse = m.airDashImpulse;
                 dp.downDashVerticalSpeed = m.downDashSpeed;
                 dp.dashPressed = (dashEdge && rs.dashAvailable &&
                                   rs.dashCooldownSeconds <= 0.0f) ? 1u : 0u;
@@ -536,8 +530,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 dp.grounded = rs.grounded ? 1u : 0u;
                 dp.dashAvailable = rs.dashAvailable ? 1u : 0u;
                 dp.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
-                dp.dashEnabled = 1u;
-                dp.downDashEnabled = 1u;
+                dp.dashEnabled = m.dashEnabled;
+                dp.downDashEnabled = m.downDashEnabled;
                 MimitaHotMovement::dashPolicy(dp);
                 vx = dp.outVelocity[0];
                 vy = dp.outVelocity[1];
@@ -566,8 +560,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             jp.velocityZ = vz;
             jp.jumpSpeed = m.jumpSpeed;
             jp.dt = dt;
-            jp.coyoteSeconds = 0.0f;
-            jp.jumpBufferSeconds = kHotJumpBufferSeconds;
+            jp.coyoteSeconds = m.coyoteSeconds;
+            jp.jumpBufferSeconds = m.jumpBufferSeconds;
             // Touch anything (ground/wall/ceiling/prop) and the jump is eligible.
             const bool contactLastTick =
                 (rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] & 2u) != 0u;
@@ -575,8 +569,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             jp.jumpPressed = jumpEdge ? 1u : 0u;
             jp.jumpHeld = mi.jump ? 1u : 0u;
             jp.jumpHeldPreviously = rs.jumpHeldPreviously ? 1u : 0u;
-            jp.autoBhopEnabled = 1u;
-            jp.maximumAirJumps = 1u;
+            jp.autoBhopEnabled = m.autoBhopEnabled;
+            jp.maximumAirJumps = m.maximumAirJumps;
             jp.jumpIntentTimerSeconds = 0.0f;
             jp.coyoteTimerSeconds = 0.0f;
             jp.airJumpsLeft = static_cast<std::int32_t>(rs.airJumpsLeft);
@@ -600,7 +594,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         if (!freezeNow && !rs.grounded) {
             GameGravityV1 gv{};
             gv.velocityZ = vz;
-            gv.gravityZ = -m.gravity;
+            gv.gravityZ = -static_cast<float>(m.gravityMagnitude);
             gv.maximumFallSpeed = m.maxFallSpeed;
             gv.dt = dt;
             float outZ = vz;
@@ -685,31 +679,26 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
     ctx->writeComponent(ctx->host, e, GAME_COMPONENT_VELOCITY, &outVl, sizeof(outVl));
 }
 
-// ── command: movementmode [name|index] ──────────────────────────────
+// ── command: movementmode [name] ────────────────────────────────────
+// Lists/reports the hot C++ presets. The global active preset is a C++ constant
+// (kActiveMovementPreset); per-actor presets come from ActorProfileState.
 void MIMITA_GAME_CALL movementModeCommand(void* /*host*/, const char* args)
 {
     if (args && args[0] != '\0') {
-        bool matched = false;
-        for (int i = 0; i < kModeCount; ++i) {
-            if (std::strncmp(args, kModes[i].name, std::strlen(kModes[i].name)) == 0) {
-                gModeIndex = i;
-                matched = true;
-                break;
-            }
-        }
-        if (!matched && args[0] >= '0' && args[0] <= '9') {
-            const int requested = std::atoi(args);
-            if (requested >= 0 && requested < kModeCount) {
-                gModeIndex = requested;
-                matched = true;
-            }
-        }
-        if (!matched) {
+        if (!MimitaHotMovement::movementPresetNameExists(args)) {
             std::printf("[MOVEMENT MODE] unknown '%s'\n", args);
             return;
         }
+        std::printf("[MOVEMENT MODE] '%s' is valid; global active is '%s' "
+                    "(edit kActiveMovementPreset + rebuild DLL to change)\n",
+                    args, MimitaHotMovement::getActiveMovementPreset().name);
+        return;
     }
-    std::printf("[MOVEMENT MODE] %s (index %d)\n", kModes[gModeIndex].name, gModeIndex);
+    std::printf("[MOVEMENT MODE] active='%s' presets:",
+                MimitaHotMovement::getActiveMovementPreset().name);
+    for (std::uint32_t i = 0; i < MimitaHotMovement::kMovementPresetCount; ++i)
+        std::printf(" %s", MimitaHotMovement::kMovementPresets[i].name);
+    std::printf("\n");
 }
 
 const MimitaHotPackage::SystemRegistrar s_movementMain{
@@ -717,7 +706,7 @@ const MimitaHotPackage::SystemRegistrar s_movementMain{
      movementMainTick, "movement.main"}};
 
 const MimitaHotPackage::CommandRegistrar s_movementModeCmd{
-    {"movementmode", "movementmode [source|default|0..N] - switch movement preset", 0,
+    {"movementmode", "movementmode [name] - list/report hot C++ movement presets", 0,
      movementModeCommand}};
 
 const MimitaHotPackage::EventRegistrar s_movementTuningRegistration{

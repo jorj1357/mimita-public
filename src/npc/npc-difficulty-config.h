@@ -40,8 +40,8 @@ struct NpcDifficultySettings {
     float faceMovementMin = 0.5f;         // min seconds spent facing movement per cycle
     float faceMovementMax = 1.5f;         // max seconds spent facing movement per cycle
 
-    // Which config/movement/*.json preset NPCs use for their physics.
-    // "follow" (default) = same global config as the player. Any preset name
+    // Which hot C++ movement preset NPCs use for their physics.
+    // "follow" (default) = same global config as the player. Any registry name
     // (e.g. "default", "source", "counterstrike") overrides NPC physics.
     std::string movementPreset = "follow";
 
@@ -116,8 +116,7 @@ private:
     uint64_t mRevision = 0;
 
     // Cached NPC movement preset (only used when movementPreset != "follow").
+    // Resolved once from the hot C++ registry (hot-movement-presets.h).
     MovementConfig mNpcMovement;
     bool mHasNpcMovement = false;
-    std::string mNpcPresetPath;
-    std::filesystem::file_time_type mNpcPresetWrite{};
 };

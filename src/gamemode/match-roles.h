@@ -51,12 +51,11 @@ private:
     bool mWatchLogged = false;
 };
 
-// Cache of parsed role movement presets. A preset name is resolved once through
-// MovementJsonConfig::loadPresetInto (which reads config/movement/*.json); the
-// parsed MovementConfig is then reused every simulation tick. pollReload()
-// refreshes any cached preset whose file changed so role movement never keeps
-// stale values after a movement hot reload. Entries are updated in place and
-// never erased, so returned pointers stay valid for the process lifetime.
+// Cache of role movement presets resolved from the hot C++ registry
+// (hot-movement-presets.h). A preset name is resolved once into a MovementConfig
+// and reused every simulation tick. Entries are never erased, so returned
+// pointers stay valid for the process lifetime. pollReload() is retained for
+// callers but is a no-op: preset values are hot C++ now, not files.
 class RoleMovementCache
 {
 public:
@@ -65,7 +64,7 @@ public:
     // Returns the cached config for a preset name, or nullptr when the name is
     // empty or unknown (callers fall back to their legacy/default movement).
     const MovementConfig* get(const std::string& preset);
-    // Re-reads cached preset files that changed on disk.
+    // No-op compatibility seam; presets are hot C++, not files.
     bool pollReload();
 
 private:
@@ -75,8 +74,6 @@ private:
     {
         bool valid = false;
         MovementConfig config;
-        std::string path;
-        std::filesystem::file_time_type write{};
     };
 
     std::unordered_map<std::string, Entry> mEntries;

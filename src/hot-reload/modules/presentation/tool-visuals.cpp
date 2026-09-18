@@ -360,6 +360,32 @@ void setIdentity(ToolVisualRecipeV1& r, const char* id, const char* displayName)
     r.definition.displayName = displayName;
 }
 
+// Behavior family + presentation set identity. Behavior id selects the shared
+// hot execution function; animation/effect set ids are the keys the animation
+// and effects agents resolve from tool action events.
+void setBehavior(ToolVisualRecipeV1& r, std::uint64_t behaviorId,
+                 std::uint64_t effectSetId, std::uint32_t networkPolicy,
+                 std::uint32_t collisionPolicy)
+{
+    r.definition.behaviorId = behaviorId;
+    r.definition.animationSetId = r.toolKey;
+    r.definition.effectSetId = effectSetId;
+    r.definition.networkPolicy = networkPolicy;
+    r.definition.collisionPolicy = collisionPolicy;
+}
+
+// Phase-0 opt-in: this definition is ready to own its execution hot-side. Until
+// set, the cold attack path stays authoritative even though a behavior exists.
+void setOwnsExecution(ToolVisualRecipeV1& r)
+{
+    r.definition.toolFlags |= TOOL_FLAG_OWNS_EXECUTION;
+}
+
+// Effect set ids (stable; the effects agent maps these to computed visuals).
+constexpr std::uint64_t kEffectSetBallistic = gameHash("tool.effect.ballistic");
+constexpr std::uint64_t kEffectSetProjectile = gameHash("tool.effect.projectile");
+constexpr std::uint64_t kEffectSetMelee = gameHash("tool.effect.melee");
+
 // Only the revolver supplies customParams through the hot definition today
 // (values mirror config/weapons.json). Other weapons leave params empty so their
 // JSON customParams remain; a brand-new hot weapon can supply its own.
@@ -394,6 +420,9 @@ ToolVisualRecipeV1 makeRevolverVisual()
     r.sounds.equip = "weapon/revolver/revolverequip";
     r.sounds.unequip = "weapon/revolver/revolverequip";
     setIdentity(r, "revolver", "Revolver");
+    setBehavior(r, TOOL_BEHAVIOR_HITSCAN, kEffectSetBallistic,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_HITSCAN);
+    setOwnsExecution(r);
     r.definition.soundHit = "player_hurt";
     r.definition.soundDryFire = "ui/click";
     r.definition.params = kRevParams;
@@ -421,6 +450,9 @@ ToolVisualRecipeV1 makeShotgunVisual()
     r.sounds.equip = "weapon/shotgun/shotgunequip";
     r.sounds.unequip = "weapon/shotgun/shotgunequip";
     setIdentity(r, "shotgun", "Shotgun");
+    setBehavior(r, TOOL_BEHAVIOR_PELLET, kEffectSetBallistic,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_HITSCAN);
+    setOwnsExecution(r);
     return r;
 }
 
@@ -449,6 +481,9 @@ ToolVisualRecipeV1 makeRocketLauncherVisual()
                   (std::uint32_t)(sizeof(kRocketPhases) / sizeof(ToolAnimPhaseV1)));
     r.sounds.reload = "rocketlauncher/rocketlauncherreload";
     setIdentity(r, "rocket_launcher", "Rocket Launcher");
+    setBehavior(r, TOOL_BEHAVIOR_ROCKET, kEffectSetProjectile,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_PROJECTILE);
+    setOwnsExecution(r);
     return r;
 }
 
@@ -476,6 +511,9 @@ ToolVisualRecipeV1 makeGrenadeLauncherVisual()
                   (std::uint32_t)(sizeof(kGrenadePhases) / sizeof(ToolAnimPhaseV1)));
     r.sounds.reload = "grenadelauncher/grenadelauncherload";
     setIdentity(r, "grenade_launcher", "Grenade Launcher");
+    setBehavior(r, TOOL_BEHAVIOR_GRENADE, kEffectSetProjectile,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_PROJECTILE);
+    setOwnsExecution(r);
     return r;
 }
 
@@ -498,6 +536,10 @@ ToolVisualRecipeV1 makeSpyknifeVisual()
                   0.0f, 0, 0, 1, 0.0f, 0.0f, 0.0f, 0.18f, 0.18f, kKnifePhases,
                   (std::uint32_t)(sizeof(kKnifePhases) / sizeof(ToolAnimPhaseV1)));
     setIdentity(r, "spyknife", "Spy Knife");
+    r.definition.soundHit = "player_hurt";
+    setBehavior(r, TOOL_BEHAVIOR_MELEE, kEffectSetMelee,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_CONTACT);
+    setOwnsExecution(r);
     return r;
 }
 
@@ -518,7 +560,57 @@ ToolVisualRecipeV1 makeSwordswordVisual()
                   10.0f, 0, 0, 1, 0.0f, 0.0f, 0.0f, 0.20f, 0.20f, kSwordPhases,
                   (std::uint32_t)(sizeof(kSwordPhases) / sizeof(ToolAnimPhaseV1)));
     setIdentity(r, "swordsword", "Swordsword");
+    setBehavior(r, TOOL_BEHAVIOR_MELEE, kEffectSetMelee,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_CONTACT);
+    setOwnsExecution(r);
     return r;
+}
+
+// Katana: a brand-new hot tool that reuses the shared physical-melee behavior
+// (TOOL_BEHAVIOR_MELEE) and the BlenderPhysical exact-pose clip
+// `animation.katana_slash`. No one-off katana damage or renderer branch. The
+// model is a placeholder until a katana mesh exists (shared melee collision),
+// so the visible weapon matches the damaging contact shape once authored.
+ToolVisualRecipeV1 makeKatanaVisual()
+{
+    ToolVisualRecipeV1 r = makeBaseVisual(
+        gameHash("katana"),
+        "assets/objects/weapons/mimita-hafs-v1.glb",
+        gameHash("mesh.tool.katana"));
+    r.viewPosition[0] = 0.35f; r.viewPosition[1] = 0.10f; r.viewPosition[2] = -0.45f;
+    r.worldPosition[0] = 0.30f;
+    r.muzzleOffset[2] = 0.3f;
+    r.muzzle.hasLight = 0u;
+    r.muzzle.scale = 0.0f;
+    r.muzzle.lifetime = 0.0f;
+    setDefinition(r, WeaponBehaviorType::Swordsword, WeaponFireMode::SemiAuto,
+                  WeaponNetworkMode::Normal, false, 18u, 30.0f, 1.5f, 0.03f, 0.0f,
+                  0.0f, 10.0f, 0, 0, 1, 0.0f, 0.0f, 0.0f, 0.20f, 0.20f, kSwordPhases,
+                  (std::uint32_t)(sizeof(kSwordPhases) / sizeof(ToolAnimPhaseV1)));
+    setIdentity(r, "katana", "Katana");
+    setBehavior(r, TOOL_BEHAVIOR_MELEE, kEffectSetMelee,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_CONTACT);
+    setOwnsExecution(r);
+    return r;
+}
+
+const ToolVisualRecipeV1* findToolVisualByNetworkId(std::uint64_t networkId)
+{
+    // NETWORK_WEAPON_* family ids (network/packets.h). Plain hot data: the
+    // execution router uses this to find a definition's behavior/flag for numeric
+    // keys without a cold switch. Re-edit live to add a family.
+    switch (networkId) {
+        case 1: return findToolVisual(gameHash("revolver"));
+        case 2: return findToolVisual(gameHash("godball"));
+        case 3: return findToolVisual(gameHash("shotgun"));
+        case 4: return findToolVisual(gameHash("swordsword"));
+        case 5: return findToolVisual(gameHash("rocket_launcher"));
+        case 6: return findToolVisual(gameHash("hafs"));
+        case 7: return findToolVisual(gameHash("grenade_launcher"));
+        case 8: return findToolVisual(gameHash("aa12"));
+        case 9: return findToolVisual(gameHash("spyknife"));
+        default: return nullptr;
+    }
 }
 
 const ToolVisualRecipeV1* findProjectileVisual(std::uint64_t projectileTypeId)
@@ -549,6 +641,172 @@ ToolVisualRecipeV1 makeHotSelftestGunVisual()
                   0.0f, 0.0f, 4, 100, 1, 0.0f, 0.0f, 0.0f, 0.15f, 0.15f, kRevPhases,
                   (std::uint32_t)(sizeof(kRevPhases) / sizeof(ToolAnimPhaseV1)));
     setIdentity(r, "hot_selftest_gun", "Hot Selftest Gun");
+    setBehavior(r, TOOL_BEHAVIOR_HITSCAN, kEffectSetBallistic,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_HITSCAN);
+    setOwnsExecution(r);
+    return r;
+}
+
+// ── Migrated tools (values copied verbatim from config/weapons.json) ──
+// Each names a shared behavior family; none adds a renderer or EXE branch.
+ToolVisualRecipeV1 makeGodballVisual()
+{
+    ToolVisualRecipeV1 r = makeBaseVisual(gameHash("godball"), "",
+                                          gameHash("mesh.tool.godball"));
+    r.muzzle.hasLight = 0u;
+    setDefinition(r, WeaponBehaviorType::Godball, WeaponFireMode::Automatic,
+                  WeaponNetworkMode::Normal, false, 2u, 1.0f, 1.0f, 0.0f, 0.0f,
+                  0.0f, 0.0f, 0, -1, 1, 0.0f, 0.5f, 0.0f, 0.0f, 0.0f, kSwordPhases,
+                  (std::uint32_t)(sizeof(kSwordPhases) / sizeof(ToolAnimPhaseV1)));
+    r.definition.soundHit = "godballhit";
+    setIdentity(r, "godball", "Godball");
+    setBehavior(r, TOOL_BEHAVIOR_CONTACT, kEffectSetMelee,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_CONTACT);
+    setOwnsExecution(r);
+    return r;
+}
+
+ToolVisualRecipeV1 makeOpRevolverVisual()
+{
+    ToolVisualRecipeV1 r = makeRevolverVisual();
+    r.toolKey = gameHash("op_revolver");
+    r.meshId = gameHash("mesh.tool.op_revolver");
+    setDefinition(r, WeaponBehaviorType::Hitscan, WeaponFireMode::Automatic,
+                  WeaponNetworkMode::Normal, true, 5u, 50.0f, 2.0f, 0.001f, 1.0f,
+                  0.0f, 99.0f, 999, 1337, 1, 0.0f, 0.0f, 0.0f, 0.12f, 0.18f,
+                  kRevPhases,
+                  (std::uint32_t)(sizeof(kRevPhases) / sizeof(ToolAnimPhaseV1)));
+    setIdentity(r, "op_revolver", "OP Revolver");
+    setBehavior(r, TOOL_BEHAVIOR_HITSCAN, kEffectSetBallistic,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_HITSCAN);
+    setOwnsExecution(r);
+    return r;
+}
+
+ToolVisualRecipeV1 makeAa12Visual()
+{
+    ToolVisualRecipeV1 r = makeShotgunVisual();
+    r.toolKey = gameHash("aa12");
+    r.meshId = gameHash("mesh.tool.aa12");
+    setDefinition(r, WeaponBehaviorType::Hitscan, WeaponFireMode::Automatic,
+                  WeaponNetworkMode::Normal, true, 6u, 12.0f, 2.0f, 0.01f, 1.5f,
+                  3.0f, 130.0f, 999, 1337, 15, 0.0f, 0.0f, 0.0f, 0.14f, 0.22f,
+                  kShotPhases,
+                  (std::uint32_t)(sizeof(kShotPhases) / sizeof(ToolAnimPhaseV1)));
+    setIdentity(r, "aa12", "AA12");
+    setBehavior(r, TOOL_BEHAVIOR_PELLET, kEffectSetBallistic,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_HITSCAN);
+    setOwnsExecution(r);
+    return r;
+}
+
+ToolVisualRecipeV1 makeAdminRevolverVisual()
+{
+    ToolVisualRecipeV1 r = makeRevolverVisual();
+    r.toolKey = gameHash("admin_revolver");
+    r.meshId = gameHash("mesh.tool.admin_revolver");
+    setDefinition(r, WeaponBehaviorType::Hitscan, WeaponFireMode::Automatic,
+                  WeaponNetworkMode::Normal, true, 9u, 50.0f, 2.0f, 0.0001f, 1.0f,
+                  3.0f, 99.0f, 9999, 1337, 1, 0.0f, 0.0f, 0.0f, 0.12f, 0.18f,
+                  kRevPhases,
+                  (std::uint32_t)(sizeof(kRevPhases) / sizeof(ToolAnimPhaseV1)));
+    setIdentity(r, "admin_revolver", "Admin Revolver");
+    setBehavior(r, TOOL_BEHAVIOR_HITSCAN, kEffectSetBallistic,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_HITSCAN);
+    setOwnsExecution(r);
+    return r;
+}
+
+ToolVisualRecipeV1 makeHafsVisual()
+{
+    ToolVisualRecipeV1 r = makeBaseVisual(
+        gameHash("hafs"), "assets/objects/weapons/mimita-hafs-v1.glb",
+        gameHash("mesh.tool.hafs"));
+    r.worldPosition[0] = 0.30f;
+    r.muzzle.hasLight = 0u;
+    r.sounds.fire = "weapon/hafs/hafsswing";
+    r.sounds.equip = "weapon/hafs/hafsequip";
+    setDefinition(r, WeaponBehaviorType::Hafs, WeaponFireMode::Automatic,
+                  WeaponNetworkMode::Normal, false, 10u, 0.0f, 1.0f, 0.0f, 0.0f,
+                  0.0f, 0.0f, 0, -1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, kSwordPhases,
+                  (std::uint32_t)(sizeof(kSwordPhases) / sizeof(ToolAnimPhaseV1)));
+    setIdentity(r, "hafs", "Hafs");
+    setBehavior(r, TOOL_BEHAVIOR_MELEE, kEffectSetMelee,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_CONTACT);
+    setOwnsExecution(r);
+    return r;
+}
+
+ToolVisualRecipeV1 makeQuickHitVisual()
+{
+    ToolVisualRecipeV1 r = makeBaseVisual(gameHash("quick_hit"), "",
+                                          gameHash("mesh.tool.quick_hit"));
+    r.muzzle.hasLight = 0u;
+    r.sounds.fire = "entity/falcon/falconhitquick";
+    setDefinition(r, WeaponBehaviorType::QuickHit, WeaponFireMode::SemiAuto,
+                  WeaponNetworkMode::Normal, false, 11u, 0.0f, 1.0f, 0.0f, 0.0f,
+                  0.0f, 0.0f, 0, -1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, kKnifePhases,
+                  (std::uint32_t)(sizeof(kKnifePhases) / sizeof(ToolAnimPhaseV1)));
+    r.definition.soundHit = "player_hurt";
+    setIdentity(r, "quick_hit", "Quick Hit");
+    setBehavior(r, TOOL_BEHAVIOR_MELEE, kEffectSetMelee,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_CONTACT);
+    setOwnsExecution(r);
+    return r;
+}
+
+ToolVisualRecipeV1 makeThrownGrenadeVisual(const char* id, const char* name,
+                                           std::uint32_t slot)
+{
+    ToolVisualRecipeV1 r = makeBaseVisual(gameHash(id), "",
+                                          gameHash("mesh.tool.thrown"));
+    r.muzzle.hasLight = 0u;
+    r.sounds.fire = "grenadelauncher/grenadelaunchershoot";
+    setDefinition(r, WeaponBehaviorType::Grenade, WeaponFireMode::SemiAuto,
+                  WeaponNetworkMode::Normal, false, slot, 0.0f, 1.0f, 1.0f, 1.0f,
+                  0.0f, 0.0f, 1, 0, 1, 18.0f, 0.12f, 3.0f, 0.0f, 0.0f,
+                  kGrenadePhases,
+                  (std::uint32_t)(sizeof(kGrenadePhases) /
+                                  sizeof(ToolAnimPhaseV1)));
+    r.definition.soundDryFire = "ui/click";
+    setIdentity(r, id, name);
+    setBehavior(r, TOOL_BEHAVIOR_THROWN, kEffectSetProjectile,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_PROJECTILE);
+    setOwnsExecution(r);
+    return r;
+}
+
+ToolVisualRecipeV1 makeAkVisual()
+{
+    ToolVisualRecipeV1 r = makeRevolverVisual();
+    r.toolKey = gameHash("ak");
+    r.meshId = gameHash("mesh.tool.ak");
+    setDefinition(r, WeaponBehaviorType::Hitscan, WeaponFireMode::Automatic,
+                  WeaponNetworkMode::Normal, true, 16u, 36.0f, 3.0f, 0.1f, 2.5f,
+                  1.2f, 1.5f, 30, 1337, 1, 0.0f, 0.0f, 0.0f, 0.12f, 0.18f,
+                  kRevPhases,
+                  (std::uint32_t)(sizeof(kRevPhases) / sizeof(ToolAnimPhaseV1)));
+    setIdentity(r, "ak", "AK");
+    setBehavior(r, TOOL_BEHAVIOR_HITSCAN, kEffectSetBallistic,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_HITSCAN);
+    setOwnsExecution(r);
+    return r;
+}
+
+ToolVisualRecipeV1 makeSniperVisual()
+{
+    ToolVisualRecipeV1 r = makeShotgunVisual();
+    r.toolKey = gameHash("sniper");
+    r.meshId = gameHash("mesh.tool.sniper");
+    setDefinition(r, WeaponBehaviorType::Hitscan, WeaponFireMode::SemiAuto,
+                  WeaponNetworkMode::Normal, true, 17u, 115.0f, 4.0f, 1.2f, 3.0f,
+                  0.0f, 4.0f, 5, 1337, 1, 0.0f, 0.0f, 0.0f, 0.12f, 0.18f,
+                  kRevPhases,
+                  (std::uint32_t)(sizeof(kRevPhases) / sizeof(ToolAnimPhaseV1)));
+    setIdentity(r, "sniper", "Sniper");
+    setBehavior(r, TOOL_BEHAVIOR_HITSCAN, kEffectSetBallistic,
+                TOOL_NETWORK_NORMAL, TOOL_COLLISION_HITSCAN);
+    setOwnsExecution(r);
     return r;
 }
 
@@ -563,11 +821,30 @@ const ToolVisualRecipeV1* allToolVisuals(std::uint32_t& count)
         makeGrenadeLauncherVisual(),
         makeSpyknifeVisual(),
         makeSwordswordVisual(),
+        makeKatanaVisual(),
         makeHotSelftestGunVisual(),
+        // Migrated built-ins: every current weapon resolves to one recipe.
+        makeGodballVisual(),
+        makeOpRevolverVisual(),
+        makeAa12Visual(),
+        makeAdminRevolverVisual(),
+        makeHafsVisual(),
+        makeQuickHitVisual(),
+        makeThrownGrenadeVisual("grenade_smoke", "Smoke Grenade", 13u),
+        makeThrownGrenadeVisual("grenade_frag", "Frag Grenade", 14u),
+        makeThrownGrenadeVisual("grenade_fire", "Fire Grenade", 15u),
+        makeAkVisual(),
+        makeSniperVisual(),
     };
     count = static_cast<std::uint32_t>(sizeof(recipes) /
                                        sizeof(ToolVisualRecipeV1));
     return recipes;
+}
+
+const ToolDefinitionV1* findToolDefinition(std::uint64_t toolKey)
+{
+    const ToolVisualRecipeV1* r = findToolVisual(toolKey);
+    return r ? &r->definition : nullptr;
 }
 
 const ToolVisualRecipeV1* findToolVisual(std::uint64_t toolKey)

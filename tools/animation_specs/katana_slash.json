@@ -1,0 +1,69 @@
+{
+  "animation_id": "animation.katana_slash",
+  "sample_rate": 60,
+  "duration_ticks": 18,
+  "loop": 0,
+  "origin": "plrOrigin",
+  "parts": ["torso", "head", "leftArm", "rightArm", "leftLeg", "rightLeg"],
+  "keys": [
+    {
+      "tick": 0,
+      "pose": {
+        "torso":    [0, 0, 0, 2, -6, 0],
+        "head":     [0, 0, 0, 0, -4, 0],
+        "leftArm":  [0, 0, 0, -22, 0, 6],
+        "rightArm": [0, 0, 0, -120, -14, -4],
+        "leftLeg":  [0, 0, 0, 0, 0, 0],
+        "rightLeg": [0, 0, 0, 0, 0, 0]
+      }
+    },
+    {
+      "tick": 4,
+      "pose": {
+        "torso":    [0, 0, 0, 4, -18, 0],
+        "head":     [0, 0, 0, 0, -10, 0],
+        "leftArm":  [0, 0, 0, -28, 0, 10],
+        "rightArm": [0, 0, 0, -155, -26, -6],
+        "leftLeg":  [0, 0, 0, 0, 0, 0],
+        "rightLeg": [0, 0, 0, 0, 0, 0]
+      }
+    },
+    {
+      "tick": 8,
+      "pose": {
+        "torso":    [0, 0, 0, 0, 14, 0],
+        "head":     [0, 0, 0, -4, 8, 0],
+        "leftArm":  [0, 0, 0, -18, 0, -14],
+        "rightArm": [0, 0, 0, -55, 32, 8],
+        "leftLeg":  [0, 0, 0, 0, 0, 0],
+        "rightLeg": [0, 0, 0, 0, 0, 0]
+      }
+    },
+    {
+      "tick": 13,
+      "pose": {
+        "torso":    [0, 0, 0, -2, 20, 0],
+        "head":     [0, 0, 0, -6, 10, 0],
+        "leftArm":  [0, 0, 0, -16, 0, -18],
+        "rightArm": [0, 0, 0, -12, 26, 6],
+        "leftLeg":  [0, 0, 0, 0, 0, 0],
+        "rightLeg": [0, 0, 0, 0, 0, 0]
+      }
+    },
+    {
+      "tick": 17,
+      "pose": {
+        "torso":    [0, 0, 0, 0, 8, 0],
+        "head":     [0, 0, 0, 0, 4, 0],
+        "leftArm":  [0, 0, 0, -22, 0, -8],
+        "rightArm": [0, 0, 0, -40, 6, 0],
+        "leftLeg":  [0, 0, 0, 0, 0, 0],
+        "rightLeg": [0, 0, 0, 0, 0, 0]
+      }
+    }
+  ],
+  "markers": [
+    { "name": "weapon_edge", "part": "rightArm", "offset": [0.0, 0.0, -0.95], "radius": 0.22, "weapon": true },
+    { "name": "hand_right", "part": "rightArm", "offset": [0.0, 0.0, -0.55], "radius": 0.12 }
+  ]
+}

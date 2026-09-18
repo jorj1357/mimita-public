@@ -125,6 +125,13 @@ struct CollisionSolveV1 {
     CollisionColliderV1 colliders[COLLISION_MAX_COLLIDERS];
     float position[3];
     float velocity[3];
+    // Append-only identity/timing so collision records can name the actor and
+    // the frame/client/server tick being solved. 0 = unknown.
+    std::uint64_t frame;
+    std::uint64_t serverTick;
+    std::uint64_t clientTick;
+    std::uint32_t actorKind;   // CollisionLogActorKind (1 player, 2 npc, ...)
+    std::uint32_t reserved0;
     // out
     float outPosition[3];
     float outVelocity[3];

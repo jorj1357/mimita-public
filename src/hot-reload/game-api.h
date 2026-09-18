@@ -111,6 +111,7 @@ struct GameMovementRuntimeStateComponentV1 {
     float jumpIntentSeconds;
     float dashGraceSeconds;
     std::uint32_t freezePreviously;
+    float freezeTimerSeconds;
     // reserved[0] = tick of the last hot actor-movement simulation,
     // reserved[1] = hot generation that produced it,
     // reserved[2] bit0 = hot actor-movement authority is active for this actor.

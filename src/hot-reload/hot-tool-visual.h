@@ -115,6 +115,44 @@ struct ToolParamV1 {
     float value;
 };
 
+// ── Shared behavior families ────────────────────────────────────────
+// A definition names ONE behavior id; many tools may share a behavior. The hot
+// router resolves toolId -> definition.behaviorId -> registered function, so a
+// new tool of an existing family is a new recipe only. These are runtime hashes,
+// never a kernel enum.
+static constexpr std::uint64_t TOOL_BEHAVIOR_HITSCAN =
+    gameHash("tool.behavior.hitscan");
+static constexpr std::uint64_t TOOL_BEHAVIOR_PELLET =
+    gameHash("tool.behavior.pellet");
+static constexpr std::uint64_t TOOL_BEHAVIOR_MELEE =
+    gameHash("tool.behavior.melee-sweep");
+static constexpr std::uint64_t TOOL_BEHAVIOR_CONTACT =
+    gameHash("tool.behavior.physical-contact");
+static constexpr std::uint64_t TOOL_BEHAVIOR_ROCKET =
+    gameHash("tool.behavior.rocket-projectile");
+static constexpr std::uint64_t TOOL_BEHAVIOR_GRENADE =
+    gameHash("tool.behavior.grenade-projectile");
+static constexpr std::uint64_t TOOL_BEHAVIOR_THROWN =
+    gameHash("tool.behavior.thrown-grenade");
+
+// toolFlags bit0: the definition opts into owning its execution hot-side. Until
+// set, the cold attack path keeps ownership even though a behavior is
+// registered. This is how a tool is migrated on, one definition at a time, with
+// no EXE edit; unset is the safe default.
+static constexpr std::uint32_t TOOL_FLAG_OWNS_EXECUTION = 1u << 0;
+
+// Network policy: how the tool's use is replicated. Normal = server authority,
+// ClientOnly = presentation/prediction only (no authoritative spawn).
+static constexpr std::uint32_t TOOL_NETWORK_NORMAL = 0;
+static constexpr std::uint32_t TOOL_NETWORK_CLIENT_ONLY = 1;
+
+// Collision policy: which shared solver family the tool's effect uses. Plain
+// data so the collision/prediction side selects a system without a weapon list.
+static constexpr std::uint32_t TOOL_COLLISION_NONE = 0;
+static constexpr std::uint32_t TOOL_COLLISION_HITSCAN = 1;
+static constexpr std::uint32_t TOOL_COLLISION_PROJECTILE = 2;
+static constexpr std::uint32_t TOOL_COLLISION_CONTACT = 3;
+
 // The single held-tool definition: gameplay data + held presentation + per-phase
 // animation. `presentMask` (GameToolFieldFlags) marks which gameplay groups the
 // hot side makes authoritative for the cold resolver; unset groups keep the
@@ -150,6 +188,16 @@ struct ToolDefinitionV1 {
     // Animation phases.
     std::uint32_t phaseCount;
     const ToolAnimPhaseV1* phases;
+    // Behavior + presentation set identity (hot-only; no cold ABI). The router
+    // dispatches by behaviorId; the animation/effect agents receive these keys in
+    // tool action events and resolve their own sets. 0 = derive from toolKey.
+    std::uint64_t behaviorId;
+    std::uint64_t animationSetId;
+    std::uint64_t effectSetId;
+    std::uint32_t networkPolicy;    // TOOL_NETWORK_*
+    std::uint32_t collisionPolicy;  // TOOL_COLLISION_*
+    std::uint32_t toolFlags;        // reserved, tool-local
+    std::uint32_t reserved;
 };
 
 // The single held-tool presentation + definition recipe.
@@ -238,9 +286,17 @@ struct LocalDisagreementVisualV1 {
 
 // Recipe registry. Stable tool-key selection; no weapon enum.
 const ToolVisualRecipeV1* findToolVisual(std::uint64_t toolKey);
+// Gameplay definition for a runtime tool key (null when no hot recipe exists).
+// Behaviors read live values here so editing a recipe changes behavior with no
+// EXE rebuild.
+const ToolDefinitionV1* findToolDefinition(std::uint64_t toolKey);
 // Projectile type (network id) -> recipe, so projectile presentation can be
 // recovered on a client even when the component did not replicate.
 const ToolVisualRecipeV1* findProjectileVisual(std::uint64_t projectileTypeId);
+// Compact network family id (NETWORK_WEAPON_*) -> recipe. Lets the execution
+// router find a definition's behavior/flag for numeric keys without a cold
+// switch. Hot data; a new tool with a new family id needs a recipe only.
+const ToolVisualRecipeV1* findToolVisualByNetworkId(std::uint64_t networkId);
 
 // Compose the shared explosion presentation (flash/smoke/debris/sound) for a
 // rocket/grenade effect type at a world position. Defined by the hot effect

@@ -19,6 +19,7 @@
 #include "hot-reload/hot-action.h"
 #include "hot-reload/hot-animation-clips.h"
 #include "hot-reload/hot-animation.h"
+#include "hot-reload/hot-animation-physical.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-pose.h"
 #include "hot-reload/hot-tool-visual.h"
@@ -148,6 +149,15 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
         ctx->host, HOT_ANIMATION_STATE_COMPONENT, entities, 256);
     for (std::uint32_t i = 0; i < count; ++i) {
         const std::uint64_t entity = entities[i];
+        // The exact Blender physical runtime owns this actor's pose; applying a
+        // procedural pose here would overwrite it.
+        HotPhys::PhysicalAnimationStateV1 physical{};
+        if (ctx->dynamicReadComponent(
+                ctx->host, entity,
+                HotPhys::HOT_PHYSICAL_ANIMATION_COMPONENT, &physical,
+                sizeof(physical)) &&
+            (physical.flags & HotPhys::PHYS_FLAG_ACTIVE) != 0)
+            continue;
         HotAnimationStateV2 anim{};
         if (!ctx->dynamicReadComponent(ctx->host, entity,
                                        HOT_ANIMATION_STATE_COMPONENT, &anim,

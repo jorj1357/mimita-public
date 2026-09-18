@@ -1,10 +1,11 @@
 // 08 02 2026, 00 00
 /* purpose
 * Declares the movement tuning preset loader (config/movement.json selector + config/movement/*.json presets).
-* REFERENCE / ARCHIVE ONLY: runtime movement tuning is owned by the hot C++
-* Source movement authority (movement.main / movement.tuning). The JSON loader
-* remains for terminal inspection and debug overlays and is NOT consulted by
-* any movement, collision, NPC, or validation simulation path.
+* COMPARISON-ONLY: runtime movement tuning is owned by the hot C++ preset
+* registry (hot-reload/hot-movement-presets.h: source, default, heavy,
+* retrograd_fast, counterstrike). This JSON loader is retained only for the
+* JSON-versus-C++ deterministic comparison harness; it is NOT consulted by any
+* movement, collision, NPC, prediction, replay, validation, or terminal path.
 * Does NOT run movement simulation, poll input, or own the movement kernel formulas.
 * Does NOT serialize packets, render, play audio, or decide network authority.
 * Does NOT replace physics/config.h as the source of built-in default constants.

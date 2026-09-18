@@ -1616,7 +1616,11 @@ void assignMatchParticipants(ServerGamemodeState& d,
         desc.roleId = roles[best].id;
         if (const MatchRoleDefinition* def =
                 MatchRoleRegistry::instance().get(desc.roleId)) {
-            desc.movementProfileId = def->movementPreset;
+            // Role preset wins; otherwise the mode-level preset applies to all.
+            if (!def->movementPreset.empty())
+                desc.movementProfileId = def->movementPreset;
+            else if (!d.movementPreset.empty())
+                desc.movementProfileId = d.movementPreset;
             desc.weaponProfileId = def->weaponSet;
             if (desc.controller == ActorController::Npc)
                 desc.behaviorProfileId = def->behaviorProfile;

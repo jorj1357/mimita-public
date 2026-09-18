@@ -13,6 +13,7 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-actor-movement.h"
 #include "hot-reload/hot-movement-policy.h"
+#include "hot-reload/hot-movement-preset-log.h"
 #include "hot-reload/hot-package.h"
 
 #include <algorithm>
@@ -32,6 +33,32 @@ constexpr bool kSimulateServerNpcs = true;
 
 using PhysicsMoveFn = void (MIMITA_GAME_CALL *)(void*, MovementStateV1*, float,
                                                 std::uint32_t);
+
+// Reads the per-actor preset from the generic ActorProfileState component
+// (movementPresetHash = gameHash(preset name)). Absent/unknown -> active preset.
+MimitaHotMovement::MovementPresetId actorMovementPreset(GameplayContextV1* ctx,
+                                                        std::uint64_t entity,
+                                                        bool* outFromProfile = nullptr)
+{
+    if (outFromProfile)
+        *outFromProfile = false;
+    if (!ctx->dynamicReadComponent)
+        return MimitaHotMovement::kActiveMovementPreset;
+    struct ActorProfileStateV1 {
+        std::uint64_t movementPresetHash;
+        std::uint64_t behaviorProfileHash;
+        std::uint32_t flags;
+        std::uint32_t reserved;
+    };
+    ActorProfileStateV1 profile{};
+    if (!ctx->dynamicReadComponent(ctx->host, entity, gameHash("ActorProfileState"),
+                                   &profile, sizeof(profile)) ||
+        profile.movementPresetHash == 0u)
+        return MimitaHotMovement::kActiveMovementPreset;
+    if (outFromProfile)
+        *outFromProfile = true;
+    return MimitaHotMovement::movementPresetIdFromHash(profile.movementPresetHash);
+}
 
 bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
                       std::uint32_t tick, bool npcOnly)
@@ -91,8 +118,16 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
         body.sizeScale = 1.0f;
     }
 
-    const MimitaHotMovement::MovementMode& m =
-        MimitaHotMovement::defaultActorMovementMode();
+    bool presetFromProfile = false;
+    const MimitaHotMovement::MovementPresetId presetId =
+        actorMovementPreset(ctx, e, &presetFromProfile);
+    const GameMovementTuningV1& m =
+        MimitaHotMovement::getMovementPreset(presetId).tuning;
+    MimitaHotMovement::movementPresetLogActor(
+        ctx, e,
+        npcOnly ? MimitaHotMovement::MOVEMENT_LOG_ACTOR_NPC
+                : MimitaHotMovement::MOVEMENT_LOG_ACTOR_REMOTE,
+        presetId, presetFromProfile ? "actor-profile" : "active", tick, tick);
 
     float vx = vl.linear[0];
     float vy = vl.linear[1];
@@ -109,114 +144,154 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     const bool dashEdge = mi.dash && !rs.dashHeldPreviously;
     const bool downDashEdge = mi.downDash && !rs.downDashHeldPreviously;
     const bool jumpEdge = mi.jump && !rs.jumpHeldPreviously;
-    const float speed = m.walkSpeed;
+    const bool freezeNow = mi.freeze != 0;
+    const bool freezeEdge = freezeNow && !rs.freezePreviously;
 
-    if (rs.grounded)
-    {
-        GameGroundMoveV1 g{};
-        g.velocity[0] = vx;
-        g.velocity[1] = vy;
-        g.wishDir[0] = wdx;
-        g.wishDir[1] = wdy;
-        g.wishSpeed = speed;
-        g.groundAcceleration = m.groundAccel;
-        g.frictionAmount = m.groundFriction;
-        g.stopspeed = 0.0f;
-        g.dt = dt;
-        g.hasInput = hasWish ? 1u : 0u;
-        float out[2] = {vx, vy};
-        MimitaHotMovement::groundMove(g, out);
-        vx = out[0];
-        vy = out[1];
-    }
-    else if (hasWish)
-    {
-        GameAirAccelerateV1 a{};
-        a.velocity[0] = vx;
-        a.velocity[1] = vy;
-        a.wishDir[0] = wdx;
-        a.wishDir[1] = wdy;
-        a.wishSpeed = speed;
-        a.wishspd = speed;
-        a.maxSpeed = speed;
-        a.airAcceleration = m.airAccel;
-        a.surfaceFriction = 1.0f;
-        a.airSpeedGainMultiplier = 1.0f;
-        a.dt = dt;
-        a.currentSpeed = vx * wdx + vy * wdy;
-        a.blendedAddSpeed = a.wishspd - a.currentSpeed;
-        float out[2] = {vx, vy};
-        MimitaHotMovement::airAccelerate(a, out);
-        vx = out[0];
-        vy = out[1];
+    // FREEZE: the ONE shared hot freeze policy (same as local prediction).
+    GameFreezePolicyV1 fp{};
+    fp.velocity[0] = vx;
+    fp.velocity[1] = vy;
+    fp.velocity[2] = vz;
+    fp.dt = dt;
+    fp.durationSeconds = m.freezeDurationSeconds;
+    fp.freezePressed = freezeEdge ? 1u : 0u;
+    fp.freezeHeld = freezeNow ? 1u : 0u;
+    fp.freezeHeldPreviously = rs.freezePreviously ? 1u : 0u;
+    fp.freezeEnabled = m.freezeEnabled;
+    fp.freezeActive = freezeNow ? 1u : 0u;
+    fp.freezeAvailable = 1u;
+    fp.freezeTimerSeconds = rs.freezeTimerSeconds;
+    MimitaHotMovement::freezePolicy(fp);
+    rs.freezeTimerSeconds = fp.outFreezeTimerSeconds;
+
+    if (fp.outFreezeActive != 0u) {
+        vx = fp.outVelocity[0];
+        vy = fp.outVelocity[1];
+        vz = fp.outVelocity[2];
+    } else {
+        GameSpeedPolicyV1 sp{};
+        sp.baseMaxSpeed = m.walkSpeed;
+        sp.baseFallbackSpeed = m.walkSpeed;
+        sp.sizeScale = body.sizeScale;
+        sp.sizeExponent = 0.0f;
+        sp.speedLimit = m.speedLimitEnabled ? m.speedLimit : 0.0f;
+        sp.speedLimitFixed = (m.speedLimitMode == 1u) ? 1u : 0u;
+        sp.airMaxWishspeed = m.airMaxWishspeed;
+        sp.rawWishSpeed = m.walkSpeed;
+        float optMax = m.walkSpeed;
+        float optWish = m.walkSpeed;
+        MimitaHotMovement::speedPolicy(sp, optMax, optWish);
+        const float speed = optMax;
+
+        if (rs.grounded) {
+            GameGroundMoveV1 g{};
+            g.velocity[0] = vx;
+            g.velocity[1] = vy;
+            g.wishDir[0] = wdx;
+            g.wishDir[1] = wdy;
+            g.wishSpeed = speed;
+            g.groundAcceleration = m.groundAcceleration;
+            g.frictionAmount =
+                (m.walkMode == MimitaHotMovement::kWalkModeSource)
+                    ? m.groundFriction
+                    : m.groundFrictionAmount;
+            g.stopspeed = m.stopspeed;
+            g.dt = dt;
+            g.hasInput = hasWish ? 1u : 0u;
+            float out[2] = {vx, vy};
+            MimitaHotMovement::groundMove(g, out);
+            vx = out[0];
+            vy = out[1];
+        } else if (hasWish) {
+            GameAirAccelerateV1 a{};
+            a.velocity[0] = vx;
+            a.velocity[1] = vy;
+            a.wishDir[0] = wdx;
+            a.wishDir[1] = wdy;
+            a.wishSpeed = m.sourceAirAccelerateBugCompatible ? speed : optWish;
+            a.wishspd = optWish;
+            a.maxSpeed = speed;
+            a.airAcceleration = m.airAcceleration;
+            a.surfaceFriction = m.surfaceFriction;
+            a.airSpeedGainMultiplier = m.airSpeedGainMultiplier;
+            a.dt = dt;
+            a.currentSpeed = vx * wdx + vy * wdy;
+            a.blendedAddSpeed = a.wishspd - a.currentSpeed;
+            float out[2] = {vx, vy};
+            MimitaHotMovement::airAccelerate(a, out);
+            vx = out[0];
+            vy = out[1];
+        }
+
+        {
+            const float yawRad = tf.yaw * MimitaHotMovement::kRadPerDegree;
+            GameDashPolicyV1 dp{};
+            dp.velocity[0] = vx;
+            dp.velocity[1] = vy;
+            dp.velocity[2] = vz;
+            dp.moveAxes[0] = hasWish ? wdx : 0.0f;
+            dp.moveAxes[1] = hasWish ? wdy : 0.0f;
+            dp.cameraForward[0] = std::cos(yawRad);
+            dp.cameraForward[1] = std::sin(yawRad);
+            dp.groundDashImpulse = m.groundDashImpulse;
+            dp.airDashImpulse = m.airDashImpulse;
+            dp.downDashVerticalSpeed = m.downDashSpeed;
+            dp.dashPressed =
+                (dashEdge && rs.dashAvailable && rs.dashCooldownSeconds <= 0.0f)
+                    ? 1u : 0u;
+            dp.downDashPressed = (downDashEdge && rs.downDashAvailable) ? 1u : 0u;
+            dp.grounded = rs.grounded ? 1u : 0u;
+            dp.dashAvailable = rs.dashAvailable ? 1u : 0u;
+            dp.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
+            dp.dashEnabled = m.dashEnabled;
+            dp.downDashEnabled = m.downDashEnabled;
+            MimitaHotMovement::dashPolicy(dp);
+            vx = dp.outVelocity[0];
+            vy = dp.outVelocity[1];
+            vz = dp.outVelocity[2];
+            rs.dashAvailable = dp.outDashAvailable;
+            rs.downDashAvailable = dp.outDownDashAvailable;
+            if (dp.outDidDash)
+                rs.dashCooldownSeconds = 0.0f;
+        }
+
+        {
+            GameJumpPolicyV1 jp{};
+            jp.velocityZ = vz;
+            jp.jumpSpeed = m.jumpSpeed;
+            jp.dt = dt;
+            jp.coyoteSeconds = m.coyoteSeconds;
+            jp.jumpBufferSeconds = m.jumpBufferSeconds;
+            jp.grounded = rs.grounded ? 1u : 0u;
+            jp.jumpPressed = jumpEdge ? 1u : 0u;
+            jp.jumpHeld = mi.jump ? 1u : 0u;
+            jp.jumpHeldPreviously = rs.jumpHeldPreviously ? 1u : 0u;
+            jp.autoBhopEnabled = m.autoBhopEnabled;
+            jp.maximumAirJumps = m.maximumAirJumps;
+            jp.airJumpsLeft = rs.airJumpsLeft;
+            jp.airJumpArmed = rs.jumpAirJumpArmed;
+            MimitaHotMovement::jumpPolicy(jp);
+            vz = jp.outVelocityZ;
+            rs.grounded = jp.outGrounded;
+            rs.airJumpsLeft = jp.airJumpsLeft;
+            rs.jumpAirJumpArmed = jp.airJumpArmed;
+        }
+
+        if (vz < -m.maxFallSpeed)
+            vz = -m.maxFallSpeed;
     }
 
-    {
-        const float yawRad = tf.yaw * MimitaHotMovement::kRadPerDegree;
-        GameDashPolicyV1 dp{};
-        dp.velocity[0] = vx;
-        dp.velocity[1] = vy;
-        dp.velocity[2] = vz;
-        dp.moveAxes[0] = hasWish ? wdx : 0.0f;
-        dp.moveAxes[1] = hasWish ? wdy : 0.0f;
-        dp.cameraForward[0] = std::cos(yawRad);
-        dp.cameraForward[1] = std::sin(yawRad);
-        dp.groundDashImpulse = m.dashImpulse;
-        dp.airDashImpulse = m.dashImpulse;
-        dp.downDashVerticalSpeed = m.downDashSpeed;
-        dp.dashPressed =
-            (dashEdge && rs.dashAvailable && rs.dashCooldownSeconds <= 0.0f) ? 1u : 0u;
-        dp.downDashPressed = (downDashEdge && rs.downDashAvailable) ? 1u : 0u;
-        dp.grounded = rs.grounded ? 1u : 0u;
-        dp.dashAvailable = rs.dashAvailable ? 1u : 0u;
-        dp.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
-        dp.dashEnabled = 1u;
-        dp.downDashEnabled = 1u;
-        MimitaHotMovement::dashPolicy(dp);
-        vx = dp.outVelocity[0];
-        vy = dp.outVelocity[1];
-        vz = dp.outVelocity[2];
-        rs.dashAvailable = dp.outDashAvailable;
-        rs.downDashAvailable = dp.outDownDashAvailable;
-        if (dp.outDidDash)
-            rs.dashCooldownSeconds = 0.0f;
-    }
-
-    {
-        GameJumpPolicyV1 jp{};
-        jp.velocityZ = vz;
-        jp.jumpSpeed = m.jumpSpeed;
-        jp.dt = dt;
-        jp.coyoteSeconds = 0.0f;
-        jp.jumpBufferSeconds =
-            MimitaHotMovement::actorJumpBufferSeconds(dt);
-        jp.grounded = rs.grounded ? 1u : 0u;
-        jp.jumpPressed = jumpEdge ? 1u : 0u;
-        jp.jumpHeld = mi.jump ? 1u : 0u;
-        jp.jumpHeldPreviously = rs.jumpHeldPreviously ? 1u : 0u;
-        jp.autoBhopEnabled = 1u;
-        jp.maximumAirJumps = 1u;
-        jp.airJumpsLeft = rs.airJumpsLeft;
-        jp.airJumpArmed = rs.jumpAirJumpArmed;
-        MimitaHotMovement::jumpPolicy(jp);
-        vz = jp.outVelocityZ;
-        rs.grounded = jp.outGrounded;
-        rs.airJumpsLeft = jp.airJumpsLeft;
-        rs.jumpAirJumpArmed = jp.airJumpArmed;
-    }
-
+    if (!freezeNow && !rs.grounded)
     {
         GameGravityV1 gv{};
         gv.velocityZ = vz;
-        gv.gravityZ = -m.gravity;
+        gv.gravityZ = -static_cast<float>(m.gravityMagnitude);
         gv.maximumFallSpeed = m.maxFallSpeed;
         gv.dt = dt;
         float oz = vz;
         MimitaHotMovement::gravity(gv, oz);
         vz = oz;
     }
-    if (vz < -m.maxFallSpeed)
-        vz = -m.maxFallSpeed;
 
     MovementStateV1 st{};
     st.position[0] = tf.position[0];

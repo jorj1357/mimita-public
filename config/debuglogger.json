@@ -19,6 +19,7 @@
     "physics": { "level": "off", "file_output": true },
     "performance": { "level": "off", "file_output": true },
     "collision": { "level": "important", "file_output": true },
+    "movement": { "level": "important", "file_output": true },
     "npc_combat": { "level": "important", "file_output": true },
     "npc_movement": { "level": "off", "file_output": true },
     "weapons": { "level": "important", "file_output": true },

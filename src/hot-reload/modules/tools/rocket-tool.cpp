@@ -1,10 +1,11 @@
-// 09 14 2026
+// 09 17 2026
 /* purpose
-* Hot rocket-launcher use behavior. The hot path is the canonical owner: it
-* suppresses the built-in kernel-container spawn and spawns a composition-driven
-* projectile entity (Transform/Velocity + HotProjectileState + ownership
-* relationship). The canonical projectiles.60 system owns simulation, collision,
-* splash damage, and effects. No kernel WeaponType/ProjectileType branch.
+* Hot rocket-launcher use behavior (family TOOL_BEHAVIOR_ROCKET). The hot path is
+* the canonical owner: it suppresses the built-in kernel-container spawn and
+* spawns a composition-driven projectile entity. Live projectile values come
+* from the tool definition params when present. Emits generic tool action facts.
+* The canonical projectiles.60 system owns simulation, collision, splash, and
+* effects. No kernel WeaponType/ProjectileType branch.
 * Does NOT link into the EXE; only into the replaceable game DLL.
 */
 #if defined(MIMITA_GAME_DLL)
@@ -14,14 +15,29 @@
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-projectile.h"
 #include "hot-reload/hot-presentation.h"
+#include "hot-reload/hot-tool-action.h"
+#include "hot-reload/hot-tool-state.h"
+#include "hot-reload/hot-tool-visual.h"
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
 // NETWORK_WEAPON_ROCKET_LAUNCHER value (see network/packets.h).
 constexpr std::uint64_t kRocketNetworkId = 5;
+
+float paramOr(const ToolDefinitionV1* def, const char* key, float fallback)
+{
+    if (!def || !def->params)
+        return fallback;
+    for (std::uint32_t i = 0; i < def->paramCount; ++i) {
+        if (def->params[i].key && std::strcmp(def->params[i].key, key) == 0)
+            return def->params[i].value;
+    }
+    return fallback;
+}
 
 void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* ctx)
 {
@@ -35,6 +51,25 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
 
     if (!ctx->entityCreate || !ctx->dynamicWriteComponent)
         return;
+
+    const std::uint64_t key = use->toolId != 0 ? use->toolId : use->toolNetworkId;
+    const ToolDefinitionV1* def = findToolDefinition(key);
+    const float speed = paramOr(def, "hotSpeed", 40.0f);
+    const float gravity = paramOr(def, "hotGravity", 22.0f);
+    const float lifetime = paramOr(def, "hotLifetime", 5.0f);
+    const float radius = paramOr(def, "hotRadius", 0.2f);
+    const float impactDamage = paramOr(def, "hotImpactDamage", 120.0f);
+    const float splashRadius = paramOr(def, "hotSplashRadius", 3.0f);
+    const float splashDamage = paramOr(def, "hotSplashDamage", 120.0f);
+
+    ToolActionEventV1 accepted{};
+    accepted.actorEntity = use->userEntity;
+    accepted.toolEntity = use->toolEntity;
+    accepted.toolId = key;
+    accepted.behaviorId = TOOL_BEHAVIOR_ROCKET;
+    accepted.action = TOOL_ACTION_PRIMARY_ACCEPTED;
+    accepted.simulationTick = use->tick;
+    emitToolAction(ctx, accepted);
 
     float dx = use->direction[0], dy = use->direction[1], dz = use->direction[2];
     const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -50,20 +85,21 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     proj.position[0] = use->origin[0];
     proj.position[1] = use->origin[1];
     proj.position[2] = use->origin[2];
-    proj.velocity[0] = dx * 40.0f;
-    proj.velocity[1] = dy * 40.0f;
-    proj.velocity[2] = dz * 40.0f + 2.0f;
-    proj.gravity = 22.0f;
-    proj.lifetime = 5.0f;
-    proj.radius = 0.2f;
-    proj.impactDamage = 120.0f;
-    proj.splashRadius = 3.0f;
-    proj.splashDamage = 120.0f;
+    proj.velocity[0] = dx * speed;
+    proj.velocity[1] = dy * speed;
+    proj.velocity[2] = dz * speed + 2.0f;
+    proj.gravity = gravity;
+    proj.lifetime = lifetime;
+    proj.radius = radius;
+    proj.impactDamage = impactDamage;
+    proj.splashRadius = splashRadius;
+    proj.splashDamage = splashDamage;
     proj.splashExponent = 2.0f;
     proj.knockbackStrength = 12.0f;
     proj.selfDamageMultiplier = 0.2f;
     proj.fullDamageRadius = 1.0f;
     proj.ownerEntity = use->userEntity;
+    proj.toolEntity = use->toolEntity;
     proj.typeId = kRocketNetworkId;
     proj.flags = HOT_PROJECTILE_EXPLODE_ON_WORLD |
                  HOT_PROJECTILE_EXPLODE_ON_ACTOR |
@@ -71,9 +107,7 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     ctx->dynamicWriteComponent(ctx->host, projectileEntity, HOT_PROJECTILE_COMPONENT,
                                &proj, sizeof(proj));
 
-    // Generic presentation: logical resource ids only. The canonical hot
-    // presentation system draws this entity through render.mesh; no rocket
-    // branch exists anywhere in the renderer.
+    // Generic presentation: logical resource ids only.
     if (ctx->writeComponent) {
         GameTransformComponentV1 tf{};
         tf.position[0] = use->origin[0];
@@ -95,8 +129,7 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
                                    HOT_PRESENTATION_COMPONENT, &present,
                                    sizeof(present));
     }
-    // Generic predicted -> authoritative link: the authoritative entity carries
-    // the originating prediction key so the client can retire its provisional.
+    // Generic predicted -> authoritative link.
     if (ctx->dynamicWriteComponent && use->predictionKey != 0) {
         HotPredictionLinkV1 link{};
         link.predictionKey = use->predictionKey;
@@ -108,12 +141,36 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
         ctx->relationshipAdd(ctx->host, gameHash("relationship.fired-projectile"),
                              use->userEntity, projectileEntity, kRocketNetworkId);
 
-    std::printf("[ROCKET.TOOL] hot projectile entity=%llu owner=%u\n",
-                (unsigned long long)projectileEntity, (unsigned)use->ownerId);
+    // Per-instance cooldown on the tool entity (no ammo for the rocket here;
+    // cold owns reload for now).
+    if (use->toolEntity != 0 && ctx->dynamicReadComponent &&
+        ctx->dynamicWriteComponent) {
+        ToolInstanceStateV1 st = toolStateEnsure(
+            ctx, use->toolEntity, key, def ? def->magazineSize : 0,
+            def ? def->reserveAmmo : -1, use->userEntity);
+        st.cooldownRemaining = def ? def->fireDelay : 0.65f;
+        toolStateWrite(ctx, use->toolEntity, st);
+    }
+
+    ToolActionEventV1 fired = accepted;
+    fired.action = TOOL_ACTION_FIRED;
+    fired.amount = def ? def->magazineSize : 0;
+    fired.direction[0] = dx; fired.direction[1] = dy; fired.direction[2] = dz;
+    emitToolAction(ctx, fired);
+
+    char msg[GAME_LOG_MESSAGE];
+    std::snprintf(msg, sizeof(msg),
+                  "rocket spawned entity=%llu speed=%.1f dmg=%.0f splash=%.1f",
+                  (unsigned long long)projectileEntity, speed, impactDamage,
+                  splashDamage);
+    toolLogEvent(ctx, 2, "tool.rocket", msg, "fired", projectileEntity,
+                 use->userEntity, 1, use->tick);
 }
 
 } // namespace
 
+const MimitaHotPackage::BehaviorIdRegistrar s_rocketBehavior{TOOL_BEHAVIOR_ROCKET,
+                                                             rocketUse};
 const MimitaHotPackage::ToolBehaviorRegistrar s_rocketTool{kRocketNetworkId, rocketUse};
 
 #endif

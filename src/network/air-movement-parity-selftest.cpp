@@ -45,24 +45,12 @@ bool check(bool condition, const std::string& name, std::string& report)
 
 MovementConfig makeAirConfig()
 {
+    // Use the SAME active hot C++ preset the local prediction path uses so the
+    // shared air algorithm receives identical numeric inputs. Only gravity and
+    // the fall clamp are disabled so the interval stays purely airborne.
     MovementConfig cfg = makeCurrentRuntimeMovementConfig();
-    // Align the server air tuning with the local `source` preset so the shared
-    // algorithm receives the SAME numeric inputs (walkSpeed=20, airAccel=12).
-    cfg.walkMode = MovementWalkMode::Source;
-    cfg.airControlEnabled = true;
-    cfg.speedCapEnabled = false;
-    cfg.speedLimitEnabled = false;
-    cfg.sourceMaxSpeed = 20.0f;
-    cfg.groundSpeed = 20.0f;
-    cfg.airSpeed = 20.0f;
-    cfg.airAcceleration = 12.0f;
-    cfg.airMaxWishspeed = 0.0f;
-    cfg.airSpeedGainMultiplier = 1.0f;
-    cfg.surfaceFriction = 1.0f;
-    cfg.sourceFriction = 0.0f;
     cfg.gravityZ = 0.0f;
     cfg.maximumFallSpeed = 0.0f;
-
     return cfg;
 }
 
@@ -90,7 +78,9 @@ bool runAirMovementParitySelfTest(std::string& report)
     LiveBehavior::setDispatchWorld(&world);
 
     // ── Identical initial state for both paths ────────────────────────
-    const glm::vec2 v0(5.0f, 0.0f);
+    // Start below the Source air projection cap (air_max_wishspeed) so the
+    // shared air-accelerate gain actually applies on both paths.
+    const glm::vec2 v0(0.5f, 0.0f);
     Ecs::setTransform(entity, glm::vec3(0.0f, 0.0f, 1000.0f),
                       glm::vec3(1.0f, 0.0f, 0.0f), 0.0f, 0.0f);
     Ecs::setVelocity(entity, glm::vec3(v0.x, v0.y, 0.0f), glm::vec3(0.0f));

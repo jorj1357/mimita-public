@@ -248,14 +248,23 @@ void speedClamp(GameSpeedClampV1& io);
 // one tuning authority: the C++ table in modules/movement-system.cpp.
 // JSON movement presets are reference/archive data and are never consulted.
 struct GameMovementTuningV1 {
-    // C++ Source preset values (filled by the hot handler).
+    // in: requested preset id (0 = source). Unknown clamps to the active preset.
+    std::uint32_t presetId;
+    // C++ preset values (filled by the hot handler).
     float walkSpeed;               // ground = air max speed
+    float groundSpeed;
+    float airSpeed;
     float groundAcceleration;
+    float groundDeceleration;
+    float groundDirectionChangeResponse;
     float airAcceleration;
     float groundFriction;          // Source friction scalar
+    float groundFrictionAmount;    // MiMITA ground friction amount
+    float airFrictionAmount;
     float stopspeed;               // friction floor
     float airMaxWishspeed;         // 0 = no air projection cap
     float airSpeedGainMultiplier;  // Source air residual gain scalar
+    float airControl;
     float surfaceFriction;         // global surface friction scalar
     float gravityMagnitude;        // positive; applied as -magnitude
     float jumpSpeed;
@@ -263,15 +272,58 @@ struct GameMovementTuningV1 {
     float jumpBufferSeconds;
     float coyoteSeconds;
     float dashImpulse;
+    float groundDashImpulse;
+    float airDashImpulse;
     float dashCooldownSeconds;
     float downDashSpeed;
     float dashGraceSeconds;
+    float dashFrictionMultiplier;
+    float freezeDurationSeconds;
+    float freezeCurveExponent;
+    float externalImpulseDecay;
+    float maximumExternalImpulseSpeed;
+    float impulseCarrySeconds;
+    float landingOverspeedBleed;
+    float landingSpeedRetention;
+    float velocityClipEpsilon;
+    float speedLimit;
+    float bunnyHopSpeedCap;
+    float minimumStrafeAngleDegrees;
+    float maximumAccelerationPerTick;
+    float accelerationFalloffNearCap;
+    float airSteeringResponse;
+    float maximumSteeringDegreesPerSecond;
+    float minimumCameraYawDeltaDegrees;
+    float minimumWishRotationDegrees;
+    float strafeAngularToleranceDegrees;
+    float softCapStart;
+    float airInputBlending;
+    float airInputMouseThresholdDegrees;
+    float sourceMaxSpeed;
+    float sourceFriction;
+    float freeFlySpeed;
     std::uint32_t maximumAirJumps;
     std::uint32_t autoBhopEnabled;
     std::uint32_t dashEnabled;
     std::uint32_t downDashEnabled;
     std::uint32_t freezeEnabled;
     std::uint32_t sourceWalkMode;
+    std::uint32_t walkMode;        // 0=mimita, 1=accel, 2=source
+    std::uint32_t airControlEnabled;
+    std::uint32_t bunnyHopEnabled;
+    std::uint32_t preserveStraightSpeed;
+    std::uint32_t diagonalInputNormalization;
+    std::uint32_t speedCapEnabled;
+    std::uint32_t maximumBhopSpeedMode;
+    std::uint32_t speedLimitEnabled;
+    std::uint32_t speedLimitMode;
+    std::uint32_t debugDrawEnabled;
+    std::uint32_t requireActiveWishRotation;
+    std::uint32_t stationaryCameraInputMode;
+    std::uint32_t sourceAirAccelerateBugCompatible;
+    std::uint32_t groundSnap;
+    std::uint32_t airInputBlendingEnabled;
+    std::uint32_t impulseFrictionMode;
     // out
     std::uint32_t handled;
     std::uint32_t reserved;

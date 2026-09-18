@@ -11,10 +11,13 @@
 
 #include "hot-reload/hot-animation-selftest.h"
 
+#include "hot-reload/hot-animation-blender.h"
 #include "hot-reload/hot-animation-clips.h"
+#include "hot-reload/hot-animation-physical.h"
 #include "hot-reload/hot-animation.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -133,6 +136,102 @@ bool runAnimationSelfTest(char* message, std::uint32_t messageSize)
         return fail(message, messageSize, "animation state version unexpected");
     if (sizeof(HotAnimationStateV2) <= sizeof(HotAnimationStateV1))
         return fail(message, messageSize, "v2 contract did not grow");
+
+    // ── BlenderPhysical exact-pose runtime contract ─────────────────────
+    const BlenderClip* katana =
+        findBlenderClip(gameHash("animation.katana_slash"));
+    if (!katana)
+        return fail(message, messageSize, "imported katana clip not registered");
+    if (katana->sampleRate != 60)
+        return fail(message, messageSize, "imported clip is not 60 Hz");
+    if (katana->durationTicks == 0 ||
+        katana->frameCount != katana->durationTicks)
+        return fail(message, messageSize, "imported clip is not tick-exact");
+    if (katana->mask != MaskFull)
+        return fail(message, messageSize, "imported clip misses a body part");
+    for (std::uint32_t f = 0; f < katana->frameCount; ++f)
+        if (katana->frames[f].t != (float)f)
+            return fail(message, messageSize, "imported frames are not tick-indexed");
+
+    // Exact sampling is deterministic and independent of render FPS: the same
+    // tick always yields the same pose.
+    Pose tickA{}, tickB{};
+    sampleBlenderClipAtTick(*katana, 7, tickA);
+    sampleBlenderClipAtTick(*katana, 7, tickB);
+    if (std::memcmp(&tickA, &tickB, sizeof(Pose)) != 0)
+        return fail(message, messageSize, "exact tick sampling not deterministic");
+    if (tickA.mask != MaskFull)
+        return fail(message, messageSize, "sampled pose misses a required part");
+
+    // One-shot holds its final tick rather than snapping to rest.
+    Pose lastA{}, lastB{};
+    sampleBlenderClipAtTick(*katana, katana->durationTicks - 1, lastA);
+    sampleBlenderClipAtTick(*katana, katana->durationTicks + 50, lastB);
+    if (std::memcmp(&lastA, &lastB, sizeof(Pose)) != 0)
+        return fail(message, messageSize, "imported one-shot did not hold final tick");
+
+    // A fast arm movement yields a finite, non-zero fixed-tick velocity.
+    Pose armStart{}, armEnd{};
+    sampleBlenderClipAtTick(*katana, 4, armStart);
+    sampleBlenderClipAtTick(*katana, 8, armEnd);
+    const float deltaDeg =
+        std::fabs(armEnd.part[PartRightArm].rot[0] -
+                  armStart.part[PartRightArm].rot[0]);
+    if (!(deltaDeg > 1.0f))
+        return fail(message, messageSize, "arm did not move across ticks");
+    const float armVelocity = deltaDeg / (4.0f * (1.0f / 60.0f));
+    if (!std::isfinite(armVelocity) || armVelocity <= 0.0f)
+        return fail(message, messageSize, "fixed-tick arm velocity invalid");
+
+    // Tool action resolution selects the correct imported clip.
+    if (findBlenderClipForAction(HOT_ACTION_SLASH, gameHash("katana")) != katana)
+        return fail(message, messageSize, "katana slash did not select its clip");
+    if (findBlenderClipForAction(HOT_ACTION_SLASH, gameHash("swordsword")) != nullptr)
+        return fail(message, messageSize, "non-katana slash selected katana clip");
+    if (findBlenderClipForAction(HOT_ACTION_WALK, gameHash("katana")) != nullptr)
+        return fail(message, messageSize, "non-melee action selected katana clip");
+
+    // The weapon contact marker exists and carries a positive sweep radius.
+    const BlenderMarker* weaponMarker = nullptr;
+    for (std::uint32_t i = 0; katana->markers && i < katana->markerCount; ++i)
+        if ((katana->markers[i].flags & BLENDER_MARKER_WEAPON) != 0)
+            weaponMarker = &katana->markers[i];
+    if (!weaponMarker || weaponMarker->radius <= 0.0f)
+        return fail(message, messageSize, "weapon contact marker missing");
+
+    // Coordinate conversion has one owner and is finite.
+    const float source[3] = {1.0f, 2.0f, 3.0f};
+    float converted[3];
+    blenderToMimita(source, converted);
+    if (converted[0] != 1.0f || converted[1] != 2.0f || converted[2] != 3.0f)
+        return fail(message, messageSize, "coordinate conversion changed a vector");
+
+    // Versioned physical state contract and phase-0 baseline convention: the
+    // target and resolved poses are distinct storage (sway/reaction is additive,
+    // never a replacement of the authored exact target).
+    if (HotPhys::PHYSICAL_ANIMATION_STATE_VERSION != 1)
+        return fail(message, messageSize, "physical state version unexpected");
+    if (offsetof(HotPhys::PhysicalAnimationStateV1, target) ==
+        offsetof(HotPhys::PhysicalAnimationStateV1, resolved))
+        return fail(message, messageSize, "target and resolved pose overlap");
+    if (sizeof(HotPhys::PhysicalAnimationStateV1) <=
+        sizeof(HotPhys::ActorPoseV1))
+        return fail(message, messageSize, "physical state does not own its poses");
+
+    // Force-transfer recipes: exact physical actions transfer force; static
+    // world can never be pushed (only the animating actor receives a reaction).
+    const HotPhys::PhysicalAnimationRecipeV1 slashRecipe =
+        HotPhys::physicalRecipeForAction(HOT_ACTION_SLASH);
+    if (!slashRecipe.enabled || !slashRecipe.reactToStaticWorld ||
+        !slashRecipe.affectDynamicActors || !slashRecipe.collideWeapon)
+        return fail(message, messageSize, "slash recipe cannot transfer force");
+    if (HotPhys::physicalRecipeForAction(HOT_ACTION_WALK).enabled)
+        return fail(message, messageSize, "locomotion action must not transfer force");
+    if (static_cast<std::uint32_t>(HotPhys::PhysicalContactResponse::Slide) != 0u ||
+        static_cast<std::uint32_t>(HotPhys::PhysicalContactResponse::Bounce) != 1u ||
+        static_cast<std::uint32_t>(HotPhys::PhysicalContactResponse::PushDynamicActor) != 2u ||
+        static_cast<std::uint32_t>(HotPhys::PhysicalContactResponse::RedirectToAnimatingActor) != 3u)
+        return fail(message, messageSize, "contact response vocabulary changed");
 
     if (message && messageSize)
         std::snprintf(message, messageSize, "%s", "animation invariants ok");

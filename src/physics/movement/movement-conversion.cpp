@@ -16,6 +16,7 @@
 #include "config/movement-config.h"
 #include "config/size-scaling-config.h"
 #include "hot-reload/hot-movement-policy.h"
+#include "hot-reload/hot-movement-presets.h"
 #include "live-code/live-behavior.h"
 #include "network/server.h"
 #include "network/simulation-constants.h"
@@ -45,49 +46,19 @@ glm::vec2 chooseInputAxes(const InputFrame& frame, const InputState& input)
     return movementClampUnitOrZero(glm::vec2(frame.moveX, frame.moveY));
 }
 
-// Compiled-in copy of the fast Source preset, used only when no hot movement
-// module is loaded. The hot module's C++ table is the live authority; these
-// values must stay identical so behavior does not change with module state.
-GameMovementTuningV1 sourceTuningFallback()
+// One tuning authority: ask the hot movement module for a preset's tuning.
+// Falls back to the same single registry definition (compiled into the EXE)
+// when no module handled the event, so there is still exactly one source of
+// truth for the values.
+GameMovementTuningV1 requestMovementTuning(MimitaHotMovement::MovementPresetId id)
 {
     GameMovementTuningV1 t{};
-    t.walkSpeed = 20.0f;
-    t.groundAcceleration = 20.0f;
-    t.airAcceleration = 12.0f;
-    t.groundFriction = 3.25f;
-    t.stopspeed = 0.0f;
-    t.airMaxWishspeed = 0.0f;
-    t.airSpeedGainMultiplier = 1.0f;
-    t.surfaceFriction = 1.0f;
-    t.gravityMagnitude = 40.0f;
-    t.jumpSpeed = 15.1f;
-    t.maxFallSpeed = 175.0f;
-    t.jumpBufferSeconds = 0.0f;
-    t.coyoteSeconds = 0.0f;
-    t.dashImpulse = 20.0f;
-    t.dashCooldownSeconds = 0.5f;
-    t.downDashSpeed = -50.0f;
-    t.dashGraceSeconds = 0.0f;
-    t.maximumAirJumps = 1u;
-    t.autoBhopEnabled = 1u;
-    t.dashEnabled = 1u;
-    t.downDashEnabled = 1u;
-    t.freezeEnabled = 1u;
-    t.sourceWalkMode = 1u;
-    t.handled = 1u;
-    return t;
-}
-
-// One tuning authority: ask the hot movement module for the active Source
-// tuning. Falls back to the compiled-in copy when no module handled the event.
-GameMovementTuningV1 requestMovementTuning()
-{
-    GameMovementTuningV1 t{};
+    t.presetId = static_cast<std::uint32_t>(id);
     if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_TUNING, &t,
                                               sizeof(t), 0, 0, 0) &&
         t.handled)
         return t;
-    return sourceTuningFallback();
+    return MimitaHotMovement::getMovementPreset(id).tuning;
 }
 
 } // namespace
@@ -343,52 +314,101 @@ MovementConfig applyRuntimeMovementTuning(MovementConfig config)
     return config;
 }
 
-MovementConfig makeCurrentRuntimeMovementConfig()
+MovementConfig makeMovementConfigForPreset(std::uint32_t presetId)
 {
-    // Single C++ Source movement authority. The hot movement module owns the
-    // edit-able tuning table; JSON presets are reference/archive material and
-    // are never consulted here.
-    const GameMovementTuningV1 t = requestMovementTuning();
+    // Single C++ movement authority. The hot module owns the edit-able preset
+    // registry; JSON presets are reference/comparison material only.
+    const MimitaHotMovement::MovementPresetId id =
+        presetId < MimitaHotMovement::kMovementPresetCount
+            ? static_cast<MimitaHotMovement::MovementPresetId>(presetId)
+            : MimitaHotMovement::kActiveMovementPreset;
+    const GameMovementTuningV1 t = requestMovementTuning(id);
     MovementConfig config = movementRuntimeDefaults();
-    config.walkMode = t.sourceWalkMode ? MovementWalkMode::Source
-                                       : MovementWalkMode::Override;
-    config.airControlEnabled = true;
+
+    config.walkMode = t.walkMode == MimitaHotMovement::kWalkModeSource
+                          ? MovementWalkMode::Source
+                          : (t.walkMode == MimitaHotMovement::kWalkModeAccel
+                                 ? MovementWalkMode::Accel
+                                 : MovementWalkMode::Override);
+    config.airControlEnabled = t.airControlEnabled != 0;
+    config.bunnyHopEnabled = t.bunnyHopEnabled != 0;
     config.autoBhopEnabled = t.autoBhopEnabled != 0;
-    config.groundSpeed = t.walkSpeed;
-    config.airSpeed = t.walkSpeed;
-    config.sourceMaxSpeed = t.walkSpeed;
+    config.preserveStraightSpeed = t.preserveStraightSpeed != 0;
+    config.minimumStrafeAngleDegrees = t.minimumStrafeAngleDegrees;
+    config.maximumAccelerationPerTick = t.maximumAccelerationPerTick;
+    config.diagonalInputNormalization = t.diagonalInputNormalization != 0;
+    config.speedCapEnabled = t.speedCapEnabled != 0;
+    config.maximumBhopSpeedMode =
+        static_cast<MovementSpeedCapMode>(t.maximumBhopSpeedMode);
+    config.accelerationFalloffNearCap = t.accelerationFalloffNearCap;
+    config.speedLimitEnabled = t.speedLimitEnabled != 0;
+    config.speedLimit = t.speedLimit;
+    config.speedLimitMode = static_cast<MovementSpeedLimitMode>(t.speedLimitMode);
+    config.landingSpeedRetention = t.landingSpeedRetention;
+    config.debugDrawEnabled = t.debugDrawEnabled != 0;
+    config.requireActiveWishRotation = t.requireActiveWishRotation != 0;
+    config.stationaryCameraInputMode =
+        static_cast<StationaryCameraInputMode>(t.stationaryCameraInputMode);
+    config.airSteeringResponse = t.airSteeringResponse;
+    config.maximumSteeringDegreesPerSecond = t.maximumSteeringDegreesPerSecond;
+    config.minimumCameraYawDeltaDegrees = t.minimumCameraYawDeltaDegrees;
+    config.minimumWishRotationDegrees = t.minimumWishRotationDegrees;
+    config.strafeAngularToleranceDegrees = t.strafeAngularToleranceDegrees;
+    config.softCapStart = t.softCapStart;
+
+    config.groundSpeed = t.groundSpeed;
+    config.airSpeed = t.airSpeed;
+    config.sourceMaxSpeed = t.sourceMaxSpeed;
+    config.sourceFriction = t.sourceFriction;
     config.groundAcceleration = t.groundAcceleration;
-    config.sourceFriction = t.groundFriction;
-    config.stopspeed = t.stopspeed;
+    config.groundDeceleration = t.groundDeceleration;
+    config.groundDirectionChangeResponse = t.groundDirectionChangeResponse;
     config.airAcceleration = t.airAcceleration;
     config.airMaxWishspeed = t.airMaxWishspeed;
+    config.sourceAirAccelerateBugCompatible =
+        t.sourceAirAccelerateBugCompatible != 0;
+    config.airControl = t.airControl;
     config.airSpeedGainMultiplier = t.airSpeedGainMultiplier;
-    config.surfaceFriction = t.surfaceFriction;
-    config.sourceAirAccelerateBugCompatible = true;
+    config.airInputBlendingEnabled = t.airInputBlendingEnabled != 0;
+    config.airInputBlending = t.airInputBlending;
+    config.airInputMouseThresholdDegrees = t.airInputMouseThresholdDegrees;
+    config.stopspeed = t.stopspeed;
+    config.bunnyHopSpeedCap = t.bunnyHopSpeedCap;
     config.gravityZ = -t.gravityMagnitude;
-    config.jumpVerticalSpeed = t.jumpSpeed;
     config.maximumFallSpeed = t.maxFallSpeed;
+    config.surfaceFriction = t.surfaceFriction;
+    config.velocityClipEpsilon = t.velocityClipEpsilon;
+    config.groundSnap = t.groundSnap != 0;
+    config.landingOverspeedBleed = t.landingOverspeedBleed;
+    config.dashGraceSeconds = t.dashGraceSeconds;
+    config.dashFrictionMultiplier = t.dashFrictionMultiplier;
+    config.jumpVerticalSpeed = t.jumpSpeed;
     config.jumpBufferSeconds = t.jumpBufferSeconds;
     config.coyoteSeconds = t.coyoteSeconds;
     config.maximumAirJumps = static_cast<int>(t.maximumAirJumps);
-    config.groundDashImpulse = t.dashImpulse;
-    config.airDashImpulse = t.dashImpulse;
-    config.dashHorizontalImpulse = t.dashImpulse;
-    config.downDashVerticalSpeed = t.downDashSpeed;
-    config.dashGraceSeconds = t.dashGraceSeconds;
-    config.dashFrictionMultiplier = 1.0f;
-    config.landingOverspeedBleed = 1.0f;
     config.dashEnabled = t.dashEnabled != 0;
     config.downDashEnabled = t.downDashEnabled != 0;
     config.freezeEnabled = t.freezeEnabled != 0;
-    config.speedLimitEnabled = false;
-    config.speedLimit = 0.0f;
-    config.airInputBlendingEnabled = false;
-    config.airInputBlending = 0.0f;
-    config.impulseFrictionMode = MovementImpulseFrictionMode::Exponential;
-    config.maximumExternalImpulseSpeed = 9999.0f;
-    config.externalImpulseDecay = 99.0f;
+    config.groundDashImpulse = t.groundDashImpulse;
+    config.airDashImpulse = t.airDashImpulse;
+    config.downDashVerticalSpeed = t.downDashSpeed;
+    config.freezeDurationSeconds = t.freezeDurationSeconds;
+    config.freezeCurveExponent = t.freezeCurveExponent;
+    config.maximumExternalImpulseSpeed = t.maximumExternalImpulseSpeed;
+    config.externalImpulseDecay = t.externalImpulseDecay;
+    config.impulseCarrySeconds = t.impulseCarrySeconds;
+    config.impulseFrictionMode =
+        t.impulseFrictionMode == 1u ? MovementImpulseFrictionMode::Source
+                                    : MovementImpulseFrictionMode::Exponential;
+    config.groundFrictionAmount = t.groundFrictionAmount;
+    config.airFrictionAmount = t.airFrictionAmount;
     return applyRuntimeMovementTuning(config);
+}
+
+MovementConfig makeCurrentRuntimeMovementConfig()
+{
+    return makeMovementConfigForPreset(
+        static_cast<std::uint32_t>(MimitaHotMovement::kActiveMovementPreset));
 }
 
 MovementServerConversionSupport currentServerMovementConversionSupport()

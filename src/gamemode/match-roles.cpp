@@ -13,8 +13,9 @@
 
 #include <nlohmann/json.hpp>
 
-#include "config/movement-config.h"
 #include "debug/debug-log.h"
+#include "hot-reload/hot-movement-presets.h"
+#include "physics/movement/movement-conversion.h"
 
 using json = nlohmann::json;
 
@@ -166,16 +167,19 @@ const MovementConfig* RoleMovementCache::get(const std::string& preset)
         return it->second.valid ? &it->second.config : nullptr;
 
     Entry entry;
-    std::string path;
-    // loadPresetInto warns once on an unknown/unparseable preset.
-    entry.valid = MovementJsonConfig::instance().loadPresetInto(
-        preset, entry.config, &path);
-    if (entry.valid) {
-        entry.path = path;
-        entry.write = getLastWrite(path);
+    // One runtime authority: resolve the preset from the hot C++ registry
+    // (hot-movement-presets.h). Movement JSON is comparison-only and never read.
+    if (MimitaHotMovement::movementPresetNameExists(preset.c_str())) {
+        entry.valid = true;
+        entry.config = makeMovementConfigForPreset(static_cast<std::uint32_t>(
+            MimitaHotMovement::movementPresetIdFromName(preset.c_str())));
         Debug::log(Debug::Category::Duel,
-            "[ROLE MOVEMENT] resolved preset '%s' from %s\n",
-            preset.c_str(), path.c_str());
+            "[ROLE MOVEMENT] resolved preset '%s' from hot C++ registry\n",
+            preset.c_str());
+    } else {
+        Debug::warn(Debug::Category::Duel,
+            "[ROLE MOVEMENT] unknown preset '%s' (hot C++ registry)\n",
+            preset.c_str());
     }
     auto inserted = mEntries.emplace(preset, std::move(entry)).first;
     return inserted->second.valid ? &inserted->second.config : nullptr;
@@ -183,29 +187,8 @@ const MovementConfig* RoleMovementCache::get(const std::string& preset)
 
 bool RoleMovementCache::pollReload()
 {
-    bool changed = false;
-    for (auto& kv : mEntries) {
-        Entry& entry = kv.second;
-        if (!entry.valid || entry.path.empty())
-            continue;  // miss entries never retry on their own
-        const auto write = getLastWrite(entry.path);
-        if (write == std::filesystem::file_time_type{} || write == entry.write)
-            continue;
-
-        MovementConfig next;
-        std::string path;
-        if (MovementJsonConfig::instance().loadPresetInto(kv.first, next, &path)) {
-            entry.config = next;
-            entry.path = path;
-            entry.write = write;
-            changed = true;
-            Debug::warn(Debug::Category::Duel,
-                "[ROLE MOVEMENT] reloaded preset '%s' from %s\n",
-                kv.first.c_str(), path.c_str());
-        } else {
-            // Keep the last valid config and stop retrying this file.
-            entry.write = write;
-        }
-    }
-    return changed;
+    // Presets are hot C++ values now; there is no file to watch. Cached configs
+    // stay valid for the process lifetime and refresh on the next get() after a
+    // hot module activation replaces the code. Nothing to reload from disk.
+    return false;
 }

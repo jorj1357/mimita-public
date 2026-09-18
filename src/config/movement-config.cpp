@@ -1,9 +1,11 @@
 // 08 15 2026, 20 52
 /* purpose
-* Implements the movement tuning preset loader and hot-reload watcher.
+* Implements the comparison-only movement preset loader.
 * Reads config/movement.json for the preset name, then loads that preset from config/movement/.
 * Resolves by the preset "name" field, falls back to the filename, then to built-in defaults.
 * Applies JSON overrides on top of the current runtime base so missing keys keep current behavior.
+* Used only by --movement-preset-selftest to compare JSON-derived values against
+* the hot C++ preset registry. No runtime movement path reads it.
 * Does NOT run movement formulas, poll input, send packets, render, or decide authority.
 * Does NOT own the shared movement kernel or replace physics/config.h constants.
 */

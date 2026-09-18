@@ -501,6 +501,10 @@ void StructuredLogger::flushBucket(RepeatBucket& bucket) {
         ev.name = bucket.event + ".summary";
         ev.level = debug::Level::Info;
         ev.fields = summary;
+        if (summary.contains("message") && summary["message"].is_string())
+            ev.message = summary["message"].get<std::string>();
+        if (summary.contains("reason") && summary["reason"].is_string())
+            ev.reason = summary["reason"].get<std::string>();
         mSequence++;
         writeLine(buildRecord(ev));
     } else if (bucket.count == 1) {
@@ -510,6 +514,10 @@ void StructuredLogger::flushBucket(RepeatBucket& bucket) {
         ev.name = bucket.event;
         ev.level = debug::Level::Info;
         ev.fields = bucket.sample;
+        if (bucket.sample.contains("message") && bucket.sample["message"].is_string())
+            ev.message = bucket.sample["message"].get<std::string>();
+        if (bucket.sample.contains("reason") && bucket.sample["reason"].is_string())
+            ev.reason = bucket.sample["reason"].get<std::string>();
         mSequence++;
         writeLine(buildRecord(ev));
     }

@@ -15,7 +15,8 @@
 #include "world/world.h"
 #include "debug/debug-log.h"
 #include "config.h"
-#include "config/movement-config.h"
+#include "hot-reload/hot-movement-presets.h"
+#include "physics/movement/movement-conversion.h"
 
 extern Renderer* gRenderer;
 
@@ -44,9 +45,9 @@ bool gCamAxisDebug = false;
 // debug_draw_enabled flag so it works independently of the master debug gate.
 static void drawBhopDebug(const Player& player, const Camera& camera)
 {
-    const auto& cfg = MovementJsonConfig::instance().config();
-    if (!cfg.debugDrawEnabled)
+    if (!MimitaHotMovement::getActiveMovementPreset().tuning.debugDrawEnabled)
         return;
+    const MovementConfig cfg = makeCurrentRuntimeMovementConfig();
 
     // Horizontal velocity line
     const glm::vec4 velColor{0.0f, 1.0f, 0.4f, 1.0f};

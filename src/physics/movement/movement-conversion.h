@@ -63,6 +63,12 @@ void applyMovementStateToServerPlayer(const MovementState& state,
 
 MovementConfig makeCurrentRuntimeMovementConfig();
 
+// Builds a MovementConfig for a specific hot C++ preset id (see
+// hot-reload/hot-movement-presets.h). Unknown ids fall back to the active
+// preset. Dispatches through the hot tuning event, so the DLL's registry wins
+// when loaded; otherwise the same registry header compiled into the EXE is used.
+MovementConfig makeMovementConfigForPreset(std::uint32_t presetId);
+
 // Applies the shared runtime tuning (simulation rate and size scaling) on top
 // of any base MovementConfig. Used by makeCurrentRuntimeMovementConfig() and
 // by callers that drive movement with a non-global config (e.g. NPC presets).

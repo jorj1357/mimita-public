@@ -1,10 +1,10 @@
 // 08 15 2026, 16 12
 /* purpose
-* Registers terminal commands for the movement tuning presets.
-* Lets users switch presets, list presets, reload, and print active tuning values.
-* Reuses the MovementJsonConfig singleton for all preset loading and persistence.
+* Registers terminal commands for the hot C++ movement presets.
+* Lists/reports presets and prints active tuning values from the hot registry.
+* Selection is a C++ constant (kActiveMovementPreset): edit + rebuild the DLL.
 * Does NOT run movement physics, parse movement formulas, or own tuning defaults.
-* Does NOT edit movement preset files or the selector file except through savePresetSelection.
+* Does NOT read or write movement JSON files.
 */
 
 #include "terminal/movement-commands.h"
@@ -13,82 +13,75 @@
 #include <string>
 #include <vector>
 
-#include "config/movement-config.h"
 #include "devtools/terminal.h"
+#include "hot-reload/hot-movement-presets.h"
+#include "physics/movement/movement-conversion.h"
 #include "terminal/terminal-state.h"
 
 void registerMovementCommands()
 {
     Terminal::instance().registerCommand({
         "movement_presets",
-        "List available movement presets from config/movement/",
+        "List available hot C++ movement presets",
         "movement_presets",
         [](const std::vector<std::string>&) {
-            const auto presets = MovementJsonConfig::instance().availablePresets();
-            if (presets.empty()) {
-                Terminal::instance().addLog(
-                    "[MOVEMENT] No presets found in config/movement/");
-                return;
-            }
-            std::string list = "[MOVEMENT] Available presets:";
-            for (const auto& name : presets)
-                list += " " + name;
+            std::string list = "[MOVEMENT] Hot C++ presets:";
+            for (std::uint32_t i = 0; i < MimitaHotMovement::kMovementPresetCount; ++i)
+                list += std::string(" ") + MimitaHotMovement::kMovementPresets[i].name;
             Terminal::instance().addLog(list);
+            Terminal::instance().addLog(
+                std::string("[MOVEMENT] Active: ") +
+                MimitaHotMovement::getActiveMovementPreset().name +
+                " (edit kActiveMovementPreset + rebuild DLL to change)");
         }
     }, CommandCategory::Physics);
 
     Terminal::instance().registerCommand({
         "movement_preset",
-        "Load a movement preset by name and persist the selection to config/movement.json",
+        "Report a hot C++ movement preset (selection is a C++ constant)",
         "movement_preset <name>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
                 Terminal::instance().addLog(
-                    "[MOVEMENT] Usage: movement_preset <name>. Active: " +
-                    MovementJsonConfig::instance().activePresetName());
+                    std::string("[MOVEMENT] Usage: movement_preset <name>. Active: ") +
+                    MimitaHotMovement::getActiveMovementPreset().name);
                 return;
             }
-            if (!MovementJsonConfig::instance().savePresetSelection(args[0])) {
+            if (!MimitaHotMovement::movementPresetNameExists(args[0].c_str())) {
                 Terminal::instance().addLog(
-                    "[MOVEMENT] Failed to load preset: " + args[0]);
+                    "[MOVEMENT] Unknown preset: " + args[0]);
                 return;
             }
             Terminal::instance().addLog(
-                "[MOVEMENT] Active preset: " +
-                MovementJsonConfig::instance().activePresetName());
+                std::string("[MOVEMENT] '") + args[0] +
+                "' is valid. Global active is '" +
+                MimitaHotMovement::getActiveMovementPreset().name +
+                "' (edit kActiveMovementPreset + rebuild DLL to change).");
         }
     }, CommandCategory::Physics);
 
     Terminal::instance().registerCommand({
         "movement_reload",
-        "Reload the active movement preset from disk",
+        "Report that movement presets are hot C++ values (no file to reload)",
         "movement_reload",
         [](const std::vector<std::string>&) {
-            MovementJsonConfig::instance().load(
-                MovementJsonConfig::instance().selectorPath());
             Terminal::instance().addLog(
-                "[MOVEMENT] Reloaded. Active preset: " +
-                MovementJsonConfig::instance().activePresetName());
+                std::string("[MOVEMENT] Presets are hot C++ registry values; "
+                            "save a hot .cpp/.h edit to activate. Active: ") +
+                MimitaHotMovement::getActiveMovementPreset().name);
         }
     }, CommandCategory::Physics);
 
     Terminal::instance().registerCommand({
         "movement_debug",
-        "Toggle the bhop/air-accel debug overlay (0=off, 1=on)",
-        "movement_debug <0|1>",
-        [](const std::vector<std::string>& args) {
-            if (args.empty()) {
-                Terminal::instance().addLog(
-                    "[MOVEMENT] Usage: movement_debug <0|1>. Currently " +
-                    std::string(MovementJsonConfig::instance().config().debugDrawEnabled
-                                    ? "on" : "off"));
-                return;
-            }
-            const bool enabled = args[0] == "1";
-            MovementJsonConfig::instance().setDebugDrawEnabled(enabled);
+        "Report the active preset's debug-draw setting",
+        "movement_debug",
+        [](const std::vector<std::string>&) {
+            const MovementConfig cfg = makeCurrentRuntimeMovementConfig();
             Terminal::instance().addLog(
-                enabled ? "[MOVEMENT] bhop debug overlay ON"
-                        : "[MOVEMENT] bhop debug overlay OFF");
+                std::string("[MOVEMENT] bhop debug overlay is ") +
+                (cfg.debugDrawEnabled ? "on" : "off") +
+                " from the active preset (edit the registry to change).");
         }
     }, CommandCategory::Physics);
 
@@ -97,11 +90,11 @@ void registerMovementCommands()
         "Print the active movement tuning values",
         "movement_print",
         [](const std::vector<std::string>&) {
-            const auto& cfg = MovementJsonConfig::instance().config();
+            const MovementConfig cfg = makeCurrentRuntimeMovementConfig();
             char buf[512];
             std::snprintf(buf, sizeof(buf),
                 "[MOVEMENT] preset=%s mode=%s air_strafing=%d bhop=%d auto_bhop=%d",
-                MovementJsonConfig::instance().activePresetName().c_str(),
+                MimitaHotMovement::getActiveMovementPreset().name,
                 cfg.walkMode == MovementWalkMode::Accel ? "accel" :
                 cfg.walkMode == MovementWalkMode::Source ? "source" : "mimita",
                 (int)cfg.airControlEnabled, (int)cfg.bunnyHopEnabled,
@@ -190,7 +183,7 @@ void registerMovementCommands()
         "movement_velocity",
         [](const std::vector<std::string>&) {
             Player& player = THE_PLAYER;
-            const auto& cfg = MovementJsonConfig::instance().config();
+            const MovementConfig cfg = makeCurrentRuntimeMovementConfig();
             char buf[384];
 
             const float hSpeed =
@@ -238,7 +231,7 @@ void registerMovementCommands()
         [](const std::vector<std::string>&) {
             Player& player = THE_PLAYER;
             const MovementAirDebug& a = player.airDebug;
-            const auto& cfg = MovementJsonConfig::instance().config();
+            const MovementConfig cfg = makeCurrentRuntimeMovementConfig();
             const char* branch =
                 a.branch == MovementAirDebug::Branch::Ground ? "ground" :
                 a.branch == MovementAirDebug::Branch::Air ? "air" : "none";

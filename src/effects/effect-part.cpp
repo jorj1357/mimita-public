@@ -10,6 +10,7 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/game-modules.h"
 #include "hot-reload/hot-animation-selftest.h"
+#include "hot-reload/hot-movement-presets.h"
 #include "hot-reload/packages/collision/collision-abi.h"
 
 #include <algorithm>
@@ -92,6 +93,72 @@ void MIMITA_GAME_CALL gameUpdateEffects(
     }
 }
 
+// Movement-registry candidate self-test: every preset must be named and finite,
+// the active id must be valid, and the shared policies must be deterministic for
+// identical inputs. A malformed registry is rejected before activation so the
+// previous movement generation keeps running.
+bool movementPresetSelfTest(char* msg, std::uint32_t messageCapacity)
+{
+    using namespace MimitaHotMovement;
+
+    for (std::uint32_t i = 0; i < kMovementPresetCount; ++i) {
+        const MovementPreset& preset = kMovementPresets[i];
+        if (!preset.name || preset.name[0] == '\0') {
+            std::snprintf(msg, messageCapacity, "movement preset %u has no name", i);
+            return false;
+        }
+        const GameMovementTuningV1& t = preset.tuning;
+        if (!std::isfinite(t.walkSpeed) || !std::isfinite(t.groundSpeed) ||
+            !std::isfinite(t.airSpeed) || !std::isfinite(t.groundAcceleration) ||
+            !std::isfinite(t.airAcceleration) || !std::isfinite(t.gravityMagnitude) ||
+            !std::isfinite(t.jumpSpeed) || !std::isfinite(t.maxFallSpeed) ||
+            !std::isfinite(t.groundDashImpulse) ||
+            !std::isfinite(t.airDashImpulse) || !std::isfinite(t.downDashSpeed) ||
+            !std::isfinite(t.freezeDurationSeconds)) {
+            std::snprintf(msg, messageCapacity,
+                          "movement preset '%s' has a non-finite value", preset.name);
+            return false;
+        }
+        if (t.walkSpeed <= 0.0f || t.jumpSpeed <= 0.0f ||
+            t.maximumAirJumps > 8u || t.walkMode > kWalkModeSource) {
+            std::snprintf(msg, messageCapacity,
+                          "movement preset '%s' has an invalid value", preset.name);
+            return false;
+        }
+    }
+
+    if (static_cast<std::uint32_t>(kActiveMovementPreset) >= kMovementPresetCount) {
+        std::snprintf(msg, messageCapacity, "active movement preset id invalid");
+        return false;
+    }
+
+    // Determinism of the shared policies for identical inputs.
+    auto groundOnce = [](float out[2]) {
+        GameGroundMoveV1 g{};
+        g.velocity[0] = 5.0f;
+        g.velocity[1] = 1.0f;
+        g.wishDir[0] = 1.0f;
+        g.wishDir[1] = 0.0f;
+        g.wishSpeed = 20.0f;
+        g.groundAcceleration = 20.0f;
+        g.frictionAmount = 3.25f;
+        g.stopspeed = 1.0f;
+        g.dt = 1.0f / 60.0f;
+        g.hasInput = 1u;
+        MimitaHotMovement::groundMove(g, out);
+    };
+    float g1[2] = {0.0f, 0.0f};
+    float g2[2] = {0.0f, 0.0f};
+    groundOnce(g1);
+    groundOnce(g2);
+    if (g1[0] != g2[0] || g1[1] != g2[1] ||
+        !std::isfinite(g1[0]) || !std::isfinite(g1[1])) {
+        std::snprintf(msg, messageCapacity, "movement ground policy non-deterministic");
+        return false;
+    }
+    return true;
+}
+
 bool MIMITA_GAME_CALL gameSelfTest(GameSelfTestResult* out)
 {
     if (!out || out->structSize != sizeof(GameSelfTestResult))
@@ -154,21 +221,30 @@ bool MIMITA_GAME_CALL gameSelfTest(GameSelfTestResult* out)
         HotCollisionPackage::collisionPackageSelfTest(
             collisionPackageMessage,
             (std::uint32_t)sizeof(collisionPackageMessage));
-    const bool allOk = ok && animOk && collisionPackageOk;
+
+    // Movement-registry candidate self-test. A broken registry/policy is
+    // rejected before activation, keeping the previous generation live.
+    char movementMessage[MIMITA_GAME_SELFTEST_MESSAGE] = {0};
+    const bool movementOk = movementPresetSelfTest(
+        movementMessage, (std::uint32_t)sizeof(movementMessage));
+
+    const bool allOk = ok && animOk && collisionPackageOk && movementOk;
 
     out->passed = allOk ? 1u : 0u;
     out->checksum = allOk ? 0xEFFEC7001ull : 0ull;
     if (allOk)
         std::snprintf(out->message, sizeof(out->message), "%s",
-                      "effect + animation + collision-package invariants ok");
+                      "effect + animation + collision-package + movement invariants ok");
     else if (!ok)
         std::snprintf(out->message, sizeof(out->message), "%s",
                       "effect invariants invalid");
     else if (!animOk)
         std::snprintf(out->message, sizeof(out->message), "%s", animMessage);
-    else
+    else if (!collisionPackageOk)
         std::snprintf(out->message, sizeof(out->message), "%s",
                       collisionPackageMessage);
+    else
+        std::snprintf(out->message, sizeof(out->message), "%s", movementMessage);
     return allOk;
 }
 

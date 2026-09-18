@@ -1,9 +1,10 @@
-// 09 14 2026
+// 09 17 2026
 /* purpose
-* Hot grenade-launcher use behavior. Uses the canonical hot projectile path:
-* spawns a composition-driven projectile entity with bouncy fuse semantics
-* expressed purely as generic component data (bounce flag, restitution, fuse
-* lifetime, splash). No new path and no ProjectileType/WeaponType enum.
+* Hot grenade-launcher use behavior (family TOOL_BEHAVIOR_GRENADE). Uses the
+* canonical hot projectile path: spawns a composition-driven projectile entity
+* with bouncy fuse semantics expressed purely as generic component data. Live
+* values come from the tool definition params when present. Emits tool actions.
+* No new path and no ProjectileType/WeaponType enum.
 * Does NOT link into the EXE; only into the replaceable game DLL.
 */
 #if defined(MIMITA_GAME_DLL)
@@ -13,14 +14,29 @@
 #include "hot-reload/hot-prediction.h"
 #include "hot-reload/hot-projectile.h"
 #include "hot-reload/hot-presentation.h"
+#include "hot-reload/hot-tool-action.h"
+#include "hot-reload/hot-tool-state.h"
+#include "hot-reload/hot-tool-visual.h"
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
 // NETWORK_WEAPON_GRENADE_LAUNCHER value (see network/packets.h).
 constexpr std::uint64_t kGrenadeNetworkId = 7;
+
+float paramOr(const ToolDefinitionV1* def, const char* key, float fallback)
+{
+    if (!def || !def->params)
+        return fallback;
+    for (std::uint32_t i = 0; i < def->paramCount; ++i) {
+        if (def->params[i].key && std::strcmp(def->params[i].key, key) == 0)
+            return def->params[i].value;
+    }
+    return fallback;
+}
 
 void MIMITA_GAME_CALL grenadeUse(const ToolUsePolicyV1* use, GameplayContextV1* ctx)
 {
@@ -33,6 +49,26 @@ void MIMITA_GAME_CALL grenadeUse(const ToolUsePolicyV1* use, GameplayContextV1* 
 
     if (!ctx->entityCreate || !ctx->dynamicWriteComponent)
         return;
+
+    const std::uint64_t key = use->toolId != 0 ? use->toolId : use->toolNetworkId;
+    const ToolDefinitionV1* def = findToolDefinition(key);
+    const float speed = paramOr(def, "hotSpeed", 25.0f);
+    const float gravity = paramOr(def, "hotGravity", 22.0f);
+    const float fuse = paramOr(def, "hotLifetime", 2.5f);
+    const float radius = paramOr(def, "hotRadius", 0.18f);
+    const float impactDamage = paramOr(def, "hotImpactDamage", 30.0f);
+    const float splashRadius = paramOr(def, "hotSplashRadius", 4.0f);
+    const float splashDamage = paramOr(def, "hotSplashDamage", 90.0f);
+    const float restitution = paramOr(def, "hotRestitution", 0.45f);
+
+    ToolActionEventV1 accepted{};
+    accepted.actorEntity = use->userEntity;
+    accepted.toolEntity = use->toolEntity;
+    accepted.toolId = key;
+    accepted.behaviorId = TOOL_BEHAVIOR_GRENADE;
+    accepted.action = TOOL_ACTION_PRIMARY_ACCEPTED;
+    accepted.simulationTick = use->tick;
+    emitToolAction(ctx, accepted);
 
     float dx = use->direction[0], dy = use->direction[1], dz = use->direction[2];
     const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -48,22 +84,23 @@ void MIMITA_GAME_CALL grenadeUse(const ToolUsePolicyV1* use, GameplayContextV1* 
     proj.position[0] = use->origin[0];
     proj.position[1] = use->origin[1];
     proj.position[2] = use->origin[2];
-    proj.velocity[0] = dx * 25.0f;
-    proj.velocity[1] = dy * 25.0f;
-    proj.velocity[2] = dz * 25.0f + 1.0f;
-    proj.gravity = 22.0f;
-    proj.lifetime = 2.5f;      // fuse
-    proj.radius = 0.18f;
-    proj.impactDamage = 30.0f;
-    proj.splashRadius = 4.0f;
-    proj.splashDamage = 90.0f;
+    proj.velocity[0] = dx * speed;
+    proj.velocity[1] = dy * speed;
+    proj.velocity[2] = dz * speed + 1.0f;
+    proj.gravity = gravity;
+    proj.lifetime = fuse;
+    proj.radius = radius;
+    proj.impactDamage = impactDamage;
+    proj.splashRadius = splashRadius;
+    proj.splashDamage = splashDamage;
     proj.splashExponent = 1.6f;
     proj.knockbackStrength = 10.0f;
     proj.selfDamageMultiplier = 0.2f;
     proj.fullDamageRadius = 1.2f;
-    proj.restitution = 0.45f;
+    proj.restitution = restitution;
     proj.maxBounces = 3;
     proj.ownerEntity = use->userEntity;
+    proj.toolEntity = use->toolEntity;
     proj.typeId = kGrenadeNetworkId;
     proj.flags = HOT_PROJECTILE_BOUNCE_ON_WORLD |
                  HOT_PROJECTILE_EXPLODE_ON_WORLD |
@@ -103,12 +140,32 @@ void MIMITA_GAME_CALL grenadeUse(const ToolUsePolicyV1* use, GameplayContextV1* 
         ctx->relationshipAdd(ctx->host, gameHash("relationship.fired-projectile"),
                              use->userEntity, projectileEntity, kGrenadeNetworkId);
 
-    std::printf("[GRENADE.TOOL] hot projectile entity=%llu owner=%u\n",
-                (unsigned long long)projectileEntity, (unsigned)use->ownerId);
+    if (use->toolEntity != 0 && ctx->dynamicReadComponent &&
+        ctx->dynamicWriteComponent) {
+        ToolInstanceStateV1 st = toolStateEnsure(
+            ctx, use->toolEntity, key, def ? def->magazineSize : 0,
+            def ? def->reserveAmmo : -1, use->userEntity);
+        st.cooldownRemaining = def ? def->fireDelay : 0.6f;
+        toolStateWrite(ctx, use->toolEntity, st);
+    }
+
+    ToolActionEventV1 fired = accepted;
+    fired.action = TOOL_ACTION_FIRED;
+    fired.direction[0] = dx; fired.direction[1] = dy; fired.direction[2] = dz;
+    emitToolAction(ctx, fired);
+
+    char msg[GAME_LOG_MESSAGE];
+    std::snprintf(msg, sizeof(msg),
+                  "grenade spawned entity=%llu speed=%.1f fuse=%.2f splash=%.1f",
+                  (unsigned long long)projectileEntity, speed, fuse, splashDamage);
+    toolLogEvent(ctx, 2, "tool.grenade", msg, "fired", projectileEntity,
+                 use->userEntity, 1, use->tick);
 }
 
 } // namespace
 
+const MimitaHotPackage::BehaviorIdRegistrar s_grenadeBehavior{
+    TOOL_BEHAVIOR_GRENADE, grenadeUse};
 const MimitaHotPackage::ToolBehaviorRegistrar s_grenadeTool{kGrenadeNetworkId,
                                                             grenadeUse};
 

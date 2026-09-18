@@ -12,8 +12,49 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/hot-tool-action.h"
+#include "hot-reload/hot-tool-visual.h"
+
+#include <cstdio>
 
 namespace {
+
+// Resolve the shared behavior for a tool use. Priority:
+//   1. a behavior registered directly under the runtime key (behaviorId == key)
+//   2. the tool definition's named behaviorId (many tools share one behavior)
+//   3. the legacy per-tool behavior table
+// Returns null when no hot behavior owns the use, so the cold path runs.
+HotToolUseFn resolveToolUseBehavior(std::uint64_t key, const char** outSource)
+{
+    if (outSource)
+        *outSource = "none";
+    if (key == 0)
+        return nullptr;
+    if (HotToolUseFn fn = HotPackageBuilder::instance().findBehavior(key)) {
+        if (outSource)
+            *outSource = "behavior-id";
+        return fn;
+    }
+    // Resolve the recipe for hash keys, or the projectile recipe for numeric
+    // network keys (5=rocket, 7=grenade) so definitions dispatch by behaviorId.
+    const ToolVisualRecipeV1* recipe = findToolVisual(key);
+    if (!recipe)
+        recipe = findProjectileVisual(key);
+    if (recipe && recipe->definition.behaviorId != 0) {
+        if (HotToolUseFn fn = HotPackageBuilder::instance().findBehavior(
+                recipe->definition.behaviorId)) {
+            if (outSource)
+                *outSource = "definition.behaviorId";
+            return fn;
+        }
+    }
+    if (HotToolUseFn fn = HotPackageBuilder::instance().findToolBehavior(key)) {
+        if (outSource)
+            *outSource = "per-tool";
+        return fn;
+    }
+    return nullptr;
+}
 
 void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
 {
@@ -22,11 +63,45 @@ void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
     if (!context || !use)
         return;
     const std::uint64_t key = use->toolId != 0 ? use->toolId : use->toolNetworkId;
-    HotToolUseFn behavior = HotPackageBuilder::instance().findToolBehavior(key);
-    if (!behavior)
-        return;  // no hot behavior: cold fire path owns this use
+    const char* source = "none";
+    HotToolUseFn behavior = resolveToolUseBehavior(key, &source);
+    if (!behavior) {
+        // No hot owner: the cold fire path keeps ownership (handled stays 0).
+        char msg[GAME_LOG_MESSAGE];
+        std::snprintf(msg, sizeof(msg), "tool=%llu no hot behavior; cold owns",
+                      (unsigned long long)key);
+        toolLogEvent(context, 1, "tool.route", msg, "cold", use->toolEntity,
+                     use->userEntity, 1, use->tick);
+        return;
+    }
+    // Phase-0 execution opt-in. A definition that names a behavior is not yet
+    // migrated until its flag says so; until then the cold attack path stays
+    // authoritative. Definitions found by hash key or numeric family id.
+    const ToolVisualRecipeV1* recipe = findToolVisual(key);
+    if (!recipe)
+        recipe = findToolVisualByNetworkId(key);
+    if (recipe && recipe->definition.behaviorId != 0 &&
+        (recipe->definition.toolFlags & TOOL_FLAG_OWNS_EXECUTION) == 0) {
+        char msg[GAME_LOG_MESSAGE];
+        std::snprintf(msg, sizeof(msg),
+                      "tool=%llu definition has not opted into hot execution; "
+                      "cold owns",
+                      (unsigned long long)key);
+        toolLogEvent(context, 1, "tool.route", msg, "cold-not-migrated",
+                     use->toolEntity, use->userEntity, 1, use->tick);
+        return;  // handled stays 0 so the cold path runs
+    }
+
     use->handled = 1;
     use->outFire = use->baseFire;
+    {
+        char msg[GAME_LOG_MESSAGE];
+        std::snprintf(msg, sizeof(msg),
+                      "tool=%llu behavior resolved by %s (tick=%u)",
+                      (unsigned long long)key, source, (unsigned)use->tick);
+        toolLogEvent(context, 1, "tool.route", msg, "hot", use->toolEntity,
+                     use->userEntity, 1, use->tick);
+    }
     behavior(use, context);
 
     // Generic handling record: the actor's action was handled by hot code this

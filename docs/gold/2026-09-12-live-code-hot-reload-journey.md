@@ -228,4 +228,5 @@ See `docs/architecture/live-development/hot-kernel-next-steps.md`. The order:
 - `docs/architecture/live-development/hot-kernel.md`
 - `docs/architecture/live-development/hot-kernel-next-steps.md`
 - `docs/gold/2026-09-12-live-jsonl-ai-observability.md`
+- `docs/gold/2026-09-18-live-editing-collisions-and-jsonl-observability.md`
 - `docs/features/live-code-development/live-code-development.md`

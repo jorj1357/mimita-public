@@ -15,8 +15,9 @@
 
 #include <nlohmann/json.hpp>
 
-#include "config/movement-config.h"
 #include "debug/debug-log.h"
+#include "hot-reload/hot-movement-presets.h"
+#include "physics/movement/movement-conversion.h"
 
 using json = nlohmann::json;
 
@@ -160,25 +161,20 @@ bool NpcDifficultyConfig::load(const std::string& path)
         // any other value resolves a preset from config/movement/*.json.
         next.movementPreset = "follow";
         mHasNpcMovement = false;
-        mNpcPresetPath.clear();
-        mNpcPresetWrite = {};
         if (root.contains("movementPreset") && root["movementPreset"].is_string())
         {
             const std::string preset = lowercaseCopy(root["movementPreset"].get<std::string>());
             if (!preset.empty() && preset != "follow")
             {
-                MovementConfig npcCfg;
-                std::string npcPath;
-                if (MovementJsonConfig::instance().loadPresetInto(preset, npcCfg, &npcPath))
+                if (MimitaHotMovement::movementPresetNameExists(preset.c_str()))
                 {
                     next.movementPreset = preset;
-                    mNpcMovement = npcCfg;
+                    mNpcMovement = makeMovementConfigForPreset(static_cast<std::uint32_t>(
+                        MimitaHotMovement::movementPresetIdFromName(preset.c_str())));
                     mHasNpcMovement = true;
-                    mNpcPresetPath = npcPath;
-                    mNpcPresetWrite = getLastWrite(npcPath);
                     Debug::warn(Debug::Category::NpcCombat,
-                        "[NPC DIFFICULTY] NPC movement preset: %s (%s)\n",
-                        preset.c_str(), npcPath.c_str());
+                        "[NPC DIFFICULTY] NPC movement preset: %s (hot C++ registry)\n",
+                        preset.c_str());
                 }
                 else
                 {
@@ -218,18 +214,6 @@ bool NpcDifficultyConfig::load(const std::string& path)
 
 bool NpcDifficultyConfig::pollReload()
 {
-    if (mHasNpcMovement && !mNpcPresetPath.empty())
-    {
-        const auto npcWrite = getLastWrite(mNpcPresetPath);
-        if (npcWrite != mNpcPresetWrite)
-        {
-            Debug::warn(Debug::Category::NpcCombat,
-                "[NPC DIFFICULTY] NPC movement preset changed on disk: %s\n",
-                fileNameOf(mNpcPresetPath).c_str());
-            return load(mPath);
-        }
-    }
-
     const auto writeTime = getLastWrite(mPath);
     if (writeTime == std::filesystem::file_time_type{} || writeTime == mLastWrite)
         return false;

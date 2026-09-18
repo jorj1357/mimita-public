@@ -39,6 +39,12 @@ public:
     {
         toolBehaviors_.push_back({toolId, fn});
     }
+    // Shared behavior family: many tool definitions may name one behaviorId.
+    // The router prefers this table over the per-tool table.
+    void addBehavior(std::uint64_t behaviorId, HotToolUseFn fn)
+    {
+        behaviors_.push_back({behaviorId, fn});
+    }
     void addProjectileBehavior(std::uint64_t typeId, HotProjectileImpactFn fn)
     {
         projectileBehaviors_.push_back({typeId, fn});
@@ -47,6 +53,13 @@ public:
     {
         for (const auto& entry : toolBehaviors_)
             if (entry.id == toolId)
+                return entry.fn;
+        return nullptr;
+    }
+    HotToolUseFn findBehavior(std::uint64_t behaviorId) const
+    {
+        for (const auto& entry : behaviors_)
+            if (entry.id == behaviorId)
                 return entry.fn;
         return nullptr;
     }
@@ -128,6 +141,7 @@ private:
     struct ToolBehaviorEntry { std::uint64_t id; HotToolUseFn fn; };
     struct ProjectileBehaviorEntry { std::uint64_t id; HotProjectileImpactFn fn; };
     std::vector<ToolBehaviorEntry> toolBehaviors_;
+    std::vector<ToolBehaviorEntry> behaviors_;
     std::vector<ProjectileBehaviorEntry> projectileBehaviors_;
     GamePackageDescriptorV1 descriptor_{};
     std::uint64_t packageId_ = gameHash("mimita.hot.package");
@@ -199,6 +213,14 @@ struct ToolBehaviorRegistrar {
     ToolBehaviorRegistrar(std::uint64_t toolId, HotToolUseFn fn)
     {
         HotPackageBuilder::instance().addToolBehavior(toolId, fn);
+    }
+};
+// Registers a shared behavior family keyed by behaviorId (see
+// hot-tool-visual.h TOOL_BEHAVIOR_*). A tool definition names this id.
+struct BehaviorIdRegistrar {
+    BehaviorIdRegistrar(std::uint64_t behaviorId, HotToolUseFn fn)
+    {
+        HotPackageBuilder::instance().addBehavior(behaviorId, fn);
     }
 };
 struct ProjectileBehaviorRegistrar {
