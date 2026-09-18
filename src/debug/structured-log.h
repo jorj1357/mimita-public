@@ -1,10 +1,14 @@
-// 07 20 2026, 19 43
+// 09 17 2026
 /* purpose
-* Declares the structured debug logging API and configuration types.
-* Provides category, level, throttling, and structured field definitions.
-* Shares logger entry points used by gameplay, networking, and diagnostics.
+* Declares the single authoritative debug output API.
+* One append-only JSONL stream (`events.jsonl`) per process run is the complete
+* debug record; the legacy Debug/terminal/printf paths bridge into it.
+* Provides the generic subsystem-neutral `debug::logEvent` API so any system
+* (collision, GUI, audio, weapons, animation, poses, networking, server/client
+* state, NPCs, players, actors, hot reload, future systems) can emit events
+* without adding new logger functions. Also keeps the legacy StructuredLogger
+* surface compiling while call sites migrate gradually.
 * Does NOT own gameplay decisions, rendering, audio, or networking transport.
-* Does NOT replace the lightweight Debug log facade.
 * Does NOT define checker policy or task completion behavior.
 */
 
@@ -18,18 +22,72 @@
 #include <glm/gtc/quaternion.hpp>
 #include <cstdarg>
 #include <cstdio>
+#include <nlohmann/json.hpp>
 
-// ── Structured debug logger ─────────────────────────────────
-// Extends the existing Debug::log system with:
-//   - hot-reloadable JSON config (config/debuglogger.json)
-//   - per-category log levels (OFF/ERRORS/IMPORTANT/VERBOSE/TRACE)
-//   - per-category separate log files
-//   - structured fields: event ID, correlation ID, tick, frame
-//   - numeric assertions with tolerance
-//   - throttling and per-N-frame sampling
-//   - startup metadata
-//   - summary file generation
+// ── Generic event API (the authoritative surface) ───────────────────────────
+namespace debug {
 
+enum class Level {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Fatal
+};
+
+struct Event {
+    std::string category;   // e.g. "COLLISION"
+    std::string name;       // e.g. "collision.resolved"
+    Level level = Level::Info;
+    std::string message;
+    std::string reason;
+    std::string correlationId;
+
+    nlohmann::json fields = nlohmann::json::object();
+
+    uint64_t frame = 0;
+    uint64_t simulationTick = 0;
+    uint64_t serverTick = 0;
+    uint64_t clientTick = 0;
+    uint64_t durationUs = 0;
+
+    // Caller-provided aggregation key. When empty the logger derives a stable
+    // key from category + name + stable identity fields.
+    std::string aggregationKey;
+
+    // Provenance, filled automatically by MIMITA_EVENT; callers normally leave
+    // these empty.
+    std::string sourceFile;
+    int sourceLine = 0;
+    std::string functionName;
+};
+
+// Emit one event into the process run's events.jsonl stream.
+void logEvent(const Event& event);
+
+    // Force any pending repeat-bucket summaries to flush.
+    void flushEvents();
+
+
+// True when the logger is initialized and the category/level is enabled.
+bool eventsEnabled(const std::string& category, Level level);
+
+// The active events.jsonl path (empty when not initialized).
+std::string eventsPath();
+
+} // namespace debug
+
+// Convenience macro that captures provenance automatically.
+#define MIMITA_EVENT(ev) do { \
+    ::debug::Event _ev__ = (ev); \
+    _ev__.sourceFile = __FILE__; \
+    _ev__.sourceLine = __LINE__; \
+    _ev__.functionName = __FUNCTION__; \
+    ::debug::logEvent(_ev__); \
+} while (0)
+
+// ── Legacy structured levels/categories (compatibility) ─────────────────────
 enum class StructuredLevel {
     Off = 0,
     Errors,
@@ -41,14 +99,19 @@ enum class StructuredLevel {
 struct StructuredLogConfig {
     bool enabled = true;
     bool hotReload = true;
-    bool consoleOutput = true;
-    bool summaryFile = true;
+    // Legacy name kept for compatibility; maps to console_mirror.
+    bool consoleOutput = false;
+    bool summaryFile = false;
+    bool eventsFile = true;
+    bool consoleMirror = false;
+    bool flushEachEvent = true;
+    float repeatWindowSeconds = 1.0f;
     StructuredLevel defaultLevel = StructuredLevel::Off;
 
     struct CategoryConfig {
         StructuredLevel level = StructuredLevel::Off;
         bool fileOutput = true;
-        float throttleSeconds = 0.0f; // 0 = no throttle; >0 = buffer and flush at this rate
+        float throttleSeconds = 0.0f;
     };
 
     CategoryConfig general;
@@ -133,20 +196,22 @@ enum class StructuredCategory {
     Count
 };
 
-// ── StructuredLogger ────────────────────────────────────────
-// Singleton. Owns config, category files, event counters.
+// ── StructuredLogger (compatibility facade) ─────────────────────────────────
+// Owns config, the single events.jsonl handle, sequence, and repeat buckets.
+// The legacy Entry/write path now emits one JSONL record per message.
 class StructuredLogger {
 public:
     static StructuredLogger& instance();
 
-    // Init: read config, create log dirs, write startup metadata
+    // Init: read config, create the run directory, open events.jsonl, emit
+    // `logger.started`, flush.
     void init();
-    // Shutdown: flush files, write summary, close handles
+    // Shutdown: flush repeat buckets, emit `logger.stopped`, flush, close.
     void shutdown();
-    // Poll config file for hot-reload
+    // Poll the config file for hot-reload.
     void pollConfig();
 
-    // ── Structured log entry ──────────────────────────────
+    // ── Legacy structured log entry ───────────────────────
     struct Entry {
         StructuredCategory category;
         StructuredLevel level;
@@ -158,7 +223,6 @@ public:
         std::string functionName;
         uint32_t tick = 0;
         uint32_t frame = 0;
-        // Numeric fields (key, expected, actual)
         std::vector<std::string> numericKeys;
         std::vector<double> numericExpected;
         std::vector<double> numericActual;
@@ -166,7 +230,6 @@ public:
         std::string message;
     };
 
-    // Write a structured entry
     void write(const Entry& e);
 
     void writeFormatted(StructuredCategory category, StructuredLevel level,
@@ -176,10 +239,9 @@ public:
                          const char* sourceFile, int sourceLine,
                          const char* functionName, const char* format, va_list args);
 
-    // Tick: flush throttled buffers
+    // Tick: flush time-expired repeat buckets.
     void tick();
 
-    // Convenience: numeric assertion
     void assertNear(const std::string& eventId, const std::string& correlationId,
                     const std::string& reason, StructuredCategory cat,
                     const std::string& sourceFile, int sourceLine,
@@ -187,15 +249,40 @@ public:
                     const std::string& key, double expected, double actual,
                     double tolerance, uint32_t tick = 0, uint32_t frame = 0);
 
-    // Check if a category/level should be logged
     bool shouldLog(StructuredCategory cat, StructuredLevel level) const;
 
-    // Get the config (for validation tolerances etc.)
     const StructuredLogConfig& config() const { return mConfig; }
 
-    // Public accessors for performance profiler routing
     const std::string& logDir() const { return mLogDir; }
     const std::string& runId() const { return mRunId; }
+
+    // The authoritative JSONL path for this run.
+    const std::string& eventsPath() const { return mEventsPath; }
+
+    // ── Internal writer surface used by debug::logEvent ─────
+    // Emits one JSONL record with universal fields and aggregation. Public so
+    // the free `debug::logEvent` function can reach it without friendship.
+    void emit(const debug::Event& event, bool forceNoAggregate = false);
+
+    // Flush every pending repeat bucket (used by debug::flushEvents).
+    void flushAllBuckets();
+
+    // Category/level gate over the string-keyed config map.
+    bool categoryEnabled(const std::string& category, debug::Level level) const;
+
+    // ── Repeat aggregation state ────────────────────────────
+    struct RepeatBucket {
+        bool active = false;
+        std::string key;
+        std::string category;
+        std::string event;
+        nlohmann::json sample = nlohmann::json::object();
+        uint64_t count = 0;
+        double firstTime = 0.0;
+        double lastTime = 0.0;
+        uint64_t firstTick = 0;
+        uint64_t lastTick = 0;
+    };
 
 private:
     StructuredLogger() = default;
@@ -204,43 +291,36 @@ private:
     StructuredLogger& operator=(const StructuredLogger&) = delete;
 
     void loadConfig();
-    void createLogDir();
-    void openCategoryFile(StructuredCategory cat);
-    void writeStartupMetadata();
-    void writeSummary();
+    void createRunDir();
     std::string categoryName(StructuredCategory cat) const;
     StructuredLevel levelFromString(const std::string& s) const;
     std::string levelToString(StructuredLevel lvl) const;
-    std::string categoryDirName(StructuredCategory cat) const;
-    std::string timestamp() const;
-    std::string runTimestamp() const;
+    std::string debugLevelToString(debug::Level lvl) const;
+    const StructuredLogConfig::CategoryConfig& categoryConfigFor(StructuredCategory cat) const;
+    void writeLine(const std::string& json);
+    void flushBucket(RepeatBucket& bucket);
+    std::string buildRecord(const debug::Event& event) const;
 
     StructuredLogConfig mConfig;
     bool mInitialized = false;
-    std::string mLogDir;       // logs/YYYY-MM-DD/
-    std::string mRunId;        // HHMMSS used for all files this run
-    uint64_t mEventCounters[(int)StructuredCategory::Count] = {};
+    std::string mLogDir;       // logs/yyyy-mm-dd/hhmmss/
+    std::string mRunId;        // hhmmss used for this run
+    std::string mEventsPath;   // <mLogDir>/events.jsonl
+    FILE* mEventsFile = nullptr;
+    uint64_t mSequence = 0;
+    double mStartTime = 0.0;
 
-    // Category file handles (nullptr = not open for this run)
-    FILE* mCategoryFiles[(int)StructuredCategory::Count] = {};
+    // String-keyed category levels from config (uppercase keys).
+    std::unordered_map<std::string, StructuredLevel> mCategoryLevels;
 
-    // Config file tracking for hot-reload
+    // Active repeat buckets, bounded. Keyed by aggregation key.
+    std::unordered_map<std::string, RepeatBucket> mBuckets;
+
     uint64_t mConfigLastWrite = 0;
     int mConfigReloadErrors = 0;
-
-    // ── Per-category throttled buffers ────────────────────────────
-    struct ThrottledBuffer {
-        std::vector<std::string> lines;     // accumulated formatted lines
-        std::vector<std::string> consoleLines; // accumulated console lines
-        double lastFlushTime = 0.0;
-    };
-    std::unordered_map<int, ThrottledBuffer> mThrottledBuffers;
-    void flushThrottled(int catIdx);
 };
 
 // ── Convenience: structured log with formatted message ─────────────
-// Builds an Entry with the given event/correlation IDs and writes it only if
-// the category/level is enabled (avoids the variadic-macro pitfalls).
 inline void logStructured(StructuredCategory cat, StructuredLevel level,
                           const std::string& eventId,
                           const std::string& correlationId,
@@ -255,6 +335,9 @@ inline void logStructured(StructuredCategory cat, StructuredLevel level,
     e.eventId = eventId;
     e.correlationId = correlationId;
     e.reason = reason;
+    e.sourceFile = "";
+    e.sourceLine = 0;
+    e.functionName = "";
     e.message = message;
     StructuredLogger::instance().write(e);
 }
@@ -281,26 +364,21 @@ struct AudioBufferAnalysis {
     std::vector<double> lastSamples;
 };
 
-// Analyze a float audio buffer and return metrics.
-// channels must be 1 or 2. For stereo, left/right are analyzed separately.
 AudioBufferAnalysis analyzeAudioBuffer(
     const std::vector<float>& buffer, uint32_t frameCount,
     uint16_t channels, uint32_t sampleRate,
     uint32_t discontinuityThreshold = 0.8f);
 
-// Analyze an int16 audio buffer (same interface).
 AudioBufferAnalysis analyzeAudioBuffer(
     const std::vector<int16_t>& buffer, uint32_t frameCount,
     uint16_t channels, uint32_t sampleRate,
     uint32_t discontinuityThreshold = 0x7FFF);
 
-// Convenient: log an audio buffer analysis to a category
 void logAudioAnalysis(StructuredCategory cat, StructuredLevel level,
     const std::string& eventId, const std::string& correlationId,
     const std::string& stage, const AudioBufferAnalysis& analysis);
 
-// ── Convenience macros ──────────────────────────────────────
-// These capture __FILE__, __LINE__, __FUNCTION__ automatically.
+// ── Convenience macros (legacy) ─────────────────────────────
 
 #define MIMITA_LOG(cat, level, eventId, correlationId, reason, ...) do { \
     if (::StructuredLogger::instance().shouldLog(cat, level)) { \

@@ -16,6 +16,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-movement-fired.h"
+#include "hot-reload/packages/collision/collision-log.h"
 #include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/packages/collision/collision-abi.h"
@@ -217,6 +218,37 @@ void buildPlayerCollision(
     }
 }
 
+// ── Live collision diagnostics (events.jsonl) ───────────────────────────────
+// One throttled record per second for the branch that did NOT solve, so a
+// missing capability or a declined solve is visible while the game runs.
+struct MovementBranchLog {
+    float sinceLogSeconds = 0.0f;
+};
+MovementBranchLog& movementBranchLog()
+{
+    static MovementBranchLog b;
+    return b;
+}
+
+void logMovementBranch(GameplayContextV1* ctx, const char* why,
+                       const MovementStateV1* st, std::uint64_t entity,
+                       std::uint64_t tick)
+{
+    MovementBranchLog& b = movementBranchLog();
+    b.sinceLogSeconds += 1.0f / 60.0f;
+    if (b.sinceLogSeconds < 1.0f)
+        return;
+    char msg[224];
+    std::snprintf(msg, sizeof(msg),
+                  "branch=%s entity=%llu pos=(%.2f %.2f %.2f) vz=%.2f",
+                  why, (unsigned long long)entity, st->position[0],
+                  st->position[1], st->position[2], st->velocity[2]);
+    HotCollisionPackage::collisionLogResult(ctx, 3u, "COLLISION",
+                                            "movement.collision", msg, why,
+                                            tick);
+    b.sinceLogSeconds = 0.0f;
+}
+
 // Collision is owned by exactly one system: the collision package
 // (`collision.main`). There is no second in-DLL solver; if the package is not
 // available the actor keeps its plain-integrated velocity for one tick rather
@@ -234,11 +266,15 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
             st->position[i] += st->velocity[i] * dt;
         st->grounded = 0;
         st->collided = 0;
+        // The package capability is missing: no collision owner at all.
+        logMovementBranch(ctx, "no_capability", st, entity, tick);
         return;
     }
     CollisionSolveV1 q;
     buildPlayerCollision(ctx, st, dt, entity, tick, q);
-    fn(ctx->host, &q);
+    // The collision package resolves capabilities from the gameplay context, so
+    // it receives `ctx` (the context), not `ctx->host` (the opaque kernel host).
+    fn(ctx, &q);
     if (!q.handled) {
         // Package could not solve (for example the world is not bound yet):
         // integrate plainly and state the result explicitly, so grounded is
@@ -247,6 +283,7 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
             st->position[i] += st->velocity[i] * dt;
         st->grounded = 0;
         st->collided = 0;
+        logMovementBranch(ctx, "declined", st, entity, tick);
         return;
     }
     for (int i = 0; i < 3; ++i) {
@@ -255,6 +292,23 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
     }
     st->grounded = q.grounded;
     st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
+
+    // Throttled branch record: proves which owner ran and the collider count
+    // that was actually sent (capsule + resolved body parts).
+    MovementBranchLog& b = movementBranchLog();
+    b.sinceLogSeconds += dt;
+    if (b.sinceLogSeconds >= 1.0f) {
+        char msg[224];
+        std::snprintf(msg, sizeof(msg),
+                      "branch=solved colliders=%u parts=%u grounded=%u worldContact=%u "
+                      "pos=(%.2f %.2f %.2f) vz=%.2f",
+                      q.colliderCount, q.colliderCount > 0 ? q.colliderCount - 1 : 0,
+                      q.grounded, q.worldContact, q.outPosition[0],
+                      q.outPosition[1], q.outPosition[2], q.outVelocity[2]);
+        collisionLogResult(ctx, 2u, "COLLISION", "movement.collision",
+                           msg, "solved", tick);
+        b.sinceLogSeconds = 0.0f;
+    }
 }
 
 // Effects are one generic spawn descriptor resolved by id; movement just emits

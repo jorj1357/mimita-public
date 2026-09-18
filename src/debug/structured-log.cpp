@@ -1,8 +1,21 @@
+// 09 17 2026
+/* purpose
+* Implements the single authoritative debug output: one append-only JSONL file
+* (`events.jsonl`) per process run under logs/yyyy-mm-dd/hhmmss/.
+* Formatting, universal fields, immediate flushing, bounded duplicate
+* aggregation, and hot-reloadable category levels all live here.
+* The legacy Debug/terminal/printf bridges feed the same stream; there is no
+* second authoritative file and no per-category .txt output.
+* Does NOT own gameplay, rendering, audio, or networking.
+*/
+
 #include "structured-log.h"
 #include "debug-log.h"
 #include "log-manager.h"
+#include "live-code/live-identity.h"
 #include "../config.h"
 #include "../utils/path_utils.h"
+#include "../utils/time-format.h"
 
 #include <algorithm>
 #include <chrono>
@@ -10,17 +23,53 @@
 #include <cstring>
 #include <ctime>
 #include <windows.h>
+#include <share.h>
 #include <filesystem>
 #include <fstream>
-#include <unordered_map>
+#include <mutex>
 #include <nlohmann/json.hpp>
 
 namespace {
-double nowSeconds() {
+
+// Bound the number of live repeat buckets so low-priority spam cannot grow
+// memory without limit.
+constexpr std::size_t MAX_ACTIVE_BUCKETS = 512;
+
+double steadySeconds() {
     static const auto start = std::chrono::steady_clock::now();
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
+
+std::string escapeJson(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 8);
+    for (char c : value) {
+        switch (c) {
+        case '\\': out += "\\\\"; break;
+        case '"':  out += "\\\""; break;
+        case '\n': out += "\\n";  break;
+        case '\r': out += "\\r";  break;
+        case '\t': out += "\\t";  break;
+        default:
+            if (static_cast<unsigned char>(c) < 0x20) {
+                char buf[8]{};
+                std::snprintf(buf, sizeof(buf), "\\u%04x", c & 0xff);
+                out += buf;
+            } else {
+                out += c;
+            }
+            break;
+        }
+    }
+    return out;
 }
+
+std::mutex& logMutex() {
+    static std::mutex m;
+    return m;
+}
+
+} // namespace
 
 // ── Singleton ───────────────────────────────────────────────
 
@@ -34,38 +83,6 @@ StructuredLogger::~StructuredLogger() {
 }
 
 // ── Helpers ─────────────────────────────────────────────────
-
-std::string StructuredLogger::timestamp() const {
-    auto now = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
-    std::tm local{};
-#ifdef _WIN32
-    localtime_s(&local, &t);
-#else
-    localtime_r(&t, &local);
-#endif
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%H:%M:%S", &local);
-    std::string result = buf;
-    result += "." + std::to_string(ms.count());
-    return result;
-}
-
-std::string StructuredLogger::runTimestamp() const {
-    auto now = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(now);
-    std::tm local{};
-#ifdef _WIN32
-    localtime_s(&local, &t);
-#else
-    localtime_r(&t, &local);
-#endif
-    char buf[16];
-    std::strftime(buf, sizeof(buf), "%H%M%S", &local);
-    return buf;
-}
 
 std::string StructuredLogger::categoryName(StructuredCategory cat) const {
     switch (cat) {
@@ -94,47 +111,12 @@ std::string StructuredLogger::categoryName(StructuredCategory cat) const {
         case StructuredCategory::GlbModels:       return "GLB_MODELS";
         case StructuredCategory::Executable:      return "EXECUTABLE";
         case StructuredCategory::GrenadeLauncher: return "GRENADE_LAUNCHER";
-        case StructuredCategory::Healthbar:        return "HEALTHBAR";
-        case StructuredCategory::Skybox:           return "SKYBOX";
+        case StructuredCategory::Healthbar:       return "HEALTHBAR";
+        case StructuredCategory::Skybox:          return "SKYBOX";
         case StructuredCategory::ChatLayout:      return "CHAT_LAYOUT";
         case StructuredCategory::Count:           return "COUNT";
     }
     return "UNKNOWN";
-}
-
-std::string StructuredLogger::categoryDirName(StructuredCategory cat) const {
-    switch (cat) {
-        case StructuredCategory::General:         return "General";
-        case StructuredCategory::Glb:             return "GLB";
-        case StructuredCategory::Replay:          return "Replay";
-        case StructuredCategory::Camera:          return "Camera";
-        case StructuredCategory::Audio:           return "Audio";
-        case StructuredCategory::Physics:         return "Physics";
-        case StructuredCategory::Performance:     return "Performance";
-        case StructuredCategory::Collision:       return "Collisions";
-        case StructuredCategory::NpcCombat:       return "NPCCombat";
-        case StructuredCategory::NpcMovement:     return "NPCMovement";
-        case StructuredCategory::Ragdoll:         return "Ragdoll";
-        case StructuredCategory::Weapons:         return "Weapons";
-        case StructuredCategory::Animation:       return "Animation";
-        case StructuredCategory::Gui:             return "GUI";
-        case StructuredCategory::Avatar:          return "Avatar";
-        case StructuredCategory::Network:         return "Network";
-        case StructuredCategory::World:           return "World";
-        case StructuredCategory::Duel:            return "Duel";
-        case StructuredCategory::Auth:            return "Auth";
-        case StructuredCategory::Chat:            return "Chat";
-        case StructuredCategory::Vip:             return "Vip";
-        case StructuredCategory::Rendering:       return "Rendering";
-        case StructuredCategory::GlbModels:       return "GLBModels";
-        case StructuredCategory::Executable:      return "Executable";
-        case StructuredCategory::GrenadeLauncher: return "GrenadeLauncher";
-        case StructuredCategory::Healthbar:        return "Healthbar";
-        case StructuredCategory::Skybox:           return "Skybox";
-        case StructuredCategory::ChatLayout:       return "ChatLayout";
-        case StructuredCategory::Count:            return "Count";
-    }
-    return "Unknown";
 }
 
 StructuredLevel StructuredLogger::levelFromString(const std::string& s) const {
@@ -157,6 +139,54 @@ std::string StructuredLogger::levelToString(StructuredLevel lvl) const {
     return "OFF";
 }
 
+std::string StructuredLogger::debugLevelToString(debug::Level lvl) const {
+    switch (lvl) {
+        case debug::Level::Trace: return "TRACE";
+        case debug::Level::Debug: return "DEBUG";
+        case debug::Level::Info:  return "INFO";
+        case debug::Level::Warn:  return "WARN";
+        case debug::Level::Error: return "ERROR";
+        case debug::Level::Fatal: return "FATAL";
+    }
+    return "INFO";
+}
+
+const StructuredLogConfig::CategoryConfig&
+StructuredLogger::categoryConfigFor(StructuredCategory cat) const {
+    switch (cat) {
+        case StructuredCategory::General:         return mConfig.general;
+        case StructuredCategory::Glb:             return mConfig.glb;
+        case StructuredCategory::Replay:          return mConfig.replay;
+        case StructuredCategory::Camera:          return mConfig.camera;
+        case StructuredCategory::Audio:           return mConfig.audio;
+        case StructuredCategory::Physics:         return mConfig.physics;
+        case StructuredCategory::Performance:     return mConfig.performance;
+        case StructuredCategory::Collision:       return mConfig.collision;
+        case StructuredCategory::NpcCombat:       return mConfig.npcCombat;
+        case StructuredCategory::NpcMovement:     return mConfig.npcMovement;
+        case StructuredCategory::Ragdoll:         return mConfig.ragdoll;
+        case StructuredCategory::Weapons:         return mConfig.weapons;
+        case StructuredCategory::Animation:       return mConfig.animation;
+        case StructuredCategory::Gui:             return mConfig.gui;
+        case StructuredCategory::Avatar:          return mConfig.avatar;
+        case StructuredCategory::Network:         return mConfig.network;
+        case StructuredCategory::World:           return mConfig.world;
+        case StructuredCategory::Duel:            return mConfig.duel;
+        case StructuredCategory::Auth:            return mConfig.auth;
+        case StructuredCategory::Chat:            return mConfig.chat;
+        case StructuredCategory::Vip:             return mConfig.vip;
+        case StructuredCategory::Rendering:       return mConfig.rendering;
+        case StructuredCategory::GlbModels:       return mConfig.glbModels;
+        case StructuredCategory::Executable:      return mConfig.executable;
+        case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
+        case StructuredCategory::Healthbar:       return mConfig.healthbar;
+        case StructuredCategory::Skybox:          return mConfig.skybox;
+        case StructuredCategory::ChatLayout:      return mConfig.chatLayout;
+        case StructuredCategory::Count:           return mConfig.replay;
+    }
+    return mConfig.replay;
+}
+
 // ── Config loading ──────────────────────────────────────────
 
 static StructuredLogConfig::CategoryConfig parseCategoryConfig(
@@ -165,9 +195,18 @@ static StructuredLogConfig::CategoryConfig parseCategoryConfig(
     StructuredLogConfig::CategoryConfig cfg;
     cfg.level = defaultLevel;
     cfg.fileOutput = true;
+    if (j.is_string()) {
+        const std::string lvl = j.get<std::string>();
+        if (lvl == "off")            cfg.level = StructuredLevel::Off;
+        else if (lvl == "errors")    cfg.level = StructuredLevel::Errors;
+        else if (lvl == "important") cfg.level = StructuredLevel::Important;
+        else if (lvl == "verbose")   cfg.level = StructuredLevel::Verbose;
+        else if (lvl == "trace")     cfg.level = StructuredLevel::Trace;
+        return cfg;
+    }
     if (j.contains("level")) {
         std::string lvl = j["level"].get<std::string>();
-        if (lvl == "off")       cfg.level = StructuredLevel::Off;
+        if (lvl == "off")            cfg.level = StructuredLevel::Off;
         else if (lvl == "errors")    cfg.level = StructuredLevel::Errors;
         else if (lvl == "important") cfg.level = StructuredLevel::Important;
         else if (lvl == "verbose")   cfg.level = StructuredLevel::Verbose;
@@ -184,9 +223,7 @@ void StructuredLogger::loadConfig() {
     const std::string configPath = "config/debuglogger.json";
     std::ifstream f(configPath);
     if (!f.is_open()) {
-        Debug::log(Debug::Category::General,
-            "[STRUCTURED_LOG] Config not found: %s\n", configPath.c_str());
-        return;
+        return;   // defaults remain in effect
     }
 
     try {
@@ -195,73 +232,56 @@ void StructuredLogger::loadConfig() {
 
         StructuredLogConfig cfg;
 
-        if (j.contains("enabled"))          cfg.enabled = j["enabled"].get<bool>();
-        if (j.contains("hot_reload"))       cfg.hotReload = j["hot_reload"].get<bool>();
-        if (j.contains("console_output"))   cfg.consoleOutput = j["console_output"].get<bool>();
-        if (j.contains("summary_file"))     cfg.summaryFile = j["summary_file"].get<bool>();
+        if (j.contains("enabled"))            cfg.enabled = j["enabled"].get<bool>();
+        if (j.contains("hot_reload"))         cfg.hotReload = j["hot_reload"].get<bool>();
+        if (j.contains("console_output"))     cfg.consoleOutput = j["console_output"].get<bool>();
+        if (j.contains("summary_file"))       cfg.summaryFile = j["summary_file"].get<bool>();
+        if (j.contains("events_file"))        cfg.eventsFile = j["events_file"].get<bool>();
+        if (j.contains("console_mirror")) {
+            cfg.consoleMirror = j["console_mirror"].get<bool>();
+            cfg.consoleOutput = cfg.consoleMirror;
+        }
+        if (j.contains("flush_each_event"))
+            cfg.flushEachEvent = j["flush_each_event"].get<bool>();
+        if (j.contains("repeat_window_seconds"))
+            cfg.repeatWindowSeconds = j["repeat_window_seconds"].get<float>();
         if (j.contains("default_level"))
             cfg.defaultLevel = levelFromString(j["default_level"].get<std::string>());
 
         if (j.contains("categories")) {
             auto& cats = j["categories"];
-            if (cats.contains("general"))
-                cfg.general = parseCategoryConfig(cats["general"], cfg.defaultLevel);
-            if (cats.contains("glb"))
-                cfg.glb = parseCategoryConfig(cats["glb"], cfg.defaultLevel);
-            if (cats.contains("replay"))
-                cfg.replay = parseCategoryConfig(cats["replay"], cfg.defaultLevel);
-            if (cats.contains("camera"))
-                cfg.camera = parseCategoryConfig(cats["camera"], cfg.defaultLevel);
-            if (cats.contains("audio"))
-                cfg.audio = parseCategoryConfig(cats["audio"], cfg.defaultLevel);
-            if (cats.contains("physics"))
-                cfg.physics = parseCategoryConfig(cats["physics"], cfg.defaultLevel);
-            if (cats.contains("performance"))
-                cfg.performance = parseCategoryConfig(cats["performance"], cfg.defaultLevel);
-            if (cats.contains("collision"))
-                cfg.collision = parseCategoryConfig(cats["collision"], cfg.defaultLevel);
-            if (cats.contains("npc_combat"))
-                cfg.npcCombat = parseCategoryConfig(cats["npc_combat"], cfg.defaultLevel);
-            if (cats.contains("npc_movement"))
-                cfg.npcMovement = parseCategoryConfig(cats["npc_movement"], cfg.defaultLevel);
-            if (cats.contains("ragdoll"))
-                cfg.ragdoll = parseCategoryConfig(cats["ragdoll"], cfg.defaultLevel);
-            if (cats.contains("weapons"))
-                cfg.weapons = parseCategoryConfig(cats["weapons"], cfg.defaultLevel);
-            if (cats.contains("animation"))
-                cfg.animation = parseCategoryConfig(cats["animation"], cfg.defaultLevel);
-            if (cats.contains("gui"))
-                cfg.gui = parseCategoryConfig(cats["gui"], cfg.defaultLevel);
-            if (cats.contains("avatar"))
-                cfg.avatar = parseCategoryConfig(cats["avatar"], cfg.defaultLevel);
-            if (cats.contains("network"))
-                cfg.network = parseCategoryConfig(cats["network"], cfg.defaultLevel);
-            if (cats.contains("world"))
-                cfg.world = parseCategoryConfig(cats["world"], cfg.defaultLevel);
-            if (cats.contains("duel"))
-                cfg.duel = parseCategoryConfig(cats["duel"], cfg.defaultLevel);
-            if (cats.contains("auth"))
-                cfg.auth = parseCategoryConfig(cats["auth"], cfg.defaultLevel);
-            if (cats.contains("chat"))
-                cfg.chat = parseCategoryConfig(cats["chat"], cfg.defaultLevel);
-            if (cats.contains("vip"))
-                cfg.vip = parseCategoryConfig(cats["vip"], cfg.defaultLevel);
-            if (cats.contains("rendering"))
-                cfg.rendering = parseCategoryConfig(cats["rendering"], cfg.defaultLevel);
-            if (cats.contains("glb_models"))
-                cfg.glbModels = parseCategoryConfig(cats["glb_models"], cfg.defaultLevel);
-            if (cats.contains("executable"))
-                cfg.executable = parseCategoryConfig(cats["executable"], cfg.defaultLevel);
-            if (cats.contains("grenade_launcher"))
-                cfg.grenadeLauncher = parseCategoryConfig(cats["grenade_launcher"], cfg.defaultLevel);
-            if (cats.contains("healthbar"))
-                cfg.healthbar = parseCategoryConfig(cats["healthbar"], cfg.defaultLevel);
-            if (cats.contains("skybox"))
-                cfg.skybox = parseCategoryConfig(cats["skybox"], cfg.defaultLevel);
-            if (cats.contains("chat_layout"))
-                cfg.chatLayout = parseCategoryConfig(cats["chat_layout"], cfg.defaultLevel);
-            if (cats.contains("ragdoll"))
-                cfg.ragdoll = parseCategoryConfig(cats["ragdoll"], cfg.defaultLevel);
+            auto read = [&](const char* key, StructuredLogConfig::CategoryConfig& dst) {
+                if (cats.contains(key))
+                    dst = parseCategoryConfig(cats[key], cfg.defaultLevel);
+            };
+            read("general", cfg.general);
+            read("glb", cfg.glb);
+            read("replay", cfg.replay);
+            read("camera", cfg.camera);
+            read("audio", cfg.audio);
+            read("physics", cfg.physics);
+            read("performance", cfg.performance);
+            read("collision", cfg.collision);
+            read("npc_combat", cfg.npcCombat);
+            read("npc_movement", cfg.npcMovement);
+            read("ragdoll", cfg.ragdoll);
+            read("weapons", cfg.weapons);
+            read("animation", cfg.animation);
+            read("gui", cfg.gui);
+            read("avatar", cfg.avatar);
+            read("network", cfg.network);
+            read("world", cfg.world);
+            read("duel", cfg.duel);
+            read("auth", cfg.auth);
+            read("chat", cfg.chat);
+            read("vip", cfg.vip);
+            read("rendering", cfg.rendering);
+            read("glb_models", cfg.glbModels);
+            read("executable", cfg.executable);
+            read("grenade_launcher", cfg.grenadeLauncher);
+            read("healthbar", cfg.healthbar);
+            read("skybox", cfg.skybox);
+            read("chat_layout", cfg.chatLayout);
         }
 
         if (j.contains("sampling")) {
@@ -299,272 +319,350 @@ void StructuredLogger::loadConfig() {
         }
 
         mConfig = cfg;
+        mCategoryLevels.clear();
+        const StructuredCategory cats[28] = {
+            StructuredCategory::General, StructuredCategory::Glb, StructuredCategory::Replay,
+            StructuredCategory::Camera, StructuredCategory::Audio, StructuredCategory::Physics,
+            StructuredCategory::Performance, StructuredCategory::Collision, StructuredCategory::NpcCombat,
+            StructuredCategory::NpcMovement, StructuredCategory::Ragdoll, StructuredCategory::Weapons,
+            StructuredCategory::Animation, StructuredCategory::Gui, StructuredCategory::Avatar,
+            StructuredCategory::Network, StructuredCategory::World, StructuredCategory::Duel,
+            StructuredCategory::Auth, StructuredCategory::Chat, StructuredCategory::Vip,
+            StructuredCategory::Rendering, StructuredCategory::GlbModels, StructuredCategory::Executable,
+            StructuredCategory::GrenadeLauncher, StructuredCategory::Healthbar, StructuredCategory::Skybox,
+            StructuredCategory::ChatLayout};
+        for (StructuredCategory c : cats)
+            mCategoryLevels[categoryName(c)] = categoryConfigFor(c).level;
         mConfigReloadErrors = 0;
     }
     catch (const std::exception& e) {
         mConfigReloadErrors++;
-        Debug::error(Debug::Category::General,
-            "[STRUCTURED_LOG] Config parse error: %s (file: %s, errors=%d)\n",
-            e.what(), configPath.c_str(), mConfigReloadErrors);
+        // Malformed config must not stop the game from logging errors: emit it.
+        debug::Event ev;
+        ev.category = "EXECUTABLE";
+        ev.name = "logger.config_error";
+        ev.level = debug::Level::Error;
+        ev.message = std::string("Config parse error: ") + e.what();
+        ev.reason = configPath;
+        ev.sourceFile = "structured-log.cpp";
+        ev.functionName = "loadConfig";
+        emit(ev, true);
     }
 }
 
-// ── Log directory ───────────────────────────────────────────
+// ── Run directory / file ────────────────────────────────────
 
-void StructuredLogger::createLogDir() {
-    auto now = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(now);
-    std::tm local{};
-#ifdef _WIN32
-    localtime_s(&local, &t);
-#else
-    localtime_r(&t, &local);
-#endif
-    char dateBuf[16];
-    std::strftime(dateBuf, sizeof(dateBuf), "%m-%d-%Y", &local);
-    std::string relPath = "logs/" + std::string(dateBuf);
+void StructuredLogger::createRunDir() {
+    mRunId = MiMitaTime::utcCompactStamp();
+    std::string relPath = "logs/" + MiMitaTime::utcDateFolder() + "/" + mRunId;
 
-    // Resolve log directory from executable directory first, fallback to relative
     mLogDir = relPath;
-    {
-        std::string exeDir = getExecutableDirectory();
+    std::string exeDir = getExecutableDirectory();
+    if (!exeDir.empty()) {
         std::string candidate = exeDir + relPath;
         std::error_code ec;
-        if (std::filesystem::create_directories(candidate, ec) || !ec)
-        {
-            // Successfully created or already exists
+        std::filesystem::create_directories(candidate, ec);
+        if (!ec)
             mLogDir = candidate;
-        }
-        else
-        {
-            // Fallback to relative path
-            std::filesystem::create_directories(relPath, ec);
-            printf("[STRUCTURED LOG] WARNING: could not create log dir at %s (error=%d). Falling back to %s\n",
-                   candidate.c_str(), ec.value(), relPath.c_str());
-        }
     }
-    printf("[STRUCTURED LOG] log directory: %s\n", mLogDir.c_str());
+    std::error_code ec;
+    std::filesystem::create_directories(mLogDir, ec);
+
+    mEventsPath = mLogDir + "/events.jsonl";
 }
 
-// ── Category file ───────────────────────────────────────────
+// ── Raw writer ──────────────────────────────────────────────
 
-void StructuredLogger::openCategoryFile(StructuredCategory cat) {
-    int idx = (int)cat;
-    if (idx < 0 || idx >= (int)StructuredCategory::Count) return;
-    if (mCategoryFiles[idx]) return;
+void StructuredLogger::writeLine(const std::string& json) {
+    if (!mEventsFile) return;
+    std::fwrite(json.data(), 1, json.size(), mEventsFile);
+    std::fputc('\n', mEventsFile);
+    if (mConfig.flushEachEvent)
+        std::fflush(mEventsFile);
+}
 
-    auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
-        switch (cat) {
-            case StructuredCategory::General:         return mConfig.general;
-            case StructuredCategory::Glb:             return mConfig.glb;
-            case StructuredCategory::Replay:      return mConfig.replay;
-            case StructuredCategory::Camera:      return mConfig.camera;
-            case StructuredCategory::Audio:       return mConfig.audio;
-            case StructuredCategory::Physics:     return mConfig.physics;
-            case StructuredCategory::Performance: return mConfig.performance;
-            case StructuredCategory::Collision:   return mConfig.collision;
-            case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
-            case StructuredCategory::NpcMovement: return mConfig.npcMovement;
-            case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
-            case StructuredCategory::Weapons:     return mConfig.weapons;
-            case StructuredCategory::Animation:   return mConfig.animation;
-            case StructuredCategory::Gui:         return mConfig.gui;
-            case StructuredCategory::Avatar:      return mConfig.avatar;
-            case StructuredCategory::Network:     return mConfig.network;
-            case StructuredCategory::World:       return mConfig.world;
-            case StructuredCategory::Duel:        return mConfig.duel;
-            case StructuredCategory::Auth:        return mConfig.auth;
-            case StructuredCategory::Chat:        return mConfig.chat;
-            case StructuredCategory::Vip:         return mConfig.vip;
-            case StructuredCategory::Rendering:   return mConfig.rendering;
-            case StructuredCategory::GlbModels:   return mConfig.glbModels;
-        case StructuredCategory::Executable:      return mConfig.executable;
-            case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
-            case StructuredCategory::Healthbar: return mConfig.healthbar;
-            case StructuredCategory::Skybox: return mConfig.skybox;
-        case StructuredCategory::ChatLayout: return mConfig.chatLayout;
+// ── Record building ─────────────────────────────────────────
+
+std::string StructuredLogger::buildRecord(const debug::Event& event) const {
+    std::string out;
+    out.reserve(256 + event.message.size());
+
+    out += "{\"wall_time\":\"";
+    out += MiMitaTime::utcIso8601Millis();
+    out += "\",\"t\":";
+
+    char num[64];
+    std::snprintf(num, sizeof(num), "%.3f", steadySeconds());
+    out += num;
+
+    out += ",\"seq\":";
+    out += std::to_string(mSequence);
+
+    out += ",\"run_id\":\"";
+    out += escapeJson(mRunId);
+    out += "\",\"pid\":";
+    out += std::to_string(LiveIdentity::pid());
+
+    out += ",\"process\":\"";
+    out += escapeJson(LiveIdentity::process());
+    out += '"';
+
+    out += ",\"level\":\"";
+    out += debugLevelToString(event.level);
+    out += '"';
+
+    out += ",\"category\":\"";
+    out += escapeJson(event.category);
+    out += '"';
+
+    out += ",\"event\":\"";
+    out += escapeJson(event.name);
+    out += '"';
+
+    auto appendStr = [&](const char* key, const std::string& value) {
+        if (value.empty()) return;
+        out += ",\"";
+        out += key;
+        out += "\":\"";
+        out += escapeJson(value);
+        out += '"';
+    };
+    auto appendTick = [&](const char* key, uint64_t value) {
+        if (value == 0) return;
+        out += ",\"";
+        out += key;
+        out += "\":";
+        out += std::to_string(value);
+    };
+
+    appendStr("message", event.message);
+    appendStr("reason", event.reason);
+    appendStr("correlation_id", event.correlationId);
+    appendTick("frame", event.frame);
+    appendTick("tick", event.simulationTick);
+    appendTick("server_tick", event.serverTick);
+    appendTick("client_tick", event.clientTick);
+    appendTick("duration_us", event.durationUs);
+
+    if (!event.sourceFile.empty()) {
+        appendStr("source", event.sourceFile);
+        if (event.sourceLine > 0) {
+            out += ",\"line\":";
+            out += std::to_string(event.sourceLine);
+        }
     }
-        return mConfig.replay;
-    }();
+    appendStr("func", event.functionName);
 
-    if (!catCfg.fileOutput) return;
+    // Caller fields, appended last. Empty object adds nothing. Universal keys
+    // are already written above, so they are skipped here: every record must
+    // carry each key exactly once.
+    if (event.fields.is_object()) {
+        for (auto it = event.fields.begin(); it != event.fields.end(); ++it) {
+            const std::string& k = it.key();
+            if (k == "wall_time" || k == "t" || k == "seq" || k == "run_id" ||
+                k == "pid" || k == "process" || k == "level" || k == "category" ||
+                k == "event" || k == "message" || k == "reason" ||
+                k == "correlation_id" || k == "frame" || k == "tick" ||
+                k == "server_tick" || k == "client_tick" || k == "duration_us" ||
+                k == "source" || k == "line" || k == "func")
+                continue;
+            out += ",\"";
+            out += escapeJson(k);
+            out += "\":";
+            out += it.value().dump();
+        }
+    } else if (!event.fields.is_null()) {
+        out += ",\"fields\":";
+        out += event.fields.dump();
+    }
 
-    std::string fileName;
-    if (cat == StructuredCategory::GrenadeLauncher)
-    {
-        // Process-specific filename: grenade-{role}-{MMDDYYYY}-{HHMMSS}-{PID}.txt
-        bool isServer = false;
-        // Heuristic: if we are running a server (listen or dedicated), call it server
-        // Otherwise it's a client.  Simple check: look for --server or listen-server state.
-        {
-            // Server detection is best-effort; fallback to "client"
-            static int check = 0;
-            if (check == 0) {
-                const char* cmd = GetCommandLineA();
-                isServer = (cmd && (strstr(cmd, "--server") || strstr(cmd, "-server")));
-                check = 1;
+    out += '}';
+    return out;
+}
+
+// ── Aggregation ─────────────────────────────────────────────
+
+void StructuredLogger::flushBucket(RepeatBucket& bucket) {
+    if (!bucket.active)
+        return;
+    if (bucket.count > 1) {
+        nlohmann::json summary = bucket.sample;
+        summary["count"] = bucket.count;
+        summary["first_t"] = bucket.firstTime;
+        summary["last_t"] = bucket.lastTime;
+        if (bucket.firstTick != 0)
+            summary["first_tick"] = bucket.firstTick;
+        if (bucket.lastTick != 0)
+            summary["last_tick"] = bucket.lastTick;
+
+        // Rename the event to the summary variant, then emit once.
+        debug::Event ev;
+        ev.category = bucket.category;
+        ev.name = bucket.event + ".summary";
+        ev.level = debug::Level::Info;
+        ev.fields = summary;
+        mSequence++;
+        writeLine(buildRecord(ev));
+    } else if (bucket.count == 1) {
+        // Never collapse a lone event; re-emit the representative as-is.
+        debug::Event ev;
+        ev.category = bucket.category;
+        ev.name = bucket.event;
+        ev.level = debug::Level::Info;
+        ev.fields = bucket.sample;
+        mSequence++;
+        writeLine(buildRecord(ev));
+    }
+    bucket = RepeatBucket{};
+}
+
+void StructuredLogger::flushAllBuckets() {
+    for (auto& kv : mBuckets)
+        flushBucket(kv.second);
+    mBuckets.clear();
+}
+
+// ── Emit ────────────────────────────────────────────────────
+
+void StructuredLogger::emit(const debug::Event& event, bool forceNoAggregate) {
+    std::lock_guard<std::mutex> lock(logMutex());
+    if (!mInitialized || !mConfig.enabled || !mEventsFile)
+        return;
+    if (!categoryEnabled(event.category, event.level))
+        return;
+
+    // Errors and fatal events bypass aggregation entirely.
+    const bool bypassAggregate = forceNoAggregate ||
+        event.level == debug::Level::Error ||
+        event.level == debug::Level::Fatal;
+
+    if (bypassAggregate) {
+        mSequence++;
+        writeLine(buildRecord(event));
+        return;
+    }
+
+    // Build the aggregation key: caller key wins, else category + name + the
+    // caller's stable identity fields (never timestamps/seq/positions).
+    std::string key = event.aggregationKey;
+    if (key.empty()) {
+        key = event.category + ":" + event.name;
+        if (event.fields.is_object()) {
+            for (auto it = event.fields.begin(); it != event.fields.end(); ++it) {
+                if (it.value().is_number_integer() || it.value().is_string()) {
+                    key += "|";
+                    key += it.key();
+                    key += "=";
+                    key += it.value().dump();
+                }
             }
         }
-        char fname[256];
-        DWORD pid = GetCurrentProcessId();
-        std::string datePart = mRunId; // reuse the seconds part; need date too
-        // Build MMDDYYYY from our date dir name (MM-DD-YYYY)
-        std::string dateDir = mLogDir;
-        size_t lastSlash = dateDir.rfind('/');
-        if (lastSlash != std::string::npos) dateDir = dateDir.substr(lastSlash + 1);
-        std::string dateCompact;
-        for (char c : dateDir) if (c != '-') dateCompact += c;
-        snprintf(fname, sizeof(fname), "grenade-%s-%s-%s-%lu.txt",
-                 isServer ? "server" : "client",
-                 dateCompact.c_str(), mRunId.c_str(), (unsigned long)pid);
-        fileName = fname;
     }
+
+    // Record the representative snapshot under a stable key. Universal keys
+    // (category/event/level and the universal field set) are carried separately
+    // by the summary record, so they are not copied into the sample fields.
+    nlohmann::json sample = nlohmann::json::object();
+    if (!event.message.empty()) sample["message"] = event.message;
+    if (!event.reason.empty())   sample["reason"] = event.reason;
+    if (event.fields.is_object()) {
+        for (auto it = event.fields.begin(); it != event.fields.end(); ++it) {
+            const std::string& k = it.key();
+            if (k == "category" || k == "event" || k == "level" ||
+                k == "wall_time" || k == "t" || k == "seq")
+                continue;
+            sample[k] = it.value();
+        }
+    }
+
+    const double now = steadySeconds();
+    auto it = mBuckets.find(key);
+    if (it == mBuckets.end()) {
+        // Bound memory: if at capacity, flush the oldest bucket first.
+        if (mBuckets.size() >= MAX_ACTIVE_BUCKETS) {
+            auto oldest = mBuckets.begin();
+            for (auto b = mBuckets.begin(); b != mBuckets.end(); ++b)
+                if (b->second.lastTime < oldest->second.lastTime) oldest = b;
+            flushBucket(oldest->second);
+            mBuckets.erase(oldest);
+        }
+        RepeatBucket& b = mBuckets[key];
+        b.active = true;
+        b.key = key;
+        b.category = event.category;
+        b.event = event.name;
+        b.sample = sample;
+        b.count = 1;
+        b.firstTime = now;
+        b.lastTime = now;
+        b.firstTick = event.simulationTick;
+        b.lastTick = event.simulationTick;
+        return;
+    }
+
+    RepeatBucket& b = it->second;
+    b.count++;
+    b.lastTime = now;
+    b.lastTick = event.simulationTick;
+    b.sample = sample;   // keep the most recent representative values
+
+    if (now - b.firstTime >= (double)mConfig.repeatWindowSeconds) {
+        flushBucket(b);
+        mBuckets.erase(it);
+    }
+}
+
+// ── Public free API ─────────────────────────────────────────
+
+namespace debug {
+
+void logEvent(const Event& event) {
+    StructuredLogger::instance().emit(event);
+}
+
+void flushEvents() {
+    StructuredLogger::instance().flushAllBuckets();
+}
+
+std::string eventsPath() {
+    return StructuredLogger::instance().eventsPath();
+}
+
+bool eventsEnabled(const std::string& category, Level level) {
+    return StructuredLogger::instance().categoryEnabled(category, level);
+}
+
+} // namespace debug
+
+// ── Category/level gate ─────────────────────────────────────
+
+bool StructuredLogger::categoryEnabled(const std::string& category,
+                                       debug::Level level) const {
+    if (!mConfig.enabled)
+        return false;
+    auto it = mCategoryLevels.find(category);
+    StructuredLevel configured = StructuredLevel::Off;
+    if (it != mCategoryLevels.end())
+        configured = it->second;
     else
-    {
-        fileName = categoryDirName(cat) + "_log_" + mRunId + ".txt";
-    }
-    std::string filePath = mLogDir + "/" + fileName;
+        configured = mConfig.defaultLevel;
 
-    FILE* f = fopen(filePath.c_str(), "w");
-    if (f) {
-        mCategoryFiles[idx] = f;
-        // Write file header
-        fprintf(f, "==================================================\n");
-        fprintf(f, " %s LOG\n", categoryName(cat).c_str());
-        fprintf(f, " Start: %s\n", timestamp().c_str());
-        fprintf(f, " Run ID: %s\n", mRunId.c_str());
-        fprintf(f, "==================================================\n\n");
-        fflush(f);
-        if (cat == ::StructuredCategory::GrenadeLauncher) {
-            // Detect role: heuristic based on command line
-            bool isServer = false;
-            const char* cmd = GetCommandLineA();
-            isServer = (cmd && (strstr(cmd, "--server") || strstr(cmd, "-server")));
-            printf("[GRENADE_LOG_PATH] role=%s path=\"%s\"\n",
-                   isServer ? "server" : "client", filePath.c_str());
-        }
+    // Map the requested debug level onto the legacy ordered levels.
+    StructuredLevel needed;
+    switch (level) {
+        case debug::Level::Trace: needed = StructuredLevel::Trace; break;
+        case debug::Level::Debug: needed = StructuredLevel::Verbose; break;
+        case debug::Level::Info:  needed = StructuredLevel::Important; break;
+        case debug::Level::Warn:  needed = StructuredLevel::Important; break;
+        case debug::Level::Error: needed = StructuredLevel::Errors; break;
+        case debug::Level::Fatal: needed = StructuredLevel::Errors; break;
     }
+    return (int)needed <= (int)configured;
 }
 
-// ── Startup metadata ────────────────────────────────────────
-
-void StructuredLogger::writeStartupMetadata() {
-    // Write to executable log if enabled
-    if (mCategoryFiles[(int)StructuredCategory::Executable]) {
-        FILE* f = mCategoryFiles[(int)StructuredCategory::Executable];
-        fprintf(f, "--- Startup Metadata ---\n");
-        fprintf(f, " Timestamp: %s\n", timestamp().c_str());
-        fprintf(f, " Run ID: %s\n", mRunId.c_str());
-        fprintf(f, " Log directory: %s\n", mLogDir.c_str());
-        fprintf(f, " Enabled categories:\n");
-        for (int i = 0; i < (int)StructuredCategory::Count; i++) {
-            if (mCategoryFiles[i]) {
-                StructuredCategory cat = (StructuredCategory)i;
-                auto& cfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
-                    switch (cat) {
-                        case StructuredCategory::General:         return mConfig.general;
-                        case StructuredCategory::Glb:             return mConfig.glb;
-                        case StructuredCategory::Replay:      return mConfig.replay;
-                        case StructuredCategory::Camera:      return mConfig.camera;
-                        case StructuredCategory::Audio:       return mConfig.audio;
-                        case StructuredCategory::Physics:     return mConfig.physics;
-                        case StructuredCategory::Performance: return mConfig.performance;
-                        case StructuredCategory::Collision:   return mConfig.collision;
-                        case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
-                        case StructuredCategory::NpcMovement: return mConfig.npcMovement;
-                        case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
-                        case StructuredCategory::Weapons:     return mConfig.weapons;
-                        case StructuredCategory::Animation:   return mConfig.animation;
-                        case StructuredCategory::Gui:         return mConfig.gui;
-                        case StructuredCategory::Avatar:      return mConfig.avatar;
-                        case StructuredCategory::Network:     return mConfig.network;
-                        case StructuredCategory::World:       return mConfig.world;
-                        case StructuredCategory::Duel:        return mConfig.duel;
-                        case StructuredCategory::Auth:        return mConfig.auth;
-                        case StructuredCategory::Chat:        return mConfig.chat;
-                        case StructuredCategory::Vip:         return mConfig.vip;
-                        case StructuredCategory::Rendering:   return mConfig.rendering;
-                        case StructuredCategory::GlbModels:   return mConfig.glbModels;
-                        case StructuredCategory::Executable:  return mConfig.executable;
-                    }
-                    return mConfig.replay;
-                }();
-                fprintf(f, "   %-12s level=%-10s file=%s\n",
-                    categoryName(cat).c_str(),
-                    levelToString(cfg.level).c_str(),
-                    cfg.fileOutput ? "yes" : "no");
-            }
-        }
-        fprintf(f, "--- End Startup Metadata ---\n\n");
-        fflush(f);
-    }
-}
-
-// ── Summary file ────────────────────────────────────────────
-
-void StructuredLogger::writeSummary() {
-    if (!mConfig.summaryFile) return;
-
-    std::string summaryPath = mLogDir + "/Summary_" + mRunId + ".txt";
-    FILE* sf = fopen(summaryPath.c_str(), "w");
-    if (!sf) return;
-
-    fprintf(sf, "==================================================\n");
-    fprintf(sf, " STRUCTURED LOG SUMMARY\n");
-    fprintf(sf, " Run ID: %s\n", mRunId.c_str());
-    fprintf(sf, " Generated: %s\n", timestamp().c_str());
-    fprintf(sf, "==================================================\n\n");
-
-    // Collect content from all category files
-    for (int i = 0; i < (int)StructuredCategory::Count; i++) {
-        if (!mCategoryFiles[i]) continue;
-        StructuredCategory cat = (StructuredCategory)i;
-
-        // Flush category file first
-        if (mCategoryFiles[i]) {
-            fflush(mCategoryFiles[i]);
-        }
-
-        std::string fileName;
-        if (cat == StructuredCategory::GrenadeLauncher) {
-            bool isServer = false;
-            const char* cmd = GetCommandLineA();
-            isServer = (cmd && (strstr(cmd, "--server") || strstr(cmd, "-server")));
-            DWORD pid = GetCurrentProcessId();
-            std::string dateDir = mLogDir;
-            size_t lastSlash = dateDir.rfind('/');
-            if (lastSlash != std::string::npos) dateDir = dateDir.substr(lastSlash + 1);
-            std::string dateCompact;
-            for (char c : dateDir) if (c != '-') dateCompact += c;
-            char fname[256];
-            snprintf(fname, sizeof(fname), "grenade-%s-%s-%s-%lu.txt",
-                     isServer ? "server" : "client",
-                     dateCompact.c_str(), mRunId.c_str(), (unsigned long)pid);
-            fileName = fname;
-        } else {
-            fileName = categoryDirName(cat) + "_log_" + mRunId + ".txt";
-        }
-        std::string filePath = mLogDir + "/" + fileName;
-
-        fprintf(sf, "\n");
-        fprintf(sf, "==================================================\n");
-        fprintf(sf, " %s LOG\n", categoryName(cat).c_str());
-        fprintf(sf, " Source: %s\n", filePath.c_str());
-        fprintf(sf, "==================================================\n\n");
-
-        // Copy file contents
-        FILE* cf = fopen(filePath.c_str(), "r");
-        if (cf) {
-            char buf[4096];
-            size_t n;
-            while ((n = fread(buf, 1, sizeof(buf), cf)) > 0) {
-                fwrite(buf, 1, n, sf);
-            }
-            fclose(cf);
-        }
-    }
-
-    fclose(sf);
+bool StructuredLogger::shouldLog(StructuredCategory cat, StructuredLevel level) const {
+    if (!mConfig.enabled) return false;
+    return (int)level <= (int)categoryConfigFor(cat).level;
 }
 
 // ── Init / Shutdown ─────────────────────────────────────────
@@ -572,42 +670,67 @@ void StructuredLogger::writeSummary() {
 void StructuredLogger::init() {
     if (mInitialized) return;
 
-    mRunId = runTimestamp();
     loadConfig();
     if (!mConfig.enabled) return;
 
-    createLogDir();
+    createRunDir();
 
-    // Open category files for enabled categories
-    for (int i = 0; i < (int)StructuredCategory::Count; i++) {
-        openCategoryFile((StructuredCategory)i);
+    // Open with Windows share flags so VSCode, rg, and Get-Content -Wait can
+    // read the file while the game writes.
+    mEventsFile = _fsopen(mEventsPath.c_str(), "a", _SH_DENYNO);
+    if (!mEventsFile) {
+        mInitialized = false;
+        return;
     }
-
-    writeStartupMetadata();
     mInitialized = true;
+    mStartTime = steadySeconds();
 
-    Debug::log(Debug::Category::General,
-        "[STRUCTURED_LOG] Initialized: dir=%s run=%s\n",
-        mLogDir.c_str(), mRunId.c_str());
+    debug::Event started;
+    started.category = "LOGGER";
+    started.name = "logger.started";
+    started.level = debug::Level::Info;
+    started.message = "events jsonl opened";
+    started.fields = {
+        {"path", mEventsPath},
+        {"run_id", mRunId},
+        {"pid", (uint64_t)LiveIdentity::pid()},
+        {"process", LiveIdentity::process()},
+    };
+    emit(started, true);
+    std::fflush(mEventsFile);
 }
 
 void StructuredLogger::shutdown() {
     if (!mInitialized) return;
 
-    writeSummary();
+    flushAllBuckets();
 
-    for (int i = 0; i < (int)StructuredCategory::Count; i++) {
-        if (mCategoryFiles[i]) {
-            fprintf(mCategoryFiles[i], "\n--- End of log ---\n");
-            fclose(mCategoryFiles[i]);
-            mCategoryFiles[i] = nullptr;
-        }
+    debug::Event stopped;
+    stopped.category = "LOGGER";
+    stopped.name = "logger.stopped";
+    stopped.level = debug::Level::Info;
+    stopped.message = "events jsonl closing";
+    stopped.fields = {
+        {"path", mEventsPath},
+        {"run_id", mRunId},
+    };
+    emit(stopped, true);
+
+    if (mEventsFile) {
+        std::fflush(mEventsFile);
+        std::fclose(mEventsFile);
+        mEventsFile = nullptr;
     }
-
     mInitialized = false;
-    Debug::log(Debug::Category::General,
-        "[STRUCTURED_LOG] Shutdown complete: dir=%s run=%s\n",
-        mLogDir.c_str(), mRunId.c_str());
+
+    // Keep a discoverable pointer to the latest run's events file.
+    std::error_code ec;
+    std::filesystem::create_directories("logs", ec);
+    FILE* f = std::fopen("logs/latest-log-path.txt", "w");
+    if (f) {
+        std::fprintf(f, "%s\n", mEventsPath.c_str());
+        std::fclose(f);
+    }
 }
 
 // ── Config polling (hot-reload) ─────────────────────────────
@@ -624,98 +747,91 @@ void StructuredLogger::pollConfig() {
     if (wtCount != mConfigLastWrite) {
         mConfigLastWrite = wtCount;
 
-        // Save old config to compare level changes
-        StructuredLogConfig oldCfg = mConfig;
+        const bool wasInitialized = mInitialized;
+        const bool wasEnabled = mConfig.enabled;
         loadConfig();
 
-        // Re-open category files if level/file_output changed
+        // If the run file was not open because the logger was disabled at
+        // startup, honor a config change that enables it live.
+        if (!wasInitialized && mConfig.enabled)
+            init();
+
         if (mInitialized) {
-            for (int i = 0; i < (int)StructuredCategory::Count; i++) {
-                StructuredCategory cat = (StructuredCategory)i;
-                auto& newCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
-                    switch (cat) {
-                        case StructuredCategory::General:         return mConfig.general;
-                        case StructuredCategory::Glb:             return mConfig.glb;
-                        case StructuredCategory::Replay:      return mConfig.replay;
-                        case StructuredCategory::Camera:      return mConfig.camera;
-                        case StructuredCategory::Audio:       return mConfig.audio;
-                        case StructuredCategory::Physics:     return mConfig.physics;
-                        case StructuredCategory::Performance: return mConfig.performance;
-                        case StructuredCategory::Collision:   return mConfig.collision;
-                        case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
-                        case StructuredCategory::NpcMovement: return mConfig.npcMovement;
-                        case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
-                        case StructuredCategory::Weapons:     return mConfig.weapons;
-                        case StructuredCategory::Animation:   return mConfig.animation;
-                        case StructuredCategory::Gui:         return mConfig.gui;
-                        case StructuredCategory::Avatar:      return mConfig.avatar;
-                        case StructuredCategory::Network:     return mConfig.network;
-                        case StructuredCategory::World:       return mConfig.world;
-                        case StructuredCategory::Duel:        return mConfig.duel;
-                        case StructuredCategory::Auth:        return mConfig.auth;
-                        case StructuredCategory::Chat:        return mConfig.chat;
-                        case StructuredCategory::Vip:         return mConfig.vip;
-                        case StructuredCategory::Rendering:   return mConfig.rendering;
-                        case StructuredCategory::GlbModels:   return mConfig.glbModels;
-                        case StructuredCategory::Executable:  return mConfig.executable;
-                    }
-                    return mConfig.replay;
-                }();
-
-                if (newCfg.fileOutput && !mCategoryFiles[i]) {
-                    openCategoryFile(cat);
-                } else if (!newCfg.fileOutput && mCategoryFiles[i]) {
-                    fclose(mCategoryFiles[i]);
-                    mCategoryFiles[i] = nullptr;
-                }
-            }
+            debug::Event ev;
+            ev.category = "LOGGER";
+            ev.name = "logger.config_reloaded";
+            ev.level = debug::Level::Info;
+            ev.message = "debuglogger.json hot-reloaded";
+            ev.fields = {{"enabled", mConfig.enabled}};
+            emit(ev, true);
+        } else if (wasEnabled && !mConfig.enabled) {
+            // Nothing to emit into; the logger is intentionally off.
         }
-
-        Debug::log(Debug::Category::General,
-            "[STRUCTURED_LOG] Config hot-reloaded\n");
     }
 }
 
-// ── Should Log ──────────────────────────────────────────────
-
-bool StructuredLogger::shouldLog(StructuredCategory cat, StructuredLevel level) const {
-    if (!mConfig.enabled) return false;
-
-    const auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
-                    switch (cat) {
-                        case StructuredCategory::General:         return mConfig.general;
-                        case StructuredCategory::Glb:             return mConfig.glb;
-                        case StructuredCategory::Replay:      return mConfig.replay;
-            case StructuredCategory::Camera:      return mConfig.camera;
-                        case StructuredCategory::Audio:       return mConfig.audio;
-                        case StructuredCategory::Physics:     return mConfig.physics;
-                        case StructuredCategory::Performance: return mConfig.performance;
-                        case StructuredCategory::Collision:   return mConfig.collision;
-                        case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
-                        case StructuredCategory::NpcMovement: return mConfig.npcMovement;
-                        case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
-                        case StructuredCategory::Weapons:     return mConfig.weapons;
-                        case StructuredCategory::Animation:   return mConfig.animation;
-            case StructuredCategory::Gui:         return mConfig.gui;
-            case StructuredCategory::Avatar:      return mConfig.avatar;
-                        case StructuredCategory::Network:     return mConfig.network;
-                        case StructuredCategory::World:       return mConfig.world;
-                        case StructuredCategory::Duel:        return mConfig.duel;
-                        case StructuredCategory::Auth:        return mConfig.auth;
-                        case StructuredCategory::Chat:        return mConfig.chat;
-                        case StructuredCategory::Vip:         return mConfig.vip;
-            case StructuredCategory::Rendering:   return mConfig.rendering;
-            case StructuredCategory::GlbModels:   return mConfig.glbModels;
-        case StructuredCategory::Executable:      return mConfig.executable;
-        case StructuredCategory::GrenadeLauncher: return mConfig.grenadeLauncher;
-        case StructuredCategory::Healthbar: return mConfig.healthbar;
-        case StructuredCategory::Skybox: return mConfig.skybox;
-        case StructuredCategory::ChatLayout: return mConfig.chatLayout;
+void StructuredLogger::tick() {
+    if (!mInitialized || !mConfig.enabled) return;
+    const double now = steadySeconds();
+    std::lock_guard<std::mutex> lock(logMutex());
+    for (auto it = mBuckets.begin(); it != mBuckets.end();) {
+        RepeatBucket& b = it->second;
+        if (b.active && now - b.firstTime >= (double)mConfig.repeatWindowSeconds) {
+            flushBucket(b);
+            it = mBuckets.erase(it);
+        } else {
+            ++it;
+        }
     }
-        return mConfig.replay;
-    }();
+}
 
-    return (int)level <= (int)catCfg.level;
+// ── Legacy Entry bridge (one JSONL record per message) ──────
+
+void StructuredLogger::write(const Entry& e) {
+    if (!mInitialized || !mConfig.enabled) return;
+    if (!shouldLog(e.category, e.level)) return;
+
+    // Map the legacy structured level onto the generic level so the record
+    // reads consistently with debug::logEvent output.
+    debug::Level level = debug::Level::Debug;
+    switch (e.level) {
+        case StructuredLevel::Off:       return;
+        case StructuredLevel::Errors:    level = debug::Level::Error; break;
+        case StructuredLevel::Important: level = debug::Level::Info; break;
+        case StructuredLevel::Verbose:   level = debug::Level::Debug; break;
+        case StructuredLevel::Trace:     level = debug::Level::Trace; break;
+    }
+
+    debug::Event ev;
+    ev.category = categoryName(e.category);
+    ev.name = e.eventId.empty() ? "log" : e.eventId;
+    ev.level = level;
+    ev.message = e.message;
+    ev.reason = e.reason;
+    ev.correlationId = e.correlationId;
+    ev.simulationTick = e.tick;
+    ev.frame = e.frame;
+    ev.sourceFile = e.sourceFile;
+    ev.sourceLine = e.sourceLine;
+    ev.functionName = e.functionName;
+
+    if (!e.numericKeys.empty()) {
+        nlohmann::json fields = nlohmann::json::object();
+        for (size_t i = 0; i < e.numericKeys.size(); ++i) {
+            const double expected = i < e.numericExpected.size() ? e.numericExpected[i] : 0.0;
+            const double actual = i < e.numericActual.size() ? e.numericActual[i] : 0.0;
+            fields[e.numericKeys[i] + "_expected"] = expected;
+            fields[e.numericKeys[i] + "_actual"] = actual;
+            fields[e.numericKeys[i] + "_difference"] = actual - expected;
+        }
+        ev.fields = std::move(fields);
+    }
+
+    // A numeric assertion failure is an error and must never be aggregated.
+    const bool assertionFailed = !e.numericKeys.empty() && e.tolerance > 0.0 &&
+        std::fabs((e.numericActual.empty() ? 0.0 : e.numericActual[0]) -
+                  (e.numericExpected.empty() ? 0.0 : e.numericExpected[0])) > e.tolerance;
+    emit(ev, assertionFailed);
 }
 
 void StructuredLogger::writeFormatted(StructuredCategory category, StructuredLevel level,
@@ -743,7 +859,7 @@ void StructuredLogger::writeVFormatted(StructuredCategory category, StructuredLe
     Entry e;
     e.category = category;
     e.level = level;
-    e.eventId = "DBG";
+    e.eventId = "log";
     e.sourceFile = sourceFile ? sourceFile : "?";
     e.sourceLine = sourceLine;
     e.functionName = functionName ? functionName : "?";
@@ -751,243 +867,35 @@ void StructuredLogger::writeVFormatted(StructuredCategory category, StructuredLe
     write(e);
 }
 
-// ── Write entry ─────────────────────────────────────────────
-
-void StructuredLogger::write(const Entry& e) {
+void StructuredLogger::assertNear(
+    const std::string& eventId, const std::string& correlationId,
+    const std::string& reason, StructuredCategory cat,
+    const std::string& sourceFile, int sourceLine,
+    const std::string& functionName,
+    const std::string& key, double expected, double actual,
+    double tolerance, uint32_t tick, uint32_t frame)
+{
     if (!mInitialized || !mConfig.enabled) return;
-    if (!shouldLog(e.category, e.level)) return;
+    if (!shouldLog(cat, StructuredLevel::Trace)) return;
 
-    int idx = (int)e.category;
-    if (idx < 0 || idx >= (int)StructuredCategory::Count) return;
+    Entry e;
+    e.category = cat;
+    e.level = std::fabs(actual - expected) > tolerance
+        ? StructuredLevel::Errors : StructuredLevel::Verbose;
+    e.eventId = eventId;
+    e.correlationId = correlationId;
+    e.reason = reason;
+    e.sourceFile = sourceFile;
+    e.sourceLine = sourceLine;
+    e.functionName = functionName;
+    e.tick = tick;
+    e.frame = frame;
+    e.numericKeys.push_back(key);
+    e.numericExpected.push_back(expected);
+    e.numericActual.push_back(actual);
+    e.tolerance = tolerance;
 
-    uint64_t& counter = mEventCounters[idx];
-    counter++;
-
-    // Build structured log line
-    char buf[4096];
-    int pos = 0;
-
-    // Header
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "[%s]\n", timestamp().c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Level: %s\n", levelToString(e.level).c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Category: %s\n", categoryName(e.category).c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Event ID: %s_%06llu\n", categoryName(e.category).c_str(),
-        (unsigned long long)counter);
-    if (!e.correlationId.empty())
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Correlation ID: %s\n", e.correlationId.c_str());
-    if (!e.reason.empty())
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Reason: %s\n", e.reason.c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Source: %s\n", e.sourceFile.c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Line: %d\n", e.sourceLine);
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Function: %s\n", e.functionName.c_str());
-    if (e.tick > 0)
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Tick: %u\n", e.tick);
-    if (e.frame > 0)
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Frame: %u\n", e.frame);
-
-    // Numeric fields
-    for (size_t i = 0; i < e.numericKeys.size(); i++) {
-        const std::string& key = e.numericKeys[i];
-        double expected = i < e.numericExpected.size() ? e.numericExpected[i] : 0.0;
-        double actual = i < e.numericActual.size() ? e.numericActual[i] : 0.0;
-
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "  %s:\n", key.c_str());
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "    Expected: %.6f\n", expected);
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "    Actual:   %.6f\n", actual);
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "    Difference: %.6f\n", actual - expected);
-
-        if (e.tolerance > 0.0) {
-            double diff = std::fabs(actual - expected);
-            pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-                "    Tolerance: %.6f\n", e.tolerance);
-            pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-                "    Status: %s\n", diff <= e.tolerance ? "PASS" : "FAIL");
-        }
-    }
-
-    if (!e.message.empty())
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Message: %s\n", e.message.c_str());
-
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos, "\n");
-
-    std::string fileLine(buf);
-    std::string consoleLine;
-    {
-        char cbuf[512];
-        int cp = 0;
-        cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp,
-            "[%s][%s] %s%s%s", categoryName(e.category).c_str(),
-            levelToString(e.level).c_str(), e.reason.c_str(),
-            e.reason.empty() ? "" : " ", e.message.c_str());
-        if (!e.numericKeys.empty()) {
-            for (size_t i = 0; i < e.numericKeys.size(); i++) {
-                double expected = i < e.numericExpected.size() ? e.numericExpected[i] : 0.0;
-                double actual = i < e.numericActual.size() ? e.numericActual[i] : 0.0;
-                cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp,
-                    " %s: exp=%.4f act=%.4f diff=%.4f",
-                    e.numericKeys[i].c_str(), expected, actual, actual - expected);
-            }
-        }
-        cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp, "\n");
-        consoleLine = cbuf;
-    }
-
-    // ── Check if this category is throttled ───────────────────────
-    auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
-        switch (e.category) {
-            case StructuredCategory::General:         return mConfig.general;
-            case StructuredCategory::Glb:             return mConfig.glb;
-            case StructuredCategory::Replay:      return mConfig.replay;
-            case StructuredCategory::Camera:      return mConfig.camera;
-            case StructuredCategory::Audio:       return mConfig.audio;
-            case StructuredCategory::Physics:     return mConfig.physics;
-            case StructuredCategory::Performance: return mConfig.performance;
-            case StructuredCategory::Collision:   return mConfig.collision;
-            case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
-            case StructuredCategory::NpcMovement: return mConfig.npcMovement;
-            case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
-            case StructuredCategory::Weapons:     return mConfig.weapons;
-            case StructuredCategory::Animation:   return mConfig.animation;
-            case StructuredCategory::Gui:         return mConfig.gui;
-            case StructuredCategory::Avatar:      return mConfig.avatar;
-            case StructuredCategory::Network:     return mConfig.network;
-            case StructuredCategory::World:       return mConfig.world;
-            case StructuredCategory::Duel:        return mConfig.duel;
-            case StructuredCategory::Auth:        return mConfig.auth;
-            case StructuredCategory::Chat:        return mConfig.chat;
-            case StructuredCategory::Vip:         return mConfig.vip;
-            case StructuredCategory::Rendering:   return mConfig.rendering;
-            case StructuredCategory::GlbModels:   return mConfig.glbModels;
-            case StructuredCategory::Executable:  return mConfig.executable;
-            default: return mConfig.replay;
-        }
-    }();
-
-    if (catCfg.throttleSeconds > 0.0f)
-    {
-        // Buffer instead of writing immediately
-        ThrottledBuffer& tb = mThrottledBuffers[idx];
-        tb.lines.push_back(fileLine);
-        if (mConfig.consoleOutput)
-            tb.consoleLines.push_back(consoleLine);
-
-        // Flush if enough time has passed
-        double now = nowSeconds();
-        if (now - tb.lastFlushTime >= (double)catCfg.throttleSeconds)
-            flushThrottled(idx);
-        return;
-    }
-
-    // ── Non-throttled: write immediately ──────────────────────────
-    {
-        LogManager::instance().write(fileLine.c_str());
-        FILE* f = mCategoryFiles[idx];
-        if (f) {
-            fprintf(f, "%s", fileLine.c_str());
-            fflush(f);
-        }
-    }
-
-    if (mConfig.consoleOutput)
-        LogManager::instance().writeConsole(consoleLine.c_str(), (int)consoleLine.size());
-}
-
-void StructuredLogger::flushThrottled(int catIdx) {
-    auto it = mThrottledBuffers.find(catIdx);
-    if (it == mThrottledBuffers.end() || it->second.lines.empty())
-        return;
-
-    ThrottledBuffer& tb = it->second;
-
-    // Write all buffered file lines
-    std::string allLines;
-    for (const auto& line : tb.lines)
-        allLines += line;
-    LogManager::instance().write(allLines.c_str());
-
-    FILE* f = mCategoryFiles[catIdx];
-    if (f) {
-        char header[128];
-        std::snprintf(header, sizeof(header),
-            "--- Throttled flush at %s (%zu lines) ---\n",
-            timestamp().c_str(), tb.lines.size());
-        fprintf(f, "%s", header);
-        for (const auto& line : tb.lines)
-            fprintf(f, "%s", line.c_str());
-        fflush(f);
-    }
-
-    // Write all buffered console lines
-    if (mConfig.consoleOutput && !tb.consoleLines.empty()) {
-        std::string console;
-        console += "--- Throttled flush (" + std::to_string(tb.consoleLines.size()) + " lines) ---\n";
-        for (const auto& line : tb.consoleLines)
-            console += line;
-        LogManager::instance().writeConsole(console.c_str(), (int)console.size());
-    }
-
-    tb.lines.clear();
-    tb.consoleLines.clear();
-    tb.lastFlushTime = nowSeconds();
-}
-
-void StructuredLogger::tick() {
-    if (!mInitialized || !mConfig.enabled) return;
-    double now = nowSeconds();
-    for (auto& kv : mThrottledBuffers) {
-        int catIdx = kv.first;
-        ThrottledBuffer& tb = kv.second;
-        if (tb.lines.empty()) continue;
-
-        // Get category throttle config
-        StructuredCategory cat = (StructuredCategory)catIdx;
-        float throttle = 0.0f;
-        switch (cat) {
-            case StructuredCategory::General:         throttle = mConfig.general.throttleSeconds; break;
-            case StructuredCategory::Glb:             throttle = mConfig.glb.throttleSeconds; break;
-            case StructuredCategory::Replay:      throttle = mConfig.replay.throttleSeconds; break;
-            case StructuredCategory::Camera:      throttle = mConfig.camera.throttleSeconds; break;
-            case StructuredCategory::Audio:       throttle = mConfig.audio.throttleSeconds; break;
-            case StructuredCategory::Physics:     throttle = mConfig.physics.throttleSeconds; break;
-            case StructuredCategory::Performance: throttle = mConfig.performance.throttleSeconds; break;
-            case StructuredCategory::Collision:   throttle = mConfig.collision.throttleSeconds; break;
-            case StructuredCategory::NpcCombat:   throttle = mConfig.npcCombat.throttleSeconds; break;
-            case StructuredCategory::NpcMovement: throttle = mConfig.npcMovement.throttleSeconds; break;
-            case StructuredCategory::Ragdoll:     throttle = mConfig.ragdoll.throttleSeconds; break;
-            case StructuredCategory::Weapons:     throttle = mConfig.weapons.throttleSeconds; break;
-            case StructuredCategory::Animation:   throttle = mConfig.animation.throttleSeconds; break;
-            case StructuredCategory::Gui:         throttle = mConfig.gui.throttleSeconds; break;
-            case StructuredCategory::Avatar:      throttle = mConfig.avatar.throttleSeconds; break;
-            case StructuredCategory::Network:     throttle = mConfig.network.throttleSeconds; break;
-            case StructuredCategory::World:       throttle = mConfig.world.throttleSeconds; break;
-            case StructuredCategory::Duel:        throttle = mConfig.duel.throttleSeconds; break;
-            case StructuredCategory::Auth:        throttle = mConfig.auth.throttleSeconds; break;
-            case StructuredCategory::Chat:        throttle = mConfig.chat.throttleSeconds; break;
-            case StructuredCategory::Vip:         throttle = mConfig.vip.throttleSeconds; break;
-            case StructuredCategory::Rendering:   throttle = mConfig.rendering.throttleSeconds; break;
-            case StructuredCategory::GlbModels:   throttle = mConfig.glbModels.throttleSeconds; break;
-            case StructuredCategory::Executable:  throttle = mConfig.executable.throttleSeconds; break;
-            default: break;
-        }
-        if (throttle > 0.0f && now - tb.lastFlushTime >= (double)throttle)
-            flushThrottled(catIdx);
-    }
+    write(e);
 }
 
 // ── Audio buffer analysis ───────────────────────────────────
@@ -1017,7 +925,6 @@ static AudioBufferAnalysis analyzeAudioBufferImpl(
     double sum = 0.0;
     double sumSq = 0.0;
 
-    // Analyze samples per channel
     std::vector<double> prevSample(channels, 0.0);
     std::vector<bool> firstSamplePerCh(channels, true);
 
@@ -1025,7 +932,6 @@ static AudioBufferAnalysis analyzeAudioBufferImpl(
         double s = (double)buffer[i];
         int ch = (int)(i % channels);
 
-        // Convert int16 if needed (normalize to [-1, 1])
         if (std::numeric_limits<T>::is_integer) {
             double maxVal = (double)std::numeric_limits<T>::max();
             s = s / maxVal;
@@ -1042,7 +948,6 @@ static AudioBufferAnalysis analyzeAudioBufferImpl(
         if (std::fabs(s) <= 0.0001) a.zeroCount++;
         if (std::fabs(s) >= 1.0) a.clipCount++;
 
-        // Discontinuity detection (per-channel, independent)
         if (!firstSamplePerCh[ch]) {
             double delta = std::fabs(s - prevSample[ch]);
             if (delta > threshold) {
@@ -1054,7 +959,6 @@ static AudioBufferAnalysis analyzeAudioBufferImpl(
         prevSample[ch] = s;
         firstSamplePerCh[ch] = false;
 
-        // Record first/last 16 samples
         if (i < 16) a.firstSamples.push_back(s);
         if (i >= totalSamples - 16) a.lastSamples.push_back(s);
     }
@@ -1117,37 +1021,4 @@ void logAudioAnalysis(StructuredCategory cat, StructuredLevel level,
     e.tolerance = 0.0;
 
     StructuredLogger::instance().write(e);
-}
-
-// ── Numeric assertion ───────────────────────────────────────
-
-void StructuredLogger::assertNear(
-    const std::string& eventId, const std::string& correlationId,
-    const std::string& reason, StructuredCategory cat,
-    const std::string& sourceFile, int sourceLine,
-    const std::string& functionName,
-    const std::string& key, double expected, double actual,
-    double tolerance, uint32_t tick, uint32_t frame)
-{
-    if (!mInitialized || !mConfig.enabled) return;
-    if (!shouldLog(cat, StructuredLevel::Trace)) return;
-
-    Entry e;
-    e.category = cat;
-    e.level = std::fabs(actual - expected) > tolerance
-        ? StructuredLevel::Errors : StructuredLevel::Verbose;
-    e.eventId = eventId;
-    e.correlationId = correlationId;
-    e.reason = reason;
-    e.sourceFile = sourceFile;
-    e.sourceLine = sourceLine;
-    e.functionName = functionName;
-    e.tick = tick;
-    e.frame = frame;
-    e.numericKeys.push_back(key);
-    e.numericExpected.push_back(expected);
-    e.numericActual.push_back(actual);
-    e.tolerance = tolerance;
-
-    write(e);
 }

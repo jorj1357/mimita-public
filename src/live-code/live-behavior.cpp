@@ -750,18 +750,52 @@ void MIMITA_GAME_CALL capLog(void*, const char* message)
     if (!message)
         return;
     std::printf("[HOT] %s\n", message);
-    // File-backed sink so hot diagnostics are saved with the rest of the
-    // categorized logs (logs/<date>/...), not just printed.
-    ::StructuredLogger::Entry e;
-    e.category = ::StructuredCategory::Network;
-    e.level = ::StructuredLevel::Verbose;
-    e.eventId = "hot.log";
-    e.reason = "hot";
-    e.sourceFile = "live-behavior";
-    e.sourceLine = 0;
-    e.functionName = "capLog";
-    e.message = message;
-    ::StructuredLogger::instance().write(e);
+    // One authoritative record: hot diagnostics land in events.jsonl.
+    ::debug::Event ev;
+    ev.category = "HOT";
+    ev.name = "hot.log";
+    ev.level = ::debug::Level::Debug;
+    ev.message = message;
+    ev.sourceFile = "live-behavior";
+    ev.functionName = "capLog";
+    ::debug::logEvent(ev);
+}
+
+// log.event: hot modules emit structured events through the ONE generic
+// capability; the kernel writes them into the process run's events.jsonl.
+void MIMITA_GAME_CALL capLogEvent(void*, const GameLogEventV1* event)
+{
+    if (!event)
+        return;
+    static const debug::Level kLevels[6] = {
+        debug::Level::Trace, debug::Level::Debug, debug::Level::Info,
+        debug::Level::Warn, debug::Level::Error, debug::Level::Fatal};
+    const std::uint32_t levelIdx = event->level < 6u ? event->level : 2u;
+
+    debug::Event ev;
+    ev.category = event->category[0] ? event->category : "HOT";
+    ev.name = event->name[0] ? event->name : "hot.event";
+    ev.level = kLevels[levelIdx];
+    ev.message = event->message;
+    ev.reason = event->reason;
+    ev.simulationTick = event->simulationTick;
+    ev.frame = event->frame;
+    ev.serverTick = event->serverTick;
+    ev.clientTick = event->clientTick;
+    ev.sourceFile = "hot-module";
+    ev.functionName = "capLogEvent";
+    if (event->entityId != 0)
+        ev.fields["entity_id"] = event->entityId;
+    if (event->actorId != 0)
+        ev.fields["actor_id"] = event->actorId;
+    if (event->actorKind != 0) {
+        static const char* kKinds[] = {"none", "player", "npc", "remote", "other"};
+        ev.fields["actor_type"] =
+            kKinds[event->actorKind < 5u ? event->actorKind : 4u];
+    }
+    if (event->result[0])
+        ev.fields["result"] = event->result;
+    debug::logEvent(ev);
 }
 
 bool MIMITA_GAME_CALL capDynamicReadComponent(void*, std::uint64_t entity,
@@ -1990,6 +2024,10 @@ struct KernelCapabilityInit {
                                     gameHash("sig.actor.spawn.v1"), 0,
                                     reinterpret_cast<void*>(&capActorSpawn),
                                     "actor.spawn");
+        rt.registerKernelCapability(GAME_CAP_LOG_EVENT,
+                                    gameHash("sig.log.event.v1"), 0,
+                                    reinterpret_cast<void*>(&capLogEvent),
+                                    "log.event");
         rt.registerKernelCapability(GAME_CAP_RENDER_DEBUG,
                                     gameHash("sig.render.debug.v1"), 0,
                                     reinterpret_cast<void*>(&capRenderDebug),

@@ -23,6 +23,7 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/packages/collision/collision-abi.h"
+#include "hot-reload/packages/collision/collision-log.h"
 #include "hot-reload/packages/collision/collision-world.h"
 
 namespace HotCollisionPackage {
@@ -51,6 +52,11 @@ constexpr float kGroundMaxHeightAboveFeet = 0.15f;
 // Old cold-path grounding stability values (preserved behavior).
 constexpr float kContactHysteresisSeconds = 0.033f;   // world contact memory
 constexpr float kStableGroundGraceSeconds = 0.08f;    // ground loss grace
+// Old cold doGroundSnap/doFloorRecovery distance: how far below the capsule a
+// walkable surface is still pulled up to resting contact. This is what stops
+// the actor hovering a fraction above the floor after a fast landing.
+constexpr float kGroundSettleDistance = 0.25f;
+constexpr float kGroundSettleEpsilon = 0.005f;
 // Extra padding around the swept union AABB so geometry brushed at the very
 // edge of the sweep is still a candidate. Kept small: the sweep itself already
 // covers the full move.
@@ -100,8 +106,24 @@ struct TimingStats {
     std::uint64_t candidates = 0;
     std::uint64_t large = 0;
     std::uint64_t contacts = 0;
+    std::uint64_t declines = 0;
+    std::uint64_t noContact = 0;
     float sinceLogSeconds = 0.0f;
 };
+
+// Unconditional per-second heartbeat for the "no collision" failure mode. The
+// kernel aggregates repeats, but a decline must always be visible, so the
+// package throttles it itself. Live-editable.
+constexpr float kDeclineLogIntervalSeconds = 1.0f;
+struct DeclineLog {
+    float sinceLogSeconds = 0.0f;
+    std::uint64_t suppressed = 0;
+};
+DeclineLog& declineLog()
+{
+    static DeclineLog d;
+    return d;
+}
 TimingStats& timingStats()
 {
     static TimingStats s;
@@ -313,6 +335,54 @@ void recordImpacts(const ActorContact* merged, int mc, ActorContact* accum,
     }
 }
 
+// Old cold doGroundSnap: pull the actor down to a walkable surface within the
+// settle distance so a fast landing rests exactly on the floor instead of
+// hovering a fraction above it. Only snaps down (never up) and only to a
+// near-feet walkable surface. Returns true when it grounded the actor.
+bool settleToGround(glm::vec3& pos, glm::vec3& vel,
+                    const ColliderRuntime* cols, int colCount,
+                    const std::vector<std::uint32_t>& candidates)
+{
+    if (cols[0].partId != COLLISION_PART_CAPSULE && colCount > 0)
+        return false;
+    for (int i = 0; i < colCount; ++i) {
+        if (cols[i].partId != COLLISION_PART_CAPSULE)
+            continue;
+        const glm::vec3 c = pos + cols[i].localOffset;
+        const float halfSeg = cols[i].halfHeight > cols[i].radius
+                                  ? cols[i].halfHeight - cols[i].radius
+                                  : 0.0f;
+        // Bottom sphere centre; its surface is the actor's feet.
+        const glm::vec3 bottomCenter = c - glm::vec3(0.0f, 0.0f, halfSeg);
+        const float feetZ = c.z - (cols[i].halfHeight > cols[i].radius
+                                       ? cols[i].halfHeight
+                                       : cols[i].radius);
+        // Probe a sphere just below the feet for a walkable surface.
+        SphereHit hits[8];
+        const int hc = gatherSphereHits(bottomCenter,
+                                        cols[i].radius + kGroundSettleDistance,
+                                        kContactTolerance, candidates, hits, 8);
+        float bestZ = -1e30f;
+        for (int h = 0; h < hc; ++h) {
+            if (hits[h].normal.z <= kWalkableSlopeDot)
+                continue;
+            const float surfaceZ = hits[h].point.z;
+            if (surfaceZ > bestZ && surfaceZ < c.z + 1.0f)
+                bestZ = surfaceZ;
+        }
+        if (bestZ <= -1e29f)
+            continue;
+        const float distance = feetZ - bestZ;
+        if (distance > 0.0f && distance < kGroundSettleDistance) {
+            pos.z -= distance - kGroundSettleEpsilon;
+            if (vel.z < 0.0f)
+                vel.z = 0.0f;
+            return true;
+        }
+    }
+    return false;
+}
+
 int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
                 std::uint64_t tick, const ColliderRuntime* cols, int colCount,
                 const std::vector<std::uint32_t>& candidates, bool& grounded,
@@ -415,6 +485,30 @@ void spawnImpactSphere(void* host, const CollisionImpactV1& ev)
     fn(ctx->host, &p);
 }
 
+// Throttled COLLISION/decline record. Reports why a solve did nothing so the
+// "fall through the world" failure is visible in events.jsonl live.
+void logDecline(void* host, const CollisionSolveV1* q, const char* why)
+{
+    DeclineLog& d = declineLog();
+    d.suppressed++;
+    d.sinceLogSeconds += q->dt;
+    if (d.sinceLogSeconds < kDeclineLogIntervalSeconds)
+        return;
+
+    const WorldCache& c = worldCache();
+    char msg[192];
+    std::snprintf(msg, sizeof(msg),
+                  "collision declined why=%s cachedTris=%u ready=%d pos=(%.2f %.2f %.2f) vz=%.2f suppressed=%llu",
+                  why, c.total, (int)c.ready, q->position[0], q->position[1],
+                  q->position[2], q->velocity[2],
+                  (unsigned long long)(d.suppressed - 1));
+    collisionLogResult(reinterpret_cast<GameplayContextV1*>(host), 4u,
+                       "COLLISION", "collision.declined", msg, why,
+                       q->tick);
+    d.sinceLogSeconds = 0.0f;
+    d.suppressed = 0;
+}
+
 void solve(void* host, CollisionSolveV1* q)
 {
     if (!q)
@@ -439,6 +533,7 @@ void solve(void* host, CollisionSolveV1* q)
         !std::isfinite(vel.y) || !std::isfinite(vel.z)) {
         q->outVelocity[0] = q->outVelocity[1] = q->outVelocity[2] = 0.0f;
         q->handled = 1u;   // keep ownership; never hand NaN to the fallback
+        logDecline(host, q, "non_finite_input");
         return;
     }
 
@@ -446,8 +541,11 @@ void solve(void* host, CollisionSolveV1* q)
     // a solve to be meaningful; if the world cache cannot be built the caller is
     // told the solve did not happen (handled = 0) instead of being handed a
     // silently-uncollided position that would let the actor fall through.
-    if (!ensureWorld(host))
+    if (!ensureWorld(host)) {
+        // This is the "no collision at all" failure mode: surface it live.
+        logDecline(host, q, "world_unavailable");
         return;
+    }
 
     const int colCount = std::min((int)q->colliderCount, (int)COLLISION_MAX_COLLIDERS);
     ColliderRuntime cols[COLLISION_MAX_COLLIDERS];
@@ -542,11 +640,20 @@ void solve(void* host, CollisionSolveV1* q)
         worldContact = hasWorldContact;
     }
 
+    // Ground settle, matching the old cold doGroundSnap: if a walkable surface
+    // is within the settle distance below the feet, rest exactly on it. This
+    // keeps walking/standing stable and jump-eligible after a fast landing.
+    if (!bounced && vel.z <= 0.0f && settleToGround(pos, vel, cols, colCount,
+                                                    candidates))
+        grounded = true;
+
     if (grounded && !bounced && vel.z > -kGroundSnapEpsilon &&
         vel.z < kGroundSnapEpsilon)
         vel.z = 0.0f;
 
-    // Throttled phase timing: one summary per interval, never per solve.
+    // Throttled phase timing: one summary per interval, never per solve. The
+    // summary is emitted into events.jsonl so collision behavior is observable
+    // live (candidates/contacts prove the broadphase saw geometry).
     {
         TimingStats& t = timingStats();
         const double narrowMs = nowMs() - narrowStart;
@@ -557,16 +664,24 @@ void solve(void* host, CollisionSolveV1* q)
         t.candidates += candidates.size();
         t.large += (std::uint64_t)worldCache().always.size();
         t.contacts += (std::uint64_t)contactAccumCount;
+        if (!collided)
+            t.noContact++;
         t.sinceLogSeconds += q->dt;
         if (t.sinceLogSeconds >= kTimingLogIntervalSeconds && t.solves > 0) {
             const double inv = 1.0 / (double)t.solves;
-            std::printf(
-                "[COLLISION PACKAGE] solves=%llu broadMs=%.3f narrowMs=%.3f "
-                "totalMs=%.3f avgCandidates=%.1f large=%llu avgContacts=%.1f\n",
-                (unsigned long long)t.solves, t.broadphaseMs * inv,
+            const WorldCache& wc = worldCache();
+            char msg[256];
+            std::snprintf(
+                msg, sizeof(msg),
+                "solves=%llu worldTris=%u broadMs=%.3f narrowMs=%.3f totalMs=%.3f "
+                "avgCand=%.1f large=%llu avgContacts=%.1f noContact=%llu grounded=%d",
+                (unsigned long long)t.solves, wc.total, t.broadphaseMs * inv,
                 t.narrowphaseMs * inv, t.solverMs * inv,
                 (double)t.candidates * inv, (unsigned long long)t.large,
-                (double)t.contacts * inv);
+                (double)t.contacts * inv, (unsigned long long)t.noContact,
+                (int)grounded);
+            collisionLog(reinterpret_cast<GameplayContextV1*>(host), 2u,
+                         "COLLISION", "collision.solve.summary", msg, q->tick);
             t = TimingStats{};
         }
     }
@@ -619,6 +734,23 @@ void solve(void* host, CollisionSolveV1* q)
         for (std::uint32_t i = 0; i < q->impactCount; ++i)
             spawnImpactSphere(host, q->impacts[i]);
     }
+
+    // One record per accepted impact (the kernel aggregates repeats and
+    // rate-limits to one per object/part per tick at the source).
+    if (q->impactCount > 0) {
+        const CollisionImpactV1& ev = q->impacts[0];
+        char msg[192];
+        std::snprintf(msg, sizeof(msg),
+                      "impact part=%u pos=(%.2f %.2f %.2f) n=(%.2f %.2f %.2f) "
+                      "contacts=%u grounded=%d bounced=%d",
+                      ev.partId, ev.position[0], ev.position[1], ev.position[2],
+                      ev.normal[0], ev.normal[1], ev.normal[2],
+                      contactAccumCount, (int)grounded, (int)bounced);
+        collisionLogResult(reinterpret_cast<GameplayContextV1*>(host), 2u,
+                           "COLLISION", "collision.impact", msg, "impact",
+                           q->tick);
+    }
+
     q->handled = 1u;
 }
 
@@ -632,6 +764,12 @@ void MIMITA_GAME_CALL onCollisionSolve(void* host, CollisionSolveV1* q)
 void collisionSolve(void* host, CollisionSolveV1* q)
 {
     solve(host, q);
+}
+
+void collisionResetRuntimeState()
+{
+    bounceTickMap().clear();
+    groundMemoryMap().clear();
 }
 
 const MimitaHotPackage::CapabilityRegistrar s_collisionProvider{

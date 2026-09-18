@@ -1,11 +1,11 @@
-// 08 09 2026, 12 45
+// 09 17 2026
 /* purpose
-* Always-on structured log for NPC combat behavior, written by BOTH the client
+* Always-on structured log for NPC combat behavior, emitted by BOTH the client
 * and server processes so their numerical views can be compared.
-* Writes to logs/<MM-DD-YYYY>/NPC_log_<HHMMSS>.txt (same dated-folder format as
-* the main logger). Each line is tagged with the writing process (proc=client|server).
-* Does NOT own any gameplay logic; it only appends diagnostic lines.
-* Does NOT gate on debug flags - it logs indefinitely, one file per game run.
+* Each message becomes one NPC record in the authoritative events.jsonl stream;
+* the writing process is tagged via LiveIdentity instead of separate files.
+* Does NOT own any gameplay logic; it only emits diagnostic events.
+* Does NOT gate on debug flags - it logs indefinitely.
 */
 
 #pragma once

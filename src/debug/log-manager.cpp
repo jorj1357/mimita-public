@@ -1,50 +1,19 @@
-#include "log-manager.h"
+// 09 17 2026
+/* purpose
+* Implements the stdout->events.jsonl legacy bridge and the console mirror.
+* Raw printf output becomes one LEGACY JSONL record per line; there is no
+* separate .txt run log and no per-category file.
+* Does NOT own events.jsonl (StructuredLogger does) and does not format events.
+*/
 
-#include <algorithm>
-#include <chrono>
-#include <cstdio>
+#include "log-manager.h"
+#include "structured-log.h"
+
 #include <cstring>
-#include <ctime>
-#include <filesystem>
 #include <fcntl.h>
 #include <io.h>
-#include <unistd.h>
+#include <string>
 #include <vector>
-
-namespace fs = std::filesystem;
-
-static std::string timestamp()
-{
-    auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-    localtime_s(&tm, &t);
-    char buf[64];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
-    return std::string(buf);
-}
-
-static std::string dateDirName()
-{
-    auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-    localtime_s(&tm, &t);
-    char buf[16];
-    std::strftime(buf, sizeof(buf), "%m-%d-%Y", &tm);
-    return std::string(buf);
-}
-
-static std::string timeFileName(const std::string& logType)
-{
-    auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-    localtime_s(&tm, &t);
-    char buf[16];
-    std::strftime(buf, sizeof(buf), "%H%M%S", &tm);
-    return logType + "_log_" + std::string(buf) + ".txt";
-}
 
 LogManager& LogManager::instance()
 {
@@ -52,110 +21,55 @@ LogManager& LogManager::instance()
     return mgr;
 }
 
-std::string LogManager::managedFilePath(const std::string& logType)
+std::string LogManager::managedFilePath(const std::string& /*logType*/)
 {
-    return "logs/" + dateDirName() + "/" + timeFileName(logType);
+    // Every managed log type now shares the one authoritative event stream.
+    return debug::eventsPath();
+}
+
+std::string LogManager::path() const
+{
+    return debug::eventsPath();
 }
 
 bool LogManager::createDirectories()
 {
-    std::error_code ec;
-    fs::create_directories("logs/" + dateDirName(), ec);
-    return !ec;
-}
-
-bool LogManager::openFile()
-{
-    mPath = "logs/" + dateDirName() + "/" + timeFileName(mLogType);
-    mFile = fopen(mPath.c_str(), "w");
-    if (!mFile) {
-        printf("[LOGMANAGER] Failed to open log: %s\n", mPath.c_str());
-        return false;
-    }
-    setvbuf(mFile, nullptr, _IOLBF, 1024);
+    // Directory creation is owned by StructuredLogger::init(); nothing to do.
     return true;
 }
 
-void LogManager::rotateLogs()
+void LogManager::cleanupOldFormat()
 {
-    const int MAX_LOGS = 30;
-    std::vector<fs::path> logFiles;
-
-    std::error_code ec;
-    if (!fs::exists("logs", ec)) return;
-
-    for (auto& entry : fs::recursive_directory_iterator("logs", ec)) {
-        if (!entry.is_regular_file()) continue;
-        std::string name = entry.path().filename().string();
-        if (name.find("_log_") != std::string::npos) {
-            // Only rotate files matching our managed log types
-            bool isOurs = false;
-            for (auto& ft : {"Server_", "Gameterminal_", "Client_", "Game_"}) {
-                if (name.find(ft) == 0) { isOurs = true; break; }
-            }
-            if (isOurs)
-                logFiles.push_back(entry.path());
-        }
-    }
-
-    if ((int)logFiles.size() <= MAX_LOGS) return;
-
-    std::sort(logFiles.begin(), logFiles.end(), [](const fs::path& a, const fs::path& b) {
-        return fs::last_write_time(a) < fs::last_write_time(b);
-    });
-
-    int toDelete = (int)logFiles.size() - MAX_LOGS;
-    mRotationDeleted = 0;
-    for (int i = 0; i < toDelete; ++i) {
-        std::error_code ec2;
-        fs::remove(logFiles[i], ec2);
-        if (!ec2) {
-            printf("[LOG ROTATION] Deleted old log: %s\n", logFiles[i].string().c_str());
-            if (mFile)
-                fprintf(mFile, "[LOG ROTATION] Deleted old log: %s\n",
-                    logFiles[i].string().c_str());
-            mRotationDeleted++;
-        }
-    }
-}
-
-void LogManager::writeHeader()
-{
-    if (!mFile) return;
-    fprintf(mFile,
-        "==================================================\n"
-        "MIMITA %s LOG\n"
-        "Start Time: %s\n"
-        "Build: debug\n"
-        "==================================================\n",
-        mLogType.c_str(), timestamp().c_str());
-
-    if (mRotationDeleted > 0) {
-        fprintf(mFile, "\n[LOG ROTATION] Removed %d old logs\n", mRotationDeleted);
-    }
-}
-
-void LogManager::writeFooter()
-{
-    if (!mFile) return;
-    fprintf(mFile,
-        "\n==================================================\n"
-        "END OF RUN\n"
-        "Time: %s\n"
-        "==================================================\n",
-        timestamp().c_str());
+    // Old-format directory cleanup is no longer performed here; the JSONL run
+    // folders are self-describing and bounded.
 }
 
 void LogManager::write(const char* text, int len)
 {
-    if (mFile && len > 0)
-        fwrite(text, 1, (size_t)len, mFile);
+    if (!text || len <= 0)
+        return;
+    // Route raw byte output through the same one-record-per-line bridge so it
+    // lands in events.jsonl.
+    std::string chunk(text, (size_t)len);
+    size_t start = 0;
+    while (start <= chunk.size()) {
+        size_t nl = chunk.find('\n', start);
+        const std::string line = (nl == std::string::npos)
+            ? chunk.substr(start)
+            : chunk.substr(start, nl - start);
+        if (!line.empty())
+            emitLegacyLine(line);
+        if (nl == std::string::npos)
+            break;
+        start = nl + 1;
+    }
 }
 
 void LogManager::write(const char* text)
 {
-    if (mFile && text)
-        fputs(text, mFile);
+    if (!text)
+        return;
+    write(text, (int)std::strlen(text));
 }
 
 void LogManager::writeConsole(const char* text, int len)
@@ -169,103 +83,64 @@ void LogManager::writeConsole(const char* text, int len)
 
 void LogManager::flush()
 {
-    if (mFile)
-        fflush(mFile);
+    debug::flushEvents();
 }
 
-int LogManager::fileCount() const
+void LogManager::emitLegacyLine(const std::string& line)
 {
-    std::error_code ec;
-    if (!fs::exists("logs", ec)) return 0;
-    int count = 0;
-    for (auto& entry : fs::recursive_directory_iterator("logs", ec)) {
-        if (!entry.is_regular_file()) continue;
-        std::string name = entry.path().filename().string();
-        if (name.find("_log_") != std::string::npos) {
-            for (auto& ft : {"Server_", "Gameterminal_", "Client_", "Game_"}) {
-                if (name.find(ft) == 0) { count++; break; }
-            }
-        }
-    }
-    return count;
+    // One clean record per message: raw output that did not already go through
+    // a structured call becomes a single LEGACY event.
+    debug::Event ev;
+    ev.category = "LEGACY";
+    ev.name = "legacy.stdout";
+    ev.level = debug::Level::Debug;
+    ev.message = line;
+    ev.sourceFile = "log-manager.cpp";
+    ev.functionName = "emitLegacyLine";
+    ev.aggregationKey = "LEGACY:legacy.stdout";
+    debug::logEvent(ev);
 }
 
 static void captureThreadFunc(int readFd, LogManager* mgr, std::atomic<bool>& running)
 {
     char buf[4096];
     int consoleFd = mgr->savedStdoutFd();
+    std::string pending;
     while (running) {
         int n = (int)_read(readFd, buf, sizeof(buf) - 1);
         if (n > 0) {
             buf[n] = '\0';
-            mgr->write(buf, n);
-            mgr->flush();
+            pending += buf;
+            size_t start = 0;
+            for (;;) {
+                size_t nl = pending.find('\n', start);
+                if (nl == std::string::npos)
+                    break;
+                std::string line = pending.substr(start, nl - start);
+                if (!line.empty() && line.back() == '\r')
+                    line.pop_back();
+                if (!line.empty())
+                    mgr->emitLegacyLine(line);
+                start = nl + 1;
+            }
+            pending.erase(0, start);
             if (consoleFd >= 0)
                 _write(consoleFd, buf, n);
         } else {
             break;
         }
     }
-}
-
-void LogManager::cleanupOldFormat()
-{
-    std::error_code ec;
-    if (!fs::exists("logs", ec)) return;
-    for (auto& entry : fs::directory_iterator("logs", ec)) {
-        if (!entry.is_directory()) continue;
-        std::string dirName = entry.path().filename().string();
-        // Check for files matching old pattern: HH-MM-SS-log.txt (dashed time + "-log.txt")
-        for (auto& file : fs::directory_iterator(entry.path(), ec)) {
-            if (!file.is_regular_file()) continue;
-            std::string name = file.path().filename().string();
-            if (name.size() > 8 && name.substr(name.size() - 8) == "-log.txt") {
-                fs::remove_all(entry.path(), ec);
-                printf("[LOGMANAGER] Cleaned up old-format log dir: %s\n", dirName.c_str());
-                break;
-            }
-        }
-        // Also delete empty directories whose name matches DD-MM-YYYY with DD > 12
-        // (unambiguously old date format, not MM-DD-YYYY)
-        if (dirName.size() == 10 && dirName[2] == '-' && dirName[5] == '-') {
-            int firstNum = std::atoi(dirName.substr(0, 2).c_str());
-            if (firstNum > 12) {
-                bool empty = true;
-                for (auto& f : fs::directory_iterator(entry.path(), ec)) {
-                    (void)f; empty = false; break;
-                }
-                if (empty) {
-                    if (fs::remove(entry.path(), ec)) {
-                        printf("[LOGMANAGER] Cleaned up old-format empty log dir: %s\n", dirName.c_str());
-                    }
-                }
-            }
-        }
-    }
+    if (!pending.empty())
+        mgr->emitLegacyLine(pending);
 }
 
 bool LogManager::init()
 {
-    if (mFile) return true;
+    if (mRunning.load())
+        return true;
 
-    cleanupOldFormat();
-
-    if (!createDirectories()) {
-        printf("[LOGMANAGER] Failed to create log directories\n");
-        return false;
-    }
-
-    rotateLogs();
-
-    if (!openFile())
-        return false;
-
-    writeHeader();
-    flush();
-
-    // Capture stdout via pipe
-    // All printf/Debug::log output goes through stdout; the pipe reader
-    // thread writes everything to the log file AND to the original console.
+    // Capture stdout via a pipe so raw printf output lands in events.jsonl.
+    // StructuredLogger already owns the file and flushes.
     int pipeFds[2];
     if (_pipe(pipeFds, 65536, _O_BINARY) == 0) {
         mPipeRead = pipeFds[0];
@@ -276,7 +151,6 @@ bool LogManager::init()
             _dup2(pipeWrite, _fileno(stdout));
             _close(pipeWrite);
 
-            // Unbuffered stdout so every printf appears in the pipe immediately
             setvbuf(stdout, nullptr, _IONBF, 0);
 
             mRunning = true;
@@ -288,27 +162,14 @@ bool LogManager::init()
         }
     }
 
-    printf("[LOGMANAGER] Logging to: %s\n", mPath.c_str());
     return true;
-}
-
-static void writeLatestLogPath(const std::string& path)
-{
-    std::error_code ec;
-    fs::create_directories("logs", ec);
-    FILE* f = fopen("logs/latest-log-path.txt", "w");
-    if (f) {
-        fprintf(f, "%s\n", path.c_str());
-        fclose(f);
-    }
 }
 
 void LogManager::shutdown()
 {
     mRunning = false;
 
-    // Restore original stdout first — this closes stdout's copy of the
-    // pipe write end, which signals EOF to the reader thread.
+    // Restore original stdout first so the pipe write end closes (EOF).
     if (mSavedStdout >= 0) {
         fflush(stdout);
         _dup2(mSavedStdout, _fileno(stdout));
@@ -316,7 +177,6 @@ void LogManager::shutdown()
         mSavedStdout = -1;
     }
 
-    // Close the read end to unblock the reader thread
     if (mPipeRead >= 0) {
         _close(mPipeRead);
         mPipeRead = -1;
@@ -324,25 +184,4 @@ void LogManager::shutdown()
 
     if (mCaptureThread.joinable())
         mCaptureThread.join();
-
-    writeFooter();
-    flush();
-
-    if (mFile) {
-        fclose(mFile);
-        mFile = nullptr;
-    }
-
-    writeLatestLogPath(mPath);
-
-    // Print log path clearly at exit
-    char absPath[4096];
-    if (_fullpath(absPath, mPath.c_str(), sizeof(absPath))) {
-        printf("\n");
-        printf("==================================================\n");
-        printf("MIMITA RUN LOG SAVED\n");
-        printf("%s\n", absPath);
-        printf("Ctrl+Click the path above to open it.\n");
-        printf("==================================================\n");
-    }
 }

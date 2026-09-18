@@ -138,6 +138,10 @@ struct CollisionSolveV1 {
     CollisionImpactV1 impacts[COLLISION_MAX_IMPACTS];
 };
 
+// `host` is the GameplayContextV1* (the gameplay context), matching the original
+// hot capsule-solve contract: the package resolves capabilities
+// (`world.collision`, `log.event`, `effect.part`) and reads tick/frame from it.
+// Hot callers pass their `ctx`, never the opaque `ctx->host`.
 using GameCollisionSolveFn = void (MIMITA_GAME_CALL *)(void* host,
                                                        CollisionSolveV1* solve);
 
@@ -148,6 +152,10 @@ void collisionSolve(void* host, CollisionSolveV1* solve);
 // Package-provided candidate self-test. Defined in `collision-selftest.cpp` and
 // called by the package self-test hook before activation.
 bool collisionPackageSelfTest(char* message, std::uint32_t cap);
+
+// Clears all per-entity runtime memory (bounce cooldowns, ground hysteresis) so
+// a candidate self-test starts from a known state. Not called during gameplay.
+void collisionResetRuntimeState();
 
 } // namespace HotCollisionPackage
 

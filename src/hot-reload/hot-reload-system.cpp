@@ -8,6 +8,7 @@
 #include "live-code/code-hash.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-journal.h"
+#include "debug/structured-log.h"
 #include "utils/path_utils.h"
 #include "utils/time-format.h"
 
@@ -28,6 +29,26 @@ void MIMITA_GAME_CALL platformLog(const char* message)
 {
     if (message)
         std::printf("%s\n", message);
+}
+
+// One authoritative HOT_RELOAD record when a generation fails to load or
+// validate. Never aggregated (Error level), so a failure is always visible.
+void emitHotReloadFailure(std::uint32_t generation, const std::string& result,
+                          const std::string& error)
+{
+    debug::Event ev;
+    ev.category = "HOT_RELOAD";
+    ev.name = "module.reloaded";
+    ev.level = debug::Level::Error;
+    ev.message = "hot generation rejected";
+    ev.reason = error;
+    ev.fields = {
+        {"generation", (uint64_t)generation},
+        {"result", result},
+    };
+    ev.sourceFile = "hot-reload-system.cpp";
+    ev.functionName = "emitHotReloadFailure";
+    debug::logEvent(ev);
 }
 
 bool wildcardMatch(const std::string& pattern, const std::string& text)
@@ -413,6 +434,7 @@ bool HotReloadSystem::tryActivateCandidate()
         LiveCodeEvents::notifyCompileFailed(summary, result.generation,
                                             active_.generation, result.error,
                                             attemptFailures_);
+        emitHotReloadFailure(result.generation, "compile_failed", result.error);
         return false;
     }
 
@@ -441,6 +463,7 @@ bool HotReloadSystem::tryActivateCandidate()
                 (std::uint64_t)std::min(10000, 2000 * attemptFailures_);
             nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + backoffMs;
             LiveCodeEvents::notifyValidationFailed(result.generation, error);
+            emitHotReloadFailure(result.generation, "load_failed", error);
             return false;
         }
         candidate.generation = result.generation;
@@ -487,6 +510,7 @@ bool HotReloadSystem::tryActivateCandidate()
             ++attemptFailures_;
             nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + 2000;
             LiveCodeEvents::notifyValidationFailed(candidate.generation, lastError_);
+            emitHotReloadFailure(candidate.generation, "switch_rejected", lastError_);
             retireRecord(candidate);
             return false;
         }
@@ -504,6 +528,8 @@ bool HotReloadSystem::tryActivateCandidate()
                 (std::uint64_t)std::min(10000, 2000 * attemptFailures_);
             nextRetryMonoMs_ = MiMitaTime::monotonicMillis() + backoffMs;
             LiveCodeEvents::notifyValidationFailed(result.generation, lastError_);
+            emitHotReloadFailure(result.generation, "package_registration_failed",
+                                 lastError_);
             retireRecord(candidate);
             return false;
         }
@@ -527,6 +553,21 @@ bool HotReloadSystem::tryActivateCandidate()
     nextRetryMonoMs_ = 0;
 
     LiveCodeEvents::notifyActivated(active_.generation, active_.codeHash);
+    {
+        debug::Event ev;
+        ev.category = "HOT_RELOAD";
+        ev.name = "module.reloaded";
+        ev.level = debug::Level::Info;
+        ev.message = "hot generation activated";
+        ev.fields = {
+            {"generation", (uint64_t)active_.generation},
+            {"code_hash", active_.codeHash},
+            {"result", "success"},
+        };
+        ev.sourceFile = "hot-reload-system.cpp";
+        ev.functionName = "activateCandidate";
+        debug::logEvent(ev);
+    }
     return true;
 }
 
@@ -628,6 +669,21 @@ bool HotReloadSystem::rollback()
             active_.api.packageDescriptor, regError);
     }
     LiveCodeEvents::notifyRollbackActivated(active_.generation, active_.codeHash);
+    {
+        debug::Event ev;
+        ev.category = "HOT_RELOAD";
+        ev.name = "module.reloaded";
+        ev.level = debug::Level::Warn;
+        ev.message = "hot generation rolled back";
+        ev.fields = {
+            {"generation", (uint64_t)active_.generation},
+            {"code_hash", active_.codeHash},
+            {"result", "rollback"},
+        };
+        ev.sourceFile = "hot-reload-system.cpp";
+        ev.functionName = "rollback";
+        debug::logEvent(ev);
+    }
     return true;
 }
 

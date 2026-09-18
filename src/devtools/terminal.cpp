@@ -12,6 +12,7 @@
 #include <ctime>
 
 #include "config.h"
+#include "debug/structured-log.h"
 #include "hot-reload/generic-runtime.h"
 #include "devtools/dev-config.h"
 #include "devtools/dev-overlay.h"
@@ -303,16 +304,34 @@ void Terminal::addLog(const std::string& text) {
     size_t pos = 0, next;
     while ((next = text.find('\n', pos)) != std::string::npos) {
         std::string line = text.substr(pos, next - pos);
-        if (!line.empty())
+        if (!line.empty()) {
             mScrollback.push_back(line);
+            emitTerminalEvent(line);
+        }
         pos = next + 1;
     }
-    if (pos < text.size())
+    if (pos < text.size()) {
         mScrollback.push_back(text.substr(pos));
+        emitTerminalEvent(text.substr(pos));
+    }
     if ((int)mScrollback.size() > MAX_SCROLLBACK)
         mScrollback.erase(mScrollback.begin(), mScrollback.begin() + ((int)mScrollback.size() - MAX_SCROLLBACK));
     if (mScrollOffset > 0)
         mScrollOffset = std::min(mScrollOffset + 1, std::max(0, (int)mScrollback.size() - 1));
+}
+
+// One clean record per terminal line in the authoritative events stream. The
+// visible scrollback remains an optional mirror; the JSONL file is the record.
+void Terminal::emitTerminalEvent(const std::string& line) {
+    debug::Event ev;
+    ev.category = "TERMINAL";
+    ev.name = "terminal.log";
+    ev.level = debug::Level::Debug;
+    ev.message = line;
+    ev.sourceFile = "terminal.cpp";
+    ev.functionName = "addLog";
+    ev.aggregationKey = "TERMINAL:terminal.log";
+    debug::logEvent(ev);
 }
 
 void Terminal::addHistory(const std::string& input) {

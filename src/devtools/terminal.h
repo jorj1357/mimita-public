@@ -74,6 +74,8 @@ public:
     void registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded, CommandCategory category);
     void execute(const std::string& input);
     void addLog(const std::string& text);
+    // Emit one TERMINAL record for a single line into events.jsonl.
+    void emitTerminalEvent(const std::string& line);
 
     // Multi-step interactive input: the next submitted line is routed to the
     // callback (instead of being run as a command). Used by interactive flows

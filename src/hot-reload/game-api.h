@@ -2363,6 +2363,37 @@ struct GameActorSpawnV1 {
 using GameActorSpawnFn = bool (MIMITA_GAME_CALL *)(void* host, GameActorSpawnV1* request);
 static constexpr std::uint64_t GAME_CAP_ACTOR_SPAWN = gameHash("actor.spawn");
 
+// log.event: the kernel's single authoritative debug stream exposed to hot
+// modules as one generic capability. A hot module emits a plain-data event and
+// the kernel writes it into the process run's events.jsonl. Adding a new hot
+// subsystem log never adds an ABI field; the caller supplies all meaning.
+static constexpr std::uint64_t GAME_CAP_LOG_EVENT = gameHash("log.event");
+static constexpr std::uint32_t GAME_LOG_CATEGORY = 32;
+static constexpr std::uint32_t GAME_LOG_NAME = 64;
+static constexpr std::uint32_t GAME_LOG_MESSAGE = 192;
+static constexpr std::uint32_t GAME_LOG_REASON = 96;
+struct GameLogEventV1 {
+    // in
+    std::uint32_t level;       // 0 trace, 1 debug, 2 info, 3 warn, 4 error, 5 fatal
+    std::uint32_t simulationTick;
+    std::uint64_t entityId;
+    char category[GAME_LOG_CATEGORY];   // e.g. "COLLISION"
+    char name[GAME_LOG_NAME];           // e.g. "collision.resolved"
+    char message[GAME_LOG_MESSAGE];
+    char reason[GAME_LOG_REASON];       // optional
+    char result[GAME_LOG_REASON];       // optional
+    // Append-only identity/timing so a hot event can say which actor, which
+    // frame, and which client/server tick it describes.
+    std::uint64_t frame;
+    std::uint64_t serverTick;
+    std::uint64_t clientTick;
+    std::uint64_t actorId;
+    std::uint32_t actorKind;   // 0 none, 1 player, 2 npc, 3 remote, 4 other
+    std::uint32_t reserved;
+};
+using GameLogEventFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                 const GameLogEventV1* event);
+
 // Generic authoritative projectile spawn. The kernel owns id allocation,
 // simulation, collision, and replication; the spec carries only generic data
 // (no weapon/projectile enum). `typeId` is a runtime key the package chooses.

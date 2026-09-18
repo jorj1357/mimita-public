@@ -1,75 +1,44 @@
 {
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "hot_reload": true,
-  "console_output": true,
-  "summary_file": false,
 
-  "default_level": "off",
+  "events_file": true,
+  "console_mirror": false,
+  "flush_each_event": true,
+  "repeat_window_seconds": 1.0,
+
+  "default_level": "important",
 
   "categories": {
-    "general": { "level": "off", "file_output": false },
-    "glb": { "level": "off", "file_output": false },
-    "replay": {
-      "level": "off",
-      "file_output": false
-    },
-    "camera": {
-      "level": "off",
-      "file_output": false
-    },
-    "audio": {
-      "level": "off",
-      "file_output": false
-    },
-    "physics": { "level": "off", "file_output": false },
-    "performance": {
-      "level": "off",
-      "file_output": false
-    },
-    "collision": {
-      "level": "off",
-      "file_output": false
-    },
-    "npc_combat": { "level": "off", "file_output": false },
-    "npc_movement": { "level": "off", "file_output": false },
-    "weapons": { "level": "off", "file_output": false },
-    "animation": { "level": "off", "file_output": false },
-    "gui": {
-      "level": "off",
-      "file_output": false
-    },
-    "avatar": {
-      "level": "off",
-      "file_output": false
-    },
-    "network": {
-      "level": "verbose",
-      "file_output": true,
-      "throttle": 0.0
-    },
-    "world": { "level": "off", "file_output": false },
-    "duel": { "level": "off", "file_output": false },
-    "auth": { "level": "off", "file_output": false },
-    "chat": { "level": "off", "file_output": false },
-    "vip": { "level": "off", "file_output": false },
-    "rendering": {
-      "level": "off",
-      "file_output": false
-    },
-    "glb_models": {
-      "level": "off",
-      "file_output": false
-    },
-    "executable": {
-      "level": "errors",
-      "file_output": false
-    },
-    "grenade_launcher": { "level": "off", "file_output": false, "throttle": 0.0 },
-    "healthbar": { "level": "off", "file_output": false, "throttle": 0.0 },
-    "skybox": { "level": "off", "file_output": false, "throttle": 0.0 },
-    "chat_layout": { "level": "off", "file_output": false, "throttle": 0.0 },
-    "ragdoll": { "level": "off", "file_output": false, "throttle": 0.0 }
+    "general": { "level": "off", "file_output": true },
+    "glb": { "level": "off", "file_output": true },
+    "replay": { "level": "off", "file_output": true },
+    "camera": { "level": "off", "file_output": true },
+    "audio": { "level": "off", "file_output": true },
+    "physics": { "level": "off", "file_output": true },
+    "performance": { "level": "off", "file_output": true },
+    "collision": { "level": "important", "file_output": true },
+    "npc_combat": { "level": "important", "file_output": true },
+    "npc_movement": { "level": "off", "file_output": true },
+    "weapons": { "level": "important", "file_output": true },
+    "animation": { "level": "off", "file_output": true },
+    "gui": { "level": "off", "file_output": true },
+    "avatar": { "level": "off", "file_output": true },
+    "network": { "level": "important", "file_output": true, "throttle": 0.0 },
+    "world": { "level": "off", "file_output": true },
+    "duel": { "level": "off", "file_output": true },
+    "auth": { "level": "off", "file_output": true },
+    "chat": { "level": "off", "file_output": true },
+    "vip": { "level": "off", "file_output": true },
+    "rendering": { "level": "off", "file_output": true },
+    "glb_models": { "level": "off", "file_output": true },
+    "executable": { "level": "errors", "file_output": true },
+    "grenade_launcher": { "level": "off", "file_output": true, "throttle": 0.0 },
+    "healthbar": { "level": "off", "file_output": true, "throttle": 0.0 },
+    "skybox": { "level": "off", "file_output": true, "throttle": 0.0 },
+    "chat_layout": { "level": "off", "file_output": true, "throttle": 0.0 },
+    "ragdoll": { "level": "off", "file_output": true, "throttle": 0.0 }
   },
 
   "sampling": {
@@ -110,4 +79,3 @@
     "log_render_counts": false
   }
 }
-

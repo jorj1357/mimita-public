@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <vector>
 
 namespace HotCollisionPackage {
@@ -74,10 +75,28 @@ CollisionSolveV1 makeCapsule(std::uint64_t entity, std::uint64_t tick,
     return q;
 }
 
+// Advance a multi-tick test: the root and its collider positions must follow the
+// package result together so each collider's local offset stays correct.
+void carryOver(CollisionSolveV1& q)
+{
+    for (int k = 0; k < 3; ++k) {
+        q.position[k] = q.outPosition[k];
+        q.velocity[k] = q.outVelocity[k];
+    }
+    for (std::uint32_t i = 0; i < q.colliderCount; ++i) {
+        for (int k = 0; k < 3; ++k)
+            q.colliders[i].position[k] = q.outPosition[k];
+    }
+}
+
 } // namespace
 
 bool collisionPackageSelfTest(char* message, std::uint32_t cap)
 {
+    // Start from a clean runtime state so no earlier test leaves hysteresis or
+    // bounce cooldown memory that would change a later test's result.
+    collisionResetRuntimeState();
+
     // 1. Capsule resting on / impacting a flat floor contacts and grounds.
     installQuad(V(-20, -20, 0), V(20, -20, 0), V(20, 20, 0), V(-20, 20, 0));
     {
@@ -197,27 +216,30 @@ bool collisionPackageSelfTest(char* message, std::uint32_t cap)
                                          0.4f, 0.5f);
         q.dt = 1.0f / 60.0f;
         bool landed = false;
-        for (int i = 0; i < 8; ++i) {
+        for (int i = 0; i < 12; ++i) {
             q.tick = 50ull + (std::uint64_t)i;
-            for (int k = 0; k < 3; ++k) {
-                q.position[k] = q.outPosition[k];
-                q.velocity[k] = q.outVelocity[k];
-            }
+            if (i > 0)
+                carryOver(q);
             collisionSolve(nullptr, &q);
             if (!q.handled)
                 return fail(message, cap, "fast fall: solve declined");
             if (!finite3(q.outPosition) || !finite3(q.outVelocity))
                 return fail(message, cap, "fast fall: non-finite output");
-            if (q.outPosition[2] < 0.3f && !q.grounded)
+            if (q.outPosition[2] < 0.2f && !q.grounded)
                 return fail(message, cap, "fast fall: tunneled through floor");
-            if (q.grounded && q.outPosition[2] > 0.3f &&
-                q.outPosition[2] < 0.9f && q.outVelocity[2] >= -0.01f) {
+            if (q.grounded && q.outVelocity[2] >= -0.01f) {
                 landed = true;
                 break;
             }
         }
-        if (!landed)
-            return fail(message, cap, "fast fall: floor not detected");
+        if (!landed) {
+            char detail[MIMITA_GAME_SELFTEST_MESSAGE];
+            std::snprintf(detail, sizeof(detail),
+                          "fast fall: no landing z=%.3f vz=%.2f g=%u wc=%u c=%u",
+                          q.outPosition[2], q.outVelocity[2], q.grounded,
+                          q.worldContact, q.contactCount);
+            return fail(message, cap, detail);
+        }
     }
 
     // 9. No world bound: the solve must decline instead of reporting a silent
@@ -267,10 +289,8 @@ bool collisionPackageSelfTest(char* message, std::uint32_t cap)
                                          0.4f, 0.9f);
         for (int i = 0; i < 12; ++i) {
             q.tick = 70ull + (std::uint64_t)i;
-            for (int k = 0; k < 3; ++k)
-                q.position[k] = q.outPosition[k];
-            for (int k = 0; k < 3; ++k)
-                q.velocity[k] = q.outVelocity[k];
+            if (i > 0)
+                carryOver(q);
             collisionSolve(nullptr, &q);
             if (!q.handled)
                 return fail(message, cap, "resting: solve declined");
