@@ -104,7 +104,7 @@ struct StructuredLogConfig {
     bool summaryFile = false;
     bool eventsFile = true;
     bool consoleMirror = false;
-    bool flushEachEvent = true;
+    bool flushEachEvent = false;
     float repeatWindowSeconds = 1.0f;
     StructuredLevel defaultLevel = StructuredLevel::Off;
 
@@ -162,6 +162,15 @@ struct StructuredLogConfig {
         float quaternionMagnitudeTolerance = 0.0001f;
         float audioVideoSyncToleranceMs = 50.0f;
     } replayValidation;
+
+    struct ProbeConfig {
+        bool enabled = false;
+        int sampleEveryTicks = 1;
+        double slowOnlyMs = 0.0;
+        double minimumChange = 0.0;
+    };
+
+    std::unordered_map<std::string, ProbeConfig> probes;
 };
 
 enum class StructuredCategory {
@@ -250,6 +259,7 @@ public:
                     double tolerance, uint32_t tick = 0, uint32_t frame = 0);
 
     bool shouldLog(StructuredCategory cat, StructuredLevel level) const;
+    bool probeEnabled(const std::string& name) const;
 
     const StructuredLogConfig& config() const { return mConfig; }
 
@@ -297,7 +307,7 @@ private:
     std::string levelToString(StructuredLevel lvl) const;
     std::string debugLevelToString(debug::Level lvl) const;
     const StructuredLogConfig::CategoryConfig& categoryConfigFor(StructuredCategory cat) const;
-    void writeLine(const std::string& json);
+    void writeLine(const std::string& json, bool forceFlush = false);
     void flushBucket(RepeatBucket& bucket);
     std::string buildRecord(const debug::Event& event) const;
 

@@ -318,6 +318,19 @@ void StructuredLogger::loadConfig() {
                 cfg.replayValidation.audioVideoSyncToleranceMs = r["audio_video_sync_tolerance_ms"].get<float>();
         }
 
+        if (j.contains("probes") && j["probes"].is_object()) {
+            for (auto it = j["probes"].begin(); it != j["probes"].end(); ++it) {
+                StructuredLogConfig::ProbeConfig probe;
+                if (it.value().is_object()) {
+                    probe.enabled = it.value().value("enabled", false);
+                    probe.sampleEveryTicks = std::max(1, it.value().value("sample_every_ticks", 1));
+                    probe.slowOnlyMs = it.value().value("slow_only_ms", 0.0);
+                    probe.minimumChange = it.value().value("minimum_change", 0.0);
+                }
+                cfg.probes[it.key()] = probe;
+            }
+        }
+
         mConfig = cfg;
         mCategoryLevels.clear();
         const StructuredCategory cats[28] = {
@@ -373,11 +386,13 @@ void StructuredLogger::createRunDir() {
 
 // ── Raw writer ──────────────────────────────────────────────
 
-void StructuredLogger::writeLine(const std::string& json) {
+void StructuredLogger::writeLine(const std::string& json, bool forceFlush) {
     if (!mEventsFile) return;
     std::fwrite(json.data(), 1, json.size(), mEventsFile);
     std::fputc('\n', mEventsFile);
-    if (mConfig.flushEachEvent)
+    // Critical records (errors/fatal) always flush promptly; ordinary records
+    // flush only when configured, so gameplay is not blocked on disk per event.
+    if (forceFlush || mConfig.flushEachEvent)
         std::fflush(mEventsFile);
 }
 
@@ -546,7 +561,7 @@ void StructuredLogger::emit(const debug::Event& event, bool forceNoAggregate) {
 
     if (bypassAggregate) {
         mSequence++;
-        writeLine(buildRecord(event));
+        writeLine(buildRecord(event), true);
         return;
     }
 
@@ -666,6 +681,16 @@ bool StructuredLogger::categoryEnabled(const std::string& category,
         case debug::Level::Fatal: needed = StructuredLevel::Errors; break;
     }
     return (int)needed <= (int)configured;
+}
+
+bool StructuredLogger::probeEnabled(const std::string& name) const
+{
+    if (!mConfig.enabled)
+        return false;
+    const auto it = mConfig.probes.find(name);
+    if (it != mConfig.probes.end())
+        return it->second.enabled;
+    return categoryEnabled("PERFORMANCE", debug::Level::Info);
 }
 
 bool StructuredLogger::shouldLog(StructuredCategory cat, StructuredLevel level) const {

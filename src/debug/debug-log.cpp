@@ -4,7 +4,9 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -116,7 +118,9 @@ void Debug::logThrottled(Category category, const char* key, float intervalSecon
     if (!enabled(category))
         return;
 
-    static std::unordered_map<std::string, double> lastPrint;
+    // Transparent comparator lets the stack key be looked up as a string_view,
+    // so no std::string is constructed on the common (already-seen key) path.
+    static std::map<std::string, double, std::less<>> lastPrint;
     // Use stack buffer to avoid heap allocation for throttle key
     char keyBuf[128];
     const char* catName = legacyCategoryKey(category);
@@ -143,10 +147,13 @@ void Debug::logThrottled(Category category, const char* key, float intervalSecon
         return;
     }
     double now = secondsNow();
-    auto it = lastPrint.find(keyBuf);
+    auto it = lastPrint.find(std::string_view(keyBuf));
     if (it != lastPrint.end() && now - it->second < intervalSeconds)
         return;
-    lastPrint[std::string(keyBuf)] = now;
+    if (it != lastPrint.end())
+        it->second = now;
+    else
+        lastPrint.emplace(keyBuf, now);
 
     va_list args;
     va_start(args, fmt);

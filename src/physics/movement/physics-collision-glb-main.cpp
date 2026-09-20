@@ -109,16 +109,18 @@ static void trackGrowth(Player& p, int candidates, int contacts, int bodySpheres
     else if (bodySpheres < d.diagPrevBodySpheres) d.diagBodySphereGrowthFrames = 0;
     d.diagPrevBodySpheres = bodySpheres;
 
+    // Throttled: the condition stays true while the counter grows, so a raw warn
+    // would emit every frame until it resets.
     if (d.diagCandidateGrowthFrames >= 10)
-        Debug::warn(Debug::Category::Collision,
+        Debug::logThrottled(Debug::Category::Collision, "growth-candidates", 1.0f,
             "[GROWTH WARNING] candidates increasing for %d frames (current=%d prev=%d)\n",
             d.diagCandidateGrowthFrames, candidates, d.diagPrevCandidates);
     if (d.diagContactGrowthFrames >= 10)
-        Debug::warn(Debug::Category::Collision,
+        Debug::logThrottled(Debug::Category::Collision, "growth-contacts", 1.0f,
             "[GROWTH WARNING] contacts increasing for %d frames (current=%d prev=%d)\n",
             d.diagContactGrowthFrames, contacts, d.diagPrevContacts);
     if (d.diagBodySphereGrowthFrames >= 10)
-        Debug::warn(Debug::Category::Collision,
+        Debug::logThrottled(Debug::Category::Collision, "growth-bodyspheres", 1.0f,
             "[GROWTH WARNING] bodySpheres increasing for %d frames (current=%d prev=%d)\n",
             d.diagBodySphereGrowthFrames, bodySpheres, d.diagPrevBodySpheres);
 }

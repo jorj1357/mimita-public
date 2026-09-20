@@ -192,7 +192,14 @@ enum PacketType : uint8_t
     // immutable content version. Payload bytes ride the existing
     // ArtifactRequest/Begin/Chunk path (logicalResourceId in the request's
     // logicalGenerationId field). Metadata only.
-    PACKET_CONTENT_ARTIFACT = 82
+    PACKET_CONTENT_ARTIFACT = 82,
+    PACKET_LIVE_REVISION_PROPOSE = 83,
+    PACKET_LIVE_REVISION_ACCEPT = 84,
+    PACKET_LIVE_REVISION_REJECT = 85,
+    PACKET_LIVE_REVISION_ACTIVATE = 86,
+    PACKET_LIVE_REVISION_ROLLBACK = 87,
+    PACKET_LIVE_REVISION_CONFLICT = 88,
+    PACKET_LIVE_REVISION_ACK = 89
 };
 
 static constexpr uint32_t ARTIFACT_CHUNK_BYTES = 1000;
@@ -1845,6 +1852,23 @@ struct ContentArtifactPacket
     uint64_t publicationToken = 0;
 };
 static_assert(sizeof(ContentArtifactPacket) <= 64, "ContentArtifactPacket too large");
+
+struct LiveRevisionPacket
+{
+    PacketHeader header;
+    uint64_t operationId = 0;
+    uint64_t resourceId = 0;
+    uint64_t revisionId = 0;
+    uint64_t parentRevisionId = 0;
+    uint64_t baseRevisionId = 0;
+    uint64_t contentHash = 0;
+    uint64_t createdTick = 0;
+    uint32_t authorClientId = 0;
+    uint32_t resourceKind = 0;
+    uint32_t state = 0;
+    uint32_t reason = 0;
+};
+static_assert(sizeof(LiveRevisionPacket) <= 128, "LiveRevisionPacket too large");
 
 // Held-fire intent. The server simulates one authoritative projectile per
 // gameplay tick while the window is open, subject to ammo and rate.

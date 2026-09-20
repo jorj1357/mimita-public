@@ -10,7 +10,9 @@
 #define GLFW_INCLUDE_NONE
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -288,15 +290,58 @@ void appendHash(std::uint64_t& hash, const std::string& text)
     }
 }
 
+struct ShaderFileStamp {
+    std::uint64_t mtime = 0;
+    std::uint64_t size = 0;
+};
+
+bool shaderFileStamp(const char* path, ShaderFileStamp& out)
+{
+    std::error_code ec;
+    const std::string resolved = resolveAssetPath(path);
+    const std::filesystem::file_time_type mtime =
+        std::filesystem::last_write_time(resolved, ec);
+    if (ec)
+        return false;
+    const std::uint64_t size = std::filesystem::file_size(resolved, ec);
+    if (ec)
+        return false;
+    out.mtime = static_cast<std::uint64_t>(mtime.time_since_epoch().count());
+    out.size = size;
+    return true;
+}
+
 std::uint64_t basicShaderContentHash()
 {
+    // Only read and hash the two shader files when their size or mtime changed.
+    // Live reload is preserved, but the per-frame blocking disk read is removed.
+    static ShaderFileStamp sVertStamp;
+    static ShaderFileStamp sFragStamp;
+    static std::uint64_t sCachedHash = 0;
+    static bool sHasCache = false;
+
+    ShaderFileStamp vertNow;
+    ShaderFileStamp fragNow;
+    if (!shaderFileStamp("shaders/basic.vert", vertNow) ||
+        !shaderFileStamp("shaders/basic.frag", fragNow))
+        return sHasCache ? sCachedHash : 0;
+
+    if (sHasCache &&
+        vertNow.mtime == sVertStamp.mtime && vertNow.size == sVertStamp.size &&
+        fragNow.mtime == sFragStamp.mtime && fragNow.size == sFragStamp.size)
+        return sCachedHash;
+
     const std::string vert = readTextFileQuiet("shaders/basic.vert");
     const std::string frag = readTextFileQuiet("shaders/basic.frag");
     if (vert.empty() || frag.empty())
-        return 0;
+        return sHasCache ? sCachedHash : 0;
     std::uint64_t hash = 1469598103934665603ull;
     appendHash(hash, vert);
     appendHash(hash, frag);
+    sVertStamp = vertNow;
+    sFragStamp = fragNow;
+    sCachedHash = hash;
+    sHasCache = true;
     return hash;
 }
 

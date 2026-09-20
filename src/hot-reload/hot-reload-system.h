@@ -140,6 +140,9 @@ private:
 
     void loadManifest();
     std::string computeSourceHash() const;
+    // Content hash of one hot source, re-read only when its size/mtime changes.
+    // Avoids full-file SHA-256 of every hot source every poll on the game thread.
+    std::string hashSourceCached(const std::string& relative) const;
     // Per-file hash diff vs the previous build; returns changed relative paths.
     std::vector<std::string> diffSourceHashes();
     std::string manifestSummary() const;
@@ -170,6 +173,12 @@ private:
     std::string manifestHash_;
     std::unordered_map<std::string, std::uint64_t> coldMtimes_;
     std::unordered_map<std::string, std::string> sourceHashes_;
+    struct SourceHashEntry {
+        std::uint64_t mtime = 0;
+        std::uint64_t size = 0;
+        std::string hash;
+    };
+    mutable std::unordered_map<std::string, SourceHashEntry> sourceHashCache_;
     std::string coldPendingFile_;
     std::uint64_t lastColdNoticeMs_ = 0;
     Project::ProjectWatcher watcher_;

@@ -1062,11 +1062,37 @@ std::string HotReloadSystem::candidateCodeHash() const
     return result_.codeHash;
 }
 
+std::string HotReloadSystem::hashSourceCached(const std::string& relative) const
+{
+    const std::string path = (root_ / relative).string();
+    std::error_code ec;
+    const std::filesystem::file_time_type mtime =
+        std::filesystem::last_write_time(path, ec);
+    if (ec)
+        return LiveCodeHash::sha256File(path);
+    const std::uint64_t size = std::filesystem::file_size(path, ec);
+    const std::uint64_t stamp =
+        static_cast<std::uint64_t>(mtime.time_since_epoch().count());
+
+    auto it = sourceHashCache_.find(relative);
+    if (it != sourceHashCache_.end() && !ec &&
+        it->second.mtime == stamp && it->second.size == size)
+        return it->second.hash;
+
+    const std::string hash = LiveCodeHash::sha256File(path);
+    SourceHashEntry& entry = sourceHashCache_[relative];
+    entry.mtime = stamp;
+    entry.size = ec ? 0 : size;
+    entry.hash = hash;
+    return hash;
+}
+
 std::string HotReloadSystem::computeSourceHash() const
 {
     std::string combined;
+    combined.reserve(hotSources_.size() * 96);
     for (const auto& relative : hotSources_) {
-        const std::string hash = LiveCodeHash::sha256File((root_ / relative).string());
+        const std::string hash = hashSourceCached(relative);
         if (hash.empty())
             return {};
         combined += relative;
@@ -1083,8 +1109,9 @@ std::vector<std::string> HotReloadSystem::diffSourceHashes()
 {
     std::vector<std::string> changed;
     std::unordered_map<std::string, std::string> next;
+    next.reserve(hotSources_.size());
     for (const auto& relative : hotSources_) {
-        const std::string hash = LiveCodeHash::sha256File((root_ / relative).string());
+        const std::string hash = hashSourceCached(relative);
         if (hash.empty())
             continue;
         next[relative] = hash;

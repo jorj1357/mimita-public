@@ -156,8 +156,13 @@ void perfAggregateScopes(double totalFrameMs, double budgetMs, int frameNumber)
     if (gPerfScopeCount == 0)
         return;
 
-    // Compute child sums
-    std::vector<double> childInclusiveSum(gPerfScopeCount, 0.0);
+    struct Entry { int index; double inclMs; double selfMs; double pctOfTotal; };
+
+    // Compute child sums. Reused thread-local buffers: this runs every frame and
+    // must not heap-allocate on the hot path.
+    static thread_local std::vector<double> childInclusiveSum;
+    static thread_local std::vector<Entry> entries;
+    childInclusiveSum.assign(gPerfScopeCount, 0.0);
     for (int i = 0; i < gPerfScopeCount; ++i) {
         const PerfScopeCapture& cap = gPerfScopes[i];
         if (cap.parentIndex >= 0 && cap.parentIndex < gPerfScopeCount) {
@@ -167,8 +172,7 @@ void perfAggregateScopes(double totalFrameMs, double budgetMs, int frameNumber)
     }
 
     // Build sorted list
-    struct Entry { int index; double inclMs; double selfMs; double pctOfTotal; };
-    std::vector<Entry> entries;
+    entries.clear();
     entries.reserve(gPerfScopeCount);
 
     for (int i = 0; i < gPerfScopeCount; ++i) {

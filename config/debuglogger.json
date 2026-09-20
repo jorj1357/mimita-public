@@ -5,7 +5,7 @@
 
   "events_file": true,
   "console_mirror": false,
-  "flush_each_event": true,
+  "flush_each_event": false,
   "repeat_window_seconds": 1.0,
 
   "default_level": "important",
@@ -60,6 +60,12 @@
     "fov_degrees_tolerance": 0.1,
     "quaternion_magnitude_tolerance": 0.0001,
     "audio_video_sync_tolerance_ms": 50.0
+  },
+
+  "probes": {
+    "movement.step": { "enabled": false, "sample_every_ticks": 60 },
+    "collision.resolve": { "enabled": false, "sample_every_ticks": 1, "slow_only_ms": 0.25 },
+    "server.position_error": { "enabled": false, "sample_every_ticks": 1, "minimum_change": 0.05 }
   },
 
   "performance": {

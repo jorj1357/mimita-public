@@ -944,18 +944,23 @@ void engineTickReplay(Engine& engine, float dt)
     } // Perf::ScopedTimer Simulation
 
     // Config polling — once per rendered frame, not per simulation tick.
-    // These do filesystem stat() calls; running them inside the catch-up loop
-    // would multiply their cost by the number of catch-up ticks.
-    GuiLayoutManager::instance().pollReload();
-    KillfeedConfig::instance().pollReload();
-    KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
-    LightingConfig::instance().pollReload();
-    ShadowConfig::instance().pollReload();
-    pollVoidDeathConfig();
-    pollHitmarkerAudioConfig();
-    pollReplayExportConfig();
-    pollOutroConfig();
-    pollReplayHitmarkerConfig();
+    // These do filesystem stat() calls; throttle the whole set so a frame does
+    // not pay one stat per config, and so catch-up ticks cannot multiply it.
+    {
+        static std::uint32_t sReplayConfigPollCounter = 0;
+        if ((sReplayConfigPollCounter++ % 15u) == 0u) {
+            GuiLayoutManager::instance().pollReload();
+            KillfeedConfig::instance().pollReload();
+            KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
+            LightingConfig::instance().pollReload();
+            ShadowConfig::instance().pollReload();
+            pollVoidDeathConfig();
+            pollHitmarkerAudioConfig();
+            pollReplayExportConfig();
+            pollOutroConfig();
+            pollReplayHitmarkerConfig();
+        }
+    }
 
     ProcessNpcSpawnCommands(npcSystem, camera, world, player);
     ProcessNpcTrainingSpawnCommands(npcSystem, camera, world, player);

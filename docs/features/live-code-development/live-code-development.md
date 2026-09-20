@@ -202,6 +202,25 @@ state migration; code activation; rollback; notification emitted; sound emitted;
 test started/finished; packet sent/received; projectile spawned/hit/reconciled;
 UI/effect event applied.
 
+For every client/server gameplay event, the journal also records both peers'
+logical code generation, aggregate code hash, module generation, simulation
+tick, and switch/READY state. A generation mismatch is an explicit event.
+Position diagnostics include predicted position, authoritative position,
+broadcast position, position error, transform epoch, and correction reason.
+
+## Generic action-to-sound presentation
+
+Gameplay code does not call sound-specific functions such as
+`playFreezeBeginSound()` or `playDashSound()`. A gameplay action emits a
+generic presentation event such as `actor.freeze.started` or
+`actor.dash.completed`. One generic audio presenter resolves that event to a
+sound definition and calls one audio player.
+
+The definition may specify asset, volume, pitch, playback speed, start offset,
+loop enabled, loop count, loop duration/ticks, spatial position, falloff,
+channel, and interruption/overlap policy. The action owns the event; audio
+owns how the configured sound is played.
+
 The journal is the detailed forensic record. The human-readable changelog
 remains required and becomes a summary generated from the live evidence. The
 journal writes under the repository time standard
