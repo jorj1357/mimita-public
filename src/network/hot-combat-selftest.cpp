@@ -49,6 +49,9 @@
 #include "combat/weapon-types.h"
 #include "render/dynamic-light.h"
 #include "camera.h"
+#include "debug/structured-log.h"
+#include "physics/movement/physics-collision-shared.h"
+#include "glm/gtc/matrix_transform.hpp"
 
 extern Camera* gpCamera;
 
@@ -120,6 +123,11 @@ ProjectileImpactPolicyV1 makeImpact(std::uint64_t typeId)
 bool runHotCombatSelfTest(std::string& report)
 {
     bool ok = true;
+
+    // CLI self-tests do not pass through the normal Engine logger bootstrap.
+    // Start the same central events.jsonl logger so the weapon probe is real
+    // evidence rather than console-only test output.
+    StructuredLogger::instance().init();
 
     EntityRegistry::instance().destroyAll();
     DynamicComponentStore::instance().clear();
@@ -3052,7 +3060,113 @@ bool runHotCombatSelfTest(std::string& report)
                     report);
     }
 
+    // ── Deterministic weapon transform probe ─────────────────────────────
+    // This is a real hot attachment -> cold collision-consumer bridge.  It
+    // deliberately uses the same Player/recomputeWeaponCapsule path as live
+    // movement, while varying only the action phase and resolved attachment
+    // pose.  The records are weapon-only so they can be compared without
+    // mixing in unrelated hot-reload lifecycle output.
+    {
+        const EntityId actor = Ecs::ensureLocalPlayerEntity();
+        const EntityId tool = EntityRegistry::instance().createGeneric(EntityRealm::Local);
+        HotToolClaimV1 claim{};
+        claim.toolKey = gameHash("revolver");
+        claim.migrated = 1;
+        claim.toolEntity = static_cast<std::uint64_t>(tool);
+        claim.meshResourceId = gameHash("mesh.tool.revolver");
+
+        HotAttachmentStateV1 attachment{};
+        attachment.parentEntity = static_cast<std::uint64_t>(actor);
+        attachment.socket = gameHash("rightArm");
+        attachment.localScale[0] = attachment.localScale[1] =
+            attachment.localScale[2] = 1.0f;
+        attachment.worldRotation[3] = 1.0f;
+        attachment.worldScale[0] = attachment.worldScale[1] =
+            attachment.worldScale[2] = 1.0f;
+        attachment.resolved = 1;
+        attachment.forward[1] = 1.0f;
+
+        const bool claimWritten = DynamicComponentStore::instance().write(
+            actor, HOT_TOOL_CLAIM_COMPONENT, &claim, sizeof(claim));
+        const bool attachmentWritten = DynamicComponentStore::instance().write(
+            tool, HOT_ATTACHMENT_COMPONENT, &attachment, sizeof(attachment));
+
+        Player probe(false);
+        probe.equippedWeaponId = "revolver";
+        probe.runtimeToolId = claim.toolKey;
+        PhysicalBodyPart arm;
+        arm.name = "rightArm";
+        arm.worldTransform = glm::mat4(1.0f);
+        probe.physicalBody.parts.push_back(arm);
+        probe.weaponGripLocal = glm::vec3(0.0f, 0.0f, 0.0f);
+        probe.weaponMuzzleLocal = glm::vec3(0.0f, 1.0f, 0.0f);
+        probe.weaponRadiusLocal = 0.08f;
+
+        auto emitPhase = [&](const char* phase, std::uint64_t tick,
+                             const glm::vec3& position, const glm::vec3& forward) {
+            attachment.worldPosition[0] = position.x;
+            attachment.worldPosition[1] = position.y;
+            attachment.worldPosition[2] = position.z;
+            attachment.muzzleWorldPosition[0] = position.x + forward.x;
+            attachment.muzzleWorldPosition[1] = position.y + forward.y;
+            attachment.muzzleWorldPosition[2] = position.z + forward.z;
+            attachment.forward[0] = forward.x;
+            attachment.forward[1] = forward.y;
+            attachment.forward[2] = forward.z;
+            DynamicComponentStore::instance().write(
+                tool, HOT_ATTACHMENT_COMPONENT, &attachment, sizeof(attachment));
+
+            probe.movementSimulationTick = tick;
+            recomputeWeaponCapsule(probe);
+
+            debug::Event ev;
+            ev.category = "WEAPONS";
+            ev.name = "weapon.probe_phase";
+            ev.level = debug::Level::Info;
+            ev.simulationTick = tick;
+            ev.message = "deterministic_hot_weapon_probe";
+            ev.reason = phase;
+            ev.fields["phase"] = phase;
+            ev.fields["weapon_id"] = probe.equippedWeaponId;
+            ev.fields["hot_attachment_written"] = attachmentWritten;
+            ev.fields["hot_claim_written"] = claimWritten;
+            ev.fields["hot_position"] = {position.x, position.y, position.z};
+            ev.fields["hot_forward"] = {forward.x, forward.y, forward.z};
+            ev.fields["collision_grip"] = {probe.weaponCollisionCapsule.a.x,
+                                              probe.weaponCollisionCapsule.a.y,
+                                              probe.weaponCollisionCapsule.a.z};
+            ev.fields["collision_tip"] = {probe.weaponCollisionCapsule.b.x,
+                                             probe.weaponCollisionCapsule.b.y,
+                                             probe.weaponCollisionCapsule.b.z};
+            ev.fields["collision_radius"] = probe.weaponCollisionCapsule.r;
+            ev.fields["collision_valid"] = probe.weaponCollisionDebug.valid;
+            ev.fields["collision_capsule_mode"] = probe.weaponCollisionDebug.capsuleMode;
+            ev.aggregationKey = std::string("weapon.probe_phase.") + phase;
+            MIMITA_EVENT(ev);
+        };
+
+        emitPhase("idle", 1001, glm::vec3(2.0f, 1.0f, 0.0f),
+                  glm::vec3(0.0f, 1.0f, 0.0f));
+        emitPhase("aim", 1002, glm::vec3(2.0f, 1.05f, 0.02f),
+                  glm::normalize(glm::vec3(0.12f, 0.99f, 0.0f)));
+        emitPhase("reload", 1003, glm::vec3(1.95f, 1.0f, 0.04f),
+                  glm::normalize(glm::vec3(-0.08f, 0.98f, 0.12f)));
+        emitPhase("melee", 1004, glm::vec3(2.0f, 1.15f, 0.0f),
+                  glm::vec3(0.0f, 1.0f, 0.0f));
+        emitPhase("wall_contact", 1005, glm::vec3(2.0f, 1.35f, 0.0f),
+                  glm::vec3(0.0f, 1.0f, 0.0f));
+
+        ok &= check(claimWritten && attachmentWritten &&
+                        probe.weaponCollisionDebug.valid &&
+                        probe.collision.hasWeaponCollisionCapsule &&
+                        glm::length(probe.weaponCollisionCapsule.b -
+                                    probe.weaponCollisionCapsule.a) > 0.001f,
+                    "deterministic weapon probe resolves hot pose into collision capsule",
+                    report);
+    }
+
     GenericRuntime::instance().deactivate();
     HotReloadSystem::instance().unloadGameDLL();
+    StructuredLogger::instance().shutdown();
     return ok;
 }

@@ -1,9 +1,10 @@
 {
-  "_comment": "Weapon collision config. source \"capsule\" (default) = smooth bounding capsule(s) welded to the weapon model. Use \"capsule\" (singular) for one capsule, or \"capsules\" (plural) for multiple named capsules. Each capsule: start/end = local-space endpoints, radius = capsule radius, scale = axis scale, rotation_degrees = euler rotation. Hot-reloaded every 250ms. Set \"visible\": true to see capsule wireframes in-game.",
+  "_comment": "Weapon collision config. 'shape' selects the collision mode: 'triangles' (default; the actual weapon GLB triangles, hot collider uses a conservative sphere until a mesh capability exists), 'sphere' (radius/center), 'capsule' (start/end/radius), 'cylinder' or 'elongated_sphere' (mapped to an oriented capsule), 'spheres' (array of {position,radius}), or 'box' (extents + radius, approximated by two spheres along the longest axis). Legacy 'source'/'capsule'/'capsules' fields are inferred when 'shape' is absent. Hot-reloaded.",
 
   "revolver": {
     "enabled": true,
     "visible": false,
+    "shape": "capsule",
     "collision_skin": 0.05,
     "source": "capsule",
     "capsule": {

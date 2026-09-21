@@ -117,4 +117,12 @@ bool available();
 // Kernel-owned capability context for generic runtime systems (dynamic
 // component read/write, entity find, log, emit). Valid for the current tick.
 GameplayContextV1* hostContext(std::uint64_t tick);
+
+// Resolve one capsule against the bound world through the universal
+// `collision.main` package (via the collision.capsuleMove capability). Returns
+// false when the capability is unavailable so the caller can fall back.
+bool capsuleMove(const float inPos[3], const float inVel[3], float radius,
+                 float halfHeight, float yaw, float sizeScale, float dt,
+                 float outPos[3], float outVel[3], bool& grounded,
+                 bool& collided);
 } // namespace LiveBehavior

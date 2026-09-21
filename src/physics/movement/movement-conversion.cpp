@@ -327,9 +327,11 @@ MovementConfig makeMovementConfigForPreset(std::uint32_t presetId)
 
     config.walkMode = t.walkMode == MimitaHotMovement::kWalkModeSource
                           ? MovementWalkMode::Source
-                          : (t.walkMode == MimitaHotMovement::kWalkModeAccel
-                                 ? MovementWalkMode::Accel
-                                 : MovementWalkMode::Override);
+                          : (t.walkMode == MimitaHotMovement::kWalkModeV206
+                                 ? MovementWalkMode::V206
+                                 : (t.walkMode == MimitaHotMovement::kWalkModeAccel
+                                        ? MovementWalkMode::Accel
+                                        : MovementWalkMode::Override));
     config.airControlEnabled = t.airControlEnabled != 0;
     config.bunnyHopEnabled = t.bunnyHopEnabled != 0;
     config.autoBhopEnabled = t.autoBhopEnabled != 0;

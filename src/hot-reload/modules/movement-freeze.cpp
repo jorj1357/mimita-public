@@ -45,17 +45,12 @@ void freezePolicy(GameFreezePolicyV1& io)
     std::uint32_t available = io.freezeAvailable;
     float timer = io.freezeTimerSeconds;
 
-    bool startedThisTick = false;
     if (pressed && available != 0u) {
-        vx = 0.0f;
-        vy = 0.0f;
-        vz = 0.0f;
         active = 1u;
         available = 0u;
         timer = 0.0f;
         io.outDidFreeze = 1u;
         io.outFreezeStarted = 1u;
-        startedThisTick = true;
     }
 
     if (released && active != 0u) {
@@ -63,16 +58,29 @@ void freezePolicy(GameFreezePolicyV1& io)
         io.outFreezeEnded = 1u;
     }
 
-    // While frozen and held, velocity is suppressed (shared rule for both paths).
-    if (active != 0u && io.freezeHeld != 0u) {
-        vx = 0.0f;
-        vy = 0.0f;
-        vz = 0.0f;
-        if (!startedThisTick) {
-            timer += io.dt;
-            if (io.durationSeconds > 0.0f && timer > io.durationSeconds)
-                timer = io.durationSeconds;
+    // v2.0.6 freeze: while active, all-axis velocity is scaled by a piecewise
+    // quadratic multiplier over the freeze duration. It is NOT hard-zeroed and
+    // does not require the key to stay held; release ends it above. Gravity is
+    // applied before freeze by the caller, so the scaled gravity survives.
+    // The curve is duration-normalised: first half x*x*0.2, second half
+    // 0.2 + x*x*0.8, matching v2.0.6 physics-freeze.cpp freezeMaxTime 5.0.
+    if (active != 0u) {
+        timer += io.dt;
+        if (io.durationSeconds > 0.0f && timer > io.durationSeconds)
+            timer = io.durationSeconds;
+
+        const float half = (io.durationSeconds > 0.0f) ? io.durationSeconds * 0.5f : 2.5f;
+        float mult;
+        if (half > 0.0f && timer < half) {
+            const float x = timer / half;
+            mult = x * x * 0.2f;
+        } else {
+            const float x = (half > 0.0f) ? (timer - half) / half : 1.0f;
+            mult = 0.2f + x * x * 0.8f;
         }
+        vx *= mult;
+        vy *= mult;
+        vz *= mult;
     }
 
     io.outVelocity[0] = vx;

@@ -1,5 +1,6 @@
 {
-  "comment": "default preserves immediate aimbody behavior; smooth treats camera look as a wish direction and smoothly moves the body and configured limbs toward it. World Z is vertical and body yaw rotates around world Z. smoothingFactor 1.0 is approximately a 250 ms response; larger values are slower and smaller values are faster. Smooth mode never snaps. For each limb, gains scale camera look pitch into local pitch/yaw/roll rotations. Camera sway is configured separately in camconfig.json.",
+  "behaviorSource": "json",
+  "comment": "default preserves immediate aimbody behavior; smooth treats camera look as a wish direction and smoothly moves the body and configured limbs toward it. World Z is vertical and body yaw rotates around world Z. smoothingFactor 1.0 is approximately a 250 ms response; larger values are slower and smaller values are faster. Smooth mode never snaps. For each limb, gains scale camera look pitch into local pitch/yaw/roll rotations. Camera sway is configured separately in camconfig.json. Set behaviorSource to \"cpp\" to disable this JSON overlay (rollback).",
   "enabled": true,
   "mode": "default",
   "smoothingFactor": 1.0,

@@ -95,8 +95,8 @@ struct GameMovementIntentComponentV1 {
     std::uint32_t downDash;
     std::uint32_t freeze;
 };
+static constexpr std::uint32_t MOVEMENT_RUNTIME_STATE_VERSION = 2;
 
-static constexpr std::uint32_t MOVEMENT_RUNTIME_STATE_VERSION = 1;
 struct GameMovementRuntimeStateComponentV1 {
     std::uint32_t version;
     std::uint32_t grounded;
@@ -107,6 +107,7 @@ struct GameMovementRuntimeStateComponentV1 {
     std::uint32_t downDashHeldPreviously;
     std::uint32_t dashAvailable;
     std::uint32_t downDashAvailable;
+    std::uint32_t dashMovementTicks;  // airborne ticks with movement held (v2.0.6 dash quality)
     float dashCooldownSeconds;
     float jumpIntentSeconds;
     float dashGraceSeconds;
@@ -1666,6 +1667,33 @@ static constexpr std::uint64_t GAME_DOMAIN_CLIENT_TICK = gameHash("client.tick")
 // resolveCapability. Generic and reusable; adding a primitive never adds a
 // context field.
 static constexpr std::uint64_t GAME_CAP_PHYSICS_MOVE = gameHash("physics.move");
+// collision.capsuleMove: generic kernel capability that resolves one capsule
+// against the bound world through the universal `collision.main` package. Cold
+// callers (server headless movement, spawn validation, the parity harness) use
+// it so they never need the DLL-only collision ABI. Plain POD, append-only.
+static constexpr std::uint64_t GAME_CAP_CAPSULE_MOVE =
+    gameHash("collision.capsuleMove");
+struct GameCapsuleMoveV1 {
+    std::uint32_t structSize;
+    std::uint32_t flags;
+    std::uint64_t entityId;
+    float position[3];
+    float velocity[3];
+    float radius;
+    float halfHeight;
+    float yaw;
+    float sizeScale;
+    float dt;
+    // out
+    float outPosition[3];
+    float outVelocity[3];
+    std::uint32_t grounded;
+    std::uint32_t collided;
+    std::uint32_t handled;
+    std::uint32_t reserved;
+};
+using GameCapsuleMoveFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                    GameCapsuleMoveV1* move);
 // actor.move.npc: hot NPC movement ownership. A hot movement package provides
 // this; the cold NPC kernel calls it once per NPC after the AI has written the
 // movement intent. It consumes the generic Transform/Velocity/MovementIntent/

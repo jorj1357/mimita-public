@@ -23,6 +23,7 @@
 #include "perf/perf.h"
 #include "physics/config.h"
 #include "physics/physics-mini.h"
+#include "physics/movement/movement-compat-adapter.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-subgrid.h"
@@ -1306,7 +1307,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         // navMovement (resolved above) carries the actor's role movement config
         // through the same shared kernel as the human actor.
         ++npc.body.movementSimulationTick;
-        physicsMainUpdate(npc.body, world, input, safeDt, 2, navMovement);
+        MovementCompat::stepActor(npc.body, world, input, safeDt, 2, navMovement);
 
         clearCollisionEntityContext();
 

@@ -80,6 +80,11 @@ bool AimBodyConfig::load(const std::string& path)
         file >> j;
         if (j.contains("enabled"))
             mEnabled = j.value("enabled", true);
+        // behaviorSource: "json" (default) applies this file; "cpp" is an
+        // explicit rollback that disables the JSON aimbody overlay, matching the
+        // movement/animations source selector.
+        if (j.value("behaviorSource", std::string("json")) == "cpp")
+            mEnabled = false;
         const std::string mode = j.value("mode", std::string("default"));
         mMode = mode == "smooth" ? "smooth" : "default";
         const float factor = j.value("smoothingFactor", 1.0f);

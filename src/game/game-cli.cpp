@@ -52,7 +52,10 @@
 #include "physics/movement/movement-selftest.h"
 #include "physics/movement/movement-parity-selftest.h"
 #include "physics/movement/movement-preset-selftest.h"
+#include "physics/movement/reference/movement-v206-reference.h"
+#include "physics/movement/reference/movement-v206-parity-selftest.h"
 #include "ragdoll/ragdoll-slice-selftest.h"
+#include "ragdoll/ragdoll-world-selftest.h"
 #include "ecs/entity-slice-selftest.h"
 #include "ecs/dynamic-lifecycle-selftest.h"
 #include "network/gamemode-hot-selftest.h"
@@ -324,11 +327,42 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--movement-v206-reference-selftest") {
+        std::string report;
+        const bool ok = MimitaV206::runMovementV206ReferenceSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MOVEMENT V206 REFERENCE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--movement-v206-parity-selftest") {
+        std::string report;
+        const bool ok = MimitaV206::runMovementV206ParitySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MOVEMENT V206 PARITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--movement-v206-gen-fixtures") {
+        std::string report;
+        const bool ok = MimitaV206::generateMovementV206Fixtures(report);
+        printf("%s", report.c_str());
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--ragdoll-slice-selftest") {
         std::string report;
         const bool ok = runRagdollSliceSelfTest(report);
         printf("%s", report.c_str());
         printf("[RAGDOLL SLICE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--ragdoll-world-selftest") {
+        std::string report;
+        const bool ok = runRagdollWorldSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[RAGDOLL WORLD SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

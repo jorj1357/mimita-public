@@ -21,6 +21,39 @@ void groundMove(const GameGroundMoveV1& in, float outVelocity[2])
     float vx = in.velocity[0];
     float vy = in.velocity[1];
 
+    if (in.movementModel == 1u) {
+        // v2.0.6 ground: friction XOR accelerate. With input, accelerate only;
+        // with no input, friction only (drop = speed * friction * dt).
+        if (in.hasInput) {
+            const float currentSpeed = vx * in.wishDir[0] + vy * in.wishDir[1];
+            const float addSpeed = in.wishSpeed - currentSpeed;
+            if (addSpeed > 0.0f) {
+                float accelSpeed = in.groundAcceleration * in.wishSpeed * in.dt;
+                if (accelSpeed > addSpeed)
+                    accelSpeed = addSpeed;
+                vx += in.wishDir[0] * accelSpeed;
+                vy += in.wishDir[1] * accelSpeed;
+            }
+        } else {
+            const float speed = std::sqrt(vx * vx + vy * vy);
+            if (speed > 0.1f) {
+                const float drop = speed * in.frictionAmount * in.dt;
+                float newSpeed = speed - drop;
+                if (newSpeed < 0.0f)
+                    newSpeed = 0.0f;
+                const float scale = newSpeed / speed;
+                vx *= scale;
+                vy *= scale;
+            } else {
+                vx = 0.0f;
+                vy = 0.0f;
+            }
+        }
+        outVelocity[0] = vx;
+        outVelocity[1] = vy;
+        return;
+    }
+
     // PM_Friction: horizontal speed drop every grounded tick.
     const float speed = std::sqrt(vx * vx + vy * vy);
     if (speed > 0.1f) {

@@ -815,14 +815,6 @@ void gatherHeadlessTrianglesForAABB(
 glm::vec3 closestPointTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c);
 
 // Collision
-void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world);
-// Generic capsule-vs-world collision mechanism: it does not require ServerPlayer.
-// It mutates pos/vel and reports ground contact; the cold physics owns the
-// sweep/slide/penetration so a hot movement policy can supply/read generic state.
-bool resolveCapsuleCollisionAgainstWorld(const HeadlessWorld& world,
-                                         glm::vec3& pos, glm::vec3& vel,
-                                         float radius, float height,
-                                         bool& onGround);
 void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players);
 
 // Player simulation

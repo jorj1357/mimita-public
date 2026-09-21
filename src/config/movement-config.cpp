@@ -56,6 +56,10 @@ bool parseWalkMode(const json& value, MovementWalkMode& out)
         out = MovementWalkMode::Source;
         return true;
     }
+    if (mode == "v206") {
+        out = MovementWalkMode::V206;
+        return true;
+    }
     return false;
 }
 
@@ -495,7 +499,8 @@ bool MovementJsonConfig::loadPresetFile(const std::string& path,
         "[MOVEMENT CONFIG] Active preset: %s (%s) mode=%s air_strafing=%d bhop=%d\n",
         mActivePreset.c_str(), fileNameOf(path).c_str(),
         mConfig.walkMode == MovementWalkMode::Accel ? "accel" :
-        mConfig.walkMode == MovementWalkMode::Source ? "source" : "mimita",
+        mConfig.walkMode == MovementWalkMode::Source ? "source" :
+        mConfig.walkMode == MovementWalkMode::V206 ? "v206" : "mimita",
         (int)mConfig.airControlEnabled, (int)mConfig.bunnyHopEnabled);
     Debug::warn(Debug::Category::Physics,
         "[MOVEMENT CONFIG] ground_speed=%.1f air_speed=%.1f ground_accel=%.1f air_accel=%.1f "

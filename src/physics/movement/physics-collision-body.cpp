@@ -4,6 +4,8 @@
 #include <vector>
 #include <cmath>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include "physics/config.h"
 #include "entities/player.h"
 #include "world/world.h"
@@ -11,6 +13,10 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "combat/weapon-collision-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
+#include "ecs/actor-entities.h"
+#include "ecs/dynamic-components.h"
+#include "hot-reload/hot-presentation.h"
 
 #define BWLOG(...) Debug::logThrottled(Debug::Category::Collision, "bw-investigate", 1.0f, __VA_ARGS__)
 
@@ -18,6 +24,115 @@
 constexpr float DEFAULT_WEAPON_COLLISION_SKIN = 0.04f;
 
 BWInvestigate gBW;
+
+// Hot-owned tools already publish the transform used for rendering through
+// AttachmentState. Collision must consume that same resolved transform or the
+// visible tool and its collider will diverge whenever the hot body pose moves.
+static bool useResolvedHotToolTransform(Player& p,
+                                        HotAttachmentStateV1* resolvedOut)
+{
+    if (resolvedOut)
+        *resolvedOut = HotAttachmentStateV1{};
+    if (p.equippedWeaponId.empty())
+        return false;
+
+    const EntityId actor = Ecs::ensureLocalPlayerEntity();
+    if (actor == kInvalidEntityId)
+        return false;
+
+    auto& store = MimitaRuntime::DynamicComponentStore::instance();
+    HotToolClaimV1 claim{};
+    if (!store.read(actor, HOT_TOOL_CLAIM_COMPONENT, &claim, sizeof(claim)) ||
+        claim.migrated == 0 || claim.toolEntity == 0)
+        return false;
+
+    const std::uint64_t weaponKey = gameHash(p.equippedWeaponId.c_str());
+    if (claim.toolKey != weaponKey &&
+        (p.runtimeToolId == 0 || claim.toolKey != p.runtimeToolId))
+        return false;
+
+    HotAttachmentStateV1 attachment{};
+    if (!store.read(static_cast<EntityId>(claim.toolEntity),
+                    HOT_ATTACHMENT_COMPONENT, &attachment,
+                    sizeof(attachment)) || attachment.resolved == 0)
+        return false;
+    if (resolvedOut)
+        *resolvedOut = attachment;
+
+    glm::quat rotation(
+        attachment.worldRotation[3], attachment.worldRotation[0],
+        attachment.worldRotation[1], attachment.worldRotation[2]);
+    const float qLen = glm::length(rotation);
+    if (!std::isfinite(qLen) || qLen < 0.0001f)
+        return false;
+    rotation = glm::normalize(rotation);
+
+    glm::vec3 scale(
+        attachment.worldScale[0], attachment.worldScale[1],
+        attachment.worldScale[2]);
+    for (int i = 0; i < 3; ++i)
+        if (!std::isfinite(scale[i]) || scale[i] <= 0.0001f)
+            scale[i] = 1.0f;
+
+    glm::vec3 position(
+        attachment.worldPosition[0], attachment.worldPosition[1],
+        attachment.worldPosition[2]);
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z))
+        return false;
+
+    p.weaponCollisionWorld = glm::translate(glm::mat4(1.0f), position) *
+                             glm::mat4_cast(rotation) *
+                             glm::scale(glm::mat4(1.0f), scale);
+    p.weaponModelTransform = p.weaponCollisionWorld;
+    return true;
+}
+
+static void logWeaponTransformProbe(const Player& p, bool hotTransform,
+                                    const HotAttachmentStateV1& attachment,
+                                    const Capsule& capsule)
+{
+    static std::uint64_t lastTick = ~std::uint64_t{0};
+    if (p.movementSimulationTick == lastTick || p.equippedWeaponId.empty())
+        return;
+    lastTick = p.movementSimulationTick;
+
+    const glm::vec3 hotMuzzle(
+        attachment.muzzleWorldPosition[0], attachment.muzzleWorldPosition[1],
+        attachment.muzzleWorldPosition[2]);
+    const glm::vec3 collisionTip = capsule.b;
+    const glm::vec3 muzzleDelta = collisionTip - hotMuzzle;
+
+    debug::Event ev;
+    ev.category = "WEAPONS";
+    ev.name = "weapon.transform_probe";
+    ev.level = debug::Level::Info;
+    ev.simulationTick = p.movementSimulationTick;
+    ev.message = hotTransform ? "hot_attachment_and_collision_transform"
+                              : "cold_collision_transform_fallback";
+    ev.reason = hotTransform ? "hot_transform_used" : "cold_fallback";
+    ev.fields["weapon_id"] = p.equippedWeaponId;
+    ev.fields["hot_transform_used"] = hotTransform;
+    ev.fields["attachment_resolved"] = attachment.resolved != 0;
+    ev.fields["hot_world_position"] = {attachment.worldPosition[0],
+                                         attachment.worldPosition[1],
+                                         attachment.worldPosition[2]};
+    ev.fields["hot_world_rotation"] = {attachment.worldRotation[0],
+                                         attachment.worldRotation[1],
+                                         attachment.worldRotation[2],
+                                         attachment.worldRotation[3]};
+    ev.fields["hot_muzzle_world"] = {hotMuzzle.x, hotMuzzle.y, hotMuzzle.z};
+    ev.fields["hot_forward"] = {attachment.forward[0], attachment.forward[1],
+                                 attachment.forward[2]};
+    ev.fields["collision_grip_world"] = {capsule.a.x, capsule.a.y, capsule.a.z};
+    ev.fields["collision_tip_world"] = {collisionTip.x, collisionTip.y,
+                                         collisionTip.z};
+    ev.fields["collision_radius"] = capsule.r;
+    ev.fields["tip_minus_hot_muzzle"] = {muzzleDelta.x, muzzleDelta.y,
+                                          muzzleDelta.z};
+    ev.aggregationKey = "weapon.transform_probe." + p.equippedWeaponId;
+    MIMITA_EVENT(ev);
+}
 
 static bool computeBodyPartCenter(
     const glm::mat4& xform,
@@ -62,6 +177,11 @@ void recomputeWeaponCapsule(Player& p)
         return;
     }
 
+    // Hot-owned tools publish the same resolved transform that the renderer
+    // uses. If unavailable, preserve the cold arm/local-transform fallback.
+    HotAttachmentStateV1 hotAttachment{};
+    const bool hotTransform = useResolvedHotToolTransform(p, &hotAttachment);
+
     // Apply JSON config — this is the ONLY source of weapon collision data.
     WeaponCollisionJsonConfig::instance().applyCollisionConfig(p);
 
@@ -78,6 +198,8 @@ void recomputeWeaponCapsule(Player& p)
             p.collision.hasWeaponCollisionCapsule = true;
             p.weaponCollisionDebug.valid = true;
         }
+        logWeaponTransformProbe(p, hotTransform, hotAttachment,
+                                p.weaponCollisionCapsule);
         return;
     }
 
@@ -88,6 +210,11 @@ void recomputeWeaponCapsule(Player& p)
         p.weaponCollisionDebug.spheres.clear();
         p.weaponCollisionDebug.capsule.enabled = false;
     }
+
+    // JSON-sphere/capsule mode has no early capsule return, so emit the same
+    // transform probe for that path as well.
+    logWeaponTransformProbe(p, hotTransform, hotAttachment,
+                            p.weaponCollisionCapsule);
 }
 
 // Generate sphere samples for configurable weapon colliders from JSON collision config.

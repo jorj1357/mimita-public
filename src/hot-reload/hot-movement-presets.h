@@ -39,6 +39,8 @@ inline constexpr std::uint32_t kMovementPresetCount =
 inline constexpr std::uint32_t kWalkModeMimita = 0;
 inline constexpr std::uint32_t kWalkModeAccel = 1;
 inline constexpr std::uint32_t kWalkModeSource = 2;
+// v2.0.6 reference model: XOR ground friction/accelerate, additive air accel.
+inline constexpr std::uint32_t kWalkModeV206 = 3;
 
 // ── Base tuning ─────────────────────────────────────────────────────────────
 // Exactly the built-in MiMITA base used before JSON overrides. Presets below
@@ -139,28 +141,29 @@ inline constexpr GameMovementTuningV1 movementTuningBase()
 inline constexpr GameMovementTuningV1 makeSourcePresetTuning()
 {
     GameMovementTuningV1 t = movementTuningBase();
-    t.walkMode = kWalkModeSource;
+    t.walkMode = kWalkModeV206;
     t.sourceWalkMode = 1;
     t.groundSpeed = 20.0f;
     t.airSpeed = 20.0f;
     t.sourceMaxSpeed = 20.0f;
-    t.groundAcceleration = 20.0f;
-    t.groundFriction = 3.25f;
-    t.sourceFriction = 3.25f;
-    t.stopspeed = 1.0f;
-    t.airSpeedGainMultiplier = 2.0f;
+    t.groundAcceleration = 8.0f;
+    t.groundFriction = 4.0f;
+    t.groundFrictionAmount = 4.0f;
+    t.sourceFriction = 4.0f;
+    t.stopspeed = 0.0f;
+    t.airSpeedGainMultiplier = 0.0f;
     t.airInputBlendingEnabled = 0u;
     t.airInputBlending = 1.0f;
     t.airInputMouseThresholdDegrees = 0.1f;  // loader clamps 0.0 -> 0.1
-    t.airAcceleration = 12.0f;
-    t.airMaxWishspeed = 2.0f;
+    t.airAcceleration = 222.0f;
+    t.airMaxWishspeed = 1.0f;
     t.sourceAirAccelerateBugCompatible = 1u;
-    t.gravityMagnitude = 40.0f;
-    t.jumpSpeed = 15.1f;
-    t.maxFallSpeed = 175.0f;
+    t.gravityMagnitude = 58.0f;
+    t.jumpSpeed = 19.0f;
+    t.maxFallSpeed = 400.0f;
     t.autoBhopEnabled = 1u;
-    t.jumpBufferSeconds = 0.2f;
-    t.coyoteSeconds = 0.0f;
+    t.jumpBufferSeconds = 0.12f;
+    t.coyoteSeconds = 0.001f;
     t.maximumAirJumps = 1u;
     t.groundSnap = 1u;
     t.velocityClipEpsilon = 1.01f;
@@ -171,17 +174,17 @@ inline constexpr GameMovementTuningV1 makeSourcePresetTuning()
     t.freezeEnabled = 1u;
     t.dashGraceSeconds = 1.0f;
     t.dashFrictionMultiplier = 0.0f;
-    t.groundDashImpulse = 20.0f;
-    t.airDashImpulse = 20.0f;
-    t.dashImpulse = 20.0f;
-    t.downDashSpeed = -50.0f;
-    t.externalImpulseDecay = 99.0f;
-    t.maximumExternalImpulseSpeed = 9999.0f;
+    t.groundDashImpulse = 100.0f;
+    t.airDashImpulse = 50.0f;
+    t.dashImpulse = 100.0f;
+    t.downDashSpeed = -100.0f;
+    t.externalImpulseDecay = 0.6f;
+    t.maximumExternalImpulseSpeed = 120.0f;
     t.impulseFrictionMode = 0u;
     t.impulseCarrySeconds = 0.1f;
     t.airControlEnabled = 1u;
     t.debugDrawEnabled = 0u;
-    t.speedLimitEnabled = 1u;
+    t.speedLimitEnabled = 0u;
     t.speedLimit = 50.0f;
     t.speedLimitMode = 1u;  // fixed
     return t;
@@ -426,7 +429,28 @@ inline bool loadJsonMovementPreset(const std::string& name,
                                    GameMovementTuningV1& out)
 {
     const std::string preset = name.empty() ? "source" : name;
-    std::ifstream file("config/movement/" + preset + ".json");
+    std::string filePath;
+    {
+        std::string stem = preset;
+        if (preset == "counterstrike")
+            stem = "cs";
+        else if (preset == "retrograd_fast")
+            stem = "retrograd-fast";
+        const std::string candidates[] = {
+            "config/movement/" + stem + ".json",
+            "config/movement/movement-" + stem + ".json",
+        };
+        for (const std::string& candidate : candidates) {
+            std::ifstream probe(candidate);
+            if (probe) {
+                filePath = candidate;
+                break;
+            }
+        }
+    }
+    if (filePath.empty())
+        return false;
+    std::ifstream file(filePath);
     if (!file)
         return false;
     try {
@@ -434,20 +458,24 @@ inline bool loadJsonMovementPreset(const std::string& name,
         GameMovementTuningV1 t = movementTuningBase();
         const std::string mode = j.value("movement_mode", "mimita");
         t.walkMode = mode == "source" ? kWalkModeSource
+                    : mode == "v206" ? kWalkModeV206
                     : mode == "accel" ? kWalkModeAccel : kWalkModeMimita;
-        t.sourceWalkMode = mode == "source" ? 1u : 0u;
+        t.sourceWalkMode = (mode == "source" || mode == "v206") ? 1u : 0u;
         auto f = [&](const char* key, float& v) { if (j.contains(key) && j[key].is_number()) v = j[key].get<float>(); };
         auto b = [&](const char* key, std::uint32_t& v) { if (j.contains(key) && j[key].is_boolean()) v = j[key].get<bool>() ? 1u : 0u; };
         auto u = [&](const char* key, std::uint32_t& v) { if (j.contains(key) && j[key].is_number_integer()) v = j[key].get<std::uint32_t>(); };
         f("max_speed", t.walkSpeed); f("max_speed", t.groundSpeed); f("max_speed", t.airSpeed);
+        f("max_speed", t.sourceMaxSpeed);
         f("ground_speed", t.groundSpeed); f("ground_acceleration", t.groundAcceleration);
         f("friction", t.groundFriction); f("friction", t.sourceFriction);
+        f("ground_friction", t.groundFrictionAmount);
         f("stop_speed", t.stopspeed); f("air_acceleration", t.airAcceleration);
         f("air_max_wishspeed", t.airMaxWishspeed); f("air_speed_gain_multiplier", t.airSpeedGainMultiplier);
         f("gravity", t.gravityMagnitude); t.gravityMagnitude = std::abs(t.gravityMagnitude);
         f("jump_velocity", t.jumpSpeed); f("max_fall_speed", t.maxFallSpeed);
         f("jump_buffer_time", t.jumpBufferSeconds); f("coyote_time", t.coyoteSeconds);
         f("ground_dash_impulse", t.groundDashImpulse); f("air_dash_impulse", t.airDashImpulse);
+        f("dash_impulse", t.dashImpulse);
         f("down_dash_speed", t.downDashSpeed); f("dash_grace_seconds", t.dashGraceSeconds);
         f("dash_friction_multiplier", t.dashFrictionMultiplier);
         f("external_impulse_decay", t.externalImpulseDecay);
@@ -456,6 +484,9 @@ inline bool loadJsonMovementPreset(const std::string& name,
         f("speed_limit", t.speedLimit); f("velocity_clip_epsilon", t.velocityClipEpsilon);
         f("surface_friction", t.surfaceFriction); f("air_input_blending", t.airInputBlending);
         f("air_input_mouse_threshold_degrees", t.airInputMouseThresholdDegrees);
+        if (t.airInputMouseThresholdDegrees < 0.1f)
+            t.airInputMouseThresholdDegrees = 0.1f;
+        f("landing_overspeed_bleed", t.landingOverspeedBleed);
         b("air_strafing", t.airControlEnabled); b("auto_bhop_enabled", t.autoBhopEnabled);
         b("dash_enabled", t.dashEnabled); b("down_dash_enabled", t.downDashEnabled);
         b("freeze_enabled", t.freezeEnabled); b("ground_snap", t.groundSnap);
@@ -463,6 +494,8 @@ inline bool loadJsonMovementPreset(const std::string& name,
         b("source_airaccelerate_bug_compatible", t.sourceAirAccelerateBugCompatible);
         b("speed_limit_enabled", t.speedLimitEnabled); u("max_air_jumps", t.maximumAirJumps);
         t.speedLimitMode = j.value("speed_limit_mode", "clamp") == "fixed" ? 1u : 0u;
+        t.impulseFrictionMode =
+            j.value("impulse_friction_mode", "exponential") == "source" ? 1u : 0u;
         t.presetId = static_cast<std::uint32_t>(movementPresetIdFromName(preset.c_str()));
         out = t;
         return true;

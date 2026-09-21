@@ -149,6 +149,11 @@ struct ColliderRuntime {
     glm::vec3 localOffset;
     float radius;
     float halfHeight;
+    // Oriented capsule axis and half segment length. Z-aligned capsules use
+    // axis (0,0,1) and halfHeight - radius; oriented capsules use the direction
+    // from `position` to `endPosition`.
+    glm::vec3 axis{0.0f, 0.0f, 1.0f};
+    float halfSeg = 0.0f;
     std::uint32_t partId;
     std::uint32_t policyId;
     bool body;
@@ -176,12 +181,10 @@ void sweptUnionAABB(const glm::vec3& pos, const ColliderRuntime* cols,
     glm::vec3 mn(1e30f), mx(-1e30f);
     for (int i = 0; i < colCount; ++i) {
         const glm::vec3 c = pos + cols[i].localOffset;
-        const float halfZ = cols[i].halfHeight > cols[i].radius
-                                ? cols[i].halfHeight
-                                : cols[i].radius;
-        const glm::vec3 r(cols[i].radius, cols[i].radius, halfZ);
-        mn = glm::min(mn, c - r);
-        mx = glm::max(mx, c + r);
+        const glm::vec3 ext = glm::vec3(cols[i].radius) +
+                              glm::abs(cols[i].axis) * cols[i].halfSeg;
+        mn = glm::min(mn, c - ext);
+        mx = glm::max(mx, c + ext);
     }
     if (colCount == 0)
         mn = mx = pos;
@@ -204,13 +207,10 @@ int gatherActorContacts(const glm::vec3& root, const ColliderRuntime* cols,
     for (int i = 0; i < colCount && n < maxOut; ++i) {
         const ColliderRuntime& col = cols[i];
         const glm::vec3 c = root + col.localOffset;
-        const float halfSeg =
-            col.halfHeight > col.radius ? col.halfHeight - col.radius : 0.0f;
-        const glm::vec3 samples[3] = {
-            c + glm::vec3(0.0f, 0.0f, halfSeg),
-            c,
-            c - glm::vec3(0.0f, 0.0f, halfSeg)};
-        const int sampleCount = col.halfHeight > col.radius ? 3 : 1;
+        const float halfSeg = col.halfSeg;
+        const glm::vec3 samples[3] = {c + col.axis * halfSeg, c,
+                                      c - col.axis * halfSeg};
+        const int sampleCount = halfSeg > 0.0f ? 3 : 1;
         for (int s = 0; s < sampleCount && n < maxOut; ++s) {
             SphereHit hits[8];
             const int hc = gatherSphereHits(samples[s], col.radius,
@@ -587,12 +587,38 @@ void solve(void* host, CollisionSolveV1* q)
     ColliderRuntime cols[COLLISION_MAX_COLLIDERS];
     for (int i = 0; i < colCount; ++i) {
         const CollisionColliderV1& c = q->colliders[i];
-        cols[i].localOffset = glm::vec3(c.position[0], c.position[1], c.position[2]) - pos;
+        const glm::vec3 startW(c.position[0], c.position[1], c.position[2]);
+        const glm::vec3 endW(c.endPosition[0], c.endPosition[1],
+                             c.endPosition[2]);
+        const glm::vec3 seg = endW - startW;
+        const float segLen = glm::length(seg);
         cols[i].radius = c.radius > 0.0f ? c.radius : 0.1f;
-        cols[i].halfHeight = c.halfHeight;
+        if ((c.flags & COLLISION_COLLIDER_ORIENTED_CAPSULE) != 0u &&
+            segLen > 1e-4f) {
+            // Oriented capsule: segment midpoint is the collider centre.
+            cols[i].axis = seg / segLen;
+            cols[i].halfSeg = segLen * 0.5f;
+            cols[i].localOffset = (startW + endW) * 0.5f - pos;
+            cols[i].halfHeight = cols[i].halfSeg + cols[i].radius;
+        } else {
+            cols[i].axis = glm::vec3(0.0f, 0.0f, 1.0f);
+            const float hh = c.halfHeight;
+            cols[i].halfSeg = hh > cols[i].radius ? hh - cols[i].radius : 0.0f;
+            cols[i].localOffset = startW - pos;
+            cols[i].halfHeight = hh;
+        }
         cols[i].partId = c.partId;
         cols[i].policyId = c.policyId;
-        cols[i].body = c.shape == COLLISION_SHAPE_SPHERE;
+        // Honor the explicit collider roles. A body-authoritative collider is
+        // never treated as a helper; a helper is never authoritative. Callers
+        // that set neither flag fall back to the legacy sphere-shape inference.
+        const bool flagHelper = (c.flags & COLLISION_COLLIDER_HELPER) != 0u;
+        const bool flagBodyAuthoritative =
+            (c.flags & COLLISION_COLLIDER_BODY_AUTHORITATIVE) != 0u;
+        cols[i].body = flagBodyAuthoritative
+                           ? true
+                           : (flagHelper ? false
+                                         : c.shape == COLLISION_SHAPE_SPHERE);
     }
 
     bool grounded = false, collided = false, worldContact = false,
@@ -844,6 +870,46 @@ void MIMITA_GAME_CALL onCollisionSolve(void* host, CollisionSolveV1* q)
     solve(host, q);
 }
 
+// Generic capsule move: the same `solve` as collision.main, exposed as a plain
+// POD capability so cold callers (server headless movement, spawn validation,
+// the parity harness) do not need the DLL-only collision ABI.
+void MIMITA_GAME_CALL onCapsuleMove(void* host, GameCapsuleMoveV1* m)
+{
+    if (!m || m->structSize != sizeof(GameCapsuleMoveV1))
+        return;
+    m->handled = 0u;
+    CollisionSolveV1 q{};
+    q.entityId = m->entityId;
+    q.dt = m->dt;
+    q.yaw = m->yaw;
+    q.sizeScale = m->sizeScale > 0.0f ? m->sizeScale : 1.0f;
+    q.mask = COLLISION_MASK_WORLD;
+    q.flags = 0u;
+    for (int i = 0; i < 3; ++i) {
+        q.position[i] = m->position[i];
+        q.velocity[i] = m->velocity[i];
+    }
+    CollisionColliderV1& c = q.colliders[q.colliderCount++];
+    c.partId = COLLISION_PART_CAPSULE;
+    c.shape = COLLISION_SHAPE_CAPSULE;
+    c.policyId = COLLISION_POLICY_CAPSULE;
+    c.flags = COLLISION_COLLIDER_HELPER;
+    c.radius = m->radius > 0.0f ? m->radius : 0.4f;
+    c.halfHeight = m->halfHeight > 0.0f ? m->halfHeight : 0.9f;
+    for (int i = 0; i < 3; ++i)
+        c.position[i] = m->position[i];
+    solve(host, &q);
+    if (q.handled == 0u)
+        return;
+    for (int i = 0; i < 3; ++i) {
+        m->outPosition[i] = q.outPosition[i];
+        m->outVelocity[i] = q.outVelocity[i];
+    }
+    m->grounded = q.grounded;
+    m->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
+    m->handled = 1u;
+}
+
 } // namespace
 
 void collisionSolve(void* host, CollisionSolveV1* q)
@@ -862,6 +928,10 @@ void collisionResetRuntimeState()
 const MimitaHotPackage::CapabilityRegistrar s_collisionProvider{
     {GAME_CAP_COLLISION, GAME_SIG_COLLISION, 0,
      reinterpret_cast<void*>(&onCollisionSolve), "collision.main"}};
+
+const MimitaHotPackage::CapabilityRegistrar s_capsuleMoveProvider{
+    {GAME_CAP_CAPSULE_MOVE, gameHash("sig.collision.capsuleMove.v1"), 0,
+     reinterpret_cast<void*>(&onCapsuleMove), "collision.capsuleMove"}};
 
 } // namespace HotCollisionPackage
 

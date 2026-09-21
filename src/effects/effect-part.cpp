@@ -120,7 +120,7 @@ bool movementPresetSelfTest(char* msg, std::uint32_t messageCapacity)
             return false;
         }
         if (t.walkSpeed <= 0.0f || t.jumpSpeed <= 0.0f ||
-            t.maximumAirJumps > 8u || t.walkMode > kWalkModeSource) {
+            t.maximumAirJumps > 8u || t.walkMode > kWalkModeV206) {
             std::snprintf(msg, messageCapacity,
                           "movement preset '%s' has an invalid value", preset.name);
             return false;

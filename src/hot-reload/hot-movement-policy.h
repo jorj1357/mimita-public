@@ -29,7 +29,7 @@ struct GameAirAccelerateV1 {
     float currentSpeed;         // in: dot(velocity, wishDir)
     float blendedAddSpeed;      // in: addSpeed after blending
     std::uint32_t tick;
-    std::uint32_t flags;        // reserved
+    std::uint32_t movementModel;  // in: 0 = source projection, 1 = v2.0.6 additive
     // out
     float outVelocity[2];
     std::uint32_t handled;
@@ -58,7 +58,7 @@ struct GameGroundMoveV1 {
     float stopspeed;         // in: friction floor
     float dt;                // in
     std::uint32_t hasInput;  // in
-    std::uint32_t flags;     // reserved
+    std::uint32_t movementModel; // in: 0 = source, 1 = v2.0.6 XOR friction/accelerate
     float outVelocity[2];
     std::uint32_t handled;
     std::uint32_t reserved;
@@ -172,7 +172,7 @@ struct GameDashPolicyV1 {
     std::uint32_t downDashAvailable;
     std::uint32_t dashEnabled;
     std::uint32_t downDashEnabled;
-    std::uint32_t reserved;
+    std::uint32_t dashMovementTicks;  // in: airborne ticks with move held (v2.0.6 dash quality)
     // out
     float outVelocity[3];
     std::uint32_t outDashAvailable;

@@ -143,92 +143,10 @@ glm::vec3 closestPointTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 
     return a + ab * v + ac * w;
 }
 
-// Generic collision mechanism: operates ONLY on position, velocity, and contact
-// facts (no ServerPlayer). The cold physics owns the sweep/penetration/slide; a
-// hot movement policy supplies the position/velocity and reads the contact back.
-bool resolveCapsuleCollisionAgainstWorld(const HeadlessWorld& world,
-                                         glm::vec3& pos, glm::vec3& vel,
-                                         float radius, float height,
-                                         bool& onGround)
-{
-    onGround = false;
-    bool touched = false;
-
-    for (int pass = 0; pass < 3; ++pass)
-    {
-        glm::vec3 samples[3] = {
-            pos + glm::vec3(0, 0, -height * 0.5f + radius),
-            pos,
-            pos + glm::vec3(0, 0, height * 0.5f - radius)
-        };
-
-        for (glm::vec3 sample : samples)
-        {
-            // Broadphase: gather only triangles near the sample point
-            AABB queryBounds;
-            queryBounds.min = sample - glm::vec3(radius + 0.1f);
-            queryBounds.max = sample + glm::vec3(radius + 0.1f);
-            thread_local std::vector<int> s_candidates;
-            s_candidates.clear();
-            gatherHeadlessTrianglesForAABB(world, queryBounds, radius * 0.1f, s_candidates);
-
-            for (int triIdx : s_candidates)
-            {
-                if (triIdx < 0 || triIdx >= (int)world.triangles.size())
-                    continue;
-                const CollisionTriangle& tri = world.triangles[triIdx];
-
-                glm::vec3 cp = closestPointTriangle(sample, tri.a, tri.b, tri.c);
-                glm::vec3 delta = sample - cp;
-                float dist = glm::length(delta);
-                if (dist >= radius || dist < 0.00001f)
-                    continue;
-
-                glm::vec3 n = delta / dist;
-                if (glm::dot(n, tri.normal) < 0.0f)
-                    n = -n;
-                float penetration = radius - dist;
-                pos += n * (penetration + 0.001f);
-                float into = glm::dot(vel, n);
-                if (into < 0.0f)
-                    vel -= n * into;
-                if (n.z > 0.35f) {
-                    onGround = true;
-                    touched = true;
-                }
-            }
-        }
-    }
-    return touched;
-}
-
-void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
-{
-    bool onGround = false;
-    resolveCapsuleCollisionAgainstWorld(world, p.pos, p.vel, PLAYER_RADIUS,
-                                        PLAYER_HEIGHT, onGround);
-    p.onGround = onGround;
-
-    // Debug log when a real triangle collision resolves below the map bounds
-    if (p.pos.z < world.boundsMin.z)
-    {
-        static uint64_t lastBelowBoundsCollisionLogMs = 0;
-        uint64_t nowBc = nowMs();
-        if (nowBc - lastBelowBoundsCollisionLogMs >= 1000)
-        {
-            printf("%s [SERVER BELOW-MAP COLLISION] playerId=%u "
-                   "posZBefore=%.2f posZAfter=%.2f onGround=%d\n",
-                   serverTimestamp(), p.id,
-                   p.pos.z, p.pos.z, (int)p.onGround);
-            lastBelowBoundsCollisionLogMs = nowBc;
-        }
-    }
-
-    // Note: the world.boundsMin.z global floor clamp has been intentionally
-    // removed.  world.boundsMin is map metadata, not collision geometry.
-    // Players below bounds must continue falling naturally until the
-    // void-death threshold.  Actual collision triangles handle platforms.
-}
+// World collision for server players is resolved through the universal
+// `collision.main` package via LiveBehavior::capsuleMove. The former
+// sample-based sphere solver (resolveCapsuleCollisionAgainstWorld /
+// resolveWorldCollision) was retired: it was the last parallel server solver.
 
 // Returns true when a player capsule centered at `pos` does not penetrate any
 // world triangle. Uses the same sample-based capsule check as
@@ -980,14 +898,30 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world, uint32_t server
         // (the cold collision mechanism mutates position/velocity + contact; it
         // does not require ServerPlayer). Typed fields are projected from it.
         {
-            // Integrate the position by the tick velocity before resolving
-            // contact. The shared kernel only owns velocity; the collide step
-            // owns position, so without this the server never advances.
-            state.position += state.baseVelocity * SERVER_DT;
+            // Resolve world collision through the universal `collision.main`
+            // package (collision.capsuleMove capability), which also integrates
+            // the tick move. Fall back to plain integration only when the
+            // capability is unavailable.
+            const float inPos[3] = {state.position.x, state.position.y,
+                                    state.position.z};
+            const float inVel[3] = {state.baseVelocity.x, state.baseVelocity.y,
+                                    state.baseVelocity.z};
+            float outPos[3] = {state.position.x, state.position.y,
+                               state.position.z};
+            float outVel[3] = {state.baseVelocity.x, state.baseVelocity.y,
+                               state.baseVelocity.z};
             bool onGround = false;
-            resolveCapsuleCollisionAgainstWorld(world, state.position,
-                                                state.baseVelocity, PLAYER_RADIUS,
-                                                PLAYER_HEIGHT, onGround);
+            bool collided = false;
+            if (LiveBehavior::capsuleMove(inPos, inVel, PLAYER_RADIUS,
+                                          PLAYER_HEIGHT * 0.5f, state.yaw,
+                                          state.sizeScale, SERVER_DT, outPos,
+                                          outVel, onGround, collided)) {
+                state.position = glm::vec3(outPos[0], outPos[1], outPos[2]);
+                state.baseVelocity = glm::vec3(outVel[0], outVel[1], outVel[2]);
+            } else {
+                state.position += state.baseVelocity * SERVER_DT;
+                onGround = false;
+            }
             state.ground.onGround = onGround;
             // Authoritative generic contact result + typed compatibility mirror.
             if (runtimeState)

@@ -15,8 +15,10 @@
 #include "entities/player.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
 #include "config.h"
 #include "effects/effect-part.h"
+#include "render/presentation-entities.h"
 
 #include <chrono>
 #include <cstdio>
@@ -41,6 +43,10 @@ static int runBodyWeaponPass(
     gBW = BWInvestigate{};
 
     auto t0 = std::chrono::steady_clock::now();
+    // The rendered hot pose used to be applied only in the render phase. Apply
+    // it before collision so limb sweeps, arm sockets, and weapon transforms
+    // use the same pose that the player will see this frame.
+    PresentationEntities::applyHotPoseToPlayer(p);
     p.updateModelWorldTransforms();
     recomputeWeaponCapsule(p);
     std::vector<BodyWeaponSphere> bwSpheres = collectBodyWeaponSpheres(p);
@@ -173,6 +179,30 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
         // Undo excess: scale back the final position
         glm::vec3 excess = totalCorrection * (1.0f - MAX_TOTAL_CORRECTION / totalCorrLen);
         p.pos -= excess;
+    }
+
+    static std::uint64_t lastProbeTick = ~std::uint64_t{0};
+    if (p.movementSimulationTick != lastProbeTick &&
+        !p.equippedWeaponId.empty()) {
+        lastProbeTick = p.movementSimulationTick;
+        debug::Event ev;
+        ev.category = "WEAPONS";
+        ev.name = "weapon.collision_result";
+    ev.level = debug::Level::Info;
+        ev.simulationTick = p.movementSimulationTick;
+        ev.message = "body_weapon_collision_phase";
+        ev.reason = gBW.weaponCapsuleContactCount > 0 ? "contact" : "no_contact";
+        ev.fields["weapon_id"] = p.equippedWeaponId;
+        ev.fields["passes"] = passesUsed;
+        ev.fields["total_correction"] = totalCorrLen;
+        ev.fields["weapon_contacts"] = gBW.weaponCapsuleContactCount;
+        ev.fields["body_spheres"] = gBW.bodyPartSphereCount;
+        ev.fields["has_weapon_capsule"] = p.collision.hasWeaponCollisionCapsule;
+        ev.fields["grounded"] = groundedThisFrame;
+        ev.fields["position"] = {p.pos.x, p.pos.y, p.pos.z};
+        ev.fields["velocity"] = {p.vel.x, p.vel.y, p.vel.z};
+        ev.aggregationKey = "weapon.collision_result." + p.equippedWeaponId;
+        MIMITA_EVENT(ev);
     }
 
     auto t1 = std::chrono::steady_clock::now();

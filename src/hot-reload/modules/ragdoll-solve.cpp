@@ -15,10 +15,12 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/packages/collision/collision-abi.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <unordered_map>
 #include <vector>
 
@@ -54,7 +56,12 @@ struct Tri { glm::vec3 a, b, c; };
 struct Cache {
     std::vector<Tri> tris;
     std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> grid;
+    // Triangles too large to index by cell (e.g. a whole floor) are tested by
+    // every limb. Without this a big triangle whose centre cell is far from the
+    // limb is silently missed.
+    std::vector<std::uint32_t> always;
     std::uint32_t total = 0;
+    std::uint64_t sampleHash = 0;
     bool valid = false;
 };
 Cache g_cache;
@@ -92,11 +99,27 @@ void ensureWorld(void* host)
     fn(ctx->host, &page);  // total + first page
     if (page.total == 0)
         return;
-    if (g_cache.valid && g_cache.total == page.total)
+
+    auto hashTri = [](const GameCollisionTriangleV1& t) {
+        std::uint64_t h = 1469598103934665603ull;
+        const float* f = &t.a[0];
+        for (int i = 0; i < 9; ++i) {
+            std::uint32_t bits = 0;
+            std::memcpy(&bits, &f[i], sizeof(bits));
+            h = (h ^ bits) * 1099511628211ull;
+        }
+        return h;
+    };
+    const std::uint64_t sampleHash = page.count > 0 ? hashTri(buf[0]) : 0;
+    // Same triangle count is not enough to prove the same world: a stale cache
+    // from a different map with the same count would silently miss geometry.
+    if (g_cache.valid && g_cache.total == page.total &&
+        g_cache.sampleHash == sampleHash)
         return;
 
     g_cache.tris.clear();
     g_cache.grid.clear();
+    g_cache.always.clear();
     g_cache.total = page.total;
     for (std::uint32_t off = 0; off < page.total;) {
         GameWorldCollisionPageV1 q{};
@@ -112,14 +135,30 @@ void ensureWorld(void* host)
                   {buf[i].c[0], buf[i].c[1], buf[i].c[2]}};
             const std::uint32_t idx = (std::uint32_t)g_cache.tris.size();
             g_cache.tris.push_back(t);
-            const glm::vec3 c = (t.a + t.b + t.c) / 3.0f;
-            g_cache.grid[cellKey((int)std::floor(c.x / kCellSize),
-                                 (int)std::floor(c.y / kCellSize),
-                                 (int)std::floor(c.z / kCellSize))]
-                .push_back(idx);
+            const glm::vec3 mn = glm::min(glm::min(t.a, t.b), t.c);
+            const glm::vec3 mx = glm::max(glm::max(t.a, t.b), t.c);
+            const int x0 = (int)std::floor(mn.x / kCellSize);
+            const int y0 = (int)std::floor(mn.y / kCellSize);
+            const int z0 = (int)std::floor(mn.z / kCellSize);
+            const int x1 = (int)std::floor(mx.x / kCellSize);
+            const int y1 = (int)std::floor(mx.y / kCellSize);
+            const int z1 = (int)std::floor(mx.z / kCellSize);
+            const long long cells = (long long)(x1 - x0 + 1) *
+                                    (long long)(y1 - y0 + 1) *
+                                    (long long)(z1 - z0 + 1);
+            if (cells > 64) {
+                // Too large to index: test from every limb query.
+                g_cache.always.push_back(idx);
+            } else {
+                for (int x = x0; x <= x1; ++x)
+                for (int y = y0; y <= y1; ++y)
+                for (int z = z0; z <= z1; ++z)
+                    g_cache.grid[cellKey(x, y, z)].push_back(idx);
+            }
         }
         off += q.count;
     }
+    g_cache.sampleHash = sampleHash;
     g_cache.valid = true;
 }
 
@@ -311,24 +350,99 @@ void worldCollision(GameRagdollSolveV1* s, float beta, float skin)
         return;
     for (std::uint32_t i = 0; i < s->limbCount; ++i) {
         const float r = limbRadius(s->statics[i]);
-        const glm::vec3 p = limbPos(s->limbs[i]);
+        glm::vec3 p = limbPos(s->limbs[i]);
         const glm::ivec3 c0 = cellOf(p - glm::vec3(r));
         const glm::ivec3 c1 = cellOf(p + glm::vec3(r));
+        auto pushTri = [&](std::uint32_t idx) {
+            const glm::vec3 cp = closestPointOnTri(p, g_cache.tris[idx]);
+            const glm::vec3 d = p - cp;
+            const float dist = glm::length(d);
+            if (dist < 1e-6f || dist >= r + skin)
+                return;
+            const glm::vec3 n = d / dist;
+            p += n * (r + skin - dist) * beta;
+        };
         for (int x = c0.x; x <= c1.x; ++x)
         for (int y = c0.y; y <= c1.y; ++y)
         for (int z = c0.z; z <= c1.z; ++z) {
             auto it = g_cache.grid.find(cellKey(x, y, z));
             if (it == g_cache.grid.end()) continue;
-            for (std::uint32_t idx : it->second) {
-                const glm::vec3 cp = closestPointOnTri(p, g_cache.tris[idx]);
-                const glm::vec3 d = p - cp;
-                const float dist = glm::length(d);
-                if (dist < 1e-6f || dist >= r + skin) continue;
-                const glm::vec3 n = d / dist;
-                setLimbPos(s->limbs[i], p + n * (r + skin - dist) * beta);
-            }
+            for (std::uint32_t idx : it->second)
+                pushTri(idx);
         }
+        for (std::uint32_t idx : g_cache.always)
+            pushTri(idx);
+        setLimbPos(s->limbs[i], p);
     }
+}
+
+// Universal collision owner path: submit each limb as a single body-authoritative
+// sphere to `collision.main`. The package owns the world cache, narrowphase,
+// depenetration, grounding, and response, so the ragdoll does not run a second
+// world solver when the capability is present. Falls back to the local grid pass
+// otherwise. Returns false before mutating limbs if the capability is missing.
+using CollisionSolveFn =
+    void (MIMITA_GAME_CALL *)(void*, HotCollisionPackage::CollisionSolveV1*);
+
+bool worldCollisionViaMain(void* host, GameRagdollSolveV1* s)
+{
+    GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
+    if (!ctx || !ctx->resolveCapability)
+        return false;
+    auto fn = reinterpret_cast<CollisionSolveFn>(ctx->resolveCapability(
+        ctx->host, HotCollisionPackage::GAME_CAP_COLLISION));
+    if (!fn)
+        return false;
+
+    for (std::uint32_t i = 0; i < s->limbCount; ++i) {
+        GameRagdollLimbStateV1& limb = s->limbs[i];
+        HotCollisionPackage::CollisionSolveV1 q{};
+        q.entityId = 0x5244000000000000ull | static_cast<std::uint64_t>(i + 1u);
+        q.dt = s->dt;
+        q.mask = HotCollisionPackage::COLLISION_MASK_WORLD;
+        q.flags = 0u;
+        const glm::vec3 p = limbPos(limb);
+        q.position[0] = p.x;
+        q.position[1] = p.y;
+        q.position[2] = p.z;
+        // Do not hand collision.main the limb velocity: the PBD step already
+        // integrated it this tick and collision.main would move it again. It is
+        // used below to cancel into-surface velocity from the returned contacts.
+        q.colliderCount = 1u;
+        HotCollisionPackage::CollisionColliderV1& col = q.colliders[0];
+        col.partId = HotCollisionPackage::COLLISION_PART_TORSO;
+        col.shape = HotCollisionPackage::COLLISION_SHAPE_SPHERE;
+        col.policyId = HotCollisionPackage::COLLISION_POLICY_BODY;
+        col.flags = HotCollisionPackage::COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+        col.radius = limbRadius(s->statics[i]);
+        col.position[0] = p.x;
+        col.position[1] = p.y;
+        col.position[2] = p.z;
+        fn(ctx, &q);
+        if (q.handled == 0u)
+            return false;
+        setLimbPos(limb,
+                   glm::vec3(q.outPosition[0], q.outPosition[1], q.outPosition[2]));
+
+        // Cancel the limb's into-surface velocity for every returned contact so
+        // the PBD integrator does not keep driving it through the surface.
+        glm::vec3 v(limb.linearVelocity[0], limb.linearVelocity[1],
+                    limb.linearVelocity[2]);
+        for (std::uint32_t h = 0;
+             h < q.contactCount &&
+             h < HotCollisionPackage::COLLISION_MAX_CONTACTS;
+             ++h) {
+            const glm::vec3 n(q.contacts[h].normal[0], q.contacts[h].normal[1],
+                              q.contacts[h].normal[2]);
+            const float into = glm::dot(v, n);
+            if (into < 0.0f)
+                v -= n * into;
+        }
+        limb.linearVelocity[0] = v.x;
+        limb.linearVelocity[1] = v.y;
+        limb.linearVelocity[2] = v.z;
+    }
+    return true;
 }
 
 void MIMITA_GAME_CALL ragdollSolveProvider(void* host, GameRagdollSolveV1* s)
@@ -350,7 +464,9 @@ void MIMITA_GAME_CALL ragdollSolveProvider(void* host, GameRagdollSolveV1* s)
     solveJoints(s, iterations, false, kTune.jointBeta);
     solveGrab(s, s->grabLeft, kTune.grabBeta);
     solveGrab(s, s->grabRight, kTune.grabBeta);
-    worldCollision(s, kTune.worldBeta, kTune.worldSkin);
+    const bool viaMain = worldCollisionViaMain(host, s);
+    if (!viaMain)
+        worldCollision(s, kTune.worldBeta, kTune.worldSkin);
     selfCollision(s, kTune.selfBeta, kTune.selfSkin);
     solveRotationLimits(s, kTune.limitBeta);
 

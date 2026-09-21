@@ -14,6 +14,7 @@
 #include "perf/perf-spike.h"
 #include "input/input-state.h"
 #include "physics/physics-mini.h"
+#include "physics/movement/movement-compat-adapter.h"
 #include "physics/config.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
@@ -174,7 +175,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         } else {
             MIMITA_PERF_SCOPE("PhysicsMainUpdate");
             setCollisionEntityContext("Player", 0, false);
-            physicsMainUpdate(*sim.player, *sim.world, inputStateFromFrame(frame), TICK_DT);
+            MovementCompat::stepActor(*sim.player, *sim.world,
+                                      inputStateFromFrame(frame), TICK_DT);
             clearCollisionEntityContext();
         }
         } // end built-in movement (else of hot override)

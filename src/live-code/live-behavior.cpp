@@ -154,6 +154,7 @@ bool MIMITA_GAME_CALL capReadComponent(void*, std::uint64_t entity,
         o->downDashHeldPreviously=c->downDashHeldPreviously?1u:0u;
         o->dashAvailable=c->dashAvailable?1u:0u;
         o->downDashAvailable=c->downDashAvailable?1u:0u;
+        o->dashMovementTicks=(std::uint32_t)(c->dashMovementTicks>0?c->dashMovementTicks:0);
         o->dashCooldownSeconds=c->dashCooldownSeconds;
         o->jumpIntentSeconds=c->jumpIntentSeconds;
         o->dashGraceSeconds=c->dashGraceSeconds;
@@ -306,6 +307,7 @@ bool MIMITA_GAME_CALL capWriteComponent(void*, std::uint64_t entity,
         c.dashHeldPreviously=i->dashHeldPreviously!=0;
         c.downDashHeldPreviously=i->downDashHeldPreviously!=0;
         c.dashAvailable=i->dashAvailable!=0; c.downDashAvailable=i->downDashAvailable!=0;
+        c.dashMovementTicks=(int)i->dashMovementTicks;
         c.dashCooldownSeconds=i->dashCooldownSeconds;
         c.jumpIntentSeconds=i->jumpIntentSeconds;
         c.dashGraceSeconds=i->dashGraceSeconds;
@@ -986,17 +988,27 @@ void moveCapsuleStepHeadless(MovementStateV1* s, const MimitaNet::HeadlessWorld*
     glm::vec3 vel(s->velocity[0], s->velocity[1], s->velocity[2]);
 
     vel.z -= 9.81f * gravityScale * dt;
-    pos += vel * dt;
 
     bool onGround = false;
-    if (world)
-        MimitaNet::resolveCapsuleCollisionAgainstWorld(
-            *world, pos, vel, radius, halfHeight * 2.0f, onGround);
+    bool collided = false;
+    const float inPos[3] = {pos.x, pos.y, pos.z};
+    const float inVel[3] = {vel.x, vel.y, vel.z};
+    float outPos[3] = {pos.x, pos.y, pos.z};
+    float outVel[3] = {vel.x, vel.y, vel.z};
+    if (LiveBehavior::capsuleMove(inPos, inVel, radius, halfHeight, s->yaw,
+                                  s->sizeScale, dt, outPos, outVel, onGround,
+                                  collided)) {
+        pos = glm::vec3(outPos[0], outPos[1], outPos[2]);
+        vel = glm::vec3(outVel[0], outVel[1], outVel[2]);
+    } else {
+        // Capability absent: integrate deterministically without collision.
+        pos += vel * dt;
+    }
 
     s->position[0] = pos.x; s->position[1] = pos.y; s->position[2] = pos.z;
     s->velocity[0] = vel.x; s->velocity[1] = vel.y; s->velocity[2] = vel.z;
     s->grounded = onGround ? 1u : 0u;
-    s->collided = 1u;
+    s->collided = collided ? 1u : 0u;
 }
 
 } // namespace
@@ -2597,6 +2609,39 @@ bool dispatchRagdollPolicy(RagdollPolicyV1& payload, std::uint64_t tick)
     module->onEvent(&event, &context);
     drainEvents(16);
     return payload.handled != 0;
+}
+
+bool capsuleMove(const float inPos[3], const float inVel[3], float radius,
+                 float halfHeight, float yaw, float sizeScale, float dt,
+                 float outPos[3], float outVel[3], bool& grounded,
+                 bool& collided)
+{
+    auto* fn = reinterpret_cast<GameCapsuleMoveFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_CAPSULE_MOVE));
+    if (!fn)
+        return false;
+    GameCapsuleMoveV1 m{};
+    m.structSize = sizeof(GameCapsuleMoveV1);
+    for (int i = 0; i < 3; ++i) {
+        m.position[i] = inPos[i];
+        m.velocity[i] = inVel[i];
+    }
+    m.radius = radius;
+    m.halfHeight = halfHeight;
+    m.yaw = yaw;
+    m.sizeScale = sizeScale;
+    m.dt = dt;
+    fn(hostContext(0), &m);
+    if (m.handled == 0u)
+        return false;
+    for (int i = 0; i < 3; ++i) {
+        outPos[i] = m.outPosition[i];
+        outVel[i] = m.outVelocity[i];
+    }
+    grounded = m.grounded != 0u;
+    collided = m.collided != 0u;
+    return true;
 }
 
 } // namespace LiveBehavior

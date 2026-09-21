@@ -3,8 +3,9 @@
 * movement.actors: the hot actor-movement system. Iterates authoritative actors
 * (server human players), reads the generic Transform/Velocity/MovementIntent/
 * RuntimeState/Body components, runs the shared Source movement policy, resolves
-* collision through the kernel physics.move primitive (headless world), and
-* writes the result back with a per-tick stamp so the cold server yields.
+* collision through the universal `collision.main` package (the same owner the
+* local player uses), and writes the result back with a per-tick stamp so the
+* cold server yields.
 * Human and NPC actors share this code; only the intent source differs.
 * Does NOT link into the EXE; only into the replaceable game DLL.
 */
@@ -15,10 +16,15 @@
 #include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-movement-preset-log.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/packages/collision/collision-abi.h"
+#include "hot-reload/packages/collision/collision-log.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace {
 
@@ -31,8 +37,111 @@ constexpr bool kSimulateServerActors = false;
 // and routing are hot-reloadable. Edit live.
 constexpr bool kSimulateServerNpcs = true;
 
-using PhysicsMoveFn = void (MIMITA_GAME_CALL *)(void*, MovementStateV1*, float,
-                                                std::uint32_t);
+// One collision owner for actors too: submit the capsule (helper) plus resolved
+// body sockets to `collision.main`, the same package the local player uses. The
+// kernel `physics.move` primitive remains only as a fallback when the collision
+// capability is unavailable.
+void resolveActorCollisions(GameplayContextV1* ctx, MovementStateV1* st,
+                            float dt, std::uint64_t entity, std::uint64_t tick)
+{
+    using namespace HotCollisionPackage;
+    GameCollisionSolveFn fn = nullptr;
+    if (ctx->resolveCapability)
+        fn = reinterpret_cast<GameCollisionSolveFn>(
+            ctx->resolveCapability(ctx->host, GAME_CAP_COLLISION));
+    if (!fn) {
+        for (int i = 0; i < 3; ++i)
+            st->position[i] += st->velocity[i] * dt;
+        st->grounded = 0;
+        st->collided = 0;
+        return;
+    }
+
+    CollisionSolveV1 q{};
+    q.entityId = entity;
+    q.tick = tick;
+    q.dt = dt;
+    q.yaw = st->yaw;
+    q.sizeScale = st->sizeScale > 0.0f ? st->sizeScale : 1.0f;
+    q.mask = COLLISION_MASK_WORLD;
+    q.flags = 0u;
+    q.actorKind = COLLISION_LOG_ACTOR_NPC;
+    for (int i = 0; i < 3; ++i) {
+        q.position[i] = st->position[i];
+        q.velocity[i] = st->velocity[i];
+    }
+
+    CollisionColliderV1& capsule = q.colliders[q.colliderCount++];
+    capsule.partId = COLLISION_PART_CAPSULE;
+    capsule.shape = COLLISION_SHAPE_CAPSULE;
+    capsule.policyId = COLLISION_POLICY_CAPSULE;
+    capsule.flags = COLLISION_COLLIDER_HELPER;
+    capsule.radius = st->radius;
+    capsule.halfHeight = st->halfHeight;
+    for (int i = 0; i < 3; ++i)
+        capsule.position[i] = st->position[i];
+
+    if (ctx->resolveCapability && q.colliderCount < COLLISION_MAX_COLLIDERS) {
+        auto rawFn = reinterpret_cast<GameSocketRawFn>(
+            ctx->resolveCapability(ctx->host, GAME_CAP_SOCKET_RAW));
+        if (rawFn) {
+            static const struct {
+                std::uint32_t part;
+                const char* name;
+                float radius;
+            } kParts[] = {
+                {COLLISION_PART_HEAD, "head", 0.30f},
+                {COLLISION_PART_TORSO, "torso", 0.42f},
+                {COLLISION_PART_LEFT_ARM, "leftArm", 0.17f},
+                {COLLISION_PART_RIGHT_ARM, "rightArm", 0.17f},
+                {COLLISION_PART_LEFT_LEG, "leftLeg", 0.20f},
+                {COLLISION_PART_RIGHT_LEG, "rightLeg", 0.20f},
+            };
+            const float s = q.sizeScale;
+            glm::mat4 root = glm::translate(
+                glm::mat4(1.0f),
+                glm::vec3(st->position[0], st->position[1], st->position[2]));
+            root *= glm::rotate(glm::mat4(1.0f), glm::radians(st->yaw),
+                                glm::vec3(0.0f, 0.0f, 1.0f));
+            for (const auto& p : kParts) {
+                if (q.colliderCount >= COLLISION_MAX_COLLIDERS)
+                    break;
+                GameSocketRawV1 r{};
+                r.entity = entity;
+                r.socket = gameHash(p.name);
+                if (!rawFn(ctx->host, &r) || !r.valid)
+                    continue;
+                const glm::vec3 local(r.position[0] * s, r.position[1] * s,
+                                      r.position[2] * s);
+                const glm::vec3 world = glm::vec3(root * glm::vec4(local, 1.0f));
+                CollisionColliderV1& c = q.colliders[q.colliderCount++];
+                c.partId = p.part;
+                c.shape = COLLISION_SHAPE_SPHERE;
+                c.policyId = COLLISION_POLICY_BODY;
+                c.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+                c.radius = p.radius * s;
+                c.position[0] = world.x;
+                c.position[1] = world.y;
+                c.position[2] = world.z;
+            }
+        }
+    }
+
+    fn(ctx, &q);
+    if (!q.handled) {
+        for (int i = 0; i < 3; ++i)
+            st->position[i] += st->velocity[i] * dt;
+        st->grounded = 0;
+        st->collided = 0;
+        return;
+    }
+    for (int i = 0; i < 3; ++i) {
+        st->position[i] = q.outPosition[i];
+        st->velocity[i] = q.outVelocity[i];
+    }
+    st->grounded = q.grounded;
+    st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
+}
 
 // Reads the per-actor preset from the generic ActorProfileState component
 // (movementPresetHash = gameHash(preset name)). Absent/unknown -> active preset.
@@ -308,19 +417,9 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     st.gravityScale = -1.0f;
     st.grounded = rs.grounded;
 
-    if (ctx->resolveCapability)
-    {
-        auto move = reinterpret_cast<PhysicsMoveFn>(
-            ctx->resolveCapability(ctx->host, GAME_CAP_PHYSICS_MOVE));
-        if (move)
-            move(ctx->host, &st, dt, GAME_PHYSICS_MOVE_HEADLESS);
-    }
-    else
-    {
-        st.position[0] += st.velocity[0] * dt;
-        st.position[1] += st.velocity[1] * dt;
-        st.position[2] += st.velocity[2] * dt;
-    }
+    // Universal collision owner: the same `collision.main` package the local
+    // player uses. `physics.move` is no longer called here.
+    resolveActorCollisions(ctx, &st, dt, e, static_cast<std::uint64_t>(tick));
 
     rs.grounded = st.grounded;
     if (rs.grounded)

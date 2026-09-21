@@ -84,12 +84,20 @@ struct CollisionColliderV1 {
     float extents[3];         // box half extents (future)
     float velocity[3];
     char label[COLLISION_MAX_LABEL];
+    // Append-only: world-space second capsule endpoint. When non-zero the
+    // collider is an oriented capsule from `position` to `endPosition` with
+    // `radius`; when zero it is the legacy Z-aligned capsule using `halfHeight`.
+    float endPosition[3];
 };
 
 // Helper colliders may classify support/steps but must not become invisible
 // walls once authoritative body colliders are present.
 static constexpr std::uint32_t COLLISION_COLLIDER_HELPER = 1u << 0;
 static constexpr std::uint32_t COLLISION_COLLIDER_BODY_AUTHORITATIVE = 1u << 1;
+// When set, the collider is an oriented capsule from `position` to
+// `endPosition` with `radius`; when unset, `endPosition` is ignored and the
+// legacy Z-aligned capsule using `halfHeight` is used.
+static constexpr std::uint32_t COLLISION_COLLIDER_ORIENTED_CAPSULE = 1u << 2;
 
 struct CollisionContactV1 {
     std::uint64_t sourceEntity;

@@ -971,6 +971,9 @@ bool tryActivateDash(MovementState& state,
         d.grounded = state.ground.onGround ? 1u : 0u;
         d.dashAvailable = 1u;
         d.dashEnabled = 1u;
+        d.dashMovementTicks = state.dash.dashMovementTicks > 0
+                                  ? static_cast<std::uint32_t>(state.dash.dashMovementTicks)
+                                  : 0u;
         d.handled = 0;
         if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_DASH, &d,
                                                   sizeof(d), 0, 0, 0) &&
@@ -1061,7 +1064,7 @@ bool tryActivateDownDash(MovementState& state,
         return true;
     }
 
-    state.baseVelocity.z = config.downDashVerticalSpeed;
+    state.baseVelocity.z += config.downDashVerticalSpeed;
     state.downDash.available = false;
     state.downDash.didDownDash = true;
     events.didDownDash = true;
@@ -1338,6 +1341,9 @@ void applySourceGround(MovementState& state,
     const bool dashGrace = state.dash.dashGraceTimerSeconds > 0.0f;
 
     float frictionAmount = config.sourceFriction * config.surfaceFriction;
+    const bool v206Walk = config.walkMode == MovementWalkMode::V206;
+    if (v206Walk)
+        frictionAmount = config.groundFrictionAmount;
     if (dashGrace)
         frictionAmount *= config.dashFrictionMultiplier;
     // Landing/autobhop tick: scale friction so bhop overspeed bleed is tunable
@@ -1361,15 +1367,37 @@ void applySourceGround(MovementState& state,
         g.wishSpeed = maxSpeed;
         g.groundAcceleration = config.groundAcceleration;
         g.frictionAmount = frictionAmount;
-        g.stopspeed = config.stopspeed;
+        g.stopspeed = v206Walk ? 0.0f : config.stopspeed;
         g.dt = dt;
         g.hasInput = hasInput ? 1u : 0u;
+        g.movementModel = v206Walk ? 1u : 0u;
         g.handled = 0;
         if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_GROUND_MOVE, &g,
                                                   sizeof(g), 0, 0, 0) &&
             g.handled) {
             vel.x = g.outVelocity[0];
             vel.y = g.outVelocity[1];
+        } else if (v206Walk) {
+            // v2.0.6 fallback: friction XOR accelerate.
+            if (hasInput) {
+                const float currentSpeed = glm::dot(vel, wishDir);
+                const float addSpeed = maxSpeed - currentSpeed;
+                if (addSpeed > 0.0f) {
+                    float accelSpeed = config.groundAcceleration * maxSpeed * dt;
+                    accelSpeed = std::min(accelSpeed, addSpeed);
+                    vel += wishDir * accelSpeed;
+                }
+            } else {
+                const float speed = glm::length(vel);
+                if (speed > 0.1f) {
+                    const float drop = speed * frictionAmount * dt;
+                    const float newSpeed = std::max(0.0f, speed - drop);
+                    if (newSpeed != speed)
+                        vel *= newSpeed / speed;
+                } else {
+                    vel = glm::vec2(0.0f);
+                }
+            }
         } else {
             // PM_Friction (horizontal only, every grounded tick).
             float speed = glm::length(vel);
@@ -1463,6 +1491,41 @@ void applySourceAir(MovementState& state,
     state.airDebug.wishVelocity = wishVelocity;
     state.airDebug.wishSpeed = wishSpeed;
     state.airDebug.wishDir = wishDir;
+
+    // v2.0.6 air model: additive impulse toward the base move speed, no
+    // projection-cap curve, no from-rest restriction.
+    if (config.walkMode == MovementWalkMode::V206) {
+        GameAirAccelerateV1 policy{};
+        policy.velocity[0] = vel.x;
+        policy.velocity[1] = vel.y;
+        policy.wishDir[0] = wishDir.x;
+        policy.wishDir[1] = wishDir.y;
+        policy.wishSpeed = maxSpeed;
+        policy.airAcceleration = config.airAcceleration;
+        policy.surfaceFriction = 1.0f;
+        policy.airSpeedGainMultiplier = 0.0f;
+        policy.dt = dt;
+        policy.movementModel = 1u;
+        policy.handled = 0;
+        if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_AIR_ACCELERATE,
+                                                  &policy, sizeof(policy), 0, 0, 0) &&
+            policy.handled) {
+            vel.x = policy.outVelocity[0];
+            vel.y = policy.outVelocity[1];
+        } else {
+            const float projected = vel.x * wishDir.x + vel.y * wishDir.y;
+            const float addSpeed = maxSpeed - projected;
+            if (addSpeed > 0.0f) {
+                float accelSpeed = config.airAcceleration * maxSpeed * dt;
+                accelSpeed = std::min(accelSpeed, addSpeed);
+                vel += wishDir * accelSpeed;
+            }
+        }
+        state.baseVelocity.x = vel.x;
+        state.baseVelocity.y = vel.y;
+        applySpeedLimitClamp(state, config);
+        return;
+    }
 
     // Source caps wishspd for projection. The original code still uses the
     // uncapped wishspeed in accelspeed; expose that historical quirk explicitly.
@@ -1618,7 +1681,8 @@ void applyBasicWalk(MovementState& state,
                     const MovementConfig& config,
                     float fixedDt)
 {
-    if (config.walkMode == MovementWalkMode::Source) {
+    if (config.walkMode == MovementWalkMode::Source ||
+        config.walkMode == MovementWalkMode::V206) {
         const float dt = std::max(movementClampStepDelta(fixedDt, config), 0.0001f);
         applySourceMovement(state, command, config, dt);
         return;

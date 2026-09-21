@@ -15,6 +15,7 @@
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-projectile.h"
 #include "hot-reload/hot-tool-visual.h"
+#include "hot-reload/packages/collision/collision-abi.h"
 
 #include <cmath>
 #include <cstdint>
@@ -189,51 +190,108 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float d
             s.velocity[0] *= f; s.velocity[1] *= f; s.velocity[2] *= f;
         }
         const float prev[3] = {s.position[0], s.position[1], s.position[2]};
-        s.position[0] += s.velocity[0] * dt;
-        s.position[1] += s.velocity[1] * dt;
-        s.position[2] += s.velocity[2] * dt;
 
         bool exploded = false;
         float at[3] = {s.position[0], s.position[1], s.position[2]};
 
-        // Low-level world contact.
-        if ((s.flags & HOT_PROJECTILE_EXPLODE_ON_WORLD) && ctx->queryWorldRay)
-        {
-            const float dx = s.position[0] - prev[0];
-            const float dy = s.position[1] - prev[1];
-            const float dz = s.position[2] - prev[2];
-            const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
-            if (len > 1e-5f)
+        // Apply a world hit: bounce or explode. Shared by the collision.main
+        // owner and the ray fallback so the response is identical.
+        auto applyWorldHit = [&](const float hit[3], const float nrm[3]) {
+            const bool canBounce =
+                (s.flags & HOT_PROJECTILE_BOUNCE_ON_WORLD) &&
+                s.bounces < s.maxBounces;
+            if (canBounce)
             {
-                const float dir[3] = {dx / len, dy / len, dz / len};
-                float hit[3] = {0.0f, 0.0f, 0.0f};
-                float nrm[3] = {0.0f, 0.0f, 1.0f};
-                float dist = 0.0f;
-                if (ctx->queryWorldRay(ctx->host, prev, dir, len + s.radius, hit,
-                                       nrm, &dist))
+                const float vn = s.velocity[0] * nrm[0] +
+                                 s.velocity[1] * nrm[1] +
+                                 s.velocity[2] * nrm[2];
+                const float k = (1.0f + s.restitution) * vn;
+                s.velocity[0] -= k * nrm[0];
+                s.velocity[1] -= k * nrm[1];
+                s.velocity[2] -= k * nrm[2];
+                s.position[0] = hit[0] + nrm[0] * (s.radius + 0.01f);
+                s.position[1] = hit[1] + nrm[1] * (s.radius + 0.01f);
+                s.position[2] = hit[2] + nrm[2] * (s.radius + 0.01f);
+                ++s.bounces;
+            }
+            else if (s.flags & HOT_PROJECTILE_EXPLODE_ON_WORLD)
+            {
+                at[0] = hit[0]; at[1] = hit[1]; at[2] = hit[2];
+                exploded = true;
+            }
+        };
+
+        // Universal collision owner first: sweep the projectile sphere through
+        // `collision.main` and consume the returned world contact. The ray query
+        // is only a fallback when the collision package is unavailable.
+        bool worldResolved = false;
+        if ((s.flags & HOT_PROJECTILE_EXPLODE_ON_WORLD) && ctx->resolveCapability)
+        {
+            auto cfn = reinterpret_cast<HotCollisionPackage::GameCollisionSolveFn>(
+                ctx->resolveCapability(ctx->host,
+                                       HotCollisionPackage::GAME_CAP_COLLISION));
+            if (cfn)
+            {
+                HotCollisionPackage::CollisionSolveV1 q{};
+                q.entityId = entities[i];
+                q.dt = dt;
+                q.mask = HotCollisionPackage::COLLISION_MASK_WORLD;
+                for (int k = 0; k < 3; ++k)
                 {
-                    const bool canBounce =
-                        (s.flags & HOT_PROJECTILE_BOUNCE_ON_WORLD) &&
-                        s.bounces < s.maxBounces;
-                    if (canBounce)
+                    q.position[k] = prev[k];
+                    q.velocity[k] = s.velocity[k];
+                }
+                q.colliderCount = 1u;
+                HotCollisionPackage::CollisionColliderV1& c = q.colliders[0];
+                c.partId = HotCollisionPackage::COLLISION_PART_TORSO;
+                c.shape = HotCollisionPackage::COLLISION_SHAPE_SPHERE;
+                c.policyId = HotCollisionPackage::COLLISION_POLICY_ROCKET;
+                c.flags =
+                    HotCollisionPackage::COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+                c.radius = s.radius;
+                for (int k = 0; k < 3; ++k)
+                    c.position[k] = prev[k];
+                cfn(ctx, &q);
+                if (q.handled)
+                {
+                    worldResolved = true;
+                    s.position[0] = q.outPosition[0];
+                    s.position[1] = q.outPosition[1];
+                    s.position[2] = q.outPosition[2];
+                    for (std::uint32_t h = 0; h < q.contactCount; ++h)
                     {
-                        const float vn = s.velocity[0] * nrm[0] +
-                                         s.velocity[1] * nrm[1] +
-                                         s.velocity[2] * nrm[2];
-                        const float k = (1.0f + s.restitution) * vn;
-                        s.velocity[0] -= k * nrm[0];
-                        s.velocity[1] -= k * nrm[1];
-                        s.velocity[2] -= k * nrm[2];
-                        s.position[0] = hit[0] + nrm[0] * (s.radius + 0.01f);
-                        s.position[1] = hit[1] + nrm[1] * (s.radius + 0.01f);
-                        s.position[2] = hit[2] + nrm[2] * (s.radius + 0.01f);
-                        ++s.bounces;
+                        if (q.contacts[h].targetKind != 0u)
+                            continue;  // world contacts only
+                        applyWorldHit(q.contacts[h].point, q.contacts[h].normal);
+                        break;
                     }
-                    else if (s.flags & HOT_PROJECTILE_EXPLODE_ON_WORLD)
-                    {
-                        at[0] = hit[0]; at[1] = hit[1]; at[2] = hit[2];
-                        exploded = true;
-                    }
+                }
+            }
+        }
+
+        // Fallback: integrate and ray-query only when the collision owner is
+        // absent (for example a build without the collision package).
+        if (!worldResolved)
+        {
+            s.position[0] += s.velocity[0] * dt;
+            s.position[1] += s.velocity[1] * dt;
+            s.position[2] += s.velocity[2] * dt;
+
+            if ((s.flags & HOT_PROJECTILE_EXPLODE_ON_WORLD) && ctx->queryWorldRay)
+            {
+                const float dx = s.position[0] - prev[0];
+                const float dy = s.position[1] - prev[1];
+                const float dz = s.position[2] - prev[2];
+                const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
+                if (len > 1e-5f)
+                {
+                    const float dir[3] = {dx / len, dy / len, dz / len};
+                    float hit[3] = {0.0f, 0.0f, 0.0f};
+                    float nrm[3] = {0.0f, 0.0f, 1.0f};
+                    float dist = 0.0f;
+                    if (ctx->queryWorldRay(ctx->host, prev, dir, len + s.radius,
+                                           hit, nrm, &dist))
+                        applyWorldHit(hit, nrm);
                 }
             }
         }

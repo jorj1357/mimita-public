@@ -107,6 +107,8 @@ struct MovementRuntimeStateComponent {
     bool downDashHeldPreviously = false;
     bool dashAvailable = true;
     bool downDashAvailable = true;
+    // Airborne ticks with movement held, used for v2.0.6 dash quality.
+    int dashMovementTicks = 0;
     float dashCooldownSeconds = 0.0f;
     float jumpIntentSeconds = 0.0f;
     float dashGraceSeconds = 0.0f;

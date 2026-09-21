@@ -479,7 +479,11 @@ struct MovementState {
 enum class MovementWalkMode : uint8_t {
     Override = 0,
     Accel = 1,
-    Source = 2
+    Source = 2,
+    // v2.0.6 reference model: XOR ground friction/accelerate (friction only
+    // when no input), additive ground accelerate and air accelerate derived
+    // from the base move speed. Selected by the `source` preset.
+    V206 = 3
 };
 
 enum class MovementSpeedCapMode : uint8_t {

@@ -18,6 +18,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-movement-fired.h"
+#include "hot-reload/hot-presentation.h"
 #include "hot-reload/packages/collision/collision-log.h"
 #include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-movement-preset-log.h"
@@ -31,9 +32,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <unordered_map>
+
+#include <nlohmann/json.hpp>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace {
 
@@ -55,8 +63,9 @@ void MIMITA_GAME_CALL onMovementTuning(void* host, const GameEventV1* event)
     GameMovementTuningV1 selected = preset.tuning;
     if (source == MimitaHotMovement::MovementBehaviorSource::Json) {
         GameMovementTuningV1 jsonTuning{};
-        if (MimitaHotMovement::loadJsonMovementPreset(
-                jsonPreset.empty() ? preset.name : jsonPreset, jsonTuning))
+        // Load the JSON for the REQUESTED preset, not the globally selected one,
+        // so per-actor/role presets resolve correctly.
+        if (MimitaHotMovement::loadJsonMovementPreset(preset.name, jsonTuning))
             selected = jsonTuning;
     }
     *t = selected;
@@ -121,6 +130,174 @@ GameSharedStateV1* sharedState(GameplayContextV1* ctx)
 using PhysicsMoveFn = void (MIMITA_GAME_CALL *)(void*, MovementStateV1*, float, std::uint32_t);
 using EffectSpawnFn = void (MIMITA_GAME_CALL *)(void*, const GameEffectSpawnV1*);
 
+// Weapon collision shape from config/weaponcollisions.json, keyed by
+// gameHash(weaponId). A shape picker selects the mode: the actual weapon
+// triangles (default; resolved elsewhere), a single sphere, an oriented capsule
+// (also used for cylinder / elongated-sphere modes), multiple spheres, or a box
+// approximation. Live-editable: re-read when the file mtime changes.
+struct WeaponShapeV1 {
+    enum class Mode { Triangles, Sphere, Capsule, Spheres, Box };
+    Mode mode = Mode::Triangles;
+    float radius = 0.0f;
+    float start[3] = {0.0f, 0.0f, 0.0f};
+    float end[3] = {0.0f, 0.0f, 0.0f};
+    float extents[3] = {0.0f, 0.0f, 0.0f};
+    struct Sphere {
+        float pos[3];
+        float radius;
+    };
+    Sphere spheres[8];
+    int sphereCount = 0;
+};
+
+WeaponShapeV1::Mode weaponShapeModeFromName(const std::string& name)
+{
+    if (name == "sphere") return WeaponShapeV1::Mode::Sphere;
+    if (name == "capsule") return WeaponShapeV1::Mode::Capsule;
+    if (name == "cylinder") return WeaponShapeV1::Mode::Capsule;
+    if (name == "elongated_sphere") return WeaponShapeV1::Mode::Capsule;
+    if (name == "capsules") return WeaponShapeV1::Mode::Capsule;
+    if (name == "spheres") return WeaponShapeV1::Mode::Spheres;
+    if (name == "box") return WeaponShapeV1::Mode::Box;
+    return WeaponShapeV1::Mode::Triangles;
+}
+
+bool weaponShapeFor(std::uint64_t toolKey, WeaponShapeV1& out)
+{
+    struct Cache {
+        std::uint64_t write = 0;
+        bool loaded = false;
+        std::unordered_map<std::uint64_t, WeaponShapeV1> map;
+    };
+    static Cache cache;
+
+    std::error_code ec;
+    const auto ft = std::filesystem::last_write_time(
+        "config/weaponcollisions.json", ec);
+    const std::uint64_t write =
+        ec ? 0ull : static_cast<std::uint64_t>(ft.time_since_epoch().count());
+    if (!cache.loaded || write != cache.write) {
+        cache.map.clear();
+        cache.loaded = true;
+        cache.write = write;
+        std::ifstream file("config/weaponcollisions.json");
+        if (file) {
+            try {
+                const auto root =
+                    nlohmann::json::parse(file, nullptr, true, true);
+                auto readVec3 = [](const nlohmann::json& v, float outv[3]) {
+                    if (v.is_array())
+                        for (int k = 0; k < 3 && k < (int)v.size(); ++k)
+                            outv[k] = v[k].get<float>();
+                };
+                auto readCapsule = [&](const nlohmann::json& cap,
+                                       WeaponShapeV1& shape) {
+                    if (!cap.is_object())
+                        return false;
+                    if (cap.contains("enabled") && cap["enabled"].is_boolean() &&
+                        !cap["enabled"].get<bool>())
+                        return false;
+                    const float r = cap.value("radius", 0.0f);
+                    if (r <= 0.0f)
+                        return false;
+                    shape.mode = WeaponShapeV1::Mode::Capsule;
+                    shape.radius = r;
+                    readVec3(cap.value("start", nlohmann::json::array()),
+                             shape.start);
+                    readVec3(cap.value("end", nlohmann::json::array()),
+                             shape.end);
+                    return true;
+                };
+                for (auto it = root.begin(); it != root.end(); ++it) {
+                    if (!it.value().is_object())
+                        continue;
+                    const auto& entry = it.value();
+                    if (entry.contains("enabled") &&
+                        entry["enabled"].is_boolean() &&
+                        !entry["enabled"].get<bool>())
+                        continue;
+
+                    WeaponShapeV1 shape{};
+                    const std::string modeName = entry.value("shape", "");
+                    shape.mode = weaponShapeModeFromName(modeName);
+                    bool ok = false;
+                    if (shape.mode == WeaponShapeV1::Mode::Triangles) {
+                        // Infer from the legacy fields when no explicit shape.
+                        if (entry.contains("spheres"))
+                            shape.mode = WeaponShapeV1::Mode::Spheres;
+                        else if (entry.contains("capsules"))
+                            shape.mode = WeaponShapeV1::Mode::Capsule;
+                        else if (entry.value("source", "capsule") == "capsule")
+                            shape.mode = WeaponShapeV1::Mode::Capsule;
+                    }
+                    switch (shape.mode) {
+                    case WeaponShapeV1::Mode::Capsule:
+                        if (entry.contains("capsule"))
+                            ok = readCapsule(entry["capsule"], shape);
+                        if (!ok && entry.contains("capsules") &&
+                            entry["capsules"].is_array() &&
+                            !entry["capsules"].empty())
+                            ok = readCapsule(entry["capsules"][0], shape);
+                        break;
+                    case WeaponShapeV1::Mode::Sphere: {
+                        const float r = entry.value("radius", 0.0f);
+                        if (r > 0.0f) {
+                            shape.radius = r;
+                            readVec3(entry.value("center",
+                                                 nlohmann::json::array()),
+                                     shape.start);
+                            shape.end[0] = shape.start[0];
+                            shape.end[1] = shape.start[1];
+                            shape.end[2] = shape.start[2];
+                            ok = true;
+                        }
+                        break;
+                    }
+                    case WeaponShapeV1::Mode::Spheres:
+                        if (entry.contains("spheres") &&
+                            entry["spheres"].is_array()) {
+                            for (const auto& sp : entry["spheres"]) {
+                                if (shape.sphereCount >= 8)
+                                    break;
+                                WeaponShapeV1::Sphere s{};
+                                s.radius = sp.value("radius", 0.0f);
+                                readVec3(sp.value("position",
+                                                  nlohmann::json::array()),
+                                         s.pos);
+                                if (s.radius > 0.0f)
+                                    shape.spheres[shape.sphereCount++] = s;
+                            }
+                            ok = shape.sphereCount > 0;
+                        }
+                        break;
+                    case WeaponShapeV1::Mode::Box: {
+                        const float r = entry.value("radius", 0.0f);
+                        readVec3(entry.value("extents",
+                                             nlohmann::json::array()),
+                                 shape.extents);
+                        shape.radius = r > 0.0f ? r : 0.1f;
+                        ok = shape.extents[0] > 0.0f || shape.extents[1] > 0.0f ||
+                             shape.extents[2] > 0.0f;
+                        break;
+                    }
+                    default:
+                        break;
+                    }
+                    if (ok)
+                        cache.map[gameHash(it.key().c_str())] = shape;
+                }
+            } catch (...) {
+            }
+        }
+    }
+
+    const auto found = cache.map.find(toolKey);
+    if (found == cache.map.end())
+        return false;
+    out = found->second;
+    return true;
+}
+
 // The player collider list: the movement/smoothing capsule plus the head,
 // torso, arms, and legs resolved from the skeleton. The caller supplies the
 // generic shape description; the collision package owns the solve.
@@ -157,6 +334,112 @@ void buildPlayerCollision(
     capsule.halfHeight = st->halfHeight;
     for (int i = 0; i < 3; ++i)
         capsule.position[i] = st->position[i];
+
+    // Weapon collider: the equipped tool's resolved hot attachment position
+    // becomes a body-authoritative collider so the weapon cannot pass through
+    // surfaces and participates in root correction. Shape data will move to the
+    // weapon collision config; a conservative sphere is the first slice.
+    if (ctx->dynamicReadComponent &&
+        q.colliderCount < COLLISION_MAX_COLLIDERS) {
+        HotToolClaimV1 claim{};
+        if (ctx->dynamicReadComponent(ctx->host, entity,
+                                      HOT_TOOL_CLAIM_COMPONENT, &claim,
+                                      sizeof(claim)) &&
+            claim.toolEntity != 0u) {
+            HotAttachmentStateV1 att{};
+            if (ctx->dynamicReadComponent(ctx->host, claim.toolEntity,
+                                          HOT_ATTACHMENT_COMPONENT, &att,
+                                          sizeof(att)) &&
+                att.resolved != 0u) {
+                // Weapon collision shape picker from config: triangles (fallback
+                // approximation), sphere, oriented capsule (also cylinder /
+                // elongated sphere), multiple spheres, or a box approximation.
+                // All shapes are placed by the hot attachment pose so the
+                // collider follows the visible weapon.
+                const float s = q.sizeScale;
+                const glm::quat rot(att.worldRotation[3], att.worldRotation[0],
+                                    att.worldRotation[1], att.worldRotation[2]);
+                const glm::vec3 origin(att.worldPosition[0], att.worldPosition[1],
+                                       att.worldPosition[2]);
+                auto toWorld = [&](const float local[3]) {
+                    return origin + rot * glm::vec3(local[0] * s, local[1] * s,
+                                                    local[2] * s);
+                };
+                auto addWeaponSphere = [&](const glm::vec3& p, float r) {
+                    if (q.colliderCount >= COLLISION_MAX_COLLIDERS)
+                        return;
+                    CollisionColliderV1& c = q.colliders[q.colliderCount++];
+                    c.partId = COLLISION_PART_WEAPON;
+                    c.shape = COLLISION_SHAPE_SPHERE;
+                    c.policyId = COLLISION_POLICY_WEAPON;
+                    c.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+                    c.radius = r * s;
+                    c.position[0] = p.x;
+                    c.position[1] = p.y;
+                    c.position[2] = p.z;
+                };
+                auto addWeaponCapsule = [&](const glm::vec3& a, const glm::vec3& b,
+                                            float r) {
+                    if (q.colliderCount >= COLLISION_MAX_COLLIDERS)
+                        return;
+                    CollisionColliderV1& c = q.colliders[q.colliderCount++];
+                    c.partId = COLLISION_PART_WEAPON;
+                    c.shape = COLLISION_SHAPE_CAPSULE;
+                    c.policyId = COLLISION_POLICY_WEAPON;
+                    c.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE |
+                              COLLISION_COLLIDER_ORIENTED_CAPSULE;
+                    c.radius = r * s;
+                    c.position[0] = a.x;
+                    c.position[1] = a.y;
+                    c.position[2] = a.z;
+                    c.endPosition[0] = b.x;
+                    c.endPosition[1] = b.y;
+                    c.endPosition[2] = b.z;
+                };
+
+                WeaponShapeV1 shape{};
+                if (weaponShapeFor(claim.toolKey, shape)) {
+                    switch (shape.mode) {
+                    case WeaponShapeV1::Mode::Capsule:
+                        addWeaponCapsule(toWorld(shape.start), toWorld(shape.end),
+                                         shape.radius);
+                        break;
+                    case WeaponShapeV1::Mode::Sphere:
+                        addWeaponSphere(toWorld(shape.start), shape.radius);
+                        break;
+                    case WeaponShapeV1::Mode::Spheres:
+                        for (int k = 0; k < shape.sphereCount; ++k)
+                            addWeaponSphere(toWorld(shape.spheres[k].pos),
+                                            shape.spheres[k].radius);
+                        break;
+                    case WeaponShapeV1::Mode::Box: {
+                        // Approximate a box with two spheres along its longest axis.
+                        int axis = 0;
+                        for (int k = 1; k < 3; ++k)
+                            if (shape.extents[k] > shape.extents[axis])
+                                axis = k;
+                        float a[3] = {0.0f, 0.0f, 0.0f};
+                        float b[3] = {0.0f, 0.0f, 0.0f};
+                        a[axis] = -shape.extents[axis];
+                        b[axis] = shape.extents[axis];
+                        addWeaponSphere(toWorld(a), shape.radius);
+                        addWeaponSphere(toWorld(b), shape.radius);
+                        break;
+                    }
+                    case WeaponShapeV1::Mode::Triangles:
+                    default:
+                        // Actual weapon triangles are resolved by the cold
+                        // presentation path; the hot collider uses a
+                        // conservative sphere until a mesh capability is added.
+                        addWeaponSphere(origin, 0.18f);
+                        break;
+                    }
+                } else {
+                    addWeaponSphere(origin, 0.18f);
+                }
+            }
+        }
+    }
 
     if (!ctx->resolveCapability ||
         q.colliderCount >= COLLISION_MAX_COLLIDERS)
@@ -237,6 +520,10 @@ void logMovementBranch(GameplayContextV1* ctx, const char* why,
     b.sinceLogSeconds = 0.0f;
 }
 
+void playActionSound(GameplayContextV1* ctx, std::uint64_t owner,
+                     const float pos[3], const char* sound, float volume,
+                     float pitch);
+
 // Collision is owned by exactly one system: the collision package
 // (`collision.main`). There is no second in-DLL solver; if the package is not
 // available the actor keeps its plain-integrated velocity for one tick rather
@@ -280,6 +567,31 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
     }
     st->grounded = q.grounded;
     st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
+
+    // Contact consumer: collision.main is the source of truth for impacts. Use
+    // the returned world contacts to play a throttled impact/land sound. Spark
+    // and decal impacts are already produced by the package through
+    // COLLISION_SOLVE_SPAWN_IMPACTS, so this adds only the audio consumer.
+    {
+        float maxIncoming = 0.0f;
+        for (std::uint32_t h = 0;
+             h < q.contactCount &&
+             h < HotCollisionPackage::COLLISION_MAX_CONTACTS;
+             ++h) {
+            if (q.contacts[h].targetKind != 0u)
+                continue;  // world contacts only
+            if (q.contacts[h].incomingSpeed > maxIncoming)
+                maxIncoming = q.contacts[h].incomingSpeed;
+        }
+        static float sinceImpact = 1.0f;  // allow the first impact immediately
+        sinceImpact += dt;
+        if (maxIncoming > 8.0f && sinceImpact >= 0.15f) {
+            sinceImpact = 0.0f;
+            const float volume = std::clamp(maxIncoming / 30.0f, 0.2f, 1.0f);
+            playActionSound(ctx, entity, st->position, "entity/player/land",
+                            volume, 1.0f);
+        }
+    }
 
     // Throttled branch record: proves which owner ran and the collider count
     // that was actually sent (capsule + resolved body parts), plus the actor
@@ -389,6 +701,102 @@ void logAction(GameplayContextV1* ctx, std::uint64_t actor,
     fn(ctx->host, &event);
 }
 
+// ── One generation-tracked movement tuning snapshot ─────────────────────────
+// JSON is the active preset source when config/movement.json says so. A parse
+// failure keeps the last valid JSON generation active; if none exists it falls
+// back to the compiled C++ preset. Resolved once per tick and reported.
+struct ResolvedTuning {
+    GameMovementTuningV1 tuning{};
+    MimitaHotMovement::MovementBehaviorSource source =
+        MimitaHotMovement::MovementBehaviorSource::Cpp;
+    std::string presetName;
+    std::uint64_t presetHash = 0;
+};
+
+ResolvedTuning resolveTuning(MimitaHotMovement::MovementPresetId id)
+{
+    const MimitaHotMovement::MovementPreset& preset =
+        MimitaHotMovement::getMovementPreset(id);
+    ResolvedTuning r;
+    r.presetName = preset.name;
+    r.tuning = preset.tuning;
+
+    std::string jsonPreset;
+    r.source = MimitaHotMovement::movementBehaviorSourceFromJson(&jsonPreset);
+    if (r.source == MimitaHotMovement::MovementBehaviorSource::Json) {
+        const std::string name = preset.name;
+        static std::string sLastGoodName;
+        static GameMovementTuningV1 sLastGood{};
+        static bool sHasLastGood = false;
+        static std::uint64_t sLastStamp = 0;
+
+        std::error_code ec;
+        const auto ft = std::filesystem::last_write_time(
+            "config/movement/" + name + ".json", ec);
+        std::uint64_t stamp =
+            ec ? 0ull : static_cast<std::uint64_t>(ft.time_since_epoch().count());
+
+        if (sHasLastGood && sLastGoodName == name && stamp != 0 && stamp == sLastStamp) {
+            r.tuning = sLastGood;
+            r.presetName = name;
+        } else {
+            GameMovementTuningV1 jsonTuning{};
+            if (MimitaHotMovement::loadJsonMovementPreset(name, jsonTuning)) {
+                sLastGood = jsonTuning;
+                sHasLastGood = true;
+                sLastGoodName = name;
+                sLastStamp = stamp;
+                r.tuning = jsonTuning;
+                r.presetName = name;
+            } else if (sHasLastGood && sLastGoodName == name) {
+                // Invalid JSON: keep the previous valid generation active.
+                r.tuning = sLastGood;
+                r.presetName = name;
+            }
+        }
+    }
+    r.presetHash = gameHash(r.presetName.c_str());
+    return r;
+}
+
+void logMovementSnapshot(GameplayContextV1* ctx, std::uint64_t entity,
+                         std::uint64_t tick, const ResolvedTuning& r)
+{
+    if (!ctx || !ctx->resolveCapability)
+        return;
+    static float sinceLog = 1.0f;  // emit the first snapshot immediately
+    sinceLog += 1.0f / 60.0f;
+    if (sinceLog < 1.0f)
+        return;
+    sinceLog = 0.0f;
+    char msg[256];
+    std::snprintf(msg, sizeof(msg),
+                  "source=%s preset=%s generation=%llu preset_hash=%llu "
+                  "simulation_tick=%llu",
+                  MimitaHotMovement::movementBehaviorSourceName(r.source),
+                  r.presetName.c_str(),
+                  static_cast<unsigned long long>(ctx->generation),
+                  static_cast<unsigned long long>(r.presetHash),
+                  static_cast<unsigned long long>(tick));
+    auto fn = reinterpret_cast<GameLogEventFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_LOG_EVENT));
+    if (!fn)
+        return;
+    GameLogEventV1 event{};
+    event.level = 2u;
+    event.simulationTick = tick;
+    event.entityId = entity;
+    event.actorId = entity;
+    event.actorKind = 1u;
+    event.frame = tick;
+    std::snprintf(event.category, sizeof(event.category), "MOVEMENT");
+    std::snprintf(event.name, sizeof(event.name), "movement.snapshot");
+    std::snprintf(event.message, sizeof(event.message), "%s", msg);
+    std::snprintf(event.result, sizeof(event.result), "%s",
+                  MimitaHotMovement::movementBehaviorSourceName(r.source));
+    fn(ctx->host, &event);
+}
+
 void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
 {
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
@@ -445,12 +853,12 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
     bool presetFromProfile = false;
     const MimitaHotMovement::MovementPresetId presetId =
         actorMovementPreset(ctx, e, &presetFromProfile);
-    const MimitaHotMovement::MovementPreset& preset =
-        MimitaHotMovement::getMovementPreset(presetId);
-    const GameMovementTuningV1& m = preset.tuning;
+    const ResolvedTuning resolved = resolveTuning(presetId);
+    const GameMovementTuningV1& m = resolved.tuning;
     MimitaHotMovement::movementPresetLogActor(
         ctx, e, MimitaHotMovement::MOVEMENT_LOG_ACTOR_PLAYER, presetId,
         presetFromProfile ? "actor-profile" : "active", tick, tick);
+    logMovementSnapshot(ctx, e, tick, resolved);
 
     if (createMode) {
         // Free-fly / noclip: camera-relative movement, no gravity/collision.
@@ -540,6 +948,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             if (rs.grounded) {
                 // GROUND: route through the ONE shared hot ground-move policy
                 // (friction + acceleration; the same implementation as server).
+                const bool v206Walk =
+                    m.walkMode == MimitaHotMovement::kWalkModeV206;
                 GameGroundMoveV1 g{};
                 g.velocity[0] = vx;
                 g.velocity[1] = vy;
@@ -550,9 +960,10 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 g.frictionAmount = (m.walkMode == MimitaHotMovement::kWalkModeSource)
                                        ? m.groundFriction
                                        : m.groundFrictionAmount;
-                g.stopspeed = m.stopspeed;
+                g.stopspeed = v206Walk ? 0.0f : m.stopspeed;
                 g.dt = dt;
                 g.hasInput = hasWish ? 1u : 0u;
+                g.movementModel = v206Walk ? 1u : 0u;
                 float out[2] = {vx, vy};
                 MimitaHotMovement::groundMove(g, out);
                 vx = out[0];
@@ -574,6 +985,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 air.dt = dt;
                 air.currentSpeed = vx * wishDirX + vy * wishDirY;
                 air.blendedAddSpeed = air.wishspd - air.currentSpeed;
+                air.movementModel =
+                    m.walkMode == MimitaHotMovement::kWalkModeV206 ? 1u : 0u;
                 float out[2] = {vx, vy};
                 MimitaHotMovement::airAccelerate(air, out);
                 vx = out[0];
@@ -606,6 +1019,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 dp.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
                 dp.dashEnabled = m.dashEnabled;
                 dp.downDashEnabled = m.downDashEnabled;
+                dp.dashMovementTicks = rs.dashMovementTicks;
                 MimitaHotMovement::dashPolicy(dp);
                 vx = dp.outVelocity[0];
                 vy = dp.outVelocity[1];
@@ -625,12 +1039,9 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 if (dp.outDidDownDash) {
                     rs.downDashAvailable = dp.outDownDashAvailable;
                     didDownDash = true;
-                    // v2.0.6 behavior: a down-dash pressed while grounded is
-                    // a launch, not a downward velocity that the floor
-                    // immediately cancels. Airborne down-dash remains the
-                    // configured downward impulse.
-                    if (dp.grounded != 0u)
-                        vz = std::max(1.0f, m.jumpSpeed);
+                    // v2.0.6 behavior: down-dash is purely additive
+                    // (velocityZ += downDashSpeed). On the ground the collision
+                    // owner cancels it; there is no grounded launch override.
                 }
             }
 
@@ -691,6 +1102,13 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         st.grounded = rs.grounded;
         resolveCollisions(ctx, &st, dt, e, tick);
         rs.grounded = st.grounded;
+        // v2.0.6 dash quality: count airborne ticks with movement held.
+        if (!st.grounded && mi.pressed) {
+            if (rs.dashMovementTicks < 99u)
+                ++rs.dashMovementTicks;
+        } else {
+            rs.dashMovementTicks = 0u;
+        }
         // Universal contact reset (movement spec): touching anything restores
         // every touch-reset ability. No time-based ability cooldowns.
         const bool contactNow = (st.grounded != 0) || (st.collided != 0);

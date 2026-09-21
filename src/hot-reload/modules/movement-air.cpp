@@ -20,6 +20,26 @@ namespace MimitaHotMovement {
 // The single air-acceleration algorithm. Context-free.
 void airAccelerate(const GameAirAccelerateV1& in, float outVelocity[2])
 {
+    if (in.movementModel == 1u) {
+        // v2.0.6 air: additive impulse toward the base move speed. No
+        // projection-cap headroom curve and no gain multiplier.
+        const float projected =
+            in.velocity[0] * in.wishDir[0] + in.velocity[1] * in.wishDir[1];
+        const float addSpeed = in.wishSpeed - projected;
+        if (addSpeed <= 0.0f) {
+            outVelocity[0] = in.velocity[0];
+            outVelocity[1] = in.velocity[1];
+            return;
+        }
+        float accelSpeed =
+            in.airAcceleration * in.wishSpeed * in.dt * in.surfaceFriction;
+        if (accelSpeed > addSpeed)
+            accelSpeed = addSpeed;
+        outVelocity[0] = in.velocity[0] + in.wishDir[0] * accelSpeed;
+        outVelocity[1] = in.velocity[1] + in.wishDir[1] * accelSpeed;
+        return;
+    }
+
     // 1. Project the current velocity onto the wish direction.
     float projected = in.velocity[0] * in.wishDir[0] + in.velocity[1] * in.wishDir[1];
     if (projected < 0.0f)
