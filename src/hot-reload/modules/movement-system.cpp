@@ -38,8 +38,8 @@
 namespace {
 
 // movement.tuning: cold callers (server, NPC, prediction setup, validation)
-// request a preset's tuning by id. The hot handler is the single authority and
-// fills the full preset; JSON is never consulted.
+// request a preset's tuning by id. The hot handler explicitly selects either
+// the C++ table or the JSON preset and fills the same POD tuning envelope.
 void MIMITA_GAME_CALL onMovementTuning(void* host, const GameEventV1* event)
 {
     auto* t = event ? static_cast<GameMovementTuningV1*>(event->payload) : nullptr;
@@ -50,7 +50,16 @@ void MIMITA_GAME_CALL onMovementTuning(void* host, const GameEventV1* event)
                         : MimitaHotMovement::kActiveMovementPreset;
     const MimitaHotMovement::MovementPreset& preset =
         MimitaHotMovement::getMovementPreset(id);
-    *t = preset.tuning;
+    std::string jsonPreset;
+    const auto source = MimitaHotMovement::movementBehaviorSourceFromJson(&jsonPreset);
+    GameMovementTuningV1 selected = preset.tuning;
+    if (source == MimitaHotMovement::MovementBehaviorSource::Json) {
+        GameMovementTuningV1 jsonTuning{};
+        if (MimitaHotMovement::loadJsonMovementPreset(
+                jsonPreset.empty() ? preset.name : jsonPreset, jsonTuning))
+            selected = jsonTuning;
+    }
+    *t = selected;
     t->presetId = static_cast<std::uint32_t>(id);
     t->handled = 1u;
     t->reserved = 0u;
@@ -62,8 +71,10 @@ void MIMITA_GAME_CALL onMovementTuning(void* host, const GameEventV1* event)
     static const char* lastLoggedMode = nullptr;
     if (lastLoggedMode != preset.name) {
         lastLoggedMode = preset.name;
-        std::printf("[MOVEMENT TUNING] source=cpp preset=%s authority=shared-hot-movement\n",
-                    preset.name);
+        std::printf("[MOVEMENT TUNING] source=%s preset=%s authority=shared-hot-movement\n",
+                    MimitaHotMovement::movementBehaviorSourceName(source),
+                    source == MimitaHotMovement::MovementBehaviorSource::Json && !jsonPreset.empty()
+                        ? jsonPreset.c_str() : preset.name);
     }
 }
 
@@ -141,6 +152,7 @@ void buildPlayerCollision(
     capsule.partId = COLLISION_PART_CAPSULE;
     capsule.shape = COLLISION_SHAPE_CAPSULE;
     capsule.policyId = COLLISION_POLICY_CAPSULE;
+    capsule.flags = COLLISION_COLLIDER_HELPER;
     capsule.radius = st->radius;
     capsule.halfHeight = st->halfHeight;
     for (int i = 0; i < 3; ++i)
@@ -184,6 +196,7 @@ void buildPlayerCollision(
         c.partId = p.part;
         c.shape = COLLISION_SHAPE_SPHERE;
         c.policyId = COLLISION_POLICY_BODY;
+        c.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
         c.radius = p.radius * s;
         c.position[0] = world.x;
         c.position[1] = world.y;
@@ -316,6 +329,66 @@ void spawnEffect(GameplayContextV1* ctx, std::uint64_t kind, const float pos[3],
     fn(ctx->host, &d);
 }
 
+// Actions do not call feature-specific audio functions.  They publish one
+// generic audio command and the kernel resolves the logical sound name through
+// the existing audio player.  Keeping this at the shared movement owner makes
+// dash/down-dash presentation identical for local prediction and hot actors.
+void playActionSound(GameplayContextV1* ctx, std::uint64_t owner,
+                     const float pos[3], const char* sound, float volume,
+                     float pitch)
+{
+    if (!ctx || !ctx->resolveCapability || !sound || !sound[0])
+        return;
+    auto fn = reinterpret_cast<GameAudioPlayFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
+    if (!fn)
+        return;
+    GameAudioCommandV1 command{};
+    std::snprintf(command.sound, sizeof(command.sound), "%s", sound);
+    command.position[0] = pos[0];
+    command.position[1] = pos[1];
+    command.position[2] = pos[2];
+    command.volume = volume;
+    command.pitch = pitch;
+    command.maxDistance = 50.0f;
+    command.spatial = 1u;
+    command.action = 0u;
+    command.ownerEntity = owner;
+    command.slotId = 0u;
+    command.op = GAME_AUDIO_PLAY_ONESHOT;
+    command.loop = 0u;
+    fn(ctx->host, &command);
+}
+
+void logAction(GameplayContextV1* ctx, std::uint64_t actor,
+               std::uint32_t tick, const char* action, std::uint64_t actionId,
+               bool availableAfter, const float position[3],
+               const float velocity[3])
+{
+    if (!ctx || !ctx->resolveCapability || !action)
+        return;
+    auto fn = reinterpret_cast<GameLogEventFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_LOG_EVENT));
+    if (!fn)
+        return;
+    GameLogEventV1 event{};
+    event.level = 2u;
+    event.simulationTick = tick;
+    event.entityId = actor;
+    event.actorId = actor;
+    event.actorKind = 1u;
+    event.frame = tick;
+    std::snprintf(event.category, sizeof(event.category), "MOVEMENT");
+    std::snprintf(event.name, sizeof(event.name), "movement.action");
+    std::snprintf(event.message, sizeof(event.message),
+                  "action=%s action_id=%llu available_after=%u pos=(%.3f %.3f %.3f) velocity=(%.3f %.3f %.3f)",
+                  action, static_cast<unsigned long long>(actionId),
+                  availableAfter ? 1u : 0u, position[0], position[1],
+                  position[2], velocity[0], velocity[1], velocity[2]);
+    std::snprintf(event.result, sizeof(event.result), "accepted");
+    fn(ctx->host, &event);
+}
+
 void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
 {
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
@@ -423,6 +496,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
 
         bool didDash = false;
         bool didDownDash = false;
+        const bool downDashAvailableBefore = rs.downDashAvailable != 0u;
         float dashDirX = 0.0f;
         float dashDirY = 0.0f;
 
@@ -551,6 +625,12 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 if (dp.outDidDownDash) {
                     rs.downDashAvailable = dp.outDownDashAvailable;
                     didDownDash = true;
+                    // v2.0.6 behavior: a down-dash pressed while grounded is
+                    // a launch, not a downward velocity that the floor
+                    // immediately cancels. Airborne down-dash remains the
+                    // configured downward impulse.
+                    if (dp.grounded != 0u)
+                        vz = std::max(1.0f, m.jumpSpeed);
                 }
             }
 
@@ -625,12 +705,47 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         else
             rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] &= ~2u;
 
+        // Prove the ability-reset decision directly in events.jsonl. The
+        // collision package separately records worldContact; tick/entity IDs
+        // join both records without adding a second collision owner.
+        if (contactNow || didDownDash ||
+            downDashAvailableBefore != (rs.downDashAvailable != 0u)) {
+            char contactMessage[320];
+            std::snprintf(
+                contactMessage, sizeof(contactMessage),
+                "touch=%u grounded=%u collided=%u ability_down_dash_before=%u "
+                "ability_down_dash_after=%u restored=%u down_dash_fired=%u "
+                "pos=(%.3f %.3f %.3f) velocity=(%.3f %.3f %.3f)",
+                contactNow ? 1u : 0u, st.grounded, st.collided,
+                downDashAvailableBefore ? 1u : 0u,
+                rs.downDashAvailable ? 1u : 0u,
+                (!downDashAvailableBefore && rs.downDashAvailable) ? 1u : 0u,
+                didDownDash ? 1u : 0u, st.position[0], st.position[1],
+                st.position[2], st.velocity[0], st.velocity[1], st.velocity[2]);
+            HotCollisionPackage::collisionLogFull(
+                ctx, 2u, "MOVEMENT", "movement.contact_ability", contactMessage,
+                contactNow ? "contact" : "no_contact", e, e,
+                HotCollisionPackage::COLLISION_LOG_ACTOR_PLAYER, tick, 0, tick,
+                tick);
+        }
+
         if (didDash) {
             const float dir[3] = {dashDirX, dashDirY, 0.0f};
             spawnEffect(ctx, gameHash("effect.dash"), st.position, dir, st.sizeScale, 0.0f);
+            const std::uint64_t actionId =
+                (static_cast<std::uint64_t>(tick) << 32u) ^ e ^ gameHash("dash");
+            playActionSound(ctx, e, st.position, "entity/player/dash", 1.0f, 1.0f);
+            logAction(ctx, e, tick, "dash", actionId,
+                      rs.dashAvailable != 0u, st.position, st.velocity);
         }
-        if (didDownDash)
+        if (didDownDash) {
             spawnEffect(ctx, gameHash("effect.downDash"), st.position, nullptr, st.sizeScale, 0.0f);
+            const std::uint64_t actionId =
+                (static_cast<std::uint64_t>(tick) << 32u) ^ e ^ gameHash("down_dash");
+            playActionSound(ctx, e, st.position, "entity/player/dash", 1.0f, 0.82f);
+            logAction(ctx, e, tick, "down_dash", actionId,
+                      rs.downDashAvailable != 0u, st.position, st.velocity);
+        }
         if (freezeEdge)
             spawnEffect(ctx, gameHash("effect.freeze"), st.position, nullptr, st.sizeScale, 0.0f);
         else if (freezeNow)

@@ -22,6 +22,7 @@
 #include "ecs/dynamic-components.h"
 #include "ecs/relationship-store.h"
 #include "live-code/live-modules.h"
+#include "live-code/live-identity.h"
 #include "live-code/live-ui.h"
 #include "hot-reload/hot-pose.h"
 #include "render/skeleton-instances.h"
@@ -46,7 +47,10 @@
 
 extern Renderer* gRenderer;
 #include "terminal/terminal-state.h"
+#include "devtools/terminal.h"
 #include "network/multiplayer-context.h"
+
+#include <windows.h>
 
 #include <glm/gtc/quaternion.hpp>
 #include "physics/ray-utils.h"
@@ -57,6 +61,8 @@ extern Renderer* gRenderer;
 #include "world/world.h"
 
 namespace {
+
+const ULONGLONG gProcessStartMs = GetTickCount64();
 
 const GameGameplayModuleV1* gameplayModule()
 {
@@ -1421,6 +1427,49 @@ void* MIMITA_GAME_CALL capResolveCapability(void*, std::uint64_t id)
     return MimitaRuntime::GenericRuntime::instance().capability(id);
 }
 
+bool MIMITA_GAME_CALL capRuntimeInfo(void*, GameRuntimeInfoV1* out)
+{
+    if (!out)
+        return false;
+    *out = GameRuntimeInfoV1{};
+    out->pid = (std::uint32_t)LiveIdentity::pid();
+    out->sessionId = LiveIdentity::sessionId();
+    out->clientTick = (std::uint32_t)LiveIdentity::simulationTick();
+    out->uptimeMs = GetTickCount64() - gProcessStartMs;
+    std::strncpy(out->process, LiveIdentity::process(), sizeof(out->process) - 1);
+    std::strncpy(out->eventsPath, debug::eventsPath().c_str(), sizeof(out->eventsPath) - 1);
+    const HotReloadSystem::Status status = HotReloadSystem::instance().status();
+    out->activeGeneration = status.activeGeneration;
+    out->hotAbiVersion = MIMITA_GAME_API_VERSION;
+    if (!status.activeHash.empty())
+        out->activeHash = std::strtoull(status.activeHash.c_str(), nullptr, 16);
+    char exe[MAX_PATH] = {};
+    if (GetModuleFileNameA(nullptr, exe, MAX_PATH) != 0)
+        std::strncpy(out->exePath, exe, sizeof(out->exePath) - 1);
+    if (gpMpContext) {
+        out->serverGeneration = gpMpContext->serverCodeGeneration;
+        out->serverTick = gpMpContext->latestServerTick;
+        out->serverPhase = gpMpContext->serverCodePhase;
+        out->serverHash = gpMpContext->serverCodeHash;
+        out->serverLogicalHash = gpMpContext->serverLogicalHash;
+        out->serverPlatformHash = gpMpContext->serverPlatformHash;
+        std::strncpy(out->roomCode, gpMpContext->currentRoomCode.empty()
+            ? gpMpContext->roomCode.c_str() : gpMpContext->currentRoomCode.c_str(),
+            sizeof(out->roomCode) - 1);
+        std::strncpy(out->serverName, gpMpContext->serverName.c_str(),
+                     sizeof(out->serverName) - 1);
+    }
+    if (!status.lastError.empty())
+        std::strncpy(out->lastError, status.lastError.c_str(), sizeof(out->lastError) - 1);
+    return true;
+}
+
+void MIMITA_GAME_CALL capTerminalOutput(void*, const char* line)
+{
+    if (line)
+        Terminal::instance().addLog(line);
+}
+
 // Generic authoritative server-context primitives: spawn a package projectile
 // and apply damage by entity id. The server containers stay kernel-owned.
 bool MIMITA_GAME_CALL capProjectileSpawn(void*, const GameProjectileSpawnSpecV1* spec,
@@ -2028,6 +2077,14 @@ struct KernelCapabilityInit {
                                     gameHash("sig.log.event.v1"), 0,
                                     reinterpret_cast<void*>(&capLogEvent),
                                     "log.event");
+        rt.registerKernelCapability(GAME_CAP_RUNTIME_INFO,
+                                    gameHash("sig.runtime.info.v1"), 0,
+                                    reinterpret_cast<void*>(&capRuntimeInfo),
+                                    "runtime.info");
+        rt.registerKernelCapability(GAME_CAP_TERMINAL_OUTPUT,
+                                    gameHash("sig.terminal.output.v1"), 0,
+                                    reinterpret_cast<void*>(&capTerminalOutput),
+                                    "terminal.output");
         rt.registerKernelCapability(GAME_CAP_RENDER_DEBUG,
                                     gameHash("sig.render.debug.v1"), 0,
                                     reinterpret_cast<void*>(&capRenderDebug),

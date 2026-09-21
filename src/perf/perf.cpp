@@ -12,6 +12,7 @@
 #include <vector>
 #include <fstream>
 #include <filesystem>
+#include <unordered_map>
 
 #include "video/frame-pacer.h"
 #include "gui/ui-system.h"
@@ -20,6 +21,132 @@
 extern FramePacer gFramePacer;
 
 PerfState gState;
+
+namespace {
+struct FrameTimeContributor {
+    std::string file;
+    std::string function;
+    std::string label;
+    int line = 0;
+    uint64_t calls = 0;
+    uint64_t frames = 0;
+    double selfMs = 0.0;
+    double inclusiveMs = 0.0;
+    double maxSelfMs = 0.0;
+    double maxInclusiveMs = 0.0;
+};
+
+struct FrameTimeWindow {
+    uint64_t startedUs = 0;
+    uint64_t frameCount = 0;
+    uint64_t firstFrame = 0;
+    uint64_t lastFrame = 0;
+    double totalMs = 0.0;
+    double worstMs = 0.0;
+    uint64_t worstFrame = 0;
+    double budgetMs = 0.0;
+    std::unordered_map<std::string, FrameTimeContributor> contributors;
+};
+
+FrameTimeWindow gFrameTimeWindow;
+
+std::string contributorKey(const PerfBreakdownEntry& e)
+{
+    return std::string(e.sourceFile) + "|" + std::to_string(e.sourceLine) + "|" +
+        e.functionName + "|" + e.label;
+}
+
+void resetFrameTimeWindow(uint64_t now)
+{
+    gFrameTimeWindow = FrameTimeWindow{};
+    gFrameTimeWindow.startedUs = now;
+}
+
+void addFrameToWindow(const PerfFrame& frame)
+{
+    if (gFrameTimeWindow.frameCount == 0)
+        gFrameTimeWindow.firstFrame = static_cast<uint64_t>(frame.frameNumber);
+    gFrameTimeWindow.lastFrame = static_cast<uint64_t>(frame.frameNumber);
+    gFrameTimeWindow.frameCount++;
+    gFrameTimeWindow.totalMs += frame.totalMs;
+    gFrameTimeWindow.budgetMs = frame.budgetMs;
+    if (frame.totalMs > gFrameTimeWindow.worstMs) {
+        gFrameTimeWindow.worstMs = frame.totalMs;
+        gFrameTimeWindow.worstFrame = static_cast<uint64_t>(frame.frameNumber);
+    }
+
+    for (int i = 0; i < frame.entryCount; ++i) {
+        const PerfBreakdownEntry& e = frame.entries[i];
+        auto& c = gFrameTimeWindow.contributors[contributorKey(e)];
+        c.file = e.sourceFile;
+        c.function = e.functionName;
+        c.label = e.label;
+        c.line = e.sourceLine;
+        c.calls += e.callCount;
+        c.frames++;
+        c.selfMs += e.selfMs;
+        c.inclusiveMs += e.inclMs;
+        c.maxSelfMs = std::max(c.maxSelfMs, e.selfMs);
+        c.maxInclusiveMs = std::max(c.maxInclusiveMs, e.inclMs);
+    }
+}
+
+void emitFrameTimeWindow(uint64_t now, uint64_t activeFrame)
+{
+    if (gFrameTimeWindow.frameCount == 0)
+        return;
+
+    std::vector<const FrameTimeContributor*> sorted;
+    sorted.reserve(gFrameTimeWindow.contributors.size());
+    for (const auto& pair : gFrameTimeWindow.contributors)
+        sorted.push_back(&pair.second);
+    std::sort(sorted.begin(), sorted.end(), [](const auto* a, const auto* b) {
+        if (a->selfMs != b->selfMs) return a->selfMs > b->selfMs;
+        return a->inclusiveMs > b->inclusiveMs;
+    });
+
+    nlohmann::json contributors = nlohmann::json::array();
+    const size_t limit = std::min<size_t>(sorted.size(), 30);
+    for (size_t i = 0; i < limit; ++i) {
+        const FrameTimeContributor& c = *sorted[i];
+        contributors.push_back({
+            {"file", c.file}, {"function", c.function}, {"line", c.line},
+            {"name", c.label}, {"calls", c.calls}, {"frames_seen", c.frames},
+            {"self_ms", c.selfMs}, {"inclusive_ms", c.inclusiveMs},
+            {"average_self_ms_per_frame", c.selfMs / gFrameTimeWindow.frameCount},
+            {"max_self_ms", c.maxSelfMs}, {"max_inclusive_ms", c.maxInclusiveMs}
+        });
+    }
+
+    debug::Event event;
+    event.category = "PERFORMANCE";
+    event.name = "performance.frame_time_summary";
+    event.level = debug::Level::Info;
+    event.simulationTick = activeFrame;
+    event.frame = activeFrame;
+    event.sourceFile = __FILE__;
+    event.sourceLine = __LINE__;
+    event.functionName = "emitFrameTimeWindow";
+    event.fields = {
+        {"window_seconds", (now - gFrameTimeWindow.startedUs) / 1000000.0},
+        {"frame_count", gFrameTimeWindow.frameCount},
+        {"first_frame", gFrameTimeWindow.firstFrame},
+        {"last_frame", gFrameTimeWindow.lastFrame},
+        {"average_frame_ms", gFrameTimeWindow.totalMs / gFrameTimeWindow.frameCount},
+        {"worst_frame_ms", gFrameTimeWindow.worstMs},
+        {"worst_frame", gFrameTimeWindow.worstFrame},
+        {"budget_ms", gFrameTimeWindow.budgetMs},
+        {"events_jsonl", debug::eventsPath()},
+        {"contributors_sorted", contributors},
+        {"units", { {"frame_time", "milliseconds"}, {"scope_time", "milliseconds"},
+                     {"window_clock", "monotonic_microseconds"} }}
+    };
+    event.aggregationKey = "performance:frame-time-summary:" +
+        std::to_string(gFrameTimeWindow.firstFrame);
+    debug::logEvent(event);
+    resetFrameTimeWindow(now);
+}
+}
 
 static uint64_t nowUs()
 {
@@ -972,6 +1099,16 @@ void Perf::endFrame(float currentFrameMs)
         perfAggregateScopes((double)currentMs, targetMs, s.frameNumber);
     }
 
+    const int lastFrameIndex = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
+    if (gFrameHistoryCount > 0 && gFrameHistory[lastFrameIndex].frameNumber == s.frameNumber) {
+        const uint64_t windowNow = nowUs();
+        if (gFrameTimeWindow.startedUs == 0)
+            resetFrameTimeWindow(windowNow);
+        addFrameToWindow(gFrameHistory[lastFrameIndex]);
+        if (windowNow - gFrameTimeWindow.startedUs >= 5000000ULL)
+            emitFrameTimeWindow(windowNow, static_cast<uint64_t>(s.frameNumber));
+    }
+
     PerfGpu::endFrame();
     Perf::logDetailedSubsystemStats();
 
@@ -1022,6 +1159,58 @@ void Perf::endFrame(float currentFrameMs)
             se.frame = (uint32_t)s.frameNumber;
             se.message = msg;
             StructuredLogger::instance().write(se);
+        }
+    }
+
+    // Keep the complete per-frame scope data in the existing ring buffer. The
+    // five-second provenance-rich summary above is the authoritative JSONL
+    // report; this legacy report remains for compatibility with older tools.
+    if (false && s.frameNumber % 60 == 0 && gFrameHistoryCount > 0) {
+        const int lastIdx =
+            (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
+        if (gFrameHistory[lastIdx].frameNumber == s.frameNumber) {
+            const PerfFrame& frame = gFrameHistory[lastIdx];
+            struct ScopeRef { const PerfBreakdownEntry* entry; };
+            ScopeRef sorted[128]{};
+            int count = 0;
+            for (int i = 0; i < frame.entryCount && count < 128; ++i)
+                sorted[count++] = {&frame.entries[i]};
+            std::sort(sorted, sorted + count,
+                      [](const ScopeRef& a, const ScopeRef& b) {
+                          return a.entry->selfMs > b.entry->selfMs;
+                      });
+
+            nlohmann::json contributors = nlohmann::json::array();
+            for (int i = 0; i < count; ++i) {
+                const PerfBreakdownEntry& e = *sorted[i].entry;
+                nlohmann::json contributor = nlohmann::json::object();
+                contributor["name"] = e.label;
+                contributor["self_ms"] = e.selfMs;
+                contributor["inclusive_ms"] = e.inclMs;
+                contributor["calls"] = e.callCount;
+                contributors.push_back(std::move(contributor));
+            }
+
+            debug::Event event;
+            event.category = "PERFORMANCE";
+            event.name = "performance.frame_window";
+            event.level = debug::Level::Info;
+            event.simulationTick = static_cast<std::uint64_t>(s.frameNumber);
+            event.frame = static_cast<std::uint64_t>(s.frameNumber);
+            event.fields = {
+                {"window_frames", 60},
+                {"frame_number", s.frameNumber},
+                {"total_ms", currentMs},
+                {"average_ms", s.avgFrameTimeMs},
+                {"budget_ms", frame.budgetMs},
+                {"contributors_sorted", contributors},
+                {"npc_count", frame.npcCount},
+                {"effect_count", frame.effectCount},
+                {"audio_count", frame.audioCount},
+                {"allocation_count", frame.allocCount}
+            };
+            event.aggregationKey = "performance:frame-window";
+            debug::logEvent(event);
         }
     }
 }

@@ -1,0 +1,32 @@
+{
+  "behaviorSource": "cpp",
+  "comment": "cpp keeps the hot built-in pose clips. json may override action timing without rebuilding.",
+  "actions": {
+    "idle": { "duration": 0.40 },
+    "walk": { "duration": 0.50 },
+    "shoot": { "duration": 0.18 },
+    "reload": { "duration": 0.60 },
+    "death": { "duration": 0.90 }
+  },
+  "tools": {
+    "revolver": {
+      "phases": {
+        "idle": {
+          "duration": 1.0,
+          "loop": true,
+          "mask": "arms",
+          "keyframes": [
+            { "time": 0.0, "parts": {
+              "leftArm": { "rotation": [ -58, 0, 6 ] },
+              "rightArm": { "rotation": [ -70, 0, -4 ] }
+            } },
+            { "time": 1.0, "parts": {
+              "leftArm": { "rotation": [ -58, 0, 6 ] },
+              "rightArm": { "rotation": [ -70, 0, -4 ] }
+            } }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -469,7 +469,11 @@ void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber)
     // Send to StructuredLogger
     StructuredLogger::Entry e;
     e.category = StructuredCategory::Performance;
-    e.level = StructuredLevel::Errors;
+    // Ordinary budget misses are repetitive telemetry and should use the
+    // logger's bounded repeat bucket. Severe misses remain immediate errors so
+    // a catastrophic frame is never hidden by aggregation.
+    e.level = totalFrameMs >= gPerfBudget.severeThresholdMs
+        ? StructuredLevel::Errors : StructuredLevel::Important;
     e.eventId = "PERFORMANCE_SPIKE";
     e.correlationId = "";
     if (gPerfCorrelationDepth > 0)

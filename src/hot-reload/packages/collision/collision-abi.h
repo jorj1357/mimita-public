@@ -86,6 +86,11 @@ struct CollisionColliderV1 {
     char label[COLLISION_MAX_LABEL];
 };
 
+// Helper colliders may classify support/steps but must not become invisible
+// walls once authoritative body colliders are present.
+static constexpr std::uint32_t COLLISION_COLLIDER_HELPER = 1u << 0;
+static constexpr std::uint32_t COLLISION_COLLIDER_BODY_AUTHORITATIVE = 1u << 1;
+
 struct CollisionContactV1 {
     std::uint64_t sourceEntity;
     std::uint32_t sourcePart;

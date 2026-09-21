@@ -1,3 +1,5 @@
+9 20 2026 1124 jorj - do not just  append to this file antmore, this is v1, superseded by C:\mimita-priv-v8\docs\regressions\README.md
+
 // 09 03 2026, 15 42
 /* purpose
 * record confirmed behavior breaks discovered through human review or playtesting

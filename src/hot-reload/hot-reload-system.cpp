@@ -23,8 +23,6 @@
 
 namespace {
 
-constexpr int HOT_RELOAD_POLL_THROTTLE = 15;
-
 void MIMITA_GAME_CALL platformLog(const char* message)
 {
     if (message)
@@ -236,27 +234,13 @@ bool HotReloadSystem::pollAndAdvance(std::uint32_t tick)
             return true;
     }
 
-    const bool watcherDirty = watcher_.poll();
-    if (!buildRunning_.load() && !buildRequested_.load()) {
-        const bool throttled = (++pollCounter_ % HOT_RELOAD_POLL_THROTTLE == 0);
-        if (throttled || watcherDirty) {
-            pollManifestReload();
-            // Re-resolve globs so live-added/removed/renamed hot files change
-            // the package source set (and therefore the source hash).
-            loadManifest();
-            pollColdBoundary();
-            const std::string hash = computeSourceHash();
-            if (!hash.empty() && hash != observedSourceHash_) {
-                // Retry the same failed hash with bounded backoff instead of
-                // suppressing it forever. A transient or racing build must be
-                // recoverable without another source edit.
-                const std::uint64_t nowMs = MiMitaTime::monotonicMillis();
-                const bool sameAsFailed = (!attemptedHash_.empty() && hash == attemptedHash_);
-                if (!sameAsFailed || nowMs >= nextRetryMonoMs_)
-                    beginBuild(sameAsFailed ? "retry" : "source_change");
-            }
-        }
-    }
+    // The frame thread only consumes the watcher's already-produced event
+    // queue. Manifest expansion, cold-boundary checks, hashing, and build
+    // enqueueing happen on the worker below.
+    if (watcher_.poll())
+        sourceScanRequested_ = true;
+    if (sourceScanRequested_.load() && !buildRunning_.load() && !buildRequested_.load())
+        cv_.notify_one();
     return false;
 }
 
@@ -327,12 +311,29 @@ void HotReloadSystem::workerMain()
     for (;;) {
         BuildRequest request;
         {
-            std::unique_lock<std::mutex> lock(mutex_);
+        std::unique_lock<std::mutex> lock(mutex_);
             cv_.wait(lock, [this] {
-                return workerStop_.load() || buildRequested_.load();
+                return workerStop_.load() || buildRequested_.load() ||
+                    sourceScanRequested_.load();
             });
             if (workerStop_.load())
                 break;
+            if (sourceScanRequested_.exchange(false) &&
+                !buildRunning_.load() && !buildRequested_.load()) {
+                lock.unlock();
+                pollManifestReload();
+                loadManifest();
+                pollColdBoundary();
+                const std::string hash = computeSourceHash();
+                if (!hash.empty() && hash != observedSourceHash_) {
+                    const std::uint64_t nowMs = MiMitaTime::monotonicMillis();
+                    const bool sameAsFailed = (!attemptedHash_.empty() && hash == attemptedHash_);
+                    if (!sameAsFailed || nowMs >= nextRetryMonoMs_)
+                        beginBuild(sameAsFailed ? "retry" : "source_change");
+                }
+                lock.lock();
+                continue;
+            }
             request = request_;
             buildRequested_ = false;
         }

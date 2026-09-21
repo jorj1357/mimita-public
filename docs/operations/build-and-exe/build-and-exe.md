@@ -83,6 +83,17 @@ may be running and must be left alone.
 
 ## Build result
 
+## Cold-build record
+
+Whenever an agent intentionally runs a cold build, it must append one
+`Cold-build occurrence N` section to the dedicated record described in
+`docs/regressions/README.md`. The entry is required even when the build
+succeeds. Explain why the live build could not produce the requested result,
+identify the exact cold source/owner or runtime boundary, state what the cold
+build was needed to prove, and name the smallest change that would make this
+work live-reloadable next time. Link the final session changelog and keep the
+existing running-process safety rules unchanged.
+
 After a build, read `build/build-result.json` (machine readable) or
 `build/changelog.txt`. Both include the produced executable name and path:
 

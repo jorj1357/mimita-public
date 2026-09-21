@@ -7,6 +7,9 @@
 
 struct PerfBreakdownEntry {
     char label[64];
+    char sourceFile[260];
+    char functionName[128];
+    int sourceLine = 0;
     double selfMs;
     double inclMs;
     uint32_t callCount;

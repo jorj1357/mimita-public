@@ -151,12 +151,20 @@ void notifyActivated(std::uint32_t generation, const std::string& codeHash)
 
 void notifyGenerationMismatch(std::uint32_t localGeneration,
                               std::uint32_t remoteGeneration,
-                              bool remoteKnown)
+                              bool remoteKnown,
+                              std::uint32_t remotePhase,
+                              const std::string& localHash,
+                              std::uint64_t remoteHash)
 {
     std::string message = "CLIENT ONLY\n" + identityBlock() +
         "\nclientGeneration=" + std::to_string(localGeneration);
-    if (remoteKnown)
-        message += "\nSERVER STILL RUNNING GENERATION " + std::to_string(remoteGeneration);
+    if (remoteKnown) {
+        const char* phase = remotePhase == 3 ? "active" :
+            (remotePhase == 2 ? "switch-pending" :
+             (remotePhase == 1 ? "ready-candidate" : "candidate/status"));
+        message += "\nSERVER GENERATION " + std::to_string(remoteGeneration) +
+                   " phase=" + phase;
+    }
     else
         message += "\ndedicated server generation independent";
     NotificationSystem::instance().pushImportant("LIVE CODE", message, 300);
@@ -164,10 +172,27 @@ void notifyGenerationMismatch(std::uint32_t localGeneration,
     fields.generation = localGeneration;
     fields.hasGeneration = true;
     fields.result = "client_only";
+    fields.codeHash = localHash;
     fields.extra = std::string("\"remote_generation\":") +
         std::to_string(remoteGeneration) +
-        ",\"remote_known\":" + (remoteKnown ? std::string("true") : std::string("false"));
+        ",\"remote_known\":" + (remoteKnown ? std::string("true") : std::string("false")) +
+        ",\"remote_phase\":" + std::to_string(remotePhase) +
+        ",\"remote_hash\":" + std::to_string(remoteHash);
     LiveEventJournal::instance().record("generation_mismatch", fields);
+}
+
+void notifyGenerationConverged(std::uint32_t generation,
+                               const std::string& codeHash)
+{
+    NotificationSystem::instance().pushImportant(
+        "LIVE CODE", "GENERATION SYNCED\n" + identityBlock() +
+            "\ngeneration=" + std::to_string(generation), 180);
+    LiveEventJournal::Fields fields;
+    fields.generation = generation;
+    fields.hasGeneration = true;
+    fields.codeHash = codeHash;
+    fields.result = "converged";
+    LiveEventJournal::instance().record("generation_converged", fields);
 }
 
 void notifyRollbackActivated(std::uint32_t generation, const std::string& codeHash)

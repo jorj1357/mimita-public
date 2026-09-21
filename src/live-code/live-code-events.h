@@ -35,7 +35,13 @@ void notifyActivated(std::uint32_t generation, const std::string& codeHash);
 // generation (for example a client activation while the server is independent).
 void notifyGenerationMismatch(std::uint32_t localGeneration,
                               std::uint32_t remoteGeneration,
-                              bool remoteKnown);
+                              bool remoteKnown,
+                              std::uint32_t remotePhase = 0,
+                              const std::string& localHash = {},
+                              std::uint64_t remoteHash = 0);
+
+void notifyGenerationConverged(std::uint32_t generation,
+                               const std::string& codeHash);
 
 // Called when the previous generation is reactivated.
 void notifyRollbackActivated(std::uint32_t generation, const std::string& codeHash);

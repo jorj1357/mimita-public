@@ -6,7 +6,7 @@
   "events_file": true,
   "console_mirror": false,
   "flush_each_event": false,
-  "repeat_window_seconds": 1.0,
+  "repeat_window_seconds": 5.0,
 
   "default_level": "important",
 
@@ -17,7 +17,7 @@
     "camera": { "level": "off", "file_output": true },
     "audio": { "level": "off", "file_output": true },
     "physics": { "level": "off", "file_output": true },
-    "performance": { "level": "off", "file_output": true },
+    "performance": { "level": "important", "file_output": true },
     "collision": { "level": "important", "file_output": true },
     "movement": { "level": "important", "file_output": true },
     "npc_combat": { "level": "important", "file_output": true },
@@ -78,11 +78,11 @@
     "history_frames_before_spike": 120,
     "history_frames_after_spike": 180,
     "aggregate_window_frames": 600,
-    "log_allocations": false,
-    "log_asset_io": false,
-    "log_collision_queries": false,
-    "log_entity_counts": false,
-    "log_effect_counts": false,
-    "log_render_counts": false
+    "log_allocations": true,
+    "log_asset_io": true,
+    "log_collision_queries": true,
+    "log_entity_counts": true,
+    "log_effect_counts": true,
+    "log_render_counts": true
   }
 }

@@ -46,6 +46,9 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
 
         PerfBreakdownEntry& e = frame.entries[frame.entryCount++];
         std::snprintf(e.label, sizeof(e.label), "%s", cap.label ? cap.label : "?");
+        std::snprintf(e.sourceFile, sizeof(e.sourceFile), "%s", cap.file ? cap.file : "?");
+        std::snprintf(e.functionName, sizeof(e.functionName), "%s", cap.func ? cap.func : "?");
+        e.sourceLine = cap.line;
         e.selfMs = selfMs;
         e.inclMs = inclMs;
         e.callCount = cap.callCount;

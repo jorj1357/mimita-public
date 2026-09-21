@@ -25,6 +25,8 @@
 #include "terminal/terminal-state.h"
 #include "game/spawn-override.h"
 #include "network/server.h"
+#include "live-code/live-behavior.h"
+#include "live-code/live-identity.h"
 
 Terminal& Terminal::instance() {
     static Terminal t;
@@ -497,7 +499,11 @@ void Terminal::execute(const std::string& input) {
                 : input.substr(pos + cmdName.size());
             while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t'))
                 rest.erase(rest.begin());
-            runtime.runCommand(cmdName, rest.c_str(), nullptr);
+            // Supply the same stable plain-data context used by hot systems.
+            // This is what makes a command registration replaceable with the
+            // DLL instead of requiring a new cold ConsoleCommand entry.
+            runtime.runCommand(cmdName, rest.c_str(),
+                               LiveBehavior::hostContext(LiveIdentity::simulationTick()));
             return;
         }
     }

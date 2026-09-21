@@ -14,6 +14,10 @@
 
 #include <cstdint>
 #include <cstring>
+#include <fstream>
+#include <string>
+
+#include <nlohmann/json.hpp>
 
 #include "hot-reload/hot-movement-policy.h"
 
@@ -394,6 +398,82 @@ inline MovementPresetId movementPresetIdFromHash(std::uint64_t hash)
         }
     }
     return kActiveMovementPreset;
+}
+
+enum class MovementBehaviorSource : std::uint8_t { Cpp = 0, Json = 1 };
+
+inline MovementBehaviorSource movementBehaviorSourceFromJson(
+    std::string* outPreset = nullptr)
+{
+    if (outPreset)
+        outPreset->clear();
+    std::ifstream selector("config/movement.json");
+    if (!selector)
+        return MovementBehaviorSource::Cpp;
+    try {
+        const nlohmann::json j = nlohmann::json::parse(selector, nullptr, true, true);
+        const std::string source = j.value("behaviorSource", "cpp");
+        if (outPreset)
+            *outPreset = j.value("preset", "source");
+        return source == "json" ? MovementBehaviorSource::Json
+                                  : MovementBehaviorSource::Cpp;
+    } catch (...) {
+        return MovementBehaviorSource::Cpp;
+    }
+}
+
+inline bool loadJsonMovementPreset(const std::string& name,
+                                   GameMovementTuningV1& out)
+{
+    const std::string preset = name.empty() ? "source" : name;
+    std::ifstream file("config/movement/" + preset + ".json");
+    if (!file)
+        return false;
+    try {
+        const nlohmann::json j = nlohmann::json::parse(file, nullptr, true, true);
+        GameMovementTuningV1 t = movementTuningBase();
+        const std::string mode = j.value("movement_mode", "mimita");
+        t.walkMode = mode == "source" ? kWalkModeSource
+                    : mode == "accel" ? kWalkModeAccel : kWalkModeMimita;
+        t.sourceWalkMode = mode == "source" ? 1u : 0u;
+        auto f = [&](const char* key, float& v) { if (j.contains(key) && j[key].is_number()) v = j[key].get<float>(); };
+        auto b = [&](const char* key, std::uint32_t& v) { if (j.contains(key) && j[key].is_boolean()) v = j[key].get<bool>() ? 1u : 0u; };
+        auto u = [&](const char* key, std::uint32_t& v) { if (j.contains(key) && j[key].is_number_integer()) v = j[key].get<std::uint32_t>(); };
+        f("max_speed", t.walkSpeed); f("max_speed", t.groundSpeed); f("max_speed", t.airSpeed);
+        f("ground_speed", t.groundSpeed); f("ground_acceleration", t.groundAcceleration);
+        f("friction", t.groundFriction); f("friction", t.sourceFriction);
+        f("stop_speed", t.stopspeed); f("air_acceleration", t.airAcceleration);
+        f("air_max_wishspeed", t.airMaxWishspeed); f("air_speed_gain_multiplier", t.airSpeedGainMultiplier);
+        f("gravity", t.gravityMagnitude); t.gravityMagnitude = std::abs(t.gravityMagnitude);
+        f("jump_velocity", t.jumpSpeed); f("max_fall_speed", t.maxFallSpeed);
+        f("jump_buffer_time", t.jumpBufferSeconds); f("coyote_time", t.coyoteSeconds);
+        f("ground_dash_impulse", t.groundDashImpulse); f("air_dash_impulse", t.airDashImpulse);
+        f("down_dash_speed", t.downDashSpeed); f("dash_grace_seconds", t.dashGraceSeconds);
+        f("dash_friction_multiplier", t.dashFrictionMultiplier);
+        f("external_impulse_decay", t.externalImpulseDecay);
+        f("max_external_impulse_speed", t.maximumExternalImpulseSpeed);
+        f("impulse_carry_seconds", t.impulseCarrySeconds);
+        f("speed_limit", t.speedLimit); f("velocity_clip_epsilon", t.velocityClipEpsilon);
+        f("surface_friction", t.surfaceFriction); f("air_input_blending", t.airInputBlending);
+        f("air_input_mouse_threshold_degrees", t.airInputMouseThresholdDegrees);
+        b("air_strafing", t.airControlEnabled); b("auto_bhop_enabled", t.autoBhopEnabled);
+        b("dash_enabled", t.dashEnabled); b("down_dash_enabled", t.downDashEnabled);
+        b("freeze_enabled", t.freezeEnabled); b("ground_snap", t.groundSnap);
+        b("air_input_blending_enabled", t.airInputBlendingEnabled);
+        b("source_airaccelerate_bug_compatible", t.sourceAirAccelerateBugCompatible);
+        b("speed_limit_enabled", t.speedLimitEnabled); u("max_air_jumps", t.maximumAirJumps);
+        t.speedLimitMode = j.value("speed_limit_mode", "clamp") == "fixed" ? 1u : 0u;
+        t.presetId = static_cast<std::uint32_t>(movementPresetIdFromName(preset.c_str()));
+        out = t;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+inline const char* movementBehaviorSourceName(MovementBehaviorSource source)
+{
+    return source == MovementBehaviorSource::Json ? "json" : "cpp";
 }
 
 } // namespace MimitaHotMovement

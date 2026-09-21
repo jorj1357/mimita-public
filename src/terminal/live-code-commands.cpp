@@ -10,8 +10,11 @@
 #include "devtools/terminal.h"
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/live-journal.h"
+#include "live-code/live-operation-queue.h"
+#include "network/server-live-collaboration.h"
 
 #include <string>
+#include <cstdint>
 #include <vector>
 
 namespace {
@@ -33,6 +36,34 @@ void printStatus()
     if (!status.lastError.empty())
         Terminal::instance().addLog("[LIVE CODE] lastError=" + status.lastError);
     Terminal::instance().addLog("[LIVE CODE] journal=" + LiveEventJournal::instance().path());
+}
+
+std::uint64_t parseId(const std::string& value)
+{
+    try { return std::stoull(value); }
+    catch (...) { return 0; }
+}
+
+void printQueue()
+{
+    Terminal::instance().addLog("[LIVE QUEUE] pending=" +
+        std::to_string(LiveCollaboration::LiveOperationQueue::instance().size()));
+}
+
+void printRevisions(const std::string& resource)
+{
+    const auto id = parseId(resource);
+    const auto active = LiveCollaboration::ServerLiveCollaboration::instance().activeRevision(id);
+    Terminal::instance().addLog("[LIVE REVISIONS] resource=" + resource +
+        " active=" + std::to_string(active));
+    for (const auto& revision :
+         LiveCollaboration::ServerLiveCollaboration::instance().revisions(id)) {
+        Terminal::instance().addLog(
+            "  revision=" + std::to_string(revision.revisionId) +
+            " parent=" + std::to_string(revision.parentRevisionId) +
+            " hash=" + std::to_string(revision.contentHash) +
+            " state=" + LiveCollaboration::revisionStateName(revision.state));
+    }
 }
 
 } // namespace
@@ -62,4 +93,32 @@ void registerLiveCodeCommands()
             },
         },
         "2026-09-12", CommandCategory::Debug);
+
+    Terminal::instance().registerCommand(
+        {
+            "live", "Inspect live collaboration queue, revisions, and rollback",
+            "live [queue|revisions <resourceId>|rollback <resourceId> <revisionId>]",
+            [](const std::vector<std::string>& args) {
+                const std::string action = args.empty() ? "queue" : args[0];
+                if (action == "queue") {
+                    printQueue();
+                    return;
+                }
+                if (action == "revisions" && args.size() >= 2) {
+                    printRevisions(args[1]);
+                    return;
+                }
+                if (action == "rollback" && args.size() >= 3) {
+                    const auto result = LiveCollaboration::ServerLiveCollaboration::instance()
+                        .rollback(parseId(args[1]), parseId(args[2]), 0);
+                    Terminal::instance().addLog(std::string("[LIVE ROLLBACK] ") +
+                        (result.accepted ? "accepted" : "rejected") +
+                        " reason=" + result.reason);
+                    return;
+                }
+                Terminal::instance().addLog(
+                    "[LIVE] usage: live [queue|revisions <resourceId>|rollback <resourceId> <revisionId>]");
+            },
+        },
+        "2026-09-20", CommandCategory::Debug);
 }

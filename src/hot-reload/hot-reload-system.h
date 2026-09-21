@@ -197,6 +197,7 @@ private:
 
     std::atomic<bool> workerStop_{false};
     std::atomic<bool> buildRequested_{false};
+    std::atomic<bool> sourceScanRequested_{false};
     std::atomic<bool> buildRunning_{false};
     std::atomic<bool> candidateReady_{false};
     bool switchPending_ = false;

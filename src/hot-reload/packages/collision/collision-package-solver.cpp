@@ -406,11 +406,18 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
     ActorContact merged[kMaxRawContacts];
     const int mc = mergeContacts(raw, rc, merged);
 
+    bool hasAuthoritativeBody = false;
+    for (int i = 0; i < colCount; ++i)
+        hasAuthoritativeBody = hasAuthoritativeBody || cols[i].body;
+
     // Actor feet plane, in the same frame as `pos`, for the old cold rule that
-    // only a contact near the feet counts as ground.
+    // only a contact near the feet counts as ground. Include leg proxies so the
+    // visible body can establish support instead of leaving the root hovering.
     float feetZ = pos.z;
     for (int i = 0; i < colCount; ++i) {
-        if (cols[i].partId != COLLISION_PART_CAPSULE)
+        if (cols[i].partId != COLLISION_PART_CAPSULE &&
+            cols[i].partId != COLLISION_PART_LEFT_LEG &&
+            cols[i].partId != COLLISION_PART_RIGHT_LEG)
             continue;
         const glm::vec3 c = pos + cols[i].localOffset;
         const float bottom = c.z - (cols[i].halfHeight > cols[i].radius
@@ -434,6 +441,12 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
         if (c.body)
             bodyContact = true;
         collided = true;
+
+        // The capsule is a support/step helper only. Once body colliders are
+        // available, capsule wall/ceiling penetration must not veto the
+        // authoritative body pose. Feet still establish support below.
+        if (hasAuthoritativeBody && c.partId == COLLISION_PART_CAPSULE && !isGround)
+            continue;
 
         if (c.touching) {
             // Touching-only: no depenetration and no velocity response. Still

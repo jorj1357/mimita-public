@@ -56,10 +56,21 @@ numbers because later edits can move line numbers.
 
 ## Regression requirement
 
-Only confirmed behavior breaks belong in `docs/regressions/`. Human playtesting
-may discover one. The AI may recommend one. Each entry must link its changelog
-and include expected behavior, actual behavior, specification, wrong code,
-corrected code, cause, fix, and proof. The regression record is append-only.
+Confirmed behavior breaks belong in `docs/regressions/`. Human playtesting may
+discover one. The AI may recommend one. Each behavior regression gets its own
+file and repeated occurrences append to that same file.
+
+Every intentional cold build is also recorded as a new occurrence in the
+dedicated cold-build debt file described in `docs/regressions/README.md`.
+That occurrence records the reason, exact cold owner/boundary, required result,
+why live activation was impossible, and the code/architecture change needed to
+make the work hot. This record is cold-build migration history, not automatic
+proof of a user-visible regression.
+
+Each record must link its changelog and include the evidence appropriate to its
+kind. A behavior regression includes expected behavior, actual behavior,
+specification, wrong code, corrected code, cause, fix, and proof. Cold-build
+debt includes the cold boundary and the next hot-boundary migration step.
 
 ## Human review
 

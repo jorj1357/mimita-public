@@ -2369,6 +2369,12 @@ static constexpr std::uint64_t GAME_CAP_ACTOR_SPAWN = gameHash("actor.spawn");
 // the kernel writes it into the process run's events.jsonl. Adding a new hot
 // subsystem log never adds an ABI field; the caller supplies all meaning.
 static constexpr std::uint64_t GAME_CAP_LOG_EVENT = gameHash("log.event");
+// runtime.info: a read-only snapshot used by hot diagnostics commands. The
+// command itself lives in the hot package; the kernel supplies process,
+// logger, connection, and generation facts without adding a command-specific
+// cold registration.
+static constexpr std::uint64_t GAME_CAP_RUNTIME_INFO = gameHash("runtime.info");
+static constexpr std::uint64_t GAME_CAP_TERMINAL_OUTPUT = gameHash("terminal.output");
 static constexpr std::uint32_t GAME_LOG_CATEGORY = 32;
 static constexpr std::uint32_t GAME_LOG_NAME = 64;
 static constexpr std::uint32_t GAME_LOG_MESSAGE = 192;
@@ -2394,6 +2400,31 @@ struct GameLogEventV1 {
 };
 using GameLogEventFn = void (MIMITA_GAME_CALL *)(void* host,
                                                  const GameLogEventV1* event);
+
+struct GameRuntimeInfoV1 {
+    std::uint32_t pid = 0;
+    std::uint32_t activeGeneration = 0;
+    std::uint32_t serverGeneration = 0;
+    std::uint32_t clientTick = 0;
+    std::uint32_t serverTick = 0;
+    std::uint32_t serverPhase = 0;
+    std::uint32_t hotAbiVersion = 0;
+    std::uint64_t sessionId = 0;
+    std::uint64_t uptimeMs = 0;
+    std::uint64_t activeHash = 0;
+    std::uint64_t serverHash = 0;
+    std::uint64_t serverLogicalHash = 0;
+    std::uint64_t serverPlatformHash = 0;
+    char process[16] = {};
+    char exePath[260] = {};
+    char eventsPath[260] = {};
+    char roomCode[64] = {};
+    char serverName[128] = {};
+    char lastError[192] = {};
+};
+using GameRuntimeInfoFn = bool (MIMITA_GAME_CALL *)(void* host,
+                                                    GameRuntimeInfoV1* out);
+using GameTerminalOutputFn = void (MIMITA_GAME_CALL *)(void* host, const char* line);
 
 // Generic authoritative projectile spawn. The kernel owns id allocation,
 // simulation, collision, and replication; the spec carries only generic data

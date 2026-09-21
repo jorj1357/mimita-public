@@ -58,6 +58,7 @@ std::uint64_t gRequestedArtifactHash = 0;
 } // namespace
 #include "live-code/live-code-events.h"
 #include "live-code/live-identity.h"
+#include "live-code/live-journal.h"
 #include "ragdoll/ragdoll-entities.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
@@ -823,6 +824,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             report.platformPackageHash = liveStatus.activeGeneration;
             mpSendPacket(ctx, &report, sizeof(report));
         }
+        static bool generationMismatchActive = false;
         if (ctx.serverCodeGeneration != 0 && liveStatus.activeGeneration != 0 &&
             ctx.serverCodeGeneration != liveStatus.activeGeneration)
         {
@@ -832,9 +834,36 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 lastServerGen != ctx.serverCodeGeneration)
             {
                 LiveCodeEvents::notifyGenerationMismatch(
-                    liveStatus.activeGeneration, ctx.serverCodeGeneration, true);
+                    liveStatus.activeGeneration, ctx.serverCodeGeneration, true,
+                    ctx.serverCodePhase, liveStatus.activeHash, ctx.serverCodeHash);
+                LiveEventJournal::Fields sync;
+                sync.tick = ctx.clientSimulationTick;
+                sync.generation = liveStatus.activeGeneration;
+                sync.hasGeneration = true;
+                sync.codeHash = liveStatus.activeHash;
+                sync.result = "mismatch";
+                sync.extra = std::string("\"server_generation\":") +
+                    std::to_string(ctx.serverCodeGeneration) +
+                    ",\"server_hash\":" + std::to_string(ctx.serverCodeHash) +
+                    ",\"server_logical_hash\":" + std::to_string(ctx.serverLogicalHash) +
+                    ",\"server_platform_hash\":" + std::to_string(ctx.serverPlatformHash) +
+                    ",\"server_phase\":" + std::to_string(ctx.serverCodePhase) +
+                    ",\"bootstrap_state\":" +
+                    std::to_string((std::uint32_t)ctx.generationBootstrap.state) +
+                    ",\"pending_verify_failure\":" +
+                    std::to_string(ctx.pendingVerifyFailure);
+                LiveEventJournal::instance().record("generation_sync_state", sync);
                 lastLocalGen = liveStatus.activeGeneration;
                 lastServerGen = ctx.serverCodeGeneration;
+                generationMismatchActive = true;
+            }
+        } else if (ctx.serverCodeGeneration != 0 &&
+                   liveStatus.activeGeneration == ctx.serverCodeGeneration)
+        {
+            if (generationMismatchActive) {
+                LiveCodeEvents::notifyGenerationConverged(
+                    liveStatus.activeGeneration, liveStatus.activeHash);
+                generationMismatchActive = false;
             }
         }
 
@@ -1510,6 +1539,22 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.serverLogicalHash = announce->logicalCodeHash;
                 ctx.serverPlatformHash = announce->platformPackageHash;
                 ctx.serverHotAbiVersion = announce->hotAbiVersion;
+                {
+                    const HotReloadSystem::Status local = HotReloadSystem::instance().status();
+                    LiveEventJournal::Fields sync;
+                    sync.tick = ctx.clientSimulationTick;
+                    sync.generation = local.activeGeneration;
+                    sync.hasGeneration = true;
+                    sync.codeHash = local.activeHash;
+                    sync.result = "announcement_received";
+                    sync.extra = std::string("\"server_generation\":") +
+                        std::to_string(ctx.serverCodeGeneration) +
+                        ",\"server_hash\":" + std::to_string(ctx.serverCodeHash) +
+                        ",\"server_logical_hash\":" + std::to_string(ctx.serverLogicalHash) +
+                        ",\"server_platform_hash\":" + std::to_string(ctx.serverPlatformHash) +
+                        ",\"server_phase\":" + std::to_string(ctx.serverCodePhase);
+                    LiveEventJournal::instance().record("generation_sync_state", sync);
+                }
                 // Late-join bootstrap: the server advertised the generation its
                 // authoritative world is ALREADY running. Enter bootstrap (never a
                 // coordinated switch) so we become locally ACTIVE on it before

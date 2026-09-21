@@ -13,8 +13,15 @@
 */
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
+
+#include <nlohmann/json.hpp>
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-action.h"
@@ -516,7 +523,7 @@ inline constexpr Keyframe kRespawnFrames[] = {
 #undef HA_ZERO
 #undef HA_PART
 
-inline ActionClip actionClip(std::uint64_t actionId)
+inline ActionClip actionClipBuiltin(std::uint64_t actionId)
 {
     ActionClip c{};
     c.duration = 0.4f;
@@ -591,6 +598,153 @@ inline ActionClip actionClip(std::uint64_t actionId)
         default:
             return c;
     }
+}
+
+inline const char* actionConfigName(std::uint64_t actionId)
+{
+    if (actionId == HOT_ACTION_IDLE) return "idle";
+    if (actionId == HOT_ACTION_EQUIPPED_IDLE) return "equipped_idle";
+    if (actionId == HOT_ACTION_WALK) return "walk";
+    if (actionId == HOT_ACTION_JUMP) return "jump";
+    if (actionId == HOT_ACTION_FALL) return "fall";
+    if (actionId == HOT_ACTION_LAND) return "land";
+    if (actionId == HOT_ACTION_DASH) return "dash";
+    if (actionId == HOT_ACTION_DOWN_DASH) return "down_dash";
+    if (actionId == HOT_ACTION_FREEZE) return "freeze";
+    if (actionId == HOT_ACTION_EQUIP) return "equip";
+    if (actionId == HOT_ACTION_SHOOT) return "shoot";
+    if (actionId == HOT_ACTION_RELOAD) return "reload";
+    if (actionId == HOT_ACTION_SLASH) return "slash";
+    if (actionId == HOT_ACTION_LUNGE) return "lunge";
+    if (actionId == HOT_ACTION_HURT) return "hurt";
+    if (actionId == HOT_ACTION_DEATH) return "death";
+    if (actionId == HOT_ACTION_RESPAWN) return "respawn";
+    return "";
+}
+
+struct JsonClipCache {
+    static constexpr std::uint32_t kActionCount = 18;
+    static constexpr std::uint32_t kMaxFrames = 32;
+    nlohmann::json root;
+    Keyframe frames[kActionCount][kMaxFrames]{};
+    std::uint32_t counts[kActionCount]{};
+    std::uint32_t masks[kActionCount]{};
+    float durations[kActionCount]{};
+    bool loops[kActionCount]{};
+    bool valid[kActionCount]{};
+    bool loaded = false;
+    std::filesystem::file_time_type write{};
+};
+
+inline int jsonClipIndex(const char* name)
+{
+    static constexpr const char* names[] = {
+        "idle", "equipped_idle", "walk", "jump", "fall", "land", "dash",
+        "down_dash", "freeze", "equip", "shoot", "reload", "slash", "lunge",
+        "hurt", "death", "respawn", "return_to_idle"};
+    for (int i = 0; i < 18; ++i)
+        if (std::strcmp(name, names[i]) == 0)
+            return i;
+    return -1;
+}
+
+inline int jsonPartIndex(const std::string& name)
+{
+    static constexpr const char* names[] = {
+        "torso", "head", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+    for (int i = 0; i < 6; ++i)
+        if (name == names[i])
+            return i;
+    return -1;
+}
+
+inline void loadJsonClipCache(JsonClipCache& cache)
+{
+    for (std::uint32_t i = 0; i < JsonClipCache::kActionCount; ++i) {
+        cache.valid[i] = false;
+        cache.counts[i] = 0;
+        cache.masks[i] = 0;
+        cache.durations[i] = 0.0f;
+        cache.loops[i] = false;
+    }
+    cache.root = nlohmann::json::object();
+    std::ifstream file("config/animations.json");
+    try {
+        cache.root = nlohmann::json::parse(file, nullptr, true, true);
+        const auto actions = cache.root.value("actions", nlohmann::json::object());
+        for (auto it = actions.begin(); it != actions.end(); ++it) {
+            const int index = jsonClipIndex(it.key().c_str());
+            if (index < 0 || !it.value().is_object())
+                continue;
+            const auto& item = it.value();
+            if (item.contains("duration") && item["duration"].is_number())
+                cache.durations[index] = std::max(0.001f, item["duration"].get<float>());
+            cache.loops[index] = item.value("loop", false);
+            const auto frames = item.value("keyframes", nlohmann::json::array());
+            if (!frames.is_array() || frames.empty())
+                continue;
+            const std::uint32_t count = std::min<std::uint32_t>(
+                static_cast<std::uint32_t>(frames.size()), JsonClipCache::kMaxFrames);
+            std::uint32_t mask = 0;
+            for (std::uint32_t f = 0; f < count; ++f) {
+                Keyframe& dst = cache.frames[index][f];
+                for (std::uint32_t p = 0; p < PartCount; ++p)
+                    for (int k = 0; k < 6; ++k)
+                        dst.part[p][k] = 0.0f;
+                const auto& src = frames[f];
+                dst.t = src.value("time", src.value("tick", 0.0f) / 60.0f);
+                const auto parts = src.value("parts", nlohmann::json::object());
+                for (auto pit = parts.begin(); pit != parts.end(); ++pit) {
+                    const int p = jsonPartIndex(pit.key());
+                    if (p < 0 || !pit.value().is_object())
+                        continue;
+                    const auto& part = pit.value();
+                    const auto tr = part.value("translation", nlohmann::json::array());
+                    const auto ro = part.value("rotation", nlohmann::json::array());
+                    for (int k = 0; k < 3 && k < static_cast<int>(tr.size()); ++k)
+                        if (tr[k].is_number()) cache.frames[index][f].part[p][k] = tr[k].get<float>();
+                    for (int k = 0; k < 3 && k < static_cast<int>(ro.size()); ++k)
+                        if (ro[k].is_number()) cache.frames[index][f].part[p][3 + k] = ro[k].get<float>();
+                    mask |= 1u << p;
+                }
+            }
+            cache.counts[index] = count;
+            cache.masks[index] = mask;
+            if (cache.durations[index] <= 0.0f)
+                cache.durations[index] = cache.frames[index][count - 1].t;
+            cache.valid[index] = mask != 0 && count > 0;
+        }
+        cache.loaded = true;
+    } catch (...) {
+        cache.loaded = false;
+    }
+}
+
+inline ActionClip actionClip(std::uint64_t actionId)
+{
+    ActionClip clip = actionClipBuiltin(actionId);
+    static JsonClipCache cache;
+    std::error_code ec;
+    const auto write = std::filesystem::last_write_time("config/animations.json", ec);
+    if (!ec && (!cache.loaded || write != cache.write)) {
+        loadJsonClipCache(cache);
+        cache.write = write;
+    }
+    if (!cache.loaded || cache.root.value("behaviorSource", "cpp") != "json")
+        return clip;
+    const char* name = actionConfigName(actionId);
+    const int index = jsonClipIndex(name);
+    if (index < 0)
+        return clip;
+    if (cache.valid[index]) {
+        clip.frames = cache.frames[index];
+        clip.frameCount = cache.counts[index];
+        clip.mask = cache.masks[index];
+        clip.loop = cache.loops[index] ? 1u : 0u;
+    }
+    if (cache.durations[index] > 0.0f)
+        clip.duration = cache.durations[index];
+    return clip;
 }
 
 } // namespace HotAnim

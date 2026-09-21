@@ -18,8 +18,13 @@
 #include "combat/weapon-types.h"
 
 #include <cstdint>
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -98,6 +103,213 @@ void addFirearmMuzzle(ToolVisualRecipeV1& r, float sr, float sg, float sb,
     r.muzzle.lightIntensity = intensity;
     r.muzzle.lightRadius = radius;
     r.muzzle.lightLifetime = 0.06f;
+}
+
+} // namespace
+
+// JSON is an optional authoring layer for the same ToolAnimPhaseV1 data that
+// the C++ recipes below provide. The cache is fixed-size on purpose: pose
+// generation can keep stable pointers between reloads and never allocates in
+// its per-frame lookup path.
+namespace {
+
+struct JsonToolAnimationCache {
+    static constexpr std::uint32_t kMaxTools = 24;
+    static constexpr std::uint32_t kMaxPhases = 8;
+    static constexpr std::uint32_t kMaxFrames = 32;
+
+    nlohmann::json root;
+    HotAnim::Keyframe frames[kMaxTools][kMaxPhases][kMaxFrames]{};
+    ToolAnimPhaseV1 phases[kMaxTools][kMaxPhases]{};
+    bool valid[kMaxTools][kMaxPhases]{};
+    std::uint32_t counts[kMaxTools]{};
+    bool loaded = false;
+    std::filesystem::file_time_type write{};
+};
+
+int jsonToolPhaseIndex(const std::string& name)
+{
+    static constexpr const char* names[] = {
+        "idle", "shoot", "just_shot", "reload", "equip", "unequip",
+        "slash", "lunge"};
+    for (int i = 0; i < 8; ++i)
+        if (name == names[i])
+            return i;
+    return -1;
+}
+
+std::uint64_t jsonToolPhaseId(int index)
+{
+    static constexpr std::uint64_t ids[] = {
+        TOOL_PHASE_IDLE, TOOL_PHASE_SHOOT, TOOL_PHASE_JUST_SHOT,
+        TOOL_PHASE_RELOAD, TOOL_PHASE_EQUIP, TOOL_PHASE_UNEQUIP,
+        TOOL_PHASE_SLASH, TOOL_PHASE_LUNGE};
+    return index >= 0 && index < 8 ? ids[index] : 0;
+}
+
+std::uint32_t jsonToolMask(const nlohmann::json& value,
+                           std::uint32_t fallback)
+{
+    if (value.is_number_unsigned() || value.is_number_integer())
+        return value.get<std::uint32_t>();
+    if (!value.is_string())
+        return fallback;
+    const std::string name = value.get<std::string>();
+    if (name == "arms") return HotAnim::MaskArms;
+    if (name == "upper") return HotAnim::MaskUpper;
+    if (name == "full") return HotAnim::MaskFull;
+    return fallback;
+}
+
+void clearJsonToolCache(JsonToolAnimationCache& cache)
+{
+    for (std::uint32_t t = 0; t < JsonToolAnimationCache::kMaxTools; ++t) {
+        cache.counts[t] = 0;
+        for (std::uint32_t p = 0; p < JsonToolAnimationCache::kMaxPhases; ++p) {
+            cache.valid[t][p] = false;
+            cache.phases[t][p] = {};
+        }
+    }
+    cache.root = nlohmann::json::object();
+    cache.loaded = false;
+}
+
+void loadJsonToolAnimations(JsonToolAnimationCache& cache,
+                            const ToolVisualRecipeV1* recipes,
+                            std::uint32_t recipeCount)
+{
+    clearJsonToolCache(cache);
+    std::ifstream file("config/animations.json");
+    try {
+        cache.root = nlohmann::json::parse(file, nullptr, true, true);
+        if (cache.root.value("behaviorSource", "cpp") != "json")
+            return;
+        const auto tools = cache.root.value("tools", nlohmann::json::object());
+        if (!tools.is_object())
+            return;
+        const std::uint32_t limit = std::min(recipeCount,
+                                             JsonToolAnimationCache::kMaxTools);
+        for (std::uint32_t t = 0; t < limit; ++t) {
+            const char* id = recipes[t].definition.id;
+            if (!id || !tools.contains(id) || !tools[id].is_object())
+                continue;
+            const auto& toolNode = tools[id];
+            const auto phaseSetName = toolNode.value("phaseSet", "");
+            const auto phaseSets = cache.root.value("phaseSets", nlohmann::json::object());
+            const auto phases = !phaseSetName.empty() && phaseSets.is_object()
+                ? phaseSets.value(phaseSetName, nlohmann::json::object())
+                : toolNode.value("phases", nlohmann::json::object());
+            if (!phases.is_object())
+                continue;
+            cache.counts[t] = recipes[t].definition.phaseCount;
+            const std::uint32_t baseCount = std::min(
+                recipes[t].definition.phaseCount,
+                JsonToolAnimationCache::kMaxPhases);
+            for (std::uint32_t p = 0; p < baseCount; ++p)
+                cache.phases[t][p] = recipes[t].definition.phases[p];
+            for (auto it = phases.begin(); it != phases.end(); ++it) {
+                const int p = jsonToolPhaseIndex(it.key());
+                if (p < 0 || !it.value().is_object())
+                    continue;
+                const auto& item = it.value();
+                auto& phase = cache.phases[t][p];
+                phase.phaseId = jsonToolPhaseId(p);
+                phase.duration = std::max(0.001f,
+                    item.value("duration", phase.duration > 0.0f ? phase.duration : 0.1f));
+                phase.loop = item.value("loop", phase.loop != 0) ? 1u : 0u;
+                phase.mask = jsonToolMask(item.value("mask", nlohmann::json()),
+                                          phase.mask != 0 ? phase.mask : HotAnim::MaskUpper);
+                const auto frames = item.value("keyframes", nlohmann::json::array());
+                if (!frames.is_array() || frames.empty())
+                    continue;
+                const std::uint32_t count = std::min<std::uint32_t>(
+                    static_cast<std::uint32_t>(frames.size()),
+                    JsonToolAnimationCache::kMaxFrames);
+                std::uint32_t mask = 0;
+                for (std::uint32_t f = 0; f < count; ++f) {
+                    auto& dst = cache.frames[t][p][f];
+                    for (std::uint32_t part = 0; part < HotAnim::PartCount; ++part)
+                        for (int k = 0; k < 6; ++k)
+                            dst.part[part][k] = 0.0f;
+                    const auto& src = frames[f];
+                    dst.t = src.value("time", src.value("tick", 0.0f) / 60.0f);
+                    if (!std::isfinite(dst.t) || dst.t < 0.0f)
+                        dst.t = 0.0f;
+                    const auto parts = src.value("parts", nlohmann::json::object());
+                    if (!parts.is_object())
+                        continue;
+                    for (auto pit = parts.begin(); pit != parts.end(); ++pit) {
+                        const int part = HotAnim::jsonPartIndex(pit.key());
+                        if (part < 0 || !pit.value().is_object())
+                            continue;
+                        const auto tr = pit.value().value("translation", nlohmann::json::array());
+                        const auto ro = pit.value().value("rotation", nlohmann::json::array());
+                        for (int k = 0; k < 3 && k < static_cast<int>(tr.size()); ++k)
+                            if (tr[k].is_number() && std::isfinite(tr[k].get<float>()))
+                                dst.part[part][k] = tr[k].get<float>();
+                        for (int k = 0; k < 3 && k < static_cast<int>(ro.size()); ++k)
+                            if (ro[k].is_number() && std::isfinite(ro[k].get<float>()))
+                                dst.part[part][3 + k] = ro[k].get<float>();
+                        mask |= 1u << part;
+                    }
+                }
+                if (mask != 0) {
+                    phase.mask = mask;
+                    phase.frames = cache.frames[t][p];
+                    phase.frameCount = count;
+                    if (item.find("duration") == item.end())
+                        phase.duration = std::max(0.001f,
+                            cache.frames[t][p][count - 1].t);
+                    cache.valid[t][p] = true;
+                    if (p >= static_cast<int>(cache.counts[t]))
+                        cache.counts[t] = static_cast<std::uint32_t>(p + 1);
+                }
+            }
+        }
+        cache.loaded = true;
+    } catch (...) {
+        clearJsonToolCache(cache);
+    }
+}
+
+void refreshJsonToolAnimations(ToolVisualRecipeV1* recipes,
+                               std::uint32_t recipeCount)
+{
+    static JsonToolAnimationCache cache;
+    static const ToolAnimPhaseV1* baselinePhases[
+        JsonToolAnimationCache::kMaxTools]{};
+    static std::uint32_t baselineCounts[JsonToolAnimationCache::kMaxTools]{};
+    static bool baselineReady = false;
+    std::error_code ec;
+    const auto write = std::filesystem::last_write_time("config/animations.json", ec);
+    const std::uint32_t limit = std::min(recipeCount,
+                                         JsonToolAnimationCache::kMaxTools);
+    if (!baselineReady) {
+        for (std::uint32_t t = 0; t < limit; ++t) {
+            baselinePhases[t] = recipes[t].definition.phases;
+            baselineCounts[t] = recipes[t].definition.phaseCount;
+        }
+        baselineReady = true;
+    }
+    if (!ec && (!cache.loaded || write != cache.write)) {
+        for (std::uint32_t t = 0; t < limit; ++t) {
+            recipes[t].definition.phases = baselinePhases[t];
+            recipes[t].definition.phaseCount = baselineCounts[t];
+        }
+        loadJsonToolAnimations(cache, recipes, recipeCount);
+        cache.write = write;
+    }
+    const bool jsonActive = cache.loaded &&
+        cache.root.value("behaviorSource", "cpp") == "json";
+    for (std::uint32_t t = 0; t < limit; ++t) {
+        if (jsonActive && cache.counts[t] != 0) {
+            recipes[t].definition.phases = cache.phases[t];
+            recipes[t].definition.phaseCount = cache.counts[t];
+        } else {
+            recipes[t].definition.phases = baselinePhases[t];
+            recipes[t].definition.phaseCount = baselineCounts[t];
+        }
+    }
 }
 
 } // namespace
@@ -814,7 +1026,7 @@ ToolVisualRecipeV1 makeSniperVisual()
 // brand-new hot tool without a cold edit.
 const ToolVisualRecipeV1* allToolVisuals(std::uint32_t& count)
 {
-    static const ToolVisualRecipeV1 recipes[] = {
+    static ToolVisualRecipeV1 recipes[] = {
         makeRevolverVisual(),
         makeShotgunVisual(),
         makeRocketLauncherVisual(),
@@ -838,6 +1050,7 @@ const ToolVisualRecipeV1* allToolVisuals(std::uint32_t& count)
     };
     count = static_cast<std::uint32_t>(sizeof(recipes) /
                                        sizeof(ToolVisualRecipeV1));
+    refreshJsonToolAnimations(recipes, count);
     return recipes;
 }
 
