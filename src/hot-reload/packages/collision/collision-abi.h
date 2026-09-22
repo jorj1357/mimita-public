@@ -59,12 +59,20 @@ enum CollisionPart : std::uint32_t {
 };
 
 // ── Centralised response policy (single owner; edit live) ───────────────────
-constexpr bool  kBounceEnabled = true;
-constexpr float kBounceStrength = 0.95f;
-constexpr float kBounceFriction = 0.0f;
-constexpr float kBounceMinSpeed = 0.0f;
-constexpr float kBounceMaxSpeed = 999999.0f;
-constexpr float kBounceCooldown = 0.001f;
+// The values are loaded by collision.main from config/collision.json. These
+// are the C++ fallback values when behaviorSource is "cpp" or JSON is invalid.
+struct CollisionBehaviorV1 {
+    std::uint32_t behaviorSourceJson;
+    std::uint32_t groundBounce;
+    std::uint32_t bounceEnabled;
+    float bounceStrength;
+    float bounceFriction;
+    float bounceMinSpeed;
+    float bounceMaxSpeed;
+    float bounceCooldown;
+};
+
+CollisionBehaviorV1 collisionBehavior();
 
 // ── Fixed bounds ────────────────────────────────────────────────────────────
 // The v2.0.6 player-body path submitted three sphere samples per animated
@@ -154,6 +162,8 @@ struct CollisionSolveV1 {
     std::uint32_t grounded;
     std::uint32_t worldContact;
     std::uint32_t bodyContact;
+    std::uint32_t bounced;
+    std::uint32_t groundSettled;
     std::uint32_t handled;      // 1 = package solved; 0 = decline
     std::uint32_t contactCount;
     CollisionContactV1 contacts[COLLISION_MAX_CONTACTS];

@@ -27,12 +27,13 @@ void MIMITA_GAME_CALL onCollisionPolicy(void* /*host*/, const GameEventV1* event
     p->outHalfHeight = p->halfHeight;
     p->outGroundedVelocityEpsilon = p->groundedVelocityEpsilon;
     p->outSkin = p->skin;
-    p->bounceEnabled = HotCollisionPackage::kBounceEnabled ? 1u : 0u;
-    p->bounceStrength = HotCollisionPackage::kBounceStrength;
-    p->bounceFriction = HotCollisionPackage::kBounceFriction;
-    p->bounceMinSpeed = HotCollisionPackage::kBounceMinSpeed;
-    p->bounceMaxSpeed = HotCollisionPackage::kBounceMaxSpeed;
-    p->bounceCooldown = HotCollisionPackage::kBounceCooldown;
+    const auto behavior = HotCollisionPackage::collisionBehavior();
+    p->bounceEnabled = behavior.bounceEnabled;
+    p->bounceStrength = behavior.bounceStrength;
+    p->bounceFriction = behavior.bounceFriction;
+    p->bounceMinSpeed = behavior.bounceMinSpeed;
+    p->bounceMaxSpeed = behavior.bounceMaxSpeed;
+    p->bounceCooldown = behavior.bounceCooldown;
 }
 
 } // namespace

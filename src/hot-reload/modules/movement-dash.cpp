@@ -69,17 +69,6 @@ static DownDashMode activeDownDashMode()
     return mode;
 }
 
-// v2.0.6 dash quality: impulse scales down the longer the player has been
-// airborne with movement held. 0..1 ticks = perfect (1.0).
-static float v206DashQualityMultiplier(std::uint32_t ticks)
-{
-    if (ticks <= 1u) return 1.00f;
-    if (ticks == 2u) return 0.85f;
-    if (ticks == 3u) return 0.70f;
-    if (ticks == 4u) return 0.55f;
-    return 0.40f;
-}
-
 void dashPolicy(GameDashPolicyV1& io)
 {
     float vx = io.velocity[0];
@@ -114,12 +103,10 @@ void dashPolicy(GameDashPolicyV1& io)
             }
         }
         if (dx != 0.0f || dy != 0.0f) {
-            // v2.0.6: ground dash uses the full ground impulse; air dash scales
-            // by dash quality (airborne movement ticks). Additive either way.
+            // afad20a: ground and air dash both use the full configured impulse
+            // with no airborne-quality scaling. Additive either way.
             const float impulse =
-                io.grounded != 0u
-                    ? io.groundDashImpulse
-                    : io.airDashImpulse * v206DashQualityMultiplier(io.dashMovementTicks);
+                io.grounded != 0u ? io.groundDashImpulse : io.airDashImpulse;
             vx += dx * impulse;
             vy += dy * impulse;
             io.outDashAvailable = 0u;

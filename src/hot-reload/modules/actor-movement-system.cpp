@@ -252,14 +252,25 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     const float wdx = hasWish ? wishX / wishLen : 0.0f;
     const float wdy = hasWish ? wishY / wishLen : 0.0f;
 
-    rs.dashCooldownSeconds = std::max(0.0f, rs.dashCooldownSeconds - dt);
     const bool dashEdge = mi.dash && !rs.dashHeldPreviously;
     const bool downDashEdge = mi.downDash && !rs.downDashHeldPreviously;
     const bool jumpEdge = mi.jump && !rs.jumpHeldPreviously;
     const bool freezeNow = mi.freeze != 0;
     const bool freezeEdge = freezeNow && !rs.freezePreviously;
 
-    // FREEZE: the ONE shared hot freeze policy (same as local prediction).
+    // ── afad20a PRE-collision: gravity -> freeze -> down-dash ─────────
+    if (!freezeNow && !rs.grounded)
+    {
+        GameGravityV1 gv{};
+        gv.velocityZ = vz;
+        gv.gravityZ = -static_cast<float>(m.gravityMagnitude);
+        gv.maximumFallSpeed = m.maxFallSpeed;
+        gv.dt = dt;
+        float oz = vz;
+        MimitaHotMovement::gravity(gv, oz);
+        vz = oz;
+    }
+
     GameFreezePolicyV1 fp{};
     fp.velocity[0] = vx;
     fp.velocity[1] = vy;
@@ -275,12 +286,71 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     fp.freezeTimerSeconds = rs.freezeTimerSeconds;
     MimitaHotMovement::freezePolicy(fp);
     rs.freezeTimerSeconds = fp.outFreezeTimerSeconds;
+    vx = fp.outVelocity[0];
+    vy = fp.outVelocity[1];
+    vz = fp.outVelocity[2];
 
-    if (fp.outFreezeActive != 0u) {
-        vx = fp.outVelocity[0];
-        vy = fp.outVelocity[1];
-        vz = fp.outVelocity[2];
-    } else {
+    {
+        const float yawRad = tf.yaw * MimitaHotMovement::kRadPerDegree;
+        GameDashPolicyV1 dd{};
+        dd.velocity[0] = vx;
+        dd.velocity[1] = vy;
+        dd.velocity[2] = vz;
+        dd.moveAxes[0] = hasWish ? wdx : 0.0f;
+        dd.moveAxes[1] = hasWish ? wdy : 0.0f;
+        dd.cameraForward[0] = std::cos(yawRad);
+        dd.cameraForward[1] = std::sin(yawRad);
+        dd.groundDashImpulse = m.groundDashImpulse;
+        dd.airDashImpulse = m.airDashImpulse;
+        dd.downDashVerticalSpeed = m.downDashSpeed;
+        dd.dashPressed = 0u;
+        dd.downDashPressed = (downDashEdge && rs.downDashAvailable) ? 1u : 0u;
+        dd.grounded = rs.grounded ? 1u : 0u;
+        dd.dashAvailable = rs.dashAvailable ? 1u : 0u;
+        dd.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
+        dd.dashEnabled = m.dashEnabled;
+        dd.downDashEnabled = m.downDashEnabled;
+        MimitaHotMovement::dashPolicy(dd);
+        vx = dd.outVelocity[0];
+        vy = dd.outVelocity[1];
+        vz = dd.outVelocity[2];
+        if (dd.outDidDownDash)
+            rs.downDashAvailable = dd.outDownDashAvailable;
+    }
+
+    MovementStateV1 st{};
+    st.position[0] = tf.position[0];
+    st.position[1] = tf.position[1];
+    st.position[2] = tf.position[2];
+    st.velocity[0] = vx;
+    st.velocity[1] = vy;
+    st.velocity[2] = vz;
+    st.yaw = tf.yaw;
+    st.radius = body.radius > 0.0f ? body.radius : 0.4f;
+    st.halfHeight = body.height > 0.0f ? body.height * 0.5f : 0.9f;
+    st.sizeScale = body.sizeScale;
+    // Gravity is owned above; tell the capsule solver not to add its own.
+    st.gravityScale = -1.0f;
+    st.grounded = rs.grounded;
+
+    // Universal collision owner: the same `collision.main` package the local
+    // player uses. `physics.move` is no longer called here.
+    resolveActorCollisions(ctx, &st, dt, e, static_cast<std::uint64_t>(tick));
+
+    // ── afad20a POST-collision: reset, then walk -> dash -> jump ──────
+    rs.grounded = st.grounded;
+    // afad20a rule: every valid world contact restores all touch-reset
+    // abilities immediately after the shared collision solve. The press-edge
+    // state is deliberately preserved, so held Q/Shift does not auto-repeat.
+    if (st.collided)
+        MimitaHotMovement::restoreTouchAbilities(rs);
+
+    vx = st.velocity[0];
+    vy = st.velocity[1];
+    vz = st.velocity[2];
+
+    if (fp.outFreezeActive == 0u)
+    {
         GameSpeedPolicyV1 sp{};
         sp.baseMaxSpeed = m.walkSpeed;
         sp.baseFallbackSpeed = m.walkSpeed;
@@ -329,6 +399,7 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
             a.dt = dt;
             a.currentSpeed = vx * wdx + vy * wdy;
             a.blendedAddSpeed = a.wishspd - a.currentSpeed;
+            a.movementModel = m.sourceAirAccelerateBugCompatible ? 1u : 0u;
             float out[2] = {vx, vy};
             MimitaHotMovement::airAccelerate(a, out);
             vx = out[0];
@@ -348,10 +419,8 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
             dp.groundDashImpulse = m.groundDashImpulse;
             dp.airDashImpulse = m.airDashImpulse;
             dp.downDashVerticalSpeed = m.downDashSpeed;
-            dp.dashPressed =
-                (dashEdge && rs.dashAvailable && rs.dashCooldownSeconds <= 0.0f)
-                    ? 1u : 0u;
-            dp.downDashPressed = (downDashEdge && rs.downDashAvailable) ? 1u : 0u;
+            dp.dashPressed = (dashEdge && rs.dashAvailable) ? 1u : 0u;
+            dp.downDashPressed = 0u;
             dp.grounded = rs.grounded ? 1u : 0u;
             dp.dashAvailable = rs.dashAvailable ? 1u : 0u;
             dp.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
@@ -366,72 +435,37 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
             if (dp.outDidDash)
                 rs.dashCooldownSeconds = 0.0f;
         }
-
-        {
-            GameJumpPolicyV1 jp{};
-            jp.velocityZ = vz;
-            jp.jumpSpeed = m.jumpSpeed;
-            jp.dt = dt;
-            jp.coyoteSeconds = m.coyoteSeconds;
-            jp.jumpBufferSeconds = m.jumpBufferSeconds;
-            jp.grounded = rs.grounded ? 1u : 0u;
-            jp.jumpPressed = jumpEdge ? 1u : 0u;
-            jp.jumpHeld = mi.jump ? 1u : 0u;
-            jp.jumpHeldPreviously = rs.jumpHeldPreviously ? 1u : 0u;
-            jp.autoBhopEnabled = m.autoBhopEnabled;
-            jp.maximumAirJumps = m.maximumAirJumps;
-            jp.airJumpsLeft = rs.airJumpsLeft;
-            jp.airJumpArmed = rs.jumpAirJumpArmed;
-            MimitaHotMovement::jumpPolicy(jp);
-            vz = jp.outVelocityZ;
-            rs.grounded = jp.outGrounded;
-            rs.airJumpsLeft = jp.airJumpsLeft;
-            rs.jumpAirJumpArmed = jp.airJumpArmed;
-        }
-
-        if (vz < -m.maxFallSpeed)
-            vz = -m.maxFallSpeed;
     }
 
-    if (!freezeNow && !rs.grounded)
     {
-        GameGravityV1 gv{};
-        gv.velocityZ = vz;
-        gv.gravityZ = -static_cast<float>(m.gravityMagnitude);
-        gv.maximumFallSpeed = m.maxFallSpeed;
-        gv.dt = dt;
-        float oz = vz;
-        MimitaHotMovement::gravity(gv, oz);
-        vz = oz;
+        GameJumpPolicyV1 jp{};
+        jp.velocityZ = vz;
+        jp.jumpSpeed = m.jumpSpeed;
+        jp.dt = dt;
+        jp.coyoteSeconds = m.coyoteSeconds;
+        jp.jumpBufferSeconds = m.jumpBufferSeconds;
+        jp.grounded = rs.grounded ? 1u : 0u;
+        jp.jumpPressed = jumpEdge ? 1u : 0u;
+        jp.jumpHeld = mi.jump ? 1u : 0u;
+        jp.jumpHeldPreviously = rs.jumpHeldPreviously ? 1u : 0u;
+        jp.autoBhopEnabled = m.autoBhopEnabled;
+        jp.maximumAirJumps = m.maximumAirJumps;
+        jp.airJumpsLeft = rs.airJumpsLeft;
+        jp.airJumpArmed = rs.jumpAirJumpArmed;
+        MimitaHotMovement::jumpPolicy(jp);
+        vz = jp.outVelocityZ;
+        rs.grounded = jp.outGrounded;
+        rs.airJumpsLeft = jp.airJumpsLeft;
+        rs.jumpAirJumpArmed = jp.airJumpArmed;
     }
 
-    MovementStateV1 st{};
-    st.position[0] = tf.position[0];
-    st.position[1] = tf.position[1];
-    st.position[2] = tf.position[2];
+    if (vz < -m.maxFallSpeed)
+        vz = -m.maxFallSpeed;
+
     st.velocity[0] = vx;
     st.velocity[1] = vy;
     st.velocity[2] = vz;
-    st.yaw = tf.yaw;
-    st.radius = body.radius > 0.0f ? body.radius : 0.4f;
-    st.halfHeight = body.height > 0.0f ? body.height * 0.5f : 0.9f;
-    st.sizeScale = body.sizeScale;
-    // Gravity is owned above; tell the capsule solver not to add its own.
-    st.gravityScale = -1.0f;
-    st.grounded = rs.grounded;
 
-    // Universal collision owner: the same `collision.main` package the local
-    // player uses. `physics.move` is no longer called here.
-    resolveActorCollisions(ctx, &st, dt, e, static_cast<std::uint64_t>(tick));
-
-    rs.grounded = st.grounded;
-    if (st.collided)
-    {
-        rs.airJumpsLeft = 1;
-        rs.jumpAirJumpArmed = 1u;
-        rs.dashAvailable = 1u;
-        rs.downDashAvailable = 1u;
-    }
     rs.jumpHeldPreviously = mi.jump ? 1u : 0u;
     rs.dashHeldPreviously = mi.dash ? 1u : 0u;
     rs.downDashHeldPreviously = mi.downDash ? 1u : 0u;

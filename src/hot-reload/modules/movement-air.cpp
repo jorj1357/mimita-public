@@ -23,10 +23,11 @@ namespace MimitaHotMovement {
 void airAccelerate(const GameAirAccelerateV1& in, float outVelocity[2])
 {
     if (in.movementModel == 1u) {
-        // The source JSON's v206 preset uses the classic CS/GoldSrc air rule:
-        // WASD supplies a wish direction, but cannot launch an actor from rest.
-        // Speed is gained when the wish direction pivots against existing
-        // horizontal velocity, which is the mouse-steered air-strafe behavior.
+        // afad20a / GoldSrc air rule: WASD supplies a wish direction, but cannot
+        // launch an actor from rest. Speed is gained when the wish direction
+        // pivots against existing horizontal velocity (mouse-steered air-strafe).
+        // Acceleration is linear and projection-limited, scaled by the air speed
+        // gain multiplier.
         const float horizontalSpeed = std::sqrt(
             in.velocity[0] * in.velocity[0] +
             in.velocity[1] * in.velocity[1]);
@@ -44,7 +45,8 @@ void airAccelerate(const GameAirAccelerateV1& in, float outVelocity[2])
             return;
         }
         float accelSpeed =
-            in.airAcceleration * in.wishSpeed * in.dt * in.surfaceFriction;
+            in.airAcceleration * in.wishSpeed * in.dt * in.surfaceFriction *
+            in.airSpeedGainMultiplier;
         if (accelSpeed > addSpeed)
             accelSpeed = addSpeed;
         outVelocity[0] = in.velocity[0] + in.wishDir[0] * accelSpeed;

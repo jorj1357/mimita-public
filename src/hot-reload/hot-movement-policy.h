@@ -188,6 +188,21 @@ static constexpr std::uint64_t GAME_EVENT_MOVEMENT_DASH =
 namespace MimitaHotMovement {
 // The single dash/down-dash implementation.
 void dashPolicy(GameDashPolicyV1& io);
+
+// afad20a touch-reset rule: a valid world contact restores every movement
+// ability immediately after the collision solve. Input edges remain separate;
+// restoring availability must not turn a held Q/Shift key into auto-repeat.
+inline void restoreTouchAbilities(GameMovementRuntimeStateComponentV1& state)
+{
+    state.airJumpsLeft = 1;
+    state.jumpAirJumpArmed = 1u;
+    state.dashAvailable = 1u;
+    state.downDashAvailable = 1u;
+    state.dashCooldownSeconds = 0.0f;
+    // Contact restores full freeze strength: reset the pass-through timer so a
+    // fresh E press starts from the fully-suppressing part of the curve.
+    state.freezeTimerSeconds = 0.0f;
+}
 }
 
 // Freeze policy (activation, duration, velocity suppression, exit). Carries the

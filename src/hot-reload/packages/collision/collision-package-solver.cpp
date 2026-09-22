@@ -14,11 +14,15 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <nlohmann/json.hpp>
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
@@ -27,6 +31,47 @@
 #include "hot-reload/packages/collision/collision-world.h"
 
 namespace HotCollisionPackage {
+
+CollisionBehaviorV1 collisionBehavior()
+{
+    static CollisionBehaviorV1 value{
+        0u, 0u, 1u, 0.35f, 0.0f, 0.01f, 999999.0f, 0.01f};
+    static std::filesystem::file_time_type lastWrite{};
+    static auto nextCheck = std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if (now < nextCheck)
+        return value;
+    nextCheck = now + std::chrono::milliseconds(250);
+
+    std::error_code ec;
+    const std::filesystem::path path("config/collision.json");
+    const auto write = std::filesystem::last_write_time(path, ec);
+    if (ec || write == lastWrite)
+        return value;
+    lastWrite = write;
+
+    std::ifstream file(path);
+    try {
+        const nlohmann::json j = nlohmann::json::parse(file, nullptr, true, true);
+        const std::string source = j.value("behaviorSource", "cpp");
+        const std::string ground = j.value("groundResponse", "settle");
+        const auto b = j.value("bounce", nlohmann::json::object());
+        value.behaviorSourceJson = source == "json" ? 1u : 0u;
+        value.groundBounce =
+            value.behaviorSourceJson && ground == "bounce" ? 1u : 0u;
+        value.bounceEnabled = b.value("enabled", true) ? 1u : 0u;
+        value.bounceStrength = std::max(0.0f, b.value("strength", 0.35f));
+        value.bounceFriction = std::clamp(b.value("friction", 0.0f), 0.0f, 1.0f);
+        value.bounceMinSpeed = std::max(0.0f, b.value("minSpeed", 0.01f));
+        value.bounceMaxSpeed = std::max(value.bounceMinSpeed,
+                                        b.value("maxSpeed", 999999.0f));
+        value.bounceCooldown = std::max(0.0f, b.value("cooldown", 0.01f));
+    } catch (...) {
+        value = CollisionBehaviorV1{0u, 0u, 1u, 0.35f, 0.0f,
+                                    0.01f, 999999.0f, 0.01f};
+    }
+    return value;
+}
 
 namespace {
 
@@ -70,9 +115,6 @@ constexpr float kMaxSweepReGatherDistance = 6.0f;
 constexpr float kImpactSphereSize = 1.0f;
 constexpr std::uint32_t kImpactSphereLifetimeTicks = 1;
 constexpr float kImpactMinIncomingSpeed = 0.0f;
-
-constexpr std::uint32_t kBounceCooldownTicks =
-    (std::uint32_t)(kBounceCooldown * 60.0f) + 1u;
 
 std::unordered_map<std::uint64_t, std::uint64_t>& bounceTickMap()
 {
@@ -273,20 +315,25 @@ int mergeContacts(const ActorContact* raw, int rawCount, ActorContact* merged)
 
 void applyVelocityResponse(glm::vec3& vel, const ActorContact& c,
                            std::uint64_t entity, std::uint64_t tick,
-                           bool& bounced)
+                           bool& bounced,
+                           const CollisionBehaviorV1& behavior)
 {
     const glm::vec3 n = c.normal;
     const float into = -glm::dot(vel, n);
     if (into <= 0.0f)
         return;
+    const std::uint64_t cooldownTicks =
+        static_cast<std::uint64_t>(behavior.bounceCooldown * 60.0f) + 1u;
     const bool cooldownClear =
-        (bounceTickMap()[entity] + kBounceCooldownTicks) <= tick;
-    if (kBounceEnabled && kBounceStrength > 0.0f && into >= kBounceMinSpeed &&
+        (bounceTickMap()[entity] + cooldownTicks) <= tick;
+    if (behavior.bounceEnabled && behavior.bounceStrength > 0.0f &&
+        into >= behavior.bounceMinSpeed &&
         cooldownClear) {
-        const float retention = 1.0f - kBounceFriction;
+        const float retention = 1.0f - behavior.bounceFriction;
         const glm::vec3 tangent = vel - n * glm::dot(vel, n);
         vel = tangent * retention +
-              n * (std::min(into, kBounceMaxSpeed) * kBounceStrength);
+              n * (std::min(into, behavior.bounceMaxSpeed) *
+                  behavior.bounceStrength);
         bounceTickMap()[entity] = tick;
         bounced = true;
     } else {
@@ -350,7 +397,8 @@ void recordImpacts(const ActorContact* merged, int mc, ActorContact* accum,
 // near-feet walkable surface. Returns true when it grounded the actor.
 bool settleToGround(glm::vec3& pos, glm::vec3& vel,
                     const ColliderRuntime* cols, int colCount,
-                    const std::vector<std::uint32_t>& candidates)
+                    const std::vector<std::uint32_t>& candidates,
+                    glm::vec3& outNormal)
 {
     if (cols[0].partId != COLLISION_PART_CAPSULE && colCount > 0)
         return false;
@@ -384,8 +432,7 @@ bool settleToGround(glm::vec3& pos, glm::vec3& vel,
         const float distance = feetZ - bestZ;
         if (distance > 0.0f && distance < kGroundSettleDistance) {
             pos.z -= distance - kGroundSettleEpsilon;
-            if (vel.z < 0.0f)
-                vel.z = 0.0f;
+            outNormal = glm::vec3(0.0f, 0.0f, 1.0f);
             return true;
         }
     }
@@ -397,18 +444,15 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
                 const std::vector<std::uint32_t>& candidates, bool& grounded,
                 bool& collided, bool& worldContact, bool& bodyContact,
                 bool& bounced, ActorContact* contactAccum,
-                int& contactAccumCount, ActorContact* impactAccum,
-                int& impactAccumCount)
+    int& contactAccumCount, ActorContact* impactAccum,
+    int& impactAccumCount)
 {
+    const CollisionBehaviorV1 behavior = collisionBehavior();
     ActorContact raw[kMaxRawContacts];
     const int rc = gatherActorContacts(pos, cols, colCount, vel, candidates,
                                        raw, kMaxRawContacts);
     ActorContact merged[kMaxRawContacts];
     const int mc = mergeContacts(raw, rc, merged);
-
-    bool hasAuthoritativeBody = false;
-    for (int i = 0; i < colCount; ++i)
-        hasAuthoritativeBody = hasAuthoritativeBody || cols[i].body;
 
     // Actor feet plane, in the same frame as `pos`, for the old cold rule that
     // only a contact near the feet counts as ground. Include leg proxies so the
@@ -442,18 +486,16 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
             bodyContact = true;
         collided = true;
 
-        // The capsule is a support/step helper only. Once body colliders are
-        // available, capsule wall/ceiling penetration must not veto the
-        // authoritative body pose. Feet still establish support below.
-        if (hasAuthoritativeBody && c.partId == COLLISION_PART_CAPSULE && !isGround)
-            continue;
-
         if (c.touching) {
             // Touching-only: no depenetration and no velocity response. Still
             // cancels into-surface velocity so a resting actor does not creep.
             const float into = glm::dot(vel, c.normal);
-            if (into < 0.0f)
-                vel -= c.normal * into;
+            if (into < 0.0f) {
+                if (isGround && behavior.groundBounce)
+                    applyVelocityResponse(vel, c, entity, tick, bounced, behavior);
+                else
+                    vel -= c.normal * into;
+            }
             continue;
         }
 
@@ -461,7 +503,7 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
         const float push = std::min(c.penetration + kSkin, cap);
         pos += c.normal * push;
 
-        if (isGround) {
+        if (isGround && !behavior.groundBounce) {
             // Ground settles, it does not bounce: cancel the into-ground
             // component and slide. This is the old cold ground response; the
             // bounce policy is for walls, ceilings, and body parts.
@@ -469,7 +511,7 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
             if (into < 0.0f)
                 vel -= c.normal * into;
         } else {
-            applyVelocityResponse(vel, c, entity, tick, bounced);
+            applyVelocityResponse(vel, c, entity, tick, bounced, behavior);
         }
     }
     recordContacts(merged, mc, contactAccum, contactAccumCount);
@@ -557,6 +599,7 @@ void solve(void* host, CollisionSolveV1* q)
         q->outVelocity[i] = q->velocity[i];
     }
     q->grounded = q->worldContact = q->bodyContact = 0u;
+    q->bounced = q->groundSettled = 0u;
     if (q->dt <= 0.0f)
         return;
 
@@ -705,11 +748,25 @@ void solve(void* host, CollisionSolveV1* q)
     // Ground settle, matching the old cold doGroundSnap: if a walkable surface
     // is within the settle distance below the feet, rest exactly on it. This
     // keeps walking/standing stable and jump-eligible after a fast landing.
-    if (!bounced && vel.z <= 0.0f && settleToGround(pos, vel, cols, colCount,
-                                                    candidates))
+    bool groundSettled = false;
+    const CollisionBehaviorV1 behavior = collisionBehavior();
+    glm::vec3 settledNormal(0.0f, 0.0f, 1.0f);
+    if (!behavior.groundBounce && !bounced && vel.z <= 0.0f &&
+        settleToGround(pos, vel, cols, colCount, candidates, settledNormal)) {
         grounded = true;
+        groundSettled = true;
+        if (behavior.groundBounce) {
+            ActorContact settleContact{};
+            settleContact.normal = settledNormal;
+            applyVelocityResponse(vel, settleContact, q->entityId, q->tick,
+                                  bounced, behavior);
+        } else if (vel.z < 0.0f) {
+            vel.z = 0.0f;
+        }
+    }
 
-    if (grounded && !bounced && vel.z > -kGroundSnapEpsilon &&
+    if (!behavior.groundBounce && grounded && !bounced &&
+        vel.z > -kGroundSnapEpsilon &&
         vel.z < kGroundSnapEpsilon)
         vel.z = 0.0f;
 
@@ -759,6 +816,8 @@ void solve(void* host, CollisionSolveV1* q)
     q->grounded = grounded ? 1u : 0u;
     q->worldContact = worldContact ? 1u : 0u;
     q->bodyContact = bodyContact ? 1u : 0u;
+    q->bounced = bounced ? 1u : 0u;
+    q->groundSettled = groundSettled ? 1u : 0u;
 
     for (int i = 0; i < contactAccumCount &&
                     q->contactCount < COLLISION_MAX_CONTACTS; ++i) {

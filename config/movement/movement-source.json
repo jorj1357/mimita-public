@@ -104,7 +104,7 @@
     // building total speed.
     //
     // Matches the fast Source preset.
-    "air_max_wishspeed": 3.0,
+    "air_max_wishspeed": 2.0,
 
     // Historical Valve-style AirAccelerate behavior.
     //
@@ -209,17 +209,20 @@
     // Horizontal velocity impulse from a grounded dash.
     //
     // Matches the fast Source preset.
-    "ground_dash_impulse": 20.0,
+    "ground_dash_impulse": 10.0,
 
     // Horizontal velocity impulse from an airborne dash.
     //
     // Matches the fast Source preset.
-    "air_dash_impulse": 20.0,
+    "air_dash_impulse": 10.0,
 
     // Vertical velocity assigned by down-dash.
     //
     // Negative = downward.
     "down_dash_speed": -50.0,
+
+    // afad20a down-dash REPLACES vertical velocity (set), it does not add.
+    "down_dash_mode": "set",
 
     // ── External impulse / knockback ─────────────────────────────────────
     //

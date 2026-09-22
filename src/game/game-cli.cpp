@@ -54,6 +54,8 @@
 #include "physics/movement/movement-preset-selftest.h"
 #include "physics/movement/reference/movement-v206-reference.h"
 #include "physics/movement/reference/movement-v206-parity-selftest.h"
+#include "physics/movement/reference/movement-afad20a-reference.h"
+#include "physics/movement/reference/afad20a-parity-selftest.h"
 #include "ragdoll/ragdoll-slice-selftest.h"
 #include "ragdoll/ragdoll-world-selftest.h"
 #include "ecs/entity-slice-selftest.h"
@@ -351,6 +353,29 @@ bool handleGameCLI(int argc, char** argv)
     if (std::string(argv[1]) == "--movement-v206-gen-fixtures") {
         std::string report;
         const bool ok = MimitaV206::generateMovementV206Fixtures(report);
+        printf("%s", report.c_str());
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--afad20a-reference-selftest") {
+        std::string report;
+        const bool ok = MimitaAfad20a::runMovementAfad20aReferenceSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MOVEMENT AFAD20A REFERENCE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--afad20a-parity-selftest") {
+        std::string report;
+        const bool ok = MimitaAfad20a::runAfad20aParitySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[MOVEMENT AFAD20A PARITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--afad20a-gen-fixtures") {
+        std::string report;
+        const bool ok = MimitaAfad20a::generateAfad20aFixtures(report);
         printf("%s", report.c_str());
         std::exit(ok ? 0 : 1);
     }

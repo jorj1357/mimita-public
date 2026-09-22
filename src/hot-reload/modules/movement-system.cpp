@@ -24,6 +24,7 @@
 #include "hot-reload/hot-movement-preset-log.h"
 #include "hot-reload/hot-movement-presets.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/hot-pose.h"
 #include "hot-reload/packages/collision/collision-abi.h"
 
 #include <algorithm>
@@ -614,6 +615,43 @@ void playActionSound(GameplayContextV1* ctx, std::uint64_t owner,
                      const float pos[3], const char* sound, float volume,
                      float pitch);
 
+// afad20a applied the current pose before updating model transforms and
+// collecting body samples.  Re-publish the last hot pose at the collision
+// boundary so the kernel updates its model-node transforms before the raw
+// socket/bounds capabilities are queried.  The pose remains POD state owned by
+// the hot animation system; this is only the old ordering restored at the
+// shared collision owner.
+void applyStoredPoseBeforeCollision(GameplayContextV1* ctx,
+                                    std::uint64_t entity)
+{
+    if (!ctx || !ctx->dynamicReadComponent || !ctx->resolveCapability)
+        return;
+    HotPoseStateV1 state{};
+    if (!ctx->dynamicReadComponent(ctx->host, entity,
+                                   HOT_POSE_STATE_COMPONENT, &state,
+                                   sizeof(state)))
+        return;
+    const std::uint32_t count =
+        std::min(state.count, static_cast<std::uint32_t>(HOT_POSE_MAX_PARTS));
+    if (count == 0u)
+        return;
+    GameSkeletonPoseV1 pose{};
+    pose.count = count;
+    pose.flags = state.version;
+    pose.entity = entity;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        pose.parts[i].part = state.part[i];
+        for (int k = 0; k < 3; ++k) {
+            pose.parts[i].translation[k] = state.translation[i][k];
+            pose.parts[i].rotationEuler[k] = state.rotationEuler[i][k];
+        }
+    }
+    auto apply = reinterpret_cast<GameSkeletonApplyFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_SKELETON_APPLY));
+    if (apply)
+        apply(ctx->host, &pose);
+}
+
 // Collision is owned by exactly one system: the collision package
 // (`collision.main`). There is no second in-DLL solver; if the package is not
 // available the actor keeps its plain-integrated velocity for one tick rather
@@ -636,6 +674,7 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
         return;
     }
     CollisionSolveV1 q;
+    applyStoredPoseBeforeCollision(ctx, entity);
     buildPlayerCollision(ctx, st, dt, entity, tick, q);
     // The collision package resolves capabilities from the gameplay context, so
     // it receives `ctx` (the context), not `ctx->host` (the opaque kernel host).
@@ -678,7 +717,7 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
         }
         static float sinceImpact = 1.0f;  // allow the first impact immediately
         sinceImpact += dt;
-        if (maxIncoming > 8.0f && sinceImpact >= 0.15f) {
+        if (maxIncoming > 8.0f && sinceImpact >= 0.01f) {
             sinceImpact = 0.0f;
             const float volume = std::clamp(maxIncoming / 30.0f, 0.2f, 1.0f);
             playActionSound(ctx, entity, st->position, "entity/player/land",
@@ -693,11 +732,17 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
     b.sinceLogSeconds += dt;
     if (b.sinceLogSeconds >= 1.0f) {
         char msg[256];
+        const auto collisionBehavior = HotCollisionPackage::collisionBehavior();
         std::snprintf(msg, sizeof(msg),
                       "branch=solved colliders=%u parts=%u grounded=%u worldContact=%u "
-                      "contacts=%u pos=(%.2f %.2f %.2f) vz=%.2f",
+                      "bodyContact=%u bounced=%u groundSettled=%u groundMode=%s "
+                      "contacts=%u "
+                      "pos=(%.2f %.2f %.2f) vz=%.2f",
                       q.colliderCount, q.colliderCount > 0 ? q.colliderCount - 1 : 0,
-                      q.grounded, q.worldContact, q.contactCount, q.outPosition[0],
+                      q.grounded, q.worldContact, q.bodyContact, q.bounced,
+                      q.groundSettled,
+                      collisionBehavior.groundBounce ? "bounce" : "settle",
+                      q.contactCount, q.outPosition[0],
                       q.outPosition[1], q.outPosition[2], q.outVelocity[2]);
         HotCollisionPackage::collisionLogFull(
             ctx, 2u, "COLLISION", "movement.collision", msg,
@@ -995,13 +1040,58 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         const bool downDashEdge = mi.downDash != 0 && !rs.downDashHeldPreviously;
         const bool jumpEdge = mi.jump != 0 && !rs.jumpHeldPreviously;
 
+        // Edge-only input trace for the two touch-reset abilities. The logger
+        // adds UTC wall_time and monotonic t; frame is the fixed simulation
+        // frame visible at the hot boundary (ctx->tick).
+        const bool dashReleased = mi.dash == 0 && rs.dashHeldPreviously != 0;
+        const bool downDashReleased =
+            mi.downDash == 0 && rs.downDashHeldPreviously != 0;
+        if (dashEdge || dashReleased || downDashEdge || downDashReleased) {
+            const char* action = downDashEdge      ? "q_down"
+                                 : downDashReleased ? "q_up"
+                                 : dashEdge          ? "shift_down"
+                                                      : "shift_up";
+            char inputMessage[256];
+            std::snprintf(
+                inputMessage, sizeof(inputMessage),
+                "action=%s q=%u shift=%u q_edge_down=%u q_edge_up=%u "
+                "shift_edge_down=%u shift_edge_up=%u frame=%llu tick=%llu "
+                "dash_available=%u down_dash_available=%u",
+                action, mi.downDash ? 1u : 0u, mi.dash ? 1u : 0u,
+                downDashEdge ? 1u : 0u, downDashReleased ? 1u : 0u,
+                dashEdge ? 1u : 0u, dashReleased ? 1u : 0u,
+                static_cast<unsigned long long>(ctx->tick),
+                static_cast<unsigned long long>(tick),
+                rs.dashAvailable, rs.downDashAvailable);
+            HotCollisionPackage::collisionLogFull(
+                ctx, 2u, "MOVEMENT", "movement.input_edge", inputMessage,
+                action, e, e, HotCollisionPackage::COLLISION_LOG_ACTOR_PLAYER,
+                ctx->tick, 0, tick, tick);
+        }
+
         bool didDash = false;
         bool didDownDash = false;
+        const bool dashAvailableBefore = rs.dashAvailable != 0u;
         const bool downDashAvailableBefore = rs.downDashAvailable != 0u;
         float dashDirX = 0.0f;
         float dashDirY = 0.0f;
 
-        // FREEZE: route through the ONE shared hot freeze policy.
+        // ── afad20a PRE-collision: gravity -> freeze -> down-dash ─────────
+        // GRAVITY (pre): the ONE shared hot gravity policy. physics.move no
+        // longer applies it. Grounded actors rest on the ground; applying
+        // gravity every tick would make the solver micro-bounce forever.
+        if (!freezeNow && !rs.grounded) {
+            GameGravityV1 gv{};
+            gv.velocityZ = vz;
+            gv.gravityZ = -static_cast<float>(m.gravityMagnitude);
+            gv.maximumFallSpeed = m.maxFallSpeed;
+            gv.dt = dt;
+            float outZ = vz;
+            MimitaHotMovement::gravity(gv, outZ);
+            vz = outZ;
+        }
+
+        // FREEZE (pre): the ONE shared hot freeze policy.
         GameFreezePolicyV1 fp{};
         fp.velocity[0] = vx;
         fp.velocity[1] = vy;
@@ -1017,12 +1107,67 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         fp.freezeTimerSeconds = rs.freezeTimerSeconds;
         MimitaHotMovement::freezePolicy(fp);
         rs.freezeTimerSeconds = fp.outFreezeTimerSeconds;
-        if (fp.outFreezeActive != 0u) {
-            // Frozen: velocity suppressed by the shared policy.
-            vx = fp.outVelocity[0];
-            vy = fp.outVelocity[1];
-            vz = fp.outVelocity[2];
-        } else {
+        vx = fp.outVelocity[0];
+        vy = fp.outVelocity[1];
+        vz = fp.outVelocity[2];
+
+        // DOWN-DASH (pre): same shared dash policy, dash edge suppressed.
+        {
+            const float yawRad = yaw * 0.01745329252f;
+            GameDashPolicyV1 dd{};
+            dd.velocity[0] = vx;
+            dd.velocity[1] = vy;
+            dd.velocity[2] = vz;
+            dd.moveAxes[0] = hasWish ? wishDirX : 0.0f;
+            dd.moveAxes[1] = hasWish ? wishDirY : 0.0f;
+            dd.cameraForward[0] = std::cos(yawRad);
+            dd.cameraForward[1] = std::sin(yawRad);
+            dd.groundDashImpulse = m.groundDashImpulse;
+            dd.airDashImpulse = m.airDashImpulse;
+            dd.downDashVerticalSpeed = m.downDashSpeed;
+            dd.dashPressed = 0u;
+            dd.downDashPressed = (downDashEdge && rs.downDashAvailable) ? 1u : 0u;
+            dd.grounded = rs.grounded ? 1u : 0u;
+            dd.dashAvailable = rs.dashAvailable ? 1u : 0u;
+            dd.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
+            dd.dashEnabled = m.dashEnabled;
+            dd.downDashEnabled = m.downDashEnabled;
+            MimitaHotMovement::dashPolicy(dd);
+            vx = dd.outVelocity[0];
+            vy = dd.outVelocity[1];
+            vz = dd.outVelocity[2];
+            if (dd.outDidDownDash) {
+                rs.downDashAvailable = dd.outDownDashAvailable;
+                didDownDash = true;
+            }
+        }
+
+        st.velocity[0] = vx;
+        st.velocity[1] = vy;
+        st.velocity[2] = vz;
+        // Gravity is owned by the hot gravity policy above; tell the generic
+        // capsule solver not to add its own (negative = already integrated).
+        st.gravityScale = -1.0f;
+        st.grounded = rs.grounded;
+        resolveCollisions(ctx, &st, dt, e, tick);
+        rs.grounded = st.grounded;
+
+        // ── afad20a POST-collision: reset, then walk -> dash -> jump ──────
+        // The contact reset must run before the ability edges are consumed so a
+        // grounded player can dash/down-dash again on the same fresh press.
+        const bool contactNow = st.collided != 0;
+        if (contactNow)
+            MimitaHotMovement::restoreTouchAbilities(rs);
+        if (contactNow)
+            rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] |= 2u;
+        else
+            rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] &= ~2u;
+
+        vx = st.velocity[0];
+        vy = st.velocity[1];
+        vz = st.velocity[2];
+
+        if (fp.outFreezeActive == 0u) {
             // SPEED: one shared hot speed policy derives the effective max speed
             // (size-scale aware), the same implementation the server uses.
             GameSpeedPolicyV1 sp{};
@@ -1039,11 +1184,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             MimitaHotMovement::speedPolicy(sp, optMax, optWish);
             const float speed = optMax;
             if (rs.grounded && !mi.jump) {
-                // GROUND: route through the ONE shared hot ground-move policy
-                // (friction + acceleration; the same implementation as server).
-                // Holding jump skips this ground-acceleration tick so a
-                // landing immediately chained into a bunny hop does not turn
-                // the held air-strafe key into a full lateral ground move.
+                // GROUND: the ONE shared hot ground-move policy.
                 const bool v206Walk =
                     m.walkMode == MimitaHotMovement::kWalkModeV206;
                 GameGroundMoveV1 g{};
@@ -1065,8 +1206,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 vx = out[0];
                 vy = out[1];
             } else if (hasWish) {
-                // AIR: route through the ONE shared hot air-acceleration policy
-                // (the same implementation the server authority uses).
+                // AIR: the ONE shared hot air-acceleration policy.
                 GameAirAccelerateV1 air{};
                 air.velocity[0] = vx;
                 air.velocity[1] = vy;
@@ -1082,16 +1222,15 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 air.currentSpeed = vx * wishDirX + vy * wishDirY;
                 air.blendedAddSpeed = air.wishspd - air.currentSpeed;
                 air.movementModel =
-                    m.walkMode == MimitaHotMovement::kWalkModeV206 ? 1u : 0u;
+                    m.sourceAirAccelerateBugCompatible ? 1u : 0u;
                 float out[2] = {vx, vy};
                 MimitaHotMovement::airAccelerate(air, out);
                 vx = out[0];
                 vy = out[1];
             }
 
-            // Dash: additive horizontal impulse, ground or air, edge-triggered.
-            // Falls back to camera-forward when no WASD is held.
-            // DASH / DOWN-DASH: route through the ONE shared hot dash policy.
+            // DASH (post-collision, additive, edge-triggered). No cooldown
+            // timer: a fresh press plus availability is the only gate.
             {
                 const float inVx = vx;
                 const float inVy = vy;
@@ -1107,9 +1246,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 dp.groundDashImpulse = m.groundDashImpulse;
                 dp.airDashImpulse = m.airDashImpulse;
                 dp.downDashVerticalSpeed = m.downDashSpeed;
-                dp.dashPressed = (dashEdge && rs.dashAvailable &&
-                                  rs.dashCooldownSeconds <= 0.0f) ? 1u : 0u;
-                dp.downDashPressed = (downDashEdge && rs.downDashAvailable) ? 1u : 0u;
+                dp.dashPressed = (dashEdge && rs.dashAvailable) ? 1u : 0u;
+                dp.downDashPressed = 0u;
                 dp.grounded = rs.grounded ? 1u : 0u;
                 dp.dashAvailable = rs.dashAvailable ? 1u : 0u;
                 dp.downDashAvailable = rs.downDashAvailable ? 1u : 0u;
@@ -1122,8 +1260,6 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 vz = dp.outVelocity[2];
                 if (dp.outDidDash) {
                     rs.dashAvailable = dp.outDashAvailable;
-                    // No time-based cooldown: dash is restored only by touching
-                    // the world (universal contact reset), per the movement spec.
                     rs.dashCooldownSeconds = 0.0f;
                     didDash = true;
                     const float ddx = dp.outVelocity[0] - inVx;
@@ -1132,17 +1268,12 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                     dashDirX = dl > 1e-4f ? ddx / dl : 0.0f;
                     dashDirY = dl > 1e-4f ? ddy / dl : 0.0f;
                 }
-                if (dp.outDidDownDash) {
-                    rs.downDashAvailable = dp.outDownDashAvailable;
-                    didDownDash = true;
-                    // v2.0.6 behavior: down-dash is purely additive
-                    // (velocityZ += downDashSpeed). On the ground the collision
-                    // owner cancels it; there is no grounded launch override.
-                }
             }
+        }
 
-            // JUMP: route through the ONE shared hot jump policy (the same
-            // implementation the server uses): eligibility, air jumps, impulse.
+        // JUMP (post): the ONE shared hot jump policy. Freeze does not suppress
+        // jump velocity.
+        {
             GameJumpPolicyV1 jp{};
             jp.velocityZ = vz;
             jp.jumpSpeed = m.jumpSpeed;
@@ -1168,43 +1299,17 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             rs.grounded = jp.outGrounded;
             rs.airJumpsLeft = static_cast<std::uint32_t>(jp.airJumpsLeft);
             rs.jumpAirJumpArmed = jp.airJumpArmed;
-
-            if (vz < -m.maxFallSpeed)
-                vz = -m.maxFallSpeed;
         }
 
-        // GRAVITY: route through the ONE shared hot gravity policy (the same
-        // implementation the server uses). physics.move no longer applies it.
-        // A grounded actor rests on the ground: applying gravity every tick
-        // would feed the collision kernel a downward speed each tick and make
-        // it micro-bounce forever. Airborne actors get full gravity.
-        if (!freezeNow && !rs.grounded) {
-            GameGravityV1 gv{};
-            gv.velocityZ = vz;
-            gv.gravityZ = -static_cast<float>(m.gravityMagnitude);
-            gv.maximumFallSpeed = m.maxFallSpeed;
-            gv.dt = dt;
-            float outZ = vz;
-            MimitaHotMovement::gravity(gv, outZ);
-            vz = outZ;
-        }
+        if (vz < -m.maxFallSpeed)
+            vz = -m.maxFallSpeed;
 
         st.velocity[0] = vx;
         st.velocity[1] = vy;
         st.velocity[2] = vz;
-        // Gravity is owned by the hot gravity policy above; tell the generic
-        // capsule solver not to add its own (negative = already integrated).
-        st.gravityScale = -1.0f;
-        st.grounded = rs.grounded;
-        resolveCollisions(ctx, &st, dt, e, tick);
-        rs.grounded = st.grounded;
 
         // Apply the configured horizontal speed limit after all additive
-        // abilities and collision response. The pre-step speed policy limits
-        // ordinary acceleration, but dash/down-dash and collision response can
-        // change velocity afterward. Keep this final clamp in the hot path so
-        // JSON speed_limit_enabled=true is authoritative without using the
-        // cold legacy movement-step.cpp path.
+        // abilities and collision response.
         if (m.speedLimitEnabled && m.speedLimit > 0.0f) {
             GameSpeedClampV1 clamp{};
             clamp.velocity[0] = st.velocity[0];
@@ -1216,26 +1321,13 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             st.velocity[1] = clamp.outVelocity[1];
         }
 
-        // v2.0.6 dash quality: count airborne ticks with movement held.
+        // Airborne ticks with movement held (diagnostic / actor parity).
         if (!st.grounded && mi.pressed) {
             if (rs.dashMovementTicks < 99u)
                 ++rs.dashMovementTicks;
         } else {
             rs.dashMovementTicks = 0u;
         }
-        // Universal contact reset (movement spec): touching anything restores
-        // every touch-reset ability. No time-based ability cooldowns.
-        const bool contactNow = (st.grounded != 0) || (st.collided != 0);
-        if (contactNow) {
-            rs.airJumpsLeft = 1;
-            rs.jumpAirJumpArmed = 1;
-            rs.dashAvailable = 1;
-            rs.downDashAvailable = 1;
-        }
-        if (contactNow)
-            rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] |= 2u;
-        else
-            rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] &= ~2u;
 
         // Prove the ability-reset decision directly in events.jsonl. The
         // collision package separately records worldContact; tick/entity IDs
@@ -1245,10 +1337,13 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             char contactMessage[320];
             std::snprintf(
                 contactMessage, sizeof(contactMessage),
-                "touch=%u grounded=%u collided=%u ability_down_dash_before=%u "
+                "touch=%u grounded=%u collided=%u ability_dash_before=%u "
+                "ability_dash_after=%u ability_down_dash_before=%u "
                 "ability_down_dash_after=%u restored=%u down_dash_fired=%u "
                 "pos=(%.3f %.3f %.3f) velocity=(%.3f %.3f %.3f)",
                 contactNow ? 1u : 0u, st.grounded, st.collided,
+                dashAvailableBefore ? 1u : 0u,
+                rs.dashAvailable ? 1u : 0u,
                 downDashAvailableBefore ? 1u : 0u,
                 rs.downDashAvailable ? 1u : 0u,
                 (!downDashAvailableBefore && rs.downDashAvailable) ? 1u : 0u,
