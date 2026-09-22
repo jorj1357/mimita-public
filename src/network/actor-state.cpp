@@ -313,15 +313,15 @@ bool actorStateHasEquippedTool(std::uint64_t actorEntity)
 
 bool actorStateActionHandled(std::uint64_t actorEntity, std::uint64_t tick)
 {
-    struct ActorActionStateV1 {
+    struct CombatHandledStateV1 {
         std::uint64_t lastHandledTick;
         std::uint32_t handled;
         std::uint32_t reserved;
     };
-    ActorActionStateV1 state{};
+    CombatHandledStateV1 state{};
     if (!MimitaRuntime::DynamicComponentStore::instance().read(
-            static_cast<EntityId>(actorEntity), gameHash("ActorActionState"), &state,
-            sizeof(state)))
+            static_cast<EntityId>(actorEntity), gameHash("CombatHandledState"),
+            &state, sizeof(state)))
         return false;
     return state.handled != 0 && state.lastHandledTick == tick;
 }

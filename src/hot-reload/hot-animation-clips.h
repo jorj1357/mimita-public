@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 
 #include <nlohmann/json.hpp>
 
@@ -252,9 +253,20 @@ inline std::uint64_t locomotionAction(bool grounded, float vy, bool justLanded,
     return equipped ? HOT_ACTION_EQUIPPED_IDLE : HOT_ACTION_IDLE;
 }
 
+inline ActionClip actionClip(std::uint64_t actionId);
+inline bool jsonClipApplied(std::uint64_t actionId);
+
 inline void evaluateAction(std::uint64_t actionId, float time, float speed01,
                            Pose& out)
 {
+    // JSON keyframes win for locomotion when config/animations.json says so;
+    // otherwise the procedural evaluators below are the compiled fallback.
+    if ((actionId == HOT_ACTION_IDLE || actionId == HOT_ACTION_EQUIPPED_IDLE ||
+         actionId == HOT_ACTION_WALK) &&
+        jsonClipApplied(actionId)) {
+        sampleClip(actionClip(actionId), time, out);
+        return;
+    }
     switch (actionId) {
         case HOT_ACTION_IDLE: evaluateIdle(time, false, out); return;
         case HOT_ACTION_EQUIPPED_IDLE: evaluateIdle(time, true, out); return;
@@ -305,11 +317,67 @@ inline void blendPose(const Pose& a, const Pose& b, float w, Pose& out)
 // A carried-weapon pose for locomotion/idle. Action poses (shoot/reload/slash)
 // keep their own arms; the weapon override only shapes the carry stance so
 // different tools read differently without a per-weapon animation.
+// Per-weapon arm rotations can be authored in config/animations.json under
+// `weaponArms` (behaviorSource json). The compiled table below is the fallback.
+struct WeaponArmV1 {
+    float leftX = 0.0f;
+    float rightX = 0.0f;
+    float leftZ = 0.0f;
+    float rightZ = 0.0f;
+};
+
+inline const std::unordered_map<std::uint64_t, WeaponArmV1>& jsonWeaponArms()
+{
+    static std::unordered_map<std::uint64_t, WeaponArmV1> map;
+    static std::uint64_t lastWrite = 0;
+    std::error_code ec;
+    const auto ft = std::filesystem::last_write_time("config/animations.json", ec);
+    const std::uint64_t write =
+        ec ? 0ull : static_cast<std::uint64_t>(ft.time_since_epoch().count());
+    if (write != lastWrite) {
+        lastWrite = write;
+        map.clear();
+        std::ifstream file("config/animations.json");
+        if (file) {
+            try {
+                const auto j = nlohmann::json::parse(file, nullptr, true, true);
+                if (j.value("behaviorSource", "cpp") == "json" &&
+                    j.contains("weaponArms") && j["weaponArms"].is_object()) {
+                    for (auto it = j["weaponArms"].begin();
+                         it != j["weaponArms"].end(); ++it) {
+                        if (!it.value().is_object())
+                            continue;
+                        WeaponArmV1 a;
+                        a.leftX = it.value().value("leftX", 0.0f);
+                        a.rightX = it.value().value("rightX", 0.0f);
+                        a.leftZ = it.value().value("leftZ", 0.0f);
+                        a.rightZ = it.value().value("rightZ", 0.0f);
+                        map[gameHash(it.key().c_str())] = a;
+                    }
+                }
+            } catch (...) {
+                map.clear();
+            }
+        }
+    }
+    return map;
+}
+
 inline bool weaponCarryArms(std::uint64_t weaponKey, float& outLeftX,
                             float& outRightX, float& outLeftZ, float& outRightZ)
 {
     if (weaponKey == 0)
         return false;
+    // JSON per-weapon arm pose wins when authored and authoritative.
+    const auto& jsonArms = jsonWeaponArms();
+    const auto found = jsonArms.find(weaponKey);
+    if (found != jsonArms.end()) {
+        outLeftX = found->second.leftX;
+        outRightX = found->second.rightX;
+        outLeftZ = found->second.leftZ;
+        outRightZ = found->second.rightZ;
+        return true;
+    }
     const std::uint64_t sword = gameHash("swordsword");
     const std::uint64_t knife = gameHash("spyknife");
     const std::uint64_t revolver = gameHash("revolver");
@@ -720,9 +788,11 @@ inline void loadJsonClipCache(JsonClipCache& cache)
     }
 }
 
-inline ActionClip actionClip(std::uint64_t actionId)
+// One shared, mtime-refreshed cache of config/animations.json for both the
+// clip lookup and the "is JSON active for this action" query. Loading the same
+// file twice (once here, once in tool-visuals) is avoided on this side.
+inline JsonClipCache& jsonClipCache()
 {
-    ActionClip clip = actionClipBuiltin(actionId);
     static JsonClipCache cache;
     std::error_code ec;
     const auto write = std::filesystem::last_write_time("config/animations.json", ec);
@@ -730,6 +800,22 @@ inline ActionClip actionClip(std::uint64_t actionId)
         loadJsonClipCache(cache);
         cache.write = write;
     }
+    return cache;
+}
+
+inline bool jsonClipApplied(std::uint64_t actionId)
+{
+    JsonClipCache& cache = jsonClipCache();
+    if (!cache.loaded || cache.root.value("behaviorSource", "cpp") != "json")
+        return false;
+    const int index = jsonClipIndex(actionConfigName(actionId));
+    return index >= 0 && cache.valid[index];
+}
+
+inline ActionClip actionClip(std::uint64_t actionId)
+{
+    ActionClip clip = actionClipBuiltin(actionId);
+    JsonClipCache& cache = jsonClipCache();
     if (!cache.loaded || cache.root.value("behaviorSource", "cpp") != "json")
         return clip;
     const char* name = actionConfigName(actionId);

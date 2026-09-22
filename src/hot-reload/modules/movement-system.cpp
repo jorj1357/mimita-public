@@ -148,6 +148,11 @@ struct WeaponShapeV1 {
     };
     Sphere spheres[8];
     int sphereCount = 0;
+    // Local-space triangle mesh for the `triangles` mode. Collision uses the
+    // actual mesh vertices (sampled as small spheres) transformed by the hot
+    // attachment pose, so the real weapon geometry drives world contact.
+    float triangles[8][3][3];
+    int triangleCount = 0;
 };
 
 WeaponShapeV1::Mode weaponShapeModeFromName(const std::string& name)
@@ -221,6 +226,33 @@ bool weaponShapeFor(std::uint64_t toolKey, WeaponShapeV1& out)
                     const std::string modeName = entry.value("shape", "");
                     shape.mode = weaponShapeModeFromName(modeName);
                     bool ok = false;
+                    // Explicit triangle mesh (the default `triangles` mode).
+                    if (entry.contains("triangles") &&
+                        entry["triangles"].is_array()) {
+                        shape.mode = WeaponShapeV1::Mode::Triangles;
+                        for (const auto& tri : entry["triangles"]) {
+                            if (shape.triangleCount >= 8)
+                                break;
+                            if (!tri.is_array() || tri.size() < 3)
+                                continue;
+                            bool okTri = true;
+                            for (int v = 0; v < 3 && okTri; ++v) {
+                                if (!tri[v].is_array() || tri[v].size() < 3) {
+                                    okTri = false;
+                                    break;
+                                }
+                                for (int k = 0; k < 3; ++k)
+                                    shape.triangles[shape.triangleCount][v][k] =
+                                        tri[v][k].get<float>();
+                            }
+                            if (okTri)
+                                ++shape.triangleCount;
+                        }
+                        if (shape.triangleCount > 0) {
+                            shape.radius = entry.value("radius", 0.03f);
+                            ok = true;
+                        }
+                    }
                     if (shape.mode == WeaponShapeV1::Mode::Triangles) {
                         // Infer from the legacy fields when no explicit shape.
                         if (entry.contains("spheres"))
@@ -427,10 +459,20 @@ void buildPlayerCollision(
                         break;
                     }
                     case WeaponShapeV1::Mode::Triangles:
+                        if (shape.triangleCount > 0) {
+                            // Vertex-sampled mesh collision: each triangle
+                            // vertex becomes a small sphere collider, so the
+                            // real weapon geometry blocks the world.
+                            for (int t = 0; t < shape.triangleCount; ++t)
+                                for (int v = 0; v < 3; ++v)
+                                    addWeaponSphere(
+                                        toWorld(shape.triangles[t][v]),
+                                        shape.radius);
+                        } else {
+                            addWeaponSphere(origin, 0.18f);
+                        }
+                        break;
                     default:
-                        // Actual weapon triangles are resolved by the cold
-                        // presentation path; the hot collider uses a
-                        // conservative sphere until a mesh capability is added.
                         addWeaponSphere(origin, 0.18f);
                         break;
                     }

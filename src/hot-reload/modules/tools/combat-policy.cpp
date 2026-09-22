@@ -92,8 +92,23 @@ void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
         return;  // handled stays 0 so the cold path runs
     }
 
-    use->handled = 1;
+    // Ownership is decided by the behavior, not the router: a behavior sets
+    // `handled = 1` only when it will actually act. If it declines, `handled`
+    // stays 0 and the cold authoritative path runs. This is what makes the
+    // execution opt-in safe (no swallowed shots when a behavior can't act).
+    use->handled = 0;
     use->outFire = use->baseFire;
+    behavior(use, context);
+    if (use->handled == 0) {
+        char msg[GAME_LOG_MESSAGE];
+        std::snprintf(msg, sizeof(msg),
+                      "tool=%llu behavior resolved by %s declined; cold owns",
+                      (unsigned long long)key, source);
+        toolLogEvent(context, 1, "tool.route", msg, "declined",
+                     use->toolEntity, use->userEntity, 1, use->tick);
+        return;
+    }
+
     {
         char msg[GAME_LOG_MESSAGE];
         std::snprintf(msg, sizeof(msg),
@@ -102,22 +117,22 @@ void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
         toolLogEvent(context, 1, "tool.route", msg, "hot", use->toolEntity,
                      use->userEntity, 1, use->tick);
     }
-    behavior(use, context);
 
     // Generic handling record: the actor's action was handled by hot code this
     // tick, so the cold legacy fallback can skip without knowing any weapon
-    // category. No tool-specific kernel query exists.
+    // category. No tool-specific kernel query exists. It uses its own component
+    // hash so it never collides with the animation `ActorActionState`.
     if (context->dynamicWriteComponent && use->userEntity != 0) {
-        struct ActorActionStateV1 {
+        struct CombatHandledStateV1 {
             std::uint64_t lastHandledTick;
             std::uint32_t handled;
             std::uint32_t reserved;
         };
-        ActorActionStateV1 state{};
+        CombatHandledStateV1 state{};
         state.lastHandledTick = use->tick;
         state.handled = 1;
         context->dynamicWriteComponent(context->host, use->userEntity,
-                                       gameHash("ActorActionState"), &state,
+                                       gameHash("CombatHandledState"), &state,
                                        sizeof(state));
     }
 }
@@ -150,9 +165,10 @@ const MimitaHotPackage::EventRegistrar s_combatToolAlt{
 const MimitaHotPackage::EventRegistrar s_combatProjectileImpact{
     {gameHash("projectile.impact"), gameHash("projectile.impact.v1"), 0,
      onProjectileImpact, "combat.projectile-impact"}};
-// Generic handling record schema (no weapon/component category).
-const MimitaHotPackage::SchemaRegistrar s_actorActionStateSchema{
-    {gameHash("ActorActionState"), gameHash("ActorActionState.v1"), 16, 8,
-     GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE, "ActorActionState", 1, 0}};
+// Generic handling record schema (no weapon/component category). Distinct hash
+// from the animation `ActorActionState`.
+const MimitaHotPackage::SchemaRegistrar s_combatHandledStateSchema{
+    {gameHash("CombatHandledState"), gameHash("CombatHandledState.v1"), 16, 8,
+     GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE, "CombatHandledState", 1, 0}};
 
 #endif

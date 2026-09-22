@@ -377,6 +377,142 @@ conservative sphere. This is the one remaining Phase C item.
   `"json"` and documented. Aimbody was already hot-reloaded; this adds the
   named source toggle.
 
+### Phase C/D: weapon triangle collision, weapons.json switch, action keyframes
+
+- **Weapon triangle collision**: `weaponcollisions.json` now supports
+  `"shape": "triangles"` with a local-space `"triangles": [[[x,y,z],[x,y,z],[x,y,z]], ...]`
+  array and a vertex `"radius"`. The hot collider transforms each triangle
+  vertex by the hot attachment pose and submits it as a small sphere collider,
+  so the real weapon mesh vertices drive world contact (vertex-sampled; no
+  triangle-vs-triangle narrowphase). The collider cap stays at 16, so the
+  remaining slots (after capsule + 6 body parts) fit ~3 triangles per weapon.
+- **weapons.json behaviorSource switch**: `loadWeaponJsonConfig` reads
+  `behaviorSource`; `"json"` (default) applies `config/weapons.json` over the
+  compiled weapon definitions, `"cpp"` keeps the compiled definitions (the hot
+  C++ tool definition still applies). Hot-reloadable; no rebuild.
+- **Action keyframes from JSON**: restored the archived `idle`/`walk` keyframes
+  (from `config/animations copy.json 9 5 2026 ...`) into
+  `config/animations.json` `actions`, which the clip loader already consumes
+  (`time` or `tick/60`). JSON action keyframes are now authoritative when
+  `behaviorSource: "json"`; `"cpp"` falls back to the compiled clips.
+
+### Weapons/animations migration — W0/A0 unblockers
+
+Decisions: fold v2.0.6 procedural animation data into `animations.json`; flip
+hitscan/melee hot now; Blender clips become an optional mode; exact parity
+targets revolver, shotgun, rocket launcher, and spy knife (documented method,
+reused for the rest).
+
+- **A0.1 `ActorActionState` collision fixed.** `combat-policy.cpp` wrote a
+  16-byte `{lastHandledTick,handled,reserved}` record at `gameHash("ActorActionState")`,
+  the same component hash the animation state machine uses for
+  `HotActorActionStateV1` (~88 bytes), and registered a second schema of size 16
+  at that hash. It now writes/registers `CombatHandledState` instead, and the
+  cold reader `MimitaNet::actorStateActionHandled` reads the same new hash.
+- **A0.3 Inert animation seam removed.** Deleted the empty `animation.main`
+  system (`src/hot-reload/modules/animation-system.cpp`) and the unused
+  `GAME_CAP_ANIMATION_UPDATE` constant.
+- **W0.1 Orphaned weapon code deleted.** Removed `weapon-manager.{h,cpp}`,
+  `revolver-system.{h,cpp}`, and `weapon-hit.{h,cpp}` (all unreferenced), plus
+  the five stale `#include "combat/weapon-hit.h"` lines.
+- **W0.2 Duplicate `config/weapons.json` parsers collapsed.** `weapon-json-config`
+  now exposes `WeaponData::configPath()` and `WeaponData::configRoot()`; the
+  viewmodel config (`weapon-config.cpp`) and the grenade-launcher physics parser
+  (`weapon-data.cpp`) read that one parsed root instead of re-reading the file
+  with hardcoded CWD-relative paths.
+
+### Weapons/animations migration — W1/A1 (one owner)
+
+- **W1 ownership seam made honest.** `combat-policy.cpp onToolUse` no longer
+  pre-claims the use (`handled = 1`) before running the behavior. The behavior
+  now owns `handled`: it sets it only when it will act, and a declined behavior
+  leaves `handled = 0` so the cold authoritative path runs. This removes the
+  "swallowed shot" hazard that made the execution opt-in unsafe.
+- **W1 duplicate removed.** `applyWeaponJson` applied the behavior type twice
+  (inside `applyWeaponStatsJson` and again in `applyWeaponJson`); the redundant
+  one was removed. (`WeaponExecution::executionTypeForBehavior` was already a
+  passthrough to `weaponExecutionTypeForBehavior`, so no duplicate there.)
+- **Execution flip status: deliberately NOT enabled yet.** `TOOL_FLAG_OWNS_EXECUTION`
+  is still off for hitscan/pellet/melee. The hot `hitscanUse`/`meleeUse` are
+  simplified (one relationship target, flat damage; no spread, pellets, damage
+  falloff, headshot multiplier, recoil, or victim/shooter knockback). Enabling
+  the flag now would regress weapon feel and contradict the exact-parity
+  requirement. With the seam fixed, the flip is a one-flag change once the cold
+  hitscan/melee logic is ported (W2/A2).
+- **A1 single locomotion-base owner.** `pose-generation.cpp` recomputed the
+  locomotion base from velocity (`locomotionAction(...)`) while `animation-policy`
+  independently selected the action from intent. It now uses the animation
+  policy's selected action directly when that action is a locomotion action
+  (idle / equipped-idle / walk / jump / fall / land), and only falls back to the
+  procedural `locomotionAction` for upper-body actions (shoot/reload/etc.).
+
+### Weapons/animations migration — A2 (JSON animation feel), W2 method
+
+- **A2.1 JSON locomotion keyframes reachable.** `HotAnim::evaluateAction`
+  short-circuited `IDLE`/`EQUIPPED_IDLE`/`WALK` to the procedural evaluators, so
+  the restored `actions.idle`/`actions.walk` JSON keyframes were dead. It now
+  samples the JSON clip when `behaviorSource == "json"` and the entry is valid,
+  falling back to the procedural evaluator otherwise. The hot-side
+  `config/animations.json` cache is now shared (`jsonClipCache`) by `actionClip`
+  and the new `jsonClipApplied`, removing the duplicate load on this side.
+- **A2.2 aimbody per-limb gains applied hot.** `pose-generation.cpp` now reads
+  `config/aimbody.json` live (mtime + `behaviorSource`) and applies each
+  configured limb's pitch/yaw/roll gain times the camera look pitch to the
+  computed pose. Previously only body yaw consumed aimbody in the cold physics
+  path; the per-limb aim (torso/head/arms) was configured but never applied.
+- **W2 method documented.** `docs/gold/2026-09-21-v206-weapon-parity-method.md`
+  records how to capture a v2.0.6 weapon reference and reuse it for every weapon,
+  with the extracted revolver (dmg 50 / delay 0.08 / mag 6 / recoil 99) and
+  shotgun (dmg 12 / delay 0.25 / mag 2 / pellets 15 / spread 3 / recoil 130)
+  values. It records the important fact that **v2.0.6 had no rocket launcher and
+  no spy knife** (and no victim/shooter knockback), so those use the current cold
+  authoritative path as their reference instead.
+- **W2 hot port + flip NOT done.** The hot `hitscanUse`/`meleeUse` are still
+  simplified; porting the v2.0.6 hitscan pipeline and flipping
+  `TOOL_FLAG_OWNS_EXECUTION` is the next W2 step, now specified by the doc.
+- **A1 status.** Locomotion base selection and aimbody are hot now. The remaining
+  cold animation code (`live-behavior.cpp capSkeletonApply`, the typed plane
+  mirror, `skeleton-instances.cpp`) is the renderer/physics-kernel boundary and
+  was not moved hot; that needs a generic pose-apply/render seam, not a module
+  move.
+
+### Weapons migration — W2 increment (hot hitscan damage model)
+
+- `hitscan-tool.cpp` now computes damage with the same v2.0.6-consistent model
+  the cold path uses: `base x body-part x range falloff`
+  (`hotHitscanDamage`/`hotHitscanFalloff`, same parameter names
+  `distanceFalloffStart` / `minDamageFraction` / `falloffExponent` /
+  `limbDamageMultiplier`). Base comes from the tool definition `damage` (falling
+  back to the old `hotDamage` param). This is hot and gated by the still-off
+  execution flag, so it is ready for the parity port.
+- **The `TOOL_FLAG_OWNS_EXECUTION` flip is NOT enabled.** Investigation found the
+  flip is not a presentation change: `tool.primary-use` is dispatched from the
+  **server** attack path, so flipping makes the server resolve hitscan through
+  the hot behavior instead of the cold `traceHitscan`. That requires porting
+  `buildPelletDirections`, `rayPlayerTarget`, the closest-pellet/world-block
+  selection, the damage/knockback aggregation, and spawn-generation identity into
+  hot first. The W2 method doc records the exact functions and the blocker.
+
+### A2 remainder — per-weapon arm poses JSON + Blender optional mode; A1 boundary
+
+- **Per-weapon carry arm poses are now hot/JSON.** `HotAnim::weaponCarryArms`
+  reads a `weaponArms` section in `config/animations.json` keyed by weapon id
+  (`leftX`/`rightX`/`leftZ`/`rightZ`, degrees) when `behaviorSource == "json"`,
+  falling back to the compiled table. The section is added with the current carry
+  values; the v2.0.6 `player-procedural.json` source values are recorded in its
+  comment so they can be dropped in live.
+- **Blender mode is explicit and optional.** `animation-physical.cpp` reads
+  `blenderMode` from `config/animations.json` (`auto`/`on` = enabled,
+  `off`/`cpp` = procedural only), mtime-refreshed each tick. The existing
+  `physicalanim` command remains a live manual override until the file changes.
+- **A1 boundary recorded.** Movement/pose *data and formulas* are now hot or JSON:
+  locomotion keyframes, per-weapon arm poses, and aimbody gains. The remaining
+  cold animation code is the kernel render/physics apply mechanism
+  (`live-behavior.cpp capSkeletonApply`, `skeleton-instances.cpp`, the typed
+  `Player` mirror). Hot code already calls it through the generic
+  `skeleton.apply` capability; moving it hot would mean moving the renderer, so it
+  stays cold by design. No module move was faked.
+
 ## Evidence
 
 - Syntax check: `g++ -std=c++17 -fsyntax-only -Isrc -Iinclude` on the reference
@@ -510,6 +646,47 @@ conservative sphere. This is the one remaining Phase C item.
 - Phase D aimbody toggle: cold build `Status: SUCCESS`;
   `--movement-v206-parity-selftest`, `--collision-selftest`,
   `--live-code-selftest` PASS.
+- Phase C/D weapon triangles + weapons.json switch + action keyframes: cold build
+  `Status: SUCCESS`. Full suite PASS (`--collision-selftest`,
+  `--ragdoll-world-selftest`, `--movement-v206-parity-selftest`,
+  `--movement-preset-selftest`, `--movement-algorithm-selftest`,
+  `--movement-v206-reference-selftest`, `--npc-entity-selftest`,
+  `--npc-actor-state-selftest`, `--live-code-selftest`). `--hot-combat-selftest`
+  back to its pre-existing 24-failure set (an attempt to raise the collider cap
+  to 40 caused an access violation there and was reverted to 16).
+- W0/A0 unblockers: cold+hot build `Status: SUCCESS`. `--collision-selftest`,
+  `--ragdoll-world-selftest`, `--movement-v206-parity-selftest`,
+  `--movement-preset-selftest`, `--movement-algorithm-selftest`,
+  `--movement-v206-reference-selftest`, `--npc-entity-selftest`,
+  `--npc-actor-state-selftest`, `--live-code-selftest` PASS.
+  `--hot-combat-selftest` remains at the same 24 pre-existing animation/phase2
+  failures (no new failures from the `ActorActionState` split).
+- W1/A1: cold+hot build `Status: SUCCESS`. Full suite PASS
+  (`--collision-selftest`, `--ragdoll-world-selftest`,
+  `--movement-v206-parity-selftest`, `--movement-preset-selftest`,
+  `--movement-algorithm-selftest`, `--movement-v206-reference-selftest`,
+  `--npc-entity-selftest`, `--npc-actor-state-selftest`, `--live-code-selftest`).
+  `--hot-combat-selftest` remains at the same 24 pre-existing failures (only
+  tool-related one is the pre-existing `phase2 unequip on tool removal`).
+- A2 (JSON locomotion + hot aimbody) and W2 method doc: cold+hot build
+  `Status: SUCCESS`. Full suite PASS (`--collision-selftest`,
+  `--ragdoll-world-selftest`, `--movement-v206-parity-selftest`,
+  `--movement-preset-selftest`, `--movement-algorithm-selftest`,
+  `--movement-v206-reference-selftest`, `--npc-entity-selftest`,
+  `--npc-actor-state-selftest`, `--live-code-selftest`). `--hot-combat-selftest`
+  unchanged at 24 pre-existing animation/phase2 failures. A2 visual correctness is
+  **not** human-verified.
+- W2 hot hitscan damage model: DLL-only rebuild (`sources=80`, `DLL build
+  success`). `--live-code-selftest`, `--movement-v206-parity-selftest`,
+  `--collision-selftest` PASS; `--hot-combat-selftest` unchanged at 24
+  pre-existing failures. Execution flag still off.
+- A2 remainder (weapon arms JSON + Blender toggle): cold+hot build
+  `Status: SUCCESS`. Full suite PASS (`--collision-selftest`,
+  `--ragdoll-world-selftest`, `--movement-v206-parity-selftest`,
+  `--movement-preset-selftest`, `--movement-algorithm-selftest`,
+  `--movement-v206-reference-selftest`, `--npc-entity-selftest`,
+  `--npc-actor-state-selftest`, `--live-code-selftest`); `--hot-combat-selftest`
+  unchanged at 24 pre-existing failures. Visual correctness not human-verified.
 - Observed unrelated flake: `--live-code-selftest` intermittently fails on
   `[FAIL] seq strictly increases` (the structured logger's `events.jsonl`
   sequence check). It passes on other runs and none of this session's changes
@@ -603,19 +780,16 @@ conservative sphere. This is the one remaining Phase C item.
    already package impacts). Remote ragdolls stay server-snapshot-driven by
    design. Optional follow-ups: contact-driven damage/recoil consumers and a
    human feel/visual acceptance pass.
-2. Phase D remainder: make `aimbody.json` and `weapons.json` tool/animation
-   references authoritative; migrate or confirm action keyframes (JSON `actions`
-   currently override durations only); replace the conservative weapon collision
-   sphere with the resolved marker + `weaponcollisions.json` shape.
-3. Phase C: NPC/actor collision, projectile world contact, the legacy
-   `collision-solver.cpp` / `physics.capsuleSolve` chain, the server sample-based
-   sphere solver, the oriented-capsule ABI, the weapon shape picker, and the
-   collision-authoritative cold/harness path are done/retired. Props do not exist
-   yet. **Still open**: expose the weapon **GLB triangles** to the hot collider (a
-   mesh capability) so the default `triangles` weapon mode uses the real mesh
-   instead of a conservative sphere. This needs triangle colliders in the
-   collision ABI/solver (or a mesh capability that returns the resolved weapon
-   triangles), which is the next substantial collision task.
+2. Phase D: `aimbody.json` and `weapons.json` now have `behaviorSource`
+   switches (json default, cpp rollback); `animations.json` carries JSON action
+   keyframes for idle/walk (from the archive) plus tool phase sets. Remaining:
+   migrate the rest of the action keyframes (shoot/reload/death) into JSON, and
+   point `weapons.json` tool entries at the JSON animation phase sets.
+3. Phase C: weapon triangle collision is implemented via a config `triangles`
+   array sampled as vertex spheres (real mesh vertices drive contact). Remaining:
+   full triangle-vs-triangle narrowphase (or a mesh capability) so every triangle
+   of the GLB mesh is used, and a higher collider cap so more than ~3 triangles
+   per weapon fit.
 4. Human: revise or explicitly retain the freeze section of the movement spec,
    and perform live human feel/visual acceptance (no-cold-build edits).
 
@@ -633,6 +807,427 @@ for movement formulas/values by the oracle parity harness, and ragdoll world
 collision is now working, but full collision behaviour and human feel/visual
 acceptance are still in progress.
 
+
+## Deterministic fixed spread (no RNG) — Phase 1
+
+Replaced all randomized weapon spread with one deterministic pattern owned by
+`src/combat/pellet-pattern.cpp`. Decisions from this session: single-ray weapons
+use a fixed offset cycle; shotgun keeps the JSON spread value `10.0`; all wire
+seed fields are kept (no longer read).
+
+- `buildFixedPelletDirections` is now the single pellet-grid generator
+  (`cols = ceil(sqrt(n))`, `rows = ceil(n/cols)`, normalized `[-1,1]` grid scaled
+  by half the spread). It is the exact pattern the client already rendered in
+  `weapon-fire-hit.cpp`.
+- `generatePelletDirections` and `WeaponExecution::buildPelletDirections` now
+  delegate to it and ignore their seed. Server `traceHitscan`, the NPC
+  multi-pellet path, and the legacy handler therefore all use the same grid.
+- Client `fireMultiPellet` calls the shared grid instead of its inline copy.
+- `buildFixedSpreadDirection` is the single deterministic single-ray cycle
+  (center + 4 axes + 4 diagonals, wraps after 9). `computeSpreadDirection`
+  delegates to it; the client/NPC/rocket call sites advance
+  `WeaponRuntime::spreadCycleIndex` instead of process-static RNG.
+- No packet/struct layouts changed: `spreadSeed`/`deterministicSeed` remain on
+  the wire and in structs but are no longer read for generation.
+
+Evidence:
+- Cold build `python build_agent.py` → `BUILD SUCCESS`, executable
+  `mimita-20260921T230914.exe`.
+- New `--pellet-pattern-selftest` → `PASS`: grid is deterministic, seed
+  independent, identical between the client and server generators; single-ray
+  cycle reproduces and wraps after 9 shots.
+- `--hot-combat-selftest` → 24 `[FAIL]` (animation/phase2), the same pre-existing
+  set; no new failures.
+
+## Hot hitscan server port — Phase 2
+
+Ported the cold authoritative hitscan into the hot tool behavior so it can
+eventually replace `WeaponExecution::traceHitscan` behind
+`TOOL_FLAG_OWNS_EXECUTION`. The flag remains OFF, so the cold path is still
+authoritative for players.
+
+- `src/combat/pellet-pattern.h` is now header-only (`inline`) so the SAME fixed
+  grid and single-ray cycle serve the cold EXE and the hot game DLL (one spread
+  owner across the boundary); `src/combat/pellet-pattern.cpp` was deleted.
+- `src/hot-reload/modules/tools/hitscan-tool.cpp` rewritten:
+  - builds the shared fixed pellet grid (`buildFixedPelletDirections`);
+  - scans targets with `findEntities(GAME_COMPONENT_HEALTH)` +
+    `readComponent(TRANSFORM/BODY/HEALTH)` (skips the shooter and the dead);
+  - per pellet, tests each target's body box (radius/height from BODY, expanded
+    by `beamThickness`), picks the closest, and blocks hits beyond the world
+    range from one `queryWorldRay` along the aim;
+  - damage = base x body-part x falloff (`hotHitscanPart` uses normalized hit
+    height: head `>=0.85`, leg `<=0.35`), aggregates per victim, applies via
+    `damage.apply` with `knockback[3]` = direction x damage x
+    `victimKnockbackPerDamage`;
+  - keeps per-tool-entity ammo/cooldown/reload and all tool action events.
+- Behavior still declines (leaves the cold path in charge) on dry fire or an
+  active cooldown, so it never swallows a shot.
+
+Known gap (blocks the flag flip): the cold path validates against rewound
+per-part body boxes from `standardPlayerBodyTemplate`; the hot behavior only has
+the generic TRANSFORM/BODY capsule via `findEntities`/`readComponent`. Until the
+body-part target geometry is exposed to hot (or rewind is owned hot), the port is
+not tick-for-tick identical and the flag must stay off.
+
+Evidence:
+- Hot DLL build: `python build_game_dll.py` → `DLL build success`.
+- Cold build: `python build_agent.py` → `BUILD SUCCESS`
+  (`mimita-20260922T103636.exe`).
+- `--pellet-pattern-selftest` → `PASS` (header-only version).
+- `--hot-combat-selftest` → 24 `[FAIL]` (same pre-existing animation/phase2 set;
+  no new failures).
+
+## Rewound hitbox bridge — flag-flip blocker resolved
+
+The cold hitscan trace validates against rewound per-part body boxes
+(`standardPlayerBodyTemplate`), which the hot behavior could not see through the
+generic TRANSFORM/BODY components. Exposed that geometry to hot using ONLY the
+existing generic dynamic-component layer — no ABI change, no new kernel slot,
+one geometry owner.
+
+- `src/hot-reload/hot-hitscan-target.h`: shared POD `HotHitscanTargetV1`
+  (version, spawnGeneration, up to 8 part boxes with center/half/bodyPart) and
+  its component/schema hashes.
+- `src/network/server-hitscan-targets.{h,cpp}`: cold publish/clear of the
+  component from the exact `WeaponExecution::PlayerTarget` list.
+- `src/network/server-attack.cpp`: hoisted the lag-compensated target build
+  (`buildRewoundHitscanTargets`, also moved the NPC rewind logging) to BEFORE
+  the hot dispatch, published the geometry, cleared it after, and reused the
+  same vector for the cold trace. The cold trace now consumes the prebuilt
+  targets; no duplicate target construction.
+- `src/hot-reload/modules/tools/hitscan-tool.cpp`: reads the published boxes via
+  `dynamicReadComponent` and ray-tests each part exactly like the cold
+  `rayPlayerTarget` (head = 1, leg = 2, else torso), falling back to the body
+  capsule only when no geometry is present.
+- New `--hitscan-target-selftest` proves publish -> read -> clear round-trips the
+  boxes (version, spawnGeneration, per-part center/half/bodyPart).
+
+Evidence:
+- Cold build `python build_agent.py` -> `BUILD SUCCESS`
+  (`mimita-20260922T104534.exe`); hot DLL build -> `DLL build success`.
+- `--hitscan-target-selftest` -> `PASS`; `--pellet-pattern-selftest` -> `PASS`.
+- `--hot-combat-selftest` -> 24 `[FAIL]` (unchanged pre-existing set);
+  `--movement-v206-parity-selftest` -> `PASS`; `--collision-selftest` -> `PASS`.
+
+With this, the hot hitscan can now validate against the same rewound pose as the
+cold authority, so the `TOOL_FLAG_OWNS_EXECUTION` flip is no longer blocked on
+target geometry. The parity harness + flip (Phase 4) is the next step.
+
+## Single ammo/cooldown/reload owner — Phase 3
+
+Made the hot per-instance `ToolInstanceStateV1` the single owner whenever a hot
+behavior claims a server attack or reload. Cold no longer writes (or reports
+from) the legacy `WeaponToolState` for a tool that has hot state.
+
+- `src/hot-reload/hot-tool-state.h`: extracted the pure state transitions
+  `toolStateBeginReload` / `toolStateFinishReload` (no component access) so cold
+  and hot share ONE owner of the ammo/reload math and timing.
+- `src/network/server-hot-tool-state.{h,cpp}`: cold read/has/write access to the
+  tool-state component (registers the schema).
+- `src/network/server-attack.cpp`:
+  - hot-accept branch now reads `ToolInstanceStateV1` from `use.toolEntity` and
+    reports `currentAmmo`/`reserveAmmo`/`stateVersion`, with
+    `nextAllowedFireTick = tick + ceil(cooldownRemaining * 60)`. It no longer
+    calls `serverWeaponStateLoad/Store` or `cooldownTickFor` (no legacy write).
+  - the legacy tick cooldown pre-gate is skipped when the tool has hot state
+    (the hot behavior enforces its own cooldown), removing the dual owner.
+- `src/network/server-packets.cpp` `handleReloadRequest`: when the tool has hot
+  state, the reload starts through `toolStateBeginReload` on the hot state and
+  the result reports hot values; the legacy component is never touched. Falls
+  back to the legacy path only when no hot state exists.
+
+Scope note: the flag is still OFF, so revolver/shotgun keep using the cold path
+and its legacy `WeaponToolState`. These changes take effect when a definition
+sets `TOOL_FLAG_OWNS_EXECUTION` (Phase 4). The legacy component and
+`serverWeaponIsMigrated` are intentionally retained for the still-cold path.
+
+Evidence:
+- Cold build `python build_agent.py` -> `BUILD SUCCESS`
+  (`mimita-20260922T105654.exe`); hot DLL rebuild -> `DLL build success`.
+- `--hot-combat-selftest` -> 24 `[FAIL]` (unchanged); `--pellet-pattern-selftest`
+  -> `PASS`; `--hitscan-target-selftest` -> `PASS`;
+  `--movement-v206-parity-selftest` -> `PASS`; `--collision-selftest` -> `PASS`.
+
+## v2.0.6 weapon parity harness + shared damage owner — Phase 4
+
+- `src/combat/hitscan-model.h` (new, header-only): the single owner of the
+  v2.0.6 hitscan damage model (base x part x falloff x angle) and knockback
+  magnitude, generic over resolved scalar params so the cold EXE and hot DLL use
+  the exact same inline code. Cold `WeaponExecution::computeHitscanDamage` /
+  `hitscanFalloffFactor` / `hitscanPartMultiplier` now delegate to it; hot
+  `hitscan-tool.cpp` maps `ToolDefinitionV1` onto it and no longer keeps a
+  duplicate copy. Registering it in `hot-modules.json` `headers` (together with
+  `pellet-pattern.h` and `hot-hitscan-target.h`) makes weapon damage/falloff and
+  spread hot-editable: changing the header rebuilds only the game DLL.
+- New `--weapon-parity-selftest` freezes the v2.0.6 revolver/shotgun reference
+  numbers (50/0.08/1.0/6/1; 12/0.25/1.5/2/15) and asserts: revolver torso=50,
+  head=100, leg=38; shotgun cold wrapper == shared model at 0..90m; damage
+  monotonically falls with distance; the 15-pellet grid is deterministic.
+
+### Flag flip: already ON — and a safety guard added
+
+Important correction discovered this phase: `TOOL_FLAG_OWNS_EXECUTION` is ALREADY
+set for revolver/shotgun (and rockets) in `tool-visuals.cpp`. Before this work
+the hot `hitscanUse` declined for players (it required a
+`relationship.targets` target, which only NPCs had), so the cold path stayed
+authoritative in practice. The Phase 2 rewrite dropped that requirement, which
+would make PLAYER hitscan claim hot. But the hot path applies damage through
+`damage.apply` (`serverApplyEntityDamage`), which does NOT reproduce the cold
+authoritative consequences:
+
+- `serverResolveDamagePolicy` (per-weapon damage policy / caps) is skipped;
+- player victims get no `DamageConfirmedEventPacket`
+  (`queueServerDamageConfirmedEvent` is only called in the cold branch);
+- NPC victims get no `broadcastNpcDamageEvent`;
+- no `ShotEventPacket` / `PelletBlastEventPacket` shot-visual broadcast.
+
+So an explicit ownership safety gate was added to `hitscan-tool.cpp`: a use is
+claimed only when the actor's `ControlSource` is `GAME_CONTROL_SERVER_NPC`. Player
+uses decline and the cold path stays authoritative, preserving shipped behavior.
+All the ported trace/state code is retained ("dont delete") and ready.
+
+The remaining gate to player hot ownership is one generic consequence capability
+(e.g. `hitscan.resolve`) that hands the hot trace aggregates to the existing cold
+consequence pipeline, rather than re-implementing policy/events hot.
+
+Evidence:
+- Cold build `BUILD SUCCESS` (`mimita-20260922T111214.exe`); hot DLL
+  `DLL build success`.
+- `--weapon-parity-selftest` PASS; `--pellet-pattern-selftest` PASS;
+  `--hitscan-target-selftest` PASS; `--movement-v206-parity-selftest` PASS;
+  `--collision-selftest` PASS; `--hot-combat-selftest` 24 FAIL (unchanged).
+
+## Authoritative consequence bridge — player hot ownership enabled
+
+Closed the last gate to player hitscan hot ownership by making the authoritative
+consequences a single shared owner instead of re-implementing them hot.
+
+- `src/network/server-hitscan-outcome.{h,cpp}` (new): the entire cold post-trace
+  consequence block (damage policy, `DamageConfirmedEventPacket`,
+  `broadcastNpcDamageEvent`, kill recording, shot/pellet-blast visual broadcast,
+  hit verdict) extracted verbatim into `serverResolveHitscanOutcome(...)`.
+  `server-attack.cpp`'s cold branch now calls it — one consequence owner.
+- `game-api.h`: new append-only capability `GAME_CAP_HITSCAN_RESOLVE`
+  (`hitscan.resolve`) + `GameHitscanResolveV1`; `ToolUsePolicyV1` gained
+  append-only `claimedTargetId`/`clientSimulationTick`.
+- `server-attack.cpp`: sets those two fields on the tool-use fact.
+- `live-behavior.cpp`: `capHitscanResolve` maps the request to a
+  `HitscanTraceResult` and runs `serverResolveHitscanOutcome` on the live server
+  context; registered as a kernel capability.
+- `hitscan-tool.cpp`: removed the temporary `ControlSource` safety gate (player
+  uses are now safe), records per-pellet results + world hit, and replaces the
+  `damage.apply` call with `hitscan.resolve`. Hot `effect.muzzle` removed so the
+  shared shot broadcast is the single source of muzzle/tracer.
+- New `--hitscan-outcome-selftest`: an NPC-victim trace through the bridge must
+  apply damage (100 -> 50) and emit the NPC damage broadcast.
+
+Evidence:
+- Cold build `BUILD SUCCESS`; hot DLL `DLL build success`.
+- `--hitscan-outcome-selftest` PASS; `--weapon-parity-selftest` PASS;
+  `--pellet-pattern-selftest` PASS; `--hitscan-target-selftest` PASS;
+  `--movement-v206-parity-selftest` PASS; `--collision-selftest` PASS;
+  `--ragdoll-world-selftest` PASS; `--hot-combat-selftest` 24 FAIL (unchanged).
+
+Dormancy/runtime note: multipayer runtime + human acceptance of the now-active
+player hot path are not yet observed; only source/build/test evidence is claimed.
+
+## Hot surface added this work (fewer cold builds)
+
+- Hot-tracked headers added to `hot-modules.json`: `src/combat/pellet-pattern.h`,
+  `src/combat/hitscan-model.h`, `src/hot-reload/hot-hitscan-target.h`. Editing
+  weapon spread, the v2.0.6 damage model, or the rewind hitbox bridge now
+  rebuilds only the game DLL.
+- Weapon damage/falloff and spread have one inline owner shared by cold and hot;
+  the hot tool modules own the trace and per-instance ammo/cooldown/reload.
+- `hitscan.resolve` moves the consequence behavior to a single owner callable by
+  any hot weapon; no per-weapon cold call site is needed to add a hot hitscan.
+
+## behaviorSource parity + melee/projectile consequence bridge
+
+Extended the hot-ownership work so (a) editing `config/weapons.json` hot-retunes
+the tools, and (b) melee/projectile hot behaviors run the same authoritative
+consequences as the cold path.
+
+### behaviorSource parity (`weapon.tuning`)
+- `game-api.h`: new `GAME_CAP_WEAPON_TUNING` (`weapon.tuning`) +
+  `GameWeaponTuningV1` (scalars + up to 24 custom params).
+- `src/network/server-weapon-tuning.{h,cpp}` (new): resolves the network id to
+  the registry `WeaponDefinition` (which already honors `behaviorSource`) and
+  reports it. `live-behavior.cpp` `capWeaponTuning` registers it.
+- `src/hot-reload/hot-tool-tuning.h` (new): `hotQueryWeaponTuning` +
+  `hotTuningHasParam`.
+- Hot tools now prefer the registry tuning over recipe literals:
+  `hitscan-tool.cpp` (damage/headshot/fireDelay/reload/mag/reserve/pellets/
+  spread/beam/falloff/knockback), `melee-tool.cpp`, `physical-contact-tool.cpp`,
+  `rocket-tool.cpp` (rocketSpeed/radius/lifetime/splash/knockback/self-damage),
+  `grenade-tool.cpp` (forwardSpeed/lifetime/splash). Editing `weapons.json` now
+  retunes hot weapons with no EXE rebuild.
+
+### melee/projectile consequence bridge (`damage.resolve`)
+- `src/network/server-damage-outcome.{h,cpp}` (new):
+  `serverResolveDamageOutcome` applies per-victim damage policy,
+  `applyServerDamage`, `queueServerDamageConfirmedEvent`,
+  `broadcastNpcDamageEvent`, and kill recording for a caller-supplied source
+  kind. One shared owner for melee/projectile damage.
+- `game-api.h`: `GAME_CAP_DAMAGE_RESOLVE` + `GameDamageResolveV1` (up to 8
+  victims); `live-behavior.cpp` `capDamageResolve` maps and calls the owner.
+- `src/hot-reload/hot-damage-resolve.h` (new): `hotResolveDamage`.
+- `hot-projectiles.cpp` splash/direct damage, `melee-tool.cpp`, and
+  `physical-contact-tool.cpp` now route through `damage.resolve` instead of the
+  raw `damage.apply`, so confirmed/NPC events and kill recording are no longer
+  dropped.
+- `hot-modules.json` tracks the new headers (`hot-tool-tuning.h`,
+  `hot-damage-resolve.h`, `hot-hitscan-target.h`, `pellet-pattern.h`,
+  `hitscan-model.h`) so editing them rebuilds only the game DLL.
+
+Evidence:
+- Cold `BUILD SUCCESS` (`mimita-20260922T120622.exe`); hot `DLL build success`.
+- `--weapon-parity-selftest` PASS (now also asserts `weapon.tuning` == registry
+  for revolver/shotgun); `--hitscan-outcome-selftest` PASS (now also asserts the
+  melee/projectile owner applies damage); the rest of the suite PASS;
+  `--hot-combat-selftest` 24 FAIL (unchanged).
+
+Residual: hot rockets/grenades still do not broadcast a reliable
+`ProjectileExplodeEventPacket` for remote clients (visual composition is local
+via `hotComposeExplosion`), and thrown-grenade/banana spawn values are not yet
+tuned from JSON. Runtime multiplayer/human acceptance remains unobserved.
+
+## Hot projectile reliable broadcast + JSON/cpp projectile tuning
+
+- `game-api.h`: `GAME_CAP_PROJECTILE_EVENT` (`projectile.event`) +
+  `GameProjectileEventV1` (spawn/explode/despawn).
+- `src/network/server-projectile-event.{h,cpp}` (new): builds the
+  `ProjectileExplodeEventPacket` (reliable, `queueReliableGameplayEventToAll`)
+  and `ProjectileSpawnEventPacket` (broadcast to all except owner) on behalf of
+  a hot owner. `live-behavior.cpp` registers `capProjectileEvent`.
+- `src/hot-reload/hot-projectile-event.h` (new): `hotBroadcastProjectileEvent`.
+- `hot-projectiles.cpp`: on detonation the canonical projectile system now
+  broadcasts the reliable explode event (position/radius/weapon), so remote
+  clients always see hot rocket/grenade explosions.
+- `rocket-tool.cpp` / `grenade-tool.cpp` / `thrown-grenade-tool.cpp`: broadcast
+  the authoritative spawn event and take their projectile values from
+  `weapon.tuning` (rocketSpeed/rocketRadius/splashRadius/knockback/
+  self-damage/gravity/throw_speed/up_bias/bounceRestitution/magazine/reserve/
+  fireDelay). Because `weapon.tuning` reads the registry, editing
+  `config/weapons.json` (behaviorSource `json`) OR `weapon-data.cpp`
+  (behaviorSource `cpp`) retunes these hot tools with no EXE rebuild.
+- `hot-modules.json` tracks `hot-projectile-event.h`.
+
+Evidence:
+- Cold `BUILD SUCCESS` (`mimita-20260922T121637.exe`); hot `DLL build success`.
+- Full suite PASS (weapon-parity, hitscan-outcome, hitscan-target,
+  pellet-pattern, movement-v206-parity, collision, ragdoll-world);
+  `--hot-combat-selftest` 24 FAIL (unchanged). Projectile broadcast is
+  source/build-verified; live multiplayer observation is still pending.
+
+## Generic event/damage primitives — consequence logic now hot-fixable
+
+Closed the last cold dependency of the weapon consequence code by exposing the
+kernel's minimal primitives as generic capabilities and moving the
+packet-building into hot headers. The consequence orchestration and packet
+contents are now hot-editable.
+
+- `game-api.h` (replacing the projectile-specific event):
+  - `event.next-id` (`event.next-id`) + `GameReliableEventTicketV1`
+  - `event.broadcast` (`event.broadcast`) + `GameEventBroadcastV1`
+    (reliable/exclude-owner flags, up to 512 payload bytes)
+  - `damage.policy` + `GameDamagePolicyV1` (per-victim policy + cap)
+  - `damage.event` + `GameDamageEventV1` (apply one damage fact + emit
+    `DamageConfirmedEventPacket` / `broadcastNpcDamageEvent` / kill recording)
+- `src/network/server-event-broadcast.{h,cpp}` (new): assigns the reliable
+  ticket and queues/sends caller-built packet bytes.
+- `src/network/server-damage-event.{h,cpp}` (new): the per-victim policy query
+  and the apply+event step (extracted from `server-damage-outcome`).
+- `src/hot-reload/hot-event-broadcast.h` (new): hot `hotEventNextId` /
+  `hotEventBroadcast` / `hotBroadcastPacket`.
+- `src/hot-reload/hot-damage-event.h` (new): `hotResolveDamagePolicy` /
+  `hotApplyDamageEvent`.
+- `src/hot-reload/hot-projectile-event.h` rewritten: the actual
+  `ProjectileExplodeEventPacket` / `ProjectileSpawnEventPacket` are BUILT in the
+  hot header and sent through `event.broadcast`. `server-projectile-event.*` and
+  the `projectile.event` capability were removed.
+- Removed the cold per-event packet code path; the packet field layout is now a
+  hot-editable header.
+
+Net: projectile spawn/explode packets, the per-victim damage event, and the
+policy query are all decided/built by hot code and only transported by the
+kernel — so a bug in that logic is a DLL-only fix.
+
+Evidence:
+- Cold `BUILD SUCCESS` (`mimita-20260922T124118.exe`); hot `DLL build success`.
+- Full suite PASS (weapon-parity, hitscan-outcome, hitscan-target,
+  pellet-pattern, movement-v206-parity, collision, ragdoll-world);
+  `--hot-combat-selftest` 24 FAIL (unchanged). Live multiplayer observation
+  remains pending.
+
+## Consequence orchestration moved into a hot module
+
+The weapon damage-consequence orchestration and its packet contents now live in
+one hot header, and both the cold fallback and the hot behaviors call it.
+
+- `src/hot-reload/hot-consequences.h` (new): `HotConsequences::resolveHitscan`
+  (orchestration: per-victim policy/damage/events, single/pellet shot-visual
+  packet building, hit verdict) plus `applyVictim` / `deliverVictim` for melee
+  and projectiles. It only calls generic primitives (`damage.policy`,
+  `damage.event`, `event.next-id`, `event.broadcast`).
+- `src/hot-reload/modules/tools/hitscan-tool.cpp`: hot hitscan now calls
+  `HotConsequences::resolveHitscan` directly (no `hitscan.resolve` request tuple).
+- `src/network/server-hitscan-outcome.cpp`: reduced to a thin cold entry that
+  builds a `GameplayContextV1` and calls the same hot orchestrator, so cold and
+  hot hitscan run one implementation.
+- `src/network/server-damage-outcome.cpp`: reduced to a thin cold entry that
+  calls `HotConsequences::applyVictim`.
+- `src/network/packets.h` added to `hot-modules.json` headers: editing the shot
+  packet contents is now a hot change.
+
+Net: a bug in hitscan/melee/projectile consequence logic (damage application,
+events, packet contents, hit verdict) is fixable by rebuilding only
+`mimita-game.dll` — no EXE rebuild.
+
+Evidence:
+- Cold `BUILD SUCCESS` (`mimita-20260922T144156.exe`); hot `DLL build success`.
+- Full suite PASS (weapon-parity, hitscan-outcome, hitscan-target,
+  pellet-pattern, movement-v206-parity, collision, ragdoll-world);
+  `--hot-combat-selftest` 24 FAIL (unchanged). Live multiplayer observation
+  remains pending.
+
+## Full hot server combat routing: attack policy + damage cap
+
+Moved the remaining server combat *policy* into hot modules so a behavior/decision
+bug is a DLL-only fix. Mechanisms stay cold (documented).
+
+- `game-api.h`: added `GAME_EVENT_ATTACK_POLICY` + `AttackPolicyV1` + 
+  `GAME_EVENT_HASH_ATTACK_POLICY` (generic-table dispatcher id).
+- `live-behavior.{h,cpp}`: `dispatchAttackPolicy` routes through the generic
+  event-type table so packages register by event id (no cold call-site per
+  behavior).
+- `src/hot-reload/modules/tools/attack-policy.cpp` (new, hot): owns attack
+  routing/validation — creation-mode block, dead, stale spawn, spawn-state,
+  slot mismatch, hitscan geometry tolerance, per-tick shot limit, community set,
+  and reported ammo/cooldown. Scope-gated to recipes with
+  `TOOL_FLAG_OWNS_EXECUTION`, so cold-owned weapons are untouched.
+- `server-attack.cpp`: builds `AttackPolicyV1`, dispatches it before the cold
+  validations; hot reject/accept-with-suppress sends the result and returns,
+  otherwise the cold path runs unchanged (safe opt-in seam).
+- Damage cap/policy was already hot (`rocket-behavior.cpp`
+  `GAME_EVENT_DAMAGE_POLICY`); `serverResolveDamagePolicy` is now clearly the
+  fallback only.
+- `hot-modules.json`: tracked `packets.h` and `hot-consequences.h`.
+- New doc `docs/gold/2026-09-22-hot-cold-combat-boundary.md` records what may be
+  hot vs the cold mechanisms.
+
+Live-edit proof: flipped a one-line decision in `attack-policy.cpp`, rebuilt only
+`mimita-game.dll`, and the unchanged EXE selftest observed the new decision
+(`hot attack policy accepts a valid request` → FAIL), then restored. This proves
+the running EXE's combat routing is DLL-driven.
+
+Evidence:
+- Cold `BUILD SUCCESS`; hot `DLL build success`.
+- `--hot-combat-selftest`: 24 pre-existing FAIL + 3 new `hot attack policy`
+  checks PASS (accept valid, reject dead, reject stale). Suite PASS
+  (hot-authoritative, weapon-parity, hitscan-outcome, hitscan-target,
+  pellet-pattern, movement-v206-parity, collision, ragdoll-world).
 
 ## Final changelog
 

@@ -35,8 +35,10 @@ struct GrenadeLauncherJsonConfig {
 static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
 {
     GrenadeLauncherJsonConfig cfg;
-    std::ifstream file("config/weapons.json");
-    if (!file.is_open())
+    // One canonical source: the parsed root owned by WeaponData
+    // (weapon-json-config.cpp). No second read of config/weapons.json.
+    const json& root = WeaponData::configRoot();
+    if (!root.is_object() || root.empty())
     {
         printf("\n"
                "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
@@ -49,9 +51,7 @@ static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
         return cfg;
     }
     try {
-        json root;
-        file >> root;
-        if (!root.is_object() || !root.contains("grenade_launcher"))
+        if (!root.contains("grenade_launcher"))
         {
             printf("\n"
                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"

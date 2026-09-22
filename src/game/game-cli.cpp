@@ -60,6 +60,10 @@
 #include "ecs/dynamic-lifecycle-selftest.h"
 #include "network/gamemode-hot-selftest.h"
 #include "network/hot-combat-selftest.h"
+#include "combat/pellet-pattern-selftest.h"
+#include "combat/weapon-parity-selftest.h"
+#include "network/hitscan-target-selftest.h"
+#include "network/hitscan-outcome-selftest.h"
 #include "network/dynamic-replication-selftest.h"
 #include "network/npc-entity-selftest.h"
 #include "network/npc-actor-state-selftest.h"
@@ -387,6 +391,38 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runHotCombatSelfTest(report);
         printf("%s", report.c_str());
         printf("[HOT COMBAT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--pellet-pattern-selftest") {
+        std::string report;
+        const bool ok = runPelletPatternSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[PELLET PATTERN SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--hitscan-target-selftest") {
+        std::string report;
+        const bool ok = runHitscanTargetSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[HITSCAN TARGET SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--weapon-parity-selftest") {
+        std::string report;
+        const bool ok = runWeaponParitySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[WEAPON PARITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--hitscan-outcome-selftest") {
+        std::string report;
+        const bool ok = runHitscanOutcomeSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[HITSCAN OUTCOME SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/server-gamemode.h"
 #include "network/server-weapon-state.h"
+#include "network/server-hot-tool-state.h"
 #include "network/server-constraints.h"
 #include "network/multiplayer-context.h"
 #include "live-code/live-behavior.h"
@@ -3039,6 +3040,82 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
 
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
     const WeaponDefinition* def = WeaponRegistry::instance().get(*wepId);
+
+    // Hot-owned tool: its per-instance state is the single owner of ammo,
+    // cooldown, and reload. Route the reload through the shared transition and
+    // report hot values; never read or write the legacy component.
+    if (def && def->magazineSize > 0 &&
+        serverHotToolStateHas(p.equippedToolEntity))
+    {
+        ToolInstanceStateV1 hot{};
+        serverHotToolStateRead(p.equippedToolEntity, hot);
+        // Adopt client-authoritative ammo (the client owns its clip).
+        if (req->magazineAmmo >= 0)
+            hot.currentAmmo = req->magazineAmmo;
+        if (req->reserveAmmo >= 0)
+            hot.reserveAmmo = req->reserveAmmo;
+
+        ReloadResultPacket result{};
+        result.header.type = PACKET_RELOAD_RESULT;
+        result.header.tick = tick;
+        result.header.playerId = p.id;
+        result.requestId = req->requestId;
+        result.spawnGeneration = req->spawnGeneration;
+        result.weaponDefNetworkId = req->weaponDefNetworkId;
+
+        if (p.dead)
+        {
+            result.accepted = 0;
+            result.reason = 2;
+        }
+        else if (hot.currentAmmo >= def->magazineSize)
+        {
+            result.accepted = 0;
+            result.reason = 3;
+        }
+        else if (hot.reserveAmmo <= 0)
+        {
+            result.accepted = 0;
+            result.reason = 4;
+        }
+        else if (hot.isReloading)
+        {
+            result.accepted = 1;
+            result.reason = 5;
+        }
+        else if (toolStateBeginReload(hot, def->magazineSize, def->reloadTime))
+        {
+            serverHotToolStateWrite(p.equippedToolEntity, hot);
+            result.accepted = 1;
+            result.reason = 0;
+        }
+        else
+        {
+            result.accepted = 0;
+            result.reason = 3;
+        }
+
+        result.magazineAmmo = hot.currentAmmo;
+        result.reserveAmmo = hot.reserveAmmo;
+        result.reloadCompleteTick = tick + (std::uint32_t)std::ceil(
+            std::max(0.0f, hot.reloadRemaining) * 60.0f);
+        result.nextAllowedFireTick = tick + (std::uint64_t)std::ceil(
+            std::max(0.0f, hot.cooldownRemaining) * 60.0f);
+        result.reloading = hot.isReloading ? 1 : 0;
+        result.stateRevision = hot.stateVersion;
+
+        Debug::log(Debug::Category::Weapons,
+                   "[RELOAD HOT] playerId=%u weapon=%s accepted=%u reason=%u ammo=%d/%d rev=%u\n",
+                   p.id, wepId->c_str(), result.accepted, result.reason,
+                   hot.currentAmmo, hot.reserveAmmo, hot.stateVersion);
+        cacheReloadResult(p, req, result.accepted, result.reason,
+                          result.magazineAmmo, result.reserveAmmo,
+                          result.reloadCompleteTick, result.nextAllowedFireTick,
+                          result.reloading, result.stateRevision);
+        serverSendToPlayer(sock, p, &result, sizeof(result));
+        return;
+    }
+
     // Migrated weapons: reload state is component-authoritative.
     serverWeaponStateLoad(p, *wepId);
 

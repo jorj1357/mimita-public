@@ -163,6 +163,10 @@ struct WeaponRuntime {
     uint32_t authoritativeStateRevision = 0;
     uint32_t authoritativeSpawnGeneration = 0;
 
+    // Deterministic single-ray spread cycle position (no RNG). Persists across
+    // shots so each burst replays the same fixed offset sequence.
+    uint32_t spreadCycleIndex = 0;
+
     struct GodballState {
         uint32_t ballEntityId = 0;
         glm::vec3 ballPosition{0.0f};

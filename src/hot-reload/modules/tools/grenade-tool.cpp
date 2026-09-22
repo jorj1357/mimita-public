@@ -12,10 +12,12 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-prediction.h"
+#include "hot-reload/hot-projectile-event.h"
 #include "hot-reload/hot-projectile.h"
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-tool-action.h"
 #include "hot-reload/hot-tool-state.h"
+#include "hot-reload/hot-tool-tuning.h"
 #include "hot-reload/hot-tool-visual.h"
 
 #include <cmath>
@@ -52,14 +54,26 @@ void MIMITA_GAME_CALL grenadeUse(const ToolUsePolicyV1* use, GameplayContextV1* 
 
     const std::uint64_t key = use->toolId != 0 ? use->toolId : use->toolNetworkId;
     const ToolDefinitionV1* def = findToolDefinition(key);
-    const float speed = paramOr(def, "hotSpeed", 25.0f);
-    const float gravity = paramOr(def, "hotGravity", 22.0f);
-    const float fuse = paramOr(def, "hotLifetime", 2.5f);
-    const float radius = paramOr(def, "hotRadius", 0.18f);
-    const float impactDamage = paramOr(def, "hotImpactDamage", 30.0f);
-    const float splashRadius = paramOr(def, "hotSplashRadius", 4.0f);
-    const float splashDamage = paramOr(def, "hotSplashDamage", 90.0f);
-    const float restitution = paramOr(def, "hotRestitution", 0.45f);
+    GameWeaponTuningV1 tuning{};
+    const bool hasTuning = hotQueryWeaponTuning(ctx, use->toolNetworkId, tuning);
+    auto tparam = [&](const char* name, float fallback) -> float {
+        float value = 0.0f;
+        if (hasTuning && hotTuningHasParam(tuning, name, &value))
+            return value;
+        return paramOr(def, name, fallback);
+    };
+    const float speed = tparam("forwardSpeed",
+        (hasTuning && tuning.projectileSpeed > 0.0f) ? tuning.projectileSpeed : 25.0f);
+    const float gravity = tparam("gravity", 22.0f);
+    const float fuse = (hasTuning && tuning.projectileLifetime > 0.0f)
+                           ? tuning.projectileLifetime
+                           : paramOr(def, "hotLifetime", 2.5f);
+    const float radius = tparam("rocketRadius",
+        (hasTuning && tuning.projectileRadius > 0.0f) ? tuning.projectileRadius : 0.18f);
+    const float impactDamage = tparam("rocketDirectDamage", 30.0f);
+    const float splashRadius = tparam("splashRadius", 4.0f);
+    const float splashDamage = tparam("splashDamage", impactDamage);
+    const float restitution = tparam("bounceRestitution", 0.45f);
 
     ToolActionEventV1 accepted{};
     accepted.actorEntity = use->userEntity;
@@ -108,6 +122,14 @@ void MIMITA_GAME_CALL grenadeUse(const ToolUsePolicyV1* use, GameplayContextV1* 
                  HOT_PROJECTILE_EXPLODE_ON_LIFETIME;
     ctx->dynamicWriteComponent(ctx->host, projectileEntity, HOT_PROJECTILE_COMPONENT,
                                &proj, sizeof(proj));
+
+    // Authoritative spawn broadcast so remote clients render the projectile.
+    hotBroadcastProjectileSpawn(ctx, (std::uint32_t)projectileEntity, use->userEntity,
+                                (std::uint32_t)use->predictionKey,
+                                (std::uint32_t)kGrenadeNetworkId,
+                                (std::uint32_t)kGrenadeNetworkId,
+                                proj.position, proj.velocity, proj.radius,
+                                proj.lifetime);
     if (ctx->writeComponent) {
         GameTransformComponentV1 tf{};
         tf.position[0] = use->origin[0];

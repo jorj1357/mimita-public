@@ -10,6 +10,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/pellet-pattern.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
@@ -24,16 +25,9 @@
 
 namespace WeaponFire {
 
-glm::vec3 computeSpreadDirection(const glm::vec3& baseDir, float spreadDegrees, unsigned int& rngState) {
-    if (spreadDegrees <= 0.0f) return baseDir;
-    rngState = rngState * 1103515245u + 12345u;
-    float theta = ((float)(rngState & 0x7FFF) / 32767.0f) * 6.2831853f;
-    rngState = rngState * 1103515245u + 12345u;
-    float radius = ((float)(rngState & 0x7FFF) / 32767.0f) * std::tan(glm::radians(spreadDegrees));
-    glm::vec3 up = std::fabs(baseDir.z) < 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 right = glm::normalize(glm::cross(baseDir, up));
-    glm::vec3 fwd = glm::normalize(glm::cross(right, up));
-    return glm::normalize(baseDir + (right * std::cos(theta) + fwd * std::sin(theta)) * radius);
+glm::vec3 computeSpreadDirection(const glm::vec3& baseDir, float spreadDegrees, unsigned int& cycleIndex) {
+    // Single owner of the fixed spread pattern lives in pellet-pattern.cpp.
+    return buildFixedSpreadDirection(baseDir, spreadDegrees, cycleIndex);
 }
 
 extern RevolverShotResult tryFireHitscan(

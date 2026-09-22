@@ -23,7 +23,6 @@
 #include "world/world.h"
 #include "config.h"
 #include "debug/debug-log.h"
-#include "combat/weapon-hit.h"
 #include "combat/death-system.h"
 #include "effects/hit-effects.h"
 #include "void-death/void-death.h"

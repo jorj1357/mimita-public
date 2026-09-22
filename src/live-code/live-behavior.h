@@ -22,6 +22,11 @@ bool dispatchDamagePolicy(DamagePolicyV1& payload, std::uint64_t tick);
 // when a hot behavior handled it (payload.handled set).
 bool dispatchFireIntent(FireIntentPolicyV1& payload, std::uint64_t tick);
 
+// Dispatch a GAME_EVENT_ATTACK_POLICY event. The kernel fills the packet-derived
+// inputs; a hot behavior owns accept/reject, reason, reported ammo/cooldown, and
+// the claim verdict. Returns true when handled.
+bool dispatchAttackPolicy(AttackPolicyV1& payload, std::uint64_t tick);
+
 // Dispatch a GAME_EVENT_RAGDOLL_SOLVE event. Returns true when handled.
 bool dispatchRagdollPolicy(RagdollPolicyV1& payload, std::uint64_t tick);
 

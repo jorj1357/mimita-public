@@ -1,5 +1,5 @@
 {
-  "_comment": "Weapon collision config. 'shape' selects the collision mode: 'triangles' (default; the actual weapon GLB triangles, hot collider uses a conservative sphere until a mesh capability exists), 'sphere' (radius/center), 'capsule' (start/end/radius), 'cylinder' or 'elongated_sphere' (mapped to an oriented capsule), 'spheres' (array of {position,radius}), or 'box' (extents + radius, approximated by two spheres along the longest axis). Legacy 'source'/'capsule'/'capsules' fields are inferred when 'shape' is absent. Hot-reloaded.",
+  "_comment": "Weapon collision config. 'shape' selects the collision mode: 'triangles' (the weapon mesh; provide a 'triangles' array of [[x,y,z],[x,y,z],[x,y,z]] local-space vertices and optional 'radius' vertex skin - collision uses the real mesh vertices), 'sphere' (radius/center), 'capsule' (start/end/radius), 'cylinder' or 'elongated_sphere' (mapped to an oriented capsule), 'spheres' (array of {position,radius}), or 'box' (extents + radius, approximated by two spheres along the longest axis). Legacy 'source'/'capsule'/'capsules' fields are inferred when 'shape' is absent. Hot-reloaded.",
 
   "revolver": {
     "enabled": true,

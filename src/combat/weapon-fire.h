@@ -122,10 +122,12 @@ void applyRecoil(
     float dt
 );
 
+// Deterministic single-ray spread (no RNG). `cycleIndex` is advanced in place
+// and indexes a fixed offset sequence, so the pattern is reproducible.
 glm::vec3 computeSpreadDirection(
     const glm::vec3& baseDir,
     float spreadDegrees,
-    unsigned int& rngState
+    unsigned int& cycleIndex
 );
 
 int applyDamageToEntity(

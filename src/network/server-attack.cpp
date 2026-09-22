@@ -15,6 +15,9 @@
 #include "network/server-damage-policy.h"
 #include "ecs/actor-entities.h"
 #include "network/server-context.h"
+#include "network/server-hitscan-outcome.h"
+#include "network/server-hitscan-targets.h"
+#include "network/server-hot-tool-state.h"
 #include "network/server-weapon-state.h"
 #include "ecs/dynamic-components.h"
 #include "ecs/entity-registry.h"
@@ -271,6 +274,94 @@ static void emitAttackRejection(
                           tick, totalPacketsOut, retransmitState);
 }
 
+// Builds the lag-compensated target list exactly as the cold hitscan trace
+// expects, and records the ECS entity for each target so the same rewound
+// hitboxes can be published to the hot behavior.
+static void buildRewoundHitscanTargets(
+    const ServerPlayer& shooter,
+    const std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::unordered_map<uint32_t, ServerNpc>& npcs,
+    uint32_t rewindTick,
+    uint32_t currentTick,
+    std::vector<WeaponExecution::PlayerTarget>& outTargets,
+    std::vector<std::uint64_t>& outEntities)
+{
+    outTargets.clear();
+    outEntities.clear();
+    outTargets.reserve(players.size() + npcs.size());
+    for (const auto& targetEntry : players)
+    {
+        const ServerPlayer& target = targetEntry.second;
+        if (target.id == shooter.id || target.dead ||
+            target.spawnState != ServerPlayer::Active)
+            continue;
+        WeaponExecution::PlayerTarget targetDesc;
+        targetDesc.playerId = target.id;
+        targetDesc.spawnGeneration = target.spawnGeneration;
+        glm::vec3 rewoundPos;
+        float rewoundYaw = target.yaw;
+        if (getPlayerPoseAtTick(target, rewindTick, rewoundPos, rewoundYaw))
+            targetDesc.position = rewoundPos;
+        else
+            targetDesc.position = target.pos;
+        targetDesc.radius = PLAYER_RADIUS;
+        targetDesc.height = PLAYER_HEIGHT;
+        targetDesc.dead = target.dead;
+        // Reconstruct the victim's real body-part hitboxes (head/torso/arms/
+        // legs) at the rewound pose + rewound yaw from the standard body
+        // template — never an invisible capsule.
+        fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw);
+        outTargets.push_back(targetDesc);
+        outEntities.push_back(Ecs::raw(
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, target.id)));
+    }
+    // Also include NPCs as trace targets, validated at the pose the attacker
+    // actually saw (rewound like players).
+    for (const auto& npcEntry : npcs)
+    {
+        const ServerNpc& npc = npcEntry.second;
+        if (npc.health <= 0)
+            continue;
+        glm::vec3 tracePos = npc.pos;
+        glm::vec3 rewoundPos;
+        float rewoundYaw = npc.yaw;
+        if (getNpcPoseAtTick(npc, rewindTick, rewoundPos, rewoundYaw))
+            tracePos = rewoundPos;
+        WeaponExecution::PlayerTarget targetDesc;
+        targetDesc.playerId = npc.entityId; // use entityId as pseudo-playerId
+        targetDesc.spawnGeneration = 0;
+        targetDesc.position = tracePos;
+        targetDesc.radius = PLAYER_RADIUS;
+        targetDesc.height = PLAYER_HEIGHT;
+        targetDesc.dead = false;
+        fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw);
+        outTargets.push_back(targetDesc);
+        outEntities.push_back(Ecs::raw(
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.entityId)));
+
+        // Debug: surface the visible-pose vs current-pose transform mismatch.
+        // One aggregate line per second, never per-frame or per-shot spam.
+        static uint64_t lastNpcRewindLog = 0;
+        const uint64_t nowRewind = nowMs();
+        if (nowRewind - lastNpcRewindLog >= 1000)
+        {
+            lastNpcRewindLog = nowRewind;
+            const float drift = glm::length(tracePos - npc.pos);
+            const float yawDrift = glm::degrees(std::fabs(
+                std::fmod(std::fabs(rewoundYaw - npc.yaw), 6.2831853f)));
+            if (drift > 0.05f || yawDrift > 5.0f)
+                Debug::warn(Debug::Category::NpcCombat,
+                    "[NPC REWIND] npc=%u rewindTick=%u currentTick=%u "
+                    "rewound=(%.2f,%.2f,%.2f) current=(%.2f,%.2f,%.2f) drift=%.2f "
+                    "rewoundYaw=%.1f currentYaw=%.1f yawDrift=%.1fdeg\n",
+                    npc.entityId, rewindTick, currentTick,
+                    tracePos.x, tracePos.y, tracePos.z,
+                    npc.pos.x, npc.pos.y, npc.pos.z, drift,
+                    glm::degrees(rewoundYaw), glm::degrees(npc.yaw), yawDrift);
+        }
+    }
+}
+
 // ── Generic attack validation + dispatch ─────────────────────────────
 void handleAttackRequest(
     SOCKET sock,
@@ -359,6 +450,78 @@ void handleAttackRequest(
                             shooter, req->requestId, "WEAPON SET DISABLED");
         sendAttackResult(sock, shooter, req, tick, false, 7, 0, -1, -1, 0, 0);
         return;
+    }
+
+    // ── Hot attack-routing policy (full hot validation seam) ──────────
+    // The cold server has parsed the request and resolved the definition; hot
+    // code now owns the routing decision (accept/reject, reason, reported
+    // ammo/cooldown, claim verdict). When no hot behavior handles it, the cold
+    // validation below runs unchanged, so this is a safe opt-in seam.
+    {
+        AttackPolicyV1 policy{};
+        policy.shooterEntity = Ecs::raw(
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id));
+        policy.shooterPlayerId = shooter.id;
+        policy.spawnGeneration = req->spawnGeneration;
+        policy.spawnStateActive = shooter.spawnState == ServerPlayer::Active ? 1u : 0u;
+        policy.shooterDead = shooter.dead ? 1u : 0u;
+        policy.weaponDefNetworkId = req->weaponDefNetworkId;
+        policy.weaponNetworkId = networkWeaponTypeForDefinition(*def);
+        policy.executionType = (std::uint32_t)def->executionType;
+        policy.equippedSlot = (std::uint32_t)req->equippedSlot;
+        const int hotLogicalSlot = serverCommunityWeaponLogicalSlot(def->id);
+        policy.expectedSlot = (std::uint32_t)(hotLogicalSlot > 0 ? hotLogicalSlot : def->slot);
+        policy.communityAllowed = serverCommunityWeaponAllowed(def->id) ? 1u : 0u;
+        policy.shotsThisTick = shooter.shotsThisTick;
+        policy.maxShotsPerTick = ServerPlayer::MAX_SHOTS_PER_TICK;
+        policy.requestId = req->requestId;
+        policy.clientSimulationTick = req->clientSimulationTick;
+        policy.claimedTargetId = req->claimedTargetId;
+        policy.origin[0] = req->muzzlePosX;
+        policy.origin[1] = req->muzzlePosY;
+        policy.origin[2] = req->muzzlePosZ;
+        policy.direction[0] = req->aimDirX;
+        policy.direction[1] = req->aimDirY;
+        policy.direction[2] = req->aimDirZ;
+        policy.shooterPos[0] = shooter.pos.x;
+        policy.shooterPos[1] = shooter.pos.y;
+        policy.shooterPos[2] = shooter.pos.z;
+        const float hotPingAllowance = (float)shooter.pingMs / 1000.0f * 200.0f;
+        policy.originTolerance = 12.0f + hotPingAllowance;
+        policy.tick = tick;
+        policy.hasDefinition = def ? 1u : 0u;
+        // Default outputs reflect the cold policy so an unhandled event leaves
+        // the cold path untouched.
+        policy.accept = 1u;
+        policy.hitVerdict = HIT_VERDICT_MISS;
+        policy.magazineAmmo = -1;
+        policy.reserveAmmo = -1;
+
+        if (LiveBehavior::dispatchAttackPolicy(policy, tick) && policy.handled)
+        {
+            if (!policy.accept)
+            {
+                emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
+                                    shooter, req->requestId,
+                                    policy.reasonText[0] ? policy.reasonText : "HOT REJECT");
+                sendAttackResult(sock, shooter, req, tick, false, (uint8_t)policy.reason,
+                                 policy.projectileId,
+                                 policy.magazineAmmo, policy.reserveAmmo,
+                                 policy.nextAllowedFireTick, policy.stateRevision,
+                                 (uint8_t)policy.hitVerdict);
+                return;
+            }
+            if (policy.suppressColdFire)
+            {
+                sendAttackResult(sock, shooter, req, tick, true, (uint8_t)policy.reason,
+                                 policy.projectileId,
+                                 policy.magazineAmmo, policy.reserveAmmo,
+                                 policy.nextAllowedFireTick, policy.stateRevision,
+                                 (uint8_t)policy.hitVerdict);
+                return;
+            }
+            // Hot accepted but left execution to the cold family dispatch.
+        }
     }
 
     // ── Validate spawn generation ──────────────────────────────────────
@@ -455,8 +618,14 @@ void handleAttackRequest(
         def->magazineSize > 0;
 
     // ── Cooldown check (tick-based) ────────────────────────────────────
+    // A tool with hot per-instance state owns its own cooldown; the hot
+    // behavior enforces it and declines when still cooling down. Do not also
+    // rate-limit it through the legacy tick counter (that would be a second
+    // owner of the same concept).
+    const bool hotStateOwns = serverHotToolStateHas(shooter.equippedToolEntity);
     constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
-    if (def->executionType != WeaponExecutionType::PhysicalContact &&
+    if (!hotStateOwns &&
+        def->executionType != WeaponExecutionType::PhysicalContact &&
         tick + COOLDOWN_GRACE_TICKS < rt.nextAllowedFireTick)
     {
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u cooldown tick=%u nextAllowed=%llu\n",
@@ -483,6 +652,23 @@ void handleAttackRequest(
     // For now, delegate to existing projectile handler which has its own cache.
     // The weapon runtime state is read AFTER the cache check to avoid
     // mutating state for duplicate requests.
+
+    // ── Lag-compensated hitscan targets (shared by cold trace and hot) ─
+    // Built once here so the hot behavior can validate against the SAME
+    // rewound body-part hitboxes the cold trace uses, published through the
+    // generic dynamic-component layer.
+    const bool hitscanFamily = def->executionType == WeaponExecutionType::Hitscan;
+    std::vector<WeaponExecution::PlayerTarget> hitscanTargets;
+    std::vector<std::uint64_t> hitscanTargetEntities;
+    uint32_t hitscanRewindTick = 0;
+    if (hitscanFamily)
+    {
+        hitscanRewindTick =
+            estimateServerRewindTick(shooter, req->clientSimulationTick, tick);
+        buildRewoundHitscanTargets(shooter, players, npcs, hitscanRewindTick, tick,
+                                   hitscanTargets, hitscanTargetEntities);
+        publishHitscanTargets(hitscanTargetEntities, hitscanTargets);
+    }
 
     // ── Generic tool-use fact (phase-0 hot-first gate) ────────────────
     // Offered to hot code for EVERY execution family. A definition opts in by
@@ -515,24 +701,43 @@ void handleAttackRequest(
         // Generic prediction key: the client's request id, so the authoritative
         // entity a hot tool creates can be linked back to the prediction.
         use.predictionKey = req->requestId;
+        use.claimedTargetId = req->claimedTargetId;
+        use.clientSimulationTick = req->clientSimulationTick;
         LiveBehavior::dispatchToolUse(use, tick);
         if (use.handled && use.outFire == 0)
         {
-            // The migrated tool owns its ammo/cooldown on the tool entity;
-            // refresh the legacy view and rate-limit through the shared cooldown.
-            serverWeaponStateLoad(shooter, *wepId);
-            rt.nextAllowedFireTick = cooldownTickFor(*def, tick);
-            rt.stateRevision++;
-            serverWeaponStateStore(shooter, *wepId);
-            sendAttackResult(sock, shooter, req, tick, true, 0, 0,
-                             rt.magazineAmmo, rt.reserveAmmo,
-                             rt.nextAllowedFireTick, rt.stateRevision);
+            // Hot owns this use. Its per-instance tool state is the single owner
+            // of ammo/cooldown/reload: report it and do NOT write the legacy
+            // component (that would be a second owner of the same concept).
+            ToolInstanceStateV1 hotState{};
+            if (serverHotToolStateRead(use.toolEntity, hotState))
+            {
+                const std::uint64_t nextAllowedTick = tick + (std::uint64_t)std::ceil(
+                    std::max(0.0f, hotState.cooldownRemaining) *
+                    (double)SERVER_TICK_RATE);
+                sendAttackResult(sock, shooter, req, tick, true, 0, 0,
+                                 hotState.currentAmmo, hotState.reserveAmmo,
+                                 nextAllowedTick, hotState.stateVersion);
+            }
+            else
+            {
+                // Behavior claimed without tool state (e.g. a stateless tool):
+                // report the legacy view unchanged; never invent state here.
+                sendAttackResult(sock, shooter, req, tick, true, 0, 0,
+                                 rt.magazineAmmo, rt.reserveAmmo,
+                                 rt.nextAllowedFireTick, rt.stateRevision);
+            }
             Debug::log(Debug::Category::Weapons,
-                "[ATTACK HOT ACCEPT] playerId=%u weapon=%s ownedByHot=1\n",
-                shooter.id, def->id.c_str());
+                "[ATTACK HOT ACCEPT] playerId=%u weapon=%s ownedByHot=1 ammo=%d/%d\n",
+                shooter.id, def->id.c_str(),
+                hotState.currentAmmo, hotState.reserveAmmo);
+            if (hitscanFamily)
+                clearHitscanTargets(hitscanTargetEntities);
             return;
         }
     }
+    if (hitscanFamily)
+        clearHitscanTargets(hitscanTargetEntities);
 
     // ── Dispatch by execution family ──────────────────────────────────
     if (def->executionType == WeaponExecutionType::Hitscan)
@@ -590,86 +795,10 @@ void handleAttackRequest(
                 worldBlockDistance = glm::length(worldHit - origin);
         }
 
-        // Lag compensation: validate the trace at the tick the attacker was
-        // actually looking at (their fire-time snapshot minus the remote
-        // interpolation buffer), so shots land where the attacker saw them.
-        const uint32_t rewindTick =
-            estimateServerRewindTick(shooter, req->clientSimulationTick, tick);
-
-        std::vector<WeaponExecution::PlayerTarget> targets;
-        targets.reserve(players.size() + npcs.size());
-        for (const auto& targetEntry : players)
-        {
-            const ServerPlayer& target = targetEntry.second;
-            if (target.id == shooter.id || target.dead ||
-                target.spawnState != ServerPlayer::Active)
-                continue;
-            WeaponExecution::PlayerTarget targetDesc;
-            targetDesc.playerId = target.id;
-            targetDesc.spawnGeneration = target.spawnGeneration;
-            glm::vec3 rewoundPos;
-            float rewoundYaw = target.yaw;
-            if (getPlayerPoseAtTick(target, rewindTick, rewoundPos, rewoundYaw))
-                targetDesc.position = rewoundPos;
-            else
-                targetDesc.position = target.pos;
-            targetDesc.radius = PLAYER_RADIUS;
-            targetDesc.height = PLAYER_HEIGHT;
-            targetDesc.dead = target.dead;
-            // Reconstruct the victim's real body-part hitboxes (head/torso/
-            // arms/legs) at the rewound pose + rewound yaw from the standard
-            // body template — never an invisible capsule.
-            fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw);
-            targets.push_back(targetDesc);
-        }
-        // Also include NPCs as trace targets, validated at the pose the
-        // attacker actually saw. The client fires at the NPC it renders
-        // (rewound to their fire-time snapshot tick), not at the NPC's
-        // current authoritative position, so rewind the NPC like players.
-        for (const auto& npcEntry : npcs)
-        {
-            const ServerNpc& npc = npcEntry.second;
-            if (npc.health <= 0)
-                continue;
-            glm::vec3 tracePos = npc.pos;
-            glm::vec3 rewoundPos;
-            float rewoundYaw = npc.yaw;
-            if (getNpcPoseAtTick(npc, rewindTick, rewoundPos, rewoundYaw))
-                tracePos = rewoundPos;
-            WeaponExecution::PlayerTarget targetDesc;
-            targetDesc.playerId = npc.entityId; // use entityId as pseudo-playerId
-            targetDesc.spawnGeneration = 0;
-            targetDesc.position = tracePos;
-            targetDesc.radius = PLAYER_RADIUS;
-            targetDesc.height = PLAYER_HEIGHT;
-            targetDesc.dead = false;
-            // Reconstruct the NPC's body-part hitboxes at the rewound pose +
-            // rewound yaw (the facing the attacker actually saw) — no capsule.
-            fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw);
-            targets.push_back(targetDesc);
-
-            // Debug: surface the visible-pose vs current-pose transform
-            // mismatch that caused moving-target misses. One aggregate line
-            // per second, never per-frame or per-shot spam.
-            static uint64_t lastNpcRewindLog = 0;
-            const uint64_t nowRewind = nowMs();
-            if (nowRewind - lastNpcRewindLog >= 1000)
-            {
-                lastNpcRewindLog = nowRewind;
-                const float drift = glm::length(tracePos - npc.pos);
-                const float yawDrift = glm::degrees(std::fabs(
-                    std::fmod(std::fabs(rewoundYaw - npc.yaw), 6.2831853f)));
-                if (drift > 0.05f || yawDrift > 5.0f)
-                    Debug::warn(Debug::Category::NpcCombat,
-                        "[NPC REWIND] npc=%u rewindTick=%u currentTick=%u "
-                        "rewound=(%.2f,%.2f,%.2f) current=(%.2f,%.2f,%.2f) drift=%.2f "
-                        "rewoundYaw=%.1f currentYaw=%.1f yawDrift=%.1fdeg\n",
-                        npc.entityId, rewindTick, tick,
-                        tracePos.x, tracePos.y, tracePos.z,
-                        npc.pos.x, npc.pos.y, npc.pos.z, drift,
-                        glm::degrees(rewoundYaw), glm::degrees(npc.yaw), yawDrift);
-            }
-        }
+        // Lag-compensated targets were built once before the hot dispatch so
+        // the cold trace and the hot behavior validate the same rewound pose.
+        const uint32_t rewindTick = hitscanRewindTick;
+        std::vector<WeaponExecution::PlayerTarget>& targets = hitscanTargets;
 
         WeaponExecution::HitscanTraceConfig traceConfig;
         traceConfig.maxRange = maxRange;
@@ -837,330 +966,13 @@ void handleAttackRequest(
         // Persist the authoritative result back onto the tool entity.
         serverWeaponStateStore(shooter, *wepId);
 
-        const uint8_t netWeapon = networkWeaponTypeForDefinition(*def);
-        for (const WeaponExecution::HitscanDamageAggregate& aggregate : trace.aggregates)
-        {
-            // Check if target is an NPC (NPC entityIds start at 1000+)
-            auto npcIt = npcs.find(aggregate.targetPlayerId);
-            if (npcIt != npcs.end())
-            {
-                ServerNpc& npcTarget = npcIt->second;
-                glm::vec3 npcKnockback = aggregate.knockback;
-                int npcDamageResolved = aggregate.damage;
-                {
-                    ServerDamagePolicyInput policyInput{};
-                    policyInput.source = GAME_DAMAGE_SOURCE_HITSCAN;
-                    policyInput.attackerEntity = Ecs::raw(
-                        Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id));
-                    policyInput.victimEntity = Ecs::raw(
-                        Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npcTarget.entityId));
-                    policyInput.weaponNetworkId = weaponDefNetworkIdFor(def->id);
-                    policyInput.victimIsNpc = 1;
-                    policyInput.tick = tick;
-                    npcDamageResolved = serverResolveDamagePolicy(
-                        policyInput, aggregate.damage, npcKnockback);
-                }
-                if (npcTarget.health > 0)
-                {
-                    npcTarget.health -= npcDamageResolved;
-                    npcTarget.knockbackImpulse += npcKnockback;
-                    npcTarget.lastAttackerId = shooter.id;
-                    npcTarget.lastAttackerPos = shooter.pos;
-                }
-                const bool killed = npcTarget.health <= 0;
-                if (killed)
-                {
-                    npcTarget.health = 0;
-                    printf("%s [SERVER NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
-                           serverTimestamp(), shooter.id,
-                           npcTarget.entityId, npcTarget.name.c_str());
-                    const char* killWeaponId = networkWeaponTypeName(netWeapon);
-                    std::string killWeaponDisplay = killWeaponId;
-                    if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
-                        if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
-                    serverGamemodeRecordKill(sock, players, &npcs,
-                        shooter.id, ENTITY_PLAYER,
-                        npcTarget.entityId, ENTITY_NPC,
-                        killWeaponId, killWeaponDisplay, req->requestId,
-                        shooter.pos, npcTarget.pos, tick, totalPacketsOut);
-                    // Do NOT erase: syncServerNpcDamageToNpc marks the real NPC
-                    // dead and respawnServerNpc re-admits it after the delay.
-                }
-                broadcastNpcDamageEvent(
-                    sock, players, tick, totalPacketsOut, shooter.id, npcTarget,
-                    npcDamageResolved, killed,
-                    origin, aggregate.hitPosition, direction, aggregate.hitNormal,
-                    netWeapon);
-                continue;
-            }
-            auto targetIt = players.find(aggregate.targetPlayerId);
-            if (targetIt == players.end() ||
-                targetIt->second.spawnGeneration != aggregate.targetSpawnGeneration)
-                continue;
-            ServerPlayer& target = targetIt->second;
-            glm::vec3 playerKnockback = aggregate.knockback;
-            int playerDamage = aggregate.damage;
-            {
-                ServerDamagePolicyInput policyInput{};
-                policyInput.source = GAME_DAMAGE_SOURCE_HITSCAN;
-                policyInput.attackerEntity = Ecs::raw(
-                    Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id));
-                policyInput.victimEntity = Ecs::raw(
-                    Ecs::ensure(EntityRealm::Server, EntityDomain::Player, target.id));
-                policyInput.weaponNetworkId = weaponDefNetworkIdFor(def->id);
-                policyInput.victimIsNpc = 0;
-                policyInput.tick = tick;
-                playerDamage = serverResolveDamagePolicy(
-                    policyInput, aggregate.damage, playerKnockback);
-            }
-            ServerDamageResult dmgResult = applyServerDamage(
-                players, target, shooter.id, playerDamage,
-                playerKnockback, ServerDamageSource::Hitscan);
-            queueServerDamageConfirmedEvent(
-                sock, players, tick, totalPacketsOut, shooter.id, target,
-                playerDamage, dmgResult,
-                aggregate.hitPosition, aggregate.hitNormal, playerKnockback,
-                ServerDamageSource::Hitscan, netWeapon, req->requestId,
-                0, 0, def->id);
-        }
+        const uint8_t hitVerdict = serverResolveHitscanOutcome(
+            sock, players, npcs, shooter, *def, trace,
+            origin, direction, worldHit, worldNormal,
+            traceConfig.maxRange, traceConfig.worldBlockDistance,
+            req->requestId, req->clientSimulationTick, req->claimedTargetId,
+            tick, totalPacketsOut);
 
-        Debug::log(Debug::Category::Weapons,
-            "[ATTACK HITSCAN ACCEPT] playerId=%u requestId=%u weapon=%s pellets=%d targets=%zu ammo=%d/%d stateRev=%u\n",
-            shooter.id, req->requestId, def->id.c_str(), trace.pelletCount,
-            trace.aggregates.size(), rt.magazineAmmo, rt.reserveAmmo,
-            rt.stateRevision);
-
-        Debug::logThrottled(Debug::Category::Weapons, "attack-rewind", 1.0,
-            "[ATTACK REWIND] playerId=%u requestId=%u fireSnapshotTick=%u "
-            "serverTick=%u rewindTick=%u delayTicks=%u\n",
-            shooter.id, req->requestId, req->clientSimulationTick,
-            tick, rewindTick, REWIND_INTERP_DELAY_TICKS);
-
-        // ── Broadcast shot visuals to all players ──────────────────────
-        if (trace.pelletCount <= 1)
-        {
-            // Single-pellet (revolver): broadcast ShotEventPacket
-            glm::vec3 hitPos = origin + direction * traceConfig.maxRange;
-            glm::vec3 hitNml = -direction;
-            uint32_t hitTarget = 0;
-            if (!trace.aggregates.empty())
-            {
-                hitPos = trace.aggregates[0].hitPosition;
-                hitNml = trace.aggregates[0].hitNormal;
-                hitTarget = trace.aggregates[0].targetPlayerId;
-            }
-            else if (glm::length(worldHit - origin) < traceConfig.maxRange)
-            {
-                hitPos = worldHit;
-                hitNml = worldNormal;
-            }
-
-            uint16_t effectFlags = SHOT_EFFECT_MUZZLE | SHOT_EFFECT_TRACER |
-                SHOT_EFFECT_SHOOT_SOUND | SHOT_EFFECT_WEAPON_TRIGGER;
-            uint8_t impactType = SHOT_IMPACT_NONE;
-            if (hitTarget != 0)
-            {
-                impactType = SHOT_IMPACT_ENTITY;
-                effectFlags |= SHOT_EFFECT_ENTITY_IMPACT | SHOT_EFFECT_BLOOD | SHOT_EFFECT_HIT_SOUND;
-            }
-            else if (glm::length(hitPos - origin) < traceConfig.maxRange - 0.1f)
-            {
-                impactType = SHOT_IMPACT_WORLD;
-                effectFlags |= SHOT_EFFECT_WORLD_IMPACT | SHOT_EFFECT_DEBRIS | SHOT_EFFECT_HIT_SOUND;
-            }
-
-            ShotEventPacket shotEvent{};
-            shotEvent.header.type = PACKET_SHOT_EVENT;
-            shotEvent.header.tick = tick;
-            shotEvent.header.playerId = shooter.id;
-            shotEvent.eventId = nextReliableGameplayEventId();
-            shotEvent.shotSerial = req->requestId;
-            shotEvent.clientTimeMs = req->clientSimulationTick;
-            shotEvent.shooterPlayerId = shooter.id;
-            shotEvent.targetPlayerId = hitTarget;
-            shotEvent.lastServerTick = tick;
-            shotEvent.weapon = netWeapon;
-            shotEvent.impactType = impactType;
-            shotEvent.effectFlags = effectFlags;
-            shotEvent.originX = origin.x;
-            shotEvent.originY = origin.y;
-            shotEvent.originZ = origin.z;
-            shotEvent.hitX = hitPos.x;
-            shotEvent.hitY = hitPos.y;
-            shotEvent.hitZ = hitPos.z;
-            shotEvent.dirX = direction.x;
-            shotEvent.dirY = direction.y;
-            shotEvent.dirZ = direction.z;
-            shotEvent.normalX = hitNml.x;
-            shotEvent.normalY = hitNml.y;
-            shotEvent.normalZ = hitNml.z;
-            // Full-beam endpoint so the tracer can continue past the first hit.
-            const glm::vec3 beamEnd = origin + direction * traceConfig.maxRange;
-            shotEvent.beamEndX = beamEnd.x;
-            shotEvent.beamEndY = beamEnd.y;
-            shotEvent.beamEndZ = beamEnd.z;
-            // Carry the real damage/health so the victim's damage number shows
-            // the actual amount (the reliable DamageConfirmed event is the
-            // source of truth for HP; this is presentation).
-            if (hitTarget != 0 && !trace.aggregates.empty())
-            {
-                const auto& agg = trace.aggregates[0];
-                shotEvent.damage = agg.damage;
-                shotEvent.damageConfirmed = 1;
-                auto targetIt = players.find(agg.targetPlayerId);
-                if (targetIt != players.end())
-                {
-                    shotEvent.targetHealth = targetIt->second.health;
-                    shotEvent.killed = targetIt->second.health <= 0 ? 1 : 0;
-                }
-            }
-
-            // Unreliable broadcast: shot visuals are fire-and-forget. The
-            // reliable DamageConfirmed event below is the source of truth for
-            // HP; a dropped visual just means one fewer tracer, not lost damage.
-            for (const auto& pe : players)
-            {
-                if (pe.second.transport)
-                    pe.second.transport->send(&shotEvent, sizeof(shotEvent));
-                else
-                    sendto(sock, (const char*)&shotEvent, sizeof(shotEvent), 0,
-                           (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
-                ++totalPacketsOut;
-            }
-
-            Debug::log(Debug::Category::Weapons,
-                       "[WEAPON_EVENT_BROADCAST] shooter=%u requestId=%u weapon=%s "
-                       "impact=%u target=%u recipients=%zu\n",
-                       shooter.id, req->requestId, def->id.c_str(),
-                       (unsigned)impactType, hitTarget, players.size());
-        }
-        else
-        {
-            // Multi-pellet (shotgun/AA12): broadcast PelletBlastEventPacket
-            glm::vec3 pelletDirs[MAX_PELLETS_PER_BLAST]{};
-            int pelletCount = WeaponExecution::buildPelletDirections(
-                *def, direction, req->deterministicSeed,
-                pelletDirs, MAX_PELLETS_PER_BLAST);
-
-            PelletBlastEventPacket blastEvent{};
-            blastEvent.header.type = PACKET_PELLET_BLAST_EVENT;
-            blastEvent.header.tick = tick;
-            blastEvent.eventId = nextReliableGameplayEventId();
-            blastEvent.shooterPlayerId = shooter.id;
-            blastEvent.shotSerial = req->requestId;
-            blastEvent.clientTimeMs = req->clientSimulationTick;
-            blastEvent.lastServerTick = tick;
-            blastEvent.spreadSeed = req->deterministicSeed;
-            blastEvent.originX = origin.x;
-            blastEvent.originY = origin.y;
-            blastEvent.originZ = origin.z;
-            blastEvent.baseDirX = direction.x;
-            blastEvent.baseDirY = direction.y;
-            blastEvent.baseDirZ = direction.z;
-            blastEvent.weapon = netWeapon;
-            blastEvent.pelletCount = (uint8_t)std::min(pelletCount, (int)MAX_NETWORK_PELLETS);
-            blastEvent.maxRange = traceConfig.maxRange;
-            {
-                const glm::vec3 beamEnd = origin + direction * traceConfig.maxRange;
-                blastEvent.beamEndX = beamEnd.x;
-                blastEvent.beamEndY = beamEnd.y;
-                blastEvent.beamEndZ = beamEnd.z;
-            }
-
-            for (int i = 0; i < pelletCount && i < MAX_NETWORK_PELLETS; ++i)
-            {
-                NetworkPelletResult& r = blastEvent.pellets[i];
-                r.pelletIndex = (uint8_t)i;
-
-                if (trace.pellets[i].hit && trace.pellets[i].targetPlayerId != 0)
-                {
-                    r.hitX = trace.pellets[i].hitPosition.x;
-                    r.hitY = trace.pellets[i].hitPosition.y;
-                    r.hitZ = trace.pellets[i].hitPosition.z;
-                    r.normalX = trace.pellets[i].hitNormal.x;
-                    r.normalY = trace.pellets[i].hitNormal.y;
-                    r.normalZ = trace.pellets[i].hitNormal.z;
-                    r.targetPlayerId = trace.pellets[i].targetPlayerId;
-                    r.impactType = PELLET_IMPACT_PLAYER;
-                    r.bodyPart = trace.pellets[i].headshot ? 0 : 1;
-                }
-                else
-                {
-                    glm::vec3 pelletEnd = origin + pelletDirs[i] * traceConfig.worldBlockDistance;
-                    r.hitX = pelletEnd.x;
-                    r.hitY = pelletEnd.y;
-                    r.hitZ = pelletEnd.z;
-                    r.normalX = -pelletDirs[i].x;
-                    r.normalY = -pelletDirs[i].y;
-                    r.normalZ = -pelletDirs[i].z;
-                    r.targetPlayerId = 0;
-                    r.impactType = PELLET_IMPACT_WORLD;
-                }
-            }
-
-            blastEvent.targetCount = 0;
-            for (const auto& agg : trace.aggregates)
-            {
-                if (blastEvent.targetCount >= MAX_PELLET_BLAST_TARGETS)
-                    break;
-                PelletBlastTargetResult& t = blastEvent.targets[blastEvent.targetCount++];
-                t.targetPlayerId = agg.targetPlayerId;
-                t.totalDamage = (int16_t)agg.damage;
-                t.knockX = 0;
-                t.knockY = 0;
-                t.knockZ = 0;
-                t.pelletsHit = (uint8_t)agg.pelletHits;
-                auto vit = players.find(agg.targetPlayerId);
-                t.healthAfter = vit != players.end() ? (int16_t)vit->second.health : 0;
-                t.killed = 0;
-                t.targetSpawnGeneration = vit != players.end() ? vit->second.spawnGeneration : 0;
-            }
-
-            // Unreliable broadcast: pellet visuals are fire-and-forget. The
-            // reliable DamageConfirmed events below are the source of truth for
-            // HP; a dropped visual just means fewer tracers, not lost damage.
-            for (const auto& pe : players)
-            {
-                if (pe.second.transport)
-                    pe.second.transport->send(&blastEvent, sizeof(blastEvent));
-                else
-                    sendto(sock, (const char*)&blastEvent, sizeof(blastEvent), 0,
-                           (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
-                ++totalPacketsOut;
-            }
-        }
-
-        uint8_t hitVerdict = HIT_VERDICT_MISS;
-        if (!trace.aggregates.empty())
-        {
-            bool hitClaimed = false;
-            for (const auto& agg : trace.aggregates)
-            {
-                if (req->claimedTargetId != 0 && agg.targetPlayerId == req->claimedTargetId)
-                {
-                    hitClaimed = true;
-                    break;
-                }
-            }
-            hitVerdict = hitClaimed ? HIT_VERDICT_HIT_CLAIMED_TARGET
-                                    : HIT_VERDICT_HIT_OTHER_TARGET;
-        }
-        {
-            int totalDmg = 0;
-            for (const auto& agg : trace.aggregates)
-                totalDmg += agg.damage;
-            char msg[512];
-            std::snprintf(msg, sizeof(msg),
-                          "player=%u weapon=%s claimed=%u pellets=%d damage=%d verdict=%u origin=(%.2f,%.2f,%.2f) dir=(%.3f,%.3f,%.3f)",
-                          shooter.id, def->id.c_str(), req->claimedTargetId,
-                          trace.pelletCount, totalDmg, (unsigned)hitVerdict,
-                          origin.x, origin.y, origin.z,
-                          direction.x, direction.y, direction.z);
-            ::logStructured(::StructuredCategory::Network, ::StructuredLevel::Important,
-                            "ATTACK_HITSCAN_ACCEPT",
-                            "ATTACK_" + std::to_string(req->requestId),
-                            "authoritative hitscan trace result", msg);
-        }
         sendAttackResult(sock, shooter, req, tick, true, 0, 0,
                          rt.magazineAmmo, rt.reserveAmmo,
                          rt.nextAllowedFireTick, rt.stateRevision,

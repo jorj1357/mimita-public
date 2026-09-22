@@ -63,6 +63,10 @@ const std::string& weaponConfigPath()
 }
 
 json gWeaponConfigRoot = json::object();
+// behaviorSource selector: "json" (default) applies config/weapons.json over the
+// compiled weapon definitions; "cpp" keeps the compiled definitions (the hot C++
+// tool definition still applies). Hot-reloadable with no rebuild.
+bool gWeaponJsonAuthoritative = true;
 std::filesystem::file_time_type gWeaponConfigLastWrite{};
 std::chrono::steady_clock::time_point gWeaponConfigLastCheck{};
 bool gWeaponConfigHasWriteTime = false;
@@ -205,7 +209,6 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonFloat(root, "projectile_lifetime", def.projectileLifetime);
     weaponJsonFireMode(root, def);
     weaponJsonNetworkMode(root, def);
-    weaponJsonBehaviorType(root, def);
     weaponJsonBool(root, "hitscan", def.hitscan);
     weaponJsonFloat(root, "beam_thickness", def.beamThickness);
     weaponJsonFloat(root, "beam_world_thickness", def.beamWorldThickness);
@@ -282,6 +285,16 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
 
 } // namespace
 
+const std::string& configPath()
+{
+    return weaponConfigPath();
+}
+
+const json& configRoot()
+{
+    return gWeaponConfigRoot;
+}
+
 void loadWeaponJsonConfig()
 {
     gWeaponConfigRoot = json::object();
@@ -299,6 +312,9 @@ void loadWeaponJsonConfig()
         file >> gWeaponConfigRoot;
         if (!gWeaponConfigRoot.is_object())
             gWeaponConfigRoot = json::object();
+        gWeaponJsonAuthoritative =
+            gWeaponConfigRoot.value("behaviorSource", std::string("json")) !=
+            "cpp";
         std::error_code ec;
         if (std::filesystem::exists(weaponConfigPath(), ec) && !ec) {
             gWeaponConfigLastWrite = std::filesystem::last_write_time(weaponConfigPath(), ec);
@@ -433,7 +449,7 @@ void registerHotTools()
 
 void registerWeaponFromJson(WeaponDefinition def)
 {
-    if (gWeaponConfigRoot.contains(def.id))
+    if (gWeaponJsonAuthoritative && gWeaponConfigRoot.contains(def.id))
         applyWeaponJson(def, gWeaponConfigRoot[def.id]);
     else
         applyWeaponExecutionType(def);

@@ -11,10 +11,12 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-prediction.h"
+#include "hot-reload/hot-projectile-event.h"
 #include "hot-reload/hot-projectile.h"
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-tool-action.h"
 #include "hot-reload/hot-tool-state.h"
+#include "hot-reload/hot-tool-tuning.h"
 #include "hot-reload/hot-tool-visual.h"
 
 #include <cmath>
@@ -48,13 +50,33 @@ void MIMITA_GAME_CALL thrownUse(const ToolUsePolicyV1* use, GameplayContextV1* c
 
     const std::uint64_t key = use->toolId != 0 ? use->toolId : use->toolNetworkId;
     const ToolDefinitionV1* def = findToolDefinition(key);
-    const float speed = paramOr(def, "hotSpeed", 18.0f);
-    const float gravity = paramOr(def, "hotGravity", 22.0f);
-    const float fuse = paramOr(def, "hotLifetime", 3.0f);
-    const float radius = paramOr(def, "hotRadius", 0.12f);
-    const float splashRadius = paramOr(def, "hotSplashRadius", 4.0f);
-    const float splashDamage = paramOr(def, "hotSplashDamage",
-                                       paramOr(def, "hotImpactDamage", 40.0f));
+    GameWeaponTuningV1 tuning{};
+    const bool hasTuning = hotQueryWeaponTuning(ctx, use->toolNetworkId, tuning);
+    auto tparam = [&](const char* name, float fallback) -> float {
+        float value = 0.0f;
+        if (hasTuning && hotTuningHasParam(tuning, name, &value))
+            return value;
+        return paramOr(def, name, fallback);
+    };
+    const float speed = tparam("throw_speed",
+        (hasTuning && tuning.projectileSpeed > 0.0f) ? tuning.projectileSpeed : 18.0f);
+    const float gravity = tparam("gravity", 22.0f);
+    const float fuse = (hasTuning && tuning.projectileLifetime > 0.0f)
+                           ? tuning.projectileLifetime
+                           : paramOr(def, "hotLifetime", 3.0f);
+    const float radius = (hasTuning && tuning.projectileRadius > 0.0f)
+                             ? tuning.projectileRadius
+                             : paramOr(def, "hotRadius", 0.12f);
+    const float splashRadius = tparam("splashRadius", 4.0f);
+    const float splashDamage = tparam("edge_damage",
+        tparam("rocketDirectDamage", 40.0f));
+    const float restitution = tparam("bounceRestitution", 0.35f);
+    const float upBias = tparam("up_bias", 1.0f);
+    const std::int32_t magazine =
+        hasTuning ? tuning.magazineSize : (def ? def->magazineSize : 1);
+    const std::int32_t reserve =
+        hasTuning ? tuning.reserveAmmo : (def ? def->reserveAmmo : -1);
+    const float fireDelay = hasTuning ? tuning.fireDelay : (def ? def->fireDelay : 1.0f);
 
     ToolActionEventV1 accepted{};
     accepted.actorEntity = use->userEntity;
@@ -81,7 +103,7 @@ void MIMITA_GAME_CALL thrownUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     proj.position[2] = use->origin[2];
     proj.velocity[0] = dx * speed;
     proj.velocity[1] = dy * speed;
-    proj.velocity[2] = dz * speed + 1.0f;
+    proj.velocity[2] = dz * speed + upBias;
     proj.gravity = gravity;
     proj.lifetime = fuse;
     proj.radius = radius;
@@ -92,7 +114,7 @@ void MIMITA_GAME_CALL thrownUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     proj.knockbackStrength = 8.0f;
     proj.selfDamageMultiplier = 0.2f;
     proj.fullDamageRadius = 1.0f;
-    proj.restitution = 0.35f;
+    proj.restitution = restitution;
     proj.maxBounces = 3;
     proj.ownerEntity = use->userEntity;
     proj.toolEntity = use->toolEntity;
@@ -103,6 +125,14 @@ void MIMITA_GAME_CALL thrownUse(const ToolUsePolicyV1* use, GameplayContextV1* c
                  HOT_PROJECTILE_EXPLODE_ON_LIFETIME;
     ctx->dynamicWriteComponent(ctx->host, projectileEntity, HOT_PROJECTILE_COMPONENT,
                                &proj, sizeof(proj));
+
+    // Authoritative spawn broadcast so remote clients render the projectile.
+    hotBroadcastProjectileSpawn(ctx, (std::uint32_t)projectileEntity, use->userEntity,
+                                (std::uint32_t)use->predictionKey,
+                                (std::uint32_t)use->toolNetworkId,
+                                (std::uint32_t)use->toolNetworkId,
+                                proj.position, proj.velocity, proj.radius,
+                                proj.lifetime);
     if (ctx->writeComponent) {
         GameTransformComponentV1 tf{};
         tf.position[0] = use->origin[0];
@@ -136,9 +166,8 @@ void MIMITA_GAME_CALL thrownUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     if (use->toolEntity != 0 && ctx->dynamicReadComponent &&
         ctx->dynamicWriteComponent) {
         ToolInstanceStateV1 st = toolStateEnsure(
-            ctx, use->toolEntity, key, def ? def->magazineSize : 1,
-            def ? def->reserveAmmo : -1, use->userEntity);
-        st.cooldownRemaining = def ? def->fireDelay : 1.0f;
+            ctx, use->toolEntity, key, magazine, reserve, use->userEntity);
+        st.cooldownRemaining = fireDelay;
         toolStateWrite(ctx, use->toolEntity, st);
     }
 

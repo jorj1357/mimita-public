@@ -2667,6 +2667,54 @@ bool runHotCombatSelfTest(std::string& report)
     context.totalPacketsOut = &totalPacketsOut;
     MimitaNet::setActiveServerContext(&context);
 
+    // ── Hot attack-routing policy owns accept/reject ─────────────────
+    {
+        AttackPolicyV1 policy{};
+        policy.shooterPlayerId = 7;
+        policy.spawnGeneration = 1;
+        policy.spawnStateActive = 1;
+        policy.weaponDefNetworkId = 1;
+        policy.weaponNetworkId = 1;
+        policy.executionType = 0;  // Hitscan
+        policy.hasDefinition = 1;
+        policy.communityAllowed = 1;
+        policy.expectedSlot = 0;   // skip slot check
+        policy.origin[0] = 0.0f; policy.origin[1] = 0.0f; policy.origin[2] = 1.0f;
+        policy.direction[0] = 1.0f; policy.direction[1] = 0.0f; policy.direction[2] = 0.0f;
+        policy.shooterPos[0] = 0.0f; policy.shooterPos[1] = 0.0f; policy.shooterPos[2] = 1.0f;
+        policy.originTolerance = 12.0f;
+        policy.maxShotsPerTick = 8;
+        policy.tick = 1;
+        const bool handled = LiveBehavior::dispatchAttackPolicy(policy, 1);
+        ok &= check(handled && policy.handled == 1 && policy.accept == 1,
+                    "hot attack policy accepts a valid request", report);
+
+        AttackPolicyV1 dead{};
+        dead.shooterPlayerId = 7;
+        dead.spawnGeneration = 1;
+        dead.spawnStateActive = 1;
+        dead.shooterDead = 1;
+        dead.weaponDefNetworkId = 1;
+        dead.weaponNetworkId = 1;
+        dead.hasDefinition = 1;
+        dead.communityAllowed = 1;
+        LiveBehavior::dispatchAttackPolicy(dead, 2);
+        ok &= check(dead.handled == 1 && dead.accept == 0,
+                    "hot attack policy rejects a dead shooter", report);
+
+        AttackPolicyV1 stale{};
+        stale.shooterPlayerId = 7;
+        stale.spawnGeneration = 0;  // stale
+        stale.spawnStateActive = 1;
+        stale.weaponDefNetworkId = 1;
+        stale.weaponNetworkId = 1;
+        stale.hasDefinition = 1;
+        stale.communityAllowed = 1;
+        LiveBehavior::dispatchAttackPolicy(stale, 3);
+        ok &= check(stale.handled == 1 && stale.accept == 0,
+                    "hot attack policy rejects a stale spawn", report);
+    }
+
     // ── Brand-new tool: use is owned by the hot behavior ─────────────
     {
         ToolUsePolicyV1 use = makeUse(kBananaTool);

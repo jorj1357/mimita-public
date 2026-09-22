@@ -18,7 +18,6 @@
 
 #include <glm/gtc/constants.hpp>
 
-#include "combat/weapon-hit.h"
 #include "debug/debug-log.h"
 #include "perf/perf.h"
 #include "physics/config.h"

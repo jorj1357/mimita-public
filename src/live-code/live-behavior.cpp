@@ -28,6 +28,15 @@
 #include "render/skeleton-instances.h"
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
+#include "network/server-hitscan-outcome.h"
+#include "network/server-damage-outcome.h"
+#include "network/server-damage-event.h"
+#include "network/server-event-broadcast.h"
+#include "network/server-weapon-tuning.h"
+#include "network/network-weapons.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-execution.h"
+#include "ecs/entity-types.h"
 #include "network/server.h"
 #include "network/server.h"
 #include "physics/movement/physics-collision.h"
@@ -1499,6 +1508,176 @@ bool MIMITA_GAME_CALL capDamageApply(void*, GameDamageApplyV1* request)
     return MimitaNet::serverApplyEntityDamage(*request);
 }
 
+// hitscan.resolve: run the shared cold consequence pipeline for a hot trace.
+void MIMITA_GAME_CALL capHitscanResolve(void*, GameHitscanResolveV1* request)
+{
+    if (!request)
+        return;
+    MimitaNet::ServerContextV1* context = MimitaNet::activeServerContext();
+    if (!context || !context->players || !context->npcs || !context->tick)
+        return;
+    auto& players = *static_cast<std::unordered_map<std::uint32_t, MimitaNet::ServerPlayer>*>(
+        context->players);
+    auto& npcs = *static_cast<std::unordered_map<std::uint32_t, MimitaNet::ServerNpc>*>(
+        context->npcs);
+
+    const std::uint32_t attackerId =
+        entityLegacyId(static_cast<EntityId>(request->attackerEntity));
+    auto shooterIt = players.find(attackerId);
+    if (shooterIt == players.end())
+        return;
+
+    const std::string* weaponId =
+        MimitaNet::weaponIdForDefNetworkId(request->weaponDefNetworkId);
+    const WeaponDefinition* def =
+        weaponId ? WeaponRegistry::instance().get(*weaponId) : nullptr;
+    if (!def)
+        return;
+
+    WeaponExecution::HitscanTraceResult trace{};
+    trace.pelletCount = static_cast<int>(request->pelletCount);
+    const std::uint32_t aggregateCount =
+        std::min(request->aggregateCount, (std::uint32_t)GAME_MAX_HITSCAN_AGGREGATES);
+    for (std::uint32_t i = 0; i < aggregateCount; ++i)
+    {
+        const GameHitscanAggregateV1& src = request->aggregates[i];
+        WeaponExecution::HitscanDamageAggregate agg{};
+        agg.targetPlayerId = entityLegacyId(static_cast<EntityId>(src.victimEntity));
+        agg.targetSpawnGeneration = src.victimSpawnGeneration;
+        agg.damage = src.damage;
+        agg.pelletHits = static_cast<int>(src.pelletHits);
+        agg.headshot = src.headshot != 0;
+        agg.knockback = glm::vec3(src.knockback[0], src.knockback[1], src.knockback[2]);
+        agg.hitPosition = glm::vec3(src.hitPosition[0], src.hitPosition[1], src.hitPosition[2]);
+        agg.hitNormal = glm::vec3(src.hitNormal[0], src.hitNormal[1], src.hitNormal[2]);
+        trace.aggregates.push_back(agg);
+    }
+    const std::uint32_t pelletWrite =
+        std::min(request->pelletCount, (std::uint32_t)GAME_MAX_HITSCAN_PELLETS);
+    for (std::uint32_t i = 0; i < pelletWrite; ++i)
+    {
+        const GameHitscanPelletV1& src = request->pellets[i];
+        WeaponExecution::HitscanPelletHit& dst = trace.pellets[i];
+        dst.hit = src.hit != 0;
+        dst.targetPlayerId = entityLegacyId(static_cast<EntityId>(src.victimEntity));
+        dst.hitPosition = glm::vec3(src.hitPosition[0], src.hitPosition[1], src.hitPosition[2]);
+        dst.hitNormal = glm::vec3(src.hitNormal[0], src.hitNormal[1], src.hitNormal[2]);
+        dst.headshot = src.headshot != 0;
+    }
+
+    std::uint64_t totalPacketsLocal = 0;
+    std::uint64_t& totalPacketsOut =
+        context->totalPacketsOut ? *context->totalPacketsOut : totalPacketsLocal;
+
+    MimitaNet::serverResolveHitscanOutcome(
+        static_cast<SOCKET>(context->sock), players, npcs, shooterIt->second, *def, trace,
+        glm::vec3(request->origin[0], request->origin[1], request->origin[2]),
+        glm::vec3(request->direction[0], request->direction[1], request->direction[2]),
+        glm::vec3(request->worldHit[0], request->worldHit[1], request->worldHit[2]),
+        glm::vec3(request->worldNormal[0], request->worldNormal[1], request->worldNormal[2]),
+        request->maxRange, request->worldBlockDistance,
+        request->requestId, request->clientSimulationTick, request->claimedTargetId,
+        *context->tick, totalPacketsOut);
+    request->resolved = 1;
+}
+
+// projectile.event: broadcast a hot-owned projectile lifecycle event.
+void MIMITA_GAME_CALL capEventNextId(void*, GameReliableEventTicketV1* out)
+{
+    MimitaNet::serverEventNextId(out);
+}
+
+void MIMITA_GAME_CALL capEventBroadcast(void*, GameEventBroadcastV1* request)
+{
+    if (!request)
+        return;
+    MimitaNet::serverEventBroadcast(*request);
+    request->resolved = 1;
+}
+
+bool MIMITA_GAME_CALL capDamagePolicy(void*, GameDamagePolicyV1* request)
+{
+    if (!request)
+        return false;
+    return MimitaNet::serverDamagePolicyQuery(*request);
+}
+
+void MIMITA_GAME_CALL capDamageEvent(void*, GameDamageEventV1* request)
+{
+    if (!request)
+        return;
+    MimitaNet::serverApplyDamageEvent(*request);
+    request->applied = 1;
+}
+bool MIMITA_GAME_CALL capWeaponTuning(void*, std::uint32_t weaponDefNetworkId,
+                                      GameWeaponTuningV1* out)
+{
+    return MimitaNet::serverWeaponTuning(weaponDefNetworkId, out);
+}
+
+// damage.resolve: kept as a thin compatibility primitive. It now uses the
+// shared per-victim damage policy/event primitives; the primary orchestration
+// lives in hot modules (damage.resolve is only for callers that cannot build
+// packets themselves).
+void MIMITA_GAME_CALL capDamageResolve(void*, GameDamageResolveV1* request)
+{
+    if (!request)
+        return;
+    MimitaNet::ServerContextV1* context = MimitaNet::activeServerContext();
+    if (!context || !context->players || !context->npcs || !context->tick)
+        return;
+    auto& players = *static_cast<std::unordered_map<std::uint32_t, MimitaNet::ServerPlayer>*>(
+        context->players);
+    auto& npcs = *static_cast<std::unordered_map<std::uint32_t, MimitaNet::ServerNpc>*>(
+        context->npcs);
+
+    const MimitaNet::ServerPlayer* attacker = nullptr;
+    if (request->attackerEntity != 0)
+    {
+        const std::uint32_t attackerId =
+            entityLegacyId(static_cast<EntityId>(request->attackerEntity));
+        auto it = players.find(attackerId);
+        if (it != players.end())
+            attacker = &it->second;
+    }
+
+    const std::string* weaponId =
+        MimitaNet::weaponIdForDefNetworkId(request->weaponDefNetworkId);
+    const WeaponDefinition* def =
+        weaponId ? WeaponRegistry::instance().get(*weaponId) : nullptr;
+
+    MimitaNet::ServerOutcomeVictim victims[GAME_MAX_DAMAGE_VICTIMS];
+    const std::uint32_t count =
+        std::min(request->victimCount, (std::uint32_t)GAME_MAX_DAMAGE_VICTIMS);
+    for (std::uint32_t i = 0; i < count; ++i)
+    {
+        const GameDamageVictimV1& src = request->victims[i];
+        MimitaNet::ServerOutcomeVictim& dst = victims[i];
+        dst.entity = src.victimEntity;
+        dst.spawnGeneration = src.victimSpawnGeneration;
+        dst.damage = src.damage;
+        dst.knockback[0] = src.knockback[0];
+        dst.knockback[1] = src.knockback[1];
+        dst.knockback[2] = src.knockback[2];
+        dst.hitPosition[0] = src.hitPosition[0];
+        dst.hitPosition[1] = src.hitPosition[1];
+        dst.hitPosition[2] = src.hitPosition[2];
+        dst.hitNormal[0] = src.hitNormal[0];
+        dst.hitNormal[1] = src.hitNormal[1];
+        dst.hitNormal[2] = src.hitNormal[2];
+    }
+
+    std::uint64_t totalPacketsLocal = 0;
+    std::uint64_t& totalPacketsOut =
+        context->totalPacketsOut ? *context->totalPacketsOut : totalPacketsLocal;
+
+    MimitaNet::serverResolveDamageOutcome(
+        static_cast<SOCKET>(context->sock), players, npcs, attacker, def,
+        request->sourceKind, request->causeSerial, request->projectileId,
+        victims, count, static_cast<std::uint32_t>(*context->tick), totalPacketsOut);
+    request->resolved = 1;
+}
+
 // Generic round-based match mechanism: a hot mode records one round winner.
 bool MIMITA_GAME_CALL capMatchRoundResult(void*, GameMatchRoundResultV1* request)
 {
@@ -2073,6 +2252,34 @@ struct KernelCapabilityInit {
                                     gameHash("sig.damage.apply.v1"), 0,
                                     reinterpret_cast<void*>(&capDamageApply),
                                     "damage.apply");
+        rt.registerKernelCapability(GAME_CAP_HITSCAN_RESOLVE,
+                                    gameHash("sig.hitscan.resolve.v1"), 0,
+                                    reinterpret_cast<void*>(&capHitscanResolve),
+                                    "hitscan.resolve");
+        rt.registerKernelCapability(GAME_CAP_WEAPON_TUNING,
+                                    gameHash("sig.weapon.tuning.v1"), 0,
+                                    reinterpret_cast<void*>(&capWeaponTuning),
+                                    "weapon.tuning");
+        rt.registerKernelCapability(GAME_CAP_DAMAGE_RESOLVE,
+                                    gameHash("sig.damage.resolve.v1"), 0,
+                                    reinterpret_cast<void*>(&capDamageResolve),
+                                    "damage.resolve");
+        rt.registerKernelCapability(GAME_CAP_EVENT_NEXT_ID,
+                                    gameHash("sig.event.next-id.v1"), 0,
+                                    reinterpret_cast<void*>(&capEventNextId),
+                                    "event.next-id");
+        rt.registerKernelCapability(GAME_CAP_EVENT_BROADCAST,
+                                    gameHash("sig.event.broadcast.v1"), 0,
+                                    reinterpret_cast<void*>(&capEventBroadcast),
+                                    "event.broadcast");
+        rt.registerKernelCapability(GAME_CAP_DAMAGE_POLICY,
+                                    gameHash("sig.damage.policy.v1"), 0,
+                                    reinterpret_cast<void*>(&capDamagePolicy),
+                                    "damage.policy");
+        rt.registerKernelCapability(GAME_CAP_DAMAGE_EVENT,
+                                    gameHash("sig.damage.event.v1"), 0,
+                                    reinterpret_cast<void*>(&capDamageEvent),
+                                    "damage.event");
         rt.registerKernelCapability(GAME_CAP_MATCH_ROUND_RESULT,
                                     gameHash("sig.match.round-result.v1"), 0,
                                     reinterpret_cast<void*>(&capMatchRoundResult),
@@ -2582,6 +2789,25 @@ bool dispatchFireIntent(FireIntentPolicyV1& payload, std::uint64_t tick)
 
     GameplayContextV1 context = makeContext(tick);
     module->onEvent(&event, &context);
+    drainEvents(16);
+    return payload.handled != 0;
+}
+
+bool dispatchAttackPolicy(AttackPolicyV1& payload, std::uint64_t tick)
+{
+    payload.handled = 0;
+    GameEventV1 event{};
+    event.typeId = GAME_EVENT_HASH_ATTACK_POLICY;
+    event.schemaHash = GAME_EVENT_HASH_ATTACK_POLICY;
+    event.payloadVersion = GAMEPLAY_EVENT_VERSION;
+    event.payloadSize = sizeof(AttackPolicyV1);
+    event.sourceEntity = payload.shooterEntity;
+    event.targetEntity = payload.claimedTargetId;
+    event.projectileEntity = 0;
+    event.tick = tick;
+    event.payload = &payload;
+    GameplayContextV1 context = makeContext(tick);
+    MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
     drainEvents(16);
     return payload.handled != 0;
 }

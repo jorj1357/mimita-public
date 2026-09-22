@@ -491,7 +491,18 @@ enum GameEventType : std::uint32_t {
     // Generic UI interaction. The cold backend hit-tests a hot-emitted widget
     // (logical element id) and emits this; hot code owns what the action means.
     GAME_EVENT_UI_ACTION = 15,
+    // Server attack-request routing/validation policy. The cold server parses the
+    // request and fills this; hot code owns accept/reject, reason, ammo/cooldown
+    // reconciliation, and the claim verdict. Falls back to the cold policy when
+    // unhandled. This is the seam that makes attack validation hot-editable.
+    // Dispatched through the generic event-type table (hash-keyed), see
+    // GAME_EVENT_HASH_ATTACK_POLICY.
+    GAME_EVENT_ATTACK_POLICY = 16,
 };
+
+// Hash ids for events dispatched through the generic event-type table.
+static constexpr std::uint64_t GAME_EVENT_HASH_ATTACK_POLICY =
+    gameHash("attack.policy");
 
 // Damage source ids carried by DamagePolicyV1::source.
 enum GameDamageSource : std::uint32_t {
@@ -924,6 +935,54 @@ struct FireIntentPolicyV1 {
     std::uint32_t reserved;
 };
 
+// ── Server attack-request policy (GAME_EVENT_ATTACK_POLICY) ──────────────
+// The cold server parses the raw AttackRequest, resolves the shooter/definition,
+// and fills the packet-derived fields below. Hot code owns the routing decision
+// (accept/reject), the reject reason, the ammo/cooldown/state reported back, and
+// the claim verdict. When `handled == 0` the cold policy runs unchanged, so this
+// is a safe opt-in seam.
+static constexpr int GAME_ATTACK_REASON_MAX = 48;
+
+struct AttackPolicyV1 {
+    // ── Inputs (filled by the kernel) ──
+    std::uint64_t shooterEntity;      // server player actor entity
+    std::uint64_t shooterPlayerId;    // legacy player id
+    std::uint32_t spawnGeneration;
+    std::uint32_t spawnStateActive;   // 1 when the shooter is Active
+    std::uint32_t shooterDead;        // 1 when dead
+    std::uint32_t weaponDefNetworkId;
+    std::uint32_t weaponNetworkId;    // NETWORK_WEAPON_* for the definition
+    std::uint32_t executionType;      // WeaponExecutionType numeric
+    std::uint32_t equippedSlot;       // requested logical slot
+    std::uint32_t expectedSlot;       // definition's expected slot
+    std::uint32_t communityAllowed;   // 1 when the community weapon set allows it
+    std::uint32_t inCooldown;         // 1 when the legacy cooldown gate would reject
+    std::uint32_t shotsThisTick;      // shots already accepted this tick
+    std::uint32_t maxShotsPerTick;
+    std::uint32_t requestId;
+    std::uint32_t clientSimulationTick;
+    std::uint32_t claimedTargetId;
+    float origin[3];
+    float direction[3];
+    float shooterPos[3];
+    float originTolerance;            // allowed muzzle-vs-server distance
+    std::uint32_t tick;
+    std::uint32_t hasDefinition;      // 1 when the weapon definition resolved
+
+    // ── Outputs (filled by hot code) ──
+    std::uint32_t handled;            // 1 = hot owns this decision
+    std::uint32_t accept;             // 1 = accept, 0 = reject
+    std::uint32_t reason;             // cold reject reason code (when accept==0)
+    std::uint32_t suppressColdFire;   // 1 = hot already executed the shot
+    std::uint32_t hitVerdict;         // HIT_VERDICT_* for the result
+    std::uint32_t projectileId;
+    std::int32_t magazineAmmo;
+    std::int32_t reserveAmmo;
+    std::uint64_t nextAllowedFireTick;
+    std::uint32_t stateRevision;
+    char reasonText[GAME_ATTACK_REASON_MAX];  // optional human-readable reason
+};
+
 // Request/response payload for GAME_EVENT_RAGDOLL_SOLVE. The kernel fills the
 // base solver parameters; a behavior sets handled and may override stiffness,
 // damping, gravity, and iteration count. This is the live solver-policy seam.
@@ -1254,6 +1313,11 @@ struct ToolUsePolicyV1 {
     // the authoritative entity it creates back to the predicted one. Opaque and
     // type-agnostic; no weapon category is implied.
     std::uint64_t predictionKey;
+    // Append-only: client claim/time context, carried so a hot authoritative
+    // trace can run the shared consequence pipeline (hitscan.resolve) with the
+    // same claim verdict and shot event timing as the cold path.
+    std::uint32_t claimedTargetId;
+    std::uint32_t clientSimulationTick;
 };
 
 // ── Generic surface effect / decal (hot policy -> cold mechanism) ──
@@ -1782,7 +1846,6 @@ struct GameToolDefinitionV1 {
 };
 using GameToolDefinitionQueryFn = bool (MIMITA_GAME_CALL *)(
     void* host, GameToolDefinitionV1* request);
-static constexpr std::uint64_t GAME_CAP_ANIMATION_UPDATE = gameHash("animation.update");
 
 // world.collision: paginated dump of the map's collision triangles. This is the
 // one cold geometry primitive that lets hot code build its own spatial index and
@@ -2503,6 +2566,203 @@ struct GameDamageApplyV1 {
 };
 using GameDamageApplyFn = bool (MIMITA_GAME_CALL *)(
     void* host, GameDamageApplyV1* request);
+
+// hitscan.resolve: hand a completed hot hitscan trace to the shared cold
+// authoritative consequence pipeline (damage policy, DamageConfirmed/NPC-damage
+// events, kill recording, shot-visual broadcasts). Hot owns the trace/behavior;
+// the kernel owns the consequences, so a hot weapon cannot silently drop them.
+static constexpr std::uint64_t GAME_CAP_HITSCAN_RESOLVE = gameHash("hitscan.resolve");
+static constexpr int GAME_MAX_HITSCAN_AGGREGATES = 16;
+static constexpr int GAME_MAX_HITSCAN_PELLETS = 16;
+
+struct GameHitscanAggregateV1 {
+    std::uint64_t victimEntity;   // player or NPC entity id
+    std::uint32_t victimSpawnGeneration;
+    std::uint32_t pelletHits;
+    std::int32_t damage;
+    std::uint32_t headshot;
+    float knockback[3];
+    float hitPosition[3];
+    float hitNormal[3];
+};
+
+struct GameHitscanPelletV1 {
+    std::uint64_t victimEntity;   // 0 = miss/world
+    float hitPosition[3];
+    float hitNormal[3];
+    std::uint32_t hit;
+    std::uint32_t headshot;
+};
+
+struct GameHitscanResolveV1 {
+    std::uint64_t attackerEntity;
+    std::uint64_t weaponEntity;
+    std::uint32_t weaponDefNetworkId;
+    std::uint32_t pelletCount;
+    std::uint32_t requestId;
+    std::uint32_t clientSimulationTick;
+    std::uint32_t claimedTargetId;
+    std::uint32_t aggregateCount;
+    float origin[3];
+    float direction[3];
+    float worldHit[3];
+    float worldNormal[3];
+    float maxRange;
+    float worldBlockDistance;
+    std::uint32_t resolved;
+    std::uint32_t reserved;
+    GameHitscanAggregateV1 aggregates[GAME_MAX_HITSCAN_AGGREGATES];
+    GameHitscanPelletV1 pellets[GAME_MAX_HITSCAN_PELLETS];
+};
+using GameHitscanResolveFn = void (MIMITA_GAME_CALL *)(
+    void* host, GameHitscanResolveV1* request);
+
+// weapon.tuning: return the JSON/cpp-resolved gameplay tuning for a weapon
+// definition network id. Hot tool behaviors query this instead of using the
+// hardcoded recipe literals, so editing config/weapons.json hot-retunes every
+// hot weapon (the cold registry already honors `behaviorSource`).
+static constexpr std::uint64_t GAME_CAP_WEAPON_TUNING = gameHash("weapon.tuning");
+static constexpr int GAME_MAX_WEAPON_CUSTOM_PARAMS = 24;
+static constexpr int GAME_WEAPON_PARAM_KEY = 28;
+
+struct GameWeaponParamV1 {
+    char key[GAME_WEAPON_PARAM_KEY];
+    float value;
+};
+
+struct GameWeaponTuningV1 {
+    std::uint32_t found;
+    std::uint32_t behaviorType;
+    std::uint32_t executionType;
+    std::uint32_t networkMode;
+    std::int32_t magazineSize;
+    std::int32_t reserveAmmo;
+    std::int32_t pelletCount;
+    float damage;
+    float headshotMultiplier;
+    float fireDelay;
+    float reloadTime;
+    float spread;
+    float recoil;
+    float beamThickness;
+    float beamWorldThickness;
+    float victimKnockbackPerDamage;
+    float projectileSpeed;
+    float projectileRadius;
+    float projectileLifetime;
+    std::uint32_t customCount;
+    std::uint32_t reserved;
+    GameWeaponParamV1 custom[GAME_MAX_WEAPON_CUSTOM_PARAMS];
+};
+using GameWeaponTuningFn = bool (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t weaponDefNetworkId, GameWeaponTuningV1* out);
+
+// damage.resolve: hand melee/projectile damage victims to the shared cold
+// authoritative consequence pipeline (damage policy, DamageConfirmed/NPC-damage
+// events, kill recording). The melee/projectile analogue of hitscan.resolve.
+static constexpr std::uint64_t GAME_CAP_DAMAGE_RESOLVE = gameHash("damage.resolve");
+static constexpr int GAME_MAX_DAMAGE_VICTIMS = 8;
+
+struct GameDamageVictimV1 {
+    std::uint64_t victimEntity;   // player or NPC entity id
+    std::uint32_t victimSpawnGeneration;
+    std::uint32_t reserved;
+    std::int32_t damage;
+    std::uint32_t reserved2;
+    float knockback[3];
+    float hitPosition[3];
+    float hitNormal[3];
+};
+
+struct GameDamageResolveV1 {
+    std::uint64_t attackerEntity;   // 0 = none (environment)
+    std::uint64_t weaponEntity;
+    std::uint32_t weaponDefNetworkId;
+    std::uint32_t sourceKind;       // GameDamageSource numeric
+    std::uint32_t causeSerial;
+    std::uint32_t projectileId;
+    std::uint32_t victimCount;
+    std::uint32_t resolved;
+    GameDamageVictimV1 victims[GAME_MAX_DAMAGE_VICTIMS];
+};
+using GameDamageResolveFn = void (MIMITA_GAME_CALL *)(
+    void* host, GameDamageResolveV1* request);
+
+// event.next-id / event.broadcast: generic reliable/unreliable gameplay-event
+// transport. Hot code builds any packet itself (packet contents stay
+// hot-editable) and asks the kernel only to assign the reliable ticket and
+// queue/send the bytes. One generic primitive, no per-event kernel slot.
+static constexpr std::uint64_t GAME_CAP_EVENT_NEXT_ID = gameHash("event.next-id");
+static constexpr std::uint64_t GAME_CAP_EVENT_BROADCAST = gameHash("event.broadcast");
+static constexpr std::uint32_t GAME_EVENT_BROADCAST_RELIABLE = 1u;
+static constexpr std::uint32_t GAME_EVENT_BROADCAST_EXCLUDE_OWNER = 2u;
+static constexpr int GAME_EVENT_BROADCAST_MAX_BYTES = 512;
+
+struct GameReliableEventTicketV1 {
+    std::uint32_t eventId;
+    std::uint32_t eventSessionId;
+};
+using GameEventNextIdFn = void (MIMITA_GAME_CALL *)(
+    void* host, GameReliableEventTicketV1* out);
+
+struct GameEventBroadcastV1 {
+    std::uint32_t flags;              // GameEventBroadcastFlags
+    std::uint32_t eventId;            // reliable only
+    std::uint32_t eventSessionId;     // reliable only
+    std::uint32_t ownerPlayerId;      // EXCLUDE_OWNER target
+    std::uint32_t payloadSize;        // sizeof(packet), header included
+    std::uint32_t resolved;
+    unsigned char payload[GAME_EVENT_BROADCAST_MAX_BYTES];
+};
+using GameEventBroadcastFn = void (MIMITA_GAME_CALL *)(
+    void* host, GameEventBroadcastV1* request);
+
+// damage.policy: per-victim authoritative damage policy resolution (hot policy
+// override + kernel safety bound). Hot consequence orchestration queries this
+// primitive instead of re-implementing policy.
+static constexpr std::uint64_t GAME_CAP_DAMAGE_POLICY = gameHash("damage.policy");
+
+struct GameDamagePolicyV1 {
+    std::uint32_t sourceKind;         // GameDamageSource numeric
+    std::uint32_t victimIsNpc;
+    std::uint64_t attackerEntity;
+    std::uint64_t victimEntity;
+    std::uint64_t projectileEntity;
+    std::uint32_t weaponNetworkId;
+    std::uint32_t tick;
+    float distance;
+    std::int32_t baseDamage;
+    std::int32_t outDamage;
+    float knockback[3];
+};
+using GameDamagePolicyFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameDamagePolicyV1* request);
+
+// damage.event: apply one authoritative damage fact to a victim and emit the
+// matching replication event (DamageConfirmed for players, NPC damage broadcast
+// for NPCs, including kill recording). This is the single per-victim consequence
+// step so hot consequence orchestration can run the same pipeline as cold.
+static constexpr std::uint64_t GAME_CAP_DAMAGE_EVENT = gameHash("damage.event");
+
+struct GameDamageEventV1 {
+    std::uint64_t attackerEntity;     // 0 = none (environment)
+    std::uint64_t victimEntity;       // player or NPC entity id
+    std::uint32_t victimSpawnGeneration;
+    std::uint32_t sourceKind;         // GameDamageSource numeric
+    std::int32_t damage;
+    std::uint32_t causeSerial;
+    std::uint32_t projectileId;
+    std::uint32_t weaponNetworkId;
+    std::uint32_t weaponDefNetworkId;
+    float knockback[3];
+    float hitPosition[3];
+    float hitNormal[3];
+    std::uint32_t applied;
+    std::uint32_t killed;
+    std::int32_t healthAfter;
+};
+using GameDamageEventFn = void (MIMITA_GAME_CALL *)(
+    void* host, GameDamageEventV1* request);
 
 // Generic presentation command for hot render systems. One shape vocabulary so
 // wireframe/debug/outline policy can live in hot code while the kernel keeps the

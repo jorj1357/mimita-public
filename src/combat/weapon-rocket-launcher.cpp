@@ -215,8 +215,7 @@ void fire(
     const float rocketSpeed = def.projectileSpeed > 0.0f
         ? def.projectileSpeed : 50.0f;
 
-    unsigned int rng = (unsigned int)(runtime.shootEffectTimer * 1000.0f) + 1;
-    glm::vec3 dir = WeaponFire::computeSpreadDirection(muzzleDir, def.spread, rng);
+    glm::vec3 dir = WeaponFire::computeSpreadDirection(muzzleDir, def.spread, runtime.spreadCycleIndex);
     Debug::warn(Debug::Category::Weapons,
         "[AIM] Final Direction Used By Projectile: (%.4f, %.4f, %.4f)",
         dir.x, dir.y, dir.z);

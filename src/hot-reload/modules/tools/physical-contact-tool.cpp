@@ -10,8 +10,10 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-damage-resolve.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-tool-action.h"
+#include "hot-reload/hot-tool-tuning.h"
 #include "hot-reload/hot-tool-visual.h"
 
 #include <cmath>
@@ -43,8 +45,17 @@ void MIMITA_GAME_CALL contactUse(const ToolUsePolicyV1* use, GameplayContextV1* 
 
     const std::uint64_t key = use->toolId != 0 ? use->toolId : use->toolNetworkId;
     const ToolDefinitionV1* def = findToolDefinition(key);
-    const float range = paramOr(def, "hotRange", kContactRange);
-    const float minDamage = paramOr(def, "minDamage", (float)kContactDamage);
+
+    GameWeaponTuningV1 tuning{};
+    const bool hasTuning = hotQueryWeaponTuning(ctx, use->toolNetworkId, tuning);
+    float tuningParamValue = 0.0f;
+    const float range = (hasTuning && hotTuningHasParam(tuning, "range", &tuningParamValue))
+                            ? tuningParamValue
+                            : paramOr(def, "hotRange", kContactRange);
+    const float minDamage =
+        (hasTuning && tuning.damage > 0.0f)
+            ? tuning.damage
+            : paramOr(def, "minDamage", (float)kContactDamage);
     const float relativeScale = paramOr(def, "relativeVelocityFactor", 2.0f);
 
     if (!ctx->relationshipQuery || !ctx->readComponent || !ctx->resolveCapability)
@@ -90,16 +101,26 @@ void MIMITA_GAME_CALL contactUse(const ToolUsePolicyV1* use, GameplayContextV1* 
     const std::int32_t damage = (std::int32_t)(minDamage +
         (range - dist) * relativeScale);
 
-    auto applyDamage = reinterpret_cast<GameDamageApplyFn>(
-        ctx->resolveCapability(ctx->host, GAME_CAP_DAMAGE_APPLY));
-    if (applyDamage) {
-        GameDamageApplyV1 request{};
-        request.victimEntity = target;
-        request.sourceEntity = use->userEntity;
-        request.amount = damage;
-        request.sourceKind = GAME_DAMAGE_SOURCE_MELEE;
-        applyDamage(ctx->host, &request);
+    // Shared cold consequence owner: damage policy + DamageConfirmed/NPC events.
+    GameDamageResolveV1 resolveReq{};
+    resolveReq.attackerEntity = use->userEntity;
+    resolveReq.weaponEntity = use->toolEntity;
+    resolveReq.weaponDefNetworkId = use->toolNetworkId;
+    resolveReq.sourceKind = GAME_DAMAGE_SOURCE_CONTACT;
+    resolveReq.causeSerial = (std::uint32_t)use->predictionKey;
+    resolveReq.victimCount = 1;
+    {
+        GameDamageVictimV1& victim = resolveReq.victims[0];
+        victim.victimEntity = target;
+        victim.damage = damage;
+        victim.hitPosition[0] = tf.position[0];
+        victim.hitPosition[1] = tf.position[1];
+        victim.hitPosition[2] = tf.position[2];
+        victim.hitNormal[0] = -use->direction[0];
+        victim.hitNormal[1] = -use->direction[1];
+        victim.hitNormal[2] = -use->direction[2];
     }
+    hotResolveDamage(ctx, resolveReq);
 
     ToolActionEventV1 contact = accepted;
     contact.action = TOOL_ACTION_MELEE_CONTACT;

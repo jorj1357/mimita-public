@@ -33,6 +33,11 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <string>
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -52,6 +57,31 @@ constexpr std::uint32_t kMaxTargets = 64;
 // Global default mode: BlenderPhysical. A missing imported clip falls back to
 // the procedural generator, so behavior is unchanged until a clip exists.
 bool g_blenderPhysicalDefault = true;
+
+// Optional Blender mode from config/animations.json `blenderMode`
+// ("auto"/"on" = enabled, "off"/"cpp" = procedural only). Re-read on mtime
+// change; the `physicalanim` command stays a live manual override until the
+// file changes. Hot-reloadable.
+void refreshBlenderModeFromJson()
+{
+    static std::uint64_t lastWrite = 0;
+    std::error_code ec;
+    const auto ft = std::filesystem::last_write_time("config/animations.json", ec);
+    const std::uint64_t write =
+        ec ? 0ull : static_cast<std::uint64_t>(ft.time_since_epoch().count());
+    if (write == lastWrite)
+        return;
+    lastWrite = write;
+    std::ifstream file("config/animations.json");
+    if (!file)
+        return;
+    try {
+        const auto j = nlohmann::json::parse(file, nullptr, true, true);
+        const std::string mode = j.value("blenderMode", std::string("auto"));
+        g_blenderPhysicalDefault = (mode != "off" && mode != "cpp");
+    } catch (...) {
+    }
+}
 
 // Approximate rest-pose part offsets (MiMITA Z-up, X lateral, metres). The
 // marker system refines these per clip; exact skeleton metadata is a later step.
@@ -522,6 +552,8 @@ void MIMITA_GAME_CALL physicalAnimationTick(void* host, std::uint64_t tick,
     if (!ctx || !ctx->dynamicEnumerateComponent || !ctx->dynamicReadComponent ||
         !ctx->dynamicWriteComponent || !ctx->resolveCapability)
         return;
+
+    refreshBlenderModeFromJson();
 
     std::uint64_t entities[kMaxActors];
     const std::uint32_t count = ctx->dynamicEnumerateComponent(

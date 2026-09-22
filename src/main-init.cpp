@@ -80,7 +80,6 @@
 #include "video/video-commands.h"
 #include "sim/sim-context.h"
 #include "engine/engine-tick.h"
-#include "combat/weapon-hit.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/death-system.h"

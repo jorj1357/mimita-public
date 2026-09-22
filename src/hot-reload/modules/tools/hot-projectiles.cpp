@@ -11,7 +11,9 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-damage-resolve.h"
 #include "hot-reload/hot-package.h"
+#include "hot-reload/hot-projectile-event.h"
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-projectile.h"
 #include "hot-reload/hot-tool-visual.h"
@@ -90,28 +92,41 @@ void spawnImpactEffect(GameplayContextV1* ctx, const float pos[3])
 
 void applyDamageTo(GameplayContextV1* ctx, std::uint64_t victim,
                    std::uint64_t source, float amount, float knockback,
-                   const float dir[3])
+                   const float dir[3], std::uint32_t weaponDefNetworkId,
+                   const float hit[3])
 {
-    if (!ctx->resolveCapability)
-        return;
-    auto dmg = reinterpret_cast<DamageApplyFn>(
-        ctx->resolveCapability(ctx->host, GAME_CAP_DAMAGE_APPLY));
-    if (!dmg)
-        return;
-    GameDamageApplyV1 req{};
-    req.victimEntity = victim;
-    req.sourceEntity = source;
-    req.amount = static_cast<std::int32_t>(amount);
+    // Route through the shared cold consequence owner (damage policy,
+    // DamageConfirmed/NPC-damage events, kill recording) instead of the raw
+    // damage.apply primitive.
+    GameDamageResolveV1 req{};
+    req.attackerEntity = source;
+    req.weaponDefNetworkId = weaponDefNetworkId;
     req.sourceKind = GAME_DAMAGE_SOURCE_EXPLOSION;
-    req.knockback[0] = dir ? dir[0] * knockback : 0.0f;
-    req.knockback[1] = dir ? dir[1] * knockback : 0.0f;
-    req.knockback[2] = dir ? dir[2] * knockback : knockback;
-    dmg(ctx->host, &req);
+    req.victimCount = 1;
+    GameDamageVictimV1& v = req.victims[0];
+    v.victimEntity = victim;
+    v.damage = static_cast<std::int32_t>(amount);
+    v.knockback[0] = dir ? dir[0] * knockback : 0.0f;
+    v.knockback[1] = dir ? dir[1] * knockback : 0.0f;
+    v.knockback[2] = dir ? dir[2] * knockback : knockback;
+    if (hit)
+    {
+        v.hitPosition[0] = hit[0];
+        v.hitPosition[1] = hit[1];
+        v.hitPosition[2] = hit[2];
+    }
+    hotResolveDamage(ctx, req);
 }
 
 void explode(GameplayContextV1* ctx, const HotProjectileStateV1& s,
-             const float at[3])
+             const float at[3], std::uint64_t projectileEntity)
 {
+    // Broadcast the authoritative explosion first so remote clients always see
+    // it, even if a later local effect path is skipped.
+    hotBroadcastProjectileExplode(ctx, (std::uint32_t)projectileEntity, s.ownerEntity,
+                                  0u, (std::uint32_t)s.typeId, (std::uint32_t)s.typeId,
+                                  at, s.splashRadius);
+
     // Rocket/grenade detonations compose the shared explosion recipe so the
     // flash/smoke/debris/sound appears where the projectile actually stopped.
     // Only a process with a local view composes it (a dedicated server has no
@@ -161,7 +176,8 @@ void explode(GameplayContextV1* ctx, const HotProjectileStateV1& s,
             continue;
         const float inv = dist > 1e-4f ? 1.0f / dist : 0.0f;
         const float dir[3] = {dx * inv, dy * inv, dz * inv};
-        applyDamageTo(ctx, actors[i], s.ownerEntity, amount, s.knockbackStrength, dir);
+        applyDamageTo(ctx, actors[i], s.ownerEntity, amount, s.knockbackStrength,
+                      dir, (std::uint32_t)s.typeId, at);
     }
 }
 
@@ -322,7 +338,8 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float d
                 {
                     if (s.impactDamage > 0.0f)
                         applyDamageTo(ctx, actors[a], s.ownerEntity, s.impactDamage,
-                                      2.0f, nullptr);
+                                      2.0f, nullptr, (std::uint32_t)s.typeId,
+                                      s.position);
                     exploded = true;
                 }
             }
@@ -342,7 +359,7 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float d
 
         if (exploded)
         {
-            explode(ctx, s, at);
+            explode(ctx, s, at, entities[i]);
             if (s.splashRadius <= 0.0f && s.impactDamage > 0.0f)
                 spawnImpactEffect(ctx, at);
             ctx->entityDestroy(ctx->host, entities[i]);

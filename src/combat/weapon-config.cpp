@@ -1,4 +1,5 @@
 #include "weapon-config.h"
+#include "weapon-json-config.h"
 
 #include <cstdio>
 #include <fstream>
@@ -8,8 +9,6 @@
 #include "devtools/terminal.h"
 
 using json = nlohmann::json;
-
-static const char* SINGLE_CONFIG_PATH = "config/weapons.json";
 
 WeaponConfig& WeaponConfig::instance() {
     static WeaponConfig cfg;
@@ -60,17 +59,18 @@ static WeaponViewModelConfig parseOne(const json& root) {
 
 void WeaponConfig::load() {
     mConfigs.clear();
-    std::ifstream file(SINGLE_CONFIG_PATH);
-    if (!file.is_open()) {
-        printf("[WEAPON CONFIG] No config at %s; all weapons use defaults\n", SINGLE_CONFIG_PATH);
+    // One canonical source: the resolved path and parsed root owned by
+    // WeaponData (weapon-json-config.cpp). No second file read or hardcoded path.
+    WeaponData::loadWeaponJsonConfig();
+    const json& root = WeaponData::configRoot();
+    const std::string& path = WeaponData::configPath();
+    if (!root.is_object() || root.empty()) {
+        printf("[WEAPON CONFIG] No config at %s; all weapons use defaults\n", path.c_str());
         mLoaded = true;
         return;
     }
 
     try {
-        json root;
-        file >> root;
-
         for (auto it = root.begin(); it != root.end(); ++it) {
             const std::string& weaponId = it.key();
             if (!it.value().is_object()) continue;
@@ -79,11 +79,11 @@ void WeaponConfig::load() {
 
         mLoaded = true;
 
-        if (std::filesystem::exists(SINGLE_CONFIG_PATH))
-            mLastWriteTime = std::filesystem::last_write_time(SINGLE_CONFIG_PATH);
+        if (std::filesystem::exists(path))
+            mLastWriteTime = std::filesystem::last_write_time(path);
         mLastCheckTime = std::chrono::steady_clock::now();
 
-        printf("[WEAPON CONFIG] Loaded %s (%zu weapons)\n", SINGLE_CONFIG_PATH, mConfigs.size());
+        printf("[WEAPON CONFIG] Loaded %s (%zu weapons)\n", path.c_str(), mConfigs.size());
         for (auto& pair : mConfigs) {
             auto& cfg = pair.second;
             printf("[WEAPON CONFIG]   %s: path=%s pos=(%.2f,%.2f,%.2f) rot=(%.1f,%.1f,%.1f) scale=(%.2f,%.2f,%.2f)%s%s\n",
@@ -95,10 +95,10 @@ void WeaponConfig::load() {
                    cfg.hasFireAnim ? " [fire]" : "",
                    cfg.hasReloadPose ? " [reload]" : "");
         }
-        Terminal::instance().addLog(std::string("[WEAPON CONFIG] Loaded ") + SINGLE_CONFIG_PATH);
+        Terminal::instance().addLog(std::string("[WEAPON CONFIG] Loaded ") + path);
 
     } catch (const std::exception& e) {
-        printf("[WEAPON CONFIG ERROR] Failed to parse %s: %s\n", SINGLE_CONFIG_PATH, e.what());
+        printf("[WEAPON CONFIG ERROR] Failed to parse %s: %s\n", path.c_str(), e.what());
         Terminal::instance().addLog(std::string("[WEAPON CONFIG ERROR] ") + e.what());
         if (!mLoaded) {
             mLoaded = true;
@@ -132,15 +132,16 @@ void WeaponConfig::pollHotReload() {
         return;
     mLastCheckTime = now;
 
-    if (!std::filesystem::exists(SINGLE_CONFIG_PATH))
+    if (!std::filesystem::exists(WeaponData::configPath()))
         return;
 
-    auto writeTime = std::filesystem::last_write_time(SINGLE_CONFIG_PATH);
+    auto writeTime = std::filesystem::last_write_time(WeaponData::configPath());
     if (writeTime == mLastWriteTime)
         return;
     mLastWriteTime = writeTime;
 
-    printf("[WEAPON CONFIG] Reloaded %s\n", SINGLE_CONFIG_PATH);
-    Terminal::instance().addLog(std::string("[WEAPON CONFIG] Reloaded ") + SINGLE_CONFIG_PATH);
+    printf("[WEAPON CONFIG] Reloaded %s\n", WeaponData::configPath().c_str());
+    Terminal::instance().addLog(std::string("[WEAPON CONFIG] Reloaded ") +
+                                WeaponData::configPath());
     load();
 }

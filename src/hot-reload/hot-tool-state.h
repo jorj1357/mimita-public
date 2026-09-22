@@ -116,11 +116,10 @@ inline std::uint32_t toolStateAdvance(GameplayContextV1* ctx,
 }
 
 // The one reload transition. Manual/empty/unequipped all funnel here.
-inline bool toolStateTryStartReload(GameplayContextV1* ctx,
-                                    ToolInstanceStateV1& s,
-                                    std::int32_t magazineSize,
-                                    float reloadTimeSeconds,
-                                    std::uint32_t /*reason*/)
+// Pure state transition (no component access) so cold and hot share one owner.
+inline bool toolStateBeginReload(ToolInstanceStateV1& s,
+                                 std::int32_t magazineSize,
+                                 float reloadTimeSeconds)
 {
     if (s.isReloading)
         return false;
@@ -133,14 +132,25 @@ inline bool toolStateTryStartReload(GameplayContextV1* ctx,
     s.isReloading = 1;
     s.reloadRemaining = reloadTimeSeconds > 0.0f ? reloadTimeSeconds : 0.0f;
     s.stateVersion++;
+    return true;
+}
+
+inline bool toolStateTryStartReload(GameplayContextV1* ctx,
+                                    ToolInstanceStateV1& s,
+                                    std::int32_t magazineSize,
+                                    float reloadTimeSeconds,
+                                    std::uint32_t /*reason*/)
+{
+    if (!toolStateBeginReload(s, magazineSize, reloadTimeSeconds))
+        return false;
     toolStateWrite(ctx, s.toolEntity, s);
     return true;
 }
 
 // The one completion ammo math: needed = mag - current; transfer from reserve.
-inline bool toolStateCompleteReload(GameplayContextV1* ctx,
-                                    ToolInstanceStateV1& s,
-                                    std::int32_t magazineSize)
+// Pure state transition (no component access) so cold and hot share one owner.
+inline bool toolStateFinishReload(ToolInstanceStateV1& s,
+                                  std::int32_t magazineSize)
 {
     if (magazineSize <= 0)
         return false;
@@ -153,8 +163,17 @@ inline bool toolStateCompleteReload(GameplayContextV1* ctx,
     s.isReloading = 0;
     s.reloadRemaining = 0.0f;
     s.stateVersion++;
-    toolStateWrite(ctx, s.toolEntity, s);
     return transferred > 0;
+}
+
+inline bool toolStateCompleteReload(GameplayContextV1* ctx,
+                                    ToolInstanceStateV1& s,
+                                    std::int32_t magazineSize)
+{
+    if (!toolStateFinishReload(s, magazineSize))
+        return false;
+    toolStateWrite(ctx, s.toolEntity, s);
+    return true;
 }
 
 // Consume one use: returns false when the magazine is empty (a dry fire).

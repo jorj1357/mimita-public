@@ -26,6 +26,12 @@
 
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <unordered_map>
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -132,6 +138,87 @@ bool readPreviousPose(GameplayContextV1* ctx, std::uint64_t entity,
     return true;
 }
 
+// ── Aimbody (per-limb look-pitch gains) ─────────────────────────────────────
+// The v2.0.6 animator tilted torso/head/arms with camera aim. The config was
+// previously dead (only body yaw used it). Read config/aimbody.json hot, honour
+// behaviorSource, and apply each configured limb's pitch/yaw/roll gain times the
+// camera look pitch to the computed pose.
+struct HotLimbAimV1 {
+    float pitch = 0.0f;
+    float yaw = 0.0f;
+    float roll = 0.0f;
+};
+struct HotAimBodyV1 {
+    bool enabled = false;
+    std::unordered_map<std::string, HotLimbAimV1> limbs;
+};
+
+const HotAimBodyV1& hotAimBody()
+{
+    static HotAimBodyV1 cfg;
+    static std::uint64_t lastWrite = 0;
+    std::error_code ec;
+    const auto ft = std::filesystem::last_write_time("config/aimbody.json", ec);
+    const std::uint64_t write =
+        ec ? 0ull : static_cast<std::uint64_t>(ft.time_since_epoch().count());
+    if (write != lastWrite) {
+        lastWrite = write;
+        cfg = HotAimBodyV1{};
+        std::ifstream file("config/aimbody.json");
+        if (file) {
+            try {
+                const auto j =
+                    nlohmann::json::parse(file, nullptr, true, true);
+                cfg.enabled =
+                    j.value("enabled", true) &&
+                    j.value("behaviorSource", std::string("json")) != "cpp";
+                if (j.contains("limbs") && j["limbs"].is_object()) {
+                    for (auto it = j["limbs"].begin(); it != j["limbs"].end();
+                         ++it) {
+                        HotLimbAimV1 l;
+                        l.pitch = it.value().value("pitch", 0.0f);
+                        l.yaw = it.value().value("yaw", 0.0f);
+                        l.roll = it.value().value("roll", 0.0f);
+                        cfg.limbs[it.key()] = l;
+                    }
+                }
+            } catch (...) {
+                cfg = HotAimBodyV1{};
+            }
+        }
+    }
+    return cfg;
+}
+
+void applyAimBody(GameplayContextV1* ctx, std::uint64_t entity,
+                  HotAnim::Pose& target)
+{
+    const HotAimBodyV1& ab = hotAimBody();
+    if (!ab.enabled || ab.limbs.empty() || !ctx->readComponent)
+        return;
+    GameAimIntentComponentV1 aim{};
+    if (!ctx->readComponent(ctx->host, entity, GAME_COMPONENT_AIM_INTENT, &aim,
+                            sizeof(aim)))
+        return;
+    const float lookPitch = aim.pitch;
+    auto applyLimb = [&](const char* name, HotAnim::PartId part) {
+        const auto it = ab.limbs.find(name);
+        if (it == ab.limbs.end())
+            return;
+        const std::uint32_t p = static_cast<std::uint32_t>(part);
+        target.part[p].rot[0] += it->second.pitch * lookPitch;
+        target.part[p].rot[1] += it->second.yaw * lookPitch;
+        target.part[p].rot[2] += it->second.roll * lookPitch;
+        target.mask |= (1u << p);
+    };
+    applyLimb("torso", HotAnim::PartTorso);
+    applyLimb("head", HotAnim::PartHead);
+    applyLimb("leftArm", HotAnim::PartLeftArm);
+    applyLimb("rightArm", HotAnim::PartRightArm);
+    applyLimb("leftLeg", HotAnim::PartLeftLeg);
+    applyLimb("rightLeg", HotAnim::PartRightLeg);
+}
+
 void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
                                          float /*dt*/)
 {
@@ -212,6 +299,25 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
         const ToolAnimPhaseV1* toolPhase =
             tool ? findToolPhase(*tool, anim.actionId) : nullptr;
 
+        // Single locomotion-base owner: when the animation policy already chose a
+        // locomotion action (idle/walk/jump/fall/land), use it directly instead of
+        // recomputing from velocity. Only upper-body actions (shoot/reload/...)
+        // fall back to the procedural locomotion action.
+        auto baseActionFor = [&]() -> std::uint64_t {
+            switch (anim.actionId) {
+            case HOT_ACTION_IDLE:
+            case HOT_ACTION_EQUIPPED_IDLE:
+            case HOT_ACTION_WALK:
+            case HOT_ACTION_JUMP:
+            case HOT_ACTION_FALL:
+            case HOT_ACTION_LAND:
+                return anim.actionId;
+            default:
+                return HotAnim::locomotionAction(grounded, vy, justLanded,
+                                                 speed01, weaponKey != 0);
+            }
+        };
+
         const HotAnim::ActionClip clip = HotAnim::actionClip(anim.actionId);
         HotAnim::Pose target;
         if (toolPhase && toolPhase->frames && toolPhase->frameCount > 0) {
@@ -219,8 +325,7 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
             // so the legs keep moving while the tool shoots/reloads/equips.
             const float locoTime =
                 hasMem ? mem.locomotionTime : anim.playbackTime;
-            const std::uint64_t baseAction = HotAnim::locomotionAction(
-                grounded, vy, justLanded, speed01, true);
+            const std::uint64_t baseAction = baseActionFor();
             HotAnim::Pose base;
             HotAnim::evaluateAction(baseAction, locoTime, speed01, base);
             HotAnim::ActionClip pc{};
@@ -237,8 +342,7 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
         } else if (clip.fullBody == 0) {
             // Upper-body action over a locomotion base (generic fallback).
             const float locoTime = hasMem ? mem.locomotionTime : anim.playbackTime;
-            const std::uint64_t baseAction = HotAnim::locomotionAction(
-                grounded, vy, justLanded, speed01, weaponKey != 0);
+            const std::uint64_t baseAction = baseActionFor();
             HotAnim::Pose base;
             HotAnim::evaluateAction(baseAction, locoTime, speed01, base);
             HotAnim::Pose overlay;
@@ -250,6 +354,8 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
             HotAnim::evaluateAction(anim.actionId, anim.playbackTime, speed01,
                                     target);
         }
+        // Aimbody per-limb gains (v2.0.6 feel), then the weapon carry override.
+        applyAimBody(ctx, entity, target);
         if (!toolPhase)
             HotAnim::applyWeaponArms(target, weaponKey, anim.actionId);
 

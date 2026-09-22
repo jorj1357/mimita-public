@@ -20,6 +20,7 @@
 #include "audio/audio.h"
 #include "camera.h"
 #include "combat/weapon-audio.h"
+#include "combat/pellet-pattern.h"
 #include "combat/shot-profiler.h"
 #include "config/networking-config.h"
 #include "debug/debug-log.h"
@@ -86,8 +87,7 @@ RevolverShotResult tryFireHitscan(
     logAimDebug("hitscan", camera, aim);
     glm::vec3 shotDirection = aim.direction;
 
-    static unsigned int spreadRng = 1;
-    shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
+    shotDirection = computeSpreadDirection(shotDirection, def.spread, runtime.spreadCycleIndex);
     result.direction = shotDirection;
     Debug::warn(Debug::Category::Weapons,
         "[AIM] Final Direction Sent Into Weapon: (%.4f, %.4f, %.4f)\n",
@@ -223,9 +223,8 @@ RevolverShotResult tryFireHitscanDir(
     result.start = muzzlePos;
 
     glm::vec3 shotDirection = glm::normalize(aimDir);
-    static unsigned int spreadRng = 1;
     if (!skipSpread)
-        shotDirection = computeSpreadDirection(shotDirection, def.spread, spreadRng);
+        shotDirection = computeSpreadDirection(shotDirection, def.spread, runtime.spreadCycleIndex);
 
     constexpr float MAX_SHOT_DISTANCE = 100.0f;
 
@@ -330,33 +329,14 @@ void fireMultiPellet(
         "[AIM] Final Direction Sent Into Weapon: (%.4f, %.4f, %.4f)\n",
         baseDir.x, baseDir.y, baseDir.z);
 
-    glm::vec3 up(0.0f, 0.0f, 1.0f);
-    if (std::fabs(glm::dot(baseDir, up)) > 0.99f)
-        up = glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 right = glm::normalize(glm::cross(baseDir, up));
-    glm::vec3 localUp = glm::normalize(glm::cross(right, baseDir));
-
     glm::vec3 pelletDirs[16];
     {
         auto ts = ShotProfiler::Scope(&shotProf.pelletGenMs);
-        float halfAngleRad = glm::radians(spreadDeg * 0.5f);
-        int pelletCount = shotProf.totalPellets;
-        int cols = std::max(1, (int)std::ceil(std::sqrt((float)pelletCount)));
-        int rows = std::max(1, (int)std::ceil((float)pelletCount / (float)cols));
-        int idx = 0;
-        for (int r = 0; r < rows && idx < pelletCount; ++r)
-            for (int c = 0; c < cols && idx < pelletCount; ++c, ++idx) {
-                float fx = cols > 1 ? (c / ((float)cols - 1.0f)) * 2.0f - 1.0f : 0.0f;
-                float fy = rows > 1 ? (r / ((float)rows - 1.0f)) * 2.0f - 1.0f : 0.0f;
-                float ha = halfAngleRad * fx;
-                float va = halfAngleRad * fy;
-                glm::quat rot = glm::angleAxis(ha, localUp) * glm::angleAxis(va, right);
-                pelletDirs[idx] = glm::normalize(rot * baseDir);
-            }
+        buildFixedPelletDirections(
+            baseDir, shotProf.totalPellets, spreadDeg,
+            pelletDirs, (int)(sizeof(pelletDirs) / sizeof(pelletDirs[0])));
     }
 
-    int cols = std::max(1, (int)std::ceil(std::sqrt((float)shotProf.totalPellets)));
-    int rows = std::max(1, (int)std::ceil((float)shotProf.totalPellets / (float)cols));
     int totalPellets = 0;
     float accumulatedDamage = 0.0f;
     constexpr float MAX_SHOT_DISTANCE = 100.0f;

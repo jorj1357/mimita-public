@@ -10,6 +10,8 @@
 
 #include "combat/weapon-execution.h"
 
+#include "combat/hitscan-model.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -109,33 +111,36 @@ float paramOr(const WeaponDefinition& def, const char* key, float fallback)
 
 float hitscanFalloffFactor(const WeaponDefinition& def, float distance)
 {
-    const float falloffStart = paramOr(def, "distanceFalloffStart", 0.0f);
-    if (falloffStart <= 0.0f)
-        return 1.0f;
-    const float minFraction = paramOr(def, "minDamageFraction", 0.1f);
-    const float exponent = std::max(0.01f, paramOr(def, "falloffExponent", 1.0f));
-    float factor = std::clamp(1.0f - distance / falloffStart, minFraction, 1.0f);
-    factor = std::pow(factor, exponent);
-    return factor;
+    HitscanDamageParams p;
+    p.distanceFalloffStart = paramOr(def, "distanceFalloffStart", 0.0f);
+    p.minDamageFraction = paramOr(def, "minDamageFraction", 0.1f);
+    p.falloffExponent = paramOr(def, "falloffExponent", 1.0f);
+    return ::hitscanFalloffFactor(p, distance);
 }
 
 float hitscanPartMultiplier(const WeaponDefinition& def, const std::string& bodyPart)
 {
-    if (bodyPart == "head")
-        return std::max(1.0f, def.headshotMultiplier);
-    if (bodyPart.find("leg") != std::string::npos)
-        return paramOr(def, "limbDamageMultiplier", 0.75f);
-    return 1.0f;
+    HitscanDamageParams p;
+    p.headshotMultiplier = def.headshotMultiplier;
+    p.limbDamageMultiplier = paramOr(def, "limbDamageMultiplier", 0.75f);
+    const bool head = bodyPart == "head";
+    const bool leg = !head && bodyPart.find("leg") != std::string::npos;
+    return ::hitscanPartMultiplier(p, head, leg);
 }
 
 int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPart,
                          float distance, float angleFactor)
 {
-    const float damage = def.damage
-        * hitscanPartMultiplier(def, bodyPart)
-        * hitscanFalloffFactor(def, distance)
-        * std::clamp(angleFactor, 0.0f, 1.0f);
-    return std::max(1, (int)std::round(damage));
+    HitscanDamageParams p;
+    p.baseDamage = def.damage;
+    p.headshotMultiplier = def.headshotMultiplier;
+    p.limbDamageMultiplier = paramOr(def, "limbDamageMultiplier", 0.75f);
+    p.distanceFalloffStart = paramOr(def, "distanceFalloffStart", 0.0f);
+    p.minDamageFraction = paramOr(def, "minDamageFraction", 0.1f);
+    p.falloffExponent = paramOr(def, "falloffExponent", 1.0f);
+    const bool head = bodyPart == "head";
+    const bool leg = !head && bodyPart.find("leg") != std::string::npos;
+    return ::computeHitscanDamage(p, head, leg, distance, angleFactor);
 }
 
 WeaponExecutionType executionTypeForBehavior(WeaponBehaviorType behavior)
@@ -149,16 +154,14 @@ int buildPelletDirections(const WeaponDefinition& def,
                           glm::vec3* outDirections,
                           int capacity)
 {
-    PelletPatternConfig config;
-    config.pelletCount = std::max(1, def.pelletCount);
-    config.spreadDegrees = def.spread;
+    (void)seed; // Deterministic fixed grid; the seed is retained for wire compatibility only.
+    float spreadDegrees = def.spread;
     auto grid = def.customParams.find("gridSpreadDegrees");
     if (grid != def.customParams.end() && grid->second > 0.0f)
-        config.spreadDegrees = grid->second;
-    config.spreadSeed = seed;
-    return generatePelletDirections(
+        spreadDegrees = grid->second;
+    return buildFixedPelletDirections(
         safeNormalize(aimDirection, glm::vec3(1.0f, 0.0f, 0.0f)),
-        config, outDirections, capacity);
+        std::max(1, def.pelletCount), spreadDegrees, outDirections, capacity);
 }
 
 bool rayPlayerTarget(const glm::vec3& origin,
