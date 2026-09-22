@@ -1229,6 +1229,28 @@ Evidence:
   (hot-authoritative, weapon-parity, hitscan-outcome, hitscan-target,
   pellet-pattern, movement-v206-parity, collision, ragdoll-world).
 
+## v2.0.6 combat harness extended to projectile/melee/attack-policy
+
+- `src/combat/combat-v206-parity-selftest.{h,cpp}` (new) +
+  `--combat-v206-parity-selftest`. Freezes the pre-hot cold reference formulas
+  and drives the live hot owner:
+  - projectile splash: two-regime full-damage-radius/edge mix and the
+    full-damage-radius==0 Gaussian `exp(-(d/r)^2 * exponent)`, plus the knock
+    scale (`(1 - t^2)*0.85 + 0.15`, or `damage/splashDamage` clamp);
+  - physical contact: slash/lunge base damage and knockback reference;
+  - attack policy: drives `LiveBehavior::dispatchAttackPolicy` for a valid
+    accept, dead reject, stale-spawn reject, out-of-tolerance geometry reject,
+    per-tick shot-limit reject, and a non-hot weapon decline (cold owns).
+- The harness starts the hot package so it exercises the real hot owner, not a
+  copy.
+
+Evidence:
+- Cold `BUILD SUCCESS`; hot `DLL build success`.
+- `--combat-v206-parity-selftest` PASS. Full suite PASS (weapon-parity,
+  hitscan-outcome, hitscan-target, pellet-pattern, movement-v206-parity,
+  collision, ragdoll-world, hot-authoritative); `--hot-combat-selftest` 24
+  pre-existing FAIL (unchanged).
+
 ## Final changelog
 
 This is the single final changelog for this session.

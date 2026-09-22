@@ -62,6 +62,7 @@
 #include "network/hot-combat-selftest.h"
 #include "combat/pellet-pattern-selftest.h"
 #include "combat/weapon-parity-selftest.h"
+#include "combat/combat-v206-parity-selftest.h"
 #include "network/hitscan-target-selftest.h"
 #include "network/hitscan-outcome-selftest.h"
 #include "network/dynamic-replication-selftest.h"
@@ -423,6 +424,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runHitscanOutcomeSelfTest(report);
         printf("%s", report.c_str());
         printf("[HITSCAN OUTCOME SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--combat-v206-parity-selftest") {
+        std::string report;
+        const bool ok = runCombatV206ParitySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[COMBAT V206 PARITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 
