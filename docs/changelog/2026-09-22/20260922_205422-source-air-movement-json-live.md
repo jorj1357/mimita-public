@@ -45,3 +45,83 @@ Status: hot-code fix built; human live acceptance pending
 This change does not claim that the movement now feels correct until the human
 tests it in the running game. The required test is standstill jump plus WASD,
 then existing horizontal movement plus mouse turning and A/D strafing.
+
+## Collision follow-up: v2.0.6 body samples
+
+Status: hot candidate built; live activation and human collision acceptance pending
+
+- Restored the v2.0.6 player-body collision shape in the hot path: three
+  authoritative sphere samples along each animated head, torso, arm, and leg.
+- Kept those samples in the same `collision.main` solve as the root capsule,
+  so world-triangle contacts can contribute to the player's correction.
+- Increased the hot request collider capacity from 16 to 32 so the root
+  capsule, weapon shape, and all 18 body samples are not silently truncated.
+- The current weapon shape path remains hot and is still included before the
+  body samples.
+
+Evidence:
+
+- Historical source: `d05c12e` built body samples from player model-node bounds
+  in `src/physics/movement/physics-collision.cpp:2677-2723`, queried world
+  triangles with `gatherGLBTrianglesForSphere`, and tested them with
+  `sphereTriangleContact`.
+- Current source: `src/hot-reload/modules/movement-system.cpp` now emits the
+  equivalent three-sphere body samples from the live socket center/orientation
+  into `collision.main`.
+- Build evidence: hot candidate generation 18 built successfully as
+  `build/hotreload/mimita-live-g000018.dll`; result status was `ok`; the
+  running executable was not written or restarted.
+- Runtime evidence: candidate activation, contact logs, and human testing of
+  limbs pushing/hanging against world geometry remain pending.
+
+## Hot afad20a animation and exact-body-bounds migration
+
+Status: hot animation candidate active; exact model-part bounds require the
+next intentional EXE build before they can be supplied to the already-running
+process.
+
+- Added the `afad20a` JSON animation compatibility path: `layers.animations`,
+  `durationTicks` at 60 Hz, `return_to_idle`, and `weapons.*.poses.*` arm
+  translations/rotations are normalized into the existing hot pose system.
+- Added the JSON-only walk-release transition: movement input selects `walk`,
+  release selects authored `return_to_idle`, and completion falls back to idle.
+  C++ mode keeps the built-in fallback behavior.
+- Added a stable read-only `mesh.part-bounds` capability. The renderer now
+  retains per-model-part local AABBs, while the hot movement system uses those
+  bounds to compute the old three-sphere samples and keeps the current
+  approximation only when the loaded EXE does not yet expose the capability.
+- Build evidence: hot candidate generation 20 succeeded with status `ok`,
+  code hash `94a13b361f33fb478ef939da99440aa3d75853ae6dfee635d702876c558b6ad7`.
+  The automatic per-process candidate with the same hash activated as
+  generation 16 in PID 21184; the EXE and running world stayed alive.
+- Runtime evidence: `events.jsonl` reports `source=json`, movement generation
+  16, and collision requests with 19 colliders / 18 body samples. It does not
+  yet prove exact bounds because PID 21184's already-loaded EXE predates the
+  new `mesh.part-bounds` registration.
+- Human acceptance is still pending: idle/walk/return-to-idle, weapon pose and
+  reload checks, plus wall/floor limb contact checks.
+
+## Activate pasted afad20a animation JSON
+
+Status: JSON installed and validated; visual acceptance pending.
+
+- Replaced `config/animations.json` with the supplied `afad20a` animation data.
+- Enabled `"behaviorSource": "json"` so the hot loader selects it instead of
+  the built-in C++ clips.
+- The active file now contains `layers.animations.walk` with 30 fixed ticks,
+  `return_to_idle` with 10 ticks, reload overlay data, weapon poses, and sway.
+- Source validation passed through the JSON parser. The running client log
+  continues to show JSON movement active; animation visual acceptance still
+  requires observing the actor walk and release transitions in-game.
+
+## Live afad20a pose smoothing
+
+Status: hot candidate built and automatically activated; human speed check
+pending.
+
+- Added the missing hot pose smoothing step after JSON sampling, matching the
+  old animation's translation/rotation spring stage instead of applying the
+  target pose directly.
+- Hot candidate generation 21 built successfully. The running client PID
+  15708 activated the matching candidate as generation 2; its JSONL continues
+  to report `source=json` and 19 collision colliders / 18 body samples.

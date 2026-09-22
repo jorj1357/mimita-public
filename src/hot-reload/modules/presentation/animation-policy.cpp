@@ -119,6 +119,7 @@ int actionRank(std::uint64_t a)
     if (a == HOT_ACTION_LAND) return 28;
     if (a == HOT_ACTION_RESPAWN) return 25;
     if (a == HOT_ACTION_WALK) return 20;
+    if (a == HOT_ACTION_RETURN_TO_IDLE) return 19;
     return 10;  // idle / equipped-idle
 }
 
@@ -137,6 +138,7 @@ bool actionIsOneShot(std::uint64_t a)
         case HOT_ACTION_LAND:
         case HOT_ACTION_HURT:
         case HOT_ACTION_RESPAWN:
+        case HOT_ACTION_RETURN_TO_IDLE:
             return true;
         default:
             return false;
@@ -152,6 +154,7 @@ float blendSecondsFor(std::uint64_t a)
         case HOT_ACTION_DASH:
         case HOT_ACTION_DOWN_DASH:
         case HOT_ACTION_LAND:
+        case HOT_ACTION_RETURN_TO_IDLE:
             return 0.06f;
         default:
             return 0.12f;
@@ -175,7 +178,7 @@ std::uint64_t selectAction(const ActionFacts& f, bool justLanded)
     if (f.equipping) return HOT_ACTION_EQUIP;
     if (f.unequipping) return HOT_ACTION_UNEQUIP;
     if (f.hurt) return HOT_ACTION_HURT;
-    if (f.jumpFired) return HOT_ACTION_JUMP;
+        if (f.jumpFired) return HOT_ACTION_JUMP;
     // Locomotion is intent-driven: walk whenever the actor intends to move,
     // otherwise idle (including while airborne). No velocity/FALL gating.
     if (f.moving) return HOT_ACTION_WALK;
@@ -320,6 +323,12 @@ void MIMITA_GAME_CALL animationPolicyTick(void* host, std::uint64_t /*tick*/,
             mem.prevLifecycleGeneration != f.lifecycleGeneration;
 
         std::uint64_t chosen = selectAction(f, justLanded);
+        // afad20a's walk clip is input-triggered: releasing movement enters a
+        // short authored return clip before idle, when the JSON source provides
+        // that clip. The C++ mode keeps its existing direct walk -> idle path.
+        if (!f.moving && anim.actionId == HOT_ACTION_WALK &&
+            HotAnim::jsonClipApplied(HOT_ACTION_RETURN_TO_IDLE))
+            chosen = HOT_ACTION_RETURN_TO_IDLE;
         const bool forceRespawn = genChanged && wasDead && !f.dead;
         if (forceRespawn)
             chosen = HOT_ACTION_RESPAWN;

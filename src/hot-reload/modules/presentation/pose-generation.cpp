@@ -219,8 +219,31 @@ void applyAimBody(GameplayContextV1* ctx, std::uint64_t entity,
     applyLimb("rightLeg", HotAnim::PartRightLeg);
 }
 
+void applyAfadSpring(const HotAnim::Pose& previous, HotAnim::Pose& target,
+                     float dt)
+{
+    // afad20a used springVec3() after sampling the JSON clip:
+    // translation stiffness/damping 90/16, rotation 80/14. PoseState stores
+    // the last applied value across hot generations, so this compact critically
+    // damped step preserves the old soft response without DLL-owned pointers.
+    const float safeDt = std::clamp(dt, 0.0f, 0.05f);
+    const float transAlpha = 1.0f - std::exp(-6.0f * safeDt);
+    const float rotAlpha = 1.0f - std::exp(-5.5f * safeDt);
+    for (std::uint32_t p = 0; p < HotAnim::PartCount; ++p) {
+        if ((target.mask & (1u << p)) == 0 ||
+            (previous.mask & (1u << p)) == 0)
+            continue;
+        for (int k = 0; k < 3; ++k) {
+            target.part[p].trans[k] = previous.part[p].trans[k] +
+                (target.part[p].trans[k] - previous.part[p].trans[k]) * transAlpha;
+            target.part[p].rot[k] = previous.part[p].rot[k] +
+                (target.part[p].rot[k] - previous.part[p].rot[k]) * rotAlpha;
+        }
+    }
+}
+
 void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
-                                         float /*dt*/)
+                                         float dt)
 {
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
     if (!ctx || !ctx->dynamicEnumerateComponent || !ctx->dynamicReadComponent ||
@@ -354,6 +377,15 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
             HotAnim::evaluateAction(anim.actionId, anim.playbackTime, speed01,
                                     target);
         }
+        // afad20a sampled the JSON target, then physically eased each body part
+        // toward it. Keep that smoothing in the hot pose path.
+        if (HotAnim::jsonClipApplied(anim.actionId) ||
+            HotAnim::jsonClipApplied(baseActionFor())) {
+            HotAnim::Pose springPrevious;
+            if (readPreviousPose(ctx, entity, springPrevious))
+                applyAfadSpring(springPrevious, target, dt);
+        }
+
         // Aimbody per-limb gains (v2.0.6 feel), then the weapon carry override.
         applyAimBody(ctx, entity, target);
         if (!toolPhase)

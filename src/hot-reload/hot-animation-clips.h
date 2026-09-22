@@ -320,6 +320,8 @@ inline void blendPose(const Pose& a, const Pose& b, float w, Pose& out)
 // Per-weapon arm rotations can be authored in config/animations.json under
 // `weaponArms` (behaviorSource json). The compiled table below is the fallback.
 struct WeaponArmV1 {
+    float leftT[3] = {0.0f, 0.0f, 0.0f};
+    float rightT[3] = {0.0f, 0.0f, 0.0f};
     float leftX = 0.0f;
     float rightX = 0.0f;
     float leftZ = 0.0f;
@@ -352,6 +354,35 @@ inline const std::unordered_map<std::uint64_t, WeaponArmV1>& jsonWeaponArms()
                         a.rightX = it.value().value("rightX", 0.0f);
                         a.leftZ = it.value().value("leftZ", 0.0f);
                         a.rightZ = it.value().value("rightZ", 0.0f);
+                        map[gameHash(it.key().c_str())] = a;
+                    }
+                }
+                // afad20a used weapons.<id>.poses.<active_pose>. Keep that
+                // authored contract live alongside the newer compact schema.
+                if (j.value("behaviorSource", "cpp") == "json" &&
+                    j.contains("weapons") && j["weapons"].is_object()) {
+                    for (auto it = j["weapons"].begin();
+                         it != j["weapons"].end(); ++it) {
+                        const auto& weapon = it.value();
+                        const std::string poseName =
+                            weapon.value("active_pose", "idle");
+                        const auto poses = weapon.value("poses", nlohmann::json::object());
+                        const auto pit = poses.find(poseName);
+                        if (pit == poses.end() || !pit->is_object())
+                            continue;
+                        WeaponArmV1 a;
+                        const auto readArm = [&](const char* name, float t[3],
+                                                 float& x, float& z) {
+                            const auto arm = pit.value().value(name, nlohmann::json::object());
+                            const auto tr = arm.value("translation", nlohmann::json::array());
+                            const auto ro = arm.value("rotation", nlohmann::json::array());
+                            for (int k = 0; k < 3 && k < (int)tr.size(); ++k)
+                                if (tr[k].is_number()) t[k] = tr[k].get<float>();
+                            if (ro.size() > 0 && ro[0].is_number()) x = ro[0].get<float>();
+                            if (ro.size() > 2 && ro[2].is_number()) z = ro[2].get<float>();
+                        };
+                        readArm("leftArm", a.leftT, a.leftX, a.leftZ);
+                        readArm("rightArm", a.rightT, a.rightX, a.rightZ);
                         map[gameHash(it.key().c_str())] = a;
                     }
                 }
@@ -424,11 +455,23 @@ inline void applyWeaponArms(Pose& pose, std::uint64_t weaponKey,
     float lx = 0.0f, rx = 0.0f, lz = 0.0f, rz = 0.0f;
     if (!weaponCarryArms(weaponKey, lx, rx, lz, rz))
         return;
+    const auto& authored = jsonWeaponArms();
+    const auto found = authored.find(weaponKey);
     if (pose.mask & MaskLeftArm) {
+        if (found != authored.end()) {
+            pose.part[PartLeftArm].trans[0] = found->second.leftT[0];
+            pose.part[PartLeftArm].trans[1] = found->second.leftT[1];
+            pose.part[PartLeftArm].trans[2] = found->second.leftT[2];
+        }
         pose.part[PartLeftArm].rot[0] = lx;
         pose.part[PartLeftArm].rot[2] = lz;
     }
     if (pose.mask & MaskRightArm) {
+        if (found != authored.end()) {
+            pose.part[PartRightArm].trans[0] = found->second.rightT[0];
+            pose.part[PartRightArm].trans[1] = found->second.rightT[1];
+            pose.part[PartRightArm].trans[2] = found->second.rightT[2];
+        }
         pose.part[PartRightArm].rot[0] = rx;
         pose.part[PartRightArm].rot[2] = rz;
     }
@@ -673,6 +716,7 @@ inline const char* actionConfigName(std::uint64_t actionId)
     if (actionId == HOT_ACTION_IDLE) return "idle";
     if (actionId == HOT_ACTION_EQUIPPED_IDLE) return "equipped_idle";
     if (actionId == HOT_ACTION_WALK) return "walk";
+    if (actionId == HOT_ACTION_RETURN_TO_IDLE) return "return_to_idle";
     if (actionId == HOT_ACTION_JUMP) return "jump";
     if (actionId == HOT_ACTION_FALL) return "fall";
     if (actionId == HOT_ACTION_LAND) return "land";
@@ -739,7 +783,13 @@ inline void loadJsonClipCache(JsonClipCache& cache)
     std::ifstream file("config/animations.json");
     try {
         cache.root = nlohmann::json::parse(file, nullptr, true, true);
-        const auto actions = cache.root.value("actions", nlohmann::json::object());
+        auto actions = cache.root.value("actions", nlohmann::json::object());
+        // afad20a names the same clip layer layers.animations and stores
+        // duration in fixed 60 Hz ticks. Normalize it into the hot cache.
+        const auto layers = cache.root.value("layers", nlohmann::json::object());
+        const auto legacy = layers.value("animations", nlohmann::json::object());
+        if (actions.empty() && legacy.is_object())
+            actions = legacy;
         for (auto it = actions.begin(); it != actions.end(); ++it) {
             const int index = jsonClipIndex(it.key().c_str());
             if (index < 0 || !it.value().is_object())
@@ -747,6 +797,8 @@ inline void loadJsonClipCache(JsonClipCache& cache)
             const auto& item = it.value();
             if (item.contains("duration") && item["duration"].is_number())
                 cache.durations[index] = std::max(0.001f, item["duration"].get<float>());
+            if (item.contains("durationTicks") && item["durationTicks"].is_number())
+                cache.durations[index] = std::max(0.001f, item["durationTicks"].get<float>() / 60.0f);
             cache.loops[index] = item.value("loop", false);
             const auto frames = item.value("keyframes", nlohmann::json::array());
             if (!frames.is_array() || frames.empty())

@@ -1933,6 +1933,17 @@ bool MIMITA_GAME_CALL capMeshBounds(void*, GameMeshBoundsV1* q)
     return true;
 }
 
+bool MIMITA_GAME_CALL capMeshPartBounds(void*, GameMeshPartBoundsV1* q)
+{
+    if (!q) return false;
+    q->valid = 0;
+    if (!PresentationRender::meshPartBounds(q->entity, q->part,
+                                            q->boundsMin, q->boundsMax))
+        return false;
+    q->valid = 1;
+    return true;
+}
+
 // Generic setting access seam: hot UI reads/writes real engine settings by
 // logical id. The kernel owns the mapping + validity constraints.
 // Kernel-provided discrete option lists for option-type settings. Hot code owns
@@ -2340,6 +2351,10 @@ struct KernelCapabilityInit {
                                     gameHash("sig.mesh.bounds.v1"), 0,
                                     reinterpret_cast<void*>(&capMeshBounds),
                                     "mesh.bounds");
+        rt.registerKernelCapability(GAME_CAP_MESH_PART_BOUNDS,
+                                    gameHash("sig.mesh.part-bounds.v1"), 0,
+                                    reinterpret_cast<void*>(&capMeshPartBounds),
+                                    "mesh.part-bounds");
         rt.registerKernelCapability(GAME_CAP_WORLD_PROJECT,
                                     gameHash("sig.world.project.v1"), 0,
                                     reinterpret_cast<void*>(&capWorldProject),

@@ -25,6 +25,7 @@ static constexpr std::uint32_t HOT_ACTION_STATE_VERSION = 1;
 static constexpr std::uint64_t HOT_ACTION_NONE = 0;
 static constexpr std::uint64_t HOT_ACTION_IDLE = gameHash("action.idle");
 static constexpr std::uint64_t HOT_ACTION_WALK = gameHash("action.walk");
+static constexpr std::uint64_t HOT_ACTION_RETURN_TO_IDLE = gameHash("action.return-to-idle");
 static constexpr std::uint64_t HOT_ACTION_JUMP = gameHash("action.jump");
 static constexpr std::uint64_t HOT_ACTION_FALL = gameHash("action.fall");
 static constexpr std::uint64_t HOT_ACTION_LAND = gameHash("action.land");

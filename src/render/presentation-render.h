@@ -55,6 +55,8 @@ bool registerLogicalResource(std::uint64_t logicalId, std::uint32_t kind,
 // mesh, relative to the entity model. Resolves the live resource generation each
 // call (never a raw handle), so a generation swap cannot leave a stale pointer.
 bool meshPartBind(std::uint64_t entity, std::uint64_t part, float outMat16[16]);
+bool meshPartBounds(std::uint64_t entity, std::uint64_t part,
+                    float outMin[3], float outMax[3]);
 
 // Model-local AABB of a logical presentation mesh (0 = unknown). Lets hot policy
 // compute grip recentre / mount from the model bounds.

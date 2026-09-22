@@ -2240,6 +2240,19 @@ struct GameSocketRawV1 {
 };
 using GameSocketRawFn = bool (MIMITA_GAME_CALL *)(void* host, GameSocketRawV1* q);
 
+// Exact local bounds for one named articulated model part. Hot policy owns
+// how these immutable asset bounds become animated collision samples.
+static constexpr std::uint64_t GAME_CAP_MESH_PART_BOUNDS = gameHash("mesh.part-bounds");
+struct GameMeshPartBoundsV1 {
+    std::uint64_t entity;
+    std::uint64_t part;
+    float boundsMin[3];
+    float boundsMax[3];
+    std::uint32_t valid;
+    std::uint32_t reserved;
+};
+using GameMeshPartBoundsFn = bool (MIMITA_GAME_CALL *)(void*, GameMeshPartBoundsV1*);
+
 // Generic effect-pool access. Hot policy reads/writes/ages the EXISTING pooled
 // effect storage (surface decals, blood particles) at a fixed tick, and can
 // claim aging so the kernel stops aging (one owner). Storage/draw stay in the

@@ -490,15 +490,22 @@ void buildPlayerCollision(
         ctx->resolveCapability(ctx->host, GAME_CAP_SOCKET_RAW));
     if (!rawFn)
         return;
+    auto boundsFn = reinterpret_cast<GameMeshPartBoundsFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_MESH_PART_BOUNDS));
 
-    static const struct { std::uint32_t part; const char* name; float radius; }
+    static const struct {
+        std::uint32_t part;
+        const char* name;
+        float radius;
+        float halfLength;
+    }
         kParts[] = {
-            {COLLISION_PART_HEAD, "head", 0.30f},
-            {COLLISION_PART_TORSO, "torso", 0.42f},
-            {COLLISION_PART_LEFT_ARM, "leftArm", 0.17f},
-            {COLLISION_PART_RIGHT_ARM, "rightArm", 0.17f},
-            {COLLISION_PART_LEFT_LEG, "leftLeg", 0.20f},
-            {COLLISION_PART_RIGHT_LEG, "rightLeg", 0.20f},
+            {COLLISION_PART_HEAD, "head", 0.30f, 0.12f},
+            {COLLISION_PART_TORSO, "torso", 0.42f, 0.30f},
+            {COLLISION_PART_LEFT_ARM, "leftArm", 0.17f, 0.24f},
+            {COLLISION_PART_RIGHT_ARM, "rightArm", 0.17f, 0.24f},
+            {COLLISION_PART_LEFT_LEG, "leftLeg", 0.20f, 0.32f},
+            {COLLISION_PART_RIGHT_LEG, "rightLeg", 0.20f, 0.32f},
         };
     const float s = q.sizeScale;
     glm::mat4 root = glm::translate(
@@ -507,7 +514,7 @@ void buildPlayerCollision(
     root *= glm::rotate(glm::mat4(1.0f), glm::radians(st->yaw),
                         glm::vec3(0.0f, 0.0f, 1.0f));
     for (const auto& p : kParts) {
-        if (q.colliderCount >= COLLISION_MAX_COLLIDERS)
+        if (q.colliderCount + 3u > COLLISION_MAX_COLLIDERS)
             break;
         GameSocketRawV1 r{};
         r.entity = entity;
@@ -516,16 +523,57 @@ void buildPlayerCollision(
             continue;
         const glm::vec3 local(r.position[0] * s, r.position[1] * s,
                               r.position[2] * s);
-        const glm::vec3 world = glm::vec3(root * glm::vec4(local, 1.0f));
-        CollisionColliderV1& c = q.colliders[q.colliderCount++];
-        c.partId = p.part;
-        c.shape = COLLISION_SHAPE_SPHERE;
-        c.policyId = COLLISION_POLICY_BODY;
-        c.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
-        c.radius = p.radius * s;
-        c.position[0] = world.x;
-        c.position[1] = world.y;
-        c.position[2] = world.z;
+        const glm::vec3 center = glm::vec3(root * glm::vec4(local, 1.0f));
+        const glm::quat socketRotation(r.rotation[3], r.rotation[0],
+                                       r.rotation[1], r.rotation[2]);
+        // afad20a used the exact mesh-node AABB, not a guessed socket length.
+        // The bounds capability is read-only asset data; all sampling policy
+        // remains here in the hot DLL.
+        glm::vec3 localMin(-p.halfLength * p.radius,
+                           -p.radius, -p.radius);
+        glm::vec3 localMax(p.halfLength * p.radius,
+                           p.radius, p.radius);
+        bool exactBounds = false;
+        if (boundsFn) {
+            GameMeshPartBoundsV1 b{};
+            b.entity = entity;
+            b.part = r.socket;
+            exactBounds = boundsFn(ctx->host, &b) && b.valid != 0;
+            if (exactBounds) {
+                for (int k = 0; k < 3; ++k) {
+                    localMin[k] = b.boundsMin[k];
+                    localMax[k] = b.boundsMax[k];
+                }
+            }
+        }
+        const glm::vec3 localCenter = (localMin + localMax) * 0.5f;
+        const glm::vec3 localExtents = (localMax - localMin) * 0.5f;
+        glm::vec3 axisDir = localExtents;
+        float axisLen = glm::length(axisDir);
+        if (axisLen > 0.001f) axisDir /= axisLen;
+        else { axisDir = glm::vec3(0, 0, 1); axisLen = p.halfLength; }
+        const glm::vec3 worldCenter = glm::vec3(root * glm::vec4(
+            glm::vec3(r.position[0], r.position[1], r.position[2]) +
+            socketRotation * (localCenter * s), 1.0f));
+        const glm::vec3 axis = glm::vec3(root * glm::vec4(
+            socketRotation * (axisDir * axisLen * s), 0.0f));
+        float radius = exactBounds
+            ? std::max(0.035f, std::min(localExtents.x, localExtents.y) * 1.5f * s)
+            : p.radius * s;
+        radius = std::min(radius, 0.35f * s);
+        for (int sample = 0; sample < 3; ++sample) {
+            const float t = static_cast<float>(sample) * 0.5f - 0.5f;
+            const glm::vec3 world = worldCenter + axis * t;
+            CollisionColliderV1& c = q.colliders[q.colliderCount++];
+            c.partId = p.part;
+            c.shape = COLLISION_SHAPE_SPHERE;
+            c.policyId = COLLISION_POLICY_BODY;
+            c.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+            c.radius = radius;
+            c.position[0] = world.x;
+            c.position[1] = world.y;
+            c.position[2] = world.z;
+        }
     }
 }
 

@@ -67,7 +67,10 @@ constexpr float kBounceMaxSpeed = 999999.0f;
 constexpr float kBounceCooldown = 0.001f;
 
 // ── Fixed bounds ────────────────────────────────────────────────────────────
-static constexpr std::uint32_t COLLISION_MAX_COLLIDERS = 16;
+// The v2.0.6 player-body path submitted three sphere samples per animated
+// body part, in addition to the root capsule and weapon shape. Keep enough
+// room for that complete hot request instead of silently dropping limbs.
+static constexpr std::uint32_t COLLISION_MAX_COLLIDERS = 32;
 static constexpr std::uint32_t COLLISION_MAX_CONTACTS = 32;
 static constexpr std::uint32_t COLLISION_MAX_IMPACTS = 16;
 static constexpr std::uint32_t COLLISION_MAX_LABEL = 32;

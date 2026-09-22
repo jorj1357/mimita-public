@@ -65,6 +65,9 @@ struct GpuMesh {
         std::uint32_t indexOffset = 0;  // into the shared index buffer
         std::uint32_t indexCount = 0;
         glm::mat4 bind{1.0f};        // node world bind transform
+        glm::vec3 boundsMin{0.0f};
+        glm::vec3 boundsMax{0.0f};
+        bool hasBounds = false;
     };
     GLuint vao = 0;
     GLuint vbo = 0;
@@ -396,6 +399,9 @@ struct GlbPartRange {
     std::uint32_t firstIndex = 0;
     std::uint32_t indexCount = 0;
     glm::mat4 bind{1.0f};
+    glm::vec3 boundsMin{0.0f};
+    glm::vec3 boundsMax{0.0f};
+    bool hasBounds = false;
 };
 
 glm::mat4 glbNodeMatrix(const tinygltf::Node& node)
@@ -480,6 +486,8 @@ void collectGlbNode(const tinygltf::Model& model, int nodeIndex,
         const tinygltf::Mesh& mesh = model.meshes[node.mesh];
         const std::uint64_t bone = gameHash(node.name.c_str());
         const std::uint32_t firstIndex = (std::uint32_t)indices.size();
+        glm::vec3 boundsMin(0.0f), boundsMax(0.0f);
+        bool hasBounds = false;
         for (const tinygltf::Primitive& prim : mesh.primitives) {
             auto posIt = prim.attributes.find("POSITION");
             if (posIt == prim.attributes.end())
@@ -491,6 +499,13 @@ void collectGlbNode(const tinygltf::Model& model, int nodeIndex,
             for (std::size_t v = 0; v < posAcc.count; ++v) {
                 GpuVertex gv{};
                 gv.pos = glbReadVec3(model, posAcc, v);
+                if (!hasBounds) {
+                    boundsMin = boundsMax = gv.pos;
+                    hasBounds = true;
+                } else {
+                    boundsMin = glm::min(boundsMin, gv.pos);
+                    boundsMax = glm::max(boundsMax, gv.pos);
+                }
                 gv.normal = nrmIt != prim.attributes.end()
                                 ? glbReadVec3(model, model.accessors[nrmIt->second], v)
                                 : glm::vec3(0.0f, 0.0f, 1.0f);
@@ -510,7 +525,8 @@ void collectGlbNode(const tinygltf::Model& model, int nodeIndex,
         }
         const std::uint32_t indexCount = (std::uint32_t)indices.size() - firstIndex;
         if (indexCount > 0)
-            parts.push_back({bone, firstIndex, indexCount, world});
+            parts.push_back({bone, firstIndex, indexCount, world,
+                             boundsMin, boundsMax, hasBounds});
     }
     for (int child : node.children)
         collectGlbNode(model, child, world, verts, indices, parts);
@@ -562,8 +578,17 @@ bool loadGlbMesh(void* user, void** outHandle)
         std::vector<GlbPartRange> pr;
         if (buildPartAwareGlb(path, pv, pi, pr)) {
             GpuMesh* mesh = uploadMesh(pv, pi);
-            for (const GlbPartRange& r : pr)
-                mesh->parts.push_back({r.bone, r.firstIndex, r.indexCount, r.bind});
+            for (const GlbPartRange& r : pr) {
+                GpuMesh::Part p;
+                p.bone = r.bone;
+                p.indexOffset = r.firstIndex;
+                p.indexCount = r.indexCount;
+                p.bind = r.bind;
+                p.boundsMin = r.boundsMin;
+                p.boundsMax = r.boundsMax;
+                p.hasBounds = r.hasBounds;
+                mesh->parts.push_back(p);
+            }
             std::vector<std::uint8_t> texBytes;
             if (loadGlbBaseColorImage(path, texBytes))
                 mesh->texture = uploadImageTexture(texBytes);
@@ -780,6 +805,23 @@ bool meshPartBind(std::uint64_t entity, std::uint64_t part, float outMat16[16])
                         outMat16[c * 4 + r] = p.bind[c][r];
             return true;
         }
+    }
+    return false;
+}
+
+bool meshPartBounds(std::uint64_t entity, std::uint64_t part,
+                    float outMin[3], float outMax[3])
+{
+    auto it = g_entityMeshId.find(static_cast<EntityId>(entity));
+    if (it == g_entityMeshId.end()) return false;
+    GpuMesh* mesh = static_cast<GpuMesh*>(
+        MimitaRuntime::PresentationResourceProvider::instance().handleOf(it->second));
+    if (!mesh) return false;
+    for (const GpuMesh::Part& p : mesh->parts) {
+        if (p.bone != part || !p.hasBounds) continue;
+        if (outMin) for (int k = 0; k < 3; ++k) outMin[k] = p.boundsMin[k];
+        if (outMax) for (int k = 0; k < 3; ++k) outMax[k] = p.boundsMax[k];
+        return true;
     }
     return false;
 }
