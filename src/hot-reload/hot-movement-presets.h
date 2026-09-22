@@ -425,30 +425,23 @@ inline MovementBehaviorSource movementBehaviorSourceFromJson(
     }
 }
 
+inline std::string movementPresetJsonPath(const std::string& name)
+{
+    const std::string preset = name.empty() ? "source" : name;
+    std::string stem = preset;
+    if (preset == "counterstrike")
+        stem = "cs";
+    else if (preset == "retrograd_fast")
+        stem = "retrograd-fast";
+    return "config/movement/movement-" + stem + ".json";
+}
+
 inline bool loadJsonMovementPreset(const std::string& name,
                                    GameMovementTuningV1& out)
 {
     const std::string preset = name.empty() ? "source" : name;
-    std::string filePath;
-    {
-        std::string stem = preset;
-        if (preset == "counterstrike")
-            stem = "cs";
-        else if (preset == "retrograd_fast")
-            stem = "retrograd-fast";
-        const std::string candidates[] = {
-            "config/movement/" + stem + ".json",
-            "config/movement/movement-" + stem + ".json",
-        };
-        for (const std::string& candidate : candidates) {
-            std::ifstream probe(candidate);
-            if (probe) {
-                filePath = candidate;
-                break;
-            }
-        }
-    }
-    if (filePath.empty())
+    const std::string filePath = movementPresetJsonPath(preset);
+    if (!std::filesystem::exists(filePath))
         return false;
     std::ifstream file(filePath);
     if (!file)

@@ -23,7 +23,7 @@
     "name": "cs16",
 
     // Uses MiMITA's Source/GoldSrc-style movement kernel.
-    "movement_mode": "v206",
+    "movement_mode": "source",
 
     // Scale/reference value.
     // 1 MiMITA unit = 20 Source / GoldSrc units.
@@ -47,20 +47,19 @@
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 8.0,
+    "ground_acceleration": 20.0,
 
     // Ground friction from the fast Source preset.
     //
     // Higher values remove ground velocity more aggressively when movement
     // input is released.
-    "friction": 4.0,
-    "ground_friction": 4.0,
+    "friction": 3.25,
 
     // Very small stop-speed threshold from the fast preset.
     //
     // This avoids the stronger low-speed braking behavior of a traditional
     // GoldSrc stopspeed value and keeps movement responsive.
-    "stop_speed": 0.0,
+    "stop_speed": 1.0,
 
     // ── Air — Source / GoldSrc PM_AirAccelerate ───────────────────────────
 
@@ -69,7 +68,7 @@
     // 0 = no air speed gain.
     // 1 = normal implementation gain.
     // 2 = current MiMITA fast preset.
-    "air_speed_gain_multiplier": 0.0,
+    "air_speed_gain_multiplier": 2.0,
 
     //  the experimental MiMITA directional/input blend.
     //  9 5 2026 its not working super good its supposed t
@@ -95,7 +94,7 @@
     // Air acceleration strength.
     //
     // Matches the fast Source preset.
-    "air_acceleration": 222.0,
+    "air_acceleration": 12.0,
 
     // Projection cap for Source-style air acceleration.
     //
@@ -105,7 +104,7 @@
     // building total speed.
     //
     // Matches the fast Source preset.
-    "air_max_wishspeed": 1.0,
+    "air_max_wishspeed": 3.0,
 
     // Historical Valve-style AirAccelerate behavior.
     //
@@ -120,17 +119,17 @@
     // Downward acceleration.
     //
     // Matches the fast Source preset.
-    "gravity": -58.0,
+    "gravity": -40.0,
 
     // Upward velocity applied when jumping.
     //
     // Matches the fast Source preset.
-    "jump_velocity": 19.0,
+    "jump_velocity": 15.1,
 
     // Maximum downward falling speed.
     //
     // Matches the fast Source preset.
-    "max_fall_speed": 400.0,
+    "max_fall_speed": 175.0,
 
     // ── Jump behavior ─────────────────────────────────────────────────────
 
@@ -145,12 +144,12 @@
     //
     // Matches the fast Source preset.
     // "jump_buffer_time": 0.1,
-    "jump_buffer_time": 0.12,
+    "jump_buffer_time": 0.2,
 
     // No coyote-time forgiveness.
     //
     // 0 keeps ledge behavior closer to old Source/GoldSrc movement.
-    "coyote_time": 0.001,
+    "coyote_time": 0.0,
 
     // MiMITA's current fast preset allows one extra air jump.
     //
@@ -210,17 +209,17 @@
     // Horizontal velocity impulse from a grounded dash.
     //
     // Matches the fast Source preset.
-    "ground_dash_impulse": 100.0,
+    "ground_dash_impulse": 20.0,
 
     // Horizontal velocity impulse from an airborne dash.
     //
     // Matches the fast Source preset.
-    "air_dash_impulse": 50.0,
+    "air_dash_impulse": 20.0,
 
     // Vertical velocity assigned by down-dash.
     //
     // Negative = downward.
-    "down_dash_speed": -100.0,
+    "down_dash_speed": -50.0,
 
     // ── External impulse / knockback ─────────────────────────────────────
     //
@@ -235,12 +234,12 @@
     //
     // In a true "source" impulse mode this may be ignored, but the fast preset
     // currently uses exponential mode.
-    "external_impulse_decay": 0.6,
+    "external_impulse_decay": 99.0,
 
     // Maximum allowed horizontal external impulse speed.
     //
     // 9999 is intentionally effectively unlimited for normal gameplay.
-    "max_external_impulse_speed": 120.0,
+    "max_external_impulse_speed": 9999.0,
 
     // Match the current fast Source preset's knockback behavior.
     //
@@ -277,11 +276,10 @@
     // requiring another schema/config change.
 
     // "speed_limit_enabled": false,
-    "speed_limit_enabled": false,
+    "speed_limit_enabled": true,
 
     // Only used if speed_limit_enabled is true.
     "speed_limit": 50.0,
-    // "speed_limit": 200.0,
 
     // "fixed" = acceleration/impulses are prevented from exceeding the limit.
     // "clamp" = final horizontal velocity is clamped after movement.

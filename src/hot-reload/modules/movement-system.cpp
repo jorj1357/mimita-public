@@ -774,7 +774,7 @@ ResolvedTuning resolveTuning(MimitaHotMovement::MovementPresetId id)
 
         std::error_code ec;
         const auto ft = std::filesystem::last_write_time(
-            "config/movement/" + name + ".json", ec);
+            MimitaHotMovement::movementPresetJsonPath(name), ec);
         std::uint64_t stamp =
             ec ? 0ull : static_cast<std::uint64_t>(ft.time_since_epoch().count());
 
@@ -987,9 +987,12 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             float optWish = m.walkSpeed;
             MimitaHotMovement::speedPolicy(sp, optMax, optWish);
             const float speed = optMax;
-            if (rs.grounded) {
+            if (rs.grounded && !mi.jump) {
                 // GROUND: route through the ONE shared hot ground-move policy
                 // (friction + acceleration; the same implementation as server).
+                // Holding jump skips this ground-acceleration tick so a
+                // landing immediately chained into a bunny hop does not turn
+                // the held air-strafe key into a full lateral ground move.
                 const bool v206Walk =
                     m.walkMode == MimitaHotMovement::kWalkModeV206;
                 GameGroundMoveV1 g{};
@@ -1144,6 +1147,24 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         st.grounded = rs.grounded;
         resolveCollisions(ctx, &st, dt, e, tick);
         rs.grounded = st.grounded;
+
+        // Apply the configured horizontal speed limit after all additive
+        // abilities and collision response. The pre-step speed policy limits
+        // ordinary acceleration, but dash/down-dash and collision response can
+        // change velocity afterward. Keep this final clamp in the hot path so
+        // JSON speed_limit_enabled=true is authoritative without using the
+        // cold legacy movement-step.cpp path.
+        if (m.speedLimitEnabled && m.speedLimit > 0.0f) {
+            GameSpeedClampV1 clamp{};
+            clamp.velocity[0] = st.velocity[0];
+            clamp.velocity[1] = st.velocity[1];
+            clamp.speedLimit = m.speedLimit;
+            clamp.enabled = 1u;
+            MimitaHotMovement::speedClamp(clamp);
+            st.velocity[0] = clamp.outVelocity[0];
+            st.velocity[1] = clamp.outVelocity[1];
+        }
+
         // v2.0.6 dash quality: count airborne ticks with movement held.
         if (!st.grounded && mi.pressed) {
             if (rs.dashMovementTicks < 99u)

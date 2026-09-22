@@ -15,17 +15,29 @@
 #include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-package.h"
 
+#include <cmath>
+
 namespace MimitaHotMovement {
 
 // The single air-acceleration algorithm. Context-free.
 void airAccelerate(const GameAirAccelerateV1& in, float outVelocity[2])
 {
     if (in.movementModel == 1u) {
-        // v2.0.6 air: additive impulse toward the base move speed. No
-        // projection-cap headroom curve and no gain multiplier.
+        // The source JSON's v206 preset uses the classic CS/GoldSrc air rule:
+        // WASD supplies a wish direction, but cannot launch an actor from rest.
+        // Speed is gained when the wish direction pivots against existing
+        // horizontal velocity, which is the mouse-steered air-strafe behavior.
+        const float horizontalSpeed = std::sqrt(
+            in.velocity[0] * in.velocity[0] +
+            in.velocity[1] * in.velocity[1]);
+        if (horizontalSpeed <= 0.1f) {
+            outVelocity[0] = in.velocity[0];
+            outVelocity[1] = in.velocity[1];
+            return;
+        }
         const float projected =
             in.velocity[0] * in.wishDir[0] + in.velocity[1] * in.wishDir[1];
-        const float addSpeed = in.wishSpeed - projected;
+        const float addSpeed = in.wishspd - projected;
         if (addSpeed <= 0.0f) {
             outVelocity[0] = in.velocity[0];
             outVelocity[1] = in.velocity[1];
