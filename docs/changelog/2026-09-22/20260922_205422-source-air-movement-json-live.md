@@ -125,3 +125,25 @@ pending.
 - Hot candidate generation 21 built successfully. The running client PID
   15708 activated the matching candidate as generation 2; its JSONL continues
   to report `source=json` and 19 collision colliders / 18 body samples.
+
+## Hot afad20a world-contact ability reset and down-dash modes
+
+Status: hot candidate active; interactive down-dash acceptance pending.
+
+- Routed player and generic-actor ability resets through the shared
+  `collision.main` world-contact result. Body-part classification remains part
+  of collision response, but it is no longer a separate ability-reset signal.
+- Preserved Q edge behavior: Q-down fires only when available; Q-up does
+  nothing; a valid world contact restores the ability with no cooldown.
+- Added two hot down-dash behaviors in `movement-dash.cpp`: `additive`
+  preserves vertical momentum and remains the default; `set` replaces the
+  vertical velocity with the authored down-dash speed. The optional preset key
+  is `down_dash_mode`.
+- Build evidence: generation 22 completed with status `ok`, code hash
+  `6959cc7f70cdcbccd5bb2501cda32b0228568c3e7a0a8c16d6492cafc184d1a3`.
+  The running client PID 15708 automatically activated its generation 4
+  candidate without restarting the EXE or session.
+- Runtime evidence: the client JSONL reports generation 4, `worldContact=1`,
+  `grounded=1`, `colliders=19`, and `parts=18` after activation. A live
+  down-dash -> contact -> re-press sequence still needs human input to prove
+  the visible feel.

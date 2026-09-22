@@ -140,7 +140,10 @@ void resolveActorCollisions(GameplayContextV1* ctx, MovementStateV1* st,
         st->velocity[i] = q.outVelocity[i];
     }
     st->grounded = q.grounded;
-    st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
+    // One collision owner, one reset signal: valid world contact. Body-part
+    // classification remains available for diagnostics and response, but is
+    // not a separate ability-reset path.
+    st->collided = q.worldContact ? 1u : 0u;
 }
 
 // Reads the per-actor preset from the generic ActorProfileState component
@@ -422,7 +425,7 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     resolveActorCollisions(ctx, &st, dt, e, static_cast<std::uint64_t>(tick));
 
     rs.grounded = st.grounded;
-    if (rs.grounded)
+    if (st.collided)
     {
         rs.airJumpsLeft = 1;
         rs.jumpAirJumpArmed = 1u;

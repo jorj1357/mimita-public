@@ -656,7 +656,10 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
         st->velocity[i] = q.outVelocity[i];
     }
     st->grounded = q.grounded;
-    st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
+    // Ability resets come from valid world contacts, matching afad20a. A
+    // body-part flag is only shape detail from the same world solve; it must
+    // not become a second reset rule.
+    st->collided = q.worldContact ? 1u : 0u;
 
     // Contact consumer: collision.main is the source of truth for impacts. Use
     // the returned world contacts to play a throttled impact/land sound. Spark

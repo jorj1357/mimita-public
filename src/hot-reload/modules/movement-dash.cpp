@@ -13,8 +13,61 @@
 #include "hot-reload/hot-package.h"
 
 #include <cmath>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <nlohmann/json.hpp>
 
 namespace MimitaHotMovement {
+
+enum class DownDashMode : std::uint32_t {
+    Additive = 0, // preserve the current vertical momentum
+    Set = 1       // replace vertical momentum with the authored speed
+};
+
+// The mode is data-driven, but remains hot: the DLL re-reads the active
+// movement preset without changing the EXE ABI. Missing/invalid data keeps the
+// requested current behavior (additive).
+static DownDashMode activeDownDashMode()
+{
+    using Clock = std::chrono::steady_clock;
+    static auto nextCheck = Clock::time_point{};
+    static std::filesystem::file_time_type lastWrite{};
+    static DownDashMode mode = DownDashMode::Additive;
+    const auto now = Clock::now();
+    if (now < nextCheck)
+        return mode;
+    nextCheck = now + std::chrono::milliseconds(250);
+
+    std::string preset = "source";
+    std::error_code ec;
+    const std::filesystem::path selector("config/movement.json");
+    if (std::filesystem::exists(selector, ec)) {
+        std::ifstream in(selector);
+        try {
+            nlohmann::json j = nlohmann::json::parse(in, nullptr, true, true);
+            preset = j.value("preset", preset);
+        } catch (...) {
+            return mode;
+        }
+    }
+    const std::filesystem::path presetPath =
+        std::filesystem::path("config/movement") / ("movement-" + preset + ".json");
+    const auto write = std::filesystem::last_write_time(presetPath, ec);
+    if (ec || write == lastWrite)
+        return mode;
+    lastWrite = write;
+    std::ifstream in(presetPath);
+    try {
+        nlohmann::json j = nlohmann::json::parse(in, nullptr, true, true);
+        const std::string value = j.value("down_dash_mode", "additive");
+        mode = value == "set" ? DownDashMode::Set : DownDashMode::Additive;
+    } catch (...) {
+        mode = DownDashMode::Additive;
+    }
+    return mode;
+}
 
 // v2.0.6 dash quality: impulse scales down the longer the player has been
 // airborne with movement held. 0..1 ticks = perfect (1.0).
@@ -77,8 +130,10 @@ void dashPolicy(GameDashPolicyV1& io)
 
     if (io.downDashPressed != 0u && io.downDashEnabled != 0u &&
         io.downDashAvailable != 0u) {
-        // v2.0.6 down-dash is additive: it preserves existing vertical momentum.
-        vz += io.downDashVerticalSpeed;
+        if (activeDownDashMode() == DownDashMode::Set)
+            vz = io.downDashVerticalSpeed;
+        else
+            vz += io.downDashVerticalSpeed;
         io.outDownDashAvailable = 0u;
         io.outDidDownDash = 1u;
     }
