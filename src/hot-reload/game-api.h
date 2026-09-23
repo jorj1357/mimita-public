@@ -2483,7 +2483,35 @@ enum GameAudioOp : std::uint32_t {
     GAME_AUDIO_PLAY_ONESHOT = 0,   // fire-and-forget
     GAME_AUDIO_SET_SLOT = 1,       // desired loop state for (owner,slot)
     GAME_AUDIO_STOP_SLOT = 2,      // stop (owner,slot)
+    // Append-only ops. Each reuses the same POD envelope; fields that do not
+    // apply to an op are ignored. No new capability id, no per-feature ABI.
+    GAME_AUDIO_PAUSE_SLOT = 3,          // pause (owner,slot)
+    GAME_AUDIO_RESUME_SLOT = 4,         // resume (owner,slot)
+    GAME_AUDIO_SET_LISTENER = 5,        // position + velocity only
+    GAME_AUDIO_RELOAD_RESOURCE = 6,     // logical id in `sound`
+    GAME_AUDIO_INVALIDATE_RESOURCE = 7, // logical id in `sound`
+    GAME_AUDIO_QUERY_STATUS = 8,        // fills out fields
 };
+enum GameAudioCategory : std::uint32_t {
+    GAME_AUDIO_CATEGORY_MOVEMENT = 0,
+    GAME_AUDIO_CATEGORY_UI = 1,
+    GAME_AUDIO_CATEGORY_WEAPONS = 2,
+    GAME_AUDIO_CATEGORY_NPC = 3,
+    GAME_AUDIO_CATEGORY_IMPACTS = 4,
+    GAME_AUDIO_CATEGORY_AMBIENT = 5,
+    GAME_AUDIO_CATEGORY_MUSIC = 6,
+    GAME_AUDIO_CATEGORY_NOTIFICATION = 7,
+    GAME_AUDIO_CATEGORY_EDITOR = 8,
+    GAME_AUDIO_CATEGORY_DEBUG = 9,
+};
+enum GameAudioInterruption : std::uint32_t {
+    GAME_AUDIO_INTERRUPT_REJECT = 0,
+    GAME_AUDIO_INTERRUPT_REPLACE_OLDEST = 1,
+    GAME_AUDIO_INTERRUPT_REPLACE_SAME_SLOT = 2,
+    GAME_AUDIO_INTERRUPT_OVERLAP = 3,
+    GAME_AUDIO_INTERRUPT_RESTART = 4,
+};
+static constexpr std::uint32_t GAME_AUDIO_COMMAND_VERSION = 2;
 struct GameAudioCommandV1 {
     char sound[64];
     float position[3];
@@ -2497,6 +2525,32 @@ struct GameAudioCommandV1 {
     std::uint64_t slotId;       // opaque logical slot id (hash), no enum
     std::uint32_t op;           // GameAudioOp
     std::uint32_t loop;         // SET_SLOT: 1 = loop
+    // ── Append-only v2. Never reorder or resize the fields above. A legacy
+    // zero-initialized caller leaves commandVersion/structSize at 0, which the
+    // kernel treats as v1. Fixed-size POD only; no STL/owning data.
+    std::uint32_t commandVersion;     // GAME_AUDIO_COMMAND_VERSION (0 = legacy v1)
+    std::uint32_t structSize;         // sizeof(GameAudioCommandV1); 0 = legacy
+    std::uint64_t requestId;          // monotonic request/event id (0 = none)
+    std::uint64_t hotGeneration;      // active hot-code generation (0 = unknown)
+    std::uint32_t resourceGeneration; // in: explicit gen (0 = current); out: resolved
+    std::uint32_t category;           // GameAudioCategory
+    std::uint32_t spatialMode;        // 0 local/2D, 1 world, 2 listener-relative
+    std::uint32_t priority;           // higher wins under a voice budget
+    std::uint32_t interruption;       // GameAudioInterruption
+    std::uint32_t replayCapture;      // 1 = capture into replay
+    std::uint32_t flags;              // bit0 oneShot bit1 loop bit2 pause bit3 resume bit4 stop
+    std::uint32_t seed;               // deterministic variant selection
+    float velocity[3];                // doppler / policy input
+    float falloffStart;
+    float falloffEnd;
+    float startOffset;                // seconds
+    float fadeIn;
+    float fadeOut;
+    // ── out (QUERY_STATUS / reload / invalidate)
+    std::uint32_t ok;
+    std::uint32_t activeVoices;
+    std::uint32_t loadedResources;
+    std::uint32_t reserved;
 };
 using GameAudioPlayFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameAudioCommandV1* command);

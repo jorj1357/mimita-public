@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <string>
+#include <type_traits>
 
 #include <unordered_map>
 
@@ -1264,6 +1265,85 @@ bool runHotCombatSelfTest(std::string& report)
                 ok &= check(LiveBehavior::audioPlayCount() == b5,
                             "STOP_SLOT on a nonexistent slot is a safe no-op",
                             report);
+            }
+        }
+
+        // Generic audio ABI: fixed-size POD and version-gated. A future or
+        // unknown version/op is rejected with no side effects.
+        ok &= check(std::is_trivially_copyable<GameAudioCommandV1>::value &&
+                        std::is_standard_layout<GameAudioCommandV1>::value,
+                    "audio command is POD (trivially copyable, standard layout)",
+                    report);
+        {
+            GameplayContextV1* actx = LiveBehavior::hostContext(32);
+            auto audio = actx ? reinterpret_cast<GameAudioPlayFn>(
+                                    actx->resolveCapability(actx->host,
+                                                            GAME_CAP_AUDIO_PLAY))
+                              : nullptr;
+            ok &= check(audio != nullptr, "audio.play v2 capability resolves", report);
+            if (audio) {
+                GameAudioCommandV1 bad{};
+                std::snprintf(bad.sound, sizeof(bad.sound), "entity/player/dash");
+                bad.op = GAME_AUDIO_PLAY_ONESHOT;
+                bad.commandVersion = GAME_AUDIO_COMMAND_VERSION + 7u;
+                bad.structSize = sizeof(GameAudioCommandV1);
+                const std::uint64_t playBefore = LiveBehavior::audioPlayCount();
+                const std::uint64_t rejBefore = LiveBehavior::audioCommandRejectCount();
+                audio(actx->host, &bad);
+                ok &= check(LiveBehavior::audioPlayCount() == playBefore &&
+                                LiveBehavior::audioCommandRejectCount() > rejBefore,
+                            "unknown audio command version is rejected (no playback)",
+                            report);
+
+                GameAudioCommandV1 badOp{};
+                std::snprintf(badOp.sound, sizeof(badOp.sound), "entity/player/dash");
+                badOp.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                badOp.structSize = sizeof(GameAudioCommandV1);
+                badOp.op = 999u;
+                const std::uint64_t rejBefore2 = LiveBehavior::audioCommandRejectCount();
+                audio(actx->host, &badOp);
+                ok &= check(LiveBehavior::audioCommandRejectCount() > rejBefore2,
+                            "unknown audio op is rejected", report);
+
+                GameAudioCommandV1 q{};
+                q.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                q.structSize = sizeof(GameAudioCommandV1);
+                q.op = GAME_AUDIO_QUERY_STATUS;
+                const std::uint64_t qBefore = LiveBehavior::audioPlayCount();
+                audio(actx->host, &q);
+                ok &= check(q.ok == 1u && LiveBehavior::audioPlayCount() == qBefore,
+                            "audio QUERY_STATUS reports status without playback",
+                            report);
+
+                GameAudioCommandV1 listener{};
+                listener.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                listener.structSize = sizeof(GameAudioCommandV1);
+                listener.op = GAME_AUDIO_SET_LISTENER;
+                listener.position[0] = 1.0f;
+                listener.position[1] = 2.0f;
+                listener.position[2] = 3.0f;
+                const std::uint64_t lBefore = LiveBehavior::audioPlayCount();
+                audio(actx->host, &listener);
+                ok &= check(LiveBehavior::audioPlayCount() == lBefore,
+                            "audio SET_LISTENER updates without playback", report);
+
+                GameAudioCommandV1 slot{};
+                std::snprintf(slot.sound, sizeof(slot.sound), "entity/player/dash");
+                slot.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                slot.structSize = sizeof(GameAudioCommandV1);
+                slot.slotId = gameHash("selftest.pausable");
+                slot.op = GAME_AUDIO_SET_SLOT;
+                slot.loop = 1u;
+                slot.volume = 0.4f;
+                slot.pitch = 1.0f;
+                audio(actx->host, &slot);
+                slot.op = GAME_AUDIO_PAUSE_SLOT;
+                audio(actx->host, &slot);
+                slot.op = GAME_AUDIO_RESUME_SLOT;
+                audio(actx->host, &slot);
+                slot.op = GAME_AUDIO_STOP_SLOT;
+                audio(actx->host, &slot);
+                ok &= check(true, "audio PAUSE/RESUME slot is safe", report);
             }
         }
 

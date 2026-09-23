@@ -105,6 +105,7 @@ const void* gDispatchCamera = nullptr;
 std::uint64_t g_skeletonApplyCount = 0;
 std::uint64_t g_animationUpdateCount = 0;
 std::uint64_t g_audioPlayCount = 0;
+std::uint64_t g_audioRejectCount = 0;
 std::uint64_t g_surfaceEffectCount = 0;
 std::uint64_t g_cameraEffectCount = 0;
 
@@ -2242,10 +2243,58 @@ static std::vector<AudioSlotVoice> g_audioSlots;
 static unsigned int g_nextSynthOwner = 0x40000000u;
 
 // Generic audio: hot policy emits a logical sound command; the kernel plays it.
+// The command is the stable ABI surface: this function validates the envelope,
+// routes the op, and owns the (owner,slot) voice table. It performs no sound
+// selection policy, so editing hot policy changes behavior without an EXE link.
 void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
 {
-    if (!command || command->sound[0] == '\0')
+    if (!command)
         return;
+
+    // ABI/version gate. A legacy zero-initialized caller leaves
+    // commandVersion/structSize at 0 and is treated as v1. Any other unknown
+    // version, or a structSize that is not this build's, is rejected with no
+    // side effects (invalid commands never crash or play).
+    const bool legacy = command->commandVersion == 0 && command->structSize == 0;
+    if (!legacy) {
+        if (command->commandVersion != GAME_AUDIO_COMMAND_VERSION ||
+            (command->structSize != 0 &&
+             command->structSize != sizeof(GameAudioCommandV1))) {
+            ++g_audioRejectCount;
+            return;
+        }
+    }
+    auto* out = const_cast<GameAudioCommandV1*>(command);
+
+    // Generic status query: no sound required. Reports live voice/resource
+    // counts so a hot `audio status` command needs no cold call site.
+    if (command->op == GAME_AUDIO_QUERY_STATUS) {
+        out->ok = 1u;
+        out->activeVoices = AudioManager::instance().activeVoiceCount();
+        out->loadedResources = AudioManager::instance().cachedSoundCount();
+        return;
+    }
+    // Listener update: position + velocity only; no sound required.
+    if (command->op == GAME_AUDIO_SET_LISTENER) {
+        setAudioListener(glm::vec3(command->position[0], command->position[1],
+                                   command->position[2]),
+                         glm::vec3(command->velocity[0], command->velocity[1],
+                                   command->velocity[2]));
+        out->ok = 1u;
+        return;
+    }
+    // Resource generation ops land with the resource-provider phase. Accept the
+    // command shape, report "not applied", and never touch the device.
+    if (command->op == GAME_AUDIO_RELOAD_RESOURCE ||
+        command->op == GAME_AUDIO_INVALIDATE_RESOURCE) {
+        out->ok = 0u;
+        return;
+    }
+    // Every remaining op resolves a logical sound id.
+    if (command->sound[0] == '\0') {
+        ++g_audioRejectCount;
+        return;
+    }
     const std::string name(command->sound,
                            strnlen(command->sound, sizeof(command->sound)));
 
@@ -2270,6 +2319,26 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
                     break;
                 }
             }
+            return;
+        }
+        // Pause/resume a persistent slot voice in place (no restart, cursor
+        // retained). A missing slot is a safe no-op.
+        if (command->op == GAME_AUDIO_PAUSE_SLOT ||
+            command->op == GAME_AUDIO_RESUME_SLOT) {
+            const bool paused = command->op == GAME_AUDIO_PAUSE_SLOT;
+            for (AudioSlotVoice& v : g_audioSlots) {
+                if (v.owner == command->ownerEntity &&
+                    v.slot == command->slotId) {
+                    AudioManager::instance().setOwnerPaused(v.synth, paused);
+                    break;
+                }
+            }
+            return;
+        }
+        // Legacy zero-op slot commands are SET_SLOT.
+        if (command->op != GAME_AUDIO_SET_SLOT &&
+            command->op != GAME_AUDIO_PLAY_ONESHOT) {
+            ++g_audioRejectCount;
             return;
         }
         // SET_SLOT (idempotent): same desired sound => no-op; else replace.
@@ -2312,7 +2381,11 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
         ++g_audioPlayCount;   // started voice
         return;
     }
-    // One-shot playback.
+    // One-shot playback. Any other op with no slot is an unknown command.
+    if (command->op != GAME_AUDIO_PLAY_ONESHOT) {
+        ++g_audioRejectCount;
+        return;
+    }
     ++g_audioPlayCount;
 
     if (command->spatial != 0) {
@@ -2417,7 +2490,7 @@ struct KernelCapabilityInit {
                                     reinterpret_cast<void*>(&capRenderUi),
                                     "render.ui");
         rt.registerKernelCapability(GAME_CAP_AUDIO_PLAY,
-                                    gameHash("sig.audio.play.v1"), 0,
+                                    gameHash("sig.audio.play.v2"), 0,
                                     reinterpret_cast<void*>(&capAudioPlay),
                                     "audio.play");
         rt.registerKernelCapability(GAME_CAP_SURFACE_EFFECT,
@@ -2864,6 +2937,11 @@ std::uint64_t animationUpdateCount()
 std::uint64_t audioPlayCount()
 {
     return g_audioPlayCount;
+}
+
+std::uint64_t audioCommandRejectCount()
+{
+    return g_audioRejectCount;
 }
 
 std::uint64_t surfaceEffectCount()

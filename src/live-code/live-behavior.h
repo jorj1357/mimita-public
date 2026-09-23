@@ -120,6 +120,10 @@ std::uint64_t animationUpdateCount();
 // the cold audio backend).
 std::uint64_t audioPlayCount();
 
+// Total audio commands rejected by the ABI/version gate or an unknown op
+// (headless evidence that invalid commands are dropped without side effects).
+std::uint64_t audioCommandRejectCount();
+
 // Total surface.effect invocations (headless evidence that hot decal policy
 // reached the cold surface mechanism).
 std::uint64_t surfaceEffectCount();

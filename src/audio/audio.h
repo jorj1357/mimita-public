@@ -32,6 +32,12 @@ public:
     void setListener(glm::vec3 pos, glm::vec3 forward);
     void play(const AudioEvent& event);
     void stopOwner(unsigned int ownerId);
+    // Pause/resume every voice owned by `ownerId` in place. The playback cursor
+    // is retained, so resume continues where pause stopped (no restart).
+    void setOwnerPaused(unsigned int ownerId, bool paused);
+    // Live voice count and cached-sound count, for generic audio status.
+    unsigned int activeVoiceCount() const;
+    unsigned int cachedSoundCount() const;
     void setDebug(bool enabled);
     bool debug() const;
 };

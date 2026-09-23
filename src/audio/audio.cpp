@@ -336,6 +336,29 @@ void AudioManager::play(const AudioEvent& event)
     }
 }
 
+void AudioManager::setOwnerPaused(unsigned int ownerId, bool paused)
+{
+    if (ownerId == 0) return;
+    for (auto& active : gActiveSounds) {
+        if (!active || active->ownerId != ownerId || !active->initialized)
+            continue;
+        if (paused)
+            ma_sound_stop(&active->sound);   // retains the playback cursor
+        else
+            ma_sound_start(&active->sound);  // resumes from the cursor
+    }
+}
+
+unsigned int AudioManager::activeVoiceCount() const
+{
+    return static_cast<unsigned int>(gActiveSounds.size());
+}
+
+unsigned int AudioManager::cachedSoundCount() const
+{
+    return static_cast<unsigned int>(gSoundFileCache.size());
+}
+
 void AudioManager::stopOwner(unsigned int ownerId)
 {
     if (ownerId == 0) return;
