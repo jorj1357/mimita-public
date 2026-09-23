@@ -635,6 +635,8 @@ void solve(void* host, CollisionSolveV1* q)
                              c.endPosition[2]);
         const glm::vec3 seg = endW - startW;
         const float segLen = glm::length(seg);
+        const glm::vec3 sweep(c.velocity[0], c.velocity[1], c.velocity[2]);
+        const float sweepLen = glm::length(sweep);
         cols[i].radius = c.radius > 0.0f ? c.radius : 0.1f;
         if ((c.flags & COLLISION_COLLIDER_ORIENTED_CAPSULE) != 0u &&
             segLen > 1e-4f) {
@@ -642,6 +644,14 @@ void solve(void* host, CollisionSolveV1* q)
             cols[i].axis = seg / segLen;
             cols[i].halfSeg = segLen * 0.5f;
             cols[i].localOffset = (startW + endW) * 0.5f - pos;
+            cols[i].halfHeight = cols[i].halfSeg + cols[i].radius;
+        } else if (c.shape == COLLISION_SHAPE_SPHERE && sweepLen > 1e-4f) {
+            // afad20a per-limb sweep: a moving sphere is a capsule from its
+            // previous centre to its current centre, so a fast arm/leg/weapon
+            // cannot tunnel through thin geometry between ticks.
+            cols[i].axis = sweep / sweepLen;
+            cols[i].halfSeg = sweepLen * 0.5f;
+            cols[i].localOffset = (startW - sweep * 0.5f) - pos;
             cols[i].halfHeight = cols[i].halfSeg + cols[i].radius;
         } else {
             cols[i].axis = glm::vec3(0.0f, 0.0f, 1.0f);
@@ -836,6 +846,9 @@ void solve(void* host, CollisionSolveV1* q)
         c.normal[2] = contactAccum[i].normal.z;
         c.penetration = contactAccum[i].penetration;
         c.incomingSpeed = contactAccum[i].incoming;
+        // afad20a: every world/body contact qualifies as a touch-reset event.
+        c.resetsAbilities = 1u;
+        c.reserved0 = 0u;
     }
 
     // Per-contact record: names the actor, the collider/part, the world

@@ -487,6 +487,75 @@ void buildPlayerCollision(
     if (!ctx->resolveCapability ||
         q.colliderCount >= COLLISION_MAX_COLLIDERS)
         return;
+
+    // ── afad20a per-limb source: the animated physical body ────────────────
+    // Use Player::physicalBody.parts (the exact body the renderer draws), each
+    // part's real collider AABB, and its previous root-relative position for a
+    // per-limb sweep. One sphere per part, matching afad20a, replaces the
+    // guessed multi-sample socket proxies.
+    auto bodyFn = reinterpret_cast<GameBodyPartsFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_BODY_PARTS));
+    if (bodyFn) {
+        GameBodyPartsV1 bp{};
+        bp.entity = entity;
+        if (bodyFn(ctx->host, &bp) && bp.valid != 0u && bp.count > 0u) {
+            auto partIdForHash = [](std::uint64_t h) -> std::uint32_t {
+                if (h == gameHash("head")) return COLLISION_PART_HEAD;
+                if (h == gameHash("torso")) return COLLISION_PART_TORSO;
+                if (h == gameHash("leftArm")) return COLLISION_PART_LEFT_ARM;
+                if (h == gameHash("rightArm")) return COLLISION_PART_RIGHT_ARM;
+                if (h == gameHash("leftLeg")) return COLLISION_PART_LEFT_LEG;
+                if (h == gameHash("rightLeg")) return COLLISION_PART_RIGHT_LEG;
+                return COLLISION_PART_TORSO;
+            };
+            const float s = q.sizeScale;
+            const glm::mat4 root =
+                glm::translate(glm::mat4(1.0f),
+                               glm::vec3(st->position[0], st->position[1],
+                                         st->position[2])) *
+                glm::rotate(glm::mat4(1.0f), glm::radians(st->yaw),
+                            glm::vec3(0.0f, 0.0f, 1.0f));
+            const std::uint32_t n = std::min(
+                bp.count, static_cast<std::uint32_t>(GAME_MAX_BODY_PARTS));
+            for (std::uint32_t i = 0; i < n; ++i) {
+                if (q.colliderCount >= COLLISION_MAX_COLLIDERS)
+                    break;
+                const GameBodyPartV1& part = bp.parts[i];
+                const glm::vec3 localPos(part.localPosition[0] * s,
+                                         part.localPosition[1] * s,
+                                         part.localPosition[2] * s);
+                const glm::vec3 world = glm::vec3(root * glm::vec4(localPos, 1.0f));
+                const glm::vec3 prevLocal(part.previousLocalPosition[0] * s,
+                                          part.previousLocalPosition[1] * s,
+                                          part.previousLocalPosition[2] * s);
+                const glm::vec3 prevWorld =
+                    glm::vec3(root * glm::vec4(prevLocal, 1.0f));
+                const glm::vec3 extents(
+                    (part.boundsMax[0] - part.boundsMin[0]) * 0.5f,
+                    (part.boundsMax[1] - part.boundsMin[1]) * 0.5f,
+                    (part.boundsMax[2] - part.boundsMin[2]) * 0.5f);
+                float radius = std::max(
+                    {extents.x, extents.y, extents.z, 0.15f});
+                radius = std::min(radius, 0.35f) * s;
+                CollisionColliderV1& c = q.colliders[q.colliderCount++];
+                c.partId = partIdForHash(part.part);
+                c.shape = COLLISION_SHAPE_SPHERE;
+                c.policyId = COLLISION_POLICY_BODY;
+                c.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+                c.radius = radius;
+                c.position[0] = world.x;
+                c.position[1] = world.y;
+                c.position[2] = world.z;
+                const glm::vec3 sweep = world - prevWorld;
+                c.velocity[0] = sweep.x;
+                c.velocity[1] = sweep.y;
+                c.velocity[2] = sweep.z;
+            }
+            return;
+        }
+    }
+
+    // ── Fallback: socket + mesh bounds (remote/NPC or unloaded model) ──────
     auto rawFn = reinterpret_cast<GameSocketRawFn>(
         ctx->resolveCapability(ctx->host, GAME_CAP_SOCKET_RAW));
     if (!rawFn)
@@ -695,10 +764,9 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
         st->velocity[i] = q.outVelocity[i];
     }
     st->grounded = q.grounded;
-    // Ability resets come from valid world contacts, matching afad20a. A
-    // body-part flag is only shape detail from the same world solve; it must
-    // not become a second reset rule.
-    st->collided = q.worldContact ? 1u : 0u;
+    // afad20a universal reset: any world or body contact (capsule, limb,
+    // weapon, tool) restores abilities, not only a grounded floor contact.
+    st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
 
     // Contact consumer: collision.main is the source of truth for impacts. Use
     // the returned world contacts to play a throttled impact/land sound. Spark

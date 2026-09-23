@@ -301,6 +301,81 @@ bool collisionPackageSelfTest(char* message, std::uint32_t cap)
         }
     }
 
+    // 12. afad20a per-limb contact: a body-authoritative limb sphere that
+    //     penetrates a wall pushes the ROOT out (not just a visual report) and
+    //     marks the contact as an ability reset.
+    {
+        installQuad(V(0, -20, -20), V(0, 20, -20), V(0, 20, 20), V(0, -20, 20));
+        CollisionSolveV1 q = makeCapsule(108, 80, V(5, 0, 0.5f), V(0, 0, 0), 0.1f, 0.5f);
+        q.colliderCount = 2;
+        CollisionColliderV1& limb = q.colliders[1];
+        limb.partId = COLLISION_PART_LEFT_ARM;
+        limb.shape = COLLISION_SHAPE_SPHERE;
+        limb.policyId = COLLISION_POLICY_BODY;
+        limb.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+        limb.radius = 0.3f;
+        limb.position[0] = 0.2f;
+        limb.position[1] = 0.0f;
+        limb.position[2] = 0.5f;
+        collisionSolve(nullptr, &q);
+        if (!q.handled || !q.worldContact)
+            return fail(message, cap, "limb: no world contact");
+        if (!(q.outPosition[0] > 5.0f))
+            return fail(message, cap, "limb: root was not pushed out");
+        bool reset = false;
+        for (std::uint32_t i = 0; i < q.contactCount; ++i)
+            if (q.contacts[i].resetsAbilities != 0u)
+                reset = true;
+        if (!reset)
+            return fail(message, cap, "limb: contact not marked resetsAbilities");
+    }
+
+    // 13. Weapon/tool contact follows the same rule: penetration pushes the root
+    //     out and qualifies as a reset.
+    {
+        installQuad(V(0, -20, -20), V(0, 20, -20), V(0, 20, 20), V(0, -20, 20));
+        CollisionSolveV1 q = makeCapsule(109, 85, V(5, 0, 0.5f), V(0, 0, 0), 0.1f, 0.5f);
+        q.colliderCount = 2;
+        CollisionColliderV1& weapon = q.colliders[1];
+        weapon.partId = COLLISION_PART_WEAPON;
+        weapon.shape = COLLISION_SHAPE_SPHERE;
+        weapon.policyId = COLLISION_POLICY_WEAPON;
+        weapon.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+        weapon.radius = 0.3f;
+        weapon.position[0] = 0.2f;
+        weapon.position[1] = 0.0f;
+        weapon.position[2] = 0.5f;
+        collisionSolve(nullptr, &q);
+        if (!q.handled || !q.worldContact)
+            return fail(message, cap, "weapon: no world contact");
+        if (!(q.outPosition[0] > 5.0f))
+            return fail(message, cap, "weapon: root was not pushed out");
+    }
+
+    // 14. Movement-through-surface: a limb whose CURRENT centre is clear but
+    //     whose per-tick sweep crossed the wall must still contact. This proves
+    //     the afad20a previous/current limb sweep, not a static-only test.
+    {
+        installQuad(V(0, -20, -20), V(0, 20, -20), V(0, 20, 20), V(0, -20, 20));
+        CollisionSolveV1 q = makeCapsule(110, 90, V(1, 0, 0.5f), V(0, 0, 0), 0.1f, 0.5f);
+        q.colliderCount = 2;
+        CollisionColliderV1& limb = q.colliders[1];
+        limb.partId = COLLISION_PART_RIGHT_ARM;
+        limb.shape = COLLISION_SHAPE_SPHERE;
+        limb.policyId = COLLISION_POLICY_BODY;
+        limb.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+        limb.radius = 0.3f;
+        // Current centre is 1.0 from the wall (no static overlap); the sweep
+        // delta places the previous centre at 0.1 (through the wall).
+        limb.position[0] = 1.0f;
+        limb.position[1] = 0.0f;
+        limb.position[2] = 0.5f;
+        limb.velocity[0] = 0.9f;
+        collisionSolve(nullptr, &q);
+        if (!q.handled || !q.worldContact)
+            return fail(message, cap, "swept limb: crossed wall not detected");
+    }
+
     return true;
 }
 

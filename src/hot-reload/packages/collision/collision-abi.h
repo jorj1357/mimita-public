@@ -93,6 +93,10 @@ struct CollisionColliderV1 {
     float radius;
     float halfHeight;         // capsule: tip-to-tip half extent
     float extents[3];         // box half extents (future)
+    // World-space displacement of this collider over the tick
+    // (currentCenter - previousCenter). When non-zero on a sphere the solver
+    // sweeps it from the previous center to the current center, so a fast limb
+    // cannot tunnel through thin geometry. Append-only meaning.
     float velocity[3];
     char label[COLLISION_MAX_LABEL];
     // Append-only: world-space second capsule endpoint. When non-zero the
@@ -121,6 +125,10 @@ struct CollisionContactV1 {
     float normal[3];
     float penetration;
     float incomingSpeed;
+    // afad20a universal contact reset: a qualifying capsule/limb/weapon/tool
+    // contact restores every touch-reset ability, not only ground contact.
+    std::uint32_t resetsAbilities;
+    std::uint32_t reserved0;
 };
 
 struct CollisionImpactV1 {

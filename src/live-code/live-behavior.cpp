@@ -1944,6 +1944,66 @@ bool MIMITA_GAME_CALL capMeshPartBounds(void*, GameMeshPartBoundsV1* q)
     return true;
 }
 
+// body.parts: the animated physical-body parts of the local typed Player, in
+// the ROOT-RELATIVE frame, plus each part-local collider AABB and its previous
+// root-relative position. This restores the afad20a per-limb collision source
+// (Player::physicalBody.parts) behind the hot boundary. The root is removed so
+// hot policy can compose its own current root, which is ahead of the cold
+// Player during the hot movement step.
+bool MIMITA_GAME_CALL capBodyParts(void*, GameBodyPartsV1* q)
+{
+    if (!q)
+        return false;
+    q->valid = 0;
+    q->count = 0;
+    if (!gpPlayer)
+        return false;
+    std::uint64_t local = 0;
+    if (GameSharedStateV1* shared =
+            MimitaRuntime::GenericRuntime::instance().sharedState())
+        local = shared->localPlayerEntity;
+    if (q->entity != 0 && local != 0 && q->entity != local)
+        return false;
+    Player& p = THE_PLAYER;
+    if (p.physicalBody.parts.empty())
+        return false;
+
+    const glm::mat4 rootWorld =
+        glm::translate(glm::mat4(1.0f), p.movementCapsule.position) *
+        glm::mat4_cast(p.movementCapsule.rotation);
+    const glm::mat4 invRoot = glm::inverse(rootWorld);
+
+    const std::uint32_t n = (std::uint32_t)std::min<std::size_t>(
+        p.physicalBody.parts.size(), GAME_MAX_BODY_PARTS);
+    for (std::uint32_t i = 0; i < n; ++i) {
+        const PhysicalBodyPart& part = p.physicalBody.parts[i];
+        const glm::mat4 localM = invRoot * part.worldTransform;
+        const glm::mat4 prevM = invRoot * part.previousWorldTransform;
+        GameBodyPartV1& out = q->parts[i];
+        out.part = gameHash(part.name.c_str());
+        out.localPosition[0] = localM[3][0];
+        out.localPosition[1] = localM[3][1];
+        out.localPosition[2] = localM[3][2];
+        const glm::quat rq = glm::quat_cast(glm::mat3(localM));
+        out.localRotation[0] = rq.x;
+        out.localRotation[1] = rq.y;
+        out.localRotation[2] = rq.z;
+        out.localRotation[3] = rq.w;
+        out.previousLocalPosition[0] = prevM[3][0];
+        out.previousLocalPosition[1] = prevM[3][1];
+        out.previousLocalPosition[2] = prevM[3][2];
+        out.boundsMin[0] = part.collider.localMin.x;
+        out.boundsMin[1] = part.collider.localMin.y;
+        out.boundsMin[2] = part.collider.localMin.z;
+        out.boundsMax[0] = part.collider.localMax.x;
+        out.boundsMax[1] = part.collider.localMax.y;
+        out.boundsMax[2] = part.collider.localMax.z;
+    }
+    q->count = n;
+    q->valid = n > 0u ? 1u : 0u;
+    return q->valid != 0u;
+}
+
 // Generic setting access seam: hot UI reads/writes real engine settings by
 // logical id. The kernel owns the mapping + validity constraints.
 // Kernel-provided discrete option lists for option-type settings. Hot code owns
@@ -2355,6 +2415,10 @@ struct KernelCapabilityInit {
                                     gameHash("sig.mesh.part-bounds.v1"), 0,
                                     reinterpret_cast<void*>(&capMeshPartBounds),
                                     "mesh.part-bounds");
+        rt.registerKernelCapability(GAME_CAP_BODY_PARTS,
+                                    gameHash("sig.body.parts.v1"), 0,
+                                    reinterpret_cast<void*>(&capBodyParts),
+                                    "body.parts");
         rt.registerKernelCapability(GAME_CAP_WORLD_PROJECT,
                                     gameHash("sig.world.project.v1"), 0,
                                     reinterpret_cast<void*>(&capWorldProject),

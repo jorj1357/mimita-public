@@ -140,10 +140,9 @@ void resolveActorCollisions(GameplayContextV1* ctx, MovementStateV1* st,
         st->velocity[i] = q.outVelocity[i];
     }
     st->grounded = q.grounded;
-    // One collision owner, one reset signal: valid world contact. Body-part
-    // classification remains available for diagnostics and response, but is
-    // not a separate ability-reset path.
-    st->collided = q.worldContact ? 1u : 0u;
+    // afad20a universal reset: any world or body contact (capsule, limb,
+    // weapon, tool) restores abilities, not only a grounded floor contact.
+    st->collided = (q.worldContact || q.bodyContact) ? 1u : 0u;
 }
 
 // Reads the per-actor preset from the generic ActorProfileState component
