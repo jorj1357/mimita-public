@@ -7,6 +7,7 @@
 */
 #include "physics/movement/movement-selftest.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -121,6 +122,38 @@ bool runMovementSelfTest(std::string& report)
     // Floor collision: the actor does not fall through and stays finite.
     ok &= check(posB[2] > 0.5f, "capsule does not fall through floor", report);
     ok &= check(std::isfinite(velB[2]), "vertical velocity finite", report);
+
+    // afad20a grounded rest: once landed the actor must not oscillate up and
+    // down while standing still (the bounce is snapped out by velocityClip).
+    if (shared)
+        shared->localPlayerEntity = (std::uint64_t)entityB;
+    {
+        MimitaRuntime::GenericRuntime& rt =
+            MimitaRuntime::GenericRuntime::instance();
+        float restMin = posB[2];
+        float restMax = posB[2];
+        bool stayedGrounded = true;
+        for (int i = 0; i < 60; ++i) {
+            Ecs::setMovementIntent(entityB, 0.0f, 0.0f, false, false, false,
+                                   false, false);
+            const std::uint64_t t = 4000ull + (std::uint64_t)i;
+            rt.beginMovementTick();
+            rt.runDomain(GAME_DOMAIN_GAMEPLAY, t, kDt,
+                         LiveBehavior::hostContext(t));
+            float p[3], v[3], y;
+            if (rt.consumeMovementOverride(p, v, y)) {
+                restMin = std::min(restMin, p[2]);
+                restMax = std::max(restMax, p[2]);
+            }
+            const auto* rs =
+                EntityRegistry::instance()
+                    .tryGet<MovementRuntimeStateComponent>(entityB);
+            if (rs && !rs->grounded)
+                stayedGrounded = false;
+        }
+        ok &= check(stayedGrounded && (restMax - restMin) < 0.05f,
+                    "grounded rest: no idle vertical oscillation", report);
+    }
 
     if (shared)
         shared->localPlayerEntity = (std::uint64_t)entity;

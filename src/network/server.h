@@ -819,7 +819,8 @@ void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
 
 // Player simulation
 void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn);
-void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn);
+void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn,
+                               uint32_t serverTick = 0);
 // Picks a safe map spawn for a player: skips spawn points where the player
 // capsule would embed in geometry (rejects "fall into a narrow shaft/spire"
 // spawns by validating the standing position). Respects the host spawn override.

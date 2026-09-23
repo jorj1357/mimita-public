@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace {
@@ -410,6 +411,116 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
         return;
     }
 
+    // Movement presentation is hot policy. The EXE only reports the movement
+    // fact; this code chooses the actual shape, geometry, timing, colour, and
+    // sound. Editing these recipes must affect the next hot DLL generation
+    // without relinking the executable.
+    if (req->effectTypeId == gameHash("effect.movement.ground_jump") ||
+        req->effectTypeId == gameHash("effect.movement.air_jump") ||
+        req->effectTypeId == gameHash("effect.movement.dash") ||
+        req->effectTypeId == gameHash("effect.movement.down_dash") ||
+        req->effectTypeId == gameHash("effect.movement.landing") ||
+        req->effectTypeId == gameHash("effect.movement.freeze") ||
+        req->effectTypeId == gameHash("effect.movement.freeze_trail") ||
+        req->effectTypeId == gameHash("effect.movement.footstep")) {
+        req->handled = 1;
+
+        const float pos[3] = {req->position[0], req->position[1], req->position[2]};
+        float dir[3] = {req->normal[0], req->normal[1], req->normal[2]};
+        const float dirLen = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] +
+                                       dir[2] * dir[2]);
+        if (dirLen < 0.001f) {
+            dir[0] = 0.0f;
+            dir[1] = 0.0f;
+            dir[2] = 1.0f;
+        } else {
+            dir[0] /= dirLen;
+            dir[1] /= dirLen;
+            dir[2] /= dirLen;
+        }
+
+        const std::uint64_t type = req->effectTypeId;
+        if (type == gameHash("effect.movement.ground_jump")) {
+            const float p[3] = {pos[0], pos[1], pos[2] - 0.5f};
+            const float v[3] = {0.0f, 0.0f, 1.5f};
+            spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
+                        1.0f, 0.85f, 0.2f, 0.25f, 2.5f,
+                        10.0f / 60.0f, 0.15f);
+            emitWorldSound(ctx, "entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
+            return;
+        }
+        if (type == gameHash("effect.movement.air_jump")) {
+            const float p[3] = {pos[0], pos[1], pos[2] - 1.0f};
+            const float v[3] = {0.0f, 0.0f, -0.5f};
+            spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
+                        0.5f, 0.3f, 1.0f, 0.4f, 3.0f,
+                        14.0f / 60.0f, 0.2f);
+            emitWorldSound(ctx, "entity/player/doublejump", pos, 1.0f, 1.0f, 22.0f);
+            return;
+        }
+        if (type == gameHash("effect.movement.dash")) {
+            const float speed = std::max(req->scale, 1.0f);
+            spawnEffectOriented(ctx, HOT_MESH_BEAM, HOT_TEX_DEFAULT, pos, dir,
+                                0.2f, 0.6f, 1.0f, 1.0f,
+                                0.18f, 0.18f,
+                                std::clamp(0.5f + speed * 0.08f, 0.5f, 3.5f),
+                                12.0f / 60.0f, 0.35f);
+            emitWorldSound(ctx, "entity/player/dash", pos,
+                           (req->flags & 1u) ? 1.3f : 1.0f,
+                           (req->flags & 1u) ? 1.2f : 1.0f, 36.0f);
+            if (req->flags & 1u)
+                emitWorldSound(ctx, "entity/player/dash", pos, 1.0f, 0.25f, 36.0f);
+            return;
+        }
+        if (type == gameHash("effect.movement.down_dash")) {
+            const float down[3] = {0.0f, 0.0f, -1.0f};
+            spawnEffectOriented(ctx, HOT_MESH_BEAM, HOT_TEX_DEFAULT, pos, down,
+                                0.1f, 0.8f, 0.8f, 1.0f,
+                                0.45f, 0.45f, 3.0f,
+                                12.0f / 60.0f, 0.3f);
+            emitWorldSound(ctx, "entity/player/dash", pos, 1.0f, 0.82f, 36.0f);
+            return;
+        }
+        if (type == gameHash("effect.movement.landing")) {
+            const float p[3] = {pos[0], pos[1], pos[2]};
+            spawnEffectOriented(ctx, HOT_MESH_BEAM, HOT_TEX_DEFAULT, p, dir,
+                                0.6f, 0.6f, 0.6f, 1.0f,
+                                0.6f, 0.12f, 0.12f,
+                                12.0f / 60.0f, 0.2f);
+            emitWorldSound(ctx, "entity/player/land", pos, 1.0f, 1.0f, 32.0f);
+            return;
+        }
+        if (type == gameHash("effect.movement.freeze")) {
+            spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, pos,
+                        nullptr, 0.2f, 1.0f, 0.3f, 0.2f, 0.0f,
+                        std::max(req->scale, 0.1f), 0.0f);
+            emitWorldSound(ctx, "entity/player/freezebegin", pos, 1.0f, 1.0f, 30.0f);
+            return;
+        }
+        if (type == gameHash("effect.movement.freeze_trail")) {
+            const float up[3] = {0.0f, 0.0f, 1.0f};
+            spawnEffectOriented(ctx, HOT_MESH_BEAM, HOT_TEX_DEFAULT, pos, up,
+                                0.1f, 0.1f, 0.4f, 1.0f,
+                                0.4f, 0.4f, 2.0f,
+                                3.0f / 60.0f, 0.0f);
+            return;
+        }
+
+        // Footsteps use a deterministic variant selected from the simulation
+        // tick, not process-global rand(), so replay and live presentation agree.
+        const std::uint32_t variant =
+            static_cast<std::uint32_t>((ctx->tick + req->sourceEntity) % 4u) + 1u;
+        char sound[64];
+        std::snprintf(sound, sizeof(sound), "entity/player/walk%u", variant);
+        const float p[3] = {pos[0], pos[1], pos[2] - 0.6f};
+        const float v[3] = {0.0f, 0.0f, 0.0f};
+        spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
+                    0.8f, 0.8f, 0.8f, 0.08f, 1.0f,
+                    6.0f / 60.0f, 0.0f);
+        emitWorldSound(ctx, sound, pos, 0.8f, 1.0f, 22.0f);
+        return;
+    }
+
     // Generic actor/NPC action audio (hot policy): a logical actor-sound key in,
     // audio.play out. Cold picks no NPC sound.
     if (req->effectTypeId == gameHash("effect.actor.sound")) {
@@ -469,13 +580,13 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             auto audio = reinterpret_cast<AudioPlayFn>(
                 ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
             if (audio) {
-                static std::uint32_t s_step = 0;
                 GameAudioCommandV1 c{};
                 if (req->text[0] != '\0')   // arbitrary logical id (no enum)
                     std::snprintf(c.sound, sizeof(c.sound), "%s", req->text);
                 else
+                    // Random walk variant each step (was a fixed 1..4 cycle).
                     std::snprintf(c.sound, sizeof(c.sound), "entity/player/walk%d",
-                                  1 + (int)(s_step++ % 4u));
+                                  1 + (std::rand() % 4));
                 c.position[0] = req->position[0];
                 c.position[1] = req->position[1];
                 c.position[2] = req->position[2];

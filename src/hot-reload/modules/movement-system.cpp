@@ -771,6 +771,10 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
                        std::uint64_t entity, std::uint64_t tick)
 {
     using namespace HotCollisionPackage;
+    // `st->grounded` was set by the caller to the previous tick's value before
+    // this call; capture it so the land sound fires only on the airborne ->
+    // grounded transition (each landing), not every grounded tick.
+    const bool wasGrounded = st->grounded != 0u;
     GameCollisionSolveFn fn = nullptr;
     if (ctx->resolveCapability)
         fn = reinterpret_cast<GameCollisionSolveFn>(
@@ -827,12 +831,11 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
             if (q.contacts[h].incomingSpeed > maxIncoming)
                 maxIncoming = q.contacts[h].incomingSpeed;
         }
-        static float sinceImpact = 1.0f;  // allow the first impact immediately
-        sinceImpact += dt;
-        // Landing/ground-smash only on a real ground contact. A wall hit has
-        // incoming speed too but must not play the land sound.
-        if (q.grounded && maxIncoming > 8.0f && sinceImpact >= 0.01f) {
-            sinceImpact = 0.0f;
+        // afad20a landing: play the grounded sound only on the airborne ->
+        // grounded transition (each landing), with no cooldown. This runs once
+        // per tick, so it is naturally capped at one sound per tick; volume
+        // scales with the impact speed.
+        if (!wasGrounded && q.grounded) {
             const float volume = std::clamp(maxIncoming / 30.0f, 0.2f, 1.0f);
             playActionSound(ctx, entity, st->position, "entity/player/land",
                             volume, 1.0f);
@@ -1371,6 +1374,12 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
                 MimitaHotMovement::groundMove(g, out);
                 vx = out[0];
                 vy = out[1];
+                // afad20a landing vertical snap (applySourceGround): a small
+                // vertical velocity while grounded is zeroed, so the collision
+                // bounce cannot make a resting actor oscillate. Real impacts
+                // (down-dash, hard fall) exceed velocityClipEpsilon and bounce.
+                if (m.groundSnap && std::fabs(vz) <= m.velocityClipEpsilon)
+                    vz = 0.0f;
             } else if (hasWish) {
                 // AIR: the ONE shared hot air-acceleration policy.
                 GameAirAccelerateV1 air{};

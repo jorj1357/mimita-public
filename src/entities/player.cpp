@@ -247,8 +247,17 @@ void Player::updateAudio(float dt)
     jump.jumpSoundTimer = std::max(0.0f, jump.jumpSoundTimer - dt);
 
     if (jump.didGroundJump) {
+        bool hotPresented = false;
         if (jump.jumpSoundTimer <= 0.0f) {
-            playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
+            EffectRequestV1 req{};
+            req.effectTypeId = gameHash("effect.movement.ground_jump");
+            req.position[0] = pos.x;
+            req.position[1] = pos.y;
+            req.position[2] = pos.z;
+            req.scale = sizeScale;
+            hotPresented = LiveBehavior::dispatchEffectRequest(req, 0);
+            if (!hotPresented)
+                playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
             jump.jumpSoundTimer = 0.08f;
         }
         glm::vec3 jumpDir = glm::length(inputWishMove) > 0.001f
@@ -256,18 +265,22 @@ void Player::updateAudio(float dt)
             : glm::vec3(0.0f, 0.0f, 0.0f);
         glm::vec3 groundJumpPos = pos;
         groundJumpPos.z -= 0.5f;
-        HitEffects::spawnGroundJumpBurst(groundJumpPos, jumpDir);
+        if (!hotPresented)
+            HitEffects::spawnGroundJumpBurst(groundJumpPos, jumpDir);
     }
 
     if (jump.didAirJump) {
+        bool hotPresented = false;
         if (jump.jumpSoundTimer <= 0.0f) {
             // Jump audio policy is hot via the same generic movement fact path.
-            EffectRequestV1 jsnd{};
-            jsnd.effectTypeId = gameHash("effect.jump.sound");
-            jsnd.position[0] = pos.x;
-            jsnd.position[1] = pos.y;
-            jsnd.position[2] = pos.z;
-            if (!LiveBehavior::dispatchEffectRequest(jsnd, 0))
+            EffectRequestV1 airJump{};
+            airJump.effectTypeId = gameHash("effect.movement.air_jump");
+            airJump.position[0] = pos.x;
+            airJump.position[1] = pos.y;
+            airJump.position[2] = pos.z;
+            airJump.scale = sizeScale;
+            hotPresented = LiveBehavior::dispatchEffectRequest(airJump, 0);
+            if (!hotPresented)
                 playAirJumpSound();
             jump.jumpSoundTimer = 0.08f;
         }
@@ -276,46 +289,95 @@ void Player::updateAudio(float dt)
             : glm::vec3(0.0f, 0.0f, 0.0f);
         glm::vec3 airJumpPos = pos;
         airJumpPos.z -= 1.0f;
-        HitEffects::spawnAirJumpBurst(airJumpPos, jumpDir);
+        if (!hotPresented)
+            HitEffects::spawnAirJumpBurst(airJumpPos, jumpDir);
     }
 
     if (dash.didDash) {
         printf("[DASH EFFECT] spawning burst\n");
         bool perfect = (dash.lastDashQuality == 0);
-        playWorldSound("entity/player/dash", pos, perfect ? 1.3f : 1.0f, perfect ? 1.2f : 1.0f, 36.0f);
         glm::vec3 dashDir = glm::length(vel) > 0.001f ? glm::normalize(vel) : glm::vec3(0,1,0);
-        HitEffects::spawnMovementDashBurst(pos, dashDir, glm::length(vel));
-        if (dash.tickPerfectDash)
-            playWorldSound("entity/player/dash", pos, 1.0f, 0.25f, 36.0f);
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.movement.dash");
+        req.position[0] = pos.x;
+        req.position[1] = pos.y;
+        req.position[2] = pos.z;
+        req.normal[0] = dashDir.x;
+        req.normal[1] = dashDir.y;
+        req.normal[2] = dashDir.z;
+        req.scale = glm::length(vel);
+        req.flags = dash.tickPerfectDash ? 1u : 0u;
+        const bool hotPresented = LiveBehavior::dispatchEffectRequest(req, 0);
+        if (!hotPresented) {
+            playWorldSound("entity/player/dash", pos, perfect ? 1.3f : 1.0f,
+                           perfect ? 1.2f : 1.0f, 36.0f);
+            HitEffects::spawnMovementDashBurst(pos, dashDir, glm::length(vel));
+            if (dash.tickPerfectDash)
+                playWorldSound("entity/player/dash", pos, 1.0f, 0.25f, 36.0f);
+        }
         dash.lastDashQuality = 0;
     }
 
     if (freeze.didFreeze) {
-        playWorldSound("entity/player/freezebegin", pos, 1.0f, 1.0f, 30.0f);
         glm::vec3 freezePos = pos;
         freezePos.z -= 0.3f;
-        EffectPartSystem::instance().spawnFreeze(freezePos, freeze.freezeTimer);
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.movement.freeze");
+        req.position[0] = freezePos.x;
+        req.position[1] = freezePos.y;
+        req.position[2] = freezePos.z;
+        req.scale = freeze.freezeTimer;
+        if (!LiveBehavior::dispatchEffectRequest(req, 0)) {
+            playWorldSound("entity/player/freezebegin", pos, 1.0f, 1.0f, 30.0f);
+            EffectPartSystem::instance().spawnFreeze(freezePos, freeze.freezeTimer);
+        }
     }
 
     if (freeze.freezeActive) {
-        EffectPartSystem::instance().spawnFreezeTrail(pos);
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.movement.freeze_trail");
+        req.position[0] = pos.x;
+        req.position[1] = pos.y;
+        req.position[2] = pos.z;
+        req.scale = sizeScale;
+        if (!LiveBehavior::dispatchEffectRequest(req, 0))
+            EffectPartSystem::instance().spawnFreezeTrail(pos);
     }
 
     if (dash.didDownDash) {
         glm::vec3 downDashPos = pos;
         downDashPos.z -= 0.3f;
-        EffectPartSystem::instance().spawnDownDash(downDashPos);
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.movement.down_dash");
+        req.position[0] = downDashPos.x;
+        req.position[1] = downDashPos.y;
+        req.position[2] = downDashPos.z;
+        req.scale = sizeScale;
+        if (!LiveBehavior::dispatchEffectRequest(req, 0))
+            EffectPartSystem::instance().spawnDownDash(downDashPos);
     }
 
     // Landing: sound + directional VFX
     if (ground.didLand) {
-        playWorldSound("entity/player/land", pos, 1.0f, 1.0f, 32.0f);
         glm::vec3 landDir = glm::length(inputWishMove) > 0.001f
             ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
             : glm::vec3(0.0f, 0.0f, 0.0f);
         glm::vec3 landPos = pos;
         landPos.z -= 0.3f;
-        HitEffects::spawnLandingBurst(landPos, landDir, glm::length(glm::vec2(vel.x, vel.y)));
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.movement.landing");
+        req.position[0] = landPos.x;
+        req.position[1] = landPos.y;
+        req.position[2] = landPos.z;
+        req.normal[0] = landDir.x;
+        req.normal[1] = landDir.y;
+        req.normal[2] = landDir.z;
+        req.scale = glm::length(glm::vec2(vel.x, vel.y));
+        if (!LiveBehavior::dispatchEffectRequest(req, 0)) {
+            playWorldSound("entity/player/land", pos, 1.0f, 1.0f, 32.0f);
+            HitEffects::spawnLandingBurst(landPos, landDir,
+                                           glm::length(glm::vec2(vel.x, vel.y)));
+        }
     }
 
     // Walk VFX: directional ground spheres offset opposite travel direction
@@ -334,15 +396,27 @@ void Player::updateAudio(float dt)
             fstep.scale = sizeScale;
             if (!LiveBehavior::dispatchEffectRequest(fstep, 0))
                 playWorldSound("entity/player/walk" + std::to_string(1 + rand() % 4), pos, 0.8f, 1.0f, 22.0f);
-            Capsule cap = getCapsule();
-            glm::vec3 footPos = cap.a;
-            footPos.z -= cap.r;
-            EffectPartSystem::instance().spawnFootstep(footPos, sizeScale);
             // Walk burst: opposite direction of travel
             glm::vec3 walkDir = glm::length(inputWishMove) > 0.001f
                 ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
                 : glm::vec3(0.0f, 0.0f, 0.0f);
-            HitEffects::spawnWalkBurst(pos, -walkDir, speed);
+            EffectRequestV1 walkFx{};
+            walkFx.effectTypeId = gameHash("effect.movement.footstep");
+            walkFx.position[0] = pos.x;
+            walkFx.position[1] = pos.y;
+            walkFx.position[2] = pos.z;
+            walkFx.normal[0] = -walkDir.x;
+            walkFx.normal[1] = -walkDir.y;
+            walkFx.normal[2] = -walkDir.z;
+            walkFx.scale = sizeScale;
+            const bool hotFootstep = LiveBehavior::dispatchEffectRequest(walkFx, 0);
+            if (!hotFootstep) {
+                Capsule cap = getCapsule();
+                glm::vec3 footPos = cap.a;
+                footPos.z -= cap.r;
+                EffectPartSystem::instance().spawnFootstep(footPos, sizeScale);
+                HitEffects::spawnWalkBurst(pos, -walkDir, speed);
+            }
             footstepTimer = 0.35f;
         }
     } else {

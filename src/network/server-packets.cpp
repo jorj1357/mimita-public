@@ -34,6 +34,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "void-death/void-death.h"
 #include "website/api-client.h"
 #include "persistence/persistence-emit.h"
@@ -1653,6 +1654,23 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
            serverTimestamp(), p.id, p.name.c_str(), p.accountId,
            p.accountId == 0 ? 1 : 0);
 
+    debug::Event connectionEvent{
+        .category = "NETWORK",
+        .name = existingId ? "server.player_rejoined" : "server.player_joined",
+        .level = debug::Level::Info,
+        .message = existingId ? "player rejoined authoritative server" : "player joined authoritative server",
+        .reason = existingId ? "reconnect_token" : "join_request",
+        .fields = {
+            {"player_id", p.id}, {"entity_id", p.id}, {"player_name", p.name},
+            {"server_tick", tick}, {"existing_player", existingId != 0},
+            {"spawn_generation", p.spawnGeneration}, {"dead", p.dead},
+            {"respawn_seconds", p.respawnSeconds}, {"connection_stale", p.connectionStale},
+            {"is_host", p.isHost}
+        },
+        .serverTick = tick,
+        .aggregationKey = "server.player.connection"};
+    MIMITA_EVENT(connectionEvent);
+
     if (!existingId)
     {
         // Use map spawnpoints if available
@@ -2364,7 +2382,7 @@ ServerPacketProcessResult processServerPacket(
                     it->second.spawned = true;
                     it->second.vel = glm::vec3(0.0f);
                     it->second.clientStateUpdated = false;
-                    completeAuthoritativeSpawn(sock, it->second, true);
+                    completeAuthoritativeSpawn(sock, it->second, true, tick);
                     printf("%s [SERVER MAP READY] transport=%s connection=%llu "
                            "id=%u name=\"%s\"\n",
                            serverTimestamp(), transportKindName(event.transportKind),

@@ -111,10 +111,10 @@ bool runMovementParitySelfTest(std::string& report)
                     std::fabs(velA[2] - velB[2]) < 1e-4f,
                 "hot movement path deterministic", report);
 
-    // It must land on the floor, not fall through, and stay finite. afad20a
-    // ground response bounces, so vertical rest is not expected.
+    // It must land on the floor, not fall through, and rest vertically
+    // (afad20a snaps a small grounded vertical velocity out).
     ok &= check(posA[2] > 0.5f, "hot movement lands on floor", report);
-    ok &= check(std::isfinite(velA[2]), "hot movement vertical finite", report);
+    ok &= check(std::fabs(velA[2]) < 0.5f, "hot movement vertical rest", report);
 
     // Landing height: the capsule center rests at radius + segment half, i.e.
     // tipHalf = 0.9 for this test capsule (radius 0.4, halfHeight 0.9). The old

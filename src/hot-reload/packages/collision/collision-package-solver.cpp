@@ -123,6 +123,10 @@ constexpr float kStableGroundGraceSeconds = 0.08f;    // ground loss grace
 // the actor hovering a fraction above the floor after a fast landing.
 constexpr float kGroundSettleDistance = 0.25f;
 constexpr float kGroundSettleEpsilon = 0.005f;
+// afad20a doFloorRecovery: lift the actor out of a floor it is embedded in.
+constexpr float kFloorRecoveryLiftDistance = 0.5f;
+// afad20a doGroundSnap: do not snap down while moving up faster than this.
+constexpr float kMaxUpwardVelForSnap = 1.0f;
 // Extra padding around the swept union AABB so geometry brushed at the very
 // edge of the sweep is still a candidate. Kept small: the sweep itself already
 // covers the full move.
@@ -419,7 +423,6 @@ bool settleToGround(glm::vec3& pos, glm::vec3& vel,
                     const std::vector<std::uint32_t>& candidates,
                     glm::vec3& outNormal)
 {
-    (void)vel;
     bool anyBody = false;
     for (int i = 0; i < colCount; ++i) {
         if (cols[i].partId != COLLISION_PART_CAPSULE &&
@@ -474,8 +477,26 @@ bool settleToGround(glm::vec3& pos, glm::vec3& vel,
     if (bestZ <= -1e29f)
         return false;
     const float distance = lowestSurfaceZ - bestZ;
-    if (distance > 0.0f && distance < kGroundSettleDistance) {
-        pos.z -= distance - kGroundSettleEpsilon;
+    if (distance > 0.0f) {
+        // afad20a doGroundSnap: the walkable surface is below the lowest
+        // collider. Rest on it when close and not moving up fast.
+        if (distance < kGroundSettleDistance && vel.z <= kMaxUpwardVelForSnap) {
+            pos.z -= distance - kGroundSettleEpsilon;
+            if (vel.z < 0.0f)
+                vel.z = 0.0f;
+            outNormal = glm::vec3(0.0f, 0.0f, 1.0f);
+            return true;
+        }
+        return false;
+    }
+    // afad20a doFloorRecovery: the walkable surface is above the lowest
+    // collider (the actor is embedded in the floor); lift it out. Runs
+    // regardless of the bounce setting so a bounced ground contact still
+    // settles to a stable resting height.
+    if (-distance < kFloorRecoveryLiftDistance) {
+        pos.z -= distance;   // distance < 0 -> lift up
+        if (vel.z < 0.0f)
+            vel.z = 0.0f;
         outNormal = glm::vec3(0.0f, 0.0f, 1.0f);
         return true;
     }
@@ -814,27 +835,21 @@ void solve(void* host, CollisionSolveV1* q)
         worldContact = hasWorldContact;
     }
 
-    // Ground settle, matching the old cold doGroundSnap: if a walkable surface
-    // is within the settle distance below the feet, rest exactly on it. This
-    // keeps walking/standing stable and jump-eligible after a fast landing.
+    // afad20a ground settle/recovery, always run (independent of bounce):
+    //   - doFloorRecovery: lift out of the floor when embedded;
+    //   - doGroundSnap: snap down within 0.25 when not moving up, zeroing the
+    //     downward velocity.
+    // Keeping this active in bounce mode is what lets a resting actor settle
+    // instead of oscillating on the bounced ground contact. It never bounces.
     bool groundSettled = false;
-    const CollisionBehaviorV1 behavior = collisionBehavior();
     glm::vec3 settledNormal(0.0f, 0.0f, 1.0f);
-    if (!behavior.groundBounce && !bounced && vel.z <= 0.0f &&
+    if (!bounced &&
         settleToGround(pos, vel, cols, colCount, candidates, settledNormal)) {
         grounded = true;
         groundSettled = true;
-        if (behavior.groundBounce) {
-            ActorContact settleContact{};
-            settleContact.normal = settledNormal;
-            applyVelocityResponse(vel, settleContact, q->entityId, q->tick,
-                                  bounced, behavior);
-        } else if (vel.z < 0.0f) {
-            vel.z = 0.0f;
-        }
     }
 
-    if (!behavior.groundBounce && grounded && !bounced &&
+    if (grounded && !bounced &&
         vel.z > -kGroundSnapEpsilon &&
         vel.z < kGroundSnapEpsilon)
         vel.z = 0.0f;

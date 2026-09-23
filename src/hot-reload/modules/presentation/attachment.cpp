@@ -369,10 +369,29 @@ void MIMITA_GAME_CALL attachmentTick(void* host, std::uint64_t /*tick*/,
                         GameMeshBoundsV1 mb{};
                         mb.meshResourceId = ps.meshResourceId;
                         if (boundsFn(ctx->host, &mb) && mb.valid) {
-                            const glm::vec3 grip(
+                            // afad20a mounted the weapon from the grip at the
+                            // near end of its longest model axis.  Re-centering
+                            // on the AABB midpoint moves long weapons away
+                            // from the right hand and makes the hot renderer
+                            // disagree with the legacy viewmodel.
+                            const glm::vec3 size(
+                                mb.boundsMax[0] - mb.boundsMin[0],
+                                mb.boundsMax[1] - mb.boundsMin[1],
+                                mb.boundsMax[2] - mb.boundsMin[2]);
+                            int axis = size.y > size.x ? 1 : 0;
+                            if (size.z > size[axis])
+                                axis = 2;
+                            glm::vec3 grip(
                                 0.5f * (mb.boundsMin[0] + mb.boundsMax[0]),
                                 0.5f * (mb.boundsMin[1] + mb.boundsMax[1]),
                                 0.5f * (mb.boundsMin[2] + mb.boundsMax[2]));
+                            const float minDistance =
+                                std::fabs(mb.boundsMin[axis]);
+                            const float maxDistance =
+                                std::fabs(mb.boundsMax[axis]);
+                            grip[axis] = maxDistance >= minDistance
+                                ? mb.boundsMin[axis]
+                                : mb.boundsMax[axis];
                             recenter = glm::translate(glm::mat4(1.0f), -grip);
                         }
                     }

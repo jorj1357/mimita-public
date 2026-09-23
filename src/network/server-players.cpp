@@ -32,6 +32,7 @@
 #include "config/networking-config.h"
 #include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <cmath>
 #include <cstdio>
@@ -391,7 +392,8 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 // ── Complete authoritative spawn and notify client ────────────────────
 // Called from every spawn path: initial spawn, auto-respawn, instant-respawn.
 // Sends PlayerRespawnedPacket with authoritative generation and inventory.
-void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn)
+void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitialSpawn,
+                                uint32_t serverTick)
 {
     // The client may have reported its pre-map-load position while the
     // authoritative transform gate was still pending.  Do not let that
@@ -437,6 +439,23 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     player.spawnState = ServerPlayer::AwaitingSpawnAck;
     resetServerMovementForAuthoritativeLifecycle(
         player, makeCurrentRuntimeMovementConfig());
+
+    debug::Event lifecycleEvent{
+        .category = "NETWORK",
+        .name = isInitialSpawn ? "server.player_spawned" : "server.player_respawned",
+        .level = debug::Level::Info,
+        .message = isInitialSpawn ? "authoritative initial spawn" : "authoritative respawn",
+        .reason = isInitialSpawn ? "join" : "respawn_timer",
+        .fields = {
+            {"player_id", player.id}, {"entity_id", player.id},
+            {"player_name", player.name}, {"server_tick", serverTick},
+            {"spawn_generation", player.spawnGeneration},
+            {"transform_epoch", player.transformEpoch}, {"health", player.health},
+            {"respawn_seconds", player.respawnSeconds}, {"is_initial_spawn", isInitialSpawn}
+        },
+        .serverTick = serverTick,
+        .aggregationKey = "server.player.lifecycle"};
+    MIMITA_EVENT(lifecycleEvent);
 
     ActorSpawnEvent lifecycleEvent;
     lifecycleEvent.entityId = player.id;

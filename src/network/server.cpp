@@ -923,7 +923,7 @@ int runServer(const LaunchOptions& options)
                 if (kv.second.justRespawned)
                 {
                     kv.second.justRespawned = false;
-                    completeAuthoritativeSpawn(sock, kv.second, false);
+                    completeAuthoritativeSpawn(sock, kv.second, false, tick);
                 }
             }
             tickWeaponRuntimes(players, tick);
@@ -1452,7 +1452,7 @@ static void simulateOneServerTick(ListenServerState& state)
             if (kv.second.justRespawned)
             {
                 kv.second.justRespawned = false;
-                completeAuthoritativeSpawn(state.sock, kv.second, false);
+                completeAuthoritativeSpawn(state.sock, kv.second, false, state.tick);
             }
         }
         tickWeaponRuntimes(state.players, state.tick);

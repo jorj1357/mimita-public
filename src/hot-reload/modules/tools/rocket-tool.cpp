@@ -74,11 +74,11 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
                                : paramOr(def, "hotLifetime", 5.0f);
     const float radius = tparam("rocketRadius",
         (hasTuning && tuning.projectileRadius > 0.0f) ? tuning.projectileRadius : 0.2f);
-    const float impactDamage = tparam("rocketDirectDamage", 120.0f);
-    const float splashRadius = tparam("splashRadius", 3.0f);
+    const float impactDamage = tparam("rocketDirectDamage", 150.0f);
+    const float splashRadius = tparam("splashRadius", 12.0f);
     const float splashDamage = tparam("splashDamage", impactDamage);
     const float splashExponent = tparam("splashExponent", 2.0f);
-    const float knockbackStrength = tparam("knockbackStrength", 12.0f);
+    const float knockbackStrength = tparam("knockbackStrength", 15.0f);
     const float selfDamageMultiplier = tparam("selfDamageMultiplier", 0.2f);
     const float fullDamageRadius = tparam("full_damage_radius", 1.0f);
 

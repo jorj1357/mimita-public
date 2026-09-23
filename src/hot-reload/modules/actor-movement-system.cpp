@@ -419,6 +419,11 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
             MimitaHotMovement::groundMove(g, out);
             vx = out[0];
             vy = out[1];
+            // afad20a landing vertical snap (applySourceGround): zero a small
+            // grounded vertical velocity so a bounced ground contact cannot
+            // make a resting actor oscillate.
+            if (m.groundSnap && std::fabs(vz) <= m.velocityClipEpsilon)
+                vz = 0.0f;
         } else if (hasWish) {
             GameAirAccelerateV1 a{};
             a.velocity[0] = vx;

@@ -512,6 +512,29 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
                 weaponId, weaponDisplayName.c_str(),
                 event.eventId, tick);
         }
+
+        debug::Event deathEvent{
+            .category = "NETWORK",
+            .name = "server.player_died",
+            .level = debug::Level::Info,
+            .message = "authoritative player death confirmed",
+            .reason = damageSourceName(source),
+            .correlationId = std::to_string(event.eventId),
+            .fields = {
+                {"victim_player_id", target.id}, {"victim_entity_id", target.id},
+                {"victim_name", target.name}, {"killer_player_id", effectiveAttackerPlayerId},
+                {"killer_npc_id", effectiveAttackerNpcId},
+                {"killer_entity_type", effectiveAttackerNpcId != 0 ? "npc" : "player_or_world"},
+                {"weapon", weaponDisplayName}, {"damage", damage},
+                {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
+                {"server_tick", tick}, {"spawn_generation", target.spawnGeneration},
+                {"deaths_total", target.deaths}, {"respawn_seconds", target.respawnSeconds},
+                {"respawns_enabled", target.respawnSeconds >= 0.0f},
+                {"connection_stale", target.connectionStale}
+            },
+            .serverTick = tick,
+            .aggregationKey = "server.player.death"};
+        MIMITA_EVENT(deathEvent);
     }
     return queueReliableGameplayEventToAll(
         sock, players, &event, sizeof(event), event.eventId,
