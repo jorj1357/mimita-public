@@ -17,6 +17,10 @@ Status: hot DLL built; default cadence/variation corrected; leg-contact trigger 
 - The legacy `effect.footstep.sound` compatibility request is now consumed
   silently; only `effect.movement.footstep` emits the walk audio. Immediate
   random repeats are allowed.
+- Jump and air-jump presentation is also emitted from the hot movement owner on
+  the accepted fresh jump edge, with no presentation timer. Releasing and
+  pressing jump again can react immediately; the jump policy still controls
+  actual air-jump availability.
 
 ## Evidence
 

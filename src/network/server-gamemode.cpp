@@ -9,6 +9,7 @@
 */
 
 #include "network/server-gamemode.h"
+#include "live-code/live-journal.h"
 
 #include <algorithm>
 #include <cmath>
@@ -3476,6 +3477,18 @@ void serverGamemodeRecordKill(
     uint32_t tick,
     uint64_t& totalPacketsOut)
 {
+    {
+        LiveEventJournal::Fields f;
+        f.tick = tick;
+        f.entityId = victimId;
+        f.actorId = std::to_string(killerId);
+        f.result = "begin";
+        f.extra = std::string("\"killer_entity_type\":") +
+            std::to_string(killerEntityType) + ",\"victim_entity_type\":" +
+            std::to_string(victimEntityType) + ",\"weapon_id\":\"" +
+            weaponId + "\"";
+        LiveEventJournal::instance().record("server.kill_record_begin", f);
+    }
     // Credit the kill. Heal the player killer only when the active gamemode
     // rule allows it (kill_heals); one-life / tactical modes set false.
     if (killerEntityType == ENTITY_PLAYER && killerId != 0 && killerId != victimId)

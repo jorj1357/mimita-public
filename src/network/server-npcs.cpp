@@ -24,6 +24,7 @@
 #include "network/actor-health.h"
 #include "network/actor-state.h"
 #include "network/dynamic-replication.h"
+#include "live-code/live-journal.h"
 
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
@@ -278,6 +279,14 @@ static void respawnServerNpc(Npc& npc)
 {
     glm::vec3 spawnPos = effectiveServerSpawn(npc.body.respawnPosition);
     float spawnYaw = npc.body.yaw;
+
+    LiveEventJournal::Fields respawnEvent;
+    respawnEvent.entityId = npc.id;
+    respawnEvent.result = "begin";
+    respawnEvent.extra = std::string("\"health\":") +
+        std::to_string(npc.body.currentHp) + ",\"respawn_timer\":" +
+        std::to_string(npc.body.respawnTimer);
+    LiveEventJournal::instance().record("server.npc_respawn_begin", respawnEvent);
 
     // Hot lifecycle policy: the active mode/behavior may relocate the respawn,
     // set the yaw, and arm spawn protection on the actor entity. Generic across
@@ -1146,6 +1155,16 @@ void simulateSharedNpcs(SOCKET sock,
                         nearestNpc->body.dead = true;
                         nearestNpc->body.respawnTimer = serverMatchRespawnsEnabled()
                             ? serverMatchRespawnSeconds() : -1.0f;
+                        LiveEventJournal::Fields deathEvent;
+                        deathEvent.tick = tick;
+                        deathEvent.entityId = nearestNpc->id;
+                        deathEvent.actorId = std::to_string(n.id);
+                        deathEvent.result = "killed";
+                        deathEvent.extra = std::string("\"victim_entity_type\":\"npc\",\"killer_entity_type\":\"npc\",\"weapon_id\":\"") +
+                            wId + "\",\"weapon_display\":\"" + wDisp +
+                            "\",\"health_after\":0,\"respawn_seconds\":" +
+                            std::to_string(nearestNpc->body.respawnTimer);
+                        LiveEventJournal::instance().record("server.npc_died", deathEvent);
                         npcMindOnKill(n);
                         serverGamemodeRecordKill(sock, players, &npcs,
                             n.id, ENTITY_NPC, nearestNpc->id, ENTITY_NPC,

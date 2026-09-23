@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "live-code/live-journal.h"
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "debug/structured-log.h"
@@ -2083,6 +2084,7 @@ void cancelDeadNpcProjectiles(
     uint32_t tick,
     uint64_t& totalPacketsOut)
 {
+    std::uint32_t cancelled = 0;
     for (auto it = projectiles.begin(); it != projectiles.end(); )
     {
         const ServerProjectile& projectile = it->second;
@@ -2116,6 +2118,15 @@ void cancelDeadNpcProjectiles(
         Ecs::despawn(EntityRegistry::instance().find(
             EntityRealm::Server, EntityDomain::Projectile, projectile.id));
         it = projectiles.erase(it);
+        ++cancelled;
+    }
+    if (cancelled > 0)
+    {
+        LiveEventJournal::Fields f;
+        f.tick = tick;
+        f.result = "owner_dead";
+        f.extra = std::string("\"cancelled_count\":") + std::to_string(cancelled);
+        LiveEventJournal::instance().record("server.npc_projectiles_cancelled", f);
     }
 }
 

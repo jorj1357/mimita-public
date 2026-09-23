@@ -446,7 +446,7 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
                         1.0f, 0.85f, 0.2f, 0.25f, 2.5f,
                         10.0f / 60.0f, 0.15f);
-            emitWorldSound(ctx, "entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
+            // Sound is emitted once by hot movement on the accepted jump edge.
             return;
         }
         if (type == gameHash("effect.movement.air_jump")) {
@@ -455,7 +455,7 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
                         0.5f, 0.3f, 1.0f, 0.4f, 3.0f,
                         14.0f / 60.0f, 0.2f);
-            emitWorldSound(ctx, "entity/player/doublejump", pos, 1.0f, 1.0f, 22.0f);
+            // Sound is emitted once by hot movement on the accepted fresh press.
             return;
         }
         if (type == gameHash("effect.movement.dash")) {

@@ -1250,6 +1250,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         vz = fp.outVelocity[2];
 
         // DOWN-DASH (pre): same shared dash policy, dash edge suppressed.
+        bool didGroundJump = false;
+        bool didAirJump = false;
         {
             const float yawRad = yaw * 0.01745329252f;
             GameDashPolicyV1 dd{};
@@ -1474,6 +1476,8 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             rs.grounded = jp.outGrounded;
             rs.airJumpsLeft = static_cast<std::uint32_t>(jp.airJumpsLeft);
             rs.jumpAirJumpArmed = jp.airJumpArmed;
+            didGroundJump = jp.outDidGroundJump != 0u;
+            didAirJump = jp.outDidAirJump != 0u;
         }
 
         if (vz < -m.maxFallSpeed)
@@ -1549,6 +1553,15 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             playActionSound(ctx, e, st.position, "entity/player/dash", 1.0f, 0.82f);
             logAction(ctx, e, tick, "down_dash", actionId,
                       rs.downDashAvailable != 0u, st.position, st.velocity);
+        }
+        if (didGroundJump || didAirJump) {
+            const std::uint64_t effectId = didAirJump
+                ? gameHash("effect.airJump") : gameHash("effect.groundJump");
+            spawnEffect(ctx, effectId, st.position, nullptr, st.sizeScale, 0.0f);
+            playActionSound(ctx, e, st.position,
+                            didAirJump ? "entity/player/doublejump"
+                                       : "entity/player/jump",
+                            1.0f, 1.0f);
         }
         if (freezeEdge)
             spawnEffect(ctx, gameHash("effect.freeze"), st.position, nullptr, st.sizeScale, 0.0f);

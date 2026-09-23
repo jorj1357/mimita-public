@@ -242,24 +242,17 @@ OBB Player::getOBB() const
 
 void Player::updateAudio(float dt)
 {
-    // Jump sound debounce: prevent frame-after-frame spam during wall climb.
-    // Only play if enough time has passed since the last jump sound.
-    jump.jumpSoundTimer = std::max(0.0f, jump.jumpSoundTimer - dt);
-
     if (jump.didGroundJump) {
         bool hotPresented = false;
-        if (jump.jumpSoundTimer <= 0.0f) {
-            EffectRequestV1 req{};
-            req.effectTypeId = gameHash("effect.movement.ground_jump");
-            req.position[0] = pos.x;
-            req.position[1] = pos.y;
-            req.position[2] = pos.z;
-            req.scale = sizeScale;
-            hotPresented = LiveBehavior::dispatchEffectRequest(req, 0);
-            if (!hotPresented)
-                playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
-            jump.jumpSoundTimer = 0.08f;
-        }
+        EffectRequestV1 req{};
+        req.effectTypeId = gameHash("effect.movement.ground_jump");
+        req.position[0] = pos.x;
+        req.position[1] = pos.y;
+        req.position[2] = pos.z;
+        req.scale = sizeScale;
+        hotPresented = LiveBehavior::dispatchEffectRequest(req, 0);
+        if (!hotPresented)
+            playWorldSound("entity/player/jump", pos, 1.0f, 1.0f, 28.0f);
         glm::vec3 jumpDir = glm::length(inputWishMove) > 0.001f
             ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
             : glm::vec3(0.0f, 0.0f, 0.0f);
@@ -271,19 +264,17 @@ void Player::updateAudio(float dt)
 
     if (jump.didAirJump) {
         bool hotPresented = false;
-        if (jump.jumpSoundTimer <= 0.0f) {
-            // Jump audio policy is hot via the same generic movement fact path.
-            EffectRequestV1 airJump{};
-            airJump.effectTypeId = gameHash("effect.movement.air_jump");
-            airJump.position[0] = pos.x;
-            airJump.position[1] = pos.y;
-            airJump.position[2] = pos.z;
-            airJump.scale = sizeScale;
-            hotPresented = LiveBehavior::dispatchEffectRequest(airJump, 0);
-            if (!hotPresented)
-                playAirJumpSound();
-            jump.jumpSoundTimer = 0.08f;
-        }
+        // The movement owner already fires only on a fresh press edge. Do not
+        // add a timer here: releasing and pressing jump must react immediately.
+        EffectRequestV1 airJump{};
+        airJump.effectTypeId = gameHash("effect.movement.air_jump");
+        airJump.position[0] = pos.x;
+        airJump.position[1] = pos.y;
+        airJump.position[2] = pos.z;
+        airJump.scale = sizeScale;
+        hotPresented = LiveBehavior::dispatchEffectRequest(airJump, 0);
+        if (!hotPresented)
+            playAirJumpSound();
         glm::vec3 jumpDir = glm::length(inputWishMove) > 0.001f
             ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
             : glm::vec3(0.0f, 0.0f, 0.0f);

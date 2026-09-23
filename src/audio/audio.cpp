@@ -423,13 +423,7 @@ void setAudioListener(glm::vec3 pos, glm::vec3 forward)
 
 void playAirJumpSound()
 {
-    if (airJumpCooldown > 0.0f)
-        return;
-
     playSound("entity/player/doublejump", 1.0f);
-
-    // how much time to wait beofre playing the sound again 
-    airJumpCooldown = 0.5f;
 }
 
 void playRandomFootstep(float sizeScale)
