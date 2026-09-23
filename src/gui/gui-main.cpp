@@ -20,6 +20,7 @@
 #include "hot-reload/hot-ui.h"
 #include "live-code/live-behavior.h"
 #include "live-code/live-ui.h"
+#include "live-code/server-exit-cause.h"
 #include "menus/main-menu.h"
 #include "menus/menu-avatar-preview.h"
 #include "menus/play-menu.h"
@@ -143,6 +144,10 @@ static MultiplayerConnectInfo gPendingConnect{};
 static SandboxMapSelection gPendingSandboxMap{};
 static PROCESS_INFORMATION gServerProcessInfo{};
 static bool gServerProcessLaunched = false;
+// Exit-cause classification facts for the child server process. The launcher
+// records these but never silently restarts before the cause is observable.
+static bool gServerExternallyTerminated = false;
+static bool gServerSawCleanShutdown = false;
 static uint64_t gServerProcessLaunchMs = 0;
 static std::string gPendingServerRoomFilePath;
 static uint64_t gPendingServerRoomFileStartMs = 0;
@@ -327,6 +332,10 @@ static void stopServerProcess()
     if (gServerProcessLaunched &&
         gServerProcessInfo.hProcess != nullptr)
     {
+        // An explicit TerminateProcess from the launcher is an external
+        // termination, not a clean shutdown; record it so the exit classifier
+        // does not mistake it for a requested shutdown.
+        gServerExternallyTerminated = true;
         TerminateProcess(gServerProcessInfo.hProcess, 0);
         CloseHandle(gServerProcessInfo.hProcess);
         CloseHandle(gServerProcessInfo.hThread);
@@ -466,7 +475,21 @@ ExternalServerProcessStatus getExternalServerProcessStatus()
     else
     {
         static uint64_t lastExitLogMs = 0;
+        static bool classified = false;
         uint64_t now = MimitaNet::nowMs();
+        if (!classified)
+        {
+            // Classify the child exit once. The server's own journal carries the
+            // clean-shutdown record when it reached its shutdown path; a zero
+            // exit without that record is NOT treated as clean.
+            const bool sawClean = gServerSawCleanShutdown;
+            const LiveCode::ServerExitCause cause = LiveCode::classifyServerExit(
+                sawClean, (std::uint32_t)exitCode, gServerExternallyTerminated);
+            printf("[SERVER PROCESS EXIT] pid=%lu exitCode=%lu cause=%s clean_record=%d\n",
+                   (unsigned long)gServerProcessInfo.dwProcessId, (unsigned long)exitCode,
+                   LiveCode::serverExitCauseName(cause), (int)sawClean);
+            classified = true;
+        }
         if (now - lastExitLogMs >= 5000)
         {
             printf("[SERVER PROCESS STATUS] exited pid=%lu exitCode=%lu\n",

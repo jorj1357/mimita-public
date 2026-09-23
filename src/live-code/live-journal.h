@@ -33,6 +33,19 @@ public:
         // Raw JSON object fragment without the outer braces, e.g.
         // "\"bytes\":128,\"status\":\"ok\"". Advanced callers only.
         std::string extra;
+
+        // Append-only server correlation fields (proposal §8). Numeric ids are
+        // omitted when zero, so a client line stays compact. `clientTick` and
+        // `hotGeneration`/`hotHash`/`serverHash` correlate a server decision
+        // with the exact generations that produced it.
+        std::uint64_t clientTick = 0;
+        std::uint32_t connectionId = 0;
+        std::uint32_t requestId = 0;
+        std::uint64_t entityId = 0;
+        std::uint32_t serverGeneration = 0;
+        std::uint32_t hotGeneration = 0;
+        std::string serverHash;
+        std::string hotHash;
     };
 
     // Resolve the daily path and open the append stream. Safe to call twice.

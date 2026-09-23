@@ -14,6 +14,7 @@
 #include "hot-reload/hot-history.h"
 #include "hot-reload/hot-rewind.h"
 #include "hot-reload/hot-reload-system.h"
+#include "live-code/live-journal.h"
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
 #include "network/actor-lifecycle.h"
@@ -433,6 +434,36 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
                                   spawnPolicy.position[2]);
         spawnYaw = spawnPolicy.yaw;
     }
+
+    // Generic actor lifecycle envelope: the ONE hot lifecycle owner shared by
+    // player initial spawn, respawn, and reconnect. The EXE owns storage; hot
+    // behavior may validate/return identity + lifecycle state.
+    {
+        ActorLifecycleStateV1 lifecycle{};
+        lifecycle.entityId = (std::uint64_t)Ecs::ensure(
+            EntityRealm::Server, EntityDomain::Player, player.id);
+        lifecycle.actorKind = 1u;  // player
+        lifecycle.lifeGeneration = player.spawnGeneration;
+        lifecycle.reason = isInitialSpawn ? 0u : 1u;  // 0 = initial join, 1 = respawn
+        lifecycle.dead = 0u;
+        lifecycle.respawnRequested = isInitialSpawn ? 0u : 1u;
+        lifecycle.position[0] = spawnPosition.x;
+        lifecycle.position[1] = spawnPosition.y;
+        lifecycle.position[2] = spawnPosition.z;
+        lifecycle.yaw = spawnYaw;
+        lifecycle.health = player.health;
+        lifecycle.maxHealth = player.maxHealth;
+        std::strncpy(lifecycle.avatarName, player.avatarName.c_str(),
+                     sizeof(lifecycle.avatarName) - 1);
+        if (LiveBehavior::dispatchActorLifecycle(lifecycle, serverTick))
+        {
+            if (lifecycle.respawnRequested == 0u && !isInitialSpawn)
+                return;  // hot lifecycle vetoed this respawn
+            spawnPosition = glm::vec3(lifecycle.position[0], lifecycle.position[1],
+                                      lifecycle.position[2]);
+            spawnYaw = lifecycle.yaw;
+        }
+    }
     player.pos = spawnPosition;
     player.yaw = spawnYaw;
 
@@ -457,6 +488,27 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
         .serverTick = serverTick,
         .aggregationKey = "server.player.lifecycle"};
     MIMITA_EVENT(lifecycleJournalEvent);
+
+    // Live-journal mirror with process/generation correlation so the server's
+    // authoritative record and the client's can be joined by ids and ticks.
+    {
+        const HotReloadSystem::Status liveStatus = HotReloadSystem::instance().status();
+        LiveEventJournal::Fields f;
+        f.tick = serverTick;
+        f.entityId = Ecs::raw(Ecs::ensure(EntityRealm::Server, EntityDomain::Player,
+                                          player.id));
+        f.connectionId = player.id;
+        f.hotGeneration = liveStatus.activeGeneration;
+        f.hotHash = liveStatus.activeHash;
+        f.result = isInitialSpawn ? "initial_spawn" : "respawn";
+        f.actorId = player.name;
+        f.extra = std::string("\"spawn_generation\":") +
+            std::to_string(player.spawnGeneration) +
+            ",\"transform_epoch\":" + std::to_string(player.transformEpoch) +
+            ",\"health\":" + std::to_string(player.health);
+        LiveEventJournal::instance().record(
+            isInitialSpawn ? "server.player_spawned" : "server.player_respawned", f);
+    }
 
     ActorSpawnEvent lifecycleEvent;
     lifecycleEvent.entityId = player.id;

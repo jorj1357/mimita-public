@@ -41,9 +41,12 @@ Metric: "if this behavior has a bug, does fixing it still require rebuilding/res
 | weapons | `weapon-system`/tool behaviors | hot tool modules | tool entities | mixed | continue hot tool policy | partial |
 | projectile sim | `server-projectiles` | hot projectile/hitscan | projectile entity | mixed | migrate spawn/policy hot | partial |
 | NPC AI/combat | `npc.cpp` fallback | `npc.combat-ai`/`npc.ai-state` | generic actor state | fallback only | done | no (policy) |
-| gamemodes | `serverGamemodeTick` fallback | hot modes (ffa/tdm/cs) | match entity | fallback for unmigrated | migrate remaining modes | partial |
+| gamemodes | `serverGamemodeTick` fallback | hot modes (ffa/tdm/cs) | match entity | fallback for unmigrated | live-rules-reload match preservation **proven** (`--live-rules-reload-selftest`); remaining modes (duel/objective/sandbox/bombtag) | partial |
+| snapshot relevance/priority/frequency | cold framing applies the decision | `net.relevance` (include/tier/cadence) + `net.send-policy` | generic Transform + ReplicationPolicy | policy hot; framing/transport mechanical | — | no (policy) |
 | objectives | cold bomb fallback | hot objective + CS | objective entity | fallback | done | no (policy) |
 | spawn | `beginMatchCountdown`/`resetGamemodeActorsAtMapSpawn` | `actor.spawn` (CS) | generic Transform/Velocity | cold for non-CS | migrate generic spawn policy | partial |
+| actor lifecycle (spawn/respawn/reconnect) | `completeAuthoritativeSpawn`/`respawnServerNpc` cold fallback | `actor.lifecycle` (players + NPCs share one owner) + `actor.spawn-policy` + `actor.lifecycle-policy` | EXE storage | hot owner wired; cold fallback retained | thin-adapter cleanup | partial (hot policy; live proof) |
+| spawn protection | none (was silently rejected) | `actor.lifecycle`/`actor.lifecycle-policy` write `SpawnProtection` | dynamic component | schema now registered; write succeeds | — | no (policy) |
 | animation | procedural + `animation.update` bridge | hot pose generation | skeleton | bridge | migrate pose hot | partial |
 | effects | cold effect pool | `effect.spawn` capability | effect entities | mechanism | done | no |
 | audio | cold audio device | none | n/a | device cold by design | hot event policy | yes |
@@ -55,6 +58,7 @@ Metric: "if this behavior has a bug, does fixing it still require rebuilding/res
 | world generation | cold world loader | none | world | IO/geometry cold | migrate rules hot | yes |
 | multiplayer generation delivery | `HotReloadSystem` (local build/load/switch) + `CodeGenerationPacket` (announce/switch) | per-peer READY/quorum + switch scheduling (`GenerationDistribution`) | logical vs platform identity | migration prep + multi-peer quorum over transport + late join + full-loop/live proof missing | implement migration prep, then late join and the full-loop proof | yes |
 | generation manifest verify | `HotReloadSystem::buildCandidateManifest` + `GenerationManifestPacket` (bounded metadata) | `verifyGeneration` (ABI/capability/schema/dependency) + `GenerationLocalFactsV1` | logical generation id | real facts + wire + gate **done** | done | no |
+| server journal + process exit cause | `LiveEventJournal` (+ new correlation fields) + `LiveEventJournal::Fields` | hot code writes `server.*` records; `server-exit-cause.h` classifier | process/generation ids | `server.started`/`shutdown.*`/`hot_generation_*`/spawn records + classifier **done**; observed in a dedicated-server run | remaining proposal event set + parent clean-detection | no (mechanism) |
 | generation migration prep | `DynamicComponentStore` schema/version + `registerMigration`/`applySchemaUpdate` | `prepareMigration(F,G)` + `validateSwitchTransaction` | schema id + version | prepare-not-commit + explicit switch-transaction validation + atomic commit **done** | done | no |
 | late-join bootstrap | server join-accept active-generation + manifest | `GenerationBootstrapV1` gate (client) | logical generation id | gates + cache miss/hit transport + real artifact install **done** | full production-loop F->G | no |
 | remote artifact install | `ArtifactCache` bytes -> `HotReloadSystem::installCandidateArtifact` -> same `loadCandidateFromFile` path | same switch transaction as local builds | content hash + logical generation | real 16.8 MB DLL installs as inactive candidate (selftest) | full-loop two-process proof | no |

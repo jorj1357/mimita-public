@@ -282,6 +282,12 @@ int runServer(const LaunchOptions& options)
         printf("%s [SERVER LIVE CODE] loaded=%d generation=%u code_hash=%s\n",
                serverTimestamp(), (int)liveStatus.loaded, liveStatus.activeGeneration,
                liveStatus.activeHash.empty() ? "(none)" : liveStatus.activeHash.c_str());
+        LiveEventJournal::Fields started;
+        started.result = "started";
+        started.hotGeneration = liveStatus.activeGeneration;
+        started.hotHash = liveStatus.activeHash;
+        started.extra = std::string("\"loaded\":") + (liveStatus.loaded ? "1" : "0");
+        LiveEventJournal::instance().record("server.started", started);
     }
 
     // Load the standard player body shape headlessly so the authoritative
@@ -874,6 +880,14 @@ int runServer(const LaunchOptions& options)
                 }
                 printf("%s [SERVER LIVE CODE] announce switch generation=%u switchTick=%u\n",
                        serverTimestamp(), announce.generation, switchTick);
+                LiveEventJournal::Fields announced;
+                announced.tick = tick;
+                announced.hotGeneration = announce.generation;
+                announced.result = isSwitch ? "switch" : "announce";
+                announced.extra = std::string("\"switch_tick\":") +
+                    std::to_string(isSwitch ? switchTick : 0u);
+                LiveEventJournal::instance().record("server.hot_generation_announced",
+                                                    announced);
             }
             if (hotReload.pollAndAdvance(tick))
             {
@@ -883,6 +897,13 @@ int runServer(const LaunchOptions& options)
                 printf("%s [SERVER LIVE CODE] activated generation=%u hash=%s\n",
                        serverTimestamp(), liveStatus.activeGeneration,
                        liveStatus.activeHash.c_str());
+                LiveEventJournal::Fields activated;
+                activated.tick = tick;
+                activated.hotGeneration = liveStatus.activeGeneration;
+                activated.hotHash = liveStatus.activeHash;
+                activated.result = "activated";
+                LiveEventJournal::instance().record("server.hot_generation_activated",
+                                                    activated);
             }
             LiveIdentity::setSimulationTick(tick);
 
@@ -1100,10 +1121,19 @@ int runServer(const LaunchOptions& options)
         }
     }
 
+    // Clean requested shutdown is an explicit, classified cause: the server
+    // reaches its own shutdown path and returns 0. Any other exit never
+    // executes these records, so a missing shutdown.completed identifies a
+    // crash/transport failure/termination.
+    {
+        LiveEventJournal::Fields requested;
+        requested.tick = tick;
+        requested.result = "requested";
+        LiveEventJournal::instance().record("server.shutdown.requested", requested);
+    }
+
     PersistenceQueue::instance().flushBlocking();
     HotReloadSystem::instance().unloadGameDLL();
-    LiveEventJournal::instance().shutdown();
-    ::StructuredLogger::instance().shutdown();
     if (!serverCode.empty())
     {
         printf("%s [SERVER] deregistering room %s\n", serverTimestamp(), serverCode.c_str());
@@ -1111,6 +1141,15 @@ int runServer(const LaunchOptions& options)
     }
     closesocket(sock);
     netShutdown();
+    {
+        LiveEventJournal::Fields completed;
+        completed.tick = tick;
+        completed.result = "clean";
+        completed.extra = std::string("\"cause\":\"requested_shutdown\",\"exit_code\":0");
+        LiveEventJournal::instance().record("server.shutdown.completed", completed);
+    }
+    LiveEventJournal::instance().shutdown();
+    ::StructuredLogger::instance().shutdown();
     printf("%s [SERVER] shutdown complete\n", serverTimestamp());
     return 0;
 }

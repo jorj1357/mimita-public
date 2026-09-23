@@ -153,6 +153,35 @@ void LiveEventJournal::record(const char* type, const Fields& fields)
     appendString(line, first, "packet_id", fields.packetId);
     appendString(line, first, "result", fields.result);
     appendString(line, first, "error", fields.error);
+
+    // Append-only server correlation fields. Zero numeric ids are omitted so a
+    // line stays compact and no format changes for existing readers.
+    if (fields.clientTick != 0) {
+        line += ",\"client_tick\":";
+        line += std::to_string(fields.clientTick);
+    }
+    if (fields.connectionId != 0) {
+        line += ",\"connection_id\":";
+        line += std::to_string(fields.connectionId);
+    }
+    if (fields.requestId != 0) {
+        line += ",\"request_id\":";
+        line += std::to_string(fields.requestId);
+    }
+    if (fields.entityId != 0) {
+        line += ",\"entity_id\":";
+        line += std::to_string(fields.entityId);
+    }
+    if (fields.serverGeneration != 0) {
+        line += ",\"server_generation\":";
+        line += std::to_string(fields.serverGeneration);
+    }
+    if (fields.hotGeneration != 0) {
+        line += ",\"hot_generation\":";
+        line += std::to_string(fields.hotGeneration);
+    }
+    appendString(line, first, "server_hash", fields.serverHash);
+    appendString(line, first, "hot_hash", fields.hotHash);
     if (!fields.extra.empty())
     {
         line += ",";

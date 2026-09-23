@@ -92,6 +92,9 @@
 #include "hot-reload/switch-transaction-selftest.h"
 #include "hot-reload/generation-bootstrap-selftest.h"
 #include "network/lagcomp-history-selftest.h"
+#include "network/actor-lifecycle-selftest.h"
+#include "network/live-rules-reload-selftest.h"
+#include "live-code/server-journal-selftest.h"
 #include "hot-reload/packet-codec-selftest.h"
 #include "hot-reload/artifact-install-selftest.h"
 #include "hot-reload/production-loop-selftest.h"
@@ -547,6 +550,30 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runGenerationBootstrapSelfTest(report);
         printf("%s", report.c_str());
         printf("[GENERATION BOOTSTRAP SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--live-rules-reload-selftest") {
+        std::string report;
+        const bool ok = runLiveRulesReloadSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[LIVE RULES RELOAD SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--server-journal-selftest") {
+        std::string report;
+        const bool ok = runServerJournalSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[SERVER JOURNAL SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--actor-lifecycle-selftest") {
+        std::string report;
+        const bool ok = runActorLifecycleSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[ACTOR LIFECYCLE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

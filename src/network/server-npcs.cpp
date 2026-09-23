@@ -306,6 +306,27 @@ static void respawnServerNpc(Npc& npc)
         }
     }
 
+    // Generic actor lifecycle envelope: the SAME hot lifecycle owner players
+    // use. Preserves identity/life generation and arms spawn protection on the
+    // NPC actor entity, so NPC and player lifecycle share one policy.
+    {
+        ActorLifecycleStateV1 lifecycle{};
+        lifecycle.entityId = (std::uint64_t)Ecs::ensure(
+            EntityRealm::Server, EntityDomain::Npc, npc.id);
+        lifecycle.actorKind = 2u;  // npc
+        lifecycle.lifeGeneration = npc.transformEpoch;
+        lifecycle.reason = 1u;  // respawn
+        lifecycle.dead = 0u;
+        lifecycle.respawnRequested = 1u;
+        lifecycle.position[0] = spawnPos.x;
+        lifecycle.position[1] = spawnPos.y;
+        lifecycle.position[2] = spawnPos.z;
+        lifecycle.yaw = spawnYaw;
+        lifecycle.health = npc.body.currentHp;
+        lifecycle.maxHealth = npc.body.maxHp;
+        LiveBehavior::dispatchActorLifecycle(lifecycle, 0);
+    }
+
     npc.body.pos = spawnPos;
     npc.body.respawnPosition = spawnPos;
     npc.body.yaw = spawnYaw;
