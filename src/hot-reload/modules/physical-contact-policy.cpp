@@ -34,9 +34,25 @@ void MIMITA_GAME_CALL contactKnockback(void* /*host*/,
     request->result = 1u;
 }
 
+std::uint32_t MIMITA_GAME_CALL contactIntervalTicks(void* /*host*/, float seconds,
+                                                    float tickRate)
+{
+    return HotPhysicalContactImpl::intervalTicks(seconds, tickRate);
+}
+
+std::uint32_t MIMITA_GAME_CALL contactShouldConfirm(void* /*host*/, std::uint32_t active,
+                                                    std::int32_t pendingDamage,
+                                                    std::uint32_t ending,
+                                                    std::uint32_t samples,
+                                                    std::uint32_t batchSize)
+{
+    return HotPhysicalContactImpl::shouldConfirm(active, pendingDamage, ending, samples,
+                                                 batchSize);
+}
+
 const GamePhysicalContactPolicyV1 kPhysicalContactPolicy{
     sizeof(GamePhysicalContactPolicyV1), 1, &contactDamage, &contactKnockback,
-    "net.physical-contact"};
+    &contactIntervalTicks, &contactShouldConfirm, "net.physical-contact"};
 
 const GamePhysicalContactPolicyV1* MIMITA_GAME_CALL lookupPhysicalContact(void* /*host*/)
 {

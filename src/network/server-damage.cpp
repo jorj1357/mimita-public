@@ -15,6 +15,7 @@
 #include "network/server-damage-policy.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-damage-application.h"
+#include "hot-reload/hot-kill-attribution.h"
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
 #include "ecs/entity-types.h"
@@ -83,6 +84,13 @@ static GameDamageApplicationFn hotDamageApplicationPolicy()
     void* callable = MimitaRuntime::GenericRuntime::instance().capability(
         GAME_CAP_DAMAGE_APPLICATION);
     return callable ? reinterpret_cast<GameDamageApplicationFn>(callable) : nullptr;
+}
+
+static GameKillAttributionFn hotKillAttributionPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_KILL_ATTRIBUTION);
+    return callable ? reinterpret_cast<GameKillAttributionFn>(callable) : nullptr;
 }
 
 static ServerDamageResult applyPlayerDamageLegacy(
@@ -462,16 +470,25 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
         // NPC damage attribution: if the victim was recently damaged by an NPC,
         // attribute the kill to the NPC even if the final blow was ownerless or
         // self-inflicted (e.g. rocket splash). 120 ticks = 2 seconds window.
-        uint32_t effectiveAttackerNpcId = attackerNpcId;
-        uint32_t effectiveAttackerPlayerId = attackerPlayerId;
-        const bool hasRealPlayerAttacker =
-            effectiveAttackerPlayerId != 0 && effectiveAttackerPlayerId != target.id;
-        if (effectiveAttackerNpcId == 0 && !hasRealPlayerAttacker &&
-            target.lastNpcDamageSourceId != 0 &&
-            (tick - target.lastNpcDamageTick) <= 120)
+        // The reattribution window and decision are hot (net.kill-attribution).
+        GameKillAttributionV1 attribution{};
+        attribution.structSize = sizeof(GameKillAttributionV1);
+        attribution.attackerNpcId = attackerNpcId;
+        attribution.attackerPlayerId = attackerPlayerId;
+        attribution.victimId = target.id;
+        attribution.lastNpcDamageSourceId = target.lastNpcDamageSourceId;
+        attribution.lastNpcDamageTick = target.lastNpcDamageTick;
+        attribution.tick = tick;
+        attribution.windowTicks = 120;
+        GameKillAttributionFn attributionPolicy = hotKillAttributionPolicy();
+        if (attributionPolicy)
+            attributionPolicy(nullptr, &attribution);
+        else
+            HotKillAttributionImpl::evaluate(attribution);
+        uint32_t effectiveAttackerNpcId = attribution.outAttackerNpcId;
+        uint32_t effectiveAttackerPlayerId = attribution.outAttackerPlayerId;
+        if (attribution.reattributed)
         {
-            effectiveAttackerNpcId = target.lastNpcDamageSourceId;
-            effectiveAttackerPlayerId = 0;
             DBG(Network,
                 "NPC_KILL_REATTRIBUTION victim=%u originalAttacker=%u npcAttacker=%u "
                 "npcDamageTick=%u currentTick=%u window=%u",

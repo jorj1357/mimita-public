@@ -19,7 +19,11 @@
 #include "ecs/actor-entities.h"
 #include "live-code/live-gameplay.h"
 #include "live-code/live-behavior.h"
+#include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-history.h"
+#include "hot-reload/hot-npc-targeting.h"
+#include "hot-reload/hot-respawn.h"
+#include "hot-reload/hot-npc-ground-clamp.h"
 #include "ecs/entity-registry.h"
 #include "network/actor-health.h"
 #include "network/actor-state.h"
@@ -62,6 +66,51 @@ namespace MimitaNet {
 // what if 8 10 2026 we set to be instant so we dont need anim to play before respawn 
 // 8 10 2026 keep this its so fun 
 constexpr float SERVER_NPC_RESPAWN_SECONDS = 0.01f;
+
+// Resolve the active generation's respawn rule through the one generic doorway.
+static const GameRespawnPolicyV1* hotRespawnPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_RESPAWN);
+    if (!callable)
+        return nullptr;
+    auto lookup = reinterpret_cast<GameRespawnLookupFn>(callable);
+    return lookup ? lookup(nullptr) : nullptr;
+}
+
+// Initial death timer (shared hot rule with players).
+static float npcInitialRespawnTimer()
+{
+    GameRespawnRuleV1 rule{};
+    rule.structSize = sizeof(GameRespawnRuleV1);
+    rule.respawnsEnabled = serverMatchRespawnsEnabled() ? 1u : 0u;
+    rule.respawnSeconds = serverMatchRespawnSeconds();
+    const GameRespawnPolicyV1* policy = hotRespawnPolicy();
+    if (policy && policy->initialTimer)
+        policy->initialTimer(nullptr, &rule);
+    else
+        HotRespawnImpl::initialTimer(rule);
+    return rule.outRespawnSeconds;
+}
+
+// Per-tick countdown; returns true when the NPC is ready to respawn.
+static bool npcRespawnTick(float& timer)
+{
+    GameRespawnRuleV1 rule{};
+    rule.structSize = sizeof(GameRespawnRuleV1);
+    rule.respawnsEnabled = serverMatchRespawnsEnabled() ? 1u : 0u;
+    rule.timer = timer;
+    rule.dt = SERVER_DT;
+    const GameRespawnPolicyV1* policy = hotRespawnPolicy();
+    if (policy && policy->tick)
+        policy->tick(nullptr, &rule);
+    else
+        HotRespawnImpl::tick(rule);
+    if (rule.stayDead)
+        return false;
+    timer = rule.outTimer;
+    return rule.readyToRespawn != 0;
+}
 
 void broadcastNpcDamageEvent(
     SOCKET sock,
@@ -213,8 +262,7 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
             {
                 n.body.currentHp = 0;
                 n.body.dead = true;
-                n.body.respawnTimer = serverMatchRespawnsEnabled()
-                    ? serverMatchRespawnSeconds() : -1.0f;
+                n.body.respawnTimer = npcInitialRespawnTimer();
             }
             break;
         }
@@ -824,6 +872,18 @@ bool getNpcPoseAtTick(const ServerNpc& npc, uint32_t targetTick,
     return true;
 }
 
+// Resolve the active generation's NPC targeting policy through the one generic
+// doorway. Never cached across a generation swap. Null when no hot provider.
+static const GameNpcTargetingPolicyV1* hotNpcTargetingPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_NPC_TARGETING);
+    if (!callable)
+        return nullptr;
+    auto lookup = reinterpret_cast<GameNpcTargetingLookupFn>(callable);
+    return lookup ? lookup(nullptr) : nullptr;
+}
+
 void simulateSharedNpcs(SOCKET sock,
                         std::unordered_map<uint32_t, ServerPlayer>& players,
                         std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -843,9 +903,18 @@ void simulateSharedNpcs(SOCKET sock,
     // NPCs. Unteamed modes (FFA/sandbox) make everyone hostile; TDM only enemies.
     // Damage stays server-authoritative: an NPC's damage to its mirror is routed
     // onto the real target, so NPCs behave exactly like players.
+    // Hostility rule is hot (net.npc-targeting).
     auto actorsAreHostile = [](int a, int b) {
-        if (a < 0 || b < 0) return true;  // no teams -> free for all
-        return a != b;
+        GameNpcHostilityV1 request{};
+        request.structSize = sizeof(GameNpcHostilityV1);
+        request.teamA = a;
+        request.teamB = b;
+        const GameNpcTargetingPolicyV1* policy = hotNpcTargetingPolicy();
+        if (policy && policy->hostile)
+            policy->hostile(nullptr, &request);
+        else
+            HotNpcTargetingImpl::hostile(request);
+        return request.hostile != 0;
     };
     auto npcTeamOf = [&](const Npc& npc) -> int {
         auto it = npcs.find(npc.id);
@@ -867,17 +936,30 @@ void simulateSharedNpcs(SOCKET sock,
             // Scored target selection. Weights come only from the behavior
             // profile; the legacy nearest-hostile path is used without one.
             const NpcBehaviorTuning& b = n.behavior;
+            // Candidate score is hot (net.npc-targeting); the cold caller adds
+            // the current-target stickiness.
             auto scoreCandidate = [&](const glm::vec3& pos, int hp, int maxHp,
                                       float threat01) {
-                const glm::vec3 d = pos - n.body.pos;
-                const float dist = glm::length(d);
-                const float distanceScore = 1.0f / (1.0f + dist);
-                const float healthFrac = maxHp > 0
-                    ? glm::clamp((float)hp / (float)maxHp, 0.0f, 1.0f) : 1.0f;
-                const float vulnerability = 1.0f - healthFrac;
-                return distanceScore * b.distanceTargetBias
-                     + vulnerability * b.lowHealthTargetBias
-                     + threat01 * b.threatBias;
+                GameNpcTargetScoreV1 request{};
+                request.structSize = sizeof(GameNpcTargetScoreV1);
+                for (int i = 0; i < 3; ++i) {
+                    request.selfPos[i] = n.body.pos[i];
+                    request.candidatePos[i] = pos[i];
+                }
+                request.candidateHp = hp;
+                request.candidateMaxHp = maxHp;
+                request.threat01 = threat01;
+                request.isCurrent = 0u;
+                request.distanceTargetBias = b.distanceTargetBias;
+                request.lowHealthTargetBias = b.lowHealthTargetBias;
+                request.threatBias = b.threatBias;
+                request.stickiness = 0.0f;
+                const GameNpcTargetingPolicyV1* policy = hotNpcTargetingPolicy();
+                if (policy && policy->score)
+                    policy->score(nullptr, &request);
+                else
+                    HotNpcTargetingImpl::score(request);
+                return request.score;
             };
 
             float bestScore = -1e30f;
@@ -1045,24 +1127,33 @@ void simulateSharedNpcs(SOCKET sock,
         // floor, so a server NPC that ends up below the floor gets pinned back
         // onto the nearest floor triangle and marked grounded — it never sinks
         // through the ground forever. Legitimate airborne/jumping NPCs above the
-        // floor are untouched; the clamp only corrects downward violations.
+        // floor are untouched; the clamp only corrects downward violations. The
+        // rest height and clamp decision are hot (net.npc-ground-clamp).
         {
-            constexpr float REST_HEIGHT = 1.8f; // capsule half-height (feet at pos.z - 1.8)
             const float floorZ = NpcNavigation::groundHeightAt(
                 world, n.body.pos, 100.0f, 5.0f);
-            if (floorZ > -1e5f)
+            GameNpcGroundClampV1 clamp{};
+            clamp.structSize = sizeof(GameNpcGroundClampV1);
+            clamp.haveFloor = floorZ > -1e5f ? 1u : 0u;
+            clamp.floorZ = floorZ;
+            clamp.posZ = n.body.pos.z;
+            clamp.velZ = n.body.vel.z;
+            clamp.restHeight = 1.8f; // capsule half-height (feet at pos.z - 1.8)
+            auto clampPolicy = reinterpret_cast<GameNpcGroundClampFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_NPC_GROUND_CLAMP));
+            if (clampPolicy)
+                clampPolicy(nullptr, &clamp);
+            else
+                HotNpcGroundClampImpl::evaluate(clamp);
+            if (clamp.clamp)
             {
-                const float restZ = floorZ + REST_HEIGHT;
-                if (n.body.pos.z < restZ)
-                {
-                    n.body.pos.z = restZ;
-                    if (n.body.vel.z < 0.0f)
-                        n.body.vel.z = 0.0f;
-                    n.body.ground.hasWorldContact = true;
-                    n.body.ground.stableOnGround = true;
-                    n.body.ground.onGround = true;
-                    n.body.ground.realWorldContactThisFrame = true;
-                }
+                n.body.pos.z = clamp.outPosZ;
+                n.body.vel.z = clamp.outVelZ;
+                n.body.ground.hasWorldContact = true;
+                n.body.ground.stableOnGround = true;
+                n.body.ground.onGround = true;
+                n.body.ground.realWorldContactThisFrame = true;
             }
         }
 
@@ -1153,8 +1244,7 @@ void simulateSharedNpcs(SOCKET sock,
                         victim.health = 0;
                         nearestNpc->body.currentHp = 0;
                         nearestNpc->body.dead = true;
-                        nearestNpc->body.respawnTimer = serverMatchRespawnsEnabled()
-                            ? serverMatchRespawnSeconds() : -1.0f;
+                        nearestNpc->body.respawnTimer = npcInitialRespawnTimer();
                         LiveEventJournal::Fields deathEvent;
                         deathEvent.tick = tick;
                         deathEvent.entityId = nearestNpc->id;
@@ -1187,13 +1277,10 @@ void simulateSharedNpcs(SOCKET sock,
     // Respawn killed NPCs (updateOneNpc freezes dead bodies; this loop drives
     // their countdown and resets them so rebuildServerNpcMap re-admits them).
     // One-life modes never revive: the dead body stays Spectating for the round.
-    const bool npcRespawns = serverMatchRespawnsEnabled();
     for (Npc& n : npcSystem.all())
     {
         if (!n.body.dead) continue;
-        if (!npcRespawns) continue;
-        n.body.respawnTimer = std::max(0.0f, n.body.respawnTimer - SERVER_DT);
-        if (n.body.respawnTimer <= 0.0f)
+        if (npcRespawnTick(n.body.respawnTimer))
             respawnServerNpc(n);
     }
 

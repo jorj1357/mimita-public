@@ -13,6 +13,7 @@
 
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-packet-codec.h"
+#include "hot-reload/hot-packet-schemas.h"
 
 namespace {
 
@@ -25,6 +26,55 @@ struct HotPingV1 {
     std::uint32_t nonce;
     std::uint32_t value;
 };
+
+// ── packet.ping: a core gameplay schema declared in the hot schema layer ─────
+// The canonical PacketHeader stays cold framing; this codec carries only the
+// schema-owned inner payload (clientTimeMs) so a layout change is a version
+// bump, not an in-place cast.
+struct PingInnerV1 {
+    std::uint64_t clientTimeMs;
+};
+
+bool MIMITA_GAME_CALL encodePing(void* /*host*/, const PacketCodecEnvelopeV1* /*env*/,
+                                 const void* src, std::uint32_t srcSize,
+                                 std::uint8_t* out, std::uint32_t outCapacity,
+                                 std::uint32_t* outSize)
+{
+    if (!src || !out || !outSize || srcSize < sizeof(PingInnerV1) ||
+        outCapacity < sizeof(PingInnerV1))
+        return false;
+    std::memcpy(out, src, sizeof(PingInnerV1));
+    *outSize = (std::uint32_t)sizeof(PingInnerV1);
+    return true;
+}
+
+bool MIMITA_GAME_CALL decodePing(void* /*host*/, const PacketCodecEnvelopeV1* /*env*/,
+                                 const std::uint8_t* payload, std::uint32_t payloadSize,
+                                 void* out, std::uint32_t outCapacity,
+                                 std::uint32_t* outSize)
+{
+    if (!payload || !out || !outSize || payloadSize < sizeof(PingInnerV1) ||
+        outCapacity < sizeof(PingInnerV1))
+        return false;
+    std::memcpy(out, payload, sizeof(PingInnerV1));
+    *outSize = (std::uint32_t)sizeof(PingInnerV1);
+    return true;
+}
+
+std::uint32_t MIMITA_GAME_CALL validatePing(void* /*host*/,
+                                            const PacketCodecEnvelopeV1* /*env*/,
+                                            const std::uint8_t* /*payload*/,
+                                            std::uint32_t payloadSize)
+{
+    return payloadSize == sizeof(PingInnerV1)
+        ? (std::uint32_t)PacketCompatibilityV1::Compatible
+        : (std::uint32_t)PacketCompatibilityV1::Malformed;
+}
+
+const GamePacketCodecDescriptorV1 kPingCodec{
+    MimitaNet::Schemas::kPing, MimitaNet::Schemas::kPingVersion,
+    MimitaNet::Schemas::kPingVersion, 0, 0,
+    &encodePing, &decodePing, &validatePing, "packet.ping"};
 
 // One valid inner payload size for the ping schema (used by the length guard).
 static constexpr std::uint32_t kHotPingBytes = 8;
@@ -164,6 +214,7 @@ const GameCapabilityDescriptorV1 kPacketCodecProvider{
 } // namespace
 
 const MimitaHotPackage::PacketCodecRegistrar s_hotPingCodecRegistrar{kHotPingCodec};
+const MimitaHotPackage::PacketCodecRegistrar s_pingCodecRegistrar{kPingCodec};
 const MimitaHotPackage::CapabilityRegistrar s_packetCodecProviderRegistrar{
     kPacketCodecProvider};
 const MimitaHotPackage::CapabilityRequirementRegistrar s_packetCodecRequirement{

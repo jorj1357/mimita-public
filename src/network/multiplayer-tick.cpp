@@ -13,6 +13,7 @@
 #include "ecs/dynamic-components.h"
 #include "ecs/relationship-store.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-client-snapshot.h"
 #include "hot-reload/generation-verify.h"
 #include "hot-reload/migration-prep.h"
 #include "hot-reload/content-artifact.h"
@@ -236,12 +237,24 @@ static void processSnapshotEntities(
         {
             eraseLocalReplica(ctx, entity.networkEntityId, "authoritative-local-snapshot");
 
-            const bool olderEpoch = entity.transformEpoch != 0 &&
-                ctx.localServerEpoch != 0 &&
-                (uint32_t)entity.transformEpoch < (uint32_t)ctx.localServerEpoch;
-            const bool sameEpochOlderTick = entity.transformEpoch == ctx.localServerEpoch &&
-                serverTick <= ctx.latestLocalSnapshotTick;
-            const bool acceptLifecycle = !olderEpoch && !sameEpochOlderTick;
+            // Local-sample staleness is hot (net.client-snapshot).
+            GameSnapshotApplyV1 apply{};
+            apply.structSize = sizeof(GameSnapshotApplyV1);
+            apply.isLocal = 1u;
+            apply.existsBefore = 1u;
+            apply.membershipAllowed = membershipAllowed ? 1u : 0u;
+            apply.incomingEpoch = entity.transformEpoch;
+            apply.localServerEpoch = ctx.localServerEpoch;
+            apply.serverTick = serverTick;
+            apply.latestLocalSnapshotTick = ctx.latestLocalSnapshotTick;
+            auto applyFn = reinterpret_cast<GameSnapshotApplyFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_CLIENT_SNAPSHOT));
+            if (applyFn)
+                applyFn(nullptr, &apply);
+            else
+                HotClientSnapshotImpl::evaluate(apply);
+            const bool acceptLifecycle = apply.acceptLifecycle != 0;
 
             if (!acceptLifecycle)
             {
@@ -390,9 +403,23 @@ static void processSnapshotEntities(
         // A stale snapshot must never create new entities: creation implies
         // authoritative membership that only the newest complete snapshot
         // may assert. Existing entities may still receive interpolation
-        // samples, which are independently freshness-rejected.
-        if (!membershipAllowed && !existsBefore)
-            continue;
+        // samples, which are independently freshness-rejected. The decision is
+        // hot (net.client-snapshot).
+        {
+            GameSnapshotApplyV1 apply{};
+            apply.structSize = sizeof(GameSnapshotApplyV1);
+            apply.existsBefore = existsBefore ? 1u : 0u;
+            apply.membershipAllowed = membershipAllowed ? 1u : 0u;
+            auto applyFn = reinterpret_cast<GameSnapshotApplyFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_CLIENT_SNAPSHOT));
+            if (applyFn)
+                applyFn(nullptr, &apply);
+            else
+                HotClientSnapshotImpl::evaluate(apply);
+            if (!apply.mayCreate)
+                continue;
+        }
         Player& p = (*replicas)[entity.networkEntityId];
         bool isNew = !existsBefore;
         EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];

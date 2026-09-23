@@ -65,12 +65,19 @@ using GamePhysicalContactDamageFn = void (MIMITA_GAME_CALL *)(
     void* host, GamePhysicalContactDamageV1* request);
 using GamePhysicalContactKnockbackFn = void (MIMITA_GAME_CALL *)(
     void* host, GamePhysicalContactKnockbackV1* request);
+using GamePhysicalContactIntervalFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, float seconds, float tickRate);
+using GamePhysicalContactConfirmFn = std::uint32_t (MIMITA_GAME_CALL *)(
+    void* host, std::uint32_t active, std::int32_t pendingDamage,
+    std::uint32_t ending, std::uint32_t samples, std::uint32_t batchSize);
 
 struct GamePhysicalContactPolicyV1 {
     std::uint32_t structSize;
     std::uint32_t version;
     GamePhysicalContactDamageFn damage;
     GamePhysicalContactKnockbackFn knockback;
+    GamePhysicalContactIntervalFn intervalTicks;
+    GamePhysicalContactConfirmFn shouldConfirm;
     const char* name;
 };
 
@@ -134,6 +141,27 @@ inline void knockback(GamePhysicalContactKnockbackV1& r)
     r.outKnockback[0] = nx * strength;
     r.outKnockback[1] = ny * strength;
     r.outKnockback[2] = nz * strength;
+}
+
+// Seconds -> whole ticks, minimum one.
+inline std::uint32_t intervalTicks(float seconds, float tickRate)
+{
+    if (seconds <= 0.0f)
+        return 1u;
+    return std::max<std::uint32_t>(1u, (std::uint32_t)std::ceil(seconds * tickRate));
+}
+
+// Episode confirm batching: never confirm an empty/inactive episode; confirm
+// immediately when the episode ends; otherwise once enough samples accumulated.
+inline std::uint32_t shouldConfirm(std::uint32_t active, std::int32_t pendingDamage,
+                                   std::uint32_t ending, std::uint32_t samples,
+                                   std::uint32_t batchSize)
+{
+    if (!active || pendingDamage <= 0)
+        return 0u;
+    if (ending)
+        return 1u;
+    return samples >= std::max<std::uint32_t>(1u, batchSize) ? 1u : 0u;
 }
 
 } // namespace HotPhysicalContactImpl

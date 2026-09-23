@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -57,6 +58,14 @@ std::vector<Recipe> g_recipes;
 std::filesystem::file_time_type g_lastWrite;
 bool g_loaded = false;
 std::uint64_t g_requestId = 0;
+
+// Per-recipe last-play state for `cooldownMs` / `repeatAllowed`. Reset on a hot
+// generation swap, which is acceptable for presentation policy.
+struct LastPlay {
+    std::uint64_t tick = 0;
+    std::uint32_t variant = 0xffffffffu;
+};
+std::unordered_map<std::uint64_t, LastPlay> g_lastPlay;
 
 std::string lower(std::string s)
 {
@@ -231,33 +240,14 @@ float unitFloat(std::uint32_t h)
     return static_cast<float>(h >> 8) * (1.0f / 16777216.0f);
 }
 
-void MIMITA_GAME_CALL onAudioFact(void* host, const GameEventV1* event)
-{
-    auto* ctx = static_cast<GameplayContextV1*>(host);
-    auto* fact = event ? static_cast<GameAudioFactV1*>(event->payload) : nullptr;
-    if (!ctx || !fact)
-        return;
-    HotAudioOverrideV1 ov{};
-    ov.volumeScale = fact->volumeScale > 0.0f ? fact->volumeScale : 1.0f;
-    ov.pitchScale = fact->pitchScale > 0.0f ? fact->pitchScale : 1.0f;
-    ov.volumeBase = fact->volumeBase;
-    ov.pitchBase = fact->pitchBase;
-    ov.seed = fact->seed;
-    ov.sound = fact->sound[0] != '\0' ? fact->sound : nullptr;
-    if (hotEmitRecipeSound(ctx, fact->recipeKey, fact->position,
-                           fact->ownerEntity, fact->spatial != 0, &ov))
-        fact->handled = 1u;
-}
-
-const MimitaHotPackage::EventRegistrar s_audioFact{
-    {GAME_EVENT_AUDIO_FACT, gameHash("audio.fact.v2"), 0, onAudioFact,
-     "hot.audio-policy"}};
-
-} // namespace
-
-bool hotEmitRecipeSound(GameplayContextV1* ctx, std::uint64_t recipeKey,
-                        const float position[3], std::uint64_t ownerEntity,
-                        bool spatial, const HotAudioOverrideV1* overrides)
+// Shared recipe -> command resolution for one-shot and slot ops. Returns true
+// when the recipe/sound matched and the command was handled (which may mean
+// "emitted" or "suppressed by recipe cooldown/repeat policy").
+bool emitRecipeCommand(GameplayContextV1* ctx, std::uint64_t recipeKey,
+                       const float position[3], std::uint64_t ownerEntity,
+                       bool spatial, const HotAudioOverrideV1* overrides,
+                       std::uint32_t op, std::uint64_t slotId, bool loop,
+                       bool allowCooldown)
 {
     if (!ctx || !ctx->resolveCapability)
         return false;
@@ -267,7 +257,6 @@ bool hotEmitRecipeSound(GameplayContextV1* ctx, std::uint64_t recipeKey,
         (overrides && overrides->sound && overrides->sound[0])
             ? overrides->sound
             : nullptr;
-    // A recipe or an explicit logical sound is required.
     if (!r && !explicitSound)
         return false;
     auto audio = reinterpret_cast<AudioPlayFn>(
@@ -283,19 +272,30 @@ bool hotEmitRecipeSound(GameplayContextV1* ctx, std::uint64_t recipeKey,
             ? (h >> 4) % static_cast<std::uint32_t>(r->soundCount)
             : 0u;
 
-    // Defaults when no recipe matched: generic impact policy.
-    float volBase = r ? r->volBase : 1.0f;
-    float volMin = r ? r->volMin : 1.0f;
-    float volMax = r ? r->volMax : 1.0f;
-    float pitchBase = r ? r->pitchBase : 1.0f;
-    float pitchMin = r ? r->pitchMin : 1.0f;
-    float pitchMax = r ? r->pitchMax : 1.0f;
+    // Recipe cooldown / repeat policy (one-shots only; loops are continuous).
+    // A suppressed event is still "handled" so the cold fallback does not play.
+    if (allowCooldown && r) {
+        LastPlay& lp = g_lastPlay[recipeKey];
+        if (r->cooldownMs > 0) {
+            const std::uint64_t cooldownTicks =
+                static_cast<std::uint64_t>(r->cooldownMs) * 60ull / 1000ull;
+            if (lp.tick != 0 && ctx->tick >= lp.tick &&
+                ctx->tick - lp.tick < cooldownTicks)
+                return true;
+        }
+        if (!r->repeatAllowed && lp.variant == variant &&
+            lp.tick == ctx->tick)
+            return true;
+        lp.tick = ctx->tick;
+        lp.variant = variant;
+    }
 
-    float volume = volMin + (volMax - volMin) * unitFloat(h);
-    float pitch =
-        pitchMin + (pitchMax - pitchMin) * unitFloat(h * 2654435761u + 1u);
-    (void)volBase;
-    (void)pitchBase;
+    float volume = (r ? r->volMin : 1.0f) +
+                   ((r ? r->volMax : 1.0f) - (r ? r->volMin : 1.0f)) *
+                       unitFloat(h);
+    float pitch = (r ? r->pitchMin : 1.0f) +
+                  ((r ? r->pitchMax : 1.0f) - (r ? r->pitchMin : 1.0f)) *
+                      unitFloat(h * 2654435761u + 1u);
     if (overrides) {
         if (overrides->volumeBase >= 0.0f)
             volume = overrides->volumeBase;
@@ -321,15 +321,115 @@ bool hotEmitRecipeSound(GameplayContextV1* ctx, std::uint64_t recipeKey,
     cmd.spatialMode = r ? r->spatialMode : 1u;
     cmd.category = r ? r->category : GAME_AUDIO_CATEGORY_IMPACTS;
     cmd.ownerEntity = ownerEntity;
-    cmd.op = GAME_AUDIO_PLAY_ONESHOT;
-    cmd.loop = (r && r->loop) ? 1u : 0u;
+    cmd.op = op;
+    cmd.slotId = slotId;
+    cmd.loop = (op == GAME_AUDIO_SET_SLOT) ? (loop ? 1u : 0u)
+                                           : ((r && r->loop) ? 1u : 0u);
     cmd.priority = r ? r->priority : 0u;
-    cmd.interruption =
-        r ? r->interruption : GAME_AUDIO_INTERRUPT_OVERLAP;
+    cmd.interruption = r ? r->interruption : GAME_AUDIO_INTERRUPT_OVERLAP;
     cmd.seed = h;
     cmd.requestId = ++g_requestId;
     cmd.hotGeneration = ctx->generation;
     cmd.falloffStart = r ? r->falloffStart : 2.0f;
+    audio(ctx->host, &cmd);
+    return true;
+}
+
+void MIMITA_GAME_CALL onAudioFact(void* host, const GameEventV1* event)
+{
+    auto* ctx = static_cast<GameplayContextV1*>(host);
+    auto* fact = event ? static_cast<GameAudioFactV1*>(event->payload) : nullptr;
+    if (!ctx || !fact)
+        return;
+    HotAudioOverrideV1 ov{};
+    ov.volumeScale = fact->volumeScale > 0.0f ? fact->volumeScale : 1.0f;
+    ov.pitchScale = fact->pitchScale > 0.0f ? fact->pitchScale : 1.0f;
+    ov.volumeBase = fact->volumeBase;
+    ov.pitchBase = fact->pitchBase;
+    ov.seed = fact->seed;
+    ov.sound = fact->sound[0] != '\0' ? fact->sound : nullptr;
+
+    bool handled = false;
+    if (fact->slotOp == GAME_AUDIO_FACT_SLOT_SET) {
+        handled = hotEmitRecipeSlot(ctx, fact->recipeKey, fact->ownerEntity,
+                                    fact->slotId, fact->loop != 0, &ov);
+    } else if (fact->slotOp == GAME_AUDIO_FACT_SLOT_STOP) {
+        hotStopRecipeSlot(ctx, fact->ownerEntity, fact->slotId);
+        handled = true;
+    } else {
+        handled = hotEmitRecipeSound(ctx, fact->recipeKey, fact->position,
+                                     fact->ownerEntity, fact->spatial != 0, &ov);
+    }
+    if (handled)
+        fact->handled = 1u;
+}
+
+// Generic music-selection policy: the cold streaming engine supplies the
+// candidate count; the hot policy picks the index and volume/pitch/loop. The
+// streaming mechanism (engine, file decode, seek) stays in the EXE.
+void MIMITA_GAME_CALL onAudioMusic(void* host, const GameEventV1* event)
+{
+    auto* ctx = static_cast<GameplayContextV1*>(host);
+    auto* p = event ? static_cast<GameMusicPolicyV1*>(event->payload) : nullptr;
+    if (!ctx || !p)
+        return;
+    pollRecipes();
+    const std::uint64_t key = gameHash("music.change");
+    const Recipe* r = findRecipe(key);
+    const std::uint32_t h = mixSeed(key, p->mode, ctx->tick);
+    p->outIndex = p->candidateCount > 0 ? (h % p->candidateCount) : 0u;
+    p->outVolume =
+        r ? (r->volMin + (r->volMax - r->volMin) * unitFloat(h)) : 1.0f;
+    p->outPitch =
+        r ? (r->pitchMin + (r->pitchMax - r->pitchMin) *
+                                unitFloat(h * 2654435761u + 1u))
+          : 1.0f;
+    p->outLoop = 1u;
+    p->handled = 1u;
+}
+
+const MimitaHotPackage::EventRegistrar s_audioFact{
+    {GAME_EVENT_AUDIO_FACT, gameHash("audio.fact.v3"), 0, onAudioFact,
+     "hot.audio-policy"}};
+const MimitaHotPackage::EventRegistrar s_audioMusic{
+    {GAME_EVENT_AUDIO_MUSIC, gameHash("audio.music.v1"), 0, onAudioMusic,
+     "hot.audio-policy"}};
+
+} // namespace
+
+bool hotEmitRecipeSound(GameplayContextV1* ctx, std::uint64_t recipeKey,
+                        const float position[3], std::uint64_t ownerEntity,
+                        bool spatial, const HotAudioOverrideV1* overrides)
+{
+    return emitRecipeCommand(ctx, recipeKey, position, ownerEntity, spatial,
+                             overrides, GAME_AUDIO_PLAY_ONESHOT, 0, false, true);
+}
+
+bool hotEmitRecipeSlot(GameplayContextV1* ctx, std::uint64_t recipeKey,
+                       std::uint64_t ownerEntity, std::uint64_t slotId,
+                       bool loop, const HotAudioOverrideV1* overrides)
+{
+    return emitRecipeCommand(ctx, recipeKey, nullptr, ownerEntity, true,
+                             overrides, GAME_AUDIO_SET_SLOT, slotId, loop,
+                             false);
+}
+
+bool hotStopRecipeSlot(GameplayContextV1* ctx, std::uint64_t ownerEntity,
+                       std::uint64_t slotId)
+{
+    if (!ctx || !ctx->resolveCapability)
+        return false;
+    auto audio = reinterpret_cast<AudioPlayFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
+    if (!audio)
+        return false;
+    GameAudioCommandV1 cmd{};
+    cmd.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+    cmd.structSize = sizeof(GameAudioCommandV1);
+    std::snprintf(cmd.sound, sizeof(cmd.sound), "%s", "audio.slot.stop");
+    cmd.ownerEntity = ownerEntity;
+    cmd.slotId = slotId;
+    cmd.op = GAME_AUDIO_STOP_SLOT;
     audio(ctx->host, &cmd);
     return true;
 }

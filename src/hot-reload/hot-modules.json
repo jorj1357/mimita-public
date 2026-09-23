@@ -82,10 +82,25 @@
     "src/hot-reload/hot-damage-event.h",
     "src/hot-reload/hot-consequences.h",
     "src/hot-reload/hot-packet-codec.h",
+    "src/hot-reload/hot-packet-schemas.h",
     "src/hot-reload/hot-snapshot-codec.h",
     "src/hot-reload/hot-movement-validation.h",
     "src/hot-reload/hot-physical-contact.h",
     "src/hot-reload/hot-damage-application.h",
+    "src/hot-reload/hot-attack-gates.h",
+    "src/hot-reload/hot-kill-attribution.h",
+    "src/hot-reload/hot-npc-targeting.h",
+    "src/hot-reload/hot-projectile-splash.h",
+    "src/hot-reload/hot-respawn.h",
+    "src/hot-reload/hot-attack-claim.h",
+    "src/hot-reload/hot-npc-ground-clamp.h",
+    "src/hot-reload/hot-broadcast-interp.h",
+    "src/hot-reload/hot-join-policy.h",
+    "src/hot-reload/hot-session-policy.h",
+    "src/hot-reload/hot-reload-decision.h",
+    "src/hot-reload/hot-client-snapshot.h",
+    "src/hot-reload/hot-projectile-correction.h",
+    "src/hot-reload/hot-connection-health.h",
     "src/hot-reload/hot-history.h",
     "src/hot-reload/hot-lagcomp-policy.h"
   ],
@@ -148,5 +163,68 @@
   "bridges": [
     "src/network/snapshot-chunks.cpp",
     "src/network/movement-validation.cpp"
+  ],
+  "comment_legacy": "LEGACY / STABLE-KERNEL. These EXE-owned files are kept in place (never deleted) and are not hot-reloadable by design. Their retry/session/policy now lives behind hot capabilities; what remains is OS/thread/lifetime mechanism, a dispatch bridge, or a thin transport wrapper whose callbacks must never enter a replaceable module. Each entry lists what stays cold and why. A change here requires a cold relink (HOT_RELOAD_LEGACY_CHANGE).",
+  "legacy": [
+    {
+      "file": "src/network/server.cpp",
+      "why": "Process/thread/socket lifetime, the fixed-tick accumulator loop, shutdown, and the live-code distribution announce. Policy blocks are delegated to hot systems/capabilities; the loop itself cannot move hot."
+    },
+    {
+      "file": "src/network/ice/ice-agent.cpp",
+      "why": "Thin libjuice wrapper. libjuice owns its own thread; callbacks must never enter a replaceable module. Only the generation-safe callback token + quiesceForReload drain are added here."
+    },
+    {
+      "file": "src/network/packets.h",
+      "why": "Wire struct layouts. The schema layer (hot-packet-schemas.h) carries versioned identities and hot codecs; the C++ layout stays the cold source of truth for the framing structs."
+    },
+    {
+      "file": "src/network/server-packets.cpp",
+      "why": "Packet parse/dispatch mechanism (size/source/rate gates, movement decode, spawn/ack bookkeeping). All acceptance policy is hot; the parse loop stays cold."
+    },
+    {
+      "file": "src/network/server-npcs.cpp",
+      "why": "Cold NPC simulation host (NpcSystem mirrors, history deques, collision). Targeting/respawn/ground-clamp/lifecycle policy are hot."
+    },
+    {
+      "file": "src/network/server-players.cpp",
+      "why": "Cold player storage/history/interp buffers. Spawn/respawn/broadcast-interp/rewind policy are hot."
+    },
+    {
+      "file": "src/network/server-projectiles.cpp",
+      "why": "Cold projectile storage and physics/collision adapters. Splash/impact policy is hot."
+    },
+    {
+      "file": "src/network/server-attack.cpp",
+      "why": "Cold packet parse, weapon-state store, and body-part volume geometry. Attack gates/claim/policy are hot."
+    },
+    {
+      "file": "src/network/server-physical-contact.cpp",
+      "why": "Cold contact detection/episode storage. Damage/knockback/interval policy are hot."
+    },
+    {
+      "file": "src/network/server-damage.cpp",
+      "why": "Cold authoritative health/velocity apply and reliable damage-event codec. Damage-application/kill-attribution policy are hot."
+    },
+    {
+      "file": "src/network/multiplayer-tick.cpp",
+      "why": "Cold replica storage, chunk reassembly buffers, and artifact receiver. Generation/connection/input/client-snapshot policy are hot."
+    },
+    {
+      "file": "src/network/multiplayer-projectiles.cpp",
+      "why": "Cold prediction buffers and projectile presentation. Projectile-correction/rocket-flight/present policy are hot."
+    },
+    {
+      "file": "src/network/multiplayer-packets.cpp",
+      "why": "UDP/ICE transport handles, the ICE connect worker, and teardown. Reconnect/session/connection-health policy are hot."
+    },
+    {
+      "file": "src/network/multiplayer-reconcile.cpp",
+      "why": "Cold state buffers and correction application. Reconciliation policy is hot (GAME_EVENT_RECONCILE)."
+    },
+    {
+      "file": "src/network/reliable-gameplay-events.cpp",
+      "why": "Cold queue memory, transmission, and disconnect safety. Retry/ACK/TTL policy is hot (GAME_EVENT_NET_RELIABLE_POLICY)."
+    }
   ]
 }

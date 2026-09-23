@@ -17,11 +17,17 @@
 #include "hot-reload/hot-tool-visual.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -109,6 +115,142 @@ void spawnEffectOriented(GameplayContextV1* ctx, std::uint64_t meshId,
     life.fadeStart = fadeStart;
     ctx->dynamicWriteComponent(ctx->host, entity, HOT_EFFECT_LIFETIME_COMPONENT,
                                &life, sizeof(life));
+}
+
+// ── hitfx.json movement recipe (hot read, last-valid preserved) ─────────────
+// The cold HitEffects implementation stays the fallback; this hot reader lets
+// the movement effect composer use config/hitfx.json values (enabled, lifetime,
+// length/radius, colors, alpha/brightness, offsets, speed scaling) live.
+struct HitfxMoveRecipeV1 {
+    bool valid = false;
+    bool enabled = true;
+    float lifetime = 0.0f;
+    float lengthStart = 0.0f, lengthEnd = 0.0f;
+    float radiusStart = 0.0f, radiusEnd = 0.0f;
+    float colorStart[3] = {1.0f, 1.0f, 1.0f};
+    float colorEnd[3] = {1.0f, 1.0f, 1.0f};
+    float alphaStart = 1.0f, alphaEnd = 0.0f;
+    float brightnessStart = 1.0f, brightnessEnd = 1.0f;
+    float forwardOffset = 0.0f, rightOffset = 0.0f, upOffset = 0.0f;
+    float speedScaling = 0.0f, speedThreshold = 0.0f;
+    float speedScaleMin = 1.0f, speedScaleMax = 1.0f;
+};
+
+struct HitfxRecipeTableV1 {
+    HitfxMoveRecipeV1 groundJump, airJump, walk, landing, movementDash;
+    HitfxMoveRecipeV1 dash, perfectDash, freeze, freezeTrail, downDash, footstep;
+    bool loaded = false;
+    std::filesystem::file_time_type writeTime{};
+};
+HitfxRecipeTableV1 g_hitfx;
+
+void readHitfxVec3(const nlohmann::json& j, float out[3])
+{
+    if (j.is_array() && j.size() >= 3) {
+        out[0] = j[0].get<float>();
+        out[1] = j[1].get<float>();
+        out[2] = j[2].get<float>();
+    }
+}
+
+void readHitfxBurst(const nlohmann::json& j, HitfxMoveRecipeV1& r)
+{
+    if (!j.is_object())
+        return;
+    r.valid = true;
+    if (j.contains("enabled")) r.enabled = j["enabled"].get<bool>();
+    if (j.contains("lifetimeTicks")) r.lifetime = j["lifetimeTicks"].get<float>() / 60.0f;
+    if (j.contains("lifetime")) r.lifetime = j["lifetime"].get<float>();
+    if (j.contains("lengthStart")) r.lengthStart = j["lengthStart"].get<float>();
+    if (j.contains("lengthEnd")) r.lengthEnd = j["lengthEnd"].get<float>();
+    if (j.contains("length")) r.lengthStart = j["length"].get<float>();
+    if (j.contains("radiusStart")) r.radiusStart = j["radiusStart"].get<float>();
+    if (j.contains("radiusEnd")) r.radiusEnd = j["radiusEnd"].get<float>();
+    if (j.contains("radius")) { r.radiusStart = j["radius"].get<float>(); r.radiusEnd = 0.0f; }
+    if (j.contains("scale")) r.radiusStart = j["scale"].get<float>();
+    if (j.contains("colorStart")) readHitfxVec3(j["colorStart"], r.colorStart);
+    if (j.contains("colorEnd")) readHitfxVec3(j["colorEnd"], r.colorEnd);
+    if (j.contains("color")) {
+        readHitfxVec3(j["color"], r.colorStart);
+        readHitfxVec3(j["color"], r.colorEnd);
+    }
+    if (j.contains("alphaStart")) r.alphaStart = j["alphaStart"].get<float>();
+    if (j.contains("alphaEnd")) r.alphaEnd = j["alphaEnd"].get<float>();
+    if (j.contains("alpha")) r.alphaStart = j["alpha"].get<float>();
+    if (j.contains("brightnessStart")) r.brightnessStart = j["brightnessStart"].get<float>();
+    if (j.contains("brightnessEnd")) r.brightnessEnd = j["brightnessEnd"].get<float>();
+    if (j.contains("forwardOffset")) r.forwardOffset = j["forwardOffset"].get<float>();
+    else if (j.contains("directionalOffset")) r.forwardOffset = j["directionalOffset"].get<float>();
+    if (j.contains("rightOffset")) r.rightOffset = j["rightOffset"].get<float>();
+    if (j.contains("upOffset")) r.upOffset = j["upOffset"].get<float>();
+    if (j.contains("speedScaling")) r.speedScaling = j["speedScaling"].get<float>();
+    if (j.contains("speedThreshold")) r.speedThreshold = j["speedThreshold"].get<float>();
+    if (j.contains("speedScaleMin")) r.speedScaleMin = j["speedScaleMin"].get<float>();
+    if (j.contains("speedScaleMax")) r.speedScaleMax = j["speedScaleMax"].get<float>();
+}
+
+bool loadHitfx()
+{
+    std::ifstream file("config/hitfx.json");
+    if (!file.is_open())
+        return false;
+    try {
+        const nlohmann::json j = nlohmann::json::parse(file, nullptr, true, true);
+        HitfxRecipeTableV1 next;
+        if (j.contains("groundJumpBurst")) readHitfxBurst(j["groundJumpBurst"], next.groundJump);
+        if (j.contains("airJumpBurst")) readHitfxBurst(j["airJumpBurst"], next.airJump);
+        if (j.contains("walkBurst")) readHitfxBurst(j["walkBurst"], next.walk);
+        if (j.contains("landingBurst")) readHitfxBurst(j["landingBurst"], next.landing);
+        if (j.contains("movementDashBurst")) readHitfxBurst(j["movementDashBurst"], next.movementDash);
+        if (j.contains("dash")) readHitfxBurst(j["dash"], next.dash);
+        if (j.contains("perfectDash")) readHitfxBurst(j["perfectDash"], next.perfectDash);
+        if (j.contains("freeze")) readHitfxBurst(j["freeze"], next.freeze);
+        if (j.contains("freezeTrail")) readHitfxBurst(j["freezeTrail"], next.freezeTrail);
+        if (j.contains("downDash")) readHitfxBurst(j["downDash"], next.downDash);
+        if (j.contains("footstep")) readHitfxBurst(j["footstep"], next.footstep);
+        next.loaded = true;
+        g_hitfx = next;
+        return true;
+    } catch (const std::exception& e) {
+        std::printf("[HITFX] hot recipe parse failed: %s (keeping last valid)\n", e.what());
+        return false;
+    }
+}
+
+void pollHitfx()
+{
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point nextCheck;
+    const auto now = Clock::now();
+    if (now < nextCheck)
+        return;
+    nextCheck = now + std::chrono::milliseconds(250);
+    std::error_code ec;
+    const auto wt = std::filesystem::last_write_time("config/hitfx.json", ec);
+    if (ec)
+        return;
+    if (!g_hitfx.loaded || wt != g_hitfx.writeTime) {
+        if (loadHitfx())
+            g_hitfx.writeTime = wt;
+    }
+}
+
+void recipeScale(const HitfxMoveRecipeV1& r, float defStart, float defEnd,
+                 float lifetime, float& scale0, float& growth)
+{
+    scale0 = (r.valid && r.radiusStart > 0.0f) ? r.radiusStart : defStart;
+    const float end = (r.valid && r.radiusEnd > 0.0f) ? r.radiusEnd : defEnd;
+    growth = lifetime > 0.0f ? (end - scale0) / lifetime : 0.0f;
+}
+
+const float* recipeColor(const HitfxMoveRecipeV1& r, const float def[3])
+{
+    return r.valid ? r.colorStart : def;
+}
+
+float recipeLifetime(const HitfxMoveRecipeV1& r, float def)
+{
+    return (r.valid && r.lifetime > 0.0f) ? r.lifetime : def;
 }
 
 using AudioPlayFn = void (MIMITA_GAME_CALL *)(void*, const GameAudioCommandV1*);
@@ -395,6 +537,7 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
     if (!ctx || !req || !ctx->entityCreate || !ctx->writeComponent ||
         !ctx->dynamicWriteComponent)
         return;
+    pollHitfx();
     // NOTE: handled is set only by a branch that actually composes the effect.
     // An unrecognized fact stays unhandled so the cold owner runs (one owner).
 
@@ -442,30 +585,54 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
 
         const std::uint64_t type = req->effectTypeId;
         if (type == gameHash("effect.movement.ground_jump")) {
-            const float p[3] = {pos[0], pos[1], pos[2] - 0.5f};
+            const HitfxMoveRecipeV1& r = g_hitfx.groundJump;
+            if (r.valid && !r.enabled)
+                return;
+            float scale0, growth;
+            const float lifetime = recipeLifetime(r, 10.0f / 60.0f);
+            recipeScale(r, 0.25f, 0.15f, lifetime, scale0, growth);
+            const float def[3] = {1.0f, 0.85f, 0.2f};
+            const float* c = recipeColor(r, def);
+            const float p[3] = {pos[0], pos[1],
+                                pos[2] - 0.5f + (r.valid ? r.upOffset : 0.0f)};
             const float v[3] = {0.0f, 0.0f, 1.5f};
             spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
-                        1.0f, 0.85f, 0.2f, 0.25f, 2.5f,
-                        10.0f / 60.0f, 0.15f);
-            // Sound is emitted once by hot movement on the accepted jump edge.
+                        c[0], c[1], c[2], scale0, growth, lifetime, 0.15f);
             return;
         }
         if (type == gameHash("effect.movement.air_jump")) {
-            const float p[3] = {pos[0], pos[1], pos[2] - 1.0f};
+            const HitfxMoveRecipeV1& r = g_hitfx.airJump;
+            if (r.valid && !r.enabled)
+                return;
+            float scale0, growth;
+            const float lifetime = recipeLifetime(r, 14.0f / 60.0f);
+            recipeScale(r, 0.4f, 0.1f, lifetime, scale0, growth);
+            const float def[3] = {0.5f, 0.3f, 1.0f};
+            const float* c = recipeColor(r, def);
+            const float p[3] = {pos[0], pos[1],
+                                pos[2] - 1.0f + (r.valid ? r.upOffset : 0.0f)};
             const float v[3] = {0.0f, 0.0f, -0.5f};
             spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
-                        0.5f, 0.3f, 1.0f, 0.4f, 3.0f,
-                        14.0f / 60.0f, 0.2f);
-            // Sound is emitted once by hot movement on the accepted fresh press.
+                        c[0], c[1], c[2], scale0, growth, lifetime, 0.2f);
             return;
         }
         if (type == gameHash("effect.movement.dash")) {
+            const HitfxMoveRecipeV1& r = g_hitfx.movementDash.valid
+                                              ? g_hitfx.movementDash
+                                              : g_hitfx.dash;
+            if (r.valid && !r.enabled)
+                return;
             const float speed = std::max(req->scale, 1.0f);
+            const float def[3] = {0.2f, 0.6f, 1.0f};
+            const float* c = recipeColor(r, def);
+            const float thick = (r.valid && r.radiusStart > 0.0f) ? r.radiusStart : 0.18f;
+            float length = std::clamp(0.5f + speed * 0.08f, 0.5f, 3.5f);
+            if (r.valid && r.lengthStart > 0.0f)
+                length = r.lengthStart;
+            const float lifetime = recipeLifetime(r, 12.0f / 60.0f);
             spawnEffectOriented(ctx, HOT_MESH_BEAM, HOT_TEX_DEFAULT, pos, dir,
-                                0.2f, 0.6f, 1.0f, 1.0f,
-                                0.18f, 0.18f,
-                                std::clamp(0.5f + speed * 0.08f, 0.5f, 3.5f),
-                                12.0f / 60.0f, 0.35f);
+                                c[0], c[1], c[2], 1.0f, thick, thick, length,
+                                lifetime, 0.35f);
             HotAudioOverrideV1 dashOv{};
             if (req->flags & 1u) {
                 dashOv.volumeScale = 1.3f;
@@ -481,50 +648,85 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             return;
         }
         if (type == gameHash("effect.movement.down_dash")) {
+            const HitfxMoveRecipeV1& r = g_hitfx.downDash;
+            if (r.valid && !r.enabled)
+                return;
+            const float def[3] = {0.1f, 0.8f, 0.8f};
+            const float* c = recipeColor(r, def);
+            const float thick = (r.valid && r.radiusStart > 0.0f) ? r.radiusStart : 0.45f;
+            const float length = (r.valid && r.lengthStart > 0.0f) ? r.lengthStart : 3.0f;
+            const float lifetime = recipeLifetime(r, 12.0f / 60.0f);
             const float down[3] = {0.0f, 0.0f, -1.0f};
             spawnEffectOriented(ctx, HOT_MESH_BEAM, HOT_TEX_DEFAULT, pos, down,
-                                0.1f, 0.8f, 0.8f, 1.0f,
-                                0.45f, 0.45f, 3.0f,
-                                12.0f / 60.0f, 0.3f);
+                                c[0], c[1], c[2], 1.0f, thick, thick, length,
+                                lifetime, 0.3f);
             hotEmitRecipeSound(ctx, gameHash("down_dash"), pos, 0, true,
                                nullptr);
             return;
         }
         if (type == gameHash("effect.movement.landing")) {
+            const HitfxMoveRecipeV1& r = g_hitfx.landing;
+            if (r.valid && !r.enabled)
+                return;
+            const float def[3] = {0.6f, 0.6f, 0.6f};
+            const float* c = recipeColor(r, def);
+            const float thick = (r.valid && r.radiusStart > 0.0f) ? r.radiusStart : 0.6f;
+            const float lifetime = recipeLifetime(r, 12.0f / 60.0f);
             const float p[3] = {pos[0], pos[1], pos[2]};
             spawnEffectOriented(ctx, HOT_MESH_BEAM, HOT_TEX_DEFAULT, p, dir,
-                                0.6f, 0.6f, 0.6f, 1.0f,
-                                0.6f, 0.12f, 0.12f,
-                                12.0f / 60.0f, 0.2f);
+                                c[0], c[1], c[2], 1.0f, thick, 0.12f, 0.12f,
+                                lifetime, 0.2f);
             hotEmitRecipeSound(ctx, gameHash("landing"), pos, 0, true, nullptr);
             return;
         }
         if (type == gameHash("effect.movement.freeze")) {
-            spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, pos,
-                        nullptr, 0.2f, 1.0f, 0.3f, 0.2f, 0.0f,
-                        std::max(req->scale, 0.1f), 0.0f);
+            const HitfxMoveRecipeV1& r = g_hitfx.freeze;
+            if (r.valid && !r.enabled)
+                return;
+            const float def[3] = {0.2f, 1.0f, 0.3f};
+            const float* c = recipeColor(r, def);
+            const float scale0 = (r.valid && r.radiusStart > 0.0f) ? r.radiusStart : 0.2f;
+            const float lifetime = recipeLifetime(r, std::max(req->scale, 0.1f));
+            spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, pos, nullptr,
+                        c[0], c[1], c[2], scale0, 0.0f, lifetime, 0.0f);
             hotEmitRecipeSound(ctx, gameHash("freeze"), pos, 0, true, nullptr);
             return;
         }
         if (type == gameHash("effect.movement.freeze_trail")) {
+            const HitfxMoveRecipeV1& r = g_hitfx.freezeTrail;
+            if (r.valid && !r.enabled)
+                return;
+            const float def[3] = {0.1f, 0.1f, 0.4f};
+            const float* c = recipeColor(r, def);
+            const float thick = (r.valid && r.radiusStart > 0.0f) ? r.radiusStart : 0.4f;
+            const float length = (r.valid && r.lengthStart > 0.0f) ? r.lengthStart : 2.0f;
+            const float lifetime = recipeLifetime(r, 3.0f / 60.0f);
             const float up[3] = {0.0f, 0.0f, 1.0f};
             spawnEffectOriented(ctx, HOT_MESH_BEAM, HOT_TEX_DEFAULT, pos, up,
-                                0.1f, 0.1f, 0.4f, 1.0f,
-                                0.4f, 0.4f, 2.0f,
-                                3.0f / 60.0f, 0.0f);
+                                c[0], c[1], c[2], 1.0f, thick, thick, length,
+                                lifetime, 0.0f);
             return;
         }
 
-        // Default afad20a-style walk mode: the audio-policy recipe owns the
-        // variant and the volume/pitch jitter. Immediate repeats are intentional
-        // (walk4, walk4, walk4 is valid), so no repeat suppression is applied.
-        const float p[3] = {pos[0], pos[1], pos[2] - 0.6f};
-        const float v[3] = {0.0f, 0.0f, 0.0f};
-        spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
-                    0.8f, 0.8f, 0.8f, 0.08f, 1.0f,
-                    6.0f / 60.0f, 0.0f);
-        hotEmitRecipeSound(ctx, gameHash("footstep"), pos, 0, true, nullptr);
-        return;
+        // Footstep: the audio-policy recipe owns the sound variant/jitter; the
+        // visual uses the hitfx.json footstep values.
+        {
+            const HitfxMoveRecipeV1& r = g_hitfx.footstep;
+            float scale0, growth;
+            const float lifetime = recipeLifetime(r, 6.0f / 60.0f);
+            recipeScale(r, 0.08f, 0.0f, lifetime, scale0, growth);
+            const float def[3] = {0.8f, 0.8f, 0.8f};
+            const float* c = recipeColor(r, def);
+            if (!r.valid || r.enabled) {
+                const float p[3] = {pos[0], pos[1],
+                                    pos[2] - 0.6f + (r.valid ? r.upOffset : 0.0f)};
+                const float v[3] = {0.0f, 0.0f, 0.0f};
+                spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
+                            c[0], c[1], c[2], scale0, growth, lifetime, 0.0f);
+            }
+            hotEmitRecipeSound(ctx, gameHash("footstep"), pos, 0, true, nullptr);
+            return;
+        }
     }
 
     // Generic actor/NPC action audio (hot policy): a logical actor-sound key in,

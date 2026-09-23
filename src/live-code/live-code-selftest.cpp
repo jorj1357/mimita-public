@@ -14,6 +14,20 @@
 #include "hot-reload/hot-movement-validation.h"
 #include "hot-reload/hot-physical-contact.h"
 #include "hot-reload/hot-damage-application.h"
+#include "hot-reload/hot-attack-gates.h"
+#include "hot-reload/hot-kill-attribution.h"
+#include "hot-reload/hot-npc-targeting.h"
+#include "hot-reload/hot-projectile-splash.h"
+#include "hot-reload/hot-respawn.h"
+#include "hot-reload/hot-attack-claim.h"
+#include "hot-reload/hot-npc-ground-clamp.h"
+#include "hot-reload/hot-broadcast-interp.h"
+#include "hot-reload/hot-join-policy.h"
+#include "hot-reload/hot-session-policy.h"
+#include "hot-reload/hot-reload-decision.h"
+#include "hot-reload/hot-client-snapshot.h"
+#include "hot-reload/hot-projectile-correction.h"
+#include "hot-reload/hot-connection-health.h"
 #include "network/packet-codec-wire.h"
 #include "network/snapshot-chunks.h"
 #include "debug/structured-log.h"
@@ -356,6 +370,14 @@ bool runLiveCodeSelfTest(std::string& report)
             ok &= check(codec && codec->schemaVersion == 1 && codec->encode &&
                             codec->decode && codec->validate,
                         "hot packet-codecs provider resolves a live codec", report);
+
+            // packet.ping: a core gameplay schema declared in the hot schema
+            // layer (hot-packet-schemas.h), resolved through the same doorway.
+            const MimitaNet::GamePacketCodecDescriptorV1* pingCodec =
+                lookup ? lookup(nullptr, gameHash("packet.ping"), 1) : nullptr;
+            ok &= check(pingCodec && pingCodec->encode && pingCodec->decode &&
+                            pingCodec->validate,
+                        "hot packet-schemas resolves packet.ping", report);
         }
 
         // ── Hot snapshot-codec registry through the same generic doorway ───
@@ -458,8 +480,12 @@ bool runLiveCodeSelfTest(std::string& report)
                     MimitaNet::GAME_CAP_PHYSICAL_CONTACT));
             const MimitaNet::GamePhysicalContactPolicyV1* policy =
                 lookup ? lookup(nullptr) : nullptr;
-            ok &= check(policy && policy->damage && policy->knockback,
+            ok &= check(policy && policy->damage && policy->knockback &&
+                            policy->intervalTicks && policy->shouldConfirm,
                         "hot physical-contact provider resolves", report);
+            if (policy && policy->intervalTicks)
+                ok &= check(policy->intervalTicks(nullptr, 0.05f, 60.0f) == 3u,
+                            "hot physical-contact interval ticks", report);
             if (policy && policy->damage)
             {
                 MimitaNet::GamePhysicalContactDamageV1 dmg{};
@@ -508,6 +534,396 @@ bool runLiveCodeSelfTest(std::string& report)
                                 lethal.healthAfter == 0 &&
                                 lethal.outRespawnSeconds == 3.0f,
                             "hot damage-application applies lethal + respawn rule",
+                            report);
+            }
+        }
+
+        // ── Hot attack gates through the same generic doorway ─────────────
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameAttackGatesFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_ATTACK_GATES));
+            ok &= check(evaluate != nullptr,
+                        "hot attack-gates provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameAttackGatesV1 cooldown{};
+                cooldown.structSize = sizeof(MimitaNet::GameAttackGatesV1);
+                cooldown.tick = 100;
+                cooldown.nextAllowedFireTick = 110;
+                cooldown.cooldownGraceTicks = 2;
+                cooldown.maxShotsPerTick = 2;
+                evaluate(nullptr, &cooldown);
+                ok &= check(cooldown.cooldownReject == 1u,
+                            "hot attack-gates reject cooldown", report);
+
+                MimitaNet::GameAttackGatesV1 geometry{};
+                geometry.structSize = sizeof(MimitaNet::GameAttackGatesV1);
+                geometry.hotStateOwns = 1;
+                geometry.isHitscan = 1;
+                geometry.shotsThisTick = 0;
+                geometry.maxShotsPerTick = 1;
+                geometry.pingMs = 0.0f;
+                geometry.origin[0] = 100.0f;
+                geometry.direction[0] = 1.0f;
+                evaluate(nullptr, &geometry);
+                ok &= check(geometry.geometryReject == 1u,
+                            "hot attack-gates reject far muzzle geometry", report);
+            }
+        }
+
+        // ── Hot kill-attribution through the same generic doorway ─────────
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameKillAttributionFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_KILL_ATTRIBUTION));
+            ok &= check(evaluate != nullptr,
+                        "hot kill-attribution provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameKillAttributionV1 reattrib{};
+                reattrib.structSize = sizeof(MimitaNet::GameKillAttributionV1);
+                reattrib.victimId = 5;
+                reattrib.lastNpcDamageSourceId = 7;
+                reattrib.lastNpcDamageTick = 100;
+                reattrib.tick = 110;
+                reattrib.windowTicks = 120;
+                evaluate(nullptr, &reattrib);
+                ok &= check(reattrib.reattributed == 1u &&
+                                reattrib.outAttackerNpcId == 7u,
+                            "hot kill-attribution credits the recent NPC", report);
+            }
+        }
+
+        // ── Hot NPC targeting through the same generic doorway ────────────
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GameNpcTargetingLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_NPC_TARGETING));
+            const MimitaNet::GameNpcTargetingPolicyV1* policy =
+                lookup ? lookup(nullptr) : nullptr;
+            ok &= check(policy && policy->hostile && policy->score,
+                        "hot npc-targeting provider resolves", report);
+            if (policy && policy->hostile)
+            {
+                MimitaNet::GameNpcHostilityV1 across{};
+                across.structSize = sizeof(MimitaNet::GameNpcHostilityV1);
+                across.teamA = 1;
+                across.teamB = 2;
+                policy->hostile(nullptr, &across);
+                ok &= check(across.hostile == 1u,
+                            "hot npc-targeting hostile across teams", report);
+
+                MimitaNet::GameNpcHostilityV1 same{};
+                same.structSize = sizeof(MimitaNet::GameNpcHostilityV1);
+                same.teamA = 1;
+                same.teamB = 1;
+                policy->hostile(nullptr, &same);
+                ok &= check(same.hostile == 0u,
+                            "hot npc-targeting same team not hostile", report);
+            }
+        }
+
+        // ── Hot projectile splash through the same generic doorway ────────
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GameProjectileSplashLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_PROJECTILE_SPLASH));
+            const MimitaNet::GameProjectileSplashPolicyV1* policy =
+                lookup ? lookup(nullptr) : nullptr;
+            ok &= check(policy && policy->damage && policy->knockScale,
+                        "hot projectile-splash provider resolves", report);
+            if (policy && policy->damage)
+            {
+                MimitaNet::GameSplashFalloffV1 r{};
+                r.structSize = sizeof(MimitaNet::GameSplashFalloffV1);
+                r.distance = 1.0f;
+                r.fullDamageRadius = 3.0f;
+                r.splashRadius = 6.0f;
+                r.splashDamage = 100.0f;
+                r.edgeDamage = 20.0f;
+                r.splashExponent = 1.0f;
+                policy->damage(nullptr, &r);
+                ok &= check(r.outDamage == 100.0f,
+                            "hot projectile-splash full-radius damage", report);
+            }
+        }
+
+        // ── Hot respawn rule through the same generic doorway ─────────────
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GameRespawnLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_RESPAWN));
+            const MimitaNet::GameRespawnPolicyV1* policy =
+                lookup ? lookup(nullptr) : nullptr;
+            ok &= check(policy && policy->initialTimer && policy->tick,
+                        "hot respawn provider resolves", report);
+            if (policy && policy->tick)
+            {
+                MimitaNet::GameRespawnRuleV1 oneLife{};
+                oneLife.structSize = sizeof(MimitaNet::GameRespawnRuleV1);
+                oneLife.respawnsEnabled = 0u;
+                policy->tick(nullptr, &oneLife);
+                ok &= check(oneLife.stayDead == 1u,
+                            "hot respawn one-life stays dead", report);
+
+                MimitaNet::GameRespawnRuleV1 count{};
+                count.structSize = sizeof(MimitaNet::GameRespawnRuleV1);
+                count.respawnsEnabled = 1u;
+                count.timer = 1.0f;
+                count.dt = 2.0f;
+                policy->tick(nullptr, &count);
+                ok &= check(count.readyToRespawn == 1u,
+                            "hot respawn countdown reaches ready", report);
+            }
+        }
+
+        // ── Hot attack claim through the same generic doorway ─────────────
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameAttackClaimFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_ATTACK_CLAIM));
+            ok &= check(evaluate != nullptr,
+                        "hot attack-claim provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameAttackClaimV1 claim{};
+                claim.structSize = sizeof(MimitaNet::GameAttackClaimV1);
+                claim.claimedTargetId = 9u;
+                claim.claimedDistance = 10.0f;
+                claim.maxRange = 100.0f;
+                claim.worldBlockDistance = 50.0f;
+                claim.rewindHitTolerance = 0.5f;
+                claim.claimLagAllowance = 0.25f;
+                evaluate(nullptr, &claim);
+                ok &= check(claim.eligible == 1u && claim.tolerance == 0.75f,
+                            "hot attack-claim accepts a clear claim", report);
+            }
+        }
+
+        // ── Hot NPC ground clamp through the same generic doorway ─────────
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameNpcGroundClampFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_NPC_GROUND_CLAMP));
+            ok &= check(evaluate != nullptr,
+                        "hot npc-ground-clamp provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameNpcGroundClampV1 clamp{};
+                clamp.structSize = sizeof(MimitaNet::GameNpcGroundClampV1);
+                clamp.haveFloor = 1u;
+                clamp.floorZ = 10.0f;
+                clamp.posZ = 5.0f;
+                clamp.velZ = -3.0f;
+                clamp.restHeight = 1.8f;
+                evaluate(nullptr, &clamp);
+                ok &= check(clamp.clamp == 1u && clamp.outPosZ == 11.8f &&
+                                clamp.outVelZ == 0.0f,
+                            "hot npc-ground-clamp pins below floor", report);
+            }
+        }
+
+        // ── Hot broadcast interpolation through the same generic doorway ──
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameBroadcastInterpFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_BROADCAST_INTERP));
+            ok &= check(evaluate != nullptr,
+                        "hot broadcast-interp provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameBroadcastInterpV1 off{};
+                off.structSize = sizeof(MimitaNet::GameBroadcastInterpV1);
+                off.configSmoothing = 0u;
+                evaluate(nullptr, &off);
+                ok &= check(off.useSmoothing == 0u,
+                            "hot broadcast-interp disabled when config off", report);
+
+                MimitaNet::GameBroadcastInterpV1 on{};
+                on.structSize = sizeof(MimitaNet::GameBroadcastInterpV1);
+                on.configSmoothing = 1u;
+                on.configMaxSpeed = 100.0f;
+                on.dt = 1.0f / 60.0f;
+                evaluate(nullptr, &on);
+                ok &= check(on.useSmoothing == 1u &&
+                                on.maxDelta > 0.0f && on.maxDelta < 2.0f,
+                            "hot broadcast-interp speed cap from config", report);
+            }
+        }
+
+        // ── Hot join policy through the same generic doorway ──────────────
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameJoinPolicyFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_JOIN_POLICY));
+            ok &= check(evaluate != nullptr,
+                        "hot join-policy provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameJoinPolicyV1 local{};
+                local.structSize = sizeof(MimitaNet::GameJoinPolicyV1);
+                local.coordinatorIsLocal = 1u;
+                evaluate(nullptr, &local);
+                ok &= check(local.accept == 1u,
+                            "hot join-policy accepts a local join", report);
+
+                MimitaNet::GameJoinPolicyV1 badPassword{};
+                badPassword.structSize = sizeof(MimitaNet::GameJoinPolicyV1);
+                badPassword.coordinatorIsLocal = 1u;
+                badPassword.passwordProtected = 1u;
+                badPassword.passwordMatches = 0u;
+                evaluate(nullptr, &badPassword);
+                ok &= check(
+                    badPassword.accept == 0u &&
+                        badPassword.rejectReason == (std::uint32_t)
+                            MimitaNet::GAME_JOIN_REJECT_WRONG_PASSWORD,
+                    "hot join-policy rejects wrong password", report);
+            }
+        }
+
+        // ── Hot session policy through the same generic doorway ───────────
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GameSessionLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_SESSION_POLICY));
+            const MimitaNet::GameSessionPolicyV1* policy =
+                lookup ? lookup(nullptr) : nullptr;
+            ok &= check(policy && policy->reconnectGrace && policy->mapReady,
+                        "hot session-policy provider resolves", report);
+            if (policy && policy->mapReady)
+            {
+                MimitaNet::GameMapReadyV1 fresh{};
+                fresh.structSize = sizeof(MimitaNet::GameMapReadyV1);
+                fresh.mapMatches = 1u;
+                policy->mapReady(nullptr, &fresh);
+                ok &= check(fresh.spawn == 1u && fresh.rearm == 0u,
+                            "hot session-policy spawns a fresh player", report);
+
+                MimitaNet::GameMapReadyV1 rearm{};
+                rearm.structSize = sizeof(MimitaNet::GameMapReadyV1);
+                rearm.alreadySpawned = 1u;
+                rearm.mapMatches = 1u;
+                policy->mapReady(nullptr, &rearm);
+                ok &= check(rearm.spawn == 0u && rearm.rearm == 1u,
+                            "hot session-policy re-arms an existing player", report);
+            }
+        }
+
+        // ── Hot reload decision through the same generic doorway ──────────
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameReloadDecisionFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_RELOAD_DECISION));
+            ok &= check(evaluate != nullptr,
+                        "hot reload-decision provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameReloadDecisionV1 full{};
+                full.structSize = sizeof(MimitaNet::GameReloadDecisionV1);
+                full.currentAmmo = 10;
+                full.magazineSize = 10;
+                full.reserveAmmo = 30;
+                evaluate(nullptr, &full);
+                ok &= check(full.accept == 0u &&
+                                full.reason == MimitaNet::GAME_RELOAD_REASON_MAG_FULL,
+                            "hot reload-decision rejects full magazine", report);
+
+                MimitaNet::GameReloadDecisionV1 begin{};
+                begin.structSize = sizeof(MimitaNet::GameReloadDecisionV1);
+                begin.currentAmmo = 3;
+                begin.magazineSize = 10;
+                begin.reserveAmmo = 30;
+                evaluate(nullptr, &begin);
+                ok &= check(begin.accept == 1u && begin.beginReload == 1u,
+                            "hot reload-decision begins a reload", report);
+            }
+        }
+
+        // ── Hot client snapshot-apply through the same generic doorway ────
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameSnapshotApplyFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_CLIENT_SNAPSHOT));
+            ok &= check(evaluate != nullptr,
+                        "hot client-snapshot provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameSnapshotApplyV1 staleLocal{};
+                staleLocal.structSize = sizeof(MimitaNet::GameSnapshotApplyV1);
+                staleLocal.isLocal = 1u;
+                staleLocal.incomingEpoch = 5u;
+                staleLocal.localServerEpoch = 5u;
+                staleLocal.serverTick = 100u;
+                staleLocal.latestLocalSnapshotTick = 120u;
+                evaluate(nullptr, &staleLocal);
+                ok &= check(
+                    staleLocal.acceptLifecycle == 0u &&
+                        staleLocal.dropReason == (std::uint32_t)
+                            MimitaNet::GAME_SNAPSHOT_DROP_STALE_LOCAL,
+                    "hot client-snapshot drops a stale local sample", report);
+
+                MimitaNet::GameSnapshotApplyV1 noCreate{};
+                noCreate.structSize = sizeof(MimitaNet::GameSnapshotApplyV1);
+                noCreate.membershipAllowed = 0u;
+                noCreate.existsBefore = 0u;
+                evaluate(nullptr, &noCreate);
+                ok &= check(noCreate.mayCreate == 0u,
+                            "hot client-snapshot blocks stale membership create", report);
+            }
+        }
+
+        // ── Hot projectile correction through the same generic doorway ────
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameProjectileCorrectionFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_PROJECTILE_CORRECTION));
+            ok &= check(evaluate != nullptr,
+                        "hot projectile-correction provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameProjectileCorrectionV1 bigError{};
+                bigError.structSize = sizeof(MimitaNet::GameProjectileCorrectionV1);
+                bigError.serverHasSentUpdate = 1u;
+                bigError.positionError = 6.0f;
+                bigError.errorThreshold = 4.0f;
+                evaluate(nullptr, &bigError);
+                ok &= check(bigError.correct == 1u,
+                            "hot projectile-correction corrects a large error", report);
+
+                MimitaNet::GameProjectileCorrectionV1 small{};
+                small.structSize = sizeof(MimitaNet::GameProjectileCorrectionV1);
+                small.serverHasSentUpdate = 1u;
+                small.positionError = 2.0f;
+                small.errorThreshold = 4.0f;
+                evaluate(nullptr, &small);
+                ok &= check(small.correct == 0u,
+                            "hot projectile-correction ignores a small error", report);
+            }
+        }
+
+        // ── Hot connection-health through the same generic doorway ────────
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GameConnectionLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_CONNECTION_POLICY));
+            const MimitaNet::GameConnectionPolicyV1* policy =
+                lookup ? lookup(nullptr) : nullptr;
+            ok &= check(policy && policy->nextState && policy->cadence,
+                        "hot connection-policy provider resolves", report);
+            if (policy && policy->nextState)
+            {
+                // Connected (6) + last packet 5000ms ago > hardTimeout 4000
+                // -> Reconnecting (7).
+                MimitaNet::GameConnectionHealthV1 health{};
+                health.structSize = sizeof(MimitaNet::GameConnectionHealthV1);
+                health.current = 6u;
+                health.lastHeardAge = 5000u;
+                health.staleThresholdMs = 1000u;
+                health.hardTimeoutMs = 4000u;
+                policy->nextState(nullptr, &health);
+                ok &= check(health.next == 7u,
+                            "hot connection-policy enters reconnect on hard timeout",
                             report);
             }
         }

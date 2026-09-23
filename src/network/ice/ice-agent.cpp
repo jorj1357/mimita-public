@@ -234,8 +234,25 @@ void IceAgent::onRecv(juice_agent_t* agent, const char* data, size_t size, void*
     if (self) self->handleRecv(data, size);
 }
 
+void IceAgent::quiesceForReload()
+{
+    // Invalidate the current callback generation and drop whatever it queued, so
+    // a module swap never observes a callback from a retired generation. The
+    // libjuice object and its OS callbacks are untouched; only the event stream
+    // the caller will drain is reset.
+    mCallbackToken.fetch_add(1);
+    std::lock_guard<std::mutex> lock(mMutex);
+    const std::size_t dropped = mEvents.size();
+    mEvents.clear();
+    if (dropped > 0)
+        Debug::warn(Debug::Category::Networking,
+                    "ICE QUIESCE dropped=%zu token=%llu\n", dropped,
+                    (unsigned long long)mCallbackToken.load());
+}
+
 void IceAgent::handleStateChanged(juice_state_t state)
 {
+    if (!mAgent) return;  // post-shutdown late callback
     IceAgentState old = mState;
 
     IceEvent ev;
@@ -263,7 +280,7 @@ void IceAgent::handleStateChanged(juice_state_t state)
 
 void IceAgent::handleCandidate(const char* sdp)
 {
-    if (!sdp) return;
+    if (!sdp || !mAgent) return;
 
     IceCandidateInfo info;
     std::string sdpStr(sdp);
@@ -326,6 +343,7 @@ void IceAgent::handleCandidate(const char* sdp)
 
 void IceAgent::handleGatheringDone()
 {
+    if (!mAgent) return;  // post-shutdown late callback
     mState = IceAgentState::GatheringComplete;
 
     char sdpBuf[JUICE_MAX_SDP_STRING_LEN] = {};

@@ -16,6 +16,10 @@
 #include "network/multiplayer-context.h"
 #include "live-code/live-behavior.h"
 #include "hot-reload/hot-reload-system.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-join-policy.h"
+#include "hot-reload/hot-session-policy.h"
+#include "hot-reload/hot-reload-decision.h"
 #include "hot-reload/artifact-transfer.h"
 #include "hot-reload/generation-distribution.h"
 #include "network/coordinator-client.h"
@@ -472,13 +476,105 @@ static void bindPlayerConnection(ServerPlayer& player,
 
 static bool isKnownPacketType(uint8_t type)
 {
-    // 2026-08-29: TODO use an explicit switch here so future packet types
-    // cannot be silently rejected by an outdated numeric range.
-    // 2026-09-12: raised to the newest defined type so client->server
-    // PACKET_CODE_GENERATION is accepted.
-    // 2026-09-23: raised to PACKET_HOT_CODEC so the generic hot-codec packet is
-    // accepted; its schema is validated by the hot codec, not by this gate.
-    return type >= PACKET_HELLO && type <= PACKET_HOT_CODEC;
+    // Explicit registry, not a numeric range: a new packet id must be added here
+    // (or arrive through PACKET_HOT_CODEC, whose schema is validated by the hot
+    // codec) instead of being silently accepted by an outdated range endpoint.
+    switch (type)
+    {
+    case PACKET_HELLO:
+    case PACKET_WELCOME:
+    case PACKET_INPUT:
+    case PACKET_SNAPSHOT:
+    case PACKET_DISCONNECT:
+    case PACKET_PING:
+    case PACKET_PLAYER_LIST:
+    case PACKET_PROFILE:
+    case PACKET_ENTITY_SPAWN:
+    case PACKET_ENTITY_DESPAWN:
+    case PACKET_SPAWN_NPC_REQUEST:
+    case PACKET_TELEPORT_REQUEST:
+    case PACKET_EXPLODE_REQUEST:
+    case PACKET_SHOT_REQUEST:
+    case PACKET_SHOT_EVENT:
+    case PACKET_CHAT_MESSAGE:
+    case PACKET_NPC_DAMAGE_REQUEST:
+    case PACKET_NPC_DAMAGE_EVENT:
+    case PACKET_SERVER_COMMAND:
+    case PACKET_JOIN_REQUEST:
+    case PACKET_JOIN_ACCEPT:
+    case PACKET_JOIN_REJECT:
+    case PACKET_RECONNECT_REQUEST:
+    case PACKET_RECONNECT_ACCEPT:
+    case PACKET_DISAGREEMENT:
+    case PACKET_CLIENT_MAP_READY:
+    case PACKET_PROJECTILE_FIRE_REQUEST:
+    case PACKET_PROJECTILE_SPAWN_EVENT:
+    case PACKET_PROJECTILE_STATE_EVENT:
+    case PACKET_PROJECTILE_EXPLODE_EVENT:
+    case PACKET_PROJECTILE_DESPAWN_EVENT:
+    case PACKET_MELEE_HIT_REQUEST:
+    case PACKET_MELEE_HIT_EVENT:
+    case PACKET_PELLET_BLAST_REQUEST:
+    case PACKET_PELLET_BLAST_EVENT:
+    case PACKET_GODBALL_STATE:
+    case PACKET_PROJECTILE_FIRE_RESULT:
+    case PACKET_ATTACK_REQUEST:
+    case PACKET_ATTACK_RESULT:
+    case PACKET_RELOAD_REQUEST:
+    case PACKET_RELOAD_RESULT:
+    case PACKET_RESPAWN_REQUEST:
+    case PACKET_PLAYER_RESPAWNED:
+    case PACKET_SPAWN_ACK:
+    case PACKET_SPAWN_ACTIVATED:
+    case PACKET_RELIABLE_EVENT_ACK:
+    case PACKET_DAMAGE_CONFIRMED_EVENT:
+    case PACKET_CHAT_REQUEST:
+    case PACKET_CHAT_MESSAGE_EVENT:
+    case PACKET_CHAT_TYPING_STATE_REQUEST:
+    case PACKET_CHAT_TYPING_STATE_EVENT:
+    case PACKET_SERVER_COMMAND_RESULT:
+    case PACKET_PLAYER_CONNECTION_STATE:
+    case PACKET_VIP_STYLE_EVENT:
+    case PACKET_DUEL_STATE:
+    case PACKET_DUEL_ENEMY_SPAWN:
+    case PACKET_DUEL_REMATCH_REQUEST:
+    case PACKET_MAP_CHANGE:
+    case PACKET_SPYKNIFE_HIT_CLAIM:
+    case PACKET_GODBALL_HIT_CLAIM:
+    case PACKET_SERVER_NOTIFICATION:
+    case PACKET_AVATAR_MANIFEST:
+    case PACKET_AVATAR_ASSET_REQUEST:
+    case PACKET_AVATAR_ASSET_CHUNK:
+    case PACKET_PROGRESSION_EVENT:
+    case PACKET_BOMB_TAG_STATE:
+    case PACKET_BOMB_TAG_PASS_EVENT:
+    case PACKET_KILL_EVENT:
+    case PACKET_CODE_GENERATION:
+    case PACKET_FIRE_INTENT_REQUEST:
+    case PACKET_RAGDOLL_STATE:
+    case PACKET_CORPSE_SPAWN:
+    case PACKET_CONSTRAINT_CREATE_REQUEST:
+    case PACKET_CONSTRAINT_CREATE:
+    case PACKET_CONSTRAINT_RELEASE:
+    case PACKET_CONSTRAINT_SNAPSHOT:
+    case PACKET_DYNAMIC_COMPONENT:
+    case PACKET_ARTIFACT_REQUEST:
+    case PACKET_ARTIFACT_BEGIN:
+    case PACKET_ARTIFACT_CHUNK:
+    case PACKET_GENERATION_MANIFEST:
+    case PACKET_CONTENT_ARTIFACT:
+    case PACKET_LIVE_REVISION_PROPOSE:
+    case PACKET_LIVE_REVISION_ACCEPT:
+    case PACKET_LIVE_REVISION_REJECT:
+    case PACKET_LIVE_REVISION_ACTIVATE:
+    case PACKET_LIVE_REVISION_ROLLBACK:
+    case PACKET_LIVE_REVISION_CONFLICT:
+    case PACKET_LIVE_REVISION_ACK:
+    case PACKET_HOT_CODEC:
+        return true;
+    default:
+        return false;
+    }
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1480,66 +1576,47 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         return;
     }
 
-    // Validate join token — coordinator validation
+    // Join acceptance (token / coordinator / password) is a hot policy
+    // (net.join-policy). The cold path gathers the facts:
+    // token presence, coordinator validation, and the password comparison.
     const std::string joinTokenStr = boundedPacketString(join->joinToken, sizeof(join->joinToken));
-    if (joinTokenStr.empty())
-    {
-        JoinRejectPacket reject{};
-        reject.header.type = PACKET_JOIN_REJECT;
-        reject.header.tick = tick;
-        reject.reason = 2; // bad token
-        if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
-            ++totalPacketsOut;
-        if (claimedTransport && claimedTransport->get())
-        {
-            (*claimedTransport)->close();
-            claimedTransport->reset();
-        }
-        printf("%s [SERVER JOIN REJECT] reason=empty-token\n", serverTimestamp());
-        return;
-    }
-
-    // Validate ICE join token with coordinator
-    // (skip validation for local-only servers)
-    if (gServerCoordinatorCode == "LOCAL")
-    {
-        printf("%s [SERVER JOIN] local server — accepting join for %s\n",
-               serverTimestamp(), join->name);
-    }
-    else if (!gServerCoordinatorCode.empty())
-    {
+    const bool coordinatorIsLocal = gServerCoordinatorCode == "LOCAL";
+    const bool hasCoordinatorCode = !gServerCoordinatorCode.empty();
+    bool coordinatorValidated = false;
+    if (!coordinatorIsLocal && hasCoordinatorCode) {
         printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s\n",
                gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
-        if (!coordinatorIceValidateJoin(gServerCoordinatorCode, joinTokenStr))
-        {
-            printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s REJECTED\n",
-                   gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
-            JoinRejectPacket reject{};
-            reject.header.type = PACKET_JOIN_REJECT;
-            reject.header.tick = tick;
-            reject.reason = 2;
-            if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
-                ++totalPacketsOut;
-            if (claimedTransport && claimedTransport->get())
-            {
-                (*claimedTransport)->close();
-                claimedTransport->reset();
-            }
-            printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
-            return;
-        }
-        printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s valid\n",
-               gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
-        printf("%s [SERVER JOIN] coordinator validated token for %s\n",
-               serverTimestamp(), join->name);
+        coordinatorValidated = coordinatorIceValidateJoin(gServerCoordinatorCode, joinTokenStr);
+        printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s %s\n",
+               gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str(),
+               coordinatorValidated ? "valid" : "REJECTED");
     }
+    const bool passwordProtected = gServerPasswordProtected && !gServerPassword.empty();
+    const bool passwordMatches = !passwordProtected ||
+        boundedPacketString(join->password, sizeof(join->password)) == gServerPassword;
+
+    GameJoinPolicyV1 joinPolicy{};
+    joinPolicy.structSize = sizeof(GameJoinPolicyV1);
+    joinPolicy.playersFull = players.size() >= MAX_PLAYERS ? 1u : 0u;
+    joinPolicy.tokenEmpty = joinTokenStr.empty() ? 1u : 0u;
+    joinPolicy.coordinatorIsLocal = coordinatorIsLocal ? 1u : 0u;
+    joinPolicy.hasCoordinatorCode = hasCoordinatorCode ? 1u : 0u;
+    joinPolicy.coordinatorValidated = coordinatorValidated ? 1u : 0u;
+    joinPolicy.passwordProtected = passwordProtected ? 1u : 0u;
+    joinPolicy.passwordMatches = passwordMatches ? 1u : 0u;
+    auto joinFn = reinterpret_cast<GameJoinPolicyFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_JOIN_POLICY));
+    if (joinFn)
+        joinFn(nullptr, &joinPolicy);
     else
+        HotJoinPolicyImpl::evaluate(joinPolicy);
+
+    if (!joinPolicy.accept)
     {
-        printf("%s [SERVER JOIN] no coordinator code — rejecting\n", serverTimestamp());
         JoinRejectPacket reject{};
         reject.header.type = PACKET_JOIN_REJECT;
         reject.header.tick = tick;
-        reject.reason = 2;
+        reject.reason = (uint8_t)joinPolicy.rejectReason;
         if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
             ++totalPacketsOut;
         if (claimedTransport && claimedTransport->get())
@@ -1547,31 +1624,9 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             (*claimedTransport)->close();
             claimedTransport->reset();
         }
-        printf("%s [SERVER JOIN REJECT] reason=no-coordinator-code\n", serverTimestamp());
+        printf("%s [SERVER JOIN REJECT] reason=policy-%u\n",
+               serverTimestamp(), (unsigned)joinPolicy.rejectReason);
         return;
-    }
-
-    // ── Password check for private servers ──
-    if (gServerPasswordProtected && !gServerPassword.empty())
-    {
-        const std::string supplied = boundedPacketString(join->password, sizeof(join->password));
-        if (supplied != gServerPassword)
-        {
-            JoinRejectPacket reject{};
-            reject.header.type = PACKET_JOIN_REJECT;
-            reject.header.tick = tick;
-            reject.reason = 5; // wrong password
-            if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
-                ++totalPacketsOut;
-            if (claimedTransport && claimedTransport->get())
-            {
-                (*claimedTransport)->close();
-                claimedTransport->reset();
-            }
-            printf("%s [SERVER JOIN REJECT] reason=wrong-password name=%s\n",
-                   serverTimestamp(), join->name);
-            return;
-        }
     }
 
     const std::string vipTicket = boundedPacketString(
@@ -1832,7 +1887,24 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
         }
     }
 
-    if (foundId == 0)
+    // Reconnect grace/rotation is hot (net.session-policy).
+    GameReconnectGraceV1 grace{};
+    grace.structSize = sizeof(GameReconnectGraceV1);
+    grace.resendExistingAccept = resendExistingAccept ? 1u : 0u;
+    grace.previousValidUntilMs = (foundId != 0)
+        ? (float)players[foundId].previousReconnectTokenValidUntilMs : 0.0f;
+    grace.nowMs = (float)currentMs;
+    grace.graceMs = 5000.0f;
+    auto graceFn = reinterpret_cast<GameReconnectGraceFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_SESSION_POLICY));
+    auto sessionPolicy = reinterpret_cast<GameSessionLookupFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_SESSION_POLICY));
+    if (sessionPolicy && sessionPolicy(nullptr) && sessionPolicy(nullptr)->reconnectGrace)
+        sessionPolicy(nullptr)->reconnectGrace(nullptr, &grace);
+    else
+        HotSessionPolicyImpl::reconnectGrace(grace);
+    (void)graceFn;
+    if (foundId == 0 || (resendExistingAccept && !grace.honorPrevious))
     {
         printf("%s [SERVER RECONNECT] rejected token=%s not-found\n",
                serverTimestamp(), requestedToken.c_str());
@@ -1852,7 +1924,8 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
         p.pendingReliableEvents.clear();
         p.reliableEventSessionId = 0;
         p.previousReconnectToken = requestedToken;
-        p.previousReconnectTokenValidUntilMs = currentMs + 5000;
+        p.previousReconnectTokenValidUntilMs =
+            (uint64_t)grace.outPreviousValidUntilMs;
         p.reconnectToken = generateReconnectToken(); // rotate token
         beginAuthoritativeTransform(p, p.pos, p.vel, p.yaw, "reconnect");
         p.awaitingAuthoritativeTransformAck = false;
@@ -2428,38 +2501,54 @@ ServerPacketProcessResult processServerPacket(
                            serverTimestamp(), ready->assignedPlayerId,
                            readyMap.c_str(), serverMap.c_str());
                 }
-                else if (!it->second.spawned)
-                {
-                    it->second.spawned = true;
-                    it->second.vel = glm::vec3(0.0f);
-                    it->second.clientStateUpdated = false;
-                    completeAuthoritativeSpawn(sock, it->second, true, tick);
-                    printf("%s [SERVER MAP READY] transport=%s connection=%llu "
-                           "id=%u name=\"%s\"\n",
-                           serverTimestamp(), transportKindName(event.transportKind),
-                           (unsigned long long)event.connectionId.value,
-                           it->second.id, it->second.name.c_str());
-                }
                 else
                 {
-                    // A map change keeps the player object alive, so the
-                    // initial-spawn branch above is not entered again.  Re-arm
-                    // the existing transform-epoch acknowledgement gate at
-                    // the server's current map position.  This makes the
-                    // client's first movement report after loading the map
-                    // acknowledge the same authoritative position instead of
-                    // being compared with stale client state.
-                    beginAuthoritativeTransform(
-                        it->second, it->second.pos, glm::vec3(0.0f),
-                        it->second.yaw, "map-ready");
-                    printf("%s [SERVER MAP READY] transport=%s connection=%llu "
-                           "id=%u name=\"%s\" rearmedTransformEpoch=%u "
-                           "position=(%.2f,%.2f,%.2f)\n",
-                           serverTimestamp(), transportKindName(event.transportKind),
-                           (unsigned long long)event.connectionId.value,
-                           it->second.id, it->second.name.c_str(),
-                           (unsigned)it->second.transformEpoch,
-                           it->second.pos.x, it->second.pos.y, it->second.pos.z);
+                    // Map-ready spawn vs re-arm is hot (net.session-policy).
+                    GameMapReadyV1 readyPolicy{};
+                    readyPolicy.structSize = sizeof(GameMapReadyV1);
+                    readyPolicy.alreadySpawned = it->second.spawned ? 1u : 0u;
+                    readyPolicy.mapMatches = 1u;  // map mismatch handled above
+                    auto sessionFn = reinterpret_cast<GameSessionLookupFn>(
+                        MimitaRuntime::GenericRuntime::instance().capability(
+                            GAME_CAP_SESSION_POLICY));
+                    if (sessionFn && sessionFn(nullptr) && sessionFn(nullptr)->mapReady)
+                        sessionFn(nullptr)->mapReady(nullptr, &readyPolicy);
+                    else
+                        HotSessionPolicyImpl::mapReady(readyPolicy);
+
+                    if (readyPolicy.spawn)
+                    {
+                        it->second.spawned = true;
+                        it->second.vel = glm::vec3(0.0f);
+                        it->second.clientStateUpdated = false;
+                        completeAuthoritativeSpawn(sock, it->second, true, tick);
+                        printf("%s [SERVER MAP READY] transport=%s connection=%llu "
+                               "id=%u name=\"%s\"\n",
+                               serverTimestamp(), transportKindName(event.transportKind),
+                               (unsigned long long)event.connectionId.value,
+                               it->second.id, it->second.name.c_str());
+                    }
+                    else if (readyPolicy.rearm)
+                    {
+                        // A map change keeps the player object alive, so the
+                        // initial-spawn branch above is not entered again. Re-arm
+                        // the existing transform-epoch acknowledgement gate at
+                        // the server's current map position. This makes the
+                        // client's first movement report after loading the map
+                        // acknowledge the same authoritative position instead of
+                        // being compared with stale client state.
+                        beginAuthoritativeTransform(
+                            it->second, it->second.pos, glm::vec3(0.0f),
+                            it->second.yaw, "map-ready");
+                        printf("%s [SERVER MAP READY] transport=%s connection=%llu "
+                               "id=%u name=\"%s\" rearmedTransformEpoch=%u "
+                               "position=(%.2f,%.2f,%.2f)\n",
+                               serverTimestamp(), transportKindName(event.transportKind),
+                               (unsigned long long)event.connectionId.value,
+                               it->second.id, it->second.name.c_str(),
+                               (unsigned)it->second.transformEpoch,
+                               it->second.pos.x, it->second.pos.y, it->second.pos.z);
+                    }
                 }
             }
         }
@@ -3001,6 +3090,18 @@ struct CachedReloadResult {
 static CachedReloadResult s_reloadCache[64];
 static uint8_t s_reloadCacheNext = 0;
 
+// Resolve the reload-decision policy (hot net.reload-decision; cold fallback).
+static void runReloadDecision(GameReloadDecisionV1& decision)
+{
+    decision.structSize = sizeof(GameReloadDecisionV1);
+    auto fn = reinterpret_cast<GameReloadDecisionFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_RELOAD_DECISION));
+    if (fn)
+        fn(nullptr, &decision);
+    else
+        HotReloadDecisionImpl::evaluate(decision);
+}
+
 static void cacheReloadResult(const ServerPlayer& player, const ReloadRequestPacket* req,
     uint8_t accepted, uint8_t reason, int32_t mag, int32_t reserve,
     uint64_t reloadCompleteTick, uint64_t nextAllowedFireTick,
@@ -3132,36 +3233,25 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
         result.spawnGeneration = req->spawnGeneration;
         result.weaponDefNetworkId = req->weaponDefNetworkId;
 
-        if (p.dead)
+        // Reload acceptance/reason ordering is hot (net.reload-decision).
+        GameReloadDecisionV1 decision{};
+        decision.dead = p.dead ? 1u : 0u;
+        decision.currentAmmo = hot.currentAmmo;
+        decision.magazineSize = def->magazineSize;
+        decision.reserveAmmo = hot.reserveAmmo;
+        decision.alreadyReloading = hot.isReloading ? 1u : 0u;
+        runReloadDecision(decision);
+        result.accepted = (uint8_t)decision.accept;
+        result.reason = (uint8_t)decision.reason;
+        if (decision.beginReload)
         {
-            result.accepted = 0;
-            result.reason = 2;
-        }
-        else if (hot.currentAmmo >= def->magazineSize)
-        {
-            result.accepted = 0;
-            result.reason = 3;
-        }
-        else if (hot.reserveAmmo <= 0)
-        {
-            result.accepted = 0;
-            result.reason = 4;
-        }
-        else if (hot.isReloading)
-        {
-            result.accepted = 1;
-            result.reason = 5;
-        }
-        else if (toolStateBeginReload(hot, def->magazineSize, def->reloadTime))
-        {
-            serverHotToolStateWrite(p.equippedToolEntity, hot);
-            result.accepted = 1;
-            result.reason = 0;
-        }
-        else
-        {
-            result.accepted = 0;
-            result.reason = 3;
+            if (toolStateBeginReload(hot, def->magazineSize, def->reloadTime))
+                serverHotToolStateWrite(p.equippedToolEntity, hot);
+            else
+            {
+                result.accepted = 0;
+                result.reason = GAME_RELOAD_REASON_MAG_FULL;
+            }
         }
 
         result.magazineAmmo = hot.currentAmmo;
@@ -3204,44 +3294,32 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
     result.spawnGeneration = req->spawnGeneration;
     result.weaponDefNetworkId = req->weaponDefNetworkId;
 
-    if (p.dead)
-    {
-        result.accepted = 0;
-        result.reason = 2;
-        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u dead — rejected\n", p.id);
-    }
-    else if (rt.magazineAmmo >= (def ? def->magazineSize : 999))
-    {
-        result.accepted = 0;
-        result.reason = 3;
-        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u magazine already full (%d/%d)\n",
-                   p.id, rt.magazineAmmo, def ? def->magazineSize : -1);
-    }
-    else if (rt.reserveAmmo <= 0)
-    {
-        result.accepted = 0;
-        result.reason = 4;
-        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u no reserve ammo\n", p.id);
-    }
-    else if (rt.reloading)
-    {
-        // Already reloading — accept but report current state
-        result.accepted = 1;
-        result.reason = 5; // already reloading
-        Debug::log(Debug::Category::Weapons, "[RELOAD] playerId=%u already reloading — report current state\n", p.id);
-    }
-    else
+    // Reload acceptance/reason ordering is hot (net.reload-decision).
+    GameReloadDecisionV1 decision{};
+    decision.dead = p.dead ? 1u : 0u;
+    decision.currentAmmo = rt.magazineAmmo;
+    decision.magazineSize = def ? def->magazineSize : 999;
+    decision.reserveAmmo = rt.reserveAmmo;
+    decision.alreadyReloading = rt.reloading ? 1u : 0u;
+    runReloadDecision(decision);
+    result.accepted = (uint8_t)decision.accept;
+    result.reason = (uint8_t)decision.reason;
+    if (decision.beginReload)
     {
         rt.reloading = true;
         float reloadTime = def ? def->reloadTime : 0.55f;
         uint32_t reloadTicks = (uint32_t)std::ceil(reloadTime * 60.0f);
         rt.reloadCompleteTick = tick + reloadTicks;
         rt.stateRevision++;
-        result.accepted = 1;
-        result.reason = 0;
         Debug::log(Debug::Category::Weapons, "[RELOAD ACCEPT] playerId=%u weapon=%s reloadTicks=%u completeTick=%llu stateRev=%u ammo=%d/%d\n",
                    p.id, wepId->c_str(), reloadTicks, (unsigned long long)rt.reloadCompleteTick,
                    rt.stateRevision, rt.magazineAmmo, rt.reserveAmmo);
+    }
+    else
+    {
+        Debug::log(Debug::Category::Weapons,
+                   "[RELOAD] playerId=%u reason=%u ammo=%d/%d\n",
+                   p.id, result.reason, rt.magazineAmmo, rt.reserveAmmo);
     }
 
     result.magazineAmmo = rt.magazineAmmo;

@@ -23,6 +23,8 @@ struct AudioEvent {
     float maxDistance = 30.0f;
     unsigned int ownerId = 0;
     bool loop = false;
+    // Voice-budget priority (higher wins). Mirrors GameAudioCommandV1.priority.
+    int priority = 0;
 };
 
 class AudioManager {
@@ -41,6 +43,18 @@ public:
     // True once the miniaudio device has initialized (false in server mode or
     // before first use), for generic audio status.
     bool deviceActive() const;
+    // Rate-limited audio tracing, toggled by the generic audio command. When on,
+    // low-level voice lifecycle events are journaled.
+    void setTrace(bool enabled);
+    bool trace() const;
+    // Voice budget. 0 = unlimited. When full, `makeRoomForVoice` applies the
+    // interruption policy: OVERLAP(3) allows, REJECT(0) refuses, and
+    // REPLACE_OLDEST(1)/REPLACE_SAME_SLOT(2)/RESTART(4) evict the lowest-priority
+    // oldest voice when the incoming voice has priority >= it.
+    void setVoiceBudget(unsigned int maxVoices);
+    unsigned int voiceBudget() const;
+    bool makeRoomForVoice(int priority, unsigned int interruption);
+    void stopOldest();
     void setDebug(bool enabled);
     bool debug() const;
 };

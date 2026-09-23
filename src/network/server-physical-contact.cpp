@@ -75,9 +75,11 @@ static float positiveParam(const WeaponDefinition& def, const char* key, float f
 
 static uint32_t intervalTicks(float seconds)
 {
-    if (seconds <= 0.0f)
-        return 1;
-    return std::max<uint32_t>(1, (uint32_t)std::ceil(seconds * SERVER_TICK_RATE));
+    // Interval policy is hot (net.physical-contact).
+    const GamePhysicalContactPolicyV1* policy = hotPhysicalContactPolicy();
+    if (policy && policy->intervalTicks)
+        return policy->intervalTicks(nullptr, seconds, (float)SERVER_TICK_RATE);
+    return HotPhysicalContactImpl::intervalTicks(seconds, (float)SERVER_TICK_RATE);
 }
 
 static void clearPhysicalRuntime(ServerPlayer& player)
@@ -263,7 +265,21 @@ static void flushEpisode(SOCKET sock,
                          uint32_t tick,
                          uint64_t& totalPacketsOut)
 {
-    if (!WeaponExecution::episodeShouldConfirm(episode, ending, CONTACT_CONFIRM_BATCH))
+    // Episode confirm batching is hot (net.physical-contact).
+    const uint32_t active = episode.active ? 1u : 0u;
+    const uint32_t endingFlag = ending ? 1u : 0u;
+    const GamePhysicalContactPolicyV1* confirmPolicy = hotPhysicalContactPolicy();
+    const uint32_t confirm = (confirmPolicy && confirmPolicy->shouldConfirm)
+        ? confirmPolicy->shouldConfirm(nullptr, active,
+                                       episode.pendingConfirmationDamage, endingFlag,
+                                       episode.samplesSinceConfirmation,
+                                       CONTACT_CONFIRM_BATCH)
+        : HotPhysicalContactImpl::shouldConfirm(active,
+                                                episode.pendingConfirmationDamage,
+                                                endingFlag,
+                                                episode.samplesSinceConfirmation,
+                                                CONTACT_CONFIRM_BATCH);
+    if (!confirm)
         return;
 
     auto targetIt = players.find(episode.targetPlayerId);

@@ -35,6 +35,7 @@
 #include "persistence/persistence-emit.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-attack-gates.h"
+#include "hot-reload/hot-attack-claim.h"
 
 #include <cmath>
 #include <vector>
@@ -59,6 +60,17 @@ static void runAttackGates(GameAttackGatesV1& gates)
         policy(nullptr, &gates);
     else
         HotAttackGatesImpl::evaluate(gates);
+}
+
+static void runAttackClaim(GameAttackClaimV1& claim)
+{
+    claim.structSize = sizeof(GameAttackClaimV1);
+    auto policy = reinterpret_cast<GameAttackClaimFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_ATTACK_CLAIM));
+    if (policy)
+        policy(nullptr, &claim);
+    else
+        HotAttackClaimImpl::evaluate(claim);
 }
 
 static bool finiteVec3(const glm::vec3& v)
@@ -876,28 +888,25 @@ void handleAttackRequest(
                     break;
                 }
             }
-            if (!alreadyConfirmed && claimedDist > 0.001f &&
-                claimedDist <= maxRange)
+            // Structural claim eligibility (distance, prior hit, world
+            // occlusion) and the acceptance tolerance are hot (net.attack-claim).
+            const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
+            GameAttackClaimV1 claim{};
+            claim.claimedTargetId = req->claimedTargetId;
+            claim.alreadyConfirmed = alreadyConfirmed ? 1u : 0u;
+            claim.claimedDistance = claimedDist;
+            claim.maxRange = maxRange;
+            claim.worldBlockDistance = worldBlockDistance;
+            claim.rewindHitTolerance = netCfg.remotePlayers.rewindHitTolerance;
+            claim.claimLagAllowance = netCfg.remotePlayers.claimLagAllowance;
+            runAttackClaim(claim);
+            if (claim.eligible)
             {
-                // World occlusion: reuse the main trace's worldBlockDistance
-                // instead of a second full raycast. The main trace already
-                // found the nearest world hit along this direction.
+                // Occlusion was already excluded by the hot eligibility gate.
                 bool occluded = false;
-                if (worldBlockDistance < claimedDist - 0.1f)
-                    occluded = true;
-
                 if (!occluded)
                 {
-                    // Claim acceptance tolerance: base rewind tolerance plus a
-                    // lag allowance so a hit that connects on the target's
-                    // RENDERED body registers even when motion-filter lag puts
-                    // the server's rewind pose slightly ahead of what the
-                    // shooter saw ("shoot what I see").
-                    const NetworkingConfigData& netCfg =
-                        NetworkingConfig::instance().data();
-                    const float tolerance =
-                        std::max(0.0f, netCfg.remotePlayers.rewindHitTolerance) +
-                        std::max(0.0f, netCfg.remotePlayers.claimLagAllowance);
+                    const float tolerance = claim.tolerance;
                     bool claimAccepted = false;
                     uint8_t claimPart = req->claimedBodyPart;
                     glm::vec3 rewoundTargetPos{0.0f}; // for the reject diagnostic

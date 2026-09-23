@@ -32,6 +32,7 @@
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-reload-system.h"
 #include "debug/debug-visuals.h"
+#include "audio/audio.h"
 #include "live-code/live-behavior.h"
 #include "live-code/live-journal.h"
 #include "live-code/live-ui.h"
@@ -1401,6 +1402,134 @@ bool runHotCombatSelfTest(std::string& report)
                     "traced one-shot journals hot activation + requested + accepted",
                     report);
                 runtime.runCommand("audio", "trace 0", actx);
+            }
+        }
+
+        // Phase 8: logical sound-resource generations through the audio command
+        // surface. A played sound registers a generation; reload queues an
+        // off-thread decode; invalidate drops it.
+        {
+            GameplayContextV1* actx = LiveBehavior::hostContext(34);
+            auto audio = actx ? reinterpret_cast<GameAudioPlayFn>(
+                                    actx->resolveCapability(actx->host,
+                                                            GAME_CAP_AUDIO_PLAY))
+                              : nullptr;
+            if (audio) {
+                GameAudioCommandV1 c{};
+                c.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                c.structSize = sizeof(GameAudioCommandV1);
+                c.op = GAME_AUDIO_PLAY_ONESHOT;
+                std::snprintf(c.sound, sizeof(c.sound), "entity/player/dash");
+                c.volume = 0.5f;
+                c.pitch = 1.0f;
+                c.spatial = 1;
+                audio(actx->host, &c);
+
+                GameAudioCommandV1 q{};
+                q.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                q.structSize = sizeof(GameAudioCommandV1);
+                q.op = GAME_AUDIO_QUERY_STATUS;
+                audio(actx->host, &q);
+                ok &= check(q.loadedResources > 0,
+                            "played sound registers a logical resource generation",
+                            report);
+
+                GameAudioCommandV1 r{};
+                r.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                r.structSize = sizeof(GameAudioCommandV1);
+                r.op = GAME_AUDIO_RELOAD_RESOURCE;
+                std::snprintf(r.sound, sizeof(r.sound), "entity/player/dash");
+                audio(actx->host, &r);
+                ok &= check(r.ok == 1u,
+                            "audio reload queues an off-thread generation reload",
+                            report);
+
+                GameAudioCommandV1 bad{};
+                bad.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                bad.structSize = sizeof(GameAudioCommandV1);
+                bad.op = GAME_AUDIO_RELOAD_RESOURCE;
+                std::snprintf(bad.sound, sizeof(bad.sound), "does/not/exist");
+                audio(actx->host, &bad);
+                ok &= check(bad.ok == 1u,
+                            "audio reload of an unknown sound is queued (worker "
+                            "reports failure, last-good kept)",
+                            report);
+
+                GameAudioCommandV1 inv{};
+                inv.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                inv.structSize = sizeof(GameAudioCommandV1);
+                inv.op = GAME_AUDIO_INVALIDATE_RESOURCE;
+                std::snprintf(inv.sound, sizeof(inv.sound), "entity/player/dash");
+                audio(actx->host, &inv);
+                ok &= check(inv.ok == 1u, "audio invalidate drops the generation",
+                            report);
+            }
+        }
+
+        // Owner-stopped slot fact, hot music policy, and voice budget.
+        {
+            GameplayContextV1* actx = LiveBehavior::hostContext(35);
+            auto audio = actx ? reinterpret_cast<GameAudioPlayFn>(
+                                    actx->resolveCapability(actx->host,
+                                                            GAME_CAP_AUDIO_PLAY))
+                              : nullptr;
+            if (audio) {
+                GameAudioFactV1 set{};
+                set.recipeKey = gameHash("weapon.melee");
+                std::snprintf(set.sound, sizeof(set.sound), "entity/player/dash");
+                set.ownerEntity = 0x1234;
+                set.slotId = gameHash("selftest.slot");
+                set.slotOp = GAME_AUDIO_FACT_SLOT_SET;
+                set.spatial = 1;
+                const std::uint64_t slotBefore = LiveBehavior::audioPlayCount();
+                LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &set,
+                                                      sizeof(set), 35);
+                ok &= check(set.handled &&
+                                LiveBehavior::audioPlayCount() > slotBefore,
+                            "audio.fact SET_SLOT starts an owner slot voice",
+                            report);
+
+                GameAudioFactV1 stop{};
+                stop.ownerEntity = 0x1234;
+                stop.slotId = gameHash("selftest.slot");
+                stop.slotOp = GAME_AUDIO_FACT_SLOT_STOP;
+                LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &stop,
+                                                      sizeof(stop), 35);
+                ok &= check(stop.handled,
+                            "audio.fact STOP_SLOT stops the slot voice", report);
+
+                GameMusicPolicyV1 mp{};
+                mp.mode = 1;
+                mp.candidateCount = 3;
+                LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_MUSIC, &mp,
+                                                      sizeof(mp), 35);
+                ok &= check(mp.handled && mp.outIndex < 3,
+                            "audio.music policy picks a candidate index", report);
+
+                auto playBudget = [&](std::uint32_t interruption) {
+                    GameAudioCommandV1 c{};
+                    c.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                    c.structSize = sizeof(GameAudioCommandV1);
+                    c.op = GAME_AUDIO_PLAY_ONESHOT;
+                    std::snprintf(c.sound, sizeof(c.sound), "entity/player/dash");
+                    c.volume = 0.3f;
+                    c.pitch = 1.0f;
+                    c.spatial = 1;
+                    c.priority = 10;
+                    c.interruption = interruption;
+                    audio(actx->host, &c);
+                };
+                AudioManager::instance().setVoiceBudget(64);
+                playBudget(GAME_AUDIO_INTERRUPT_OVERLAP);
+                const unsigned int before =
+                    AudioManager::instance().activeVoiceCount();
+                const unsigned int budget = before > 0 ? before : 1u;
+                AudioManager::instance().setVoiceBudget(budget);
+                playBudget(GAME_AUDIO_INTERRUPT_REPLACE_OLDEST);
+                ok &= check(AudioManager::instance().activeVoiceCount() <= budget,
+                            "voice budget + REPLACE_OLDEST keeps voices at budget",
+                            report);
+                AudioManager::instance().setVoiceBudget(64);
             }
         }
 

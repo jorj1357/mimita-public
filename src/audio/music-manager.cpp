@@ -9,8 +9,29 @@
 
 #include "miniaudio.h"
 #include "debug/debug-log.h"
+#include "live-code/live-behavior.h"
 
 using json = nlohmann::json;
+
+bool MusicManager::queryMusicPolicy(std::uint32_t mode,
+                                    std::uint32_t candidateCount,
+                                    std::uint32_t& outIndex)
+{
+    if (candidateCount == 0)
+        return false;
+    GameMusicPolicyV1 p{};
+    p.mode = mode;
+    p.candidateCount = candidateCount;
+    p.outVolume = 1.0f;
+    p.outPitch = 1.0f;
+    LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_MUSIC, &p, sizeof(p), 0);
+    if (!p.handled)
+        return false;
+    outIndex = p.outIndex < candidateCount ? p.outIndex : 0u;
+    mPolicyVolumeScale = p.outVolume > 0.0f ? p.outVolume : 1.0f;
+    mPolicyPitchScale = p.outPitch > 0.0f ? p.outPitch : 1.0f;
+    return true;
+}
 
 MusicManager& MusicManager::instance()
 {
@@ -88,7 +109,9 @@ void MusicManager::uninitSound()
 void MusicManager::applyVolume()
 {
     if (mCurrentSound) {
-        float effective = mMuted ? 0.0f : std::clamp(mVolume, 0.0f, 1.0f);
+        float effective = mMuted ? 0.0f
+                                 : std::clamp(mVolume, 0.0f, 1.0f) *
+                                       mPolicyVolumeScale;
         ma_sound_set_volume(mCurrentSound, effective);
     }
 }
@@ -96,7 +119,7 @@ void MusicManager::applyVolume()
 void MusicManager::applyPlaybackSpeed()
 {
     if (mCurrentSound) {
-        float clamped = std::clamp(mPlaybackSpeed, 0.25f, 2.0f);
+        float clamped = std::clamp(mPlaybackSpeed * mPolicyPitchScale, 0.25f, 2.0f);
         ma_sound_set_pitch(mCurrentSound, clamped);
     }
 }
@@ -144,8 +167,12 @@ void MusicManager::startTrack(const std::string& path)
 void MusicManager::pickMenuTrack()
 {
     if (mMenuTracks.empty()) return;
-    std::uniform_int_distribution<size_t> dist(0, mMenuTracks.size() - 1);
-    const auto& t = mMenuTracks[dist(mRng)];
+    std::uint32_t idx = 0;
+    if (!queryMusicPolicy(0, (std::uint32_t)mMenuTracks.size(), idx)) {
+        std::uniform_int_distribution<size_t> dist(0, mMenuTracks.size() - 1);
+        idx = (std::uint32_t)dist(mRng);
+    }
+    const auto& t = mMenuTracks[idx];
     startTrack(t.path);
 }
 
@@ -153,11 +180,16 @@ void MusicManager::playNextIngame()
 {
     if (mPlaylist.empty()) return;
 
-    mPlaylistIndex++;
-    if (mPlaylistIndex >= mPlaylist.size()) {
-        std::shuffle(mPlaylist.begin(), mPlaylist.end(), mRng);
-        mPlaylistIndex = 0;
-        Debug::log(Debug::Category::Audio, "[MUSIC] playlist reshuffled (%zu tracks)\n", mPlaylist.size());
+    std::uint32_t idx = 0;
+    if (queryMusicPolicy(1, (std::uint32_t)mPlaylist.size(), idx)) {
+        mPlaylistIndex = idx;
+    } else {
+        mPlaylistIndex++;
+        if (mPlaylistIndex >= mPlaylist.size()) {
+            std::shuffle(mPlaylist.begin(), mPlaylist.end(), mRng);
+            mPlaylistIndex = 0;
+            Debug::log(Debug::Category::Audio, "[MUSIC] playlist reshuffled (%zu tracks)\n", mPlaylist.size());
+        }
     }
 
     const auto& t = mPlaylist[mPlaylistIndex];
@@ -287,8 +319,12 @@ void MusicManager::enterGameMode()
     std::shuffle(mPlaylist.begin(), mPlaylist.end(), mRng);
     mPlaylistIndex = 0;
 
-    std::uniform_int_distribution<size_t> dist(0, mPlaylist.size() - 1);
-    mPlaylistIndex = dist(mRng);
+    std::uint32_t idx = 0;
+    if (!queryMusicPolicy(1, (std::uint32_t)mPlaylist.size(), idx)) {
+        std::uniform_int_distribution<size_t> dist(0, mPlaylist.size() - 1);
+        idx = (std::uint32_t)dist(mRng);
+    }
+    mPlaylistIndex = idx;
 
     const auto& t = mPlaylist[mPlaylistIndex];
     startTrack(t.path);

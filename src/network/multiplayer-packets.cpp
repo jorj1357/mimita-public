@@ -17,6 +17,8 @@
 #include "ragdoll/ragdoll-presentation.h"
 #include "physics/constraints/constraint-store.h"
 #include "network/connection-health.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-connection-health.h"
 #include "network/simulation-constants.h"
 #include "network/udp-transport.h"
 #include "network/ice-transport.h"
@@ -1558,18 +1560,28 @@ void mpTickReconnect(MultiplayerContext& ctx)
     const auto& retryCfg = NetworkingConfig::instance().data().retries;
     const uint64_t now = nowMs();
 
-    // The true give-up is owned by the grace deadline in
-    // mpUpdateConnectionHealth so the client always waits the full window;
-    // the attempt cap is only a secondary limit on how often we send.
-    if (ctx.reconnectAttempts >= (int)retryCfg.reconnectMaxAttempts)
+    // Retry cadence is hot (net.connection-policy): the give-up is owned by the
+    // grace deadline in mpUpdateConnectionHealth, so the attempt cap is only a
+    // secondary limit on how often we send.
+    GameReconnectCadenceV1 cadence{};
+    cadence.structSize = sizeof(GameReconnectCadenceV1);
+    cadence.attempts = ctx.reconnectAttempts;
+    cadence.maxAttempts = (int32_t)retryCfg.reconnectMaxAttempts;
+    cadence.backoffMs = ctx.reconnectBackoffMs;
+    cadence.intervalMs = (uint64_t)retryCfg.reconnectIntervalMs;
+    cadence.now = now;
+    cadence.lastAttemptMs = ctx.lastReconnectAttemptMs;
+    auto connFn = reinterpret_cast<GameConnectionLookupFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_CONNECTION_POLICY));
+    if (connFn && connFn(nullptr) && connFn(nullptr)->cadence)
+        connFn(nullptr)->cadence(nullptr, &cadence);
+    else
+        HotConnectionHealthImpl::cadence(cadence);
+    if (!cadence.maySend)
         return;
 
     const uint64_t intervalMs = (uint64_t)retryCfg.reconnectIntervalMs;
-    if (ctx.reconnectBackoffMs == 0)
-        ctx.reconnectBackoffMs = intervalMs;
-    if (now - ctx.lastReconnectAttemptMs < ctx.reconnectBackoffMs)
-        return;
-
+    ctx.reconnectBackoffMs = cadence.outBackoffMs;
     ctx.lastReconnectAttemptMs = now;
     ++ctx.reconnectAttempts;
 
@@ -1647,9 +1659,24 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
         ctx.disconnectStartedMs > 0 && ctx.lastHeardServerMs > ctx.disconnectStartedMs;
 
     const ConnectionState before = ctx.connectionState;
-    ConnectionState next = mpNextConnectionHealth(
-        before, now, lastHeardAge, heardSinceDisconnect,
-        staleThreshold, hardTimeout, ctx.reconnectGraceDeadlineMs, graceMs);
+    // Next-state decision is hot (net.connection-policy).
+    GameConnectionHealthV1 health{};
+    health.structSize = sizeof(GameConnectionHealthV1);
+    health.current = (std::uint32_t)before;
+    health.now = now;
+    health.lastHeardAge = lastHeardAge;
+    health.heardSinceDisconnect = heardSinceDisconnect ? 1u : 0u;
+    health.staleThresholdMs = staleThreshold;
+    health.hardTimeoutMs = hardTimeout;
+    health.graceDeadline = ctx.reconnectGraceDeadlineMs;
+    health.graceMs = graceMs;
+    auto connFn = reinterpret_cast<GameConnectionLookupFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_CONNECTION_POLICY));
+    if (connFn && connFn(nullptr) && connFn(nullptr)->nextState)
+        connFn(nullptr)->nextState(nullptr, &health);
+    else
+        HotConnectionHealthImpl::nextState(health);
+    ConnectionState next = (ConnectionState)health.next;
 
     if (next == before)
         return;

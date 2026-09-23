@@ -109,9 +109,13 @@ void WeaponQuickHit::startAttack(QuickHitState& state, const WeaponDefinition& d
     state.currentArmCapsule = computeArmCapsule(owner, def);
     state.hasPreviousCapsule = true;
 
-    // Cut previous sound and play new one
-    AudioManager::instance().stopOwner(QUICKHIT_SOUND_OWNER_ID);
-    {
+    // Cut previous sound and play new one. A hot slot SET replaces the previous
+    // swing voice (same owner+slot); the cold path cuts then plays.
+    if (!LiveBehavior::emitAudioSlot("weapon.melee", def.soundShoot.c_str(),
+                                     QUICKHIT_SOUND_OWNER_ID,
+                                     gameHash("quickhit.attack"), false,
+                                     1.0f, 1.0f)) {
+        AudioManager::instance().stopOwner(QUICKHIT_SOUND_OWNER_ID);
         AudioEvent attackSound;
         attackSound.name = def.soundShoot;
         attackSound.category = AudioCategory::Impacts;
@@ -121,9 +125,7 @@ void WeaponQuickHit::startAttack(QuickHitState& state, const WeaponDefinition& d
         attackSound.pitch = 1.0f;
         attackSound.maxDistance = 40.0f;
         attackSound.ownerId = QUICKHIT_SOUND_OWNER_ID;
-        if (!LiveBehavior::emitAudioFact("weapon.melee", def.soundShoot.c_str(),
-                                         owner.pos, 0, true))
-            AudioManager::instance().play(attackSound);
+        AudioManager::instance().play(attackSound);
     }
 
     // Set shoot effect timer for pose system

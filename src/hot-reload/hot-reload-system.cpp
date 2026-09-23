@@ -9,6 +9,7 @@
 #include "live-code/live-code-events.h"
 #include "live-code/live-journal.h"
 #include "live-code/network-journal-events.h"
+#include "network/game-transport.h"
 #include "debug/structured-log.h"
 #include "utils/path_utils.h"
 #include "utils/time-format.h"
@@ -541,6 +542,9 @@ bool HotReloadSystem::tryActivateCandidate()
     // Safe-point barrier: every validation has passed and no gameplay is
     // running on this thread between here and the swap, so the module tables
     // and registered package can be replaced without draining an active call.
+    // Quiesce live transports first: ICE callbacks run on the libjuice thread
+    // and must be invalidated/drained so none can outlive the generation.
+    MimitaTransport::quiesceAllTransports();
     {
         LiveEventJournal::Fields barrier;
         barrier.generation = candidate.generation;
@@ -739,6 +743,7 @@ void HotReloadSystem::loadManifest()
     hotSources_.clear();
     coldSources_.clear();
     bridgeSources_.clear();
+    legacySources_.clear();
     std::ifstream file(manifestPath());
     if (!file.is_open()) {
         hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
@@ -771,6 +776,17 @@ void HotReloadSystem::loadManifest()
             for (const auto& bridge : json["bridges"])
                 bridgeSources_.push_back(bridge.get<std::string>());
         }
+        // Legacy / stable-kernel files: kept in place, never hot. Watched for the
+        // relink warning like cold/bridge sources so an edit is never silently
+        // ignored, and recorded with an explicit LEGACY result.
+        if (json.contains("legacy") && json["legacy"].is_array()) {
+            for (const auto& entry : json["legacy"]) {
+                if (entry.is_string())
+                    legacySources_.push_back(entry.get<std::string>());
+                else if (entry.is_object() && entry.contains("file"))
+                    legacySources_.push_back(entry["file"].get<std::string>());
+            }
+        }
     } catch (...) {
         hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
     }
@@ -784,6 +800,8 @@ void HotReloadSystem::loadManifest()
     coldSources_.erase(std::unique(coldSources_.begin(), coldSources_.end()), coldSources_.end());
     std::sort(bridgeSources_.begin(), bridgeSources_.end());
     bridgeSources_.erase(std::unique(bridgeSources_.begin(), bridgeSources_.end()), bridgeSources_.end());
+    std::sort(legacySources_.begin(), legacySources_.end());
+    legacySources_.erase(std::unique(legacySources_.begin(), legacySources_.end()), legacySources_.end());
 }
 
 std::filesystem::path HotReloadSystem::manifestPath() const
@@ -845,6 +863,9 @@ void HotReloadSystem::pollColdBoundary()
     // Dispatch-only bridges carry no behavior, but a change still needs a relink.
     checkSources(bridgeSources_, "HOT_RELOAD_BRIDGE_CHANGE",
                  "dispatch-only bridge change cannot be activated without relinking mimita.exe");
+    // Legacy / stable-kernel files are kept in place and never hot.
+    checkSources(legacySources_, "HOT_RELOAD_LEGACY_CHANGE",
+                 "legacy stable-kernel change cannot be activated without relinking mimita.exe");
 
     // Periodic in-game reminder while a cold change is waiting for a restart.
     if (!coldPendingFile_.empty()) {

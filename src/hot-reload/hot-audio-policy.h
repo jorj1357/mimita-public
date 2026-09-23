@@ -31,6 +31,16 @@ bool hotEmitRecipeSound(GameplayContextV1* ctx, std::uint64_t recipeKey,
                         const float position[3], std::uint64_t ownerEntity,
                         bool spatial, const HotAudioOverrideV1* overrides);
 
+// Set (start/replace) or stop a logical persistent slot keyed by
+// (ownerEntity, slotId). The kernel maps it to a physical voice; a SET replaces
+// any voice already in that slot (idempotent per desired state). No raw voice
+// handle crosses the boundary.
+bool hotEmitRecipeSlot(GameplayContextV1* ctx, std::uint64_t recipeKey,
+                       std::uint64_t ownerEntity, std::uint64_t slotId,
+                       bool loop, const HotAudioOverrideV1* overrides);
+bool hotStopRecipeSlot(GameplayContextV1* ctx, std::uint64_t ownerEntity,
+                       std::uint64_t slotId);
+
 // Read-only diagnostics for tests and `audio status`.
 bool hotAudioRecipeExists(std::uint64_t recipeKey);
 std::uint32_t hotAudioRecipeCount();

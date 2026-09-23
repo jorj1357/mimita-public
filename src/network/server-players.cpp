@@ -11,7 +11,10 @@
 #include "network/server.h"
 #include "network/server-context.h"
 #include "live-code/live-behavior.h"
+#include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-history.h"
+#include "hot-reload/hot-respawn.h"
+#include "hot-reload/hot-broadcast-interp.h"
 #include "hot-reload/hot-rewind.h"
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/live-journal.h"
@@ -43,6 +46,27 @@
 
 namespace MimitaNet {
 namespace {
+
+// Resolve the active generation's respawn rule through the one generic doorway.
+static const GameRespawnPolicyV1* hotRespawnPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_RESPAWN);
+    if (!callable)
+        return nullptr;
+    auto lookup = reinterpret_cast<GameRespawnLookupFn>(callable);
+    return lookup ? lookup(nullptr) : nullptr;
+}
+
+static void runRespawnTick(GameRespawnRuleV1& rule)
+{
+    rule.structSize = sizeof(GameRespawnRuleV1);
+    const GameRespawnPolicyV1* policy = hotRespawnPolicy();
+    if (policy && policy->tick)
+        policy->tick(nullptr, &rule);
+    else
+        HotRespawnImpl::tick(rule);
+}
 
 float safeServerSizeScale(float sizeScale)
 {
@@ -718,25 +742,28 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world, uint32_t server
         syncServerMovementRuntime(p, false);
         p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
 
-        // One-life / no-respawn mode: the actor remains dead for the round
-        // (Spectating in the match state) and never revives here, even if a
-        // client requests an instant respawn.
-        if (!serverMatchRespawnsEnabled())
+        // The respawn rule is hot (net.respawn): one-life modes stay dead, an
+        // instant request zeroes the timer, otherwise the timer counts down.
+        GameRespawnRuleV1 rule{};
+        rule.respawnsEnabled = serverMatchRespawnsEnabled() ? 1u : 0u;
+        rule.instantRespawnRequested = p.instantRespawnRequested ? 1u : 0u;
+        rule.respawnSeconds = serverMatchRespawnSeconds();
+        rule.timer = p.respawnSeconds;
+        rule.dt = SERVER_DT;
+        runRespawnTick(rule);
+        if (rule.stayDead)
         {
             p.instantRespawnRequested = false;
             return;
         }
-
-        // Instant respawn request from client Space press
-        if (p.instantRespawnRequested)
+        if (rule.instantApplied)
         {
             p.instantRespawnRequested = false;
-            p.respawnSeconds = 0.0f;
             printf("%s [SERVER RESPAWN INSTANT] playerId=%u trigger=instantRespawnRequested\n",
                    serverTimestamp(), p.id);
         }
-        p.respawnSeconds -= SERVER_DT;
-        if (p.respawnSeconds <= 0.0f)
+        p.respawnSeconds = rule.outTimer;
+        if (rule.readyToRespawn)
         {
             glm::vec3 respawnPos;
             float respawnYaw = 0.0f;
@@ -1376,7 +1403,21 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
 
     const auto& interpCfg = NetworkingConfig::instance().data().remotePlayers;
 
-    if (!interpCfg.serverSmoothing)
+    // Smoothing-enabled and per-tick movement cap are hot (net.broadcast-interp).
+    GameBroadcastInterpV1 interpPolicy{};
+    interpPolicy.structSize = sizeof(GameBroadcastInterpV1);
+    interpPolicy.configSmoothing = interpCfg.serverSmoothing ? 1u : 0u;
+    interpPolicy.configMaxSpeed = interpCfg.serverBroadcastMaxSpeed;
+    interpPolicy.dt = SERVER_DT;
+    auto interpFn = reinterpret_cast<GameBroadcastInterpFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_BROADCAST_INTERP));
+    if (interpFn)
+        interpFn(nullptr, &interpPolicy);
+    else
+        HotBroadcastInterpImpl::evaluate(interpPolicy);
+
+    if (!interpPolicy.useSmoothing)
     {
         player.broadcastPosition = player.lastAcceptedClientPosition;
         player.broadcastVelocity = player.lastAcceptedClientVelocity;
@@ -1399,10 +1440,8 @@ void updateServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
 
         // Optional speed clamp: cap how far the broadcast may move per tick so
         // a burst report cannot make the body lurch even through the buffer.
-        // 0 = unlimited.
-        const float maxDelta = interpCfg.serverBroadcastMaxSpeed > 0.0
-            ? (float)(interpCfg.serverBroadcastMaxSpeed * (double)SERVER_DT)
-            : 0.0f;
+        // 0 = unlimited (hot policy).
+        const float maxDelta = interpPolicy.maxDelta;
         const auto clampDelta = [&](const glm::vec3& target) {
             if (maxDelta <= 0.0f)
             {

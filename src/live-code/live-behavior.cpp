@@ -50,6 +50,7 @@
 #include "camera.h"
 #include "input/input-state.h"
 #include "audio/audio.h"
+#include "audio/audio-resource.h"
 #include "effects/effect-part.h"
 #include "debug/debug-visuals.h"
 #include "gui/ui-system.h"
@@ -2343,6 +2344,7 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
     // it on. `flags` bit0 is the enable for this op.
     if (command->op == GAME_AUDIO_SET_TRACE) {
         g_audioTrace = (command->flags & 1u) != 0;
+        AudioManager::instance().setTrace(g_audioTrace);
         out->ok = 1u;
         out->reserved = g_audioTrace ? 1u : 0u;
         audioJournal("audio.device_status", command, 0,
@@ -2355,8 +2357,13 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
     if (command->op == GAME_AUDIO_QUERY_STATUS) {
         out->ok = 1u;
         out->activeVoices = AudioManager::instance().activeVoiceCount();
-        out->loadedResources = AudioManager::instance().cachedSoundCount();
-        out->reserved = g_audioTrace ? 1u : 0u;
+        // Resource generations when available, otherwise the legacy cache count.
+        const std::uint32_t generations =
+            AudioResourceRegistry::instance().loadedCount();
+        out->loadedResources = generations > 0
+                                   ? generations
+                                   : AudioManager::instance().cachedSoundCount();
+        out->reserved = AudioManager::instance().trace() ? 1u : 0u;
         audioJournal("audio.device_status", command, 0,
                      AudioManager::instance().deviceActive() ? "active"
                                                              : "inactive",
@@ -2376,9 +2383,23 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
     // command shape, report "not applied", and never touch the device.
     if (command->op == GAME_AUDIO_RELOAD_RESOURCE ||
         command->op == GAME_AUDIO_INVALIDATE_RESOURCE) {
-        out->ok = 0u;
-        audioJournal("audio.resource_lookup", command, 0, "phase8-pending",
-                     "resource generations not wired yet", "none");
+        if (command->sound[0] == '\0') {
+            out->ok = 0u;
+            audioJournalRejected(command, "missing-sound");
+            return;
+        }
+        const std::string resourceName(
+            command->sound, strnlen(command->sound, sizeof(command->sound)));
+        if (command->op == GAME_AUDIO_RELOAD_RESOURCE) {
+            out->ok = AudioResourceRegistry::instance().requestReload(resourceName)
+                          ? 1u
+                          : 0u;
+        } else {
+            AudioResourceRegistry::instance().invalidate(resourceName);
+            out->ok = 1u;
+        }
+        audioJournal("audio.resource_lookup", command, 0,
+                     out->ok ? "queued" : "failed", nullptr, "none");
         return;
     }
     // Every remaining op resolves a logical sound id.
@@ -2456,10 +2477,19 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
             e.maxDistance = command->maxDistance > 0.0f ? command->maxDistance : 50.0f;
             e.ownerId = v.synth;
             e.loop = command->loop != 0;
+            e.priority = static_cast<int>(command->priority);
             AudioManager::instance().play(e);
             audioJournalTrace("audio.voice_replaced", command, v.synth,
                               "replaced");
             ++g_audioPlayCount;   // replaced voice
+            return;
+        }
+        // Voice budget / interruption policy. Legacy (version 0) callers bypass.
+        if (command->commandVersion != 0 &&
+            !AudioManager::instance().makeRoomForVoice(
+                static_cast<int>(command->priority), command->interruption)) {
+            ++g_audioRejectCount;
+            audioJournalRejected(command, "voice-budget");
             return;
         }
         const unsigned int synth = ++g_nextSynthOwner;
@@ -2473,6 +2503,7 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
         e.maxDistance = command->maxDistance > 0.0f ? command->maxDistance : 50.0f;
         e.ownerId = synth;
         e.loop = command->loop != 0;
+        e.priority = static_cast<int>(command->priority);
         AudioManager::instance().play(e);
         g_audioSlots.push_back(
             {command->ownerEntity, command->slotId, synth, name});
@@ -2486,19 +2517,27 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
         audioJournalRejected(command, "unknown-op");
         return;
     }
+    // Voice budget / interruption policy. Legacy (version 0) callers bypass it.
+    if (command->commandVersion != 0 &&
+        !AudioManager::instance().makeRoomForVoice(
+            static_cast<int>(command->priority), command->interruption)) {
+        ++g_audioRejectCount;
+        audioJournalRejected(command, "voice-budget");
+        return;
+    }
     ++g_audioPlayCount;
     audioJournalTrace("audio.requested", command, 0, "oneshot");
 
-    if (command->spatial != 0) {
-        playWorldSound(name, glm::vec3(command->position[0], command->position[1],
-                                       command->position[2]),
-                       command->volume > 0.0f ? command->volume : 1.0f,
-                       command->pitch > 0.0f ? command->pitch : 1.0f,
-                       command->maxDistance > 0.0f ? command->maxDistance : 50.0f);
-    } else {
-        playSoundPitched(name, command->volume > 0.0f ? command->volume : 1.0f,
-                         command->pitch > 0.0f ? command->pitch : 1.0f);
-    }
+    AudioEvent event;
+    event.name = name;
+    event.world = command->spatial != 0;
+    event.position = glm::vec3(command->position[0], command->position[1],
+                               command->position[2]);
+    event.volume = command->volume > 0.0f ? command->volume : 1.0f;
+    event.pitch = command->pitch > 0.0f ? command->pitch : 1.0f;
+    event.maxDistance = command->maxDistance > 0.0f ? command->maxDistance : 50.0f;
+    event.priority = static_cast<int>(command->priority);
+    AudioManager::instance().play(event);
     audioJournalTrace("audio.accepted", command, 0, "accepted");
 }
 
@@ -3072,6 +3111,35 @@ bool emitAudioFact(const char* recipeName, const char* sound,
     fact.volumeBase = volumeBase;
     fact.pitchBase = pitchBase;
     fact.spatial = spatial ? 1u : 0u;
+    dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact, sizeof(fact), 0);
+    return fact.handled != 0;
+}
+
+bool emitAudioSlot(const char* recipeName, const char* sound,
+                   std::uint64_t ownerEntity, std::uint64_t slotId, bool loop,
+                   float volumeScale, float pitchScale)
+{
+    GameAudioFactV1 fact{};
+    if (recipeName && *recipeName)
+        fact.recipeKey = gameHash(recipeName);
+    if (sound && *sound)
+        std::snprintf(fact.sound, sizeof(fact.sound), "%s", sound);
+    fact.ownerEntity = ownerEntity;
+    fact.volumeScale = volumeScale;
+    fact.pitchScale = pitchScale;
+    fact.slotId = slotId;
+    fact.slotOp = GAME_AUDIO_FACT_SLOT_SET;
+    fact.loop = loop ? 1u : 0u;
+    dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact, sizeof(fact), 0);
+    return fact.handled != 0;
+}
+
+bool emitAudioSlotStop(std::uint64_t ownerEntity, std::uint64_t slotId)
+{
+    GameAudioFactV1 fact{};
+    fact.ownerEntity = ownerEntity;
+    fact.slotId = slotId;
+    fact.slotOp = GAME_AUDIO_FACT_SLOT_STOP;
     dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact, sizeof(fact), 0);
     return fact.handled != 0;
 }

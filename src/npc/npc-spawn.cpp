@@ -294,7 +294,8 @@ void NpcSystem::spawnPrototypeScene()
 void NpcSystem::clear()
 {
     for (const Npc& npc : npcs) {
-        AudioManager::instance().stopOwner(npc.id);
+        if (!LiveBehavior::emitAudioSlotStop(npc.id, gameHash("npc.spawn")))
+            AudioManager::instance().stopOwner(npc.id);
         EffectPartSystem::instance().destroyOwner(npc.id);
         Debug::log(Debug::Category::General, "[NPC] destroyed id=%u\n", npc.id);
     }
@@ -329,8 +330,9 @@ void NpcSystem::spawnNpc(float difficulty)
         snd.position[2] = spawnPos.z;
         std::snprintf(snd.text, sizeof(snd.text), "%s", "actor.spawn");
         if (!LiveBehavior::dispatchEffectRequest(snd, 0)) {
-            if (!LiveBehavior::emitAudioFact("npc.spawn", "npc_spawn", spawnPos,
-                                             id, true, 1.0f, 1.0f, 0.8f, 1.0f))
+            if (!LiveBehavior::emitAudioSlot("npc.spawn", "npc_spawn", id,
+                                             gameHash("npc.spawn"), false,
+                                             1.0f, 1.0f))
                 AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
         }
     }
@@ -352,8 +354,9 @@ void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos,
         snd.position[2] = spawnPos.z;
         std::snprintf(snd.text, sizeof(snd.text), "%s", "actor.spawn");
         if (!LiveBehavior::dispatchEffectRequest(snd, 0)) {
-            if (!LiveBehavior::emitAudioFact("npc.spawn", "npc_spawn", spawnPos,
-                                             id, true, 1.0f, 1.0f, 0.8f, 1.0f))
+            if (!LiveBehavior::emitAudioSlot("npc.spawn", "npc_spawn", id,
+                                             gameHash("npc.spawn"), false,
+                                             1.0f, 1.0f))
                 AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
         }
     }
@@ -365,7 +368,8 @@ void NpcSystem::destroySelected(const std::vector<std::uint32_t>& ids)
 {
     npcs.erase(std::remove_if(npcs.begin(), npcs.end(), [&](const Npc& npc) {
         if (std::find(ids.begin(), ids.end(), npc.id) == ids.end()) return false;
-        AudioManager::instance().stopOwner(npc.id);
+        if (!LiveBehavior::emitAudioSlotStop(npc.id, gameHash("npc.spawn")))
+            AudioManager::instance().stopOwner(npc.id);
         EffectPartSystem::instance().destroyOwner(npc.id);
         NpcSelectionManager::instance().deselect(npc.id);
         Debug::log(Debug::Category::General, "[NPC] destroyed id=%u\n", npc.id);

@@ -172,6 +172,9 @@ private:
     // like cold sources for the relink warning, but they carry no behavior: the
     // policy lives in a hot header/provider.
     std::vector<std::string> bridgeSources_;
+    // LEGACY / stable-kernel sources: kept in place, never hot, watched only for
+    // the relink warning. See hot-modules.json "legacy".
+    std::vector<std::string> legacySources_;
     std::filesystem::path root_;
     std::filesystem::path sourceDLL_;
     std::string manifestHash_;

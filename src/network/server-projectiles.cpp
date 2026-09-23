@@ -21,6 +21,8 @@
 #include "live-code/live-behavior.h"
 #include "live-code/live-gameplay.h"
 #include "network/server-damage-policy.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-projectile-splash.h"
 
 #include <algorithm>
 #include <chrono>
@@ -42,6 +44,18 @@
 
 namespace MimitaNet {
 namespace {
+
+// Resolve the active generation's projectile splash policy through the one
+// generic doorway. Never cached across a generation swap. Null when none.
+static const GameProjectileSplashPolicyV1* hotProjectileSplashPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_PROJECTILE_SPLASH);
+    if (!callable)
+        return nullptr;
+    auto lookup = reinterpret_cast<GameProjectileSplashLookupFn>(callable);
+    return lookup ? lookup(nullptr) : nullptr;
+}
 
 ServerProjectilePerfStats gProjectilePerf;
 
@@ -753,27 +767,37 @@ void explodeProjectile(SOCKET sock,
                                                    projectile.ownerPlayerId);
     }
 
+    // Falloff curves are hot (net.projectile-splash).
     auto splashDamageAt = [&](float dist) -> float {
-        if (projectile.fullDamageRadius > 0.0f)
-        {
-            if (dist <= projectile.fullDamageRadius)
-                return projectile.splashDamage;
-            if (dist >= projectile.splashRadius)
-                return projectile.edgeDamage;
-            const float t = (dist - projectile.fullDamageRadius) /
-                std::max(0.001f, projectile.splashRadius - projectile.fullDamageRadius);
-            return glm::mix(projectile.splashDamage, projectile.edgeDamage, t);
-        }
-        return projectile.splashDamage *
-            std::exp(-std::pow(dist / projectile.splashRadius, 2.0f) *
-                     projectile.splashExponent);
+        GameSplashFalloffV1 request{};
+        request.structSize = sizeof(GameSplashFalloffV1);
+        request.distance = dist;
+        request.fullDamageRadius = projectile.fullDamageRadius;
+        request.splashRadius = projectile.splashRadius;
+        request.splashDamage = projectile.splashDamage;
+        request.edgeDamage = projectile.edgeDamage;
+        request.splashExponent = projectile.splashExponent;
+        const GameProjectileSplashPolicyV1* policy = hotProjectileSplashPolicy();
+        if (policy && policy->damage)
+            policy->damage(nullptr, &request);
+        else
+            HotProjectileSplashImpl::damage(request);
+        return request.outDamage;
     };
     auto splashKnockScaleAt = [&](float dist, float damageValue) -> float {
-        if (projectile.fullDamageRadius > 0.0f)
-            return std::clamp(damageValue / std::max(0.001f, projectile.splashDamage),
-                              0.0f, 1.0f);
-        const float t = dist / projectile.splashRadius;
-        return (1.0f - t * t) * 0.85f + 0.15f;
+        GameSplashFalloffV1 request{};
+        request.structSize = sizeof(GameSplashFalloffV1);
+        request.distance = dist;
+        request.fullDamageRadius = projectile.fullDamageRadius;
+        request.splashRadius = projectile.splashRadius;
+        request.splashDamage = projectile.splashDamage;
+        request.damageValue = damageValue;
+        const GameProjectileSplashPolicyV1* policy = hotProjectileSplashPolicy();
+        if (policy && policy->knockScale)
+            policy->knockScale(nullptr, &request);
+        else
+            HotProjectileSplashImpl::knockScale(request);
+        return request.outKnockScale;
     };
 
     if (directTargetId != 0)
@@ -1069,256 +1093,6 @@ void explodeProjectile(SOCKET sock,
 
 } // namespace
 
-ServerProjectileAttackResult handleGenericProjectileAttack(
-    SOCKET sock,
-    std::unordered_map<uint32_t, ServerPlayer>& players,
-    std::unordered_map<uint32_t, ServerNpc>& npcs,
-    std::unordered_map<uint32_t, ServerProjectile>& projectiles,
-    uint32_t& nextProjectileId,
-    ServerPlayer& shooter,
-    const WeaponDefinition& definition,
-    uint32_t requestId,
-    const glm::vec3& origin,
-    const glm::vec3& direction,
-    uint32_t clientSimulationTick,
-    uint32_t tick,
-    uint64_t& totalPacketsOut)
-{
-    ServerProjectileAttackResult result;
-
-    auto rtIt = shooter.weaponRuntimes.find(definition.id);
-    if (rtIt != shooter.weaponRuntimes.end())
-    {
-        result.magazineAmmo = rtIt->second.magazineAmmo;
-        result.reserveAmmo = rtIt->second.reserveAmmo;
-        result.nextAllowedFireTick = rtIt->second.nextAllowedFireTick;
-        result.stateRevision = rtIt->second.stateRevision;
-    }
-
-    const uint8_t networkWeapon = networkWeaponTypeForDefinition(definition);
-    const float originDistance = finiteVec(origin)
-        ? glm::length(origin - shooter.pos)
-        : 99999.0f;
-    const float directionLength = finiteVec(direction)
-        ? glm::length(direction)
-        : 0.0f;
-
-    if (shooter.dead)
-    {
-        result.reason = 2;
-        return result;
-    }
-    if (requestId == 0)
-    {
-        result.reason = 8;
-        return result;
-    }
-    if (definition.executionType != WeaponExecutionType::Projectile ||
-        !networkWeaponTypeIsProjectile(networkWeapon))
-    {
-        result.reason = 7;
-        return result;
-    }
-    if (rtIt == shooter.weaponRuntimes.end() || !rtIt->second.initialized)
-    {
-        result.reason = 7;
-        return result;
-    }
-    if (!finiteVec(origin) || originDistance > 12.0f ||
-        directionLength < 0.5f || directionLength > 1.5f)
-    {
-        result.reason = 5;
-        return result;
-    }
-
-    ServerPlayer::ServerWeaponRuntime& runtime = rtIt->second;
-    // Ammo is client-authoritative: the client owns its clip and never gets
-    // rejected for ammo. The server-side counter stays informational.
-    const bool consumesAmmo = definition.magazineSize > 0;
-
-    constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
-    if (tick + COOLDOWN_GRACE_TICKS < runtime.nextAllowedFireTick)
-    {
-        result.reason = 1;
-        result.magazineAmmo = runtime.magazineAmmo;
-        result.reserveAmmo = runtime.reserveAmmo;
-        result.nextAllowedFireTick = runtime.nextAllowedFireTick;
-        result.stateRevision = runtime.stateRevision;
-        return result;
-    }
-
-    auto cfgOpt = projectileConfigFromDefinition(definition, networkWeapon);
-    if (!cfgOpt)
-    {
-        result.reason = 7;
-        result.magazineAmmo = runtime.magazineAmmo;
-        result.reserveAmmo = runtime.reserveAmmo;
-        result.nextAllowedFireTick = runtime.nextAllowedFireTick;
-        result.stateRevision = runtime.stateRevision;
-        return result;
-    }
-    const ProjectileConfig& cfg = *cfgOpt;
-    const glm::vec3 dir = glm::normalize(direction);
-
-    ServerProjectile projectile;
-    projectile.id = nextProjectileId++;
-    if (nextProjectileId == 0)
-        nextProjectileId = 1;
-    projectile.ownerPlayerId = shooter.id;
-    projectile.fireSerial = requestId;
-    projectile.weaponType = networkWeapon;
-    projectile.weaponDefNetworkId = weaponDefNetworkIdFor(definition.id);
-    projectile.position = origin;
-    projectile.previousPosition = origin;
-    projectile.velocity = dir * cfg.speed + glm::vec3(0.0f, 0.0f, cfg.upBias);
-    if (cfg.inheritOwnerVelocity)
-        projectile.velocity += shooter.vel;
-    projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    if (networkWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
-    {
-        glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 refUp = std::fabs(forward.z) < 0.99f
-            ? glm::vec3(0.0f, 0.0f, 1.0f)
-            : glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
-        projectile.angularVelocity = right * cfg.angularSpeed;
-    }
-    projectile.lifetime = cfg.lifetime;
-    projectile.radius = cfg.radius;
-    projectile.splashRadius = cfg.splashRadius;
-    projectile.splashDamage = cfg.splashDamage;
-    projectile.splashExponent = cfg.splashExponent;
-    projectile.fullDamageRadius = cfg.fullDamageRadius;
-    projectile.edgeDamage = cfg.edgeDamage;
-    projectile.splashEnabled = (cfg.onExpireEffect == 0.0f);
-    projectile.knockbackStrength = cfg.knockbackStrength;
-    projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
-    projectile.selfDamageMultiplier = cfg.selfDamageMultiplier;
-    projectile.gravity = cfg.gravity;
-    projectile.drag = cfg.drag;
-    projectile.restitution = cfg.restitution;
-    projectile.friction = cfg.friction;
-    projectile.armingDistance = cfg.armingDistance;
-    projectile.armingTime = cfg.armingTime;
-    projectile.minBounceSpeed = cfg.minBounceSpeed;
-    projectile.angularDrag = cfg.angularDrag;
-    projectile.maxBounceCount = cfg.maxBounceCount;
-    auto cp = [&](const char* key, float fallback) -> float {
-        auto it = definition.customParams.find(key);
-        return it != definition.customParams.end() ? it->second : fallback;
-    };
-    projectile.explodeOnPlayerImpact = cp("explodeOnPlayerImpact", 1.0f) > 0.0f;
-    projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
-    projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
-    projectile.splashLineOfSight = cfg.splashLineOfSight;
-    const uint32_t fireViewTick = estimateServerRewindTick(
-        shooter, clientSimulationTick, tick);
-    projectile.spawnTick = tick;
-    projectile.fireViewTick = fireViewTick;
-    projectile.simulationTick = fireViewTick > 0 ? fireViewTick : tick;
-
-    // Live gameplay policy: apply the replaceable rocket policy to the
-    // AUTHORITATIVE projectile so server damage and motion match the local
-    // launcher. JSON remains the base; the hot module modifies resolved values.
-    // If the module is unavailable or rejects the call, the JSON values stay.
-    {
-        RocketFlightStateV1 flightState{};
-        flightState.position[0] = projectile.position.x;
-        flightState.position[1] = projectile.position.y;
-        flightState.position[2] = projectile.position.z;
-        flightState.velocity[0] = projectile.velocity.x;
-        flightState.velocity[1] = projectile.velocity.y;
-        flightState.velocity[2] = projectile.velocity.z;
-        flightState.age = 0.0f;
-        flightState.lifetime = projectile.lifetime;
-        flightState.weaponNetworkId = projectile.weaponDefNetworkId;
-        flightState.flags = 0;
-        RocketFlightParamsV1 flightBase{};
-        flightBase.speedScale = 1.0f;
-        flightBase.gravityScale = 1.0f;
-        flightBase.dragScale = 1.0f;
-        flightBase.upBias = cfg.upBias;
-        flightBase.lifetime = projectile.lifetime;
-        flightBase.bounces = static_cast<std::uint32_t>(cfg.maxBounceCount > 0 ? cfg.maxBounceCount : 0);
-        RocketFlightParamsV1 flightOut{};
-        if (LiveGameplay::rocketFlight(flightState, flightBase, flightOut))
-        {
-            const float speedScale = std::max(0.0f, flightOut.speedScale);
-            const float outSpeed = cfg.speed * speedScale;
-            projectile.velocity = dir * outSpeed + glm::vec3(0.0f, 0.0f, flightOut.upBias);
-            if (cfg.inheritOwnerVelocity)
-                projectile.velocity += shooter.vel;
-            if (flightOut.lifetime > 0.0f)
-                projectile.lifetime = flightOut.lifetime;
-            projectile.gravity *= std::max(0.0f, flightOut.gravityScale);
-            projectile.drag *= std::max(0.0f, flightOut.dragScale);
-            LiveGameplay::journalPolicy("server", "rocket_flight", projectile.id, 0,
-                                        cfg.speed, outSpeed, 0.0f, 0.0f);
-        }
-    }
-
-    Debug::logThrottled(Debug::Category::Weapons, "projectile-replay", 1.0,
-        "[PROJECTILE REPLAY] playerId=%u requestId=%u receiveTick=%u "
-        "clientFireTick=%u mappedFireTick=%u replayTicks=%u weapon=%s\n",
-        shooter.id, requestId, tick, clientSimulationTick, fireViewTick,
-        fireViewTick > 0 && fireViewTick < tick ? tick - fireViewTick : 0,
-        networkWeaponTypeName(networkWeapon));
-
-    if (consumesAmmo && runtime.magazineAmmo > 0)
-        --runtime.magazineAmmo;
-    runtime.nextAllowedFireTick = (uint64_t)tick +
-        (uint64_t)std::ceil(cfg.fireDelay * SERVER_TICK_RATE);
-    runtime.reloading = false;
-    runtime.reloadCompleteTick = 0;
-    ++runtime.stateRevision;
-
-    shooter.lastProjectileFireSerial = requestId;
-    shooter.nextProjectileFireTick = runtime.nextAllowedFireTick;
-    shooter.projectileFireCooldown = cfg.fireDelay;
-
-    ProjectileSpawnEventPacket spawn{};
-    spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
-    spawn.header.tick = tick;
-    fillProjectilePose(spawn, projectile);
-    projectiles[projectile.id] = projectile;
-
-    // Entity/component slice: authoritative rocket entity owned by the shooter
-    // player entity, keyed by the existing network projectile id.
-    {
-        const EntityId ownerEntity =
-            Ecs::ensure(EntityRealm::Server, EntityDomain::Player, shooter.id);
-        Ecs::setAuthority(ownerEntity, NetworkAuthority::Server);
-        Ecs::spawnRocket(EntityRealm::Server, projectile.id, ownerEntity,
-                         projectile.position, projectile.velocity,
-                         projectile.weaponDefNetworkId, projectile.fireSerial,
-                         projectile.lifetime, NetworkAuthority::Server);
-    }
-
-    // Broadcast the spawn to everyone EXCEPT the shooter — the shooter's client
-    // already has its own instant predicted projectile and adopting a server copy
-    // back is what caused the "two rockets" duplicate on badconn.
-    broadcastPacket(sock, players, spawn, totalPacketsOut, projectile.ownerPlayerId);
-
-    printf("%s [PROJECTILE GENERIC ACCEPT] playerId=%u requestId=%u "
-           "projectileId=%u weapon=%s ammo=%d/%d nextAllowedTick=%llu "
-           "position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f)\n",
-           serverTimestamp(), shooter.id, requestId, projectile.id,
-           networkWeaponTypeName(networkWeapon),
-           runtime.magazineAmmo, runtime.reserveAmmo,
-           (unsigned long long)runtime.nextAllowedFireTick,
-           projectile.position.x, projectile.position.y, projectile.position.z,
-           projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
-
-    result.accepted = true;
-    result.reason = 0;
-    result.projectileId = projectile.id;
-    result.magazineAmmo = runtime.magazineAmmo;
-    result.reserveAmmo = runtime.reserveAmmo;
-    result.nextAllowedFireTick = runtime.nextAllowedFireTick;
-    result.stateRevision = runtime.stateRevision;
-    return result;
-}
-
 void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                                  std::unordered_map<uint32_t, ServerPlayer>& players,
                                  std::unordered_map<uint32_t, ServerProjectile>& projectiles,
@@ -1349,396 +1123,6 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
            networkWeaponTypeName(request->weapon));
     return;
 
-#if 0
-    auto shooterIt = players.find(request->header.playerId);
-    const bool ownsShooter =
-        shooterIt != players.end() &&
-        sameAddress(shooterIt->second.addr, from);
-    if (!ownsShooter)
-    {
-        printf("%s [PROJECTILE FIRE REQUEST RX] playerId=%u fireSerial=%u "
-               "weapon=%s accepted=0 reason=sender-address-mismatch\n",
-               serverTimestamp(), request->header.playerId,
-               request->fireSerial, networkWeaponTypeName(request->weapon));
-        return;
-    }
-
-    ServerPlayer& shooter = shooterIt->second;
-
-    // ── Cache lookup: if this fireSerial was already processed, resend ──
-    for (uint8_t ci = 0; ci < ServerPlayer::MAX_CACHED_FIRE_RESULTS; ++ci)
-    {
-        const auto& cached = shooter.cachedFireResults[ci];
-        if (!cached.valid || cached.fireSerial != request->fireSerial)
-            continue;
-
-        ProjectileFireResultPacket cachedResult{};
-        cachedResult.header.type = PACKET_PROJECTILE_FIRE_RESULT;
-        cachedResult.header.tick = tick;
-        cachedResult.header.playerId = shooter.id;
-        cachedResult.fireSerial = cached.fireSerial;
-        cachedResult.projectileId = cached.projectileId;
-        cachedResult.weapon = cached.weapon;
-        cachedResult.accepted = cached.accepted ? 1 : 0;
-        cachedResult.reason = cached.reason;
-        cachedResult.cooldownRemaining = cached.cooldownRemaining;
-        for (const auto& kv : players)
-        {
-            if (kv.first == shooter.id)
-            {
-                if (kv.second.transport) kv.second.transport->send(&cachedResult, sizeof(cachedResult));
-                else sendto(sock, (const char*)&cachedResult, sizeof(cachedResult), 0,
-                            (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-            }
-        }
-        // If accepted and the projectile still exists, resend the spawn to this client
-        if (cached.accepted && cached.projectileId != 0)
-        {
-            auto projIt = projectiles.find(cached.projectileId);
-            if (projIt != projectiles.end())
-            {
-                ProjectileSpawnEventPacket spawn{};
-                spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
-                spawn.header.tick = tick;
-                fillProjectilePose(spawn, projIt->second);
-                serverSendToPlayer(sock, shooter, &spawn, sizeof(spawn));
-            }
-        }
-        return;
-    }
-
-    const glm::vec3 origin(request->originX, request->originY, request->originZ);
-    const glm::vec3 direction(request->dirX, request->dirY, request->dirZ);
-    const float originDistance = finiteVec(origin)
-        ? glm::length(origin - shooter.pos)
-        : 99999.0f;
-    const float directionLength = finiteVec(direction)
-        ? glm::length(direction)
-        : 0.0f;
-    const bool serialNew = request->fireSerial != 0;
-
-    auto cacheResult = [&](bool accepted, uint32_t projId, uint8_t reason, float cooldown) {
-        auto& slot = shooter.cachedFireResults[shooter.nextCachedFireResultSlot];
-        slot.fireSerial = request->fireSerial;
-        slot.accepted = accepted;
-        slot.projectileId = projId;
-        slot.weapon = request->weapon;
-        slot.reason = reason;
-        slot.cooldownRemaining = cooldown;
-        slot.valid = true;
-        shooter.nextCachedFireResultSlot = (shooter.nextCachedFireResultSlot + 1) % ServerPlayer::MAX_CACHED_FIRE_RESULTS;
-    };
-
-    // ── Authoritative weapon runtime ──────────────────────────────────
-    // Lazy-init the runtime from WeaponDefinition on first use
-    const char* wepId = (request->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER) ? "grenade_launcher"
-                      : (request->weapon == NETWORK_WEAPON_ROCKET_LAUNCHER) ? "rocket_launcher"
-                      : nullptr;
-    ServerPlayer::ServerWeaponRuntime* runtime = nullptr;
-    if (wepId)
-    {
-        auto rtIt = shooter.weaponRuntimes.find(wepId);
-        if (rtIt == shooter.weaponRuntimes.end())
-        {
-            // Initialize from WeaponDefinition
-            const WeaponDefinition* def = WeaponRegistry::instance().get(wepId);
-            if (def)
-            {
-                ServerPlayer::ServerWeaponRuntime rt;
-                rt.magazineAmmo = def->magazineSize;
-                rt.reserveAmmo = initialReserveAmmoForDefinition(*def);
-                rt.nextAllowedFireTick = 0;
-                rt.initialized = true;
-                shooter.weaponRuntimes[wepId] = rt;
-                rtIt = shooter.weaponRuntimes.find(wepId);
-            }
-        }
-        if (rtIt != shooter.weaponRuntimes.end())
-            runtime = &rtIt->second;
-    }
-
-    const bool hasAmmo = runtime ? runtime->magazineAmmo > 0 : true;
-
-    // Tick-based cooldown validation (replaces float cooldown)
-    constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
-    const uint64_t currentTick = tick;
-    const bool cooldownValid = currentTick + COOLDOWN_GRACE_TICKS >= shooter.nextProjectileFireTick;
-    const uint64_t remainingCooldownTicks = shooter.nextProjectileFireTick > currentTick
-        ? shooter.nextProjectileFireTick - currentTick : 0;
-
-    const bool directionValid = directionLength >= 0.5f && directionLength <= 1.5f;
-    const bool accepted =
-        !shooter.dead &&
-        serialNew &&
-        networkWeaponTypeIsProjectile(request->weapon) &&
-        hasAmmo &&
-        cooldownValid &&
-        originDistance <= 8.0f &&
-        directionValid;
-
-    int serverAmmo = runtime ? runtime->magazineAmmo : -1;
-    printf("%s [PROJECTILE FIRE REQUEST RX] playerId=%u fireSerial=%u "
-           "weapon=%s originDistance=%.2f directionLength=%.2f "
-           "serverTick=%u nextAllowedTick=%llu remainingTicks=%llu "
-           "hasAmmo=%d serverAmmo=%d "
-           "cooldownValid=%d accepted=%d reason=%s\n",
-           serverTimestamp(), shooter.id, request->fireSerial,
-           networkWeaponTypeName(request->weapon), originDistance,
-           directionLength, currentTick,
-           (unsigned long long)shooter.nextProjectileFireTick,
-           (unsigned long long)remainingCooldownTicks,
-           (int)hasAmmo, serverAmmo,
-           (int)cooldownValid,
-           (int)accepted,
-           accepted ? "accepted" :
-           shooter.dead ? "dead" :
-           !serialNew ? "zero-serial" :
-           !hasAmmo ? "out-of-ammo" :
-           !networkWeaponTypeIsProjectile(request->weapon) ? "not-projectile-weapon" :
-           !cooldownValid ? "cooldown" :
-           originDistance > 8.0f ? "origin-too-far" : "invalid-direction");
-
-    if (!accepted)
-    {
-        ProjectileFireResultPacket reject{};
-        reject.header.type = PACKET_PROJECTILE_FIRE_RESULT;
-        reject.header.tick = tick;
-        reject.header.playerId = shooter.id;
-        reject.fireSerial = request->fireSerial;
-        reject.weapon = request->weapon;
-        reject.accepted = 0;
-        reject.cooldownRemaining = (float)remainingCooldownTicks / 60.0f;
-
-        if (shooter.dead) reject.reason = PROJECTILE_FIRE_DEAD;
-        else if (!serialNew) reject.reason = PROJECTILE_FIRE_ALREADY_ACCEPTED;
-        else if (!networkWeaponTypeIsProjectile(request->weapon)) reject.reason = PROJECTILE_FIRE_CONFIG_MISSING;
-        else if (!hasAmmo) reject.reason = PROJECTILE_FIRE_DEAD; // reuse DEAD as out-of-ammo for now
-        else if (!cooldownValid) reject.reason = PROJECTILE_FIRE_COOLDOWN;
-        else if (originDistance > 8.0f) reject.reason = PROJECTILE_FIRE_ORIGIN_INVALID;
-        else reject.reason = PROJECTILE_FIRE_DIRECTION_INVALID;
-
-        cacheResult(false, 0, reject.reason, reject.cooldownRemaining);
-
-        serverSendToPlayer(sock, shooter, &reject, sizeof(reject));
-        {
-            auto& _log = ::StructuredLogger::instance();
-            if (_log.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
-                ::StructuredLogger::Entry e;
-                e.category = ::StructuredCategory::GrenadeLauncher;
-                e.level = ::StructuredLevel::Important;
-                e.eventId = "GRENADE_SERVER_REQUEST";
-                e.correlationId = "GRENADE_P" + std::to_string(shooter.id)
-                    + "_F" + std::to_string(request->fireSerial) + "_J0";
-                e.reason = "rejected";
-                char buf[512]; std::snprintf(buf, sizeof(buf),
-                    "playerId=%u fireSerial=%u weapon=%s serialNew=%d "
-                    "dirLen=%.2f originDist=%.2f cooldownRemainingTicks=%llu",
-                    shooter.id, request->fireSerial, networkWeaponTypeName(request->weapon),
-                    (int)serialNew,
-                    directionLength, originDistance,
-                    (unsigned long long)remainingCooldownTicks);
-                e.message = buf;
-                _log.write(e);
-            }
-        }
-        return;
-    }
-
-    auto cfgOpt = projectileConfig(request->weapon);
-    if (!cfgOpt)
-    {
-        // Config missing or invalid — reject without consuming state
-        ProjectileFireResultPacket reject{};
-        reject.header.type = PACKET_PROJECTILE_FIRE_RESULT;
-        reject.header.tick = tick;
-        reject.header.playerId = shooter.id;
-        reject.fireSerial = request->fireSerial;
-        reject.weapon = request->weapon;
-        reject.accepted = 0;
-        reject.reason = PROJECTILE_FIRE_CONFIG_MISSING;
-        reject.cooldownRemaining = shooter.projectileFireCooldown;
-        cacheResult(false, 0, PROJECTILE_FIRE_CONFIG_MISSING, shooter.projectileFireCooldown);
-        serverSendToPlayer(sock, shooter, &reject, sizeof(reject));
-        return;
-    }
-    const ProjectileConfig& cfg = *cfgOpt;
-    // Update equipped slot from weapon type to handle equip-input/fire-request race
-    if (networkWeaponTypeIsProjectile(request->weapon))
-    {
-        int slotForWeapon = slotForNetworkWeaponType(request->weapon);
-        if (slotForWeapon > 0)
-            shooter.equippedSlot = slotForWeapon;
-    }
-    const glm::vec3 dir = glm::normalize(direction);
-
-    ServerProjectile projectile;
-    projectile.id = nextProjectileId++;
-    if (nextProjectileId == 0)
-        nextProjectileId = 1;
-    projectile.ownerPlayerId = shooter.id;
-    projectile.fireSerial = request->fireSerial;
-    projectile.weaponType = request->weapon;
-    projectile.position = origin;
-    projectile.previousPosition = origin;
-    projectile.velocity = dir * cfg.speed + glm::vec3(0.0f, 0.0f, cfg.upBias);
-    projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    if (request->weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
-    {
-        glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 refUp = std::fabs(forward.z) < 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
-        projectile.angularVelocity = right * cfg.angularSpeed;
-    }
-    else
-    {
-        projectile.angularVelocity = glm::vec3(0.0f);
-    }
-    projectile.lifetime = cfg.lifetime;
-    projectile.radius = cfg.radius;
-    projectile.splashRadius = cfg.splashRadius;
-    projectile.splashDamage = cfg.splashDamage;
-    projectile.splashExponent = cfg.splashExponent;
-    projectile.knockbackStrength = cfg.knockbackStrength;
-    projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
-    projectile.selfDamageMultiplier = cfg.selfDamageMultiplier;
-    projectile.gravity = cfg.gravity;
-    projectile.drag = cfg.drag;
-    projectile.restitution = cfg.restitution;
-    projectile.friction = cfg.friction;
-    projectile.armingDistance = cfg.armingDistance;
-    projectile.armingTime = cfg.armingTime;
-    projectile.minBounceSpeed = cfg.minBounceSpeed;
-    projectile.angularDrag = cfg.angularDrag;
-    projectile.maxBounceCount = cfg.maxBounceCount;
-    // Generic explosion-trigger policy captured at spawn from weapon definition
-    if (wepId) {
-        const WeaponDefinition* spawnDef = WeaponRegistry::instance().get(std::string(wepId));
-        if (spawnDef) {
-            auto spawnCp = [&](const char* key, float fb) -> float {
-                auto it = spawnDef->customParams.find(key);
-                return it != spawnDef->customParams.end() ? it->second : fb;
-            };
-            projectile.explodeOnPlayerImpact = spawnCp("explodeOnPlayerImpact", 1.0f) > 0.0f;
-            projectile.explodeOnWorldImpact = spawnCp("explodeOnWorldImpact", 0.0f) > 0.0f;
-            projectile.explodeOnLifetime = spawnCp("explodeOnLifetime", 1.0f) > 0.0f;
-        }
-    }
-    projectile.spawnTick = tick;
-
-    shooter.lastProjectileFireSerial = request->fireSerial;
-    // Tick-based cooldown: ceil(fireDelay * 60) ticks
-    uint32_t cooldownTicks = (uint32_t)std::ceil(cfg.fireDelay * 60.0f);
-    shooter.nextProjectileFireTick = (uint64_t)tick + cooldownTicks;
-    shooter.projectileFireCooldown = cfg.fireDelay; // kept for legacy snapshot serialization
-
-    // Authoritative ammo consumption
-    if (runtime)
-    {
-        if (runtime->magazineAmmo > 0)
-            --runtime->magazineAmmo;
-        printf("[SERVER WEAPON RUNTIME] playerId=%u weapon=%s magazineAmmo=%d/%d\n",
-               shooter.id, wepId ? wepId : "?", runtime->magazineAmmo,
-               runtime->magazineAmmo + (int)(runtime->reserveAmmo > 0));
-    }
-
-    ProjectileSpawnEventPacket spawn{};
-    spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
-    spawn.header.tick = tick;
-    fillProjectilePose(spawn, projectile);
-    projectiles[projectile.id] = projectile;
-
-    // Cache the accepted result BEFORE sending so retries can be answered idempotently
-    cacheResult(true, projectile.id, PROJECTILE_FIRE_ACCEPTED, shooter.projectileFireCooldown);
-
-    {
-        auto& _lg = ::StructuredLogger::instance();
-        if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
-            ::StructuredLogger::Entry e;
-            e.category = ::StructuredCategory::GrenadeLauncher;
-            e.level = ::StructuredLevel::Important;
-            e.eventId = "GRENADE_SERVER_REQUEST";
-            e.correlationId = "GRENADE_P" + std::to_string(shooter.id)
-                + "_F" + std::to_string(request->fireSerial)
-                + "_J" + std::to_string(projectile.id);
-            e.reason = "accepted";
-            char b[512]; std::snprintf(b, sizeof(b),
-                "projectileId=%u playerId=%u fireSerial=%u weapon=%s "
-                "spawnPos=(%.2f,%.2f,%.2f) spawnVel=(%.2f,%.2f,%.2f) "
-                "lifetime=%.1f radius=%.2f speed=%.1f gravity=%.1f drag=%.2f "
-                "restitution=%.2f friction=%.2f upBias=%.1f "
-                "angSpeed=%.1f angDrag=%.2f maxBounce=%d minBounceSpeed=%.1f armingDist=%.1f",
-                projectile.id, shooter.id, request->fireSerial,
-                networkWeaponTypeName(request->weapon),
-                projectile.position.x, projectile.position.y, projectile.position.z,
-                projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
-                projectile.lifetime, projectile.radius, cfg.speed, projectile.gravity,
-                projectile.drag, projectile.restitution, projectile.friction,
-                cfg.upBias, cfg.angularSpeed, projectile.angularDrag,
-                projectile.maxBounceCount, projectile.minBounceSpeed,
-                projectile.armingDistance);
-            e.message = b;
-            _lg.write(e);
-        }
-    }
-
-    {
-        auto& _lg = ::StructuredLogger::instance();
-        if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
-            ::StructuredLogger::Entry e;
-            e.category = ::StructuredCategory::GrenadeLauncher;
-            e.level = ::StructuredLevel::Important;
-            e.eventId = "GRENADE_SERVER_SPAWN";
-            e.correlationId = "GRENADE_P" + std::to_string(shooter.id)
-                + "_F" + std::to_string(request->fireSerial)
-                + "_J" + std::to_string(projectile.id);
-            e.reason = "spawn";
-            char b[512]; std::snprintf(b, sizeof(b),
-                "projectileId=%u playerId=%u fireSerial=%u weapon=%s "
-                "pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) speed=%.1f "
-                "angVel=(%.2f,%.2f,%.2f) radius=%.2f gravity=%.1f drag=%.2f "
-                "angDrag=%.2f restitution=%.2f friction=%.2f "
-                "maxBounce=%d lifetime=%.1f armingDist=%.1f armingTime=%.1f "
-                "upBias=%.1f minBounceSpeed=%.1f",
-                projectile.id, shooter.id, request->fireSerial,
-                networkWeaponTypeName(request->weapon),
-                projectile.position.x, projectile.position.y, projectile.position.z,
-                projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
-                glm::length(projectile.velocity),
-                projectile.angularVelocity.x, projectile.angularVelocity.y, projectile.angularVelocity.z,
-                projectile.radius, projectile.gravity, projectile.drag,
-                projectile.angularDrag, projectile.restitution, projectile.friction,
-                projectile.maxBounceCount, projectile.lifetime,
-                projectile.armingDistance, projectile.armingTime,
-                cfg.upBias, projectile.minBounceSpeed);
-            e.message = b;
-            _lg.write(e);
-        }
-    }
-
-    printf("%s [PROJECTILE SERVER SPAWN] projectileId=%u ownerPlayerId=%u "
-           "weapon=%s position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f) "
-           "spawnTick=%u lifetime=%.2f\n",
-           serverTimestamp(), projectile.id, projectile.ownerPlayerId,
-           networkWeaponTypeName(projectile.weaponType),
-           projectile.position.x, projectile.position.y, projectile.position.z,
-           projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
-           projectile.spawnTick, projectile.lifetime);
-
-    broadcastPacket(sock, players, spawn, totalPacketsOut);
-
-    // Send fire result to the shooter
-    ProjectileFireResultPacket result{};
-    result.header.type = PACKET_PROJECTILE_FIRE_RESULT;
-    result.header.tick = tick;
-    result.header.playerId = shooter.id;
-    result.fireSerial = request->fireSerial;
-    result.projectileId = projectile.id;
-    result.weapon = request->weapon;
-    result.accepted = 1;
-    result.reason = PROJECTILE_FIRE_ACCEPTED;
-    result.cooldownRemaining = shooter.projectileFireCooldown;
-    serverSendToPlayer(sock, shooter, &result, sizeof(result));
-#endif
 }
 
 void tickServerProjectiles(SOCKET sock,

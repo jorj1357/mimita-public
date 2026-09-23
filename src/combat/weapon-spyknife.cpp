@@ -242,8 +242,13 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
     state.prevBladeOBB = box;
     state.hasPrevBladeOBB = true;
 
-    AudioManager::instance().stopOwner(SPYKNIFE_SOUND_OWNER_ID);
-    {
+    // Owner-stopped swing voice: a hot slot SET replaces the previous swing
+    // voice (same owner+slot); the cold path cuts then plays.
+    if (!LiveBehavior::emitAudioSlot("weapon.melee", def.soundShoot.c_str(),
+                                     SPYKNIFE_SOUND_OWNER_ID,
+                                     gameHash("spyknife.attack"), false,
+                                     1.0f, 1.0f)) {
+        AudioManager::instance().stopOwner(SPYKNIFE_SOUND_OWNER_ID);
         AudioEvent attackSound;
         attackSound.name = def.soundShoot;
         attackSound.category = AudioCategory::Impacts;
@@ -253,9 +258,7 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
         attackSound.pitch = 1.0f;
         attackSound.maxDistance = 40.0f;
         attackSound.ownerId = SPYKNIFE_SOUND_OWNER_ID;
-        if (!LiveBehavior::emitAudioFact("weapon.melee", def.soundShoot.c_str(),
-                                         owner.pos, 0, true))
-            AudioManager::instance().play(attackSound);
+        AudioManager::instance().play(attackSound);
     }
 
     WeaponRuntime* rt = nullptr;

@@ -12,6 +12,7 @@
 
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-damage-application.h"
+#include "hot-reload/hot-kill-attribution.h"
 
 namespace {
 
@@ -23,9 +24,18 @@ void MIMITA_GAME_CALL evaluateDamageApplication(void* /*host*/,
     HotDamageApplicationImpl::evaluate(*request);
 }
 
+void MIMITA_GAME_CALL evaluateKillAttribution(void* /*host*/,
+                                              GameKillAttributionV1* request)
+{
+    HotKillAttributionImpl::evaluate(*request);
+}
+
 const GameCapabilityDescriptorV1 kDamageApplicationProvider{
     GAME_CAP_DAMAGE_APPLICATION, GAME_SIG_DAMAGE_APPLICATION, 0,
     reinterpret_cast<void*>(&evaluateDamageApplication), "net.damage-application"};
+const GameCapabilityDescriptorV1 kKillAttributionProvider{
+    GAME_CAP_KILL_ATTRIBUTION, GAME_SIG_KILL_ATTRIBUTION, 0,
+    reinterpret_cast<void*>(&evaluateKillAttribution), "net.kill-attribution"};
 
 } // namespace
 
@@ -33,5 +43,9 @@ const MimitaHotPackage::CapabilityRegistrar s_damageApplicationProviderRegistrar
     kDamageApplicationProvider};
 const MimitaHotPackage::CapabilityRequirementRegistrar s_damageApplicationRequirement{
     GAME_CAP_DAMAGE_APPLICATION, GAME_SIG_DAMAGE_APPLICATION, 0};
+const MimitaHotPackage::CapabilityRegistrar s_killAttributionProviderRegistrar{
+    kKillAttributionProvider};
+const MimitaHotPackage::CapabilityRequirementRegistrar s_killAttributionRequirement{
+    GAME_CAP_KILL_ATTRIBUTION, GAME_SIG_KILL_ATTRIBUTION, 0};
 
 #endif // MIMITA_GAME_DLL

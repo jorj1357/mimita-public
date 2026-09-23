@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <random>
 #include <string>
@@ -63,6 +64,10 @@ private:
     void scanFolder(const std::string& dir, std::vector<TrackEntry>& out);
     void loadCredits(const std::string& path);
     std::string displayName(const std::string& filename) const;
+    // Ask the hot audio policy which candidate to play and at what volume/pitch.
+    // Returns false when no hot owner is available (cold RNG fallback applies).
+    bool queryMusicPolicy(std::uint32_t mode, std::uint32_t candidateCount,
+                          std::uint32_t& outIndex);
     void startTrack(const std::string& path);
     void playNextIngame();
     void pickMenuTrack();
@@ -86,6 +91,9 @@ private:
     float mVolume = 1.0f;
     bool mMuted = false;
     float mPlaybackSpeed = 1.0f;
+    // Multipliers returned by the hot music policy (1 = unchanged).
+    float mPolicyVolumeScale = 1.0f;
+    float mPolicyPitchScale = 1.0f;
     std::string mCurrentPath;
     std::string mCurrentFilename;
     std::string mCurrentArtist;

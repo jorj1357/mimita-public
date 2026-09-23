@@ -10,6 +10,8 @@
 
 #include "network/multiplayer-context.h"
 #include "ecs/actor-entities.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-projectile-correction.h"
 #include "live-code/live-behavior.h"
 #include "live-code/live-gameplay.h"
 #include "network/simulation-constants.h"
@@ -2031,16 +2033,35 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                 const glm::vec3 posError = projectile.targetStatePos - projectile.position;
                 const float err = glm::length(posError);
                 const bool serverHasSentUpdate = projectile.targetStateTick > projectile.prevStateTick;
-                if (serverHasSentUpdate && err > 4.0f)
+                // Correction decision is hot (net.projectile-correction).
+                GameProjectileCorrectionV1 correction{};
+                correction.structSize = sizeof(GameProjectileCorrectionV1);
+                correction.serverHasSentUpdate = serverHasSentUpdate ? 1u : 0u;
+                correction.positionError = err;
+                correction.errorThreshold = 4.0f;
+                correction.positionBlend = 0.3f;
+                correction.velocityBlend = 0.25f;
+                correction.rotationBlend = 0.20f;
+                auto correctionFn = reinterpret_cast<GameProjectileCorrectionFn>(
+                    MimitaRuntime::GenericRuntime::instance().capability(
+                        GAME_CAP_PROJECTILE_CORRECTION));
+                if (correctionFn)
+                    correctionFn(nullptr, &correction);
+                else
+                    HotProjectileCorrectionImpl::evaluate(correction);
+                if (correction.correct)
                 {
                     // Server disagrees with local physics — correct toward
                     // server state but gently (don't hard-snap the position
                     // variable, only blend renderPosition).
-                    projectile.renderPosition = projectile.position + posError * 0.3f;
+                    projectile.renderPosition =
+                        projectile.position + posError * correction.outPositionBlend;
                     projectile.renderVelocity = projectile.velocity +
-                        (projectile.targetStateVel - projectile.velocity) * 0.25f;
+                        (projectile.targetStateVel - projectile.velocity) *
+                            correction.outVelocityBlend;
                     projectile.renderRotation = glm::normalize(
-                        glm::slerp(projectile.rotation, projectile.targetStateRot, 0.20f));
+                        glm::slerp(projectile.rotation, projectile.targetStateRot,
+                                   correction.outRotationBlend));
                 }
                 else
                 {

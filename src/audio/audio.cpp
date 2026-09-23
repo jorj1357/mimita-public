@@ -21,11 +21,14 @@
 #include "miniaudio.h"
 
 #include "audio.h"
+#include "audio/audio-resource.h"
+#include "live-code/live-journal.h"
 #include <string>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
+#include <climits>
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -61,11 +64,18 @@ struct ActiveSound {
     float maxDistance = 0.0f;
     float createdTime = 0.0f;
     unsigned int ownerId = 0;
+    int priority = 0;
+    // The generation this voice started with. Holding it keeps the bytes alive
+    // (ma_decoder references them) and defers retirement of an old generation
+    // until every voice using it has finished.
+    std::shared_ptr<const AudioResourceGeneration> resource;
 };
 static std::vector<std::unique_ptr<ActiveSound>> gActiveSounds;
 static void initAudioOnce();
 static float gAudioTime = 0.0f;
 static bool gSoundDebug = true;
+static bool gAudioTrace = false;
+static unsigned int gVoiceBudget = 64;
 
 static std::unordered_map<std::string, std::vector<uint8_t>> gSoundFileCache;
 
@@ -144,7 +154,7 @@ static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
 
 static void startSound(const std::string& name, float volume, float pitch,
                        const glm::vec3* position, float maxDistance,
-                       bool loop = false)
+                       bool loop = false, int priority = 0)
 {
     MIMITA_PERF_SCOPE("Audio::StartSound");
     { MIMITA_PERF_SCOPE("Audio::StartSound::InitAudio"); initAudioOnce(); }
@@ -152,14 +162,28 @@ static void startSound(const std::string& name, float volume, float pitch,
     std::unique_ptr<ActiveSound> active;
     { MIMITA_PERF_SCOPE("Audio::StartSound::Allocation");
       active = std::make_unique<ActiveSound>(); }
-    const std::vector<uint8_t>& cached = getCachedSoundData(name);
-    if (cached.empty()) {
+    // Prefer the current logical-sound generation; fall back to the legacy
+    // name-keyed cache when no generation exists. Either way the bytes outlive
+    // the voice (generation shared_ptr held below, cache is append-only).
+    std::shared_ptr<const AudioResourceGeneration> generation =
+        AudioResourceRegistry::instance().acquire(name);
+    const std::uint8_t* audioBytes = nullptr;
+    std::size_t audioSize = 0;
+    if (generation && generation->valid && !generation->bytes.empty()) {
+        audioBytes = generation->bytes.data();
+        audioSize = generation->bytes.size();
+    } else {
+        const std::vector<uint8_t>& cached = getCachedSoundData(name);
+        audioBytes = cached.data();
+        audioSize = cached.size();
+    }
+    if (!audioBytes || audioSize == 0) {
         Perf::state().audioPerf.soundsRejected++;
         if (gSoundDebug) printf("[SOUND] invalid path event=%s\n", name.c_str());
         return;
     }
     { MIMITA_PERF_SCOPE("Audio::StartSound::DecoderInit");
-      if (ma_decoder_init_memory(cached.data(), cached.size(), nullptr, &active->decoder) != MA_SUCCESS) {
+      if (ma_decoder_init_memory(audioBytes, audioSize, nullptr, &active->decoder) != MA_SUCCESS) {
         Perf::state().audioPerf.decoderFailures++;
         Perf::state().audioPerf.soundsRejected++;
         if (gSoundDebug) printf("[SOUND] decoder failed event=%s\n", name.c_str());
@@ -177,11 +201,13 @@ static void startSound(const std::string& name, float volume, float pitch,
     }
     active->initialized = true;
     active->name = name;
+    active->resource = generation;
     active->position = position ? *position : glm::vec3(0.0f);
     active->volume = volume;
     active->pitch = pitch;
     active->maxDistance = maxDistance;
     active->createdTime = gAudioTime;
+    active->priority = priority;
     if (loop)
         ma_sound_set_looping(&active->sound, MA_TRUE);
     { MIMITA_PERF_SCOPE("Audio::StartSound::ConfigureVoice");
@@ -256,6 +282,10 @@ void audioUpdate(float dt)
     if (!gAudioInit)
         initAudioOnce();
 
+    // Publish any completed off-thread sound-resource decodes at this safe
+    // boundary (never blocks; the worker already did the decode).
+    AudioResourceRegistry::instance().update();
+
     // Background cache: one sound per frame, never block
     if (gAudioInit && !gSoundCacheComplete && gSoundCacheIndex < gSoundCacheQueue.size())
     {
@@ -275,6 +305,18 @@ void audioUpdate(float dt)
         std::remove_if(gActiveSounds.begin(), gActiveSounds.end(), [](const std::unique_ptr<ActiveSound>& active) {
             if (!active || !active->initialized || ma_sound_at_end(&active->sound)) {
                 if (active && active->initialized) {
+                    if (gAudioTrace) {
+                        LiveEventJournal::Fields f;
+                        f.entityId = active->ownerId;
+                        f.result = "finished";
+                        char extra[192] = {};
+                        std::snprintf(extra, sizeof(extra),
+                                      "\"sound\":\"%s\",\"voice\":%u",
+                                      active->name.c_str(), active->ownerId);
+                        f.extra = extra;
+                        LiveEventJournal::instance().record(
+                            "audio.voice_finished", f);
+                    }
                     ma_sound_uninit(&active->sound);
                     ma_decoder_uninit(&active->decoder);
                 }
@@ -327,12 +369,12 @@ void AudioManager::play(const AudioEvent& event)
 
     if (event.world) {
         startSound(event.name, event.volume, event.pitch, &event.position,
-                   event.maxDistance, event.loop);
+                   event.maxDistance, event.loop, event.priority);
         if (!gActiveSounds.empty())
             gActiveSounds.back()->ownerId = event.ownerId;
     } else {
         startSound(event.name, event.volume, event.pitch, nullptr, 0.0f,
-                   event.loop);
+                   event.loop, event.priority);
     }
 }
 
@@ -362,6 +404,71 @@ unsigned int AudioManager::cachedSoundCount() const
 bool AudioManager::deviceActive() const
 {
     return gAudioInit;
+}
+
+void AudioManager::setTrace(bool enabled)
+{
+    gAudioTrace = enabled;
+}
+
+bool AudioManager::trace() const
+{
+    return gAudioTrace;
+}
+
+void AudioManager::setVoiceBudget(unsigned int maxVoices)
+{
+    gVoiceBudget = maxVoices;
+}
+
+unsigned int AudioManager::voiceBudget() const
+{
+    return gVoiceBudget;
+}
+
+void AudioManager::stopOldest()
+{
+    for (auto it = gActiveSounds.begin(); it != gActiveSounds.end(); ++it) {
+        if (*it && (*it)->initialized) {
+            ma_sound_uninit(&(*it)->sound);
+            ma_decoder_uninit(&(*it)->decoder);
+            gActiveSounds.erase(it);
+            return;
+        }
+    }
+}
+
+bool AudioManager::makeRoomForVoice(int priority, unsigned int interruption)
+{
+    if (gVoiceBudget == 0 || gActiveSounds.size() < gVoiceBudget)
+        return true;
+    if (interruption == 3u)   // OVERLAP
+        return true;
+    if (interruption == 0u)   // REJECT
+        return false;
+    // REPLACE_OLDEST(1) / REPLACE_SAME_SLOT(2) / RESTART(4): evict the
+    // lowest-priority active voice when the incoming voice is at least as high.
+    size_t victim = gActiveSounds.size();
+    int lowest = INT_MAX;
+    for (size_t i = 0; i < gActiveSounds.size(); ++i) {
+        const auto& s = gActiveSounds[i];
+        if (!s || !s->initialized)
+            continue;
+        if (s->priority < lowest) {
+            lowest = s->priority;
+            victim = i;
+        }
+    }
+    if (victim >= gActiveSounds.size())
+        return true;
+    if (priority < lowest)
+        return false;
+    if (gActiveSounds[victim]->initialized) {
+        ma_sound_uninit(&gActiveSounds[victim]->sound);
+        ma_decoder_uninit(&gActiveSounds[victim]->decoder);
+    }
+    gActiveSounds.erase(gActiveSounds.begin() + victim);
+    return true;
 }
 
 void AudioManager::stopOwner(unsigned int ownerId)

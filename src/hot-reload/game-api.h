@@ -2579,6 +2579,32 @@ struct GameAudioFactV1 {
     // (category/volume/pitch/falloff). Lets data-driven callers (weapon defs)
     // name a logical sound without the policy living in gameplay code.
     char sound[64];
+    // Append-only (audio.fact.v3): logical slot lifecycle for looping /
+    // owner-stopped voices. slotOp 0 = one-shot (existing), 1 = SET slot,
+    // 2 = STOP slot. The hot policy maps a SET to audio.play SET_SLOT keyed by
+    // (ownerEntity, slotId); STOP maps to STOP_SLOT. No raw voice handle crosses.
+    std::uint64_t slotId;
+    std::uint32_t slotOp;   // GameAudioFactSlotOp
+    std::uint32_t loop;     // SET: 1 = looping voice
+};
+static constexpr std::uint32_t GAME_AUDIO_FACT_ONESHOT = 0;
+static constexpr std::uint32_t GAME_AUDIO_FACT_SLOT_SET = 1;
+static constexpr std::uint32_t GAME_AUDIO_FACT_SLOT_STOP = 2;
+
+// Generic music-selection policy fact (cold music manager -> hot audio policy).
+// The cold streaming engine supplies the candidate count and asks the hot
+// policy which track to play and at what volume/pitch/loop; the streaming
+// mechanism itself stays in the EXE. `handled` is set by the hot owner.
+static constexpr std::uint64_t GAME_EVENT_AUDIO_MUSIC = gameHash("audio.music");
+struct GameMusicPolicyV1 {
+    std::uint32_t mode;            // 0 = menu, 1 = ingame
+    std::uint32_t candidateCount;
+    std::uint32_t outIndex;        // out: chosen candidate index
+    float outVolume;               // out: volume multiplier (1 = unchanged)
+    float outPitch;                // out: pitch multiplier (1 = unchanged)
+    std::uint32_t outLoop;         // out: 1 = loop
+    std::uint32_t handled;         // out: hot owner accepted
+    std::uint32_t reserved;
 };
 // Generic round-based match mechanism: a hot mode records the winner of one
 // round. The kernel owns round tallying, the RESULTS transition, and the

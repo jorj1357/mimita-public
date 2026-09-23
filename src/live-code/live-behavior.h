@@ -74,6 +74,14 @@ inline bool emitAudioFact(const char* recipeName, const char* sound,
                          volumeScale, pitchScale, volumeBase, pitchBase);
 }
 
+// Set (start/replace) or stop a logical persistent slot keyed by
+// (ownerEntity, slotId). Used for looping and owner-stopped voices. A SET
+// replaces any voice already in that slot; STOP is a safe no-op when absent.
+bool emitAudioSlot(const char* recipeName, const char* sound,
+                   std::uint64_t ownerEntity, std::uint64_t slotId, bool loop,
+                   float volumeScale = 1.0f, float pitchScale = 1.0f);
+bool emitAudioSlotStop(std::uint64_t ownerEntity, std::uint64_t slotId);
+
 // Generic actor lifecycle boundary. The kernel owns the envelope storage;
 // hot behavior owns lifecycle decisions when it marks the payload handled.
 bool dispatchActorLifecycle(ActorLifecycleStateV1& payload, std::uint64_t tick);

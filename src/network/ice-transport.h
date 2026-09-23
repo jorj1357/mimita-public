@@ -21,10 +21,18 @@ class IceTransport : public IGameTransport
 {
 public:
     IceTransport(std::unique_ptr<IceAgent> agent)
-        : mAgent(std::move(agent)) {}
+        : mAgent(std::move(agent))
+    {
+        MimitaTransport::registerTransport(this);
+    }
 
-    IceTransport(IceTransport&&) = default;
-    IceTransport& operator=(IceTransport&&) = default;
+    ~IceTransport() override
+    {
+        MimitaTransport::unregisterTransport(this);
+    }
+
+    IceTransport(IceTransport&&) = delete;
+    IceTransport& operator=(IceTransport&&) = delete;
 
     bool send(const void* data, size_t size) override
     {
@@ -64,6 +72,7 @@ public:
 
     void close() override
     {
+        MimitaTransport::unregisterTransport(this);
         if (mAgent)
         {
             mAgent->shutdown();
@@ -74,6 +83,14 @@ public:
             Sleep(50);
             mAgent.reset();
         }
+    }
+
+    void quiesceForReload() override
+    {
+        // libjuice callbacks never enter hot code, but drain them and bump the
+        // generation token so a module swap observes no in-flight callback.
+        if (mAgent)
+            mAgent->quiesceForReload();
     }
 
     IceAgent* agent() { return mAgent.get(); }
