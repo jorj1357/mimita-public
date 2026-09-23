@@ -506,10 +506,12 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             return;
         }
 
-        // Footsteps use a deterministic variant selected from the simulation
-        // tick, not process-global rand(), so replay and live presentation agree.
-        const std::uint32_t variant =
-            static_cast<std::uint32_t>((ctx->tick + req->sourceEntity) % 4u) + 1u;
+        // Default afad20a-style walk mode: one random variant per cadence event.
+        // Immediate repeats are intentional: walk4, walk4, walk4 is valid.
+        static std::uint32_t randomState = 0x6D2B79F5u;
+        randomState = randomState * 1664525u + 1013904223u +
+                      static_cast<std::uint32_t>(ctx->tick);
+        std::uint32_t variant = (randomState >> 24) % 4u + 1u;
         char sound[64];
         std::snprintf(sound, sizeof(sound), "entity/player/walk%u", variant);
         const float p[3] = {pos[0], pos[1], pos[2] - 0.6f};
@@ -517,7 +519,13 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
         spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
                     0.8f, 0.8f, 0.8f, 0.08f, 1.0f,
                     6.0f / 60.0f, 0.0f);
-        emitWorldSound(ctx, sound, pos, 0.8f, 1.0f, 22.0f);
+        const float volumeJitter =
+            static_cast<float>((randomState >> 8) & 0xFFu) / 255.0f;
+        const float pitchJitter =
+            static_cast<float>((randomState >> 16) & 0xFFu) / 255.0f;
+        emitWorldSound(ctx, sound, pos,
+                       0.72f + volumeJitter * 0.16f,
+                       0.96f + pitchJitter * 0.08f, 22.0f);
         return;
     }
 
@@ -576,27 +584,9 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
     // owned here. Movement state is read-only input; this does not own movement.
     if (req->effectTypeId == gameHash("effect.footstep.sound")) {
         req->handled = 1;
-        if (ctx->resolveCapability) {
-            auto audio = reinterpret_cast<AudioPlayFn>(
-                ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
-            if (audio) {
-                GameAudioCommandV1 c{};
-                if (req->text[0] != '\0')   // arbitrary logical id (no enum)
-                    std::snprintf(c.sound, sizeof(c.sound), "%s", req->text);
-                else
-                    // Random walk variant each step (was a fixed 1..4 cycle).
-                    std::snprintf(c.sound, sizeof(c.sound), "entity/player/walk%d",
-                                  1 + (std::rand() % 4));
-                c.position[0] = req->position[0];
-                c.position[1] = req->position[1];
-                c.position[2] = req->position[2];
-                c.volume = 0.8f;
-                c.pitch = 1.0f;
-                c.maxDistance = 22.0f;
-                c.spatial = 1;
-                audio(ctx->host, &c);
-            }
-        }
+        // Legacy Player::updateAudio emits this compatibility fact from the
+        // cold EXE. The canonical sound is emitted by effect.movement.footstep;
+        // consume this one silently so the old and new paths cannot double-play.
         return;
     }
 

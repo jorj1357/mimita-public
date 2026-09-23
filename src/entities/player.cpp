@@ -386,16 +386,9 @@ void Player::updateAudio(float dt)
     if (ground.stableOnGround && speed > 0.5f) {
         footstepTimer -= dt;
         if (footstepTimer <= 0.0f) {
-            // Footstep audio policy is hot (generic movement fact -> hot policy
-            // -> audio.play). Cold spatial playback is the fallback only.
-            EffectRequestV1 fstep{};
-            fstep.effectTypeId = gameHash("effect.footstep.sound");
-            fstep.position[0] = pos.x;
-            fstep.position[1] = pos.y;
-            fstep.position[2] = pos.z;
-            fstep.scale = sizeScale;
-            if (!LiveBehavior::dispatchEffectRequest(fstep, 0))
-                playWorldSound("entity/player/walk" + std::to_string(1 + rand() % 4), pos, 0.8f, 1.0f, 22.0f);
+            // One generic movement fact owns both the walk sound and walk VFX.
+            // Do not also dispatch effect.footstep.sound here: that would make
+            // every cadence emit two audio commands.
             // Walk burst: opposite direction of travel
             glm::vec3 walkDir = glm::length(inputWishMove) > 0.001f
                 ? glm::normalize(glm::vec3(inputWishMove.x, inputWishMove.y, 0.0f))
