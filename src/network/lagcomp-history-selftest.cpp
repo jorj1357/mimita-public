@@ -16,6 +16,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-history.h"
+#include "hot-reload/hot-rewind.h"
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/live-behavior.h"
 #include "network/server.h"
@@ -213,6 +214,46 @@ bool runLagcompHistorySelfTest(std::string& report)
             MimitaNet::GAME_EVENT_HISTORY_SELECT, &select, sizeof(select), 101, 0, 0);
         check(coldOk && select.handled && closeEnough(coldNpcPos.x, select.position[0]),
               "cold/hot NPC rewind parity on identical inputs", report);
+    }
+
+    // ── End-to-end unified policy: target tick -> selection -> pose ───
+    // Stage 1 (net.rewind) and stage 2 (history.select) are two EXE seams but
+    // one shared hot policy body in hot-lagcomp-policy.h. Editing that one file
+    // changes the whole ordering; this drives both stages in sequence.
+    {
+        GameRewindPolicyV1 rp{};
+        rp.currentTick = 1000;
+        rp.commandTick = 990;
+        rp.interpolationDelaySeconds = 0.05f;  // 3 ticks
+        rp.compensationSeconds = 0.0f;
+        rp.maxRewindTicks = 40;
+        rp.attackerGeneration = 1;
+        rp.targetGeneration = 1;
+        rp.currentGeneration = 1;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_REWIND, &rp, sizeof(rp), 0,
+                                              0, 0);
+        check(rp.handled == 1u && rp.allow == 1u && rp.targetTick == 987u,
+              "unified: stage 1 selects the rewind target tick", report);
+
+        // Feed the chosen target tick into stage 2 over the same history.
+        MimitaNet::GameHistorySelectV1 select{};
+        select.targetTick = rp.targetTick;
+        select.haveA = 1;
+        select.haveB = 1;
+        select.a.tick = 986;
+        select.a.position[0] = 0.0f;
+        select.a.logicalGenerationId = 1;
+        select.b.tick = 988;
+        select.b.position[0] = 2.0f;
+        select.b.logicalGenerationId = 1;
+        LiveBehavior::dispatchGameplayEvent64(MimitaNet::GAME_EVENT_HISTORY_SELECT,
+                                              &select, sizeof(select), rp.targetTick,
+                                              0, 0);
+        check(select.handled &&
+                  select.selection ==
+                      (std::uint32_t)HistorySelectionV1::Interpolated &&
+                  closeEnough(select.position[0], 1.0f),
+              "unified: stage 2 resolves the pose at that tick", report);
     }
 
     HotReloadSystem::instance().unloadGameDLL();

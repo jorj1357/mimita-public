@@ -13,12 +13,9 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-rewind.h"
-
-#include <cmath>
+#include "hot-reload/hot-lagcomp-policy.h"
 
 namespace {
-
-constexpr double kSimHz = 60.0;
 
 void MIMITA_GAME_CALL onRewind(void* /*host*/, const GameEventV1* event)
 {
@@ -26,53 +23,11 @@ void MIMITA_GAME_CALL onRewind(void* /*host*/, const GameEventV1* event)
     if (!p)
         return;
 
-    p->handled = 0u;
-    p->allow = 0u;
-    p->clamped = 0u;
-    p->reject = 0u;
+    // ONE shared lag-compensation policy body (also used by history.select), so
+    // a single edit to hot-lagcomp-policy.h changes both stages live.
+    p->targetTick = MimitaLagComp::selectTargetTick(
+        *p, &p->handled, &p->allow, &p->clamped, &p->reject);
     p->interpolate = 1u;
-    p->targetTick = p->commandTick;
-
-    // Generation mismatch: never evaluate across incompatible behavior
-    // generations; reject conservatively.
-    if (p->attackerGeneration != p->currentGeneration ||
-        p->targetGeneration != p->currentGeneration) {
-        p->reject = 1u;
-        p->handled = 1u;
-        return;
-    }
-
-    const int64_t interpTicks = (int64_t)std::llround(
-        (double)p->interpolationDelaySeconds * kSimHz);
-    const int64_t compTicks = (int64_t)std::llround(
-        (double)p->compensationSeconds * kSimHz);
-    const int64_t pingTicks = (int64_t)std::llround(
-        (double)p->measuredLatencySeconds * kSimHz);
-
-    int64_t rewind;
-    if (p->commandTick != 0u) {
-        rewind = (int64_t)p->commandTick - interpTicks - compTicks;
-    } else if (p->acceptedClientTick != 0u && p->acceptedServerTick != 0u) {
-        rewind = (int64_t)p->acceptedServerTick - interpTicks - compTicks - pingTicks;
-    } else {
-        rewind = (int64_t)p->currentTick - interpTicks - compTicks - pingTicks;
-    }
-
-    if (p->maxRewindTicks > 0u) {
-        const int64_t floor = (int64_t)p->currentTick - (int64_t)p->maxRewindTicks;
-        if (rewind < floor) {
-            rewind = floor;
-            p->clamped = 1u;
-        }
-    }
-    if (rewind < 0)
-        rewind = 0;
-    if (rewind > (int64_t)p->currentTick)
-        rewind = (int64_t)p->currentTick;
-
-    p->targetTick = (std::uint32_t)rewind;
-    p->allow = 1u;
-    p->handled = 1u;
 }
 
 } // namespace

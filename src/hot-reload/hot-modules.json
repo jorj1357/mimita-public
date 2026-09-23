@@ -81,7 +81,8 @@
     "src/hot-reload/hot-damage-event.h",
     "src/hot-reload/hot-consequences.h",
     "src/hot-reload/hot-packet-codec.h",
-    "src/hot-reload/hot-history.h"
+    "src/hot-reload/hot-history.h",
+    "src/hot-reload/hot-lagcomp-policy.h"
   ],
   "globs": [
     "src/hot-reload/modules/*.cpp",
