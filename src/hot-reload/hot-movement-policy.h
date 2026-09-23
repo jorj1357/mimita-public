@@ -10,6 +10,7 @@
 */
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 
 #include "hot-reload/game-api.h"
@@ -199,9 +200,45 @@ inline void restoreTouchAbilities(GameMovementRuntimeStateComponentV1& state)
     state.dashAvailable = 1u;
     state.downDashAvailable = 1u;
     state.dashCooldownSeconds = 0.0f;
-    // Contact restores full freeze strength: reset the pass-through timer so a
-    // fresh E press starts from the fully-suppressing part of the curve.
-    state.freezeTimerSeconds = 0.0f;
+    // afad20a restores freeze availability on contact (it does NOT reset the
+    // pass-through timer). A grounded actor therefore regains a fresh E press
+    // every tick; an airborne actor must touch a surface again.
+    state.freezeAvailable = 1u;
+}
+
+// afad20a freeze pass-through curve: 0 at activation, ramping to 1 at the end
+// of the configured duration. The caller scales the collision/integration
+// velocity by this and reconciles the stored velocity afterwards.
+inline float freezePassThrough(float timerSeconds, float durationSeconds,
+                               float exponent)
+{
+    if (timerSeconds <= 0.0f)
+        return 0.0f;
+    if (durationSeconds <= 0.0f)
+        return 1.0f;
+    float u = timerSeconds / durationSeconds;
+    if (u <= 0.0f)
+        return 0.0f;
+    if (u >= 1.0f)
+        return 1.0f;
+    return std::pow(u, exponent);
+}
+
+// Below this pass-through the collision response is not un-scaled (dividing by
+// a near-zero factor would explode the velocity); the stored velocity is kept
+// instead. Mirrors the cold `freezeDashMinimumPassThrough` default (0.001).
+static constexpr float kFreezeReconcileMinPassThrough = 0.001f;
+
+// v2.0.6 freeze stored-velocity multiplier (piecewise-quadratic, 5s duration).
+// Used only when the freeze policy is invoked with movementModel == 1.
+inline float freezeVelocityMultiplierV206(float t)
+{
+    if (t < 2.5f) {
+        const float x = t / 2.5f;
+        return x * x * 0.2f;
+    }
+    const float x = (t - 2.5f) / 2.5f;
+    return 0.2f + x * x * 0.8f;
 }
 }
 
@@ -218,6 +255,10 @@ struct GameFreezePolicyV1 {
     std::uint32_t freezeActive;
     std::uint32_t freezeAvailable;
     float freezeTimerSeconds;
+    // in: 0 = afad20a (activation hard-stop; caller applies the pass-through
+    // curve to the collision velocity), 1 = v2.0.6 (destructive curve on the
+    // stored velocity).
+    std::uint32_t movementModel;
     // out
     float outVelocity[3];
     std::uint32_t outFreezeActive;

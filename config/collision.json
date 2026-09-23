@@ -1,6 +1,6 @@
 {
     "behaviorSource": "json",
-    "groundResponse": "settle",
+    "groundResponse": "bounce",
     "walkableSlopeDot": 0.80,
     "bodySampleRadius": 0.25,
     "maxStepHeight": 0.25,

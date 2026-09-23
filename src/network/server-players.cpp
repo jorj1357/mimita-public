@@ -873,6 +873,9 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world, uint32_t server
             seeded.downDashAvailable = state.downDash.available;
             seeded.jumpIntentSeconds = state.jump.jumpIntentTimerSeconds;
             seeded.dashGraceSeconds = state.dash.dashGraceTimerSeconds;
+            seeded.freezeActive = state.freeze.active;
+            seeded.freezeAvailable = state.freeze.available;
+            seeded.freezeTimerSeconds = state.freeze.timerSeconds;
             runtimeState = &EntityRegistry::instance().add<MovementRuntimeStateComponent>(
                 playerEntity, seeded);
         }
@@ -887,6 +890,9 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world, uint32_t server
         state.dash.dashAvailable = runtimeState->dashAvailable;
         state.downDash.available = runtimeState->downDashAvailable;
         state.dash.dashGraceTimerSeconds = runtimeState->dashGraceSeconds;
+        state.freeze.active = runtimeState->freezeActive;
+        state.freeze.available = runtimeState->freezeAvailable;
+        state.freeze.timerSeconds = runtimeState->freezeTimerSeconds;
 
         // Phase 1: Pre-collision movement (gravity, walk, jump, dash)
         applyPreCollisionBasicMovement(state, cmd, cfg, SERVER_DT);
@@ -960,6 +966,10 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world, uint32_t server
             runtimeState->downDashAvailable = stepResult.state.downDash.available;
             runtimeState->dashGraceSeconds =
                 stepResult.state.dash.dashGraceTimerSeconds;
+            runtimeState->freezeActive = stepResult.state.freeze.active;
+            runtimeState->freezeAvailable = stepResult.state.freeze.available;
+            runtimeState->freezeTimerSeconds =
+                stepResult.state.freeze.timerSeconds;
         }
         p.clientStateUpdated = false;
 

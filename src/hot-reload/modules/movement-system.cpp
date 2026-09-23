@@ -1100,6 +1100,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         rs.jumpAirJumpArmed = 1;
         rs.dashAvailable = 1;
         rs.downDashAvailable = 1;
+        rs.freezeAvailable = 1;
     }
     if (!ctx->readComponent(ctx->host, e, GAME_COMPONENT_BODY, &body, sizeof(body))) {
         body.radius = 0.4f;
@@ -1232,10 +1233,14 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         fp.freezeHeld = freezeNow ? 1u : 0u;
         fp.freezeHeldPreviously = rs.freezePreviously ? 1u : 0u;
         fp.freezeEnabled = m.freezeEnabled;
-        fp.freezeActive = freezeNow ? 1u : 0u;
-        fp.freezeAvailable = 1u;
+        fp.freezeActive = rs.freezeActive;
+        fp.freezeAvailable = rs.freezeAvailable;
         fp.freezeTimerSeconds = rs.freezeTimerSeconds;
+        fp.movementModel =
+            (m.walkMode == MimitaHotMovement::kWalkModeV206) ? 1u : 0u;
         MimitaHotMovement::freezePolicy(fp);
+        rs.freezeActive = fp.outFreezeActive;
+        rs.freezeAvailable = fp.outFreezeAvailable;
         rs.freezeTimerSeconds = fp.outFreezeTimerSeconds;
         vx = fp.outVelocity[0];
         vy = fp.outVelocity[1];
@@ -1272,15 +1277,41 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             }
         }
 
-        st.velocity[0] = vx;
-        st.velocity[1] = vy;
-        st.velocity[2] = vz;
+        // afad20a freeze suppression: the collision/integration velocity is
+        // scaled by the pass-through curve, while the stored velocity is
+        // reconciled back after the solve so momentum is preserved and returns
+        // when the freeze ends (mirrors physics-mini's collision velocity view).
+        const bool frozenNow =
+            fp.outFreezeActive != 0u &&
+            m.walkMode != MimitaHotMovement::kWalkModeV206;
+        const float freezePass = frozenNow
+            ? MimitaHotMovement::freezePassThrough(rs.freezeTimerSeconds,
+                                                   m.freezeDurationSeconds,
+                                                   m.freezeCurveExponent)
+            : 1.0f;
+        const float storedVx = vx;
+        const float storedVy = vy;
+        const float storedVz = vz;
+        st.velocity[0] = vx * freezePass;
+        st.velocity[1] = vy * freezePass;
+        st.velocity[2] = vz * freezePass;
         // Gravity is owned by the hot gravity policy above; tell the generic
         // capsule solver not to add its own (negative = already integrated).
         st.gravityScale = -1.0f;
         st.grounded = rs.grounded;
         resolveCollisions(ctx, &st, dt, e, tick);
         rs.grounded = st.grounded;
+        if (frozenNow) {
+            if (freezePass > MimitaHotMovement::kFreezeReconcileMinPassThrough) {
+                vx = st.velocity[0] / freezePass;
+                vy = st.velocity[1] / freezePass;
+                vz = st.velocity[2] / freezePass;
+            } else {
+                vx = storedVx;
+                vy = storedVy;
+                vz = storedVz;
+            }
+        }
 
         // ── afad20a POST-collision: reset, then walk -> dash -> jump ──────
         // The contact reset must run before the ability edges are consumed so a
@@ -1296,9 +1327,11 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         else
             rs.reserved[GAME_MOVEMENT_STAMP_FLAGS] &= ~2u;
 
-        vx = st.velocity[0];
-        vy = st.velocity[1];
-        vz = st.velocity[2];
+        if (!frozenNow) {
+            vx = st.velocity[0];
+            vy = st.velocity[1];
+            vz = st.velocity[2];
+        }
 
         if (fp.outFreezeActive == 0u) {
             // SPEED: one shared hot speed policy derives the effective max speed

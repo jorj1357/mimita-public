@@ -168,6 +168,9 @@ bool MIMITA_GAME_CALL capReadComponent(void*, std::uint64_t entity,
         o->jumpIntentSeconds=c->jumpIntentSeconds;
         o->dashGraceSeconds=c->dashGraceSeconds;
         o->freezePreviously=c->freezePreviously?1u:0u;
+        o->freezeActive=c->freezeActive?1u:0u;
+        o->freezeAvailable=c->freezeAvailable?1u:0u;
+        o->freezeTimerSeconds=c->freezeTimerSeconds;
         o->reserved[GAME_MOVEMENT_STAMP_TICK]=c->lastSimTick;
         o->reserved[GAME_MOVEMENT_STAMP_GENERATION]=c->lastSimGeneration;
         o->reserved[GAME_MOVEMENT_STAMP_FLAGS]=0u;
@@ -321,6 +324,9 @@ bool MIMITA_GAME_CALL capWriteComponent(void*, std::uint64_t entity,
         c.jumpIntentSeconds=i->jumpIntentSeconds;
         c.dashGraceSeconds=i->dashGraceSeconds;
         c.freezePreviously=i->freezePreviously!=0;
+        c.freezeActive=i->freezeActive!=0;
+        c.freezeAvailable=i->freezeAvailable!=0;
+        c.freezeTimerSeconds=i->freezeTimerSeconds;
         c.lastSimTick=i->reserved[GAME_MOVEMENT_STAMP_TICK];
         c.lastSimGeneration=i->reserved[GAME_MOVEMENT_STAMP_GENERATION];
         return true; }

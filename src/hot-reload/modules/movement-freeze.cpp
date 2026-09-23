@@ -38,6 +38,8 @@ void freezePolicy(GameFreezePolicyV1& io)
         io.freezePressed != 0u || (io.freezeHeld != 0u && io.freezeHeldPreviously == 0u);
     const bool released = io.freezeHeld == 0u && io.freezeHeldPreviously != 0u;
 
+    const bool v206 = io.movementModel == 1u;
+
     float vx = io.velocity[0];
     float vy = io.velocity[1];
     float vz = io.velocity[2];
@@ -47,10 +49,13 @@ void freezePolicy(GameFreezePolicyV1& io)
     bool startedThisTick = false;
 
     if (pressed && available != 0u) {
-        // afad20a: activation hard-stops stored velocity (all axes).
-        vx = 0.0f;
-        vy = 0.0f;
-        vz = 0.0f;
+        // afad20a: activation hard-stops stored velocity (all axes). v2.0.6
+        // instead suppresses through the curve below, including this tick.
+        if (!v206) {
+            vx = 0.0f;
+            vy = 0.0f;
+            vz = 0.0f;
+        }
         active = 1u;
         available = 0u;
         timer = 0.0f;
@@ -64,24 +69,22 @@ void freezePolicy(GameFreezePolicyV1& io)
         io.outFreezeEnded = 1u;
     }
 
-    // afad20a freeze: while held, stored velocity is scaled by the pass-through
-    // curve pow(timer/duration, 4). At t=0 movement is fully suppressed; by the
-    // end of the duration it passes through completely. Release ends it above.
-    if (active != 0u && io.freezeHeld != 0u && !startedThisTick) {
+    // afad20a: activation hard-stops the stored velocity; while held the stored
+    // velocity is NOT rescaled. The pass-through curve is applied by the caller
+    // to the collision/integration velocity only, so momentum is preserved and
+    // returns when the freeze ends. The timer drives that curve.
+    // v2.0.6: the stored velocity is multiplied by the piecewise-quadratic curve
+    // every held tick, including the activation tick.
+    if (active != 0u && io.freezeHeld != 0u && (v206 || !startedThisTick)) {
         timer += io.dt;
         if (io.durationSeconds > 0.0f && timer > io.durationSeconds)
             timer = io.durationSeconds;
-
-        float passThrough = 1.0f;
-        if (io.durationSeconds > 0.0f) {
-            float u = timer / io.durationSeconds;
-            if (u < 0.0f) u = 0.0f;
-            if (u > 1.0f) u = 1.0f;
-            passThrough = u * u * u * u;
+        if (v206) {
+            const float mult = freezeVelocityMultiplierV206(timer);
+            vx *= mult;
+            vy *= mult;
+            vz *= mult;
         }
-        vx *= passThrough;
-        vy *= passThrough;
-        vz *= passThrough;
     }
 
     io.outVelocity[0] = vx;

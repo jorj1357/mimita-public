@@ -83,21 +83,38 @@ bool runMovementParitySelfTest(std::string& report)
     ok &= check(MimitaRuntime::GenericRuntime::instance().systemCount() > 0,
                 "hot package active with systems", report);
 
-    // Two identical runs must agree exactly (determinism of the hot path).
+    // Two identical runs from FRESH entities must agree exactly. afad20a ground
+    // contacts bounce, and the bounce cooldown is per-entity state; a fresh
+    // entity for each run removes that carry-over.
+    const EntityId entityB = Ecs::ensure(EntityRealm::Local, EntityDomain::Player, 2);
+    Ecs::setBody(entityB, 1.0f, 0.4f, 1.8f);
+    Ecs::setMovementIntent(entityB, 0.0f, 0.0f, false, false, false, false, false);
+    const EntityId entityC = Ecs::ensure(EntityRealm::Local, EntityDomain::Player, 3);
+    Ecs::setBody(entityC, 1.0f, 0.4f, 1.8f);
+    Ecs::setMovementIntent(entityC, 0.0f, 0.0f, false, false, false, false, false);
+
+    GameSharedStateV1* shared =
+        MimitaRuntime::GenericRuntime::instance().sharedState();
+
     float posA[3] = {0.0f, 0.0f, 0.0f};
     float velA[3] = {0.0f, 0.0f, 0.0f};
     float posB[3] = {0.0f, 0.0f, 0.0f};
     float velB[3] = {0.0f, 0.0f, 0.0f};
-    const bool gotA = runHotMovement(entity, 120, posA, velA);
-    const bool gotB = runHotMovement(entity, 120, posB, velB);
+    if (shared)
+        shared->localPlayerEntity = (std::uint64_t)entityB;
+    const bool gotA = runHotMovement(entityB, 120, posA, velA);
+    if (shared)
+        shared->localPlayerEntity = (std::uint64_t)entityC;
+    const bool gotB = runHotMovement(entityC, 120, posB, velB);
     ok &= check(gotA && gotB, "hot movement produced overrides", report);
     ok &= check(std::fabs(posA[2] - posB[2]) < 1e-4f &&
                     std::fabs(velA[2] - velB[2]) < 1e-4f,
                 "hot movement path deterministic", report);
 
-    // It must land on the floor, not fall through, and end at rest vertically.
+    // It must land on the floor, not fall through, and stay finite. afad20a
+    // ground response bounces, so vertical rest is not expected.
     ok &= check(posA[2] > 0.5f, "hot movement lands on floor", report);
-    ok &= check(std::fabs(velA[2]) < 0.5f, "hot movement vertical rest", report);
+    ok &= check(std::isfinite(velA[2]), "hot movement vertical finite", report);
 
     // Landing height: the capsule center rests at radius + segment half, i.e.
     // tipHalf = 0.9 for this test capsule (radius 0.4, halfHeight 0.9). The old

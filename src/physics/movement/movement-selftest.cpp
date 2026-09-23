@@ -78,8 +78,9 @@ bool runMovementSelfTest(std::string& report)
     const EntityId entity = Ecs::ensure(EntityRealm::Local, EntityDomain::Player, 1);
     Ecs::setBody(entity, 1.0f, 0.4f, 1.8f);
     Ecs::setMovementIntent(entity, 0.0f, 0.0f, false, false, false, false, false);
-    if (GameSharedStateV1* shared =
-            MimitaRuntime::GenericRuntime::instance().sharedState()) {
+    GameSharedStateV1* shared =
+        MimitaRuntime::GenericRuntime::instance().sharedState();
+    if (shared) {
         shared->magic = GAME_SHARED_MAGIC;
         shared->modeFlags = GAME_MODE_FLAG_HOT_MOVEMENT;
         shared->localPlayerEntity = (std::uint64_t)entity;
@@ -94,25 +95,40 @@ bool runMovementSelfTest(std::string& report)
     ok &= check(posA[2] < 10.0f && std::isfinite(posA[2]),
                 "gravity applied", report);
 
-    // Determinism: two identical runs must agree exactly.
+    // Determinism: two identical runs from FRESH entities must agree exactly.
+    // afad20a ground contacts bounce, and the bounce cooldown is per-entity
+    // state; using a fresh entity for each run removes that carry-over.
+    const EntityId entityB = Ecs::ensure(EntityRealm::Local, EntityDomain::Player, 2);
+    Ecs::setBody(entityB, 1.0f, 0.4f, 1.8f);
+    Ecs::setMovementIntent(entityB, 0.0f, 0.0f, false, false, false, false, false);
+    const EntityId entityC = Ecs::ensure(EntityRealm::Local, EntityDomain::Player, 3);
+    Ecs::setBody(entityC, 1.0f, 0.4f, 1.8f);
+    Ecs::setMovementIntent(entityC, 0.0f, 0.0f, false, false, false, false, false);
     float posB[3] = {0.0f, 0.0f, 0.0f};
     float velB[3] = {0.0f, 0.0f, 0.0f};
-    runHotMovement(entity, 120, posB, velB);
+    if (shared)
+        shared->localPlayerEntity = (std::uint64_t)entityB;
+    runHotMovement(entityB, 120, posB, velB);
     float posC[3] = {0.0f, 0.0f, 0.0f};
     float velC[3] = {0.0f, 0.0f, 0.0f};
-    runHotMovement(entity, 120, posC, velC);
+    if (shared)
+        shared->localPlayerEntity = (std::uint64_t)entityC;
+    runHotMovement(entityC, 120, posC, velC);
     ok &= check(std::fabs(posB[2] - posC[2]) < 1e-4f &&
                     std::fabs(velB[2] - velC[2]) < 1e-4f,
                 "hot movement path deterministic", report);
 
-    // Floor collision: the actor settles on the floor and reports grounded.
+    // Floor collision: the actor does not fall through and stays finite.
     ok &= check(posB[2] > 0.5f, "capsule does not fall through floor", report);
-    ok &= check(std::fabs(velB[2]) < 0.5f, "vertical velocity settles", report);
+    ok &= check(std::isfinite(velB[2]), "vertical velocity finite", report);
+
+    if (shared)
+        shared->localPlayerEntity = (std::uint64_t)entity;
 
     // Grounded down-dash repeat (afad20a): a fresh Q press on the ground must
     // fire a down-dash every time, because the grounded contact restores the
-    // ability each tick. Press for one tick, release for nine, and count the
-    // HOT_FIRED_DOWN_DASH facts the hot movement publishes.
+    // ability each tick. The down-dash into the ground must also BOUNCE the
+    // actor up (afad20a ground response), not just settle.
     {
         MimitaRuntime::GenericRuntime& rt =
             MimitaRuntime::GenericRuntime::instance();
@@ -132,7 +148,7 @@ bool runMovementSelfTest(std::string& report)
         }
         int fired = 0;
         int presses = 0;
-        int groundedTicks = 0;
+        int bouncedUp = 0;
         for (int i = 0; i < 200; ++i) {
             const bool press = (i % 10) == 0;
             if (press)
@@ -145,6 +161,8 @@ bool runMovementSelfTest(std::string& report)
                          LiveBehavior::hostContext(t));
             float p[3], v[3], y;
             rt.consumeMovementOverride(p, v, y);
+            if (v[2] > 1.0f)
+                ++bouncedUp;
             HotMovementFiredV1 f{};
             if (store.read(entity, HOT_MOVEMENT_FIRED_COMPONENT, &f,
                            (std::uint32_t)sizeof(f)) &&
@@ -154,17 +172,12 @@ bool runMovementSelfTest(std::string& report)
                 store.write(entity, HOT_MOVEMENT_FIRED_COMPONENT, &f,
                             (std::uint32_t)sizeof(f));
             }
-            if (const MovementRuntimeStateComponent* rs =
-                    EntityRegistry::instance()
-                        .tryGet<MovementRuntimeStateComponent>(entity)) {
-                if (rs->grounded)
-                    ++groundedTicks;
-            }
         }
-        ok &= check(groundedTicks > 150,
-                    "grounded down-dash: stays grounded", report);
         ok &= check(fired >= presses - 2,
                     "grounded down-dash: fires on each fresh press", report);
+        ok &= check(bouncedUp > 0,
+                    "grounded down-dash: bounces up (afad20a ground response)",
+                    report);
     }
 
     HotReloadSystem::instance().unloadGameDLL();

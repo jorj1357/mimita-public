@@ -491,8 +491,10 @@ bool runMovementAlgorithmSelfTest(std::string& report)
             return f;
         }());
         ok &= check(h.handled == 1u && h.outDidFreeze == 0u &&
-                        h.outFreezeActive == 1u && approx(h.outVelocity[0], 0.0f),
-                    "hot freeze keeps the actor frozen while held", report);
+                        h.outFreezeActive == 1u &&
+                        approx(h.outVelocity[0], 5.0f),
+                    "hot freeze keeps stored velocity while held (no rescale)",
+                    report);
 
         GameFreezePolicyV1 r = runFreeze([&] {
             GameFreezePolicyV1 f = base;

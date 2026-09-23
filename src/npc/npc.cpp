@@ -548,6 +548,9 @@ void projectNpcBodyFromGeneric(Npc& npc, EntityId entity)
         npc.body.ground.onGround = rs->grounded;
         npc.body.ground.hasWorldContact = rs->grounded;
         npc.body.ground.stableOnGround = rs->grounded;
+        npc.body.freeze.freezeActive = rs->freezeActive;
+        npc.body.freeze.freezeAvailable = rs->freezeAvailable;
+        npc.body.freeze.freezeTimer = rs->freezeTimerSeconds;
     }
 }
 
@@ -1279,6 +1282,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
                 rs = &reg.add<MovementRuntimeStateComponent>(
                     moveEntity, MovementRuntimeStateComponent{});
             rs->grounded = npc.body.ground.onGround;
+            rs->freezeActive = npc.body.freeze.freezeActive;
+            rs->freezeAvailable = npc.body.freeze.freezeAvailable;
+            rs->freezeTimerSeconds = npc.body.freeze.freezeTimer;
         }
         auto* moveFn = reinterpret_cast<GameNpcMoveFn>(
             MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_NPC_MOVE));

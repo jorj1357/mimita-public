@@ -1094,6 +1094,8 @@ void updateFreeze(MovementState& state,
         fp.freezeActive = state.freeze.active ? 1u : 0u;
         fp.freezeAvailable = state.freeze.available ? 1u : 0u;
         fp.freezeTimerSeconds = state.freeze.timerSeconds;
+        fp.movementModel =
+            (config.walkMode == MovementWalkMode::V206) ? 1u : 0u;
         fp.handled = 0;
         if (LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_MOVEMENT_FREEZE, &fp,
                                                   sizeof(fp), 0, 0, 0) &&

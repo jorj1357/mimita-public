@@ -219,6 +219,7 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
         rs.jumpAirJumpArmed = 1u;
         rs.dashAvailable = 1u;
         rs.downDashAvailable = 1u;
+        rs.freezeAvailable = 1u;
     }
 
     GameBodyComponentV1 body{};
@@ -281,10 +282,14 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     fp.freezeHeld = freezeNow ? 1u : 0u;
     fp.freezeHeldPreviously = rs.freezePreviously ? 1u : 0u;
     fp.freezeEnabled = m.freezeEnabled;
-    fp.freezeActive = freezeNow ? 1u : 0u;
-    fp.freezeAvailable = 1u;
+    fp.freezeActive = rs.freezeActive;
+    fp.freezeAvailable = rs.freezeAvailable;
     fp.freezeTimerSeconds = rs.freezeTimerSeconds;
+    fp.movementModel =
+        (m.walkMode == MimitaHotMovement::kWalkModeV206) ? 1u : 0u;
     MimitaHotMovement::freezePolicy(fp);
+    rs.freezeActive = fp.outFreezeActive;
+    rs.freezeAvailable = fp.outFreezeAvailable;
     rs.freezeTimerSeconds = fp.outFreezeTimerSeconds;
     vx = fp.outVelocity[0];
     vy = fp.outVelocity[1];
@@ -333,6 +338,24 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     st.gravityScale = -1.0f;
     st.grounded = rs.grounded;
 
+    // afad20a freeze suppression: scale the collision velocity by the
+    // pass-through curve and reconcile the stored velocity after the solve so
+    // momentum is preserved and returns when the freeze ends.
+    const bool frozenNow =
+        fp.outFreezeActive != 0u &&
+        m.walkMode != MimitaHotMovement::kWalkModeV206;
+    const float freezePass = frozenNow
+        ? MimitaHotMovement::freezePassThrough(rs.freezeTimerSeconds,
+                                               m.freezeDurationSeconds,
+                                               m.freezeCurveExponent)
+        : 1.0f;
+    const float storedVx = vx;
+    const float storedVy = vy;
+    const float storedVz = vz;
+    st.velocity[0] = vx * freezePass;
+    st.velocity[1] = vy * freezePass;
+    st.velocity[2] = vz * freezePass;
+
     // Universal collision owner: the same `collision.main` package the local
     // player uses. `physics.move` is no longer called here.
     resolveActorCollisions(ctx, &st, dt, e, static_cast<std::uint64_t>(tick));
@@ -345,9 +368,21 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
     if (st.collided || st.grounded)
         MimitaHotMovement::restoreTouchAbilities(rs);
 
-    vx = st.velocity[0];
-    vy = st.velocity[1];
-    vz = st.velocity[2];
+    if (frozenNow) {
+        if (freezePass > MimitaHotMovement::kFreezeReconcileMinPassThrough) {
+            vx = st.velocity[0] / freezePass;
+            vy = st.velocity[1] / freezePass;
+            vz = st.velocity[2] / freezePass;
+        } else {
+            vx = storedVx;
+            vy = storedVy;
+            vz = storedVz;
+        }
+    } else {
+        vx = st.velocity[0];
+        vy = st.velocity[1];
+        vz = st.velocity[2];
+    }
 
     if (fp.outFreezeActive == 0u)
     {

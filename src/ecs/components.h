@@ -113,6 +113,11 @@ struct MovementRuntimeStateComponent {
     float jumpIntentSeconds = 0.0f;
     float dashGraceSeconds = 0.0f;
     bool freezePreviously = false;
+    // afad20a freeze runtime (persistent): active freeze state, availability
+    // (consumed on use, restored by a contact), and the pass-through timer.
+    bool freezeActive = false;
+    bool freezeAvailable = true;
+    float freezeTimerSeconds = 0.0f;
     // Hot actor-movement handshake: tick/generation of the last hot simulation
     // that owned this actor. Cold server movement yields when lastSimTick equals
     // the current server tick, so only one path moves an actor per tick.

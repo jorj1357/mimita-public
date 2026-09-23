@@ -340,6 +340,7 @@ bool checkFreezeCurve(std::string& report)
         p.freezeActive = 1u;
         p.freezeAvailable = 0u;
         p.freezeTimerSeconds = c.t;
+        p.movementModel = 1u;  // v2.0.6 destructive freeze curve
         p.handled = 0u;
 
         const bool handled =

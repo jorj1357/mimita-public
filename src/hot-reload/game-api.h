@@ -95,7 +95,7 @@ struct GameMovementIntentComponentV1 {
     std::uint32_t downDash;
     std::uint32_t freeze;
 };
-static constexpr std::uint32_t MOVEMENT_RUNTIME_STATE_VERSION = 2;
+static constexpr std::uint32_t MOVEMENT_RUNTIME_STATE_VERSION = 3;
 
 struct GameMovementRuntimeStateComponentV1 {
     std::uint32_t version;
@@ -112,6 +112,11 @@ struct GameMovementRuntimeStateComponentV1 {
     float jumpIntentSeconds;
     float dashGraceSeconds;
     std::uint32_t freezePreviously;
+    // afad20a freeze runtime: active is the persistent freeze state, available
+    // is consumed on use and restored by a world/body contact, timer drives the
+    // pass-through suppression curve. Persisted so the hot policy is stateless.
+    std::uint32_t freezeActive;
+    std::uint32_t freezeAvailable;
     float freezeTimerSeconds;
     // reserved[0] = tick of the last hot actor-movement simulation,
     // reserved[1] = hot generation that produced it,
