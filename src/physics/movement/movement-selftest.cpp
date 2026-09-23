@@ -13,8 +13,11 @@
 #include <glm/glm.hpp>
 
 #include "ecs/actor-entities.h"
+#include "ecs/components.h"
+#include "ecs/dynamic-components.h"
 #include "ecs/entity-registry.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-movement-fired.h"
 #include "hot-reload/hot-reload-system.h"
 #include "live-code/live-behavior.h"
 #include "physics/physics-types.h"
@@ -105,6 +108,64 @@ bool runMovementSelfTest(std::string& report)
     // Floor collision: the actor settles on the floor and reports grounded.
     ok &= check(posB[2] > 0.5f, "capsule does not fall through floor", report);
     ok &= check(std::fabs(velB[2]) < 0.5f, "vertical velocity settles", report);
+
+    // Grounded down-dash repeat (afad20a): a fresh Q press on the ground must
+    // fire a down-dash every time, because the grounded contact restores the
+    // ability each tick. Press for one tick, release for nine, and count the
+    // HOT_FIRED_DOWN_DASH facts the hot movement publishes.
+    {
+        MimitaRuntime::GenericRuntime& rt =
+            MimitaRuntime::GenericRuntime::instance();
+        MimitaRuntime::DynamicComponentStore& store =
+            MimitaRuntime::DynamicComponentStore::instance();
+        Ecs::setTransform(entity, glm::vec3(0.0f, 0.0f, 10.0f),
+                          glm::vec3(0.0f, 1.0f, 0.0f), 0.0f, 0.0f);
+        Ecs::setVelocity(entity, glm::vec3(0.0f), glm::vec3(0.0f));
+        for (int i = 0; i < 90; ++i) {
+            Ecs::setMovementIntent(entity, 0.0f, 0.0f, false, false, false,
+                                   false, false);
+            rt.beginMovementTick();
+            rt.runDomain(GAME_DOMAIN_GAMEPLAY, (std::uint64_t)i, kDt,
+                         LiveBehavior::hostContext((std::uint64_t)i));
+            float p[3], v[3], y;
+            rt.consumeMovementOverride(p, v, y);
+        }
+        int fired = 0;
+        int presses = 0;
+        int groundedTicks = 0;
+        for (int i = 0; i < 200; ++i) {
+            const bool press = (i % 10) == 0;
+            if (press)
+                ++presses;
+            Ecs::setMovementIntent(entity, 0.0f, 0.0f, false, false, false,
+                                   press, false);
+            const std::uint64_t t = 1000ull + (std::uint64_t)i;
+            rt.beginMovementTick();
+            rt.runDomain(GAME_DOMAIN_GAMEPLAY, t, kDt,
+                         LiveBehavior::hostContext(t));
+            float p[3], v[3], y;
+            rt.consumeMovementOverride(p, v, y);
+            HotMovementFiredV1 f{};
+            if (store.read(entity, HOT_MOVEMENT_FIRED_COMPONENT, &f,
+                           (std::uint32_t)sizeof(f)) &&
+                (f.flags & HOT_FIRED_DOWN_DASH) != 0u) {
+                ++fired;
+                f.flags &= ~HOT_FIRED_DOWN_DASH;
+                store.write(entity, HOT_MOVEMENT_FIRED_COMPONENT, &f,
+                            (std::uint32_t)sizeof(f));
+            }
+            if (const MovementRuntimeStateComponent* rs =
+                    EntityRegistry::instance()
+                        .tryGet<MovementRuntimeStateComponent>(entity)) {
+                if (rs->grounded)
+                    ++groundedTicks;
+            }
+        }
+        ok &= check(groundedTicks > 150,
+                    "grounded down-dash: stays grounded", report);
+        ok &= check(fired >= presses - 2,
+                    "grounded down-dash: fires on each fresh press", report);
+    }
 
     HotReloadSystem::instance().unloadGameDLL();
     EntityRegistry::instance().destroyAll();

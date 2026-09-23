@@ -14,6 +14,8 @@
 #include "hot-reload/hot-animation-blender.h"
 #include "hot-reload/hot-animation-clips.h"
 #include "hot-reload/hot-animation-physical.h"
+#include "hot-reload/hot-animation-afad20a.h"
+#include "hot-reload/hot-animation-weapon-poses.h"
 #include "hot-reload/hot-animation.h"
 
 #include <cmath>
@@ -274,6 +276,25 @@ bool runAnimationSelfTest(char* message, std::uint32_t messageSize)
         afad20aSampleClip(clip, 0.25f, 1.0f, cppOut);
         if (std::memcmp(&jsonOut, &cppOut, sizeof(Pose)) != 0)
             return fail(message, messageSize, "afad20a/json sampling parity");
+    }
+
+    // afad20a C++ animation evaluator: state machine, dash/freeze overlay
+    // weights, exact spring, idle sway.
+    {
+        char afadMsg[MIMITA_GAME_SELFTEST_MESSAGE] = {0};
+        if (!Afad20a::runAfad20aAnimationSelfTest(
+                afadMsg, (std::uint32_t)sizeof(afadMsg)))
+            return fail(message, messageSize,
+                        afadMsg[0] ? afadMsg : "afad20a animation self-test failed");
+    }
+
+    // afad20a per-weapon arm pose table: state mapping + arm application.
+    {
+        char wpMsg[MIMITA_GAME_SELFTEST_MESSAGE] = {0};
+        if (!HotWeaponPose::runWeaponPoseSelfTest(
+                wpMsg, (std::uint32_t)sizeof(wpMsg)))
+            return fail(message, messageSize,
+                        wpMsg[0] ? wpMsg : "weapon pose self-test failed");
     }
 
     if (message && messageSize)

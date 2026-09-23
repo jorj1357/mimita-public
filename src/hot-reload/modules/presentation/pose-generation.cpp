@@ -17,7 +17,9 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-action.h"
+#include "hot-reload/hot-animation-afad20a.h"
 #include "hot-reload/hot-animation-clips.h"
+#include "hot-reload/hot-animation-weapon-poses.h"
 #include "hot-reload/hot-animation.h"
 #include "hot-reload/hot-animation-physical.h"
 #include "hot-reload/hot-package.h"
@@ -286,6 +288,105 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
             sizeof(mem));
         const bool justLanded = hasMem && mem.prevGrounded == 0;
 
+        // ── afad20a C++ animation path (locomotionSource: "cpp") ───────────
+        // afad20a had three clip states (idle/walk/return_to_idle), dash and
+        // freeze as pose OVERLAYS with timers, idle sway, and an exact
+        // springVec3 ease. This reproduces that; the JSON sampler path below
+        // stays available by setting locomotionSource: "json".
+        if (HotAnim::afad20aSourceCpp()) {
+            GameMovementIntentComponentV1 mi{};
+            ctx->readComponent(ctx->host, entity, GAME_COMPONENT_MOVEMENT_INTENT,
+                               &mi, sizeof(mi));
+            const bool moving = mi.pressed != 0;
+            const bool freezeActive = mi.freeze != 0;
+            const bool didDash = anim.actionId == HOT_ACTION_DASH ||
+                                 anim.actionId == HOT_ACTION_DOWN_DASH;
+
+            Afad20a::State st{};
+            if (!ctx->dynamicReadComponent(ctx->host, entity,
+                                           Afad20a::HOT_AFAD_STATE_COMPONENT, &st,
+                                           sizeof(st)) ||
+                st.version != Afad20a::HOT_AFAD_STATE_VERSION) {
+                st = Afad20a::State{};
+                st.version = Afad20a::HOT_AFAD_STATE_VERSION;
+                st.dashPoseTimer = -1.0f;
+                st.freezePoseTimer = -1.0f;
+            }
+            const float returnDur =
+                HotAnim::actionClip(HOT_ACTION_RETURN_TO_IDLE).duration;
+            Afad20a::stepState(st, moving,
+                               HotAnim::jsonClipApplied(HOT_ACTION_RETURN_TO_IDLE),
+                               returnDur, dt);
+            st.weaponSwayTime += dt;
+
+            const std::uint64_t kIdle = gameHash("idle");
+            const std::uint64_t kWalk = gameHash("walk");
+            const std::uint64_t kReturn = gameHash("return_to_idle");
+            std::uint64_t baseAction = HOT_ACTION_IDLE;
+            if (st.currentClip == kWalk)
+                baseAction = HOT_ACTION_WALK;
+            else if (st.currentClip == kReturn)
+                baseAction = HOT_ACTION_RETURN_TO_IDLE;
+
+            HotAnim::Pose target;
+            HotAnim::afad20aSampleClip(HotAnim::actionClip(baseAction),
+                                       st.animStateTime,
+                                       HotAnim::afad20aWalkSpeedScale(), target);
+            // Tool action arms: the afad20a per-weapon `weapons.<id>.poses`
+            // table when weaponPoseSource is "json"; otherwise the hot tool
+            // phases / JSON carry stance (the compiled path).
+            HotWeaponPose::Pose wp{};
+            const ToolVisualRecipeV1* tool = findToolVisual(weaponKey);
+            const ToolAnimPhaseV1* toolPhase =
+                tool ? findToolPhase(*tool, anim.actionId) : nullptr;
+            if (HotWeaponPose::sourceIsJson() &&
+                HotWeaponPose::poseFor(weaponKey, anim.actionId, wp)) {
+                HotWeaponPose::apply(target, wp);
+            } else if (toolPhase && toolPhase->frames &&
+                       toolPhase->frameCount > 0) {
+                HotAnim::ActionClip pc{};
+                pc.duration = toolPhase->duration;
+                pc.loop = static_cast<std::uint8_t>(toolPhase->loop ? 1 : 0);
+                pc.fullBody = 0;
+                pc.mask = toolPhase->mask;
+                pc.frames = toolPhase->frames;
+                pc.frameCount = toolPhase->frameCount;
+                HotAnim::Pose overlay;
+                HotAnim::sampleClip(pc, anim.playbackTime, overlay);
+                HotAnim::applyMask(target, overlay, toolPhase->mask);
+            } else {
+                HotAnim::applyWeaponArms(target, weaponKey, anim.actionId);
+            }
+            // afad20a overlay order: freeze mix, then dash mix.
+            const float fw = Afad20a::freezeWeight(st, freezeActive, dt);
+            Afad20a::applyOverlay(target, Afad20a::freezePose(), fw,
+                                  HotAnim::MaskFull);
+            const float dw = Afad20a::dashWeight(st, didDash, dt);
+            Afad20a::applyOverlay(target, Afad20a::dashPose(), dw,
+                                  HotAnim::MaskFull);
+            // Idle procedural sway while idle.
+            if (st.currentClip == kIdle)
+                Afad20a::applyIdleSway(target, st.weaponSwayTime, freezeActive);
+            applyAimBody(ctx, entity, target);
+            // Exact afad20a springVec3 ease (persistent value/velocity).
+            Afad20a::springStep(st, target, dt);
+
+            ctx->dynamicWriteComponent(ctx->host, entity,
+                                       Afad20a::HOT_AFAD_STATE_COMPONENT, &st,
+                                       sizeof(st));
+
+            GameSkeletonPoseV1 pose{};
+            pose.entity = entity;
+            pose.flags = 2;  // pose contract version 2 (radians)
+            for (std::uint32_t p = 0; p < HotAnim::PartCount; ++p) {
+                if ((target.mask & (1u << p)) == 0)
+                    continue;
+                addPart(pose, HotAnim::partHash(p), target.part[p]);
+            }
+            apply(ctx->host, &pose);
+            continue;
+        }
+
         // Generic facts for locomotion base composition.
         bool grounded = hasAction &&
                         (action.flags & HOT_ACTION_FLAG_GROUNDED) != 0;
@@ -427,6 +528,10 @@ void MIMITA_GAME_CALL poseGenerationTick(void* host, std::uint64_t /*tick*/,
 const MimitaHotPackage::SchemaRegistrar s_poseStateSchema{
     {HOT_POSE_STATE_COMPONENT, gameHash("PoseState.v1"), sizeof(HotPoseStateV1),
      8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE, "PoseState", 1, 0}};
+const MimitaHotPackage::SchemaRegistrar s_afadStateSchema{
+    {Afad20a::HOT_AFAD_STATE_COMPONENT, gameHash("AfadAnimState.v1"),
+     sizeof(Afad20a::State), 8, GAME_COPY_RUNTIME_ONLY, GAME_NET_NONE,
+     "AfadAnimState", 1, 0}};
 const MimitaHotPackage::SystemRegistrar s_poseSystem{
     {gameHash("hot.pose-generation"), GAME_DOMAIN_RENDER, 2, 0,
      poseGenerationTick, "hot.pose-generation"}};
