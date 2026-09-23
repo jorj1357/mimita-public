@@ -17,6 +17,7 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-audio-policy.h"
 #include "hot-reload/hot-movement-fired.h"
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/packages/collision/collision-log.h"
@@ -721,9 +722,9 @@ void logMovementBranch(GameplayContextV1* ctx, const char* why,
     b.sinceLogSeconds = 0.0f;
 }
 
-void playActionSound(GameplayContextV1* ctx, std::uint64_t owner,
-                     const float pos[3], const char* sound, float volume,
-                     float pitch);
+void playActionRecipe(GameplayContextV1* ctx, std::uint64_t owner,
+                      const float pos[3], std::uint64_t recipeKey,
+                      float volumeScale, float pitchScale);
 
 // afad20a applied the current pose before updating model transforms and
 // collecting body samples. Re-publish the last hot pose at the collision
@@ -837,8 +838,8 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
         // scales with the impact speed.
         if (!wasGrounded && q.grounded) {
             const float volume = std::clamp(maxIncoming / 30.0f, 0.2f, 1.0f);
-            playActionSound(ctx, entity, st->position, "entity/player/land",
-                            volume, 1.0f);
+            playActionRecipe(ctx, entity, st->position, gameHash("landing"),
+                             volume, 1.0f);
         }
     }
 
@@ -912,35 +913,21 @@ void spawnEffect(GameplayContextV1* ctx, std::uint64_t kind, const float pos[3],
     fn(ctx->host, &d);
 }
 
-// Actions do not call feature-specific audio functions.  They publish one
-// generic audio command and the kernel resolves the logical sound name through
-// the existing audio player.  Keeping this at the shared movement owner makes
-// dash/down-dash presentation identical for local prediction and hot actors.
-void playActionSound(GameplayContextV1* ctx, std::uint64_t owner,
-                     const float pos[3], const char* sound, float volume,
-                     float pitch)
+// Actions do not call feature-specific audio functions. They name a logical
+// recipe; the hot audio-policy owner resolves sound/variant/volume/pitch from
+// config/audio-recipes.json and emits one audio.play command. Keeping this at
+// the shared movement owner makes dash/down-dash/jump presentation identical for
+// local prediction and hot actors.
+void playActionRecipe(GameplayContextV1* ctx, std::uint64_t owner,
+                      const float pos[3], std::uint64_t recipeKey,
+                      float volumeScale, float pitchScale)
 {
-    if (!ctx || !ctx->resolveCapability || !sound || !sound[0])
+    if (!ctx || !ctx->resolveCapability)
         return;
-    auto fn = reinterpret_cast<GameAudioPlayFn>(
-        ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
-    if (!fn)
-        return;
-    GameAudioCommandV1 command{};
-    std::snprintf(command.sound, sizeof(command.sound), "%s", sound);
-    command.position[0] = pos[0];
-    command.position[1] = pos[1];
-    command.position[2] = pos[2];
-    command.volume = volume;
-    command.pitch = pitch;
-    command.maxDistance = 50.0f;
-    command.spatial = 1u;
-    command.action = 0u;
-    command.ownerEntity = owner;
-    command.slotId = 0u;
-    command.op = GAME_AUDIO_PLAY_ONESHOT;
-    command.loop = 0u;
-    fn(ctx->host, &command);
+    HotAudioOverrideV1 ov{};
+    ov.volumeScale = volumeScale;
+    ov.pitchScale = pitchScale;
+    hotEmitRecipeSound(ctx, recipeKey, pos, owner, true, &ov);
 }
 
 void logAction(GameplayContextV1* ctx, std::uint64_t actor,
@@ -1542,7 +1529,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             spawnEffect(ctx, gameHash("effect.dash"), st.position, dir, st.sizeScale, 0.0f);
             const std::uint64_t actionId =
                 (static_cast<std::uint64_t>(tick) << 32u) ^ e ^ gameHash("dash");
-            playActionSound(ctx, e, st.position, "entity/player/dash", 1.0f, 1.0f);
+            playActionRecipe(ctx, e, st.position, gameHash("dash"), 1.0f, 1.0f);
             logAction(ctx, e, tick, "dash", actionId,
                       rs.dashAvailable != 0u, st.position, st.velocity);
         }
@@ -1550,7 +1537,7 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             spawnEffect(ctx, gameHash("effect.downDash"), st.position, nullptr, st.sizeScale, 0.0f);
             const std::uint64_t actionId =
                 (static_cast<std::uint64_t>(tick) << 32u) ^ e ^ gameHash("down_dash");
-            playActionSound(ctx, e, st.position, "entity/player/dash", 1.0f, 0.82f);
+            playActionRecipe(ctx, e, st.position, gameHash("down_dash"), 1.0f, 1.0f);
             logAction(ctx, e, tick, "down_dash", actionId,
                       rs.downDashAvailable != 0u, st.position, st.velocity);
         }
@@ -1558,10 +1545,9 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
             const std::uint64_t effectId = didAirJump
                 ? gameHash("effect.airJump") : gameHash("effect.groundJump");
             spawnEffect(ctx, effectId, st.position, nullptr, st.sizeScale, 0.0f);
-            playActionSound(ctx, e, st.position,
-                            didAirJump ? "entity/player/doublejump"
-                                       : "entity/player/jump",
-                            1.0f, 1.0f);
+            playActionRecipe(ctx, e, st.position,
+                             gameHash(didAirJump ? "air_jump" : "ground_jump"),
+                             1.0f, 1.0f);
         }
         if (freezeEdge)
             spawnEffect(ctx, gameHash("effect.freeze"), st.position, nullptr, st.sizeScale, 0.0f);

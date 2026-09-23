@@ -16,6 +16,7 @@
 #include "audio/audio.h"
 #include "debug/debug-log.h"
 #include "entities/player.h"
+#include "live-code/live-behavior.h"
 #include "npc/npc.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
@@ -120,7 +121,9 @@ void WeaponQuickHit::startAttack(QuickHitState& state, const WeaponDefinition& d
         attackSound.pitch = 1.0f;
         attackSound.maxDistance = 40.0f;
         attackSound.ownerId = QUICKHIT_SOUND_OWNER_ID;
-        AudioManager::instance().play(attackSound);
+        if (!LiveBehavior::emitAudioFact("weapon.melee", def.soundShoot.c_str(),
+                                         owner.pos, 0, true))
+            AudioManager::instance().play(attackSound);
     }
 
     // Set shoot effect timer for pose system

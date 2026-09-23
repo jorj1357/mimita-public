@@ -359,6 +359,11 @@ unsigned int AudioManager::cachedSoundCount() const
     return static_cast<unsigned int>(gSoundFileCache.size());
 }
 
+bool AudioManager::deviceActive() const
+{
+    return gAudioInit;
+}
+
 void AudioManager::stopOwner(unsigned int ownerId)
 {
     if (ownerId == 0) return;

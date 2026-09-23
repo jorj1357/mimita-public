@@ -328,8 +328,11 @@ void NpcSystem::spawnNpc(float difficulty)
         snd.position[1] = spawnPos.y;
         snd.position[2] = spawnPos.z;
         std::snprintf(snd.text, sizeof(snd.text), "%s", "actor.spawn");
-        if (!LiveBehavior::dispatchEffectRequest(snd, 0))
-            AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+        if (!LiveBehavior::dispatchEffectRequest(snd, 0)) {
+            if (!LiveBehavior::emitAudioFact("npc.spawn", "npc_spawn", spawnPos,
+                                             id, true, 1.0f, 1.0f, 0.8f, 1.0f))
+                AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+        }
     }
     Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (global diff=%.1f)\n",
                id, spawnPos.x, spawnPos.y, spawnPos.z, d);
@@ -348,8 +351,11 @@ void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos,
         snd.position[1] = spawnPos.y;
         snd.position[2] = spawnPos.z;
         std::snprintf(snd.text, sizeof(snd.text), "%s", "actor.spawn");
-        if (!LiveBehavior::dispatchEffectRequest(snd, 0))
-            AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+        if (!LiveBehavior::dispatchEffectRequest(snd, 0)) {
+            if (!LiveBehavior::emitAudioFact("npc.spawn", "npc_spawn", spawnPos,
+                                             id, true, 1.0f, 1.0f, 0.8f, 1.0f))
+                AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+        }
     }
     Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (network, diff=%.1f)\n",
                id, spawnPos.x, spawnPos.y, spawnPos.z, d);

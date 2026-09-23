@@ -16,6 +16,7 @@
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "entities/player.h"
+#include "live-code/live-behavior.h"
 #include "npc/npc.h"
 #include "perf/perf-spike.h"
 #include "physics/movement/physics-collision.h"
@@ -198,11 +199,16 @@ static void checkCapsuleHits(SwordswordState& state, const WeaponDefinition& def
             cd = tickInterval;
 
             float vol = std::min(0.5f + (knockback / 80.0f) * 0.5f, 1.0f);
-            playWorldSound("weapon/hafs/hafsknockback", npc.body.pos, vol, 1.0f, 30.0f);
+            if (!LiveBehavior::emitAudioFact("weapon.melee", "weapon/hafs/hafsknockback",
+                                             npc.body.pos, 0, true, 1.0f, 1.0f, vol, 1.0f))
+                playWorldSound("weapon/hafs/hafsknockback", npc.body.pos, vol, 1.0f, 30.0f);
 
             float kbSoundMin = cp(def, "knockbackSoundMinForce", 40.0f);
-            if (knockback > kbSoundMin)
-                playWorldSound("weapon/hafs/hafsknockback", npc.body.pos, 0.8f, 1.0f, 30.0f);
+            if (knockback > kbSoundMin) {
+                if (!LiveBehavior::emitAudioFact("weapon.melee", "weapon/hafs/hafsknockback",
+                                                 npc.body.pos, 0, true, 1.0f, 1.0f, 0.8f, 1.0f))
+                    playWorldSound("weapon/hafs/hafsknockback", npc.body.pos, 0.8f, 1.0f, 30.0f);
+            }
 
             if (DebugConfig::DEBUG_SWORDSWORD) {
                 printf("[SWORDSWORD HIT] target=%u part=%s speed=%.1f total=%.1f dmg=%.1f kb=%.1f\n",
@@ -246,7 +252,9 @@ static void applyWorldHitKnockback(SwordswordState& state, const WeaponDefinitio
                     dir.z * kbStrength * kbV);
     owner.vel += kbVec;
 
-    playWorldSound("weapon/hafs/hafsWorldHit", contactPos, 0.6f, 1.0f, 20.0f);
+    if (!LiveBehavior::emitAudioFact("weapon.impact", "weapon/hafs/hafsWorldHit",
+                                     contactPos, 0, true, 1.0f, 1.0f, 0.6f, 1.0f))
+        playWorldSound("weapon/hafs/hafsWorldHit", contactPos, 0.6f, 1.0f, 20.0f);
     state.worldHitCooldown = cooldown;
 
     if (DebugConfig::DEBUG_SWORDSWORD)
@@ -442,7 +450,9 @@ void startSlash(SwordswordState& state, const WeaponDefinition& def, Player& own
     owner.vel.x += dir2D.x * slashImpulse;
     owner.vel.y += dir2D.y * slashImpulse;
 
-    playWorldSound("weapon/hafs/hafsswing", owner.pos, 0.8f, 1.0f, 30.0f);
+    if (!LiveBehavior::emitAudioFact("weapon.melee", "weapon/hafs/hafsswing",
+                                     owner.pos, 0, true, 1.0f, 1.0f, 0.8f, 1.0f))
+        playWorldSound("weapon/hafs/hafsswing", owner.pos, 0.8f, 1.0f, 30.0f);
     Debug::log(Debug::Category::Weapons, "[SWORD ANIM LOCAL] attacker=%s action=slash-start\n",
                owner.username.c_str());
     Debug::log(Debug::Category::Weapons, "[SWORDSWORD] slash start impulse=%.1f dir=(%.2f %.2f)\n",
@@ -462,7 +472,9 @@ void startLunge(SwordswordState& state, const WeaponDefinition& def, Player& own
     owner.vel.x += dir2D.x * lungeImpulse;
     owner.vel.y += dir2D.y * lungeImpulse;
 
-    playWorldSound("weapon/hafs/hafslunge", owner.pos, 0.8f, 1.0f, 30.0f);
+    if (!LiveBehavior::emitAudioFact("weapon.melee", "weapon/hafs/hafslunge",
+                                     owner.pos, 0, true, 1.0f, 1.0f, 0.8f, 1.0f))
+        playWorldSound("weapon/hafs/hafslunge", owner.pos, 0.8f, 1.0f, 30.0f);
     Debug::log(Debug::Category::Weapons, "[SWORD ANIM LOCAL] attacker=%s action=lunge-start\n",
                owner.username.c_str());
     Debug::log(Debug::Category::Weapons, "[SWORDSWORD] lunge start impulse=%.1f dir=(%.2f %.2f)\n",

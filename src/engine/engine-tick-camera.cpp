@@ -13,6 +13,7 @@
 #include "audio/hitmarker-audio.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "live-code/live-behavior.h"
 #include "replay/replay.h"
 #include "replay/replay-camera.h"
 #include "replay/replay-editor.h"
@@ -1308,11 +1309,17 @@ void engineTickCamera(Engine& engine, float dt)
                     pbspeedMul = gReplayEditor.playbackSpeedAtTick((int)gReplayPlayer.currentTick());
                 // During export the clip audio is mixed into the MP4 separately;
                 // do not also play the sounds live.
-                if (!isReplayExportActive())
-                    playWorldSound(
-                        sound.soundPath, sound.position,
-                        sound.volume, sound.pitch * pbspeedMul,
-                        sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
+                if (!isReplayExportActive()) {
+                    const char* replayRecipe = (sound.soundPath == "hitworld")
+                        ? "projectile.impact" : "weapon.impact";
+                    if (!LiveBehavior::emitAudioFact(replayRecipe, sound.soundPath.c_str(),
+                                                     sound.position, 0, true, 1.0f, 1.0f,
+                                                     sound.volume, sound.pitch * pbspeedMul))
+                        playWorldSound(
+                            sound.soundPath, sound.position,
+                            sound.volume, sound.pitch * pbspeedMul,
+                            sound.maxDistance > 0.0f ? sound.maxDistance : 40.0f);
+                }
             }
             // takeTriggeredSounds() also uses swap() into this reusable buffer.
             sounds.clear();

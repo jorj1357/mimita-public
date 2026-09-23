@@ -526,8 +526,12 @@ void update(
             if (state.gameTime - rocket.lastInAirSoundTime >= inAirInterval) {
                 float volDb = cp(def, "flightSoundVolumeDb", 15.0f);
                 float volMul = powf(10.0f, volDb / 20.0f);
-                playWorldSound("rocketlauncher/rocketlauncherinair", rocket.position,
-                    0.5f * volMul, 1.0f, 40.0f);
+                if (!LiveBehavior::emitAudioFact("projectile.inair",
+                                                 "rocketlauncher/rocketlauncherinair",
+                                                 rocket.position, 0, true, 1.0f, 1.0f,
+                                                 0.5f * volMul, 1.0f))
+                    playWorldSound("rocketlauncher/rocketlauncherinair", rocket.position,
+                        0.5f * volMul, 1.0f, 40.0f);
                 rocket.lastInAirSoundTime = state.gameTime;
             }
         }

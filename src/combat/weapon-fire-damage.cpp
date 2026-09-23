@@ -21,6 +21,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "entities/player.h"
+#include "live-code/live-behavior.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "network/multiplayer-context.h"
 #include "npc/npc.h"
@@ -87,8 +88,10 @@ static void predictRemoteKill(Player& victim,
 
     if (actorType == "npc")
     {
-        AudioManager::instance().play(
-            {"npc_death", AudioCategory::NPC, true, victim.pos, 1.0f, 0.9f, 45.0f, 0});
+        if (!LiveBehavior::emitAudioFact("actor.death", "npc_death", victim.pos,
+                                         0, true, 1.0f, 1.0f, 1.0f, 0.9f))
+            AudioManager::instance().play(
+                {"npc_death", AudioCategory::NPC, true, victim.pos, 1.0f, 0.9f, 45.0f, 0});
     }
 
     Debug::log(Debug::Category::Networking,
@@ -144,7 +147,9 @@ static void presentRemoteHit(const WeaponDefinition& def,
         float vol, pit;
         const auto& sndCfg = WeaponHitFxConfig::instance().soundFor(def.id);
         computeImpactAudio(sndCfg.baseVolume, dist, severity, vol, pit);
-        playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        if (!LiveBehavior::emitAudioFact("weapon.impact", def.soundHit.c_str(), hitEnd,
+                                         0, true, 1.0f, 1.0f, vol, pit))
+            playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
         Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
                    def.soundHit.c_str(), dist, damage, severity, pit, vol);
     }
@@ -230,7 +235,11 @@ void processNpcHit(
         float severity = std::clamp(ctx.angleFactor * ((float)totalDamage / 100.0f) * headMul, 0.0f, 1.0f);
         float vol, pit;
         computeImpactAudio(1.2f, dist, severity, vol, pit);
-        if (!serverAuthHits()) playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        if (!serverAuthHits()) {
+            if (!LiveBehavior::emitAudioFact("weapon.impact", def.soundHit.c_str(),
+                                             hitEnd, 0, true, 1.0f, 1.0f, vol, pit))
+                playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        }
         Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
                    def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
     }
@@ -482,7 +491,9 @@ void processPlayerHit(
         float vol, pit;
         const auto& sndCfg = WeaponHitFxConfig::instance().soundFor(def.id);
         computeImpactAudio(sndCfg.baseVolume, dist, severity, vol, pit);
-        playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
+        if (!LiveBehavior::emitAudioFact("weapon.impact", def.soundHit.c_str(), hitEnd,
+                                         0, true, 1.0f, 1.0f, vol, pit))
+            playWorldSound(def.soundHit, hitEnd, vol, pit, 60.0f);
         Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
                    def.soundHit.c_str(), dist, totalDamage, severity, pit, vol);
     }
@@ -523,7 +534,9 @@ void processWorldHit(
     float vol, pit;
     const auto& sndCfg = WeaponHitFxConfig::instance().soundFor(def.id);
     computeImpactAudio(sndCfg.baseVolume, dist, severity, vol, pit);
-    playWorldSound("hitworld", hitEnd, vol, pit, 60.0f);
+    if (!LiveBehavior::emitAudioFact("projectile.impact", "hitworld", hitEnd,
+                                     0, true, 1.0f, 1.0f, vol, pit))
+        playWorldSound("hitworld", hitEnd, vol, pit, 60.0f);
     Debug::log(Debug::Category::Audio, "[WORLD IMPACT AUDIO] dist=%.1f severity=%.2f pitch=%.2f volume=%.2f\n",
                dist, severity, pit, vol);
 }
@@ -764,7 +777,9 @@ void finalizeMultiPelletResult(
             float severity = std::clamp(accumulatedDamage / 100.0f, 0.0f, 1.0f);
             float vol, pit;
             computeImpactAudio(1.2f, dist, severity, vol, pit);
-            playWorldSound(def.soundHit, lastPelletEnd, vol, pit, 60.0f);
+            if (!LiveBehavior::emitAudioFact("weapon.impact", def.soundHit.c_str(),
+                                             lastPelletEnd, 0, true, 1.0f, 1.0f, vol, pit))
+                playWorldSound(def.soundHit, lastPelletEnd, vol, pit, 60.0f);
             Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f damage=%.0f severity=%.2f pitch=%.2f volume=%.2f\n",
                        def.soundHit.c_str(), dist, accumulatedDamage, severity, pit, vol);
             hitmarker((int)accumulatedDamage);
@@ -782,7 +797,9 @@ void finalizeMultiPelletResult(
         float severity = std::clamp(directness, 0.0f, 1.0f);
         float vol, pit;
         computeImpactAudio(1.2f, dist, severity, vol, pit);
-        playWorldSound("hitworld", lastPelletEnd, vol, pit, 60.0f);
+        if (!LiveBehavior::emitAudioFact("projectile.impact", "hitworld", lastPelletEnd,
+                                         0, true, 1.0f, 1.0f, vol, pit))
+            playWorldSound("hitworld", lastPelletEnd, vol, pit, 60.0f);
         Debug::log(Debug::Category::Audio, "[WORLD IMPACT AUDIO] dist=%.1f severity=%.2f pitch=%.2f volume=%.2f\n",
                    dist, severity, pit, vol);
     }

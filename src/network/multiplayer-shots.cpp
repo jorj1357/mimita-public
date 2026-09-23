@@ -22,6 +22,7 @@
 #include "audio/hitmarker-audio.h"
 #include "ui/hitmarker.h"
 #include "killfeed/killfeed.h"
+#include "live-code/live-behavior.h"
 
 #include "terminal/terminal-state.h"
 #include "config/networking-config.h"
@@ -417,8 +418,10 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         // Death sound for every client. The killfeed line is owned by the
         // single authoritative KillEventPacket, not this damage event, so the
         // killer, victim, and every observer present it exactly once.
-        AudioManager::instance().play(
-            {"npc_death", AudioCategory::NPC, true, hitPos, 1.0f, 0.9f, 45.0f, 0});
+        if (!LiveBehavior::emitAudioFact("actor.death", "npc_death", hitPos,
+                                         0, true, 1.0f, 1.0f, 1.0f, 0.9f))
+            AudioManager::instance().play(
+                {"npc_death", AudioCategory::NPC, true, hitPos, 1.0f, 0.9f, 45.0f, 0});
         if (npcPtr)
         {
             npcPtr->netPredictedDead = false;
@@ -622,7 +625,9 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
     // For non-shooter: play sound and muzzle flash once
     if (!isLocalShooter)
     {
-        playWorldSound("shotgunshoot", visualOrigin, 1.0f, 1.0f, 80.0f);
+        if (!LiveBehavior::emitAudioFact("weapon.fire", "shotgunshoot", visualOrigin,
+                                         0, true, 1.0f, 1.0f))
+            playWorldSound("shotgunshoot", visualOrigin, 1.0f, 1.0f, 80.0f);
         EffectPartSystem::instance().spawnMuzzleFlash(visualOrigin, "", 1.0f, weaponName);
     }
 

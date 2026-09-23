@@ -6,6 +6,7 @@
 #include "devtools/dev-overlay.h"
 #include "effects/effect-part.h"
 #include "audio/audio.h"
+#include "live-code/live-behavior.h"
 #include "debug/debug-log.h"
 
 extern bool gMainmenuDebug;
@@ -59,7 +60,11 @@ void registerDevOverlayCommands()
         "spawnfx_test", "Trigger spawn flash effect immediately", "spawnfx_test",
         [](const std::vector<std::string>&) {
             THE_PLAYER.spawnFlashTimer = 10.0f;
-            playSound("entity/player/spawning", 1.0f);
+            if (!LiveBehavior::emitAudioFact(
+                    "actor.respawn", "entity/player/spawning",
+                    static_cast<const float*>(nullptr), 0, false, 1.0f, 1.0f,
+                    1.0f, 1.0f))
+                playSound("entity/player/spawning", 1.0f);
             Debug::log(Debug::Category::Audio, "[SPAWN FX] spawnfx_test triggered\n");
             Terminal::instance().addLog("[SPAWN FX] test triggered");
         },

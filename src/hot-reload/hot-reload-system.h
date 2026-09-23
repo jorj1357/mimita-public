@@ -168,6 +168,10 @@ private:
 
     std::vector<std::string> hotSources_;
     std::vector<std::string> coldSources_;
+    // EXE-owned dispatch-only bridges (see hot-modules.json "bridges"). Watched
+    // like cold sources for the relink warning, but they carry no behavior: the
+    // policy lives in a hot header/provider.
+    std::vector<std::string> bridgeSources_;
     std::filesystem::path root_;
     std::filesystem::path sourceDLL_;
     std::string manifestHash_;

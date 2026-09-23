@@ -12,6 +12,8 @@
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "network/server-damage-policy.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-physical-contact.h"
 #include "ecs/actor-entities.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
@@ -27,6 +29,19 @@ namespace MimitaNet {
 namespace {
 
 static constexpr uint8_t CONTACT_CONFIRM_BATCH = 4;
+
+// Resolve the active generation's physical-contact policy through the one
+// generic doorway. Never cached across a generation swap. Null when no hot
+// provider is registered.
+static const GamePhysicalContactPolicyV1* hotPhysicalContactPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_PHYSICAL_CONTACT);
+    if (!callable)
+        return nullptr;
+    auto lookup = reinterpret_cast<GamePhysicalContactLookupFn>(callable);
+    return lookup ? lookup(nullptr) : nullptr;
+}
 
 static const WeaponDefinition* equippedWeaponDefinition(const ServerPlayer& player)
 {
@@ -296,52 +311,49 @@ static int physicalContactDamage(const WeaponDefinition& def,
                                  bool swordLunge,
                                  float dt)
 {
+    // The formula is hot (net.physical-contact); the cold bridge resolves the
+    // weapon-definition params and the shape fact it needs.
+    GamePhysicalContactDamageV1 request{};
+    request.structSize = sizeof(GamePhysicalContactDamageV1);
+    request.swordLunge = swordLunge ? 1u : 0u;
+    request.dt = dt;
+    request.shapeTravelDistance = WeaponExecution::physicalShapeTravelDistance(shape);
+    request.shapeHasLength =
+        glm::length(shape.currentB - shape.currentA) > 0.001f ? 1u : 0u;
+
     if (def.behaviorType == WeaponBehaviorType::Godball)
     {
-        const float base = WeaponExecution::paramOr(def, "baseDamagePerTick",
+        request.kind = GAME_PHYSICAL_KIND_GODBALL;
+        request.baseDamage = WeaponExecution::paramOr(def, "baseDamagePerTick",
             std::max(1.0f, def.damage));
-        const float speedFactor = WeaponExecution::paramOr(def, "speedDamageFactor", 0.5f);
-        const float maxDamage = WeaponExecution::paramOr(def, "maxDamageCap", 200.0f);
-        const float speed = WeaponExecution::physicalShapeTravelDistance(shape) /
-            std::max(dt, 0.0001f);
-        return std::clamp((int)std::round(base + speed * speedFactor),
-            1, (int)std::max(1.0f, maxDamage));
+        request.speedDamageFactor = WeaponExecution::paramOr(def, "speedDamageFactor", 0.5f);
+        request.maxDamageCap = WeaponExecution::paramOr(def, "maxDamageCap", 200.0f);
     }
-
-    if (def.behaviorType == WeaponBehaviorType::QuickHit)
+    else if (def.behaviorType == WeaponBehaviorType::QuickHit)
     {
-        // Force-based damage from capsule velocity
-        const float travelDist = WeaponExecution::physicalShapeTravelDistance(shape);
-        const float speed = travelDist / std::max(dt, 0.0001f);
-
-        // Directness: how aligned capsule velocity is with the contact normal
-        // Use shape direction as velocity proxy (previous->current)
-        glm::vec3 shapeDir = shape.currentB - shape.currentA;
-        float shapeLen = glm::length(shapeDir);
-        float directness = 1.0f;
-        if (shapeLen > 0.001f) {
-            shapeDir /= shapeLen;
-            // Use the hit normal if available, otherwise assume head-on
-            directness = 0.8f;
-        }
-
-        float rawForce = speed * directness;
-        float forceScale = WeaponExecution::paramOr(def, "forceDamageScale", 1.0f);
-        float forceExp = WeaponExecution::paramOr(def, "forceDamageExponent", 1.35f);
-        float minDmg = WeaponExecution::paramOr(def, "minDamage", 1.0f);
-        float maxDmg = WeaponExecution::paramOr(def, "maxDamage", 100.0f);
-
-        float damage = minDmg + std::pow(rawForce * forceScale, forceExp);
-        return std::clamp((int)std::round(damage),
-            (int)std::max(1.0f, minDmg), (int)std::max(1.0f, maxDmg));
+        request.kind = GAME_PHYSICAL_KIND_QUICKHIT;
+        request.forceDamageScale = WeaponExecution::paramOr(def, "forceDamageScale", 1.0f);
+        request.forceDamageExponent =
+            WeaponExecution::paramOr(def, "forceDamageExponent", 1.35f);
+        request.minDamage = WeaponExecution::paramOr(def, "minDamage", 1.0f);
+        request.maxDamage = WeaponExecution::paramOr(def, "maxDamage", 100.0f);
+    }
+    else
+    {
+        request.kind = GAME_PHYSICAL_KIND_SWORD;
+        const char* baseKey = swordLunge ? "lungeBaseDamage" : "slashBaseDamage";
+        const char* compatKey = swordLunge ? "lungeDamage" : "slashDamage";
+        const float fallback = swordLunge ? 18.0f : 10.0f;
+        request.baseDamage = WeaponExecution::paramOr(def, baseKey,
+            WeaponExecution::paramOr(def, compatKey, fallback));
     }
 
-    const char* baseKey = swordLunge ? "lungeBaseDamage" : "slashBaseDamage";
-    const char* compatKey = swordLunge ? "lungeDamage" : "slashDamage";
-    const float fallback = swordLunge ? 18.0f : 10.0f;
-    const float base = WeaponExecution::paramOr(def, baseKey,
-        WeaponExecution::paramOr(def, compatKey, fallback));
-    return std::clamp((int)std::round(base), 1, 500);
+    const GamePhysicalContactPolicyV1* policy = hotPhysicalContactPolicy();
+    if (policy && policy->damage)
+        policy->damage(nullptr, &request);
+    else
+        HotPhysicalContactImpl::damage(request);
+    return request.outDamage;
 }
 
 static glm::vec3 physicalContactKnockback(const WeaponDefinition& def,
@@ -349,28 +361,43 @@ static glm::vec3 physicalContactKnockback(const WeaponDefinition& def,
                                           int damage,
                                           bool swordLunge)
 {
-    glm::vec3 normal = hit.normal;
-    if (glm::length(normal) < 0.001f)
-        normal = glm::vec3(0.0f, 0.0f, 1.0f);
-    normal.z = std::max(normal.z, 0.15f);
-    normal = glm::normalize(normal);
+    // The formula is hot (net.physical-contact); the cold bridge resolves the
+    // weapon-definition params it needs.
+    GamePhysicalContactKnockbackV1 request{};
+    request.structSize = sizeof(GamePhysicalContactKnockbackV1);
+    request.damage = damage;
+    request.swordLunge = swordLunge ? 1u : 0u;
+    for (int i = 0; i < 3; ++i)
+        request.normal[i] = hit.normal[i];
 
     if (def.behaviorType == WeaponBehaviorType::QuickHit)
     {
-        float forceKbScale = WeaponExecution::paramOr(def, "forceKnockbackScale", 1.0f);
-        float maxKb = WeaponExecution::paramOr(def, "maxKnockback", 100.0f);
-        float minKb = WeaponExecution::paramOr(def, "minKnockback", 0.0f);
-        float strength = std::clamp((float)damage * forceKbScale, minKb, maxKb);
-        return normal * strength;
+        request.kind = GAME_PHYSICAL_KIND_QUICKHIT;
+        request.forceKnockbackScale =
+            WeaponExecution::paramOr(def, "forceKnockbackScale", 1.0f);
+        request.maxKnockback = WeaponExecution::paramOr(def, "maxKnockback", 100.0f);
+        request.minKnockback = WeaponExecution::paramOr(def, "minKnockback", 0.0f);
+    }
+    else
+    {
+        request.kind = def.behaviorType == WeaponBehaviorType::Godball
+            ? GAME_PHYSICAL_KIND_GODBALL
+            : GAME_PHYSICAL_KIND_SWORD;
+        if (def.behaviorType != WeaponBehaviorType::Godball)
+        {
+            const char* key = swordLunge ? "lungeKnockback" : "slashKnockback";
+            request.swordKnockback =
+                WeaponExecution::paramOr(def, key, std::max(1.0f, damage * 0.75f));
+        }
     }
 
-    float strength = std::max(1.0f, damage * 0.75f);
-    if (def.behaviorType != WeaponBehaviorType::Godball)
-    {
-        const char* key = swordLunge ? "lungeKnockback" : "slashKnockback";
-        strength = WeaponExecution::paramOr(def, key, strength);
-    }
-    return normal * strength;
+    const GamePhysicalContactPolicyV1* policy = hotPhysicalContactPolicy();
+    if (policy && policy->knockback)
+        policy->knockback(nullptr, &request);
+    else
+        HotPhysicalContactImpl::knockback(request);
+    return glm::vec3(request.outKnockback[0], request.outKnockback[1],
+                     request.outKnockback[2]);
 }
 
 static void recordWeaponMovementContact(ServerPlayer& attacker,

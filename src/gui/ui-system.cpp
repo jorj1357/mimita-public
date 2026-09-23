@@ -13,6 +13,7 @@
 #include "gui/gui-media.h"
 #include "gui/gui-coord.h"
 #include "live-code/live-ui.h"
+#include "live-code/live-behavior.h"
 #include "gui/ui-tooltip.h"
 
 #include "audio/audio.h"
@@ -157,7 +158,11 @@ void uiEndFrame()
         {
             printf("[UI HOVER ENTER] id=%s\n", gHoverOwnerKey.c_str());
             if (uiCanPlayUISound()) {
-                playMenuHover();
+                if (!LiveBehavior::emitAudioFact(
+                        "ui.hover", "ui/hover",
+                        static_cast<const float*>(nullptr), 0, false, 1.0f,
+                        1.0f, 0.18f, 1.15f))
+                    playMenuHover();
             }
         }
         gPrevHoverOwnerKey = gHoverOwnerKey;

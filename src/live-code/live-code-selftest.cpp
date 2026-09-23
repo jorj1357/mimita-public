@@ -10,7 +10,12 @@
 #include "hot-reload/hot-reload-system.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-packet-codec.h"
+#include "hot-reload/hot-snapshot-codec.h"
+#include "hot-reload/hot-movement-validation.h"
+#include "hot-reload/hot-physical-contact.h"
+#include "hot-reload/hot-damage-application.h"
 #include "network/packet-codec-wire.h"
+#include "network/snapshot-chunks.h"
 #include "debug/structured-log.h"
 #include "live-code/code-hash.h"
 #include "live-code/live-actor.h"
@@ -351,6 +356,160 @@ bool runLiveCodeSelfTest(std::string& report)
             ok &= check(codec && codec->schemaVersion == 1 && codec->encode &&
                             codec->decode && codec->validate,
                         "hot packet-codecs provider resolves a live codec", report);
+        }
+
+        // ── Hot snapshot-codec registry through the same generic doorway ───
+        // The hot module registers the snapshot codec; the cold dispatcher in
+        // network/snapshot-chunks.cpp resolves it by capability id. This proves
+        // snapshot serialization is a hot source edit with no EXE call site.
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GameSnapshotCodecLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_SNAPSHOT_CODECS));
+            const MimitaNet::GameSnapshotCodecV1* codec =
+                lookup ? lookup(nullptr) : nullptr;
+            ok &= check(codec && codec->build && codec->parse && codec->reassemble,
+                        "hot snapshot-codecs provider resolves a live codec", report);
+            if (codec && codec->build && codec->parse)
+            {
+                MimitaNet::CompactEntityData entity{};
+                entity.networkEntityId = 1;
+                entity.entityType = MimitaNet::ENTITY_PLAYER;
+                entity.active = 1;
+                entity.px = 1.0f; entity.py = 2.0f; entity.pz = 3.0f;
+                entity.aimX = 1.0f;
+                MimitaNet::SnapshotChunkPacket chunk{};
+                MimitaNet::GameSnapshotBuildV1 build{};
+                build.structSize = sizeof(MimitaNet::GameSnapshotBuildV1);
+                build.entityCount = 1;
+                build.serverTick = 99;
+                build.ownerPlayerId = 3;
+                build.entities = &entity;
+                build.outChunks = &chunk;
+                build.maxChunks = 1;
+                codec->build(nullptr, &build);
+                ok &= check(build.result == 1u && build.outChunkCount == 1u,
+                            "hot snapshot codec builds a chunk", report);
+                MimitaNet::SnapshotChunkPacket parsed{};
+                MimitaNet::GameSnapshotParseV1 parse{};
+                parse.structSize = sizeof(MimitaNet::GameSnapshotParseV1);
+                parse.data = &chunk;
+                parse.bytes = (std::uint32_t)MimitaNet::snapshotChunkWireSize(1);
+                parse.out = &parsed;
+                codec->parse(nullptr, &parse);
+                ok &= check(parse.result == 1u && parsed.entityCount == 1u &&
+                                parsed.entities[0].networkEntityId == 1,
+                            "hot snapshot codec parses a chunk", report);
+            }
+        }
+
+        // ── Hot movement-validation policy through the same generic doorway ─
+        // The hot module registers the server movement-report policy; the cold
+        // bridge in network/movement-validation.cpp resolves it by capability id.
+        {
+            auto validateFn = reinterpret_cast<MimitaNet::GameMovementValidateFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_MOVEMENT_VALIDATE));
+            ok &= check(validateFn != nullptr,
+                        "hot movement-validation provider resolves", report);
+            if (validateFn)
+            {
+                auto fillBase = [](MimitaNet::GameMovementValidateV1& req) {
+                    req.structSize = sizeof(MimitaNet::GameMovementValidateV1);
+                    req.playerExists = 1; req.connectionActive = 1;
+                    req.connectionOwnsPlayer = 1; req.spawned = 1;
+                    req.spawnStateActive = 1; req.movementEnabled = 1;
+                    req.spawnGeneration = 3; req.transformEpoch = 4;
+                    req.reportSizeScale = 1.0f; req.acceptedStateFinite = 1;
+                    for (int i = 0; i < 3; ++i) {
+                        req.worldBoundsMin[i] = -100.0f;
+                        req.worldBoundsMax[i] = 100.0f;
+                    }
+                    req.reportPosition[0] = 1.0f;
+                    req.reportPosition[1] = 2.0f;
+                    req.reportPosition[2] = 3.0f;
+                };
+
+                MimitaNet::GameMovementValidateV1 accept{};
+                fillBase(accept);
+                accept.reportSpawnGeneration = 3;
+                accept.reportTransformEpoch = 4;
+                validateFn(nullptr, &accept);
+                ok &= check(accept.result == 1u && accept.decision == 0u,
+                            "hot movement-validation accepts a valid report", report);
+
+                MimitaNet::GameMovementValidateV1 stale{};
+                fillBase(stale);
+                stale.reportSpawnGeneration = 2;
+                stale.reportTransformEpoch = 4;
+                validateFn(nullptr, &stale);
+                ok &= check(
+                    stale.result == 1u && stale.decision == 2u &&
+                        stale.reason == (std::uint32_t)
+                            MimitaNet::MovementValidationReason::SpawnGenerationMismatch,
+                    "hot movement-validation rejects a stale generation", report);
+            }
+        }
+
+        // ── Hot physical-contact policy through the same generic doorway ───
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GamePhysicalContactLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_PHYSICAL_CONTACT));
+            const MimitaNet::GamePhysicalContactPolicyV1* policy =
+                lookup ? lookup(nullptr) : nullptr;
+            ok &= check(policy && policy->damage && policy->knockback,
+                        "hot physical-contact provider resolves", report);
+            if (policy && policy->damage)
+            {
+                MimitaNet::GamePhysicalContactDamageV1 dmg{};
+                dmg.structSize = sizeof(MimitaNet::GamePhysicalContactDamageV1);
+                dmg.kind = MimitaNet::GAME_PHYSICAL_KIND_SWORD;
+                dmg.baseDamage = 10.0f;
+                policy->damage(nullptr, &dmg);
+                ok &= check(dmg.result == 1u && dmg.outDamage == 10,
+                            "hot physical-contact sword damage", report);
+            }
+        }
+
+        // ── Hot damage-application rules through the same generic doorway ──
+        {
+            auto evaluate = reinterpret_cast<MimitaNet::GameDamageApplicationFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_DAMAGE_APPLICATION));
+            ok &= check(evaluate != nullptr,
+                        "hot damage-application provider resolves", report);
+            if (evaluate)
+            {
+                MimitaNet::GameDamageApplicationV1 friendly{};
+                friendly.structSize = sizeof(MimitaNet::GameDamageApplicationV1);
+                friendly.attackerFound = 1;
+                friendly.targetTeam = 1;
+                friendly.attackerTeam = 1;
+                friendly.targetHealth = 100;
+                friendly.damage = 10;
+                evaluate(nullptr, &friendly);
+                ok &= check(friendly.accept == 0u &&
+                                friendly.rejectReason == (std::uint32_t)
+                                    MimitaNet::GAME_DAMAGE_REJECT_FRIENDLY_FIRE,
+                            "hot damage-application rejects friendly fire", report);
+
+                MimitaNet::GameDamageApplicationV1 lethal{};
+                lethal.structSize = sizeof(MimitaNet::GameDamageApplicationV1);
+                lethal.attackerFound = 1;
+                lethal.targetTeam = 0;
+                lethal.attackerTeam = 1;
+                lethal.targetHealth = 10;
+                lethal.damage = 30;
+                lethal.respawnsEnabled = 1;
+                lethal.respawnSeconds = 3.0f;
+                evaluate(nullptr, &lethal);
+                ok &= check(lethal.accept == 1u && lethal.killed == 1u &&
+                                lethal.healthAfter == 0 &&
+                                lethal.outRespawnSeconds == 3.0f,
+                            "hot damage-application applies lethal + respawn rule",
+                            report);
+            }
         }
 
         // ── End-to-end hot round trip ───────────────────────────────────────

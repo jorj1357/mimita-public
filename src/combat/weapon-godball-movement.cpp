@@ -25,6 +25,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "entities/player.h"
+#include "live-code/live-behavior.h"
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
 #include "world/world.h"
@@ -655,7 +656,9 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                         float severity = std::clamp((float)rounded / 100.0f, 0.0f, 1.0f);
                         float vol, pit;
                         computeImpactAudio(1.0f, dist, severity, vol, pit);
-                        playWorldSound("godballhit", hitPt, vol, pit, 60.0f);
+                        if (!LiveBehavior::emitAudioFact("projectile.impact", "godballhit",
+                                                         hitPt, 0, true, 1.0f, 1.0f, vol, pit))
+                            playWorldSound("godballhit", hitPt, vol, pit, 60.0f);
                     }
                 }
 

@@ -33,6 +33,7 @@
 #include "hot-reload/hot-reload-system.h"
 #include "debug/debug-visuals.h"
 #include "live-code/live-behavior.h"
+#include "live-code/live-journal.h"
 #include "live-code/live-ui.h"
 #include "hot-reload/hot-ui.h"
 #include "project/presentation-resource.h"
@@ -129,6 +130,9 @@ bool runHotCombatSelfTest(std::string& report)
     // Start the same central events.jsonl logger so the weapon probe is real
     // evidence rather than console-only test output.
     StructuredLogger::instance().init();
+    // Start the live journal too so audio status/trace/rejection events are
+    // written to the same JSONL record a live run would produce.
+    LiveEventJournal::instance().init();
 
     EntityRegistry::instance().destroyAll();
     DynamicComponentStore::instance().clear();
@@ -1184,21 +1188,36 @@ bool runHotCombatSelfTest(std::string& report)
         ok &= check(fireHandled && LiveBehavior::audioPlayCount() > audioBefore3,
                     "real weapon-fire sound policy is hot (audio.play)", report);
 
-        // Footstep + air-jump audio use the same generic movement-fact substrate.
+        // Footstep: the canonical movement fact is owned by the hot composer,
+        // which now resolves the sound through the audio-policy recipe snapshot.
         EffectRequestV1 stepReq{};
-        stepReq.effectTypeId = gameHash("effect.footstep.sound");
+        stepReq.effectTypeId = gameHash("effect.movement.footstep");
         const std::uint64_t stepBefore = LiveBehavior::audioPlayCount();
         const bool stepHandled = LiveBehavior::dispatchEffectRequest(stepReq, 28);
         ok &= check(stepHandled && LiveBehavior::audioPlayCount() > stepBefore,
-                    "grounded footstep audio policy is hot (audio.play)", report);
+                    "footstep recipe is hot (effect.movement.footstep -> audio.play)",
+                    report);
 
-        EffectRequestV1 stepCustom{};
-        stepCustom.effectTypeId = gameHash("effect.footstep.sound");
-        std::snprintf(stepCustom.text, sizeof(stepCustom.text), "mod/custom_step");
-        const std::uint64_t custBefore = LiveBehavior::audioPlayCount();
-        const bool custHandled = LiveBehavior::dispatchEffectRequest(stepCustom, 29);
-        ok &= check(custHandled && LiveBehavior::audioPlayCount() > custBefore,
-                    "arbitrary logical footstep sound id is hot (no enum)", report);
+        // Generic sound-only fact: a recipe key reaches audio.play through the
+        // hot audio-policy owner with no effect/visual implied.
+        GameAudioFactV1 fact{};
+        fact.recipeKey = gameHash("footstep");
+        fact.spatial = 1;
+        const std::uint64_t factBefore = LiveBehavior::audioPlayCount();
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact,
+                                              sizeof(fact), 29);
+        ok &= check(fact.handled && LiveBehavior::audioPlayCount() > factBefore,
+                    "audio.fact recipe reaches audio.play (sound-only fact)", report);
+
+        // An unknown recipe is left unhandled so the cold fallback stays the
+        // sole owner (no silent success).
+        GameAudioFactV1 unknownFact{};
+        unknownFact.recipeKey = gameHash("recipe.does.not.exist");
+        unknownFact.spatial = 1;
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &unknownFact,
+                                              sizeof(unknownFact), 29);
+        ok &= check(unknownFact.handled == 0,
+                    "unknown audio recipe is unhandled (cold fallback owns)", report);
 
         EffectRequestV1 actorSnd{};
         actorSnd.effectTypeId = gameHash("effect.actor.sound");
@@ -1347,13 +1366,60 @@ bool runHotCombatSelfTest(std::string& report)
             }
         }
 
+        // Phase 2: generic audio status command + journal events. The command
+        // resolves audio.play and issues QUERY_STATUS/SET_TRACE; the kernel
+        // journals device status, traced requests, and rejected commands.
+        ok &= check(runtime.hasCommand("audio"),
+                    "hot audio command registered (status/resources/voices/reload/trace)",
+                    report);
+        {
+            GameplayContextV1* actx = LiveBehavior::hostContext(33);
+            const std::uint64_t jBefore = LiveBehavior::audioJournalCount();
+            const bool ran = runtime.runCommand("audio", "status", actx);
+            ok &= check(ran && LiveBehavior::audioJournalCount() > jBefore,
+                        "audio status command reports and journals device status",
+                        report);
+
+            auto audio = actx ? reinterpret_cast<GameAudioPlayFn>(
+                                    actx->resolveCapability(actx->host,
+                                                            GAME_CAP_AUDIO_PLAY))
+                              : nullptr;
+            if (audio) {
+                runtime.runCommand("audio", "trace 1", actx);
+                GameAudioCommandV1 c{};
+                c.commandVersion = GAME_AUDIO_COMMAND_VERSION;
+                c.structSize = sizeof(GameAudioCommandV1);
+                c.op = GAME_AUDIO_PLAY_ONESHOT;
+                c.hotGeneration = 7u;
+                std::snprintf(c.sound, sizeof(c.sound), "entity/player/dash");
+                c.volume = 0.5f;
+                c.pitch = 1.0f;
+                const std::uint64_t jTrace = LiveBehavior::audioJournalCount();
+                audio(actx->host, &c);
+                ok &= check(
+                    LiveBehavior::audioJournalCount() >= jTrace + 2,
+                    "traced one-shot journals hot activation + requested + accepted",
+                    report);
+                runtime.runCommand("audio", "trace 0", actx);
+            }
+        }
+
         EffectRequestV1 jumpReq{};
         jumpReq.effectTypeId = gameHash("effect.movement.air_jump");
         jumpReq.scale = 1.0f;
-        const std::uint64_t jumpBefore = LiveBehavior::audioPlayCount();
-        const bool jumpHandled = LiveBehavior::dispatchEffectRequest(jumpReq, 30);
-        ok &= check(jumpHandled && LiveBehavior::audioPlayCount() > jumpBefore,
-                    "air-jump visual/audio uses the same movement-fact substrate", report);
+        ok &= check(LiveBehavior::dispatchEffectRequest(jumpReq, 30),
+                    "air-jump visual is hot-owned (movement-fact substrate)", report);
+
+        // Air-jump sound is owned by the hot movement action edge and resolved
+        // through the audio-policy recipe (sound-only fact path).
+        GameAudioFactV1 airFact{};
+        airFact.recipeKey = gameHash("air_jump");
+        airFact.spatial = 1;
+        const std::uint64_t airBefore = LiveBehavior::audioPlayCount();
+        LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &airFact,
+                                              sizeof(airFact), 30);
+        ok &= check(airFact.handled && LiveBehavior::audioPlayCount() > airBefore,
+                    "air-jump recipe reaches audio.play via audio.fact", report);
 
         EffectRequestV1 dashReq{};
         dashReq.effectTypeId = gameHash("effect.movement.dash");

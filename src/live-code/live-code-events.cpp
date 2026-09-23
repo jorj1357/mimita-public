@@ -11,6 +11,7 @@
 #include "debug/debug-log.h"
 #include "live-code/live-identity.h"
 #include "live-code/live-journal.h"
+#include "live-code/live-behavior.h"
 #include "notifications/notifications.h"
 #include "utils/time-format.h"
 
@@ -82,7 +83,10 @@ void notifyCompileFailed(const std::string& file, std::uint32_t candidateGenerat
         "\nattempt=" + std::to_string(attempt) +
         "\nerror=" + error;
     NotificationSystem::instance().pushCritical("LIVE CODE", message, 0);
-    playSound("live/failure", 0.7f);
+    if (!LiveBehavior::emitAudioFact("live.failure", "live/failure",
+                                     static_cast<const float*>(nullptr), 0, false,
+                                     1.0f, 1.0f, 0.7f, 1.0f))
+        playSound("live/failure", 0.7f);
 
     LiveEventJournal::Fields fields;
     fields.file = file;
@@ -128,7 +132,10 @@ void notifyActivated(std::uint32_t generation, const std::string& codeHash)
     if (LiveIdentity::simulationTick() != 0)
         message += "\ntick=" + std::to_string(LiveIdentity::simulationTick());
     NotificationSystem::instance().pushImportant("LIVE CODE", message, 240);
-    playSound("live/success", 0.8f);
+    if (!LiveBehavior::emitAudioFact("live.success", "live/success",
+                                     static_cast<const float*>(nullptr), 0, false,
+                                     1.0f, 1.0f, 0.8f, 1.0f))
+        playSound("live/success", 0.8f);
 
     LiveEventJournal::Fields fields;
     fields.generation = generation;
@@ -202,7 +209,10 @@ void notifyRollbackActivated(std::uint32_t generation, const std::string& codeHa
         "rollback activated\n" + identityBlock() +
             "\ngeneration=" + std::to_string(generation),
         240);
-    playSound("live/success", 0.8f);
+    if (!LiveBehavior::emitAudioFact("live.success", "live/success",
+                                     static_cast<const float*>(nullptr), 0, false,
+                                     1.0f, 1.0f, 0.8f, 1.0f))
+        playSound("live/success", 0.8f);
 
     LiveEventJournal::Fields fields;
     fields.generation = generation;
@@ -223,7 +233,10 @@ void notifyValidationFailed(std::uint32_t generation, const std::string& error)
             "\ncandidateGeneration=" + std::to_string(generation) +
             "\nerror=" + error,
         0);
-    playSound("live/failure", 0.7f);
+    if (!LiveBehavior::emitAudioFact("live.failure", "live/failure",
+                                     static_cast<const float*>(nullptr), 0, false,
+                                     1.0f, 1.0f, 0.7f, 1.0f))
+        playSound("live/failure", 0.7f);
     LiveEventJournal::Fields fields;
     fields.generation = generation;
     fields.hasGeneration = true;
@@ -243,7 +256,10 @@ void notifyBoundaryViolation(const std::string& file)
             "\nfile=" + file +
             "\nreason=EXE-owned kernel change\nMiMITA.exe was not restarted",
         0);
-    playSound("live/failure", 0.7f);
+    if (!LiveBehavior::emitAudioFact("live.failure", "live/failure",
+                                     static_cast<const float*>(nullptr), 0, false,
+                                     1.0f, 1.0f, 0.7f, 1.0f))
+        playSound("live/failure", 0.7f);
 }
 
 void notifyColdRestartPending(const std::string& file)

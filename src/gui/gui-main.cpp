@@ -1014,7 +1014,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                         printf("[ONLINE MENU] External server process launched port=%u code=%s map=%s\n",
                                gServerLaunchSettings.port, gServerLaunchSettings.serverCode.c_str(),
                                gServerLaunchSettings.mapName.c_str());
-                        printf("[ONLINE MENU] Use 'Connect Localhost' or run: --client --connect 127.0.0.1:%u --name <name>\n",
+                        printf("[ONLINE MENU] Use 'Connect Localhost' to join 127.0.0.1:%u\n",
                                gServerLaunchSettings.port);
                     }
                     else

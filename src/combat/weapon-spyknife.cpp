@@ -22,6 +22,7 @@
 #include "world/world.h"
 #include "physics/physics-types.h"
 #include "effects/hit-effects.h"
+#include "live-code/live-behavior.h"
 #include "ui/hitmarker.h"
 #include "combat/death-system.h"
 #include "devtools/terminal.h"
@@ -252,7 +253,9 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
         attackSound.pitch = 1.0f;
         attackSound.maxDistance = 40.0f;
         attackSound.ownerId = SPYKNIFE_SOUND_OWNER_ID;
-        AudioManager::instance().play(attackSound);
+        if (!LiveBehavior::emitAudioFact("weapon.melee", def.soundShoot.c_str(),
+                                         owner.pos, 0, true))
+            AudioManager::instance().play(attackSound);
     }
 
     WeaponRuntime* rt = nullptr;
@@ -321,7 +324,9 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
         bsSound.volume = 1.0f;
         bsSound.pitch = 1.0f;
         bsSound.maxDistance = 50.0f;
-        AudioManager::instance().play(bsSound);
+        if (!LiveBehavior::emitAudioFact("weapon.impact", "spyknifebackstab",
+                                         target.pos, 0, true))
+            AudioManager::instance().play(bsSound);
     }
 
     glm::vec3 kbDir = toLen > 0.001f ? toTarget / toLen : glm::vec3(0.0f, 0.0f, 1.0f);

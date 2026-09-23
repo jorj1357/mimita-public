@@ -8,6 +8,7 @@
 #include "live-code/code-hash.h"
 #include "live-code/live-code-events.h"
 #include "live-code/live-journal.h"
+#include "live-code/network-journal-events.h"
 #include "debug/structured-log.h"
 #include "utils/path_utils.h"
 #include "utils/time-format.h"
@@ -299,6 +300,7 @@ bool HotReloadSystem::beginBuild(const std::string& reason)
     fields.module = summary;
     fields.result = reason;
     LiveEventJournal::instance().record("source_hash_changed", fields);
+    LiveEventJournal::instance().record(LiveNetEvents::kReloadRequested, fields);
 
     buildRunning_ = true;
     buildRequested_ = true;
@@ -536,6 +538,20 @@ bool HotReloadSystem::tryActivateCandidate()
         }
     }
 
+    // Safe-point barrier: every validation has passed and no gameplay is
+    // running on this thread between here and the swap, so the module tables
+    // and registered package can be replaced without draining an active call.
+    {
+        LiveEventJournal::Fields barrier;
+        barrier.generation = candidate.generation;
+        barrier.hasGeneration = true;
+        barrier.codeHash = candidate.codeHash;
+        barrier.extra = std::string("\"active_generation\":") +
+            std::to_string(active_.generation) +
+            ",\"candidate_generation\":" + std::to_string(candidate.generation);
+        LiveEventJournal::instance().record(LiveNetEvents::kBarrierEntered, barrier);
+    }
+
     retireRecord(previous_);
     previous_ = active_;
     active_ = candidate;
@@ -554,6 +570,15 @@ bool HotReloadSystem::tryActivateCandidate()
     nextRetryMonoMs_ = 0;
 
     LiveCodeEvents::notifyActivated(active_.generation, active_.codeHash);
+    {
+        LiveEventJournal::Fields activated;
+        activated.generation = active_.generation;
+        activated.hasGeneration = true;
+        activated.codeHash = active_.codeHash;
+        activated.result = "activated";
+        LiveEventJournal::instance().record(LiveNetEvents::kGenerationActivated, activated);
+        LiveEventJournal::instance().record(LiveNetEvents::kBarrierReleased, activated);
+    }
     {
         debug::Event ev;
         ev.category = "HOT_RELOAD";
@@ -671,6 +696,14 @@ bool HotReloadSystem::rollback()
     }
     LiveCodeEvents::notifyRollbackActivated(active_.generation, active_.codeHash);
     {
+        LiveEventJournal::Fields rolledBack;
+        rolledBack.generation = active_.generation;
+        rolledBack.hasGeneration = true;
+        rolledBack.codeHash = active_.codeHash;
+        rolledBack.result = "rollback";
+        LiveEventJournal::instance().record(LiveNetEvents::kGenerationRollback, rolledBack);
+    }
+    {
         debug::Event ev;
         ev.category = "HOT_RELOAD";
         ev.name = "module.reloaded";
@@ -705,6 +738,7 @@ void HotReloadSystem::loadManifest()
 {
     hotSources_.clear();
     coldSources_.clear();
+    bridgeSources_.clear();
     std::ifstream file(manifestPath());
     if (!file.is_open()) {
         hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
@@ -733,6 +767,10 @@ void HotReloadSystem::loadManifest()
             for (const auto& cold : json["cold"])
                 coldSources_.push_back(cold.get<std::string>());
         }
+        if (json.contains("bridges") && json["bridges"].is_array()) {
+            for (const auto& bridge : json["bridges"])
+                bridgeSources_.push_back(bridge.get<std::string>());
+        }
     } catch (...) {
         hotSources_ = {"src/effects/effect-part.cpp", "src/hot-reload/game-api.h"};
     }
@@ -744,6 +782,8 @@ void HotReloadSystem::loadManifest()
     hotSources_.erase(std::unique(hotSources_.begin(), hotSources_.end()), hotSources_.end());
     std::sort(coldSources_.begin(), coldSources_.end());
     coldSources_.erase(std::unique(coldSources_.begin(), coldSources_.end()), coldSources_.end());
+    std::sort(bridgeSources_.begin(), bridgeSources_.end());
+    bridgeSources_.erase(std::unique(bridgeSources_.begin(), bridgeSources_.end()), bridgeSources_.end());
 }
 
 std::filesystem::path HotReloadSystem::manifestPath() const
@@ -770,32 +810,41 @@ void HotReloadSystem::pollManifestReload()
 
 void HotReloadSystem::pollColdBoundary()
 {
-    for (const auto& relative : coldSources_) {
-        const std::filesystem::path path = root_ / relative;
-        WIN32_FILE_ATTRIBUTE_DATA data{};
-        if (!GetFileAttributesExW(path.wstring().c_str(), GetFileExInfoStandard, &data))
-            continue;
-        ULARGE_INTEGER value{};
-        value.LowPart = data.ftLastWriteTime.dwLowDateTime;
-        value.HighPart = data.ftLastWriteTime.dwHighDateTime;
-        const std::uint64_t stamp = value.QuadPart;
-        auto it = coldMtimes_.find(relative);
-        if (it == coldMtimes_.end()) {
-            coldMtimes_[relative] = stamp;
-            continue;
-        }
-        if (it->second == stamp)
-            continue;
-        it->second = stamp;
+    auto checkSources = [this](const std::vector<std::string>& sources,
+                               const char* result, const char* error) {
+        for (const auto& relative : sources) {
+            const std::filesystem::path path = root_ / relative;
+            WIN32_FILE_ATTRIBUTE_DATA data{};
+            if (!GetFileAttributesExW(path.wstring().c_str(), GetFileExInfoStandard, &data))
+                continue;
+            ULARGE_INTEGER value{};
+            value.LowPart = data.ftLastWriteTime.dwLowDateTime;
+            value.HighPart = data.ftLastWriteTime.dwHighDateTime;
+            const std::uint64_t stamp = value.QuadPart;
+            auto it = coldMtimes_.find(relative);
+            if (it == coldMtimes_.end()) {
+                coldMtimes_[relative] = stamp;
+                continue;
+            }
+            if (it->second == stamp)
+                continue;
+            it->second = stamp;
 
-        LiveEventJournal::Fields fields;
-        fields.file = relative;
-        fields.result = "HOT_RELOAD_BOUNDARY_VIOLATION";
-        fields.error = "cold kernel change cannot be activated without relinking mimita.exe";
-        LiveEventJournal::instance().record("hot_reload_boundary_violation", fields);
-        LiveCodeEvents::notifyBoundaryViolation(relative);
-        coldPendingFile_ = relative;
-    }
+            LiveEventJournal::Fields fields;
+            fields.file = relative;
+            fields.result = result;
+            fields.error = error;
+            LiveEventJournal::instance().record("hot_reload_boundary_violation", fields);
+            LiveCodeEvents::notifyBoundaryViolation(relative);
+            coldPendingFile_ = relative;
+        }
+    };
+
+    checkSources(coldSources_, "HOT_RELOAD_BOUNDARY_VIOLATION",
+                 "cold kernel change cannot be activated without relinking mimita.exe");
+    // Dispatch-only bridges carry no behavior, but a change still needs a relink.
+    checkSources(bridgeSources_, "HOT_RELOAD_BRIDGE_CHANGE",
+                 "dispatch-only bridge change cannot be activated without relinking mimita.exe");
 
     // Periodic in-game reminder while a cold change is waiting for a restart.
     if (!coldPendingFile_.empty()) {

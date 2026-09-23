@@ -28,6 +28,7 @@
 #include "debug/structured-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "live-code/live-behavior.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "replay/replay.h"
 #include "gui/hud/chat-bubble.h"
@@ -631,9 +632,12 @@ void engineTickNet(Engine& engine, float dt)
                         shootSound = "rocketlauncher/rocketshoot";
                     else if (event.weapon == MimitaNet::NETWORK_WEAPON_GRENADE_LAUNCHER)
                         shootSound = "grenadelauncher/grenadelaunchershoot";
-                    playWorldSound(
-                        shootSound, event.origin + visualDelta,
-                        1.0f, 1.0f, 80.0f);
+                    if (!LiveBehavior::emitAudioFact("weapon.fire", shootSound,
+                                                     event.origin + visualDelta, 0, true,
+                                                     1.0f, 1.0f))
+                        playWorldSound(
+                            shootSound, event.origin + visualDelta,
+                            1.0f, 1.0f, 80.0f);
                 }
 
                 if (event.effectFlags &
@@ -690,7 +694,11 @@ void engineTickNet(Engine& engine, float dt)
                     computeImpactAudio(1.2f, dist, 0.5f, vol, pit);
                     const char* hitEvent = event.impactType == MimitaNet::SHOT_IMPACT_WORLD
                         ? "hitworld" : "player_hurt";
-                    playWorldSound(hitEvent, event.hit, vol, pit, 60.0f);
+                    const char* hitRecipe = event.impactType == MimitaNet::SHOT_IMPACT_WORLD
+                        ? "projectile.impact" : "weapon.impact";
+                    if (!LiveBehavior::emitAudioFact(hitRecipe, hitEvent, event.hit, 0, true,
+                                                     1.0f, 1.0f, vol, pit))
+                        playWorldSound(hitEvent, event.hit, vol, pit, 60.0f);
                     Debug::log(Debug::Category::Audio, "[%s AUDIO] dist=%.1f pitch=%.2f volume=%.2f\n",
                                event.impactType == MimitaNet::SHOT_IMPACT_WORLD ? "WORLD IMPACT" : "HIT",
                                dist, pit, vol);

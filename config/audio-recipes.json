@@ -1,0 +1,370 @@
+{
+  "ground_jump": {
+    "sounds": ["entity/player/jump"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 28.0,
+    "falloffStart": 2.0,
+    "category": "Movement",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "air_jump": {
+    "sounds": ["entity/player/doublejump"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 22.0,
+    "falloffStart": 2.0,
+    "category": "Movement",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "dash": {
+    "sounds": ["entity/player/dash"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 36.0,
+    "falloffStart": 2.0,
+    "category": "Movement",
+    "spatialMode": "world",
+    "priority": 25,
+    "overlap": "allow"
+  },
+
+  "down_dash": {
+    "sounds": ["entity/player/dash"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 0.82 },
+    "maxDistance": 36.0,
+    "falloffStart": 2.0,
+    "category": "Movement",
+    "spatialMode": "world",
+    "priority": 25,
+    "overlap": "allow"
+  },
+
+  "landing": {
+    "sounds": ["entity/player/land"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 32.0,
+    "falloffStart": 2.0,
+    "category": "Movement",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "footstep": {
+    "sounds": [
+      "entity/player/walk1",
+      "entity/player/walk2",
+      "entity/player/walk3",
+      "entity/player/walk4"
+    ],
+    "selection": "nondeterministic",
+    "volume": { "base": 0.8, "min": 0.72, "max": 0.88 },
+    "pitch": { "base": 1.0, "min": 0.96, "max": 1.04 },
+    "maxDistance": 22.0,
+    "falloffStart": 2.0,
+    "category": "Movement",
+    "spatialMode": "world",
+    "priority": 10,
+    "overlap": "allow",
+    "repeatAllowed": true,
+    "cooldownMs": 0
+  },
+
+  "freeze": {
+    "sounds": ["entity/player/freezebegin"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 30.0,
+    "falloffStart": 2.0,
+    "category": "Movement",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "hurt": {
+    "sounds": ["player_hurt"],
+    "volume": { "base": 1.2 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 60.0,
+    "falloffStart": 4.0,
+    "category": "Impacts",
+    "spatialMode": "world",
+    "priority": 30,
+    "overlap": "allow"
+  },
+
+  "weapon.fire": {
+    "sounds": ["revolvershoot"],
+    "volume": { "base": 0.9, "min": 0.82, "max": 1.0 },
+    "pitch": { "base": 1.0, "min": 0.96, "max": 1.05 },
+    "maxDistance": 80.0,
+    "falloffStart": 3.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 40,
+    "overlap": "allow"
+  },
+
+  "weapon.reload": {
+    "sounds": ["revolverreload"],
+    "volume": { "base": 0.8 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 20.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 15,
+    "overlap": "allow"
+  },
+
+  "weapon.dryfire": {
+    "sounds": ["revolverchamber"],
+    "volume": { "base": 0.25 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 15.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 10,
+    "overlap": "allow"
+  },
+
+  "weapon.equip": {
+    "sounds": ["weapon/hafs/hafsequip"],
+    "volume": { "base": 0.85 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 15.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 15,
+    "overlap": "allow"
+  },
+
+  "weapon.melee": {
+    "sounds": ["weapon/hafs/hafsswing"],
+    "volume": { "base": 0.8 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 30.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 30,
+    "overlap": "allow"
+  },
+
+  "weapon.impact": {
+    "sounds": ["hitworld"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 60.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 35,
+    "overlap": "allow"
+  },
+
+  "weapon.explosion": {
+    "sounds": ["rocketlauncher/rocketlauncherexplode"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 50.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 50,
+    "overlap": "allow"
+  },
+
+  "projectile.inair": {
+    "sounds": ["rocketlauncher/rocketlauncherinair"],
+    "volume": { "base": 0.7 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 60.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "projectile.impact": {
+    "sounds": ["hitworld"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 60.0,
+    "category": "Impacts",
+    "spatialMode": "world",
+    "priority": 35,
+    "overlap": "allow"
+  },
+
+  "hitmarker": {
+    "sounds": ["hitmarker1"],
+    "volume": { "base": 0.6 },
+    "pitch": { "base": 1.0, "min": 0.96, "max": 1.04 },
+    "maxDistance": 0.0,
+    "category": "UI",
+    "spatialMode": "local",
+    "priority": 5,
+    "overlap": "allow"
+  },
+
+  "npc.spawn": {
+    "sounds": ["npc_spawn"],
+    "volume": { "base": 0.8 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 35.0,
+    "category": "NPC",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "npc.action": {
+    "sounds": ["entity/player/dash"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 36.0,
+    "category": "NPC",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "actor.death": {
+    "sounds": ["npc_death"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 40.0,
+    "category": "NPC",
+    "spatialMode": "world",
+    "priority": 30,
+    "overlap": "allow"
+  },
+
+  "actor.respawn": {
+    "sounds": ["entity/player/spawning"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 30.0,
+    "category": "NPC",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "ui.click": {
+    "sounds": ["ui/click"],
+    "volume": { "base": 0.6 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 0.0,
+    "category": "UI",
+    "spatialMode": "local",
+    "priority": 5,
+    "overlap": "allow"
+  },
+
+  "ui.hover": {
+    "sounds": ["ui/hover"],
+    "volume": { "base": 0.18 },
+    "pitch": { "base": 1.15 },
+    "maxDistance": 0.0,
+    "category": "UI",
+    "spatialMode": "local",
+    "priority": 5,
+    "overlap": "allow"
+  },
+
+  "ui.chat": {
+    "sounds": ["ui/chat/chat1"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0, "min": 0.96, "max": 1.08 },
+    "maxDistance": 0.0,
+    "category": "UI",
+    "spatialMode": "local",
+    "priority": 5,
+    "overlap": "allow"
+  },
+
+  "live.success": {
+    "sounds": ["live/success"],
+    "volume": { "base": 0.8 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 0.0,
+    "category": "Notification",
+    "spatialMode": "local",
+    "priority": 10,
+    "overlap": "allow"
+  },
+
+  "live.failure": {
+    "sounds": ["live/failure"],
+    "volume": { "base": 0.7 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 0.0,
+    "category": "Notification",
+    "spatialMode": "local",
+    "priority": 10,
+    "overlap": "allow"
+  },
+
+  "editor.action": {
+    "sounds": ["ui/click"],
+    "volume": { "base": 0.5 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 0.0,
+    "category": "Editor",
+    "spatialMode": "local",
+    "priority": 5,
+    "overlap": "allow"
+  },
+
+  "music.change": {
+    "sounds": ["music/default"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 0.0,
+    "category": "Music",
+    "spatialMode": "listener",
+    "priority": 0,
+    "overlap": "replace_same_slot"
+  },
+
+  "ambient.effect": {
+    "sounds": ["ambient/default"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 40.0,
+    "category": "Ambient",
+    "spatialMode": "world",
+    "priority": 10,
+    "overlap": "allow"
+  },
+
+  "pobject.spawn": {
+    "sounds": ["hitworld"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 50.0,
+    "category": "Impacts",
+    "spatialMode": "world",
+    "priority": 20,
+    "overlap": "allow"
+  },
+
+  "bomb.effect": {
+    "sounds": ["assets/sound/weapon/bomb/explosion2.wav"],
+    "volume": { "base": 1.0 },
+    "pitch": { "base": 1.0 },
+    "maxDistance": 80.0,
+    "category": "Weapons",
+    "spatialMode": "world",
+    "priority": 50,
+    "overlap": "allow"
+  }
+}

@@ -23,6 +23,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "entities/player.h"
+#include "live-code/live-behavior.h"
 #include "npc/npc.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physics-types.h"
@@ -87,7 +88,10 @@ uint32_t PersistentPhysicsSystem::spawn(
     if (!cfg.spawnSound.empty()) {
         Debug::log(Debug::Category::Audio, "[POBJ] sound=spawn path=%s pos=(%.2f %.2f %.2f)\n",
                    cfg.spawnSound.c_str(), position.x, position.y, position.z);
-        playWorldSound(cfg.spawnSound, position, 1.0f, 1.0f, 50.0f);
+        if (!LiveBehavior::emitAudioFact("pobject.spawn", cfg.spawnSound.c_str(),
+                                         position, 0, /*spatial*/true,
+                                         1.0f, 1.0f, 1.0f, 1.0f))
+            playWorldSound(cfg.spawnSound, position, 1.0f, 1.0f, 50.0f);
     }
 
     ReplayEffectEvent spawnEvent;

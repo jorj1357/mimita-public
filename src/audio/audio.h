@@ -38,6 +38,9 @@ public:
     // Live voice count and cached-sound count, for generic audio status.
     unsigned int activeVoiceCount() const;
     unsigned int cachedSoundCount() const;
+    // True once the miniaudio device has initialized (false in server mode or
+    // before first use), for generic audio status.
+    bool deviceActive() const;
     void setDebug(bool enabled);
     bool debug() const;
 };

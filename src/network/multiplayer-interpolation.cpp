@@ -1702,7 +1702,18 @@ void updateRenderedReplica(
             ? glm::normalize(player.vel)
             : glm::vec3(0.0f, 1.0f, 0.0f);
         HitEffects::spawnMovementDashBurst(player.pos, dashDir, glm::length(player.vel));
-        playWorldSound("entity/player/dash", player.pos, 1.0f, 1.0f, 36.0f);
+        {
+            GameAudioFactV1 fact{};
+            fact.recipeKey = gameHash("dash");
+            fact.position[0] = player.pos.x;
+            fact.position[1] = player.pos.y;
+            fact.position[2] = player.pos.z;
+            fact.spatial = 1;
+            LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact,
+                                                  sizeof(fact), 0);
+            if (!fact.handled)
+                playWorldSound("entity/player/dash", player.pos, 1.0f, 1.0f, 36.0f);
+        }
         printf("[NET PRESENTATION RX] entityId=%u event=dash serial=%u triggered=1\n",
                entityId, (unsigned)render.dashSerial);
     }
@@ -1716,7 +1727,18 @@ void updateRenderedReplica(
         glm::vec3 jumpPos = player.pos;
         jumpPos.z -= 0.5f;
         HitEffects::spawnGroundJumpBurst(jumpPos, jumpDir);
-        playWorldSound("entity/player/jump", player.pos, 1.0f, 1.0f, 28.0f);
+        {
+            GameAudioFactV1 fact{};
+            fact.recipeKey = gameHash("ground_jump");
+            fact.position[0] = player.pos.x;
+            fact.position[1] = player.pos.y;
+            fact.position[2] = player.pos.z;
+            fact.spatial = 1;
+            LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact,
+                                                  sizeof(fact), 0);
+            if (!fact.handled)
+                playWorldSound("entity/player/jump", player.pos, 1.0f, 1.0f, 28.0f);
+        }
         printf("[NET PRESENTATION RX] entityId=%u event=groundJump serial=%u triggered=1\n",
                entityId, (unsigned)render.groundJumpSerial);
     }
@@ -1730,7 +1752,18 @@ void updateRenderedReplica(
         glm::vec3 jumpPos = player.pos;
         jumpPos.z -= 1.0f;
         HitEffects::spawnAirJumpBurst(jumpPos, jumpDir);
-        playWorldSound("entity/player/jump", player.pos, 1.0f, 1.0f, 28.0f);
+        {
+            GameAudioFactV1 fact{};
+            fact.recipeKey = gameHash("air_jump");
+            fact.position[0] = player.pos.x;
+            fact.position[1] = player.pos.y;
+            fact.position[2] = player.pos.z;
+            fact.spatial = 1;
+            LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact,
+                                                  sizeof(fact), 0);
+            if (!fact.handled)
+                playWorldSound("entity/player/jump", player.pos, 1.0f, 1.0f, 28.0f);
+        }
         printf("[NET PRESENTATION RX] entityId=%u event=airJump serial=%u triggered=1\n",
                entityId, (unsigned)render.airJumpSerial);
     }
@@ -1755,7 +1788,18 @@ void updateRenderedReplica(
         glm::vec3 freezePos = player.pos;
         freezePos.z -= 0.3f;
         EffectPartSystem::instance().spawnFreeze(freezePos, 2.0f);
-        playWorldSound("entity/player/freezebegin", player.pos, 1.0f, 1.0f, 30.0f);
+        {
+            GameAudioFactV1 fact{};
+            fact.recipeKey = gameHash("freeze");
+            fact.position[0] = player.pos.x;
+            fact.position[1] = player.pos.y;
+            fact.position[2] = player.pos.z;
+            fact.spatial = 1;
+            LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact,
+                                                  sizeof(fact), 0);
+            if (!fact.handled)
+                playWorldSound("entity/player/freezebegin", player.pos, 1.0f, 1.0f, 30.0f);
+        }
         printf("[NET PRESENTATION RX] entityId=%u event=freeze serial=%u triggered=1\n",
                entityId, (unsigned)render.freezeSerial);
     }

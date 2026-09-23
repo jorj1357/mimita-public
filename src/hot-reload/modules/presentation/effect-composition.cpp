@@ -10,6 +10,7 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-audio-policy.h"
 #include "hot-reload/hot-effect.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-presentation.h"
@@ -465,11 +466,18 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
                                 0.18f, 0.18f,
                                 std::clamp(0.5f + speed * 0.08f, 0.5f, 3.5f),
                                 12.0f / 60.0f, 0.35f);
-            emitWorldSound(ctx, "entity/player/dash", pos,
-                           (req->flags & 1u) ? 1.3f : 1.0f,
-                           (req->flags & 1u) ? 1.2f : 1.0f, 36.0f);
-            if (req->flags & 1u)
-                emitWorldSound(ctx, "entity/player/dash", pos, 1.0f, 0.25f, 36.0f);
+            HotAudioOverrideV1 dashOv{};
+            if (req->flags & 1u) {
+                dashOv.volumeScale = 1.3f;
+                dashOv.pitchScale = 1.2f;
+            }
+            hotEmitRecipeSound(ctx, gameHash("dash"), pos, 0, true, &dashOv);
+            if (req->flags & 1u) {
+                HotAudioOverrideV1 lowPitch{};
+                lowPitch.pitchBase = 0.25f;
+                hotEmitRecipeSound(ctx, gameHash("dash"), pos, 0, true,
+                                   &lowPitch);
+            }
             return;
         }
         if (type == gameHash("effect.movement.down_dash")) {
@@ -478,7 +486,8 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
                                 0.1f, 0.8f, 0.8f, 1.0f,
                                 0.45f, 0.45f, 3.0f,
                                 12.0f / 60.0f, 0.3f);
-            emitWorldSound(ctx, "entity/player/dash", pos, 1.0f, 0.82f, 36.0f);
+            hotEmitRecipeSound(ctx, gameHash("down_dash"), pos, 0, true,
+                               nullptr);
             return;
         }
         if (type == gameHash("effect.movement.landing")) {
@@ -487,14 +496,14 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
                                 0.6f, 0.6f, 0.6f, 1.0f,
                                 0.6f, 0.12f, 0.12f,
                                 12.0f / 60.0f, 0.2f);
-            emitWorldSound(ctx, "entity/player/land", pos, 1.0f, 1.0f, 32.0f);
+            hotEmitRecipeSound(ctx, gameHash("landing"), pos, 0, true, nullptr);
             return;
         }
         if (type == gameHash("effect.movement.freeze")) {
             spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, pos,
                         nullptr, 0.2f, 1.0f, 0.3f, 0.2f, 0.0f,
                         std::max(req->scale, 0.1f), 0.0f);
-            emitWorldSound(ctx, "entity/player/freezebegin", pos, 1.0f, 1.0f, 30.0f);
+            hotEmitRecipeSound(ctx, gameHash("freeze"), pos, 0, true, nullptr);
             return;
         }
         if (type == gameHash("effect.movement.freeze_trail")) {
@@ -506,26 +515,15 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             return;
         }
 
-        // Default afad20a-style walk mode: one random variant per cadence event.
-        // Immediate repeats are intentional: walk4, walk4, walk4 is valid.
-        static std::uint32_t randomState = 0x6D2B79F5u;
-        randomState = randomState * 1664525u + 1013904223u +
-                      static_cast<std::uint32_t>(ctx->tick);
-        std::uint32_t variant = (randomState >> 24) % 4u + 1u;
-        char sound[64];
-        std::snprintf(sound, sizeof(sound), "entity/player/walk%u", variant);
+        // Default afad20a-style walk mode: the audio-policy recipe owns the
+        // variant and the volume/pitch jitter. Immediate repeats are intentional
+        // (walk4, walk4, walk4 is valid), so no repeat suppression is applied.
         const float p[3] = {pos[0], pos[1], pos[2] - 0.6f};
         const float v[3] = {0.0f, 0.0f, 0.0f};
         spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
                     0.8f, 0.8f, 0.8f, 0.08f, 1.0f,
                     6.0f / 60.0f, 0.0f);
-        const float volumeJitter =
-            static_cast<float>((randomState >> 8) & 0xFFu) / 255.0f;
-        const float pitchJitter =
-            static_cast<float>((randomState >> 16) & 0xFFu) / 255.0f;
-        emitWorldSound(ctx, sound, pos,
-                       0.72f + volumeJitter * 0.16f,
-                       0.96f + pitchJitter * 0.08f, 22.0f);
+        hotEmitRecipeSound(ctx, gameHash("footstep"), pos, 0, true, nullptr);
         return;
     }
 
@@ -533,26 +531,16 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
     // audio.play out. Cold picks no NPC sound.
     if (req->effectTypeId == gameHash("effect.actor.sound")) {
         req->handled = 1;
-        if (ctx->resolveCapability && req->text[0] != '\0') {
-            auto audio = reinterpret_cast<AudioPlayFn>(
-                ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
-            if (audio) {
-                const char* sound =
-                    std::strcmp(req->text, "actor.dash") == 0
-                        ? "entity/player/dash"
-                    : std::strcmp(req->text, "actor.spawn") == 0
-                        ? "npc_spawn" : req->text;
-                GameAudioCommandV1 c{};
-                std::snprintf(c.sound, sizeof(c.sound), "%s", sound);
-                c.position[0] = req->position[0];
-                c.position[1] = req->position[1];
-                c.position[2] = req->position[2];
-                c.volume = 1.0f;
-                c.pitch = 1.0f;
-                c.maxDistance = 36.0f;
-                c.spatial = 1;
-                audio(ctx->host, &c);
-            }
+        if (req->text[0] != '\0') {
+            const bool dash = std::strcmp(req->text, "actor.dash") == 0;
+            const bool spawn = std::strcmp(req->text, "actor.spawn") == 0;
+            HotAudioOverrideV1 ov{};
+            ov.sound = dash ? "entity/player/dash"
+                            : (spawn ? "npc_spawn" : req->text);
+            hotEmitRecipeSound(ctx, gameHash(dash ? "npc.action"
+                                                  : (spawn ? "npc.spawn"
+                                                           : "npc.action")),
+                               req->position, 0, true, &ov);
         }
         return;
     }
@@ -561,22 +549,8 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
     // audio.play out. Cold playAirJumpSound is fallback only.
     if (req->effectTypeId == gameHash("effect.jump.sound")) {
         req->handled = 1;
-        if (ctx->resolveCapability) {
-            auto audio = reinterpret_cast<AudioPlayFn>(
-                ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
-            if (audio) {
-                GameAudioCommandV1 c{};
-                std::snprintf(c.sound, sizeof(c.sound), "%s", "entity/player/doublejump");
-                c.position[0] = req->position[0];
-                c.position[1] = req->position[1];
-                c.position[2] = req->position[2];
-                c.volume = 1.0f;
-                c.pitch = 1.0f;
-                c.maxDistance = 22.0f;
-                c.spatial = 0;
-                audio(ctx->host, &c);
-            }
-        }
+        hotEmitRecipeSound(ctx, gameHash("air_jump"), req->position, 0, true,
+                           nullptr);
         return;
     }
 
@@ -594,21 +568,11 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
     // here; the cold mixer only plays the resulting command.
     if (req->effectTypeId == gameHash("effect.weapon.fire.sound")) {
         req->handled = 1;
-        if (ctx->resolveCapability && req->text[0] != '\0') {
-            auto audio = reinterpret_cast<AudioPlayFn>(
-                ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
-            if (audio) {
-                GameAudioCommandV1 c{};
-                std::snprintf(c.sound, sizeof(c.sound), "%s", req->text);
-                c.position[0] = req->position[0];
-                c.position[1] = req->position[1];
-                c.position[2] = req->position[2];
-                c.volume = 0.9f;
-                c.pitch = 1.0f;
-                c.maxDistance = 80.0f;
-                c.spatial = 1;
-                audio(ctx->host, &c);
-            }
+        if (req->text[0] != '\0') {
+            HotAudioOverrideV1 ov{};
+            ov.sound = req->text;
+            hotEmitRecipeSound(ctx, gameHash("weapon.fire"), req->position, 0,
+                               true, &ov);
         }
         return;
     }

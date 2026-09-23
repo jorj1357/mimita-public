@@ -2491,6 +2491,7 @@ enum GameAudioOp : std::uint32_t {
     GAME_AUDIO_RELOAD_RESOURCE = 6,     // logical id in `sound`
     GAME_AUDIO_INVALIDATE_RESOURCE = 7, // logical id in `sound`
     GAME_AUDIO_QUERY_STATUS = 8,        // fills out fields
+    GAME_AUDIO_SET_TRACE = 9,           // flags bit0 = enable rate-limited tracing
 };
 enum GameAudioCategory : std::uint32_t {
     GAME_AUDIO_CATEGORY_MOVEMENT = 0,
@@ -2554,6 +2555,31 @@ struct GameAudioCommandV1 {
 };
 using GameAudioPlayFn = void (MIMITA_GAME_CALL *)(
     void* host, const GameAudioCommandV1* command);
+
+// Generic sound-only fact (cold/hot caller -> hot audio policy). Unlike
+// effect.request it implies no visual: the hot policy resolves `recipeKey`
+// against the audio recipe snapshot and emits one GameAudioCommandV2. `handled`
+// is set by the hot owner so the cold caller can skip its fallback and exactly
+// one owner plays. Fixed-size POD.
+static constexpr std::uint64_t GAME_EVENT_AUDIO_FACT = gameHash("audio.fact");
+struct GameAudioFactV1 {
+    std::uint64_t recipeKey;    // gameHash("footstep") etc.
+    std::uint64_t ownerEntity;  // 0 = global
+    float position[3];
+    float volumeScale;          // <=0 => 1
+    float pitchScale;           // <=0 => 1
+    float volumeBase;           // >=0 overrides recipe base volume
+    float pitchBase;            // >=0 overrides recipe base pitch
+    std::uint64_t seed;         // 0 => use dispatch tick
+    std::uint32_t spatial;      // 1 = world
+    std::uint32_t handled;      // out: hot owner accepted
+    std::uint32_t reserved;
+    // Append-only (audio.fact.v2): an explicit logical sound id. When set it
+    // overrides the recipe's sound list while the recipe still owns policy
+    // (category/volume/pitch/falloff). Lets data-driven callers (weapon defs)
+    // name a logical sound without the policy living in gameplay code.
+    char sound[64];
+};
 // Generic round-based match mechanism: a hot mode records the winner of one
 // round. The kernel owns round tallying, the RESULTS transition, and the
 // match-over decision; no mode-specific finish callback or round field.
@@ -2611,6 +2637,20 @@ static constexpr std::uint64_t GAME_CAP_LOG_EVENT = gameHash("log.event");
 // cold registration.
 static constexpr std::uint64_t GAME_CAP_RUNTIME_INFO = gameHash("runtime.info");
 static constexpr std::uint64_t GAME_CAP_TERMINAL_OUTPUT = gameHash("terminal.output");
+
+// Live-networking policy capability ids (append-only). Generic ids only; a hot
+// package registers the provider and cold mechanism calls through the one
+// resolveCapability doorway. No new GameplayContextV1 field is added.
+//   clock.read            monotonic + tick clock without a pointer to the kernel
+//   connection.read       bounded per-connection facts (id, generation, rtt)
+//   connection.transition request a connection state change (reconnect policy)
+//   net.snapshot-codecs   hot snapshot build/parse/reassemble codec provider
+static constexpr std::uint64_t GAME_CAP_CLOCK_READ = gameHash("clock.read");
+static constexpr std::uint64_t GAME_CAP_CONNECTION_READ = gameHash("connection.read");
+static constexpr std::uint64_t GAME_CAP_CONNECTION_TRANSITION =
+    gameHash("connection.transition");
+static constexpr std::uint64_t GAME_CAP_SNAPSHOT_CODECS =
+    gameHash("net.snapshot-codecs");
 static constexpr std::uint32_t GAME_LOG_CATEGORY = 32;
 static constexpr std::uint32_t GAME_LOG_NAME = 64;
 static constexpr std::uint32_t GAME_LOG_MESSAGE = 192;

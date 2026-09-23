@@ -247,12 +247,6 @@ int main(int argc, char** argv)
     AuthSystem::instance().init(launchOptions.sessionToken);
     if (launchOptions.name.empty())
         launchOptions.name = AuthSystem::instance().displayName();
-    if (launchOptions.server && launchOptions.client)
-    {
-        printf("[MAIN] choose only one mode: --server or --client\n");
-        MimitaNet::printLaunchUsage();
-        return 1;
-    }
     if (launchOptions.udpEcho)
     {
         printf("[BOOT MODE] mode=udp-echo-server graphicsInitialized=0 uiInitialized=0\n");
@@ -267,16 +261,6 @@ int main(int argc, char** argv)
         LogManager::instance().shutdown();
         return ret;
     }
-    if (launchOptions.client)
-    {
-        printf("[BOOT MODE] mode=standalone-client graphicsInitialized=0 uiInitialized=0\n");
-        LogManager::instance().setLogType("Client");
-        LogManager::instance().init();
-        int ret = MimitaNet::runClient(launchOptions);
-        LogManager::instance().shutdown();
-        return ret;
-    }
-
     printf("[BOOT MODE] mode=full-client graphicsInitialized=1 uiInitialized=1\n");
     if (gExportSubprocessMode) {
         LogManager::instance().setLogType("ReplayExport");

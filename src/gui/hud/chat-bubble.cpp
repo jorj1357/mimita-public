@@ -26,6 +26,7 @@
 #include "gui/ui-system.h"
 #include "gui/hud/player-nameplates.h"
 #include "audio/audio.h"
+#include "live-code/live-behavior.h"
 #include "vip/vip-name-render.h"
 #include "network/net_common.h"
 #include <GLFW/glfw3.h>
@@ -258,7 +259,10 @@ void renderChatBubbles(const ActorChatState& state, const Player& player, const 
 void playChatSound(int messageLength)
 {
     float pitch = computeChatPitch(messageLength);
-    AudioManager::instance().play({"ui/chat/chat1", AudioCategory::UI, false, {}, 1.0f, pitch});
+    if (!LiveBehavior::emitAudioFact("ui.chat", "ui/chat/chat1",
+                                     static_cast<const float*>(nullptr), 0, false,
+                                     1.0f, 1.0f, 1.0f, pitch))
+        AudioManager::instance().play({"ui/chat/chat1", AudioCategory::UI, false, {}, 1.0f, pitch});
 }
 
 void renderTypingIndicator(const Player& player, const Camera& camera, bool isLocal)

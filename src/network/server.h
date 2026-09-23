@@ -1017,13 +1017,6 @@ void cancelDeadNpcProjectiles(
     std::unordered_map<uint32_t, ServerProjectile>& projectiles,
     uint32_t tick,
     uint64_t& totalPacketsOut);
-void handleMeleeHitRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
-                           std::unordered_map<uint32_t, ServerPlayer>& players,
-                           uint32_t tick, uint64_t& totalPacketsOut);
-void tickServerSwordCombat(SOCKET sock,
-                           std::unordered_map<uint32_t, ServerPlayer>& players,
-                           const HeadlessWorld& world,
-                           float dt, uint32_t tick, uint64_t& totalPacketsOut);
 void tickServerPhysicalContactWeapons(SOCKET sock,
                                       std::unordered_map<uint32_t, ServerPlayer>& players,
                                       const HeadlessWorld& world,

@@ -1,13 +1,20 @@
 // 08 03 2026, 17 20
 /* purpose
-* Owns compact snapshot chunk encode, decode, reassembly, and self-test coverage.
+* Cold snapshot-chunk bridge. The chunk/quantize/reassemble policy lives in the
+* shared header `hot-reload/hot-snapshot-codec.h` (one source for the cold EXE
+* fallback and the hot provider). These functions adapt the existing STL-facing
+* API to the POD `net.snapshot-codecs` capability and prefer the active hot
+* codec; when no hot package is loaded (headless tests) they run the shared
+* implementation directly.
 * Keeps multiplayer entity snapshot payloads under the safe datagram size limit.
-* Copies bounded VIP appearance bytes through legacy and chunked snapshot paths.
 * DOES NOT own server entitlement verification or render interpolation policy.
 * DOES NOT send full player profile, style JSON, or payment state over the network.
 * DOES NOT mutate gameplay entities outside snapshot serialization.
 */
 #include "network/snapshot-chunks.h"
+
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-snapshot-codec.h"
 #include "vip/vip-appearance.h"
 
 #include <algorithm>
@@ -16,7 +23,7 @@
 #include <cstring>
 #include <limits>
 #include <sstream>
-#include <unordered_set>
+#include <vector>
 
 namespace MimitaNet {
 namespace {
@@ -27,17 +34,22 @@ void setError(std::string* error, const char* message)
         *error = message;
 }
 
-bool finiteCompactEntity(const CompactEntityData& e)
-{
-    return std::isfinite(e.px) && std::isfinite(e.py) && std::isfinite(e.pz) &&
-           std::isfinite(e.vx) && std::isfinite(e.vy) && std::isfinite(e.vz) &&
-           std::isfinite(e.yaw) &&
-           std::isfinite(e.aimX) && std::isfinite(e.aimY) && std::isfinite(e.aimZ);
-}
-
 bool sameCompactFields(const CompactEntityData& a, const CompactEntityData& b)
 {
     return std::memcmp(&a, &b, sizeof(CompactEntityData)) == 0;
+}
+
+// Resolve the active generation's snapshot codec through the one generic
+// doorway. Never cached across a generation swap. Null when no hot provider is
+// registered (headless selftests, early startup).
+const GameSnapshotCodecV1* hotSnapshotCodec()
+{
+    void* callable =
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_SNAPSHOT_CODECS);
+    if (!callable)
+        return nullptr;
+    auto lookup = reinterpret_cast<GameSnapshotCodecLookupFn>(callable);
+    return lookup ? lookup(nullptr) : nullptr;
 }
 
 CompactEntityData makeTestEntity(uint32_t id)
@@ -94,138 +106,29 @@ bool expectReject(const std::vector<uint8_t>& bytes, const char* name, std::ostr
 
 } // namespace
 
-uint16_t quantizeGodballPos(float v) {
-    const float clamped = std::clamp(v, -327.67f, 327.67f);
-    return static_cast<uint16_t>((clamped + 327.67f) / 0.01f);
-}
-
-float dequantizeGodballPos(uint16_t raw) {
-    return static_cast<float>(raw) * 0.01f - 327.67f;
-}
-
-int16_t quantizeGodballVel(float v) {
-    const float clamped = std::clamp(v, -3276.7f, 3276.7f);
-    return static_cast<int16_t>(clamped / 0.1f);
-}
-
-float dequantizeGodballVel(int16_t raw) {
-    return static_cast<float>(raw) * 0.1f;
-}
+uint16_t quantizeGodballPos(float v) { return HotSnapshotCodecImpl::quantizePos(v); }
+float dequantizeGodballPos(uint16_t raw) { return HotSnapshotCodecImpl::dequantizePos(raw); }
+int16_t quantizeGodballVel(float v) { return HotSnapshotCodecImpl::quantizeVel(v); }
+float dequantizeGodballVel(int16_t raw) { return HotSnapshotCodecImpl::dequantizeVel(raw); }
 
 size_t snapshotChunkHeaderBytes()
 {
-    return offsetof(SnapshotChunkPacket, entities);
+    return HotSnapshotCodecImpl::chunkHeaderBytes();
 }
 
 size_t snapshotChunkWireSize(uint16_t entityCount)
 {
-    return snapshotChunkHeaderBytes() + entityCount * sizeof(CompactEntityData);
+    return HotSnapshotCodecImpl::chunkWireSize(entityCount);
 }
 
 CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
 {
-    CompactEntityData out{};
-    out.networkEntityId = entity.networkEntityId;
-    out.entityType = entity.entityType;
-    out.active = entity.active;
-    out.stateFlags = entity.stateFlags;
-    out.transformEpoch = entity.transformEpoch;
-    out.ownerClientId = entity.ownerClientId;
-    out.px = entity.px;
-    out.py = entity.py;
-    out.pz = entity.pz;
-    out.vx = entity.vx;
-    out.vy = entity.vy;
-    out.vz = entity.vz;
-    out.yaw = entity.yaw;
-    out.aimX = entity.aimX;
-    out.aimY = entity.aimY;
-    out.aimZ = entity.aimZ;
-    out.health = entity.health;
-    out.onGround = entity.onGround;
-    out.equippedSlot = entity.equippedSlot;
-    out.weaponState = entity.weaponState;
-    out.pingMs = entity.pingMs;
-    out.sizeScale = entity.sizeScale;
-    out.dashSerial = entity.dashSerial;
-    out.groundJumpSerial = entity.groundJumpSerial;
-    out.airJumpSerial = entity.airJumpSerial;
-    out.downDashSerial = entity.downDashSerial;
-    out.directionChangeSerial = entity.directionChangeSerial;
-    out.equipSerial = entity.equipSerial;
-    out.freezeSerial = entity.freezeSerial;
-    out.spawnGeneration = entity.spawnGeneration;
-    out.vipTier = entity.vipTier;
-    out.vipStyleKind = entity.vipStyleKind;
-    out.vipColorR = entity.vipColorR;
-    out.vipColorG = entity.vipColorG;
-    out.vipColorB = entity.vipColorB;
-    out.vipFlags = entity.vipFlags;
-    out.vipStyleEpoch = entity.vipStyleEpoch;
-    out.godballPosX = quantizeGodballPos(entity.godballX);
-    out.godballPosY = quantizeGodballPos(entity.godballY);
-    out.godballPosZ = quantizeGodballPos(entity.godballZ);
-    out.godballVelX = quantizeGodballVel(entity.godballVx);
-    out.godballVelY = quantizeGodballVel(entity.godballVy);
-    out.godballVelZ = quantizeGodballVel(entity.godballVz);
-    std::memset(out.displayName, 0, sizeof(out.displayName));
-    std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
-    std::memset(out.avatarName, 0, sizeof(out.avatarName));
-    std::strncpy(out.avatarName, entity.avatarName, sizeof(out.avatarName) - 1);
-    return out;
+    return HotSnapshotCodecImpl::compact(entity);
 }
 
 SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
 {
-    SnapshotEntity out{};
-    out.networkEntityId = entity.networkEntityId;
-    out.entityType = entity.entityType;
-    out.active = entity.active;
-    out.stateFlags = entity.stateFlags;
-    out.transformEpoch = entity.transformEpoch;
-    out.ownerClientId = entity.ownerClientId;
-    out.px = entity.px;
-    out.py = entity.py;
-    out.pz = entity.pz;
-    out.vx = entity.vx;
-    out.vy = entity.vy;
-    out.vz = entity.vz;
-    out.yaw = entity.yaw;
-    out.aimX = entity.aimX;
-    out.aimY = entity.aimY;
-    out.aimZ = entity.aimZ;
-    out.health = entity.health;
-    out.onGround = entity.onGround;
-    out.equippedSlot = entity.equippedSlot;
-    out.weaponState = entity.weaponState;
-    out.pingMs = entity.pingMs;
-    out.sizeScale = entity.sizeScale;
-    out.dashSerial = entity.dashSerial;
-    out.groundJumpSerial = entity.groundJumpSerial;
-    out.airJumpSerial = entity.airJumpSerial;
-    out.downDashSerial = entity.downDashSerial;
-    out.directionChangeSerial = entity.directionChangeSerial;
-    out.equipSerial = entity.equipSerial;
-    out.freezeSerial = entity.freezeSerial;
-    out.spawnGeneration = entity.spawnGeneration;
-    out.vipTier = entity.vipTier;
-    out.vipStyleKind = entity.vipStyleKind;
-    out.vipColorR = entity.vipColorR;
-    out.vipColorG = entity.vipColorG;
-    out.vipColorB = entity.vipColorB;
-    out.vipFlags = entity.vipFlags;
-    out.vipStyleEpoch = entity.vipStyleEpoch;
-    out.godballX = dequantizeGodballPos(entity.godballPosX);
-    out.godballY = dequantizeGodballPos(entity.godballPosY);
-    out.godballZ = dequantizeGodballPos(entity.godballPosZ);
-    out.godballVx = dequantizeGodballVel(entity.godballVelX);
-    out.godballVy = dequantizeGodballVel(entity.godballVelY);
-    out.godballVz = dequantizeGodballVel(entity.godballVelZ);
-    std::memset(out.displayName, 0, sizeof(out.displayName));
-    std::strncpy(out.displayName, entity.displayName, sizeof(out.displayName) - 1);
-    std::memset(out.avatarName, 0, sizeof(out.avatarName));
-    std::strncpy(out.avatarName, entity.avatarName, sizeof(out.avatarName) - 1);
-    return out;
+    return HotSnapshotCodecImpl::decompact(entity);
 }
 
 bool buildSnapshotChunks(const CompactEntityData* entities,
@@ -237,65 +140,42 @@ bool buildSnapshotChunks(const CompactEntityData* entities,
                          std::string* error)
 {
     outChunks.clear();
-    if (entityCount > 0 && !entities)
-    {
-        setError(error, "entities-null");
+
+    std::vector<SnapshotChunkPacket> chunks(MAX_SNAPSHOT_CHUNKS);
+    GameSnapshotBuildV1 request{};
+    request.structSize = sizeof(GameSnapshotBuildV1);
+    request.entityCount = entityCount;
+    request.serverTick = serverTick;
+    request.ownerPlayerId = ownerPlayerId;
+    request.logicalGenerationId = logicalGenerationId;
+    request.entities = entities;
+    request.outChunks = chunks.data();
+    request.maxChunks = MAX_SNAPSHOT_CHUNKS;
+
+    bool ok = false;
+    const GameSnapshotCodecV1* codec = hotSnapshotCodec();
+    if (codec && codec->build) {
+        codec->build(nullptr, &request);
+        ok = request.result != 0;
+    } else {
+        char err[64] = {};
+        ok = HotSnapshotCodecImpl::build(entities, entityCount, serverTick,
+                                         ownerPlayerId, logicalGenerationId,
+                                         chunks.data(), MAX_SNAPSHOT_CHUNKS,
+                                         &request.outChunkCount, err);
+        std::strncpy(request.error, err, sizeof(request.error) - 1);
+    }
+    if (!ok) {
+        setError(error, request.error[0] ? request.error : "build-failed");
         return false;
     }
 
-    const uint32_t chunkCount = std::max<uint32_t>(
-        1, (entityCount + SNAPSHOT_CHUNK_MAX_ENTITIES - 1) / SNAPSHOT_CHUNK_MAX_ENTITIES);
-    if (chunkCount > MAX_SNAPSHOT_CHUNKS)
-    {
-        setError(error, "too-many-chunks");
-        return false;
+    outChunks.reserve(request.outChunkCount);
+    for (uint32_t i = 0; i < request.outChunkCount; ++i) {
+        const size_t bytes = snapshotChunkWireSize(chunks[i].entityCount);
+        const auto* begin = reinterpret_cast<const uint8_t*>(&chunks[i]);
+        outChunks.emplace_back(begin, begin + bytes);
     }
-
-    outChunks.reserve(chunkCount);
-    for (uint32_t chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex)
-    {
-        const uint32_t first = chunkIndex * SNAPSHOT_CHUNK_MAX_ENTITIES;
-        const uint16_t count = static_cast<uint16_t>(
-            std::min<uint32_t>(SNAPSHOT_CHUNK_MAX_ENTITIES, entityCount - first));
-        for (uint16_t i = 0; i < count; ++i)
-        {
-            if (!finiteCompactEntity(entities[first + i]))
-            {
-                setError(error, "non-finite-entity");
-                return false;
-            }
-        }
-
-        SnapshotChunkPacket packet{};
-        packet.header.magic = PROTOCOL_MAGIC;
-        packet.header.version = PROTOCOL_VERSION;
-        packet.header.type = PACKET_SNAPSHOT;
-        packet.header.tick = serverTick;
-        packet.header.playerId = ownerPlayerId;
-        packet.serverTick = serverTick;
-        packet.chunkIndex = static_cast<uint16_t>(chunkIndex);
-        packet.chunkCount = static_cast<uint16_t>(chunkCount);
-        packet.entityCount = count;
-        packet.payloadBytes = static_cast<uint16_t>(count * sizeof(CompactEntityData));
-        packet.logicalGenerationId = logicalGenerationId;
-        if (count > 0)
-        {
-            std::memcpy(packet.entities, entities + first,
-                        count * sizeof(CompactEntityData));
-        }
-
-        const size_t bytes = snapshotChunkWireSize(count);
-        if (bytes > MAX_GAME_DATAGRAM_BYTES)
-        {
-            setError(error, "chunk-too-large");
-            return false;
-        }
-
-        std::vector<uint8_t> encoded(bytes);
-        std::memcpy(encoded.data(), &packet, bytes);
-        outChunks.push_back(std::move(encoded));
-    }
-
     return true;
 }
 
@@ -304,73 +184,24 @@ bool parseSnapshotChunk(const void* data,
                         SnapshotChunkPacket& out,
                         std::string* error)
 {
-    out = {};
-    if (!data)
-    {
-        setError(error, "null-data");
-        return false;
+    const GameSnapshotCodecV1* codec = hotSnapshotCodec();
+    bool ok = false;
+    char err[64] = {};
+    if (codec && codec->parse) {
+        GameSnapshotParseV1 request{};
+        request.structSize = sizeof(GameSnapshotParseV1);
+        request.data = data;
+        request.bytes = static_cast<uint32_t>(bytes);
+        request.out = &out;
+        codec->parse(nullptr, &request);
+        ok = request.result != 0;
+        std::strncpy(err, request.error, sizeof(err) - 1);
+    } else {
+        ok = HotSnapshotCodecImpl::parse(data, bytes, out, err);
     }
-    if (bytes > MAX_GAME_DATAGRAM_BYTES)
-    {
-        setError(error, "packet-too-large");
-        return false;
-    }
-    if (bytes < snapshotChunkHeaderBytes())
-    {
-        setError(error, "truncated-header");
-        return false;
-    }
-
-    std::memcpy(&out, data, bytes);
-    if (out.header.magic != PROTOCOL_MAGIC)
-    {
-        setError(error, "bad-magic");
-        return false;
-    }
-    if (out.header.version != PROTOCOL_VERSION)
-    {
-        setError(error, "bad-version");
-        return false;
-    }
-    if (out.header.type != PACKET_SNAPSHOT)
-    {
-        setError(error, "bad-type");
-        return false;
-    }
-    if (out.chunkCount == 0 || out.chunkCount > MAX_SNAPSHOT_CHUNKS)
-    {
-        setError(error, "bad-chunk-count");
-        return false;
-    }
-    if (out.chunkIndex >= out.chunkCount)
-    {
-        setError(error, "bad-chunk-index");
-        return false;
-    }
-    if (out.entityCount > SNAPSHOT_CHUNK_MAX_ENTITIES)
-    {
-        setError(error, "bad-entity-count");
-        return false;
-    }
-    if (out.payloadBytes != out.entityCount * sizeof(CompactEntityData))
-    {
-        setError(error, "bad-payload-bytes");
-        return false;
-    }
-    if (bytes != snapshotChunkWireSize(out.entityCount))
-    {
-        setError(error, "wire-size-mismatch");
-        return false;
-    }
-    for (uint16_t i = 0; i < out.entityCount; ++i)
-    {
-        if (!finiteCompactEntity(out.entities[i]))
-        {
-            setError(error, "non-finite-entity");
-            return false;
-        }
-    }
-    return true;
+    if (!ok)
+        setError(error, err[0] ? err : "parse-failed");
+    return ok;
 }
 
 bool reassembleSnapshotChunks(const std::vector<SnapshotChunkPacket>& chunks,
@@ -381,71 +212,42 @@ bool reassembleSnapshotChunks(const std::vector<SnapshotChunkPacket>& chunks,
     outEntities.clear();
     if (outLogicalGenerationId)
         *outLogicalGenerationId = 0;
-    if (chunks.empty())
-    {
-        setError(error, "no-chunks");
+
+    const uint32_t maxEntities =
+        static_cast<uint32_t>(chunks.size()) * SNAPSHOT_CHUNK_MAX_ENTITIES;
+    std::vector<CompactEntityData> scratch(maxEntities);
+
+    uint32_t entityCount = 0;
+    uint32_t logicalGenerationId = 0;
+    bool ok = false;
+    const GameSnapshotCodecV1* codec = hotSnapshotCodec();
+    if (codec && codec->reassemble) {
+        GameSnapshotReassembleV1 request{};
+        request.structSize = sizeof(GameSnapshotReassembleV1);
+        request.chunks = chunks.data();
+        request.chunkCount = static_cast<uint32_t>(chunks.size());
+        request.outEntities = scratch.data();
+        request.maxEntities = maxEntities;
+        codec->reassemble(nullptr, &request);
+        ok = request.result != 0;
+        entityCount = request.outEntityCount;
+        logicalGenerationId = request.outLogicalGenerationId;
+        if (!ok)
+            setError(error, request.error[0] ? request.error : "reassemble-failed");
+    } else {
+        char err[64] = {};
+        ok = HotSnapshotCodecImpl::reassemble(
+            chunks.data(), static_cast<uint32_t>(chunks.size()), scratch.data(),
+            maxEntities, &entityCount, &logicalGenerationId, err);
+        if (!ok)
+            setError(error, err[0] ? err : "reassemble-failed");
+    }
+    if (!ok)
         return false;
-    }
 
-    const uint32_t tick = chunks[0].serverTick;
-    const uint16_t chunkCount = chunks[0].chunkCount;
-    if (chunkCount == 0 || chunkCount > MAX_SNAPSHOT_CHUNKS)
-    {
-        setError(error, "bad-chunk-count");
-        return false;
-    }
-
-    std::vector<const SnapshotChunkPacket*> ordered(chunkCount, nullptr);
-    for (const SnapshotChunkPacket& chunk : chunks)
-    {
-        if (chunk.serverTick != tick)
-        {
-            setError(error, "mixed-ticks");
-            return false;
-        }
-        if (chunk.chunkCount != chunkCount || chunk.chunkIndex >= chunkCount)
-        {
-            setError(error, "inconsistent-chunk");
-            return false;
-        }
-        if (chunk.logicalGenerationId != chunks[0].logicalGenerationId)
-        {
-            setError(error, "mixed-generations");
-            return false;
-        }
-        if (ordered[chunk.chunkIndex])
-        {
-            setError(error, "duplicate-chunk");
-            return false;
-        }
-        ordered[chunk.chunkIndex] = &chunk;
-    }
-
-    for (uint16_t i = 0; i < chunkCount; ++i)
-    {
-        if (!ordered[i])
-        {
-            setError(error, "missing-chunk");
-            return false;
-        }
-    }
-
-    std::unordered_set<uint32_t> seenIds;
-    for (const SnapshotChunkPacket* chunk : ordered)
-    {
-        for (uint16_t i = 0; i < chunk->entityCount; ++i)
-        {
-            const CompactEntityData& entity = chunk->entities[i];
-            if (entity.networkEntityId != 0 && !seenIds.insert(entity.networkEntityId).second)
-            {
-                setError(error, "duplicate-entity");
-                return false;
-            }
-            outEntities.push_back(entity);
-        }
-    }
+    outEntities.assign(scratch.begin(), scratch.begin() + entityCount);
     if (outLogicalGenerationId)
-        *outLogicalGenerationId = chunks[0].logicalGenerationId;
+        *outLogicalGenerationId = logicalGenerationId;
     return true;
 }
 

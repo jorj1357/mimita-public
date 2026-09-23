@@ -12,6 +12,7 @@
 #include "ecs/actor-entities.h"
 #include "ecs/entity-types.h"
 #include "hot-reload/game-api.h"
+#include "live-code/live-behavior.h"
 #include "network/actor-state.h"
 
 #include <cstdio>
@@ -34,8 +35,11 @@ static bool tryAutoReloadOffhand(Player& player, const std::string& weaponId)
     if (!def) return false;
     WeaponRuntimeHelper::startReload(rt, *def);
     if (rt.isReloading) {
-        if (!def->soundReload.empty())
-            playWorldSound(def->soundReload, player.pos, 0.7f, 1.0f, 20.0f);
+        if (!def->soundReload.empty()) {
+            if (!LiveBehavior::emitAudioFact("weapon.reload", def->soundReload.c_str(),
+                                             player.pos, 0, true, 1.0f, 1.0f, 0.7f, 1.0f))
+                playWorldSound(def->soundReload, player.pos, 0.7f, 1.0f, 20.0f);
+        }
         if (DebugConfig::DEBUG_RELOAD)
             Debug::log(Debug::Category::General, "[RELOAD] auto-reload started for holstered '%s'\n",
                        weaponId.c_str());

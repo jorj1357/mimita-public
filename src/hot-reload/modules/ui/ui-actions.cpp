@@ -10,6 +10,7 @@
 #if defined(MIMITA_GAME_DLL)
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-audio-policy.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-ui.h"
 
@@ -234,28 +235,21 @@ void MIMITA_GAME_CALL onUiAction(void* host, const GameEventV1* event)
 
     // Hot UI-sound policy: pick the logical sound id here (no cold widget knows
     // product sounds). Cold owns decode/mix/device only.
-    if (ctx->resolveCapability) {
-        using AudioPlayFn = void (MIMITA_GAME_CALL *)(void*,
-                                                      const GameAudioCommandV1*);
-        auto play = reinterpret_cast<AudioPlayFn>(
-            ctx->resolveCapability(ctx->host, GAME_CAP_AUDIO_PLAY));
-        if (play) {
-            const char* sound = "audio.ui.click";
-            if (id == gameHash("menu.back") ||
-                id == gameHash("pause.leave.cancel"))
-                sound = "audio.ui.back";
-            else if (id == gameHash("menu.play") ||
-                     id == gameHash("serverbrowser.connect") ||
-                     id == gameHash("serverbrowser.join-code") ||
-                     id == gameHash("pause.resume"))
-                sound = "audio.ui.confirm";
-            GameAudioCommandV1 cmd{};
-            std::snprintf(cmd.sound, sizeof(cmd.sound), "%s", sound);
-            cmd.volume = 0.8f;
-            cmd.pitch = 1.0f;
-            cmd.spatial = 0;
-            play(ctx->host, &cmd);
-        }
+    {
+        const char* sound = "audio.ui.click";
+        if (id == gameHash("menu.back") ||
+            id == gameHash("pause.leave.cancel"))
+            sound = "audio.ui.back";
+        else if (id == gameHash("menu.play") ||
+                 id == gameHash("serverbrowser.connect") ||
+                 id == gameHash("serverbrowser.join-code") ||
+                 id == gameHash("pause.resume"))
+            sound = "audio.ui.confirm";
+        HotAudioOverrideV1 ov{};
+        ov.sound = sound;
+        ov.volumeBase = 0.8f;
+        ov.pitchBase = 1.0f;
+        hotEmitRecipeSound(ctx, gameHash("ui.click"), nullptr, 0, false, &ov);
     }
     if (id == gameHash("menu.back")) {
         // Generic return navigation: settings opened from pause returns to pause.

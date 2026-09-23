@@ -9,6 +9,7 @@
 #include "audio/audio.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
+#include "live-code/live-behavior.h"
 
 struct HitmarkerAudioConfig {
     bool enabled = true;
@@ -129,7 +130,10 @@ void playHitmarkerSound(int damage)
     float pitch = gConfig.pitchMax - (gConfig.pitchMax - gConfig.pitchMin) * curve;
     float volume = gConfig.volumeMin + (gConfig.volumeMax - gConfig.volumeMin) * curve;
 
-    playSoundPitched("hitmarker1", volume, pitch);
+    if (!LiveBehavior::emitAudioFact("hitmarker", "hitmarker1",
+                                     static_cast<const float*>(nullptr), 0, false,
+                                     1.0f, 1.0f, volume, pitch))
+        playSoundPitched("hitmarker1", volume, pitch);
 
     Debug::log(Debug::Category::Audio,
                "[HITMARKER AUDIO]\n"

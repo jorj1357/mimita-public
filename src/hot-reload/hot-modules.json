@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Hot replaceable module manifest. Sources compile into the coarse mimita-game DLL; headers participate in change detection and code hashing. 'cold' lists EXE-owned sources whose changes cannot be activated live (HOT_RELOAD_BOUNDARY_VIOLATION).",
+  "comment": "Hot replaceable module manifest. Sources compile into the coarse mimita-game DLL; headers participate in change detection and code hashing. 'cold' lists EXE-owned sources whose changes cannot be activated live (HOT_RELOAD_BOUNDARY_VIOLATION). 'bridges' lists EXE-owned dispatch-only bridges: their behavior already lives in a hot header/provider, they contain no policy, and a change still requires a cold relink (HOT_RELOAD_BRIDGE_CHANGE).",
   "modules": [
     {
       "name": "effects",
@@ -56,6 +56,7 @@
     "src/hot-reload/hot-pose.h",
     "src/hot-reload/hot-prediction.h",
     "src/hot-reload/hot-presentation.h",
+    "src/hot-reload/hot-audio-policy.h",
     "src/hot-reload/hot-tool-visual.h",
     "src/hot-reload/hot-tool-action.h",
     "src/hot-reload/hot-tool-state.h",
@@ -81,6 +82,10 @@
     "src/hot-reload/hot-damage-event.h",
     "src/hot-reload/hot-consequences.h",
     "src/hot-reload/hot-packet-codec.h",
+    "src/hot-reload/hot-snapshot-codec.h",
+    "src/hot-reload/hot-movement-validation.h",
+    "src/hot-reload/hot-physical-contact.h",
+    "src/hot-reload/hot-damage-application.h",
     "src/hot-reload/hot-history.h",
     "src/hot-reload/hot-lagcomp-policy.h"
   ],
@@ -110,7 +115,6 @@
     "src/network/server-damage-policy.h",
     "src/network/server-damage.cpp",
     "src/network/server-attack.cpp",
-    "src/network/server-melee.cpp",
     "src/network/server-physical-contact.cpp",
     "src/combat/weapon-rocket-launcher.cpp",
     "src/combat/weapon-system.cpp",
@@ -135,13 +139,14 @@
     "src/physics/movement/move-capsule.cpp",
     "src/physics/movement/movement-step.cpp",
     "src/physics/physics-mini.cpp",
-    "src/network/movement-validation.cpp",
     "src/network/server.cpp",
-    "src/network/client.cpp",
     "src/network/packets.h",
     "src/network/reliable-gameplay-events.cpp",
-    "src/network/snapshot-chunks.cpp",
     "src/network/ice/ice-agent.cpp",
     "src/combat/death-system.h"
+  ],
+  "bridges": [
+    "src/network/snapshot-chunks.cpp",
+    "src/network/movement-validation.cpp"
   ]
 }

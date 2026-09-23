@@ -237,9 +237,12 @@ bool DeathSystem::kill(
     if (actorType == "npc")
         Debug::log(Debug::Category::NpcCombat, "[NPC] Respawning in %.2f seconds\n", victim.respawnTimer);
 
-    if (actorType == "npc")
-        AudioManager::instance().play(
-            {"npc_death", AudioCategory::NPC, true, victimPos, 1.0f, 0.9f, 45.0f, 0});
+    if (actorType == "npc") {
+        if (!LiveBehavior::emitAudioFact("actor.death", "npc_death", victimPos, 0,
+                                         true, 1.0f, 1.0f, 1.0f, 0.9f))
+            AudioManager::instance().play(
+                {"npc_death", AudioCategory::NPC, true, victimPos, 1.0f, 0.9f, 45.0f, 0});
+    }
 
     if (DebugConfig::DEBUG_DEATH_TIMELINE || DebugConfig::DEBUG_DEATH_PERF)
         Debug::log(Debug::Category::Ragdoll, "[DEATH PERF] kill() total=%.3fms actor=%s\n",
@@ -311,7 +314,9 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     actor.spawnFlashTimer = 10.0f;
     actor.killedBy.clear();
     actor.ground.onGround = false;
-    playWorldSound("entity/player/spawning", actor.pos, 1.0f);
+    if (!LiveBehavior::emitAudioFact("actor.respawn", "entity/player/spawning",
+                                     actor.pos, 0, true, 1.0f, 1.0f, 1.0f, 1.0f))
+        playWorldSound("entity/player/spawning", actor.pos, 1.0f);
     Debug::log(Debug::Category::Audio, "[SPAWN FX] playing spawning.wav\n");
     resetAllWeaponRuntimesForSpawn(actor, "DeathSystem::respawn");
     actor.syncLegacyStateToLayers();

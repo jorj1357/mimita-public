@@ -23,7 +23,9 @@
 #include "ecs/relationship-store.h"
 #include "live-code/live-modules.h"
 #include "live-code/live-identity.h"
+#include "live-code/live-journal.h"
 #include "live-code/live-ui.h"
+#include "utils/time-format.h"
 #include "hot-reload/hot-pose.h"
 #include "render/skeleton-instances.h"
 #include "network/server-context.h"
@@ -106,7 +108,14 @@ std::uint64_t g_skeletonApplyCount = 0;
 std::uint64_t g_animationUpdateCount = 0;
 std::uint64_t g_audioPlayCount = 0;
 std::uint64_t g_audioRejectCount = 0;
+std::uint64_t g_audioJournalCount = 0;
 std::uint64_t g_surfaceEffectCount = 0;
+// Rate-limited audio tracing is disabled by default; a hot `audio trace 1`
+// command (GAME_AUDIO_SET_TRACE) enables it. `command_rejected` is always
+// recorded but throttled so a misbehaving caller cannot flood the journal.
+bool g_audioTrace = false;
+std::uint64_t g_audioRejectJournalLastMs = 0;
+std::uint64_t g_audioLastHotGeneration = 0;
 std::uint64_t g_cameraEffectCount = 0;
 
 void MIMITA_GAME_CALL kernelEmitEvent(GameplayContextV1*, const GameEventV1* event);
@@ -2242,6 +2251,59 @@ struct AudioSlotVoice {
 static std::vector<AudioSlotVoice> g_audioSlots;
 static unsigned int g_nextSynthOwner = 0x40000000u;
 
+// Append one audio journal line. Trace-gated events are suppressed unless a hot
+// `audio trace 1` enabled tracing; `command_rejected` is always recorded but
+// throttled. All values are plain data; no voice handle crosses the boundary.
+void audioJournal(const char* type, const GameAudioCommandV1* c,
+                  unsigned int voiceId, const char* result, const char* error,
+                  const char* fallback)
+{
+    if (!type || !*type)
+        return;
+    LiveEventJournal::Fields f;
+    if (c) {
+        if (c->hotGeneration != 0)
+            f.hotGeneration = static_cast<std::uint32_t>(c->hotGeneration);
+        if (c->ownerEntity != 0)
+            f.entityId = c->ownerEntity;
+        char extra[320] = {};
+        std::snprintf(extra, sizeof(extra),
+                      "\"sound\":\"%.*s\",\"op\":%u,\"slot\":%llu,\"voice\":%u,"
+                      "\"volume\":%.3f,\"pitch\":%.3f,\"pos\":[%.2f,%.2f,%.2f],"
+                      "\"category\":%u,\"resource_generation\":%u,\"fallback\":\"%s\"",
+                      (int)strnlen(c->sound, sizeof(c->sound)), c->sound, c->op,
+                      (unsigned long long)c->slotId, voiceId, c->volume, c->pitch,
+                      c->position[0], c->position[1], c->position[2], c->category,
+                      c->resourceGeneration, fallback ? fallback : "none");
+        f.extra = extra;
+    }
+    if (result && *result)
+        f.result = result;
+    if (error && *error)
+        f.error = error;
+    LiveEventJournal::instance().record(type, f);
+    ++g_audioJournalCount;
+}
+
+void audioJournalRejected(const GameAudioCommandV1* c, const char* why)
+{
+    const std::uint64_t now = MiMitaTime::monotonicMillis();
+    if (now - g_audioRejectJournalLastMs < 100)
+        return;
+    g_audioRejectJournalLastMs = now;
+    audioJournal("audio.command_rejected", c, 0, "rejected", why, "none");
+}
+
+// High-volume per-request/per-voice events are only recorded while tracing is
+// enabled, so the default journal stays bounded.
+void audioJournalTrace(const char* type, const GameAudioCommandV1* c,
+                       unsigned int voiceId, const char* result)
+{
+    if (!g_audioTrace)
+        return;
+    audioJournal(type, c, voiceId, result, nullptr, "none");
+}
+
 // Generic audio: hot policy emits a logical sound command; the kernel plays it.
 // The command is the stable ABI surface: this function validates the envelope,
 // routes the op, and owns the (owner,slot) voice table. It performs no sound
@@ -2261,10 +2323,32 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
             (command->structSize != 0 &&
              command->structSize != sizeof(GameAudioCommandV1))) {
             ++g_audioRejectCount;
+            audioJournalRejected(command, "unknown-version");
             return;
         }
     }
     auto* out = const_cast<GameAudioCommandV1*>(command);
+
+    // The first command from a new hot generation proves the new policy is
+    // live. Recorded once per generation so activation is visible in the journal
+    // without a cold activation call site.
+    if (command->hotGeneration != 0 &&
+        command->hotGeneration != g_audioLastHotGeneration) {
+        g_audioLastHotGeneration = command->hotGeneration;
+        audioJournal("audio.hot_policy_activated", command, 0, "activated",
+                     nullptr, "none");
+    }
+
+    // Rate-limited tracing toggle. Off by default; a hot `audio trace 1` turns
+    // it on. `flags` bit0 is the enable for this op.
+    if (command->op == GAME_AUDIO_SET_TRACE) {
+        g_audioTrace = (command->flags & 1u) != 0;
+        out->ok = 1u;
+        out->reserved = g_audioTrace ? 1u : 0u;
+        audioJournal("audio.device_status", command, 0,
+                     g_audioTrace ? "trace-on" : "trace-off", nullptr, "none");
+        return;
+    }
 
     // Generic status query: no sound required. Reports live voice/resource
     // counts so a hot `audio status` command needs no cold call site.
@@ -2272,6 +2356,11 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
         out->ok = 1u;
         out->activeVoices = AudioManager::instance().activeVoiceCount();
         out->loadedResources = AudioManager::instance().cachedSoundCount();
+        out->reserved = g_audioTrace ? 1u : 0u;
+        audioJournal("audio.device_status", command, 0,
+                     AudioManager::instance().deviceActive() ? "active"
+                                                             : "inactive",
+                     nullptr, "none");
         return;
     }
     // Listener update: position + velocity only; no sound required.
@@ -2288,11 +2377,14 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
     if (command->op == GAME_AUDIO_RELOAD_RESOURCE ||
         command->op == GAME_AUDIO_INVALIDATE_RESOURCE) {
         out->ok = 0u;
+        audioJournal("audio.resource_lookup", command, 0, "phase8-pending",
+                     "resource generations not wired yet", "none");
         return;
     }
     // Every remaining op resolves a logical sound id.
     if (command->sound[0] == '\0') {
         ++g_audioRejectCount;
+        audioJournalRejected(command, "missing-sound");
         return;
     }
     const std::string name(command->sound,
@@ -2315,6 +2407,8 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
                 if (it->owner == command->ownerEntity &&
                     it->slot == command->slotId) {
                     AudioManager::instance().stopOwner(it->synth);
+                    audioJournalTrace("audio.voice_stopped", command, it->synth,
+                                      "stopped");
                     g_audioSlots.erase(it);
                     break;
                 }
@@ -2339,6 +2433,7 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
         if (command->op != GAME_AUDIO_SET_SLOT &&
             command->op != GAME_AUDIO_PLAY_ONESHOT) {
             ++g_audioRejectCount;
+            audioJournalRejected(command, "unknown-op");
             return;
         }
         // SET_SLOT (idempotent): same desired sound => no-op; else replace.
@@ -2347,6 +2442,7 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
                 continue;
             if (v.sound == name)
                 return;   // already playing this desired state
+            audioJournalTrace("audio.requested", command, 0, "slot-replace");
             AudioManager::instance().stopOwner(v.synth);
             v.sound = name;
             v.synth = ++g_nextSynthOwner;
@@ -2361,6 +2457,8 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
             e.ownerId = v.synth;
             e.loop = command->loop != 0;
             AudioManager::instance().play(e);
+            audioJournalTrace("audio.voice_replaced", command, v.synth,
+                              "replaced");
             ++g_audioPlayCount;   // replaced voice
             return;
         }
@@ -2378,15 +2476,18 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
         AudioManager::instance().play(e);
         g_audioSlots.push_back(
             {command->ownerEntity, command->slotId, synth, name});
+        audioJournalTrace("audio.voice_started", command, synth, "started");
         ++g_audioPlayCount;   // started voice
         return;
     }
     // One-shot playback. Any other op with no slot is an unknown command.
     if (command->op != GAME_AUDIO_PLAY_ONESHOT) {
         ++g_audioRejectCount;
+        audioJournalRejected(command, "unknown-op");
         return;
     }
     ++g_audioPlayCount;
+    audioJournalTrace("audio.requested", command, 0, "oneshot");
 
     if (command->spatial != 0) {
         playWorldSound(name, glm::vec3(command->position[0], command->position[1],
@@ -2398,6 +2499,7 @@ void MIMITA_GAME_CALL capAudioPlay(void*, const GameAudioCommandV1* command)
         playSoundPitched(name, command->volume > 0.0f ? command->volume : 1.0f,
                          command->pitch > 0.0f ? command->pitch : 1.0f);
     }
+    audioJournalTrace("audio.accepted", command, 0, "accepted");
 }
 
 
@@ -2942,6 +3044,36 @@ std::uint64_t audioPlayCount()
 std::uint64_t audioCommandRejectCount()
 {
     return g_audioRejectCount;
+}
+
+std::uint64_t audioJournalCount()
+{
+    return g_audioJournalCount;
+}
+
+bool emitAudioFact(const char* recipeName, const char* sound,
+                   const float position[3], std::uint64_t ownerEntity,
+                   bool spatial, float volumeScale, float pitchScale,
+                   float volumeBase, float pitchBase)
+{
+    GameAudioFactV1 fact{};
+    if (recipeName && *recipeName)
+        fact.recipeKey = gameHash(recipeName);
+    if (sound && *sound)
+        std::snprintf(fact.sound, sizeof(fact.sound), "%s", sound);
+    fact.ownerEntity = ownerEntity;
+    if (position) {
+        fact.position[0] = position[0];
+        fact.position[1] = position[1];
+        fact.position[2] = position[2];
+    }
+    fact.volumeScale = volumeScale;
+    fact.pitchScale = pitchScale;
+    fact.volumeBase = volumeBase;
+    fact.pitchBase = pitchBase;
+    fact.spatial = spatial ? 1u : 0u;
+    dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &fact, sizeof(fact), 0);
+    return fact.handled != 0;
 }
 
 std::uint64_t surfaceEffectCount()

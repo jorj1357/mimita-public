@@ -10,6 +10,7 @@
 #include "gui/gui-coord.h"
 #include "gui/font-stuff/font-loader.h"
 #include "audio/audio.h"
+#include "live-code/live-behavior.h"
 #include "debug/debug-log.h"
 
 using namespace UISys;
@@ -77,7 +78,11 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
             printf("[UI] playing click sound: %s\n", clickSound);
         }
         if (uiCanPlayUISound()) {
-            playMenuClick();
+            if (!LiveBehavior::emitAudioFact(
+                    "ui.click", "ui/click",
+                    static_cast<const float*>(nullptr), 0, false, 1.0f, 1.0f,
+                    0.6f, 1.0f))
+                playMenuClick();
         }
     }
 

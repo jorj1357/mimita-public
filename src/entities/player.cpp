@@ -431,11 +431,24 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
 
     printf("[APPLY DAMAGE] hpAfter=%d actualDamage=%d\n", currentHp, actualDamage);
     
-    // Play hurt sound with volume/pitch based on damage
+    // Play hurt sound with volume/pitch based on damage. The hot audio policy
+    // owns the recipe; the direct call below is the fallback only, and it runs
+    // only when the hot handler did not accept the fact (one owner).
     float severity = std::clamp((float)actualDamage / 100.0f, 0.0f, 1.0f);
     float vol, pit;
     computeImpactAudio(1.2f, 0.0f, severity, vol, pit);
-    playWorldSound("player_hurt", pos, vol, pit, 60.0f);
+    GameAudioFactV1 hurt{};
+    hurt.recipeKey = gameHash("hurt");
+    hurt.position[0] = pos.x;
+    hurt.position[1] = pos.y;
+    hurt.position[2] = pos.z;
+    hurt.volumeBase = vol;
+    hurt.pitchBase = pit;
+    hurt.spatial = 1;
+    LiveBehavior::dispatchGameplayEvent64(GAME_EVENT_AUDIO_FACT, &hurt,
+                                          sizeof(hurt), 0);
+    if (!hurt.handled)
+        playWorldSound("player_hurt", pos, vol, pit, 60.0f);
     Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=player_hurt damage=%d severity=%.2f pitch=%.2f volume=%.2f\n",
                actualDamage, severity, pit, vol);
     

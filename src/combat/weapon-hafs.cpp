@@ -5,6 +5,7 @@
 #include "audio/audio.h"
 #include "debug/debug-log.h"
 #include "entities/player.h"
+#include "live-code/live-behavior.h"
 #include "npc/npc.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
@@ -104,7 +105,9 @@ void WeaponHafs::startLunge(HafsState& state, const WeaponDefinition& def, Playe
 
 void WeaponHafs::onBulletBlocked(HafsState& state, Player& owner) {
     state.blockedBulletsThisFrame++;
-    playWorldSound("weapon/hafs/hafsWorldHit", owner.pos, 0.6f, 1.0f, 20.0f);
+    if (!LiveBehavior::emitAudioFact("weapon.impact", "weapon/hafs/hafsWorldHit",
+                                     owner.pos, 0, true, 1.0f, 1.0f, 0.6f, 1.0f))
+        playWorldSound("weapon/hafs/hafsWorldHit", owner.pos, 0.6f, 1.0f, 20.0f);
     Debug::log(Debug::Category::Weapons, "[HAFS] bullet blocked (total=%d)\n",
                state.blockedBulletsThisFrame);
 }
@@ -254,8 +257,11 @@ void WeaponHafs::update(HafsState& state, const WeaponDefinition& def,
 
                     // Knockback sound for strong hits
                     float kbSoundMin = cp(def, "knockbackSoundMinForce", 40.0f);
-                    if (kbForce > kbSoundMin)
-                        playWorldSound("weapon/hafs/hafsknockback", partCenter, 0.8f, 1.0f, 30.0f);
+                    if (kbForce > kbSoundMin) {
+                        if (!LiveBehavior::emitAudioFact("weapon.melee", "weapon/hafs/hafsknockback",
+                                                         partCenter, 0, true, 1.0f, 1.0f, 0.8f, 1.0f))
+                            playWorldSound("weapon/hafs/hafsknockback", partCenter, 0.8f, 1.0f, 30.0f);
+                    }
 
                     // Cooldown from config
                     float tickInterval = cp(def, "damageTickInterval", 0.05f);

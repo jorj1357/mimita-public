@@ -1,7 +1,11 @@
 // 07 21 2026, 16 45
 /* purpose
-* Implements Stage 3A client-trusting movement report validation.
-* Applies shared movement vocabulary to server ownership, lifecycle, sequence, and bounds checks.
+* Cold bridge for client-trusting movement report validation. The accept/
+* correct/reject policy lives in the shared header
+* `hot-reload/hot-movement-validation.h` (one source for the cold EXE fallback
+* and the hot provider). This file projects the ServerPlayer + report + config
+* into the POD request, precomputes the world sweep the policy cannot do, and
+* applies the returned decision.
 * Provides bounded diagnostic counters and reset bridges for authoritative server movement state.
 * Does NOT send packets, poll sockets, render, play audio, or own transport decisions.
 * Does NOT simulate full server-derived movement, rewind prediction, or input acknowledgements.
@@ -10,6 +14,8 @@
 
 #include "network/movement-validation.h"
 
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-movement-validation.h"
 #include "network/server.h"
 
 #include <algorithm>
@@ -20,25 +26,9 @@
 namespace MimitaNet {
 namespace {
 
-constexpr float kTickSeconds = 1.0f / 60.0f;
-constexpr float kFinitePositionLimit = 100000.0f;
-constexpr float kFiniteVelocityLimit = 5000.0f;
-
 bool hasFlag(uint32_t flags, MovementReportFlags flag)
 {
     return (flags & static_cast<uint32_t>(flag)) != 0;
-}
-
-float horizontalLength(glm::vec3 v)
-{
-    return glm::length(glm::vec2(v.x, v.y));
-}
-
-bool componentMagnitudeAllowed(glm::vec3 v, float maxAbs)
-{
-    return std::abs(v.x) <= maxAbs &&
-           std::abs(v.y) <= maxAbs &&
-           std::abs(v.z) <= maxAbs;
 }
 
 float safeSizeScale(float sizeScale)
@@ -46,77 +36,6 @@ float safeSizeScale(float sizeScale)
     if (!std::isfinite(sizeScale) || sizeScale <= 0.0f)
         return 1.0f;
     return std::clamp(sizeScale, 0.1f, 10.0f);
-}
-
-float clientElapsedSeconds(const ServerPlayer& player,
-                           const ClientMovementReport& report,
-                           const MovementValidationContext& context)
-{
-    if (player.movementValidation.lastAcceptedClientTick != 0 &&
-        report.clientSimulationTick > player.movementValidation.lastAcceptedClientTick)
-    {
-        const uint64_t deltaTicks =
-            report.clientSimulationTick -
-            player.movementValidation.lastAcceptedClientTick;
-        return std::clamp(static_cast<float>(deltaTicks) * kTickSeconds,
-                          kTickSeconds,
-                          0.5f);
-    }
-
-    if (player.lastAcceptedClientTransformMs != 0 && context.nowMs != 0 &&
-        context.nowMs >= player.lastAcceptedClientTransformMs)
-    {
-        return std::clamp(
-            static_cast<float>(context.nowMs - player.lastAcceptedClientTransformMs) /
-                1000.0f,
-            1.0f / 240.0f,
-            0.5f);
-    }
-
-    return kTickSeconds;
-}
-
-bool tickTooOld(const ServerPlayer& player,
-                const ClientMovementReport& report,
-                const MovementValidationContext& context,
-                const MovementValidationConfig& config)
-{
-    if (context.serverTick == 0 || report.clientSimulationTick == 0)
-        return false;
-
-    const uint64_t serverTick = context.serverTick;
-    const uint64_t clientTick = report.clientSimulationTick;
-    return serverTick > clientTick &&
-           serverTick - clientTick > config.maximumReportAgeTicks;
-}
-
-bool tickTooFuture(const ClientMovementReport& report,
-                   const MovementValidationContext& context,
-                   const MovementValidationConfig& config)
-{
-    if (context.serverTick == 0 || report.clientSimulationTick == 0)
-        return false;
-    return report.clientSimulationTick > context.serverTick &&
-           report.clientSimulationTick - context.serverTick >
-               config.maximumFutureTickLead;
-}
-
-glm::vec3 validationBoundsMin(const MovementValidationConfig& config)
-{
-    return config.worldBoundsMin - glm::vec3(config.worldBoundsPadding);
-}
-
-glm::vec3 validationBoundsMax(const MovementValidationConfig& config)
-{
-    return config.worldBoundsMax + glm::vec3(config.worldBoundsPadding);
-}
-
-bool insideBounds(glm::vec3 position, const MovementValidationConfig& config)
-{
-    const glm::vec3 minB = validationBoundsMin(config);
-    const glm::vec3 maxB = validationBoundsMax(config);
-    return position.x >= minB.x && position.y >= minB.y && position.z >= minB.z &&
-           position.x <= maxB.x && position.y <= maxB.y && position.z <= maxB.z;
 }
 
 bool rayTriangle(const glm::vec3& origin,
@@ -171,14 +90,6 @@ bool crossesBlockingGeometry(const HeadlessWorld* world,
     }
 
     return false;
-}
-
-MovementValidationResult reject(MovementValidationReason reason)
-{
-    MovementValidationResult result;
-    result.decision = MovementValidationDecision::Reject;
-    result.reason = reason;
-    return result;
 }
 
 MovementState stateFromAcceptedReport(const ServerPlayer& player,
@@ -243,55 +154,6 @@ MovementState stateFromAcceptedReport(const ServerPlayer& player,
         hasFlag(report.movementFlags, MOVEMENT_REPORT_GROUND_RETURN_AVAILABLE);
 
     return state;
-}
-
-bool hasContactResetEvidence(const ClientMovementReport& report)
-{
-    return hasFlag(report.movementFlags, MOVEMENT_REPORT_ON_GROUND) ||
-           hasFlag(report.movementFlags, MOVEMENT_REPORT_STABLE_ON_GROUND) ||
-           hasFlag(report.movementFlags, MOVEMENT_REPORT_HAS_WORLD_CONTACT) ||
-           hasFlag(report.movementFlags, MOVEMENT_REPORT_REAL_WORLD_CONTACT);
-}
-
-bool invalidAbilityTransition(const ServerPlayer& player,
-                              const ClientMovementReport& report)
-{
-    const MovementState& previous = player.movement;
-    const bool contactReset = hasContactResetEvidence(report);
-
-    const bool freshDash = report.dashSerial != 0 &&
-        report.dashSerial != player.lastPresentationDashSerial;
-    if (freshDash && !previous.dash.dashAvailable && !contactReset)
-        return true;
-
-    const bool freshDownDash = report.downDashSerial != 0 &&
-        report.downDashSerial != player.lastPresentationDownDashSerial;
-    if (freshDownDash && !previous.downDash.available && !contactReset)
-        return true;
-
-    const bool freshFreeze = report.freezeSerial != 0 &&
-        report.freezeSerial != player.lastPresentationFreezeSerial;
-    if (freshFreeze && !previous.freeze.available && !contactReset)
-        return true;
-
-    if (hasFlag(report.movementFlags, MOVEMENT_REPORT_DASH_AVAILABLE) &&
-        !previous.dash.dashAvailable &&
-        !contactReset)
-        return true;
-    if (hasFlag(report.movementFlags, MOVEMENT_REPORT_DOWN_DASH_AVAILABLE) &&
-        !previous.downDash.available &&
-        !contactReset)
-        return true;
-    if (hasFlag(report.movementFlags, MOVEMENT_REPORT_FREEZE_AVAILABLE) &&
-        !previous.freeze.available &&
-        !contactReset)
-        return true;
-    if (hasFlag(report.movementFlags, MOVEMENT_REPORT_AIR_JUMP_ARMED) &&
-        !previous.jump.airJumpArmed &&
-        !contactReset)
-        return true;
-
-    return false;
 }
 
 } // namespace
@@ -457,188 +319,101 @@ MovementValidationResult validateClientMovementReport(
     const MovementValidationContext& context,
     const MovementValidationConfig& config)
 {
-    if (!context.playerExists)
-        return reject(MovementValidationReason::UnknownPlayer);
-    if (!context.connectionActive)
-        return reject(MovementValidationReason::InactiveConnection);
-    if (!context.connectionOwnsPlayer)
-        return reject(MovementValidationReason::WrongOwner);
-    if (!player.spawned)
-        return reject(MovementValidationReason::NotSpawned);
-    const bool reportIsCurrentLife =
-        report.lifecycle.spawnGeneration == player.spawnGeneration &&
-        report.lifecycle.transformEpoch == player.transformEpoch;
-    if (player.spawnState != ServerPlayer::Active)
+    // The accepted state projection stays cold; the policy only decides whether
+    // to accept it, correct it, or reject it.
+    const MovementState acceptedState =
+        stateFromAcceptedReport(player, report, config);
+
+    GameMovementValidateV1 request{};
+    request.structSize = sizeof(GameMovementValidateV1);
+    request.playerExists = context.playerExists ? 1u : 0u;
+    request.connectionActive = context.connectionActive ? 1u : 0u;
+    request.connectionOwnsPlayer = context.connectionOwnsPlayer ? 1u : 0u;
+    request.serverTick = context.serverTick;
+    request.nowMs = context.nowMs;
+    request.spawned = player.spawned ? 1u : 0u;
+    request.spawnStateActive = player.spawnState == ServerPlayer::Active ? 1u : 0u;
+    request.dead = player.dead ? 1u : 0u;
+    request.movementEnabled = player.movement.movementEnabled ? 1u : 0u;
+    request.spawnGeneration = player.spawnGeneration;
+    request.transformEpoch = static_cast<std::uint32_t>(player.transformEpoch);
+    request.hasMovementSequence = player.hasMovementSequence ? 1u : 0u;
+    request.lastMovementSequence = player.lastMovementSequence;
+    request.awaitingAuthoritativeTransformAck =
+        player.awaitingAuthoritativeTransformAck ? 1u : 0u;
+    request.authoritativeTransformEpoch =
+        static_cast<std::uint32_t>(player.authoritativeTransformEpoch);
+    request.hasAcceptedClientTransform = player.hasAcceptedClientTransform ? 1u : 0u;
+    for (int i = 0; i < 3; ++i)
     {
-        // Implicit lifecycle resume: a client report carrying the player's
-        // CURRENT spawn generation + transform epoch proves the client already
-        // received the authoritative spawn sync, so it must never stay wedged
-        // frozen at the spawn point waiting for a SpawnAck that packet loss,
-        // jitter, or reorder can delay indefinitely. The generation + epoch
-        // checks below still reject every stale-life report, so this cannot
-        // resurrect an old life's movement.
-        if (!reportIsCurrentLife)
-            return reject(MovementValidationReason::NotActive);
+        request.playerPos[i] = player.pos[i];
+        request.lastAcceptedClientPosition[i] = player.lastAcceptedClientPosition[i];
+        request.reportPosition[i] = report.position[i];
+        request.reportBaseVelocity[i] = report.baseVelocity[i];
+        request.reportExternalImpulse[i] = report.externalImpulse[i];
+        request.reportCameraForward[i] = report.horizontalCameraForward[i];
+        request.worldBoundsMin[i] = config.worldBoundsMin[i];
+        request.worldBoundsMax[i] = config.worldBoundsMax[i];
     }
-    if (player.dead)
-        return reject(MovementValidationReason::Dead);
-    if (!player.movement.movementEnabled)
-    {
-        // movementEnabled is only false because spawnState is still
-        // AwaitingSpawnAck; a current-life report IS the proof of life, so let
-        // it through (stateFromAcceptedReport re-enables movement on accept).
-        // Otherwise a respawned player would be frozen at the spawn point on
-        // the server until the one-shot SpawnAck round-trips.
-        if (!reportIsCurrentLife)
-            return reject(MovementValidationReason::MovementDisabled);
-    }
-    if (report.lifecycle.spawnGeneration != player.spawnGeneration)
-        return reject(MovementValidationReason::SpawnGenerationMismatch);
-    if (report.lifecycle.transformEpoch != player.transformEpoch)
-        return reject(MovementValidationReason::TransformEpochMismatch);
-    if (player.hasMovementSequence)
-    {
-        if (report.movementSequence == player.lastMovementSequence)
-            return reject(MovementValidationReason::DuplicateSequence);
-        if (!movementReportSequenceIsNewer(report.movementSequence,
-                                           player.lastMovementSequence))
-            return reject(MovementValidationReason::OldSequence);
-    }
-    // Stale-tick handling. The movement sequence is the authoritative per-life
-    // ordering key and is already validated as strictly newer above. A newer
-    // sequence carrying an older or equal client tick therefore means the
-    // client's simulation clock restarted (for example Player::reset() on
-    // respawn or a map switch), not a replay of an old command. Letting it
-    // through re-baselines lastAcceptedClientTick on accept; rejecting it would
-    // wedge the player at one server position forever, because every later
-    // report would be compared against the stale high-water tick.
-
-    MovementValidationResult result;
-    result.acceptedState = stateFromAcceptedReport(player, report, config);
-
-    const bool finiteState =
-        movementIsFinite(report.moveAxes) &&
-        movementIsFinite(report.horizontalCameraForward) &&
-        movementIsFinite(report.position) &&
-        movementIsFinite(report.baseVelocity) &&
-        movementIsFinite(report.externalImpulse) &&
-        movementIsFinite(report.yaw) &&
-        movementIsFinite(report.lookPitch) &&
-        movementIsFinite(report.sizeScale) &&
-        movementIsFinite(result.acceptedState);
-    if (!finiteState)
-        return reject(MovementValidationReason::NonFinite);
-    if (!componentMagnitudeAllowed(report.position, kFinitePositionLimit) ||
-        !componentMagnitudeAllowed(report.baseVelocity, kFiniteVelocityLimit) ||
-        !componentMagnitudeAllowed(report.externalImpulse, kFiniteVelocityLimit) ||
-        report.sizeScale <= 0.0f)
-    {
-        return reject(MovementValidationReason::MalformedState);
-    }
-
-    // if (player.awaitingAuthoritativeTransformAck)
-    // {
-    //     const float distanceFromAuthoritative =
-    //         glm::length(report.position - player.authoritativeTransformPosition);
-    //     if (report.lifecycle.transformEpoch != player.authoritativeTransformEpoch)
-    //         return reject(MovementValidationReason::TransformEpochMismatch);
-    //     if (distanceFromAuthoritative > config.authoritativeAckDistance)
-    //     {
-    //         MovementValidationResult ackReject =
-    //             reject(MovementValidationReason::TooFarFromAuthoritative);
-    //         ackReject.metrics.positionError = distanceFromAuthoritative;
-    //         return ackReject;
-    //     }
-    //     result.clearsAuthoritativeTransformAck = true;
-    // }
-
-    // 7 22 2026 1209 testing so we can actual move 
-    // 7 22 2026 1215 it didnt work 
-    if (player.awaitingAuthoritativeTransformAck)
-    {
-        // The epoch is the acknowledgement.
-        //
-        // Do not require the client to remain within a tiny radius after applying
-        // the transform. The locally predicted player may legitimately move before
-        // the first matching-epoch report reaches the server.
-        if (report.lifecycle.transformEpoch != player.authoritativeTransformEpoch)
-            return reject(MovementValidationReason::TransformEpochMismatch);
-
-        result.clearsAuthoritativeTransformAck = true;
-    }
-
-    // ── Active human players use validated client-transform authority ──
-    // Skip per‑packet speed, displacement, and ability‑transition checks.
-    // The client owns its movement integration and world collision.
-    // The server retains only structural, lifecycle, sequence, finite‑value,
-    // and catastrophic‑bound validation.
+    request.lastAcceptedClientTick = player.movementValidation.lastAcceptedClientTick;
+    request.reportSpawnGeneration = report.lifecycle.spawnGeneration;
+    request.reportTransformEpoch = report.lifecycle.transformEpoch;
+    request.reportMovementSequence = report.movementSequence;
+    request.reportClientSimulationTick = report.clientSimulationTick;
+    request.reportMoveAxes[0] = report.moveAxes.x;
+    request.reportMoveAxes[1] = report.moveAxes.y;
+    request.reportYaw = report.yaw;
+    request.reportLookPitch = report.lookPitch;
+    request.reportSizeScale = report.sizeScale;
+    request.reportMovementFlags = report.movementFlags;
+    request.worldBoundsPadding = config.worldBoundsPadding;
+    request.postGapCorrectionMinTicks = config.postGapCorrectionMinTicks;
+    request.postGapCorrectionDistance = config.postGapCorrectionDistance;
+    request.acceptedStateFinite = movementIsFinite(acceptedState) ? 1u : 0u;
 
     const glm::vec3 previousPosition = player.hasAcceptedClientTransform
         ? player.lastAcceptedClientPosition
         : player.pos;
+    request.crossesBlockingGeometry =
+        crossesBlockingGeometry(context.world, previousPosition, report.position,
+                                config.wallSweepTolerance) ? 1u : 0u;
+    request.belowVoidFloor =
+        (context.world && report.position.z < context.world->boundsMin.z) ? 1u : 0u;
 
-    // ── Post-blackout drift correction ────────────────────────────────
-    // A client that skipped many simulation ticks (inputs/snapshots lost during
-    // a blackout or reconnect) can have locally predicted its way far from the
-    // server's authoritative simulation. Blindly accepting the drifted position
-    // makes the wrong spot stick for BOTH clients until a death forces an epoch
-    // snap. Correct it back to the server's position so the two re-converge as
-    // soon as traffic resumes (the client snaps back via its post-gap resync).
-    // Normal latency leads the accepted tick by ~ping worth of ticks (well below
-    // postGapCorrectionMinTicks), so healthy play is untouched.
-    const uint64_t clientGapTicks =
-        (player.movementValidation.lastAcceptedClientTick != 0 &&
-         report.clientSimulationTick > player.movementValidation.lastAcceptedClientTick)
-            ? report.clientSimulationTick - player.movementValidation.lastAcceptedClientTick
-            : 0u;
-    if (clientGapTicks > config.postGapCorrectionMinTicks)
-    {
-        const float drift = glm::length(report.position - player.pos);
-        if (drift > config.postGapCorrectionDistance)
-        {
-            result.decision = MovementValidationDecision::Correct;
-            result.reason = MovementValidationReason::TooFarFromAuthoritative;
-            result.acceptedState.position = player.pos;
-            result.acceptedState.baseVelocity = glm::vec3(0.0f);
-            result.acceptedState.externalImpulse = glm::vec3(0.0f);
-            result.metrics.positionError = drift;
-            return result;
-        }
-    }
+    auto validateFn = reinterpret_cast<GameMovementValidateFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_MOVEMENT_VALIDATE));
+    if (validateFn)
+        validateFn(nullptr, &request);
+    else
+        HotMovementValidationImpl::validate(&request);
 
-    if (!insideBounds(report.position, config))
+    MovementValidationResult result;
+    if (!request.result)
+        return result;
+
+    result.decision = static_cast<MovementValidationDecision>(request.decision);
+    result.reason = static_cast<MovementValidationReason>(request.reason);
+    if (result.decision == MovementValidationDecision::Reject)
     {
-        result.decision = MovementValidationDecision::Correct;
-        result.reason = MovementValidationReason::OutOfBounds;
-        result.acceptedState.position = glm::clamp(
-            report.position,
-            validationBoundsMin(config),
-            validationBoundsMax(config));
+        // Matches the previous reject() shape: no accepted state is applied.
         return result;
     }
 
-    if (crossesBlockingGeometry(context.world,
-                                previousPosition,
-                                report.position,
-                                config.wallSweepTolerance))
-    {
-        // Skip the correction when the player is falling into the void below
-        // the map. Void death handles the fall; snapping back up would
-        // rubberband the player above the kill threshold forever.
-        if (!(context.world && report.position.z < context.world->boundsMin.z))
-        {
-            result.decision = MovementValidationDecision::Correct;
-            result.reason = MovementValidationReason::BlockingGeometry;
-            result.acceptedState.position = previousPosition;
-            result.acceptedState.baseVelocity = glm::vec3(0.0f);
-            result.acceptedState.externalImpulse = glm::vec3(0.0f);
-            result.metrics.positionError = glm::length(report.position - previousPosition);
-            return result;
-        }
-    }
-
-    result.decision = MovementValidationDecision::Accept;
-    result.reason = MovementValidationReason::None;
+    result.acceptedState = acceptedState;
+    result.acceptedState.position = glm::vec3(request.acceptedPosition[0],
+                                              request.acceptedPosition[1],
+                                              request.acceptedPosition[2]);
+    result.acceptedState.baseVelocity = glm::vec3(request.acceptedBaseVelocity[0],
+                                                  request.acceptedBaseVelocity[1],
+                                                  request.acceptedBaseVelocity[2]);
+    result.acceptedState.externalImpulse =
+        glm::vec3(request.acceptedExternalImpulse[0],
+                  request.acceptedExternalImpulse[1],
+                  request.acceptedExternalImpulse[2]);
+    result.clearsAuthoritativeTransformAck =
+        request.clearsAuthoritativeTransformAck != 0;
+    result.metrics.positionError = request.positionError;
     return result;
 }
 

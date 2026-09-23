@@ -1376,7 +1376,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         dashFx.scale = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
         if (!LiveBehavior::dispatchEffectRequest(dashFx, 0)) {
             EffectPartSystem::instance().spawnDash(npc.body.pos);
-            playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
+            if (!LiveBehavior::emitAudioFact("npc.action", "entity/player/dash",
+                                             npc.body.pos, 0, true, 1.0f, 1.0f,
+                                             1.0f, 1.0f))
+                playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
         }
     }
 

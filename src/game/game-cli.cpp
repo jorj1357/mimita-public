@@ -11,6 +11,7 @@
 #include "game/game-cli.h"
 #include "combat/weapon-runtime.h"
 #include "network/snapshot-chunks.h"
+#include "hot-reload/hot-reload-system.h"
 #include <cstdio>
 #include <algorithm>
 #include <cstdlib>
@@ -252,8 +253,13 @@ bool handleGameCLI(int argc, char** argv)
     }
 
     if (std::string(argv[1]) == "--snapshot-chunk-selftest") {
+        // Load the hot package so the codec selftest exercises the hot provider
+        // (net.snapshot-codecs) rather than the compiled fallback. A missing DLL
+        // simply leaves the fallback active, so this never regresses the test.
+        HotReloadSystem::instance().startup();
         std::string report;
         const bool ok = MimitaNet::runSnapshotChunkSelfTest(&report);
+        HotReloadSystem::instance().unloadGameDLL();
         printf("%s", report.c_str());
         printf("[SNAPSHOT CHUNK SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);

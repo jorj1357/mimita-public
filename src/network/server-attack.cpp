@@ -33,12 +33,33 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "persistence/persistence-emit.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-attack-gates.h"
 
 #include <cmath>
 #include <vector>
 
 namespace MimitaNet {
 namespace {
+
+// Resolve the active generation's attack-gate policy through the one generic
+// doorway. Never cached across a generation swap. Null when no hot provider.
+static GameAttackGatesFn hotAttackGatesPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_ATTACK_GATES);
+    return callable ? reinterpret_cast<GameAttackGatesFn>(callable) : nullptr;
+}
+
+static void runAttackGates(GameAttackGatesV1& gates)
+{
+    gates.structSize = sizeof(GameAttackGatesV1);
+    GameAttackGatesFn policy = hotAttackGatesPolicy();
+    if (policy)
+        policy(nullptr, &gates);
+    else
+        HotAttackGatesImpl::evaluate(gates);
+}
 
 static bool finiteVec3(const glm::vec3& v)
 {
@@ -617,16 +638,25 @@ void handleAttackRequest(
     const bool consumesAmmo = def->executionType != WeaponExecutionType::PhysicalContact &&
         def->magazineSize > 0;
 
-    // ── Cooldown check (tick-based) ────────────────────────────────────
+    // ── Attack gates: cooldown grace + per-tick shot rate ─────────────
     // A tool with hot per-instance state owns its own cooldown; the hot
     // behavior enforces it and declines when still cooling down. Do not also
     // rate-limit it through the legacy tick counter (that would be a second
-    // owner of the same concept).
+    // owner of the same concept). The thresholds and decisions are hot
+    // (net.attack-gates).
     const bool hotStateOwns = serverHotToolStateHas(shooter.equippedToolEntity);
-    constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
-    if (!hotStateOwns &&
-        def->executionType != WeaponExecutionType::PhysicalContact &&
-        tick + COOLDOWN_GRACE_TICKS < rt.nextAllowedFireTick)
+    GameAttackGatesV1 gates{};
+    gates.hotStateOwns = hotStateOwns ? 1u : 0u;
+    gates.isPhysicalContact =
+        def->executionType == WeaponExecutionType::PhysicalContact ? 1u : 0u;
+    gates.isHitscan = def->executionType == WeaponExecutionType::Hitscan ? 1u : 0u;
+    gates.tick = tick;
+    gates.nextAllowedFireTick = rt.nextAllowedFireTick;
+    gates.cooldownGraceTicks = 2;
+    gates.shotsThisTick = shooter.shotsThisTick;
+    gates.maxShotsPerTick = ServerPlayer::MAX_SHOTS_PER_TICK;
+    runAttackGates(gates);
+    if (gates.cooldownReject)
     {
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u cooldown tick=%u nextAllowed=%llu\n",
                    shooter.id, req->requestId, tick, (unsigned long long)rt.nextAllowedFireTick);
@@ -637,10 +667,7 @@ void handleAttackRequest(
                          rt.nextAllowedFireTick, rt.stateRevision);
         return;
     }
-
-    // ── Per-tick shot rate limit ───────────────────────────────────
-    if (def->executionType == WeaponExecutionType::Hitscan &&
-        shooter.shotsThisTick >= ServerPlayer::MAX_SHOTS_PER_TICK)
+    if (gates.rateLimitReject)
     {
         sendAttackResult(sock, shooter, req, tick, false, 1, 0,
                          rt.magazineAmmo, rt.reserveAmmo,
@@ -747,15 +774,24 @@ void handleAttackRequest(
         glm::vec3 origin = finiteVec3(reqOrigin) ? reqOrigin : fallbackOrigin;
         glm::vec3 direction = normalizedOrZero(
             glm::vec3(req->aimDirX, req->aimDirY, req->aimDirZ));
-        // Allow the muzzle position to be ahead of the server's record of the
-        // shooter by the distance the player could have traveled during their
-        // round-trip latency.  Without this, shots are falsely rejected on
-        // high-latency connections (e.g. badconn 8) because the client fires
-        // from a position the server has not accepted yet.
-        const float pingAllowance = (float)shooter.pingMs / 1000.0f * 200.0f;
-        const float originTolerance = 12.0f + pingAllowance;
-        if (!finiteVec3(origin) || glm::length(direction) <= 0.0001f ||
-            glm::length(origin - shooter.pos) > originTolerance)
+        // The muzzle may lead the server's record of the shooter by the distance
+        // the player could travel during their round-trip latency; the tolerance
+        // and the geometry decision are hot (net.attack-gates). The cooldown and
+        // shot-rate gates are suppressed here (already applied above).
+        GameAttackGatesV1 geometry{};
+        geometry.hotStateOwns = 1u;
+        geometry.isHitscan = 1u;
+        geometry.shotsThisTick = 0u;
+        geometry.maxShotsPerTick = 1u;
+        geometry.pingMs = (float)shooter.pingMs;
+        for (int i = 0; i < 3; ++i)
+        {
+            geometry.shooterPos[i] = shooter.pos[i];
+            geometry.origin[i] = origin[i];
+            geometry.direction[i] = direction[i];
+        }
+        runAttackGates(geometry);
+        if (geometry.geometryReject)
         {
             Debug::log(Debug::Category::Weapons,
                 "[ATTACK REJECT] playerId=%u requestId=%u invalid hitscan geometry\n",

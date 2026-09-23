@@ -13,6 +13,8 @@
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
 #include "network/server-damage-policy.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-damage-application.h"
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
 #include "ecs/entity-types.h"
@@ -73,6 +75,16 @@ ServerActorRef findServerActor(uint32_t actorId,
     return ref;
 }
 
+// Resolve the active generation's damage-application policy through the one
+// generic doorway. Never cached across a generation swap. Null when no hot
+// provider is registered.
+static GameDamageApplicationFn hotDamageApplicationPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_DAMAGE_APPLICATION);
+    return callable ? reinterpret_cast<GameDamageApplicationFn>(callable) : nullptr;
+}
+
 static ServerDamageResult applyPlayerDamageLegacy(
     std::unordered_map<uint32_t, ServerPlayer>& players,
     ServerPlayer& target,
@@ -85,66 +97,57 @@ static ServerDamageResult applyPlayerDamageLegacy(
     result.healthBefore = target.health;
     result.healthAfter = target.health;
 
-    if (target.dead || damage <= 0)
+    // The accept/reject, friendly-fire, damage-limit, and death/respawn rules
+    // are hot (net.damage-application); the cold path applies the decision.
+    GameDamageApplicationV1 request{};
+    request.structSize = sizeof(GameDamageApplicationV1);
+    request.targetDead = target.dead ? 1u : 0u;
+    request.targetConnectionStale = target.connectionStale ? 1u : 0u;
+    request.attackerIsTarget = attackerPlayerId == target.id ? 1u : 0u;
+    request.targetTeam = target.matchTeam;
+    request.damage = damage;
+    request.damageLimit = serverAuthoritativeDamageLimit();
+    request.respawnsEnabled = serverMatchRespawnsEnabled() ? 1u : 0u;
+    request.respawnSeconds = serverMatchRespawnSeconds();
+    request.targetHealth = target.health;
+    auto attackerIt = players.find(attackerPlayerId);
+    request.attackerFound = attackerIt != players.end() ? 1u : 0u;
+    request.attackerTeam = attackerIt != players.end() ? attackerIt->second.matchTeam : -1;
+
+    GameDamageApplicationFn policy = hotDamageApplicationPolicy();
+    if (policy)
+        policy(nullptr, &request);
+    else
+        HotDamageApplicationImpl::evaluate(request);
+
+    if (!request.result || !request.accept)
     {
+        const char* reason =
+            request.rejectReason == GAME_DAMAGE_REJECT_TARGET_DEAD ? "target-dead" :
+            request.rejectReason == GAME_DAMAGE_REJECT_NON_POSITIVE ? "non-positive-damage" :
+            request.rejectReason == GAME_DAMAGE_REJECT_TARGET_RECONNECTING ? "target-reconnecting" :
+            request.rejectReason == GAME_DAMAGE_REJECT_FRIENDLY_FIRE ? "friendly-fire" :
+            "rejected";
         DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
             "reason=%s damage=%d health=%d",
-            target.id, attackerPlayerId, damageSourceName(source),
-            target.dead ? "target-dead" : "non-positive-damage",
+            target.id, attackerPlayerId, damageSourceName(source), reason,
             damage, target.health);
         return result;
     }
 
-    // Disconnected/reconnecting players take no damage: someone who crashed or
-    // froze should not die while offline. Their body is frozen and invulnerable
-    // for the reconnect grace window.
-    // TODO(anti-cheat): a client could drop packets to dodge damage. Honest-play
-    // assumption for now; revisit with server-side movement/DPS accounting.
-    if (target.connectionStale)
-    {
-        DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
-            "reason=target-reconnecting damage=%d health=%d",
-            target.id, attackerPlayerId, damageSourceName(source), damage, target.health);
-        return result;
-    }
-
-    // Team-based friendly fire filtering: teammates cannot damage each other.
-    // Self-damage (attacker == target) is always allowed for rocket jumping.
-    if (attackerPlayerId != target.id && target.matchTeam >= 0)
-    {
-        auto attackerIt = players.find(attackerPlayerId);
-        if (attackerIt != players.end() && attackerIt->second.matchTeam >= 0)
-        {
-            if (attackerIt->second.matchTeam == target.matchTeam)
-            {
-                DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
-                    "reason=friendly-fire teams=%d damage=%d health=%d",
-                    target.id, attackerPlayerId, damageSourceName(source),
-                    target.matchTeam, damage, target.health);
-                return result;
-            }
-        }
-    }
-
-    const int damageLimit = serverAuthoritativeDamageLimit();
-    int clampedDamage = std::max(1, damage);
-    if (damageLimit > 0 && clampedDamage > damageLimit)
-        clampedDamage = damageLimit;
-    target.health = std::max(0, target.health - clampedDamage);
+    target.health = request.healthAfter;
     target.vel += knockback;
     recordServerMovementExternalImpulse(target, knockback);
     result.applied = true;
     result.healthAfter = target.health;
 
-    if (target.health == 0)
+    if (request.killed)
     {
         target.dead = true;
         // Honor the active gamemode's respawn rule. One-life modes set a
         // negative timer so the respawn pump never revives the actor and the
         // match state advances it to Spectating.
-        target.respawnSeconds = serverMatchRespawnsEnabled()
-            ? serverMatchRespawnSeconds()
-            : -1.0f;
+        target.respawnSeconds = request.outRespawnSeconds;
         target.vel = glm::vec3(0.0f);
         target.movement.movementEnabled = false;
         target.movement.baseVelocity = glm::vec3(0.0f);
@@ -161,7 +164,7 @@ static ServerDamageResult applyPlayerDamageLegacy(
 
     DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s damage=%d "
         "healthBefore=%d healthAfter=%d killed=%d knockback=(%.2f,%.2f,%.2f)",
-        target.id, attackerPlayerId, damageSourceName(source), clampedDamage,
+        target.id, attackerPlayerId, damageSourceName(source), request.clampedDamage,
         result.healthBefore, result.healthAfter, (int)result.killed,
         knockback.x, knockback.y, knockback.z);
     return result;

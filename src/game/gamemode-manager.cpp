@@ -24,6 +24,7 @@
 #include "gui/gui-element-render.h"
 #include "debug/debug-visuals.h"
 #include "audio/audio.h"
+#include "live-code/live-behavior.h"
 #include "network/community-match-client.h"
 #include "network/multiplayer-context.h"
 #include "gamemode/gamemode.h"
@@ -171,12 +172,20 @@ void GamemodeManager::update(float dt, Player& player) {
 
         // Explosion: timer was > 0, now == 0
         if (mPrevBombTimerTicks > 0 && curTimer == 0) {
-            playEventSound("assets/sound/weapon/bomb/explosion2.wav", 1.0f);
+            if (!LiveBehavior::emitAudioFact("bomb.effect",
+                                             "assets/sound/weapon/bomb/explosion2.wav",
+                                             static_cast<const float*>(nullptr), 0,
+                                             /*spatial*/false, 1.0f, 1.0f, 1.0f, 1.0f))
+                playEventSound("assets/sound/weapon/bomb/explosion2.wav", 1.0f);
         }
 
         // Pass: holder changed (both > 0 means a real transfer, not initial assignment)
         if (mPrevBombHolderId != 0 && curHolder != 0 && mPrevBombHolderId != curHolder) {
-            playEventSound("assets/sound/weapon/bomb/bombpass1.wav", 1.0f);
+            if (!LiveBehavior::emitAudioFact("bomb.effect",
+                                             "assets/sound/weapon/bomb/bombpass1.wav",
+                                             static_cast<const float*>(nullptr), 0,
+                                             /*spatial*/false, 1.0f, 1.0f, 1.0f, 1.0f))
+                playEventSound("assets/sound/weapon/bomb/bombpass1.wav", 1.0f);
         }
 
         // Tick sound: timer crossed a 60-tick boundary (once per second)
@@ -184,14 +193,22 @@ void GamemodeManager::update(float dt, Player& player) {
             uint32_t prevSecond = mPrevBombTimerTicks / 60;
             uint32_t curSecond = curTimer / 60;
             if (curSecond < prevSecond) {
-                playEventSound("assets/sound/weapon/bomb/bombtick1.wav", 0.8f);
+                if (!LiveBehavior::emitAudioFact("bomb.effect",
+                                                 "assets/sound/weapon/bomb/bombtick1.wav",
+                                                 static_cast<const float*>(nullptr), 0,
+                                                 /*spatial*/false, 1.0f, 1.0f, 0.8f, 1.0f))
+                    playEventSound("assets/sound/weapon/bomb/bombtick1.wav", 0.8f);
             }
         }
 
         // Inactive sound: play while inactive, stop when active
         if (c.bombInactiveTicks() > 0) {
             if (!mInactiveSoundPlaying) {
-                playEventSound("assets/sound/weapon/bomb/bombinactive1.wav", 0.6f);
+                if (!LiveBehavior::emitAudioFact("bomb.effect",
+                                                 "assets/sound/weapon/bomb/bombinactive1.wav",
+                                                 static_cast<const float*>(nullptr), 0,
+                                                 /*spatial*/false, 1.0f, 1.0f, 0.6f, 1.0f))
+                    playEventSound("assets/sound/weapon/bomb/bombinactive1.wav", 0.6f);
                 mInactiveSoundPlaying = true;
             }
         } else {

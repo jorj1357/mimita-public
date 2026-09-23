@@ -17,7 +17,6 @@ namespace MimitaNet {
 struct LaunchOptions
 {
     bool server = false;
-    bool client = false;
     std::string connect;
     bool connectExplicit = false;
     std::string bind = "0.0.0.0:1357";
@@ -46,7 +45,6 @@ struct LaunchOptions
 LaunchOptions parseLaunchOptions(int argc, char** argv);
 void printLaunchUsage();
 int runServer(const LaunchOptions& options);
-int runClient(const LaunchOptions& options);
 
 // Forward declaration
 struct ServerLaunchSettings;

@@ -9,6 +9,8 @@
 
 #include <cstdint>
 
+#include <glm/glm.hpp>
+
 #include "hot-reload/game-api.h"
 
 namespace LiveBehavior {
@@ -48,6 +50,29 @@ bool dispatchToolUse(ToolUsePolicyV1& payload, std::uint64_t tick);
 // Generic effect request: a hot effect behavior may own the composition. Returns
 // true when handled (the cold fallback must not also compose).
 bool dispatchEffectRequest(EffectRequestV1& payload, std::uint64_t tick);
+
+// Emit a generic sound-only fact (audio.fact). The hot audio policy resolves the
+// recipe (and optional explicit logical sound) and emits one audio.play command.
+// Returns true when the hot owner accepted it; the cold caller must not also
+// play in that case (one owner). `sound` may be null/empty to use the recipe's
+// sound list; `volumeBase`/`pitchBase` < 0 use the recipe value.
+bool emitAudioFact(const char* recipeName, const char* sound,
+                   const float position[3], std::uint64_t ownerEntity,
+                   bool spatial, float volumeScale = 1.0f,
+                   float pitchScale = 1.0f, float volumeBase = -1.0f,
+                   float pitchBase = -1.0f);
+
+// glm convenience overload for the common world-position call site.
+inline bool emitAudioFact(const char* recipeName, const char* sound,
+                          const glm::vec3& position, std::uint64_t ownerEntity,
+                          bool spatial, float volumeScale = 1.0f,
+                          float pitchScale = 1.0f, float volumeBase = -1.0f,
+                          float pitchBase = -1.0f)
+{
+    const float p[3] = {position.x, position.y, position.z};
+    return emitAudioFact(recipeName, sound, p, ownerEntity, spatial,
+                         volumeScale, pitchScale, volumeBase, pitchBase);
+}
 
 // Generic actor lifecycle boundary. The kernel owns the envelope storage;
 // hot behavior owns lifecycle decisions when it marks the payload handled.
@@ -123,6 +148,10 @@ std::uint64_t audioPlayCount();
 // Total audio commands rejected by the ABI/version gate or an unknown op
 // (headless evidence that invalid commands are dropped without side effects).
 std::uint64_t audioCommandRejectCount();
+
+// Total audio journal lines emitted (headless evidence that the audio event
+// path ran; the file write itself is proven by --live-code-selftest).
+std::uint64_t audioJournalCount();
 
 // Total surface.effect invocations (headless evidence that hot decal policy
 // reached the cold surface mechanism).

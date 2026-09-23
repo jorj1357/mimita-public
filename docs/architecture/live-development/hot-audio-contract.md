@@ -124,6 +124,7 @@ GAME_AUDIO_SET_LISTENER        = 5   (append)
 GAME_AUDIO_RELOAD_RESOURCE     = 6   (append; logical id in `sound`)
 GAME_AUDIO_INVALIDATE_RESOURCE = 7   (append; logical id in `sound`)
 GAME_AUDIO_QUERY_STATUS        = 8   (append; fills out fields)
+GAME_AUDIO_SET_TRACE           = 9   (append; flags bit0 = enable tracing)
 ```
 
 ```text

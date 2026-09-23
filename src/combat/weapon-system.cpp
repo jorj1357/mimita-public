@@ -25,6 +25,7 @@
 #include "ecs/actor-entities.h"
 #include "ecs/dynamic-components.h"
 #include "hot-reload/hot-presentation.h"
+#include "live-code/live-behavior.h"
 
 #include <algorithm>
 #include <cmath>
@@ -169,8 +170,11 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         if (rt->isReloading) {
             bool wasReloading = rt->isReloading;
             WeaponRuntimeHelper::tickReload(*rt, *def, dt);
-            if (wasReloading && !rt->isReloading && !def->soundReload.empty())
-                playWorldSound(def->soundReload, player.pos, 0.9f, 1.0f, 10.0f);
+            if (wasReloading && !rt->isReloading && !def->soundReload.empty()) {
+                if (!LiveBehavior::emitAudioFact("weapon.reload", def->soundReload.c_str(),
+                                                 player.pos, 0, true, 1.0f, 1.0f, 0.9f, 1.0f))
+                    playWorldSound(def->soundReload, player.pos, 0.9f, 1.0f, 10.0f);
+            }
         }
 
         if (rt->reloadBufferTimer > 0.0f) {
@@ -1037,7 +1041,9 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     if (!def || !rt) return result;
 
     if (rt->fireCooldown > 0.0f && !rt->isReloading) {
-        playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
+        if (!LiveBehavior::emitAudioFact("ui.click", "ui/click", player.pos, 0, true,
+                                         1.0f, 1.0f, 0.4f, 0.75f))
+            playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
         return result;
     }
 
@@ -1045,7 +1051,9 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     if (rt->currentAmmo > 0 && rt->isReloading) {
         // Fire loaded projectile, interrupt reload, discard partial progress
     } else if (rt->currentAmmo <= 0) {
-        playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
+        if (!LiveBehavior::emitAudioFact("ui.click", "ui/click", player.pos, 0, true,
+                                         1.0f, 1.0f, 0.4f, 0.75f))
+            playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
         if (!rt->isReloading && rt->reserveAmmo > 0) {
             reload(player);
             result.autoReloadTriggered = true;
