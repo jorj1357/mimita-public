@@ -77,6 +77,22 @@ CollisionBehaviorV1 collisionBehavior()
 
 namespace {
 
+// Human-readable collider/limb name for contact records.
+inline const char* collisionPartName(std::uint32_t part)
+{
+    switch (part) {
+        case COLLISION_PART_CAPSULE: return "capsule";
+        case COLLISION_PART_HEAD: return "head";
+        case COLLISION_PART_TORSO: return "torso";
+        case COLLISION_PART_LEFT_ARM: return "leftArm";
+        case COLLISION_PART_RIGHT_ARM: return "rightArm";
+        case COLLISION_PART_LEFT_LEG: return "leftLeg";
+        case COLLISION_PART_RIGHT_LEG: return "rightLeg";
+        case COLLISION_PART_WEAPON: return "weapon";
+        default: return "unknown";
+    }
+}
+
 // ── Solve tuning (edit live) ────────────────────────────────────────────────
 // These are the hot owner's values; edit and save to retune while the EXE runs.
 constexpr float kWalkableSlopeDot = 0.80f;   // old cold MAX_WALKABLE_SLOPE_DOT
@@ -393,50 +409,75 @@ void recordImpacts(const ActorContact* merged, int mc, ActorContact* accum,
     }
 }
 
-// Old cold doGroundSnap: pull the actor down to a walkable surface within the
-// settle distance so a fast landing rests exactly on the floor instead of
-// hovering a fraction above it. Only snaps down (never up) and only to a
-// near-feet walkable surface. Returns true when it grounded the actor.
+// afad20a grounding authority is the visible BODY: the actor rests where its
+// lowest limb (foot/leg/arm/torso/head) touches a walkable surface. The root
+// capsule is a movement helper and must not hold the body above the floor, so it
+// is only used when no body collider is present. Only snaps down, within the
+// settle distance.
 bool settleToGround(glm::vec3& pos, glm::vec3& vel,
                     const ColliderRuntime* cols, int colCount,
                     const std::vector<std::uint32_t>& candidates,
                     glm::vec3& outNormal)
 {
-    if (cols[0].partId != COLLISION_PART_CAPSULE && colCount > 0)
-        return false;
+    (void)vel;
+    bool anyBody = false;
     for (int i = 0; i < colCount; ++i) {
-        if (cols[i].partId != COLLISION_PART_CAPSULE)
-            continue;
-        const glm::vec3 c = pos + cols[i].localOffset;
-        const float halfSeg = cols[i].halfHeight > cols[i].radius
-                                  ? cols[i].halfHeight - cols[i].radius
-                                  : 0.0f;
-        // Bottom sphere centre; its surface is the actor's feet.
-        const glm::vec3 bottomCenter = c - glm::vec3(0.0f, 0.0f, halfSeg);
-        const float feetZ = c.z - (cols[i].halfHeight > cols[i].radius
-                                       ? cols[i].halfHeight
-                                       : cols[i].radius);
-        // Probe a sphere just below the feet for a walkable surface.
-        SphereHit hits[8];
-        const int hc = gatherSphereHits(bottomCenter,
-                                        cols[i].radius + kGroundSettleDistance,
-                                        kContactTolerance, candidates, hits, 8);
-        float bestZ = -1e30f;
-        for (int h = 0; h < hc; ++h) {
-            if (hits[h].normal.z <= kWalkableSlopeDot)
-                continue;
-            const float surfaceZ = hits[h].point.z;
-            if (surfaceZ > bestZ && surfaceZ < c.z + 1.0f)
-                bestZ = surfaceZ;
+        if (cols[i].partId != COLLISION_PART_CAPSULE &&
+            cols[i].partId != COLLISION_PART_WEAPON) {
+            anyBody = true;
+            break;
         }
-        if (bestZ <= -1e29f)
+    }
+    float lowestSurfaceZ = 1e30f;
+    glm::vec3 probeCenter(0.0f);
+    float probeRadius = 0.0f;
+    bool found = false;
+    for (int i = 0; i < colCount; ++i) {
+        const ColliderRuntime& col = cols[i];
+        const bool isBody = col.partId != COLLISION_PART_CAPSULE &&
+                            col.partId != COLLISION_PART_WEAPON;
+        if (anyBody && !isBody)
             continue;
-        const float distance = feetZ - bestZ;
-        if (distance > 0.0f && distance < kGroundSettleDistance) {
-            pos.z -= distance - kGroundSettleEpsilon;
-            outNormal = glm::vec3(0.0f, 0.0f, 1.0f);
-            return true;
+        const glm::vec3 c = pos + col.localOffset;
+        glm::vec3 lowCenter = c;
+        float surfaceZ;
+        if (col.halfSeg > 0.0f) {
+            const glm::vec3 e1 = c + col.axis * col.halfSeg;
+            const glm::vec3 e2 = c - col.axis * col.halfSeg;
+            const glm::vec3 low = (e1.z < e2.z) ? e1 : e2;
+            lowCenter = glm::vec3(c.x, c.y, low.z);
+            surfaceZ = low.z - col.radius;
+        } else {
+            surfaceZ = c.z - col.radius;
         }
+        if (surfaceZ < lowestSurfaceZ) {
+            lowestSurfaceZ = surfaceZ;
+            probeCenter = lowCenter;
+            probeRadius = col.radius;
+            found = true;
+        }
+    }
+    if (!found)
+        return false;
+    SphereHit hits[8];
+    const int hc = gatherSphereHits(probeCenter,
+                                    probeRadius + kGroundSettleDistance,
+                                    kContactTolerance, candidates, hits, 8);
+    float bestZ = -1e30f;
+    for (int h = 0; h < hc; ++h) {
+        if (hits[h].normal.z <= kWalkableSlopeDot)
+            continue;
+        const float surfaceZ = hits[h].point.z;
+        if (surfaceZ > bestZ && surfaceZ < probeCenter.z + 1.0f)
+            bestZ = surfaceZ;
+    }
+    if (bestZ <= -1e29f)
+        return false;
+    const float distance = lowestSurfaceZ - bestZ;
+    if (distance > 0.0f && distance < kGroundSettleDistance) {
+        pos.z -= distance - kGroundSettleEpsilon;
+        outNormal = glm::vec3(0.0f, 0.0f, 1.0f);
+        return true;
     }
     return false;
 }
@@ -456,19 +497,33 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
     ActorContact merged[kMaxRawContacts];
     const int mc = mergeContacts(raw, rc, merged);
 
-    // Actor feet plane, in the same frame as `pos`, for the old cold rule that
-    // only a contact near the feet counts as ground. Include leg proxies so the
-    // visible body can establish support instead of leaving the root hovering.
-    float feetZ = pos.z;
+    // Actor feet plane, in the same frame as `pos`. Prefer the visible body
+    // colliders (legs) so grounding follows the limbs; fall back to the root
+    // capsule only when no body collider is present. Without this the capsule
+    // (a helper) held the body above the floor.
+    bool anyBody = false;
     for (int i = 0; i < colCount; ++i) {
         if (cols[i].partId != COLLISION_PART_CAPSULE &&
-            cols[i].partId != COLLISION_PART_LEFT_LEG &&
-            cols[i].partId != COLLISION_PART_RIGHT_LEG)
+            cols[i].partId != COLLISION_PART_WEAPON) {
+            anyBody = true;
+            break;
+        }
+    }
+    float feetZ = pos.z;
+    for (int i = 0; i < colCount; ++i) {
+        const bool isBody = cols[i].partId != COLLISION_PART_CAPSULE &&
+                            cols[i].partId != COLLISION_PART_WEAPON;
+        if (anyBody && !isBody)
             continue;
         const glm::vec3 c = pos + cols[i].localOffset;
-        const float bottom = c.z - (cols[i].halfHeight > cols[i].radius
-                                        ? cols[i].halfHeight
-                                        : cols[i].radius);
+        float bottom;
+        if (cols[i].halfSeg > 0.0f) {
+            const glm::vec3 e1 = c + cols[i].axis * cols[i].halfSeg;
+            const glm::vec3 e2 = c - cols[i].axis * cols[i].halfSeg;
+            bottom = std::min(e1.z, e2.z) - cols[i].radius;
+        } else {
+            bottom = c.z - cols[i].radius;
+        }
         feetZ = std::min(feetZ, bottom);
     }
 
@@ -489,14 +544,16 @@ int resolveOnce(glm::vec3& pos, glm::vec3& vel, std::uint64_t entity,
         collided = true;
 
         if (c.touching) {
-            // Touching-only: no depenetration and no velocity response. Still
-            // cancels into-surface velocity so a resting actor does not creep.
+            // Touching-only: no depenetration. The velocity response still
+            // applies so a wall/ceiling contact BOUNCES (afad20a
+            // respondVelocityAgainstNormal), while a settling ground contact
+            // just cancels the into-ground component.
             const float into = glm::dot(vel, c.normal);
             if (into < 0.0f) {
-                if (isGround && behavior.groundBounce)
-                    applyVelocityResponse(vel, c, entity, tick, bounced, behavior);
-                else
+                if (isGround && !behavior.groundBounce)
                     vel -= c.normal * into;
+                else
+                    applyVelocityResponse(vel, c, entity, tick, bounced, behavior);
             }
             continue;
         }
@@ -853,21 +910,23 @@ void solve(void* host, CollisionSolveV1* q)
         c.reserved0 = 0u;
     }
 
-    // Per-contact record: names the actor, the collider/part, the world
-    // triangle index on the touched surface, the contact point, the normal, and
-    // the penetration. This is the "did the code think I touched anything"
-    // evidence, with the triangle that was actually touched.
+    // Per-contact record: names the actor, the collider/part (limb), the world
+    // triangle index on the touched surface, the contact point, the normal, the
+    // penetration, the incoming speed, and whether it reset abilities. This is
+    // the "which limb touched what, on which tick" evidence.
     if (q->contactCount > 0 && contactLogEnabled()) {
         for (std::uint32_t i = 0; i < q->contactCount; ++i) {
             const CollisionContactV1& c = q->contacts[i];
             char msg[256];
             std::snprintf(
                 msg, sizeof(msg),
-                "part=%u tri=%d point=(%.3f %.3f %.3f) n=(%.2f %.2f %.2f) "
-                "pen=%.4f incoming=%.2f colCount=%u",
-                c.sourcePart, c.triangle, c.point[0], c.point[1], c.point[2],
-                c.normal[0], c.normal[1], c.normal[2], c.penetration,
-                c.incomingSpeed, (unsigned)colCount);
+                "actor=%llu part=%s tri=%d target=%s point=(%.3f %.3f %.3f) "
+                "n=(%.2f %.2f %.2f) pen=%.4f incoming=%.2f resets=%u grounded=%u",
+                (unsigned long long)c.sourceEntity,
+                collisionPartName(c.sourcePart), c.triangle,
+                c.targetKind == 0u ? "world" : "entity", c.point[0], c.point[1],
+                c.point[2], c.normal[0], c.normal[1], c.normal[2],
+                c.penetration, c.incomingSpeed, c.resetsAbilities, q->grounded);
             collisionLogFull(host, 2u, "COLLISION", "collision.contact", msg,
                              q->grounded ? "grounded" : "contact",
                              q->entityId, q->entityId, q->actorKind, q->frame,

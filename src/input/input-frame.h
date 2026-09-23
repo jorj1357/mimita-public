@@ -19,6 +19,10 @@ struct InputFrame {
     bool jump = false;
     bool jumpPressed = false;
     bool dashPressed = false;
+    // Raw key-down state for edge abilities. The hot movement owns the
+    // press-edge (down transition) so there is no buffer/cooldown here.
+    bool dashHeld = false;
+    bool downDashHeld = false;
     bool movementPressed = false;
     bool movementJustPressed = false;
     bool reloadPressed = false;

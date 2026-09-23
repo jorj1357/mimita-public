@@ -96,8 +96,10 @@ void engineTickNet(Engine& engine, float dt)
         if (cmd.getState("walkleft").held)    mpInput.wishX -= 1.0f;
         if (cmd.getState("walkright").held)   mpInput.wishX += 1.0f;
         mpInput.jumpHeld = cmd.isJumpHeld();
-        mpInput.dashPressed = cmd.isDashPressed();
-        mpInput.downDashPressed = cmd.isDownDashPressed();
+        // Raw press edge: no buffer/cooldown. The receiving actor's hot movement
+        // owns the held->pressed transition.
+        mpInput.dashPressed = cmd.getState("dash").pressed;
+        mpInput.downDashPressed = cmd.getState("down_dash").pressed;
         mpInput.freezeHeld = cmd.isFreezeHeld();
         mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&
             glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED &&

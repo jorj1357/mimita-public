@@ -112,7 +112,7 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     ensureInputInit(win);
     InputCommandSystem::instance().update(0.016f);
 
-    const auto& cmd = InputCommandSystem::instance();
+    InputCommandSystem& cmd = InputCommandSystem::instance();
 
     glm::vec3 f = cam.front;
     f.z = 0.0f;
@@ -153,12 +153,19 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
         cmd.getState("walkleft").pressed ||
         cmd.getState("walkright").pressed;
 
+    // Dash / down-dash: NO buffer and NO cooldown. The frame carries the raw
+    // key-down state and the hot movement owns the press edge, so a press acts
+    // as fast as possible. The edge field below is only for network/replay.
     frame.jump = cmd.isJumpHeld() || gTerminalInputOverride.jump;
     frame.jumpPressed = cmd.getState("jump").pressed || gTerminalInputOverride.jumpPressed;
-    frame.dashPressed = cmd.isDashPressed() || gTerminalInputOverride.dashPressed;
+    frame.dashHeld = cmd.getState("dash").held;
+    frame.downDashHeld = cmd.getState("down_dash").held;
+    frame.dashPressed = cmd.getState("dash").pressed ||
+                        gTerminalInputOverride.dashPressed;
     frame.reloadPressed = cmd.getState("reload").pressed || gTerminalInputOverride.reloadPressed;
     frame.groundReturnPressed = cmd.isGroundReturnPressed() || gTerminalInputOverride.groundReturnPressed;
-    frame.downDashPressed = cmd.isDownDashPressed() || gTerminalInputOverride.downDashPressed;
+    frame.downDashPressed = cmd.getState("down_dash").pressed ||
+                            gTerminalInputOverride.downDashPressed;
     frame.freezeHeld = cmd.isFreezeHeld() || gTerminalInputOverride.freezeHeld;
     frame.freezePressed = cmd.getState("freeze").pressed || gTerminalInputOverride.freezePressed;
 

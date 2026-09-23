@@ -2264,14 +2264,15 @@ static constexpr std::uint64_t GAME_CAP_BODY_PARTS = gameHash("body.parts");
 static constexpr std::uint32_t GAME_MAX_BODY_PARTS = 8;
 struct GameBodyPartV1 {
     std::uint64_t part;             // gameHash(part name)
-    float worldPosition[3];         // world-space node origin (space==1) or root-relative (space==0)
-    float worldRotation[4];         // quaternion xyzw
-    float previousWorldPosition[3]; // previous tick, same space as worldPosition
+    // Full world / previous-tick matrices (column-major, glm layout). The part
+    // transform carries model scale, so the collider centre must be transformed
+    // by the matrix, not by rotation alone.
+    float worldMatrix[16];
+    float previousWorldMatrix[16];
     float boundsMin[3];             // part-local collider AABB
     float boundsMax[3];
-    // 1 = positions are WORLD space (afad20a); 0 = legacy root-relative. The
-    // hot builder composes legacy values with its own root so a new DLL stays
-    // compatible with an older EXE during a partial update.
+    // 1 = matrices above are valid (world); 0 = legacy/unsupported, the hot
+    // builder falls back to the socket path.
     std::uint32_t space;
     std::uint32_t reserved;
 };

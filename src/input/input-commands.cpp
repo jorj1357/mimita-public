@@ -291,7 +291,8 @@ bool InputCommandSystem::isJumpHeld() const {
 }
 
 bool InputCommandSystem::isDashPressed() const {
-    return getState("dash").pressed || mDashBuffer.active;
+    // No buffer: dash is edge-triggered and must act on the raw press.
+    return getState("dash").pressed;
 }
 
 bool InputCommandSystem::isGroundReturnPressed() const {
@@ -299,7 +300,8 @@ bool InputCommandSystem::isGroundReturnPressed() const {
 }
 
 bool InputCommandSystem::isDownDashPressed() const {
-    return getState("down_dash").pressed || mDownDashBuffer.active;
+    // No buffer: down-dash is edge-triggered and must act on the raw press.
+    return getState("down_dash").pressed;
 }
 
 bool InputCommandSystem::isFreezeHeld() const {

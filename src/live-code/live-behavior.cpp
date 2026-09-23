@@ -1974,24 +1974,19 @@ bool MIMITA_GAME_CALL capBodyParts(void*, GameBodyPartsV1* q)
         const PhysicalBodyPart& part = p.physicalBody.parts[i];
         GameBodyPartV1& out = q->parts[i];
         out.part = gameHash(part.name.c_str());
-        out.worldPosition[0] = part.worldTransform[3][0];
-        out.worldPosition[1] = part.worldTransform[3][1];
-        out.worldPosition[2] = part.worldTransform[3][2];
-        const glm::quat rq = glm::quat_cast(glm::mat3(part.worldTransform));
-        out.worldRotation[0] = rq.x;
-        out.worldRotation[1] = rq.y;
-        out.worldRotation[2] = rq.z;
-        out.worldRotation[3] = rq.w;
-        out.previousWorldPosition[0] = part.previousWorldTransform[3][0];
-        out.previousWorldPosition[1] = part.previousWorldTransform[3][1];
-        out.previousWorldPosition[2] = part.previousWorldTransform[3][2];
+        for (int c = 0; c < 4; ++c)
+            for (int r = 0; r < 4; ++r) {
+                out.worldMatrix[c * 4 + r] = part.worldTransform[c][r];
+                out.previousWorldMatrix[c * 4 + r] =
+                    part.previousWorldTransform[c][r];
+            }
         out.boundsMin[0] = part.collider.localMin.x;
         out.boundsMin[1] = part.collider.localMin.y;
         out.boundsMin[2] = part.collider.localMin.z;
         out.boundsMax[0] = part.collider.localMax.x;
         out.boundsMax[1] = part.collider.localMax.y;
         out.boundsMax[2] = part.collider.localMax.z;
-        out.space = 1u;  // positions above are world space
+        out.space = 1u;  // matrices above are valid world transforms
         out.reserved = 0u;
     }
     q->count = n;

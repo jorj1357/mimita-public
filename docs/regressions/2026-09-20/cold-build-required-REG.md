@@ -144,3 +144,53 @@ files can be classified HOT; packet transport remains COLD mechanism only.
 The compile and existing live-code self-test passed. Full two-client revision
 transport, simultaneous-edit preservation, packet activation, and live
 rollback still require runtime/human acceptance.
+
+---
+
+## Cold-build occurrence 2
+
+UTC time: 2026-09-23T03:23:49Z
+
+Related changelog:
+`docs/changelog/2026-09-23/20260923_032900-dash-down-dash-no-buffer-hot-edge.md`
+
+### Why the cold build was required
+
+The dash / down-dash press edge lived in the input layer (`src/input/*`,
+`src/sim/simulate-tick.cpp`, `src/engine/engine-tick-net.cpp`), which is EXE
+code. Removing the 150 ms press buffer and feeding the raw key-down state into
+the movement intent changed those EXE files. A hot build alone could not apply
+it.
+
+### Exact cold source / boundary
+
+- `src/input/input-frame.h` (added `dashHeld`, `downDashHeld`)
+- `src/input/input-poll.cpp` (raw held + raw pressed, no buffer)
+- `src/input/input-commands.cpp` (`isDashPressed`/`isDownDashPressed` no buffer)
+- `src/sim/simulate-tick.cpp` (intent uses held fields)
+- `src/engine/engine-tick-net.cpp` (network uses raw pressed)
+
+### Result needed from the new executable
+
+Rapid Q / Shift presses each produce a fresh edge with no 150 ms merge.
+
+### Why it could not be applied through the live path
+
+The input sampling and the intent write are in the EXE, not in the hot module.
+
+### Smallest change that would make this hot
+
+The hot movement already owns the edge. Only the raw key sampling is EXE-side.
+The remaining cold surface is small and stable: the frame's held booleans and the
+intent write. A future option is a generic `input.read` raw-state capability so
+hot code can compute edges without any EXE edit; the frame fields themselves are
+stable and should not need further edits.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260922T232349.exe` (an earlier `mimita-20260922T231811.exe`
+was the one-shot buffer variant).
+
+### Human review
+
+Pending. Rapid-tap behavior needs a human playtest.

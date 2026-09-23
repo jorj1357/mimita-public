@@ -2,6 +2,21 @@
 Date: July 21, 2026
 Status: Target default movement behavior and migration reference
 Scope: Player-controlled movement, collision, touch resets, knockback interaction, prediction, validation, and replication
+
+> ## HARD RULE — NO COOLDOWNS, NO BUFFERS, NO TIMER BALANCING
+>
+> Movement abilities are immediate. **If the user presses a button, do the thing
+> on the tick it is sampled.** There is **no input buffer** (no 150 ms or any
+> other press buffer), **no cooldown**, and **no timer-based gating** anywhere in
+> the movement path: dash, down-dash, jump, freeze, walk, air movement, and
+> contact reset. Abilities are gated only by their availability and a fresh
+> input edge. Do not add a timer as a substitute for a contact, an edge, or an
+> availability flag.
+>
+> The hot movement owns the input edge (the key-down transition). The input layer
+> only samples raw key state. Any buffer or cooldown added here is a regression:
+> see `docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`.
+
 ________________
 
 

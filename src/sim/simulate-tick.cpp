@@ -91,8 +91,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         Ecs::setHealth(playerEntity, sim.player->currentHp, sim.player->maxHp,
                        sim.player->dead);
         Ecs::setMovementIntent(playerEntity, frame.moveX, frame.moveY,
-                               frame.movementPressed, frame.jump, frame.dashPressed,
-                               frame.downDashPressed, frame.freezeHeld);
+                               frame.movementPressed, frame.jump, frame.dashHeld,
+                               frame.downDashHeld, frame.freezeHeld);
         // One source for the actor capsule so hot movement and the kernel solve
         // agree on size (fixes the model sinking when the fallback was used).
         Ecs::setBody(playerEntity, sim.player->sizeScale, PLAYER_RADIUS, PLAYER_HEIGHT);
