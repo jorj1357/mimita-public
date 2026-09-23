@@ -233,6 +233,49 @@ bool runAnimationSelfTest(char* message, std::uint32_t messageSize)
         static_cast<std::uint32_t>(HotPhys::PhysicalContactResponse::RedirectToAnimatingActor) != 3u)
         return fail(message, messageSize, "contact response vocabulary changed");
 
+    // afad20a C++ locomotion sampling: exact 60 Hz tick timing, loop wrap,
+    // one-shot hold, and determinism. Frames are authored in seconds
+    // (tick / 60); tick 30 at 1x speed must sample the mid keyframe.
+    {
+        Keyframe frames[3]{};
+        frames[0].t = 0.0f;
+        frames[1].t = 0.5f;
+        frames[1].part[PartRightArm][5] = 10.0f;
+        frames[2].t = 1.0f;
+        ActionClip clip{};
+        clip.duration = 1.0f;   // 60 ticks
+        clip.loop = 1;
+        clip.mask = MaskFull;
+        clip.frames = frames;
+        clip.frameCount = 3;
+
+        Pose a{}, b{};
+        afad20aSampleClip(clip, 0.5f, 1.0f, a);
+        afad20aSampleClip(clip, 0.5f, 1.0f, b);
+        if (!finitePose(a))
+            return fail(message, messageSize, "afad20a sample not finite");
+        if (std::memcmp(&a, &b, sizeof(Pose)) != 0)
+            return fail(message, messageSize, "afad20a sample not deterministic");
+        if (std::fabs(a.part[PartRightArm].rot[2] - 10.0f) > 0.01f)
+            return fail(message, messageSize, "afad20a tick timing wrong");
+
+        // A one-shot clamps to durationTicks - 1 and holds its final pose.
+        clip.loop = 0;
+        Pose c{}, d{};
+        afad20aSampleClip(clip, 5.0f, 1.0f, c);
+        afad20aSampleClip(clip, 10.0f, 1.0f, d);
+        if (std::memcmp(&c, &d, sizeof(Pose)) != 0)
+            return fail(message, messageSize, "afad20a one-shot did not hold");
+
+        // C++ and JSON sources must agree for the same clip and time (parity).
+        clip.loop = 1;
+        Pose jsonOut{}, cppOut{};
+        sampleClip(clip, 0.25f, jsonOut);
+        afad20aSampleClip(clip, 0.25f, 1.0f, cppOut);
+        if (std::memcmp(&jsonOut, &cppOut, sizeof(Pose)) != 0)
+            return fail(message, messageSize, "afad20a/json sampling parity");
+    }
+
     if (message && messageSize)
         std::snprintf(message, messageSize, "%s", "animation invariants ok");
     return true;

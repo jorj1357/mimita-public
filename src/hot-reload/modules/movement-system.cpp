@@ -331,6 +331,9 @@ bool weaponShapeFor(std::uint64_t toolKey, WeaponShapeV1& out)
     return true;
 }
 
+// Which per-limb source the collider builder used this tick (diagnostic).
+const char* g_limbSource = "none";
+
 // The player collider list: the movement/smoothing capsule plus the head,
 // torso, arms, and legs resolved from the skeleton. The caller supplies the
 // generic shape description; the collision package owns the solve.
@@ -499,6 +502,7 @@ void buildPlayerCollision(
         GameBodyPartsV1 bp{};
         bp.entity = entity;
         if (bodyFn(ctx->host, &bp) && bp.valid != 0u && bp.count > 0u) {
+            g_limbSource = "body.parts";
             auto partIdForHash = [](std::uint64_t h) -> std::uint32_t {
                 if (h == gameHash("head")) return COLLISION_PART_HEAD;
                 if (h == gameHash("torso")) return COLLISION_PART_TORSO;
@@ -508,6 +512,8 @@ void buildPlayerCollision(
                 if (h == gameHash("rightLeg")) return COLLISION_PART_RIGHT_LEG;
                 return COLLISION_PART_TORSO;
             };
+            const std::uint32_t n = std::min(
+                bp.count, static_cast<std::uint32_t>(GAME_MAX_BODY_PARTS));
             const float s = q.sizeScale;
             const glm::mat4 root =
                 glm::translate(glm::mat4(1.0f),
@@ -515,38 +521,61 @@ void buildPlayerCollision(
                                          st->position[2])) *
                 glm::rotate(glm::mat4(1.0f), glm::radians(st->yaw),
                             glm::vec3(0.0f, 0.0f, 1.0f));
-            const std::uint32_t n = std::min(
-                bp.count, static_cast<std::uint32_t>(GAME_MAX_BODY_PARTS));
             for (std::uint32_t i = 0; i < n; ++i) {
                 if (q.colliderCount >= COLLISION_MAX_COLLIDERS)
                     break;
                 const GameBodyPartV1& part = bp.parts[i];
-                const glm::vec3 localPos(part.localPosition[0] * s,
-                                         part.localPosition[1] * s,
-                                         part.localPosition[2] * s);
-                const glm::vec3 world = glm::vec3(root * glm::vec4(localPos, 1.0f));
-                const glm::vec3 prevLocal(part.previousLocalPosition[0] * s,
-                                          part.previousLocalPosition[1] * s,
-                                          part.previousLocalPosition[2] * s);
-                const glm::vec3 prevWorld =
-                    glm::vec3(root * glm::vec4(prevLocal, 1.0f));
+                // afad20a computeBodyPartCenter: the collider AABB centre in the
+                // part's local frame, transformed by the part's transform. When
+                // `space == 1` the capability supplied WORLD transforms (afad20a,
+                // no extra size scale). Legacy `space == 0` values are
+                // root-relative and are composed with the hot root and scale so a
+                // new DLL still works against an older EXE.
+                const glm::vec3 localCenter(
+                    (part.boundsMin[0] + part.boundsMax[0]) * 0.5f,
+                    (part.boundsMin[1] + part.boundsMax[1]) * 0.5f,
+                    (part.boundsMin[2] + part.boundsMax[2]) * 0.5f);
+                const glm::quat rot(part.worldRotation[3], part.worldRotation[0],
+                                    part.worldRotation[1], part.worldRotation[2]);
+                glm::vec3 center, prevCenter;
+                if (part.space == 1u) {
+                    const glm::vec3 origin(part.worldPosition[0],
+                                           part.worldPosition[1],
+                                           part.worldPosition[2]);
+                    center = origin + rot * localCenter;
+                    const glm::vec3 prevOrigin(part.previousWorldPosition[0],
+                                               part.previousWorldPosition[1],
+                                               part.previousWorldPosition[2]);
+                    prevCenter = prevOrigin + rot * localCenter;
+                } else {
+                    const glm::vec3 lp(part.worldPosition[0], part.worldPosition[1],
+                                       part.worldPosition[2]);
+                    const glm::vec3 pp(part.previousWorldPosition[0],
+                                       part.previousWorldPosition[1],
+                                       part.previousWorldPosition[2]);
+                    const glm::vec3 localOffset = rot * (localCenter * s);
+                    center = glm::vec3(root * glm::vec4((lp * s) + localOffset, 1.0f));
+                    prevCenter = glm::vec3(root * glm::vec4((pp * s) + localOffset, 1.0f));
+                }
                 const glm::vec3 extents(
                     (part.boundsMax[0] - part.boundsMin[0]) * 0.5f,
                     (part.boundsMax[1] - part.boundsMin[1]) * 0.5f,
                     (part.boundsMax[2] - part.boundsMin[2]) * 0.5f);
                 float radius = std::max(
                     {extents.x, extents.y, extents.z, 0.15f});
-                radius = std::min(radius, 0.35f) * s;
+                radius = std::min(radius, 0.35f);
+                if (part.space != 1u)
+                    radius *= s;
                 CollisionColliderV1& c = q.colliders[q.colliderCount++];
                 c.partId = partIdForHash(part.part);
                 c.shape = COLLISION_SHAPE_SPHERE;
                 c.policyId = COLLISION_POLICY_BODY;
                 c.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
                 c.radius = radius;
-                c.position[0] = world.x;
-                c.position[1] = world.y;
-                c.position[2] = world.z;
-                const glm::vec3 sweep = world - prevWorld;
+                c.position[0] = center.x;
+                c.position[1] = center.y;
+                c.position[2] = center.z;
+                const glm::vec3 sweep = center - prevCenter;
                 c.velocity[0] = sweep.x;
                 c.velocity[1] = sweep.y;
                 c.velocity[2] = sweep.z;
@@ -556,6 +585,7 @@ void buildPlayerCollision(
     }
 
     // ── Fallback: socket + mesh bounds (remote/NPC or unloaded model) ──────
+    g_limbSource = "socket";
     auto rawFn = reinterpret_cast<GameSocketRawFn>(
         ctx->resolveCapability(ctx->host, GAME_CAP_SOCKET_RAW));
     if (!rawFn)
@@ -685,34 +715,35 @@ void playActionSound(GameplayContextV1* ctx, std::uint64_t owner,
                      float pitch);
 
 // afad20a applied the current pose before updating model transforms and
-// collecting body samples.  Re-publish the last hot pose at the collision
+// collecting body samples. Re-publish the last hot pose at the collision
 // boundary so the kernel updates its model-node transforms before the raw
-// socket/bounds capabilities are queried.  The pose remains POD state owned by
-// the hot animation system; this is only the old ordering restored at the
-// shared collision owner.
+// socket/bounds capabilities are queried. When no stored pose exists yet, an
+// empty pose is still applied so `Player::updateModelWorldTransforms()` runs
+// and the animated physical body (Player::physicalBody.parts) is populated for
+// the per-limb collision source instead of staying stale/empty.
 void applyStoredPoseBeforeCollision(GameplayContextV1* ctx,
                                     std::uint64_t entity)
 {
-    if (!ctx || !ctx->dynamicReadComponent || !ctx->resolveCapability)
-        return;
-    HotPoseStateV1 state{};
-    if (!ctx->dynamicReadComponent(ctx->host, entity,
-                                   HOT_POSE_STATE_COMPONENT, &state,
-                                   sizeof(state)))
-        return;
-    const std::uint32_t count =
-        std::min(state.count, static_cast<std::uint32_t>(HOT_POSE_MAX_PARTS));
-    if (count == 0u)
+    if (!ctx || !ctx->resolveCapability)
         return;
     GameSkeletonPoseV1 pose{};
-    pose.count = count;
-    pose.flags = state.version;
     pose.entity = entity;
-    for (std::uint32_t i = 0; i < count; ++i) {
-        pose.parts[i].part = state.part[i];
-        for (int k = 0; k < 3; ++k) {
-            pose.parts[i].translation[k] = state.translation[i][k];
-            pose.parts[i].rotationEuler[k] = state.rotationEuler[i][k];
+    if (ctx->dynamicReadComponent) {
+        HotPoseStateV1 state{};
+        if (ctx->dynamicReadComponent(ctx->host, entity,
+                                      HOT_POSE_STATE_COMPONENT, &state,
+                                      sizeof(state))) {
+            const std::uint32_t count = std::min(
+                state.count, static_cast<std::uint32_t>(HOT_POSE_MAX_PARTS));
+            pose.count = count;
+            pose.flags = state.version;
+            for (std::uint32_t i = 0; i < count; ++i) {
+                pose.parts[i].part = state.part[i];
+                for (int k = 0; k < 3; ++k) {
+                    pose.parts[i].translation[k] = state.translation[i][k];
+                    pose.parts[i].rotationEuler[k] = state.rotationEuler[i][k];
+                }
+            }
         }
     }
     auto apply = reinterpret_cast<GameSkeletonApplyFn>(
@@ -799,19 +830,48 @@ void resolveCollisions(GameplayContextV1* ctx, MovementStateV1* st, float dt,
     MovementBranchLog& b = movementBranchLog();
     b.sinceLogSeconds += dt;
     if (b.sinceLogSeconds >= 1.0f) {
-        char msg[256];
+        char msg[320];
         const auto collisionBehavior = HotCollisionPackage::collisionBehavior();
+        std::uint32_t limbCols = 0, limbHits = 0, weaponCols = 0, weaponHits = 0;
+        const CollisionColliderV1* firstLimb = nullptr;
+        for (std::uint32_t i = 0; i < q.colliderCount &&
+                                i < HotCollisionPackage::COLLISION_MAX_COLLIDERS;
+             ++i) {
+            const std::uint32_t part = q.colliders[i].partId;
+            if (part >= COLLISION_PART_HEAD && part <= COLLISION_PART_RIGHT_LEG) {
+                ++limbCols;
+                if (!firstLimb)
+                    firstLimb = &q.colliders[i];
+            } else if (part == COLLISION_PART_WEAPON) {
+                ++weaponCols;
+            }
+        }
+        for (std::uint32_t i = 0; i < q.contactCount &&
+                                i < HotCollisionPackage::COLLISION_MAX_CONTACTS;
+             ++i) {
+            const std::uint32_t part = q.contacts[i].sourcePart;
+            if (part >= COLLISION_PART_HEAD && part <= COLLISION_PART_RIGHT_LEG)
+                ++limbHits;
+            else if (part == COLLISION_PART_WEAPON)
+                ++weaponHits;
+        }
         std::snprintf(msg, sizeof(msg),
-                      "branch=solved colliders=%u parts=%u grounded=%u worldContact=%u "
+                      "branch=solved limbSrc=%s colliders=%u limbCols=%u limbHits=%u "
+                      "weaponCols=%u weaponHits=%u grounded=%u worldContact=%u "
                       "bodyContact=%u bounced=%u groundSettled=%u groundMode=%s "
-                      "contacts=%u "
+                      "contacts=%u limb0=(%.2f %.2f %.2f r=%.3f) "
                       "pos=(%.2f %.2f %.2f) vz=%.2f",
-                      q.colliderCount, q.colliderCount > 0 ? q.colliderCount - 1 : 0,
-                      q.grounded, q.worldContact, q.bodyContact, q.bounced,
-                      q.groundSettled,
+                      g_limbSource, q.colliderCount, limbCols, limbHits,
+                      weaponCols, weaponHits, q.grounded, q.worldContact,
+                      q.bodyContact, q.bounced, q.groundSettled,
                       collisionBehavior.groundBounce ? "bounce" : "settle",
-                      q.contactCount, q.outPosition[0],
-                      q.outPosition[1], q.outPosition[2], q.outVelocity[2]);
+                      q.contactCount,
+                      firstLimb ? firstLimb->position[0] : 0.0f,
+                      firstLimb ? firstLimb->position[1] : 0.0f,
+                      firstLimb ? firstLimb->position[2] : 0.0f,
+                      firstLimb ? firstLimb->radius : 0.0f,
+                      q.outPosition[0], q.outPosition[1],
+                      q.outPosition[2], q.outVelocity[2]);
         HotCollisionPackage::collisionLogFull(
             ctx, 2u, "COLLISION", "movement.collision", msg,
             q.grounded ? "grounded" : ((q.worldContact || q.bodyContact)
@@ -1223,7 +1283,10 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
         // ── afad20a POST-collision: reset, then walk -> dash -> jump ──────
         // The contact reset must run before the ability edges are consumed so a
         // grounded player can dash/down-dash again on the same fresh press.
-        const bool contactNow = st.collided != 0;
+        // afad20a synthesizes a Ground contact whenever the actor is on the
+        // ground even if no explicit contact was returned, so grounded alone
+        // qualifies; a limb/weapon contact qualifies without being grounded.
+        const bool contactNow = (st.collided != 0) || (st.grounded != 0);
         if (contactNow)
             MimitaHotMovement::restoreTouchAbilities(rs);
         if (contactNow)
@@ -1399,8 +1462,10 @@ void MIMITA_GAME_CALL movementMainTick(void* host, std::uint64_t tick, float dt)
 
         // Prove the ability-reset decision directly in events.jsonl. The
         // collision package separately records worldContact; tick/entity IDs
-        // join both records without adding a second collision owner.
-        if (contactNow || didDownDash ||
+        // join both records without adding a second collision owner. Log only a
+        // real availability transition or a fired down-dash, not every grounded
+        // tick (grounded resets every tick now).
+        if (didDownDash ||
             downDashAvailableBefore != (rs.downDashAvailable != 0u)) {
             char contactMessage[320];
             std::snprintf(

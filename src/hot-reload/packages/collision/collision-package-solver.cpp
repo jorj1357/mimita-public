@@ -25,6 +25,7 @@
 #include <nlohmann/json.hpp>
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-behavior-source.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/packages/collision/collision-abi.h"
 #include "hot-reload/packages/collision/collision-log.h"
@@ -53,10 +54,11 @@ CollisionBehaviorV1 collisionBehavior()
     std::ifstream file(path);
     try {
         const nlohmann::json j = nlohmann::json::parse(file, nullptr, true, true);
-        const std::string source = j.value("behaviorSource", "cpp");
         const std::string ground = j.value("groundResponse", "settle");
         const auto b = j.value("bounce", nlohmann::json::object());
-        value.behaviorSourceJson = source == "json" ? 1u : 0u;
+        value.behaviorSourceJson =
+            MimitaBehavior::collisionSource() == MimitaBehavior::Source::Json
+                ? 1u : 0u;
         value.groundBounce =
             value.behaviorSourceJson && ground == "bounce" ? 1u : 0u;
         value.bounceEnabled = b.value("enabled", true) ? 1u : 0u;

@@ -1945,11 +1945,11 @@ bool MIMITA_GAME_CALL capMeshPartBounds(void*, GameMeshPartBoundsV1* q)
 }
 
 // body.parts: the animated physical-body parts of the local typed Player, in
-// the ROOT-RELATIVE frame, plus each part-local collider AABB and its previous
-// root-relative position. This restores the afad20a per-limb collision source
-// (Player::physicalBody.parts) behind the hot boundary. The root is removed so
-// hot policy can compose its own current root, which is ahead of the cold
-// Player during the hot movement step.
+// WORLD space (the exact transforms the renderer draws), plus each part-local
+// collider AABB and its previous world position. This restores the afad20a
+// per-limb collision source (Player::physicalBody.parts) behind the hot
+// boundary. The root and any model scale are already baked into the part world
+// transform, so hot policy must NOT apply them again.
 bool MIMITA_GAME_CALL capBodyParts(void*, GameBodyPartsV1* q)
 {
     if (!q)
@@ -1968,36 +1968,31 @@ bool MIMITA_GAME_CALL capBodyParts(void*, GameBodyPartsV1* q)
     if (p.physicalBody.parts.empty())
         return false;
 
-    const glm::mat4 rootWorld =
-        glm::translate(glm::mat4(1.0f), p.movementCapsule.position) *
-        glm::mat4_cast(p.movementCapsule.rotation);
-    const glm::mat4 invRoot = glm::inverse(rootWorld);
-
     const std::uint32_t n = (std::uint32_t)std::min<std::size_t>(
         p.physicalBody.parts.size(), GAME_MAX_BODY_PARTS);
     for (std::uint32_t i = 0; i < n; ++i) {
         const PhysicalBodyPart& part = p.physicalBody.parts[i];
-        const glm::mat4 localM = invRoot * part.worldTransform;
-        const glm::mat4 prevM = invRoot * part.previousWorldTransform;
         GameBodyPartV1& out = q->parts[i];
         out.part = gameHash(part.name.c_str());
-        out.localPosition[0] = localM[3][0];
-        out.localPosition[1] = localM[3][1];
-        out.localPosition[2] = localM[3][2];
-        const glm::quat rq = glm::quat_cast(glm::mat3(localM));
-        out.localRotation[0] = rq.x;
-        out.localRotation[1] = rq.y;
-        out.localRotation[2] = rq.z;
-        out.localRotation[3] = rq.w;
-        out.previousLocalPosition[0] = prevM[3][0];
-        out.previousLocalPosition[1] = prevM[3][1];
-        out.previousLocalPosition[2] = prevM[3][2];
+        out.worldPosition[0] = part.worldTransform[3][0];
+        out.worldPosition[1] = part.worldTransform[3][1];
+        out.worldPosition[2] = part.worldTransform[3][2];
+        const glm::quat rq = glm::quat_cast(glm::mat3(part.worldTransform));
+        out.worldRotation[0] = rq.x;
+        out.worldRotation[1] = rq.y;
+        out.worldRotation[2] = rq.z;
+        out.worldRotation[3] = rq.w;
+        out.previousWorldPosition[0] = part.previousWorldTransform[3][0];
+        out.previousWorldPosition[1] = part.previousWorldTransform[3][1];
+        out.previousWorldPosition[2] = part.previousWorldTransform[3][2];
         out.boundsMin[0] = part.collider.localMin.x;
         out.boundsMin[1] = part.collider.localMin.y;
         out.boundsMin[2] = part.collider.localMin.z;
         out.boundsMax[0] = part.collider.localMax.x;
         out.boundsMax[1] = part.collider.localMax.y;
         out.boundsMax[2] = part.collider.localMax.z;
+        out.space = 1u;  // positions above are world space
+        out.reserved = 0u;
     }
     q->count = n;
     q->valid = n > 0u ? 1u : 0u;

@@ -1,5 +1,6 @@
 {
   "behaviorSource": "json",
+  "locomotionSource": "cpp",
   "sway": {
     "weapon_amount": 0.15,
     "weapon_speed": 8.0,

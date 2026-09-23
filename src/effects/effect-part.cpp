@@ -10,6 +10,7 @@
 #include "hot-reload/game-api.h"
 #include "hot-reload/game-modules.h"
 #include "hot-reload/hot-animation-selftest.h"
+#include "hot-reload/hot-behavior-parity.h"
 #include "hot-reload/hot-movement-presets.h"
 #include "hot-reload/packages/collision/collision-abi.h"
 
@@ -228,13 +229,21 @@ bool MIMITA_GAME_CALL gameSelfTest(GameSelfTestResult* out)
     const bool movementOk = movementPresetSelfTest(
         movementMessage, (std::uint32_t)sizeof(movementMessage));
 
+    // Fixed-tick C++/JSON parity report for movement, collision, and animation.
+    // Report-only: known tuning differences are printed and summarized; they do
+    // not reject a candidate because the active source is an explicit choice.
+    char parityMessage[MIMITA_GAME_SELFTEST_MESSAGE] = {0};
+    runBehaviorParitySelfTest(parityMessage,
+                              (std::uint32_t)sizeof(parityMessage));
+
     const bool allOk = ok && animOk && collisionPackageOk && movementOk;
 
     out->passed = allOk ? 1u : 0u;
     out->checksum = allOk ? 0xEFFEC7001ull : 0ull;
     if (allOk)
-        std::snprintf(out->message, sizeof(out->message), "%s",
-                      "effect + animation + collision-package + movement invariants ok");
+        std::snprintf(out->message, sizeof(out->message),
+                      "effect + animation + collision-package + movement invariants ok | %s",
+                      parityMessage);
     else if (!ok)
         std::snprintf(out->message, sizeof(out->message), "%s",
                       "effect invariants invalid");

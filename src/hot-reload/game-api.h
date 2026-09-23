@@ -2254,20 +2254,26 @@ struct GameMeshPartBoundsV1 {
 using GameMeshPartBoundsFn = bool (MIMITA_GAME_CALL *)(void*, GameMeshPartBoundsV1*);
 
 // Animated physical-body part query (afad20a `Player::physicalBody.parts`).
-// Returns each part's ROOT-RELATIVE transform (so hot policy composes its own
-// current root) plus the part-local collider AABB and the previous root-relative
-// position for per-limb sweep. This is the exact body the renderer draws, not a
-// guessed socket proxy. Only entities that own a typed Player body answer; hot
-// callers keep a socket-based fallback when `valid == 0`.
+// Returns each part's WORLD transform (the exact transform the renderer draws)
+// plus the part-local collider AABB and the previous world position, matching
+// afad20a's per-limb source. The collider centre is the AABB centre transformed
+// by the part world transform; hot policy owns that formula. Only entities that
+// own a typed Player body answer; hot callers keep a socket fallback when
+// `valid == 0`.
 static constexpr std::uint64_t GAME_CAP_BODY_PARTS = gameHash("body.parts");
 static constexpr std::uint32_t GAME_MAX_BODY_PARTS = 8;
 struct GameBodyPartV1 {
     std::uint64_t part;             // gameHash(part name)
-    float localPosition[3];         // root-relative
-    float localRotation[4];         // quaternion xyzw, root-relative
-    float previousLocalPosition[3]; // root-relative previous tick
+    float worldPosition[3];         // world-space node origin (space==1) or root-relative (space==0)
+    float worldRotation[4];         // quaternion xyzw
+    float previousWorldPosition[3]; // previous tick, same space as worldPosition
     float boundsMin[3];             // part-local collider AABB
     float boundsMax[3];
+    // 1 = positions are WORLD space (afad20a); 0 = legacy root-relative. The
+    // hot builder composes legacy values with its own root so a new DLL stays
+    // compatible with an older EXE during a partial update.
+    std::uint32_t space;
+    std::uint32_t reserved;
 };
 struct GameBodyPartsV1 {
     std::uint64_t entity;

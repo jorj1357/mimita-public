@@ -338,10 +338,10 @@ bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
 
     // ── afad20a POST-collision: reset, then walk -> dash -> jump ──────
     rs.grounded = st.grounded;
-    // afad20a rule: every valid world contact restores all touch-reset
-    // abilities immediately after the shared collision solve. The press-edge
-    // state is deliberately preserved, so held Q/Shift does not auto-repeat.
-    if (st.collided)
+    // afad20a synthesizes a Ground contact whenever the actor is on the ground
+    // even if no explicit contact was returned, so grounded alone qualifies;
+    // a limb/weapon contact qualifies without being grounded.
+    if (st.collided || st.grounded)
         MimitaHotMovement::restoreTouchAbilities(rs);
 
     vx = st.velocity[0];

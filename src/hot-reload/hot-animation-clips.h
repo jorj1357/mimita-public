@@ -147,8 +147,13 @@ inline void sampleClip(const ActionClip& clip, float time, Pose& out)
     if (clip.duration > 1e-5f) {
         if (clip.loop)
             time = time - clip.duration * std::floor(time / clip.duration);
-        else if (time > clip.duration)
-            time = clip.duration;
+        else {
+            // afad20a one-shots clamp to durationTicks - 1, so the JSON and C++
+            // samplers hold the same final pose instead of diverging by a tick.
+            const float maxT = std::max(0.0f, clip.duration - 1.0f / 60.0f);
+            if (time > maxT)
+                time = maxT;
+        }
     }
     if (time <= clip.frames[0].t) {
         for (std::uint32_t i = 0; i < PartCount; ++i)
@@ -255,16 +260,26 @@ inline std::uint64_t locomotionAction(bool grounded, float vy, bool justLanded,
 
 inline ActionClip actionClip(std::uint64_t actionId);
 inline bool jsonClipApplied(std::uint64_t actionId);
+inline bool afad20aSourceCpp();
+inline float afad20aWalkSpeedScale();
+inline void afad20aSampleClip(const ActionClip& clip, float timeSeconds,
+                              float speedScale, Pose& out);
 
 inline void evaluateAction(std::uint64_t actionId, float time, float speed01,
                            Pose& out)
 {
-    // JSON keyframes win for locomotion when config/animations.json says so;
-    // otherwise the procedural evaluators below are the compiled fallback.
+    // JSON/afad20a keyframes win for locomotion; otherwise the procedural
+    // evaluators below are the compiled fallback. Both sources sample the same
+    // cached frames, so the C++ and JSON implementations agree.
     if ((actionId == HOT_ACTION_IDLE || actionId == HOT_ACTION_EQUIPPED_IDLE ||
-         actionId == HOT_ACTION_WALK) &&
+         actionId == HOT_ACTION_WALK ||
+         actionId == HOT_ACTION_RETURN_TO_IDLE) &&
         jsonClipApplied(actionId)) {
-        sampleClip(actionClip(actionId), time, out);
+        const ActionClip clip = actionClip(actionId);
+        if (afad20aSourceCpp())
+            afad20aSampleClip(clip, time, afad20aWalkSpeedScale(), out);
+        else
+            sampleClip(clip, time, out);
         return;
     }
     switch (actionId) {
@@ -858,7 +873,7 @@ inline JsonClipCache& jsonClipCache()
 inline bool jsonClipApplied(std::uint64_t actionId)
 {
     JsonClipCache& cache = jsonClipCache();
-    if (!cache.loaded || cache.root.value("behaviorSource", "cpp") != "json")
+    if (!cache.loaded)
         return false;
     const int index = jsonClipIndex(actionConfigName(actionId));
     return index >= 0 && cache.valid[index];
@@ -868,7 +883,7 @@ inline ActionClip actionClip(std::uint64_t actionId)
 {
     ActionClip clip = actionClipBuiltin(actionId);
     JsonClipCache& cache = jsonClipCache();
-    if (!cache.loaded || cache.root.value("behaviorSource", "cpp") != "json")
+    if (!cache.loaded)
         return clip;
     const char* name = actionConfigName(actionId);
     const int index = jsonClipIndex(name);
@@ -883,6 +898,80 @@ inline ActionClip actionClip(std::uint64_t actionId)
     if (cache.durations[index] > 0.0f)
         clip.duration = cache.durations[index];
     return clip;
+}
+
+// ── afad20a C++ locomotion sampling ─────────────────────────────────────────
+// The afad20a animator sampled keyframes on a fixed 60 Hz tick clock, scaled by
+// walkFrequency * walkFrequencyMultiplier, wrapped with fmod for loops and
+// clamped to durationTicks - 1 for one-shots, then linearly interpolated on
+// euler degrees. This is the C++ implementation of that contract; the JSON
+// source samples the same cached frames through sampleClip().
+inline bool afad20aSourceCpp()
+{
+    JsonClipCache& cache = jsonClipCache();
+    if (!cache.loaded)
+        return true;  // compiled default: the C++ afad20a sampler
+    return cache.root.value("locomotionSource", std::string("cpp")) == "cpp";
+}
+
+inline float afad20aWalkSpeedScale()
+{
+    JsonClipCache& cache = jsonClipCache();
+    float scale = 0.3f;
+    if (cache.loaded) {
+        const float freq = cache.root.value("walkFrequency", 0.3f);
+        const float mult = cache.root.value("walkFrequencyMultiplier", 1.0f);
+        scale = std::max(0.01f, freq * mult);
+    }
+    return scale;
+}
+
+inline void afad20aSampleClip(const ActionClip& clip, float timeSeconds,
+                              float speedScale, Pose& out)
+{
+    out.clear();
+    out.mask = clip.mask;
+    if (!clip.frames || clip.frameCount == 0)
+        return;
+    const float durationTicks = clip.duration * 60.0f;
+    const float duration = durationTicks > 0.0f ? durationTicks : 1.0f;
+    const float tickTime = timeSeconds * 60.0f * speedScale;
+    float looped = clip.loop ? std::fmod(tickTime, duration)
+                             : std::min(tickTime, duration - 1.0f);
+    if (looped < 0.0f)
+        looped += duration;
+
+    const Keyframe* prev = &clip.frames[0];
+    const Keyframe* next = &clip.frames[0];
+    for (std::uint32_t i = 0; i < clip.frameCount; ++i) {
+        const float ft = clip.frames[i].t * 60.0f;
+        if (ft <= looped)
+            prev = &clip.frames[i];
+        if (ft >= looped) {
+            next = &clip.frames[i];
+            break;
+        }
+    }
+
+    float range = 0.0f;
+    float t = 0.0f;
+    if (prev == next && clip.loop && clip.frameCount > 1) {
+        const Keyframe* last = &clip.frames[clip.frameCount - 1];
+        prev = last;
+        const float wrapped = (duration - last->t * 60.0f) + next->t * 60.0f;
+        float current = looped - last->t * 60.0f;
+        if (current < 0.0f)
+            current += duration;
+        range = wrapped;
+        t = range > 0.001f ? current / range : 0.0f;
+    } else {
+        range = next->t * 60.0f - prev->t * 60.0f;
+        t = range > 0.001f ? (looped - prev->t * 60.0f) / range : 0.0f;
+    }
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    for (std::uint32_t i = 0; i < PartCount; ++i)
+        lerpPart(out.part[i], prev->part[i], next->part[i], t);
 }
 
 } // namespace HotAnim

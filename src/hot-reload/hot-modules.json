@@ -46,6 +46,8 @@
     "src/hot-reload/hot-action.h",
     "src/hot-reload/hot-animation-clips.h",
     "src/hot-reload/hot-animation-selftest.h",
+    "src/hot-reload/hot-behavior-source.h",
+    "src/hot-reload/hot-behavior-parity.h",
     "src/hot-reload/hot-movement-fired.h",
     "src/hot-reload/hot-movement-collision.h",
     "src/hot-reload/hot-effect.h",

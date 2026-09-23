@@ -19,6 +19,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "hot-reload/hot-behavior-source.h"
 #include "hot-reload/hot-movement-policy.h"
 
 namespace MimitaHotMovement {
@@ -141,29 +142,29 @@ inline constexpr GameMovementTuningV1 movementTuningBase()
 inline constexpr GameMovementTuningV1 makeSourcePresetTuning()
 {
     GameMovementTuningV1 t = movementTuningBase();
-    t.walkMode = kWalkModeV206;
+    t.walkMode = kWalkModeSource;
     t.sourceWalkMode = 1;
     t.groundSpeed = 20.0f;
     t.airSpeed = 20.0f;
     t.sourceMaxSpeed = 20.0f;
-    t.groundAcceleration = 8.0f;
-    t.groundFriction = 4.0f;
-    t.groundFrictionAmount = 4.0f;
-    t.sourceFriction = 4.0f;
-    t.stopspeed = 0.0f;
-    t.airSpeedGainMultiplier = 0.0f;
+    t.groundAcceleration = 20.0f;
+    t.groundFriction = 3.25f;
+    t.groundFrictionAmount = 3.25f;
+    t.sourceFriction = 3.25f;
+    t.stopspeed = 1.0f;
+    t.airSpeedGainMultiplier = 2.0f;
     t.airInputBlendingEnabled = 0u;
     t.airInputBlending = 1.0f;
     t.airInputMouseThresholdDegrees = 0.1f;  // loader clamps 0.0 -> 0.1
-    t.airAcceleration = 222.0f;
-    t.airMaxWishspeed = 1.0f;
+    t.airAcceleration = 12.0f;
+    t.airMaxWishspeed = 2.0f;
     t.sourceAirAccelerateBugCompatible = 1u;
-    t.gravityMagnitude = 58.0f;
-    t.jumpSpeed = 19.0f;
-    t.maxFallSpeed = 400.0f;
+    t.gravityMagnitude = 40.0f;
+    t.jumpSpeed = 15.1f;
+    t.maxFallSpeed = 175.0f;
     t.autoBhopEnabled = 1u;
-    t.jumpBufferSeconds = 0.12f;
-    t.coyoteSeconds = 0.001f;
+    t.jumpBufferSeconds = 0.2f;
+    t.coyoteSeconds = 0.0f;
     t.maximumAirJumps = 1u;
     t.groundSnap = 1u;
     t.velocityClipEpsilon = 1.01f;
@@ -174,17 +175,17 @@ inline constexpr GameMovementTuningV1 makeSourcePresetTuning()
     t.freezeEnabled = 1u;
     t.dashGraceSeconds = 1.0f;
     t.dashFrictionMultiplier = 0.0f;
-    t.groundDashImpulse = 100.0f;
-    t.airDashImpulse = 50.0f;
-    t.dashImpulse = 100.0f;
-    t.downDashSpeed = -100.0f;
+    t.groundDashImpulse = 10.0f;
+    t.airDashImpulse = 10.0f;
+    t.dashImpulse = 10.0f;
+    t.downDashSpeed = -50.0f;
     t.externalImpulseDecay = 0.6f;
     t.maximumExternalImpulseSpeed = 120.0f;
     t.impulseFrictionMode = 0u;
     t.impulseCarrySeconds = 0.1f;
     t.airControlEnabled = 1u;
     t.debugDrawEnabled = 0u;
-    t.speedLimitEnabled = 0u;
+    t.speedLimitEnabled = 1u;
     t.speedLimit = 50.0f;
     t.speedLimitMode = 1u;  // fixed
     return t;
@@ -415,14 +416,14 @@ inline MovementBehaviorSource movementBehaviorSourceFromJson(
         return MovementBehaviorSource::Cpp;
     try {
         const nlohmann::json j = nlohmann::json::parse(selector, nullptr, true, true);
-        const std::string source = j.value("behaviorSource", "cpp");
         if (outPreset)
             *outPreset = j.value("preset", "source");
-        return source == "json" ? MovementBehaviorSource::Json
-                                  : MovementBehaviorSource::Cpp;
     } catch (...) {
         return MovementBehaviorSource::Cpp;
     }
+    return MimitaBehavior::movementSource() == MimitaBehavior::Source::Json
+               ? MovementBehaviorSource::Json
+               : MovementBehaviorSource::Cpp;
 }
 
 inline std::string movementPresetJsonPath(const std::string& name)
