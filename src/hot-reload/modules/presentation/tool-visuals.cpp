@@ -14,6 +14,7 @@
 
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-presentation.h"
+#include "hot-reload/hot-behavior-source.h"
 
 #include "combat/weapon-types.h"
 
@@ -25,6 +26,9 @@
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 namespace {
 
@@ -55,8 +59,10 @@ ToolVisualRecipeV1 makeBaseVisual(std::uint64_t toolKey, const char* modelPath,
     r.socket = gameHash("rightArm");
     r.viewRotation[3] = 1.0f;
     r.viewScale = 1.0f;
+    r.viewScaleXYZ[0] = r.viewScaleXYZ[1] = r.viewScaleXYZ[2] = 1.0f;
     r.worldRotation[3] = 1.0f;
     r.worldScale = 1.0f;
+    r.worldScaleXYZ[0] = r.worldScaleXYZ[1] = r.worldScaleXYZ[2] = 1.0f;
     // Muzzle default: bright untextured sphere, one 60 Hz tick.
     r.muzzle.meshId = HOT_MESH_SPHERE;
     r.muzzle.textureId = 0;
@@ -86,6 +92,21 @@ ToolVisualRecipeV1 makeBaseVisual(std::uint64_t toolKey, const char* modelPath,
     r.explosion.lifetime = 0.8f;
     r.flags = 1u;  // complete recipe
     return r;
+}
+
+void setEulerDegrees(float q[4], float x, float y, float z)
+{
+    glm::mat4 rotation(1.0f);
+    rotation = glm::rotate(rotation, glm::radians(x), glm::vec3(1, 0, 0));
+    rotation = glm::rotate(rotation, glm::radians(y), glm::vec3(0, 1, 0));
+    rotation = glm::rotate(rotation, glm::radians(z), glm::vec3(0, 0, 1));
+    const glm::quat result = glm::normalize(glm::quat_cast(rotation));
+    q[0] = result.x; q[1] = result.y; q[2] = result.z; q[3] = result.w;
+}
+
+void setScale(float out[3], float x, float y, float z)
+{
+    out[0] = x; out[1] = y; out[2] = z;
 }
 
 void addFirearmMuzzle(ToolVisualRecipeV1& r, float sr, float sg, float sb,
@@ -619,9 +640,8 @@ ToolVisualRecipeV1 makeRevolverVisual()
         gameHash("revolver"),
         "assets/objects/weapons/mimita-revolver-v1.glb",
         gameHash("mesh.tool.revolver"));
-    r.viewPosition[0] = 0.35f; r.viewPosition[1] = 0.10f; r.viewPosition[2] = -0.45f;
-    r.worldPosition[0] = 0.30f;
-    r.muzzleOffset[2] = 0.22f;
+    r.worldPosition[0] = -0.2f;
+    setScale(r.viewScaleXYZ, 1.0f, 1.0f, 1.0f);
     addFirearmMuzzle(r, 1.0f, 0.9f, 0.55f, 0.16f, 1.0f, 0.85f, 0.5f, 3.0f, 6.0f);
     r.sounds.fire = "revolvershoot";
     setDefinition(r, WeaponBehaviorType::Hitscan, WeaponFireMode::SemiAuto,
@@ -649,9 +669,9 @@ ToolVisualRecipeV1 makeShotgunVisual()
         gameHash("shotgun"),
         "assets/objects/weapons/mimita-shotgun-v1.glb",
         gameHash("mesh.tool.shotgun"));
-    r.viewPosition[0] = 0.35f; r.viewPosition[1] = 0.08f; r.viewPosition[2] = -0.5f;
-    r.worldPosition[0] = 0.30f;
-    r.muzzleOffset[2] = 0.5f;
+    r.viewPosition[2] = 0.5f;
+    r.worldPosition[1] = 0.05f; r.worldPosition[2] = -1.5f;
+    setEulerDegrees(r.worldRotation, 0.0f, -5.0f, -90.0f);
     addFirearmMuzzle(r, 1.0f, 0.82f, 0.45f, 0.2f, 1.0f, 0.78f, 0.42f, 3.2f, 7.0f);
     r.sounds.fire = "shotgunshoot";
     setDefinition(r, WeaponBehaviorType::Hitscan, WeaponFireMode::SemiAuto,
@@ -674,9 +694,9 @@ ToolVisualRecipeV1 makeRocketLauncherVisual()
         gameHash("rocket_launcher"),
         "assets/objects/weapons/mimita-rpg-v3.glb",
         gameHash("mesh.tool.rocket_launcher"));
-    r.viewPosition[0] = 0.32f; r.viewPosition[1] = 0.02f; r.viewPosition[2] = -0.55f;
-    r.worldPosition[0] = 0.30f;
-    r.muzzleOffset[2] = 0.55f;
+    r.viewPosition[0] = 0.2f; r.viewPosition[2] = -1.5f;
+    setEulerDegrees(r.viewRotation, 0.0f, 0.0f, -90.0f);
+    setScale(r.viewScaleXYZ, 1.5f, 1.5f, 1.5f);
     addFirearmMuzzle(r, 1.0f, 0.7f, 0.3f, 0.3f, 1.0f, 0.6f, 0.25f, 4.0f, 9.0f);
     r.projectile.meshId = HOT_MESH_ROCKET;
     r.projectile.textureId = HOT_TEX_ROCKET;
@@ -705,9 +725,9 @@ ToolVisualRecipeV1 makeGrenadeLauncherVisual()
         gameHash("grenade_launcher"),
         "assets/objects/weapons/mimita-nadelauncher-v1.glb",
         gameHash("mesh.tool.grenade_launcher"));
-    r.viewPosition[0] = 0.32f; r.viewPosition[1] = 0.02f; r.viewPosition[2] = -0.5f;
-    r.worldPosition[0] = 0.30f;
-    r.muzzleOffset[2] = 0.4f;
+    r.viewPosition[0] = -1.0f; r.viewPosition[1] = 0.3f; r.viewPosition[2] = 0.6f;
+    setEulerDegrees(r.viewRotation, -100.0f, -5.0f, 168.0f);
+    setScale(r.viewScaleXYZ, 0.8f, 0.4f, 0.4f);
     addFirearmMuzzle(r, 1.0f, 0.85f, 0.5f, 0.18f, 1.0f, 0.8f, 0.45f, 3.0f, 7.0f);
     r.projectile.meshId = HOT_MESH_GRENADE;
     r.projectile.textureId = HOT_TEX_GRENADE;
@@ -735,9 +755,11 @@ ToolVisualRecipeV1 makeSpyknifeVisual()
         gameHash("spyknife"),
         "assets/objects/weapons/mimita-spy-knife-v2.glb",
         gameHash("mesh.tool.spyknife"));
-    r.viewPosition[0] = 0.35f; r.viewPosition[1] = 0.05f; r.viewPosition[2] = -0.45f;
-    r.worldPosition[0] = 0.30f;
-    r.muzzleOffset[2] = 0.2f;
+    r.viewPosition[0] = -8.4f; r.viewPosition[1] = -3.0f; r.viewPosition[2] = 0.4f;
+    setEulerDegrees(r.viewRotation, 0.0f, 30.0f, 0.0f);
+    r.worldPosition[0] = 9.3f; r.worldPosition[1] = 2.9f; r.worldPosition[2] = -0.1f;
+    setEulerDegrees(r.worldRotation, 0.0f, 0.0f, -5.0f);
+    setScale(r.viewScaleXYZ, 1.0f, 1.0f, 2.0f);
     // Melee: no muzzle flash / light.
     r.muzzle.hasLight = 0u;
     r.muzzle.scale = 0.0f;
@@ -761,9 +783,9 @@ ToolVisualRecipeV1 makeSwordswordVisual()
         gameHash("swordsword"),
         "assets/objects/weapons/mimita-hafs-v1.glb",
         gameHash("mesh.tool.swordsword"));
-    r.viewPosition[0] = 0.35f; r.viewPosition[1] = 0.10f; r.viewPosition[2] = -0.45f;
-    r.worldPosition[0] = 0.30f;
-    r.muzzleOffset[2] = 0.3f;
+    r.viewPosition[0] = -9.0f; r.viewPosition[1] = 0.2f;
+    setEulerDegrees(r.viewRotation, 100.0f, 0.0f, 0.0f);
+    setScale(r.viewScaleXYZ, 0.6f, 0.3f, 0.3f);
     r.muzzle.hasLight = 0u;
     r.muzzle.scale = 0.0f;
     r.muzzle.lifetime = 0.0f;
@@ -790,7 +812,6 @@ ToolVisualRecipeV1 makeKatanaVisual()
         "assets/objects/weapons/mimita-hafs-v1.glb",
         gameHash("mesh.tool.katana"));
     r.viewPosition[0] = 0.35f; r.viewPosition[1] = 0.10f; r.viewPosition[2] = -0.45f;
-    r.worldPosition[0] = 0.30f;
     r.muzzleOffset[2] = 0.3f;
     r.muzzle.hasLight = 0u;
     r.muzzle.scale = 0.0f;
@@ -934,7 +955,10 @@ ToolVisualRecipeV1 makeHafsVisual()
     ToolVisualRecipeV1 r = makeBaseVisual(
         gameHash("hafs"), "assets/objects/weapons/mimita-hafs-v1.glb",
         gameHash("mesh.tool.hafs"));
-    r.worldPosition[0] = 0.30f;
+    r.viewPosition[0] = -9.0f; r.viewPosition[1] = -3.0f; r.viewPosition[2] = 0.5f;
+    r.worldPosition[0] = 0.25f; r.worldPosition[1] = -0.05f; r.worldPosition[2] = -0.25f;
+    setEulerDegrees(r.worldRotation, 90.0f, 10.0f, -25.0f);
+    setScale(r.viewScaleXYZ, 1.5f, 1.5f, 1.5f);
     r.muzzle.hasLight = 0u;
     r.sounds.fire = "weapon/hafs/hafsswing";
     r.sounds.equip = "weapon/hafs/hafsequip";
@@ -1050,6 +1074,138 @@ const ToolVisualRecipeV1* allToolVisuals(std::uint32_t& count)
     };
     count = static_cast<std::uint32_t>(sizeof(recipes) /
                                        sizeof(ToolVisualRecipeV1));
+    // JSON is an authored presentation source, not a second renderer.  When
+    // selected, copy the old weapon viewmodel/attachment values into the same
+    // recipe consumed by the hot renderer.  C++ remains the rollback source.
+    struct JsonPresentationCache {
+        ToolVisualRecipeV1 baseline[32]{};
+        ToolVisualRecipeV1 lastValid[32]{};
+        std::string modelPaths[32];
+        std::filesystem::file_time_type writeTime{};
+        bool baselineReady = false;
+        bool jsonReady = false;
+    };
+    static JsonPresentationCache cache;
+    if (!cache.baselineReady) {
+        for (std::uint32_t i = 0; i < count; ++i)
+            cache.baseline[i] = cache.lastValid[i] = recipes[i];
+        cache.baselineReady = true;
+    }
+    if (MimitaBehavior::weaponSource() == MimitaBehavior::Source::Cpp) {
+        for (std::uint32_t i = 0; i < count; ++i)
+            recipes[i] = cache.baseline[i];
+    } else {
+        static const std::filesystem::path path("config/weapons.json");
+        std::error_code ec;
+        const auto writeTime = std::filesystem::last_write_time(path, ec);
+        if (!cache.jsonReady || (!ec && writeTime != cache.writeTime)) {
+            nlohmann::json root;
+            bool parsed = false;
+            std::ifstream file(path);
+            if (file) {
+                try {
+                    file >> root;
+                    parsed = root.is_object();
+                } catch (...) {
+                    parsed = false;
+                }
+            }
+            if (parsed) {
+                for (std::uint32_t i = 0; i < count; ++i)
+                    recipes[i] = cache.baseline[i];
+                for (auto it = root.begin(); it != root.end(); ++it) {
+                    if (!it.value().is_object() || !it.value().contains("id"))
+                        continue;
+                    const std::string id = it.value().value("id", std::string{});
+                    if (id.empty())
+                        continue;
+                    ToolVisualRecipeV1* recipe = nullptr;
+                    for (std::uint32_t i = 0; i < count; ++i) {
+                        if (recipes[i].toolKey == gameHash(id.c_str())) {
+                            recipe = &recipes[i];
+                            break;
+                        }
+                    }
+                    if (!recipe)
+                        continue;
+                    const auto& entry = it.value();
+                    if (entry.contains("model") && entry["model"].is_object()) {
+                        const std::string model = entry["model"].value(
+                            "path", std::string{});
+                        if (!model.empty()) {
+                            const std::size_t index =
+                                static_cast<std::size_t>(recipe - recipes);
+                            cache.modelPaths[index] = model;
+                            recipe->modelPath = cache.modelPaths[index].c_str();
+                        }
+                    }
+                    if (!entry.contains("viewmodel") ||
+                        !entry["viewmodel"].is_object())
+                        continue;
+                    const auto& vm = entry["viewmodel"];
+                    auto readVec3 = [](const nlohmann::json& value, float out[3]) {
+                        if (!value.is_array() || value.size() < 3)
+                            return false;
+                        for (int k = 0; k < 3; ++k)
+                            out[k] = value[k].get<float>();
+                        return true;
+                    };
+                    readVec3(vm.value("position", nlohmann::json{}),
+                             recipe->viewPosition);
+                    float degrees[3]{};
+                    if (readVec3(vm.value("rotation_degrees", nlohmann::json{}),
+                                 degrees)) {
+                        glm::mat4 rotation(1.0f);
+                        rotation = glm::rotate(rotation, glm::radians(degrees[0]),
+                                               glm::vec3(1, 0, 0));
+                        rotation = glm::rotate(rotation, glm::radians(degrees[1]),
+                                               glm::vec3(0, 1, 0));
+                        rotation = glm::rotate(rotation, glm::radians(degrees[2]),
+                                               glm::vec3(0, 0, 1));
+                        const glm::quat q = glm::normalize(glm::quat_cast(rotation));
+                        recipe->viewRotation[0] = q.x;
+                        recipe->viewRotation[1] = q.y;
+                        recipe->viewRotation[2] = q.z;
+                        recipe->viewRotation[3] = q.w;
+                    }
+                    if (readVec3(vm.value("scale", nlohmann::json{}),
+                                 recipe->viewScaleXYZ))
+                        recipe->viewScale = recipe->viewScaleXYZ[0];
+                    if (vm.contains("attachment") && vm["attachment"].is_object()) {
+                        const auto& attachment = vm["attachment"];
+                        readVec3(attachment.value("position", nlohmann::json{}),
+                                 recipe->worldPosition);
+                        if (readVec3(attachment.value("rotation_degrees",
+                                                        nlohmann::json{}),
+                                     degrees)) {
+                            glm::mat4 rotation(1.0f);
+                            rotation = glm::rotate(rotation, glm::radians(degrees[0]),
+                                                   glm::vec3(1, 0, 0));
+                            rotation = glm::rotate(rotation, glm::radians(degrees[1]),
+                                                   glm::vec3(0, 1, 0));
+                            rotation = glm::rotate(rotation, glm::radians(degrees[2]),
+                                                   glm::vec3(0, 0, 1));
+                            const glm::quat q = glm::normalize(glm::quat_cast(rotation));
+                            recipe->worldRotation[0] = q.x;
+                            recipe->worldRotation[1] = q.y;
+                            recipe->worldRotation[2] = q.z;
+                            recipe->worldRotation[3] = q.w;
+                        }
+                    }
+                }
+                for (std::uint32_t i = 0; i < count; ++i)
+                    cache.lastValid[i] = recipes[i];
+                cache.jsonReady = true;
+                cache.writeTime = writeTime;
+            } else if (cache.jsonReady) {
+                for (std::uint32_t i = 0; i < count; ++i)
+                    recipes[i] = cache.lastValid[i];
+            }
+        } else {
+            for (std::uint32_t i = 0; i < count; ++i)
+                recipes[i] = cache.lastValid[i];
+        }
+    }
     refreshJsonToolAnimations(recipes, count);
     return recipes;
 }

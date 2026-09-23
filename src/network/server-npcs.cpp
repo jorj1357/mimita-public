@@ -19,6 +19,7 @@
 #include "ecs/actor-entities.h"
 #include "live-code/live-gameplay.h"
 #include "live-code/live-behavior.h"
+#include "hot-reload/hot-history.h"
 #include "ecs/entity-registry.h"
 #include "network/actor-health.h"
 #include "network/actor-state.h"
@@ -678,10 +679,77 @@ bool getNpcPositionAtTick(const ServerNpc& npc, uint32_t targetTick, glm::vec3& 
 }
 
 // Like getNpcPositionAtTick but also returns the broadcast yaw at that tick so
+// Fill the bracketing samples for an NPC history. Returns false when empty.
+static bool bracketNpcHistory(const ServerNpc& npc, uint32_t targetTick,
+                              MimitaNet::GameHistorySelectV1& out)
+{
+    out = MimitaNet::GameHistorySelectV1{};
+    out.targetTick = targetTick;
+    if (npc.posHistory.empty())
+        return false;
+    auto toSample = [](MimitaNet::GameHistorySampleV1& s,
+                       const ServerNpcPositionSample& e) {
+        s.tick = e.tick;
+        s.logicalGenerationId = e.logicalGenerationId;
+        s.position[0] = e.pos.x;
+        s.position[1] = e.pos.y;
+        s.position[2] = e.pos.z;
+        s.velocity[0] = e.vel.x;
+        s.velocity[1] = e.vel.y;
+        s.velocity[2] = e.vel.z;
+        s.yaw = e.yaw;
+    };
+    const auto& back = npc.posHistory.back();
+    const auto& front = npc.posHistory.front();
+    if (targetTick >= back.tick) {
+        toSample(out.a, back);
+        out.haveA = 1;
+        return true;
+    }
+    if (targetTick <= front.tick) {
+        toSample(out.a, front);
+        out.haveA = 1;
+        return true;
+    }
+    int lo = 0;
+    int hi = (int)npc.posHistory.size() - 1;
+    while (lo < hi - 1) {
+        int mid = (lo + hi) / 2;
+        if (npc.posHistory[mid].tick <= targetTick)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    toSample(out.a, npc.posHistory[lo]);
+    out.haveA = 1;
+    if (npc.posHistory[lo].tick == targetTick) {
+        out.exactTick = 1;
+        return true;
+    }
+    toSample(out.b, npc.posHistory[lo + 1]);
+    out.haveB = 1;
+    return true;
+}
+
 // NPC body-part hitboxes are reconstructed with the facing the attacker saw.
 bool getNpcPoseAtTick(const ServerNpc& npc, uint32_t targetTick,
                       glm::vec3& outPos, float& outYaw)
 {
+    // Hot lag-comp policy first; cold fallback below.
+    {
+        MimitaNet::GameHistorySelectV1 select{};
+        if (bracketNpcHistory(npc, targetTick, select) &&
+            LiveBehavior::dispatchGameplayEvent64(
+                MimitaNet::GAME_EVENT_HISTORY_SELECT, &select, sizeof(select),
+                targetTick, 0, 0) &&
+            select.handled)
+        {
+            outPos = glm::vec3(select.position[0], select.position[1],
+                               select.position[2]);
+            outYaw = select.yaw;
+            return true;
+        }
+    }
     if (npc.posHistory.empty())
         return false;
     const auto& back = npc.posHistory.back();

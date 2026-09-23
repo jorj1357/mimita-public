@@ -14,11 +14,16 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <cstring>
 
 #include <nlohmann/json.hpp>
 
 #include "avatar/avatar.h"
 #include "debug/debug-log.h"
+#include "live-code/live-behavior.h"
+#include "live-code/live-journal.h"
+#include "hot-reload/hot-reload-system.h"
 #include "npc/npc.h"
 
 #include <GLFW/glfw3.h>
@@ -29,6 +34,26 @@ struct NpcAvatarConfig { bool forceAvatar = false; std::string forceAvatarPath; 
 NpcAvatarConfig gConfig;
 std::filesystem::file_time_type gLastWrite{};
 bool gLoaded = false;
+
+void recordAvatarDecision(std::uint32_t npcId, std::uint16_t transformEpoch,
+                          const std::string& avatar, const char* result)
+{
+    LiveEventJournal::Fields fields;
+    const auto status = HotReloadSystem::instance().status();
+    fields.tick = 0;
+    fields.generation = status.activeGeneration;
+    fields.hasGeneration = status.activeGeneration != 0;
+    fields.module = "actor.avatar-policy";
+    fields.actorId = std::to_string(npcId);
+    fields.result = result ? result : "unknown";
+    nlohmann::json extra;
+    extra["life_generation"] = transformEpoch;
+    extra["avatar"] = avatar;
+    fields.extra = extra.dump();
+    if (fields.extra.size() >= 2 && fields.extra.front() == '{' && fields.extra.back() == '}')
+        fields.extra = fields.extra.substr(1, fields.extra.size() - 2);
+    LiveEventJournal::instance().record("npc_avatar_selected", fields);
+}
 
 void loadConfig()
 {
@@ -72,15 +97,45 @@ std::string forcedAvatarName()
 std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
 {
     const std::string forced = forcedAvatarName();
-    if (!forced.empty()) return forced;
+    if (!forced.empty()) {
+        recordAvatarDecision(npcId, transformEpoch, forced, "forced");
+        return forced;
+    }
     const std::vector<std::string> avatars = AvatarSystem::instance().listAvatars();
     if (avatars.empty()) return {};
+
+    // The EXE owns discovery and validation of asset names. The hot policy
+    // owns the per-life choice and returns only a plain-data result.
+    ActorAvatarPolicyV1 policy{};
+    policy.entityId = npcId;
+    policy.lifeGeneration = transformEpoch;
+    policy.candidateCount = static_cast<std::uint32_t>(std::min(
+        avatars.size(), static_cast<std::size_t>(ACTOR_AVATAR_POLICY_MAX_CANDIDATES)));
+    for (std::uint32_t i = 0; i < policy.candidateCount; ++i) {
+        std::strncpy(policy.candidates[i], avatars[i].c_str(),
+                     sizeof(policy.candidates[i]) - 1);
+        policy.candidates[i][sizeof(policy.candidates[i]) - 1] = '\0';
+    }
+    if (LiveBehavior::dispatchActorAvatarPolicy(policy, 0) &&
+        policy.selectedAvatar[0] != '\0') {
+        Debug::log(Debug::Category::Avatar,
+            "[NPC AVATAR HOT] npc=%u epoch=%u index=%u avatar=%s\n",
+            npcId, (unsigned)transformEpoch, policy.selectedIndex,
+            policy.selectedAvatar);
+        recordAvatarDecision(npcId, transformEpoch, policy.selectedAvatar, "hot");
+        return policy.selectedAvatar;
+    }
+
+    // Compatibility fallback: a missing/failed hot generation must not make a
+    // new actor lose its appearance.
     // Deterministic: same NPC + same life (epoch) = same avatar.
     // New life (new epoch) produces a different but stable avatar.
     const std::uint64_t seed = static_cast<std::uint64_t>(npcId) * 65537ULL + transformEpoch;
     std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
     std::uniform_int_distribution<size_t> dist(0, avatars.size() - 1);
-    return avatars[dist(rng)];
+    const std::string selected = avatars[dist(rng)];
+    recordAvatarDecision(npcId, transformEpoch, selected, "fallback");
+    return selected;
 }
 }
 

@@ -136,6 +136,9 @@ struct PhysicalBody {
 struct PendingPlayerModel {
     std::atomic<bool> ready{false};
     std::string path;
+    // Avatar identity captured when this async request was started. A reused
+    // NPC may receive a new life/avatar before the worker completes.
+    std::string avatarNameAtRequest;
     std::string resolvedPath;
     std::string glbDir;
     bool loadOk = false;

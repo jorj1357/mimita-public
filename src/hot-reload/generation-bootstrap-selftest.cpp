@@ -162,5 +162,31 @@ bool runGenerationBootstrapSelfTest(std::string& report)
                     "ready but not locally active -> world still blocked", report);
     }
 
+    // ── Bounded acquisition timeout ───────────────────────────────────
+    {
+        GenerationBootstrapV1 b;
+        b.begin(G);
+        b.onMetadata(G, hash, /*artifactCached=*/false);
+        ok &= check(b.state == BootstrapState::Acquiring &&
+                        !b.tickTimeout(1000, 20000),
+                    "bootstrap arms the timeout window", report);
+        ok &= check(b.state == BootstrapState::Acquiring &&
+                        !b.tickTimeout(15000, 20000),
+                    "bootstrap stays acquiring inside the window", report);
+        ok &= check(b.tickTimeout(21000, 20000) &&
+                        b.state == BootstrapState::Failed &&
+                        b.failure == (std::uint32_t)BootstrapFailure::Timeout &&
+                        !b.worldParticipationAllowed(G, G),
+                    "unacquired bootstrap times out to an explicit failure", report);
+
+        GenerationBootstrapV1 r;
+        r.begin(G);
+        r.onMetadata(G, hash, true);
+        r.complete(G, true, manifest, facts);
+        ok &= check(!r.tickTimeout(999999, 20000) &&
+                        r.state == BootstrapState::Ready,
+                    "completed bootstrap is not affected by the timeout", report);
+    }
+
     return ok;
 }

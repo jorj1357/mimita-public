@@ -43,6 +43,7 @@ inline Source readSource(const char* path, Source fallback = Source::Cpp)
 inline Source movementSource() { return readSource("config/movement.json"); }
 inline Source collisionSource() { return readSource("config/collision.json"); }
 inline Source animationSource() { return readSource("config/animations.json"); }
+inline Source weaponSource() { return readSource("config/weapons.json"); }
 
 inline const char* name(Source source)
 {

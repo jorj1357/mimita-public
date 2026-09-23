@@ -47,7 +47,22 @@ enum class BootstrapFailure : std::uint32_t {
     None = 0,
     NoTarget = 1,
     NotLoaded = 2,
+    // The target artifact never arrived (unreachable/old server, lost transfer).
+    // A persistent mismatch must become a bounded, explicit failure instead of an
+    // indefinite Acquiring state that can wedge world participation.
+    Timeout = 3,
 };
+
+inline const char* bootstrapFailureName(BootstrapFailure f)
+{
+    switch (f) {
+    case BootstrapFailure::None: return "none";
+    case BootstrapFailure::NoTarget: return "no-target";
+    case BootstrapFailure::NotLoaded: return "not-loaded";
+    case BootstrapFailure::Timeout: return "timeout";
+    }
+    return "unknown";
+}
 
 // Bounded: one target generation at a time. Any packet tagged with a different
 // generation cannot complete the current bootstrap.
@@ -56,6 +71,10 @@ struct GenerationBootstrapV1 {
     std::uint64_t manifestArtifactHash = 0;  // identity of the target manifest
     BootstrapState state = BootstrapState::Idle;
     std::uint32_t failure = 0;               // VerifyFailure or BootstrapFailure
+    // Wall-clock ms at which the current active bootstrap was first observed.
+    // 0 means "not armed yet"; the owner arms it on the next tick. Reset by
+    // begin() so a re-target restarts the window.
+    std::uint64_t startedMs = 0;
 
     bool active() const
     {
@@ -70,10 +89,30 @@ struct GenerationBootstrapV1 {
         targetGeneration = serverActiveGeneration;
         manifestArtifactHash = 0;
         failure = 0;
+        startedMs = 0;
         state = serverActiveGeneration == 0 ? BootstrapState::Failed
                                             : BootstrapState::AwaitingMetadata;
         if (serverActiveGeneration == 0)
             failure = (std::uint32_t)BootstrapFailure::NoTarget;
+    }
+
+    // Bounded acquisition: an active bootstrap that makes no progress within
+    // `timeoutMs` becomes an explicit Timeout failure. Call once per client tick.
+    // Returns true exactly on the tick the timeout fires (for one journal line).
+    bool tickTimeout(std::uint64_t nowMs, std::uint64_t timeoutMs)
+    {
+        if (!active())
+            return false;
+        if (startedMs == 0) {
+            startedMs = nowMs;
+            return false;
+        }
+        if (nowMs >= startedMs && nowMs - startedMs >= timeoutMs) {
+            failure = (std::uint32_t)BootstrapFailure::Timeout;
+            state = BootstrapState::Failed;
+            return true;
+        }
+        return false;
     }
 
     // Manifest for the target arrives (identity must match the target).

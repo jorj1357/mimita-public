@@ -49,6 +49,14 @@ bool dispatchToolUse(ToolUsePolicyV1& payload, std::uint64_t tick);
 // true when handled (the cold fallback must not also compose).
 bool dispatchEffectRequest(EffectRequestV1& payload, std::uint64_t tick);
 
+// Generic actor lifecycle boundary. The kernel owns the envelope storage;
+// hot behavior owns lifecycle decisions when it marks the payload handled.
+bool dispatchActorLifecycle(ActorLifecycleStateV1& payload, std::uint64_t tick);
+
+// Select one avatar from the kernel-provided candidate list. Returns true when
+// the hot policy handled the request and filled selectedAvatar/selectedIndex.
+bool dispatchActorAvatarPolicy(ActorAvatarPolicyV1& payload, std::uint64_t tick);
+
 // Generic dispatch for any event type with a mutable POD payload. This is the
 // single call site shape for all hot behavior seams: the kernel fills base
 // values, calls this, then applies the payload's `handled`/out fields. New
@@ -73,6 +81,14 @@ bool dispatchGameplayEvent64(std::uint64_t typeId, void* payload,
 bool runBehaviorBindings(std::uint64_t entity, std::uint32_t eventType,
                          void* payload, std::uint32_t payloadSize,
                          std::uint64_t tick);
+
+// Test hook: when no live server context exists (headless self-test), a
+// `net.packet-reply` call is delivered here instead of to a socket. Production
+// always goes through serverPacketReply; this is observation only.
+using PacketReplySink = void (*)(std::uint32_t connectionId, const void* bytes,
+                                 std::uint32_t size);
+void setPacketReplySink(PacketReplySink sink);
+void clearPacketReplySink();
 
 // World used by the queryWorldRay capability while a dispatch is in flight.
 void setDispatchWorld(const void* world);

@@ -32,6 +32,8 @@
 #include "network/server-damage-outcome.h"
 #include "network/server-damage-event.h"
 #include "network/server-event-broadcast.h"
+#include "network/server-history.h"
+#include "hot-reload/hot-packet-codec.h"
 #include "network/server-weapon-tuning.h"
 #include "network/network-weapons.h"
 #include "combat/weapon-registry.h"
@@ -1601,6 +1603,29 @@ void MIMITA_GAME_CALL capEventBroadcast(void*, GameEventBroadcastV1* request)
     request->resolved = 1;
 }
 
+// Test-only observation sink for net.packet-reply when no server is running.
+static LiveBehavior::PacketReplySink gPacketReplySink = nullptr;
+
+// net.packet-reply: send caller-built bytes back to one connection. Used by a
+// hot net.packet handler to answer a received packet (e.g. a handshake).
+void MIMITA_GAME_CALL capHotPacketReply(void*, std::uint32_t connectionId,
+                                        const void* bytes, std::uint32_t size)
+{
+    if (gPacketReplySink)
+    {
+        gPacketReplySink(connectionId, bytes, size);
+        return;
+    }
+    MimitaNet::serverPacketReply(connectionId, bytes, size);
+}
+
+// history.query: generic EXE-owned historical state for lag compensation. The
+// kernel exposes raw samples; hot `history.select` owns the decision.
+std::uint32_t MIMITA_GAME_CALL capHistoryQuery(void*, MimitaNet::GameHistoryQueryV1* q)
+{
+    return MimitaNet::serverHistoryQuery(nullptr, q);
+}
+
 bool MIMITA_GAME_CALL capDamagePolicy(void*, GameDamagePolicyV1* request)
 {
     if (!request)
@@ -2363,6 +2388,14 @@ struct KernelCapabilityInit {
                                     gameHash("sig.log.event.v1"), 0,
                                     reinterpret_cast<void*>(&capLogEvent),
                                     "log.event");
+        rt.registerKernelCapability(MimitaNet::GAME_CAP_HOT_PACKET_REPLY,
+                                    gameHash("sig.net.packet-reply.v1"), 0,
+                                    reinterpret_cast<void*>(&capHotPacketReply),
+                                    "net.packet-reply");
+        rt.registerKernelCapability(MimitaNet::GAME_CAP_HISTORY_QUERY,
+                                    gameHash("sig.history.query.v1"), 0,
+                                    reinterpret_cast<void*>(&capHistoryQuery),
+                                    "history.query");
         rt.registerKernelCapability(GAME_CAP_RUNTIME_INFO,
                                     gameHash("sig.runtime.info.v1"), 0,
                                     reinterpret_cast<void*>(&capRuntimeInfo),
@@ -2607,6 +2640,44 @@ bool dispatchMatchEvaluate(GameMatchEvaluateV1& payload, std::uint64_t tick)
     return payload.handled != 0;
 }
 
+bool dispatchActorLifecycle(ActorLifecycleStateV1& payload, std::uint64_t tick)
+{
+    payload.handled = 0;
+    GameEventV1 event{};
+    event.typeId = GAME_EVENT_ACTOR_LIFECYCLE;
+    event.schemaHash = gameHash("actor.lifecycle.v1");
+    event.payloadVersion = 1;
+    event.payloadSize = sizeof(ActorLifecycleStateV1);
+    event.sourceEntity = payload.entityId;
+    event.tick = tick;
+    event.payload = &payload;
+    GameplayContextV1 context = makeContext(tick);
+    MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
+    const GameGameplayModuleV1* module = gameplayModule();
+    if (module && module->onEvent)
+        module->onEvent(&event, &context);
+    return payload.handled != 0;
+}
+
+bool dispatchActorAvatarPolicy(ActorAvatarPolicyV1& payload, std::uint64_t tick)
+{
+    payload.handled = 0;
+    GameEventV1 event{};
+    event.typeId = GAME_EVENT_ACTOR_AVATAR_POLICY;
+    event.schemaHash = gameHash("actor.avatar-policy.v1");
+    event.payloadVersion = 1;
+    event.payloadSize = sizeof(ActorAvatarPolicyV1);
+    event.sourceEntity = payload.entityId;
+    event.tick = tick;
+    event.payload = &payload;
+    GameplayContextV1 context = makeContext(tick);
+    MimitaRuntime::GenericRuntime::instance().dispatchEvent(event, &context);
+    const GameGameplayModuleV1* module = gameplayModule();
+    if (module && module->onEvent)
+        module->onEvent(&event, &context);
+    return payload.handled != 0;
+}
+
 bool dispatchProjectileImpact(ProjectileImpactPolicyV1& payload, std::uint64_t tick)
 {
     payload.handled = 0;
@@ -2743,6 +2814,16 @@ bool runBehaviorBindings(std::uint64_t entity, std::uint32_t eventType,
         ran = true;
     }
     return ran;
+}
+
+void setPacketReplySink(LiveBehavior::PacketReplySink sink)
+{
+    gPacketReplySink = sink;
+}
+
+void clearPacketReplySink()
+{
+    gPacketReplySink = nullptr;
 }
 
 void setDispatchWorld(const void* world)

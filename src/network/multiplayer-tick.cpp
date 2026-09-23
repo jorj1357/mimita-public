@@ -19,6 +19,7 @@
 #include "network/constraint-codec.h"
 #include "physics/constraints/constraint-store.h"
 #include "network/packets.h"
+#include "network/packet-codec-wire.h"
 #include "duel/duel-queue.h"
 #include "network/community-match-client.h"
 #include "network/snapshot-chunks.h"
@@ -1258,6 +1259,40 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             mpNotifyConnectionStateChange(ctx, ConnectionState::Reconnecting,
                                           ConnectionState::Connected);
         }
+        else if (header->type == PACKET_HOT_CODEC)
+        {
+            // Generic hot-codec packet: decode through the active generation's
+            // codec and forward the opaque bytes to hot code as `net.packet`.
+            MimitaNet::PacketCodecEnvelopeV1 envelope{};
+            MimitaNet::PacketCompatibilityV1 codecReason =
+                MimitaNet::PacketCompatibilityV1::Malformed;
+            std::vector<std::uint8_t> scratch(bytes > 0 ? (std::size_t)bytes : 1);
+            std::uint32_t decodedSize = 0;
+            const bool decoded = MimitaNet::parseHotCodecDatagram(
+                reinterpret_cast<const std::uint8_t*>(buffer), (std::uint32_t)bytes,
+                scratch.data(), (std::uint32_t)scratch.size(), &decodedSize, &envelope,
+                &codecReason);
+            if (decoded)
+            {
+                std::vector<std::uint8_t> eventBytes(
+                    sizeof(MimitaNet::PacketCodecEnvelopeV1) + decodedSize);
+                std::memcpy(eventBytes.data(), &envelope,
+                            sizeof(MimitaNet::PacketCodecEnvelopeV1));
+                if (decodedSize > 0)
+                    std::memcpy(
+                        eventBytes.data() + sizeof(MimitaNet::PacketCodecEnvelopeV1),
+                        scratch.data(), decodedSize);
+                LiveBehavior::dispatchGameplayEvent64(
+                    MimitaNet::GAME_EVENT_HOT_PACKET, eventBytes.data(),
+                    (std::uint32_t)eventBytes.size(), 0, 0, ctx.clientSimulationTick);
+            }
+            else
+            {
+                Debug::logThrottled(Debug::Category::Networking, "hot-codec-decode",
+                                    1.0f, "hot codec decode failed reason=%u",
+                                    (unsigned)codecReason);
+            }
+        }
         else if (header->type == PACKET_DISAGREEMENT && bytes >= (int)sizeof(DisagreementPacket))
         {
             mpProcessDisagreementPacket(ctx, reinterpret_cast<const DisagreementPacket*>(buffer));
@@ -2479,6 +2514,35 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                        "[SPAWN ACK RETRY] playerId=%u spawnGen=%u epoch=%u\n",
                        ctx.localPlayerId, ctx.pendingSpawnAckGeneration,
                        ctx.pendingSpawnAckEpoch);
+        }
+    }
+
+    // Bounded late-join bootstrap: an active bootstrap that cannot acquire the
+    // server's ACTIVE generation within the window becomes an explicit Timeout
+    // failure instead of wedging in Acquiring forever. The hot
+    // `net.generation-policy` still decides world participation; this only turns
+    // an indefinite mismatch into a bounded, journalled failure.
+    {
+        constexpr std::uint64_t kBootstrapTimeoutMs = 20000;
+        if (ctx.generationBootstrap.tickTimeout(currentMs, kBootstrapTimeoutMs))
+        {
+            LiveEventJournal::Fields f;
+            f.tick = ctx.clientSimulationTick;
+            f.result = "bootstrap_timeout";
+            f.error = "server active generation artifact not acquired";
+            f.extra = std::string("\"server_generation\":") +
+                std::to_string(ctx.serverCodeGeneration) +
+                ",\"target_generation\":" +
+                std::to_string(ctx.generationBootstrap.targetGeneration) +
+                ",\"bootstrap_state\":" +
+                std::to_string((std::uint32_t)ctx.generationBootstrap.state) +
+                ",\"bootstrap_failure\":" +
+                std::to_string(ctx.generationBootstrap.failure);
+            LiveEventJournal::instance().record("generation_bootstrap_failed", f);
+            Debug::warn(Debug::Category::General,
+                "generation bootstrap timed out: server_gen=%u target=%llu",
+                ctx.serverCodeGeneration,
+                (unsigned long long)ctx.generationBootstrap.targetGeneration);
         }
     }
 

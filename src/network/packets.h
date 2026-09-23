@@ -199,7 +199,13 @@ enum PacketType : uint8_t
     PACKET_LIVE_REVISION_ACTIVATE = 86,
     PACKET_LIVE_REVISION_ROLLBACK = 87,
     PACKET_LIVE_REVISION_CONFLICT = 88,
-    PACKET_LIVE_REVISION_ACK = 89
+    PACKET_LIVE_REVISION_ACK = 89,
+    // ── Generic hot-codec packet (bidirectional) ─────────────────────
+    // ONE opaque packet type for every hot packet schema. The payload is
+    // [PacketCodecEnvelopeV1][inner payload]; the schema is selected by
+    // schemaId+schemaVersion and owned by a hot codec. No per-schema packet
+    // type or EXE call site. See src/hot-reload/hot-packet-codec.h.
+    PACKET_HOT_CODEC = 90
 };
 
 static constexpr uint32_t ARTIFACT_CHUNK_BYTES = 1000;

@@ -58,4 +58,26 @@ void serverEventBroadcast(const GameEventBroadcastV1& request)
     }
 }
 
+void serverPacketReply(std::uint32_t connectionId, const void* bytes,
+                       std::uint32_t size)
+{
+    ServerContextV1* context = activeServerContext();
+    if (!context || !context->players || !bytes || size == 0)
+        return;
+    auto& players =
+        *static_cast<std::unordered_map<std::uint32_t, ServerPlayer>*>(context->players);
+    auto it = players.find(connectionId);
+    if (it == players.end())
+        return;
+    const SOCKET sock = static_cast<SOCKET>(context->sock);
+    const int byteCount = static_cast<int>(size);
+    if (it->second.transport)
+        it->second.transport->send(bytes, byteCount);
+    else
+        sendto(sock, (const char*)bytes, byteCount, 0,
+               (sockaddr*)&it->second.addr, sizeof(it->second.addr));
+    if (context->totalPacketsOut)
+        ++(*context->totalPacketsOut);
+}
+
 } // namespace MimitaNet

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "hot-reload/game-api.h"
+#include "hot-reload/hot-packet-codec.h"
 
 // Hot-side (DLL-internal) composition tables. A tool or projectile is an
 // entity/composition; these tables let any module add a behavior for a runtime
@@ -70,6 +71,32 @@ public:
                 return entry.fn;
         return nullptr;
     }
+
+    void addPacketCodec(const MimitaNet::GamePacketCodecDescriptorV1& c)
+    {
+        packetCodecs_.push_back(c);
+    }
+    // Version-range lookup: prefer a codec that can decode `version`
+    // ([minSupportedVersion, schemaVersion]); otherwise return the newest codec
+    // for the schema so the dispatcher can report too-old/too-new explicitly.
+    const MimitaNet::GamePacketCodecDescriptorV1* findPacketCodec(
+        std::uint64_t schemaId, std::uint32_t version) const
+    {
+        const MimitaNet::GamePacketCodecDescriptorV1* newest = nullptr;
+        const MimitaNet::GamePacketCodecDescriptorV1* inRange = nullptr;
+        for (const auto& c : packetCodecs_) {
+            if (c.schemaId != schemaId)
+                continue;
+            if (!newest || c.schemaVersion > newest->schemaVersion)
+                newest = &c;
+            if (version >= c.minSupportedVersion && version <= c.schemaVersion) {
+                if (!inRange || c.schemaVersion > inRange->schemaVersion)
+                    inRange = &c;
+            }
+        }
+        return inRange ? inRange : newest;
+    }
+    std::size_t packetCodecCount() const { return packetCodecs_.size(); }
 
     void addSystem(const GameSystemDescriptorV1& s) { systems_.push_back(s); }
     void addEventType(const GameEventTypeDescriptorV1& e) { events_.push_back(e); }
@@ -130,6 +157,7 @@ private:
     HotPackageBuilder() = default;
 
     std::vector<GameSystemDescriptorV1> systems_;
+    std::vector<MimitaNet::GamePacketCodecDescriptorV1> packetCodecs_;
     std::vector<GameEventTypeDescriptorV1> events_;
     std::vector<GameComponentSchemaDescriptorV1> schemas_;
     std::vector<GameCapabilityDescriptorV1> providers_;
@@ -227,6 +255,15 @@ struct ProjectileBehaviorRegistrar {
     ProjectileBehaviorRegistrar(std::uint64_t typeId, HotProjectileImpactFn fn)
     {
         HotPackageBuilder::instance().addProjectileBehavior(typeId, fn);
+    }
+};
+// Registers a packet codec for (schemaId, schemaVersion). Adding a new packet
+// schema is a hot source edit: register a codec here and provide the
+// net.packet-codecs lookup capability; no EXE call site changes.
+struct PacketCodecRegistrar {
+    explicit PacketCodecRegistrar(const MimitaNet::GamePacketCodecDescriptorV1& c)
+    {
+        HotPackageBuilder::instance().addPacketCodec(c);
     }
 };
 } // namespace MimitaHotPackage

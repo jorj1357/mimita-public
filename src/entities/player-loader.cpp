@@ -736,6 +736,7 @@ void Player::requestModelLoad(const std::string& filepath)
 
     auto data = std::make_shared<PendingPlayerModel>();
     data->path = filepath;
+    data->avatarNameAtRequest = mAvatarName;
     data->resolvedPath = resolveAssetPath(filepath);
     if (!gAvatarBodypartOverrides.is_null())
         data->bodypartOverrides = gAvatarBodypartOverrides;
@@ -783,6 +784,16 @@ void Player::finalizeModelIfReady()
     if (!mPendingModel->ready.load()) return;
 
     PendingPlayerModel* d = mPendingModel.get();
+    if (d->avatarNameAtRequest != mAvatarName) {
+        // The actor received a newer avatar while this worker was loading.
+        // Do not upload or attach the old model to the new life. The render
+        // path will request the current avatar on the next pass.
+        printf("[PLAYER] discarded stale async model: requestedAvatar=%s currentAvatar=%s\n",
+               d->avatarNameAtRequest.c_str(), mAvatarName.c_str());
+        mPendingModel.reset();
+        mLazyLoadRequested = false;
+        return;
+    }
     if (!d->loadOk) {
         mPendingModel.reset();
         return;

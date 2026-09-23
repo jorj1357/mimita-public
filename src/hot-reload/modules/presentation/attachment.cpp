@@ -174,15 +174,19 @@ void writeToolPresentation(GameplayContextV1* ctx, std::uint64_t toolEntity,
             att.localPosition[k] = recipe.viewPosition[k];
         for (int k = 0; k < 4; ++k)
             att.localRotation[k] = recipe.viewRotation[k];
-        const float s = recipe.viewScale > 0.0f ? recipe.viewScale : 1.0f;
-        att.localScale[0] = att.localScale[1] = att.localScale[2] = s;
+        for (int k = 0; k < 3; ++k)
+            att.localScale[k] = recipe.viewScaleXYZ[k] > 0.0f
+                ? recipe.viewScaleXYZ[k]
+                : (recipe.viewScale > 0.0f ? recipe.viewScale : 1.0f);
     } else {
         for (int k = 0; k < 3; ++k)
             att.localPosition[k] = recipe.worldPosition[k];
         for (int k = 0; k < 4; ++k)
             att.localRotation[k] = recipe.worldRotation[k];
-        const float s = recipe.worldScale > 0.0f ? recipe.worldScale : 1.0f;
-        att.localScale[0] = att.localScale[1] = att.localScale[2] = s;
+        for (int k = 0; k < 3; ++k)
+            att.localScale[k] = recipe.worldScaleXYZ[k] > 0.0f
+                ? recipe.worldScaleXYZ[k]
+                : (recipe.worldScale > 0.0f ? recipe.worldScale : 1.0f);
     }
     ctx->dynamicWriteComponent(ctx->host, toolEntity, HOT_ATTACHMENT_COMPONENT,
                                &att, sizeof(att));
@@ -392,6 +396,20 @@ void MIMITA_GAME_CALL attachmentTick(void* host, std::uint64_t /*tick*/,
                             grip[axis] = maxDistance >= minDistance
                                 ? mb.boundsMin[axis]
                                 : mb.boundsMax[axis];
+                            glm::vec3 muzzle(
+                                0.5f * (mb.boundsMin[0] + mb.boundsMax[0]),
+                                0.5f * (mb.boundsMin[1] + mb.boundsMax[1]),
+                                0.5f * (mb.boundsMin[2] + mb.boundsMax[2]));
+                            muzzle[axis] = maxDistance >= minDistance
+                                ? mb.boundsMax[axis]
+                                : mb.boundsMin[axis];
+                            // The old fire path derived its muzzle from the
+                            // opposite end of the same model axis. Keeping it
+                            // here makes visible fire, collision, and traces
+                            // share the exact mounted weapon transform.
+                            att.localMuzzle[0] = muzzle.x;
+                            att.localMuzzle[1] = muzzle.y;
+                            att.localMuzzle[2] = muzzle.z;
                             recenter = glm::translate(glm::mat4(1.0f), -grip);
                         }
                     }

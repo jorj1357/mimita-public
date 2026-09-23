@@ -17,4 +17,11 @@ void serverEventNextId(GameReliableEventTicketV1* out);
 // Queues (reliable) or sends (unreliable) a caller-built packet.
 void serverEventBroadcast(const GameEventBroadcastV1& request);
 
+// Sends caller-built bytes back to ONE connection (the originating player),
+// over its own transport when present. Used by the generic hot-packet handler
+// to answer a received packet through the `net.packet-reply` capability. The
+// bytes may themselves be a hot-coded datagram.
+void serverPacketReply(std::uint32_t connectionId, const void* bytes,
+                       std::uint32_t size);
+
 } // namespace MimitaNet

@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/packet-codec-dispatch.h"
 #include "debug/debug-log.h"
 #include "config/networking-config.h"
 #include "live-code/live-behavior.h"
@@ -310,6 +311,8 @@ void handleReliableEventAck(const char* buffer, int bytes,
         [&](const ServerPlayer::PendingReliableEvent& e) {
             return e.eventId == ack->eventId && e.eventSessionId == ack->eventSessionId;
         }), pending.end());
+    // Retire any hot-coded bytes retained for this event: it is delivered.
+    PacketCodecDispatch::instance().retireEvent(ack->eventId);
 }
 
 void tickReliableGameplayEvents(SOCKET sock,
@@ -362,10 +365,12 @@ void tickReliableGameplayEvents(SOCKET sock,
                         "[RELIABLE EVENT KEPT] playerId=%u eventId=%u reason=%s action=keep-connection\n",
                         player.id, it->eventId,
                         ttlExpired ? "ttl-expired" : "attempts-exhausted");
+                    PacketCodecDispatch::instance().retireEvent(it->eventId);
                     it = player.pendingReliableEvents.erase(it);
                     continue;
                 }
 
+                PacketCodecDispatch::instance().retireEvent(it->eventId);
                 markReliableConnectionUnhealthy(players, playerIt,
                     ttlExpired ? "ttl-expired" : "attempts-exhausted",
                     it->packetType, it->eventId);

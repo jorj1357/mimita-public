@@ -91,6 +91,8 @@
 #include "hot-reload/migration-prep-selftest.h"
 #include "hot-reload/switch-transaction-selftest.h"
 #include "hot-reload/generation-bootstrap-selftest.h"
+#include "network/lagcomp-history-selftest.h"
+#include "hot-reload/packet-codec-selftest.h"
 #include "hot-reload/artifact-install-selftest.h"
 #include "hot-reload/production-loop-selftest.h"
 #include "hot-reload/content-resource-selftest.h"
@@ -545,6 +547,22 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = runGenerationBootstrapSelfTest(report);
         printf("%s", report.c_str());
         printf("[GENERATION BOOTSTRAP SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--lagcomp-history-selftest") {
+        std::string report;
+        const bool ok = runLagcompHistorySelfTest(report);
+        printf("%s", report.c_str());
+        printf("[LAGCOMP HISTORY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--packet-codec-selftest") {
+        std::string report;
+        const bool ok = runPacketCodecSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[PACKET CODEC SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

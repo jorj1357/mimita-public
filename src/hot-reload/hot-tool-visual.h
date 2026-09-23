@@ -213,9 +213,11 @@ struct ToolVisualRecipeV1 {
     float viewPosition[3];
     float viewRotation[4];     // quaternion xyzw
     float viewScale;
+    float viewScaleXYZ[3];     // afad20a per-axis view scale
     float worldPosition[3];
     float worldRotation[4];
     float worldScale;
+    float worldScaleXYZ[3];    // afad20a per-axis world scale
     float muzzleOffset[3];     // local muzzle point in attachment space
     // Sub-visuals.
     ToolMuzzleVisualV1 muzzle;

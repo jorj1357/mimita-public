@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/server-context.h"
 #include "live-code/live-behavior.h"
+#include "hot-reload/hot-history.h"
 #include "hot-reload/hot-rewind.h"
 #include "hot-reload/hot-reload-system.h"
 #include "ecs/components.h"
@@ -440,7 +441,7 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     resetServerMovementForAuthoritativeLifecycle(
         player, makeCurrentRuntimeMovementConfig());
 
-    debug::Event lifecycleEvent{
+    debug::Event lifecycleJournalEvent{
         .category = "NETWORK",
         .name = isInitialSpawn ? "server.player_spawned" : "server.player_respawned",
         .level = debug::Level::Info,
@@ -455,7 +456,7 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
         },
         .serverTick = serverTick,
         .aggregationKey = "server.player.lifecycle"};
-    MIMITA_EVENT(lifecycleEvent);
+    MIMITA_EVENT(lifecycleJournalEvent);
 
     ActorSpawnEvent lifecycleEvent;
     lifecycleEvent.entityId = player.id;
@@ -1135,9 +1136,78 @@ bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& ou
 // Like getPositionAtTick but also returns the broadcast yaw at that tick so
 // body-part hitboxes can be reconstructed with the correct facing (the yaw the
 // attacker saw, not the target's current yaw).
+// Fill the bracketing samples for a player history. Returns false when empty.
+static bool bracketPlayerHistory(const ServerPlayer& p, uint32_t targetTick,
+                                 MimitaNet::GameHistorySelectV1& out)
+{
+    out = MimitaNet::GameHistorySelectV1{};
+    out.targetTick = targetTick;
+    if (p.posHistory.empty())
+        return false;
+    auto toSample = [](MimitaNet::GameHistorySampleV1& s,
+                       const PositionHistoryEntry& e) {
+        s.tick = e.tick;
+        s.logicalGenerationId = e.logicalGenerationId;
+        s.position[0] = e.pos.x;
+        s.position[1] = e.pos.y;
+        s.position[2] = e.pos.z;
+        s.velocity[0] = e.vel.x;
+        s.velocity[1] = e.vel.y;
+        s.velocity[2] = e.vel.z;
+        s.yaw = e.yaw;
+    };
+    const auto& back = p.posHistory.back();
+    const auto& front = p.posHistory.front();
+    if (targetTick >= back.tick) {
+        toSample(out.a, back);
+        out.haveA = 1;
+        return true;
+    }
+    if (targetTick <= front.tick) {
+        toSample(out.a, front);
+        out.haveA = 1;
+        return true;
+    }
+    int lo = 0;
+    int hi = (int)p.posHistory.size() - 1;
+    while (lo < hi - 1) {
+        int mid = (lo + hi) / 2;
+        if (p.posHistory[mid].tick <= targetTick)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    toSample(out.a, p.posHistory[lo]);
+    out.haveA = 1;
+    if (p.posHistory[lo].tick == targetTick) {
+        out.exactTick = 1;
+        return true;
+    }
+    toSample(out.b, p.posHistory[lo + 1]);
+    out.haveB = 1;
+    return true;
+}
+
 bool getPlayerPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
                          glm::vec3& outPos, float& outYaw)
 {
+    // Hot lag-comp policy first: the generic history.select seam owns the
+    // interpolate/nearest/generation-clamp decision. Falls back to the cold
+    // implementation below when no hot behavior handles it.
+    {
+        MimitaNet::GameHistorySelectV1 select{};
+        if (bracketPlayerHistory(p, targetTick, select) &&
+            LiveBehavior::dispatchGameplayEvent64(
+                MimitaNet::GAME_EVENT_HISTORY_SELECT, &select, sizeof(select),
+                targetTick, 0, 0) &&
+            select.handled)
+        {
+            outPos = glm::vec3(select.position[0], select.position[1],
+                               select.position[2]);
+            outYaw = select.yaw;
+            return true;
+        }
+    }
     if (p.posHistory.empty())
         return false;
     const auto& back = p.posHistory.back();

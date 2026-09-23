@@ -79,8 +79,9 @@
     "src/hot-reload/hot-projectile-event.h",
     "src/hot-reload/hot-event-broadcast.h",
     "src/hot-reload/hot-damage-event.h",
-    "src/network/packets.h",
-    "src/hot-reload/hot-consequences.h"
+    "src/hot-reload/hot-consequences.h",
+    "src/hot-reload/hot-packet-codec.h",
+    "src/hot-reload/hot-history.h"
   ],
   "globs": [
     "src/hot-reload/modules/*.cpp",

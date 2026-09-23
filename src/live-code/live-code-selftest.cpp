@@ -8,6 +8,9 @@
 #include "live-code/live-code-selftest.h"
 
 #include "hot-reload/hot-reload-system.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-packet-codec.h"
+#include "network/packet-codec-wire.h"
 #include "debug/structured-log.h"
 #include "live-code/code-hash.h"
 #include "live-code/live-actor.h"
@@ -22,6 +25,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -29,6 +33,34 @@ bool check(bool condition, const char* name, std::string& report)
 {
     report += std::string(condition ? "[ok] " : "[FAIL] ") + name + "\n";
     return condition;
+}
+
+// Observation sink for the hot handler's `net.packet-reply` in headless mode.
+// When `sendSocket` is set, the reply is sent over a real loopback UDP socket
+// (the "server -> client" leg); otherwise it is captured in-process.
+struct ReplyCapture {
+    std::vector<std::uint8_t> bytes;
+    std::uint32_t connectionId = 0;
+    bool got = false;
+    SOCKET sendSocket = INVALID_SOCKET;
+    sockaddr_in sendTo{};
+};
+ReplyCapture* gReplyCapture = nullptr;
+
+void captureHotPacketReply(std::uint32_t connectionId, const void* bytes,
+                           std::uint32_t size)
+{
+    if (!gReplyCapture)
+        return;
+    gReplyCapture->connectionId = connectionId;
+    if (gReplyCapture->sendSocket != INVALID_SOCKET && size > 0)
+    {
+        sendto(gReplyCapture->sendSocket, (const char*)bytes, (int)size, 0,
+               (const sockaddr*)&gReplyCapture->sendTo, sizeof(gReplyCapture->sendTo));
+    }
+    gReplyCapture->bytes.assign(static_cast<const std::uint8_t*>(bytes),
+                                static_cast<const std::uint8_t*>(bytes) + size);
+    gReplyCapture->got = true;
 }
 
 } // namespace
@@ -235,6 +267,40 @@ bool runLiveCodeSelfTest(std::string& report)
                         std::isfinite((float)policy.outDamage) && policy.outDamage >= 0,
                     "hot damage policy dispatch", report);
 
+        ActorLifecycleStateV1 actorLifecycle{};
+        actorLifecycle.entityId = 42;
+        actorLifecycle.actorKind = 2;
+        actorLifecycle.lifeGeneration = 1;
+        actorLifecycle.position[0] = 3.0f;
+        actorLifecycle.maxHealth = 100;
+        actorLifecycle.health = 100;
+        ok &= check(LiveBehavior::dispatchActorLifecycle(actorLifecycle, 42) &&
+                        actorLifecycle.handled == 1 &&
+                        actorLifecycle.entityId == 42 &&
+                        actorLifecycle.lifeGeneration == 1 &&
+                        actorLifecycle.health == 100,
+                    "generic hot actor lifecycle boundary", report);
+
+        ActorAvatarPolicyV1 avatarPolicy{};
+        avatarPolicy.entityId = 42;
+        avatarPolicy.lifeGeneration = 1;
+        avatarPolicy.candidateCount = 3;
+        std::snprintf(avatarPolicy.candidates[0], sizeof(avatarPolicy.candidates[0]), "avatar-a");
+        std::snprintf(avatarPolicy.candidates[1], sizeof(avatarPolicy.candidates[1]), "avatar-b");
+        std::snprintf(avatarPolicy.candidates[2], sizeof(avatarPolicy.candidates[2]), "avatar-c");
+        ok &= check(LiveBehavior::dispatchActorAvatarPolicy(avatarPolicy, 42) &&
+                        avatarPolicy.handled == 1 &&
+                        avatarPolicy.selectedIndex < avatarPolicy.candidateCount &&
+                        avatarPolicy.selectedAvatar[0] != '\0',
+                    "hot actor avatar policy", report);
+        const std::string selectedAvatar = avatarPolicy.selectedAvatar;
+        ActorAvatarPolicyV1 repeatAvatarPolicy = avatarPolicy;
+        repeatAvatarPolicy.handled = 0;
+        repeatAvatarPolicy.selectedAvatar[0] = '\0';
+        ok &= check(LiveBehavior::dispatchActorAvatarPolicy(repeatAvatarPolicy, 42) &&
+                        selectedAvatar == repeatAvatarPolicy.selectedAvatar,
+                    "hot actor avatar policy deterministic per life", report);
+
         // ── Hot-module log capability round-trip ───────────────────────────
         // Proves the exact path the collision package uses: a hot caller
         // resolves `log.event` through the gameplay context and the record
@@ -271,6 +337,136 @@ bool runLiveCodeSelfTest(std::string& report)
         }
         ok &= check(sawCapabilityLog, "hot capability log reached events.jsonl",
                     report);
+
+        // ── Hot packet-codec registry through the same generic doorway ─────
+        // The hot module registers a real codec; the cold dispatcher resolves it
+        // by capability id and looks it up by (schemaId, schemaVersion). This
+        // proves a packet schema is a hot source edit with no EXE call site.
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GamePacketCodecLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_PACKET_CODECS));
+            const MimitaNet::GamePacketCodecDescriptorV1* codec =
+                lookup ? lookup(nullptr, gameHash("packet.hot.ping"), 1) : nullptr;
+            ok &= check(codec && codec->schemaVersion == 1 && codec->encode &&
+                            codec->decode && codec->validate,
+                        "hot packet-codecs provider resolves a live codec", report);
+        }
+
+        // ── End-to-end hot round trip ───────────────────────────────────────
+        // Build a hot-coded ping datagram, decode it through the hot codec, hand
+        // the bytes to the hot `net.packet` handler, and observe the handler's
+        // reply through the kernel reply capability. No EXE schema knowledge.
+        {
+            ReplyCapture capture;
+            gReplyCapture = &capture;
+            LiveBehavior::setPacketReplySink(&captureHotPacketReply);
+            ok &= check(
+                MimitaRuntime::GenericRuntime::instance().hasCapability(
+                    MimitaNet::GAME_CAP_HOT_PACKET_REPLY),
+                "net.packet-reply capability registered", report);
+
+            // Real two-leg loopback: the "client" sends the ping datagram over a
+            // real UDP socket; the "server" receives it, decodes and dispatches
+            // through the hot codec/handler; the handler's reply is sent back over
+            // the same socket and parsed as the client would parse it.
+            WSADATA wsa{};
+            WSAStartup(MAKEWORD(2, 2), &wsa);
+            SOCKET serverSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            SOCKET clientSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            sockaddr_in serverAddr{};
+            serverAddr.sin_family = AF_INET;
+            serverAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            serverAddr.sin_port = 0;
+            bind(serverSock, (const sockaddr*)&serverAddr, sizeof(serverAddr));
+            int serverAddrLen = sizeof(serverAddr);
+            getsockname(serverSock, (sockaddr*)&serverAddr, &serverAddrLen);
+            const DWORD timeoutMs = 2000;
+            setsockopt(serverSock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeoutMs,
+                       sizeof(timeoutMs));
+            setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeoutMs,
+                       sizeof(timeoutMs));
+            capture.sendSocket = serverSock;
+            capture.sendTo = serverAddr;
+
+            // Build the client's ping. The inner layout is hot-owned, but a
+            // raw 8-byte ping payload is enough to exercise the path.
+            MimitaNet::PacketCodecEnvelopeV1 in{};
+            in.connectionId = 21;
+            in.serverTick = 4242;
+            in.packetSequence = 9;
+            std::uint32_t ping[2] = {7u, 100u};
+            std::vector<std::uint8_t> datagram;
+            MimitaNet::PacketCompatibilityV1 reason =
+                MimitaNet::PacketCompatibilityV1::Malformed;
+            const bool built = MimitaNet::buildHotCodecDatagram(
+                gameHash("packet.hot.ping"), 1, ping, (std::uint32_t)sizeof(ping),
+                in, datagram, &reason);
+            ok &= check(built, "hot round trip: datagram builds", report);
+
+            if (built)
+            {
+                sendto(clientSock, (const char*)datagram.data(), (int)datagram.size(),
+                       0, (const sockaddr*)&serverAddr, sizeof(serverAddr));
+                std::vector<std::uint8_t> received(2048);
+                sockaddr_in from{};
+                int fromLen = sizeof(from);
+                int n = recvfrom(serverSock, (char*)received.data(),
+                                 (int)received.size(), 0, (sockaddr*)&from, &fromLen);
+                ok &= check(n > 0, "hot round trip: server received the datagram",
+                            report);
+                // Reply to the client's source address, not the server's.
+                capture.sendTo = from;
+                // Mirror production: strip the outer header, decode through the
+                // hot codec, and dispatch [envelope][payload] to the hot handler.
+                std::uint32_t decodedSize = 0;
+                MimitaNet::PacketCodecEnvelopeV1 envelope{};
+                std::uint8_t decodedPayload[16] = {};
+                const bool decoded = n > 0 && MimitaNet::parseHotCodecDatagram(
+                    received.data(), (std::uint32_t)n, decodedPayload,
+                    (std::uint32_t)sizeof(decodedPayload), &decodedSize, &envelope,
+                    &reason);
+                ok &= check(decoded, "hot round trip: server decodes the packet",
+                            report);
+                if (decoded)
+                {
+                    std::vector<std::uint8_t> eventBytes(
+                        sizeof(envelope) + decodedSize);
+                    std::memcpy(eventBytes.data(), &envelope, sizeof(envelope));
+                    std::memcpy(eventBytes.data() + sizeof(envelope), decodedPayload,
+                                decodedSize);
+                    const bool dispatched = LiveBehavior::dispatchGameplayEvent64(
+                        MimitaNet::GAME_EVENT_HOT_PACKET, eventBytes.data(),
+                        (std::uint32_t)eventBytes.size(), 1, 0, 0);
+                    ok &= check(dispatched, "hot round trip: net.packet dispatched",
+                                report);
+                    ok &= check(capture.got && capture.connectionId == 21,
+                                "hot net.packet handler replies on the origin connection",
+                                report);
+                    // Receive the reply on the client socket and parse it.
+                    std::vector<std::uint8_t> replyBytes(2048);
+                    sockaddr_in replyFrom{};
+                    int replyFromLen = sizeof(replyFrom);
+                    int rn = recvfrom(clientSock, (char*)replyBytes.data(),
+                                      (int)replyBytes.size(), 0,
+                                      (sockaddr*)&replyFrom, &replyFromLen);
+                    std::uint32_t reply[2] = {0u, 0u};
+                    std::uint32_t replySize = 0;
+                    const bool decodedReply = rn > 0 &&
+                        MimitaNet::parseHotCodecDatagram(
+                            replyBytes.data(), (std::uint32_t)rn, reply,
+                            (std::uint32_t)sizeof(reply), &replySize, nullptr, &reason);
+                    ok &= check(decodedReply && reply[0] == 7u && reply[1] == 101u,
+                                "hot round trip: client decodes the hot-handled reply",
+                                report);
+                }
+            }
+            closesocket(serverSock);
+            closesocket(clientSock);
+            WSACleanup();
+            LiveBehavior::clearPacketReplySink();
+            gReplyCapture = nullptr;
+        }
     }
 
     HotReloadSystem::instance().unloadGameDLL();

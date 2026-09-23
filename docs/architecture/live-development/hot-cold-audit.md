@@ -105,9 +105,9 @@ Traced the real client reconciliation path (`src/network/multiplayer-reconcile.c
 | post-gap resync threshold | multiplayer-reconcile.cpp | error > 1.5 | **policy** | COLD | hot |
 | interpolation state storage | multiplayer-tick.cpp (`EntityInterpolationState`) | sample buffer | mechanism | COLD | keep |
 | interpolation policy | multiplayer-interpolation.cpp (`buildReceiveTimeRender`, `adaptiveDelaySeconds`) + multiplayer-tick.cpp | samples + render clock + gaps + jitter/loss | **policy** | **HOT** (`net.interpolate`: alpha, generation/lifecycle snap, packet-gap snap, buffer-dry hold/extrapolate, extrapolation cap, adaptive delay) | complete (generation ids pending distributed work) |
-| rewind/lag-comp policy | server-players.cpp `estimateServerRewindTick` fallback + `getPlayerPoseAtTick`/`getNpcPoseAtTick` | command tick, latency, interp delay, history bounds | **policy** | **HOT** (`net.rewind`: target tick, latency+interp compensation, max-rewind clamp, generation reject) | generic `historicalState(EntityId,T)` + explosion rewind still cold/absent |
+| rewind/lag-comp policy | server-players.cpp `estimateServerRewindTick` fallback + `getPlayerPoseAtTick`/`getNpcPoseAtTick` | command tick, latency, interp delay, history bounds | **policy** | **HOT** (`net.rewind`: target tick; `history.select`: selection interpolate/nearest/generation clamp) | live-edit proof |
 | rewind history storage | server-players.cpp (`pushPositionHistory`) | generic Transform | mechanism | COLD | keep |
-| rewind sample selection/clamp | `getPositionAtTick`/hit rewind | history | **policy** | COLD | hot |
+| rewind sample selection/clamp | `history.select` hot policy over `history.query` | history | **policy** | **HOT** (`history.select`; explosion victim rewind now routed through it) | live-edit proof |
 
 **Generic reconciliation payload sketch** (no `Player*`): predicted
 Transform/Velocity + authoritative Transform/Velocity + predicted/authoritative

@@ -21,6 +21,8 @@
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
 #include "network/relevance.h"
+#include "network/packet-codec-wire.h"
+#include "live-code/live-journal.h"
 #include "ecs/actor-entities.h"
 #include "ecs/components.h"
 #include "ecs/dynamic-components.h"
@@ -474,7 +476,9 @@ static bool isKnownPacketType(uint8_t type)
     // cannot be silently rejected by an outdated numeric range.
     // 2026-09-12: raised to the newest defined type so client->server
     // PACKET_CODE_GENERATION is accepted.
-    return type >= PACKET_HELLO && type <= PACKET_CONSTRAINT_SNAPSHOT;
+    // 2026-09-23: raised to PACKET_HOT_CODEC so the generic hot-codec packet is
+    // accepted; its schema is validated by the hot codec, not by this gate.
+    return type >= PACKET_HELLO && type <= PACKET_HOT_CODEC;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1983,6 +1987,59 @@ ServerPacketProcessResult processServerPacket(
                transportKindName(event.transportKind),
                (unsigned long long)event.connectionId.value,
                source.c_str(), header->type);
+        return result;
+    }
+
+    // Generic hot-codec packet: hand the opaque [envelope][payload] bytes to the
+    // active generation's codec and forward the decoded bytes to hot code as the
+    // generic `net.packet` event. The kernel never knows the schema, so a new
+    // schema is a hot source edit. Invalid/incompatible packets are rejected
+    // explicitly and securely dropped here.
+    if (header->type == PACKET_HOT_CODEC)
+    {
+        MimitaNet::PacketCodecEnvelopeV1 envelope{};
+        MimitaNet::PacketCompatibilityV1 codecReason =
+            MimitaNet::PacketCompatibilityV1::Malformed;
+        std::vector<std::uint8_t> scratch(event.payloadBytes > 0 ? event.payloadBytes
+                                                                 : 1);
+        std::uint32_t decodedSize = 0;
+        const bool decoded = MimitaNet::parseHotCodecDatagram(
+            reinterpret_cast<const std::uint8_t*>(buffer),
+            (std::uint32_t)event.payloadBytes, scratch.data(),
+            (std::uint32_t)scratch.size(), &decodedSize, &envelope, &codecReason);
+        if (decoded)
+        {
+            std::vector<std::uint8_t> eventBytes(sizeof(MimitaNet::PacketCodecEnvelopeV1) +
+                                                 decodedSize);
+            std::memcpy(eventBytes.data(), &envelope,
+                        sizeof(MimitaNet::PacketCodecEnvelopeV1));
+            if (decodedSize > 0)
+                std::memcpy(eventBytes.data() + sizeof(MimitaNet::PacketCodecEnvelopeV1),
+                            scratch.data(), decodedSize);
+            const bool handled = LiveBehavior::dispatchGameplayEvent64(
+                MimitaNet::GAME_EVENT_HOT_PACKET, eventBytes.data(),
+                (std::uint32_t)eventBytes.size(), 0, 0, tick);
+            LiveEventJournal::Fields fields;
+            fields.tick = tick;
+            fields.packetId = std::to_string(header->playerId);
+            fields.result = handled ? "hot_packet_handled" : "hot_packet_unhandled";
+            fields.extra = std::string("\"schema_id\":") +
+                std::to_string((unsigned long long)envelope.schemaId) +
+                ",\"schema_version\":" + std::to_string(envelope.schemaVersion);
+            LiveEventJournal::instance().record("server.packet_received", fields);
+        }
+        else
+        {
+            LiveEventJournal::Fields fields;
+            fields.tick = tick;
+            fields.packetId = std::to_string(header->playerId);
+            fields.result = "rejected";
+            fields.error = "hot codec decode failed";
+            fields.extra = std::string("\"reason\":") +
+                std::to_string((std::uint32_t)codecReason);
+            LiveEventJournal::instance().record("server.packet_rejected", fields);
+        }
+        result.handled = true;
         return result;
     }
 

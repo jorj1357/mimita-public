@@ -1268,17 +1268,32 @@ bool runHotCombatSelfTest(std::string& report)
         }
 
         EffectRequestV1 jumpReq{};
-        jumpReq.effectTypeId = gameHash("effect.jump.sound");
+        jumpReq.effectTypeId = gameHash("effect.movement.air_jump");
+        jumpReq.scale = 1.0f;
         const std::uint64_t jumpBefore = LiveBehavior::audioPlayCount();
         const bool jumpHandled = LiveBehavior::dispatchEffectRequest(jumpReq, 30);
         ok &= check(jumpHandled && LiveBehavior::audioPlayCount() > jumpBefore,
-                    "air-jump audio uses the same movement-fact substrate", report);
+                    "air-jump visual/audio uses the same movement-fact substrate", report);
 
-        // Unhandled movement facts must report unhandled so cold stays the owner.
+        EffectRequestV1 dashReq{};
+        dashReq.effectTypeId = gameHash("effect.movement.dash");
+        dashReq.normal[1] = 1.0f;
+        dashReq.scale = 12.0f;
+        ok &= check(LiveBehavior::dispatchEffectRequest(dashReq, 31),
+                    "dash visual/audio is hot-owned", report);
+
+        EffectRequestV1 landingReq{};
+        landingReq.effectTypeId = gameHash("effect.movement.landing");
+        landingReq.normal[2] = 1.0f;
+        ok &= check(LiveBehavior::dispatchEffectRequest(landingReq, 32),
+                    "landing visual/audio is hot-owned", report);
+
+        // Unknown movement facts must still report unhandled so an unmigrated
+        // caller remains the sole cold owner.
         EffectRequestV1 unknownReq{};
         unknownReq.effectTypeId = gameHash("effect.landing.sound");
-        ok &= check(!LiveBehavior::dispatchEffectRequest(unknownReq, 31),
-                    "unmigrated landing audio stays cold-owned (no duplicate owner)", report);
+        ok &= check(!LiveBehavior::dispatchEffectRequest(unknownReq, 33),
+                    "unknown movement fact stays unhandled (no duplicate owner)", report);
     }
 
     // ── Generic attachment + logical mesh resources + view space ──────

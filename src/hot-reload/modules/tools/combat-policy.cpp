@@ -14,6 +14,7 @@
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-tool-action.h"
 #include "hot-reload/hot-tool-visual.h"
+#include "hot-reload/hot-behavior-source.h"
 
 #include <cstdio>
 
@@ -64,12 +65,14 @@ void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
         return;
     const std::uint64_t key = use->toolId != 0 ? use->toolId : use->toolNetworkId;
     const char* source = "none";
+    const char* policySource = MimitaBehavior::name(MimitaBehavior::weaponSource());
     HotToolUseFn behavior = resolveToolUseBehavior(key, &source);
     if (!behavior) {
         // No hot owner: the cold fire path keeps ownership (handled stays 0).
         char msg[GAME_LOG_MESSAGE];
-        std::snprintf(msg, sizeof(msg), "tool=%llu no hot behavior; cold owns",
-                      (unsigned long long)key);
+        std::snprintf(msg, sizeof(msg),
+                      "tool=%llu policy=%s no hot behavior; cold owns",
+                      (unsigned long long)key, policySource);
         toolLogEvent(context, 1, "tool.route", msg, "cold", use->toolEntity,
                      use->userEntity, 1, use->tick);
         return;
@@ -84,9 +87,9 @@ void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
         (recipe->definition.toolFlags & TOOL_FLAG_OWNS_EXECUTION) == 0) {
         char msg[GAME_LOG_MESSAGE];
         std::snprintf(msg, sizeof(msg),
-                      "tool=%llu definition has not opted into hot execution; "
+                      "tool=%llu policy=%s definition has not opted into hot execution; "
                       "cold owns",
-                      (unsigned long long)key);
+                      (unsigned long long)key, policySource);
         toolLogEvent(context, 1, "tool.route", msg, "cold-not-migrated",
                      use->toolEntity, use->userEntity, 1, use->tick);
         return;  // handled stays 0 so the cold path runs
@@ -102,8 +105,8 @@ void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
     if (use->handled == 0) {
         char msg[GAME_LOG_MESSAGE];
         std::snprintf(msg, sizeof(msg),
-                      "tool=%llu behavior resolved by %s declined; cold owns",
-                      (unsigned long long)key, source);
+                      "tool=%llu policy=%s behavior resolved by %s declined; cold owns",
+                      (unsigned long long)key, policySource, source);
         toolLogEvent(context, 1, "tool.route", msg, "declined",
                      use->toolEntity, use->userEntity, 1, use->tick);
         return;
@@ -112,8 +115,9 @@ void MIMITA_GAME_CALL onToolUse(void* host, const GameEventV1* event)
     {
         char msg[GAME_LOG_MESSAGE];
         std::snprintf(msg, sizeof(msg),
-                      "tool=%llu behavior resolved by %s (tick=%u)",
-                      (unsigned long long)key, source, (unsigned)use->tick);
+                      "tool=%llu policy=%s behavior resolved by %s (tick=%u)",
+                      (unsigned long long)key, policySource, source,
+                      (unsigned)use->tick);
         toolLogEvent(context, 1, "tool.route", msg, "hot", use->toolEntity,
                      use->userEntity, 1, use->tick);
     }

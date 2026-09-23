@@ -1193,6 +1193,48 @@ struct ActorLifecyclePolicyV1 {
     std::uint32_t spawnProtectionTicks; // 0 = none; 60 = 1 second at 60 Hz
 };
 
+// actor.lifecycle: generic actor lifecycle state envelope. The EXE owns the
+// storage and transport mechanism; hot behavior may validate or return the
+// lifecycle state without receiving Player/Npc objects or STL types.
+static constexpr std::uint64_t GAME_EVENT_ACTOR_LIFECYCLE =
+    gameHash("actor.lifecycle");
+struct ActorLifecycleStateV1 {
+    // in/out stable identity and lifecycle state
+    std::uint64_t entityId;
+    std::uint32_t actorKind;       // generic actor/player/NPC
+    std::uint32_t lifeGeneration;
+    std::uint32_t reason;          // initial spawn/respawn/despawn, caller-defined
+    std::uint32_t dead;
+    std::uint32_t respawnRequested;
+    std::uint32_t handled;
+    std::uint32_t reserved0;
+
+    // in/out actor state. The hot module may return decisions through these
+    // fields; the kernel remains responsible for applying them to storage.
+    float position[3];
+    float velocity[3];
+    float yaw;
+    std::int32_t health;
+    std::int32_t maxHealth;
+    char avatarName[64];
+};
+
+// actor.avatar-policy: select the avatar for one authoritative actor life.
+// The EXE supplies the validated, sorted candidate names; hot code chooses a
+// name but does not inspect files or access AvatarSystem/engine objects.
+static constexpr std::uint64_t GAME_EVENT_ACTOR_AVATAR_POLICY =
+    gameHash("actor.avatar-policy");
+static constexpr std::uint32_t ACTOR_AVATAR_POLICY_MAX_CANDIDATES = 32;
+struct ActorAvatarPolicyV1 {
+    std::uint64_t entityId;
+    std::uint32_t lifeGeneration;
+    std::uint32_t candidateCount;
+    std::uint32_t handled;
+    std::uint32_t selectedIndex;
+    char candidates[ACTOR_AVATAR_POLICY_MAX_CANDIDATES][64];
+    char selectedAvatar[64];
+};
+
 // net.generation-policy: the hot decision when the client and server hot
 // generations differ. Keeps a mismatch from silently wedging world
 // participation, and is editable live.

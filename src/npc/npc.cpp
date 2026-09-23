@@ -1362,18 +1362,21 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     if (input.dashPressed && npc.body.dash.didDash)
     {
         npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
-        EffectPartSystem::instance().spawnDash(npc.body.pos);
-        // NPC action audio policy is hot (generic actor-sound fact). Cold world
-        // playback is the fallback only.
-        {
-            EffectRequestV1 snd{};
-            snd.effectTypeId = gameHash("effect.actor.sound");
-            snd.position[0] = npc.body.pos.x;
-            snd.position[1] = npc.body.pos.y;
-            snd.position[2] = npc.body.pos.z;
-            std::snprintf(snd.text, sizeof(snd.text), "%s", "actor.dash");
-            if (!LiveBehavior::dispatchEffectRequest(snd, 0))
-                playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
+        // The hot movement/effect owner composes both the NPC dash visual and
+        // its sound. Keep the old implementation only as a compatibility
+        // fallback while older hot generations are active.
+        EffectRequestV1 dashFx{};
+        dashFx.effectTypeId = gameHash("effect.movement.dash");
+        dashFx.position[0] = npc.body.pos.x;
+        dashFx.position[1] = npc.body.pos.y;
+        dashFx.position[2] = npc.body.pos.z;
+        dashFx.normal[0] = npc.body.vel.x;
+        dashFx.normal[1] = npc.body.vel.y;
+        dashFx.normal[2] = 0.0f;
+        dashFx.scale = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
+        if (!LiveBehavior::dispatchEffectRequest(dashFx, 0)) {
+            EffectPartSystem::instance().spawnDash(npc.body.pos);
+            playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
         }
     }
 

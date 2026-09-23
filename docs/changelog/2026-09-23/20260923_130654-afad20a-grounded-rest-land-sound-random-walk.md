@@ -6,6 +6,10 @@ Status: hot DLL built; cold build succeeded; deterministic tests pass; human acc
 Related specification: `docs/specs/movement/movement.md`
 Reference commit: `afad20a` ("npc stuff its cool", 2026-09-11).
 Related: `docs/changelog/2026-09-23/20260923_101537-afad20a-freeze-grounded-hot.md`
+Gold reference written this session:
+`docs/gold/2026-09-23-afad20a-behavior-parity-hot-reload-journey.md` (the
+9/22-9/23 behavior-parity journey, the input-buffer lesson, and the hot-reload
+direction).
 
 ## Reported symptoms
 
