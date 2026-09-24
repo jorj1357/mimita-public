@@ -103,6 +103,7 @@
 #include "hot-reload/glb-consumer-selftest.h"
 #include "hot-reload/tool-entity-continuity-selftest.h"
 #include "hot-reload/capability-selftest.h"
+#include "hot-reload/npc-generic-slice-selftest.h"
 
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
@@ -746,6 +747,13 @@ bool handleGameCLI(int argc, char** argv)
     if (std::string(argv[1]) == "--capability-selftest") {
         std::string report;
         const bool ok = runCapabilitySelfTest(report);
+        printf("%s", report.c_str());
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-generic-slice-selftest") {
+        std::string report;
+        const bool ok = runNpcGenericSliceSelfTest(report);
         printf("%s", report.c_str());
         std::exit(ok ? 0 : 1);
     }

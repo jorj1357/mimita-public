@@ -9,7 +9,16 @@
 
 # Hot / warm / cold audit
 
-Last updated: 2026-09-24 (NPC lifecycle behind one hot policy: the generic
+Last updated: 2026-09-24 (generic NPC actor authority, Phases 1-3 of the fully
+hot NPC architecture: generic `ActorOriginState` / `ActorLifecycleComponentV1` /
+`ActorAvatarState` dynamic components are authoritative for NPC lifecycle
+metadata; the generic `GameActorStateV1` POD envelope + `actor.state.read/write`
+capabilities give hot code one canonical actor representation (no `Npc*`); a
+single generic `actor.destroy` path records destruction facts. `ServerNpc` is now
+a derived projection. Dead `ServerNpc` fields and the mirror-origin seed are
+marked LEGACY with a dated delete note (2026-09-24 18:09 UTC); nothing deleted.)
+
+Previous: 2026-09-24 (NPC lifecycle behind one hot policy: the generic
 `npc.lifecycle` capability owns automatic startup NPC count, spawn placement,
 initial health, starting weapon/loadout, difficulty, respawn enable, and
 origin-aware reconciliation of stale automatic NPCs. The EXE only stores/creates
@@ -537,6 +546,40 @@ NPC owner map.
 
 Status: NPC lifecycle decisions are HOT; the EXE stores and applies. Health-bar
 presentation is excluded from this migration as requested.
+
+## Update 2026-09-24 — generic NPC actor authority (Phases 1-3)
+
+Phased live-safe migration of NPCs onto the generic ECS/replication/lifecycle
+systems. This pass covers Phases 1-3; Phases 4-6 (generic replication, hot
+behavior, deleting the typed path) remain.
+
+- **Generic component authority (Phase 1):**
+  - `MimitaNet::ActorOriginStateV1` (origin + starting-weapon hash) replaces the
+    NPC-specific origin special-case; written at every life's creation.
+  - `MimitaNet::ActorLifecycleComponentV1` (life generation, dead, respawn
+    timer, death reason).
+  - `MimitaNet::ActorAvatarStateV1` (hashed avatar identity + generation) so
+    avatar identity is not limited by the legacy 15-byte field.
+  - All GAME_NET_ALL, registered by `actorStateEnsureSchemas`.
+  - `GameActorStateV1` POD envelope + `actor.state.read` / `actor.state.write`
+    kernel capabilities: one canonical actor representation for hot code.
+- **Generic identity/storage (Phase 2):** reconciliation reads origin from the
+  generic component (`originOf`), not the mirror; `rebuildServerNpcMap` is a
+  derived projection that seeds/writes the generic components. `ServerNpc` is no
+  longer authoritative for origin/lifecycle/avatar.
+- **Generic destruction (Phase 3):** `destroyNpcActor` + `actor.destroy`
+  capability + `GAME_EVENT_ACTOR_DESTROY` record entity/kind/generation/reason/
+  source/tick/health/authority before removing exactly one entity. Reconciliation
+  deletes route through it.
+- **Legacy (marked, not deleted, dated 2026-09-24 18:09 UTC):** mirror-origin
+  seed fallback; dead `ServerNpc` fields (`phase`, `lastAttackTime`, `strafeDir`,
+  `stateTimer`, `orbitAngle`, `aiState`, `bodyParts`, `bodyPartCount`).
+- **Test:** `--npc-generic-slice-selftest` (17 checks) proves identity,
+  components, the envelope, respawn generation, origin distinction, and destroy.
+
+Still cold: `ServerNpc` storage map, `NpcSystem` typed body, NPC snapshot branch,
+NPC-specific packet types, and the NPC-specific ID allocators (`nextId`=100,
+`nextEntityId`=1000, waves=100000). These are Phase 4-6.
 
 ## COLD (policy owners still deciding behavior)
 

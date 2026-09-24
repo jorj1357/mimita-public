@@ -29,6 +29,7 @@
 #include "network/packet-codec-wire.h"
 #include "live-code/live-journal.h"
 #include "ecs/actor-entities.h"
+#include "network/actor-state.h"
 #include "ecs/components.h"
 #include "ecs/dynamic-components.h"
 #include "ecs/entity-registry.h"
@@ -1484,6 +1485,14 @@ void handleSpawnNpcRequest(const char* buffer, int bytes,
     npc.name = "NPC " + std::to_string(npc.entityId);
     npc.pos = {request->px, request->py, request->pz};
     npc.difficulty = request->difficulty;
+    // Generic origin authority: write the component so reconciliation reads the
+    // generic source, not the mirror (fixes manual NPC removal generically).
+    {
+        const EntityId npcIdentity =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.entityId);
+        actorStateWriteOrigin(Ecs::raw(npcIdentity), npc.origin, 0);
+        actorStateWriteLifecycle(Ecs::raw(npcIdentity), 1u, 0u, 0.0f);
+    }
     npcs[npc.entityId] = npc;
     printf("%s [SERVER ENTITY SPAWN] entityId=%u type=NPC ownerClientId=0 position=(%.2f,%.2f,%.2f) difficulty=%.1f\n",
            serverTimestamp(), npc.entityId, npc.pos.x, npc.pos.y, npc.pos.z, npc.difficulty);

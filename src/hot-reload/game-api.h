@@ -1167,6 +1167,82 @@ struct NpcLifecyclePolicyV1 {
 using GameNpcLifecycleFn = void (MIMITA_GAME_CALL *)(void* host,
                                                      NpcLifecyclePolicyV1* request);
 
+// ── Generic actor state envelope (NPC migration Phase 1) ────────────
+// One versioned POD representation of an actor's generic component state for
+// hot code: identity, transform, velocity, health, lifecycle, origin, avatar,
+// team/role/profile, and equipped tool. No STL containers, pointers, or class
+// references. The kernel fills it from the generic components and applies the
+// fields a hot command changed; `Npc`/`ServerNpc` are compatibility projections.
+static constexpr std::uint64_t GAME_CAP_ACTOR_STATE_READ = gameHash("actor.state.read");
+static constexpr std::uint64_t GAME_CAP_ACTOR_STATE_WRITE = gameHash("actor.state.write");
+static constexpr std::uint64_t GAME_SIG_ACTOR_STATE =
+    gameHash("sig.actor.state.v1");
+
+struct GameActorStateV1 {
+    std::uint32_t structSize;
+    std::uint32_t version;
+    std::uint64_t entity;          // generic entity id (identity)
+    std::uint32_t actorKind;       // 0 none, 1 player, 2 npc
+    std::uint32_t flags;           // bit0 dead, bit1 onGround, bit2 hasTarget
+    float position[3];
+    float velocity[3];
+    float aim[3];
+    float yaw;
+    std::int32_t health;
+    std::int32_t maxHealth;
+    std::uint32_t lifeGeneration;  // ActorLifecycleState.lifeGeneration
+    std::uint32_t origin;          // ActorOriginState.origin (GameNpcOriginV1)
+    std::uint64_t avatarHash;      // ActorAvatarState.avatarHash
+    std::uint64_t toolKey;         // equipped tool runtime key (0 = none)
+    std::int32_t team;
+    std::uint32_t roleIndex;
+    std::uint64_t roleHash;
+    std::uint64_t movementPresetHash;
+    std::uint64_t behaviorProfileHash;
+    std::uint64_t targetEntity;    // relationship.targets (0 = none)
+    std::uint64_t tick;
+    std::uint32_t reserved[2];
+};
+using GameActorStateReadFn = bool (MIMITA_GAME_CALL *)(void* host,
+                                                      std::uint64_t entity,
+                                                      GameActorStateV1* out);
+using GameActorStateWriteFn = bool (MIMITA_GAME_CALL *)(void* host,
+                                                       GameActorStateV1* state);
+
+// ── Generic actor destruction (NPC migration Phase 3) ───────────────
+// ONE generic destruction path. Before destroying an entity the kernel records
+// entity id, actor kind, lifecycle generation, reason, source, tick, health, and
+// authority (journal + generic event), so legitimate death/despawn is
+// distinguishable from accidental reconciliation deletion. No NPC-specific
+// destroy branch.
+enum GameActorDestroyReasonV1 : std::uint32_t {
+    GAME_ACTOR_DESTROY_UNKNOWN = 0,
+    GAME_ACTOR_DESTROY_DEATH = 1,
+    GAME_ACTOR_DESTROY_RECONCILE = 2,
+    GAME_ACTOR_DESTROY_DESPAWN = 3,
+    GAME_ACTOR_DESTROY_MODE_RESET = 4,
+    GAME_ACTOR_DESTROY_MAP_CHANGE = 5,
+};
+// Dispatch id: the generic destruction fact hot code may observe/override.
+static constexpr std::uint64_t GAME_EVENT_ACTOR_DESTROY = gameHash("actor.destroy-event");
+static constexpr std::uint64_t GAME_CAP_ACTOR_DESTROY = gameHash("actor.destroy");
+static constexpr std::uint64_t GAME_SIG_ACTOR_DESTROY =
+    gameHash("sig.actor.destroy.v1");
+
+struct GameActorDestroyV1 {
+    std::uint64_t entity;
+    std::uint32_t actorKind;
+    std::uint32_t lifeGeneration;
+    std::uint32_t reason;          // GameActorDestroyReasonV1
+    std::uint32_t sourceHash;      // gameHash(source system name)
+    std::uint64_t tick;
+    std::int32_t health;
+    std::uint32_t authority;       // NetworkAuthority numeric
+    std::uint32_t result;          // 1 = destroyed
+};
+using GameActorDestroyFn = bool (MIMITA_GAME_CALL *)(void* host,
+                                                     GameActorDestroyV1* request);
+
 // actor.spawn-policy: choose/suppress an actor spawn (startup NPCs and players).
 static constexpr std::uint64_t GAME_EVENT_ACTOR_SPAWN_POLICY =
     gameHash("actor.spawn-policy");

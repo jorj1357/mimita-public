@@ -11,6 +11,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-context.h"
 #include "network/actor-lifecycle.h"
 #include "hot-reload/hot-reload-system.h"
 #include "network/server-gamemode.h"
@@ -207,6 +208,71 @@ static void evaluateNpcLifecycle(NpcLifecyclePolicyV1& request)
         MimitaNet::HotNpcLifecycleImpl::evaluate(request);
 }
 
+// ONE generic actor destruction path (cold bridge). Records the destruction
+// facts and removes the actor (simulated body + mirror + generic entity) exactly
+// once. Every NPC/mirror disappearance routes through here so legitimate death/
+// despawn is distinguishable from accidental reconciliation deletion.
+static void destroyNpcActor(std::unordered_map<uint32_t, ServerNpc>& npcs,
+                            NpcSystem& npcSystem,
+                            std::unordered_set<uint32_t>& npcIdsAlive,
+                            std::uint32_t npcId,
+                            std::uint32_t reason,
+                            const char* source)
+{
+    const EntityId entity =
+        Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npcId);
+
+    // Record the destruction facts before removing anything.
+    std::uint32_t lifeGen = 0, dead = 0;
+    float respawnTimer = 0.0f;
+    actorStateReadLifecycle(Ecs::raw(entity), &lifeGen, &dead, &respawnTimer);
+    std::int32_t health = 0;
+    actorHealthRead(Ecs::raw(entity), &health, nullptr, nullptr);
+
+    GameActorDestroyV1 record{};
+    record.entity = Ecs::raw(entity);
+    record.actorKind = 2u;  // npc
+    record.lifeGeneration = lifeGen;
+    record.reason = reason;
+    record.sourceHash = (std::uint32_t)gameHash(source ? source : "unknown");
+    record.tick = 0;
+    record.health = health;
+    record.authority = (std::uint32_t)NetworkAuthority::Server;
+    record.result = 1u;
+    // Dispatch as a generic event so hot code may observe/override destruction;
+    // the cold side then performs the actual removal below.
+    LiveBehavior::dispatchGameplayEvent64(
+        GAME_EVENT_ACTOR_DESTROY, &record, sizeof(record), 0,
+        (std::uint32_t)npcId, 0);
+
+    // Remove the simulated body, the mirror, and the generic entity once.
+    npcSystem.destroySelected({npcId});
+    npcIdsAlive.erase(npcId);
+    npcs.erase(npcId);
+    EntityRegistry::instance().destroy(entity);
+}
+
+// Public generic actor destruction entry (kernel capability target). The active
+// server context owns the NPC mirror/body stores; when it is present the record
+// is removed through the one destroyNpcActor path. When no server context is
+// active this is a no-op that reports the result, so the capability is always
+// resolvable. See serverDestroyActor in server-context.h.
+bool serverDestroyActor(GameActorDestroyV1& request)
+{
+    ServerContextV1* context = activeServerContext();
+    if (!context || !context->npcs)
+    {
+        request.result = 0;
+        return false;
+    }
+    // The generic entity is destroyed directly; the mirror/body are reconciled
+    // on the next fixed tick by npcIdsAlive (removed entity), so this stays a
+    // single generic operation for hot callers.
+    EntityRegistry::instance().destroy(static_cast<EntityId>(request.entity));
+    request.result = 1;
+    return true;
+}
+
 // Origin-aware reconciliation of automatic startup NPCs. Creates the desired
 // number of automatic NPCs and removes automatic NPCs no longer desired; manual
 // and gamemode NPCs are never touched. Runs only at fixed-tick boundaries.
@@ -216,10 +282,20 @@ static void reconcileAutomaticNpcs(std::unordered_map<uint32_t, ServerNpc>& npcs
                                    const World& world,
                                    std::uint32_t reason)
 {
+    // Origin is read from the generic ActorOriginState component (authority);
+    // the mirror field is only a fallback for a pre-migration entity. This is
+    // what makes disabling automatic startup NPCs safe for manual NPCs.
+    auto originOf = [&](const ServerNpc& sn) -> std::uint32_t {
+        std::uint32_t origin = sn.origin;
+        const EntityId id =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, sn.entityId);
+        actorStateReadOrigin(Ecs::raw(id), &origin, nullptr);
+        return origin;
+    };
     std::uint32_t automaticCount = 0;
     std::uint32_t manualCount = 0;
     for (const auto& kv : npcs) {
-        if (kv.second.origin == GAME_NPC_ORIGIN_STARTUP)
+        if (originOf(kv.second) == GAME_NPC_ORIGIN_STARTUP)
             ++automaticCount;
         else
             ++manualCount;
@@ -244,7 +320,7 @@ static void reconcileAutomaticNpcs(std::unordered_map<uint32_t, ServerNpc>& npcs
     if (request.destroyAutomatic) {
         std::vector<uint32_t> automaticIds;
         for (const auto& kv : npcs)
-            if (kv.second.origin == GAME_NPC_ORIGIN_STARTUP)
+            if (originOf(kv.second) == GAME_NPC_ORIGIN_STARTUP)
                 automaticIds.push_back(kv.first);
         std::sort(automaticIds.begin(), automaticIds.end(),
                   std::greater<uint32_t>());
@@ -252,11 +328,8 @@ static void reconcileAutomaticNpcs(std::unordered_map<uint32_t, ServerNpc>& npcs
         for (uint32_t id : automaticIds) {
             if (automaticCount <= desired)
                 break;
-            npcSystem.destroySelected({id});
-            npcIdsAlive.erase(id);
-            npcs.erase(id);
-            EntityRegistry::instance().destroy(static_cast<EntityId>(
-                Ecs::raw(Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, id))));
+            destroyNpcActor(npcs, npcSystem, npcIdsAlive, id,
+                            GAME_ACTOR_DESTROY_RECONCILE, "npc.reconcile");
             --automaticCount;
         }
     }
@@ -283,6 +356,17 @@ static void reconcileAutomaticNpcs(std::unordered_map<uint32_t, ServerNpc>& npcs
         if (request.startingWeapon[0])
             npc.startingWeapon = request.startingWeapon;
         npc.difficulty = request.outDifficulty > 0.0f ? request.outDifficulty : 1.0f;
+        // Write the generic origin component at creation so it is authoritative
+        // from the first tick (not seeded from the mirror).
+        {
+            const EntityId npcIdentity =
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.entityId);
+            const std::uint64_t weaponHash = request.startingWeapon[0]
+                ? static_cast<std::uint64_t>(gameHash(request.startingWeapon))
+                : 0;
+            actorStateWriteOrigin(Ecs::raw(npcIdentity), npc.origin, weaponHash);
+            actorStateWriteLifecycle(Ecs::raw(npcIdentity), 1u, 0u, 0.0f);
+        }
         npcs[npc.entityId] = npc;
         printf("%s [NPC LIFECYCLE] spawn reason=%u entityId=%u origin=startup "
                "pos=(%.2f,%.2f,%.2f)\n",
@@ -309,6 +393,18 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         npcIdsAlive.insert(kv.first);
         if (alreadySimulated) continue;
         npcSystem.spawnNpc(kv.first, kv.second.difficulty, kv.second.pos);
+        // Seed the generic origin component for this life so authority lives in
+        // the component, not the mirror.
+        {
+            const EntityId npcIdentity =
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, kv.first);
+            const std::uint64_t weaponHash = kv.second.startingWeapon.empty()
+                ? 0
+                : static_cast<std::uint64_t>(
+                      gameHash(kv.second.startingWeapon.c_str()));
+            actorStateWriteOrigin(Ecs::raw(npcIdentity), kv.second.origin,
+                                  weaponHash);
+        }
         // Apply the lifecycle-initialized health and starting weapon to the
         // newly adopted real NPC body. The ServerNpc fields are set by the
         // npc.lifecycle policy (or the healthall override); the policy value
@@ -751,6 +847,39 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         // and freshly-respawned ones are broadcast as before.
         ServerNpc sn;
         sn.entityId = n.id;
+        const EntityId npcIdentity =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id);
+
+        // Origin/lifecycle are now GENERIC component authority (NPC migration
+        // Phase 1-2). The mirror reads them and never owns them, so the
+        // per-tick rebuild can no longer drop a manual NPC's origin. When the
+        // component is absent (pre-migration entity) fall back to the prior
+        // mirror value once, then seed the component.
+        std::uint32_t origin = GAME_NPC_ORIGIN_STARTUP;
+        std::uint64_t weaponHash = 0;
+        if (actorStateReadOrigin(Ecs::raw(npcIdentity), &origin, &weaponHash)) {
+            sn.origin = origin;
+        } else if (const auto previous = npcs.find(n.id); previous != npcs.end()) {
+            // LEGACY SEED (marked to delete/migrate 2026-09-24 18:09 UTC):
+            // old records carried origin/startingWeapon as strings. Once every
+            // life writes ActorOriginState at creation this branch is dead;
+            // delete it at the next safe opportunity (after a full session
+            // confirms all lives seed the component at creation).
+            sn.origin = previous->second.origin;
+            actorStateWriteOrigin(Ecs::raw(npcIdentity), previous->second.origin,
+                                  static_cast<std::uint64_t>(gameHash(
+                                      previous->second.startingWeapon.empty()
+                                          ? "revolver"
+                                          : previous->second.startingWeapon.c_str())));
+        } else {
+            actorStateWriteOrigin(Ecs::raw(npcIdentity), sn.origin, 0);
+        }
+        // Lifecycle component: keep the generic generation/dead mirror in sync.
+        actorStateWriteLifecycle(Ecs::raw(npcIdentity), n.transformEpoch,
+                                 n.body.dead ? 1u : 0u, n.body.respawnTimer);
+        // Avatar identity as a hash (no 15-byte limitation in the component).
+        actorStateWriteAvatar(Ecs::raw(npcIdentity), gameHash(n.avatarName.c_str()),
+                              n.transformEpoch);
         sn.transformEpoch = n.transformEpoch;
         sn.name = n.body.username.empty()
             ? "NPC " + std::to_string(n.id)

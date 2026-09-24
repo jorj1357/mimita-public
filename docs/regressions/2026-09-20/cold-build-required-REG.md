@@ -518,3 +518,67 @@ Automated tests (test evidence):
 
 Pending. Live startup toggle, `npc_spawn` preservation, live count change, and
 generation transition still require human observation.
+
+## Cold-build occurrence 8
+
+UTC time: 2026-09-24T22:11:56Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_221156-npc-generic-actor-phases-1-3.md`
+
+### Why the cold build was required
+
+The fully-hot NPC migration installs new generic actor components
+(`ActorOriginState`, `ActorLifecycleComponent`, `ActorAvatarState`), a new POD
+actor-state envelope, three new kernel capability ids (`actor.state.read`,
+`actor.state.write`, `actor.destroy`), a new generic destruction event, and
+bridge call sites in `server-npcs.cpp`/`server.cpp`/`server-packets.cpp`. New
+capability ids, a new struct layout, and new call sites cannot activate through a
+live DLL swap, so one cold relink was required.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/game-api.h` (new capabilities + envelopes)
+- `src/network/actor-state.{h,cpp}`, `server-context.h`
+- `src/live-code/live-behavior.cpp` (kernel capability registration)
+- `src/network/server-npcs.cpp`, `server.cpp`, `server-packets.cpp`, `server.h`
+
+### Result needed from the new executable
+
+The generic actor components are authoritative for NPC origin/lifecycle/avatar,
+the actor-state envelope resolves for hot code, and the one generic destruction
+path records and removes exactly one entity.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new capability id, a new component schema, or a
+new bridge call site. After this build, NPC generic-state and destruction edits
+are hot.
+
+### Smallest change that would make this hot
+
+None for the bridge installation. Going forward, moving NPC position/aim/name/
+avatar into generic replication (Phase 4) and NPC behavior into hot systems
+(Phase 5) are the remaining cold boundaries; each is a one-time install.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T181053.exe`.
+
+Automated tests (test evidence):
+
+```text
+--npc-generic-slice-selftest PASS (17/17)
+--capability-selftest         PASS
+--dynamic-lifecycle-selftest  PASS
+--gamemode-hot-selftest       PASS
+--production-loop-selftest    PASS
+--live-code-selftest          4 pre-existing journal FAILs
+--hot-authoritative-selftest  1 pre-existing journal-evidence FAIL
+--hot-combat-selftest         25 pre-existing animation/phase2 FAILs
+```
+
+### Human review
+
+Pending. Two-client agreement and live behavior edits still require human
+observation.

@@ -639,6 +639,15 @@ struct ServerNpc
     // runtime state (firing / reloading / empty), mirroring player snapshots.
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
+    // LEGACY DEAD FIELDS (marked 2026-09-24 18:09 UTC; safe to delete at the
+    // next safe opportunity). `phase` is written once at startup and never read;
+    // `lastAttackTime`/`strafeDir`/`stateTimer`/`orbitAngle`/`aiState` have no
+    // readers. Kept (not deleted) so the migration stays non-destructive; the
+    // generic actor components + Npc state machine are authoritative.
+    //   float phase; float lastAttackTime; float strafeDir; float stateTimer;
+    //   float orbitAngle; ServerNpcState aiState;
+    // `bodyParts`/`bodyPartCount` are read but never written (dead lag-comp
+    // data); the generic rewind history owns NPC pose reconstruction.
     // Per-tick broadcast position history for hit-rewind validation. The
     // client fires at the NPC pose it actually saw (the newest snapshot),
     // so the server validates the trace against the matching historical pose

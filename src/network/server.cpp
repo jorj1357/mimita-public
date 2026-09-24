@@ -10,6 +10,8 @@
 
 #include "network/server.h"
 #include "network/server-context.h"
+#include "network/actor-state.h"
+#include "ecs/actor-entities.h"
 #include "network/dynamic-replication.h"
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
@@ -618,6 +620,19 @@ int runServer(const LaunchOptions& options)
                 npc.health = (int)npcPlan.outHealth;
             if (npcPlan.startingWeapon[0])
                 npc.startingWeapon = npcPlan.startingWeapon;
+            // Generic origin component authority at creation.
+            {
+                const EntityId npcIdentity =
+                    Ecs::ensure(EntityRealm::Server, EntityDomain::Npc,
+                                npc.entityId);
+                const std::uint64_t weaponHash = npcPlan.startingWeapon[0]
+                    ? static_cast<std::uint64_t>(
+                          gameHash(npcPlan.startingWeapon))
+                    : 0;
+                actorStateWriteOrigin(Ecs::raw(npcIdentity), npc.origin,
+                                      weaponHash);
+                actorStateWriteLifecycle(Ecs::raw(npcIdentity), 1u, 0u, 0.0f);
+            }
             if (npcPlan.useSpawnPoints && !world.spawnPoints.empty())
             {
                 size_t idx = i % world.spawnPoints.size();

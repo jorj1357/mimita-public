@@ -24,6 +24,9 @@ constexpr std::uint64_t kTeamId = gameHash("ActorTeamState");
 constexpr std::uint64_t kRoleId = gameHash("ActorRoleState");
 constexpr std::uint64_t kProfileId = gameHash("ActorProfileState");
 constexpr std::uint64_t kIdentityId = gameHash("ActorIdentityState");
+constexpr std::uint64_t kOriginId = gameHash("ActorOriginState");
+constexpr std::uint64_t kLifecycleId = gameHash("ActorLifecycleState");
+constexpr std::uint64_t kAvatarId = gameHash("ActorAvatarState");
 constexpr std::uint64_t kTargetsRel = gameHash("relationship.targets");
 constexpr std::uint64_t kToolRefId = gameHash("ToolRefState");
 constexpr std::uint64_t kContainsItemRel = gameHash("relationship.contains-item");
@@ -70,6 +73,108 @@ void actorStateEnsureSchemas()
                  "ToolRefState");
     ensureSchema(kIdentityId, gameHash("ActorIdentityState.v1"),
                  sizeof(ActorIdentityStateV1), 4, "ActorIdentityState");
+    ensureSchema(kOriginId, gameHash("ActorOriginState.v1"),
+                 sizeof(ActorOriginStateV1), 8, "ActorOriginState");
+    ensureSchema(kLifecycleId, gameHash("ActorLifecycleState.v1"),
+                 sizeof(ActorLifecycleComponentV1), 4, "ActorLifecycleState");
+    ensureSchema(kAvatarId, gameHash("ActorAvatarState.v1"),
+                 sizeof(ActorAvatarStateV1), 8, "ActorAvatarState");
+}
+
+bool actorStateWriteOrigin(std::uint64_t entity, std::uint32_t origin,
+                           std::uint64_t startingWeaponHash)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorOriginStateV1 state{};
+    state.origin = origin;
+    // The hash is both the component value and the caller's key; store the id
+    // hash in startingWeaponNameHash so a reader can resolve the name.
+    state.startingWeaponHash = startingWeaponHash;
+    state.startingWeaponNameHash = startingWeaponHash;
+    return MimitaRuntime::DynamicComponentStore::instance().write(
+        static_cast<EntityId>(entity), kOriginId, &state, sizeof(state));
+}
+
+bool actorStateReadOrigin(std::uint64_t entity, std::uint32_t* origin,
+                          std::uint64_t* startingWeaponHash)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorOriginStateV1 state{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            static_cast<EntityId>(entity), kOriginId, &state, sizeof(state)))
+        return false;
+    if (origin)
+        *origin = state.origin;
+    if (startingWeaponHash)
+        *startingWeaponHash = state.startingWeaponHash;
+    return true;
+}
+
+bool actorStateWriteLifecycle(std::uint64_t entity, std::uint32_t lifeGeneration,
+                              std::uint32_t dead, float respawnTimer)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorLifecycleComponentV1 state{};
+    state.lifeGeneration = lifeGeneration ? lifeGeneration : 1u;
+    state.dead = dead;
+    state.respawnTimer = respawnTimer;
+    return MimitaRuntime::DynamicComponentStore::instance().write(
+        static_cast<EntityId>(entity), kLifecycleId, &state, sizeof(state));
+}
+
+bool actorStateReadLifecycle(std::uint64_t entity, std::uint32_t* lifeGeneration,
+                             std::uint32_t* dead, float* respawnTimer)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorLifecycleComponentV1 state{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            static_cast<EntityId>(entity), kLifecycleId, &state, sizeof(state)))
+        return false;
+    if (lifeGeneration)
+        *lifeGeneration = state.lifeGeneration;
+    if (dead)
+        *dead = state.dead;
+    if (respawnTimer)
+        *respawnTimer = state.respawnTimer;
+    return true;
+}
+
+bool actorStateWriteAvatar(std::uint64_t entity, std::uint64_t avatarHash,
+                           std::uint32_t generation)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorAvatarStateV1 state{};
+    state.avatarHash = avatarHash;
+    state.generation = generation;
+    return MimitaRuntime::DynamicComponentStore::instance().write(
+        static_cast<EntityId>(entity), kAvatarId, &state, sizeof(state));
+}
+
+bool actorStateReadAvatar(std::uint64_t entity, std::uint64_t* avatarHash,
+                          std::uint32_t* generation)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorAvatarStateV1 state{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            static_cast<EntityId>(entity), kAvatarId, &state, sizeof(state)))
+        return false;
+    if (avatarHash)
+        *avatarHash = state.avatarHash;
+    if (generation)
+        *generation = state.generation;
+    return true;
 }
 
 bool actorStateWriteIdentity(std::uint64_t entity, const char* name)

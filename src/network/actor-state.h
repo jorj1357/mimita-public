@@ -86,4 +86,45 @@ bool actorStateReadIdentity(std::uint64_t entity, char* outName,
 // (no weapon/type category is known to the kernel).
 bool actorStateActionHandled(std::uint64_t actorEntity, std::uint64_t tick);
 
+// ── Generic actor lifecycle/origin state (NPC migration Phase 1-3) ──────
+// One generic source for actor lifecycle metadata so `ServerNpc` stops owning
+// it. Origin/R… classify the life without an NPC-specific field, and the
+// lifecycle component carries the identity generation + death/respawn facts.
+// GAME_NET_ALL so a joining client learns them generically. The hot
+// `npc.lifecycle` policy is the only decider; these components are its state.
+struct ActorOriginStateV1 {
+    std::uint32_t origin;         // GameNpcOriginV1 (0 startup,1 manual,2 mode,3 respawn)
+    std::uint32_t startingWeaponHash;  // gameHash(weaponId); 0 = cold default
+    std::uint64_t startingWeaponNameHash;  // reserved for generic identity
+};
+bool actorStateWriteOrigin(std::uint64_t entity, std::uint32_t origin,
+                           std::uint64_t startingWeaponHash);
+bool actorStateReadOrigin(std::uint64_t entity, std::uint32_t* origin,
+                          std::uint64_t* startingWeaponHash);
+
+struct ActorLifecycleComponentV1 {
+    std::uint32_t lifeGeneration;  // bumped per respawn; never 0
+    std::uint32_t dead;
+    float respawnTimer;
+    std::uint32_t deathReason;     // GameActorDestroyReasonV1 at death
+    std::uint32_t reserved;
+};
+bool actorStateWriteLifecycle(std::uint64_t entity, std::uint32_t lifeGeneration,
+                              std::uint32_t dead, float respawnTimer);
+bool actorStateReadLifecycle(std::uint64_t entity, std::uint32_t* lifeGeneration,
+                             std::uint32_t* dead, float* respawnTimer);
+
+// Generic avatar identity: a hashed resource/avatar identity so avatar names are
+// not limited by the legacy 15-byte NPC packet field. The client resolves the
+// hash to a name/resource; the server only stores the identity. GAME_NET_ALL.
+struct ActorAvatarStateV1 {
+    std::uint64_t avatarHash;      // gameHash(avatarName); 0 = none
+    std::uint32_t generation;      // avatar generation (per life)
+    std::uint32_t reserved;
+};
+bool actorStateWriteAvatar(std::uint64_t entity, std::uint64_t avatarHash,
+                           std::uint32_t generation);
+bool actorStateReadAvatar(std::uint64_t entity, std::uint64_t* avatarHash,
+                          std::uint32_t* generation);
+
 } // namespace MimitaNet

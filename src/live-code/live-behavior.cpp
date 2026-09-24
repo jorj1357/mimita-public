@@ -15,6 +15,9 @@
 
 #include "ecs/components.h"
 #include "ecs/entity-registry.h"
+#include "ecs/actor-entities.h"
+#include "network/actor-state.h"
+#include "network/actor-health.h"
 #include "debug/structured-log.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-reload-system.h"
@@ -1888,6 +1891,15 @@ bool MIMITA_GAME_CALL capActorSpawn(void*, GameActorSpawnV1* request)
     return MimitaNet::serverSpawnOrResetActor(*request);
 }
 
+// actor.destroy: the ONE generic actor destruction path. Hot code requests
+// destruction; the kernel records the facts and removes the entity once.
+bool MIMITA_GAME_CALL capActorDestroy(void*, GameActorDestroyV1* request)
+{
+    if (!request)
+        return false;
+    return MimitaNet::serverDestroyActor(*request);
+}
+
 // npc.lifecycle: kernel-registered fallback so the capability always resolves.
 // The active provider (a hot package) overrides this through the same id.
 void MIMITA_GAME_CALL capNpcLifecycle(void*, NpcLifecyclePolicyV1* request)
@@ -1895,6 +1907,118 @@ void MIMITA_GAME_CALL capNpcLifecycle(void*, NpcLifecyclePolicyV1* request)
     if (!request)
         return;
     MimitaNet::HotNpcLifecycleImpl::evaluate(*request);
+}
+
+// Generic actor state read: fill the POD envelope from the generic components so
+// hot code consumes one canonical actor representation (no Npc pointer). Phase 1
+// of the NPC migration.
+bool MIMITA_GAME_CALL capActorStateRead(void*, std::uint64_t entity,
+                                        GameActorStateV1* out)
+{
+    if (!out || entity == 0)
+        return false;
+    *out = GameActorStateV1{};
+    out->structSize = sizeof(GameActorStateV1);
+    out->version = 1;
+    out->entity = entity;
+
+    const EntityId id = static_cast<EntityId>(entity);
+    const EntityDomain domain = entityDomain(id);
+
+    using MimitaRuntime::DynamicComponentStore;
+    auto& store = DynamicComponentStore::instance();
+
+    // Transform / velocity.
+    if (const auto* t = EntityRegistry::instance().tryGet<TransformComponent>(id)) {
+        out->position[0] = t->position.x;
+        out->position[1] = t->position.y;
+        out->position[2] = t->position.z;
+        out->aim[0] = t->look.x;
+        out->aim[1] = t->look.y;
+        out->aim[2] = t->look.z;
+        out->yaw = t->yaw;
+    }
+    if (const auto* v = EntityRegistry::instance().tryGet<VelocityComponent>(id)) {
+        out->velocity[0] = v->linear.x;
+        out->velocity[1] = v->linear.y;
+        out->velocity[2] = v->linear.z;
+    }
+    // Health: the generic ActorHealthState component is authoritative; the
+    // typed HealthComponent is a mirror fallback.
+    {
+        std::int32_t hp = 0, maxHp = 0;
+        std::uint32_t dead = 0;
+        MimitaNet::ActorHealthStateV1 hs{};
+        if (store.read(id, gameHash("ActorHealthState"), &hs, sizeof(hs))) {
+            hp = hs.current; maxHp = hs.max; dead = hs.dead;
+        } else if (const auto* hc =
+                       EntityRegistry::instance().tryGet<HealthComponent>(id)) {
+            hp = hc->current; maxHp = hc->max; dead = hc->dead;
+        }
+        out->health = hp;
+        out->maxHealth = maxHp;
+        if (dead) out->flags |= 1u;
+    }
+    // Origin, lifecycle, avatar, team/role/profile, target, tool.
+    std::uint32_t origin = 0, lifeGen = 0, dead = 0;
+    float respawnTimer = 0.0f;
+    if (MimitaNet::actorStateReadOrigin(entity, &origin, nullptr))
+        out->origin = origin;
+    if (MimitaNet::actorStateReadLifecycle(entity, &lifeGen, &dead, &respawnTimer))
+        out->lifeGeneration = lifeGen;
+    if (MimitaNet::actorStateReadAvatar(entity, &out->avatarHash, nullptr)) {}
+    std::int32_t team = -1;
+    if (MimitaNet::actorStateReadTeam(entity, &team))
+        out->team = team;
+    std::uint64_t roleHash = 0;
+    if (MimitaNet::actorStateReadRoleHash(entity, &roleHash))
+        out->roleHash = roleHash;
+    std::uint64_t mvHash = 0, behHash = 0;
+    if (MimitaNet::actorStateReadProfile(entity, &mvHash, &behHash)) {
+        out->movementPresetHash = mvHash;
+        out->behaviorProfileHash = behHash;
+    }
+    std::uint64_t target = 0;
+    if (MimitaNet::actorStateGetTarget(entity, &target))
+        out->targetEntity = target;
+    std::uint64_t toolEntity = 0, toolKey = 0;
+    if (MimitaNet::actorStateGetEquippedTool(entity, &toolEntity, &toolKey))
+        out->toolKey = toolKey;
+
+    out->actorKind = domain == EntityDomain::Player ? 1u
+                     : domain == EntityDomain::Npc ? 2u : 0u;
+    return true;
+}
+
+// Generic actor state write: apply only the generic component fields a hot
+// command changed. Transform/velocity/health/team/role/profile/tool are written
+// through the same shared helpers players use; no NPC-specific branch.
+bool MIMITA_GAME_CALL capActorStateWrite(void*, GameActorStateV1* state)
+{
+    if (!state || state->entity == 0)
+        return false;
+    const EntityId id = static_cast<EntityId>(state->entity);
+
+    Ecs::setTransform(id, glm::vec3(state->position[0], state->position[1],
+                                    state->position[2]),
+                      glm::vec3(state->aim[0], state->aim[1], state->aim[2]),
+                      state->yaw, 0.0f);
+    Ecs::setVelocity(id, glm::vec3(state->velocity[0], state->velocity[1],
+                                   state->velocity[2]),
+                     glm::vec3(0.0f));
+    if (state->maxHealth > 0)
+        Ecs::setHealth(id, state->health, state->maxHealth,
+                       (state->flags & 1u) != 0);
+    if (state->origin != 0)
+        MimitaNet::actorStateWriteOrigin(state->entity, state->origin, 0);
+    if (state->lifeGeneration != 0)
+        MimitaNet::actorStateWriteLifecycle(state->entity, state->lifeGeneration,
+                                            (state->flags & 1u) ? 1u : 0u, 0.0f);
+    if (state->avatarHash != 0)
+        MimitaNet::actorStateWriteAvatar(state->entity, state->avatarHash,
+                                         state->lifeGeneration);
+    state->reserved[0] = 1u;  // result: applied
+    return true;
 }
 
 // Generic presentation command: hot render systems describe geometry; the
@@ -2752,6 +2876,18 @@ struct KernelCapabilityInit {
                                     GAME_SIG_NPC_LIFECYCLE, 0,
                                     reinterpret_cast<void*>(&capNpcLifecycle),
                                     "npc.lifecycle");
+        rt.registerKernelCapability(GAME_CAP_ACTOR_STATE_READ,
+                                    GAME_SIG_ACTOR_STATE, 0,
+                                    reinterpret_cast<void*>(&capActorStateRead),
+                                    "actor.state.read");
+        rt.registerKernelCapability(GAME_CAP_ACTOR_STATE_WRITE,
+                                    GAME_SIG_ACTOR_STATE, 0,
+                                    reinterpret_cast<void*>(&capActorStateWrite),
+                                    "actor.state.write");
+        rt.registerKernelCapability(GAME_CAP_ACTOR_DESTROY,
+                                    GAME_SIG_ACTOR_DESTROY, 0,
+                                    reinterpret_cast<void*>(&capActorDestroy),
+                                    "actor.destroy");
         rt.registerKernelCapability(GAME_CAP_LOG_EVENT,
                                     gameHash("sig.log.event.v1"), 0,
                                     reinterpret_cast<void*>(&capLogEvent),

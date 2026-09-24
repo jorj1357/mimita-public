@@ -50,4 +50,9 @@ bool serverSpawnOrResetActor(GameActorSpawnV1& request);
 bool serverProjectActorSpatialFromGeneric(std::uint64_t actorEntity);
 bool serverProjectActorSpatialToGeneric(std::uint64_t actorEntity);
 
+// ONE generic actor destruction path (NPC migration Phase 3). Records the
+// destruction facts (entity, kind, generation, reason, source, tick, health,
+// authority) and removes the actor through its owning store exactly once.
+bool serverDestroyActor(GameActorDestroyV1& request);
+
 } // namespace MimitaNet
