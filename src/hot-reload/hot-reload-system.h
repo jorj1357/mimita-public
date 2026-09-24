@@ -31,6 +31,15 @@ public:
     // caller's simulation tick, used to honor a requested coordinated switch.
     bool pollAndAdvance(std::uint32_t tick = 0);
 
+    // When an in-process listen server is ticking on its own background thread,
+    // that thread owns activation (it is the safe point). The main render thread
+    // sets this so its own pollAndAdvance becomes a no-op, avoiding a swap while
+    // the server thread is mid-tick inside a hot call. The owning thread calls
+    // pollAndAdvanceFromTickOwner instead, which ignores the suppression.
+    void setExternalTickOwner(bool active) { externalTickOwner_ = active; }
+    bool hasExternalTickOwner() const { return externalTickOwner_; }
+    bool pollAndAdvanceFromTickOwner(std::uint32_t tick = 0);
+
     // Coordinated switch (multiplayer): a validated candidate is held until
     // `tick` so every peer activates the same generation at the same tick.
     bool candidateReady() const { return candidateReady_.load(); }
@@ -138,6 +147,7 @@ private:
         std::filesystem::path outputPath;
     };
 
+    bool pollAndAdvance(std::uint32_t tick, bool fromTickOwner);
     void loadManifest();
     std::string computeSourceHash() const;
     // Content hash of one hot source, re-read only when its size/mtime changes.
@@ -202,6 +212,7 @@ private:
     bool haveInstalledCandidate_ = false;
     std::atomic<bool> remoteCandidateInstalled_{false};
 
+    std::atomic<bool> externalTickOwner_{false};
     std::atomic<bool> workerStop_{false};
     std::atomic<bool> buildRequested_{false};
     std::atomic<bool> sourceScanRequested_{false};

@@ -11,6 +11,7 @@
 #include "combat/weapon-execution.h"
 
 #include "combat/hitscan-model.h"
+#include "hot-reload/hot-geometry.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,12 +36,14 @@ static glm::vec3 closestPointOnSegment(const glm::vec3& a,
                                        const glm::vec3& b,
                                        const glm::vec3& p)
 {
-    const glm::vec3 ab = b - a;
-    const float len2 = glm::dot(ab, ab);
-    if (len2 <= 0.000001f)
-        return a;
-    const float t = glm::clamp(glm::dot(p - a, ab) / len2, 0.0f, 1.0f);
-    return a + ab * t;
+    // Geometry primitive is hot-editable (net.geometry).
+    MimitaNet::GameGeometryQueryV1 q{};
+    q.primitiveId = MimitaNet::GAME_GEOM_CLOSEST_POINT_SEGMENT;
+    q.pointA[0] = a.x; q.pointA[1] = a.y; q.pointA[2] = a.z;
+    q.pointB[0] = b.x; q.pointB[1] = b.y; q.pointB[2] = b.z;
+    q.point[0] = p.x; q.point[1] = p.y; q.point[2] = p.z;
+    MimitaNet::runGeometryPrimitive(q);
+    return glm::vec3(q.outClosest[0], q.outClosest[1], q.outClosest[2]);
 }
 
 static bool rayAabb(const glm::vec3& origin,
@@ -50,29 +53,17 @@ static bool rayAabb(const glm::vec3& origin,
                     float maxDistance,
                     float& outDistance)
 {
-    float tmin = 0.0f;
-    float tmax = maxDistance;
-    for (int axis = 0; axis < 3; ++axis)
-    {
-        if (std::fabs(direction[axis]) < 0.000001f)
-        {
-            if (origin[axis] < bmin[axis] || origin[axis] > bmax[axis])
-                return false;
-            continue;
-        }
-
-        const float inv = 1.0f / direction[axis];
-        float t1 = (bmin[axis] - origin[axis]) * inv;
-        float t2 = (bmax[axis] - origin[axis]) * inv;
-        if (t1 > t2)
-            std::swap(t1, t2);
-        tmin = std::max(tmin, t1);
-        tmax = std::min(tmax, t2);
-        if (tmin > tmax)
-            return false;
-    }
-    outDistance = tmin;
-    return outDistance >= 0.0f && outDistance <= maxDistance;
+    // Geometry primitive is hot-editable (net.geometry).
+    MimitaNet::GameGeometryQueryV1 q{};
+    q.primitiveId = MimitaNet::GAME_GEOM_RAY_AABB;
+    q.origin[0] = origin.x; q.origin[1] = origin.y; q.origin[2] = origin.z;
+    q.direction[0] = direction.x; q.direction[1] = direction.y; q.direction[2] = direction.z;
+    q.boxMin[0] = bmin.x; q.boxMin[1] = bmin.y; q.boxMin[2] = bmin.z;
+    q.boxMax[0] = bmax.x; q.boxMax[1] = bmax.y; q.boxMax[2] = bmax.z;
+    q.maxDistance = maxDistance;
+    MimitaNet::runGeometryPrimitive(q);
+    outDistance = q.outDistance;
+    return q.hit != 0;
 }
 
 static bool sweptPointSphere(const glm::vec3& previous,
@@ -81,23 +72,26 @@ static bool sweptPointSphere(const glm::vec3& previous,
                              const PlayerTarget& target,
                              PhysicalContactHit& outHit)
 {
-    const glm::vec3 targetCenter = target.position;
-    const float targetRadius = std::max(target.radius, 0.01f);
-    const float sumRadius = radius + targetRadius;
-    const glm::vec3 closest = closestPointOnSegment(previous, current, targetCenter);
-    const glm::vec3 delta = targetCenter - closest;
-    const float distance = glm::length(delta);
-    if (distance > sumRadius)
+    // Geometry primitive is hot-editable (net.geometry).
+    MimitaNet::GameGeometryQueryV1 q{};
+    q.primitiveId = MimitaNet::GAME_GEOM_SWEPT_POINT_SPHERE;
+    q.pointA[0] = previous.x; q.pointA[1] = previous.y; q.pointA[2] = previous.z;
+    q.pointB[0] = current.x; q.pointB[1] = current.y; q.pointB[2] = current.z;
+    q.radius = radius;
+    q.sphereCenter[0] = target.position.x;
+    q.sphereCenter[1] = target.position.y;
+    q.sphereCenter[2] = target.position.z;
+    q.targetRadius = target.radius;
+    MimitaNet::runGeometryPrimitive(q);
+    if (q.hit == 0)
         return false;
 
     outHit.hit = true;
     outHit.targetPlayerId = target.playerId;
     outHit.targetSpawnGeneration = target.spawnGeneration;
-    outHit.distance = distance;
-    outHit.normal = distance > 0.0001f
-        ? glm::normalize(delta)
-        : glm::vec3(0.0f, 0.0f, 1.0f);
-    outHit.hitPosition = closest + outHit.normal * radius;
+    outHit.distance = q.outDistance;
+    outHit.normal = glm::vec3(q.outNormal[0], q.outNormal[1], q.outNormal[2]);
+    outHit.hitPosition = glm::vec3(q.outPoint[0], q.outPoint[1], q.outPoint[2]);
     return true;
 }
 

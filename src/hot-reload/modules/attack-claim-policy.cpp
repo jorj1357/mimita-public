@@ -22,9 +22,17 @@ void MIMITA_GAME_CALL evaluateAttackClaim(void* /*host*/, GameAttackClaimV1* req
     HotAttackClaimImpl::evaluate(*request);
 }
 
+void MIMITA_GAME_CALL resolveClaimPart(void* /*host*/, GameClaimPartV1* request)
+{
+    HotAttackClaimImpl::resolvePart(*request);
+}
+
 const GameCapabilityDescriptorV1 kAttackClaimProvider{
     GAME_CAP_ATTACK_CLAIM, GAME_SIG_ATTACK_CLAIM, 0,
     reinterpret_cast<void*>(&evaluateAttackClaim), "net.attack-claim"};
+const GameCapabilityDescriptorV1 kClaimPartProvider{
+    GAME_CAP_CLAIM_PART, GAME_SIG_CLAIM_PART, 0,
+    reinterpret_cast<void*>(&resolveClaimPart), "net.claim-part"};
 
 } // namespace
 
@@ -32,5 +40,9 @@ const MimitaHotPackage::CapabilityRegistrar s_attackClaimProviderRegistrar{
     kAttackClaimProvider};
 const MimitaHotPackage::CapabilityRequirementRegistrar s_attackClaimRequirement{
     GAME_CAP_ATTACK_CLAIM, GAME_SIG_ATTACK_CLAIM, 0};
+const MimitaHotPackage::CapabilityRegistrar s_claimPartProviderRegistrar{
+    kClaimPartProvider};
+const MimitaHotPackage::CapabilityRequirementRegistrar s_claimPartRequirement{
+    GAME_CAP_CLAIM_PART, GAME_SIG_CLAIM_PART, 0};
 
 #endif // MIMITA_GAME_DLL

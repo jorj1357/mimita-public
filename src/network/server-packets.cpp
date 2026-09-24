@@ -17,6 +17,7 @@
 #include "live-code/live-behavior.h"
 #include "hot-reload/hot-reload-system.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-geometry.h"
 #include "hot-reload/hot-join-policy.h"
 #include "hot-reload/hot-session-policy.h"
 #include "hot-reload/hot-reload-decision.h"
@@ -593,20 +594,19 @@ bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
                        const glm::vec3& a, const glm::vec3& b, const glm::vec3& c,
                        float& outDist)
 {
-    glm::vec3 e1 = b - a;
-    glm::vec3 e2 = c - a;
-    glm::vec3 p = glm::cross(direction, e2);
-    float det = glm::dot(e1, p);
-    if (std::fabs(det) < 0.000001f) return false;
-    float inv = 1.0f / det;
-    glm::vec3 t = origin - a;
-    float u = glm::dot(t, p) * inv;
-    if (u < 0.0f || u > 1.0f) return false;
-    glm::vec3 q = glm::cross(t, e1);
-    float v = glm::dot(direction, q) * inv;
-    if (v < 0.0f || u + v > 1.0f) return false;
-    outDist = glm::dot(e2, q) * inv;
-    return outDist > 0.0f;
+    // Geometry primitive is hot-editable (net.geometry).
+    GameGeometryQueryV1 q{};
+    q.primitiveId = GAME_GEOM_RAY_TRIANGLE;
+    q.origin[0] = origin.x; q.origin[1] = origin.y; q.origin[2] = origin.z;
+    q.direction[0] = direction.x; q.direction[1] = direction.y; q.direction[2] = direction.z;
+    q.triA[0] = a.x; q.triA[1] = a.y; q.triA[2] = a.z;
+    q.triB[0] = b.x; q.triB[1] = b.y; q.triB[2] = b.z;
+    q.triC[0] = c.x; q.triC[1] = c.y; q.triC[2] = c.z;
+    q.maxDistance = 1e30f;
+    runGeometryPrimitive(q);
+    outDist = q.outDistance;
+    // The world triangle test accepts a strictly-forward hit.
+    return q.hit != 0 && q.outDistance > 0.0f;
 }
 
 bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,

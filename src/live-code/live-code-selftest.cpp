@@ -28,6 +28,8 @@
 #include "hot-reload/hot-client-snapshot.h"
 #include "hot-reload/hot-projectile-correction.h"
 #include "hot-reload/hot-connection-health.h"
+#include "hot-reload/hot-server-policy.h"
+#include "hot-reload/hot-geometry.h"
 #include "network/packet-codec-wire.h"
 #include "network/snapshot-chunks.h"
 #include "debug/structured-log.h"
@@ -926,6 +928,68 @@ bool runLiveCodeSelfTest(std::string& report)
                             "hot connection-policy enters reconnect on hard timeout",
                             report);
             }
+        }
+
+        // ── Hot server startup policy through the same generic doorway ────
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GameServerPolicyLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_SERVER_POLICY));
+            const MimitaNet::GameServerPolicyV1* policy =
+                lookup ? lookup(nullptr) : nullptr;
+            ok &= check(policy && policy->mode && policy->startupNpc,
+                        "hot server-policy provider resolves", report);
+            if (policy && policy->mode)
+            {
+                MimitaNet::GameServerModeV1 community{};
+                community.structSize = sizeof(MimitaNet::GameServerModeV1);
+                community.gameModeIsSandbox = 0u;
+                policy->mode(nullptr, &community);
+                ok &= check(community.useDuel == 0u && community.startMatch == 1u,
+                            "hot server-policy community starts a match", report);
+
+                MimitaNet::GameServerStartupNpcV1 plan{};
+                plan.structSize = sizeof(MimitaNet::GameServerStartupNpcV1);
+                plan.npcsEnabled = 1u;
+                plan.requestedCount = 5u;
+                plan.spawnPointCount = 3u;
+                plan.maxSpawn = 256u;
+                policy->startupNpc(nullptr, &plan);
+                ok &= check(plan.count == 5u && plan.useSpawnPoints == 1u,
+                            "hot server-policy clamps startup NPCs", report);
+            }
+        }
+
+        // ── Hot geometry primitives through the same generic doorway ──────
+        {
+            auto lookup = reinterpret_cast<MimitaNet::GameGeometryLookupFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_GEOMETRY));
+            const MimitaNet::GameGeometryPrimitiveV1* prim =
+                lookup ? lookup(nullptr, MimitaNet::GAME_GEOM_RAY_AABB) : nullptr;
+            ok &= check(lookup && prim && prim->invoke,
+                        "hot geometry provider resolves ray.aabb", report);
+
+            // Ray from z=-10 toward +z hits a unit box at the origin at t=9.
+            MimitaNet::GameGeometryQueryV1 q{};
+            q.primitiveId = MimitaNet::GAME_GEOM_RAY_AABB;
+            q.origin[2] = -10.0f;
+            q.direction[2] = 1.0f;
+            q.boxMin[0] = -1.0f; q.boxMin[1] = -1.0f; q.boxMin[2] = -1.0f;
+            q.boxMax[0] = 1.0f; q.boxMax[1] = 1.0f; q.boxMax[2] = 1.0f;
+            q.maxDistance = 100.0f;
+            MimitaNet::runGeometryPrimitive(q);
+            ok &= check(q.hit == 1u && q.outDistance > 8.9f && q.outDistance < 9.1f,
+                        "hot geometry ray.aabb hits a box", report);
+
+            // Point inside the same box is contained.
+            MimitaNet::GameGeometryQueryV1 p{};
+            p.primitiveId = MimitaNet::GAME_GEOM_POINT_IN_AABB;
+            p.boxMin[0] = -1.0f; p.boxMin[1] = -1.0f; p.boxMin[2] = -1.0f;
+            p.boxMax[0] = 1.0f; p.boxMax[1] = 1.0f; p.boxMax[2] = 1.0f;
+            p.point[0] = 0.5f; p.point[1] = 0.0f; p.point[2] = 0.0f;
+            MimitaNet::runGeometryPrimitive(p);
+            ok &= check(p.hit == 1u, "hot geometry point.aabb contains", report);
         }
 
         // ── End-to-end hot round trip ───────────────────────────────────────

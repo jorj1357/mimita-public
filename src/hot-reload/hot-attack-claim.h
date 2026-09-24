@@ -36,12 +36,43 @@ struct GameAttackClaimV1 {
 
 using GameAttackClaimFn = void (MIMITA_GAME_CALL *)(void* host,
                                                     GameAttackClaimV1* request);
+// Reuse the same capability; the cold bridge resolves both callables by id and
+// dispatches by struct shape.
 
 static constexpr std::uint64_t GAME_CAP_ATTACK_CLAIM = gameHash("net.attack-claim");
 static constexpr std::uint64_t GAME_SIG_ATTACK_CLAIM =
     gameHash("sig.net.attack-claim.v1");
 
+// Given the client-supplied part and a matched template box's canonical part
+// (0 = torso, 1 = head, other = limb), resolve the reported claim part. The
+// cold geometry does the box test; this decides how a claimed part is recorded.
+struct GameClaimPartV1 {
+    std::uint32_t structSize;
+    std::uint32_t claimedPart;      // client-supplied (0 = unspecified)
+    std::uint32_t boxPart;          // 0 torso, 1 head, other limb
+    // out
+    std::uint32_t resolvedPart;     // 1 head, 2 torso, 3 leg
+    std::uint32_t result;
+};
+
+using GameClaimPartFn = void (MIMITA_GAME_CALL *)(void* host, GameClaimPartV1* request);
+
+static constexpr std::uint64_t GAME_CAP_CLAIM_PART = gameHash("net.claim-part");
+static constexpr std::uint64_t GAME_SIG_CLAIM_PART = gameHash("sig.net.claim-part.v1");
+
 namespace HotAttackClaimImpl {
+
+// Canonical part resolution: a specified head/leg claim is preserved; otherwise
+// derive from the matched box (head -> 1, torso -> 2, limb -> 3).
+inline void resolvePart(GameClaimPartV1& r)
+{
+    if (r.claimedPart == 0u || r.claimedPart == 2u) {
+        r.resolvedPart = (r.boxPart == 0u) ? 2u : (r.boxPart == 1u ? 1u : 3u);
+    } else {
+        r.resolvedPart = r.claimedPart;
+    }
+    r.result = 1u;
+}
 
 inline void evaluate(GameAttackClaimV1& r)
 {

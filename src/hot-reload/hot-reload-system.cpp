@@ -213,8 +213,23 @@ void HotReloadSystem::startup()
     watcher_.start(root_ / "src");
 }
 
+bool HotReloadSystem::pollAndAdvanceFromTickOwner(std::uint32_t tick)
+{
+    return pollAndAdvance(tick, /*fromTickOwner=*/true);
+}
+
 bool HotReloadSystem::pollAndAdvance(std::uint32_t tick)
 {
+    return pollAndAdvance(tick, /*fromTickOwner=*/false);
+}
+
+bool HotReloadSystem::pollAndAdvance(std::uint32_t tick, bool fromTickOwner)
+{
+    // When a listen server's background thread owns activation, a main-thread
+    // call must not swap a generation mid-tick. The owner thread bypasses this.
+    if (!fromTickOwner && externalTickOwner_.load())
+        return false;
+
     if (!worker_.joinable())
         return false;
 

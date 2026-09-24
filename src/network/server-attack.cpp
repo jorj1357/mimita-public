@@ -164,13 +164,34 @@ static bool claimedHitInBodyParts(const glm::vec3& claimedHit,
                                 t.offset.z);
             const glm::vec3 ctr = pos + off;
             const glm::vec3 half = t.half + glm::vec3(tolerance);
-            if (claimedHit.x >= ctr.x - half.x && claimedHit.x <= ctr.x + half.x &&
-                claimedHit.y >= ctr.y - half.y && claimedHit.y <= ctr.y + half.y &&
-                claimedHit.z >= ctr.z - half.z && claimedHit.z <= ctr.z + half.z)
+            // Point-in-AABB is the hot geometry primitive (net.geometry);
+            // which claimed part the box resolves to is hot (net.claim-part).
+            GameGeometryQueryV1 pointQuery{};
+            pointQuery.primitiveId = GAME_GEOM_POINT_IN_AABB;
+            pointQuery.point[0] = claimedHit.x;
+            pointQuery.point[1] = claimedHit.y;
+            pointQuery.point[2] = claimedHit.z;
+            pointQuery.boxMin[0] = ctr.x - half.x;
+            pointQuery.boxMin[1] = ctr.y - half.y;
+            pointQuery.boxMin[2] = ctr.z - half.z;
+            pointQuery.boxMax[0] = ctr.x + half.x;
+            pointQuery.boxMax[1] = ctr.y + half.y;
+            pointQuery.boxMax[2] = ctr.z + half.z;
+            runGeometryPrimitive(pointQuery);
+            if (pointQuery.hit != 0)
             {
-                if (claimPart == 0 || claimPart == 2)
-                    claimPart = t.bodyPart == 0 ? 2
-                        : (t.bodyPart == 1 ? 1 : 3);
+                GameClaimPartV1 part{};
+                part.structSize = sizeof(GameClaimPartV1);
+                part.claimedPart = claimPart;
+                part.boxPart = t.bodyPart;
+                auto partFn = reinterpret_cast<GameClaimPartFn>(
+                    MimitaRuntime::GenericRuntime::instance().capability(
+                        GAME_CAP_CLAIM_PART));
+                if (partFn)
+                    partFn(nullptr, &part);
+                else
+                    HotAttackClaimImpl::resolvePart(part);
+                claimPart = (uint8_t)part.resolvedPart;
                 return true;
             }
         }

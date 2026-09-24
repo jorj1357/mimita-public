@@ -21,6 +21,7 @@
 #include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-server-policy.h"
 #include "network/coordinator-client.h"
 #include "network/network-weapons.h"
 #include "network/ice-transport.h"
@@ -477,8 +478,20 @@ int runServer(const LaunchOptions& options)
     dedicatedIceState.port = actualPort;
     std::vector<PendingServerTransport> pendingIceTransports;
 
+    // Duel vs community mode selection is hot (net.server-policy).
+    GameServerModeV1 modePolicy{};
+    modePolicy.structSize = sizeof(GameServerModeV1);
+    modePolicy.duelRequested = options.duel ? 1u : 0u;
+    modePolicy.gameModeIsSandbox = options.gameMode == "sandbox" ? 1u : 0u;
+    auto serverPolicyFn = reinterpret_cast<GameServerPolicyLookupFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_SERVER_POLICY));
+    if (serverPolicyFn && serverPolicyFn(nullptr) && serverPolicyFn(nullptr)->mode)
+        serverPolicyFn(nullptr)->mode(nullptr, &modePolicy);
+    else
+        HotServerPolicyImpl::mode(modePolicy);
+
     // Duel mode: run a first-to-goal PvP match between the first two players.
-    if (options.duel)
+    if (modePolicy.useDuel)
     {
         const Gamemode& gm = GamemodeRegistry::instance().get(options.gamemodeId);
         ServerGamemodeState duelRules;
@@ -504,19 +517,30 @@ int runServer(const LaunchOptions& options)
                                 options.weaponSetId);
         serverCommunitySetMode(options.gameMode);
         serverCommunitySetWeaponSet(options.weaponSetId);
-        if (options.gameMode != "sandbox")
+        if (modePolicy.startMatch)
             serverCommunityStartMatch(false);
     }
 
-    // Startup NPCs (controlled by --npcs and --no-npcs flags)
+    // Startup NPCs (controlled by --npcs and --no-npcs flags). The count and the
+    // spawn-point-vs-fallback choice are hot (net.server-policy).
     {
-        uint32_t npcCount = options.npcsEnabled ? options.npcCount : 0;
+        GameServerStartupNpcV1 npcPlan{};
+        npcPlan.structSize = sizeof(GameServerStartupNpcV1);
+        npcPlan.npcsEnabled = options.npcsEnabled ? 1u : 0u;
+        npcPlan.requestedCount = options.npcCount;
+        npcPlan.spawnPointCount = (uint32_t)world.spawnPoints.size();
+        npcPlan.maxSpawn = 256u;
+        if (serverPolicyFn && serverPolicyFn(nullptr) && serverPolicyFn(nullptr)->startupNpc)
+            serverPolicyFn(nullptr)->startupNpc(nullptr, &npcPlan);
+        else
+            HotServerPolicyImpl::startupNpc(npcPlan);
+        uint32_t npcCount = npcPlan.count;
         for (uint32_t i = 0; i < npcCount; ++i)
         {
             ServerNpc npc;
             npc.entityId = nextEntityId++;
             npc.name = "NPC " + std::to_string(i + 1);
-            if (!world.spawnPoints.empty())
+            if (npcPlan.useSpawnPoints && !world.spawnPoints.empty())
             {
                 size_t idx = i % world.spawnPoints.size();
                 npc.pos = effectiveServerSpawn(world.spawnPoints[idx].position);
@@ -1372,6 +1396,10 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     PersistenceQueue::instance().beginSession(state.serverCode, AuthSystem::instance().user().sessionToken,
                                               AuthSystem::instance().user().id);
     state.serverRunning = true;
+    // The listen server's background thread now owns hot-reload activation (it
+    // is the safe point). Suppress the main render thread's pollAndAdvance so a
+    // swap can never happen while this thread is mid-tick inside a hot call.
+    HotReloadSystem::instance().setExternalTickOwner(true);
     state.serverThread = std::thread(listenServerThreadFunc, std::ref(state));
 
     return true;
@@ -1392,6 +1420,9 @@ void stopListenServer(ListenServerState& state)
 
     if (state.serverThread.joinable())
         state.serverThread.join();
+
+    // The tick thread has stopped; return activation ownership to the main thread.
+    HotReloadSystem::instance().setExternalTickOwner(false);
 
     // Flush any remaining persistence events before shutdown
     {
@@ -1416,6 +1447,12 @@ void stopListenServer(ListenServerState& state)
 // and extracted from the old tickListenServer accumulator loop.
 static void simulateOneServerTick(ListenServerState& state)
 {
+    // Hot-reload barrier: activate a validated candidate at the TOP of this
+    // fixed tick, on the LISTEN SERVER THREAD (the same thread that runs every
+    // hot call). This is the safe point; the main render thread sets the tick
+    // owner so its own pollAndAdvance becomes a no-op.
+    HotReloadSystem::instance().pollAndAdvanceFromTickOwner(state.tick);
+
     // Hot-reload networkingconfig.json so hosted servers pick up changes live.
     NetworkingConfig::instance().pollReload();
 
