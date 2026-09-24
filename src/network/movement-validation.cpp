@@ -15,6 +15,7 @@
 #include "network/movement-validation.h"
 
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-geometry.h"
 #include "hot-reload/hot-movement-validation.h"
 #include "network/server.h"
 
@@ -44,24 +45,18 @@ bool rayTriangle(const glm::vec3& origin,
                  float maxDistance,
                  float& outDistance)
 {
-    glm::vec3 e1 = tri.b - tri.a;
-    glm::vec3 e2 = tri.c - tri.a;
-    glm::vec3 p = glm::cross(direction, e2);
-    float det = glm::dot(e1, p);
-    if (std::abs(det) < 0.000001f)
-        return false;
-
-    float inv = 1.0f / det;
-    glm::vec3 t = origin - tri.a;
-    float u = glm::dot(t, p) * inv;
-    if (u < 0.0f || u > 1.0f)
-        return false;
-    glm::vec3 q = glm::cross(t, e1);
-    float v = glm::dot(direction, q) * inv;
-    if (v < 0.0f || u + v > 1.0f)
-        return false;
-    outDistance = glm::dot(e2, q) * inv;
-    return outDistance >= 0.0f && outDistance <= maxDistance;
+    // Ray-triangle is the hot geometry primitive (net.geometry).
+    GameGeometryQueryV1 q{};
+    q.primitiveId = GAME_GEOM_RAY_TRIANGLE;
+    q.origin[0] = origin.x; q.origin[1] = origin.y; q.origin[2] = origin.z;
+    q.direction[0] = direction.x; q.direction[1] = direction.y; q.direction[2] = direction.z;
+    q.triA[0] = tri.a.x; q.triA[1] = tri.a.y; q.triA[2] = tri.a.z;
+    q.triB[0] = tri.b.x; q.triB[1] = tri.b.y; q.triB[2] = tri.b.z;
+    q.triC[0] = tri.c.x; q.triC[1] = tri.c.y; q.triC[2] = tri.c.z;
+    q.maxDistance = maxDistance;
+    runGeometryPrimitive(q);
+    outDistance = q.outDistance;
+    return q.hit != 0 && q.outDistance >= 0.0f && q.outDistance <= maxDistance;
 }
 
 bool crossesBlockingGeometry(const HeadlessWorld* world,

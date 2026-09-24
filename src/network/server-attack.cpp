@@ -36,6 +36,7 @@
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-attack-gates.h"
 #include "hot-reload/hot-attack-claim.h"
+#include "hot-reload/hot-geometry.h"
 
 #include <cmath>
 #include <vector>
