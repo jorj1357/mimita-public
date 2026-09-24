@@ -37,6 +37,15 @@ namespace {
 // memory without limit.
 constexpr std::size_t MAX_ACTIVE_BUCKETS = 512;
 
+// The client and server can share one events.jsonl.  std::mutex only protects
+// writers inside one process, so it cannot stop two processes from splitting
+// each other's records.  This named mutex is deliberately shared by both.
+HANDLE eventsFileProcessMutex() {
+    static HANDLE handle = CreateMutexA(nullptr, FALSE,
+                                        "Local\\MiMITA_events_jsonl_v1");
+    return handle;
+}
+
 double steadySeconds() {
     static const auto start = std::chrono::steady_clock::now();
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
@@ -512,16 +521,22 @@ void StructuredLogger::createRunDir() {
 
 void StructuredLogger::writeLine(const std::string& json, bool forceFlush) {
     if (!mEventsFile) return;
-    // One atomic write of the whole line (including the newline) so two
-    // processes appending to a shared events.jsonl cannot interleave a
-    // malformed half-line.
+    // Build exactly one physical line before taking the inter-process lock.
     std::string line = json;
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
+        line.pop_back();
     line += '\n';
+
+    HANDLE processMutex = eventsFileProcessMutex();
+    const bool locked = processMutex &&
+        WaitForSingleObject(processMutex, 5000) == WAIT_OBJECT_0;
     std::fwrite(line.data(), 1, line.size(), mEventsFile);
     // Critical records (errors/fatal) always flush promptly; ordinary records
     // flush only when configured, so gameplay is not blocked on disk per event.
     if (forceFlush || mConfig.flushEachEvent)
         std::fflush(mEventsFile);
+    if (locked)
+        ReleaseMutex(processMutex);
 }
 
 void StructuredLogger::appendRaw(const char* bytes, uint32_t len, bool forceFlush) {

@@ -278,6 +278,12 @@ void fire(
         realm == EntityRealm::Server ? NetworkAuthority::Server
                                      : NetworkAuthority::ClientPredicted);
 
+    Debug::log(Debug::Category::Weapons,
+        "[ROCKET] spawn entity=%llu ownerEntity=%llu realm=%u speed=%.2f lifetime=%.2f",
+        static_cast<unsigned long long>(rocket.entityId),
+        static_cast<unsigned long long>(ownerEntity),
+        static_cast<unsigned>(realm), finalSpeed, rocket.lifetime);
+
     state.activeRockets.push_back(rocket);
 
     {
@@ -393,6 +399,10 @@ void update(
 
         rocket.lifetime -= dt;
         if (rocket.lifetime <= 0.0f) {
+            Debug::log(Debug::Category::Weapons,
+                "[ROCKET] explode reason=lifetime entity=%llu pos=(%.2f,%.2f,%.2f)",
+                static_cast<unsigned long long>(rocket.entityId),
+                rocket.position.x, rocket.position.y, rocket.position.z);
             doExplosion(state, def, runtime, owner, npcs, camera, rocket.position, 0, false, victimPlayer, presentationOnly, rocket.ownerEntity);
             rocket.exploded = true;
             it = state.activeRockets.erase(it);
@@ -424,6 +434,10 @@ void update(
                     }
                 }
                 if (hitWorld) {
+                    Debug::log(Debug::Category::Weapons,
+                        "[ROCKET] explode reason=world entity=%llu pos=(%.2f,%.2f,%.2f)",
+                        static_cast<unsigned long long>(rocket.entityId),
+                        worldHitPos.x, worldHitPos.y, worldHitPos.z);
                     doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false, victimPlayer, presentationOnly, rocket.ownerEntity);
                     rocket.exploded = true;
                     Ecs::despawn(rocket.entityId);
@@ -472,6 +486,9 @@ void update(
                     if (hitNpc) break;
                 }
                 if (hitNpc) {
+                    Debug::log(Debug::Category::Weapons,
+                        "[ROCKET] explode reason=npc entity=%llu victim=%u",
+                        static_cast<unsigned long long>(rocket.entityId), hitNpcId);
                     doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true, victimPlayer, presentationOnly, rocket.ownerEntity);
                     rocket.exploded = true;
                     Ecs::despawn(rocket.entityId);
