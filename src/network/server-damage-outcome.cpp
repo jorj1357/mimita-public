@@ -80,6 +80,12 @@ void serverResolveDamageOutcome(
             v.damage, v.knockback, v.hitPosition, v.hitNormal, causeSerial,
             projectileId, weaponNetworkId, weaponDefNetworkId);
     }
+
+    // The context above is stack-owned for this synchronous consequence pass.
+    // Do not leave the global bridge pointing at it after the hot damage call
+    // returns; the next projectile, lifecycle, or network callback would see
+    // a dangling server context.
+    setActiveServerContext(nullptr);
 }
 
 } // namespace MimitaNet

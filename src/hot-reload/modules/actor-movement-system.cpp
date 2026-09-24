@@ -13,6 +13,8 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/hot-actor-movement.h"
+#include "hot-reload/hot-action.h"
+#include "hot-reload/hot-animation.h"
 #include "hot-reload/hot-movement-policy.h"
 #include "hot-reload/hot-movement-preset-log.h"
 #include "hot-reload/hot-package.h"
@@ -124,6 +126,60 @@ void resolveActorCollisions(GameplayContextV1* ctx, MovementStateV1* st,
                 c.position[1] = world.y;
                 c.position[2] = world.z;
             }
+
+            // afad20a treated the equipped tool as another physical body
+            // participant.  Keep the NPC path on that same collision owner:
+            // use the live right-arm grip and weapon-edge sockets when the
+            // presentation/model provider exposes them, and sweep the tool
+            // between the previous and current socket positions so a fast
+            // melee weapon cannot tunnel through world geometry.  If the
+            // weapon edge is unavailable, the grip remains a conservative
+            // authoritative sphere rather than silently dropping weapon
+            // collision for NPCs.
+            GameSocketRawV1 grip{};
+            grip.entity = entity;
+            grip.socket = gameHash("rightArm");
+            GameSocketRawV1 edge{};
+            edge.entity = entity;
+            edge.socket = gameHash("weapon_edge");
+            const bool hasGrip = rawFn(ctx->host, &grip) && grip.valid;
+            const bool hasEdge = rawFn(ctx->host, &edge) && edge.valid;
+            if (hasGrip && q.colliderCount < COLLISION_MAX_COLLIDERS) {
+                const glm::vec3 gripLocal(grip.position[0] * s,
+                                          grip.position[1] * s,
+                                          grip.position[2] * s);
+                const glm::vec3 gripWorld = glm::vec3(
+                    root * glm::vec4(gripLocal, 1.0f));
+                CollisionColliderV1& weapon = q.colliders[q.colliderCount++];
+                weapon.partId = COLLISION_PART_WEAPON;
+                weapon.policyId = COLLISION_POLICY_WEAPON;
+                weapon.flags = COLLISION_COLLIDER_BODY_AUTHORITATIVE;
+                weapon.radius = 0.12f * s;
+                weapon.position[0] = gripWorld.x;
+                weapon.position[1] = gripWorld.y;
+                weapon.position[2] = gripWorld.z;
+                weapon.label[0] = 'w'; weapon.label[1] = 'e';
+                weapon.label[2] = 'a'; weapon.label[3] = 'p';
+                weapon.label[4] = 'o'; weapon.label[5] = 'n';
+                weapon.label[6] = '\0';
+                weapon.velocity[0] = st->velocity[0];
+                weapon.velocity[1] = st->velocity[1];
+                weapon.velocity[2] = st->velocity[2];
+                if (hasEdge) {
+                    const glm::vec3 edgeLocal(edge.position[0] * s,
+                                              edge.position[1] * s,
+                                              edge.position[2] * s);
+                    const glm::vec3 edgeWorld = glm::vec3(
+                        root * glm::vec4(edgeLocal, 1.0f));
+                    weapon.shape = COLLISION_SHAPE_CAPSULE;
+                    weapon.flags |= COLLISION_COLLIDER_ORIENTED_CAPSULE;
+                    weapon.endPosition[0] = edgeWorld.x;
+                    weapon.endPosition[1] = edgeWorld.y;
+                    weapon.endPosition[2] = edgeWorld.z;
+                } else {
+                    weapon.shape = COLLISION_SHAPE_SPHERE;
+                }
+            }
         }
     }
 
@@ -175,6 +231,25 @@ MimitaHotMovement::MovementPresetId actorMovementPreset(GameplayContextV1* ctx,
 bool simulateOneActor(GameplayContextV1* ctx, std::uint64_t e, float dt,
                       std::uint32_t tick, bool npcOnly)
 {
+    // Ensure NPCs enter the same hot animation pipeline as players.  The
+    // component is persistent EXE-owned state; this only seeds it once, so a
+    // DLL generation can change pose policy without resetting the live actor.
+    if (npcOnly && ctx->dynamicReadComponent && ctx->dynamicWriteComponent) {
+        HotAnimationStateV2 animation{};
+        if (!ctx->dynamicReadComponent(ctx->host, e,
+                                       HOT_ANIMATION_STATE_COMPONENT,
+                                       &animation, sizeof(animation))) {
+            animation.version = HOT_ANIMATION_STATE_VERSION;
+            animation.byteSize = static_cast<std::uint32_t>(sizeof(animation));
+            animation.actionId = HOT_ACTION_IDLE;
+            animation.loop = 1u;
+            animation.lifecycleGeneration = 1u;
+            ctx->dynamicWriteComponent(ctx->host, e,
+                                       HOT_ANIMATION_STATE_COMPONENT,
+                                       &animation, sizeof(animation));
+        }
+    }
+
     GameControlSourceComponentV1 cs{};
     const bool hasControl =
         ctx->readComponent(ctx->host, e, GAME_COMPONENT_CONTROL_SOURCE, &cs,

@@ -1254,7 +1254,10 @@ void tickServerProjectiles(SOCKET sock,
                         ? projectile.genericTypeId : projectile.weaponType;
                     if (impact.ownerId != 0)
                         impact.ownerEntity = static_cast<std::uint64_t>(Ecs::ensure(
-                            EntityRealm::Server, EntityDomain::Player, impact.ownerId));
+                            EntityRealm::Server,
+                            projectile.ownerNpcId != 0
+                                ? EntityDomain::Npc : EntityDomain::Player,
+                            impact.ownerId));
                     if (step.hitPlayerId != 0)
                         impact.victimEntity = static_cast<std::uint64_t>(Ecs::ensure(
                             EntityRealm::Server, EntityDomain::Player, step.hitPlayerId));

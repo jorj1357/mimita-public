@@ -22,6 +22,7 @@
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-history.h"
 #include "hot-reload/hot-npc-targeting.h"
+#include "hot-reload/hot-npc-lifecycle.h"
 #include "hot-reload/hot-respawn.h"
 #include "hot-reload/hot-npc-ground-clamp.h"
 #include "ecs/entity-registry.h"
@@ -183,6 +184,113 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
            npcWorld.collisionAlwaysLargeTriangles.size());
 }
 
+// Resolve the active generation's NPC lifecycle policy through the one generic
+// doorway. Never cached across a generation swap. Null when no hot provider.
+static GameNpcLifecycleFn hotNpcLifecyclePolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_NPC_LIFECYCLE);
+    return callable ? reinterpret_cast<GameNpcLifecycleFn>(callable) : nullptr;
+}
+
+// Evaluate one NPC lifecycle decision. `request` is filled by the caller with
+// live config/state facts; the hot provider (or the shared fallback) owns the
+// decision. The cold side only applies the result.
+static void evaluateNpcLifecycle(NpcLifecyclePolicyV1& request)
+{
+    if (request.structSize == 0)
+        request.structSize = sizeof(NpcLifecyclePolicyV1);
+    const GameNpcLifecycleFn fn = hotNpcLifecyclePolicy();
+    if (fn)
+        fn(nullptr, &request);
+    else
+        MimitaNet::HotNpcLifecycleImpl::evaluate(request);
+}
+
+// Origin-aware reconciliation of automatic startup NPCs. Creates the desired
+// number of automatic NPCs and removes automatic NPCs no longer desired; manual
+// and gamemode NPCs are never touched. Runs only at fixed-tick boundaries.
+static void reconcileAutomaticNpcs(std::unordered_map<uint32_t, ServerNpc>& npcs,
+                                   NpcSystem& npcSystem,
+                                   std::unordered_set<uint32_t>& npcIdsAlive,
+                                   const World& world,
+                                   std::uint32_t reason)
+{
+    std::uint32_t automaticCount = 0;
+    std::uint32_t manualCount = 0;
+    for (const auto& kv : npcs) {
+        if (kv.second.origin == GAME_NPC_ORIGIN_STARTUP)
+            ++automaticCount;
+        else
+            ++manualCount;
+    }
+
+    NpcLifecyclePolicyV1 request{};
+    request.structSize = sizeof(NpcLifecyclePolicyV1);
+    request.reason = reason;
+    // Live config facts: the startup enable/count are owned by the hot policy;
+    // the fallback reads these when no provider is registered.
+    request.configStartupEnabled = serverGameOverrides().startupNpcsEnabled ? 1u : 0u;
+    request.requestedCount = serverGameOverrides().startupNpcCount;
+    request.existingAutomaticCount = automaticCount;
+    request.existingManualCount = manualCount;
+    request.maxSpawn = 256u;
+    request.spawnPointCount = (std::uint32_t)world.spawnPoints.size();
+    evaluateNpcLifecycle(request);
+    if (!request.handled)
+        return;
+
+    // Remove excess automatic NPCs (highest ids first for determinism).
+    if (request.destroyAutomatic) {
+        std::vector<uint32_t> automaticIds;
+        for (const auto& kv : npcs)
+            if (kv.second.origin == GAME_NPC_ORIGIN_STARTUP)
+                automaticIds.push_back(kv.first);
+        std::sort(automaticIds.begin(), automaticIds.end(),
+                  std::greater<uint32_t>());
+        const std::uint32_t desired = request.desiredAutomatic;
+        for (uint32_t id : automaticIds) {
+            if (automaticCount <= desired)
+                break;
+            npcSystem.destroySelected({id});
+            npcIdsAlive.erase(id);
+            npcs.erase(id);
+            EntityRegistry::instance().destroy(static_cast<EntityId>(
+                Ecs::raw(Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, id))));
+            --automaticCount;
+        }
+    }
+
+    // Create missing automatic NPCs. The id comes from the NpcSystem's own
+    // allocator so the mirror map and the simulated body can never collide.
+    for (std::uint32_t i = 0; i < request.spawnCount; ++i) {
+        ServerNpc npc;
+        npc.entityId = npcSystem.nextNpcId();
+        npc.origin = GAME_NPC_ORIGIN_STARTUP;
+        npc.name = "NPC " + std::to_string(npc.entityId);
+        if (request.useSpawnPoints && !world.spawnPoints.empty()) {
+            const size_t idx = (automaticCount + i) % world.spawnPoints.size();
+            npc.pos = effectiveServerSpawn(world.spawnPoints[idx].position);
+            // World spawn points carry a rotation quaternion; derive yaw.
+            const glm::vec3 forward =
+                world.spawnPoints[idx].rotation * glm::vec3(1.0f, 0.0f, 0.0f);
+            npc.yaw = std::atan2(forward.y, forward.x);
+        } else {
+            npc.pos = {4.0f + (float)(automaticCount + i) * 2.0f, 8.0f, 30.0f};
+        }
+        if (request.outHealth > 0)
+            npc.health = (int)request.outHealth;
+        if (request.startingWeapon[0])
+            npc.startingWeapon = request.startingWeapon;
+        npc.difficulty = request.outDifficulty > 0.0f ? request.outDifficulty : 1.0f;
+        npcs[npc.entityId] = npc;
+        printf("%s [NPC LIFECYCLE] spawn reason=%u entityId=%u origin=startup "
+               "pos=(%.2f,%.2f,%.2f)\n",
+               serverTimestamp(), reason, npc.entityId, npc.pos.x, npc.pos.y,
+               npc.pos.z);
+    }
+}
+
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)
 // into the real NpcSystem so they get full AI simulation.
 static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -201,16 +309,23 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         npcIdsAlive.insert(kv.first);
         if (alreadySimulated) continue;
         npcSystem.spawnNpc(kv.first, kv.second.difficulty, kv.second.pos);
-        // Apply the healthall override to the newly adopted real NPC body.
+        // Apply the lifecycle-initialized health and starting weapon to the
+        // newly adopted real NPC body. The ServerNpc fields are set by the
+        // npc.lifecycle policy (or the healthall override); the policy value
+        // wins over the built-in default.
         for (Npc& n : npcSystem.all())
         {
             if (n.id == kv.first)
             {
-                if (serverGameOverrides().maxHpOverride > 0)
-                {
-                    n.body.maxHp = serverGameOverrides().maxHpOverride;
-                    n.body.currentHp = n.body.maxHp;
-                }
+                if (!kv.second.startingWeapon.empty())
+                    n.body.equippedWeaponId = kv.second.startingWeapon;
+                int hp = serverGameOverrides().maxHpOverride > 0
+                             ? serverGameOverrides().maxHpOverride
+                             : kv.second.health;
+                if (hp <= 0)
+                    hp = 100;
+                n.body.maxHp = hp;
+                n.body.currentHp = hp;
                 finalizeServerNpcSpawn(n, ActorSpawnReason::NpcCreate);
             }
         }
@@ -289,6 +404,27 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     npc.body.syncLegacyStateToLayers();
     npc.body.updateModelWorldTransforms();
 
+    // Initial creation and respawn must enter the same hot lifecycle owner.
+    // This keeps health/presentation/spawn protection initialization identical
+    // for the first NPC and every later life.
+    {
+        ActorLifecycleStateV1 lifecycle{};
+        lifecycle.entityId = (std::uint64_t)Ecs::ensure(
+            EntityRealm::Server, EntityDomain::Npc, npc.id);
+        lifecycle.actorKind = 2u; // NPC
+        lifecycle.lifeGeneration = npc.transformEpoch;
+        lifecycle.reason = reason == ActorSpawnReason::Respawn ? 1u : 0u;
+        lifecycle.dead = 0u;
+        lifecycle.respawnRequested = 1u;
+        lifecycle.position[0] = npc.body.pos.x;
+        lifecycle.position[1] = npc.body.pos.y;
+        lifecycle.position[2] = npc.body.pos.z;
+        lifecycle.yaw = npc.body.yaw;
+        lifecycle.health = npc.body.currentHp;
+        lifecycle.maxHealth = npc.body.maxHp;
+        LiveBehavior::dispatchActorLifecycle(lifecycle, 0);
+    }
+
     // Generic NPC entity: the ActorHealthState dynamic component is the
     // authoritative health store; the typed HealthComponent is a mirror. Mark
     // the entity for generic lifecycle replication (CREATE) so clients learn it
@@ -336,6 +472,11 @@ static void respawnServerNpc(Npc& npc)
         std::to_string(npc.body.respawnTimer);
     LiveEventJournal::instance().record("server.npc_respawn_begin", respawnEvent);
 
+    // Respawn enable/delay is owned by the shared respawn rule (net.respawn):
+    // when respawns are disabled its initial timer is negative so
+    // npcRespawnTick never fires. NPC lifecycle initialization below therefore
+    // runs only for a life the shared rule already authorized — one owner.
+    //
     // Hot lifecycle policy: the active mode/behavior may relocate the respawn,
     // set the yaw, and arm spawn protection on the actor entity. Generic across
     // players and NPCs; when unhandled (or no hot module) the cold spawn point
@@ -896,6 +1037,12 @@ void simulateSharedNpcs(SOCKET sock,
                         uint32_t tick,
                         uint64_t& totalPacketsOut)
 {
+    // Lifecycle reconciliation at the fixed-tick boundary: align the automatic
+    // NPC set with the hot npc.lifecycle policy. Manual/gamemode NPCs are
+    // preserved. Crossing a hot generation is the same reconciliation.
+    reconcileAutomaticNpcs(npcs, npcSystem, npcIdsAlive, world,
+                           GAME_NPC_LIFECYCLE_RECONCILE);
+
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
 

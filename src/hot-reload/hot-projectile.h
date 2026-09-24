@@ -42,5 +42,22 @@ struct HotProjectileStateV1 {
     std::uint32_t flags;       // HOT_PROJECTILE_*
     std::uint32_t maxBounces;
     std::uint32_t bounces;
-    std::uint32_t reserved;
+    // Append-only single-detonation guard. Once a projectile has detonated or
+    // begun destruction, `detonated` is set and the system refuses to process
+    // another explosion for this entity. This makes "spawn -> simulate -> first
+    // contact -> explode once -> destroy" authoritative even when the entity is
+    // observed again before the destroy is visible. `explosionReason` records
+    // the first cause (0 none, 1 world, 2 actor, 3 lifetime, 4 direct).
+    std::uint32_t detonated;
+    std::uint32_t explosionReason;
+    // Append-only fire correlation for logging (owner's fire serial, weapon id).
+    std::uint64_t fireSerial;
+    std::uint64_t weaponNetworkId;
 };
+
+// HotProjectileStateV1::explosionReason values (hot-only; logging/diagnostics).
+static constexpr std::uint32_t HOT_PROJECTILE_REASON_NONE = 0u;
+static constexpr std::uint32_t HOT_PROJECTILE_REASON_WORLD = 1u;
+static constexpr std::uint32_t HOT_PROJECTILE_REASON_ACTOR = 2u;
+static constexpr std::uint32_t HOT_PROJECTILE_REASON_LIFETIME = 3u;
+static constexpr std::uint32_t HOT_PROJECTILE_REASON_DIRECT = 4u;

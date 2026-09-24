@@ -51,11 +51,53 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     mutableUse->ammoCost = 0;
     mutableUse->handled = 1;
 
-    if (!ctx->entityCreate || !ctx->dynamicWriteComponent)
+    if (!ctx->entityCreate || !ctx->dynamicWriteComponent) {
+        // Cannot act: decline so the cold path is not silently swallowed.
+        mutableUse->handled = 0;
         return;
+    }
 
     const std::uint64_t key = use->toolId != 0 ? use->toolId : use->toolNetworkId;
     const ToolDefinitionV1* def = findToolDefinition(key);
+
+    {
+        char req[GAME_LOG_MESSAGE];
+        std::snprintf(req, sizeof(req),
+                      "request tool=%llu owner=%llu tick=%llu origin=(%.2f,%.2f,%.2f) "
+                      "dir=(%.3f,%.3f,%.3f)",
+                      (unsigned long long)key,
+                      (unsigned long long)use->userEntity,
+                      (unsigned long long)use->tick,
+                      use->origin[0], use->origin[1], use->origin[2],
+                      use->direction[0], use->direction[1], use->direction[2]);
+        toolLogEvent(ctx, 2, "rocket.fire.request", req, "requested",
+                     use->toolEntity, use->userEntity, 1, use->tick);
+    }
+
+    // Hot automatic-fire policy: the tool's own per-instance state owns the
+    // cooldown, so `fire_delay` and fire cadence are hot-editable and no cold
+    // launcher has to be consulted. A request while the tool is cooling down is
+    // rejected here (one owner), which also makes `fire_mode=automatic` a
+    // repeated-tick request naturally rate-limited by fire_delay.
+    if (use->toolEntity != 0 && ctx->dynamicReadComponent) {
+        ToolInstanceStateV1 existing{};
+        if (ctx->dynamicReadComponent(ctx->host, use->toolEntity,
+                                      gameHash("ToolInstanceState"), &existing,
+                                      sizeof(existing)) &&
+            (existing.cooldownRemaining > 0.0f || existing.isReloading)) {
+            mutableUse->outFire = 0;
+            mutableUse->handled = 1;
+            char rejected[GAME_LOG_MESSAGE];
+            std::snprintf(rejected, sizeof(rejected),
+                          "rejected tool=%llu owner=%llu cooldown=%.3f reloading=%u",
+                          (unsigned long long)key,
+                          (unsigned long long)use->userEntity,
+                          existing.cooldownRemaining, existing.isReloading);
+            toolLogEvent(ctx, 2, "rocket.fire.rejected", rejected, "cooldown",
+                         use->toolEntity, use->userEntity, 1, use->tick);
+            return;
+        }
+    }
 
     // Prefer the registry tuning (weapons.json / behaviorSource) over literals.
     GameWeaponTuningV1 tuning{};
@@ -66,21 +108,42 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
             return value;
         return paramOr(def, name, fallback);
     };
+    // JSON + hot C++ composability: the JSON/tuning value is the data, the
+    // multiplier below is the formula. Editing a multiplier here changes the
+    // running behavior without a cold rebuild; editing JSON changes the data.
+    constexpr float kSpeedMultiplier = 1.0f;
+    constexpr float kGravityMultiplier = 1.0f;
+    constexpr float kLifetimeMultiplier = 1.0f;
+    constexpr float kRadiusMultiplier = 1.0f;
+    constexpr float kDamageMultiplier = 1.0f;
+    constexpr float kSplashRadiusMultiplier = 1.0f;
+    constexpr float kSplashDamageMultiplier = 1.0f;
+    constexpr float kKnockbackMultiplier = 1.0f;
+
     const float speed = tparam("rocketSpeed",
-        (hasTuning && tuning.projectileSpeed > 0.0f) ? tuning.projectileSpeed : 40.0f);
-    const float gravity = tparam("gravity", 22.0f);
-    const float lifetime = (hasTuning && tuning.projectileLifetime > 0.0f)
+        (hasTuning && tuning.projectileSpeed > 0.0f) ? tuning.projectileSpeed : 40.0f)
+        * kSpeedMultiplier;
+    const float gravity = tparam("gravity", 22.0f) * kGravityMultiplier;
+    const float lifetime = ((hasTuning && tuning.projectileLifetime > 0.0f)
                                ? tuning.projectileLifetime
-                               : paramOr(def, "hotLifetime", 5.0f);
+                               : paramOr(def, "hotLifetime", 5.0f)) * kLifetimeMultiplier;
     const float radius = tparam("rocketRadius",
-        (hasTuning && tuning.projectileRadius > 0.0f) ? tuning.projectileRadius : 0.2f);
-    const float impactDamage = tparam("rocketDirectDamage", 150.0f);
-    const float splashRadius = tparam("splashRadius", 12.0f);
-    const float splashDamage = tparam("splashDamage", impactDamage);
+        (hasTuning && tuning.projectileRadius > 0.0f) ? tuning.projectileRadius : 0.2f)
+        * kRadiusMultiplier;
+    const float impactDamage = tparam("rocketDirectDamage", 150.0f) * kDamageMultiplier;
+    const float splashRadius = tparam("splashRadius", 12.0f) * kSplashRadiusMultiplier;
+    const float splashDamage = tparam("splashDamage", impactDamage) * kSplashDamageMultiplier;
     const float splashExponent = tparam("splashExponent", 2.0f);
-    const float knockbackStrength = tparam("knockbackStrength", 15.0f);
+    const float knockbackStrength = tparam("knockbackStrength", 15.0f) * kKnockbackMultiplier;
     const float selfDamageMultiplier = tparam("selfDamageMultiplier", 0.2f);
     const float fullDamageRadius = tparam("full_damage_radius", 1.0f);
+    // World-hit mode: 0 explode, 1 bounce, 2 stop. JSON `worldHitMode`
+    // overrides; `maxBounceCount` > 0 implies bounce for legacy configs.
+    const float worldHitModeJson = tparam("worldHitMode", -1.0f);
+    const float maxBounceCount = tparam("maxBounceCount", 0.0f);
+    const std::uint32_t worldHitMode = worldHitModeJson >= 0.0f
+        ? (std::uint32_t)worldHitModeJson
+        : (maxBounceCount > 0.0f ? 1u : 0u);
 
     ToolActionEventV1 accepted{};
     accepted.actorEntity = use->userEntity;
@@ -121,9 +184,23 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     proj.ownerEntity = use->userEntity;
     proj.toolEntity = use->toolEntity;
     proj.typeId = kRocketNetworkId;
-    proj.flags = HOT_PROJECTILE_EXPLODE_ON_WORLD |
-                 HOT_PROJECTILE_EXPLODE_ON_ACTOR |
+    proj.fireSerial = use->predictionKey;
+    proj.weaponNetworkId = use->toolNetworkId != 0 ? use->toolNetworkId : kRocketNetworkId;
+    proj.flags = HOT_PROJECTILE_EXPLODE_ON_ACTOR |
                  HOT_PROJECTILE_EXPLODE_ON_LIFETIME;
+    // World-hit policy from JSON/hot C++: explode, bounce, or stop.
+    switch (worldHitMode) {
+    case 1u:  // bounce
+        proj.flags |= HOT_PROJECTILE_BOUNCE_ON_WORLD;
+        proj.maxBounces = maxBounceCount > 0.0f ? (std::uint32_t)maxBounceCount : 1u;
+        proj.restitution = tparam("bounceRestitution", 0.6f);
+        break;
+    case 2u:  // stop (no world explosion; lifetime still applies)
+        break;
+    default:  // explode
+        proj.flags |= HOT_PROJECTILE_EXPLODE_ON_WORLD;
+        break;
+    }
     ctx->dynamicWriteComponent(ctx->host, projectileEntity, HOT_PROJECTILE_COMPONENT,
                                &proj, sizeof(proj));
 
@@ -186,13 +263,32 @@ void MIMITA_GAME_CALL rocketUse(const ToolUsePolicyV1* use, GameplayContextV1* c
     fired.direction[0] = dx; fired.direction[1] = dy; fired.direction[2] = dz;
     emitToolAction(ctx, fired);
 
-    char msg[GAME_LOG_MESSAGE];
-    std::snprintf(msg, sizeof(msg),
-                  "rocket spawned entity=%llu speed=%.1f dmg=%.0f splash=%.1f",
-                  (unsigned long long)projectileEntity, speed, impactDamage,
-                  splashDamage);
-    toolLogEvent(ctx, 2, "tool.rocket", msg, "fired", projectileEntity,
-                 use->userEntity, 1, use->tick);
+    {
+        char accepted[GAME_LOG_MESSAGE];
+        std::snprintf(accepted, sizeof(accepted),
+                      "accepted tool=%llu owner=%llu entity=%llu speed=%.1f lifetime=%.2f",
+                      (unsigned long long)key,
+                      (unsigned long long)use->userEntity,
+                      (unsigned long long)projectileEntity, speed, lifetime);
+        toolLogEvent(ctx, 2, "rocket.fire.accepted", accepted, "accepted",
+                     projectileEntity, use->userEntity, 1, use->tick);
+        char spawnMsg[GAME_LOG_MESSAGE];
+        std::snprintf(spawnMsg, sizeof(spawnMsg),
+                      "spawn entity=%llu owner=%llu weapon=%llu serial=%llu "
+                      "speed=%.1f gravity=%.1f lifetime=%.2f radius=%.2f "
+                      "dmg=%.0f splash=%.1f kb=%.1f worldHitMode=%u pos=(%.2f,%.2f,%.2f)",
+                      (unsigned long long)projectileEntity,
+                      (unsigned long long)use->userEntity,
+                      (unsigned long long)proj.weaponNetworkId,
+                      (unsigned long long)use->predictionKey, speed, gravity,
+                      lifetime, radius, impactDamage, splashDamage,
+                      knockbackStrength, worldHitMode, proj.position[0],
+                      proj.position[1], proj.position[2]);
+        toolLogEvent(ctx, 2, "rocket.spawn", spawnMsg, "spawned",
+                     projectileEntity, use->userEntity, 1, use->tick);
+        toolLogEvent(ctx, 2, "tool.rocket", spawnMsg, "fired", projectileEntity,
+                     use->userEntity, 1, use->tick);
+    }
 }
 
 } // namespace

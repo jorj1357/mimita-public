@@ -27,6 +27,7 @@
 #include "live-code/live-ui.h"
 #include "utils/time-format.h"
 #include "hot-reload/hot-pose.h"
+#include "hot-reload/hot-npc-lifecycle.h"
 #include "render/skeleton-instances.h"
 #include "network/server-context.h"
 #include "network/server-gamemode.h"
@@ -71,6 +72,7 @@ extern Renderer* gRenderer;
 #include "ragdoll/ragdoll-components.h"
 #include "ragdoll/ragdoll-entities.h"
 #include "ragdoll/ragdoll-body.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
 #include "world/world.h"
 
@@ -578,6 +580,45 @@ bool MIMITA_GAME_CALL capInputRead(void*, GameInputStateV1* out)
     s.extendLeftMouse = in->extendLeftMouse ? 1u : 0u;
     s.extendRightMouse = in->extendRightMouse ? 1u : 0u;
     *out = s;
+    return true;
+}
+
+// Stable mechanism bridge: the hot module owns the toggle policy, while this
+// kernel callback is the only place allowed to touch the persistent Player and
+// RagdollModeSystem objects. Future ragdoll policy edits stay DLL-only.
+bool MIMITA_GAME_CALL capRagdollToggle(void*, GameRagdollToggleV1* request)
+{
+    if (!request || request->structSize != sizeof(GameRagdollToggleV1))
+        return false;
+
+    Player& player = THE_PLAYER;
+    if (player.dead)
+        return false;
+
+    RagdollModeSystem& ragdoll = RagdollModeSystem::instance();
+    const auto& cfg = RagdollModeConfig::instance().data();
+    if (request->request == 1u) {
+        if (!cfg.enabled || ragdoll.isActive())
+            return false;
+        ragdoll.activate(player);
+    } else if (request->request == 2u) {
+        if (!ragdoll.isActive())
+            return false;
+        ragdoll.deactivate(player);
+    } else if (request->request == 3u) {
+        if (ragdoll.isActive())
+            ragdoll.deactivate(player);
+        else if (cfg.enabled)
+            ragdoll.activate(player);
+        else
+            return false;
+    } else {
+        return false;
+    }
+
+    player.ragdollModeActive = ragdoll.isActive();
+    request->applied = 1u;
+    request->active = player.ragdollModeActive ? 1u : 0u;
     return true;
 }
 
@@ -1847,6 +1888,15 @@ bool MIMITA_GAME_CALL capActorSpawn(void*, GameActorSpawnV1* request)
     return MimitaNet::serverSpawnOrResetActor(*request);
 }
 
+// npc.lifecycle: kernel-registered fallback so the capability always resolves.
+// The active provider (a hot package) overrides this through the same id.
+void MIMITA_GAME_CALL capNpcLifecycle(void*, NpcLifecyclePolicyV1* request)
+{
+    if (!request)
+        return;
+    MimitaNet::HotNpcLifecycleImpl::evaluate(*request);
+}
+
 // Generic presentation command: hot render systems describe geometry; the
 // kernel owns the low-level debug draw. No entity/weapon/mode type switch.
 void MIMITA_GAME_CALL capRenderDebug(void*, const GameRenderDebugCommandV1* cmd)
@@ -2698,6 +2748,10 @@ struct KernelCapabilityInit {
                                     gameHash("sig.actor.spawn.v1"), 0,
                                     reinterpret_cast<void*>(&capActorSpawn),
                                     "actor.spawn");
+        rt.registerKernelCapability(GAME_CAP_NPC_LIFECYCLE,
+                                    GAME_SIG_NPC_LIFECYCLE, 0,
+                                    reinterpret_cast<void*>(&capNpcLifecycle),
+                                    "npc.lifecycle");
         rt.registerKernelCapability(GAME_CAP_LOG_EVENT,
                                     gameHash("sig.log.event.v1"), 0,
                                     reinterpret_cast<void*>(&capLogEvent),
@@ -2834,6 +2888,10 @@ struct KernelCapabilityInit {
                                     gameHash("sig.ragdoll.bind.v1"), 0,
                                     reinterpret_cast<void*>(&capRagdollBind),
                                     "ragdoll.bind");
+        rt.registerKernelCapability(GAME_CAP_RAGDOLL_TOGGLE,
+                                    gameHash("sig.ragdoll.toggle.v1"), 0,
+                                    reinterpret_cast<void*>(&capRagdollToggle),
+                                    "ragdoll.toggle");
     }
 };
 const KernelCapabilityInit s_kernelCapabilities{};

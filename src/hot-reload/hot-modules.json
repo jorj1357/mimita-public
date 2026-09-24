@@ -108,7 +108,8 @@
     "src/hot-reload/hot-geometry.h",
     "src/hot-reload/hot-history.h",
     "src/hot-reload/hot-lagcomp-policy.h",
-    "src/hot-reload/hot-logging.h"
+    "src/hot-reload/hot-logging.h",
+    "src/hot-reload/hot-npc-lifecycle.h"
   ],
   "globs": [
     "src/hot-reload/modules/*.cpp",

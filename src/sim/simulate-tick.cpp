@@ -138,21 +138,6 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             sim.player->ragdollModeActive = false;
         }
         else {
-        // Handle ragdoll mode toggle
-        static bool ragdollTogglePrev = false;
-        bool ragdollToggleNow = frame.ragdollTogglePressed;
-        if (ragdollToggleNow && !ragdollTogglePrev && RagdollModeConfig::instance().data().enabled) {
-            auto& ragdoll = RagdollModeSystem::instance();
-            if (ragdoll.isActive()) {
-                ragdoll.deactivate(*sim.player);
-                sim.player->ragdollModeActive = false;
-            } else {
-                ragdoll.activate(*sim.player);
-                sim.player->ragdollModeActive = true;
-            }
-        }
-        ragdollTogglePrev = ragdollToggleNow;
-
         if (sim.player->ragdollModeActive && RagdollModeSystem::instance().isActive()) {
             MIMITA_PERF_SCOPE("RagdollModeUpdate");
             InputState ragdollInput = inputStateFromFrame(frame);

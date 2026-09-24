@@ -513,6 +513,32 @@ static void processSnapshotEntities(
             }
         }
 
+        // NPCs never inherit the local player's avatar.  The snapshot is the
+        // authoritative per-life identity; retry the bind whenever the
+        // background avatar metadata has finished loading, even if the NPC
+        // itself has not spawned a new life.  This repairs the old failure
+        // where a first apply raced the async cache and the replica kept the
+        // player's avatar (or the white/default body) forever.
+        if (entity.entityType == ENTITY_NPC) {
+            const std::string npcAvatar = entity.avatarName[0] != '\0'
+                ? std::string(entity.avatarName)
+                : npcAvatarNameForLife(entity.networkEntityId,
+                                       entity.transformEpoch);
+            if (!npcAvatar.empty() &&
+                (!AvatarSystem::instance().isAvatarLoadPending(npcAvatar) &&
+                 (p.avatarName() != npcAvatar || !p.avatarInstance ||
+                  p.avatarInstance->name != npcAvatar))) {
+                const bool applied =
+                    AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar);
+                p.setAvatarName(npcAvatar);
+                Debug::warn(Debug::Category::Avatar,
+                    "[NPC AVATAR BIND] entityId=%u epoch=%u avatar='%s' applied=%d atlas=%u\n",
+                    entity.networkEntityId, (unsigned)entity.transformEpoch,
+                    npcAvatar.c_str(), (int)applied,
+                    p.avatarInstance ? p.avatarInstance->atlasTexture : 0);
+            }
+        }
+
         if (!pushInterpolationTarget(interpolation, entity, serverTick,
                                      logicalGenerationId))
             continue;

@@ -9,7 +9,26 @@
 
 # Hot / warm / cold audit
 
-Last updated: 2026-09-24 (hot debug-logging policy: the overridable `log.event`
+Last updated: 2026-09-24 (NPC lifecycle behind one hot policy: the generic
+`npc.lifecycle` capability owns automatic startup NPC count, spawn placement,
+initial health, starting weapon/loadout, difficulty, respawn enable, and
+origin-aware reconciliation of stale automatic NPCs. The EXE only stores/creates
+entities, runs the fixed-tick loop, and applies the result. Startup, `npc_spawn`,
+respawn, and reconciliation all pass through the shared `finalizeServerNpcSpawn`
+lifecycle; manual/gamemode NPCs are never removed by lifecycle reconciliation.)
+
+Previous: 2026-09-24 (rocket behavior behind the hot tool/projectile system:
+`rocket-tool.cpp` + `hot-projectiles.cpp` are the canonical rocket owners
+(fire/spawn/movement/collision/explosion/damage/effects/sounds/logging). Player
+and NPC cold callers now dispatch a generic `ToolUsePolicyV1` first and only
+fall back to the legacy `WeaponRocketLauncher` when the hot router declines. The
+hot projectile has a single-detonation guard (one explosion/sound/destroy per
+entity) and a 60-tick consolidated `rocket.tick.sample` record. JSON values are
+data, hot C++ supplies formulas via multipliers; `worldHitMode` selects
+explode/bounce/stop live. Cold `WeaponRocketLauncher`/`RocketLauncherState`/
+`Ecs::spawnRocket` are marked legacy compatibility, not deleted.)
+
+Previous: 2026-09-24 (hot debug-logging policy: the overridable `log.event`
 kernel capability is now provided by the hot `logging.provider`
 (`src/hot-reload/modules/logging-provider.cpp` + `hot-logging.h`), owning
 filtering, event naming, field selection, schemas, sampling/throttling,
@@ -454,6 +473,70 @@ route through the hot provider while a package is active; the cold fallback runs
 when no provider is registered (startup, crash-only, or provider compile
 failure). Player/NPC/projectile dynamic field schemas (`player.state`) remain a
 later phase.
+
+## Update 2026-09-24 — rocket behavior behind the hot boundary
+
+Rocket owner map (HOT vs COLD FALLBACK).
+
+- **HOT (canonical owners):**
+  - `src/hot-reload/modules/tools/rocket-tool.cpp` — fire policy, spawn, live
+    values, `worldHitMode`, hot cooldown/automatic-fire gate, `rocket.fire.*` /
+    `rocket.spawn` logs.
+  - `src/hot-reload/modules/tools/hot-projectiles.cpp` — the one projectile
+    simulator: velocity/gravity, lifetime, world + actor collision, explosion
+    position, splash/knockback, single detonation, effects, `rocket.*` logs and
+    the 60-tick sample.
+  - `src/hot-reload/modules/rocket-behavior.cpp` — damage/fire-intent policy.
+  - `src/hot-reload/modules/tools/combat-policy.cpp` — `tool.primary-use` /
+    `projectile.impact` routers.
+  - `src/hot-reload/modules/presentation/tool-visuals.cpp` — rocket recipe,
+    `TOOL_BEHAVIOR_ROCKET`, `setOwnsExecution`.
+  - `src/hot-reload/modules/presentation/effect-composition.cpp` —
+    `hotComposeExplosion` (explosion sound + timeline).
+- **COLD BRIDGE (dispatch only, no rocket behavior):**
+  `src/combat/weapon-system.cpp` (player `fireRocketLauncher` dispatches
+  `ToolUsePolicyV1`, then falls back); `src/npc/npc-combat.cpp` (NPC
+  `tryFire` projectile branch dispatches `ToolUsePolicyV1`, then falls back);
+  `src/network/server-npcs.cpp` (already dispatched the tool fact).
+- **COLD MECHANISM / LEGACY FALLBACK (retained, not deleted, marked in-file):**
+  `src/combat/weapon-rocket-launcher.cpp` / `.h` (`WeaponRocketLauncher`,
+  `RocketLauncherState`), `src/ecs/actor-entities.cpp` (`Ecs::spawnRocket`),
+  `src/network/server-projectiles.cpp` (generic client-prediction spawn).
+
+Single-sound fix: `hotBroadcastProjectileExplode` now excludes the origin
+process and the simulator composes its own single local detonation, and a
+`detonated` guard on `HotProjectileStateV1` refuses a second explosion for an
+entity. Rocket status: HOT for fire/spawn/sim/collision/explosion/damage/
+effects/sounds/logging; the legacy cold launcher remains only as a fallback.
+
+## Update 2026-09-24 — NPC lifecycle behind the hot boundary
+
+NPC owner map.
+
+- **HOT (canonical owner):** `src/hot-reload/modules/npc-lifecycle-policy.cpp`
+  (registers the `npc.lifecycle` capability) and
+  `src/hot-reload/hot-npc-lifecycle.h` (shared fallback). Owns: startup enable,
+  startup count, spawn placement intent, initial health, starting weapon,
+  weapon loadout, difficulty, respawn enable, and origin-aware reconciliation.
+  Values come from `config/weapons.json` `npc_lifecycle`; multiplier constants
+  are the hot formula layer. A malformed config keeps the last-good policy.
+- **COLD BRIDGE (apply only):**
+  - `src/network/server.cpp` asks the policy for the startup NPC plan and
+    records the launch options as live facts.
+  - `src/network/server-npcs.cpp` (`reconcileAutomaticNpcs`, `evaluateNpcLifecycle`)
+    runs reconciliation at each fixed tick and on a generation swap (the next
+    fixed tick after activation), creates missing automatic NPCs, removes only
+    stale automatic NPCs, and preserves manual/gamemode NPCs.
+  - `src/network/server-packets.cpp` tags `npc_spawn` as origin MANUAL.
+- **COLD MECHANISM:** `NpcSystem`, entity storage, the fixed-tick loop, sockets,
+  and `finalizeServerNpcSpawn` (the single shared init for startup/manual/
+  respawn/reconcile). Respawn delay stays owned by the shared `net.respawn`
+  rule so there is exactly one respawn-delay owner.
+- Origin is carried on `ServerNpc.origin` (`GameNpcOriginV1`); health and
+  starting weapon are initialized from the policy through the shared lifecycle.
+
+Status: NPC lifecycle decisions are HOT; the EXE stores and applies. Health-bar
+presentation is excluded from this migration as requested.
 
 ## COLD (policy owners still deciding behavior)
 

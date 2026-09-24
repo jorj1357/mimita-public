@@ -1,6 +1,16 @@
 {
   "behaviorSource": "json",
   "comment 7 20 2026": "this is the .json file at C:/important/mimita-priv-v8/config/weapons.json defining behavior for all weapons in mimita",
+  "npc_lifecycle": {
+    "comment": "Hot-editable NPC lifecycle data. The hot npc.lifecycle policy owns the decisions; these are the live values. Startup NPCs are opt-in.",
+    "startupNpcsEnabled": false,
+    "startupNpcCount": 0,
+    "respawnEnabled": true,
+    "respawnSeconds": 0.0,
+    "startingWeapon": "revolver",
+    "weaponLoadout": ["revolver", "shotgun", "rocket_launcher"],
+    "health": 100
+  },
   "revolver": {
     "id": "revolver",
     "display_name": "Revolver",

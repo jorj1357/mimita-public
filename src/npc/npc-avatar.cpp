@@ -101,7 +101,23 @@ std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
         recordAvatarDecision(npcId, transformEpoch, forced, "forced");
         return forced;
     }
-    const std::vector<std::string> avatars = AvatarSystem::instance().listAvatars();
+    const std::vector<std::string> discoveredAvatars = AvatarSystem::instance().listAvatars();
+    // NPC avatar identity currently travels in CompactEntityData::avatarName,
+    // whose wire capacity is 15 characters plus the terminator.  Do not let a
+    // longer folder name enter the selection path: truncating it in a snapshot
+    // makes the client request a non-existent avatar and leaves the NPC on the
+    // white/default body.  A future packet/schema migration can raise this
+    // limit, but silently truncating a live identity is never safe.
+    std::vector<std::string> avatars;
+    avatars.reserve(discoveredAvatars.size());
+    for (const std::string& avatar : discoveredAvatars) {
+        if (avatar.size() < 16)
+            avatars.push_back(avatar);
+        else
+            Debug::warn(Debug::Category::Avatar,
+                        "[NPC AVATAR] skipping '%s': exceeds 15-byte network identity\n",
+                        avatar.c_str());
+    }
     if (avatars.empty()) return {};
 
     // The EXE owns discovery and validation of asset names. The hot policy

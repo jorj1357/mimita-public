@@ -34,9 +34,57 @@ const std::uint64_t kDomain = gameHash("projectiles.60");
 constexpr std::uint64_t kRocketNetworkId = 5;
 constexpr std::uint64_t kGrenadeNetworkId = 7;
 
+// Tick-sampled rocket telemetry: collect each rocket's state every tick and emit
+// ONE consolidated record every 60 ticks (1 second at 60 Hz). Editing the window
+// changes the live cadence; no EXE rebuild and no per-tick spam.
+constexpr std::uint32_t kSampleWindowTicks = 60;
+
 using DamageApplyFn = bool (MIMITA_GAME_CALL *)(void*, GameDamageApplyV1*);
 using EffectSpawnFn = void (MIMITA_GAME_CALL *)(void*, const GameEffectSpawnV1*);
 
+const char* explosionReasonName(std::uint32_t reason)
+{
+    switch (reason) {
+    case HOT_PROJECTILE_REASON_WORLD: return "world";
+    case HOT_PROJECTILE_REASON_ACTOR: return "actor";
+    case HOT_PROJECTILE_REASON_LIFETIME: return "lifetime";
+    case HOT_PROJECTILE_REASON_DIRECT: return "direct";
+    default: return "none";
+    }
+}
+
+// One generic rocket lifecycle log record. Category is ROCKET so
+// debuglogger.json owns the level/destination policy (no hard-coded level gate).
+void logRocketEvent(GameplayContextV1* ctx, std::uint32_t level, const char* name,
+                    const HotProjectileStateV1& s, std::uint64_t projectileEntity,
+                    const char* fmt, ...)
+{
+    if (!ctx || !ctx->resolveCapability || !name)
+        return;
+    auto fn = reinterpret_cast<GameLogEventFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_LOG_EVENT));
+    if (!fn)
+        return;
+    GameLogEventV1 event{};
+    event.level = level;
+    event.simulationTick = static_cast<std::uint32_t>(ctx->tick);
+    event.serverTick = ctx->tick;
+    event.entityId = projectileEntity;
+    event.actorId = s.ownerEntity;
+    event.actorKind = 5u;  // "other": projectile/logical owner
+    std::snprintf(event.category, sizeof(event.category), "%s", "ROCKET");
+    std::snprintf(event.name, sizeof(event.name), "%s", name);
+    if (fmt) {
+        va_list args;
+        va_start(args, fmt);
+        std::vsnprintf(event.message, sizeof(event.message), fmt, args);
+        va_end(args);
+    }
+    fn(nullptr, &event);
+}
+
+// Generic (non-rocket-state) projectile log used where the full projectile
+// state is not in scope, e.g. damage application.
 void logProjectileEvent(GameplayContextV1* ctx, const char* name,
                         std::uint64_t tick, const char* fmt, ...)
 {
@@ -50,7 +98,7 @@ void logProjectileEvent(GameplayContextV1* ctx, const char* name,
     event.level = 1u;
     event.simulationTick = static_cast<std::uint32_t>(tick);
     event.serverTick = tick;
-    std::snprintf(event.category, sizeof(event.category), "%s", "projectile");
+    std::snprintf(event.category, sizeof(event.category), "%s", "ROCKET");
     std::snprintf(event.name, sizeof(event.name), "%s", name);
     if (fmt) {
         va_list args;
@@ -59,6 +107,87 @@ void logProjectileEvent(GameplayContextV1* ctx, const char* name,
         va_end(args);
     }
     fn(nullptr, &event);
+}
+
+// ── Tick sample buffer ──────────────────────────────────────────────
+struct RocketSample {
+    std::uint64_t projectileEntity;
+    std::uint64_t tick;
+    float position[3];
+    float velocity[3];
+    float age;
+};
+struct RocketSampleBuffer {
+    std::uint64_t windowStartTick = 0;
+    RocketSample samples[128];
+    std::uint32_t count = 0;
+};
+RocketSampleBuffer g_rocketSamples;
+
+void recordRocketSample(const HotProjectileStateV1& s, std::uint64_t entity,
+                        std::uint64_t tick)
+{
+    if (g_rocketSamples.windowStartTick == 0)
+        g_rocketSamples.windowStartTick = tick;
+    if (g_rocketSamples.count >= 128)
+        return;
+    RocketSample& sample = g_rocketSamples.samples[g_rocketSamples.count++];
+    sample.projectileEntity = entity;
+    sample.tick = tick;
+    sample.position[0] = s.position[0];
+    sample.position[1] = s.position[1];
+    sample.position[2] = s.position[2];
+    sample.velocity[0] = s.velocity[0];
+    sample.velocity[1] = s.velocity[1];
+    sample.velocity[2] = s.velocity[2];
+    sample.age = s.age;
+}
+
+// Emit ONE consolidated `rocket.tick.sample` record for the last window, then
+// reset the buffer for the next window.
+void flushRocketSamples(GameplayContextV1* ctx, std::uint64_t tick)
+{
+    if (g_rocketSamples.count == 0) {
+        g_rocketSamples = RocketSampleBuffer{};
+        return;
+    }
+    if (!ctx || !ctx->resolveCapability) {
+        g_rocketSamples = RocketSampleBuffer{};
+        return;
+    }
+    auto fn = reinterpret_cast<GameLogEventFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_LOG_EVENT));
+    if (!fn) {
+        g_rocketSamples = RocketSampleBuffer{};
+        return;
+    }
+    GameLogEventV1 event{};
+    event.level = 1u;  // debug
+    event.simulationTick = static_cast<std::uint32_t>(tick);
+    event.serverTick = tick;
+    std::snprintf(event.category, sizeof(event.category), "%s", "ROCKET");
+    std::snprintf(event.name, sizeof(event.name), "%s", "rocket.tick.sample");
+    const std::uint64_t windowStart = g_rocketSamples.windowStartTick;
+    const std::uint32_t n = g_rocketSamples.count;
+    // Render every tick 1..60 for each rocket as a compact bracket list.
+    int offset = std::snprintf(event.message, sizeof(event.message),
+                               "window=[%llu..%llu] samples=%u ",
+                               (unsigned long long)windowStart,
+                               (unsigned long long)tick, n);
+    for (std::uint32_t i = 0; i < n && offset > 0 &&
+                             offset < (int)sizeof(event.message) - 1; ++i) {
+        const RocketSample& sample = g_rocketSamples.samples[i];
+        offset += std::snprintf(event.message + offset,
+                                sizeof(event.message) - (std::size_t)offset,
+                                "{%llu t=%llu p=(%.2f,%.2f,%.2f) v=(%.1f,%.1f,%.1f) a=%.2f}",
+                                (unsigned long long)sample.projectileEntity,
+                                (unsigned long long)sample.tick,
+                                sample.position[0], sample.position[1],
+                                sample.position[2], sample.velocity[0],
+                                sample.velocity[1], sample.velocity[2], sample.age);
+    }
+    fn(nullptr, &event);
+    g_rocketSamples = RocketSampleBuffer{};
 }
 
 // True when this process owns a local view (client / listen host). A dedicated
@@ -171,19 +300,20 @@ void applyDamageTo(GameplayContextV1* ctx, std::uint64_t victim,
 
 void explode(GameplayContextV1* ctx, const HotProjectileStateV1& s,
              const float at[3], std::uint64_t projectileEntity,
-             std::uint64_t tick)
+             std::uint64_t tick, std::uint32_t reason)
 {
-    logProjectileEvent(ctx, "projectile.explosion.before", tick,
-                       "projectile=%llu owner=%llu type=%llu pos=(%.3f,%.3f,%.3f) splash=%.3f",
-                       static_cast<unsigned long long>(projectileEntity),
-                       static_cast<unsigned long long>(s.ownerEntity),
-                       static_cast<unsigned long long>(s.typeId), at[0], at[1], at[2],
-                       s.splashRadius);
+    const char* reasonName = explosionReasonName(reason);
+    logRocketEvent(ctx, 2, "rocket.explosion.before", s, projectileEntity,
+                   "reason=%s pos=(%.3f,%.3f,%.3f) splash=%.3f weapon=%llu serial=%llu",
+                   reasonName, at[0], at[1], at[2], s.splashRadius,
+                   (unsigned long long)s.weaponNetworkId,
+                   (unsigned long long)s.fireSerial);
     // Broadcast the authoritative explosion first so remote clients always see
-    // it, even if a later local effect path is skipped.
+    // it, even if a later local effect path is skipped. The origin process is
+    // excluded so it composes its own single local detonation (no double sound).
     hotBroadcastProjectileExplode(ctx, (std::uint32_t)projectileEntity, s.ownerEntity,
                                   0u, (std::uint32_t)s.typeId, (std::uint32_t)s.typeId,
-                                  at, s.splashRadius);
+                                  at, s.splashRadius, true /* exclude origin */);
 
     // Rocket/grenade detonations compose the shared explosion recipe so the
     // flash/smoke/debris/sound appears where the projectile actually stopped.
@@ -272,12 +402,24 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t tick, float dt)
     std::uint64_t entities[128];
     const std::uint32_t count = ctx->dynamicEnumerateComponent(
         ctx->host, HOT_PROJECTILE_COMPONENT, entities, 128);
+    // One consolidated telemetry record per window (1 second at 60 Hz).
+    if (g_rocketSamples.windowStartTick != 0 &&
+        tick - g_rocketSamples.windowStartTick >= kSampleWindowTicks)
+        flushRocketSamples(ctx, tick);
+
     for (std::uint32_t i = 0; i < count; ++i)
     {
         HotProjectileStateV1 s{};
         if (!ctx->dynamicReadComponent(ctx->host, entities[i],
                                        HOT_PROJECTILE_COMPONENT, &s, sizeof(s)))
             continue;
+
+        // Single-detonation guard: an entity already marked detonated must never
+        // be simulated or exploded again, even if its destroy is not yet visible.
+        if (s.detonated) {
+            ctx->entityDestroy(ctx->host, entities[i]);
+            continue;
+        }
 
         s.age += dt;
         s.velocity[2] -= s.gravity * dt;
@@ -287,7 +429,10 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t tick, float dt)
         }
         const float prev[3] = {s.position[0], s.position[1], s.position[2]};
 
+        recordRocketSample(s, entities[i], tick);
+
         bool exploded = false;
+        std::uint32_t reason = HOT_PROJECTILE_REASON_NONE;
         float at[3] = {s.position[0], s.position[1], s.position[2]};
 
         // Apply a world hit: bounce or explode. Shared by the collision.main
@@ -314,6 +459,13 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t tick, float dt)
             {
                 at[0] = hit[0]; at[1] = hit[1]; at[2] = hit[2];
                 exploded = true;
+                reason = HOT_PROJECTILE_REASON_WORLD;
+                logRocketEvent(ctx, 2, "rocket.world_hit", s, entities[i],
+                               "pos=(%.3f,%.3f,%.3f) normal=(%.2f,%.2f,%.2f) speed=%.1f",
+                               hit[0], hit[1], hit[2], nrm[0], nrm[1], nrm[2],
+                               std::sqrt(s.velocity[0] * s.velocity[0] +
+                                         s.velocity[1] * s.velocity[1] +
+                                         s.velocity[2] * s.velocity[2]));
             }
         };
 
@@ -416,11 +568,18 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t tick, float dt)
                 const float ddz = tf.position[2] - s.position[2];
                 if (ddx * ddx + ddy * ddy + ddz * ddz <= hitRadius * hitRadius)
                 {
+                    logRocketEvent(ctx, 2, "rocket.actor_hit", s, actors[a],
+                                   "owner=%llu victim=%llu pos=(%.3f,%.3f,%.3f) direct=%.1f",
+                                   (unsigned long long)s.ownerEntity,
+                                   (unsigned long long)actors[a],
+                                   s.position[0], s.position[1], s.position[2],
+                                   s.impactDamage);
                     if (s.impactDamage > 0.0f)
                         applyDamageTo(ctx, actors[a], s.ownerEntity, s.impactDamage,
                                       2.0f, nullptr, (std::uint32_t)s.typeId,
                                       s.position, tick);
                     exploded = true;
+                    reason = HOT_PROJECTILE_REASON_ACTOR;
                 }
             }
         }
@@ -429,7 +588,10 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t tick, float dt)
         if (!exploded && s.age >= s.lifetime)
         {
             if (s.flags & HOT_PROJECTILE_EXPLODE_ON_LIFETIME)
+            {
                 exploded = true;
+                reason = HOT_PROJECTILE_REASON_LIFETIME;
+            }
             else
             {
                 ctx->entityDestroy(ctx->host, entities[i]);
@@ -439,18 +601,21 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t tick, float dt)
 
         if (exploded)
         {
-            logProjectileEvent(ctx, "projectile.explosion.after", tick,
-                               "projectile=%llu owner=%llu type=%llu destroying=1",
-                               static_cast<unsigned long long>(entities[i]),
-                               static_cast<unsigned long long>(s.ownerEntity),
-                               static_cast<unsigned long long>(s.typeId));
-            explode(ctx, s, at, entities[i], tick);
+            // Mark detonated before any side effect so a re-observation of this
+            // entity in the same or a later tick cannot explode it twice.
+            s.detonated = 1u;
+            s.explosionReason = reason;
+            ctx->dynamicWriteComponent(ctx->host, entities[i],
+                                       HOT_PROJECTILE_COMPONENT, &s, sizeof(s));
+            logRocketEvent(ctx, 2, "rocket.explosion.after", s, entities[i],
+                           "reason=%s destroying=1",
+                           explosionReasonName(reason));
+            explode(ctx, s, at, entities[i], tick, reason);
             if (s.splashRadius <= 0.0f && s.impactDamage > 0.0f)
                 spawnImpactEffect(ctx, at);
-            logProjectileEvent(ctx, "projectile.destroy", tick,
-                               "projectile=%llu owner=%llu exploded=1",
-                               static_cast<unsigned long long>(entities[i]),
-                               static_cast<unsigned long long>(s.ownerEntity));
+            logRocketEvent(ctx, 2, "rocket.destroy", s, entities[i],
+                           "reason=%s exploded=1",
+                           explosionReasonName(reason));
             ctx->entityDestroy(ctx->host, entities[i]);
             continue;
         }

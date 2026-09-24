@@ -6,6 +6,14 @@
 * Does NOT own server projectile authority or packet routing.
 * Does NOT define generic weapon request validation.
 * Does NOT implement movement, spawn, or respawn policy.
+*
+* LEGACY (cold compatibility fallback). The canonical rocket owner is now the
+* hot path: `src/hot-reload/modules/tools/rocket-tool.cpp` (fire/spawn) and
+* `src/hot-reload/modules/tools/hot-projectiles.cpp` (movement/collision/
+* explosion/damage/effects). The player and NPC cold callers dispatch a generic
+* `ToolUsePolicyV1` first and only fall back to this file when the hot router
+* declines. Rocket behavior edits belong in the hot files; this file is retained
+* (not deleted) so behavior is unchanged where the hot path is inactive.
 */
 
 #include "weapon-rocket-launcher.h"

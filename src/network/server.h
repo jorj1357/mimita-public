@@ -91,6 +91,11 @@ struct ServerGameOverrides
     int maxHpOverride = 0;            // 0 = default 100
     bool spawnOverrideEnabled = false;
     glm::vec3 spawnOverridePosition{0.0f};
+    // Live startup-NPC configuration facts. The hot npc.lifecycle policy owns
+    // the decision; these are inputs read each reconciliation. Default matches
+    // the opt-in startup behavior (no automatic NPCs unless requested).
+    bool startupNpcsEnabled = false;
+    uint32_t startupNpcCount = 0;
 };
 ServerGameOverrides& serverGameOverrides();
 // The player name that launched/owns this server (from --host-player or launch
@@ -646,6 +651,12 @@ struct ServerNpc
     // 10 seconds of broadcast history at 60 Hz so hit rewind always has the
     // exact pose the shooter rendered, even across long lag/blackout windows.
     static constexpr size_t MAX_POS_HISTORY = 600;
+    // Origin of this NPC life. Automatic startup NPCs are owned by the hot
+    // npc.lifecycle reconciliation and may be removed when the desired count
+    // drops; manual/gamemode NPCs are preserved.
+    std::uint32_t origin = 0;  // GameNpcOriginV1: 0 startup, 1 manual, 2 gamemode, 3 respawn
+    // Starting weapon id from the npc.lifecycle policy (empty = cold default).
+    std::string startingWeapon;
 };
 
 // Shared actor lifecycle adapter for the authoritative NPC body. The NPC
@@ -1262,8 +1273,8 @@ struct ServerLaunchSettings
     uint32_t maxPlayers = 999;
     bool passwordProtected = false;
     std::string password;
-    bool startupNpcsEnabled = true;
-    uint32_t startupNpcCount = 3;
+    bool startupNpcsEnabled = false;
+    uint32_t startupNpcCount = 0;
     uint16_t port = DEFAULT_PORT;
     std::string serverCode;
     bool externalProcessLaunched = false;

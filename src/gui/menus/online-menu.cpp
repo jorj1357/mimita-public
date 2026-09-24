@@ -373,7 +373,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
     if (!defaultsInitialized)
     {
         if (b.get("server.startup_npcs").empty())
-            b.set("server.startup_npcs", "true");
+            b.set("server.startup_npcs", "false");
 
         if (b.get("server.startup_npc_count").empty())
             b.set("server.startup_npc_count", "1");

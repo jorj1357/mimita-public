@@ -57,7 +57,10 @@ namespace HotRespawnImpl {
 // Initial death timer: the configured delay, or -1 so the pump never revives.
 inline void initialTimer(GameRespawnRuleV1& r)
 {
-    r.outRespawnSeconds = r.respawnsEnabled ? r.respawnSeconds : -1.0f;
+    // Default gameplay policy is immediate next-fixed-tick respawn.  The
+    // stable EXE still owns the death/respawn state machine; this hot policy
+    // owns the delay and can be edited live for future modes.
+    r.outRespawnSeconds = r.respawnsEnabled ? 0.0f : -1.0f;
     r.result = 1u;
 }
 

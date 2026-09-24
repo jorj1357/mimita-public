@@ -421,6 +421,7 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
 // identity, control source, and the movement/aim intent for this life.
 void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
 {
+    npc.hotFireIntent = false;
     // Identity + components are maintained even when no hot module is loaded,
     // so the entity registry is the canonical record for the migrated slice.
     const EntityId entity = Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id);
@@ -512,6 +513,8 @@ void applyLiveActorBehavior(Npc& npc, InputState& input, float dt, double now)
         npc.emotion.stress = std::clamp(state.emotionStress, 0.0f, 1.0f);
         return;
     }
+
+    npc.hotFireIntent = (command.buttons & ACTOR_BUTTON_FIRE) != 0;
 
     if (input.movementPressed)
         input.wishMoveXY *= std::clamp(command.speedScale, 0.0f, 2.0f);
@@ -1187,6 +1190,22 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             if (dist < 8.0f)
                 npc.sensors.hasTarget = true;
         }
+    }
+
+    // Combat intent must not depend on landing in the probabilistic Attack
+    // state.  Equipping a weapon and acquiring a hostile target are separate
+    // concerns: the state machine may choose Idle/Aim/Hold/Strafe for
+    // movement, but those states must still allow the weapon owner to decide
+    // whether this tick can fire.  Keep ammo, cooldown, reload, LOS, aim, and
+    // damage validation in NpcCombat::tryFire; this only restores the missing
+    // actor action intent.
+    if (!npc.bombTagActive && npc.sensors.hasTarget && cachedWeaponDef &&
+        (!LiveActor::available() || npc.hotFireIntent))
+    {
+        const auto runtime = npc.body.weaponRuntimes.find(cachedWeaponDef->id);
+        if (runtime != npc.body.weaponRuntimes.end() &&
+            (runtime->second.currentAmmo > 0 || runtime->second.reserveAmmo > 0))
+            attack = true;
     }
 
     {

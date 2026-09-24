@@ -19,6 +19,9 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "live-code/live-behavior.h"
+#include "live-code/live-identity.h"
+#include "network/network-weapons.h"
 #include "effects/effect-part.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physics-types.h"
@@ -438,15 +441,42 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         const EntityId npcEntity = Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id);
         Ecs::setControlSource(npcEntity, ControlSource::ServerNpc);
         Ecs::setAuthority(npcEntity, NetworkAuthority::Server);
-        WeaponRocketLauncher::fire(gNpcRocketState, *def, rt, npc.body, npcPos, aimDir,
-                                   npcEntity, EntityRealm::Server);
+
+        // Hot tool bridge (Phase 3): offer the NPC rocket use to the hot tool
+        // dispatcher. When the hot rocket behavior owns it, the canonical
+        // projectile entity is created by the hot path and the legacy cold
+        // launcher is skipped. Cold remains the fallback when no hot owner acts.
+        bool hotOwned = false;
+        {
+            ToolUsePolicyV1 use{};
+            use.userEntity = Ecs::raw(npcEntity);
+            use.toolId = gameHash(def->id.c_str());
+            use.toolNetworkId = MimitaNet::networkWeaponTypeForDefinition(*def);
+            use.ownerId = npc.id;
+            use.tick = LiveIdentity::simulationTick();
+            use.baseFire = 1;
+            use.outFire = 1;
+            use.origin[0] = npcPos.x;
+            use.origin[1] = npcPos.y;
+            use.origin[2] = npcPos.z;
+            use.direction[0] = aimDir.x;
+            use.direction[1] = aimDir.y;
+            use.direction[2] = aimDir.z;
+            if (LiveBehavior::dispatchToolUse(use, use.tick) && use.handled &&
+                use.outFire == 0)
+                hotOwned = true;
+        }
+        if (!hotOwned) {
+            WeaponRocketLauncher::fire(gNpcRocketState, *def, rt, npc.body, npcPos, aimDir,
+                                       npcEntity, EntityRealm::Server);
+        }
         fired = true;
         {
             float range = effectiveRange(*def);
             shotEnd = npcPos + aimDir * (range > 0.0f ? range : 100.0f);
         }
-        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s rocketLauncher dir=(%.2f %.2f %.2f)\n",
-                   npc.id, def->id.c_str(), aimDir.x, aimDir.y, aimDir.z);
+        Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s rocketLauncher hot=%d dir=(%.2f %.2f %.2f)\n",
+                   npc.id, def->id.c_str(), (int)hotOwned, aimDir.x, aimDir.y, aimDir.z);
         break;
     }
     case WeaponBehaviorType::Melee:

@@ -15,6 +15,7 @@
 
 #include "hot-reload/game-api.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-npc-lifecycle.h"
 
 namespace {
 
@@ -165,6 +166,42 @@ bool runCapabilitySelfTest(std::string& report)
           "P6 override provider generation = 46", report);
     check(rt.overrideCapability(kKernelEcho) == nullptr,
           "P6 non-overridable kernel id has no override", report);
+
+    // P7: the shared NPC lifecycle fallback contract (used when no hot provider
+    // is registered). Reconcile aligns the automatic set; manual NPCs never
+    // gate automatic spawn/removal.
+    {
+        NpcLifecyclePolicyV1 r{};
+        r.structSize = sizeof(NpcLifecyclePolicyV1);
+        r.reason = GAME_NPC_LIFECYCLE_RECONCILE;
+        r.configStartupEnabled = 1u;
+        r.requestedCount = 3u;
+        r.existingAutomaticCount = 1u;
+        r.maxSpawn = 256u;
+        MimitaNet::HotNpcLifecycleImpl::evaluate(r);
+        check(r.handled && r.spawnCount == 2u && r.destroyAutomatic == 0u,
+              "P7 reconcile spawns missing automatic NPCs", report);
+
+        NpcLifecyclePolicyV1 d{};
+        d.structSize = sizeof(NpcLifecyclePolicyV1);
+        d.reason = GAME_NPC_LIFECYCLE_RECONCILE;
+        d.configStartupEnabled = 0u;
+        d.existingAutomaticCount = 2u;
+        d.existingManualCount = 5u;
+        MimitaNet::HotNpcLifecycleImpl::evaluate(d);
+        check(d.handled && d.desiredAutomatic == 0u && d.destroyAutomatic == 1u &&
+                  d.spawnCount == 0u,
+              "P7 disabled startup removes automatic only", report);
+
+        NpcLifecyclePolicyV1 rr{};
+        rr.structSize = sizeof(NpcLifecyclePolicyV1);
+        rr.reason = GAME_NPC_LIFECYCLE_RESPAWN;
+        rr.respawnPlayerId = 42u;
+        rr.respawnEnabled = 1u;
+        MimitaNet::HotNpcLifecycleImpl::evaluate(rr);
+        check(rr.handled && rr.outSpawnId == 42u && rr.outRespawnNow == 1u,
+              "P7 respawn revives the same id", report);
+    }
 
     // Deactivate: package providers retire; kernel primitives survive.
     rt.deactivate();

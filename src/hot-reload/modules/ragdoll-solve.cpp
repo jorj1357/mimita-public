@@ -496,9 +496,52 @@ void MIMITA_GAME_CALL ragdollSolveProvider(void* host, GameRagdollSolveV1* s)
     s->applied = 1;
 }
 
+// Hot toggle policy. The kernel only provides input and the stable state
+// bridge; the edge policy itself lives in the replaceable DLL.
+void MIMITA_GAME_CALL ragdollToggleTick(void* host, std::uint64_t tick, float)
+{
+    if (!host)
+        return;
+    GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
+    if (!ctx->resolveCapability)
+        return;
+
+    auto inputFn = reinterpret_cast<GameInputReadFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_INPUT_READ));
+    auto toggleFn = reinterpret_cast<GameRagdollToggleFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_RAGDOLL_TOGGLE));
+    if (!inputFn || !toggleFn)
+        return;
+
+    GameInputStateV1 input{};
+    if (!inputFn(ctx->host, &input))
+        return;
+
+    static std::uint32_t previousHeld = 0;
+    const bool pressed = input.ragdollTogglePressed != 0;
+    const bool edge = pressed && previousHeld == 0;
+    previousHeld = pressed ? 1u : 0u;
+    if (!edge)
+        return;
+
+    GameRagdollToggleV1 request{};
+    request.structSize = sizeof(request);
+    request.request = 3u;
+    request.tick = tick;
+    toggleFn(ctx->host, &request);
+}
+
 const MimitaHotPackage::CapabilityRegistrar s_ragdollSolveProvider{
     {GAME_CAP_RAGDOLL_SOLVE, gameHash("sig.ragdoll.solve.v1"), 0,
      reinterpret_cast<void*>(&ragdollSolveProvider), "ragdoll.solve"}};
+
+const MimitaHotPackage::SystemRegistrar s_ragdollToggleSystem{
+    // GameSystemDescriptorV1::priority is uint32_t and the domain runs in
+    // ascending priority order, so the intended "before priority 0" is 0
+    // (the minimum). A negative literal narrowed into the field and failed the
+    // build; 0 preserves the earliest-run intent.
+    {gameHash("ragdoll.toggle-policy"), GAME_DOMAIN_GAMEPLAY, 0u, 0,
+     ragdollToggleTick, "ragdoll.toggle-policy"}};
 
 } // namespace
 

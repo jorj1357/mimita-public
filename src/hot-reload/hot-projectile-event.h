@@ -26,7 +26,8 @@ inline std::uint32_t hotOwnerPlayerId(std::uint64_t ownerEntity)
 inline void hotBroadcastProjectileExplode(
     GameplayContextV1* ctx, std::uint32_t projectileId, std::uint64_t ownerEntity,
     std::uint32_t fireSerial, std::uint32_t weaponNetworkId,
-    std::uint32_t weaponDefNetworkId, const float position[3], float radius)
+    std::uint32_t weaponDefNetworkId, const float position[3], float radius,
+    bool excludeOrigin = false)
 {
     GameReliableEventTicketV1 ticket{};
     hotEventNextId(ctx, ticket);
@@ -47,7 +48,12 @@ inline void hotBroadcastProjectileExplode(
     packet.radius = radius;
 
     GameEventBroadcastV1 request{};
-    request.flags = GAME_EVENT_BROADCAST_RELIABLE;
+    // When the origin process composes its own local detonation (single sound),
+    // exclude it from the broadcast so it does not also apply the remote
+    // explosion event locally (which would double the sound).
+    request.flags = GAME_EVENT_BROADCAST_RELIABLE |
+        (excludeOrigin ? GAME_EVENT_BROADCAST_EXCLUDE_OWNER : 0u);
+    request.ownerPlayerId = hotOwnerPlayerId(ownerEntity);
     request.eventId = ticket.eventId;
     request.eventSessionId = ticket.eventSessionId;
     request.payloadSize = (std::uint32_t)sizeof(packet);

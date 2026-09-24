@@ -23,6 +23,9 @@ struct World;
 struct WeaponDefinition;
 struct WeaponRuntime;
 
+// LEGACY (cold compatibility fallback): the canonical rocket owner is the hot
+// `rocket-tool.cpp` / `hot-projectiles.cpp`. Retained so cold callers can fall
+// back when the hot tool router declines; do not add new rocket behavior here.
 struct RocketLauncherState {
     struct Rocket {
         glm::vec3 position{0.0f};

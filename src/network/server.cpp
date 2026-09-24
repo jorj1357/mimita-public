@@ -22,6 +22,7 @@
 #include "network/multiplayer-context.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-server-policy.h"
+#include "hot-reload/hot-npc-lifecycle.h"
 #include "hot-reload/hot-server-tick.h"
 #include "live-code/net-hot-log.h"
 #include "network/coordinator-client.h"
@@ -585,25 +586,38 @@ int runServer(const LaunchOptions& options)
             serverCommunityStartMatch(false);
     }
 
-    // Startup NPCs (controlled by --npcs and --no-npcs flags). The count and the
-    // spawn-point-vs-fallback choice are hot (net.server-policy).
+    // Startup NPCs. The EXE no longer permanently decides the count: it records
+    // the launch options as live facts and asks the hot npc.lifecycle policy.
+    // The per-tick reconciliation then keeps the automatic set aligned, so a
+    // live policy/config change applies without a restart.
+    serverGameOverrides().startupNpcsEnabled = options.npcsEnabled;
+    serverGameOverrides().startupNpcCount = options.npcCount;
     {
-        GameServerStartupNpcV1 npcPlan{};
-        npcPlan.structSize = sizeof(GameServerStartupNpcV1);
-        npcPlan.npcsEnabled = options.npcsEnabled ? 1u : 0u;
+        auto npcLifecycleFn = reinterpret_cast<GameNpcLifecycleFn>(
+            MimitaRuntime::GenericRuntime::instance().capability(
+                GAME_CAP_NPC_LIFECYCLE));
+        NpcLifecyclePolicyV1 npcPlan{};
+        npcPlan.structSize = sizeof(NpcLifecyclePolicyV1);
+        npcPlan.reason = GAME_NPC_LIFECYCLE_STARTUP;
+        npcPlan.configStartupEnabled = options.npcsEnabled ? 1u : 0u;
         npcPlan.requestedCount = options.npcCount;
         npcPlan.spawnPointCount = (uint32_t)world.spawnPoints.size();
         npcPlan.maxSpawn = 256u;
-        if (serverPolicyFn && serverPolicyFn(nullptr) && serverPolicyFn(nullptr)->startupNpc)
-            serverPolicyFn(nullptr)->startupNpc(nullptr, &npcPlan);
+        if (npcLifecycleFn)
+            npcLifecycleFn(nullptr, &npcPlan);
         else
-            HotServerPolicyImpl::startupNpc(npcPlan);
-        uint32_t npcCount = npcPlan.count;
+            HotNpcLifecycleImpl::evaluate(npcPlan);
+        uint32_t npcCount = npcPlan.spawnCount;
         for (uint32_t i = 0; i < npcCount; ++i)
         {
             ServerNpc npc;
             npc.entityId = nextEntityId++;
+            npc.origin = GAME_NPC_ORIGIN_STARTUP;
             npc.name = "NPC " + std::to_string(i + 1);
+            if (npcPlan.outHealth > 0)
+                npc.health = (int)npcPlan.outHealth;
+            if (npcPlan.startingWeapon[0])
+                npc.startingWeapon = npcPlan.startingWeapon;
             if (npcPlan.useSpawnPoints && !world.spawnPoints.empty())
             {
                 size_t idx = i % world.spawnPoints.size();

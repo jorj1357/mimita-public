@@ -356,13 +356,18 @@ struct ActorStateV1 {
 
 struct ActorCommandV1 {
     float speedScale;
-    std::uint32_t buttons;  // reserved action bits
+    std::uint32_t buttons;  // ActorCommandButtons
     std::uint32_t role;
     float emotionPanic;
     float emotionFear;
     float emotionConfidence;
     float emotionStress;
     std::uint64_t tick;
+};
+
+enum ActorCommandButtons : std::uint32_t {
+    ACTOR_BUTTON_NONE = 0,
+    ACTOR_BUTTON_FIRE = 1u << 0,
 };
 
 struct ActorEventV1 {
@@ -1094,6 +1099,73 @@ static constexpr std::uint32_t GAME_MOVEMENT_VALIDATION_FORCE_ACTIVE = 1u;
 // These let the hot package own decisions that used to live only in cold code.
 // Every cold caller dispatches with facts; a handler that sets `handled` owns
 // the decision; otherwise the cold default behavior runs unchanged.
+
+// ── NPC lifecycle policy (generic capability) ───────────────────────
+// ONE hot owner for NPC lifecycle decisions: whether automatic startup NPCs
+// are enabled, how many, spawn placement, initial health, starting
+// weapon/loadout, difficulty/profile, respawn, and stale-NPC reconciliation.
+// The cold EXE owns entity storage, sockets, the fixed-tick loop, and applying
+// the result; it never decides the policy. POD only; no STL/engine pointers.
+static constexpr std::uint64_t GAME_CAP_NPC_LIFECYCLE = gameHash("npc.lifecycle");
+static constexpr std::uint64_t GAME_SIG_NPC_LIFECYCLE =
+    gameHash("sig.npc.lifecycle.v1");
+
+// Why an NPC lifecycle evaluation happened.
+enum GameNpcLifecycleReasonV1 : std::uint32_t {
+    GAME_NPC_LIFECYCLE_STARTUP = 0,      // server construction
+    GAME_NPC_LIFECYCLE_RECONCILE = 1,    // per-tick reconciliation
+    GAME_NPC_LIFECYCLE_MANUAL_SPAWN = 2, // npc_spawn command
+    GAME_NPC_LIFECYCLE_RESPAWN = 3,      // one NPC respawning
+    GAME_NPC_LIFECYCLE_GENERATION = 4,   // a new hot generation activated
+};
+
+// NPC origin: automatic startup NPCs are owned by the lifecycle policy and may
+// be removed when the desired count drops; manual/gamemode NPCs are preserved.
+enum GameNpcOriginV1 : std::uint32_t {
+    GAME_NPC_ORIGIN_STARTUP = 0,
+    GAME_NPC_ORIGIN_MANUAL = 1,
+    GAME_NPC_ORIGIN_GAMEMODE = 2,
+    GAME_NPC_ORIGIN_RESPAWN = 3,
+};
+
+struct NpcLifecyclePolicyV1 {
+    std::uint32_t structSize;
+    std::uint32_t reason;                 // GameNpcLifecycleReasonV1
+    // in: current live configuration facts (cold reads the live config)
+    std::uint32_t configStartupEnabled;
+    std::uint32_t requestedCount;         // configured startup count
+    std::uint32_t existingAutomaticCount;
+    std::uint32_t existingManualCount;
+    std::uint32_t maxSpawn;
+    std::uint32_t spawnPointCount;
+    // in: one-NPC respawn facts (reason == RESPAWN)
+    std::uint32_t respawnPlayerId;
+    std::uint32_t respawnEnabled;
+    float respawnSeconds;
+    float respawnPosition[3];
+    float respawnYaw;
+    // out: decided lifecycle
+    std::uint32_t spawnCount;             // automatic NPCs to create this eval
+    std::uint32_t desiredAutomatic;       // target automatic NPC total (reconcile)
+    std::uint32_t destroyAutomatic;       // 1 = remove automatic NPCs to match
+    std::uint32_t allowManualSpawn;
+    std::uint32_t useSpawnPoints;
+    std::uint32_t outSpawnId;             // respawn: the NPC id to revive
+    std::uint32_t outHealth;              // initial/max health (0 = cold default)
+    std::uint32_t outRespawnNow;          // respawn: 1 = revive this tick
+    // out: starting weapon/loadout (weapon id hashes, most-preferred first)
+    std::uint32_t loadoutCount;
+    std::uint32_t loadout[8];
+    // out: starting weapon id as a fixed string (cold looks up the registry);
+    // empty = cold default. Fixed size, no pointers.
+    char startingWeapon[32];
+    float outDifficulty;
+    std::uint32_t handled;
+    std::uint32_t result;
+};
+
+using GameNpcLifecycleFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                     NpcLifecyclePolicyV1* request);
 
 // actor.spawn-policy: choose/suppress an actor spawn (startup NPCs and players).
 static constexpr std::uint64_t GAME_EVENT_ACTOR_SPAWN_POLICY =
@@ -2233,6 +2305,21 @@ struct GameRagdollAimV1 {
 };
 using GameRagdollAimFn = void (MIMITA_GAME_CALL *)(void* host,
                                                    GameRagdollAimV1* aim);
+
+// ragdoll.toggle: generic kernel bridge for the hot ragdoll policy. The hot
+// module decides when a toggle is requested; the stable kernel only applies
+// the request to the persistent local Player/RagdollModeSystem state.
+static constexpr std::uint64_t GAME_CAP_RAGDOLL_TOGGLE =
+    gameHash("ragdoll.toggle");
+struct GameRagdollToggleV1 {
+    std::uint32_t structSize;
+    std::uint32_t request;       // 1 = activate, 2 = deactivate, 3 = toggle
+    std::uint64_t tick;
+    std::uint32_t applied;       // kernel result
+    std::uint32_t active;        // resulting active state
+};
+using GameRagdollToggleFn = bool (MIMITA_GAME_CALL *)(
+    void* host, GameRagdollToggleV1* toggle);
 // Generic authoritative server-context primitives. These let hot code mutate
 // authoritative world state through stable generic handles; the kernel keeps
 // ownership of the players/projectiles containers and networking.

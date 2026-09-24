@@ -35,6 +35,9 @@ bool MIMITA_GAME_CALL chooseActorCommand(
     const float confidence = std::clamp(state->emotionConfidence, 0.0f, 1.0f);
     command->speedScale = std::clamp(
         1.0f - 0.30f * fear + 0.30f * (confidence - 0.5f), 0.2f, 1.6f);
+    if (state->kind == 1 && (state->flags & 4u) != 0 &&
+        state->health > 0.0f)
+        command->buttons |= ACTOR_BUTTON_FIRE;
     command->role = state->role;
     command->emotionPanic = state->emotionPanic;
     command->emotionFear = state->emotionFear;

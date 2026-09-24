@@ -1478,6 +1478,9 @@ void handleSpawnNpcRequest(const char* buffer, int bytes,
 
     ServerNpc npc;
     npc.entityId = nextEntityId++;
+    // Manual spawn: preserved by lifecycle reconciliation even when automatic
+    // startup NPCs are disabled.
+    npc.origin = GAME_NPC_ORIGIN_MANUAL;
     npc.name = "NPC " + std::to_string(npc.entityId);
     npc.pos = {request->px, request->py, request->pz};
     npc.difficulty = request->difficulty;

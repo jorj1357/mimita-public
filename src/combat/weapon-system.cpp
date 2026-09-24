@@ -26,6 +26,8 @@
 #include "ecs/dynamic-components.h"
 #include "hot-reload/hot-presentation.h"
 #include "live-code/live-behavior.h"
+#include "live-code/live-identity.h"
+#include "network/network-weapons.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1104,8 +1106,32 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     }
     else
     {
-        WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir,
-                                   Ecs::ensureLocalPlayerEntity(), EntityRealm::Local);
+        // Hot tool bridge (Phase 3): offer the rocket use to the hot tool
+        // dispatcher first, mirroring the server attack path. When the hot
+        // rocket behavior handles it, the projectile entity is created by the
+        // hot path and the legacy cold launcher is skipped. Cold remains the
+        // fallback when no hot owner acts, so behavior is unchanged where the
+        // hot path is inactive.
+        const EntityId ownerEntity = Ecs::ensureLocalPlayerEntity();
+        ToolUsePolicyV1 use{};
+        use.userEntity = static_cast<std::uint64_t>(ownerEntity);
+        use.toolId = gameHash(def->id.c_str());
+        use.toolNetworkId = MimitaNet::networkWeaponTypeForDefinition(*def);
+        use.tick = LiveIdentity::simulationTick();
+        use.baseFire = 1;
+        use.outFire = 1;
+        use.origin[0] = muzzlePos.x;
+        use.origin[1] = muzzlePos.y;
+        use.origin[2] = muzzlePos.z;
+        use.direction[0] = dir.x;
+        use.direction[1] = dir.y;
+        use.direction[2] = dir.z;
+        const bool hotOwned = LiveBehavior::dispatchToolUse(use, use.tick) &&
+                              use.handled && use.outFire == 0;
+        if (!hotOwned) {
+            WeaponRocketLauncher::fire(mRocketState, *def, *rt, player, muzzlePos, dir,
+                                       ownerEntity, EntityRealm::Local);
+        }
     }
     rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
     mShotCooldown = def->fireDelay;

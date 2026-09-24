@@ -393,3 +393,128 @@ Automated tests (test evidence):
 
 Pending. Live logging-policy edits (field add/remove, destination routing,
 throttling, malformed-config last-good) still require human acceptance.
+
+## Cold-build occurrence 6
+
+UTC time: 2026-09-24T19:31:20Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_193120-rocket-behavior-hot.md`
+
+### Why the cold build was required
+
+The rocket migration adds hot rocket policy, but the player and NPC fire paths
+are cold `weapon-system.cpp` / `npc-combat.cpp` call sites that previously called
+`WeaponRocketLauncher::fire` directly. Installing the cold bridge (dispatch a
+generic `ToolUsePolicyV1` first, fall back to the legacy launcher only when the
+hot router declines) changes those cold call sites, which cannot be activated
+through a live DLL swap. The hot rocket owner itself is already hot.
+
+### Exact cold source / boundary
+
+- `src/combat/weapon-system.cpp` (player rocket tool-use bridge)
+- `src/npc/npc-combat.cpp` (NPC rocket tool-use bridge)
+- `src/hot-reload/hot-projectile.h` (append-only state fields; hot header)
+- `src/hot-reload/hot-projectile-event.h` (explode exclude-origin flag; hot)
+
+### Result needed from the new executable
+
+The player and NPC rocket fire paths offer a `ToolUsePolicyV1` to the hot tool
+dispatcher before the cold launcher, so the canonical hot rocket owner runs while
+the legacy launcher stays only as a fallback.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new branch/call site in `weapon-system.cpp` or
+`npc-combat.cpp`. The bridge had to be compiled and linked once.
+
+### Smallest change that would make this hot
+
+None for the bridge installation; this is the one-time boundary. After this
+build, rocket fire/spawn/movement/collision/explosion/damage/effects/sound/log
+edits live in the hot `rocket-tool.cpp` / `hot-projectiles.cpp` and activate
+without a cold relink. Future cold builds should only be needed when a brand-new
+cold call site is genuinely required; the goal is to keep the interval as large
+as possible.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T152930.exe`.
+
+Automated tests (test evidence):
+
+```text
+--capability-selftest        PASS
+--hot-combat-selftest        rocket checks PASS; 25 known pre-existing FAILs
+--live-code-selftest         4 pre-existing journal FAILs only
+--gamemode-hot-selftest      PASS
+--dynamic-lifecycle-selftest PASS
+--production-loop-selftest   PASS
+--hot-authoritative-selftest known pre-existing journal-evidence FAIL
+```
+
+### Human review
+
+Pending. Live-edit and single-sound/destroy acceptance checks still require
+human observation.
+
+## Cold-build occurrence 7
+
+UTC time: 2026-09-24T20:59:50Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_205950-npc-lifecycle-hot.md`
+
+### Why the cold build was required
+
+The NPC lifecycle migration installs a new generic capability
+(`npc.lifecycle`), a new POD envelope (`NpcLifecyclePolicyV1`), origin tagging
+on `ServerNpc`, and cold reconciliation/startup call sites. Installing the new
+capability id, the per-tick reconciliation branch, and the origin field changes
+the EXE and cannot be activated through a live DLL swap.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/game-api.h` (new capability id + POD envelope)
+- `src/live-code/live-behavior.cpp` (kernel fallback registration)
+- `src/network/server.h`, `server.cpp`, `server-npcs.cpp`, `server-packets.cpp`
+  (origin field + reconciliation/startup/apply call sites)
+
+### Result needed from the new executable
+
+The `npc.lifecycle` capability resolves (hot provider or kernel fallback),
+startup asks the policy for the plan, the per-tick reconciliation aligns the
+automatic NPC set while preserving manual NPCs, and NPC init uses the shared
+lifecycle.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new capability id, a new per-tick reconciliation
+branch, or a new `ServerNpc` field. The bridge had to be linked once.
+
+### Smallest change that would make this hot
+
+None for the bridge installation. After this build, NPC policy edits live in
+`modules/npc-lifecycle-policy.cpp` + `hot-npc-lifecycle.h` and `config/weapons.json`
+and apply through the next fixed tick without a cold relink.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T165449.exe`.
+
+Automated tests (test evidence):
+
+```text
+--capability-selftest        PASS (incl. P7 lifecycle checks)
+--gamemode-hot-selftest      PASS
+--dynamic-lifecycle-selftest PASS
+--production-loop-selftest   PASS
+--hot-authoritative-selftest known pre-existing journal-evidence FAIL
+--live-code-selftest         4 pre-existing journal FAILs
+--hot-combat-selftest        25 pre-existing animation/phase2 FAILs
+```
+
+### Human review
+
+Pending. Live startup toggle, `npc_spawn` preservation, live count change, and
+generation transition still require human observation.

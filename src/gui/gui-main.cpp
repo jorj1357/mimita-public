@@ -201,7 +201,7 @@ static void readServerSettingsFromBindings()
     std::string name = b.get("server.name", "MiMITA Server");
     std::string mapName = resolveServerMapId(b.get("server.map"));
     std::string playerLimitStr = b.get("server.player_limit", "999");
-    std::string npcsStr = b.get("server.startup_npcs", "true");
+    std::string npcsStr = b.get("server.startup_npcs", "false");
     std::string npcCountStr = b.get("server.startup_npc_count", "1");
     std::string privacy = b.get("server.privacy", "Public (no password)");
     std::string mode = b.get("server.mode", "Sandbox");
