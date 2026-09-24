@@ -22,6 +22,8 @@
 #include "network/multiplayer-context.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-server-policy.h"
+#include "hot-reload/hot-server-tick.h"
+#include "live-code/net-hot-log.h"
 #include "network/coordinator-client.h"
 #include "network/network-weapons.h"
 #include "network/ice-transport.h"
@@ -218,6 +220,66 @@ void reportServerPerf(const char* label,
     perf = ServerLoopPerf{};
 }
 
+// ── Hot server tick orchestration policy (network.tick) ────────────────
+// The cold loop owns the call sequence, sockets, threads, and persistent state;
+// a hot `server.tick` system owns the orchestration decisions. Both the
+// dedicated and listen tick bodies resolve this one shared policy path.
+constexpr uint32_t kServerMaxCatchupSteps = 5;
+
+struct ServerTickPolicy
+{
+    bool requestShutdown = false;
+    bool snapshotDue = true;
+    bool runGameplayDomain = true;
+    bool runPostMovement = true;
+    bool advanceGeneration = true;
+    uint32_t catchupCap = 0;  // 0 = leave the cold cap
+    char reason[48] = {};
+};
+
+ServerTickPolicy resolveServerTickPolicy(uint64_t tick, uint32_t catchupSteps,
+                                         uint32_t playersActive,
+                                         uint32_t projectilesActive,
+                                         bool autoExitDue, bool snapshotDue,
+                                         bool gameplayDomainDue)
+{
+    GameServerTickV1 request{};
+    request.structSize = sizeof(GameServerTickV1);
+    request.abiVersion = GAME_SERVER_TICK_VERSION;
+    request.tick = tick;
+    // Generation metadata is 0 here to avoid a per-tick status() lock; a hot
+    // policy that needs it resolves `runtime.info` instead.
+    request.generation = 0;
+    request.dt = (float)SERVER_DT;
+    request.catchupSteps = catchupSteps;
+    request.maxCatchup = kServerMaxCatchupSteps;
+    request.playersActive = playersActive;
+    request.projectilesActive = projectilesActive;
+    request.autoExitDue = autoExitDue ? 1u : 0u;
+    request.snapshotDue = snapshotDue ? 1u : 0u;
+    request.gameplayDomainDue = gameplayDomainDue ? 1u : 0u;
+
+    void* callable =
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_SERVER_TICK);
+    auto fn = callable ? reinterpret_cast<GameServerTickFn>(callable) : nullptr;
+    if (fn)
+        fn(nullptr, &request);
+    else
+        HotServerTickImpl::evaluate(request);
+
+    ServerTickPolicy policy;
+    if (!request.handled)
+        return policy;  // cold defaults
+    policy.requestShutdown = request.outRequestShutdown != 0u;
+    policy.snapshotDue = request.outSnapshotDue != 0u;
+    policy.runGameplayDomain = request.outRunGameplayDomain != 0u;
+    policy.runPostMovement = request.outRunPostMovement != 0u;
+    policy.advanceGeneration = request.outAdvanceGeneration != 0u;
+    policy.catchupCap = request.outCatchupSteps;
+    std::snprintf(policy.reason, sizeof(policy.reason), "%s", request.reason);
+    return policy;
+}
+
 } // namespace
 
 // Forward declaration for background listen server thread
@@ -289,6 +351,8 @@ int runServer(const LaunchOptions& options)
         started.hotHash = liveStatus.activeHash;
         started.extra = std::string("\"loaded\":") + (liveStatus.loaded ? "1" : "0");
         LiveEventJournal::instance().record("server.started", started);
+        emitNetworkLog(2u, "NETWORK", "network.server.started",
+                       "dedicated server started", 0);
     }
 
     // Load the standard player body shape headlessly so the authoritative
@@ -642,6 +706,7 @@ int runServer(const LaunchOptions& options)
 
     PersistenceQueue::instance().beginSession(serverCode, AuthSystem::instance().user().sessionToken,
                                               AuthSystem::instance().user().id);
+    bool shutdownRequested = false;
     while (true)
     {
         auto loopStart = std::chrono::steady_clock::now();
@@ -746,6 +811,12 @@ int runServer(const LaunchOptions& options)
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
+            // Hot fixed-tick orchestration policy (network.tick). Cold owns the
+            // loop/sockets/threads; the hot system returns the decisions below.
+            const ServerTickPolicy tickPolicy = resolveServerTickPolicy(
+                tick, (uint32_t)steps, (uint32_t)players.size(),
+                (uint32_t)projectiles.size(), false, true, true);
+
             // Coordinated live-code switch: when a candidate is validated, hold
             // it and announce the shared switch tick so the server and all
             // connected clients activate the same generation at that tick. The
@@ -934,6 +1005,7 @@ int runServer(const LaunchOptions& options)
             // Generic runtime systems execute in the server's fixed step too, so
             // a hot-registered system runs authoritatively on the dedicated
             // server with no per-system EXE call site.
+            if (tickPolicy.runGameplayDomain)
             {
                 MimitaRuntime::GenericRuntime& runtime =
                     MimitaRuntime::GenericRuntime::instance();
@@ -986,6 +1058,7 @@ int runServer(const LaunchOptions& options)
                                nextProjectileId, tick, totalPacketsOut);
             // Hot actor-movement post pass: runs after NPC AI has written the
             // generic intent, so one hot system can move players and NPCs.
+            if (tickPolicy.runPostMovement)
             {
                 MimitaRuntime::GenericRuntime& runtime =
                     MimitaRuntime::GenericRuntime::instance();
@@ -1004,7 +1077,8 @@ int runServer(const LaunchOptions& options)
                                     tick, totalPacketsIn, totalPacketsOut,
                                     &transportStats, &disagreementRetransmit);
 
-            buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
+            if (tickPolicy.snapshotDue)
+                buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             serverReplicateDynamicComponents(sock, players, tick, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
@@ -1015,7 +1089,13 @@ int runServer(const LaunchOptions& options)
             accumulator -= (double)SERVER_DT;
             ++tick;
             ++steps;
+            if (tickPolicy.requestShutdown)
+                shutdownRequested = true;
+            if (tickPolicy.catchupCap > 0 && (uint32_t)steps >= tickPolicy.catchupCap)
+                break;
         }
+        if (shutdownRequested)
+            break;
         const bool cappedCatchup = steps >= MAX_STEPS && accumulator >= (double)SERVER_DT;
 
         // Poll coordinator for incoming ICE requests every outer loop
@@ -1048,6 +1128,8 @@ int runServer(const LaunchOptions& options)
                 printf("%s [SERVER HEARTBEAT] tick=%u players=%zu — alive\n",
                        serverTimestamp(), tick, players.size());
                 fflush(stdout);
+                emitNetworkLog(1u, "NETWORK", "network.server_tick",
+                               "server tick heartbeat", tick);
                 s_lastHeartbeatTick = tick;
             }
         }
@@ -1154,6 +1236,8 @@ int runServer(const LaunchOptions& options)
         requested.tick = tick;
         requested.result = "requested";
         LiveEventJournal::instance().record("server.shutdown.requested", requested);
+        emitNetworkLog(2u, "NETWORK", "network.shutdown_requested",
+                       "server shutdown requested", tick);
     }
 
     PersistenceQueue::instance().flushBlocking();
@@ -1171,6 +1255,8 @@ int runServer(const LaunchOptions& options)
         completed.result = "clean";
         completed.extra = std::string("\"cause\":\"requested_shutdown\",\"exit_code\":0");
         LiveEventJournal::instance().record("server.shutdown.completed", completed);
+        emitNetworkLog(2u, "NETWORK", "network.shutdown_completed",
+                       "clean server shutdown", tick);
     }
     LiveEventJournal::instance().shutdown();
     ::StructuredLogger::instance().shutdown();
@@ -1453,6 +1539,12 @@ static void simulateOneServerTick(ListenServerState& state)
     // owner so its own pollAndAdvance becomes a no-op.
     HotReloadSystem::instance().pollAndAdvanceFromTickOwner(state.tick);
 
+    // Hot fixed-tick orchestration policy (network.tick), shared with the
+    // dedicated loop so both tick bodies use one policy path.
+    const ServerTickPolicy tickPolicy = resolveServerTickPolicy(
+        state.tick, 0, (uint32_t)state.players.size(),
+        (uint32_t)state.projectiles.size(), false, true, true);
+
     // Hot-reload networkingconfig.json so hosted servers pick up changes live.
     NetworkingConfig::instance().pollReload();
 
@@ -1512,7 +1604,29 @@ static void simulateOneServerTick(ListenServerState& state)
         if (state.serverCode.find("LOCAL-") != 0)
             tickIceCoordinator(state, state.players.size());
 
+        LiveIdentity::setSimulationTick(state.tick);
+
+        // Generic runtime systems execute in the listen server's fixed step too,
+        // matching the dedicated loop (shared tick policy path).
+        if (tickPolicy.runGameplayDomain)
+        {
+            MimitaRuntime::GenericRuntime& runtime =
+                MimitaRuntime::GenericRuntime::instance();
+            void* runtimeHost = LiveBehavior::hostContext(state.tick);
+            LiveBehavior::setDispatchHeadlessWorld(&state.world);
+            runtime.runDomain(GAME_DOMAIN_GAMEPLAY, state.tick,
+                              (float)SERVER_DT, runtimeHost);
+            runtime.runActiveModeDomain(state.tick, (float)SERVER_DT, runtimeHost);
+            runtime.runRegisteredDomains(state.tick, (float)SERVER_DT, runtimeHost);
+            LiveBehavior::drainEvents(64);
+        }
+
         handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
+        for (auto& kv : state.players)
+        {
+            kv.second.shotsThisTick = 0;
+            kv.second.attackPktsThisTick = 0;
+        }
         // Bind the authoritative headless collision world for server-side hot
         // movement on this tick.
         LiveBehavior::setDispatchHeadlessWorld(&state.world);
@@ -1532,6 +1646,8 @@ static void simulateOneServerTick(ListenServerState& state)
             }
         }
         tickWeaponRuntimes(state.players, state.tick);
+        tickHeldFireIntents(state.sock, state.players, state.npcs, state.projectiles,
+                            state.nextProjectileId, state.tick, state.totalPacketsOut);
         resolvePlayerCollision(state.players);
         checkVoidDeath(state.players, state.npcs);
         simulateSharedNpcs(state.sock, state.players, state.npcs,
@@ -1539,6 +1655,7 @@ static void simulateOneServerTick(ListenServerState& state)
                            state.npcIdsAlive, state.projectiles, state.nextProjectileId,
                            state.tick, state.totalPacketsOut);
         // Hot actor-movement post pass (after NPC AI writes intent).
+        if (tickPolicy.runPostMovement)
         {
             MimitaRuntime::GenericRuntime& runtime =
                 MimitaRuntime::GenericRuntime::instance();
@@ -1566,8 +1683,9 @@ static void simulateOneServerTick(ListenServerState& state)
                                 state.totalPacketsOut, nullptr,
                                 &state.disagreementRetransmit);
 
-        buildAndSendSnapshot(state.sock, state.players, state.npcs,
-                             state.tick, state.totalPacketsOut);
+        if (tickPolicy.snapshotDue)
+            buildAndSendSnapshot(state.sock, state.players, state.npcs,
+                                 state.tick, state.totalPacketsOut);
 
         tickDisagreementRetransmit(state.sock, state.players,
                                    state.disagreementRetransmit,
@@ -1602,6 +1720,9 @@ static void simulateOneServerTick(ListenServerState& state)
 
         // ICE rooms stay alive via coordinatorIceHostPoll in tickIceCoordinator
 
+        if (tickPolicy.requestShutdown)
+            state.serverRunning = false;
+
         ++state.tick;
     }
 }
@@ -1620,6 +1741,8 @@ static void listenServerThreadFunc(ListenServerState& state)
     double accumulator = 0.0;
 
     printf("[LISTEN SERVER THREAD] started with accumulator timing\n");
+    emitNetworkLog(2u, "NETWORK", "network.server.thread_started",
+                   "listen server thread started", 0);
 
     uint64_t lastLogTick = 0;
     uint64_t lastHzLog = 0;
@@ -1689,6 +1812,8 @@ static void listenServerThreadFunc(ListenServerState& state)
     }
 
     printf("[LISTEN SERVER THREAD] exiting\n");
+    emitNetworkLog(2u, "NETWORK", "network.server.thread_exiting",
+                   "listen server thread exiting", state.tick);
 }
 
 void tickListenServer(ListenServerState& state, float /*dt*/)

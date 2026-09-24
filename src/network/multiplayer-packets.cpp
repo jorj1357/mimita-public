@@ -19,6 +19,8 @@
 #include "network/connection-health.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-connection-health.h"
+#include "hot-reload/hot-connection-transition.h"
+#include "live-code/net-hot-log.h"
 #include "network/simulation-constants.h"
 #include "network/udp-transport.h"
 #include "network/ice-transport.h"
@@ -1398,6 +1400,36 @@ static void pushConnectionNotification(const MultiplayerContext& ctx, const char
     NotificationSystem::instance().pushCritical(title, message, 0);
 }
 
+// Build + resolve the generic connection transition decision. The cold side
+// supplies stable POD facts (transport/ICE stay cold); the hot policy owns the
+// next state/stage, retry, timeout classification, and the user-visible label.
+// Falls back to the shared implementation when no provider is registered.
+static GameConnectionTransitionV1 resolveConnectionTransition(
+    MultiplayerContext& ctx, ConnectionState before, ConnectionState requested)
+{
+    const auto& cfg = NetworkingConfig::instance().data();
+    GameConnectionTransitionV1 t{};
+    t.structSize = sizeof(GameConnectionTransitionV1);
+    t.abiVersion = 1;
+    t.connectionId = ctx.localPlayerId;
+    t.currentState = (std::uint32_t)before;
+    t.requestedState = (std::uint32_t)requested;
+    t.stage = ctx.joinStage;
+    t.attempt = (std::uint32_t)ctx.reconnectAttempts;
+    t.maxAttempts = (std::uint32_t)cfg.retries.reconnectMaxAttempts;
+    t.elapsedMs = ctx.disconnectStartedMs ? nowMs() - ctx.disconnectStartedMs : 0;
+    t.iceJobActive = mpIceConnectActive() ? 1u : 0u;
+    t.reconnectTokenPresent = ctx.reconnectToken.empty() ? 0u : 1u;
+    auto fn = reinterpret_cast<GameConnectionTransitionFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_CONNECTION_TRANSITION));
+    if (fn)
+        fn(nullptr, &t);
+    else
+        HotConnectionTransitionImpl::evaluate(t);
+    return t;
+}
+
 static bool sendReconnectRequest(MultiplayerContext& ctx)
 {
     if (ctx.localPlayerId == 0 || ctx.reconnectToken.empty())
@@ -1503,14 +1535,13 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
     // Keep the legacy connectionStatus string honest for existing HUD paths.
     ctx.connectionStatus = mpConnectionHealthText(ctx);
 
+    // Route the lifecycle record through the generic log.event capability so
+    // changing the event name/fields never requires a cold rebuild.
     {
-        char msg[128];
-        std::snprintf(msg, sizeof(msg), "from=%d to=%d player=%u",
-                      (int)before, (int)next, ctx.localPlayerId);
-        ::logStructured(::StructuredCategory::Network, ::StructuredLevel::Important,
-                        "CONNECTION_STATE",
-                        "CONNECTION_" + std::to_string(ctx.localPlayerId),
-                        "connection state transition", msg);
+        char msg[160];
+        std::snprintf(msg, sizeof(msg), "from=%d to=%d stage=%u player=%u",
+                      (int)before, (int)next, ctx.joinStage, ctx.localPlayerId);
+        emitNetworkLog(2u, "NETWORK", "network.connection_state", msg, ctx.tick);
     }
 }
 
@@ -1580,8 +1611,19 @@ void mpTickReconnect(MultiplayerContext& ctx)
     if (!cadence.maySend)
         return;
 
+    // connection.transition: the hot policy owns the retry/timeout classification
+    // and may suppress a retry or set a different backoff. The shared fallback
+    // preserves the existing cadence behavior.
+    const GameConnectionTransitionV1 transition =
+        resolveConnectionTransition(ctx, ctx.connectionState,
+                                    ConnectionState::Reconnecting);
+    if (transition.handled && !transition.outRetry)
+        return;
+
     const uint64_t intervalMs = (uint64_t)retryCfg.reconnectIntervalMs;
-    ctx.reconnectBackoffMs = cadence.outBackoffMs;
+    ctx.reconnectBackoffMs = transition.handled && transition.outBackoffMs != 0
+        ? transition.outBackoffMs
+        : cadence.outBackoffMs;
     ctx.lastReconnectAttemptMs = now;
     ++ctx.reconnectAttempts;
 
@@ -1678,6 +1720,16 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
         HotConnectionHealthImpl::nextState(health);
     ConnectionState next = (ConnectionState)health.next;
 
+    // connection.transition: the hot policy may override the health-derived next
+    // state, advance the join stage, and supply the user-visible label. The
+    // shared fallback applies the requested state verbatim.
+    const GameConnectionTransitionV1 transition =
+        resolveConnectionTransition(ctx, before, next);
+    if (transition.handled && transition.outState != 0u)
+        next = (ConnectionState)transition.outState;
+    if (transition.handled)
+        ctx.joinStage = transition.outStage;
+
     if (next == before)
         return;
 
@@ -1695,6 +1747,8 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
             teardownPreviousSession(ctx, DisconnectPolicy::ConnectionFailure);
             mpNotifyConnectionStateChange(ctx, before,
                                           ConnectionState::ReconnectFailed);
+            if (transition.handled && transition.outMessage[0] != '\0')
+                ctx.connectionStatus = transition.outMessage;
             return;
         }
         mpStartReconnect(ctx);
@@ -1715,6 +1769,9 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     default:
         break;
     }
+    // A hot label overrides the derived HUD text for this transition.
+    if (transition.handled && transition.outMessage[0] != '\0')
+        ctx.connectionStatus = transition.outMessage;
 }
 
 } // namespace MimitaNet

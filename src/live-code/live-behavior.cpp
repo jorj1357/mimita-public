@@ -785,8 +785,9 @@ void MIMITA_GAME_CALL capLog(void*, const char* message)
 {
     if (!message)
         return;
-    std::printf("[HOT] %s\n", message);
-    // One authoritative record: hot diagnostics land in events.jsonl.
+    // One authoritative record: hot diagnostics land in events.jsonl. The hot
+    // provider owns destinations/terminal routing; this bridge never writes to
+    // stdout directly.
     ::debug::Event ev;
     ev.category = "HOT";
     ev.name = "hot.log";
@@ -797,12 +798,11 @@ void MIMITA_GAME_CALL capLog(void*, const char* message)
     ::debug::logEvent(ev);
 }
 
-// log.event: hot modules emit structured events through the ONE generic
-// capability; the kernel writes them into the process run's events.jsonl.
-void MIMITA_GAME_CALL capLogEvent(void*, const GameLogEventV1* event)
+// Build a debug::Event projection from the stable POD envelope. This is the
+// cold compatibility path; the hot provider receives the raw envelope and may
+// build its own record body instead.
+static debug::Event makeLogEvent(const GameLogEventV1* event)
 {
-    if (!event)
-        return;
     static const debug::Level kLevels[6] = {
         debug::Level::Trace, debug::Level::Debug, debug::Level::Info,
         debug::Level::Warn, debug::Level::Error, debug::Level::Fatal};
@@ -831,7 +831,107 @@ void MIMITA_GAME_CALL capLogEvent(void*, const GameLogEventV1* event)
     }
     if (event->result[0])
         ev.fields["result"] = event->result;
-    debug::logEvent(ev);
+    if (event->correlationId != 0)
+        ev.correlationId = std::to_string(event->correlationId);
+    if (event->parentEventId != 0)
+        ev.fields["parent_event_id"] = event->parentEventId;
+    // Append-only envelope: a provider may attach a typed field payload. A
+    // smaller structSize means an older generation; read nothing past it.
+    if (event->structSize >= sizeof(GameLogEventV1) && event->fields &&
+        event->fieldCount > 0) {
+        for (std::uint32_t i = 0; i < event->fieldCount; ++i) {
+            const GameLogFieldV1& f = event->fields[i];
+            if ((f.flags & GAME_LOG_FIELD_FLAG_PRESENT) == 0 &&
+                (f.flags & GAME_LOG_FIELD_FLAG_DEPRECATED) != 0)
+                continue;
+            std::string key = f.name ? f.name
+                                     : ("field_" + std::to_string(f.nameId));
+            switch (f.type) {
+                case GAME_LOG_FIELD_BOOL:
+                    ev.fields[key] = (f.intValue != 0);
+                    break;
+                case GAME_LOG_FIELD_INT:
+                    ev.fields[key] = f.intValue;
+                    break;
+                case GAME_LOG_FIELD_UINT:
+                    ev.fields[key] = f.uintValue;
+                    break;
+                case GAME_LOG_FIELD_FLOAT:
+                    ev.fields[key] = f.doubleValue;
+                    break;
+                case GAME_LOG_FIELD_STRING:
+                    ev.fields[key] = f.string;
+                    break;
+                case GAME_LOG_FIELD_VEC3:
+                    ev.fields[key] = {f.vector[0], f.vector[1], f.vector[2]};
+                    break;
+                case GAME_LOG_FIELD_VEC4:
+                    ev.fields[key] = {f.vector[0], f.vector[1], f.vector[2],
+                                      f.vector[3]};
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    return ev;
+}
+
+// log.event: hot modules emit structured events through the ONE generic
+// capability; the kernel writes them into the process run's events.jsonl.
+// The id is registered overridable, so a hot package provider owns logging
+// policy (filtering, fields, naming, destinations, aggregation) and the kernel
+// keeps only the append/flush mechanism.
+void MIMITA_GAME_CALL capLogEvent(void* host, const GameLogEventV1* event)
+{
+    if (!event)
+        return;
+
+    auto& runtime = MimitaRuntime::GenericRuntime::instance();
+    auto* provider = reinterpret_cast<GameLogProviderFn>(
+        runtime.overrideCapability(GAME_CAP_LOG_EVENT));
+    if (provider) {
+        GameLogRecordV1 record{};
+        provider(host, event, &record);
+        if (record.handled) {
+            if (record.emit) {
+                if (record.destinations & GAME_LOG_DEST_JSONL) {
+                    debug::Event ev = makeLogEvent(event);
+                    StructuredLogger::instance().emitProviderRecord(
+                        ev, record.body, record.bodyLen, record.forceFlush != 0);
+                }
+                if (record.destinations & GAME_LOG_DEST_TERMINAL) {
+                    auto* term = reinterpret_cast<GameTerminalOutputFn>(
+                        runtime.capability(GAME_CAP_TERMINAL_OUTPUT));
+                    if (term) {
+                        std::string line = "[";
+                        line += event->category[0] ? event->category : "HOT";
+                        line += "] ";
+                        line += event->name[0] ? event->name : "hot.event";
+                        if (event->message[0]) {
+                            line += " - ";
+                            line += event->message;
+                        }
+                        term(host, line.c_str());
+                    }
+                }
+            }
+            return;
+        }
+        // An override that declines falls through to the cold fallback.
+    }
+
+    debug::logEvent(makeLogEvent(event));
+}
+
+// log.append: the one safe append mechanism used by a hot logging provider's
+// flush system. `bytes` is a JSON body fragment (no outer braces); the cold side
+// adds only the universal process/time prefix and writes one atomic line.
+// flags bit0 = flush.
+void MIMITA_GAME_CALL capLogAppend(void*, const char* bytes, std::uint32_t len,
+                                   std::uint32_t flags)
+{
+    StructuredLogger::instance().appendBody(bytes, len, (flags & 1u) != 0);
 }
 
 bool MIMITA_GAME_CALL capDynamicReadComponent(void*, std::uint64_t entity,
@@ -2601,7 +2701,11 @@ struct KernelCapabilityInit {
         rt.registerKernelCapability(GAME_CAP_LOG_EVENT,
                                     gameHash("sig.log.event.v1"), 0,
                                     reinterpret_cast<void*>(&capLogEvent),
-                                    "log.event");
+                                    "log.event", /*overridable=*/true);
+        rt.registerKernelCapability(GAME_CAP_LOG_APPEND,
+                                    gameHash("sig.log.append.v1"), 0,
+                                    reinterpret_cast<void*>(&capLogAppend),
+                                    "log.append");
         rt.registerKernelCapability(MimitaNet::GAME_CAP_HOT_PACKET_REPLY,
                                     gameHash("sig.net.packet-reply.v1"), 0,
                                     reinterpret_cast<void*>(&capHotPacketReply),

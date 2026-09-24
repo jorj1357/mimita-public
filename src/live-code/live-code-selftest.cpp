@@ -28,6 +28,9 @@
 #include "hot-reload/hot-client-snapshot.h"
 #include "hot-reload/hot-projectile-correction.h"
 #include "hot-reload/hot-connection-health.h"
+#include "hot-reload/hot-connection-transition.h"
+#include "hot-reload/hot-server-tick.h"
+#include "hot-reload/hot-projectile-cancel.h"
 #include "hot-reload/hot-server-policy.h"
 #include "hot-reload/hot-geometry.h"
 #include "network/packet-codec-wire.h"
@@ -358,6 +361,31 @@ bool runLiveCodeSelfTest(std::string& report)
         }
         ok &= check(sawCapabilityLog, "hot capability log reached events.jsonl",
                     report);
+
+        // The cold `debug::logEvent` API must also route through the hot
+        // provider while the package is active, so ordinary gameplay
+        // diagnostics share the hot filtering/field/destination policy.
+        {
+            StructuredLogger::instance().init();
+            const std::string providerEventsPath =
+                StructuredLogger::instance().eventsPath();
+            debug::Event ev;
+            ev.category = "NETWORK";
+            ev.name = "selftest.provider_route";
+            ev.level = debug::Level::Info;
+            ev.message = "cold logEvent routed through the hot provider";
+            debug::logEvent(ev);
+            StructuredLogger::instance().shutdown();
+
+            bool sawProviderRoute = false;
+            std::ifstream probe(providerEventsPath);
+            while (std::getline(probe, line)) {
+                if (line.find("selftest.provider_route") != std::string::npos)
+                    sawProviderRoute = true;
+            }
+            ok &= check(sawProviderRoute,
+                        "cold logEvent routed through hot provider", report);
+        }
 
         // ── Hot packet-codec registry through the same generic doorway ─────
         // The hot module registers a real codec; the cold dispatcher resolves it
@@ -926,6 +954,109 @@ bool runLiveCodeSelfTest(std::string& report)
                 policy->nextState(nullptr, &health);
                 ok &= check(health.next == 7u,
                             "hot connection-policy enters reconnect on hard timeout",
+                            report);
+            }
+        }
+
+        // ── Hot server tick orchestration through the generic doorway ─────
+        {
+            auto fn = reinterpret_cast<GameServerTickFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_SERVER_TICK));
+            ok &= check(fn != nullptr, "hot server-tick provider resolves", report);
+            if (fn)
+            {
+                GameServerTickV1 tickReq{};
+                tickReq.structSize = sizeof(GameServerTickV1);
+                tickReq.abiVersion = GAME_SERVER_TICK_VERSION;
+                tickReq.tick = 42u;
+                tickReq.snapshotDue = 1u;
+                tickReq.gameplayDomainDue = 1u;
+                fn(nullptr, &tickReq);
+                ok &= check(tickReq.handled == 1u && tickReq.outSnapshotDue == 1u &&
+                                tickReq.outRunGameplayDomain == 1u,
+                            "hot server-tick preserves snapshot/gameplay decisions",
+                            report);
+                GameServerTickV1 exitReq{};
+                exitReq.structSize = sizeof(GameServerTickV1);
+                exitReq.autoExitDue = 1u;
+                fn(nullptr, &exitReq);
+                ok &= check(exitReq.outRequestShutdown == 1u,
+                            "hot server-tick honors the auto-exit request", report);
+            }
+        }
+
+        // ── Hot connection transition through the generic doorway ─────────
+        {
+            auto fn = reinterpret_cast<GameConnectionTransitionFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_CONNECTION_TRANSITION));
+            ok &= check(fn != nullptr,
+                        "hot connection-transition provider resolves", report);
+            if (fn)
+            {
+                GameConnectionTransitionV1 t{};
+                t.structSize = sizeof(GameConnectionTransitionV1);
+                t.currentState = 1u;
+                t.requestedState = 6u;
+                t.reconnectTokenPresent = 1u;
+                t.attempt = 0u;
+                t.maxAttempts = 3u;
+                fn(nullptr, &t);
+                ok &= check(t.handled == 1u && t.outState == 6u && t.outRetry == 1u,
+                            "hot connection-transition applies state and retry",
+                            report);
+            }
+        }
+
+        // ── Hot projectile cancellation through the generic doorway ───────
+        {
+            auto fn = reinterpret_cast<GameProjectileCancelFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_PROJECTILE_CANCEL));
+            ok &= check(fn != nullptr,
+                        "hot projectile-cancel provider resolves", report);
+            if (fn)
+            {
+                GameProjectileCancelV1 dead{};
+                dead.structSize = sizeof(GameProjectileCancelV1);
+                dead.ownerDead = 1u;
+                fn(nullptr, &dead);
+                ok &= check(dead.outCancel == 1u,
+                            "hot projectile-cancel cancels a dead-owner projectile",
+                            report);
+                GameProjectileCancelV1 alive{};
+                alive.structSize = sizeof(GameProjectileCancelV1);
+                alive.ownerAlive = 1u;
+                fn(nullptr, &alive);
+                ok &= check(alive.outCancel == 0u,
+                            "hot projectile-cancel keeps a live-owner projectile",
+                            report);
+            }
+        }
+
+        // ── Damage-application v2 suicide outcome ─────────────────────────
+        {
+            auto fn = reinterpret_cast<MimitaNet::GameDamageApplicationFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    MimitaNet::GAME_CAP_DAMAGE_APPLICATION));
+            ok &= check(fn != nullptr,
+                        "hot damage-application provider resolves", report);
+            if (fn)
+            {
+                MimitaNet::GameDamageApplicationV1 suicide{};
+                suicide.structSize = sizeof(MimitaNet::GameDamageApplicationV1);
+                suicide.version = 2u;
+                suicide.attackerIsTarget = 1u;
+                suicide.damage = 999;
+                suicide.targetHealth = 100;
+                suicide.respawnsEnabled = 1u;
+                suicide.respawnSeconds = 3.0f;
+                fn(nullptr, &suicide);
+                ok &= check(suicide.accept == 1u && suicide.killed == 1u &&
+                                suicide.outSuicide == 1u &&
+                                suicide.outScoreEligible == 0u,
+                            "hot damage-application marks suicide with no score",
                             report);
             }
         }

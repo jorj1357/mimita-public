@@ -23,6 +23,7 @@
 #include "network/server-damage-policy.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-projectile-splash.h"
+#include "hot-reload/hot-projectile-cancel.h"
 
 #include <algorithm>
 #include <chrono>
@@ -55,6 +56,15 @@ static const GameProjectileSplashPolicyV1* hotProjectileSplashPolicy()
         return nullptr;
     auto lookup = reinterpret_cast<GameProjectileSplashLookupFn>(callable);
     return lookup ? lookup(nullptr) : nullptr;
+}
+
+// Resolve the active generation's projectile cancellation policy. Null when no
+// hot provider is registered (the shared fallback runs).
+static GameProjectileCancelFn hotProjectileCancelPolicy()
+{
+    void* callable = MimitaRuntime::GenericRuntime::instance().capability(
+        GAME_CAP_PROJECTILE_CANCEL);
+    return callable ? reinterpret_cast<GameProjectileCancelFn>(callable) : nullptr;
 }
 
 ServerProjectilePerfStats gProjectilePerf;
@@ -204,6 +214,13 @@ void gatherHeadlessTrianglesForAABB(
     }
 }
 
+// ── LEGACY (kept in place, not deleted; unreachable from the live server) ──
+// The legacy kernel-container projectile policy below (ProjectileConfig,
+// projectileConfig*, finiteVec, playerDamageCenter, ServerProjectileWorldView,
+// explodeProjectile, tickServerProjectiles) has no live caller: the canonical
+// authoritative projectile path is the hot `projectiles.60` system
+// (src/hot-reload/modules/tools/hot-projectiles.cpp). Kept as a reference
+// fallback per the no-deletion rule; policy here must not be extended.
 struct ProjectileConfig
 {
     float speed = 0.0f;
@@ -1479,7 +1496,24 @@ void cancelDeadNpcProjectiles(
         }
 
         const auto npcIt = npcs.find(projectile.ownerNpcId);
-        if (npcIt != npcs.end() && npcIt->second.health > 0)
+        const bool ownerAlive = npcIt != npcs.end() && npcIt->second.health > 0;
+        // The cancellation policy is hot (net.projectile-cancel); the cold path
+        // owns the container, despawn, and transport.
+        GameProjectileCancelV1 cancelRequest{};
+        cancelRequest.structSize = sizeof(GameProjectileCancelV1);
+        cancelRequest.version = GAME_PROJECTILE_CANCEL_VERSION;
+        cancelRequest.projectileId = projectile.id;
+        cancelRequest.ownerPlayerId = projectile.ownerPlayerId;
+        cancelRequest.ownerNpcId = projectile.ownerNpcId;
+        cancelRequest.ownerAlive = ownerAlive ? 1u : 0u;
+        cancelRequest.ownerDead = ownerAlive ? 0u : 1u;
+        cancelRequest.exploded = projectile.exploded ? 1u : 0u;
+        GameProjectileCancelFn cancelPolicy = hotProjectileCancelPolicy();
+        if (cancelPolicy)
+            cancelPolicy(nullptr, &cancelRequest);
+        else
+            HotProjectileCancelImpl::evaluate(cancelRequest);
+        if (!cancelRequest.outCancel)
         {
             ++it;
             continue;

@@ -1,7 +1,7 @@
 # Cold Build Required
 
 Time created: 2026-09-20T15:11:13Z
-Time last updated: 2026-09-20T15:29:00Z
+Time last updated: 2026-09-24T03:15:13Z
 
 Status: COLD-BUILD DEBT
 
@@ -194,3 +194,202 @@ was the one-shot buffer variant).
 ### Human review
 
 Pending. Rapid-tap behavior needs a human playtest.
+
+---
+
+## Cold-build occurrence 3
+
+UTC time: 2026-09-24T03:15:13Z
+
+Related changelog:
+`docs/changelog/2026-09-23/20260923_231500-network-hot-tick-damage-projectile-connection.md`
+
+### Why the cold build was required
+
+The networking gameplay migration added new versioned POD envelopes and generic
+capabilities that the EXE itself must call for the first time: `network.tick`
+(`GameServerTickV1`), `connection.transition` (`GameConnectionTransitionV1`),
+`net.projectile-cancel` (`GameProjectileCancelV1`), and append-only extensions to
+`ProjectileImpactPolicyV1` and `GameDamageApplicationV1`. Installing a new cold
+call site and a new struct layout cannot happen through a live DLL swap; the EXE
+must be relinked once. After this build, further edits to the hot headers and hot
+modules activate without restarting the process.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/game-api.h` (new/changed POD envelopes)
+- `src/hot-reload/hot-damage-application.h` (append-only damage + actor-death result)
+- `src/network/server.cpp` (server tick policy path + `log.event` diagnostics)
+- `src/network/server-damage.cpp` (suicide/outcome + actor events)
+- `src/network/server-projectiles.cpp` (hot cancellation + legacy markers)
+- `src/network/multiplayer-packets.cpp` (connection transition + `log.event`)
+- `src/network/multiplayer-context.h` (join stage fact)
+- `src/network/server.h` (`ServerDamageResult` suicide/score fields)
+
+### Result needed from the new executable
+
+The new envelopes resolve as hot providers, both tick bodies use the shared
+`network.tick` policy path, damage reports an explicit suicide with no score, and
+the new capability self-tests pass.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new call site or read a new struct field. The new
+capabilities had to be registered and called by the EXE before the live path
+could own the policy.
+
+### Smallest change that would make this hot
+
+None for the installation itself; this is the one-time ABI/installation boundary.
+Going forward the policy edits live in `hot-server-tick.h`,
+`hot-connection-transition.h`, `hot-damage-application.h`,
+`hot-projectile-splash.h`, `hot-projectile-cancel.h`, and the matching
+`src/hot-reload/modules/*.cpp`, all of which are hot.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260923T231639.exe` (final; an earlier
+`mimita-20260923T231343.exe` built the same tree).
+
+Automated tests (test evidence):
+
+```text
+--live-code-selftest        PASS (incl. new server-tick / connection-transition /
+                                 projectile-cancel / damage-application checks)
+--server-journal-selftest   PASS
+--capability-selftest       PASS
+--gamemode-hot-selftest     PASS
+--hot-authoritative-selftest PASS
+--match-policy-selftest     PASS
+--hot-combat-selftest       only the 25 known pre-existing animation/phase2 FAILs
+```
+
+### Human review
+
+Pending. Live-edit, rocket self-kill, falloff edit, and join retry edit still
+require human acceptance.
+
+## Cold-build occurrence 4
+
+UTC time: 2026-09-24T15:26:22Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_152622-hot-logging-abi-bootstrap.md`
+
+### Why the cold build was required
+
+Phase 0 of the hot-logging migration adds a new stable logging ABI and a new
+generic mechanism that the EXE itself must provide before any hot logging policy
+can activate: append-only `GameLogEventV1` fields plus `GameLogFieldV1` /
+`GameLogRecordV1`, the `log.append` capability, the `overridable` kernel
+capability flag with `overrideCapability`, and the `log.event` bridge that
+consults a package override. A new call site, a new capability id, and a new
+struct layout cannot be installed through a live DLL swap; the EXE must be
+relinked once.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/game-api.h` (append-only logging envelope + field payload)
+- `src/hot-reload/generic-runtime.{h,cpp}` (overridable kernel capability)
+- `src/live-code/live-behavior.cpp` (`log.event` override bridge, `log.append`)
+- `src/debug/structured-log.{h,cpp}` (atomic append + provider record surface)
+- `src/hot-reload/capability-selftest.cpp` (P6 overridable checks)
+
+### Result needed from the new executable
+
+`log.event` resolves as before, a package provider for an overridable kernel id
+is reachable through `overrideCapability`, the kernel entry stays stable for all
+callers, and `log.append` exists as the single safe append mechanism.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new capability id, a new bridge branch, or a new
+trailing struct field. The ABI and the override mechanism had to be registered
+and called by the EXE before a hot provider can own logging policy.
+
+### Smallest change that would make this hot
+
+None for the installation itself; this is the one-time ABI/installation boundary.
+After this build, logging policy edits live in the Phase 2 hot provider
+(`src/hot-reload/modules/logging-provider.cpp` + `src/hot-reload/hot-logging.h`),
+which register through the same `log.event` id and need no cold relink.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T112457.exe`.
+
+Automated tests (test evidence):
+
+```text
+--capability-selftest   PASS (incl. new P6 overridable checks)
+--live-code-selftest    log.event capability resolves; 4 pre-existing "journal"
+                        checks FAIL identically on the pre-change build
+                        mimita-20260924T100751.exe (not caused by this build)
+```
+
+### Human review
+
+Pending. Live provider activation and live logging-policy edits still require
+human acceptance.
+
+## Cold-build occurrence 5
+
+UTC time: 2026-09-24T15:43:06Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_154306-hot-logging-provider.md`
+
+### Why the cold build was required
+
+Phases 2-3 add the hot logging provider and route the cold `debug::logEvent` API
+through it. The provider itself is a hot module, but installing its `logging.flush`
+system and the new cold-side bridge (`emitViaProvider`, `appendBody`,
+destination-aware `capLogEvent`) requires the EXE to gain those call sites and
+the `hot-logging.h` manifest entry once.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/hot-logging.h` (new hot header; must be in `headers`)
+- `src/hot-reload/modules/logging-provider.cpp` (new hot module)
+- `src/debug/structured-log.cpp` (provider bridge + `appendBody`)
+- `src/live-code/live-behavior.cpp` (destination-aware `log.event`, wrapped append)
+- `src/hot-reload/hot-modules.json` (header registration)
+
+### Result needed from the new executable
+
+The `log.event` capability resolves to the hot `logging.provider`, `logging.flush`
+registers and runs, cold `debug::logEvent` routes through the provider, and
+aggregation still collapses repeats while errors stay unaggregated.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain the new cold bridge call sites in
+`structured-log.cpp` / `live-behavior.cpp`, nor discover a brand-new hot header
+before it is listed in the manifest. The bridge and manifest are cold.
+
+### Smallest change that would make this hot
+
+None for the bridge installation. After this build, logging policy edits live in
+`hot-logging.h` and `modules/logging-provider.cpp` and activate live.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T114203.exe`.
+
+Automated tests (test evidence):
+
+```text
+--capability-selftest        PASS
+--live-code-selftest         PASS except 4 pre-existing journal checks (also fail
+                             on mimita-20260924T100751.exe); new provider-route PASS
+--gamemode-hot-selftest      PASS
+--dynamic-lifecycle-selftest PASS
+--production-loop-selftest   PASS
+--hot-combat-selftest        25 known pre-existing animation/phase2 FAILs
+--hot-authoritative-selftest known pre-existing journal-evidence FAIL
+```
+
+### Human review
+
+Pending. Live logging-policy edits (field add/remove, destination routing,
+throttling, malformed-config last-good) still require human acceptance.

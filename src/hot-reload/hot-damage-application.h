@@ -26,6 +26,16 @@ enum GameDamageRejectV1 : std::uint32_t {
     GAME_DAMAGE_REJECT_FRIENDLY_FIRE = 4,
 };
 
+// High-level outcome of one authoritative damage application (append-only).
+enum GameDamageOutcomeV1 : std::uint32_t {
+    GAME_DAMAGE_OUTCOME_NONE = 0,
+    GAME_DAMAGE_OUTCOME_APPLIED = 1,     // damage applied, target survives
+    GAME_DAMAGE_OUTCOME_KILLED = 2,      // damage applied, target died
+    GAME_DAMAGE_OUTCOME_SELF = 3,        // applied, attacker == victim, survived
+    GAME_DAMAGE_OUTCOME_SUICIDE = 4,     // applied, attacker == victim, died
+    GAME_DAMAGE_OUTCOME_REJECTED = 5,
+};
+
 struct GameDamageApplicationV1 {
     std::uint32_t structSize;
 
@@ -50,6 +60,44 @@ struct GameDamageApplicationV1 {
     std::int32_t  healthAfter;
     float         outRespawnSeconds;  // respawn rule applied on death
     std::uint32_t result;             // 1 = the policy produced a decision
+
+    // ── Append-only (net.damage-application.v2) ─────────────────────────
+    // Version + explicit outcome so the cold path never re-derives suicide or
+    // the scoring decision. 0 = v1 (legacy).
+    std::uint32_t version;            // 2
+    std::uint32_t outOutcome;         // GameDamageOutcomeV1
+    std::uint32_t outSuicide;         // 1 = attacker == victim
+    std::uint32_t outScoreEligible;   // 1 = this death may award a score
+    std::uint64_t outAttackerEntity;  // attacker entity (0 = environment/self)
+    std::uint64_t outVictimEntity;
+    std::uint64_t tick;
+    std::uint32_t outDeathReason;     // GameDamageSource numeric
+    std::uint32_t reserved;
+};
+
+// Authoritative actor-death result envelope (append-only). The cold path applies
+// health/velocity/death state; this carries the hot death/death-policy result to
+// the kill-recording and event-emission sites without an actor object.
+struct GameActorDeathResultV1 {
+    std::uint32_t structSize;
+    std::uint32_t version;
+    std::uint64_t actorEntity;
+    std::uint64_t attackerEntity;
+    std::uint32_t victimId;
+    std::uint32_t attackerId;
+    std::uint32_t sourceKind;         // GameDamageSource numeric
+    std::uint32_t weaponDefNetworkId;
+    std::int32_t  damage;
+    std::int32_t  healthBefore;
+    std::int32_t  healthAfter;
+    std::uint32_t suicide;            // 1 = attacker == victim
+    std::uint32_t scoreEligible;      // 0 = do not record a score (suicide)
+    float         respawnSeconds;     // applied respawn rule (-1 = one-life)
+    std::uint64_t tick;
+    std::uint64_t generation;
+    std::uint32_t handled;
+    std::uint32_t result;
+    char reason[48];
 };
 
 using GameDamageApplicationFn = void (MIMITA_GAME_CALL *)(
@@ -72,15 +120,20 @@ inline void evaluate(GameDamageApplicationV1& r)
     r.healthAfter = r.targetHealth;
     r.outRespawnSeconds = r.respawnSeconds;
     r.result = 1u;
+    r.outOutcome = GAME_DAMAGE_OUTCOME_NONE;
+    r.outSuicide = 0u;
+    r.outScoreEligible = 0u;
 
     if (r.targetDead || r.damage <= 0) {
         r.rejectReason = r.targetDead ? GAME_DAMAGE_REJECT_TARGET_DEAD
                                       : GAME_DAMAGE_REJECT_NON_POSITIVE;
+        r.outOutcome = GAME_DAMAGE_OUTCOME_REJECTED;
         return;
     }
     // Disconnected/reconnecting players take no damage.
     if (r.targetConnectionStale) {
         r.rejectReason = GAME_DAMAGE_REJECT_TARGET_RECONNECTING;
+        r.outOutcome = GAME_DAMAGE_OUTCOME_REJECTED;
         return;
     }
     // Team-based friendly fire filtering; self-damage always allowed.
@@ -88,6 +141,7 @@ inline void evaluate(GameDamageApplicationV1& r)
         if (r.attackerFound && r.attackerTeam >= 0 &&
             r.attackerTeam == r.targetTeam) {
             r.rejectReason = GAME_DAMAGE_REJECT_FRIENDLY_FIRE;
+            r.outOutcome = GAME_DAMAGE_OUTCOME_REJECTED;
             return;
         }
     }
@@ -102,6 +156,14 @@ inline void evaluate(GameDamageApplicationV1& r)
         r.killed = 1u;
         r.outRespawnSeconds = r.respawnsEnabled ? r.respawnSeconds : -1.0f;
     }
+    // Explicit suicide representation: attacker == victim. A suicide never
+    // awards a score (outScoreEligible = 0) even though the death applies.
+    r.outSuicide = r.attackerIsTarget ? 1u : 0u;
+    r.outScoreEligible = r.outSuicide ? 0u : 1u;
+    if (r.outSuicide)
+        r.outOutcome = r.killed ? GAME_DAMAGE_OUTCOME_SUICIDE : GAME_DAMAGE_OUTCOME_SELF;
+    else
+        r.outOutcome = r.killed ? GAME_DAMAGE_OUTCOME_KILLED : GAME_DAMAGE_OUTCOME_APPLIED;
 }
 
 } // namespace HotDamageApplicationImpl

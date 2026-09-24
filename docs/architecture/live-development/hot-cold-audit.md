@@ -9,7 +9,16 @@
 
 # Hot / warm / cold audit
 
-Last updated: 2026-09-14 (authoritative gameplay.60 boundary with a hot
+Last updated: 2026-09-24 (hot debug-logging policy: the overridable `log.event`
+kernel capability is now provided by the hot `logging.provider`
+(`src/hot-reload/modules/logging-provider.cpp` + `hot-logging.h`), owning
+filtering, event naming, field selection, schemas, sampling/throttling,
+aggregation, destination routing, and JSONL body construction. Cold retains only
+the `events.jsonl` handle, process/time identity, the one atomic append
+(`log.append`), and the last-good fallback. `StructuredLogger` policy and
+`debug-log.*` are marked legacy fallback, not deleted.)
+
+Previous: 2026-09-14 (authoritative gameplay.60 boundary with a hot
 `npc.combat-ai` system owning target selection + authoritative attack via
 generic capabilities; NPC team/role/behavior/target generic-authoritative; NPC
 health generic + replicated + lifecycle; generic entity create/destroy and
@@ -411,6 +420,40 @@ Compiling into `mimita-live-gNNNNNN.dll` is not sufficient.
 - `src/network/server-damage-policy.*` (policy partly hot).
 - selected JSON configuration loaders.
 - `src/live-code/live-editor.cpp` (inspection is kernel-formatted).
+
+## Update 2026-09-24 — debug logging behind the hot boundary
+
+Classification of the debug-logging owners (HOT / COLD BRIDGE / COLD MECHANISM /
+MIGRATION TARGET). Nothing was deleted; cold policy is retained as fallback and
+marked legacy.
+
+- **HOT**: `src/hot-reload/modules/logging-provider.cpp`,
+  `src/hot-reload/hot-logging.h`. Owns category/level filtering, event naming,
+  field selection, schema/version awareness, sampling/throttling, aggregation,
+  destination routing, and JSONL body construction. Registered through the
+  overridable `log.event` kernel capability; reloads `config/debuglogger.json`
+  live; a malformed update keeps the last-good config and emits one error record.
+- **COLD BRIDGE** (stable dispatch, no policy): `src/live-code/net-hot-log.h`
+  (prefers the hot provider, falls back to the journal); `capLogEvent` /
+  `capLog` in `live-behavior.cpp`; `capLogAppend` (`log.append`);
+  `debug::logEvent` -> provider bridge in `structured-log.cpp`; `src/debug/debug-log.*`.
+- **COLD MECHANISM** (OS/file/process): `StructuredLogger` file handle, run
+  directory, sequence counter, process identity, the one atomic `fwrite` line
+  append, and crash-safe flush in `src/debug/structured-log.cpp`;
+  `src/debug/crash-handler.*`; `src/debug/log-manager.*` stdout capture;
+  `src/live-code/live-journal.*` facade.
+- **MIGRATION TARGET** (remaining): `StructuredLogger` config parse/category
+  map/repeat aggregation (now legacy fallback); ad-hoc debug-file writers
+  (`src/debug/npckillfeed-log.cpp`, `logs/*_debug.txt` writers in
+  `death-system.cpp`, `spawn-utils.cpp`, `weapon-runtime.cpp`,
+  `crosshair-config.cpp`, `perf.cpp`); raw `printf` diagnostics (deferred by
+  decision in this pass).
+
+Status: the cold `debug::logEvent` API and the hot `log.event` capability both
+route through the hot provider while a package is active; the cold fallback runs
+when no provider is registered (startup, crash-only, or provider compile
+failure). Player/NPC/projectile dynamic field schemas (`player.state`) remain a
+later phase.
 
 ## COLD (policy owners still deciding behavior)
 
@@ -1409,3 +1452,53 @@ Proves the GLB consumer gate end-to-end with a REAL object graph, headlessly:
   impact spheres, damage numbers, and a tick-based impact burst. JSON is the
   fallback. `EffectRequestV1` v3 carries the hit fact.
 - DEFERRED: `PresentationState` schema v2 + migration.
+
+## 2026-09-23 (later) — networking tick / damage / projectile / connection policy hot
+
+The four target networking files are now classified "cold mechanism, hot policy".
+Nothing was deleted; dead legacy branches are marked in place.
+
+- `src/network/server.cpp` (LEGACY mechanism): process/thread/socket lifetime,
+  the fixed-tick accumulator loop, shutdown, and the live-code distribution
+  announce stay cold. Both tick bodies (`runServer` and `simulateOneServerTick`)
+  now resolve one shared hot `network.tick` policy (`GameServerTickV1`,
+  `hot-server-tick.h`, `modules/server-tick-policy.cpp`) for catch-up cap,
+  snapshot cadence, phase/domain gates, and shutdown. The listen tick body gained
+  the gameplay domain, shot resets, `tickHeldFireIntents`, and
+  `LiveIdentity::setSimulationTick` so both bodies share the policy path.
+  Server-start/tick/shutdown/thread diagnostics route through `log.event`.
+- `src/network/server-damage.cpp` (LEGACY mechanism): health/velocity apply,
+  movement-impulse recording, and the reliable damage-event codec stay cold.
+  Accept/reject, friendly-fire, clamp, death/respawn, explicit suicide
+  (`attacker == victim`, `outSuicide`, `outScoreEligible = 0`), and kill
+  attribution are hot (`net.damage-application` v2, `net.kill-attribution`).
+  Suicide skips `serverGamemodeRecordKill` (no scoring) and emits `actor.killed`
+  with killer == victim. `actor.damage` and `actor.respawn_requested` facts emit
+  through the generic event system.
+- `src/network/server-projectiles.cpp` (LEGACY mechanism): storage,
+  physics/collision adapters, and transport stay cold. Splash falloff is hot
+  (`net.projectile-splash`, now with a `mode` field shared by the canonical hot
+  projectile path), impact is hot (`projectile.impact` /
+  `ProjectileImpactPolicyV1` v2 with victim list + returned damage/knockback),
+  and owner-death cancellation is hot (`net.projectile-cancel`). The legacy
+  `tickServerProjectiles`/`explodeProjectile`/`projectileConfig*` branches are
+  unreachable from the live server and are marked LEGACY in place.
+- `src/network/multiplayer-packets.cpp` (LEGACY mechanism): UDP/ICE transport,
+  the ICE connect worker, socket ownership, and teardown stay cold. Reconnect
+  cadence/health are hot (`net.connection-policy`) and the join/reconnect
+  state-machine transition, retry timing, timeout classification, and
+  user-visible stage labels are hot (`connection.transition`,
+  `hot-connection-transition.h`). Lifecycle records route through `log.event`.
+- NEW STABLE INTERFACES (`game-api.h`, append-only): `GameServerTickV1`,
+  `GameConnectionTransitionV1` + `GameConnectionActionV1`/`GameJoinStageV1`,
+  `GameProjectileCancelV1`, and appended fields on `ProjectileImpactPolicyV1`.
+  `GameDamageApplicationV1` gained the v2 outcome/suicide fields and a separate
+  `GameActorDeathResultV1` in `hot-damage-application.h`.
+- `GameLogEventV1` (`log.event`) now carries server lifecycle and connection
+  lifecycle diagnostics through `src/live-code/net-hot-log.h`.
+
+- LIVE-PROOF DEBT: no live edit, rocket self-kill, falloff edit, or join-retry
+  edit was observed this session; automated self-tests pass but human acceptance
+  remains. The two tick bodies share the policy path but are not a single
+  function; the listen-body parity additions (gameplay domain, held fire,
+  shot resets) need human review for behavior change.

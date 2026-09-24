@@ -91,6 +91,7 @@
     "src/hot-reload/hot-kill-attribution.h",
     "src/hot-reload/hot-npc-targeting.h",
     "src/hot-reload/hot-projectile-splash.h",
+    "src/hot-reload/hot-projectile-cancel.h",
     "src/hot-reload/hot-respawn.h",
     "src/hot-reload/hot-attack-claim.h",
     "src/hot-reload/hot-npc-ground-clamp.h",
@@ -101,10 +102,13 @@
     "src/hot-reload/hot-client-snapshot.h",
     "src/hot-reload/hot-projectile-correction.h",
     "src/hot-reload/hot-connection-health.h",
+    "src/hot-reload/hot-connection-transition.h",
+    "src/hot-reload/hot-server-tick.h",
     "src/hot-reload/hot-server-policy.h",
     "src/hot-reload/hot-geometry.h",
     "src/hot-reload/hot-history.h",
-    "src/hot-reload/hot-lagcomp-policy.h"
+    "src/hot-reload/hot-lagcomp-policy.h",
+    "src/hot-reload/hot-logging.h"
   ],
   "globs": [
     "src/hot-reload/modules/*.cpp",
@@ -160,17 +164,28 @@
     "src/network/packets.h",
     "src/network/reliable-gameplay-events.cpp",
     "src/network/ice/ice-agent.cpp",
-    "src/combat/death-system.h"
+    "src/combat/death-system.h",
+    "src/debug/structured-log.cpp",
+    "src/debug/structured-log.h",
+    "src/debug/log-manager.cpp",
+    "src/debug/log-manager.h",
+    "src/debug/debug-log.cpp",
+    "src/debug/debug-log.h",
+    "src/debug/crash-handler.cpp",
+    "src/debug/crash-handler.h",
+    "src/live-code/live-journal.cpp",
+    "src/live-code/live-journal.h"
   ],
   "bridges": [
     "src/network/snapshot-chunks.cpp",
-    "src/network/movement-validation.cpp"
+    "src/network/movement-validation.cpp",
+    "src/live-code/net-hot-log.h"
   ],
   "comment_legacy": "LEGACY / STABLE-KERNEL. These EXE-owned files are kept in place (never deleted) and are not hot-reloadable by design. Their retry/session/policy now lives behind hot capabilities; what remains is OS/thread/lifetime mechanism, a dispatch bridge, or a thin transport wrapper whose callbacks must never enter a replaceable module. Each entry lists what stays cold and why. A change here requires a cold relink (HOT_RELOAD_LEGACY_CHANGE).",
   "legacy": [
     {
       "file": "src/network/server.cpp",
-      "why": "Process/thread/socket lifetime, the fixed-tick accumulator loop, shutdown, and the live-code distribution announce. Policy blocks are delegated to hot systems/capabilities; the loop itself cannot move hot."
+      "why": "Cold mechanism, hot policy. Process/thread/socket lifetime, the fixed-tick accumulator loop, shutdown, and the live-code distribution announce stay cold. Tick orchestration decisions are hot (network.tick via hot-server-tick.h); mode selection and startup NPCs are hot (net.server-policy); lifecycle diagnostics route through log.event. The loop itself cannot move hot."
     },
     {
       "file": "src/network/ice/ice-agent.cpp",
@@ -194,7 +209,7 @@
     },
     {
       "file": "src/network/server-projectiles.cpp",
-      "why": "Cold projectile storage and physics/collision adapters. Splash/impact policy is hot."
+      "why": "Cold mechanism, hot policy. Projectile storage, physics/collision adapters, and packet transport stay cold. Splash/impact policy (net.projectile-splash, projectile.impact) and owner-death cancellation (net.projectile-cancel) are hot. Legacy dead branches (tickServerProjectiles/explodeProjectile/projectileConfig) are kept in place, marked legacy, and are unreachable from the live server."
     },
     {
       "file": "src/network/server-attack.cpp",
@@ -206,7 +221,7 @@
     },
     {
       "file": "src/network/server-damage.cpp",
-      "why": "Cold authoritative health/velocity apply and reliable damage-event codec. Damage-application/kill-attribution policy are hot."
+      "why": "Cold mechanism, hot policy. Authoritative health/velocity apply, movement-impulse recording, and the reliable damage-event codec stay cold. Accept/reject, friendly-fire, clamp, death/respawn, explicit suicide (attacker==victim, no score), and kill attribution are hot (net.damage-application, net.kill-attribution). actor.damage/actor.killed/actor.respawn_requested facts emit through the generic event system."
     },
     {
       "file": "src/network/multiplayer-tick.cpp",
@@ -218,7 +233,7 @@
     },
     {
       "file": "src/network/multiplayer-packets.cpp",
-      "why": "UDP/ICE transport handles, the ICE connect worker, and teardown. Reconnect/session/connection-health policy are hot."
+      "why": "Cold mechanism, hot policy. UDP/ICE transport handles, the ICE connect worker, socket ownership, and teardown stay cold. Reconnect cadence and connection health (net.connection-policy) plus the join/reconnect state-machine transition, retry timing, timeout classification, and user-visible stage labels (connection.transition via hot-connection-transition.h) are hot. Lifecycle records route through log.event."
     },
     {
       "file": "src/network/multiplayer-reconcile.cpp",

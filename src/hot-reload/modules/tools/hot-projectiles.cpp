@@ -14,6 +14,7 @@
 #include "hot-reload/hot-damage-resolve.h"
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-projectile-event.h"
+#include "hot-reload/hot-projectile-splash.h"
 #include "hot-reload/hot-presentation.h"
 #include "hot-reload/hot-projectile.h"
 #include "hot-reload/hot-tool-visual.h"
@@ -21,6 +22,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdarg>
+#include <cstdio>
 
 namespace {
 
@@ -33,6 +36,30 @@ constexpr std::uint64_t kGrenadeNetworkId = 7;
 
 using DamageApplyFn = bool (MIMITA_GAME_CALL *)(void*, GameDamageApplyV1*);
 using EffectSpawnFn = void (MIMITA_GAME_CALL *)(void*, const GameEffectSpawnV1*);
+
+void logProjectileEvent(GameplayContextV1* ctx, const char* name,
+                        std::uint64_t tick, const char* fmt, ...)
+{
+    if (!ctx || !ctx->resolveCapability || !name)
+        return;
+    auto fn = reinterpret_cast<GameLogEventFn>(
+        ctx->resolveCapability(ctx->host, GAME_CAP_LOG_EVENT));
+    if (!fn)
+        return;
+    GameLogEventV1 event{};
+    event.level = 1u;
+    event.simulationTick = static_cast<std::uint32_t>(tick);
+    event.serverTick = tick;
+    std::snprintf(event.category, sizeof(event.category), "%s", "projectile");
+    std::snprintf(event.name, sizeof(event.name), "%s", name);
+    if (fmt) {
+        va_list args;
+        va_start(args, fmt);
+        std::vsnprintf(event.message, sizeof(event.message), fmt, args);
+        va_end(args);
+    }
+    fn(nullptr, &event);
+}
 
 // True when this process owns a local view (client / listen host). A dedicated
 // server has no local player and must not compose screen-only effects.
@@ -93,7 +120,7 @@ void spawnImpactEffect(GameplayContextV1* ctx, const float pos[3])
 void applyDamageTo(GameplayContextV1* ctx, std::uint64_t victim,
                    std::uint64_t source, float amount, float knockback,
                    const float dir[3], std::uint32_t weaponDefNetworkId,
-                   const float hit[3])
+                   const float hit[3], std::uint64_t tick)
 {
     // Route through the shared cold consequence owner (damage policy,
     // DamageConfirmed/NPC-damage events, kill recording) instead of the raw
@@ -115,12 +142,43 @@ void applyDamageTo(GameplayContextV1* ctx, std::uint64_t victim,
         v.hitPosition[1] = hit[1];
         v.hitPosition[2] = hit[2];
     }
+    GameHealthComponentV1 before{};
+    const bool readBefore = ctx->readComponent(
+        ctx->host, victim, GAME_COMPONENT_HEALTH, &before, sizeof(before));
+    logProjectileEvent(ctx, "projectile.damage.before", tick,
+                       "owner=%llu victim=%llu source=%u amount=%.2f health=%d dead=%u",
+                       static_cast<unsigned long long>(source),
+                       static_cast<unsigned long long>(victim), weaponDefNetworkId,
+                       amount, readBefore ? before.current : -1,
+                       readBefore ? before.dead : 0u);
     hotResolveDamage(ctx, req);
+    GameHealthComponentV1 after{};
+    const bool readAfter = ctx->readComponent(
+        ctx->host, victim, GAME_COMPONENT_HEALTH, &after, sizeof(after));
+    logProjectileEvent(ctx, "projectile.damage.after", tick,
+                       "owner=%llu victim=%llu source=%u amount=%.2f health=%d dead=%u",
+                       static_cast<unsigned long long>(source),
+                       static_cast<unsigned long long>(victim), weaponDefNetworkId,
+                       amount, readAfter ? after.current : -1,
+                       readAfter ? after.dead : 0u);
+    if (readAfter && after.dead && (!readBefore || !before.dead))
+        logProjectileEvent(ctx, "actor.death", tick,
+                           "actor=%llu attacker=%llu source=%u health_before=%d health_after=%d",
+                           static_cast<unsigned long long>(victim),
+                           static_cast<unsigned long long>(source), weaponDefNetworkId,
+                           readBefore ? before.current : -1, after.current);
 }
 
 void explode(GameplayContextV1* ctx, const HotProjectileStateV1& s,
-             const float at[3], std::uint64_t projectileEntity)
+             const float at[3], std::uint64_t projectileEntity,
+             std::uint64_t tick)
 {
+    logProjectileEvent(ctx, "projectile.explosion.before", tick,
+                       "projectile=%llu owner=%llu type=%llu pos=(%.3f,%.3f,%.3f) splash=%.3f",
+                       static_cast<unsigned long long>(projectileEntity),
+                       static_cast<unsigned long long>(s.ownerEntity),
+                       static_cast<unsigned long long>(s.typeId), at[0], at[1], at[2],
+                       s.splashRadius);
     // Broadcast the authoritative explosion first so remote clients always see
     // it, even if a later local effect path is skipped.
     hotBroadcastProjectileExplode(ctx, (std::uint32_t)projectileEntity, s.ownerEntity,
@@ -146,6 +204,18 @@ void explode(GameplayContextV1* ctx, const HotProjectileStateV1& s,
         // Direct-only damage is applied at the contact point below.
         return;
     }
+    // Resolve the shared, hot-editable splash falloff policy once for the whole
+    // explosion. The falloff curve is hot policy; this system owns the victim
+    // enumeration, LOS-free distance test, and damage application.
+    const MimitaNet::GameProjectileSplashPolicyV1* splashPolicy = nullptr;
+    if (ctx->resolveCapability) {
+        auto lookup = reinterpret_cast<MimitaNet::GameProjectileSplashLookupFn>(
+            ctx->resolveCapability(ctx->host,
+                                   MimitaNet::GAME_CAP_PROJECTILE_SPLASH));
+        if (lookup)
+            splashPolicy = lookup(ctx->host);
+    }
+
     std::uint64_t actors[64];
     const std::uint32_t count =
         ctx->findEntities(ctx->host, 0, GAME_COMPONENT_HEALTH, actors, 64);
@@ -165,11 +235,21 @@ void explode(GameplayContextV1* ctx, const HotProjectileStateV1& s,
         const float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
         if (dist > s.splashRadius)
             continue;
-        float t = 0.0f;
-        if (dist > s.fullDamageRadius && s.splashRadius > s.fullDamageRadius)
-            t = (dist - s.fullDamageRadius) / (s.splashRadius - s.fullDamageRadius);
-        const float falloff = std::pow(1.0f - t, s.splashExponent > 0.0f ? s.splashExponent : 1.0f);
-        float amount = s.splashDamage * falloff;
+        // One policy call per victim; mode 1 preserves the canonical linear
+        // power curve exactly. A hot provider may change the curve live.
+        MimitaNet::GameSplashFalloffV1 falloffRequest{};
+        falloffRequest.structSize = sizeof(MimitaNet::GameSplashFalloffV1);
+        falloffRequest.mode = 1u;
+        falloffRequest.distance = dist;
+        falloffRequest.fullDamageRadius = s.fullDamageRadius;
+        falloffRequest.splashRadius = s.splashRadius;
+        falloffRequest.splashDamage = s.splashDamage;
+        falloffRequest.splashExponent = s.splashExponent;
+        if (splashPolicy && splashPolicy->damage)
+            splashPolicy->damage(ctx->host, &falloffRequest);
+        else
+            MimitaNet::HotProjectileSplashImpl::damage(falloffRequest);
+        float amount = falloffRequest.outDamage;
         if (actors[i] == s.ownerEntity && s.selfDamageMultiplier > 0.0f)
             amount *= s.selfDamageMultiplier;
         if (amount <= 0.0f)
@@ -177,11 +257,11 @@ void explode(GameplayContextV1* ctx, const HotProjectileStateV1& s,
         const float inv = dist > 1e-4f ? 1.0f / dist : 0.0f;
         const float dir[3] = {dx * inv, dy * inv, dz * inv};
         applyDamageTo(ctx, actors[i], s.ownerEntity, amount, s.knockbackStrength,
-                      dir, (std::uint32_t)s.typeId, at);
+                      dir, (std::uint32_t)s.typeId, at, tick);
     }
 }
 
-void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float dt)
+void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t tick, float dt)
 {
     GameplayContextV1* ctx = static_cast<GameplayContextV1*>(host);
     if (!ctx || !ctx->dynamicEnumerateComponent || !ctx->dynamicReadComponent ||
@@ -339,7 +419,7 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float d
                     if (s.impactDamage > 0.0f)
                         applyDamageTo(ctx, actors[a], s.ownerEntity, s.impactDamage,
                                       2.0f, nullptr, (std::uint32_t)s.typeId,
-                                      s.position);
+                                      s.position, tick);
                     exploded = true;
                 }
             }
@@ -359,9 +439,18 @@ void MIMITA_GAME_CALL projectileTick(void* host, std::uint64_t /*tick*/, float d
 
         if (exploded)
         {
-            explode(ctx, s, at, entities[i]);
+            logProjectileEvent(ctx, "projectile.explosion.after", tick,
+                               "projectile=%llu owner=%llu type=%llu destroying=1",
+                               static_cast<unsigned long long>(entities[i]),
+                               static_cast<unsigned long long>(s.ownerEntity),
+                               static_cast<unsigned long long>(s.typeId));
+            explode(ctx, s, at, entities[i], tick);
             if (s.splashRadius <= 0.0f && s.impactDamage > 0.0f)
                 spawnImpactEffect(ctx, at);
+            logProjectileEvent(ctx, "projectile.destroy", tick,
+                               "projectile=%llu owner=%llu exploded=1",
+                               static_cast<unsigned long long>(entities[i]),
+                               static_cast<unsigned long long>(s.ownerEntity));
             ctx->entityDestroy(ctx->host, entities[i]);
             continue;
         }

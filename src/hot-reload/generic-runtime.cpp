@@ -471,7 +471,8 @@ void GenericRuntime::registerKernelCapability(std::uint64_t id,
                                               std::uint64_t signatureId,
                                               std::uint64_t schemaHash,
                                               void* callable,
-                                              const char* name)
+                                              const char* name,
+                                              bool overridable)
 {
     if (id == 0 || !callable)
         return;
@@ -481,6 +482,7 @@ void GenericRuntime::registerKernelCapability(std::uint64_t id,
             existing.signatureId = signatureId;
             existing.schemaHash = schemaHash;
             existing.callable = callable;
+            existing.overridable = overridable ? 1u : 0u;
             existing.name = name ? name : "";
             return;
         }
@@ -492,8 +494,38 @@ void GenericRuntime::registerKernelCapability(std::uint64_t id,
     e.callable = callable;
     e.providerPackage = 0;
     e.providerGeneration = 0;
+    e.overridable = overridable ? 1u : 0u;
     e.name = name ? name : "";
     kernelCapabilities_.push_back(std::move(e));
+}
+
+void* GenericRuntime::overrideCapability(std::uint64_t id) const
+{
+    if (!kernelCapabilityOverridable(id))
+        return nullptr;
+    for (const CapabilityEntry& p : capabilityProviders_) {
+        if (p.id == id)
+            return p.callable;
+    }
+    return nullptr;
+}
+
+std::uint32_t GenericRuntime::overrideProviderGeneration(std::uint64_t id) const
+{
+    for (const CapabilityEntry& p : capabilityProviders_) {
+        if (p.id == id)
+            return p.providerGeneration;
+    }
+    return 0;
+}
+
+bool GenericRuntime::kernelCapabilityOverridable(std::uint64_t id) const
+{
+    for (const CapabilityEntry& p : kernelCapabilities_) {
+        if (p.id == id)
+            return p.overridable != 0;
+    }
+    return false;
 }
 
 bool GenericRuntime::capabilityInfo(std::uint64_t id, std::uint64_t* outSignatureId,

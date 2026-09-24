@@ -1,5 +1,8 @@
 #pragma once
 
+// LEGACY (cold bridge): the Debug::Category API maps onto StructuredLogger and
+// carries no policy of its own. Retained for existing callers; new diagnostics
+// should use debug::logEvent or the hot `log.event` capability.
 #include <cstdarg>
 #include "../config.h"
 #include "structured-log.h"

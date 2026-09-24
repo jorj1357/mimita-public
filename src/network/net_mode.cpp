@@ -28,6 +28,8 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.connect = argv[++i];
             options.connectExplicit = true;
         }
+        else if (std::strcmp(argv[i], "--room-code") == 0 && i + 1 < argc)
+            options.roomCode = argv[++i];
         else if (std::strcmp(argv[i], "--bind") == 0 && i + 1 < argc)
         {
             options.bind = argv[++i];
@@ -96,6 +98,7 @@ void printLaunchUsage()
     printf("  --no-map-rotation Disable automatic community map rotation\n");
     printf("  --map-rotation-minutes <1-9999> Automatic map rotation interval\n");
     printf("  --no-discord-notification Disable the server-live Discord announcement\n");
+    printf("  --room-code <code> Show a published room code on a direct local join\n");
     printf("  --ice             ICE NAT traversal is always enabled\n");
     printf("No args keeps the normal single-player/menu flow.\n");
 }

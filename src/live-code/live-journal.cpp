@@ -7,12 +7,11 @@
 */
 #include "live-code/live-journal.h"
 #include "live-code/live-identity.h"
+#include "debug/structured-log.h"
 #include "utils/time-format.h"
 
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 
 namespace {
 
@@ -69,19 +68,14 @@ void LiveEventJournal::init()
     if (mActive)
         return;
 
-    const std::filesystem::path dir =
-        std::filesystem::path("logs") / "features" / "live-code" / MiMitaTime::utcDateFolder();
-    std::error_code error;
-    std::filesystem::create_directories(dir, error);
-
-    mPath = (dir / ("live_events_" + MiMitaTime::utcCompactStamp() + ".jsonl")).string();
-
-    std::ofstream probe(mPath, std::ios::app);
-    if (!probe.is_open()) {
+    // Compatibility facade: live-code diagnostics share the authoritative
+    // StructuredLogger stream. This preserves existing call sites while
+    // eliminating the second logs/features/live-code file family.
+    mPath = debug::eventsPath();
+    if (mPath.empty()) {
         mActive = false;
         return;
     }
-    probe.close();
     mActive = true;
 }
 
@@ -106,96 +100,34 @@ void LiveEventJournal::record(const char* type, const Fields& fields)
     if (!type || !*type)
         return;
 
-    const std::string ts = MiMitaTime::utcIso8601Millis();
-    const std::uint64_t mono = MiMitaTime::monotonicMillis();
-
-    std::string line;
-    line.reserve(256);
-    line += '{';
-    bool first = true;
-    appendString(line, first, "ts_utc", ts);
-
-    if (!first) line += ",";
-    first = false;
-    line += "\"mono_ms\":";
-    line += std::to_string(mono);
-
-    // Every event identifies the process side, PID, and session so client and
-    // server evidence can never be confused.
-    line += ",\"process\":\"";
-    line += escapeJson(LiveIdentity::process());
-    line += '"';
-    line += ",\"pid\":";
-    line += std::to_string(LiveIdentity::pid());
-    if (LiveIdentity::sessionId() != 0) {
-        line += ",\"session_id\":";
-        line += std::to_string(LiveIdentity::sessionId());
-    }
-
-    if (!first) line += ",";
-    line += "\"type\":\"";
-    line += escapeJson(type);
-    line += '"';
-
-    if (fields.tick != 0) {
-        line += ",\"tick\":";
-        line += std::to_string(fields.tick);
-    }
-    if (fields.hasGeneration) {
-        line += ",\"generation\":";
-        line += std::to_string(fields.generation);
-    }
-    appendString(line, first, "code_hash", fields.codeHash);
-    appendString(line, first, "file", fields.file);
-    appendString(line, first, "module", fields.module);
-    appendString(line, first, "actor_id", fields.actorId);
-    appendString(line, first, "projectile_id", fields.projectileId);
-    appendString(line, first, "packet_id", fields.packetId);
-    appendString(line, first, "result", fields.result);
-    appendString(line, first, "error", fields.error);
-
-    // Append-only server correlation fields. Zero numeric ids are omitted so a
-    // line stays compact and no format changes for existing readers.
-    if (fields.clientTick != 0) {
-        line += ",\"client_tick\":";
-        line += std::to_string(fields.clientTick);
-    }
-    if (fields.connectionId != 0) {
-        line += ",\"connection_id\":";
-        line += std::to_string(fields.connectionId);
-    }
-    if (fields.requestId != 0) {
-        line += ",\"request_id\":";
-        line += std::to_string(fields.requestId);
-    }
-    if (fields.entityId != 0) {
-        line += ",\"entity_id\":";
-        line += std::to_string(fields.entityId);
-    }
-    if (fields.serverGeneration != 0) {
-        line += ",\"server_generation\":";
-        line += std::to_string(fields.serverGeneration);
-    }
-    if (fields.hotGeneration != 0) {
-        line += ",\"hot_generation\":";
-        line += std::to_string(fields.hotGeneration);
-    }
-    appendString(line, first, "server_hash", fields.serverHash);
-    appendString(line, first, "hot_hash", fields.hotHash);
-    if (!fields.extra.empty())
-    {
-        line += ",";
-        line += fields.extra;
-    }
-    line += '}';
-
     std::lock_guard<std::mutex> lock(mMutex);
     if (!mActive)
         return;
 
-    std::ofstream out(mPath, std::ios::app);
-    if (!out.is_open())
-        return;
-    out << line << '\n';
-    out.flush();
+    debug::Event event;
+    event.category = "NETWORK";
+    event.name = type;
+    event.level = debug::Level::Info;
+    event.simulationTick = fields.tick;
+    event.clientTick = fields.clientTick;
+    event.message = fields.error.empty() ? fields.result : fields.error;
+    event.fields["live_code_event"] = true;
+    if (LiveIdentity::sessionId() != 0) event.fields["session_id"] = LiveIdentity::sessionId();
+    if (fields.hasGeneration) event.fields["generation"] = fields.generation;
+    if (!fields.codeHash.empty()) event.fields["code_hash"] = fields.codeHash;
+    if (!fields.file.empty()) event.fields["file"] = fields.file;
+    if (!fields.module.empty()) event.fields["module"] = fields.module;
+    if (!fields.actorId.empty()) event.fields["actor_id"] = fields.actorId;
+    if (!fields.projectileId.empty()) event.fields["projectile_id"] = fields.projectileId;
+    if (!fields.packetId.empty()) event.fields["packet_id"] = fields.packetId;
+    if (!fields.result.empty()) event.fields["result"] = fields.result;
+    if (!fields.error.empty()) event.fields["error"] = fields.error;
+    if (fields.connectionId != 0) event.fields["connection_id"] = fields.connectionId;
+    if (fields.requestId != 0) event.fields["request_id"] = fields.requestId;
+    if (fields.entityId != 0) event.fields["entity_id"] = fields.entityId;
+    if (fields.serverGeneration != 0) event.fields["server_generation"] = fields.serverGeneration;
+    if (fields.hotGeneration != 0) event.fields["hot_generation"] = fields.hotGeneration;
+    if (!fields.serverHash.empty()) event.fields["server_hash"] = fields.serverHash;
+    if (!fields.hotHash.empty()) event.fields["hot_hash"] = fields.hotHash;
+    debug::logEvent(event);
 }

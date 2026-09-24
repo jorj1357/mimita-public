@@ -310,6 +310,7 @@ int main(int argc, char** argv)
         MultiplayerConnectInfo info;
         info.shouldConnect = true;
         info.directAddress = launchOptions.connect;
+        info.roomCode = launchOptions.roomCode;
         info.mapName = launchOptions.mapName;
         setPendingMultiplayerConnect(info);
     }

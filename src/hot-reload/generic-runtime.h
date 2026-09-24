@@ -68,9 +68,18 @@ public:
     // Register a kernel-side primitive capability by id + signature. The kernel
     // treats these as ordinary registry entries, identical in mechanism to a
     // hot package provider.
+    // `overridable` marks a kernel primitive whose implementation a hot package
+    // may replace by registering a provider for the same id. The kernel entry
+    // stays resolvable (the bridge consults the override first) so every caller
+    // sees one stable ABI id. Default false preserves all existing behavior.
     void registerKernelCapability(std::uint64_t id, std::uint64_t signatureId,
                                   std::uint64_t schemaHash, void* callable,
-                                  const char* name);
+                                  const char* name, bool overridable = false);
+    // A package provider registered for an overridable kernel id, or nullptr.
+    // The kernel bridge for that id calls it before its own fallback path.
+    void* overrideCapability(std::uint64_t id) const;
+    std::uint32_t overrideProviderGeneration(std::uint64_t id) const;
+    bool kernelCapabilityOverridable(std::uint64_t id) const;
     // Metadata for a resolved capability. providerPackage 0 = kernel.
     bool capabilityInfo(std::uint64_t id, std::uint64_t* outSignatureId,
                         std::uint64_t* outSchemaHash,
@@ -180,7 +189,9 @@ private:
         void* callable = nullptr;
         std::uint64_t providerPackage = 0;   // 0 = kernel
         std::uint32_t providerGeneration = 0;
-        std::uint32_t reserved = 0;
+        // Kernel entries only: a hot package may override this id. Package
+        // provider entries carry 0 here.
+        std::uint32_t overridable = 0;
         std::string name;
     };
     struct CapabilityRequirement {

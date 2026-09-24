@@ -208,6 +208,13 @@ enum class StructuredCategory {
 // ── StructuredLogger (compatibility facade) ─────────────────────────────────
 // Owns config, the single events.jsonl handle, sequence, and repeat buckets.
 // The legacy Entry/write path now emits one JSONL record per message.
+//
+// LEGACY (cold fallback): when a hot `log.event` provider is active, filtering,
+// naming, fields, destinations, and aggregation are owned by
+// `src/hot-reload/modules/logging-provider.cpp`. The config/level/aggregation
+// logic here is retained only as the cold fallback for when no provider is
+// registered (startup, crash-only, or provider compile failure). It is not
+// deleted so behavior is unchanged if the hot path is unavailable.
 class StructuredLogger {
 public:
     static StructuredLogger& instance();
@@ -237,6 +244,7 @@ public:
         std::vector<double> numericActual;
         double tolerance = 0.0;
         std::string message;
+        nlohmann::json fields = nlohmann::json::object();
     };
 
     void write(const Entry& e);
@@ -274,6 +282,16 @@ public:
     // the free `debug::logEvent` function can reach it without friendship.
     void emit(const debug::Event& event, bool forceNoAggregate = false);
 
+    // Hot-provider path. `emitProviderRecord` writes one record whose field
+    // body was already filtered/constructed by the hot logging provider; the
+    // cold side adds only universal fields and the atomic append. `appendBody`
+    // wraps a prebuilt body fragment with the universal prefix (used by the
+    // provider's aggregation flush system). `appendRaw` appends a whole line.
+    void emitProviderRecord(const debug::Event& event, const char* body,
+                            uint32_t bodyLen, bool forceFlush = false);
+    void appendBody(const char* body, uint32_t len, bool forceFlush = false);
+    void appendRaw(const char* bytes, uint32_t len, bool forceFlush = false);
+
     // Flush every pending repeat bucket (used by debug::flushEvents).
     void flushAllBuckets();
 
@@ -309,7 +327,9 @@ private:
     const StructuredLogConfig::CategoryConfig& categoryConfigFor(StructuredCategory cat) const;
     void writeLine(const std::string& json, bool forceFlush = false);
     void flushBucket(RepeatBucket& bucket);
-    std::string buildRecord(const debug::Event& event) const;
+    std::string buildRecord(const debug::Event& event,
+                            const char* rawBody = nullptr,
+                            uint32_t rawBodyLen = 0) const;
 
     StructuredLogConfig mConfig;
     bool mInitialized = false;

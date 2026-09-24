@@ -138,12 +138,43 @@ bool runCapabilitySelfTest(std::string& report)
     check(error.find("duplicate capability provider") != std::string::npos,
           "P5 failure reason is duplicate-provider", report);
 
+    // P6: a kernel capability marked overridable may be replaced by a package
+    // provider, while the kernel entry stays resolvable so every caller keeps
+    // one stable ABI id. Non-overridable kernel ids are never overridden.
+    const std::uint64_t kOverridable = gameHash("selftest.overridable");
+    rt.registerKernelCapability(kOverridable, gameHash("sig.selftest.override.v1"), 0,
+                                reinterpret_cast<void*>(&kernelEcho),
+                                "selftest.overridable", /*overridable=*/true);
+    check(rt.kernelCapabilityOverridable(kOverridable),
+          "P6 kernel capability marked overridable", report);
+    check(rt.overrideCapability(kOverridable) == nullptr,
+          "P6 no override before a provider registers", report);
+
+    const GameCapabilityDescriptorV1 p6Providers[] = {
+        {kOverridable, gameHash("sig.selftest.override.v1"), 0,
+         reinterpret_cast<void*>(&providerA), "override.provider.a"}};
+    GamePackageDescriptorV1 p6 = makePackage(p6Providers, 1, nullptr, 0,
+                                             gameHash("selftest.pkg6"));
+    error.clear();
+    check(rt.activate(&p6, error, 46), "P6 override provider activates", report);
+    check(rt.overrideCapability(kOverridable) == reinterpret_cast<void*>(&providerA),
+          "P6 override resolves to the package provider", report);
+    check(rt.capability(kOverridable) == reinterpret_cast<void*>(&kernelEcho),
+          "P6 kernel bridge entry stays stable for callers", report);
+    check(rt.overrideProviderGeneration(kOverridable) == 46,
+          "P6 override provider generation = 46", report);
+    check(rt.overrideCapability(kKernelEcho) == nullptr,
+          "P6 non-overridable kernel id has no override", report);
+
     // Deactivate: package providers retire; kernel primitives survive.
     rt.deactivate();
     check(rt.capability(kBanana) == nullptr, "deactivate retires package providers", report);
     check(rt.kernelProvidesCapability(kKernelEcho) &&
               reinterpret_cast<LaunchFn>(rt.capability(kKernelEcho))(nullptr, 7) == 7u,
           "kernel capability survives package deactivation", report);
+    check(rt.overrideCapability(kOverridable) == nullptr &&
+              rt.capability(kOverridable) == reinterpret_cast<void*>(&kernelEcho),
+          "P6 deactivate retires override, kernel fallback survives", report);
 
     report += gPass ? "[CAPABILITY SELFTEST] PASS\n" : "[CAPABILITY SELFTEST] FAIL\n";
     return gPass;

@@ -31,14 +31,14 @@
 
 namespace {
 
-void spawnEffect(GameplayContextV1* ctx, std::uint64_t meshId, std::uint64_t texId,
+bool spawnEffect(GameplayContextV1* ctx, std::uint64_t meshId, std::uint64_t texId,
                  const float pos[3], const float vel[3], float colorR,
                  float colorG, float colorB, float scale0, float growth,
-                 float lifetime, float fadeStart)
+                 float lifetime, float fadeStart, float alpha = 1.0f)
 {
     std::uint64_t entity = 0;
     if (!ctx->entityCreate(ctx->host, 0u, &entity) || entity == 0)
-        return;
+        return false;
     GameTransformComponentV1 tf{};
     tf.position[0] = pos[0];
     tf.position[1] = pos[1];
@@ -59,7 +59,7 @@ void spawnEffect(GameplayContextV1* ctx, std::uint64_t meshId, std::uint64_t tex
     present.color[0] = colorR;
     present.color[1] = colorG;
     present.color[2] = colorB;
-    present.color[3] = 1.0f;
+    present.color[3] = std::clamp(alpha, 0.0f, 1.0f);
     ctx->dynamicWriteComponent(ctx->host, entity, HOT_PRESENTATION_COMPONENT,
                                &present, sizeof(present));
     HotEffectLifetimeV1 life{};
@@ -73,6 +73,7 @@ void spawnEffect(GameplayContextV1* ctx, std::uint64_t meshId, std::uint64_t tex
     life.fadeStart = fadeStart;
     ctx->dynamicWriteComponent(ctx->host, entity, HOT_EFFECT_LIFETIME_COMPONENT,
                                &life, sizeof(life));
+    return true;
 }
 
 // A static, oriented effect (no motion integration): +Z is rotated to `dir`, and
@@ -134,6 +135,10 @@ struct HitfxMoveRecipeV1 {
     float forwardOffset = 0.0f, rightOffset = 0.0f, upOffset = 0.0f;
     float speedScaling = 0.0f, speedThreshold = 0.0f;
     float speedScaleMin = 1.0f, speedScaleMax = 1.0f;
+    float offset[3] = {0.0f, 0.0f, 0.0f};
+    float velocity[3] = {0.0f, 0.0f, 0.0f};
+    std::string shape = "sphere";
+    std::string model;
 };
 
 struct HitfxRecipeTableV1 {
@@ -143,6 +148,7 @@ struct HitfxRecipeTableV1 {
     std::filesystem::file_time_type writeTime{};
 };
 HitfxRecipeTableV1 g_hitfx;
+std::uint64_t g_footstepPresentationSerial = 0;
 
 void readHitfxVec3(const nlohmann::json& j, float out[3])
 {
@@ -187,6 +193,10 @@ void readHitfxBurst(const nlohmann::json& j, HitfxMoveRecipeV1& r)
     if (j.contains("speedThreshold")) r.speedThreshold = j["speedThreshold"].get<float>();
     if (j.contains("speedScaleMin")) r.speedScaleMin = j["speedScaleMin"].get<float>();
     if (j.contains("speedScaleMax")) r.speedScaleMax = j["speedScaleMax"].get<float>();
+    if (j.contains("offset")) readHitfxVec3(j["offset"], r.offset);
+    if (j.contains("velocity")) readHitfxVec3(j["velocity"], r.velocity);
+    if (j.contains("shape") && j["shape"].is_string()) r.shape = j["shape"].get<std::string>();
+    if (j.contains("model") && j["model"].is_string()) r.model = j["model"].get<std::string>();
 }
 
 bool loadHitfx()
@@ -197,17 +207,18 @@ bool loadHitfx()
     try {
         const nlohmann::json j = nlohmann::json::parse(file, nullptr, true, true);
         HitfxRecipeTableV1 next;
-        if (j.contains("groundJumpBurst")) readHitfxBurst(j["groundJumpBurst"], next.groundJump);
-        if (j.contains("airJumpBurst")) readHitfxBurst(j["airJumpBurst"], next.airJump);
-        if (j.contains("walkBurst")) readHitfxBurst(j["walkBurst"], next.walk);
-        if (j.contains("landingBurst")) readHitfxBurst(j["landingBurst"], next.landing);
-        if (j.contains("movementDashBurst")) readHitfxBurst(j["movementDashBurst"], next.movementDash);
-        if (j.contains("dash")) readHitfxBurst(j["dash"], next.dash);
-        if (j.contains("perfectDash")) readHitfxBurst(j["perfectDash"], next.perfectDash);
-        if (j.contains("freeze")) readHitfxBurst(j["freeze"], next.freeze);
-        if (j.contains("freezeTrail")) readHitfxBurst(j["freezeTrail"], next.freezeTrail);
-        if (j.contains("downDash")) readHitfxBurst(j["downDash"], next.downDash);
-        if (j.contains("footstep")) readHitfxBurst(j["footstep"], next.footstep);
+        const bool jsonActive = j.value("behaviorSource", std::string("json")) != "cpp";
+        if (jsonActive && j.contains("groundJumpBurst")) readHitfxBurst(j["groundJumpBurst"], next.groundJump);
+        if (jsonActive && j.contains("airJumpBurst")) readHitfxBurst(j["airJumpBurst"], next.airJump);
+        if (jsonActive && j.contains("walkBurst")) readHitfxBurst(j["walkBurst"], next.walk);
+        if (jsonActive && j.contains("landingBurst")) readHitfxBurst(j["landingBurst"], next.landing);
+        if (jsonActive && j.contains("movementDashBurst")) readHitfxBurst(j["movementDashBurst"], next.movementDash);
+        if (jsonActive && j.contains("dash")) readHitfxBurst(j["dash"], next.dash);
+        if (jsonActive && j.contains("perfectDash")) readHitfxBurst(j["perfectDash"], next.perfectDash);
+        if (jsonActive && j.contains("freeze")) readHitfxBurst(j["freeze"], next.freeze);
+        if (jsonActive && j.contains("freezeTrail")) readHitfxBurst(j["freezeTrail"], next.freezeTrail);
+        if (jsonActive && j.contains("downDash")) readHitfxBurst(j["downDash"], next.downDash);
+        if (jsonActive && j.contains("footstep")) readHitfxBurst(j["footstep"], next.footstep);
         next.loaded = true;
         g_hitfx = next;
         return true;
@@ -251,6 +262,16 @@ const float* recipeColor(const HitfxMoveRecipeV1& r, const float def[3])
 float recipeLifetime(const HitfxMoveRecipeV1& r, float def)
 {
     return (r.valid && r.lifetime > 0.0f) ? r.lifetime : def;
+}
+
+std::uint64_t meshForHitfxShape(const HitfxMoveRecipeV1& r)
+{
+    if (r.shape == "cube") return HOT_MESH_CUBE;
+    if (r.shape == "hexagon") return HOT_MESH_HEXAGON;
+    if (r.shape == "rocket") return HOT_MESH_ROCKET;
+    if (r.shape == "grenade") return HOT_MESH_GRENADE;
+    if (r.shape == "actor") return HOT_MESH_ACTOR;
+    return HOT_MESH_SPHERE;
 }
 
 using AudioPlayFn = void (MIMITA_GAME_CALL *)(void*, const GameAudioCommandV1*);
@@ -593,11 +614,14 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             recipeScale(r, 0.25f, 0.15f, lifetime, scale0, growth);
             const float def[3] = {1.0f, 0.85f, 0.2f};
             const float* c = recipeColor(r, def);
-            const float p[3] = {pos[0], pos[1],
-                                pos[2] - 0.5f + (r.valid ? r.upOffset : 0.0f)};
-            const float v[3] = {0.0f, 0.0f, 1.5f};
-            spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
-                        c[0], c[1], c[2], scale0, growth, lifetime, 0.15f);
+            const float p[3] = {pos[0] + r.offset[0], pos[1] + r.offset[1],
+                                pos[2] - 0.5f + r.upOffset + r.offset[2]};
+            const float v[3] = {r.velocity[0], r.velocity[1],
+                                r.velocity[2] != 0.0f ? r.velocity[2] : 1.5f};
+            const bool spawned = spawnEffect(ctx, meshForHitfxShape(r), HOT_TEX_DEFAULT, p, v,
+                                             c[0], c[1], c[2], scale0, growth,
+                                             lifetime, 0.15f, r.alphaStart);
+            req->handled = spawned ? 1u : 0u;
             return;
         }
         if (type == gameHash("effect.movement.air_jump")) {
@@ -609,11 +633,14 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             recipeScale(r, 0.4f, 0.1f, lifetime, scale0, growth);
             const float def[3] = {0.5f, 0.3f, 1.0f};
             const float* c = recipeColor(r, def);
-            const float p[3] = {pos[0], pos[1],
-                                pos[2] - 1.0f + (r.valid ? r.upOffset : 0.0f)};
-            const float v[3] = {0.0f, 0.0f, -0.5f};
-            spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
-                        c[0], c[1], c[2], scale0, growth, lifetime, 0.2f);
+            const float p[3] = {pos[0] + r.offset[0], pos[1] + r.offset[1],
+                                pos[2] - 1.0f + r.upOffset + r.offset[2]};
+            const float v[3] = {r.velocity[0], r.velocity[1],
+                                r.velocity[2] != 0.0f ? r.velocity[2] : -0.5f};
+            const bool spawned = spawnEffect(ctx, meshForHitfxShape(r), HOT_TEX_DEFAULT, p, v,
+                                             c[0], c[1], c[2], scale0, growth,
+                                             lifetime, 0.2f, r.alphaStart);
+            req->handled = spawned ? 1u : 0u;
             return;
         }
         if (type == gameHash("effect.movement.dash")) {
@@ -714,17 +741,22 @@ void MIMITA_GAME_CALL onEffectRequest(void* host, const GameEventV1* event)
             const HitfxMoveRecipeV1& r = g_hitfx.footstep;
             float scale0, growth;
             const float lifetime = recipeLifetime(r, 6.0f / 60.0f);
-            recipeScale(r, 0.08f, 0.0f, lifetime, scale0, growth);
+            recipeScale(r, 0.5f, 0.0f, lifetime, scale0, growth);
             const float def[3] = {0.8f, 0.8f, 0.8f};
             const float* c = recipeColor(r, def);
             if (!r.valid || r.enabled) {
                 const float p[3] = {pos[0], pos[1],
-                                    pos[2] - 0.6f + (r.valid ? r.upOffset : 0.0f)};
-                const float v[3] = {0.0f, 0.0f, 0.0f};
-                spawnEffect(ctx, HOT_MESH_SPHERE, HOT_TEX_DEFAULT, p, v,
-                            c[0], c[1], c[2], scale0, growth, lifetime, 0.0f);
+                                    pos[2] - 0.6f + r.upOffset + r.offset[2]};
+                const float v[3] = {r.velocity[0], r.velocity[1], r.velocity[2]};
+                spawnEffect(ctx, meshForHitfxShape(r), HOT_TEX_DEFAULT, p, v,
+                            c[0], c[1], c[2], scale0, growth, lifetime, 0.0f,
+                            r.alphaStart);
             }
-            hotEmitRecipeSound(ctx, gameHash("footstep"), pos, 0, true, nullptr);
+            HotAudioOverrideV1 footstepAudio{};
+            footstepAudio.seed = ++g_footstepPresentationSerial ^
+                                 (static_cast<std::uint64_t>(ctx->tick) << 32);
+            hotEmitRecipeSound(ctx, gameHash("footstep"), pos, 0, true,
+                               &footstepAudio);
             return;
         }
     }

@@ -99,7 +99,8 @@ static ServerDamageResult applyPlayerDamageLegacy(
     uint32_t attackerPlayerId,
     int damage,
     const glm::vec3& knockback,
-    ServerDamageSource source)
+    ServerDamageSource source,
+    uint32_t tick = 0)
 {
     ServerDamageResult result;
     result.healthBefore = target.health;
@@ -121,6 +122,12 @@ static ServerDamageResult applyPlayerDamageLegacy(
     auto attackerIt = players.find(attackerPlayerId);
     request.attackerFound = attackerIt != players.end() ? 1u : 0u;
     request.attackerTeam = attackerIt != players.end() ? attackerIt->second.matchTeam : -1;
+    // v2 identity/outcome facts: explicit suicide (attacker == victim) and the
+    // scoring eligibility decision live in the hot policy.
+    request.version = 2u;
+    request.outVictimEntity = target.id;
+    request.outAttackerEntity = attackerPlayerId;
+    request.outDeathReason = static_cast<std::uint32_t>(source);
 
     GameDamageApplicationFn policy = hotDamageApplicationPolicy();
     if (policy)
@@ -148,6 +155,8 @@ static ServerDamageResult applyPlayerDamageLegacy(
     recordServerMovementExternalImpulse(target, knockback);
     result.applied = true;
     result.healthAfter = target.health;
+    result.suicide = request.outSuicide != 0u;
+    result.scoreEligible = request.outScoreEligible != 0u;
 
     if (request.killed)
     {
@@ -175,6 +184,28 @@ static ServerDamageResult applyPlayerDamageLegacy(
         target.id, attackerPlayerId, damageSourceName(source), request.clampedDamage,
         result.healthBefore, result.healthAfter, (int)result.killed,
         knockback.x, knockback.y, knockback.z);
+
+    // Generic actor.damage fact through the existing event system. The payload is
+    // the resolved hot outcome; an unregistered event type is a safe no-op.
+    {
+        GameDamageApplicationV1 fact = request;
+        fact.tick = tick;
+        LiveBehavior::dispatchGameplayEvent64(
+            gameHash("actor.damage"), &fact, sizeof(fact), tick,
+            fact.outAttackerEntity, fact.outVictimEntity);
+    }
+    if (request.killed)
+    {
+        ActorLifecycleStateV1 life{};
+        life.entityId = target.id;
+        life.actorKind = 1u;  // player
+        life.dead = 1u;
+        life.respawnRequested = request.outRespawnSeconds >= 0.0f ? 1u : 0u;
+        life.reason = static_cast<std::uint32_t>(source);
+        LiveBehavior::dispatchGameplayEvent64(
+            gameHash("actor.respawn_requested"), &life, sizeof(life), tick,
+            0, target.id);
+    }
     return result;
 }
 
@@ -224,7 +255,8 @@ ServerDamageResult applyActorDamage(
         request.eventId, request.serverTick);
     result = applyPlayerDamageLegacy(players, *victim.player,
                                      attacker.id, request.damage,
-                                     request.knockback, request.source);
+                                     request.knockback, request.source,
+                                     request.serverTick);
     result.eventId = request.eventId;
     result.correlationId = request.correlationId;
     Debug::log(Debug::Category::Networking,
@@ -352,7 +384,8 @@ bool serverApplyEntityDamage(GameDamageApplyV1& request)
         // damage), which is also the phase-1 generic damage path.
         result = applyPlayerDamageLegacy(players, *damageRequest.victim.player,
                                          attackerPlayerId, damageRequest.damage,
-                                         damageRequest.knockback, damageRequest.source);
+                                         damageRequest.knockback, damageRequest.source,
+                                         damageRequest.serverTick);
     } else {
         // NPC victim: generic ActorHealthState on the NPC entity is the
         // authoritative store. The ServerNpc mirror and the typed
@@ -501,7 +534,27 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
         if (const WeaponDefinition* definition = WeaponRegistry::instance().get(weaponId))
             weaponDisplayName = definition->displayName.empty()
                 ? definition->id : definition->displayName;
-        if (effectiveAttackerNpcId != 0)
+        if (result.suicide)
+        {
+            // Explicit suicide (attacker == victim): the death is a fact, but it
+            // has no scoring path. Dispatch the generic actor.killed fact with
+            // killer == victim and skip serverGamemodeRecordKill entirely.
+            GameActorKilledV1 suicideEvent{};
+            suicideEvent.killerEntity = target.id;
+            suicideEvent.victimEntity = target.id;
+            suicideEvent.killerId = target.id;
+            suicideEvent.victimId = target.id;
+            suicideEvent.killerIsNpc = 0;
+            suicideEvent.victimIsNpc = 0;
+            suicideEvent.weaponNetworkId = weapon;
+            suicideEvent.tick = tick;
+            LiveBehavior::dispatchActorKilled(suicideEvent, tick);
+            DBG(Network,
+                "KILL_EVENT_ENQUEUE type=SUICIDE victimPlayerId=%u weaponId=\"%s\" "
+                "weaponDisplay=\"%s\" eventId=%u tick=%u",
+                target.id, weaponId, weaponDisplayName.c_str(), event.eventId, tick);
+        }
+        else if (effectiveAttackerNpcId != 0)
         {
             serverGamemodeRecordKill(sock, players, nullptr,
                 effectiveAttackerNpcId, ENTITY_NPC, target.id, ENTITY_PLAYER,

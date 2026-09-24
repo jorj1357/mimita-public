@@ -32,6 +32,12 @@ struct GameSplashFalloffV1 {
     float outDamage;
     float outKnockScale;
     std::uint32_t result;
+    // Append-only: falloff model. 0 (default) = the legacy exponential gaussian;
+    // 1 = the linear power curve used by the canonical hot projectile path
+    // (fullDamageRadius mix, then pow(1-t, exponent)). Lets both the cold
+    // fallback and the live hot path share one editable policy without changing
+    // either formula.
+    std::uint32_t mode;
 };
 
 using GameSplashDamageFn = void (MIMITA_GAME_CALL *)(void* host,
@@ -60,6 +66,21 @@ namespace HotProjectileSplashImpl {
 
 inline void damage(GameSplashFalloffV1& r)
 {
+    if (r.mode == 1u) {
+        // Linear power curve (canonical hot projectile path).
+        float t = 0.0f;
+        if (r.fullDamageRadius <= 0.0f) {
+            t = r.distance / std::max(0.001f, r.splashRadius);
+        } else if (r.distance > r.fullDamageRadius &&
+                   r.splashRadius > r.fullDamageRadius) {
+            t = (r.distance - r.fullDamageRadius) /
+                std::max(0.001f, r.splashRadius - r.fullDamageRadius);
+        }
+        const float e = r.splashExponent > 0.0f ? r.splashExponent : 1.0f;
+        r.outDamage = r.splashDamage * std::pow(std::max(0.0f, 1.0f - t), e);
+        r.result = 1u;
+        return;
+    }
     if (r.fullDamageRadius > 0.0f) {
         if (r.distance <= r.fullDamageRadius) {
             r.outDamage = r.splashDamage;

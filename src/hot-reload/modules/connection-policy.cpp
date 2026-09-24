@@ -12,6 +12,7 @@
 
 #include "hot-reload/hot-package.h"
 #include "hot-reload/hot-connection-health.h"
+#include "hot-reload/hot-connection-transition.h"
 
 namespace {
 
@@ -40,11 +41,27 @@ const GameCapabilityDescriptorV1 kConnectionPolicyProvider{
     GAME_CAP_CONNECTION_POLICY, GAME_SIG_CONNECTION_POLICY, 0,
     reinterpret_cast<void*>(&lookupConnectionPolicy), "net.connection-policy"};
 
+// connection.transition: the hot join/reconnect state-machine decision. The cold
+// side supplies POD facts and applies the returned state/action/label.
+void MIMITA_GAME_CALL connectionTransition(void* /*host*/,
+                                           GameConnectionTransitionV1* request)
+{
+    HotConnectionTransitionImpl::evaluate(*request);
+}
+
+const GameCapabilityDescriptorV1 kConnectionTransitionProvider{
+    GAME_CAP_CONNECTION_TRANSITION, GAME_SIG_CONNECTION_TRANSITION, 0,
+    reinterpret_cast<void*>(&connectionTransition), "connection.transition"};
+
 } // namespace
 
 const MimitaHotPackage::CapabilityRegistrar s_connectionPolicyProviderRegistrar{
     kConnectionPolicyProvider};
 const MimitaHotPackage::CapabilityRequirementRegistrar s_connectionPolicyRequirement{
     GAME_CAP_CONNECTION_POLICY, GAME_SIG_CONNECTION_POLICY, 0};
+const MimitaHotPackage::CapabilityRegistrar s_connectionTransitionProviderRegistrar{
+    kConnectionTransitionProvider};
+const MimitaHotPackage::CapabilityRequirementRegistrar s_connectionTransitionRequirement{
+    GAME_CAP_CONNECTION_TRANSITION, GAME_SIG_CONNECTION_TRANSITION, 0};
 
 #endif // MIMITA_GAME_DLL

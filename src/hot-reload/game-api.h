@@ -1334,6 +1334,24 @@ struct ProjectileImpactPolicyV1 {
     std::uint32_t outExplode;   // 1 = run the kernel explosion/damage path
     std::uint32_t handled;
     std::uint32_t reserved;
+    // ── Append-only (projectile-impact.v2) ──────────────────────────────
+    // Versioned envelope: owner/projectile/tick, collision result, victim list,
+    // and returned damage/knockback decisions. Never reorder or resize the fields
+    // above; a legacy zero-initialized caller leaves version/structSize at 0 and
+    // the kernel treats it as v1.
+    std::uint32_t structSize;         // sizeof(ProjectileImpactPolicyV1); 0 = v1
+    std::uint32_t version;            // 2 (0 = v1)
+    std::uint64_t tick;
+    std::uint32_t collisionResult;    // same vocabulary as hitKind
+    std::uint32_t victimCount;        // valid entries in victimEntities[]/out*
+    std::uint64_t victimEntities[8];  // explosion victim list
+    std::int32_t outDamage[8];        // returned per-victim damage decision
+    float outKnockback[8][3];         // returned per-victim knockback decision
+    float outSelfDamageMultiplier;    // <=0 = leave cold policy
+    std::uint32_t outCancelProjectile;// 1 = cancel/despawn after this impact
+    std::uint32_t outSplashRadius;    // 0 = leave cold policy
+    std::uint32_t result;             // 1 = policy produced a result
+    std::uint32_t errorReason;        // rejection reason (0 = none)
 };
 
 // ── Generic tool/action use policy (runtime event) ──────────────
@@ -2656,7 +2674,16 @@ static constexpr std::uint64_t GAME_CAP_ACTOR_SPAWN = gameHash("actor.spawn");
 // modules as one generic capability. A hot module emits a plain-data event and
 // the kernel writes it into the process run's events.jsonl. Adding a new hot
 // subsystem log never adds an ABI field; the caller supplies all meaning.
+// The kernel registers this id as OVERRIDABLE: a hot package may provide a
+// provider for the same id and the kernel bridge consults it first, so logging
+// policy (filtering, fields, schemas, destinations, aggregation) is hot while
+// the cold side keeps only the append/flush mechanism.
 static constexpr std::uint64_t GAME_CAP_LOG_EVENT = gameHash("log.event");
+// log.append: the one safe append mechanism. A hot logging provider builds the
+// JSON body and returns it through GameLogRecordV1; the kernel wraps universal
+// fields and performs a single atomic write. POD only; `bytes` is valid only
+// for the duration of the call.
+static constexpr std::uint64_t GAME_CAP_LOG_APPEND = gameHash("log.append");
 // runtime.info: a read-only snapshot used by hot diagnostics commands. The
 // command itself lives in the hot package; the kernel supplies process,
 // logger, connection, and generation facts without adding a command-specific
@@ -2677,10 +2704,144 @@ static constexpr std::uint64_t GAME_CAP_CONNECTION_TRANSITION =
     gameHash("connection.transition");
 static constexpr std::uint64_t GAME_CAP_SNAPSHOT_CODECS =
     gameHash("net.snapshot-codecs");
+
+// server.tick: one versioned POD tick envelope the cold server loop fills each
+// fixed step and a hot `server.tick`/`network.tick` system consumes. The cold
+// file keeps the call sequence (receive -> hot systems -> apply commands/events
+// -> replicate); the hot system owns the orchestration decisions (catch-up cap,
+// snapshot cadence, phase gates, shutdown request, diagnostics). No new
+// GameplayContextV1 field: resolved through the generic capability doorway.
+static constexpr std::uint64_t GAME_CAP_SERVER_TICK = gameHash("network.tick");
+static constexpr std::uint32_t GAME_SERVER_TICK_VERSION = 1;
+
+struct GameServerTickV1 {
+    std::uint32_t structSize;
+    std::uint32_t abiVersion;
+    // in: simulation facts for this fixed step
+    std::uint64_t tick;
+    std::uint64_t generation;
+    std::uint64_t serverHash;
+    float dt;
+    std::uint32_t catchupSteps;        // steps already run this frame
+    std::uint32_t maxCatchup;          // cold cap (MAX_STEPS)
+    std::uint32_t playersActive;
+    std::uint32_t projectilesActive;
+    std::uint64_t elapsedMs;           // wall time this frame
+    std::uint32_t phase;               // cold server phase (0 unknown)
+    std::uint32_t autoExitDue;         // 1 = --timeout reached (cold computed)
+    std::uint32_t snapshotDue;         // 1 = cold cadence says replicate now
+    std::uint32_t gameplayDomainDue;   // 1 = run the gameplay domain this step
+    // out: hot orchestration decisions
+    std::uint32_t outCatchupSteps;     // clamp applied to catchup (0 = leave)
+    std::uint32_t outRequestShutdown;  // 1 = stop the loop after this step
+    std::uint32_t outSnapshotDue;      // override snapshot cadence
+    std::uint32_t outRunGameplayDomain;// override gameplay-domain run
+    std::uint32_t outRunPostMovement;  // override post-movement run
+    std::uint32_t outAdvanceGeneration;// 1 = allow generation activation now
+    std::uint32_t handled;             // 1 = hot owns the decisions
+    std::uint32_t result;              // 1 = policy produced a result
+    char reason[48];                   // optional human-readable reason
+};
+using GameServerTickFn = void (MIMITA_GAME_CALL *)(void* host, GameServerTickV1* request);
+
+// connection.transition: the hot connection state-machine decision. The cold
+// side supplies stable POD connection facts (transport/ICE remain cold) and
+// receives the next state/action; it applies the side effect (send, teardown,
+// notify). `stage` is the fine-grained join workflow stage the hot policy owns.
+enum GameConnectionActionV1 : std::uint32_t {
+    GAME_CONNECTION_ACTION_NONE = 0,
+    GAME_CONNECTION_ACTION_SEND_RECONNECT = 1,
+    GAME_CONNECTION_ACTION_TEARDOWN = 2,
+    GAME_CONNECTION_ACTION_NOTIFY = 3,
+    GAME_CONNECTION_ACTION_RETRY = 4,
+    GAME_CONNECTION_ACTION_ACCEPT = 5,
+    GAME_CONNECTION_ACTION_GIVEUP = 6,
+};
+
+enum GameJoinStageV1 : std::uint32_t {
+    GAME_JOIN_STAGE_REQUESTED = 0,
+    GAME_JOIN_STAGE_ROOM_CHECKED = 1,
+    GAME_JOIN_STAGE_COORDINATOR_CONTACTED = 2,
+    GAME_JOIN_STAGE_CANDIDATES_GATHERED = 3,
+    GAME_JOIN_STAGE_SDP_EXCHANGED = 4,
+    GAME_JOIN_STAGE_ICE_CONNECTING = 5,
+    GAME_JOIN_STAGE_TRANSPORT_READY = 6,
+    GAME_JOIN_STAGE_JOIN_ACCEPTED = 7,
+    GAME_JOIN_STAGE_ACTIVE = 8,
+};
+
+struct GameConnectionTransitionV1 {
+    std::uint32_t structSize;
+    std::uint32_t abiVersion;
+    // in
+    std::uint32_t connectionId;
+    std::uint32_t generation;
+    std::uint32_t currentState;        // ConnectionState numeric
+    std::uint32_t requestedState;      // desired ConnectionState numeric (0 = none)
+    std::uint32_t stage;               // GameJoinStageV1 current stage
+    std::uint32_t attempt;
+    std::uint32_t maxAttempts;
+    std::uint64_t elapsedMs;
+    std::uint64_t serverGeneration;
+    std::uint64_t clientGeneration;
+    std::int32_t lastError;
+    std::uint32_t iceJobActive;
+    std::uint32_t reconnectTokenPresent;
+    // out
+    std::uint32_t outState;            // ConnectionState numeric to apply
+    std::uint32_t outStage;            // GameJoinStageV1 to apply
+    std::uint32_t outAction;           // GameConnectionActionV1
+    std::uint32_t outRetry;            // 1 = a retry attempt may be sent
+    std::uint32_t handled;
+    std::uint32_t result;
+    std::uint64_t outBackoffMs;        // backoff to store (0 = leave)
+    char outMessage[96];               // optional user-visible stage label
+    char reason[48];
+};
+using GameConnectionTransitionFn = void (MIMITA_GAME_CALL *)(
+    void* host, GameConnectionTransitionV1* request);
+
 static constexpr std::uint32_t GAME_LOG_CATEGORY = 32;
 static constexpr std::uint32_t GAME_LOG_NAME = 64;
 static constexpr std::uint32_t GAME_LOG_MESSAGE = 192;
 static constexpr std::uint32_t GAME_LOG_REASON = 96;
+
+// Generic hot-safe field payload. A hot provider may attach typed fields (for
+// example `player.state` -> health/position/velocity) without changing any cold
+// struct layout. No STL containers and no owning pointers; `name` and any
+// pointer values are valid only during the provider call.
+enum GameLogFieldType : std::uint32_t {
+    GAME_LOG_FIELD_NONE = 0,
+    GAME_LOG_FIELD_BOOL = 1,
+    GAME_LOG_FIELD_INT = 2,
+    GAME_LOG_FIELD_UINT = 3,
+    GAME_LOG_FIELD_FLOAT = 4,
+    GAME_LOG_FIELD_STRING = 5,
+    GAME_LOG_FIELD_VEC3 = 6,
+    GAME_LOG_FIELD_VEC4 = 7,
+};
+static constexpr std::uint32_t GAME_LOG_FIELD_STRING_MAX = 96;
+// Field flags: bit0 present, bit1 deprecated.
+static constexpr std::uint32_t GAME_LOG_FIELD_FLAG_PRESENT = 1u << 0;
+static constexpr std::uint32_t GAME_LOG_FIELD_FLAG_DEPRECATED = 1u << 1;
+struct GameLogFieldV1 {
+    std::uint64_t nameId;      // gameHash("health") or 0
+    const char* name;          // optional; valid only during the call
+    std::uint32_t type;        // GameLogFieldType
+    std::uint32_t flags;       // GAME_LOG_FIELD_FLAG_*
+    std::int64_t intValue;
+    std::uint64_t uintValue;
+    double doubleValue;
+    float vector[4];
+    char string[GAME_LOG_FIELD_STRING_MAX];
+    std::uint32_t reserved;
+};
+struct GameLogFieldListV1 {
+    std::uint32_t count;
+    std::uint32_t reserved;
+    const GameLogFieldV1* items;  // valid only during the call
+};
+
 struct GameLogEventV1 {
     // in
     std::uint32_t level;       // 0 trace, 1 debug, 2 info, 3 warn, 4 error, 5 fatal
@@ -2699,9 +2860,46 @@ struct GameLogEventV1 {
     std::uint64_t actorId;
     std::uint32_t actorKind;   // 0 none, 1 player, 2 npc, 3 remote, 4 other
     std::uint32_t reserved;
+    // Append-only logging ABI. `structSize == 0` means the original V1 layout;
+    // new callers set structSize/abiVersion and may attach a generic field
+    // payload and correlation/parent identity. Old and new generations coexist:
+    // a provider checks structSize before reading any trailing field. This does
+    // not bump MIMITA_GAME_API_VERSION, so existing generations keep loading.
+    std::uint32_t structSize;   // sizeof(GameLogEventV1) for new callers
+    std::uint32_t abiVersion;   // MIMITA_GAME_API_VERSION
+    std::uint32_t schemaVersion;
+    std::uint32_t fieldCount;
+    std::uint64_t schemaId;       // gameHash("player.state") or 0
+    std::uint64_t correlationId;
+    std::uint64_t parentEventId;
+    std::uint64_t sessionId;
+    std::uint32_t processRole;    // 0 none, 1 client, 2 server
+    std::uint32_t reserved2;
+    const GameLogFieldV1* fields; // valid only during the call
 };
 using GameLogEventFn = void (MIMITA_GAME_CALL *)(void* host,
                                                  const GameLogEventV1* event);
+
+// Provider output. A hot provider that overrides log.event fills this in; the
+// kernel performs the destination writes and flush. `body` is a prebuilt JSON
+// object fragment without the outer braces (e.g. "\"health\":100"), valid only
+// for the duration of the call.
+static constexpr std::uint32_t GAME_LOG_DEST_JSONL = 1u << 0;
+static constexpr std::uint32_t GAME_LOG_DEST_TERMINAL = 1u << 1;
+static constexpr std::uint32_t GAME_LOG_DEST_LIVE_CODE = 1u << 2;
+struct GameLogRecordV1 {
+    std::uint32_t handled;      // 1 = the override produced a decision
+    std::uint32_t emit;         // 0 = filtered out
+    std::uint32_t destinations; // GAME_LOG_DEST_* bits
+    std::uint32_t forceFlush;
+    const char* body;           // valid only during the call
+    std::uint32_t bodyLen;
+    std::uint32_t reserved;
+};
+using GameLogProviderFn = void (MIMITA_GAME_CALL *)(
+    void* host, const GameLogEventV1* event, GameLogRecordV1* out);
+using GameLogAppendFn = void (MIMITA_GAME_CALL *)(
+    void* host, const char* bytes, std::uint32_t len, std::uint32_t flags);
 
 struct GameRuntimeInfoV1 {
     std::uint32_t pid = 0;
@@ -2777,6 +2975,35 @@ struct GameDamageApplyV1 {
 };
 using GameDamageApplyFn = bool (MIMITA_GAME_CALL *)(
     void* host, GameDamageApplyV1* request);
+
+// projectile.cancel: hot decision for whether a live projectile must be
+// cancelled (for example its owner died). The cold path owns the container,
+// despawn, and packet transport; a hot module owns the cancellation policy.
+static constexpr std::uint64_t GAME_CAP_PROJECTILE_CANCEL =
+    gameHash("net.projectile-cancel");
+static constexpr std::uint32_t GAME_PROJECTILE_CANCEL_VERSION = 1;
+
+struct GameProjectileCancelV1 {
+    std::uint32_t structSize;
+    std::uint32_t version;
+    std::uint64_t projectileEntity;
+    std::uint64_t ownerEntity;
+    std::uint32_t projectileId;
+    std::uint32_t ownerPlayerId;
+    std::uint32_t ownerNpcId;
+    std::uint32_t ownerAlive;        // 1 = owner still alive
+    std::uint32_t ownerDead;         // 1 = owner confirmed dead
+    std::uint32_t ageTicks;
+    std::uint32_t exploded;
+    // out
+    std::uint32_t outCancel;         // 1 = despawn this projectile
+    std::uint32_t outEmitDespawn;    // 1 = emit the despawn event
+    std::uint32_t handled;
+    std::uint32_t result;
+    char reason[48];
+};
+using GameProjectileCancelFn = void (MIMITA_GAME_CALL *)(
+    void* host, GameProjectileCancelV1* request);
 
 // hitscan.resolve: hand a completed hot hitscan trace to the shared cold
 // authoritative consequence pipeline (damage policy, DamageConfirmed/NPC-damage

@@ -515,6 +515,9 @@ struct MultiplayerContext
 
     // ── Connection lifecycle ──────────────────────────────────────────
     ConnectionState connectionState = ConnectionState::Disconnected;
+    // Fine-grained join workflow stage (GameJoinStageV1). Owned by the hot
+    // connection policy; the cold side stores and projects it for diagnostics.
+    uint32_t joinStage = 0;
     std::string roomCode;
     std::string serverName;
     std::string joinToken;

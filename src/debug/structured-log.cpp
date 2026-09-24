@@ -13,6 +13,7 @@
 #include "debug-log.h"
 #include "log-manager.h"
 #include "live-code/live-identity.h"
+#include "hot-reload/generic-runtime.h"   // overridable log.event provider lookup
 #include "../config.h"
 #include "../utils/path_utils.h"
 #include "../utils/time-format.h"
@@ -20,6 +21,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <windows.h>
@@ -67,6 +69,111 @@ std::string escapeJson(const std::string& value) {
 std::mutex& logMutex() {
     static std::mutex m;
     return m;
+}
+
+// ── Hot provider bridge (Phase 2/3) ─────────────────────────
+// Project the in-process debug::Event onto the stable POD envelope and consult
+// the overridable `log.event` provider. When the provider handles the event,
+// its policy (filter, naming, fields, destinations, aggregation) wins and the
+// cold path is skipped; otherwise the cold fallback below owns it.
+struct LogFieldScratch {
+    std::string keys[32];
+    GameLogFieldV1 fields[32];
+};
+thread_local LogFieldScratch g_logFieldScratch;
+
+void fillEnvelopeFromEvent(const debug::Event& e, GameLogEventV1& v1) {
+    v1 = GameLogEventV1{};
+    v1.structSize = sizeof(GameLogEventV1);
+    v1.abiVersion = MIMITA_GAME_API_VERSION;
+    v1.level = (std::uint32_t)e.level;
+    v1.simulationTick = (std::uint32_t)e.simulationTick;
+    v1.frame = e.frame;
+    v1.serverTick = e.serverTick;
+    v1.clientTick = e.clientTick;
+    std::strncpy(v1.category, e.category.c_str(), sizeof(v1.category) - 1);
+    std::strncpy(v1.name, e.name.c_str(), sizeof(v1.name) - 1);
+    std::strncpy(v1.message, e.message.c_str(), sizeof(v1.message) - 1);
+    std::strncpy(v1.reason, e.reason.c_str(), sizeof(v1.reason) - 1);
+    if (!e.correlationId.empty())
+        v1.correlationId = std::strtoull(e.correlationId.c_str(), nullptr, 10);
+    v1.sessionId = LiveIdentity::sessionId();
+
+    int n = 0;
+    if (e.fields.is_object()) {
+        for (auto it = e.fields.begin(); it != e.fields.end() && n < 32; ++it) {
+            const auto& v = it.value();
+            GameLogFieldV1& f = g_logFieldScratch.fields[n];
+            f = GameLogFieldV1{};
+            g_logFieldScratch.keys[n] = it.key();
+            f.name = g_logFieldScratch.keys[n].c_str();
+            f.nameId = gameHash(it.key().c_str());
+            f.flags = GAME_LOG_FIELD_FLAG_PRESENT;
+            if (v.is_boolean()) {
+                f.type = GAME_LOG_FIELD_BOOL;
+                f.intValue = v.get<bool>() ? 1 : 0;
+            } else if (v.is_number_integer()) {
+                f.type = GAME_LOG_FIELD_INT;
+                f.intValue = v.get<std::int64_t>();
+            } else if (v.is_number_unsigned()) {
+                f.type = GAME_LOG_FIELD_UINT;
+                f.uintValue = v.get<std::uint64_t>();
+            } else if (v.is_number_float()) {
+                f.type = GAME_LOG_FIELD_FLOAT;
+                f.doubleValue = v.get<double>();
+            } else if (v.is_string()) {
+                f.type = GAME_LOG_FIELD_STRING;
+                std::strncpy(f.string, v.get_ref<const std::string&>().c_str(),
+                             sizeof(f.string) - 1);
+            } else if (v.is_array() && v.size() == 3) {
+                f.type = GAME_LOG_FIELD_VEC3;
+                for (int i = 0; i < 3; ++i) f.vector[i] = v[i].get<float>();
+            } else if (v.is_array() && v.size() == 4) {
+                f.type = GAME_LOG_FIELD_VEC4;
+                for (int i = 0; i < 4; ++i) f.vector[i] = v[i].get<float>();
+            } else {
+                continue;
+            }
+            ++n;
+        }
+    }
+    v1.fieldCount = (std::uint32_t)n;
+    v1.fields = n > 0 ? g_logFieldScratch.fields : nullptr;
+}
+
+// Returns true when the hot provider owned the event (emitted or filtered).
+bool emitViaProvider(const debug::Event& event) {
+    auto* provider = reinterpret_cast<GameLogProviderFn>(
+        MimitaRuntime::GenericRuntime::instance().overrideCapability(GAME_CAP_LOG_EVENT));
+    if (!provider)
+        return false;
+
+    GameLogEventV1 v1;
+    fillEnvelopeFromEvent(event, v1);
+    GameLogRecordV1 record{};
+    provider(nullptr, &v1, &record);
+    if (!record.handled)
+        return false;
+    if (record.emit && (record.destinations & GAME_LOG_DEST_JSONL))
+        StructuredLogger::instance().emitProviderRecord(
+            event, record.body, record.bodyLen, record.forceFlush != 0);
+    if (record.emit && (record.destinations & GAME_LOG_DEST_TERMINAL)) {
+        auto* term = reinterpret_cast<GameTerminalOutputFn>(
+            MimitaRuntime::GenericRuntime::instance().capability(
+                GAME_CAP_TERMINAL_OUTPUT));
+        if (term) {
+            std::string line = "[";
+            line += event.category.empty() ? "LOG" : event.category;
+            line += "] ";
+            line += event.name;
+            if (!event.message.empty()) {
+                line += " - ";
+                line += event.message;
+            }
+            term(nullptr, line.c_str());
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -219,6 +326,8 @@ static StructuredLogConfig::CategoryConfig parseCategoryConfig(
     return cfg;
 }
 
+// LEGACY (cold fallback): hot policy lives in the logging provider. Retained so
+// logging still works when no hot provider is active.
 void StructuredLogger::loadConfig() {
     const std::string configPath = "config/debuglogger.json";
     std::ifstream f(configPath);
@@ -366,6 +475,21 @@ void StructuredLogger::loadConfig() {
 // ── Run directory / file ────────────────────────────────────
 
 void StructuredLogger::createRunDir() {
+    const char* sharedPath = std::getenv("MIMITA_EVENTS_FILE");
+    if (sharedPath && *sharedPath) {
+        mEventsPath = sharedPath;
+        std::filesystem::path path(mEventsPath);
+        mLogDir = path.parent_path().string();
+        if (mLogDir.empty())
+            mLogDir = ".";
+        std::error_code sharedError;
+        std::filesystem::create_directories(path.parent_path(), sharedError);
+        mRunId = path.parent_path().filename().string();
+        if (mRunId.empty())
+            mRunId = MiMitaTime::utcCompactStamp();
+        return;
+    }
+
     mRunId = MiMitaTime::utcCompactStamp();
     std::string relPath = "logs/" + MiMitaTime::utcDateFolder() + "/" + mRunId;
 
@@ -388,17 +512,71 @@ void StructuredLogger::createRunDir() {
 
 void StructuredLogger::writeLine(const std::string& json, bool forceFlush) {
     if (!mEventsFile) return;
-    std::fwrite(json.data(), 1, json.size(), mEventsFile);
-    std::fputc('\n', mEventsFile);
+    // One atomic write of the whole line (including the newline) so two
+    // processes appending to a shared events.jsonl cannot interleave a
+    // malformed half-line.
+    std::string line = json;
+    line += '\n';
+    std::fwrite(line.data(), 1, line.size(), mEventsFile);
     // Critical records (errors/fatal) always flush promptly; ordinary records
     // flush only when configured, so gameplay is not blocked on disk per event.
     if (forceFlush || mConfig.flushEachEvent)
         std::fflush(mEventsFile);
 }
 
+void StructuredLogger::appendRaw(const char* bytes, uint32_t len, bool forceFlush) {
+    if (!bytes || len == 0) return;
+    std::lock_guard<std::mutex> lock(logMutex());
+    if (!mInitialized || !mEventsFile) return;
+    mSequence++;
+    writeLine(std::string(bytes, len), forceFlush);
+}
+
+// Wrap a hot-provider body fragment (no outer braces) with the universal
+// prefix. The body carries level/category/event and its own fields; the cold
+// side supplies only process/time identity. This is the one append mechanism a
+// hot provider's aggregation flush uses, so it never opens a file itself.
+void StructuredLogger::appendBody(const char* body, uint32_t len, bool forceFlush) {
+    if (!body || len == 0) return;
+    std::lock_guard<std::mutex> lock(logMutex());
+    if (!mInitialized || !mConfig.enabled || !mEventsFile) return;
+
+    std::string out;
+    out.reserve(len + 192);
+    out += "{\"wall_time\":\"";
+    out += MiMitaTime::utcIso8601Millis();
+    out += "\",\"t\":";
+    char num[64];
+    std::snprintf(num, sizeof(num), "%.3f", steadySeconds());
+    out += num;
+    out += ",\"seq\":";
+    out += std::to_string(++mSequence);
+    out += ",\"run_id\":\"";
+    out += escapeJson(mRunId);
+    out += "\",\"pid\":";
+    out += std::to_string(LiveIdentity::pid());
+    out += ",\"process\":\"";
+    out += escapeJson(LiveIdentity::process());
+    out += "\",";
+    out.append(body, len);
+    out += '}';
+    writeLine(out, forceFlush);
+}
+
+void StructuredLogger::emitProviderRecord(const debug::Event& event,
+                                          const char* body, uint32_t bodyLen,
+                                          bool forceFlush) {
+    std::lock_guard<std::mutex> lock(logMutex());
+    if (!mInitialized || !mConfig.enabled || !mEventsFile) return;
+    mSequence++;
+    writeLine(buildRecord(event, body, bodyLen), forceFlush);
+}
+
 // ── Record building ─────────────────────────────────────────
 
-std::string StructuredLogger::buildRecord(const debug::Event& event) const {
+std::string StructuredLogger::buildRecord(const debug::Event& event,
+                                          const char* rawBody,
+                                          uint32_t rawBodyLen) const {
     std::string out;
     out.reserve(256 + event.message.size());
 
@@ -468,10 +646,17 @@ std::string StructuredLogger::buildRecord(const debug::Event& event) const {
     }
     appendStr("func", event.functionName);
 
-    // Caller fields, appended last. Empty object adds nothing. Universal keys
-    // are already written above, so they are skipped here: every record must
-    // carry each key exactly once.
-    if (event.fields.is_object()) {
+    // Hot-provider body, appended last verbatim. It is a prebuilt JSON object
+    // fragment (no outer braces) already filtered and constructed by the hot
+    // logging provider, so it replaces the caller field object. A non-null but
+    // empty body means "the provider chose no fields" and still suppresses the
+    // caller fields.
+    if (rawBody) {
+        if (rawBodyLen > 0) {
+            out += ',';
+            out.append(rawBody, rawBodyLen);
+        }
+    } else if (event.fields.is_object()) {
         for (auto it = event.fields.begin(); it != event.fields.end(); ++it) {
             const std::string& k = it.key();
             if (k == "wall_time" || k == "t" || k == "seq" || k == "run_id" ||
@@ -547,6 +732,8 @@ void StructuredLogger::flushAllBuckets() {
 
 // ── Emit ────────────────────────────────────────────────────
 
+// LEGACY (cold fallback): category/level gating and repeat aggregation here are
+// the fallback policy. The hot provider owns the active policy when registered.
 void StructuredLogger::emit(const debug::Event& event, bool forceNoAggregate) {
     std::lock_guard<std::mutex> lock(logMutex());
     if (!mInitialized || !mConfig.enabled || !mEventsFile)
@@ -640,6 +827,11 @@ void StructuredLogger::emit(const debug::Event& event, bool forceNoAggregate) {
 namespace debug {
 
 void logEvent(const Event& event) {
+    // Hot logging policy first (filtering, naming, fields, destinations,
+    // aggregation); the cold fallback runs only when no provider is active or
+    // the provider declines the event.
+    if (emitViaProvider(event))
+        return;
     StructuredLogger::instance().emit(event);
 }
 
@@ -659,6 +851,7 @@ bool eventsEnabled(const std::string& category, Level level) {
 
 // ── Category/level gate ─────────────────────────────────────
 
+// LEGACY (cold fallback): the hot provider owns the active category/level gate.
 bool StructuredLogger::categoryEnabled(const std::string& category,
                                        debug::Level level) const {
     if (!mConfig.enabled)
@@ -858,6 +1051,11 @@ void StructuredLogger::write(const Entry& e) {
             fields[e.numericKeys[i] + "_difference"] = actual - expected;
         }
         ev.fields = std::move(fields);
+    }
+
+    if (e.fields.is_object()) {
+        for (auto it = e.fields.begin(); it != e.fields.end(); ++it)
+            ev.fields[it.key()] = it.value();
     }
 
     // A numeric assertion failure is an error and must never be aggregated.

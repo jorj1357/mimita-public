@@ -700,6 +700,10 @@ struct ServerDamageResult
     std::string rejectionReason;
     uint32_t eventId = 0;
     uint64_t correlationId = 0;
+    // Append-only: hot damage-application outcome so kill recording can honor
+    // suicide (attacker == victim, no score) without re-deriving it.
+    bool suicide = false;        // attacker == victim
+    bool scoreEligible = true;   // false for suicide
 };
 
 struct ServerProjectile

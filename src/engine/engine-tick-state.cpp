@@ -268,6 +268,8 @@ void engineTickState(Engine& engine, float dt)
                             player.username);
                         if (connectionStarted)
                         {
+                            if (!mci.roomCode.empty())
+                                mpContext.currentRoomCode = mci.roomCode;
                             Debug::log(
                                 Debug::Category::Networking,
                                 "[CONNECT STARTED] address=%s room=%s\n",
