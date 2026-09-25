@@ -1,3 +1,5 @@
+// todo combine this with roles.json and behavior-profiles.json 2026-09-24 2206 jorj 
+
 {
   "comment": "NPC difficulty tuning. This file hot-reloads while the game runs (client AND hosted/dedicated server): edit it, save, and changes apply immediately (no restart). The keys with \"comment_\" prefixes are documentation only and are ignored by the game. See src/npc/npc-difficulty-config.cpp.",
   "maxAngularErrorDegrees": 0.01,

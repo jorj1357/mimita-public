@@ -1,3 +1,10 @@
+// 2026 09 24 2204 jorj - combine this with behavior-profiles, 
+// actors have roles, roels define like,
+// what waepons they can have, waht movement preset they have, what their goal is
+// what their behavior is like are they agresive or netural or run away etc
+// todo expand this to work for all npcs, inf dgn slr npcs, CSGO mode npcs, 
+// normal npcs, RPG style npcs etc 
+
 {
   "roles": [
     {

@@ -1,9 +1,0 @@
-{
-    "enabled": true,
-    "durationTicks": 10,
-    "fadeStartTick": 8,
-    "localBlackout": true,
-    "hideGui": true,
-    "playerColor": [1, 1, 1, 1],
-    "backgroundColor": [0, 0, 0, 1]
-}
