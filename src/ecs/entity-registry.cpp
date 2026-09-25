@@ -61,6 +61,22 @@ EntityId EntityRegistry::createGeneric(EntityRealm realm, std::uint32_t legacyId
     return create(realm, EntityDomain::None, legacyId);
 }
 
+std::uint32_t EntityRegistry::allocateLegacyId(EntityRealm realm,
+                                               EntityDomain domain)
+{
+    const std::uint64_t key = entityLookupKey(realm, domain, 0);
+    std::uint32_t& next = mNextLegacyId[key];
+    if (next == 0)
+        next = 1000;  // stable base for the first typed actor id
+    for (;;) {
+        const std::uint32_t candidate = next++;
+        if (candidate == 0)
+            continue;
+        if (mLookup.find(entityLookupKey(realm, domain, candidate)) == mLookup.end())
+            return candidate;
+    }
+}
+
 EntityId EntityRegistry::adopt(EntityId id)
 {
     if (id == kInvalidEntityId)

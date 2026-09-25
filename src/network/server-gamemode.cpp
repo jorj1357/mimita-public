@@ -41,6 +41,7 @@
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/game-api.h"
 #include "network/actor-state.h"
+#include "network/actor-health.h"
 #include "live-code/live-behavior.h"
 
 namespace MimitaNet {
@@ -2121,19 +2122,24 @@ void spawnWaveNpcs(ServerGamemodeState& d,
                    std::unordered_map<uint32_t, ServerNpc>& npcs,
                    int count)
 {
-    uint32_t nextId = 100000;
-    for (const auto& kv : npcs)
-        nextId = std::max(nextId, kv.first + 1);
     for (int i = 0; i < count; ++i) {
-        while (npcs.count(nextId)) ++nextId;
         ServerNpc npc;
-        npc.entityId = nextId;
+        npc.entityId = EntityRegistry::instance().allocateLegacyId(
+            EntityRealm::Server, EntityDomain::Npc);
+        npc.origin = GAME_NPC_ORIGIN_GAMEMODE;
         npc.name = "Wave " + std::to_string(d.waveNumber) +
                    " NPC " + std::to_string(i + 1);
         npc.pos = gamemodeSpawnPoint(d);
         npc.yaw = 0.0f;
-        npcs[nextId] = npc;
-        ++nextId;
+        // Generic origin authority at creation: a wave NPC must never be
+        // classified as an automatic startup NPC by reconciliation.
+        {
+            const EntityId npcIdentity = Ecs::ensure(
+                EntityRealm::Server, EntityDomain::Npc, npc.entityId);
+            actorStateWriteOrigin(Ecs::raw(npcIdentity), npc.origin, 0);
+            actorStateWriteLifecycle(Ecs::raw(npcIdentity), 1u, 0u, 0.0f);
+        }
+        npcs[npc.entityId] = npc;
     }
 }
 
@@ -3441,6 +3447,14 @@ void serverRespawnAllActors(SOCKET sock,
         ServerNpc& npc = kv.second;
         npc.health = 100;
         ++npc.transformEpoch;
+        // Reset the generic authoritative health + lifecycle component so the
+        // mirror projection cannot resurrect a dead body from stale authority.
+        const EntityId npcIdentity =
+            Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.entityId);
+        actorHealthInit(Ecs::raw(npcIdentity), 100);
+        Ecs::setHealth(npcIdentity, 100, 100, false);
+        actorStateWriteLifecycle(Ecs::raw(npcIdentity), npc.transformEpoch, 0u,
+                                 0.0f);
         finalizeServerNpcMirrorSpawn(npc, ActorSpawnReason::RespawnAll, tick);
     }
     d.hasPendingKill = false;

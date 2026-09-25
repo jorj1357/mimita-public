@@ -1167,6 +1167,318 @@ struct NpcLifecyclePolicyV1 {
 using GameNpcLifecycleFn = void (MIMITA_GAME_CALL *)(void* host,
                                                      NpcLifecyclePolicyV1* request);
 
+// ── NPC movement/facing intent policy (generic capability, migration Phase 5a) ─
+// ONE hot owner for the NPC movement/facing intent decision: the aim-at-target
+// vs face-movement mode timer, the desired facing, turn-speed limiting, and the
+// final MovementIntent/AimIntent the shared movement kernel consumes. Cold fills
+// the raw navigation/action facts it still computes and applies the result; it
+// owns no facing policy. Persistent facing mode + RNG ride in/out so the policy
+// stays stateless and reload-safe. POD only; no STL/engine pointers.
+static constexpr std::uint64_t GAME_CAP_NPC_INTENT = gameHash("npc.intent");
+static constexpr std::uint64_t GAME_SIG_NPC_INTENT =
+    gameHash("sig.npc.intent.v1");
+
+struct NpcIntentPolicyV1 {
+    std::uint32_t structSize;
+    std::uint32_t handled;
+    std::uint32_t result;
+    std::uint64_t entity;
+    float dt;
+    std::uint32_t tick;
+    // in: raw movement/action facts (still computed cold by navigation/state)
+    float rawMoveX;
+    float rawMoveY;
+    std::uint32_t movementPressed;
+    std::uint32_t jump;
+    std::uint32_t dash;
+    std::uint32_t downDash;
+    // in: facing decision context (cold reads config + sensors)
+    float pos[3];
+    float currentFacing[3];
+    std::uint32_t hasTarget;
+    float targetPos[3];
+    float turnSpeed;          // degrees/second (0 = no limiting)
+    float aimAtTargetMin;
+    float aimAtTargetMax;
+    float faceMovementMin;
+    float faceMovementMax;
+    // in/out: persistent facing state + RNG (hot policy decides, cold stores)
+    std::uint32_t facingTargetMode;
+    float facingModeTimer;
+    std::uint32_t rngState;
+    // out: applied intent
+    float outMoveX;
+    float outMoveY;
+    std::uint32_t outMovementPressed;
+    std::uint32_t outJump;
+    std::uint32_t outDash;
+    std::uint32_t outDownDash;
+    float outFacing[3];
+    float outYaw;             // degrees (body facing)
+};
+
+using GameNpcIntentFn = void (MIMITA_GAME_CALL *)(void* host,
+                                                  NpcIntentPolicyV1* request);
+
+// ── NPC target-selection policy (generic capability, migration Phase 5b) ──────
+// The cold side still enumerates candidates (it owns actor storage, teams, and
+// weapon threat data), but the SELECTION policy — scored aggregation, current-
+// target stickiness, the anti-thrash switch threshold, and the legacy
+// nearest-hostile fallback — is hot. Cold fills scored candidates and applies
+// the chosen target. POD only; no STL/engine pointers.
+static constexpr std::uint64_t GAME_CAP_NPC_TARGET_SELECT =
+    gameHash("npc.target-select");
+static constexpr std::uint64_t GAME_SIG_NPC_TARGET_SELECT =
+    gameHash("sig.npc.target-select.v1");
+
+static constexpr int NPC_TARGET_SELECT_MAX_CANDIDATES = 128;
+
+struct NpcTargetCandidateV1 {
+    std::uint32_t id;         // legacy id (player or npc)
+    std::uint32_t kind;       // 0 player, 1 npc
+    float pos[3];
+    float distanceSq;
+    float score;              // cold-precomputed via the net.npc-targeting policy
+    std::uint32_t isCurrent;  // 1 = this is the selector's current target
+    std::uint32_t alive;      // 1 = eligible
+    std::uint32_t reserved;
+};
+
+struct NpcTargetSelectPolicyV1 {
+    std::uint32_t structSize;
+    std::uint32_t handled;
+    std::uint32_t result;
+    std::uint64_t entity;
+    std::uint32_t tick;
+    std::uint32_t behaviorActive;    // 1 = scored selection, 0 = nearest-hostile
+    std::uint32_t currentTargetId;   // 0 = none
+    float currentStickiness;         // added to a candidate that is current
+    float targetSwitchThreshold;     // scored path anti-thrash margin
+    std::uint32_t candidateCount;
+    std::uint32_t chosenId;          // out: legacy id (0 = none)
+    std::uint32_t chosenKind;        // out: 0 player, 1 npc
+    NpcTargetCandidateV1 candidates[NPC_TARGET_SELECT_MAX_CANDIDATES];
+};
+
+using GameNpcTargetSelectFn = void (MIMITA_GAME_CALL *)(
+    void* host, NpcTargetSelectPolicyV1* request);
+
+// ── NPC weapon-selection policy (generic capability, migration Phase 5c) ──────
+// The cold side still enumerates the loadout (it owns weapon definitions, ammo
+// runtime, and config), and still handles the explicit force-weapon and legacy
+// distance cases. The SCORED selection driven by the behavior profile — range
+// fit, damage utility, safety, and the anti-thrash switch threshold — is hot.
+// Cold fills per-weapon candidates and applies the chosen weapon hash. POD only.
+static constexpr std::uint64_t GAME_CAP_NPC_WEAPON_SELECT =
+    gameHash("npc.weapon-select");
+static constexpr std::uint64_t GAME_SIG_NPC_WEAPON_SELECT =
+    gameHash("sig.npc.weapon-select.v1");
+
+static constexpr int NPC_WEAPON_SELECT_MAX = 8;
+
+struct NpcWeaponCandidateV1 {
+    std::uint64_t weaponHash;   // gameHash(weapon id)
+    std::uint32_t usable;       // ammo>0 || reserve>0 || reloading
+    std::uint32_t isEquipped;
+    float effRange;
+    float damage;
+    std::uint32_t pelletCount;
+    std::uint32_t behaviorType; // WeaponBehaviorType numeric value
+    std::uint32_t reserved;
+};
+
+struct NpcWeaponSelectPolicyV1 {
+    std::uint32_t structSize;
+    std::uint32_t handled;
+    std::uint32_t result;
+    std::uint64_t entity;
+    std::uint32_t tick;
+    float distance;
+    float weaponRangeBias;
+    float weaponDamageBias;
+    float weaponSafetyBias;
+    float weaponSwitchThreshold;
+    std::uint64_t currentWeaponHash;  // 0 = none
+    std::uint32_t candidateCount;
+    std::uint64_t chosenWeaponHash;   // out (never 0 when candidates exist)
+    NpcWeaponCandidateV1 candidates[NPC_WEAPON_SELECT_MAX];
+};
+
+using GameNpcWeaponSelectFn = void (MIMITA_GAME_CALL *)(
+    void* host, NpcWeaponSelectPolicyV1* request);
+
+// ── NPC combat decision policy (generic capability, migration Phase 5d) ───────
+// The cold side owns the firing mechanics (hitscan/projectile via the shared
+// weapon system) and the config; the hot policy owns the fire gate (cooldown,
+// weapon presence, range cap, ammo/reload, line of sight) and the fire
+// aggression blend. Cold applies startReload and skips mechanics when blocked.
+// The RNG-consuming cooldown roll stays cold so the RNG order is unchanged.
+static constexpr std::uint64_t GAME_CAP_NPC_COMBAT_DECISION =
+    gameHash("npc.combat-decision");
+static constexpr std::uint64_t GAME_SIG_NPC_COMBAT_DECISION =
+    gameHash("sig.npc.combat-decision.v1");
+
+struct NpcCombatDecisionPolicyV1 {
+    std::uint32_t structSize;
+    std::uint32_t handled;
+    std::uint32_t result;
+    std::uint64_t entity;
+    std::uint32_t tick;
+    // in: gate facts
+    float attackCooldown;
+    float distance;
+    float rangeCap;
+    std::uint32_t hasWeapon;
+    std::int32_t ammoCurrent;
+    std::int32_t ammoReserve;
+    std::uint32_t isReloading;
+    float reloadTime;
+    std::uint32_t losBlocked;
+    // in: aggression inputs
+    float effectiveAggressionBase;  // npcMindEffectiveAggression(npc, baseRaw)
+    float aggressionBonus;
+    float healthFrac;
+    std::uint32_t recentlyHit;
+    float targetDistance;
+    std::uint32_t visible;
+    // out
+    std::uint32_t shouldFire;
+    std::uint32_t startReload;
+    float outReloadSeconds;
+    float outAggression;
+};
+using GameNpcCombatDecisionFn = void (MIMITA_GAME_CALL *)(
+    void* host, NpcCombatDecisionPolicyV1* request);
+
+// ── NPC AI state-selection policy (generic capability, migration Phase 5e) ────
+// The cold side owns the world/navigation queries (isStuck), the mind scalars,
+// and the weapon range; the hot policy owns the state scoring, the randomness,
+// the anti-thrash current-state penalty, and the stuck/hit-reaction/no-target
+// guards. Cold applies the chosen state. Persistent stuck timer + RNG ride in/out.
+static constexpr std::uint64_t GAME_CAP_NPC_STATE_SELECT =
+    gameHash("npc.state-select");
+static constexpr std::uint64_t GAME_SIG_NPC_STATE_SELECT =
+    gameHash("sig.npc.state-select.v1");
+
+struct NpcStateSelectPolicyV1 {
+    std::uint32_t structSize;
+    std::uint32_t handled;
+    std::uint32_t result;
+    std::uint64_t entity;
+    std::uint32_t tick;
+    // in
+    std::uint32_t currentState;    // NpcState numeric value
+    std::uint32_t hasTarget;
+    std::uint32_t isStuck;
+    float distance;
+    float difficulty01;
+    float effectiveAggression;     // npcMindEffectiveAggression(npc, tuningAggression)
+    float weaponRange;             // weaponEffectiveRange(npc)
+    float preferredRange;          // behavior preferredRange (0 = none/inactive)
+    float retreatBonus;            // npcMindRetreatBonus(npc)
+    float attackCooldown;
+    float hitReactionTimer;
+    float lastKnownAge;
+    float distToLastKnown;
+    float retreatTimer;
+    float aggressionTuning;        // npc.tuning.aggression
+    float randomnessScale;         // 1.0 = stock; scales the score spread only
+    // in/out
+    float stuckTimer;
+    std::uint32_t rngState;
+    // out
+    std::uint32_t chosenState;     // NpcState numeric value
+};
+using GameNpcStateSelectFn = void (MIMITA_GAME_CALL *)(
+    void* host, NpcStateSelectPolicyV1* request);
+
+// ── NPC navigation goal policy (generic capability, migration Phase 5f) ───────
+// The cold side owns pathfinding, steering, and world queries; the hot policy
+// owns the mapping from brain state + memory to an abstract navigation goal
+// (reach/follow/maintain/flee). Cold applies the goal to the navigator.
+static constexpr std::uint64_t GAME_CAP_NPC_NAV_GOAL =
+    gameHash("npc.nav-goal");
+static constexpr std::uint64_t GAME_SIG_NPC_NAV_GOAL =
+    gameHash("sig.npc.nav-goal.v1");
+
+struct NpcNavGoalPolicyV1 {
+    std::uint32_t structSize;
+    std::uint32_t handled;
+    std::uint32_t result;
+    std::uint64_t entity;
+    std::uint32_t tick;
+    // in
+    std::uint32_t hasTarget;
+    std::uint32_t currentState;    // NpcState numeric value
+    float lastAttackerAge;
+    float lastAttackerPos[3];
+    float recentDangerAge;
+    float recentDangerPos[3];
+    float selfPos[3];
+    float wanderTarget[3];
+    float lastKnownTarget[3];
+    float effectiveRange;          // weaponEffectiveRange(npc)
+    float preferredRange;          // behavior preferredRange (0 = none/inactive)
+    float maintainDistanceScale;   // 1.0 = stock; scales MaintainDistance only
+    // out
+    std::uint32_t goalKind;        // NpcGoalKind numeric value
+    float goalTargetPos[3];
+    float goalDesiredDistance;
+};
+using GameNpcNavGoalFn = void (MIMITA_GAME_CALL *)(
+    void* host, NpcNavGoalPolicyV1* request);
+
+// ── NPC navigation world-query policy (generic capability, migration Phase 5g) ─
+// ONE hot owner for the NPC navigation/pathfinding logic that touches the world:
+// wall avoidance, stuck detection, unstuck steering, climbable-wall detection,
+// obstacle probes, cover direction, and ground height. The kernel exposes the
+// generic `queryWorldRay` plus the actor state; the hot package (editable,
+// add/delete-able source under src/hot-reload/packages/navigation/) implements
+// the logic. Cold keeps its original implementation as the fallback when no hot
+// provider is registered. POD only; no STL/engine pointers.
+static constexpr std::uint64_t GAME_CAP_NPC_NAVIGATION =
+    gameHash("npc.navigation");
+static constexpr std::uint64_t GAME_SIG_NPC_NAVIGATION =
+    gameHash("sig.npc.navigation.v1");
+
+enum GameNpcNavOpV1 : std::uint32_t {
+    GAME_NPC_NAV_OBSTACLE = 0,       // is there a wall within checkDist along dir
+    GAME_NPC_NAV_CLIMBABLE = 1,      // climbable wall along moveDir + normal
+    GAME_NPC_NAV_WALL_AVOID = 2,     // steer around a wall toward desiredDir
+    GAME_NPC_NAV_GROUND_HEIGHT = 3,  // highest floor below pos within searchDist
+    GAME_NPC_NAV_IS_STUCK = 4,       // grounded, trying to move, not moving
+    GAME_NPC_NAV_UNSTUCK = 5,        // pick the most open direction (uses RNG)
+    GAME_NPC_NAV_COVER = 6,          // direction toward LOS-breaking cover
+};
+
+struct NpcNavigationV1 {
+    std::uint32_t structSize;
+    std::uint32_t op;         // GameNpcNavOpV1
+    std::uint32_t handled;    // 1 = hot provider answered
+    std::uint32_t result;     // generic success flag
+    std::uint64_t entity;
+    std::uint32_t tick;
+    // in
+    float pos[3];             // actor base position
+    float prevPos[3];         // isStuck: previous tick position
+    float dir[3];             // desired / move / test direction
+    float threatPos[3];       // cover: threat position
+    float checkDist;
+    float radius;
+    float searchDist;
+    float lastMoveInput[2];   // isStuck: last planar move input
+    std::uint32_t grounded;
+    std::uint32_t rngState;   // unstuck: in/out
+    // out
+    std::uint32_t hit;        // obstacle/climbable/ground found
+    float outDir[3];          // wall-avoid / unstuck / cover direction
+    float outNormal[3];       // climbable wall normal
+    float outHeight;          // ground height
+    std::uint32_t outRngState;
+};
+using GameNpcNavigationFn = void (MIMITA_GAME_CALL *)(
+    void* host, NpcNavigationV1* request);
+
 // ── Generic actor state envelope (NPC migration Phase 1) ────────────
 // One versioned POD representation of an actor's generic component state for
 // hot code: identity, transform, velocity, health, lifecycle, origin, avatar,

@@ -109,7 +109,13 @@
     "src/hot-reload/hot-history.h",
     "src/hot-reload/hot-lagcomp-policy.h",
     "src/hot-reload/hot-logging.h",
-    "src/hot-reload/hot-npc-lifecycle.h"
+    "src/hot-reload/hot-npc-lifecycle.h",
+    "src/hot-reload/hot-npc-intent.h",
+    "src/hot-reload/hot-npc-target-select.h",
+    "src/hot-reload/hot-npc-weapon-select.h",
+    "src/hot-reload/hot-npc-combat-decision.h",
+    "src/hot-reload/hot-npc-state-select.h",
+    "src/hot-reload/hot-npc-nav-goal.h"
   ],
   "globs": [
     "src/hot-reload/modules/*.cpp",
@@ -202,7 +208,7 @@
     },
     {
       "file": "src/network/server-npcs.cpp",
-      "why": "Cold NPC simulation host (NpcSystem mirrors, history deques, collision). Targeting/respawn/ground-clamp/lifecycle policy are hot."
+      "why": "Cold NPC simulation host (NpcSystem mirrors, history deques, collision) and the generic destruction/adoption mechanism. Targeting/respawn/ground-clamp/lifecycle policy are hot. Actor ids come from the one EntityRegistry allocator; origin/lifecycle are read from the generic components and the legacy mirror-seed branch is deleted."
     },
     {
       "file": "src/network/server-players.cpp",

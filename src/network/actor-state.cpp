@@ -27,6 +27,8 @@ constexpr std::uint64_t kIdentityId = gameHash("ActorIdentityState");
 constexpr std::uint64_t kOriginId = gameHash("ActorOriginState");
 constexpr std::uint64_t kLifecycleId = gameHash("ActorLifecycleState");
 constexpr std::uint64_t kAvatarId = gameHash("ActorAvatarState");
+constexpr std::uint64_t kNetStateId = gameHash("ActorNetState");
+constexpr std::uint64_t kWeaponStateId = gameHash("ActorWeaponState");
 constexpr std::uint64_t kTargetsRel = gameHash("relationship.targets");
 constexpr std::uint64_t kToolRefId = gameHash("ToolRefState");
 constexpr std::uint64_t kContainsItemRel = gameHash("relationship.contains-item");
@@ -79,6 +81,21 @@ void actorStateEnsureSchemas()
                  sizeof(ActorLifecycleComponentV1), 4, "ActorLifecycleState");
     ensureSchema(kAvatarId, gameHash("ActorAvatarState.v1"),
                  sizeof(ActorAvatarStateV1), 8, "ActorAvatarState");
+    ensureSchema(kNetStateId, gameHash("ActorNetState.v1"),
+                 sizeof(ActorNetStateV1), 4, "ActorNetState");
+    // Hot input only (ActorNetState is the wire carrier): network policy NONE.
+    {
+        MimitaRuntime::DynamicComponentSchema schema;
+        schema.typeId = kWeaponStateId;
+        schema.schemaHash = gameHash("ActorWeaponState.v1");
+        schema.version = 1;
+        schema.size = sizeof(ActorWeaponStateV1);
+        schema.align = 4;
+        schema.copyPolicy = GAME_COPY_RUNTIME_ONLY;
+        schema.networkPolicy = GAME_NET_NONE;
+        schema.name = "ActorWeaponState";
+        MimitaRuntime::DynamicComponentStore::instance().registerSchema(schema);
+    }
 }
 
 bool actorStateWriteOrigin(std::uint64_t entity, std::uint32_t origin,
@@ -429,6 +446,54 @@ bool actorStateActionHandled(std::uint64_t actorEntity, std::uint64_t tick)
             &state, sizeof(state)))
         return false;
     return state.handled != 0 && state.lastHandledTick == tick;
+}
+
+bool actorStateWriteNetState(std::uint64_t entity, const ActorNetStateV1& state)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    return MimitaRuntime::DynamicComponentStore::instance().write(
+        static_cast<EntityId>(entity), kNetStateId, &state, sizeof(state));
+}
+
+bool actorStateReadNetState(std::uint64_t entity, ActorNetStateV1* out)
+{
+    if (entity == 0 || !out)
+        return false;
+    actorStateEnsureSchemas();
+    return MimitaRuntime::DynamicComponentStore::instance().read(
+        static_cast<EntityId>(entity), kNetStateId, out, sizeof(*out));
+}
+
+bool actorStateWriteWeaponState(std::uint64_t entity, std::int16_t equippedSlot,
+                                std::uint8_t weaponState)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorWeaponStateV1 state{};
+    state.equippedSlot = equippedSlot;
+    state.weaponState = weaponState;
+    return MimitaRuntime::DynamicComponentStore::instance().write(
+        static_cast<EntityId>(entity), kWeaponStateId, &state, sizeof(state));
+}
+
+bool actorStateReadWeaponState(std::uint64_t entity, std::int16_t* equippedSlot,
+                               std::uint8_t* weaponState)
+{
+    if (entity == 0)
+        return false;
+    actorStateEnsureSchemas();
+    ActorWeaponStateV1 state{};
+    if (!MimitaRuntime::DynamicComponentStore::instance().read(
+            static_cast<EntityId>(entity), kWeaponStateId, &state, sizeof(state)))
+        return false;
+    if (equippedSlot)
+        *equippedSlot = state.equippedSlot;
+    if (weaponState)
+        *weaponState = state.weaponState;
+    return true;
 }
 
 } // namespace MimitaNet

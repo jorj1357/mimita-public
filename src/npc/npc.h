@@ -222,7 +222,7 @@ public:
     void spawnNpc(float difficulty);
     void spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos,
                   const std::string& customName = "");
-    uint32_t nextNpcId() { return nextId++; }
+    uint32_t nextNpcId();
 
     void setGlobalDifficulty(float d);
     void refreshDifficultyTuning();
@@ -249,7 +249,6 @@ public:
 
 private:
     std::vector<Npc> npcs;
-    uint32_t nextId = 100;
     float globalDifficulty_ = -1.0f;
     float currentTime = 0.0f;
 

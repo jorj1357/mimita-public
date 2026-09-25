@@ -21,6 +21,9 @@
 #include "debug/structured-log.h"
 #include "live-code/live-behavior.h"
 #include "live-code/live-identity.h"
+#include "hot-reload/game-api.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-npc-combat-decision.h"
 #include "network/network-weapons.h"
 #include "effects/effect-part.h"
 #include "physics/movement/physics-collision.h"
@@ -220,19 +223,6 @@ glm::vec3 NpcCombat::applyAimError(const Npc& npc, glm::vec3 aimDir)
     return aimDir;
 }
 
-static float computeFireAggression(const Npc& npc)
-{
-    float baseRaw = (npc.behavior.active && npc.behavior.aggression >= 0.0f)
-        ? npc.behavior.aggression : npc.tuning.aggression;
-    float base = npcMindEffectiveAggression(npc, baseRaw);
-    float healthFrac = (float)npc.body.currentHp / (float)npc.body.maxHp;
-    float lowHealth = (1.0f - healthFrac) * 0.3f;
-    float closeTarget = npc.sensors.targetDistance < 5.0f ? 0.3f : 0.0f;
-    float recentlyHit = npc.hitReactionTimer > 0.0f ? 0.4f : 0.0f;
-    float visible = npc.cachedLoSBlocked ? 0.0f : 0.2f;
-    return glm::clamp(base + lowHealth + closeTarget + recentlyHit + visible, 0.0f, 1.0f);
-}
-
 bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 {
     // Never fire at a dead/unconscious target. Stops the post-death shot/sound
@@ -241,14 +231,6 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         return false;
 
     const int hpBeforeShot = player.currentHp;
-
-    if (npc.attackCooldown > 0.0f)
-    {
-        Debug::logThrottled(Debug::Category::NpcCombat, "npc-cd",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: attackCooldown=%.2f\n",
-            npc.id, npc.attackCooldown);
-        return false;
-    }
 
     float dist = npc.sensors.targetDistance;
 
@@ -259,68 +241,75 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     const float beamOverride = npcDiffSettings.npcHitRadius;
 
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
-    if (!def)
+    WeaponRuntime* rtPtr = def ? &npc.body.weaponRuntimes[def->id] : nullptr;
+
+    // Fire gate + fire aggression are a hot policy (npc.combat-decision). Cold
+    // owns the firing mechanics below and applies the decision; the RNG-consuming
+    // cooldown roll stays cold so the RNG order is unchanged.
+    NpcCombatDecisionPolicyV1 decision{};
+    decision.structSize = sizeof(NpcCombatDecisionPolicyV1);
+    decision.entity = Ecs::raw(
+        Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id));
+    decision.tick = static_cast<std::uint32_t>(LiveIdentity::simulationTick());
+    decision.attackCooldown = npc.attackCooldown;
+    decision.distance = dist;
+    decision.rangeCap = NpcCombat::kNpcFiringRangeCap;
+    decision.hasWeapon = def ? 1u : 0u;
+    if (rtPtr) {
+        decision.ammoCurrent = rtPtr->currentAmmo;
+        decision.ammoReserve = rtPtr->reserveAmmo;
+        decision.isReloading = rtPtr->isReloading ? 1u : 0u;
+    }
+    decision.reloadTime = def ? def->reloadTime : 0.0f;
+    decision.losBlocked = npc.cachedLoSBlocked ? 1u : 0u;
     {
+        const float baseRaw = (npc.behavior.active && npc.behavior.aggression >= 0.0f)
+            ? npc.behavior.aggression : npc.tuning.aggression;
+        decision.effectiveAggressionBase = npcMindEffectiveAggression(npc, baseRaw);
+    }
+    decision.aggressionBonus = npcDiffSettings.aggressionBonus;
+    decision.healthFrac = npc.body.maxHp > 0
+        ? (float)npc.body.currentHp / (float)npc.body.maxHp : 0.0f;
+    decision.recentlyHit = npc.hitReactionTimer > 0.0f ? 1u : 0u;
+    decision.targetDistance = dist;
+    decision.visible = npc.cachedLoSBlocked ? 0u : 1u;
+
+    auto* decisionFn = reinterpret_cast<GameNpcCombatDecisionFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_NPC_COMBAT_DECISION));
+    if (decisionFn)
+        decisionFn(nullptr, &decision);
+    else
+        MimitaNet::HotNpcCombatDecisionImpl::evaluate(decision);
+
+    npc.fireAggressionBias = decision.outAggression;
+
+    if (decision.startReload && rtPtr)
+    {
+        rtPtr->isReloading = true;
+        rtPtr->reloadTimer = decision.outReloadSeconds;
         Debug::log(Debug::Category::NpcCombat,
-            "[NPC] id=%u fire blocked: no weapon equipped\n", npc.id);
+            "[NPC RELOAD] npc=%u weapon=%s started reload=%.2fs ammo=%d reserve=%d",
+            npc.id, def->id.c_str(), decision.outReloadSeconds,
+            rtPtr->currentAmmo, rtPtr->reserveAmmo);
         return false;
     }
+    if (!decision.shouldFire || !def || !rtPtr)
+    {
+        Debug::logThrottled(Debug::Category::NpcCombat, "npc-fire-blocked",
+            DebugConfig::PRINT_INTERVAL,
+            "[NPC] id=%u fire blocked: gate (cooldown=%.2f dist=%.1f ammo=%d/%d reload=%d los=%d)\n",
+            npc.id, npc.attackCooldown, dist,
+            rtPtr ? rtPtr->currentAmmo : 0, rtPtr ? rtPtr->reserveAmmo : 0,
+            (int)decision.isReloading, (int)decision.losBlocked);
+        return false;
+    }
+    auto& rt = *rtPtr;
 
     Debug::log(Debug::Category::NpcCombat,
         "[NPC FIRE] id=%u equippedWeaponId=%s defId=%s behaviorType=%d pellets=%d damage=%.0f\n",
         npc.id, npc.body.equippedWeaponId.c_str(), def->id.c_str(),
         (int)def->behaviorType, def->pelletCount, def->damage);
-
-    // Range gate is effectively unlimited so an NPC never idles purely because
-    // a target is far away. The hitscan/projectile itself still has its own
-    // weapon range, so damage only lands within reach; the NPC always fires.
-    if (npcFiringRangeBlocked(dist))
-    {
-        Debug::logThrottled(Debug::Category::NpcCombat, "npc-range",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: dist=%.1f > cap=%.1f\n",
-            npc.id, dist, NpcCombat::kNpcFiringRangeCap);
-        return false;
-    }
-
-    auto& rt = npc.body.weaponRuntimes[def->id];
-
-    // No ammo and no reserve — can't fire
-    if (rt.currentAmmo <= 0 && rt.reserveAmmo <= 0)
-    {
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC] id=%u fire blocked: no ammo (current=%d reserve=%d)\n",
-            npc.id, rt.currentAmmo, rt.reserveAmmo);
-        return false;
-    }
-
-    // Reload if empty
-    if (rt.currentAmmo <= 0 && rt.reserveAmmo > 0 && !rt.isReloading)
-    {
-        rt.isReloading = true;
-        rt.reloadTimer = def->reloadTime;
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC RELOAD] npc=%u weapon=%s started reload=%.2fs ammo=%d reserve=%d",
-            npc.id, def->id.c_str(), def->reloadTime, rt.currentAmmo, rt.reserveAmmo);
-        return false;
-    }
-
-    // Currently reloading
-    if (rt.isReloading)
-    {
-        Debug::logThrottled(Debug::Category::NpcCombat, "npc-reloading",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: reloading %.2fs left\n",
-            npc.id, rt.reloadTimer);
-        return false;
-    }
-
-    // No ammo in magazine
-    if (rt.currentAmmo <= 0)
-    {
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC] id=%u fire blocked: magazine empty but reserve=%d (should have triggered reload)\n",
-            npc.id, rt.reserveAmmo);
-        return false;
-    }
 
     glm::vec3 aimDir;
     // Gun-tip muzzle: project the shot origin forward along the model's facing
@@ -540,8 +529,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     minDelay = std::max(0.0f, minDelay / cadence);
     maxDelay = std::max(minDelay, maxDelay / cadence);
     float rawPos = random01(npc.rngState);
-    float aggression = glm::clamp(computeFireAggression(npc) + npcCfg.aggressionBonus, 0.0f, 1.0f);
-    npc.fireAggressionBias = aggression;
+    // Aggression was decided by the hot combat policy (npc.combat-decision).
+    float aggression = npc.fireAggressionBias;
     float calm = 1.0f - aggression;
     float pos = rawPos - aggression * 0.35f + calm * 0.15f + npc.fireRhythmOffset * 0.2f;
     pos = glm::clamp(pos, 0.0f, 1.0f);

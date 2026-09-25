@@ -36,6 +36,9 @@
 #include "live-code/live-behavior.h"
 #include "hot-reload/game-api.h"
 #include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-npc-intent.h"
+#include "hot-reload/hot-npc-weapon-select.h"
+#include "hot-reload/hot-npc-nav-goal.h"
 #include <cstdio>
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
@@ -49,6 +52,14 @@
 #include "ecs/entity-registry.h"
 
 static constexpr float SEARCH_TIMEOUT = 8.0f;
+
+// Single NPC id allocator. Local/duel/dev NPC bodies and server-adopted NPCs all
+// draw from the EntityRegistry so no private counter can collide with another.
+uint32_t NpcSystem::nextNpcId()
+{
+    return EntityRegistry::instance().allocateLegacyId(
+        EntityRealm::Server, EntityDomain::Npc);
+}
 
 float targetCanSeeNpc(const Npc& npc, const World& world)
 {
@@ -124,15 +135,6 @@ bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def
 }
 
 namespace {
-
-glm::vec3 safePlanarNormal(glm::vec3 v, glm::vec3 fallback)
-{
-    v.z = 0.0f;
-    float len = glm::length(v);
-    if (len < 0.0001f)
-        return fallback;
-    return v / len;
-}
 
 glm::vec3 rotatePlanar(glm::vec3 v, float radians)
 {
@@ -271,147 +273,125 @@ void logStateChange(const Npc& npc, NpcState oldState, NpcState newState)
 NpcGoal makeNavGoal(const Npc& npc)
 {
     NpcGoal goal;
-    if (!npc.sensors.hasTarget) {
-        if (npc.stateMachine.currentState == NpcState::Chase) {
-            goal.kind = NpcGoalKind::ReachPosition;
-            goal.targetPos = npc.stateMachine.lastKnownTarget;
-        } else if (npc.memory.lastAttackerAge < 6.0f &&
-                   glm::length(npc.memory.lastAttackerPos - npc.body.pos) > 2.0f) {
-            // Investigate the last attacker (bounded memory).
-            goal.kind = NpcGoalKind::ReachPosition;
-            goal.targetPos = npc.memory.lastAttackerPos;
-        } else if (npc.memory.recentDangerAge < 6.0f &&
-                   glm::length(npc.memory.recentDangerPos - npc.body.pos) > 2.0f) {
-            // Move toward recent danger even without a visible target.
-            goal.kind = NpcGoalKind::ReachPosition;
-            goal.targetPos = npc.memory.recentDangerPos;
-        } else if (npc.stateMachine.currentState == NpcState::RandomWalk) {
-            goal.kind = NpcGoalKind::ReachPosition;
-            goal.targetPos = npc.stateMachine.wanderTarget;
-        }
-        return goal;
-    }
+    // Navigation goal mapping is a hot policy (npc.nav-goal). Cold owns
+    // pathfinding/steering/world queries; the hot policy maps brain state +
+    // bounded memory to an abstract goal.
+    NpcNavGoalPolicyV1 request{};
+    request.structSize = sizeof(NpcNavGoalPolicyV1);
+    request.entity = Ecs::raw(
+        Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id));
+    request.hasTarget = npc.sensors.hasTarget ? 1u : 0u;
+    request.currentState = (std::uint32_t)npc.stateMachine.currentState;
+    request.lastAttackerAge = npc.memory.lastAttackerAge;
+    request.lastAttackerPos[0] = npc.memory.lastAttackerPos.x;
+    request.lastAttackerPos[1] = npc.memory.lastAttackerPos.y;
+    request.lastAttackerPos[2] = npc.memory.lastAttackerPos.z;
+    request.recentDangerAge = npc.memory.recentDangerAge;
+    request.recentDangerPos[0] = npc.memory.recentDangerPos.x;
+    request.recentDangerPos[1] = npc.memory.recentDangerPos.y;
+    request.recentDangerPos[2] = npc.memory.recentDangerPos.z;
+    request.selfPos[0] = npc.body.pos.x;
+    request.selfPos[1] = npc.body.pos.y;
+    request.selfPos[2] = npc.body.pos.z;
+    request.wanderTarget[0] = npc.stateMachine.wanderTarget.x;
+    request.wanderTarget[1] = npc.stateMachine.wanderTarget.y;
+    request.wanderTarget[2] = npc.stateMachine.wanderTarget.z;
+    request.lastKnownTarget[0] = npc.stateMachine.lastKnownTarget.x;
+    request.lastKnownTarget[1] = npc.stateMachine.lastKnownTarget.y;
+    request.lastKnownTarget[2] = npc.stateMachine.lastKnownTarget.z;
+    request.effectiveRange = weaponEffectiveRange(npc);
+    request.preferredRange =
+        (npc.behavior.active && npc.behavior.preferredRange > 0.0f)
+            ? npc.behavior.preferredRange : 0.0f;
+    request.maintainDistanceScale = 1.0f;
 
-    switch (npc.stateMachine.currentState) {
-        case NpcState::Chase:
-        case NpcState::Advance:
-            goal.kind = NpcGoalKind::FollowActor;
-            break;
-        case NpcState::Circle:
-        case NpcState::Strafe:
-        case NpcState::HoldPosition:
-        case NpcState::Peek:
-        case NpcState::Aim:
-            goal.kind = NpcGoalKind::MaintainDistance;
-            goal.desiredDistance =
-                (npc.behavior.active && npc.behavior.preferredRange > 0.0f)
-                    ? npc.behavior.preferredRange
-                    : std::clamp(weaponEffectiveRange(npc) * 0.6f, 5.0f, 25.0f);
-            break;
-        case NpcState::Retreat:
-        case NpcState::Recover:
-            goal.kind = NpcGoalKind::FleeActor;
-            goal.desiredDistance = 8.0f;
-            break;
-        default:
-            goal.kind = NpcGoalKind::FollowActor;
-            break;
-    }
+    auto* goalFn = reinterpret_cast<GameNpcNavGoalFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_NPC_NAV_GOAL));
+    if (goalFn)
+        goalFn(nullptr, &request);
+    else
+        MimitaNet::HotNpcNavGoalImpl::evaluate(request);
+
+    goal.kind = static_cast<NpcGoalKind>(request.goalKind);
+    goal.targetPos = glm::vec3(request.goalTargetPos[0],
+                               request.goalTargetPos[1],
+                               request.goalTargetPos[2]);
+    goal.desiredDistance = request.goalDesiredDistance;
     return goal;
 }
 
 InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bool attack, bool downDash, float dt)
 {
     InputState input;
-    input.wishMoveXY = {moveDir.x, moveDir.y};
-    input.movementPressed = glm::length(moveDir) > 0.001f;
-    input.jumpHeld = jump;
-    input.jumpPressed = jump;
-    input.dashPressed = dash;
-    input.groundReturnPressed = false;
-    input.downDashPressed = downDash;
-    input.freezeHeld = false;
 
-    glm::vec3 desiredFwd;
-
-    // Facing-mode timing: switch between "aim at target" (dominant, long
-    // stretches) and "face movement" (brief). Being airborne or grounded is
-    // irrelevant — a jumping/dashing NPC aims exactly like a standing one.
+    // Facing/aim intent is a hot policy (NPC migration Phase 5a). The EXE fills
+    // the raw navigation/action facts and the config values; the hot provider (or
+    // the shared fallback) owns the mode timer, desired facing, turn-speed
+    // limiting, and the final MovementIntent/AimIntent. Persistent facing state
+    // and RNG ride in/out so the policy is stateless and reload-safe.
     const auto& facingCfg = NpcDifficultyConfig::instance().settings();
-    if (facingCfg.aimAtTargetMax <= 0.0f)
-    {
-        npc.facingTargetMode = true;  // no move-mode configured; always aim
-    }
-    else if (npc.facingModeTimer <= 0.0f)
-    {
-        npc.facingTargetMode = !npc.facingTargetMode;
-        if (npc.facingTargetMode)
-        {
-            float minT = facingCfg.aimAtTargetMin;
-            float maxT = std::max(minT, facingCfg.aimAtTargetMax);
-            npc.facingModeTimer = minT + random01(npc.rngState) * (maxT - minT);
-        }
-        else
-        {
-            float minT = facingCfg.faceMovementMin;
-            float maxT = std::max(minT, facingCfg.faceMovementMax);
-            npc.facingModeTimer = minT + random01(npc.rngState) * (maxT - minT);
-        }
-    }
-    else
-    {
-        npc.facingModeTimer -= dt;
-    }
 
-    if (npc.facingTargetMode && npc.sensors.hasTarget)
-    {
-        // Aim mode: face the target so the model turns smoothly at the player
-        // no matter how it is moving. The arcade aim error is applied to the
-        // shot, not to the model facing.
-        glm::vec3 npcEye = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.8f);
-        glm::vec3 toTarget = npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcEye;
-        glm::vec3 aimDir = glm::length(toTarget) > 0.001f ? glm::normalize(toTarget)
-                                                          : glm::vec3(1.0f, 0.0f, 0.0f);
-        desiredFwd = safePlanarNormal(aimDir, {1.0f, 0.0f, 0.0f});
-    }
-    else if (input.movementPressed)
-    {
-        // Move mode (or no target while moving): face travel direction.
-        desiredFwd = safePlanarNormal(moveDir, {1.0f, 0.0f, 0.0f});
-    }
-    else if (npc.sensors.hasTarget)
-    {
-        // Not moving: look at the target rather than snapping to +X.
-        glm::vec3 npcEye = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.8f);
-        glm::vec3 toTarget = npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcEye;
-        glm::vec3 aimDir = glm::length(toTarget) > 0.001f ? glm::normalize(toTarget)
-                                                          : glm::vec3(1.0f, 0.0f, 0.0f);
-        desiredFwd = safePlanarNormal(aimDir, {1.0f, 0.0f, 0.0f});
-    }
-    else
-    {
-        // Idle with no target: hold the current facing instead of snapping.
-        desiredFwd = npc.currentFacing;
-    }
+    NpcIntentPolicyV1 req{};
+    req.structSize = sizeof(NpcIntentPolicyV1);
+    req.entity = Ecs::raw(
+        Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id));
+    req.dt = dt;
+    req.tick = static_cast<std::uint32_t>(LiveIdentity::simulationTick());
+    req.rawMoveX = moveDir.x;
+    req.rawMoveY = moveDir.y;
+    req.movementPressed = glm::length(moveDir) > 0.001f ? 1u : 0u;
+    req.jump = jump ? 1u : 0u;
+    req.dash = dash ? 1u : 0u;
+    req.downDash = downDash ? 1u : 0u;
+    req.pos[0] = npc.body.pos.x;
+    req.pos[1] = npc.body.pos.y;
+    req.pos[2] = npc.body.pos.z;
+    req.currentFacing[0] = npc.currentFacing.x;
+    req.currentFacing[1] = npc.currentFacing.y;
+    req.currentFacing[2] = npc.currentFacing.z;
+    req.hasTarget = npc.sensors.hasTarget ? 1u : 0u;
+    req.targetPos[0] = npc.sensors.targetPos.x;
+    req.targetPos[1] = npc.sensors.targetPos.y;
+    req.targetPos[2] = npc.sensors.targetPos.z;
+    req.turnSpeed = facingCfg.turnSpeed > 0.0f ? facingCfg.turnSpeed
+                                               : npc.tuning.turnSpeed;
+    req.aimAtTargetMin = facingCfg.aimAtTargetMin;
+    req.aimAtTargetMax = facingCfg.aimAtTargetMax;
+    req.faceMovementMin = facingCfg.faceMovementMin;
+    req.faceMovementMax = facingCfg.faceMovementMax;
+    req.facingTargetMode = npc.facingTargetMode ? 1u : 0u;
+    req.facingModeTimer = npc.facingModeTimer;
+    req.rngState = npc.rngState;
 
-    // Apply turn speed limiting: smoothly rotate currentFacing toward desiredFwd
-    // The config turnSpeed overrides the per-difficulty tuning value when > 0.
-    float turnSpeed = facingCfg.turnSpeed > 0.0f ? facingCfg.turnSpeed : npc.tuning.turnSpeed;
-    float maxTurnAngle = turnSpeed * dt;  // degrees this frame
-    float angleDiff = glm::degrees(std::acos(
-        std::clamp(glm::dot(npc.currentFacing, desiredFwd), -1.0f, 1.0f)));
-    if (angleDiff > maxTurnAngle && maxTurnAngle > 0.0f) {
-        float t = maxTurnAngle / angleDiff;
-        npc.currentFacing = glm::normalize(
-            glm::mix(npc.currentFacing, desiredFwd, t));
-    } else {
-        npc.currentFacing = desiredFwd;
-    }
-    // The rendered model yaw follows the smoothly-turned facing (this is the
-    // ONLY place body.yaw updates — no snapping on fire).
-    npc.body.yaw = glm::degrees(std::atan2(npc.currentFacing.y, npc.currentFacing.x));
+    auto* intentFn = reinterpret_cast<GameNpcIntentFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(GAME_CAP_NPC_INTENT));
+    if (intentFn)
+        intentFn(nullptr, &req);
+    else
+        MimitaNet::HotNpcIntentImpl::evaluate(req);
+
+    // Apply the decided intent to the typed NPC and the shared movement input.
+    npc.facingTargetMode = req.facingTargetMode != 0u;
+    npc.facingModeTimer = req.facingModeTimer;
+    npc.rngState = req.rngState;
+    npc.currentFacing = glm::vec3(req.outFacing[0], req.outFacing[1],
+                                  req.outFacing[2]);
+    // The rendered model yaw follows the smoothly-turned facing (the ONLY place
+    // body.yaw updates — no snapping on fire).
+    npc.body.yaw = req.outYaw;
+
+    input.wishMoveXY = {req.outMoveX, req.outMoveY};
+    input.movementPressed = req.outMovementPressed != 0u;
+    input.jumpHeld = req.outJump != 0u;
+    input.jumpPressed = req.outJump != 0u;
+    input.dashPressed = req.outDash != 0u;
+    input.groundReturnPressed = false;
+    input.downDashPressed = req.outDownDash != 0u;
+    input.freezeHeld = false;
     input.camForward = npc.currentFacing;
 
+    (void)attack;
     return input;
 }
 
@@ -806,51 +786,71 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         if (npc.loadoutOverride.empty() && !cfg.forceWeapon.empty()) {
             bestWeapon = cfg.forceWeapon;
         } else if (npc.behavior.active) {
-            // Scored weapon selection from existing weapon metadata plus the
-            // behavior profile weights. Ammo/legality remain authoritative.
+            // Scored weapon selection policy is hot (npc.weapon-select). The cold
+            // caller enumerates the loadout and owns ammo/legality; the hot policy
+            // owns the profile scoring and the anti-thrash switch threshold.
             const NpcBehaviorTuning& b = npc.behavior;
-            auto weaponScore = [&](const WeaponDefinition& def) {
-                const float effRange = weaponSelectionRangeOf(def);
-                const float rangeFit = 1.0f - glm::clamp(
-                    std::fabs(effRange - dist) / std::max(effRange, 1.0f), 0.0f, 1.0f);
-                const float burst = def.damage * (float)std::max(1, def.pelletCount);
-                const float damageUtility = glm::clamp(burst / 80.0f, 0.0f, 1.0f);
-                float safety = glm::clamp(effRange / 80.0f, 0.0f, 1.0f);
-                if (def.behaviorType == WeaponBehaviorType::RocketLauncher ||
-                    def.behaviorType == WeaponBehaviorType::GrenadeLauncher ||
-                    def.behaviorType == WeaponBehaviorType::Projectile)
-                    safety *= 0.5f;
-                else if (def.behaviorType == WeaponBehaviorType::Melee ||
-                         def.behaviorType == WeaponBehaviorType::Swordsword)
-                    safety = 0.05f;
-                return rangeFit * b.weaponRangeBias
-                     + damageUtility * b.weaponDamageBias
-                     + safety * b.weaponSafetyBias;
-            };
-            auto usable = [&](const std::string& wid) {
-                auto it = npc.body.weaponRuntimes.find(wid);
-                if (it == npc.body.weaponRuntimes.end()) return false;
-                const auto& rt = it->second;
-                return rt.currentAmmo > 0 || rt.reserveAmmo > 0 || rt.isReloading;
-            };
+            NpcWeaponSelectPolicyV1 request{};
+            request.structSize = sizeof(NpcWeaponSelectPolicyV1);
+            request.entity = Ecs::raw(
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id));
+            request.tick =
+                static_cast<std::uint32_t>(LiveIdentity::simulationTick());
+            request.distance = dist;
+            request.weaponRangeBias = b.weaponRangeBias;
+            request.weaponDamageBias = b.weaponDamageBias;
+            request.weaponSafetyBias = b.weaponSafetyBias;
+            request.weaponSwitchThreshold = b.weaponSwitchThreshold;
+            request.currentWeaponHash =
+                (std::uint64_t)gameHash(npc.body.equippedWeaponId.c_str());
 
-            const WeaponDefinition* curDef =
-                WeaponRegistry::instance().get(npc.body.equippedWeaponId);
-            const float currentScore = curDef ? weaponScore(*curDef) : -1e30f;
-
-            float bestScore = -1e30f;
-            for (const auto& wid : loadout) {
-                if (!usable(wid)) continue;
+            auto addWeapon = [&](const std::string& wid) {
+                if (wid.empty() ||
+                    request.candidateCount >=
+                        (std::uint32_t)NPC_WEAPON_SELECT_MAX)
+                    return;
+                const std::uint64_t hash = (std::uint64_t)gameHash(wid.c_str());
+                for (std::uint32_t i = 0; i < request.candidateCount; ++i)
+                    if (request.candidates[i].weaponHash == hash)
+                        return;
                 const WeaponDefinition* d = WeaponRegistry::instance().get(wid);
-                if (!d) continue;
-                const float s = weaponScore(*d);
-                if (s > bestScore) { bestScore = s; bestWeapon = wid; }
+                if (!d)
+                    return;
+                auto it = npc.body.weaponRuntimes.find(wid);
+                const bool usable = it != npc.body.weaponRuntimes.end() &&
+                    (it->second.currentAmmo > 0 || it->second.reserveAmmo > 0 ||
+                     it->second.isReloading);
+                NpcWeaponCandidateV1& c =
+                    request.candidates[request.candidateCount++];
+                c.weaponHash = hash;
+                c.usable = usable ? 1u : 0u;
+                c.isEquipped = (wid == npc.body.equippedWeaponId) ? 1u : 0u;
+                c.effRange = weaponSelectionRangeOf(*d);
+                c.damage = d->damage;
+                c.pelletCount = (std::uint32_t)std::max(1, d->pelletCount);
+                c.behaviorType = (std::uint32_t)d->behaviorType;
+            };
+            for (const auto& wid : loadout)
+                addWeapon(wid);
+            addWeapon(npc.body.equippedWeaponId);  // ensure the current is scored
+
+            auto* weaponFn = reinterpret_cast<GameNpcWeaponSelectFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_NPC_WEAPON_SELECT));
+            if (weaponFn)
+                weaponFn(nullptr, &request);
+            else
+                MimitaNet::HotNpcWeaponSelectImpl::evaluate(request);
+
+            if (request.chosenWeaponHash !=
+                (std::uint64_t)gameHash(npc.body.equippedWeaponId.c_str())) {
+                for (const auto& wid : loadout)
+                    if ((std::uint64_t)gameHash(wid.c_str()) ==
+                        request.chosenWeaponHash) {
+                        bestWeapon = wid;
+                        break;
+                    }
             }
-            // Keep the current weapon unless a candidate is clearly better.
-            if (curDef && usable(npc.body.equippedWeaponId) &&
-                bestWeapon != npc.body.equippedWeaponId &&
-                bestScore <= currentScore + b.weaponSwitchThreshold)
-                bestWeapon = npc.body.equippedWeaponId;
         } else {
             // Legacy distance-based switching (unchanged without a profile).
             // Check ammo: if current weapon is empty, force a switch

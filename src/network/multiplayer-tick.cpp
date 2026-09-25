@@ -12,6 +12,9 @@
 #include "network/dynamic-replication.h"
 #include "ecs/dynamic-components.h"
 #include "ecs/relationship-store.h"
+#include "ecs/entity-types.h"
+#include "ecs/entity-registry.h"
+#include "network/actor-state.h"
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-client-snapshot.h"
 #include "hot-reload/generation-verify.h"
@@ -175,6 +178,40 @@ static bool mpGenerationWorldAllowed(const MultiplayerContext& ctx)
         gp.handled)
         allowed = gp.allowWorld != 0u;
     return allowed;
+}
+
+// ── Generic actor net-state binding (NPC migration Phase 4) ─────────────
+// Client half of generic actor replication: when the server has projected an
+// actor's transform/velocity into the generic ActorNetState component, that
+// component becomes the movement source of truth and the compact ENTITY_NPC
+// snapshot is only a compatibility transport for membership/avatar. This is the
+// migration marker: present -> generic movement bound; absent -> legacy snapshot
+// movement. Returns true when the out entity's movement was replaced.
+static bool mpApplyGenericNpcNetState(const SnapshotEntity& in, SnapshotEntity& out)
+{
+    if (in.entityType != ENTITY_NPC)
+        return false;
+    const EntityId id = EntityRegistry::instance().find(
+        EntityRealm::Server, EntityDomain::Npc, in.networkEntityId);
+    if (id == kInvalidEntityId)
+        return false;
+    MimitaNet::ActorNetStateV1 ns{};
+    if (!MimitaNet::actorStateReadNetState(static_cast<std::uint64_t>(id), &ns))
+        return false;
+    out.px = ns.position[0];
+    out.py = ns.position[1];
+    out.pz = ns.position[2];
+    out.vx = ns.velocity[0];
+    out.vy = ns.velocity[1];
+    out.vz = ns.velocity[2];
+    out.aimX = ns.aim[0];
+    out.aimY = ns.aim[1];
+    out.aimZ = ns.aim[2];
+    out.yaw = ns.yaw;
+    out.onGround = ns.onGround ? 1u : 0u;
+    out.equippedSlot = ns.equippedSlot;
+    out.weaponState = ns.weaponState;
+    return true;
 }
 
 static void processSnapshotEntities(
@@ -539,9 +576,33 @@ static void processSnapshotEntities(
             }
         }
 
-        if (!pushInterpolationTarget(interpolation, entity, serverTick,
-                                     logicalGenerationId))
+        if (entity.entityType == ENTITY_NPC)
+        {
+            // Generic ActorNetState is the movement authority when present; the
+            // compact snapshot still supplies membership/avatar/epoch.
+            SnapshotEntity bound = entity;
+            if (mpApplyGenericNpcNetState(entity, bound))
+            {
+                Debug::logThrottled(Debug::Category::Networking,
+                                    "npc-generic-net-bound", 5.0f,
+                                    "[NPC GENERIC NET] entityId=%u movement bound "
+                                    "to ActorNetState\n",
+                                    entity.networkEntityId);
+                if (!pushInterpolationTarget(interpolation, bound, serverTick,
+                                             logicalGenerationId))
+                    continue;
+            }
+            else if (!pushInterpolationTarget(interpolation, entity, serverTick,
+                                              logicalGenerationId))
+            {
+                continue;
+            }
+        }
+        else if (!pushInterpolationTarget(interpolation, entity, serverTick,
+                                          logicalGenerationId))
+        {
             continue;
+        }
         p.spawnGeneration = entity.spawnGeneration;
         if (isNew)
         {

@@ -31,6 +31,10 @@ public:
     // id, so it never collides with player/npc/projectile/world-object ids and
     // requires no new enum. Pass a non-zero legacyId to request a stable id.
     EntityId createGeneric(EntityRealm realm, std::uint32_t legacyId = 0);
+    // The single legacy-id allocator for typed actors (one per (realm, domain)).
+    // Subsystems that need a new NPC/player/projectile id must call this instead
+    // of keeping a private counter, so two subsystems can never collide.
+    std::uint32_t allocateLegacyId(EntityRealm realm, EntityDomain domain);
     // Registers the exact packed EntityId (used by generic replication so a
     // client materializes the server's identity verbatim). If a different
     // generation currently owns the same (realm, domain, legacyId) key, the old
@@ -133,4 +137,5 @@ private:
     std::unordered_map<std::type_index, std::unique_ptr<IComponentStore>> mStores;
     std::vector<EntityId> mDestroyed;
     std::uint32_t nextDynamicId_ = 1;
+    std::unordered_map<std::uint64_t, std::uint32_t> mNextLegacyId;
 };

@@ -582,3 +582,367 @@ Automated tests (test evidence):
 
 Pending. Two-client agreement and live behavior edits still require human
 observation.
+
+## Cold-build occurrence 9
+
+UTC time: 2026-09-24T18:46:36Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_184636-npc-lifecycle-authority-allocator.md`
+
+### Why the cold build was required
+
+Phase 3.5 makes the hot `npc.lifecycle` provider reachable by marking the kernel
+capability `overridable` and forwarding through a dispatcher, adds a single typed
+actor id allocator on `EntityRegistry`, and changes NPC id/call sites across
+`server.cpp`, `server-packets.cpp`, `server-npcs.cpp`, `server-gamemode.cpp`, and
+`npc.{h,cpp}`. A capability's overridable flag, a new registry method, and the
+allocation call sites are kernel/bridge code, so one cold relink was required.
+
+### Exact cold source / boundary
+
+- `src/ecs/entity-registry.{h,cpp}` (new `allocateLegacyId`)
+- `src/live-code/live-behavior.cpp` (overridable kernel capability + dispatcher)
+- `src/npc/npc.{h,cpp}` (`NpcSystem::nextNpcId` delegates to the registry)
+- `src/network/server.cpp`, `server-packets.cpp`, `server-npcs.cpp`,
+  `server-gamemode.cpp` (id + origin/lifecycle seeding)
+
+### Result needed from the new executable
+
+The hot `npc.lifecycle` provider is authoritative when present (the kernel
+fallback only runs when it is absent), every NPC birth path seeds generic
+origin/lifecycle, and all NPC ids come from the one `EntityRegistry` allocator.
+
+### Why it could not be applied through the live path
+
+The overridable flag and the bridge dispatcher are registered kernel-side; the
+allocator and call sites are cold. After this build, edits to
+`npc-lifecycle-policy.cpp` take effect through a live DLL swap.
+
+### Smallest change that would make this hot
+
+None for this installation. Phase 4 (generic actor replication) and Phase 5 (hot
+behavior port) remain the next cold boundaries; each is a one-time install.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T183424.exe`.
+
+Automated tests (test evidence):
+
+```text
+--npc-generic-slice-selftest   PASS
+--npc-entity-selftest          PASS
+--npc-actor-state-selftest     PASS
+--dynamic-replication-selftest PASS
+--dynamic-lifecycle-selftest   PASS
+--actor-lifecycle-selftest     PASS
+--capability-selftest          PASS
+--gamemode-hot-selftest        PASS
+--production-loop-selftest     PASS
+--entity-slice-selftest        pre-existing journal-evidence FAIL (reproduced on
+                               mimita-20260924T181053.exe and T180948.exe)
+```
+
+### Human review
+
+Pending. Live confirmation that the hot lifecycle provider (not the fallback)
+runs, plus `npc_spawn`/wave origin classification over a full session, require a
+running server and human observation.
+
+## Cold-build occurrence 10
+
+UTC time: 2026-09-24T18:58:36Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_184636-npc-lifecycle-authority-allocator.md`
+
+### Why the cold build was required
+
+Phase 4 completion adds a generic component (`ActorWeaponState`) and implements
+the `actorStateWriteNetState`/`ReadNetState`/`WriteWeaponState`/`ReadWeaponState`
+cold helpers, and adds the client-side generic binding in
+`multiplayer-tick.cpp` (`mpApplyGenericNpcNetState`). New component schema ids and
+new cold bridge call sites cannot activate through a live DLL swap, so one cold
+relink was required.
+
+### Exact cold source / boundary
+
+- `src/network/actor-state.{h,cpp}` (new component + implemented helpers)
+- `src/network/server-npcs.cpp` (mirror writes ActorWeaponState)
+- `src/network/multiplayer-tick.cpp` (client generic movement binding)
+- `src/hot-reload/npc-generic-slice-selftest.cpp` (round-trip checks)
+
+### Result needed from the new executable
+
+Remote NPC movement/aim/ground/weapon on the client are fed from the generic
+`ActorNetState` component when present, with the compact `ENTITY_NPC` snapshot as
+the fallback; the hot `actor.net-state` system projects all fields.
+
+### Why it could not be applied through the live path
+
+The client binding and the new component schema/helper signatures are cold. After
+this build, further lifecycle/behavior edits remain hot.
+
+### Smallest change that would make this hot
+
+None for this installation. Retiring the compact NPC branch and the Phase 5 hot
+behavior port remain the next cold boundaries.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T185829.exe`; hot DLL current.
+
+Automated tests (test evidence):
+
+```text
+--npc-generic-slice-selftest  PASS (incl. ActorNetState/ActorWeaponState round-trips)
+--npc-entity-selftest         PASS
+--npc-actor-state-selftest    PASS
+--dynamic-replication-selftest PASS
+--dynamic-lifecycle-selftest  PASS
+--actor-lifecycle-selftest    PASS
+--capability-selftest         PASS
+--gamemode-hot-selftest       PASS
+--production-loop-selftest    PASS
+```
+
+### Human review
+
+Pending. Two-client agreement that remote NPC movement renders identically from
+the generic path, and live DLL edit confirmation, require a running server and
+human observation.
+
+## Cold-build occurrence 11
+
+UTC time: 2026-09-24T19:14:08Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_184636-npc-lifecycle-authority-allocator.md`
+
+### Why the cold build was required
+
+Phase 5a moves NPC movement/facing intent behind a new hot capability
+(`npc.intent`) with a new POD (`NpcIntentPolicyV1`), a new capability id, and a
+new bridge call site in `buildInputState` (`src/npc/npc.cpp`). A new capability
+id and a new call site cannot activate through a live DLL swap, so one cold
+relink was required.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/game-api.h` (new capability id + POD)
+- `src/npc/npc.cpp` (intent request fill + apply; old facing block deleted)
+
+### Result needed from the new executable
+
+The hot `npc.intent` provider owns the facing-mode timer, desired facing,
+turn-speed limiting, and the final MovementIntent/AimIntent; the shared fallback
+is RNG-identical so behavior does not change when no provider is active.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new capability id or a new bridge call site.
+
+### Smallest change that would make this hot
+
+None for this installation. Subsequent behavior phases (targeting loop, combat,
+navigation) remain the next cold boundaries; each is a one-time install.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T191400.exe`; hot DLL current.
+
+Automated tests (test evidence):
+
+```text
+--npc-generic-slice-selftest   PASS (incl. npc-intent checks)
+--npc-entity-selftest          PASS
+--npc-actor-state-selftest     PASS
+--dynamic-replication-selftest PASS
+--dynamic-lifecycle-selftest   PASS
+--actor-lifecycle-selftest     PASS
+--capability-selftest          PASS
+--gamemode-hot-selftest        PASS
+--production-loop-selftest     PASS
+--movement-parity-selftest     PASS
+```
+
+### Human review
+
+Pending. Live edit of `kTurnSpeedMultiplier` and an in-game facing check require a
+running server and human observation.
+
+## Cold-build occurrence 12
+
+UTC time: 2026-09-24T19:25:19Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_184636-npc-lifecycle-authority-allocator.md`
+
+### Why the cold build was required
+
+Phase 5b adds a new generic capability (`npc.target-select`) with a new POD and a
+new bridge call site in `simulateSharedNpcs` (`src/network/server-npcs.cpp`). A
+new capability id and a new call site cannot activate through a live DLL swap, so
+one cold relink was required.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/game-api.h` (new capability id + PODs)
+- `src/network/server-npcs.cpp` (candidate enumeration + hot selection call)
+
+### Result needed from the new executable
+
+The hot `npc.target-select` provider owns scored aggregation, stickiness, the
+anti-thrash switch threshold, and the legacy nearest-hostile fallback; the shared
+fallback reproduces the previous cold selection exactly.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new capability id or a new bridge call site.
+
+### Smallest change that would make this hot
+
+None for this installation. Combat/weapon, AI state, and navigation remain the
+next cold behavior boundaries.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T191901.exe`; hot DLL current.
+
+Automated tests (test evidence):
+
+```text
+--npc-generic-slice-selftest  PASS (incl. target-select checks)
+--npc-entity-selftest         PASS
+--npc-actor-state-selftest    PASS
+--dynamic-replication-selftest PASS
+--dynamic-lifecycle-selftest  PASS
+--actor-lifecycle-selftest    PASS
+--capability-selftest         PASS
+--gamemode-hot-selftest       PASS
+--production-loop-selftest    PASS
+--movement-parity-selftest    PASS
+```
+
+### Human review
+
+Pending. Live edit of `kSwitchThresholdMultiplier` and an in-game target-switch
+check require a running server and human observation.
+
+## Cold-build occurrence 13
+
+UTC time: 2026-09-24T19:38:00Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_184636-npc-lifecycle-authority-allocator.md`
+
+### Why the cold build was required
+
+Phase 5c adds a new generic capability (`npc.weapon-select`) with a new POD and a
+new bridge call site in the `npc.cpp` scored weapon-selection branch. A new
+capability id and a new call site cannot activate through a live DLL swap, so one
+cold relink was required.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/game-api.h` (new capability id + PODs)
+- `src/npc/npc.cpp` (loadout candidate enumeration + hot selection call)
+
+### Result needed from the new executable
+
+The hot `npc.weapon-select` provider owns the behavior-profile scoring and the
+anti-thrash switch threshold; the shared fallback reproduces the previous scored
+selection exactly. The force-weapon and legacy distance branches stay cold.
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new capability id or a new bridge call site.
+
+### Smallest change that would make this hot
+
+None for this installation. Fire gate/reload decision, damage response, AI state,
+and navigation remain the next cold behavior boundaries.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T193147.exe`; hot DLL current.
+
+Automated tests (test evidence):
+
+```text
+--npc-generic-slice-selftest  PASS (incl. weapon-select checks)
+--npc-entity-selftest         PASS
+--npc-actor-state-selftest    PASS
+--dynamic-replication-selftest PASS
+--dynamic-lifecycle-selftest  PASS
+--actor-lifecycle-selftest    PASS
+--capability-selftest         PASS
+--gamemode-hot-selftest       PASS
+--production-loop-selftest    PASS
+--movement-parity-selftest    PASS
+```
+
+### Human review
+
+Pending. Live edit of `kWeaponSwitchThresholdMultiplier` and an in-game weapon-
+switch check require a running server and human observation.
+
+## Cold-build occurrence 14
+
+UTC time: 2026-09-24T19:54:30Z
+
+Related changelog:
+`docs/changelog/2026-09-24/20260924_184636-npc-lifecycle-authority-allocator.md`
+
+### Why the cold build was required
+
+Phases 5d/5e/5f add three generic capabilities (`npc.combat-decision`,
+`npc.state-select`, `npc.nav-goal`) with new PODs and new bridge call sites in
+`tryFire` (`npc-combat.cpp`), `pickNextState` (`npc-state-machine.cpp`), and
+`makeNavGoal` (`npc.cpp`). New capability ids and call sites cannot activate
+through a live DLL swap, so one cold relink was required.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/game-api.h` (three capability ids + PODs)
+- `src/npc/npc-combat.cpp`, `src/npc/npc-state-machine.cpp`, `src/npc/npc.cpp`
+
+### Result needed from the new executable
+
+The hot policies own the fire gate + aggression, the state scoring/selection, and
+the navigation-goal mapping; the shared fallbacks reproduce the previous cold
+logic exactly (same RNG consumption).
+
+### Why it could not be applied through the live path
+
+A running process cannot gain a new capability id or a new bridge call site.
+
+### Smallest change that would make this hot
+
+None for this installation. Navigation world queries, firing/damage mechanics,
+and the combat `tryFire` mechanics remain cold by design.
+
+### Build result
+
+`SUCCESS` -> `mimita-20260924T194735.exe`; hot DLL current.
+
+Automated tests (test evidence):
+
+```text
+--npc-generic-slice-selftest  PASS (incl. 5d/5e/5f policy checks)
+--npc-entity-selftest         PASS
+--npc-actor-state-selftest    PASS
+--dynamic-replication-selftest PASS
+--dynamic-lifecycle-selftest  PASS
+--actor-lifecycle-selftest    PASS
+--capability-selftest         PASS
+--gamemode-hot-selftest       PASS
+--production-loop-selftest    PASS
+--movement-parity-selftest    PASS
+```
+
+### Human review
+
+Pending. Live edits of `kAggressionBias`, `kStateRandomnessScale`, and
+`kMaintainDistanceScale` require a running server and human observation.

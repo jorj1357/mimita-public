@@ -1900,13 +1900,31 @@ bool MIMITA_GAME_CALL capActorDestroy(void*, GameActorDestroyV1* request)
     return MimitaNet::serverDestroyActor(*request);
 }
 
-// npc.lifecycle: kernel-registered fallback so the capability always resolves.
-// The active provider (a hot package) overrides this through the same id.
-void MIMITA_GAME_CALL capNpcLifecycle(void*, NpcLifecyclePolicyV1* request)
+// npc.lifecycle: kernel dispatcher so the capability always resolves. A hot
+// package provider (overridable id) owns the decision when present; otherwise
+// the shared fallback preserves pre-migration behavior. Resolved per call, never
+// cached across a generation swap.
+void MIMITA_GAME_CALL capNpcLifecycle(void* host, NpcLifecyclePolicyV1* request)
 {
     if (!request)
         return;
-    MimitaNet::HotNpcLifecycleImpl::evaluate(*request);
+    auto& runtime = MimitaRuntime::GenericRuntime::instance();
+    auto* provider = reinterpret_cast<GameNpcLifecycleFn>(
+        runtime.overrideCapability(GAME_CAP_NPC_LIFECYCLE));
+    if (!provider) {
+        MimitaNet::HotNpcLifecycleImpl::evaluate(*request);
+        return;
+    }
+    static std::uint32_t s_loggedGeneration = 0;
+    const std::uint32_t generation =
+        runtime.overrideProviderGeneration(GAME_CAP_NPC_LIFECYCLE);
+    if (generation != s_loggedGeneration) {
+        s_loggedGeneration = generation;
+        printf("[NPC LIFECYCLE] hot provider active generation=%u\n", generation);
+    }
+    if (request->structSize == 0)
+        request->structSize = sizeof(NpcLifecyclePolicyV1);
+    provider(host, request);
 }
 
 // Generic actor state read: fill the POD envelope from the generic components so
@@ -2875,7 +2893,7 @@ struct KernelCapabilityInit {
         rt.registerKernelCapability(GAME_CAP_NPC_LIFECYCLE,
                                     GAME_SIG_NPC_LIFECYCLE, 0,
                                     reinterpret_cast<void*>(&capNpcLifecycle),
-                                    "npc.lifecycle");
+                                    "npc.lifecycle", /*overridable=*/true);
         rt.registerKernelCapability(GAME_CAP_ACTOR_STATE_READ,
                                     GAME_SIG_ACTOR_STATE, 0,
                                     reinterpret_cast<void*>(&capActorStateRead),

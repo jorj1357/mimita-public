@@ -23,6 +23,7 @@
 #include "hot-reload/generic-runtime.h"
 #include "hot-reload/hot-history.h"
 #include "hot-reload/hot-npc-targeting.h"
+#include "hot-reload/hot-npc-target-select.h"
 #include "hot-reload/hot-npc-lifecycle.h"
 #include "hot-reload/hot-respawn.h"
 #include "hot-reload/hot-npc-ground-clamp.h"
@@ -334,11 +335,13 @@ static void reconcileAutomaticNpcs(std::unordered_map<uint32_t, ServerNpc>& npcs
         }
     }
 
-    // Create missing automatic NPCs. The id comes from the NpcSystem's own
-    // allocator so the mirror map and the simulated body can never collide.
+    // Create missing automatic NPCs. The id comes from the one EntityRegistry
+    // allocator (via NpcSystem) so the mirror map and the simulated body can
+    // never collide with a manual/startup/wave id.
     for (std::uint32_t i = 0; i < request.spawnCount; ++i) {
         ServerNpc npc;
-        npc.entityId = npcSystem.nextNpcId();
+        npc.entityId = EntityRegistry::instance().allocateLegacyId(
+            EntityRealm::Server, EntityDomain::Npc);
         npc.origin = GAME_NPC_ORIGIN_STARTUP;
         npc.name = "NPC " + std::to_string(npc.entityId);
         if (request.useSpawnPoints && !world.spawnPoints.empty()) {
@@ -850,30 +853,14 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         const EntityId npcIdentity =
             Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id);
 
-        // Origin/lifecycle are now GENERIC component authority (NPC migration
-        // Phase 1-2). The mirror reads them and never owns them, so the
-        // per-tick rebuild can no longer drop a manual NPC's origin. When the
-        // component is absent (pre-migration entity) fall back to the prior
-        // mirror value once, then seed the component.
+        // Origin is GENERIC component authority (ActorOriginState). Every
+        // creation path (startup, manual, wave, respawn) seeds it at birth, so
+        // the per-tick rebuild never owns or reinvents it. A body created outside
+        // those paths gets the safe automatic default once.
         std::uint32_t origin = GAME_NPC_ORIGIN_STARTUP;
-        std::uint64_t weaponHash = 0;
-        if (actorStateReadOrigin(Ecs::raw(npcIdentity), &origin, &weaponHash)) {
-            sn.origin = origin;
-        } else if (const auto previous = npcs.find(n.id); previous != npcs.end()) {
-            // LEGACY SEED (marked to delete/migrate 2026-09-24 18:09 UTC):
-            // old records carried origin/startingWeapon as strings. Once every
-            // life writes ActorOriginState at creation this branch is dead;
-            // delete it at the next safe opportunity (after a full session
-            // confirms all lives seed the component at creation).
-            sn.origin = previous->second.origin;
-            actorStateWriteOrigin(Ecs::raw(npcIdentity), previous->second.origin,
-                                  static_cast<std::uint64_t>(gameHash(
-                                      previous->second.startingWeapon.empty()
-                                          ? "revolver"
-                                          : previous->second.startingWeapon.c_str())));
-        } else {
-            actorStateWriteOrigin(Ecs::raw(npcIdentity), sn.origin, 0);
-        }
+        if (!actorStateReadOrigin(Ecs::raw(npcIdentity), &origin, nullptr))
+            actorStateWriteOrigin(Ecs::raw(npcIdentity), origin, 0);
+        sn.origin = origin;
         // Lifecycle component: keep the generic generation/dead mirror in sync.
         actorStateWriteLifecycle(Ecs::raw(npcIdentity), n.transformEpoch,
                                  n.body.dead ? 1u : 0u, n.body.respawnTimer);
@@ -926,6 +913,10 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         auto oldIt = npcs.find(sn.entityId);
         if (oldIt != npcs.end())
             sn.posHistory = std::move(oldIt->second.posHistory);
+        // Generic weapon-presentation source for the hot actor.net-state
+        // projection (hot input only; ActorNetState is the wire carrier).
+        actorStateWriteWeaponState(Ecs::raw(npcIdentity), sn.equippedSlot,
+                                   sn.weaponState);
         next[sn.entityId] = std::move(sn);
         npcIdsAlive.insert(sn.entityId);
     }
@@ -1207,13 +1198,12 @@ void simulateSharedNpcs(SOCKET sock,
         ServerPlayer* nearestPlayer = nullptr;
         Npc* nearestNpc = nullptr;
 
-        if (n.behavior.active)
+        // Target selection policy is hot (npc.target-select). The cold caller
+        // still enumerates candidates and owns teams/weapon threat data; the hot
+        // policy owns scored aggregation, stickiness, the switch threshold, and
+        // the legacy nearest-hostile fallback.
         {
-            // Scored target selection. Weights come only from the behavior
-            // profile; the legacy nearest-hostile path is used without one.
             const NpcBehaviorTuning& b = n.behavior;
-            // Candidate score is hot (net.npc-targeting); the cold caller adds
-            // the current-target stickiness.
             auto scoreCandidate = [&](const glm::vec3& pos, int hp, int maxHp,
                                       float threat01) {
                 GameNpcTargetScoreV1 request{};
@@ -1238,80 +1228,89 @@ void simulateSharedNpcs(SOCKET sock,
                 return request.score;
             };
 
-            float bestScore = -1e30f;
-            float currentScore = -1e30f;
+            NpcTargetSelectPolicyV1 request{};
+            request.structSize = sizeof(NpcTargetSelectPolicyV1);
+            request.entity = Ecs::raw(
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, n.id));
+            request.tick = tick;
+            request.behaviorActive = n.behavior.active ? 1u : 0u;
+            request.currentTargetId = n.serverTargetId;
+            request.currentStickiness = npcMindStickiness(n);
+            request.targetSwitchThreshold =
+                n.behavior.active ? b.targetSwitchThreshold : 0.0f;
+
+            auto addCandidate = [&](std::uint32_t id, std::uint32_t kind,
+                                    const glm::vec3& pos, float score) {
+                if (request.candidateCount >=
+                    (std::uint32_t)NPC_TARGET_SELECT_MAX_CANDIDATES)
+                    return;
+                NpcTargetCandidateV1& c =
+                    request.candidates[request.candidateCount++];
+                c.id = id;
+                c.kind = kind;
+                c.pos[0] = pos.x;
+                c.pos[1] = pos.y;
+                c.pos[2] = pos.z;
+                const glm::vec3 d = pos - n.body.pos;
+                c.distanceSq = glm::dot(d, d);
+                c.score = score;
+                c.isCurrent = (id == n.serverTargetId) ? 1u : 0u;
+                c.alive = 1u;
+            };
+
             for (auto& kv : players)
             {
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.connectionStale) continue;
                 if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
-                float s = scoreCandidate(p.pos, p.health, std::max(1, p.maxHealth), 0.5f);
-                const bool isCurrent = (p.id == n.serverTargetId);
-                if (isCurrent) s += npcMindStickiness(n);
-                if (s > bestScore) { bestScore = s; nearestPlayer = &p; nearestNpc = nullptr; }
-                if (isCurrent) currentScore = s;
+                const float s = n.behavior.active
+                    ? scoreCandidate(p.pos, p.health, std::max(1, p.maxHealth), 0.5f)
+                    : 0.0f;
+                addCandidate(p.id, 0u, p.pos, s);
             }
             for (Npc& other : npcSystem.all())
             {
                 if (&other == &n) continue;
                 if (other.body.dead || other.body.currentHp <= 0) continue;
                 if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
-                float threat01 = 0.0f;
-                if (const WeaponDefinition* wd =
-                        WeaponRegistry::instance().get(other.body.equippedWeaponId))
-                    threat01 = glm::clamp(wd->damage / 50.0f, 0.0f, 1.0f);
-                float s = scoreCandidate(other.body.pos, other.body.currentHp,
-                                         other.body.maxHp, threat01);
-                const bool isCurrent = (other.id == n.serverTargetId);
-                if (isCurrent) s += npcMindStickiness(n);
-                if (s > bestScore) { bestScore = s; nearestNpc = &other; nearestPlayer = nullptr; }
-                if (isCurrent) currentScore = s;
+                float s = 0.0f;
+                if (n.behavior.active) {
+                    float threat01 = 0.0f;
+                    if (const WeaponDefinition* wd =
+                            WeaponRegistry::instance().get(other.body.equippedWeaponId))
+                        threat01 = glm::clamp(wd->damage / 50.0f, 0.0f, 1.0f);
+                    s = scoreCandidate(other.body.pos, other.body.currentHp,
+                                       other.body.maxHp, threat01);
+                }
+                addCandidate(other.id, 1u, other.body.pos, s);
             }
 
-            // Switch only when a new candidate beats the current target by the
-            // configured threshold (reduces target thrashing).
-            if ((nearestPlayer || nearestNpc) && n.serverTargetId != 0 &&
-                currentScore > -1e29f)
-            {
-                const uint32_t bestId = nearestPlayer ? nearestPlayer->id : nearestNpc->id;
-                if (bestId != n.serverTargetId &&
-                    bestScore <= currentScore + b.targetSwitchThreshold)
-                {
-                    bool kept = false;
-                    for (auto& kv : players)
-                    {
-                        if (kv.second.id == n.serverTargetId && !kv.second.dead)
-                        { nearestPlayer = &kv.second; nearestNpc = nullptr; kept = true; break; }
+            auto* selectFn = reinterpret_cast<GameNpcTargetSelectFn>(
+                MimitaRuntime::GenericRuntime::instance().capability(
+                    GAME_CAP_NPC_TARGET_SELECT));
+            if (selectFn)
+                selectFn(nullptr, &request);
+            else
+                MimitaNet::HotNpcTargetSelectImpl::evaluate(request);
+
+            if (request.chosenId != 0) {
+                if (request.chosenKind == 0u) {
+                    auto it = players.find(request.chosenId);
+                    if (it != players.end() && !it->second.dead) {
+                        nearestPlayer = &it->second;
+                        nearestNpc = nullptr;
                     }
-                    if (!kept)
-                        for (Npc& other : npcSystem.all())
-                            if (other.id == n.serverTargetId && !other.body.dead &&
-                                other.body.currentHp > 0)
-                            { nearestNpc = &other; nearestPlayer = nullptr; kept = true; break; }
+                } else {
+                    for (Npc& candidate : npcSystem.all()) {
+                        if (candidate.id != request.chosenId)
+                            continue;
+                        if (!candidate.body.dead && candidate.body.currentHp > 0) {
+                            nearestNpc = &candidate;
+                            nearestPlayer = nullptr;
+                        }
+                        break;
+                    }
                 }
-            }
-        }
-        else
-        {
-            // Legacy nearest-hostile (unchanged when no behavior profile applies).
-            float bestD2 = std::numeric_limits<float>::max();
-            for (auto& kv : players)
-            {
-                ServerPlayer& p = kv.second;
-                if (p.dead || p.connectionStale) continue;
-                if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
-                const glm::vec3 d = p.pos - n.body.pos;
-                const float d2 = glm::dot(d, d);
-                if (d2 < bestD2) { bestD2 = d2; nearestPlayer = &p; nearestNpc = nullptr; }
-            }
-            for (Npc& other : npcSystem.all())
-            {
-                if (&other == &n) continue;
-                if (other.body.dead || other.body.currentHp <= 0) continue;
-                if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
-                const glm::vec3 d = other.body.pos - n.body.pos;
-                const float d2 = glm::dot(d, d);
-                if (d2 < bestD2) { bestD2 = d2; nearestNpc = &other; nearestPlayer = nullptr; }
             }
         }
 

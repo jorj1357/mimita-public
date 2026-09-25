@@ -12,6 +12,7 @@
 #include "network/server-context.h"
 #include "network/actor-state.h"
 #include "ecs/actor-entities.h"
+#include "ecs/entity-registry.h"
 #include "network/dynamic-replication.h"
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
@@ -613,7 +614,8 @@ int runServer(const LaunchOptions& options)
         for (uint32_t i = 0; i < npcCount; ++i)
         {
             ServerNpc npc;
-            npc.entityId = nextEntityId++;
+            npc.entityId = EntityRegistry::instance().allocateLegacyId(
+                EntityRealm::Server, EntityDomain::Npc);
             npc.origin = GAME_NPC_ORIGIN_STARTUP;
             npc.name = "NPC " + std::to_string(i + 1);
             if (npcPlan.outHealth > 0)
@@ -1420,7 +1422,9 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     for (uint32_t i = 0; i < npcCount; ++i)
     {
         ServerNpc npc;
-        npc.entityId = state.nextEntityId++;
+        npc.entityId = EntityRegistry::instance().allocateLegacyId(
+            EntityRealm::Server, EntityDomain::Npc);
+        npc.origin = GAME_NPC_ORIGIN_STARTUP;
         npc.name = "NPC " + std::to_string(i + 1);
         if (!state.world.spawnPoints.empty())
         {
@@ -1464,6 +1468,14 @@ bool startListenServer(ListenServerState& state, uint16_t port,
             npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
         }
         npc.phase = i * 2.0f;
+        // Generic origin/lifecycle authority at creation so reconciliation
+        // never treats a startup NPC as anything else.
+        {
+            const EntityId npcIdentity = Ecs::ensure(
+                EntityRealm::Server, EntityDomain::Npc, npc.entityId);
+            actorStateWriteOrigin(Ecs::raw(npcIdentity), npc.origin, 0);
+            actorStateWriteLifecycle(Ecs::raw(npcIdentity), 1u, 0u, 0.0f);
+        }
         state.npcs[npc.entityId] = npc;
     }
     printf("[LISTEN SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",

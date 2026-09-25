@@ -127,4 +127,38 @@ bool actorStateWriteAvatar(std::uint64_t entity, std::uint64_t avatarHash,
 bool actorStateReadAvatar(std::uint64_t entity, std::uint64_t* avatarHash,
                           std::uint32_t* generation);
 
+// Generic actor network state (NPC migration Phase 4): the wire-facing
+// projection of the authoritative Transform/Velocity plus the presentation
+// bits the compact snapshot used to carry. GAME_NET_ALL. Replicating an actor's
+// position/velocity/aim/pose is replication because it possesses this component,
+// not because packet code contains an NPC branch.
+struct ActorNetStateV1 {
+    float position[3];
+    float velocity[3];
+    float aim[3];
+    float yaw;
+    std::uint32_t onGround;
+    std::int16_t equippedSlot;
+    std::uint8_t weaponState;   // NET_WEAPON_STATE_* bits
+    std::uint8_t reserved8;
+    std::uint32_t reserved;
+};
+bool actorStateWriteNetState(std::uint64_t entity, const ActorNetStateV1& state);
+bool actorStateReadNetState(std::uint64_t entity, ActorNetStateV1* out);
+
+// Generic weapon presentation state for an actor's equipped tool: the compact
+// snapshot's equippedSlot + weaponState bits as a generic component, so the hot
+// `actor.net-state` projection does not read typed Npc fields. Network policy is
+// NONE (a hot input only); `ActorNetState` remains the wire carrier.
+struct ActorWeaponStateV1 {
+    std::int16_t equippedSlot;
+    std::uint8_t weaponState;   // NET_WEAPON_STATE_* bits
+    std::uint8_t reserved8;
+    std::uint32_t reserved;
+};
+bool actorStateWriteWeaponState(std::uint64_t entity, std::int16_t equippedSlot,
+                                std::uint8_t weaponState);
+bool actorStateReadWeaponState(std::uint64_t entity, std::int16_t* equippedSlot,
+                               std::uint8_t* weaponState);
+
 } // namespace MimitaNet

@@ -10,91 +10,10 @@
 #include "npc/npc-internal.h"
 #include "npc/npc-mind.h"
 #include "combat/weapon-registry.h"
-
-// Search and cover constants
-static constexpr float SEARCH_TIMEOUT = 8.0f;
-static constexpr float COVER_CHECK_DIST = 4.0f;
-
-namespace {
-
-float scoreState(NpcState s, const Npc& npc, float d01)
-{
-    const auto& sensors = npc.sensors;
-    float dist = sensors.targetDistance;
-    float close01 = 1.0f - clamp01((dist - 2.0f) / 16.0f);
-    float far01 = clamp01((dist - 4.0f) / 146.0f);
-    float mid01 = 1.0f - std::fabs(dist - 8.0f) / 12.0f;
-    float longRange01 = clamp01((dist - 20.0f) / 130.0f);
-    float hasTarget = sensors.hasTarget ? 1.0f : 0.0f;
-    // Personality baseline plus runtime confidence/fear.
-    float agg = npcMindEffectiveAggression(npc, npc.tuning.aggression);
-
-    // Weapon range awareness: prefer distances matching weapon effective range.
-    // A role behavior preferred_range overrides the weapon-derived distance.
-    float wepRange = weaponEffectiveRange(npc);
-    float idealDist = (npc.behavior.active && npc.behavior.preferredRange > 0.0f)
-        ? npc.behavior.preferredRange
-        : std::clamp(wepRange * 0.6f, 5.0f, wepRange);
-    float rangeMatch = 1.0f - std::fabs(dist - idealDist) / std::max(wepRange, 20.0f);
-    rangeMatch = clamp01(rangeMatch);
-
-    switch (s)
-    {
-        case NpcState::Idle:
-            return (1.0f - hasTarget) * 0.8f;
-
-        case NpcState::RandomWalk:
-            return (1.0f - hasTarget) * 0.6f + 0.2f;
-
-        case NpcState::Chase:
-            return hasTarget * (0.3f + far01 * 0.6f + (1.0f - close01) * 0.3f * agg)
-                 * (0.8f + 0.2f * (1.0f - rangeMatch));
-
-        case NpcState::Circle:
-            return hasTarget * (close01 * 0.5f + mid01 * 0.4f * agg)
-                 * (0.7f + 0.3f * rangeMatch);
-
-        case NpcState::Strafe:
-            return hasTarget * (0.15f + mid01 * 0.5f + (1.0f - longRange01) * 0.3f)
-                 * (0.7f + 0.3f * rangeMatch);
-
-        case NpcState::Retreat:
-            return hasTarget * (close01 * 0.3f + (1.0f - agg) * 0.2f)
-                 + npcMindRetreatBonus(npc);
-
-        case NpcState::Attack:
-            if (npc.attackCooldown > 0.0f) return 0.0f;
-            return hasTarget * (close01 * 0.8f + mid01 * 0.4f + far01 * 0.15f)
-                 * (0.5f + 0.5f * rangeMatch);
-
-        case NpcState::Recover:
-            return 0.0f;
-
-        case NpcState::Advance:
-            return hasTarget * (longRange01 * 0.6f * agg + far01 * 0.3f)
-                 * (0.6f + 0.4f * (1.0f - rangeMatch));
-
-        case NpcState::HoldPosition:
-            return hasTarget * (mid01 * 0.3f + (1.0f - agg) * 0.15f)
-                 * (0.6f + 0.4f * rangeMatch);
-
-        case NpcState::Peek:
-            return hasTarget * (mid01 * 0.25f + close01 * 0.15f)
-                 * (0.7f + 0.3f * rangeMatch);
-
-        case NpcState::Aim:
-            if (npc.attackCooldown > 0.0f) return 0.0f;
-            return hasTarget * (mid01 * 0.3f + far01 * 0.2f + close01 * 0.1f)
-                 * (0.5f + 0.5f * rangeMatch);
-
-        case NpcState::ZigZag:
-            return hasTarget * (mid01 * 0.35f * agg + far01 * 0.2f)
-                 * (0.7f + 0.3f * (1.0f - rangeMatch));
-    }
-    return 0.0f;
-}
-
-} // anonymous namespace
+#include "ecs/actor-entities.h"
+#include "hot-reload/game-api.h"
+#include "hot-reload/generic-runtime.h"
+#include "hot-reload/hot-npc-state-select.h"
 
 float stateMinTime(NpcState s, float d01)
 {
@@ -163,105 +82,49 @@ std::string npcStateName(NpcState s)
 
 NpcState pickNextState(Npc& npc)
 {
-    float d01 = difficulty01(npc.difficulty);
+    const float d01 = difficulty01(npc.difficulty);
     const auto& sensors = npc.sensors;
-    float dist = sensors.targetDistance;
 
-    if (NpcNavigation::isStuck(npc))
-    {
-        npc.stateMachine.stuckTimer = std::min(npc.stateMachine.stuckTimer + 0.016f, 1.0f);
-        if (npc.stateMachine.stuckTimer > 0.3f)
-        {
-            if (random01(npc.rngState) < 0.5f)
-                return NpcState::Chase;
-            else
-                return NpcState::RandomWalk;
-        }
-    }
+    // State selection is a hot policy (npc.state-select). Cold owns the
+    // world/navigation query, the mind scalars, and weapon range; the hot policy
+    // owns the scoring, randomness, and guards. Persistent stuck timer + RNG ride
+    // in/out so the policy is stateless and reload-safe.
+    NpcStateSelectPolicyV1 request{};
+    request.structSize = sizeof(NpcStateSelectPolicyV1);
+    request.entity = Ecs::raw(
+        Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.id));
+    request.currentState = (std::uint32_t)npc.stateMachine.currentState;
+    request.hasTarget = sensors.hasTarget ? 1u : 0u;
+    request.isStuck = NpcNavigation::isStuck(npc) ? 1u : 0u;
+    request.distance = sensors.targetDistance;
+    request.difficulty01 = d01;
+    request.effectiveAggression =
+        npcMindEffectiveAggression(npc, npc.tuning.aggression);
+    request.weaponRange = weaponEffectiveRange(npc);
+    request.preferredRange =
+        (npc.behavior.active && npc.behavior.preferredRange > 0.0f)
+            ? npc.behavior.preferredRange : 0.0f;
+    request.retreatBonus = npcMindRetreatBonus(npc);
+    request.attackCooldown = npc.attackCooldown;
+    request.hitReactionTimer = npc.hitReactionTimer;
+    request.lastKnownAge = npc.stateMachine.lastKnownAge;
+    request.distToLastKnown =
+        glm::length(npc.stateMachine.lastKnownTarget - npc.body.pos);
+    request.retreatTimer = npc.stateMachine.retreatTimer;
+    request.aggressionTuning = npc.tuning.aggression;
+    request.randomnessScale = 1.0f;
+    request.stuckTimer = npc.stateMachine.stuckTimer;
+    request.rngState = npc.rngState;
+
+    auto* stateFn = reinterpret_cast<GameNpcStateSelectFn>(
+        MimitaRuntime::GenericRuntime::instance().capability(
+            GAME_CAP_NPC_STATE_SELECT));
+    if (stateFn)
+        stateFn(nullptr, &request);
     else
-    {
-        npc.stateMachine.stuckTimer = 0.0f;
-    }
+        MimitaNet::HotNpcStateSelectImpl::evaluate(request);
 
-    if (npc.hitReactionTimer > 0.0f && random01(npc.rngState) < 0.6f)
-        return NpcState::Recover;
-
-    if (!sensors.hasTarget)
-    {
-        // Search phase: move toward last known position before giving up
-        if (npc.stateMachine.lastKnownAge < SEARCH_TIMEOUT && npc.stateMachine.lastKnownAge > 0.5f)
-        {
-            float distToLastKnown = glm::length(npc.stateMachine.lastKnownTarget - npc.body.pos);
-            if (distToLastKnown > 2.0f)
-                return NpcState::Chase; // Chase toward last known position (acts as "search")
-            // If close to last known, circle around looking
-            return NpcState::Circle;
-        }
-        // Give up and wander
-        if (random01(npc.rngState) < 0.4f)
-            return NpcState::Idle;
-        return NpcState::RandomWalk;
-    }
-
-    if (npc.stateMachine.currentState == NpcState::Retreat)
-    {
-        float maxRetreat = 0.5f + (1.0f - d01) * 2.5f;
-        if (npc.stateMachine.retreatTimer > maxRetreat)
-        {
-            if (dist < 8.0f)
-                return NpcState::Circle;
-            return NpcState::Chase;
-        }
-    }
-
-    struct Candidate {
-        NpcState state;
-        float score;
-    };
-    Candidate candidates[10];
-    int candidateCount = 0;
-
-    auto add = [&](NpcState s) {
-        float score = scoreState(s, npc, d01);
-        if (score > 0.01f && candidateCount < 10)
-            candidates[candidateCount++] = {s, score};
-    };
-
-    add(NpcState::Chase);
-    add(NpcState::Circle);
-    add(NpcState::Strafe);
-    add(NpcState::Retreat);
-    add(NpcState::Attack);
-    add(NpcState::Advance);
-    add(NpcState::HoldPosition);
-    add(NpcState::Peek);
-    add(NpcState::Aim);
-    add(NpcState::ZigZag);
-
-    float randomness = 0.15f + d01 * 0.20f;
-    for (int i = 0; i < candidateCount; ++i)
-        candidates[i].score *= (1.0f - randomness * random01(npc.rngState));
-
-    if (npc.tuning.aggression > 0.6f && dist > 4.0f)
-    {
-        for (int i = 0; i < candidateCount; ++i)
-            if (candidates[i].state == NpcState::Retreat)
-                candidates[i].score *= 0.1f;
-    }
-
-    for (int i = 0; i < candidateCount; ++i)
-    {
-        if (candidates[i].state == npc.stateMachine.currentState)
-            candidates[i].score *= 0.7f;
-    }
-
-    if (candidateCount == 0)
-        return NpcState::Chase;
-
-    int bestIdx = 0;
-    for (int i = 1; i < candidateCount; ++i)
-        if (candidates[i].score > candidates[bestIdx].score)
-            bestIdx = i;
-
-    return candidates[bestIdx].state;
+    npc.stateMachine.stuckTimer = request.stuckTimer;
+    npc.rngState = request.rngState;
+    return static_cast<NpcState>(request.chosenState);
 }

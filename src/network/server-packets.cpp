@@ -1419,9 +1419,17 @@ void handleInputPacket(const char* buffer, int bytes,
     if (in->spawnNpcPressed)
     {
         ServerNpc npc;
-        npc.entityId = nextEntityId++;
+        npc.entityId = EntityRegistry::instance().allocateLegacyId(
+            EntityRealm::Server, EntityDomain::Npc);
+        npc.origin = GAME_NPC_ORIGIN_MANUAL;
         npc.name = "NPC " + std::to_string(npc.entityId);
         npc.pos = p.pos + glm::vec3(2.0f, 0.0f, 0.0f);
+        {
+            const EntityId npcIdentity =
+                Ecs::ensure(EntityRealm::Server, EntityDomain::Npc, npc.entityId);
+            actorStateWriteOrigin(Ecs::raw(npcIdentity), npc.origin, 0);
+            actorStateWriteLifecycle(Ecs::raw(npcIdentity), 1u, 0u, 0.0f);
+        }
         npcs[npc.entityId] = npc;
         printf("%s [SERVER ENTITY SPAWN] entityId=%u type=NPC ownerClientId=0 position=(%.2f,%.2f,%.2f)\n",
                serverTimestamp(), npc.entityId, npc.pos.x, npc.pos.y, npc.pos.z);
@@ -1478,7 +1486,8 @@ void handleSpawnNpcRequest(const char* buffer, int bytes,
         return;
 
     ServerNpc npc;
-    npc.entityId = nextEntityId++;
+    npc.entityId = EntityRegistry::instance().allocateLegacyId(
+        EntityRealm::Server, EntityDomain::Npc);
     // Manual spawn: preserved by lifecycle reconciliation even when automatic
     // startup NPCs are disabled.
     npc.origin = GAME_NPC_ORIGIN_MANUAL;
