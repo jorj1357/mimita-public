@@ -14,6 +14,7 @@ WeaponDefinition createRocketLauncherDefinition();
 WeaponDefinition createGrenadeLauncherDefinition();
 WeaponDefinition createAdminRevolverDefinition();
 WeaponDefinition createHafsDefinition();
+WeaponDefinition createProjectileRifleDefinition();
 
 void registerBuiltinWeapons();
 bool reloadBuiltinWeaponsIfChanged();

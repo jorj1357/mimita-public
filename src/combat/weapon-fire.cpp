@@ -36,6 +36,42 @@ glm::vec3 computeSpreadDirection(const glm::vec3& baseDir, float spreadDegrees, 
     return glm::normalize(baseDir + (right * std::cos(theta) + fwd * std::sin(theta)) * radius);
 }
 
+glm::vec3 computeConfiguredProjectileDirection(
+    const WeaponDefinition& def,
+    WeaponRuntime& runtime,
+    const glm::vec3& baseDir)
+{
+    if (def.spread <= 0.0f)
+        return glm::normalize(baseDir);
+
+    const auto param = [&](const char* key, float fallback) {
+        const auto it = def.customParams.find(key);
+        return it != def.customParams.end() ? it->second : fallback;
+    };
+    const int mode = static_cast<int>(param("spreadMode", 0.0f));
+    const float blend = glm::clamp(
+        mode == 1 ? 1.0f : param("spreadBlend", 0.0f), 0.0f, 1.0f);
+    unsigned int rng = static_cast<unsigned int>(
+        runtime.customFloats["projectileSpreadRng"]);
+    if (rng == 0)
+        rng = 0x6d2b79f5u;
+    const glm::vec3 randomDir = computeSpreadDirection(baseDir, def.spread, rng);
+    runtime.customFloats["projectileSpreadRng"] = static_cast<float>(rng);
+
+    glm::vec3 up = std::fabs(baseDir.z) < 0.99f
+        ? glm::vec3(0.0f, 0.0f, 1.0f)
+        : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 right = glm::normalize(glm::cross(baseDir, up));
+    up = glm::normalize(glm::cross(right, baseDir));
+    const float shot = runtime.customFloats["projectileSpreadShot"]++;
+    const float cycle = std::max(2.0f, param("fixedPatternCycle", 12.0f));
+    const float t = std::fmod(shot, cycle - 1.0f) / std::max(1.0f, cycle - 2.0f);
+    const float fixedRadius = std::tan(glm::radians(def.spread)) * (0.25f + 0.75f * t);
+    const glm::vec3 fixedDir = glm::normalize(
+        baseDir - right * fixedRadius + up * fixedRadius);
+    return glm::normalize(randomDir * (1.0f - blend) + fixedDir * blend);
+}
+
 extern RevolverShotResult tryFireHitscan(
     const WeaponDefinition& def,
     WeaponRuntime& runtime,

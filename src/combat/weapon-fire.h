@@ -128,6 +128,14 @@ glm::vec3 computeSpreadDirection(
     unsigned int& rngState
 );
 
+// Projectile spray helper: 0 blend = random spread, 1 blend = deterministic
+// fixed pattern. The fixed pattern deliberately trends up-left for recoil tests.
+glm::vec3 computeConfiguredProjectileDirection(
+    const WeaponDefinition& def,
+    WeaponRuntime& runtime,
+    const glm::vec3& baseDir
+);
+
 int applyDamageToEntity(
     const DamageContext& ctx,
     Npc& victim,

@@ -142,5 +142,21 @@
         "rotation_degrees": [0.0, 0.0, 0.0]
       }
     ]
+  },
+
+  "projectile_rifle": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "source": "capsule",
+    "capsule": {
+      "enabled": true,
+      "name": "stretched_revolver_barrel",
+      "start": [-0.65, 0.0, 0.0],
+      "end": [2.15, 0.0, 0.0],
+      "radius": 0.22,
+      "scale": [1.0, 1.0, 1.0],
+      "rotation_degrees": [0.0, 0.0, 0.0]
+    }
   }
 }

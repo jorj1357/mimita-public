@@ -22,6 +22,9 @@ struct AudioEvent {
     float pitch = 1.0f;
     float maxDistance = 30.0f;
     unsigned int ownerId = 0;
+    float startSeconds = 0.0f;
+    float endSeconds = 0.0f;
+    bool retrigger = false;
 };
 
 class AudioManager {

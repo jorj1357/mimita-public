@@ -768,7 +768,16 @@ RevolverShotResult WeaponSystem::fire(
 
     if (def->behaviorType == WeaponBehaviorType::QuickHit) {
         WeaponQuickHit::startAttack(mQuickHitState, *def, player, camera);
-        return {};
+        // QuickHit has no local ray-hit result, but it is still a real
+        // multiplayer attack.  Return a fired marker so the shared command
+        // path sends AttackRequest and the server starts the authoritative
+        // physical-contact shape.
+        RevolverShotResult result;
+        result.fired = true;
+        result.start = player.pos;
+        result.end = player.pos + camera.front;
+        result.direction = camera.front;
+        return result;
     }
 
     if (def->behaviorType == WeaponBehaviorType::SpyKnife) {
@@ -778,6 +787,10 @@ RevolverShotResult WeaponSystem::fire(
 
     if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
         return fireRocketLauncher(camera, player, npcs, world, remotePlayers);
+    }
+
+    if (def->behaviorType == WeaponBehaviorType::Projectile) {
+        return fireGenericProjectile(camera, player, npcs, world);
     }
 
     bool canInterruptReload = (def->behaviorType == WeaponBehaviorType::GrenadeLauncher);
@@ -848,6 +861,44 @@ RevolverShotResult WeaponSystem::fire(
     }
 
     return fireHitscan(camera, player, npcs, world, remotePlayers, remoteNpcs);
+}
+
+RevolverShotResult WeaponSystem::fireGenericProjectile(
+    const Camera& camera,
+    Player& player,
+    NpcSystem& npcs,
+    const World& world)
+{
+    const WeaponDefinition* def = getCurrentDef(player);
+    WeaponRuntime* rt = getCurrentRuntime(player);
+    if (!def || !rt || rt->isReloading || rt->fireCooldown > 0.0f || rt->currentAmmo <= 0)
+        return {};
+
+    rt->currentAmmo--;
+    rt->fireCooldown = def->fireDelay;
+    rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
+    mShotCooldown = def->fireDelay;
+    mShootingTimer = 0.1f;
+
+    const int idx = slotIndex(def->slot);
+    const WeaponViewModel& vm = mViewModels[idx];
+    const glm::vec3 muzzlePos = vm.muzzle;
+    const WeaponFire::AimSolution aim = WeaponFire::computeAim(
+        camera, world, npcs, muzzlePos, vm.forward, nullptr);
+    const glm::vec3 dir = WeaponFire::computeConfiguredProjectileDirection(
+        *def, *rt, glm::normalize(aim.direction));
+
+    WeaponFire::applyRecoil(player, *def, dir, mRecoilValue, 1.0f / 60.0f);
+    WeaponAudio::playShootSound(*def, muzzlePos);
+    AnalyticsManager::instance().trackWeaponUsed(def->id);
+
+    RevolverShotResult result;
+    result.fired = true;
+    result.start = muzzlePos;
+    result.end = muzzlePos + dir;
+    result.direction = dir;
+    result.hitNormal = -dir;
+    return result;
 }
 
 void WeaponSystem::tagLatestLocalRocket(uint32_t fireSerial)

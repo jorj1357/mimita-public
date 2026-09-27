@@ -21,6 +21,7 @@
 #include "physics/physics-types.h"
 #include "physics/config.h"
 #include "combat/weapon-execution.h"
+#include "combat/attack-timeline.h"
 #include "combat/weapon-swordsword.h"
 #include "combat/weapon-quick-hit.h"
 #include "combat/weapon-spyknife.h"
@@ -364,6 +365,8 @@ struct ServerPlayer
     SwordswordState swordswordState;
     QuickHitState quickHitState;
     SpyKnifeState spyKnifeState;
+    AttackTimeline physicalAttackTimeline;
+    bool physicalAttackIsLunge = false;
     float meleeCooldownTimer = 0.0f;
     std::deque<PositionHistoryEntry> posHistory;
     // ── Per-tick rate limits ───────────────────────────────────────
@@ -960,6 +963,7 @@ void tickServerSwordCombat(SOCKET sock,
                            float dt, uint32_t tick, uint64_t& totalPacketsOut);
 void tickServerPhysicalContactWeapons(SOCKET sock,
                                       std::unordered_map<uint32_t, ServerPlayer>& players,
+                                      std::unordered_map<uint32_t, ServerNpc>& npcs,
                                       const HeadlessWorld& world,
                                       float dt, uint32_t tick,
                                       uint64_t& totalPacketsOut);

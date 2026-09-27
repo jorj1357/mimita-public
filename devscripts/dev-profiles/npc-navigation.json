@@ -7,6 +7,7 @@
   "npc_count": 1,
   "auto_map_rotation": false,
   "discord_notification": false,
+  "host_player_name": "",
   "client_name": "NPC Dev",
   "server_name": "NPC Dev Server",
   "server_bind": "0.0.0.0:1357"

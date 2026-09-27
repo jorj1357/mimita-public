@@ -140,6 +140,7 @@ struct PhysicalContactHit
 struct PhysicalContactEpisode
 {
     bool active = false;
+    bool targetIsNpc = false;
     uint32_t targetPlayerId = 0;
     uint32_t targetSpawnGeneration = 0;
     uint32_t contactSerial = 0;

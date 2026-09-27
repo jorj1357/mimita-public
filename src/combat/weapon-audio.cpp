@@ -4,6 +4,7 @@
 #include "config/size-scaling-config.h"
 #include <cstdlib>
 #include <cstdio>
+#include <functional>
 #include "debug/debug-log.h"
 
 namespace WeaponAudio {
@@ -16,11 +17,15 @@ void playShootSound(const WeaponDefinition& def, const glm::vec3& position, floa
     float sPitch = sc.scale(1.0f, sc.soundPitchExponent, ss);
     float pitchRange = std::max(0.0f, def.soundPitchVariation);
     float volRange = std::max(0.0f, def.soundVolumeVariation);
-    float rndPitch = 1.0f + ((rand() % 20001 - 10000) / 10000.0f) * pitchRange;
+    float rndPitch = def.soundPitch + ((rand() % 20001 - 10000) / 10000.0f) * pitchRange;
     float rndVolume = 1.0f + ((rand() % 20001 - 10000) / 10000.0f) * volRange;
     Debug::log(Debug::Category::Audio, "[WEAPON AUDIO] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
                def.id.c_str(), def.soundShoot.c_str(), rndPitch * sPitch, rndVolume * sVol);
-    playWorldSound(def.soundShoot, position, rndVolume * sVol, rndPitch * sPitch, 80.0f);
+    AudioEvent event{def.soundShoot, AudioCategory::Weapons, true, position,
+                     rndVolume * sVol, rndPitch * sPitch, 80.0f,
+                     def.soundRetrigger ? static_cast<unsigned int>(0x50524600u ^ std::hash<std::string>{}(def.id)) : 0u,
+                     def.soundStartSeconds, def.soundEndSeconds, def.soundRetrigger};
+    AudioManager::instance().play(event);
 }
 
 void playReloadSound(const WeaponDefinition& def) {

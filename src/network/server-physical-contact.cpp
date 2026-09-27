@@ -70,92 +70,6 @@ static void clearPhysicalRuntime(ServerPlayer& player)
     player.physicalContactEpisodes.clear();
 }
 
-static bool isSwordActive(const SwordswordState& state)
-{
-    return state.state == SwordswordState::AttackState::SlashActive ||
-           state.state == SwordswordState::AttackState::LungeActive;
-}
-
-static bool isSwordLunge(const SwordswordState& state)
-{
-    return state.state == SwordswordState::AttackState::LungeActive;
-}
-
-static void advanceSwordState(ServerPlayer& player, const WeaponDefinition& def, float dt)
-{
-    if (player.meleeCooldownTimer > 0.0f)
-        player.meleeCooldownTimer = std::max(0.0f, player.meleeCooldownTimer - dt);
-
-    SwordswordState& ss = player.swordswordState;
-    const float slashWindup = std::max(0.001f, positiveParam(def, "slashWindupTime", 0.08f));
-    const float slashActive = std::max(0.001f, positiveParam(def, "slashActiveTime", 0.15f));
-    const float slashRecover = std::max(0.001f, positiveParam(def, "slashRecoverTime", 0.10f));
-    const float lungeWindup = std::max(0.001f, positiveParam(def, "lungeWindupTime", 0.10f));
-    const float lungeActive = std::max(0.001f, positiveParam(def, "lungeActiveTime", 0.20f));
-    const float lungeRecover = std::max(0.001f, positiveParam(def, "lungeRecoverTime", 0.12f));
-
-    switch (ss.state)
-    {
-    case SwordswordState::AttackState::SlashWindup:
-        ss.stateTimer += dt;
-        ss.animTimer = ss.stateTimer / slashWindup;
-        if (ss.stateTimer >= slashWindup)
-        {
-            ss.state = SwordswordState::AttackState::SlashActive;
-            ss.stateTimer = 0.0f;
-        }
-        break;
-    case SwordswordState::AttackState::SlashActive:
-        ss.stateTimer += dt;
-        ss.animTimer = ss.stateTimer / slashActive;
-        if (ss.stateTimer >= slashActive)
-        {
-            ss.state = SwordswordState::AttackState::SlashRecover;
-            ss.stateTimer = 0.0f;
-        }
-        break;
-    case SwordswordState::AttackState::SlashRecover:
-        ss.stateTimer += dt;
-        ss.animTimer = ss.stateTimer / slashRecover;
-        if (ss.stateTimer >= slashRecover)
-        {
-            ss = SwordswordState{};
-            player.meleeCooldownTimer = 0.0f;
-        }
-        break;
-    case SwordswordState::AttackState::LungeWindup:
-        ss.stateTimer += dt;
-        ss.animTimer = ss.stateTimer / lungeWindup;
-        if (ss.stateTimer >= lungeWindup)
-        {
-            ss.state = SwordswordState::AttackState::LungeActive;
-            ss.stateTimer = 0.0f;
-        }
-        break;
-    case SwordswordState::AttackState::LungeActive:
-        ss.stateTimer += dt;
-        ss.animTimer = ss.stateTimer / lungeActive;
-        if (ss.stateTimer >= lungeActive)
-        {
-            ss.state = SwordswordState::AttackState::LungeRecover;
-            ss.stateTimer = 0.0f;
-        }
-        break;
-    case SwordswordState::AttackState::LungeRecover:
-        ss.stateTimer += dt;
-        ss.animTimer = ss.stateTimer / lungeRecover;
-        if (ss.stateTimer >= lungeRecover)
-        {
-            ss = SwordswordState{};
-            player.meleeCooldownTimer = 0.0f;
-        }
-        break;
-    case SwordswordState::AttackState::Idle:
-    default:
-        break;
-    }
-}
-
 static bool buildPhysicalShape(ServerPlayer& attacker,
                                const WeaponDefinition& def,
                                uint16_t weaponDefNetworkId,
@@ -177,8 +91,13 @@ static bool buildPhysicalShape(ServerPlayer& attacker,
              def.behaviorType == WeaponBehaviorType::Melee ||
              def.behaviorType == WeaponBehaviorType::Hafs)
     {
-        advanceSwordState(attacker, def, dt);
-        if (!isSwordActive(attacker.swordswordState))
+        if (!attacker.physicalAttackTimeline.isCommitted())
+            return false;
+
+        const bool active = attacker.physicalAttackTimeline.isActive();
+        const bool lunge = attacker.physicalAttackIsLunge;
+        attacker.physicalAttackTimeline.advanceOneTick();
+        if (!active)
             return false;
 
         const float bladeLength = std::max(0.1f,
@@ -192,15 +111,21 @@ static bool buildPhysicalShape(ServerPlayer& attacker,
         outShape.currentA = grip;
         outShape.currentB = tip;
         outShape.radius = bladeRadius;
-        outSwordLunge = isSwordLunge(attacker.swordswordState);
+        outSwordLunge = lunge;
     }
     else if (def.behaviorType == WeaponBehaviorType::QuickHit)
     {
         QuickHitState& qh = attacker.quickHitState;
-        if (!qh.active || qh.activeTicksRemaining == 0)
+        if (!qh.active || !attacker.physicalAttackTimeline.isCommitted())
             return false;
 
-        qh.activeTicksRemaining--;
+        const bool active = attacker.physicalAttackTimeline.isActive();
+        attacker.physicalAttackTimeline.advanceOneTick();
+        if (!active)
+            return false;
+
+        if (qh.activeTicksRemaining > 0)
+            qh.activeTicksRemaining--;
 
         const float capsuleRadius = std::max(0.05f,
             WeaponExecution::paramOr(def, "hitboxRadius", 0.22f));
@@ -249,6 +174,16 @@ static void flushEpisode(SOCKET sock,
                          uint32_t tick,
                          uint64_t& totalPacketsOut)
 {
+    if (episode.targetIsNpc) {
+        episode.pendingConfirmationDamage = 0;
+        episode.pendingHealthBefore = 0;
+        episode.pendingHealthAfter = 0;
+        episode.pendingKilled = false;
+        episode.samplesSinceConfirmation = 0;
+        episode.accumulatedKnockback = glm::vec3(0.0f);
+        return;
+    }
+
     if (!WeaponExecution::episodeShouldConfirm(episode, ending, CONTACT_CONFIRM_BATCH))
         return;
 
@@ -275,6 +210,88 @@ static void flushEpisode(SOCKET sock,
     episode.pendingKilled = false;
     episode.samplesSinceConfirmation = 0;
     episode.accumulatedKnockback = glm::vec3(0.0f);
+}
+
+static int physicalContactDamage(const WeaponDefinition& def,
+                                 const WeaponExecution::PhysicalContactShape& shape,
+                                 const WeaponExecution::PhysicalContactHit& hit,
+                                 bool swordLunge,
+                                 float dt);
+static glm::vec3 physicalContactKnockback(
+    const WeaponDefinition& def,
+    const WeaponExecution::PhysicalContactShape& shape,
+    const WeaponExecution::PhysicalContactHit& hit,
+    int damage,
+    bool swordLunge);
+
+static void applyPhysicalContactNpcHit(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    ServerPlayer& attacker,
+    ServerNpc& target,
+    const WeaponDefinition& def,
+    const WeaponExecution::PhysicalContactShape& shape,
+    const WeaponExecution::PhysicalContactHit& hit,
+    bool swordLunge,
+    uint32_t tick,
+    float dt,
+    uint64_t& totalPacketsOut)
+{
+    if (target.health <= 0)
+        return;
+
+    auto& episode = attacker.physicalContactEpisodes[target.entityId];
+    if (!episode.active || !episode.targetIsNpc) {
+        episode = WeaponExecution::PhysicalContactEpisode{};
+        episode.active = true;
+        episode.targetIsNpc = true;
+        episode.targetPlayerId = target.entityId;
+        episode.contactSerial = attacker.nextPhysicalContactSerial++;
+        if (attacker.nextPhysicalContactSerial == 0)
+            attacker.nextPhysicalContactSerial = 1;
+        episode.firstTick = tick;
+    }
+
+    const float damageInterval = def.behaviorType == WeaponBehaviorType::Godball
+        ? WeaponExecution::paramOr(def, "damageTickInterval", 0.15f)
+        : WeaponExecution::paramOr(def, "damageTickInterval", 0.05f);
+    if (episode.lastSampleTick != 0 &&
+        tick - episode.lastSampleTick < intervalTicks(damageInterval))
+        return;
+    episode.lastSampleTick = tick;
+
+    const int damage = physicalContactDamage(def, shape, hit, swordLunge, dt);
+    const glm::vec3 knockback = physicalContactKnockback(def, shape, hit, damage, swordLunge);
+    const int healthBefore = target.health;
+    target.health = std::max(0, target.health - damage);
+    target.knockbackImpulse += knockback;
+    const bool killed = target.health == 0;
+
+    const glm::vec3 normal = glm::length(hit.normal) > 0.001f
+        ? glm::normalize(hit.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+    const glm::vec3 direction = glm::length(hit.hitPosition - attacker.pos) > 0.001f
+        ? glm::normalize(hit.hitPosition - attacker.pos) : normal;
+    const uint8_t networkWeapon = networkWeaponTypeForDefinition(def);
+
+    Debug::log(Debug::Category::Weapons,
+        "[PHYSICAL CONTACT NPC DAMAGE] attacker=%u target=%u weapon=%s "
+        "radius=%.2f damage=%d health=%d->%d killed=%d\n",
+        attacker.id, target.entityId, def.id.c_str(), shape.radius, damage,
+        healthBefore, target.health, (int)killed);
+    broadcastNpcDamageEvent(sock, players, tick, totalPacketsOut,
+                            attacker.id, target, damage, killed,
+                            attacker.pos, hit.hitPosition, direction, normal,
+                            networkWeapon);
+    if (killed) {
+        std::string display = networkWeaponTypeName(networkWeapon);
+        if (const WeaponDefinition* weapon = WeaponRegistry::instance().get(def.id))
+            if (!weapon->displayName.empty()) display = weapon->displayName;
+        serverGamemodeRecordKill(sock, players, &npcs,
+            attacker.id, ENTITY_PLAYER, target.entityId, ENTITY_NPC,
+            def.id, display, episode.contactSerial,
+            attacker.pos, target.pos, tick, totalPacketsOut);
+    }
 }
 
 static void flushAndClearEpisodes(SOCKET sock,
@@ -490,6 +507,7 @@ static void applyPhysicalContactHit(SOCKET sock,
 
 void tickServerPhysicalContactWeapons(SOCKET sock,
                                       std::unordered_map<uint32_t, ServerPlayer>& players,
+                                      std::unordered_map<uint32_t, ServerNpc>& npcs,
                                       const HeadlessWorld& world,
                                       float dt, uint32_t tick,
                                       uint64_t& totalPacketsOut)
@@ -544,6 +562,30 @@ void tickServerPhysicalContactWeapons(SOCKET sock,
             touchingTargets.insert(target.id);
             applyPhysicalContactHit(sock, players, attacker, target, *def, shape,
                                     hit, swordLunge, tick, dt, totalPacketsOut);
+        }
+
+        for (auto& targetEntry : npcs)
+        {
+            ServerNpc& target = targetEntry.second;
+            if (target.entityId == attacker.id || target.health <= 0)
+                continue;
+
+            WeaponExecution::PlayerTarget targetDesc;
+            targetDesc.playerId = target.entityId;
+            targetDesc.spawnGeneration = target.transformEpoch;
+            targetDesc.position = target.pos + glm::vec3(0.0f, 0.0f, 0.9f);
+            targetDesc.radius = WeaponExecution::paramOr(*def, "targetBodyRadius", 0.65f);
+            targetDesc.height = PLAYER_HEIGHT;
+            targetDesc.dead = target.health <= 0;
+
+            WeaponExecution::PhysicalContactHit hit;
+            if (!WeaponExecution::testPhysicalContact(shape, targetDesc, hit))
+                continue;
+
+            touchingTargets.insert(target.entityId);
+            applyPhysicalContactNpcHit(sock, players, npcs, attacker, target,
+                                       *def, shape, hit, swordLunge,
+                                       tick, dt, totalPacketsOut);
         }
 
         for (auto it = attacker.physicalContactEpisodes.begin();

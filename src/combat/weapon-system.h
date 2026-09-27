@@ -140,6 +140,11 @@ private:
         NpcSystem& npcs,
         const World& world,
         const std::unordered_map<uint32_t, Player>* remotePlayers);
+    RevolverShotResult fireGenericProjectile(
+        const Camera& camera,
+        Player& player,
+        NpcSystem& npcs,
+        const World& world);
 
     WeaponRuntime* getCurrentRuntime(Player& player);
 

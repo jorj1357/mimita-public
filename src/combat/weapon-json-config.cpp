@@ -239,7 +239,15 @@ void applyWeaponSoundJson(WeaponDefinition& def, const json& root)
         weaponJsonString(sound, "equip", def.soundEquip);
         def.soundPitchVariation = sound.value("pitch_variation", def.soundPitchVariation);
         def.soundVolumeVariation = sound.value("volume_variation", def.soundVolumeVariation);
+        def.soundPitch = sound.value("pitch", def.soundPitch);
+        def.soundStartSeconds = sound.value("start_seconds", def.soundStartSeconds);
+        def.soundEndSeconds = sound.value("end_seconds", def.soundEndSeconds);
+        def.soundRetrigger = sound.value("retrigger", def.soundRetrigger);
     }
+    def.soundPitch = root.value("fireSoundPitch", def.soundPitch);
+    def.soundStartSeconds = root.value("fireSoundStartSeconds", def.soundStartSeconds);
+    def.soundEndSeconds = root.value("fireSoundEndSeconds", def.soundEndSeconds);
+    def.soundRetrigger = root.value("fireSoundRetrigger", def.soundRetrigger);
 }
 
 void applyWeaponCustomParamsJson(WeaponDefinition& def, const json& root)

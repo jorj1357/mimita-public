@@ -191,7 +191,8 @@ enum NetworkWeaponType : uint8_t
     NETWORK_WEAPON_GRENADE_LAUNCHER = 7,
     NETWORK_WEAPON_AA12 = 8,
     NETWORK_WEAPON_SPYKNIFE = 9,
-    NETWORK_WEAPON_FORCE_PUNCH = 10
+    NETWORK_WEAPON_FORCE_PUNCH = 10,
+    NETWORK_WEAPON_PROJECTILE_RIFLE = 11
 };
 
 enum NetworkWeaponStateFlags : uint8_t
@@ -759,6 +760,9 @@ struct ProjectileExplodeEventPacket
     float posY = 0.0f;
     float posZ = 0.0f;
     float radius = 0.0f;
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    float normalZ = 1.0f;
     ProjectileDamageResultPacket victims[MAX_PROJECTILE_DAMAGE_RESULTS];
 };
 

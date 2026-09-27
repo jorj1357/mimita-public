@@ -72,6 +72,9 @@ struct MultiplayerConnectInfo
 {
     bool shouldConnect = false;
     std::string roomCode;
+    // Optional process-launch identity. Empty keeps the authenticated profile
+    // display name used by normal GUI joins.
+    std::string playerName;
     // Direct UDP join target (e.g. "127.0.0.1:1357") used by the
     // --connect launcher path. When set, the client joins directly
     // instead of doing an ICE room-code connect.

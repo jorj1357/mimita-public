@@ -61,6 +61,7 @@ struct ActiveSound {
     float maxDistance = 0.0f;
     float createdTime = 0.0f;
     unsigned int ownerId = 0;
+    float endSeconds = 0.0f;
 };
 static std::vector<std::unique_ptr<ActiveSound>> gActiveSounds;
 static void initAudioOnce();
@@ -141,7 +142,8 @@ static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
 }
 
 static void startSound(const std::string& name, float volume, float pitch,
-                       const glm::vec3* position, float maxDistance)
+                       const glm::vec3* position, float maxDistance,
+                       float startSeconds, float endSeconds, unsigned int ownerId)
 {
     MIMITA_PERF_SCOPE("Audio::StartSound");
     { MIMITA_PERF_SCOPE("Audio::StartSound::InitAudio"); initAudioOnce(); }
@@ -179,10 +181,16 @@ static void startSound(const std::string& name, float volume, float pitch,
     active->pitch = pitch;
     active->maxDistance = maxDistance;
     active->createdTime = gAudioTime;
+    active->ownerId = ownerId;
+    active->endSeconds = std::max(0.0f, endSeconds);
     { MIMITA_PERF_SCOPE("Audio::StartSound::ConfigureVoice");
       const PlayerSettings& settings = GetPlayerSettings();
       ma_sound_set_volume(&active->sound, std::max(0.0f, volume * settings.masterVolume * settings.sfxVolume));
       ma_sound_set_pitch(&active->sound, std::clamp(pitch, 0.25f, 3.0f));
+      if (startSeconds > 0.0f) {
+          const ma_uint64 frame = static_cast<ma_uint64>(startSeconds * active->decoder.outputSampleRate);
+          ma_sound_seek_to_pcm_frame(&active->sound, frame);
+      }
       if (position) {
           ma_sound_set_position(&active->sound, position->x, position->y, position->z);
           ma_sound_set_spatialization_enabled(&active->sound, MA_TRUE);
@@ -268,7 +276,12 @@ void audioUpdate(float dt)
     { MIMITA_PERF_SCOPE("Audio::Update::RemoveFinishedSounds");
     gActiveSounds.erase(
         std::remove_if(gActiveSounds.begin(), gActiveSounds.end(), [](const std::unique_ptr<ActiveSound>& active) {
-            if (!active || !active->initialized || ma_sound_at_end(&active->sound)) {
+            float cursorSeconds = 0.0f;
+            const bool reachedConfiguredEnd = active && active->initialized &&
+                active->endSeconds > 0.0f &&
+                ma_sound_get_cursor_in_seconds(&active->sound, &cursorSeconds) == MA_SUCCESS &&
+                cursorSeconds >= active->endSeconds;
+            if (!active || !active->initialized || ma_sound_at_end(&active->sound) || reachedConfiguredEnd) {
                 if (active && active->initialized) {
                     ma_sound_uninit(&active->sound);
                     ma_decoder_uninit(&active->decoder);
@@ -320,12 +333,14 @@ void AudioManager::play(const AudioEvent& event)
                 listenerPos.x, listenerPos.y, listenerPos.z,
                 listenerFwd.x, listenerFwd.y, listenerFwd.z);
 
+    if (event.retrigger && event.ownerId != 0)
+        stopOwner(event.ownerId);
     if (event.world) {
-        startSound(event.name, event.volume, event.pitch, &event.position, event.maxDistance);
-        if (!gActiveSounds.empty())
-            gActiveSounds.back()->ownerId = event.ownerId;
+        startSound(event.name, event.volume, event.pitch, &event.position, event.maxDistance,
+                   event.startSeconds, event.endSeconds, event.ownerId);
     } else {
-        startSound(event.name, event.volume, event.pitch, nullptr, 0.0f);
+        startSound(event.name, event.volume, event.pitch, nullptr, 0.0f,
+                   event.startSeconds, event.endSeconds, event.ownerId);
     }
 }
 

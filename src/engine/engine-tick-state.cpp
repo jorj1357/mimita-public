@@ -250,7 +250,9 @@ void engineTickState(Engine& engine, float dt)
                                    activeMapPath.c_str());
                     }
 
-                    player.username = AuthSystem::instance().displayName();
+                    player.username = mci.playerName.empty()
+                        ? AuthSystem::instance().displayName()
+                        : mci.playerName;
                     player.reset();
                     // 7 22 2026 1227 attempting fix 
                     // no more local host 

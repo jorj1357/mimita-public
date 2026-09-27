@@ -12,12 +12,54 @@
 
 #include "audio/audio.h"
 #include "config/weapon-hitfx-config.h"
+#include "combat/weapon-registry.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 
 void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
-                      const std::string& attacker, float sizeScale, bool playSound)
+                      const std::string& attacker, float sizeScale, bool playSound,
+                      const glm::vec3& surfaceNormal)
 {
+    if (weaponId == "projectile_rifle") {
+        const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+        const auto param = [&](const char* key, float fallback) {
+            if (!def) return fallback;
+            const auto it = def->customParams.find(key);
+            return it != def->customParams.end() ? it->second : fallback;
+        };
+        const glm::vec3 normal = glm::length(surfaceNormal) > 0.001f
+            ? glm::normalize(surfaceNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
+        const glm::vec3 impactPosition = position + normal * 0.01f;
+        const glm::vec3 color(param("impactColorR", 1.0f),
+                              param("impactColorG", 1.0f),
+                              param("impactColorB", 1.0f));
+        EffectPart stage1;
+        stage1.position = impactPosition;
+        stage1.normal = normal;
+        stage1.maxLifetime = 1.0f / 60.0f;
+        stage1.scale = param("impactRadius", 0.25f);
+        stage1.endScale = stage1.scale;
+        stage1.color = color;
+        stage1.alpha = param("impactAlphaStage1", 0.5f);
+        stage1.billboardText = false;
+        stage1.replayType = "projectile_rifle_impact_stage1";
+        EffectPartSystem::instance().spawn(stage1);
+
+        EffectPart stage2 = stage1;
+        stage2.maxLifetime = 5.0f / 60.0f;
+        stage2.scale = stage1.scale * 1.2f;
+        stage2.alpha = param("impactAlphaStage2", 0.3f);
+        stage2.replayType = "projectile_rifle_impact_stage2";
+        EffectPartSystem::instance().spawn(stage2);
+
+        EffectPart stage3 = stage1;
+        stage3.maxLifetime = param("impactStage3Ticks", 18.0f) / 60.0f;
+        stage3.scale = stage1.scale * 1.5f;
+        stage3.alpha = param("impactAlphaStage3", 0.12f);
+        stage3.replayType = "projectile_rifle_impact_stage3";
+        EffectPartSystem::instance().spawn(stage3);
+        return;
+    }
     const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
 
     // Explosion sound

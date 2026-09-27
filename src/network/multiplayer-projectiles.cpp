@@ -99,6 +99,8 @@ const WeaponDefinition* projectileDefinition(uint8_t weapon)
         id = "grenade_launcher";
     else if (weapon == NETWORK_WEAPON_ROCKET_LAUNCHER)
         id = "rocket_launcher";
+    else if (weapon == NETWORK_WEAPON_PROJECTILE_RIFLE)
+        id = "projectile_rifle";
     if (!id)
         return nullptr;
     return WeaponRegistry::instance().get(id);
@@ -114,10 +116,7 @@ float cp(const WeaponDefinition* def, const char* key, float fallback)
 
 ProjectileVisualConfig projectileVisualConfig(uint8_t weapon)
 {
-    return projectileVisualConfigForWeapon(
-        weapon == NETWORK_WEAPON_ROCKET_LAUNCHER
-            ? "rocket_launcher"
-            : "grenade_launcher");
+    return projectileVisualConfigForWeapon(networkWeaponTypeName(weapon));
 }
 
 uint32_t provisionalProjectileId(uint32_t requestId)
@@ -903,6 +902,7 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
     }
 
     const glm::vec3 position(event->posX, event->posY, event->posZ);
+    const glm::vec3 surfaceNormal(event->normalX, event->normalY, event->normalZ);
     const char* weaponName = networkWeaponTypeName(event->weapon);
     bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
     const bool wasPredicted = ctx.predictedProjectileIds.erase(event->projectileId) > 0;
@@ -923,7 +923,8 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             removedLegacy = gpWeapons->removeLocalRocketByFireSerial(event->fireSerial);
     }
 
-    // ── Explosion visuals: reconcile against the client-predicted explosion ──
+    // ── Terminal visuals: explosions reconcile; rifle bullets use a plain
+    // impact sphere and never report an explosion-position disagreement. ──
     // The local owner predicts the explosion instantly. The server confirm either
     // agrees (let the predicted effect play out — no redraw) or disagrees (show a
     // disagreement marker + the corrected explosion). Other clients always render
@@ -936,7 +937,15 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             attacker = pi->second.name;
     }
     const auto predIt = ctx.predictedExplosions.find(event->fireSerial);
-    if (predIt != ctx.predictedExplosions.end())
+    const bool directBullet = event->weapon == NETWORK_WEAPON_PROJECTILE_RIFLE;
+    if (directBullet)
+    {
+        if (predIt != ctx.predictedExplosions.end())
+            ctx.predictedExplosions.erase(predIt);
+        else
+            spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal);
+    }
+    else if (predIt != ctx.predictedExplosions.end())
     {
         const glm::vec3 predictedPos = predIt->second;
         ctx.predictedExplosions.erase(predIt);
@@ -962,12 +971,12 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             de.correction = position - predictedPos;
             de.description = "explosion position mismatch";
             spawnDisagreementEffect(de);
-            spawnExplosionFx(position, weaponName, attacker);
+            spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal);
         }
     }
     else
     {
-        spawnExplosionFx(position, weaponName, attacker);
+        spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal);
     }
 
     for (uint8_t i = 0; i < event->victimCount && i < MAX_PROJECTILE_DAMAGE_RESULTS; ++i)
@@ -1752,7 +1761,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                     auto pi = ctx.playerRegistry.find(ctx.localPlayerId);
                     if (pi != ctx.playerRegistry.end())
                         attacker = pi->second.name;
-                    spawnExplosionFx(explodePos, weaponId, attacker);
+                    spawnExplosionFx(explodePos, weaponId, attacker, 1.0f, true, step.hitNormal);
                     ctx.predictedExplosions[projectile.fireSerial] = explodePos;
 
                     // ── Predicted blast hit feedback (instant) ──────────────
@@ -1764,7 +1773,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                     // feedback aligns with the authoritative verdict (a target
                     // behind a wall is skipped, not rolled back later).
                     const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
-                    if (def)
+                    if (def && projectile.weaponType != NETWORK_WEAPON_PROJECTILE_RIFLE)
                     {
                         const float radius = cp(def, "splashRadius", 8.0f);
                         const float splashDamage = cp(def, "rocketDirectDamage", 150.0f);

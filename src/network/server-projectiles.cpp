@@ -28,6 +28,7 @@
 #include "combat/projectile-simulation.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
+#include "combat/weapon-execution.h"
 #include "combat/weapon-types.h"
 #include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision-shared.h"
@@ -284,6 +285,8 @@ std::optional<ProjectileConfig> projectileConfig(uint8_t weapon)
         weaponId = "rocket_launcher";
     else if (weapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
         weaponId = "grenade_launcher";
+    else if (weapon == NETWORK_WEAPON_PROJECTILE_RIFLE)
+        weaponId = "projectile_rifle";
     else
         return std::nullopt;
 
@@ -677,6 +680,7 @@ void explodeProjectile(SOCKET sock,
                        std::unordered_map<uint32_t, ServerNpc>& npcs,
                        ServerProjectile& projectile,
                        const glm::vec3& position,
+                       const glm::vec3& surfaceNormal,
                        const char* impactType,
                        uint32_t directTargetId,
                        uint32_t tick,
@@ -699,7 +703,100 @@ void explodeProjectile(SOCKET sock,
     packet.posX = position.x;
     packet.posY = position.y;
     packet.posZ = position.z;
-    packet.radius = projectile.splashRadius;
+    packet.normalX = surfaceNormal.x;
+    packet.normalY = surfaceNormal.y;
+    packet.normalZ = surfaceNormal.z;
+    const bool directBullet = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
+    packet.radius = directBullet ? 0.0f : projectile.splashRadius;
+
+    // The projectile rifle uses the same direct damage/knockback contract as
+    // revolver and shotgun hitscan, but keeps the projectile's travel and
+    // fixed-tick collision. It is a bullet terminal, not an explosion.
+    if (directBullet)
+    {
+        const WeaponDefinition* def = WeaponRegistry::instance().get("projectile_rifle");
+        const int damageValue = std::max(1, (int)std::round(
+            def ? def->damage : projectile.splashDamage));
+        const glm::vec3 shotDir = glm::length(projectile.velocity) > 0.001f
+            ? glm::normalize(projectile.velocity)
+            : glm::vec3(0.0f, 1.0f, 0.0f);
+        const float victimImpulse = def
+            ? def->victimKnockback + damageValue * def->victimKnockbackPerDamage
+            : 0.0f;
+        glm::vec3 victimKnockback = shotDir * victimImpulse *
+            (def ? def->enemyImpulseMultiplier : 1.0f);
+        victimKnockback.z += victimImpulse *
+            (def ? def->victimKnockbackVerticalFraction : 0.0f);
+
+        auto npcIt = npcs.find(directTargetId);
+        if (directTargetId != 0 && npcIt != npcs.end() && npcIt->second.health > 0)
+        {
+            ServerNpc& npc = npcIt->second;
+            npc.health -= damageValue;
+            npc.knockbackImpulse += victimKnockback;
+            const bool killed = npc.health <= 0;
+            if (killed)
+            {
+                npc.health = 0;
+                const uint32_t ownerId = projectile.ownerNpcId != 0
+                    ? projectile.ownerNpcId : projectile.ownerPlayerId;
+                const uint8_t ownerKind = projectile.ownerNpcId != 0
+                    ? ENTITY_NPC : ENTITY_PLAYER;
+                glm::vec3 killerPos = position;
+                auto ownerIt = players.find(projectile.ownerPlayerId);
+                if (ownerIt != players.end()) killerPos = ownerIt->second.pos;
+                serverGamemodeRecordKill(sock, players, &npcs,
+                    ownerId, ownerKind, npc.entityId, ENTITY_NPC,
+                    "projectile_rifle", "Projectile Rifle",
+                    projectile.fireSerial, killerPos, npc.pos,
+                    tick, totalPacketsOut);
+            }
+            broadcastNpcDamageEvent(
+                sock, players, tick, totalPacketsOut, projectile.ownerPlayerId,
+                npc, damageValue, killed, position, npc.pos,
+                shotDir, -shotDir, projectile.weaponType);
+        }
+        else if (directTargetId != 0)
+        {
+            auto playerIt = players.find(directTargetId);
+            if (playerIt != players.end() && !playerIt->second.dead)
+            {
+                ServerPlayer& victim = playerIt->second;
+                ServerDamageResult damage = applyServerDamage(
+                    players, victim, projectile.ownerPlayerId, damageValue,
+                    victimKnockback, ServerDamageSource::Hitscan);
+                queueServerDamageConfirmedEvent(
+                    sock, players, tick, totalPacketsOut,
+                    projectile.ownerPlayerId, victim, damageValue, damage,
+                    position, -shotDir, victimKnockback,
+                    ServerDamageSource::Hitscan, projectile.weaponType,
+                    projectile.fireSerial, projectile.id,
+                    projectile.ownerNpcId, "projectile_rifle");
+                if (damage.applied && packet.victimCount < MAX_PROJECTILE_DAMAGE_RESULTS)
+                {
+                    auto& out = packet.victims[packet.victimCount++];
+                    out.victimPlayerId = victim.id;
+                    out.damage = damageValue;
+                    out.healthAfter = damage.healthAfter;
+                    out.knockX = victimKnockback.x;
+                    out.knockY = victimKnockback.y;
+                    out.knockZ = victimKnockback.z;
+                    out.killed = damage.killed ? 1 : 0;
+                    out.targetSpawnGeneration = victim.spawnGeneration;
+                }
+            }
+        }
+
+        printf("%s [PROJECTILE BULLET IMPACT] projectileId=%u targetId=%u damage=%d "
+               "knockback=(%.2f,%.2f,%.2f) position=(%.2f,%.2f,%.2f)\n",
+               serverTimestamp(), projectile.id, directTargetId, damageValue,
+               victimKnockback.x, victimKnockback.y, victimKnockback.z,
+               position.x, position.y, position.z);
+        queueReliableGameplayEventToAll(sock, players, &packet, sizeof(packet),
+                                        packet.eventId, packet.eventSessionId,
+                                        totalPacketsOut);
+        return;
+    }
 
     if (directTargetId != 0)
     {
@@ -1593,7 +1690,8 @@ void tickServerProjectiles(SOCKET sock,
 
         const bool sharedProjectile =
             projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER ||
-            projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER;
+            projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER ||
+            projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
 
         if (sharedProjectile)
         {
@@ -1668,17 +1766,20 @@ void tickServerProjectiles(SOCKET sock,
                 if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
                 {
                     explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
+                                      glm::vec3(0.0f, 0.0f, 1.0f),
                                       "lifetime", 0, tick, stepTick, totalPacketsOut);
                 }
                 else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
                 {
                     explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
+                                      step.hitNormal,
                                       "player", step.hitPlayerId, tick, stepTick,
                                       totalPacketsOut);
                 }
                 else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
                 {
                     explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
+                                      step.hitNormal,
                                       "world", 0, tick, stepTick, totalPacketsOut);
                 }
 
@@ -1701,6 +1802,7 @@ void tickServerProjectiles(SOCKET sock,
             if (projectile.age >= projectile.lifetime)
             {
                 explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
+                                  glm::vec3(0.0f, 0.0f, 1.0f),
                                   "lifetime", 0, tick, tick,
                                   totalPacketsOut);
             }

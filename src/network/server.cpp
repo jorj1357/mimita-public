@@ -670,7 +670,7 @@ int runServer(const LaunchOptions& options)
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
-            tickServerPhysicalContactWeapons(sock, players, world, SERVER_DT, tick, totalPacketsOut);
+            tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
 
             tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
                          pendingIceTransports);
@@ -1148,7 +1148,7 @@ static void simulateOneServerTick(ListenServerState& state)
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);
 
-        tickServerPhysicalContactWeapons(state.sock, state.players,
+        tickServerPhysicalContactWeapons(state.sock, state.players, state.npcs,
                                          state.world, SERVER_DT, state.tick,
                                          state.totalPacketsOut);
 

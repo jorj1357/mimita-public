@@ -801,6 +801,49 @@ WeaponDefinition createSpyKnifeDefinition() {
     return def;
 }
 
+WeaponDefinition createProjectileRifleDefinition() {
+    WeaponDefinition def;
+    def.id = "projectile_rifle";
+    def.displayName = "Projectile Rifle";
+    def.slot = 14;
+    def.modelPath = "assets/objects/weapons/mimita-revolver-v1.glb";
+    def.damage = 250.0f;
+    def.headshotMultiplier = 2.0f;
+    def.fireDelay = 1.0f / 60.0f;
+    def.reloadTime = 1.5f;
+    def.magazineSize = 30;
+    def.pelletCount = 1;
+    def.spread = 3.0f;
+    def.recoil = 35.0f;
+    def.projectileSpeed = 90.0f;
+    def.projectileRadius = 0.1f;
+    def.projectileLifetime = 3.0f;
+    def.fireMode = WeaponFireMode::Automatic;
+    def.behaviorType = WeaponBehaviorType::Projectile;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+    def.soundShoot = "revolvershoot";
+    def.soundDryFire = "ui/click";
+    def.poseId = "revolver";
+    def.customParams["splashRadius"] = 1.0f;
+    def.customParams["rocketDirectDamage"] = 250.0f;
+    def.customParams["splashExponent"] = 2.0f;
+    def.customParams["knockbackStrength"] = 35.0f;
+    def.customParams["gravity"] = 0.0f;
+    def.customParams["drag"] = 0.0f;
+    def.customParams["explodeOnPlayerImpact"] = 1.0f;
+    def.customParams["explodeOnWorldImpact"] = 1.0f;
+    def.customParams["explodeOnLifetime"] = 1.0f;
+    def.customParams["splashLineOfSight"] = 0.0f;
+    def.customParams["projectileVisualSphere"] = 1.0f;
+    def.customParams["projectileVisualRadius"] = 0.1f;
+    def.customParams["projectileVisualFillR"] = 1.0f;
+    def.customParams["projectileVisualFillG"] = 1.0f;
+    def.customParams["projectileVisualFillB"] = 1.0f;
+    def.customParams["projectileFillAlpha"] = 1.0f;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -816,7 +859,8 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createQuickHitDefinition());
     registerWeaponFromJson(createForcePunchDefinition());
     registerWeaponFromJson(createSpyKnifeDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife");
+    registerWeaponFromJson(createProjectileRifleDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife, projectile_rifle");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

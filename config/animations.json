@@ -939,6 +939,38 @@
         }
       }
     },
+    "force_punch": {
+      "active_pose": "idle",
+      "poses": {
+        "idle": {
+          "useWeaponPose": true,
+          "leftArm": {
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "rightArm": {
+            "translation": [
+              0.35,
+              -0.1,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              90.0
+            ]
+          }
+        }
+      }
+    },
     "grenade_launcher": {
       "active_pose": "idle",
       "poses": {

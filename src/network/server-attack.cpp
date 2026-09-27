@@ -72,6 +72,11 @@ static void startServerSwordAttack(ServerPlayer& attacker,
         : SwordswordState::AttackState::SlashWindup;
     attacker.swordswordState.stateTimer = 0.0f;
     attacker.swordswordState.animTimer = 0.0f;
+    attacker.physicalAttackIsLunge = lunge;
+    attacker.physicalAttackTimeline.start(
+        (uint32_t)std::ceil((lunge ? lungeWindup : slashWindup) * SERVER_TICK_RATE),
+        (uint32_t)std::ceil((lunge ? lungeActive : slashActive) * SERVER_TICK_RATE),
+        (uint32_t)std::ceil((lunge ? lungeRecover : slashRecover) * SERVER_TICK_RATE));
     attacker.meleeCooldownTimer = std::max(0.0f, cooldown);
     attacker.hasLastPhysicalWeaponShape = false;
 }
@@ -1090,6 +1095,8 @@ void handleAttackRequest(
         else if (def->behaviorType == WeaponBehaviorType::QuickHit)
         {
             // Start server-side quick hit attack
+            shooter.physicalAttackIsLunge = false;
+            shooter.physicalAttackTimeline.start(15, 8, 15);
             shooter.quickHitState.active = true;
             shooter.quickHitState.activeTicksRemaining =
                 (uint32_t)WeaponExecution::paramOr(*def, "activeHitboxTicks", 30.0f);
@@ -1117,10 +1124,8 @@ void handleAttackRequest(
         return;
     }
 
-    // ── Projectile weapons (grenade, rocket) ─────────────────────────
-    if (def->executionType == WeaponExecutionType::Projectile &&
-        (def->behaviorType == WeaponBehaviorType::RocketLauncher ||
-         def->behaviorType == WeaponBehaviorType::GrenadeLauncher))
+    // ── All server-authoritative projectile weapons ──────────────────
+    if (def->executionType == WeaponExecutionType::Projectile)
     {
         glm::vec3 origin(req->muzzlePosX, req->muzzlePosY, req->muzzlePosZ);
         if (!finiteVec3(origin))

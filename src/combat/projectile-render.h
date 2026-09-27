@@ -18,6 +18,8 @@ struct ProjectileRenderMesh {
 };
 
 struct ProjectileVisualConfig {
+    bool sphere = false;
+    glm::vec3 fillColor = glm::vec3(1.0f);
     // Main projectile
     std::string texturePath = "assets/textureshq/colorful2.png";
     float length = 1.5f;

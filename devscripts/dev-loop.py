@@ -306,7 +306,6 @@ class DevLoop:
             str(exe), "--server", "--bind", server_bind,
             "--name", str(self.profile.get("server_name", "MiMITA Dev Server")),
             "--map", str(self.profile.get("map", "coolplace")),
-            "--host-player", str(self.profile.get("client_name", "Dev")),
             "--mode", str(self.profile.get("mode", "sandbox")),
             "--gamemode", str(self.profile.get("gamemode", "sandbox")),
             "--weapon-set", str(self.profile.get("weapon_set", 1)),
@@ -314,6 +313,13 @@ class DevLoop:
             "--no-discord-notification",
             "--room-file", str(self.room_file_path),
         ]
+        # Leave --host-player unset for the automatic dev client. The server's
+        # existing empty-name rule makes the first room-code joiner the host,
+        # avoiding a mismatch between a profile label and the logged-in
+        # AuthSystem display name used by the real client.
+        configured_host = str(self.profile.get("host_player_name", "")).strip()
+        if configured_host:
+            server_args.extend(["--host-player", configured_host])
         if not self.profile.get("auto_map_rotation", False):
             server_args.append("--no-map-rotation")
 
@@ -332,8 +338,13 @@ class DevLoop:
         room_code = ""
         while time.time() < deadline:
             if server.poll() is not None:
-                print(f"[DEV] server exited before room-code handshake: {server.returncode}")
+                self.last_message = (
+                    f"server exited before room-code handshake: {server.returncode}"
+                )
+                self.save_state("server_failed")
+                print(f"[DEV] {self.last_message}")
                 self.stop_processes()
+                self.print_status()
                 return
             try:
                 room_code = self.room_file_path.read_text(encoding="utf-8").strip()
@@ -344,8 +355,11 @@ class DevLoop:
             time.sleep(0.1)
 
         if not room_code:
-            print("[DEV] server did not publish a room code within 20 seconds")
+            self.last_message = "server did not publish a room code within 20 seconds"
+            self.save_state("server_failed")
+            print(f"[DEV] {self.last_message}")
             self.stop_processes()
+            self.print_status()
             return
 
         self.room_code = room_code

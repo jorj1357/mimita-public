@@ -14,4 +14,5 @@
 
 void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
                       const std::string& attacker, float sizeScale = 1.0f,
-                      bool playSound = true);
+                      bool playSound = true,
+                      const glm::vec3& surfaceNormal = glm::vec3(0.0f, 0.0f, 1.0f));

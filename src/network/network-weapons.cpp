@@ -39,6 +39,8 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_HAFS;
     if (definition.id == "force_punch")
         return NETWORK_WEAPON_FORCE_PUNCH;
+    if (definition.id == "projectile_rifle")
+        return NETWORK_WEAPON_PROJECTILE_RIFLE;
     return NETWORK_WEAPON_NONE;
 }
 
@@ -122,6 +124,7 @@ int slotForNetworkWeaponType(uint8_t type)
     case NETWORK_WEAPON_ROCKET_LAUNCHER: return 7;
     case NETWORK_WEAPON_GRENADE_LAUNCHER: return 8;
     case NETWORK_WEAPON_HAFS: return 10;
+    case NETWORK_WEAPON_PROJECTILE_RIFLE: return 14;
     default: return -1;
     }
 }
@@ -140,6 +143,7 @@ const char* networkWeaponTypeName(uint8_t type)
     case NETWORK_WEAPON_GRENADE_LAUNCHER: return "grenade_launcher";
     case NETWORK_WEAPON_AA12: return "aa12";
     case NETWORK_WEAPON_FORCE_PUNCH: return "force_punch";
+    case NETWORK_WEAPON_PROJECTILE_RIFLE: return "projectile_rifle";
     default: return "unknown";
     }
 }
@@ -147,7 +151,8 @@ const char* networkWeaponTypeName(uint8_t type)
 bool networkWeaponTypeIsProjectile(uint8_t type)
 {
     return type == NETWORK_WEAPON_ROCKET_LAUNCHER ||
-        type == NETWORK_WEAPON_GRENADE_LAUNCHER;
+        type == NETWORK_WEAPON_GRENADE_LAUNCHER ||
+        type == NETWORK_WEAPON_PROJECTILE_RIFLE;
 }
 
 bool networkWeaponTypeIsHitscan(uint8_t type)

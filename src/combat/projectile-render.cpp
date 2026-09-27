@@ -40,6 +40,11 @@ ProjectileVisualConfig projectileVisualConfigForWeapon(const std::string& weapon
     const bool rocket = weaponId == "rocket_launcher";
     const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
     ProjectileVisualConfig cfg;
+    cfg.sphere = projectileParam(def, "projectileVisualSphere", 0.0f) > 0.0f;
+    cfg.fillColor = {
+        projectileParam(def, "projectileVisualFillR", 1.0f),
+        projectileParam(def, "projectileVisualFillG", 1.0f),
+        projectileParam(def, "projectileVisualFillB", 1.0f)};
     cfg.texturePath = rocket ? "assets/textureshq/colorful2.png" : "assets/textureshq/meat1.png";
     cfg.length = projectileParam(def, "projectileVisualLength", rocket ? 1.5f : 1.8f);
     cfg.radius = projectileParam(def, "projectileVisualRadius", rocket ? 0.18f : 0.28f);
@@ -291,6 +296,13 @@ void renderProjectile(
 {
     if (!gRenderer || !gRenderer->shaderProgram)
         return;
+
+    if (cfg.sphere) {
+        const float scale = std::max({cfg.scale.x, cfg.scale.y, cfg.scale.z});
+        DebugVis::drawFilledSphere(camera, position, cfg.radius * scale,
+            glm::vec4(cfg.fillColor, cfg.fillAlpha));
+        return;
+    }
 
     // Load texture
     GLuint tex = gTextures.getPath(cfg.texturePath);

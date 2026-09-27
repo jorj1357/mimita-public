@@ -128,6 +128,10 @@ struct WeaponDefinition {
 
     float soundPitchVariation = 0.05f;   // ±5% pitch randomization per shot
     float soundVolumeVariation = 0.05f;  // ±5% volume randomization per shot
+    float soundPitch = 1.0f;
+    float soundStartSeconds = 0.0f;
+    float soundEndSeconds = 0.0f;
+    bool soundRetrigger = false;
 
     glm::vec3 tint{1.0f};  // RGB multiplier for rendering (1,1,1 = no tint)
 
