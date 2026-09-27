@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "utils/json-comments.h"
 
 using json = nlohmann::json;
 
@@ -54,7 +55,7 @@ bool CommunityServerConfig::loadModes(const std::string& path)
     }
     try {
         json root;
-        file >> root;
+        root = parseJsonConfig(file);
         if (!root.contains("modes") || !root["modes"].is_array())
             throw std::runtime_error("missing modes array");
         std::vector<CommunityMode> next;
@@ -91,7 +92,7 @@ bool CommunityServerConfig::loadWeaponSets(const std::string& path)
     }
     try {
         json root;
-        file >> root;
+        root = parseJsonConfig(file);
         if (!root.contains("sets") || !root["sets"].is_array())
             throw std::runtime_error("missing sets array");
         std::vector<CommunityWeaponSet> next;

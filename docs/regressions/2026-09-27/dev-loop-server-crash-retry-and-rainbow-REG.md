@@ -1,9 +1,10 @@
 # Dev loop stopped at zero processes after a server startup crash
 
 Time created: 2026-09-27T15:48:01Z
-Time last updated: 2026-09-27T16:20:00Z
+Time last updated: 2026-09-27T16:24:36Z
 
-Status: ATTEMPTED FIX (1)
+Status: FIXED (configuration startup blocker); dev-loop fallback behavior remains
+covered by the orchestration fix below.
 
 Related specification:
 `docs/operations/task-completion/task-completion.md`
@@ -31,14 +32,15 @@ storm.
 The development-loop text should be visually distinct from ordinary command
 output and cycle through the rainbow over five seconds.
 
-## Confirmed cause
+## Confirmed causes
 
 Two causes were separated:
 
-1. The build-26 game binary itself exits during dedicated-server startup. Its
-   console output reaches community configuration loading, then Windows
-   reports exception `0x20474343`. The game-side fault owner is not yet
-   identified.
+1. The server loaded `config/onlinemodes.json` and `config/weaponsets.json`,
+   then crashed while scanning `config/gamemodes/`. The offending file was
+   `config/gamemodes/retrograd.json`, which began with `//` comment lines even
+   though the runtime treats these files as strict JSON. The failure occurred
+   before map loading, ICE initialization, or room-code publication.
 2. The dev loop treated an exited server as an idle state. It did not schedule
    a bounded retry or launch a fallback process, so the visible result was
    `RUNNING: (none)`.
@@ -63,11 +65,25 @@ Two causes were separated:
 The fallback client does not claim that the server succeeded; it only prevents
 the development session from having no MiMITA process at all.
 
+## Corrective configuration fix
+
+The non-JSON comment header was removed from `config/gamemodes/retrograd.json`.
+The file remains valid JSON and keeps the same runtime fields and values.
+
 ## Proof status
+
+- `config/gamemodes/retrograd.json | ConvertFrom-Json`: passed.
+- Build 32 executable with the corrected config survived five seconds, reached
+  dedicated server transport, initialized ICE, registered room `8THPU7N`, and
+  wrote the room-code file.
+- The same build with the original commented header exited with
+  `541541187` (`0x20474343`) before the gamemode loader reached room startup.
+- The projectile trail and Counter-Strike changes were not the cause of this
+  startup failure.
 
 - `python -m py_compile devscripts/dev-loop.py`: passed.
 - `python devscripts/dev-loop.py --help`: passed.
 - `git diff --check -- devscripts/dev-loop.py`: passed.
-- The server crash remains unresolved at the game-binary level.
-- Human review is required to observe the bounded retries, one-shot fallback,
-  always-on restart behavior, and terminal colors during a real failed launch.
+- Human review remains required for the automatic room-code client join and
+  visual terminal behavior. The currently running old dev-loop process must be
+  restarted to load the one-shot fallback guard.

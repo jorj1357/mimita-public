@@ -17,6 +17,7 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "utils/json-comments.h"
 
 using json = nlohmann::json;
 
@@ -43,7 +44,7 @@ void GamemodeMapPool::load(const std::string& path)
 
     try {
         json root;
-        file >> root;
+        root = parseJsonConfig(file);
         std::vector<std::string> next;
         if (root.contains("maps") && root["maps"].is_array())
         {

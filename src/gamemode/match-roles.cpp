@@ -15,6 +15,7 @@
 
 #include "config/movement-config.h"
 #include "debug/debug-log.h"
+#include "utils/json-comments.h"
 
 using json = nlohmann::json;
 
@@ -70,7 +71,7 @@ bool MatchRoleRegistry::load(const std::string& path)
 
     try {
         json root;
-        file >> root;
+        root = parseJsonConfig(file);
 
         std::vector<MatchRoleDefinition> roles;
         if (root.contains("roles")) {

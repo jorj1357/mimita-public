@@ -6,9 +6,10 @@
 # Does NOT validate live hot reload behavior or exported MP4 pixels.
 # Does NOT change user-selected account or game settings.
 #!/usr/bin/env python3
-import json
 from pathlib import Path
 import sys
+
+from jsonc import load as load_jsonc
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +21,7 @@ def rel(path):
 
 def load_json(path, errors):
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        return load_jsonc(path)
     except Exception as exc:
         errors.append(f"{rel(path)}: JSON parse failed: {exc}")
         return None

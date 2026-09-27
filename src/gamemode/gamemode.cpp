@@ -17,6 +17,7 @@
 
 #include "game/duel.h"
 #include "debug/debug-log.h"
+#include "utils/json-comments.h"
 
 using json = nlohmann::json;
 
@@ -138,7 +139,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
 
     try {
         json root;
-        file >> root;
+        root = parseJsonConfig(file);
         if (!root.is_object() || !root.contains("id") || !root["id"].is_string()) {
             Debug::warn(Debug::Category::Duel, "[GAMEMODE] %s has no string \"id\"; skipped.\n", fileNameOf(path).c_str());
             return;

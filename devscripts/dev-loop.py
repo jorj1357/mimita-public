@@ -35,10 +35,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from build_toolchain import compiler as resolve_compiler
 from build_toolchain import glfw_lib as resolve_glfw_lib
+from jsonc import load as load_jsonc
 
 DEV_ROOT = ROOT / ".dev"
 BUILD_ROOT = DEV_ROOT / "builds"
 STATE_PATH = DEV_ROOT / "state.json"
+LOCK_PATH = DEV_ROOT / "dev-loop.lock"
 PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
 DEFAULT_MAP_POOL_PATH = ROOT / "config" / "gamemode-good-maps.json"
 
@@ -118,7 +120,7 @@ def write_json(path: Path, value: dict) -> None:
 
 
 def read_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return load_jsonc(path)
 
 
 def allowed_dev_maps(profile: dict) -> list[str]:
@@ -178,6 +180,43 @@ def find_ccache() -> str | None:
         return configured
     found = shutil.which("ccache")
     return found
+
+
+def acquire_dev_loop_lock() -> int:
+    """Allow exactly one dev-loop daemon for this checkout."""
+    DEV_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(
+            str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        )
+    except FileExistsError:
+        owner = "unknown"
+        try:
+            owner = LOCK_PATH.read_text(encoding="ascii").strip() or owner
+            owner_pid = int(owner)
+            os.kill(owner_pid, 0)
+        except (OSError, ValueError):
+            try:
+                LOCK_PATH.unlink()
+            except OSError as error:
+                raise SystemExit(
+                    f"[DEV] another dev-loop owns {LOCK_PATH}: {error}"
+                ) from error
+            return acquire_dev_loop_lock()
+        raise SystemExit(
+            f"[DEV] dev-loop already running for this checkout (PID {owner_pid})"
+        )
+    os.write(descriptor, str(os.getpid()).encode("ascii"))
+    os.close(descriptor)
+    return os.getpid()
+
+
+def release_dev_loop_lock(owner_pid: int) -> None:
+    try:
+        if LOCK_PATH.read_text(encoding="ascii").strip() == str(owner_pid):
+            LOCK_PATH.unlink()
+    except (FileNotFoundError, OSError):
+        pass
 
 
 def load_profile(name: str) -> dict:
@@ -649,8 +688,12 @@ def main() -> int:
     parser.add_argument("--profile", default="npc-navigation")
     parser.add_argument("--auto-restart", action="store_true")
     args = parser.parse_args()
+    owner_pid = acquire_dev_loop_lock()
     profile = load_profile(args.profile)
-    DevLoop(profile, args.auto_restart).run()
+    try:
+        DevLoop(profile, args.auto_restart).run()
+    finally:
+        release_dev_loop_lock(owner_pid)
     return 0
 
 
