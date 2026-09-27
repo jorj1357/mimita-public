@@ -235,6 +235,14 @@ bool handleGameCLI(int argc, char** argv)
         return true;
     }
 
+    if (std::string(argv[1]) == "--canonical-contact-selftest") {
+        std::string summary;
+        const bool ok = canonicalContactSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[CANONICAL CONTACT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
     if (std::string(argv[1]) == "--collision-subgrid-selftest") {
         std::string summary;
         const bool ok = collisionSubGridSelfTest(&summary);

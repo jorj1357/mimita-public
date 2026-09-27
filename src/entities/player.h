@@ -349,6 +349,42 @@ struct CollisionState {
     float bounceCooldown = 0.0f;
     bool hasWeaponCollisionCapsule = false;
 
+    // Contacts that already produced a bounce this tick, keyed by actor part and
+    // world triangle. This is how the actor-triangle solver dedupes duplicate
+    // contacts without muting a valid same-tick impact via a global cooldown.
+    static constexpr int kMaxRespondedContacts = 16;
+    struct RespondedContact {
+        const void* label = nullptr;
+        int worldTriangle = -1;
+    };
+    RespondedContact respondedContacts[kMaxRespondedContacts];
+    int respondedContactCount = 0;
+    uint64_t respondedContactTick = ~0ull;
+
+    bool alreadyRespondedToContact(const void* label, int worldTriangle,
+                                   uint64_t tick) const {
+        if (respondedContactTick != tick)
+            return false;
+        for (int i = 0; i < respondedContactCount; ++i)
+            if (respondedContacts[i].worldTriangle == worldTriangle &&
+                respondedContacts[i].label == label)
+                return true;
+        return false;
+    }
+
+    void markRespondedToContact(const void* label, int worldTriangle,
+                                uint64_t tick) {
+        if (respondedContactTick != tick) {
+            respondedContactTick = tick;
+            respondedContactCount = 0;
+        }
+        if (respondedContactCount < kMaxRespondedContacts) {
+            respondedContacts[respondedContactCount].label = label;
+            respondedContacts[respondedContactCount].worldTriangle = worldTriangle;
+            ++respondedContactCount;
+        }
+    }
+
     // Diagnostics: track values that should never grow unbounded
     int diagPrevCandidates = 0;
     int diagCandidateGrowthFrames = 0;

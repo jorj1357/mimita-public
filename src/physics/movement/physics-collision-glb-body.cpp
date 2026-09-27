@@ -93,15 +93,33 @@ static int runBodyWeaponPass(
         p.ground.realWorldContactThisFrame = true;
         p.ground.hasWorldContact = true;
         p.ground.worldContactLostTimer = 0.033f;
-        appendPlayerMovementContactForNormal(
-            p,
-            c.normal.z > MAX_WALKABLE_SLOPE_DOT,
-            false,
-            c.normal,
-            c.point,
-            c.penetration,
-            c.triangleIndex,
-            bodyWeaponContactSource(c.label));
+
+        // Canonical contact: kind/source/point/normal/penetration are identical
+        // to the previous appendPlayerMovementContactForNormal call; the adapter
+        // only adds the shape, subshape, sweep velocity, and material metadata.
+        const bool isWeapon = c.label && std::strcmp(c.label, "weapon") == 0;
+        const MovementShapeKind shapeKind = isWeapon
+            ? MovementShapeKind::Capsule
+            : (useMeshBody ? MovementShapeKind::TriangleMesh
+                           : MovementShapeKind::Sphere);
+        const MovementContact canonical = movementContactFromRecoveryContact(
+            c,
+            classifyCollisionMovementContactKind(
+                c.normal, c.normal.z > MAX_WALKABLE_SLOPE_DOT, false),
+            bodyWeaponContactSource(c.label),
+            shapeKind,
+            p.movementSimulationTick,
+            MovementLifecycleIdentity{p.spawnGeneration, 0});
+        p.movementContacts.addDeduplicated(canonical);
+
+        if (DebugConfig::COLLISION_VERBOSE)
+            Debug::log(Debug::Category::Collision,
+                "[CANONICAL CONTACT] part=%s shape=%d sub=%d tri=%d pen=%.4f sweep=(%.3f %.3f %.3f) tick=%llu\n",
+                c.label ? c.label : "?", (int)shapeKind, (int)canonical.subshape,
+                c.triangleIndex, c.penetration,
+                canonical.sweepVelocity.x, canonical.sweepVelocity.y,
+                canonical.sweepVelocity.z,
+                (unsigned long long)p.movementSimulationTick);
 
         if (c.label && std::strcmp(c.label, "weapon") != 0 &&
             p.bodySparkTick != p.movementSimulationTick) {

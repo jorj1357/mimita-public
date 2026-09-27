@@ -179,6 +179,68 @@ Design and rules:
 `doCollisions` still does not call the solver; it runs alongside the legacy
 pipeline and is proven by `--actor-triangle-solve-selftest`.
 
+## Phase 4–5 — safe→desired sweep and unified manifold (hardened)
+
+- `RecoveryContact` gained `timeOfImpact` (appended field; existing aggregate
+  initializers unchanged). `collectActorMeshContacts` sets it: 0 for a
+  current-pose overlap, the crossing parameter for a swept vertex path, and the
+  sample alpha for the stepped fallback. The solver copies it into
+  `ActorWorldContact::timeOfImpact`.
+- The manifold is sorted strongest impact first (`penetration + |sweepDelta|`)
+  before responding, so the dominant surface owns the response and a later
+  rate limit cannot mute it (Phase 6 groundwork).
+- The safe pose is captured once; corrections accumulate and are applied once at
+  the end, so a depenetration is never re-read as a fresh sweep (Phase 4 rule).
+- `result.maxPenetration` is the residual of the final iteration, not the peak.
+- Grounding uses the desired-pose lowest point (`desiredLowestZ`), so an embedded
+  actor that moved up in the correction still grounds and a hand on a ledge does
+  not.
+- Added deterministic cases: giant wall 30 m away (no false positive), deep
+  embed (depenetrate + ground), crate, high-speed thin-wall crossing (no
+  tunneling), weapon render-mesh contact, on top of floor/wall/leaving/corner.
+
+## Phase 6 — momentum and per-contact dedup (added)
+
+- `CollisionState` gained a per-tick responded-contact list keyed by
+  `(actorPart, worldTriangle)` (`alreadyRespondedToContact` /
+  `markRespondedToContact`; reset lazily on tick change).
+- `respondVelocityAgainstNormal` no longer gates every bounce behind the global
+  `bounceCooldown`. When a contact identity is supplied (the actor-triangle
+  solver passes `label` + triangle index), a repeated response for the SAME
+  contact in the same tick is suppressed, but a different valid impact still
+  bounces. Callers without an identity keep the legacy cooldown gate, so the
+  legacy pipeline behavior is unchanged.
+- The response formula is unchanged and matches the spec:
+  `out = tangent*(1 - friction) + normal*(into * restitution)`, which preserves
+  tangential momentum and reflects the normal component by restitution. Velocity
+  is never set to zero by a collision.
+- `--actor-triangle-solve-selftest` adds a 200 m/s impact case: normal momentum
+  reflected, tangential momentum preserved, velocity nonzero.
+
+## Phase 7 — solver wired into the active path behind a toggle (added)
+
+- `CollisionConfig` gained `actorTriangleSolver()` (JSON
+  `"actorTriangleSolver"`, default false, hot-reloadable via
+  `engine-tick-setup.cpp`'s `pollHotReload`).
+- `physics-collision-glb-main.cpp` `doGLBTriangleCollisions` checks the toggle
+  first: when on and the actor is not an NPC, it calls
+  `runActorTriangleCollisionStep` and returns, bypassing body/weapon, sweep-slide,
+  batched depenetration, floor recovery, and emergency stuck for that actor. If
+  the world has no triangles or the actor has no body triangles, it falls back to
+  the legacy pipeline instead of freezing.
+- `runActorTriangleCollisionStep` (in `actor-triangle-solver.cpp`): integrates
+  `(vel + externalImpulse) * dt` (with the z step clamp) into the desired pose,
+  synchronizes the equipped weapon collider mesh, solves, sets grounding, and
+  spawns the body-contact spark from the solver's final contact point using
+  `bodySparkTick` (same boundary as the legacy body phase; weapon contacts do not
+  spawn a body spark).
+- Grounding in this path comes only from triangle contacts (actor desired-pose
+  lowest point); the capsule is not consulted.
+- Still not deleted: the legacy owners remain for the toggle-off path and NPCs.
+  Removal is Phase 9 after human acceptance.
+- Not yet wired here: NPC/server headless body triangles, weapon transform
+  verification in-game, step-up (legacy sweep-slide owned it).
+
 ## Grounded / contact facts
 
 - `applyCollisionContact` (`physics-collision-core.cpp:126`) sets
@@ -208,3 +270,34 @@ pipeline and is proven by `--actor-triangle-solve-selftest`.
 4. Whether server hit-validation AABBs (`server-body-template.cpp`) must become
    the same triangle representation or stay a documented boundary.
 5. Whether the dead safety passes are removed in Phase 7 cleanup.
+
+## Stage A — canonical contact vocabulary (added)
+
+`MovementContact` (`movement-types.h`) is the one canonical contact type. It
+gained `MovementShapeKind`, `MovementSubshape`, `targetEntityId`, `materialId`,
+and `sweepVelocity`; `surfaceVelocity` was already present. Contact identity
+(dedup) does not use the new fields, so existing behavior is unchanged.
+
+Adapters in `physics-collision.h` / `physics-collision-core.cpp` convert
+producer-specific results into the canonical type without reconstructing facts:
+
+- `movementSubshapeFromLabel(const char*)` maps body/weapon/root labels.
+- `movementContactFromRecoveryContact(...)` preserves kind/source/point/normal/
+  penetration, derives `surfaceId` from the triangle, `subshape` from the label,
+  and `sweepVelocity` from `sweepDelta`.
+- `movementContactFromSweepHit(...)` adds sweep and surface velocity.
+
+The body/weapon producer (`physics-collision-glb-body.cpp`) now emits canonical
+contacts through the adapter; legacy callers (`applyCollisionContact` for
+root/ground/block) still emit directly and migrate in a later stage.
+
+The local player's weapon render-mesh triangles are exposed through the one
+shared CPU loader: `WeaponViewModel::update` calls
+`ensureActorWeaponColliderMesh(player, modelPath)` gated by
+`CollisionConfig::bodyMeshCollision()`. Body triangles already come from
+`Player::loadModel`. This is the same loader the actor-triangle solver consumes;
+`doCollisions` behavior is unchanged.
+
+Deterministic coverage: `--canonical-contact-selftest` (metadata survival,
+sphere/mesh equivalence, sweep+surface velocity, label mapping, arm-on-slope
+keeps subshape and point, and dedup identity unchanged).

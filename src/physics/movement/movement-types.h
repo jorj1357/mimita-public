@@ -244,17 +244,50 @@ enum class MovementContactSource : uint8_t {
     OtherGameplay
 };
 
+// Low-level shape that produced a contact. Lets a consumer reason about the
+// primitive without inspecting producer-specific result types.
+enum class MovementShapeKind : uint8_t {
+    Unknown,
+    Sphere,
+    Capsule,
+    TriangleMesh,
+    Box,
+    Plane
+};
+
+// Actor subshape that produced a contact. Replaces a raw label pointer so the
+// canonical contact stays POD and replication-safe.
+enum class MovementSubshape : uint8_t {
+    Unknown,
+    RootCapsule,
+    Head,
+    Torso,
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Weapon,
+    World
+};
+
 struct MovementContact {
     MovementContactKind kind = MovementContactKind::Unknown;
     MovementContactSource source = MovementContactSource::Unknown;
+    MovementShapeKind shapeKind = MovementShapeKind::Unknown;
+    MovementSubshape subshape = MovementSubshape::Unknown;
     MovementLifecycleIdentity targetLifecycle;
     uint64_t contactId = 0;
     uint64_t sourceEventId = 0;
     uint32_t sourceEntityId = 0;
+    uint32_t targetEntityId = 0;
     uint32_t surfaceId = 0;
+    uint32_t materialId = 0;
     uint64_t simulationTick = 0;
     glm::vec3 point{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    // Motion of the actor part that produced the contact (sweep delta).
+    glm::vec3 sweepVelocity{0.0f};
+    // Motion of the support surface (zero for static world).
     glm::vec3 surfaceVelocity{0.0f};
     float strength = 0.0f;
     float penetrationDepth = 0.0f;

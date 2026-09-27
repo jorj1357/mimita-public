@@ -3,6 +3,7 @@
 #include "physics/movement/physics-collision-glb-body.h"
 #include "physics/movement/physics-collision-glb-safety.h"
 #include "physics/movement/physics-collision-glb-sweep-slide.h"
+#include "physics/movement/actor-triangle-solver.h"
 
 #include <chrono>
 #include <cstdio>
@@ -129,6 +130,21 @@ void doGLBTriangleCollisions(
     bool& groundedThisFrame,
     float dt
 ) {
+    // ── Single actor-triangle owner (opt-in, hot-reloadable) ─────────────
+    // When enabled, the local player's GLB collision is handled by the one
+    // triangle solver and the legacy capsule/body/emergency pipeline is
+    // bypassed entirely. NPCs keep the legacy path for now.
+    if (CollisionConfig::instance().actorTriangleSolver() && !isCurrentEntityNpc())
+    {
+        if (runActorTriangleCollisionStep(p, world, groundedThisFrame, dt))
+        {
+            gLastCollisionTrace = CollisionTraceSnapshot{};
+            gLastCollisionTrace.startPos = p.pos;
+            gLastCollisionTrace.finalPos = p.pos;
+            return;
+        }
+    }
+
     CollisionFrameDiag diag;
     auto tFrameStart = std::chrono::steady_clock::now();
     constexpr float SURFACE_SLOP = 0.01f;

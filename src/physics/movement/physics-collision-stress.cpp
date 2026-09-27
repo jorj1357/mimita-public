@@ -396,6 +396,173 @@ bool collisionStressSelfTest(std::string* outSummary)
     return ok;
 }
 
+// Verifies the canonical contact adapters: producer-specific results
+// (RecoveryContact, SweepHit) convert into one MovementContact vocabulary with
+// kind/source/point/normal/penetration preserved and shape/subshape/sweep/
+// surface metadata added, without changing contact dedup identity.
+bool canonicalContactSelfTest(std::string* outSummary)
+{
+    std::string summary;
+    bool ok = true;
+    auto check = [&](bool cond, const char* name) {
+        summary += cond ? "  PASS: " : "  FAIL: ";
+        summary += name;
+        summary += "\n";
+        if (!cond) ok = false;
+    };
+
+    const MovementLifecycleIdentity life{7u, 0u};
+    const uint64_t tick = 1234u;
+    const glm::vec3 normal(0.0f, 0.0f, 1.0f);
+    const glm::vec3 point(1.0f, 2.0f, 3.0f);
+
+    // 1. RecoveryContact metadata survives conversion.
+    {
+        RecoveryContact rc;
+        rc.label = "leftArm";
+        rc.triangleIndex = 5;
+        rc.penetration = 0.03f;
+        rc.normal = normal;
+        rc.point = point;
+        rc.sweepDelta = glm::vec3(0.2f, 0.0f, 0.0f);
+        const MovementContact mc = movementContactFromRecoveryContact(
+            rc, MovementContactKind::Wall, MovementContactSource::PlayerBody,
+            MovementShapeKind::TriangleMesh, tick, life);
+        check(mc.subshape == MovementSubshape::LeftArm,
+              "recovery label maps to leftArm subshape");
+        check(mc.surfaceId == 6u, "recovery triangle maps to surfaceId");
+        check(mc.shapeKind == MovementShapeKind::TriangleMesh,
+              "recovery shape kind preserved");
+        check(mc.source == MovementContactSource::PlayerBody,
+              "recovery source preserved");
+        check(mc.simulationTick == tick, "recovery tick preserved");
+        check(std::fabs(mc.penetrationDepth - 0.03f) < 1e-6f,
+              "recovery penetration preserved");
+        check(glm::length(mc.sweepVelocity - glm::vec3(0.2f, 0.0f, 0.0f)) < 1e-6f,
+              "recovery sweep velocity preserved");
+        check(glm::length(mc.point - point) < 1e-6f, "recovery point preserved");
+        check(mc.targetLifecycle.spawnGeneration == 7u,
+              "recovery lifecycle preserved");
+    }
+
+    // 2. Sphere and mesh producers describe the same surface with equivalent
+    //    canonical fields and only the shape kind differs.
+    {
+        RecoveryContact sphere;
+        sphere.label = "leftArm";
+        sphere.triangleIndex = 9;
+        sphere.penetration = 0.02f;
+        sphere.normal = normal;
+        sphere.point = point;
+        RecoveryContact mesh = sphere;
+
+        const MovementContact a = movementContactFromRecoveryContact(
+            sphere, MovementContactKind::StaticWorld,
+            MovementContactSource::PlayerBody, MovementShapeKind::Sphere,
+            tick, life);
+        const MovementContact b = movementContactFromRecoveryContact(
+            mesh, MovementContactKind::StaticWorld,
+            MovementContactSource::PlayerBody, MovementShapeKind::TriangleMesh,
+            tick, life);
+        check(a.subshape == b.subshape && a.surfaceId == b.surfaceId &&
+                  a.kind == b.kind && a.source == b.source &&
+                  std::fabs(a.penetrationDepth - b.penetrationDepth) < 1e-6f &&
+                  glm::length(a.normal - b.normal) < 1e-6f &&
+                  glm::length(a.point - b.point) < 1e-6f,
+              "sphere and mesh contacts produce equivalent canonical fields");
+        check(a.shapeKind != b.shapeKind,
+              "sphere and mesh keep distinct shape kind");
+    }
+
+    // 3. SweepHit conversion carries sweep and surface velocity.
+    {
+        SweepHit hit;
+        hit.hit = true;
+        hit.time = 0.25f;
+        hit.point = point;
+        hit.normal = normal;
+        hit.triangleIndex = 11;
+        hit.colliderName = "weapon";
+        const MovementContact mc = movementContactFromSweepHit(
+            hit, MovementContactKind::Wall, MovementContactSource::Weapon,
+            MovementShapeKind::Capsule, tick, life,
+            glm::vec3(0.5f, 0.0f, 0.0f), glm::vec3(1.5f, 0.0f, 0.0f));
+        check(mc.subshape == MovementSubshape::Weapon,
+              "sweep hit collider maps to weapon subshape");
+        check(mc.surfaceId == 12u, "sweep hit triangle maps to surfaceId");
+        check(glm::length(mc.sweepVelocity - glm::vec3(0.5f, 0.0f, 0.0f)) < 1e-6f,
+              "sweep hit sweep velocity preserved");
+        check(glm::length(mc.surfaceVelocity - glm::vec3(1.5f, 0.0f, 0.0f)) < 1e-6f,
+              "sweep hit surface velocity preserved");
+        check(std::fabs(mc.penetrationDepth) < 1e-6f,
+              "sweep hit has zero penetration");
+    }
+
+    // 4. Root capsule and world labels map correctly.
+    {
+        check(movementSubshapeFromLabel("glb-recovery") ==
+                  MovementSubshape::RootCapsule,
+              "recovery label maps to root capsule");
+        check(movementSubshapeFromLabel("Player_Capsule_Depen") ==
+                  MovementSubshape::RootCapsule,
+              "player capsule label maps to root capsule");
+        check(movementSubshapeFromLabel("weapon") == MovementSubshape::Weapon,
+              "weapon label maps to weapon");
+        check(movementSubshapeFromLabel(nullptr) == MovementSubshape::Unknown,
+              "null label maps to unknown");
+    }
+
+    // 5. An arm contact on a walkable slope keeps the arm subshape and the
+    //    contact point, so the foot-proximity decision stays with the consumer.
+    {
+        RecoveryContact arm;
+        arm.label = "rightArm";
+        arm.point = glm::vec3(0.0f, 0.0f, 1.4f);
+        arm.normal = glm::normalize(glm::vec3(0.3f, 0.0f, 0.95f));
+        arm.penetration = 0.01f;
+        const MovementContact mc = movementContactFromRecoveryContact(
+            arm,
+            classifyCollisionMovementContactKind(arm.normal, false, false),
+            MovementContactSource::PlayerBody, MovementShapeKind::TriangleMesh,
+            tick, life);
+        check(mc.subshape == MovementSubshape::RightArm,
+              "slope arm contact keeps arm subshape");
+        check(std::fabs(mc.point.z - 1.4f) < 1e-6f,
+              "slope arm contact keeps its point for the foot check");
+    }
+
+    // 6. The new canonical fields do not change dedup identity, so gameplay
+    //    behavior is unchanged for existing callers.
+    {
+        RecoveryContact rc;
+        rc.label = "torso";
+        rc.triangleIndex = 2;
+        rc.penetration = 0.01f;
+        rc.normal = normal;
+        rc.point = point;
+        MovementContact a = movementContactFromRecoveryContact(
+            rc, MovementContactKind::StaticWorld,
+            MovementContactSource::StaticWorld, MovementShapeKind::Sphere,
+            tick, life);
+        MovementContact b = a;
+        b.shapeKind = MovementShapeKind::TriangleMesh;
+        b.subshape = MovementSubshape::Weapon;
+        b.sweepVelocity = glm::vec3(9.0f, 0.0f, 0.0f);
+        b.materialId = 42u;
+        b.targetEntityId = 99u;
+
+        MovementContactSet set;
+        set.addDeduplicated(a);
+        const bool added = set.addDeduplicated(b);
+        check(!added && set.duplicateCount == 1,
+              "new canonical metadata does not change contact dedup identity");
+    }
+
+    if (outSummary)
+        *outSummary = summary;
+    return ok;
+}
+
 // Verifies the collision sub-grid broadphase returns exactly the same triangle
 // set as the previous whole-chunk iteration (via brute-force overlap scan), and
 // that a small query near a dense cluster touches a small fraction of triangles.

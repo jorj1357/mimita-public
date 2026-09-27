@@ -73,15 +73,23 @@ inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
 //   bodyContact  - true when this came from a body/weapon contact rather than the
 //                  root capsule.
 //   penetration  - the contact's penetration depth.
+//   actorPart    - the contact's actor part label, or null.
+//   worldTriangle- the world triangle index, or -1.
 // When a moving limb/weapon is the dominant impact it pushes the whole body
 // outward even though the root velocity is not moving into the surface. A body
 // contact that is simply embedded (penetrating but not moving) also gets the
 // configured minimum push, so a limb can no longer stay stuck inside a wall.
 // Root-capsule contacts (bodyContact == false) keep the old behavior.
+// When actorPart and worldTriangle identify the contact, a repeated response for
+// the SAME contact in the same tick is suppressed (per-contact dedup); a valid
+// different contact is never muted by a global cooldown. Callers without an
+// identity keep the legacy bounceCooldown gate.
 inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
                                          const glm::vec3& partVelocity = glm::vec3(0.0f),
                                          bool bodyContact = false,
-                                         float penetration = 0.0f)
+                                         float penetration = 0.0f,
+                                         const char* actorPart = nullptr,
+                                         int worldTriangle = -1)
 {
     const CollisionConfig& cfg = CollisionConfig::instance();
     glm::vec3* velocities[] =
@@ -90,8 +98,30 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
         &p.externalImpulse
     };
 
-    if (!cfg.bounceEnabled() || p.collision.bounceCooldown > 0.0f || cfg.bounceStrength() <= 0.0f)
+    if (!cfg.bounceEnabled() || cfg.bounceStrength() <= 0.0f)
     {
+        projectVelocityAgainstNormal(p, normal);
+        return;
+    }
+
+    const bool hasIdentity = (actorPart != nullptr && worldTriangle >= 0);
+    if (hasIdentity)
+    {
+        // Dedupe by contact identity, not by a global timer: a duplicate of the
+        // same limb/triangle in one tick is projected, but a different valid
+        // impact still bounces even if another contact bounced this tick.
+        if (p.collision.alreadyRespondedToContact(
+                (const void*)actorPart, worldTriangle, p.movementSimulationTick))
+        {
+            projectVelocityAgainstNormal(p, normal);
+            return;
+        }
+        p.collision.markRespondedToContact(
+            (const void*)actorPart, worldTriangle, p.movementSimulationTick);
+    }
+    else if (p.collision.bounceCooldown > 0.0f)
+    {
+        // Legacy callers without a contact identity keep the old cooldown gate.
         projectVelocityAgainstNormal(p, normal);
         return;
     }

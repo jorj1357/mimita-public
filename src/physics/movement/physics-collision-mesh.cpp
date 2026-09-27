@@ -351,7 +351,10 @@ std::vector<RecoveryContact> collectActorMeshContacts(
 
                 glm::vec3 n = wt.normal;
                 if (currentOverlap) {
-                    if (glm::dot(actorPos - wt.a, n) < 0.0f)
+                    // Only flip when the actor is clearly on the other side.
+                    // An embedded actor whose center lies on the plane must not
+                    // flip the world normal by a rounding-sized epsilon.
+                    if (glm::dot(actorPos - wt.a, n) < -1e-4f)
                         n = -n;
                 } else {
                     if (glm::dot(sweep, n) > 0.0f)

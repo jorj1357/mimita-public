@@ -21,6 +21,9 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "entities/player.h"
+#include "combat/weapon-registry.h"
+#include "combat/weapon-config.h"
+#include "combat/weapon-types.h"
 #include "tinygltf/tiny_gltf.h"
 #include "utils/path_utils.h"
 
@@ -343,6 +346,35 @@ bool ensureActorWeaponColliderMesh(Player& player, const char* glbPath)
     player.weaponColliderMeshPath = glbPath;
     player.previousWeaponModelTransform = player.weaponModelTransform;
     return true;
+}
+
+bool ensureActorWeaponColliderMeshFromEquipped(Player& player)
+{
+    if (player.equippedWeaponId.empty())
+    {
+        player.weaponColliderMesh.clear();
+        player.weaponColliderMeshPath.clear();
+        return false;
+    }
+
+    // The viewmodel sets weaponModelTransform when a weapon model is active.
+    // The identity placeholder (translation ~0) means "no world attachment", so
+    // do not place unset weapon triangles at the world origin.
+    if (glm::length(glm::vec3(player.weaponModelTransform[3])) < 0.001f)
+        return false;
+
+    const WeaponDefinition* def = WeaponRegistry::instance().get(player.equippedWeaponId);
+    if (!def)
+        return false;
+
+    std::string modelPath = def->modelPath;
+    const WeaponViewModelConfig* vmcfg = WeaponConfig::instance().get(def->id);
+    if (vmcfg && !vmcfg->modelPath.empty())
+        modelPath = vmcfg->modelPath;
+    if (modelPath.empty())
+        return false;
+
+    return ensureActorWeaponColliderMesh(player, modelPath.c_str());
 }
 
 bool ensureActorBodyCollisionMesh(Player& player, const char* glbPath)

@@ -56,3 +56,14 @@ bool solveActorTriangleCollision(
 // Deterministic Phase 3 test: synthetic box actor vs floor, wall, corner, and a
 // leaving-old-contact case.
 bool actorTriangleSolverSelfTest(std::string* outSummary = nullptr);
+
+// Active-path wrapper for the local player: integrates the tick's intended
+// movement into the desired pose, runs the single triangle solver, reports
+// grounding, and preserves the body-contact spark boundary. Returns true when
+// the actor solver handled the step (world has triangles and the actor has body
+// triangles); false lets the caller fall back to the legacy pipeline.
+bool runActorTriangleCollisionStep(
+    Player& player,
+    const World& world,
+    bool& groundedThisFrame,
+    float dt);

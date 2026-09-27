@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "physics/physics-types.h"
+#include "physics/movement/movement-types.h"
 
 class Block;
 class Player;
@@ -41,6 +42,43 @@ struct RecoveryContact
     float timeOfImpact = 0.0f;
 };
 
+// =====================================================
+// Canonical contact adapters
+// =====================================================
+// MovementContact is the one canonical contact vocabulary (see movement-types.h).
+// Producer-specific results (RecoveryContact, SweepHit, ActorWorldContact) are
+// converted through these adapters instead of reconstructing contact facts
+// independently at every call site. Adapters are additive; callers migrate
+// gradually and unchanged callers keep their old behavior.
+
+// Maps a producer label ("head", "leftArm", "weapon", "glb-recovery", ...) to
+// the canonical actor subshape.
+MovementSubshape movementSubshapeFromLabel(const char* label);
+
+// Converts a RecoveryContact into the canonical contact. surfaceId is derived
+// from triangleIndex, subshape from label, and sweepVelocity from sweepDelta.
+MovementContact movementContactFromRecoveryContact(
+    const RecoveryContact& recovery,
+    MovementContactKind kind,
+    MovementContactSource source,
+    MovementShapeKind shapeKind,
+    uint64_t simulationTick,
+    MovementLifecycleIdentity targetLifecycle,
+    uint32_t materialId = 0);
+
+// Converts a SweepHit into the canonical contact. A sweep hit carries no
+// penetration, so penetrationDepth is zero and timeOfImpact is unused here.
+MovementContact movementContactFromSweepHit(
+    const SweepHit& hit,
+    MovementContactKind kind,
+    MovementContactSource source,
+    MovementShapeKind shapeKind,
+    uint64_t simulationTick,
+    MovementLifecycleIdentity targetLifecycle,
+    const glm::vec3& sweepVelocity = glm::vec3(0.0f),
+    const glm::vec3& surfaceVelocity = glm::vec3(0.0f),
+    uint32_t materialId = 0);
+
 // Resolves ALL solid block collisions (no slopes)
 // - Mutates player position & velocity
 // - Sets groundedThisFrame if standing on something
@@ -57,6 +95,9 @@ std::string collisionStateSummary(const class Player& p);
 std::string collisionStressRun(const std::string& caseName);
 bool collisionStressSelfTest(std::string* outSummary = nullptr);
 bool collisionSubGridSelfTest(std::string* outSummary = nullptr);
+// Deterministic check that the canonical contact adapters preserve producer
+// metadata and that the new canonical fields do not change contact identity.
+bool canonicalContactSelfTest(std::string* outSummary = nullptr);
 
 // Resolve collision between two capsules (e.g., player vs NPC)
 // - Mutates positions of both capsules

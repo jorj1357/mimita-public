@@ -34,6 +34,12 @@ public:
     // part. Toggle off to fall back to the sphere approximation.
     bool bodyMeshCollision() const { return mBodyMeshCollision; }
 
+    // When true, the local player's GLB collision uses the single
+    // actor-triangle solver instead of the legacy capsule/body/emergency
+    // pipeline. Hot-reloadable so it can be enabled for testing and reverted
+    // without a rebuild.
+    bool actorTriangleSolver() const { return mActorTriangleSolver; }
+
 private:
     CollisionConfig();
 
@@ -45,6 +51,7 @@ private:
     float mBounceCooldown = 0.05f;
     float mBounceMinPush = 0.1f;
     bool mBodyMeshCollision = true;
+    bool mActorTriangleSolver = false;
 
     std::string mPath;
     std::filesystem::file_time_type mLastWrite{};

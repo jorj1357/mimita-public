@@ -67,6 +67,11 @@ bool loadActorWeaponTriangles(const char* glbPath, std::vector<CollisionTriangle
 // true when triangles are available.
 bool ensureActorWeaponColliderMesh(Player& player, const char* glbPath);
 
+// Populate the weapon collider mesh from the player's equipped weapon model.
+// Returns false when there is no equipped weapon or the weapon world transform
+// is the unset identity placeholder.
+bool ensureActorWeaponColliderMeshFromEquipped(Player& player);
+
 // Populate the player's body-part collision triangles (skeleton + colliders)
 // with no GL when the actor has none. Returns true when parts are available.
 bool ensureActorBodyCollisionMesh(Player& player, const char* glbPath);

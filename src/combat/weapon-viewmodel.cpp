@@ -15,7 +15,9 @@
 
 #include "camera.h"
 #include "config.h"
+#include "config/collision-config.h"
 #include "config/size-scaling-config.h"
+#include "physics/movement/actor-collision-mesh.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
@@ -203,6 +205,13 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         modelPath = def->modelPath;
 
     loadModel(modelPath);
+
+    // Expose the weapon render-mesh triangles through the one shared CPU-only
+    // actor loader, so the actor-triangle collision owner can consume the same
+    // geometry the renderer draws. Gated by the existing mesh-collision switch
+    // and idempotent per path; the legacy sphere/capsule path is unchanged.
+    if (!modelPath.empty() && CollisionConfig::instance().bodyMeshCollision())
+        ensureActorWeaponColliderMesh(player, modelPath.c_str());
 
     // Resolve tint: viewmodel config overrides weapon definition
     mTint = glm::vec3(1.0f);

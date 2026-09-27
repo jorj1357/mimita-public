@@ -672,3 +672,52 @@ completed successfully; active MiMITA processes were left running.
 
 Pending. Fire at a world target in physical aim mode and confirm the normal
 hitmarker appears at the world-projected crosshair rather than screen center.
+
+## Cold-build occurrence 11
+
+UTC time: 2026-09-27T21:41:58Z
+
+Related changelog:
+`docs/changelog/2026-09-27/20260927_214339-canonical-contact-stage-a.md`
+
+### Why the cold build was required
+
+Stage A changes a widely included C++ header (`movement-types.h`), a combat
+translation unit (`weapon-viewmodel.cpp`), and several collision translation
+units. A canonical build was required to compile the changed C++ and verify the
+executable link.
+
+### Exact cold source / boundary
+
+- `src/physics/movement/movement-types.h` — canonical contact fields.
+- `src/physics/movement/physics-collision.{h}` and
+  `physics-collision-core.cpp` — adapters.
+- `src/physics/movement/physics-collision-glb-body.cpp` — producer.
+- `src/combat/weapon-viewmodel.cpp` — local-player weapon mesh loader call.
+- `src/game/game-cli.cpp` — `--canonical-contact-selftest`.
+
+### Result needed from the new executable
+
+The new canonical-contact selftest must compile and run, and the existing
+collision self-tests must remain green with identical final positions/velocities.
+
+### Why it could not be applied through the live path
+
+The change is C++ in cold collision/combat translation units; the running
+process uses the existing executable and the collision system is not behind the
+replaceable module boundary.
+
+### Smallest change that would make this hot
+
+Move the collision contact vocabulary and producer call graph behind the
+replaceable gameplay-module boundary with a stable exported ABI.
+
+### Build result
+
+`SUCCESS` on 2026-09-27. `mimita.exe` linked; `python build.py build-only` then
+reported `Nothing changed`.
+
+### Human review
+
+Pending. No default behavior changed; human review is needed once the opt-in
+`actorTriangleSolver` path is enabled.

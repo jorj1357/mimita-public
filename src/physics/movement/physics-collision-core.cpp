@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 #include <cmath>
 #include <limits>
@@ -57,6 +58,87 @@ void recoverInvalidPlayerCollisionState(Player& p, const glm::vec3& frameStart, 
 static uint32_t movementSurfaceIdFromTriangle(int triangleIndex)
 {
     return triangleIndex >= 0 ? static_cast<uint32_t>(triangleIndex + 1) : 0;
+}
+
+MovementSubshape movementSubshapeFromLabel(const char* label)
+{
+    if (!label || !*label)
+        return MovementSubshape::Unknown;
+
+    if (std::strcmp(label, "head") == 0)     return MovementSubshape::Head;
+    if (std::strcmp(label, "torso") == 0)    return MovementSubshape::Torso;
+    if (std::strcmp(label, "leftArm") == 0)  return MovementSubshape::LeftArm;
+    if (std::strcmp(label, "rightArm") == 0) return MovementSubshape::RightArm;
+    if (std::strcmp(label, "leftLeg") == 0)  return MovementSubshape::LeftLeg;
+    if (std::strcmp(label, "rightLeg") == 0) return MovementSubshape::RightLeg;
+    if (std::strcmp(label, "weapon") == 0)   return MovementSubshape::Weapon;
+    if (std::strcmp(label, "glb-recovery") == 0 ||
+        std::strcmp(label, "recovery") == 0 ||
+        std::strncmp(label, "Player_Capsule", 14) == 0)
+        return MovementSubshape::RootCapsule;
+
+    return MovementSubshape::Unknown;
+}
+
+MovementContact movementContactFromRecoveryContact(
+    const RecoveryContact& recovery,
+    MovementContactKind kind,
+    MovementContactSource source,
+    MovementShapeKind shapeKind,
+    uint64_t simulationTick,
+    MovementLifecycleIdentity targetLifecycle,
+    uint32_t materialId)
+{
+    MovementContact contact;
+    contact.kind = kind;
+    contact.source = source;
+    contact.shapeKind = shapeKind;
+    contact.subshape = movementSubshapeFromLabel(recovery.label);
+    contact.targetLifecycle = targetLifecycle;
+    contact.surfaceId = movementSurfaceIdFromTriangle(recovery.triangleIndex);
+    contact.materialId = materialId;
+    contact.simulationTick = simulationTick;
+    contact.point = isFiniteVec3(recovery.point) ? recovery.point : glm::vec3(0.0f);
+    contact.normal = isFiniteVec3(recovery.normal) ? recovery.normal
+                                                   : glm::vec3(0.0f, 0.0f, 1.0f);
+    contact.sweepVelocity = isFiniteVec3(recovery.sweepDelta) ? recovery.sweepDelta
+                                                              : glm::vec3(0.0f);
+    contact.penetrationDepth = recovery.penetration;
+    contact.strength = recovery.penetration;
+    contact.resetsAbilities = true;
+    return contact;
+}
+
+MovementContact movementContactFromSweepHit(
+    const SweepHit& hit,
+    MovementContactKind kind,
+    MovementContactSource source,
+    MovementShapeKind shapeKind,
+    uint64_t simulationTick,
+    MovementLifecycleIdentity targetLifecycle,
+    const glm::vec3& sweepVelocity,
+    const glm::vec3& surfaceVelocity,
+    uint32_t materialId)
+{
+    MovementContact contact;
+    contact.kind = kind;
+    contact.source = source;
+    contact.shapeKind = shapeKind;
+    contact.subshape = movementSubshapeFromLabel(hit.colliderName.c_str());
+    contact.targetLifecycle = targetLifecycle;
+    contact.surfaceId = movementSurfaceIdFromTriangle(hit.triangleIndex);
+    contact.materialId = materialId;
+    contact.simulationTick = simulationTick;
+    contact.point = isFiniteVec3(hit.point) ? hit.point : glm::vec3(0.0f);
+    contact.normal = isFiniteVec3(hit.normal) ? hit.normal
+                                              : glm::vec3(0.0f, 0.0f, 1.0f);
+    contact.sweepVelocity = isFiniteVec3(sweepVelocity) ? sweepVelocity
+                                                        : glm::vec3(0.0f);
+    contact.surfaceVelocity = isFiniteVec3(surfaceVelocity) ? surfaceVelocity
+                                                            : glm::vec3(0.0f);
+    contact.penetrationDepth = 0.0f;
+    contact.resetsAbilities = true;
+    return contact;
 }
 
 MovementContactKind classifyCollisionMovementContactKind(const glm::vec3& normal,

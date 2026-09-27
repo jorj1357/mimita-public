@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -28,6 +29,7 @@
 #include "map/map-loader-collision.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "effects/effect-part.h"
 
 namespace {
 
@@ -70,6 +72,23 @@ void mergeContactsByNormal(const std::vector<RecoveryContact>& contacts,
         if (!found)
             merged.push_back(c);
     }
+}
+
+// Lowest point of the actor's DESIRED pose (not the swept union), used to tell
+// foot ground from a limb resting on a ledge.
+float desiredLowestZ(const std::vector<ActorCollisionMesh>& meshes)
+{
+    float lowest = std::numeric_limits<float>::max();
+    for (const ActorCollisionMesh& m : meshes)
+    {
+        if (!m.localTriangles)
+            continue;
+        for (const CollisionTriangle& t : *m.localTriangles)
+            for (const glm::vec3& v : {t.a, t.b, t.c})
+                lowest = std::min(lowest,
+                    glm::vec3(m.desiredTransform * glm::vec4(v, 1.0f)).z);
+    }
+    return lowest;
 }
 
 } // namespace
@@ -137,7 +156,9 @@ bool solveActorTriangleCollision(
         float iterMaxPen = 0.0f;
         for (const RecoveryContact& c : contacts)
             iterMaxPen = std::max(iterMaxPen, c.penetration);
-        result.maxPenetration = std::max(result.maxPenetration, iterMaxPen);
+        // Report the residual of the latest iteration, not the peak: it is the
+        // penetration the actor is left with after correction.
+        result.maxPenetration = iterMaxPen;
 
         allContacts.insert(allContacts.end(), contacts.begin(), contacts.end());
 
@@ -185,12 +206,11 @@ bool solveActorTriangleCollision(
         });
 
     // Grounding comes from the actor's own geometry: the lowest point of the
-    // pose box. A walkable normal whose contact is near that lowest point is
+    // desired pose. A walkable normal whose contact is near that lowest point is
     // ground; a walkable contact high on the body (a hand on a ledge) is not.
     const std::vector<ActorCollisionMesh> finalMeshes =
         collectActorCollisionMeshes(player);
-    const AABB finalPoseBox = makeSweptActorMeshAABB(finalMeshes, glm::vec3(0.0f));
-    const float lowestZ = finalPoseBox.min.z;
+    const float lowestZ = desiredLowestZ(finalMeshes);
 
     for (const RecoveryContact& c : manifold)
     {
@@ -224,8 +244,11 @@ bool solveActorTriangleCollision(
         }
 
         // One response per distinct surface. The body/weapon part velocity is
-        // passed so a moving limb or weapon pushes the whole body.
-        respondVelocityAgainstNormal(player, c.normal, c.sweepDelta, true, c.penetration);
+        // passed so a moving limb or weapon pushes the whole body. The contact
+        // identity is passed so a duplicate of the same contact is deduped
+        // instead of relying on a global cooldown.
+        respondVelocityAgainstNormal(player, c.normal, c.sweepDelta, true,
+                                     c.penetration, c.label, c.triangleIndex);
 
         // Sliding: strip the blocked component from the intended move.
         const float vn = glm::dot(result.remainingMovement, c.normal);
@@ -235,6 +258,58 @@ bool solveActorTriangleCollision(
 
     result.correctedPos = player.pos;
     commitActorCollisionMeshes(player);
+    return true;
+}
+
+bool runActorTriangleCollisionStep(
+    Player& player,
+    const World& world,
+    bool& groundedThisFrame,
+    float dt)
+{
+    if (world.collisionMesh.triangles.empty())
+        return false;
+    // Without body triangles the solver has no geometry; let the legacy path
+    // handle this actor instead of freezing it.
+    if (player.physicalBody.parts.empty())
+        return false;
+
+    glm::vec3 totalMove = (player.vel + player.externalImpulse) * dt;
+    const float maxZStep = PLAYER_RADIUS;
+    if (totalMove.z < -maxZStep)
+        totalMove.z = -maxZStep;
+
+    // Keep the weapon collider mesh in sync with the equipped weapon.
+    ensureActorWeaponColliderMeshFromEquipped(player);
+
+    // Apply the desired pose: previous = safe, world = desired.
+    player.pos += totalMove;
+    player.updateModelWorldTransforms();
+
+    ActorTriangleCollisionResult result;
+    solveActorTriangleCollision(player, world, totalMove, result);
+
+    if (result.grounded)
+        groundedThisFrame = true;
+
+    // Body-contact spark: same boundary as the legacy body phase, fed by the
+    // solver's final contact point. The weapon label does not spawn a body spark.
+    if (player.bodySparkTick != player.movementSimulationTick)
+    {
+        for (const ActorWorldContact& c : result.contacts)
+        {
+            if (c.actorPart && std::strcmp(c.actorPart, "weapon") == 0)
+                continue;
+            EffectPart* spawned = EffectPartSystem::instance()
+                .spawnBodyContactSpark(player.pos, c.point, player.vel, 0.1f);
+            if (spawned)
+            {
+                player.bodySparkTick = player.movementSimulationTick;
+                break;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -278,6 +353,28 @@ World makeCornerWorld()
 {
     World w = makeFloorWorld();
     addQuad(w, {0.5f,-2,0}, {0.5f,-2,4}, {0.5f,2,4}, {0.5f,2,0});
+    buildCollisionChunks(w, nullptr);
+    return w;
+}
+
+void buildBoxTriangles(std::vector<CollisionTriangle>& out,
+                       glm::vec3 center, glm::vec3 half);
+
+World makeGiantWallWorld(float x)
+{
+    World w;
+    addQuad(w, {x,-40,0}, {x,-40,80}, {x,40,80}, {x,40,0});  // normal (-1,0,0)
+    buildCollisionChunks(w, nullptr);
+    return w;
+}
+
+World makeCrateWorld()
+{
+    World w = makeFloorWorld();
+    std::vector<CollisionTriangle> box;
+    buildBoxTriangles(box, glm::vec3(1.0f, 0.0f, 0.5f), glm::vec3(0.5f, 0.5f, 0.5f));
+    w.collisionMesh.triangles.insert(w.collisionMesh.triangles.end(),
+                                     box.begin(), box.end());
     buildCollisionChunks(w, nullptr);
     return w;
 }
@@ -428,6 +525,134 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
             if (c.normal.x < -0.5f) side = true;
         }
         check(up && side, "corner produces floor and wall contacts at once");
+    }
+
+    // 5. Giant wall 30 m away: no contact, no false positive.
+    {
+        World world = makeGiantWallWorld(30.0f);
+        Player p(false);
+        setupBoxActor(p, glm::vec3(-0.5f, 0.0f, -0.5f), 0.4f, 0.5f);
+        const glm::vec3 move(0.5f, 0.0f, 0.0f);
+        p.pos += move;
+        p.updateModelWorldTransforms();
+
+        ActorTriangleCollisionResult r;
+        solveActorTriangleCollision(p, world, move, r);
+        check(r.contacts.empty(), "giant wall 30m away produces no contact");
+    }
+
+    // 6. Deeply embedded actor is depenetrated and grounded.
+    {
+        World world = makeFloorWorld();
+        Player p(false);
+        setupBoxActor(p, glm::vec3(0.0f, 0.0f, -0.5f), 0.4f, 0.5f);  // bottom 0.5 in floor
+        const glm::vec3 move(0.0f, 0.0f, 0.0f);
+        p.updateModelWorldTransforms();
+
+        ActorTriangleCollisionResult r;
+        solveActorTriangleCollision(p, world, move, r);
+        check(r.grounded, "deeply embedded actor grounds");
+        check(r.correctedPos.z > -0.05f, "deeply embedded actor is depenetrated");
+        check(r.maxPenetration <= 0.05f, "embedded penetration is resolved");
+    }
+
+    // 7. Crate blocks the actor.
+    {
+        World world = makeCrateWorld();
+        Player p(false);
+        setupBoxActor(p, glm::vec3(-0.5f, 0.0f, 0.01f), 0.4f, 0.5f);  // right face -0.1
+        const glm::vec3 move(1.2f, 0.0f, 0.0f);
+        p.pos += move;
+        p.updateModelWorldTransforms();
+
+        ActorTriangleCollisionResult r;
+        solveActorTriangleCollision(p, world, move, r);
+        bool crateHit = false;
+        for (const ActorWorldContact& c : r.contacts)
+            if (c.normal.x < -0.5f) crateHit = true;
+        check(crateHit, "crate produces a blocking contact");
+        check(r.correctedPos.x <= 0.15f, "actor stops at the crate");
+    }
+
+    // 8. Thin-wall crossing at high speed must not tunnel.
+    {
+        World world = makeWallWorld();
+        Player p(false);
+        setupBoxActor(p, glm::vec3(-1.0f, 0.0f, -0.5f), 0.4f, 0.5f);
+        const glm::vec3 move(3.0f, 0.0f, 0.0f);   // desired pose fully past the wall
+        p.pos += move;
+        p.updateModelWorldTransforms();
+
+        ActorTriangleCollisionResult r;
+        solveActorTriangleCollision(p, world, move, r);
+        bool wallHit = false;
+        for (const ActorWorldContact& c : r.contacts)
+            if (c.normal.x < -0.5f) wallHit = true;
+        check(wallHit, "high-speed actor detects a thin wall crossing");
+        check(r.correctedPos.x <= 0.15f, "high-speed actor does not tunnel through");
+    }
+
+    // 9. Weapon render-mesh triangles collide through the same solver.
+    {
+        World world = makeWallWorld();
+        Player p(false);
+        setupBoxActor(p, glm::vec3(-3.0f, 0.0f, 2.0f), 0.2f, 0.2f);  // body clear of wall
+        p.weaponColliderMesh.clear();
+        buildBoxTriangles(p.weaponColliderMesh, glm::vec3(0.0f), glm::vec3(0.1f));
+        p.weaponColliderMeshPath = "test-weapon";
+        const glm::mat4 wSafe = glm::translate(glm::mat4(1.0f), glm::vec3(0.2f, 0.0f, 0.5f));
+        p.weaponModelTransform = wSafe;
+        p.previousWeaponModelTransform = wSafe;
+
+        p.pos += glm::vec3(1.0f, 0.0f, 0.0f);
+        p.updateModelWorldTransforms();
+        p.weaponModelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(1.2f, 0.0f, 0.5f));
+
+        ActorTriangleCollisionResult r;
+        solveActorTriangleCollision(p, world, glm::vec3(1.0f, 0.0f, 0.0f), r);
+        bool weaponHit = false;
+        for (const ActorWorldContact& c : r.contacts)
+            if (c.actorPart && std::strcmp(c.actorPart, "weapon") == 0) weaponHit = true;
+        check(weaponHit, "weapon render-mesh triangles produce a contact");
+    }
+
+    // 10. 200 m/s impact: tangential momentum preserved, normal reflected by
+    // restitution, and velocity never zeroed by the collision.
+    {
+        World world = makeWallWorld();
+        Player p(false);
+        setupBoxActor(p, glm::vec3(-0.5f, 0.0f, -0.5f), 0.4f, 0.5f);
+        p.collision.bounceCooldown = 0.0f;
+        p.vel = glm::vec3(200.0f, 120.0f, 0.0f);
+        const glm::vec3 move(0.8f, 0.0f, 0.0f);
+        p.pos += move;
+        p.updateModelWorldTransforms();
+
+        ActorTriangleCollisionResult r;
+        solveActorTriangleCollision(p, world, move, r);
+        check(p.vel.x < 0.0f, "200 m/s normal momentum is reflected");
+        check(std::fabs(p.vel.y - 120.0f) < 0.5f, "200 m/s tangential momentum is preserved");
+        check(glm::length(p.vel) > 1.0f, "200 m/s impact does not zero velocity");
+    }
+
+    // 11. Active-path wrapper: a falling actor lands and grounds through
+    // runActorTriangleCollisionStep, the function the opt-in pipeline calls.
+    {
+        World world = makeFloorWorld();
+        Player p(false);
+        setupBoxActor(p, glm::vec3(0.0f, 0.0f, 2.0f), 0.4f, 0.5f);
+        p.dash.dashAvailable = true;
+
+        bool grounded = false;
+        constexpr float dt = 1.0f / 60.0f;
+        for (int i = 0; i < 240 && !grounded; ++i)
+        {
+            p.vel.z -= 58.0f * dt;   // gravity
+            grounded = false;
+            runActorTriangleCollisionStep(p, world, grounded, dt);
+        }
+        check(grounded, "active-path wrapper lands and grounds");
+        check(p.pos.z > -0.05f, "active-path wrapper does not sink through the floor");
     }
 
     if (outSummary)
