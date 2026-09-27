@@ -74,6 +74,8 @@ struct NpcDifficultySettings {
     bool wallBacktrackEnabled = true;
     float wallBacktrackDistance = 5.0f;
     float wallBacktrackDuration = 2.5f;
+    bool wallGroundSupportRequired = true;
+    float wallGroundProbeDepth = 4.0f;
 
     // Force a specific weapon. When non-empty, NPCs always use this weapon
     // and ignore distance-based switching. Set to a weapon id to test it.

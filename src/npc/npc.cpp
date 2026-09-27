@@ -342,7 +342,8 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
         npc.facingModeTimer -= dt;
     }
 
-    if (npc.facingTargetMode && npc.sensors.hasTarget)
+    const bool targetVisible = npc.sensors.hasTarget && !npc.cachedLoSBlocked;
+    if (npc.facingTargetMode && targetVisible)
     {
         // Aim mode: face the target so the model turns smoothly at the player
         // no matter how it is moving. The arcade aim error is applied to the
@@ -358,7 +359,7 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
         // Move mode (or no target while moving): face travel direction.
         desiredFwd = safePlanarNormal(moveDir, {1.0f, 0.0f, 0.0f});
     }
-    else if (npc.sensors.hasTarget)
+    else if (targetVisible)
     {
         // Not moving: look at the target rather than snapping to +X.
         glm::vec3 npcEye = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.8f);

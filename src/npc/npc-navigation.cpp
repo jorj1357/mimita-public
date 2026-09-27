@@ -48,6 +48,44 @@ static bool rayHitsAny(glm::vec3 origin, glm::vec3 dir, float maxDist,
     return hit;
 }
 
+static bool hasGroundSupport(const Npc& npc, glm::vec3 moveDir,
+                             const World& world, float probeDistance,
+                             float probeDepth, const std::vector<int>& candidates)
+{
+    if (!npc.body.ground.onGround)
+        return true; // Air movement may intentionally cross a gap.
+
+    moveDir.z = 0.0f;
+    const float len = glm::length(moveDir);
+    if (len < 0.001f)
+        return true;
+    moveDir /= len;
+
+    const Capsule capsule = npc.body.getCapsule();
+    const glm::vec3 probePos = npc.body.pos + moveDir * probeDistance;
+    const glm::vec3 origin = probePos + glm::vec3(0.0f, 0.0f, 1.0f);
+    const glm::vec3 down(0.0f, 0.0f, -1.0f);
+    float bestZ = -1e6f;
+
+    for (int ti : candidates)
+    {
+        if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size())
+            continue;
+        float hitT = 0.0f;
+        if (rayTriangleIntersect(origin, down, world.collisionMesh.triangles[ti],
+                                 probeDepth + 1.0f, hitT))
+            bestZ = std::max(bestZ, origin.z - hitT);
+    }
+
+    // Keep the probe tied to the actor's real capsule width. A floor directly
+    // under only the center point is not enough if the NPC would hang off an
+    // edge with its body radius unsupported.
+    if (bestZ <= -1e5f)
+        return false;
+    const float feetZ = npc.body.pos.z - (capsule.b.z - capsule.a.z) * 0.5f - capsule.r;
+    return bestZ >= feetZ - probeDepth;
+}
+
 } // anonymous namespace
 
 bool NpcNavigation::rayTriangle(const glm::vec3& origin, const glm::vec3& dir,
@@ -118,7 +156,11 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
         return desiredDir;
 
     const float checkDist = cfg.wallCastDistance;
-    if (!rayHitsAny(origin, desiredDir, checkDist, candidates, world))
+    const bool forwardBlocked = rayHitsAny(origin, desiredDir, checkDist, candidates, world);
+    const bool forwardUnsupported = cfg.wallGroundSupportRequired &&
+        !hasGroundSupport(npc, desiredDir, world, checkDist,
+                          cfg.wallGroundProbeDepth, candidates);
+    if (!forwardBlocked && !forwardUnsupported)
         return desiredDir;
 
     // Search the closest useful escape direction first. This keeps the NPC
@@ -142,9 +184,14 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
         if (glm::length(altDir) < 0.001f)
             continue;
         float hitDistance = cfg.wallSearchDistance;
-        if (!rayHitsAny(origin, altDir, cfg.wallSearchDistance, candidates, world, &hitDistance))
+        const bool blocked = rayHitsAny(origin, altDir, cfg.wallSearchDistance,
+                                        candidates, world, &hitDistance);
+        const bool unsupported = cfg.wallGroundSupportRequired &&
+            !hasGroundSupport(npc, altDir, world, cfg.wallSearchDistance,
+                              cfg.wallGroundProbeDepth, candidates);
+        if (!blocked && !unsupported)
             return glm::normalize(altDir);
-        if (hitDistance > bestClearance)
+        if (!unsupported && hitDistance > bestClearance)
         {
             bestClearance = hitDistance;
             bestDir = glm::normalize(altDir);
@@ -161,7 +208,9 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
 {
     static thread_local std::vector<int> candidates;
     candidates.clear();
-    gatherNear(world, npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f), 2.5f, candidates);
+    const auto& cfg = NpcDifficultyConfig::instance().settings();
+    gatherNear(world, npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f),
+               std::max(2.5f, cfg.wallSearchDistance + 0.5f), candidates);
     return wallAvoidDirection(npc, desiredDir, world, candidates);
 }
 

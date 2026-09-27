@@ -1,7 +1,7 @@
 # Task
 
 - Task ID: NPC wall recovery
-- Summary: Make NPC local wall avoidance try side, diagonal, and backward directions, then backtrack and replan when the current route is blocked.
+- Summary: Make NPC local wall avoidance replan around walls, backtrack when needed, face targets only through clear line-of-sight, and reject unsupported ground directions.
 - Status: PASS_WITH_HUMAN_REVIEW
 - Date, time, timezone: 2026-09-27T19:38:06Z, display America/New_York 2026-09-27 15:38:06 EDT
 - Branch: afad20a-rebuild
@@ -15,7 +15,7 @@
 
 # Requested behavior
 
-When an NPC is moving into a wall, it should look for a nearby valid direction, including backing up, instead of continuing into the wall.
+When an NPC is moving into a wall, it should look for a nearby valid direction, including backing up, instead of continuing into the wall. It should not face a target through a wall or walk over an unsupported edge.
 
 # Specification alignment
 
@@ -56,6 +56,12 @@ When an NPC is moving into a wall, it should look for a nearby valid direction, 
 - New behavior: gather at least 3m or the configured wall search distance plus 0.5m.
 - Reason: configured searches must have enough nearby triangles available.
 
+## Additional navigation and facing changes
+
+- `src/npc/npc-navigation.cpp`: grounded candidate directions now require supporting ground within the configured probe depth; unsupported edge directions are rejected.
+- `src/npc/npc.cpp`: target-facing now requires clear cached line-of-sight, and blocked route directions trigger repathing/backtracking.
+- `config/npc-difficulty.json` and `NpcDifficultySettings`: added `wallGroundSupportRequired` and `wallGroundProbeDepth`.
+
 # Diagnostics
 
 - Owner/category: NPC navigation / NPC movement.
@@ -69,14 +75,14 @@ When an NPC is moving into a wall, it should look for a nearby valid direction, 
 
 - Focused skill paths and results: `docs/skills/spec-behavior-review-v1.md` — PASS_WITH_HUMAN_REVIEW; `docs/skills/efficiency-checker-v1.md` — reviewed cached local candidate reuse and fixed-tick execution.
 - Tests and exact commands: `python devscripts/run-npc-combat-tests.py` — PASS; `git diff --check` — PASS.
-- Build status: an earlier build passed before the backtrack change; the later full build was blocked by the unrelated pre-existing `src/gui/menus/pause-menu.cpp:197` error (`Terminal` has not been declared). No NPC-file compile error was reported.
+- Build status: `python build.py build-only` — BUILD SUCCESS after the final changes; compiled 12 files and linked `mimita.exe`.
 - Runtime or hot-reload evidence: source/config/build evidence only; no live gameplay or hot-reload observation performed.
 - Output files: `build/mimita.exe` and staged runtime DLLs produced by the canonical build.
 
 # Measured evidence
 
 - Before values: wall check was hardcoded to 1.5m; local navigation gather was fixed at 3m.
-- After values: defaults are `wallCastDistance=1.5` and `wallSearchDistance=3.0`; values are clamped during load.
+- After values: defaults are `wallCastDistance=1.5`, `wallSearchDistance=3.0`, and `wallGroundProbeDepth=4.0`; values are clamped during load.
 - Timestamps: build completed 2026-09-27T19:38:06Z or earlier.
 - Tick/frame/network measurements: not collected.
 
@@ -91,7 +97,7 @@ When an NPC is moving into a wall, it should look for a nearby valid direction, 
 - Visual review: not performed.
 - Gameplay review: still required in a map with NPCs facing walls and corners.
 - Multiplayer review: not performed.
-- Still unverified: live doorway/wall gameplay; whether ray-based local choices match the full NPC capsule clearance in every wall/corner case; whether the new behavior feels good.
+- Still unverified: live doorway/wall gameplay; whether ray-based local choices match the full NPC capsule clearance in every wall/corner case; whether the ground probe fits every map edge and drop; whether the new behavior feels good.
 
 # Related feature record
 

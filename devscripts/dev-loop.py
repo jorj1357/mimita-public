@@ -48,8 +48,6 @@ POLL_SECONDS = 0.15
 DEBOUNCE_SECONDS = 0.30
 KEEP_BUILDS = 5
 RAINBOW_SECONDS = 5.0
-SERVER_RETRY_DELAY = 1.5
-MAX_SERVER_RETRIES = 3
 RUNTIME_DLLS = (
     "libgcc_s_seh-1.dll",
     "libstdc++-6.dll",
@@ -182,9 +180,48 @@ def find_ccache() -> str | None:
     return found
 
 
+def existing_dev_loop_pids() -> list[int]:
+    """Find other dev-loop processes for this exact checkout on Windows."""
+    if os.name != "nt":
+        return []
+    script_text = str(Path(__file__).resolve()).replace("/", "\\").lower()
+    try:
+        result = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-Command",
+                "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" "
+                "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    pids = []
+    for line in result.stdout.splitlines():
+        try:
+            pid_text, command_line = line.split("\t", 1)
+            pid = int(pid_text.strip())
+        except (ValueError, TypeError):
+            continue
+        if pid != os.getpid() and script_text in command_line.replace("/", "\\").lower():
+            pids.append(pid)
+    return pids
+
+
 def acquire_dev_loop_lock() -> int:
     """Allow exactly one dev-loop daemon for this checkout."""
     DEV_ROOT.mkdir(parents=True, exist_ok=True)
+    existing = existing_dev_loop_pids()
+    if existing:
+        joined = ", ".join(str(pid) for pid in existing)
+        raise SystemExit(
+            f"[DEV] another dev-loop is already running for this checkout "
+            f"(PID {joined}); close it before starting a new one"
+        )
     try:
         descriptor = os.open(
             str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY
@@ -325,9 +362,6 @@ class DevLoop:
         self.last_status_line = None
         self.room_file_path: Path | None = None
         self.room_code = None
-        self.server_retry_count = 0
-        self.next_auto_launch_at = 0.0
-        self.fallback_client = False
         self.status_visible = False
         self.status_line_count = 0
 
@@ -465,7 +499,6 @@ class DevLoop:
             return
 
         self.stop_processes()
-        self.fallback_client = False
         server_bind = self.profile.get("server_bind", "0.0.0.0:1357")
         map_name = select_dev_map(self.profile)
         print(f"[DEV] selected allowed map: {map_name}")
@@ -534,8 +567,6 @@ class DevLoop:
             return
 
         self.room_code = room_code
-        self.server_retry_count = 0
-        self.fallback_client = False
         print(f"[DEV] ROOM CODE: {room_code}")
 
         client_args = [
@@ -572,28 +603,6 @@ class DevLoop:
         self.running_build = None
         self.cleanup_room_file()
 
-    def launch_fallback_client(self) -> None:
-        """Keep one visible MiMITA process alive when the server binary crashes."""
-        if self.fallback_client:
-            return
-        if self.latest_build is None:
-            return
-        exe = BUILD_ROOT / f"{self.latest_build:04d}" / "mimita.exe"
-        if not exe.is_file():
-            return
-        print("[DEV] server retries exhausted; launching one fallback MiMITA client")
-        client = subprocess.Popen(
-            [str(exe)],
-            cwd=ROOT,
-            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
-        )
-        self.processes = [client]
-        self.running_build = self.latest_build
-        self.fallback_client = True
-        self.last_message = "fallback client running; server startup failed"
-        self.save_state("fallback_client")
-        self.print_status()
-
     def maintain_process(self) -> None:
         live = [process for process in self.processes if process.poll() is None]
         self.processes = live
@@ -612,19 +621,11 @@ class DevLoop:
                     self.save_state("stale_waiting")
                     self.print_status(force=True)
             return
-        now = time.monotonic()
-        if now < self.next_auto_launch_at:
-            return
-        if self.server_retry_count < MAX_SERVER_RETRIES:
-            self.server_retry_count += 1
-            print(
-                f"[DEV] no MiMITA process is running; automatic server retry "
-                f"{self.server_retry_count}/{MAX_SERVER_RETRIES}"
-            )
-            self.next_auto_launch_at = now + SERVER_RETRY_DELAY
-            self.launch_latest()
-        else:
-            self.launch_fallback_client()
+        message = "no MiMITA process running; press [1] to launch one server/client pair"
+        if self.last_message != message:
+            self.last_message = message
+            self.save_state("stopped_waiting")
+            self.print_status(force=True)
 
     def cleanup_room_file(self) -> None:
         if self.room_file_path is not None:

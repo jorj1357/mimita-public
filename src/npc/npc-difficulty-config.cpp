@@ -147,6 +147,8 @@ bool NpcDifficultyConfig::load(const std::string& path)
         next.wallBacktrackEnabled = optBool(root, "wallBacktrackEnabled", next.wallBacktrackEnabled);
         next.wallBacktrackDistance = std::clamp(optFloat(root, "wallBacktrackDistance", next.wallBacktrackDistance), 0.5f, 12.0f);
         next.wallBacktrackDuration = std::clamp(optFloat(root, "wallBacktrackDuration", next.wallBacktrackDuration), 0.25f, 6.0f);
+        next.wallGroundSupportRequired = optBool(root, "wallGroundSupportRequired", next.wallGroundSupportRequired);
+        next.wallGroundProbeDepth = std::clamp(optFloat(root, "wallGroundProbeDepth", next.wallGroundProbeDepth), 0.5f, 20.0f);
 
         // Force weapon mode
         next.forceWeapon = optString(root, "forceWeapon", next.forceWeapon);
@@ -284,6 +286,8 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["wallBacktrackEnabled"] = mData.wallBacktrackEnabled;
     j["wallBacktrackDistance"] = mData.wallBacktrackDistance;
     j["wallBacktrackDuration"] = mData.wallBacktrackDuration;
+    j["wallGroundSupportRequired"] = mData.wallGroundSupportRequired;
+    j["wallGroundProbeDepth"] = mData.wallGroundProbeDepth;
     j["forceWeapon"] = mData.forceWeapon;
 
     j["mirrorMovementEnabled"] = mData.mirrorMovementEnabled;
