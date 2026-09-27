@@ -25,6 +25,9 @@ public:
     float bounceMinSpeed() const { return mBounceMinSpeed; }
     float bounceMaxSpeed() const { return mBounceMaxSpeed; }
     float bounceCooldown() const { return mBounceCooldown; }
+    // Minimum outward push for a valid body/weapon contact at very low speed,
+    // so a touching limb/tool still nudges the whole body.
+    float bounceMinPush() const { return mBounceMinPush; }
 
 private:
     CollisionConfig();
@@ -35,6 +38,7 @@ private:
     float mBounceMinSpeed = 7.0f;
     float mBounceMaxSpeed = 45.0f;
     float mBounceCooldown = 0.05f;
+    float mBounceMinPush = 0.1f;
 
     std::string mPath;
     std::filesystem::file_time_type mLastWrite{};

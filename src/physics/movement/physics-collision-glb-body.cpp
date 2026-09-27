@@ -81,6 +81,13 @@ static int runBodyWeaponPass(
             c.triangleIndex,
             bodyWeaponContactSource(c.label));
 
+        // TO-DELETE (2026-09-27): the pink body-contact spark is visual-only and
+        // the moving-limb bounce below now provides the real feedback. Remove
+        // this block, EffectPartSystem::spawnBodyContactSpark
+        // (effects/effect-part.cpp), its declaration (effects/effect-part.h),
+        // its render case (effects/effect-part-render.cpp: body_spark), and the
+        // config/hitfx.json bodyContactSpark block once the bounce is confirmed
+        // working in gameplay. Not deleted yet (nothing else depends on it).
         if (c.label && std::strcmp(c.label, "weapon") != 0 &&
             p.bodySparkTick != p.movementSimulationTick) {
             EffectPart* spawned = EffectPartSystem::instance().spawnBodyContactSpark(p.pos, c.point, p.vel, 0.1f);
@@ -134,7 +141,10 @@ static int runBodyWeaponPass(
     }
 
     if (pass == maxPasses - 1) {
-        for (const auto& pc : bodyPushContacts) respondVelocityAgainstNormal(p, pc.normal);
+        // Pass each contact's own swept part velocity so a moving arm/leg/weapon
+        // bounces the whole body even when the root is not moving into the wall.
+        for (const auto& pc : bodyPushContacts)
+            respondVelocityAgainstNormal(p, pc.normal, pc.sweepDelta);
     }
 
     auto t1 = std::chrono::steady_clock::now();

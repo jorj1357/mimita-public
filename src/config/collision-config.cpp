@@ -55,6 +55,7 @@ bool CollisionConfig::load(const std::string& path)
             mBounceMinSpeed = std::max(0.0f, b.value("minSpeed", 7.0f));
             mBounceMaxSpeed = std::max(mBounceMinSpeed, b.value("maxSpeed", 45.0f));
             mBounceCooldown = std::max(0.0f, b.value("cooldown", 0.05f));
+            mBounceMinPush = std::max(0.0f, b.value("minPush", 0.1f));
         }
         else
         {
@@ -67,9 +68,9 @@ bool CollisionConfig::load(const std::string& path)
 
         Debug::log(Debug::Category::Collision,
             "[COLLISION CONFIG] bounce enabled=%d strength=%.3f friction=%.2f "
-            "minSpeed=%.2f maxSpeed=%.2f cooldown=%.3f\n",
+            "minSpeed=%.2f maxSpeed=%.2f cooldown=%.3f minPush=%.3f\n",
             (int)mBounceEnabled, mBounceStrength, mBounceFriction,
-            mBounceMinSpeed, mBounceMaxSpeed, mBounceCooldown);
+            mBounceMinSpeed, mBounceMaxSpeed, mBounceCooldown, mBounceMinPush);
         return true;
     }
     catch (const std::exception& e)

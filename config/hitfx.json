@@ -365,6 +365,7 @@
     },
 
     "bodyContactSpark": {
+        "comment": "TO-DELETE (2026-09-27): pink body-contact spark. Visual-only legacy feedback superseded by the moving-limb collision bounce. Remove this whole block together with spawnBodyContactSpark and its render case once the bounce is confirmed in gameplay.",
         "enabled": true,
         "color": [1.0, 0.0, 0.5],
         "alpha": 1.0,

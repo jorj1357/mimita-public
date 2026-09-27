@@ -66,7 +66,15 @@ inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
     projectVelocityAgainstNormal(p, normal);
 }
 
-inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal)
+// Response against a surface. `partVelocity` is the swept motion of the body
+// part / weapon that produced the contact (RecoveryContact::sweepDelta); leave
+// it zero for root-capsule contacts. When a moving limb/weapon is the dominant
+// impact, it pushes the whole body outward even though the root velocity is not
+// moving into the surface (the "moving arm can't bounce" fix). The
+// non-zero/moving-into-surface `partVelocity` also enables the low-speed
+// minimum push; the root path is unchanged.
+inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
+                                         const glm::vec3& partVelocity = glm::vec3(0.0f))
 {
     const CollisionConfig& cfg = CollisionConfig::instance();
     glm::vec3* velocities[] =
@@ -84,8 +92,23 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal)
     float totalInto = 0.0f;
     for (glm::vec3* v : velocities)
         totalInto += std::max(0.0f, -glm::dot(*v, normal));
-    if (totalInto < cfg.bounceMinSpeed())
+
+    const float partInto = std::max(0.0f, -glm::dot(partVelocity, normal));
+    const float impact = std::max(totalInto, partInto);
+
+    if (impact < cfg.bounceMinSpeed())
     {
+        // A valid, very-low-speed body/weapon contact still nudges the whole
+        // body by the configured minimum instead of only sliding. Root contacts
+        // (partInto == 0) keep their old project-only behavior.
+        if (partInto > 0.0f && cfg.bounceMinPush() > 0.0f)
+        {
+            const float retention = 1.0f - cfg.bounceFriction();
+            const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);
+            p.vel = tangent * retention + normal * cfg.bounceMinPush();
+            p.collision.bounceCooldown = cfg.bounceCooldown();
+            return;
+        }
         projectVelocityAgainstNormal(p, normal);
         return;
     }
@@ -99,6 +122,15 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal)
             continue;
         glm::vec3 tangent = *v - normal * glm::dot(*v, normal);
         *v = tangent * retention + normal * (std::min(into, maxInto) * cfg.bounceStrength());
+    }
+
+    // Part-driven push: the moving limb/weapon is the dominant impact, so give
+    // the root body an outward velocity along the surface normal.
+    if (partInto > totalInto)
+    {
+        const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);
+        p.vel = tangent * retention +
+                normal * (std::min(partInto, maxInto) * cfg.bounceStrength());
     }
 
     p.collision.bounceCooldown = cfg.bounceCooldown();

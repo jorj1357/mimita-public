@@ -214,6 +214,56 @@ bool collisionStressSelfTest(std::string* outSummary)
         summary += "\n";
     }
 
+    // Direct response check for the moving-limb bounce (Phase A behavior): a
+    // body part whose own sweep moves into a wall must push the whole body
+    // outward even while the root velocity is still, and a very-low-speed part
+    // contact must still apply the minimum push.
+    {
+        const CollisionConfig& cc = CollisionConfig::instance();
+        if (cc.bounceEnabled() && cc.bounceStrength() > 0.0f)
+        {
+            const glm::vec3 wallNormal(1.0f, 0.0f, 0.0f);
+
+            Player partPlayer(false);
+            partPlayer.vel = glm::vec3(0.0f);
+            partPlayer.externalImpulse = glm::vec3(0.0f);
+            partPlayer.collision.bounceCooldown = 0.0f;
+            respondVelocityAgainstNormal(partPlayer, wallNormal,
+                                         glm::vec3(-2.0f, 0.0f, 0.0f));
+            const bool partBounce = partPlayer.vel.x > 0.01f;
+            ok = ok && partBounce;
+            summary += partBounce ? "PASS " : "FAIL ";
+            summary += "[COLLISION STRESS] moving limb bounces still root\n";
+
+            Player minPushPlayer(false);
+            minPushPlayer.vel = glm::vec3(0.0f);
+            minPushPlayer.externalImpulse = glm::vec3(0.0f);
+            minPushPlayer.collision.bounceCooldown = 0.0f;
+            respondVelocityAgainstNormal(minPushPlayer, wallNormal,
+                                         glm::vec3(-0.001f, 0.0f, 0.0f));
+            const bool minPush = minPushPlayer.vel.x > 0.0f;
+            ok = ok && minPush;
+            summary += minPush ? "PASS " : "FAIL ";
+            summary += "[COLLISION STRESS] low-speed limb contact min push\n";
+
+            // Root-only contacts keep the old behavior (no phantom push when
+            // nothing is moving into the surface).
+            Player stillPlayer(false);
+            stillPlayer.vel = glm::vec3(0.0f);
+            stillPlayer.externalImpulse = glm::vec3(0.0f);
+            stillPlayer.collision.bounceCooldown = 0.0f;
+            respondVelocityAgainstNormal(stillPlayer, wallNormal);
+            const bool still = glm::length(stillPlayer.vel) < 0.001f;
+            ok = ok && still;
+            summary += still ? "PASS " : "FAIL ";
+            summary += "[COLLISION STRESS] resting root contact adds no push\n";
+        }
+        else
+        {
+            summary += "SKIP [COLLISION STRESS] bounce disabled in config\n";
+        }
+    }
+
     if (outSummary)
         *outSummary = summary;
     return ok;
