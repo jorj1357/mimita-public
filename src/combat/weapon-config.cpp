@@ -69,7 +69,7 @@ void WeaponConfig::load() {
 
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
 
         for (auto it = root.begin(); it != root.end(); ++it) {
             const std::string& weaponId = it.key();

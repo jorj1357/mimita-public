@@ -49,7 +49,7 @@ bool RewardPopupConfig::load(const std::string& path)
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         RewardPopupConfigData d;
 
         auto readColor4 = [&](const char* key, glm::vec4& out) {

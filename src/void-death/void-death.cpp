@@ -32,7 +32,7 @@ static void reloadVoidDeathConfig()
     try
     {
         nlohmann::json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         VoidDeathConfig loaded;
         if (j.contains("enabled"))

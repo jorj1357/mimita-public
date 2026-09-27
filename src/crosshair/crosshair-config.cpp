@@ -68,7 +68,7 @@ bool CrosshairConfig::load(const std::string& path)
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         CrosshairSettings d;
         d.enabled = j.value("enabled", d.enabled);
         d.laserSight = j.value("laserSight", d.laserSight);

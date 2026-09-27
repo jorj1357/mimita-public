@@ -81,13 +81,6 @@ static int runBodyWeaponPass(
             c.triangleIndex,
             bodyWeaponContactSource(c.label));
 
-        // TO-DELETE (2026-09-27): the pink body-contact spark is visual-only and
-        // the moving-limb bounce below now provides the real feedback. Remove
-        // this block, EffectPartSystem::spawnBodyContactSpark
-        // (effects/effect-part.cpp), its declaration (effects/effect-part.h),
-        // its render case (effects/effect-part-render.cpp: body_spark), and the
-        // config/hitfx.json bodyContactSpark block once the bounce is confirmed
-        // working in gameplay. Not deleted yet (nothing else depends on it).
         if (c.label && std::strcmp(c.label, "weapon") != 0 &&
             p.bodySparkTick != p.movementSimulationTick) {
             EffectPart* spawned = EffectPartSystem::instance().spawnBodyContactSpark(p.pos, c.point, p.vel, 0.1f);
@@ -98,18 +91,28 @@ static int runBodyWeaponPass(
     if (bwContacts.empty())
         return (pass == 0) ? -1 : 0;
 
-    std::vector<RecoveryContact> walkableContacts, bodyPushContacts;
+    // Split body contacts into true foot-ground and push contacts. A walkable
+    // normal alone is NOT enough: an arm/torso/weapon resting on a shallow slope
+    // is not the ground under the feet. Only a walkable contact whose point is
+    // near the feet grounds the player; every other body contact pushes the body
+    // and is depenetrated below, so a limb can no longer jam inside a walkable
+    // slope while the root is still.
+    const Capsule groundCap = p.getCapsule();
+    const float feetZ = groundCap.a.z - groundCap.r;
+    std::vector<RecoveryContact> groundContacts, bodyPushContacts;
     for (const auto& c : bwContacts) {
-        if (c.normal.z > MAX_WALKABLE_SLOPE_DOT)
-            walkableContacts.push_back(c);
+        const bool walkable = c.normal.z > MAX_WALKABLE_SLOPE_DOT;
+        const bool nearFeet = c.point.z <= feetZ + 0.15f;
+        if (walkable && nearFeet)
+            groundContacts.push_back(c);
         else
             bodyPushContacts.push_back(c);
     }
 
-    // Walkable contacts: weapon contacts support player weight by default
-    for (const RecoveryContact& wc : walkableContacts) {
-        applyCollisionContact(p, groundedThisFrame, wc.normal, wc.point, wc.penetration, wc.triangleIndex, wc.label);
-        if (!groundedByWeapon && wc.label && std::strcmp(wc.label, "weapon") == 0) {
+    // Ground contacts support player weight by default
+    for (const RecoveryContact& gc : groundContacts) {
+        applyCollisionContact(p, groundedThisFrame, gc.normal, gc.point, gc.penetration, gc.triangleIndex, gc.label);
+        if (!groundedByWeapon && gc.label && std::strcmp(gc.label, "weapon") == 0) {
             groundedByWeapon = true;
             groundedThisFrame = true;
             if (p.vel.z < 0.0f) p.vel.z = 0.0f;
@@ -119,7 +122,9 @@ static int runBodyWeaponPass(
     // Root capsule contacts
     std::vector<RecoveryContact> bwRootContacts = collectCapsuleRecoveryContacts(world, rootCap, sharedCandidates);
 
-    // Solver: combine root + body push contacts
+    // Solver: combine root + ALL body push contacts (walkable-non-foot
+    // included), so a limb touching any surface depenetrates instead of staying
+    // embedded.
     std::vector<RecoveryContact> solverContacts;
     solverContacts.reserve(bwRootContacts.size() + bodyPushContacts.size());
     solverContacts.insert(solverContacts.end(), bwRootContacts.begin(), bwRootContacts.end());
@@ -141,10 +146,11 @@ static int runBodyWeaponPass(
     }
 
     if (pass == maxPasses - 1) {
-        // Pass each contact's own swept part velocity so a moving arm/leg/weapon
-        // bounces the whole body even when the root is not moving into the wall.
+        // Pass each contact's own swept part velocity and penetration so a
+        // moving (or statically embedded) arm/leg/weapon pushes the whole body
+        // even when the root is not moving into the wall.
         for (const auto& pc : bodyPushContacts)
-            respondVelocityAgainstNormal(p, pc.normal, pc.sweepDelta);
+            respondVelocityAgainstNormal(p, pc.normal, pc.sweepDelta, true, pc.penetration);
     }
 
     auto t1 = std::chrono::steady_clock::now();

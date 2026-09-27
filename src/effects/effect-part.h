@@ -150,11 +150,6 @@ public:
     void drainPendingWorldHits(int maxCount);
     void destroyOwner(unsigned int ownerId);
     EffectPart* spawnCustom(glm::vec3 position, glm::vec3 color, float lifetime, const char* label);
-    // TO-DELETE (2026-09-27): pink body-contact spark. Visual-only; the
-    // moving-limb collision bounce is the real contact feedback now. Remove
-    // this, the definition in effect-part.cpp, the "body_spark" render case in
-    // effect-part-render.cpp, and config/hitfx.json "bodyContactSpark" once the
-    // bounce is confirmed in gameplay. Not deleted yet.
     EffectPart* spawnBodyContactSpark(glm::vec3 playerPos, glm::vec3 contactPoint, glm::vec3 velocity, float partRadius);
     
     void setWorld(const class World& world) { mWorld = &world; }

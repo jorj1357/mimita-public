@@ -45,7 +45,7 @@ void PostFX::loadConfig(const std::string& path)
     try
     {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         auto read = [&](const std::string& key, float& val, float def) {
             val = j.contains(key) ? j[key].get<float>() : def;

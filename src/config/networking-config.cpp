@@ -195,7 +195,7 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
     json root;
     try
     {
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
     }
     catch (const std::exception& e)
     {

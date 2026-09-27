@@ -69,7 +69,7 @@ static void reloadReplayExportConfig()
     try
     {
         nlohmann::json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         ReplayExportConfig loaded;
         if (j.contains("encoder"))
@@ -200,7 +200,9 @@ std::string defaultFfmpegPath()
         std::ifstream file("config/replay/ffmpeg-path.json");
         nlohmann::json j;
         try {
-            if (file.is_open() && (file >> j) && j.contains("path")) {
+            if (file.is_open())
+                j = nlohmann::json::parse(file, nullptr, true, true);
+            if (file.is_open() && j.contains("path")) {
                 std::string configured = j["path"].get<std::string>();
                 if (std::filesystem::exists(configured))
                     return std::filesystem::absolute(configured).make_preferred().string();

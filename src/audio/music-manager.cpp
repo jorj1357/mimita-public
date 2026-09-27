@@ -54,7 +54,7 @@ void MusicManager::loadCredits(const std::string& path)
     }
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         for (auto it = j.begin(); it != j.end(); ++it) {
             std::string fname = it.key();
             std::string artist = it.value().value("artist", std::string());
@@ -402,7 +402,7 @@ void MusicManager::loadConfig()
     }
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         if (j.contains("musicEnabled")) {
             bool enabled = j["musicEnabled"];
             setMuted(!enabled);

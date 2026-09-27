@@ -104,7 +104,7 @@ void VideoSettings::load()
     try
     {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         if (j.contains("resolution_index"))
             mIndex = std::clamp(j["resolution_index"].get<int>(), 1, NUM_RESOLUTIONS);

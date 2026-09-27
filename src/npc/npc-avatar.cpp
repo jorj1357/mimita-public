@@ -41,7 +41,7 @@ void loadConfig()
     }
     try {
         nlohmann::json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
         loaded.forceAvatar = root.value("forceAvatar", false);
         loaded.forceAvatarPath = root.value("forceAvatarPath", "");
         gConfig = std::move(loaded);

@@ -124,7 +124,7 @@ bool GameplayConfig::load(const std::string& path)
 
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
 
         GameplayConfigData next;
         if (root.contains("aim_mode") && !parseAimMode(root["aim_mode"], next.aimMode)) {

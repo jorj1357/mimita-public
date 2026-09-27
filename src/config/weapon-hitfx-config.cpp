@@ -300,7 +300,7 @@ bool WeaponHitFxConfig::load(const std::string& path)
 
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
 
         Config defs;
         if (root.contains("defaults")) {

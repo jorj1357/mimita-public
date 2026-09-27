@@ -9,6 +9,6 @@
         "minSpeed": 0.01,
         "maxSpeed": 999999.0,
         "cooldown": 0.01,
-        "minPush": 0.1
+        "minPush": 100.0
     }
 }

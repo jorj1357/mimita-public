@@ -19,7 +19,7 @@ void DebugVis::loadConfig()
     try
     {
         nlohmann::json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         if (j.contains("debugVisualizationEnabled"))
             setMasterEnabled(j["debugVisualizationEnabled"].get<bool>());
         printf("[DBGVIS] config loaded: %s\n", DBG_CONFIG_PATH);

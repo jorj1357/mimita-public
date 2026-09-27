@@ -45,7 +45,7 @@ bool MuzzleFlashConfig::load(const std::string& path)
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         MuzzleFlashSettings d;
         d.enabled = j.value("enabled", d.enabled);
         if (j.contains("color") && j["color"].is_array() && j["color"].size() >= 3) {

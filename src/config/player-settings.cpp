@@ -41,7 +41,7 @@ bool LoadPlayerSettings(const std::string& account)
 
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
         const json& j = root.contains("settings") ? root["settings"] : root;
         readValue(j, "fov", gSettings.fov);
         readValue(j, "master_volume", gSettings.masterVolume);

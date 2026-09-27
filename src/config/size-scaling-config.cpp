@@ -55,7 +55,7 @@ bool SizeScalingConfig::load(const std::string& path)
 
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
 
         SizeScalingData next;
         auto rd = [&](const char* key, float& field) {

@@ -235,16 +235,31 @@ bool collisionStressSelfTest(std::string* outSummary)
             summary += partBounce ? "PASS " : "FAIL ";
             summary += "[COLLISION STRESS] moving limb bounces still root\n";
 
+            // A statically embedded body contact (no sweep, but penetrating)
+            // must still get the minimum push so a limb cannot stay stuck.
             Player minPushPlayer(false);
             minPushPlayer.vel = glm::vec3(0.0f);
             minPushPlayer.externalImpulse = glm::vec3(0.0f);
             minPushPlayer.collision.bounceCooldown = 0.0f;
             respondVelocityAgainstNormal(minPushPlayer, wallNormal,
-                                         glm::vec3(-0.001f, 0.0f, 0.0f));
+                                         glm::vec3(0.0f), true, 0.05f);
             const bool minPush = minPushPlayer.vel.x > 0.0f;
             ok = ok && minPush;
             summary += minPush ? "PASS " : "FAIL ";
-            summary += "[COLLISION STRESS] low-speed limb contact min push\n";
+            summary += "[COLLISION STRESS] embedded limb contact min push\n";
+
+            // A root-capsule contact with penetration but bodyContact == false
+            // must NOT get the minimum push (no phantom motion).
+            Player embeddedRoot(false);
+            embeddedRoot.vel = glm::vec3(0.0f);
+            embeddedRoot.externalImpulse = glm::vec3(0.0f);
+            embeddedRoot.collision.bounceCooldown = 0.0f;
+            respondVelocityAgainstNormal(embeddedRoot, wallNormal,
+                                         glm::vec3(0.0f), false, 0.05f);
+            const bool noPhantom = glm::length(embeddedRoot.vel) < 0.001f;
+            ok = ok && noPhantom;
+            summary += noPhantom ? "PASS " : "FAIL ";
+            summary += "[COLLISION STRESS] embedded root contact no push\n";
 
             // Root-only contacts keep the old behavior (no phantom push when
             // nothing is moving into the surface).

@@ -37,7 +37,7 @@ bool ShadowConfig::load(const std::string& path)
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         ShadowConfigData d;
 

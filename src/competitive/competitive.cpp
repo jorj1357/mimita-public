@@ -110,7 +110,7 @@ void LoadCompetitiveProfile(const std::string& account)
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
         if (root.contains("competitive")) {
             auto& c = root["competitive"];
             gProfile.mmr = c.value("mmr", kMmrDefault);

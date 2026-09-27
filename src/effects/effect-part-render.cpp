@@ -392,9 +392,6 @@ void EffectPartSystem::render(const Camera& camera) const {
             DebugVis::drawFilledSphereOriented(camera, center, axis, 1.0f, drawColor,
                                                dimensions * 0.5f, impact.localAxis.c_str());
         }
-        // TO-DELETE (2026-09-27): render case for the pink body-contact spark.
-        // Remove with spawnBodyContactSpark / config/hitfx.json
-        // "bodyContactSpark" once the moving-limb bounce is confirmed.
         else if (effect.replayType == "body_spark") {
             const auto& bcfg = HitEffects::config().bodyContactSpark;
             const glm::vec3 axis = glm::length(effect.endPosition - effect.position) > 0.001f

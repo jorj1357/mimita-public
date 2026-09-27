@@ -66,15 +66,21 @@ inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
     projectVelocityAgainstNormal(p, normal);
 }
 
-// Response against a surface. `partVelocity` is the swept motion of the body
-// part / weapon that produced the contact (RecoveryContact::sweepDelta); leave
-// it zero for root-capsule contacts. When a moving limb/weapon is the dominant
-// impact, it pushes the whole body outward even though the root velocity is not
-// moving into the surface (the "moving arm can't bounce" fix). The
-// non-zero/moving-into-surface `partVelocity` also enables the low-speed
-// minimum push; the root path is unchanged.
+// Response against a surface.
+//   partVelocity - the swept motion of the body part / weapon that produced the
+//                  contact (RecoveryContact::sweepDelta); zero for root capsule.
+//   bodyContact  - true when this came from a body/weapon contact rather than the
+//                  root capsule.
+//   penetration  - the contact's penetration depth.
+// When a moving limb/weapon is the dominant impact it pushes the whole body
+// outward even though the root velocity is not moving into the surface. A body
+// contact that is simply embedded (penetrating but not moving) also gets the
+// configured minimum push, so a limb can no longer stay stuck inside a wall.
+// Root-capsule contacts (bodyContact == false) keep the old behavior.
 inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
-                                         const glm::vec3& partVelocity = glm::vec3(0.0f))
+                                         const glm::vec3& partVelocity = glm::vec3(0.0f),
+                                         bool bodyContact = false,
+                                         float penetration = 0.0f)
 {
     const CollisionConfig& cfg = CollisionConfig::instance();
     glm::vec3* velocities[] =
@@ -99,9 +105,12 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
     if (impact < cfg.bounceMinSpeed())
     {
         // A valid, very-low-speed body/weapon contact still nudges the whole
-        // body by the configured minimum instead of only sliding. Root contacts
-        // (partInto == 0) keep their old project-only behavior.
-        if (partInto > 0.0f && cfg.bounceMinPush() > 0.0f)
+        // body outward. Fires when the part is sweeping into the surface OR is
+        // simply embedded (penetrating), so a stick limb is pushed out. Root
+        // contacts keep their old project-only behavior.
+        const bool embedded =
+            bodyContact && (partInto > 0.0f || penetration > 0.002f);
+        if (embedded && cfg.bounceMinPush() > 0.0f)
         {
             const float retention = 1.0f - cfg.bounceFriction();
             const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);

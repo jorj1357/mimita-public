@@ -39,7 +39,7 @@ void DuelHistory::load(const std::string& profileId)
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
         if (!root.is_array())
             return;
         for (const auto& item : root)

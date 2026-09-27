@@ -57,7 +57,7 @@ bool KillfeedConfig::load(const std::string& path)
 
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
         KillfeedConfigData loaded;
 
         const std::string requestedMode = root.value("mode", std::string("hud"));

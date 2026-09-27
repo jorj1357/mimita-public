@@ -129,7 +129,7 @@ bool LoadAccountConfig(const std::string& account) {
     
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         
         std::string accountName = j.value("accountName", account);
         auto bindsJson = j.value("binds", json::object());
@@ -249,7 +249,7 @@ bool LoadDuelStats(const std::string& account) {
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
         if (root.contains("duelStats")) {
             const json& j = root["duelStats"];
             if (j.contains("kills")) gDuelStats.kills = j["kills"].get<int>();

@@ -52,7 +52,7 @@ bool HealthbarConfig::load(const std::string& path)
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         HealthbarConfigData d;
         d.aimModeEnabled = j.value("aim_mode_enabled", d.aimModeEnabled);
         d.aimConeDegrees = std::max(0.0f, j.value("aim_cone_degrees", d.aimConeDegrees));

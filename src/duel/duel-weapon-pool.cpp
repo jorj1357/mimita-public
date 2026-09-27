@@ -28,7 +28,7 @@ void DuelWeaponPool::load(const std::string& path) {
         return;
     }
     try {
-        json root; file >> root;
+        json root; root = json::parse(file, nullptr, true, true);
         std::unordered_set<std::string> nextAllowed;
         std::unordered_map<int, int> nextDuelToNative;
         std::unordered_map<int, int> nextNativeToDuel;

@@ -194,7 +194,7 @@ static void applyBodypartConfigOverrides(
         return;
     }
     nlohmann::json j;
-    try { file >> j; } catch (...) {
+    try { j = nlohmann::json::parse(file, nullptr, true, true); } catch (...) {
         Debug::warn(Debug::Category::General,
             "[BODYPART] Failed to parse config/bodyparts.json\n");
         return;

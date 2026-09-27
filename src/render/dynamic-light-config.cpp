@@ -75,7 +75,7 @@ bool DynamicLightConfig::load(const std::string& path)
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         DynamicLightConfigData d;
 

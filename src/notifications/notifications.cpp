@@ -121,7 +121,7 @@ void NotificationSystem::loadConfig()
     }
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         mMaxCount = j.value("max_count", 3);
         mDefaultDurationTicks = j.value("default_duration_ticks", 300u);
         mTipDurationTicks = j.value("tip_duration_ticks", 0u);
@@ -182,7 +182,7 @@ void NotificationSystem::loadGuiConfig()
     if (!file.is_open()) return;
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         if (!j.contains("render")) return;
         const json& r = j["render"];
         mAnchor = r.value("anchor", std::string("bottom_right"));
@@ -219,7 +219,7 @@ void NotificationSystem::loadTipsConfig()
     }
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         mTipsEnabled = j.value("enabled", true);
         mTipMinTicks = j.value("minimum_ticks_between_tips", 60u);
         mTipMaxTicks = j.value("maximum_ticks_between_tips", 1800u);

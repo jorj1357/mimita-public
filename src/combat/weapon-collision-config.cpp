@@ -148,7 +148,7 @@ void WeaponCollisionJsonConfig::load() {
 
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
 
         int weaponCount = 0;
         for (auto it = root.begin(); it != root.end(); ++it) {

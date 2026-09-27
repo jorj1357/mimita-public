@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "utils/json-comments.h"
 
 using json = nlohmann::json;
 
@@ -60,13 +61,13 @@ AimBodyConfig& AimBodyConfig::instance()
 bool AimBodyConfig::load(const std::string& path)
 {
     mPath = path;
-    mEnabled = true;
-    mMode = "default";
-    mSmoothingFactor = 1.0f;
-    mLimbs.clear();
 
     std::ifstream file(path);
     if (!file.is_open()) {
+        mEnabled = true;
+        mMode = "default";
+        mSmoothingFactor = 1.0f;
+        mLimbs.clear();
         Debug::warn(Debug::Category::Animation,
             "[AIMBODY] missing %s; defaults active (enabled=1, pitch-only)\n", path.c_str());
         save();
@@ -77,7 +78,13 @@ bool AimBodyConfig::load(const std::string& path)
         json j;
         file.clear();
         file.seekg(0);
-        file >> j;
+        j = parseJsonConfig(file);
+        // Commit only after parsing succeeds. A malformed or partially-written
+        // hot-reload must not leave enabled=true with an empty limb map.
+        mEnabled = true;
+        mMode = "default";
+        mSmoothingFactor = 1.0f;
+        mLimbs.clear();
         if (j.contains("enabled"))
             mEnabled = j.value("enabled", true);
         const std::string mode = j.value("mode", std::string("default"));

@@ -108,7 +108,7 @@ bool GuiLayout::load(const std::string& filePath, const std::string& sectionId)
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         std::unordered_map<std::string, GuiElement> loadedElements;
 
         // Helper lambda to parse a single element from JSON

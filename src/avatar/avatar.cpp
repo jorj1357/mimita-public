@@ -400,7 +400,7 @@ bool AvatarSystem::parseAvatarJson(const std::string& jsonPath, const std::strin
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
 
         std::unordered_map<std::string, std::string> textureAliases;
         if (root.contains("textures") && root["textures"].is_object()) {
@@ -533,7 +533,7 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
 
         // ── Build texture alias table (optional) ──────────────────────
         std::unordered_map<std::string, std::string> textureAliases;
@@ -938,7 +938,7 @@ bool AvatarSystem::loadPreset(const std::string& presetName) {
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
 
         if (root.contains("colors"))
             mAvatar.colors = parsePartColors(root["colors"]);
@@ -990,7 +990,7 @@ std::vector<std::string> AvatarSystem::listAvatars() const {
         if (!file.is_open()) continue;
         try {
             json root;
-            file >> root;
+            root = nlohmann::json::parse(file, nullptr, true, true);
             const bool hasAvatarData = root.is_object() &&
                 ((root.contains("advanced") && root["advanced"].is_object()) ||
                  (root.contains("simple") && root["simple"].is_object()));

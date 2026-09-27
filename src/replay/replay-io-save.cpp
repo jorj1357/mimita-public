@@ -124,7 +124,7 @@ bool ReplayClip::load(const std::string& path)
         return false;
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
         const json metadata = root.value("metadata", json::object());
         mapPath = metadata.value("mapPath", "");
         killerId = metadata.value("killerId", "");

@@ -71,7 +71,7 @@ bool RagdollDeathConfig::load(const std::string& path)
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         mData.enabled = readJsonBool(j, "enabled", mData.enabled);
         mData.totalTicks = readJsonInt(j, "totalTicks", mData.totalTicks);

@@ -50,7 +50,7 @@ static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
     }
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
         if (!root.is_object() || !root.contains("grenade_launcher"))
         {
             printf("\n"

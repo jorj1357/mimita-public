@@ -963,7 +963,7 @@ static bool loadWorldCrosshairFromJSON()
 
     json j;
     try {
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
     } catch (const std::exception& e) {
         logWorldXh(std::string("[WorldCrosshair] Parse error in ") +
                    WORLD_XH_CONFIG_PATH + ": " + e.what());
@@ -1258,7 +1258,7 @@ void loadCoolShotLineConfig()
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
 
         CoolShotLineState next;
         if (root.contains("enabled") && root["enabled"].is_boolean())
@@ -1321,7 +1321,7 @@ void pollCoolShotLineConfig()
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
 
         CoolShotLineState next;
         if (root.contains("enabled") && root["enabled"].is_boolean())

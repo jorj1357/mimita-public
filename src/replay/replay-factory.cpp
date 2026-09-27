@@ -39,7 +39,7 @@ bool loadClipInfo(const std::string& path, ReplayClipInfo& info)
 
     try {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
 
         info.path = path;
         info.filename = std::filesystem::path(path).filename().string();

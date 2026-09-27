@@ -43,7 +43,7 @@ static void reloadConfig()
     try
     {
         nlohmann::json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         HitmarkerAudioConfig loaded;
         if (j.contains("enabled"))

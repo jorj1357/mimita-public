@@ -174,7 +174,7 @@ void loadAnimationConfig(PlayerProceduralConfig& loaded)
 
     try {
         nlohmann::json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
         parseSway(root, loaded);
         parseLayers(root, loaded);
         parseWeaponPoses(root, loaded);

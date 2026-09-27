@@ -115,7 +115,7 @@ void InputCommandSystem::loadBinds(const std::string& path) {
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         auto binds = j.value("binds", json::object());
         for (auto& [action, keyStr] : binds.items()) {

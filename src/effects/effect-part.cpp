@@ -646,12 +646,6 @@ EffectPart* EffectPartSystem::spawnDownDash(glm::vec3 position) {
     return spawn(e);
 }
 
-// TO-DELETE (2026-09-27): pink body-contact spark, visual-only legacy feedback.
-// Superseded by the moving-limb collision bounce in
-// physics/movement/physics-collision-shared.h (respondVelocityAgainstNormal).
-// Remove this definition together with its declaration, "body_spark" render
-// case, config/hitfx.json "bodyContactSpark", and the call site in
-// physics-collision-glb-body.cpp once the bounce is confirmed in gameplay.
 EffectPart* EffectPartSystem::spawnBodyContactSpark(glm::vec3 playerPos, glm::vec3 contactPoint, glm::vec3 velocity, float partRadius) {
     const auto& cfg = HitEffects::config().bodyContactSpark;
     if (!cfg.enabled) return nullptr;

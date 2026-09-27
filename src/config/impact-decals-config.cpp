@@ -169,7 +169,7 @@ bool ImpactDecalsConfig::load(const std::string& path)
 
     try {
         json root;
-        file >> root;
+        root = json::parse(file, nullptr, true, true);
 
         ImpactDecalsData data;
         data.enabled = readJsonBool(root, "enabled", data.enabled);

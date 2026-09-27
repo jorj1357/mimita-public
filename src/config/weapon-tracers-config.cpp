@@ -80,7 +80,7 @@ bool WeaponTracersConfig::load(const std::string& path)
     nlohmann::json root;
     try
     {
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
     }
     catch (const std::exception&)
     {

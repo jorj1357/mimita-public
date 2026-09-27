@@ -48,7 +48,7 @@ bool reloadPlayerProceduralConfig()
     try
     {
         nlohmann::json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
 
         PlayerProceduralConfig loaded = gPlayerProcedural;
         readJsonValue(j, "torsoAimYawStrength", loaded.torsoAimYawStrength);

@@ -43,7 +43,7 @@ void load()
 
     try {
         json j;
-        file >> j;
+        j = nlohmann::json::parse(file, nullptr, true, true);
         if (!j.is_array())
         {
             Debug::log(Debug::Category::Gui, "[TIPS] tips.json is not an array\n");

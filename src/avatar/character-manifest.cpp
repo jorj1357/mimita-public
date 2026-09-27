@@ -37,7 +37,7 @@ bool CharacterManifest::load(const std::string& path)
     try
     {
         json root;
-        file >> root;
+        root = nlohmann::json::parse(file, nullptr, true, true);
 
         if (root.contains("name") && root["name"].is_string())
             name = root["name"].get<std::string>();
