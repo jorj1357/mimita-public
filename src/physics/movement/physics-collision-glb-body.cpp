@@ -36,12 +36,21 @@ static MovementContactSource bodyWeaponContactSource(const char* label)
 
 static int runBodyWeaponPass(
     Player& p, const World& world, bool& groundedThisFrame,
-    bool& groundedByWeapon, int pass, int maxPasses)
+    bool& groundedByWeapon, int pass, int maxPasses,
+    const std::vector<glm::mat4>& preservedPreviousTransforms)
 {
     gBW = BWInvestigate{};
 
     auto t0 = std::chrono::steady_clock::now();
     p.updateModelWorldTransforms();
+    // Refresh the current pose for this pass, but do not overwrite the pose
+    // from the start of the tick. Mesh collision needs both poses to sweep the
+    // actual limb triangles through the world.
+    for (size_t i = 0; i < p.physicalBody.parts.size() &&
+                       i < preservedPreviousTransforms.size(); ++i) {
+        p.physicalBody.parts[i].previousWorldTransform =
+            preservedPreviousTransforms[i];
+    }
     recomputeWeaponCapsule(p);
 
     // Body collision: real per-part mesh triangles when enabled, else the
@@ -185,10 +194,15 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
     int passesUsed = 0;
     bool groundedByWeapon = false;
     glm::vec3 totalCorrection(0.0f);
+    std::vector<glm::mat4> preservedPreviousTransforms;
+    preservedPreviousTransforms.reserve(p.physicalBody.parts.size());
+    for (const PhysicalBodyPart& part : p.physicalBody.parts)
+        preservedPreviousTransforms.push_back(part.previousWorldTransform);
 
     for (int pass = 0; pass < MAX_PASSES; ++pass) {
         glm::vec3 beforePos = p.pos;
-        int result = runBodyWeaponPass(p, world, groundedThisFrame, groundedByWeapon, pass, MAX_PASSES);
+        int result = runBodyWeaponPass(p, world, groundedThisFrame,
+            groundedByWeapon, pass, MAX_PASSES, preservedPreviousTransforms);
         if (result < 0) { passesUsed = pass + 1; break; }
         passesUsed = pass + 1;
         totalCorrection += p.pos - beforePos;

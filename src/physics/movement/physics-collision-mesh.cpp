@@ -28,7 +28,6 @@
 namespace {
 
 // Per-part / per-call budgets so a pathological model cannot freeze a frame.
-constexpr int kMaxPartTriangles = 512;
 constexpr int kMaxContactsPerPart = 64;
 constexpr int kMaxTriangleTests = 200000;
 
@@ -117,6 +116,14 @@ AABB transformedColliderAABB(const glm::vec3& localMin,
     return box;
 }
 
+AABB mergedAABB(const AABB& a, const AABB& b)
+{
+    AABB result;
+    result.min = glm::min(a.min, b.min);
+    result.max = glm::max(a.max, b.max);
+    return result;
+}
+
 glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a,
                                  const glm::vec3& b, const glm::vec3& c)
 {
@@ -183,8 +190,15 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
         if (part.collider.triangles.empty())
             continue;
 
-        const AABB partBox = transformedColliderAABB(
+        // The world query must cover the whole path, not only where the limb
+        // ended. Otherwise a fast arm can cross a thin wall between ticks and
+        // have no wall triangle in its candidate list.
+        const AABB currentBox = transformedColliderAABB(
             part.collider.localMin, part.collider.localMax, part.worldTransform);
+        const AABB previousBox = transformedColliderAABB(
+            part.collider.localMin, part.collider.localMax,
+            part.previousWorldTransform);
+        const AABB partBox = mergedAABB(currentBox, previousBox);
 
         std::vector<int> candidates;
         appendChunkTrianglesForAABB(world, partBox, kSkin, candidates,
@@ -192,8 +206,10 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
         if (candidates.empty())
             continue;
 
-        const int triCount = std::min((int)part.collider.triangles.size(),
-                                      kMaxPartTriangles);
+        // Do not pick an arbitrary prefix of the visible limb mesh. Every
+        // loaded model triangle participates; the global test budget remains
+        // the safety valve for pathological assets.
+        const int triCount = (int)part.collider.triangles.size();
         int partContacts = 0;
 
         for (int ti = 0; ti < triCount && partContacts < kMaxContactsPerPart; ++ti)
@@ -210,16 +226,40 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
             const glm::vec3 prevCentroid = (pa + pb + pc) / 3.0f;
             const glm::vec3 sweep = centroid - prevCentroid;
 
+            const float maxVertexTravel = std::max({
+                glm::length(a - pa), glm::length(b - pb), glm::length(c - pc)});
+            // Sample often enough that a thin wall cannot fit between two
+            // triangle tests. This is a conservative first swept-triangle
+            // implementation; the tested vertices are still the real model
+            // collider vertices used by the renderer.
+            const int sweepSteps = std::clamp(
+                (int)std::ceil(maxVertexTravel / 0.08f), 1, 64);
+
             for (int wi : candidates)
             {
                 if (triangleTests >= kMaxTriangleTests)
                     return contacts;
                 if (wi < 0 || wi >= (int)world.collisionMesh.triangles.size())
                     continue;
-                ++triangleTests;
-
                 const CollisionTriangle& wt = world.collisionMesh.triangles[wi];
-                if (!triangleTriangleIntersect(a, b, c, wt.a, wt.b, wt.c))
+                glm::vec3 hitCentroid(0.0f);
+                bool hit = false;
+                for (int si = 0; si <= sweepSteps; ++si) {
+                    const float alpha = (float)si / (float)sweepSteps;
+                    const glm::vec3 sa = pa + (a - pa) * alpha;
+                    const glm::vec3 sb = pb + (b - pb) * alpha;
+                    const glm::vec3 sc = pc + (c - pc) * alpha;
+                    ++triangleTests;
+                    if (triangleTriangleIntersect(sa, sb, sc,
+                                                   wt.a, wt.b, wt.c)) {
+                        hitCentroid = (sa + sb + sc) / 3.0f;
+                        hit = true;
+                        break;
+                    }
+                    if (triangleTests >= kMaxTriangleTests)
+                        return contacts;
+                }
+                if (!hit)
                     continue;
 
                 // Normal points from the world surface toward the actor (the
@@ -227,8 +267,16 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
                 // one poking through a wall is pushed out, regardless of where
                 // the part's own triangle centroid sits.
                 glm::vec3 n = wt.normal;
-                if (glm::dot(p.pos - wt.a, n) < 0.0f)
+                if (glm::dot(sweep, sweep) > 1e-8f) {
+                    // For a swept hit, the response must oppose the part's
+                    // travel. This also handles a triangle that crossed a
+                    // wall and is already on the far side at the current
+                    // tick, where the root position alone is misleading.
+                    if (glm::dot(sweep, n) > 0.0f)
+                        n = -n;
+                } else if (glm::dot(p.pos - wt.a, n) < 0.0f) {
                     n = -n;
+                }
 
                 // Penetration: deepest body vertex behind the oriented plane.
                 const float s0 = glm::dot(a - wt.a, n);
@@ -238,7 +286,8 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
                 if (penetration < kSkin)
                     penetration = kSkin;
 
-                const glm::vec3 point = closestPointOnTriangle(centroid, wt.a, wt.b, wt.c);
+                const glm::vec3 point = closestPointOnTriangle(
+                    hitCentroid, wt.a, wt.b, wt.c);
                 contacts.push_back({n, point, sweep, penetration, wi, nullptr,
                                     part.name.c_str()});
                 ++partContacts;

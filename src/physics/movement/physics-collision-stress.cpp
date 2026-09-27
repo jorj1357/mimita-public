@@ -323,6 +323,49 @@ bool collisionStressSelfTest(std::string* outSummary)
             ok = ok && meshOk;
             summary += meshOk ? "PASS " : "FAIL ";
             summary += "[COLLISION STRESS] mesh limb triangle hits floor, pushes up\n";
+
+            // A thin wall crossed between ticks must still be found even when
+            // the limb ends completely on the other side. This catches both
+            // swept broadphase mistakes and the old current-pose-only test.
+            World sweptWorld;
+            addStressQuad(sweptWorld,
+                {0.0f, -2.0f, -2.0f}, {0.0f, 2.0f, -2.0f},
+                {0.0f, 2.0f, 2.0f}, {0.0f, -2.0f, 2.0f});
+            buildCollisionChunks(sweptWorld, nullptr);
+
+            Player sweptPlayer(false);
+            sweptPlayer.pos = glm::vec3(0.0f, 0.0f, 1.0f);
+            PhysicalBodyPart sweptArm;
+            sweptArm.name = "sweptArm";
+            CollisionTriangle sweptTri;
+            sweptTri.a = glm::vec3(0.0f, -0.5f, -0.5f);
+            sweptTri.b = glm::vec3(0.0f,  0.5f, -0.5f);
+            sweptTri.c = glm::vec3(0.0f,  0.0f,  0.5f);
+            sweptTri.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+            sweptArm.collider.triangles.push_back(sweptTri);
+            sweptArm.collider.localMin = glm::vec3(0.0f, -0.5f, -0.5f);
+            sweptArm.collider.localMax = glm::vec3(0.0f,  0.5f,  0.5f);
+            sweptArm.previousWorldTransform = glm::mat4(1.0f);
+            sweptArm.previousWorldTransform[3].x = -1.0f;
+            sweptArm.worldTransform = glm::mat4(1.0f);
+            sweptArm.worldTransform[3].x = 1.0f;
+            sweptPlayer.physicalBody.parts.push_back(sweptArm);
+
+            const std::vector<RecoveryContact> sweptContacts =
+                collectBodyMeshContacts(sweptPlayer, sweptWorld);
+            bool sweptHit = false;
+            bool opposedSweep = false;
+            for (const RecoveryContact& c : sweptContacts) {
+                if (c.penetration > 0.0f) {
+                    sweptHit = true;
+                    if (c.normal.x < -0.5f)
+                        opposedSweep = true;
+                }
+            }
+            const bool sweptOk = sweptHit && opposedSweep;
+            ok = ok && sweptOk;
+            summary += sweptOk ? "PASS " : "FAIL ";
+            summary += "[COLLISION STRESS] swept limb crosses thin wall\n";
         }
         else
         {

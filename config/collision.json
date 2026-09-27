@@ -3,6 +3,7 @@
     "bodySampleRadius": 0.25,
     "maxStepHeight": 0.25,
     "bodyMeshCollision": true,
+    // "bodyMeshCollision": false,
     "bounce": {
         "enabled": true,
         "strength": 0.35,
