@@ -45,6 +45,14 @@
       "description": "Role loadout: Rocket Launcher, Shotgun. Not host-selectable.",
       "role_only": true,
       "weapons": ["rocket_launcher", "shotgun"]
+    },
+    {
+      "id": 8,
+      "key": "counterstrike_rifles",
+      "name": "Counter-Strike Rifles (role)",
+      "description": "Counter-Strike preset rifle loadout.",
+      "role_only": true,
+      "weapons": ["projectile_rifle"]
     }
   ]
 }

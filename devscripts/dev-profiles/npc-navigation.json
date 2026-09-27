@@ -1,6 +1,8 @@
 {
   "name": "npc-navigation",
   "map": "coolplace",
+  "map_selection": "random",
+  "allowed_maps_file": "config/gamemode-good-maps.json",
   "mode": "sandbox",
   "gamemode": "sandbox",
   "weapon_set": 1,

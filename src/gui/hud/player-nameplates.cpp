@@ -166,6 +166,14 @@ HealthbarRenderResult drawPlayerHealthbar(
     }
 
     const auto& cfg = HealthbarConfig::instance().data();
+    if (isLiveWorld && !HealthbarConfig::instance().worldHealthbarsVisible())
+    {
+        result.cullReason = HealthbarCullReason::Disabled;
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] SKIPPED entity=%s reason=ModeOverride\n",
+            player.username.c_str());
+        return result;
+    }
     result.distance = glm::length(camera.pos - result.anchor);
     Debug::log(Debug::Category::Gui,
         "[HEALTHBAR] entity=%s distance=%.1f maxDistance=%.1f isLocal=%d\n",
@@ -334,6 +342,7 @@ const char* healthbarCullReasonName(HealthbarCullReason reason)
     case HealthbarCullReason::Dead: return "dead";
     case HealthbarCullReason::TooFar: return "too-far";
     case HealthbarCullReason::Offscreen: return "offscreen";
+    case HealthbarCullReason::Disabled: return "disabled";
     }
     return "unknown";
 }

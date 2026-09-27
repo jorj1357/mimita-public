@@ -321,7 +321,31 @@ void EffectPartSystem::render(const Camera& camera) const {
         alpha = std::max(0.0f, alpha);
         float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
         
-        glm::vec4 drawColor{effect.color.x, effect.color.y, effect.color.z, alpha};
+        glm::vec3 displayColor = effect.color;
+        if (effect.phaseColors)
+        {
+            const float ageTicks = effect.lifetime * 60.0f;
+            if (ageTicks <= effect.phaseColorStartTicks)
+            {
+                const float tPhase = effect.phaseColorStartTicks > 0.0f
+                    ? std::clamp(ageTicks / effect.phaseColorStartTicks, 0.0f, 1.0f)
+                    : 1.0f;
+                displayColor = glm::mix(effect.phaseColorStart, effect.phaseColorMiddle, tPhase);
+            }
+            else if (ageTicks <= effect.phaseColorMiddleTicks)
+            {
+                const float span = std::max(0.001f,
+                    effect.phaseColorMiddleTicks - effect.phaseColorStartTicks);
+                const float tPhase = std::clamp(
+                    (ageTicks - effect.phaseColorStartTicks) / span, 0.0f, 1.0f);
+                displayColor = glm::mix(effect.phaseColorMiddle, effect.phaseColorEnd, tPhase);
+            }
+            else
+            {
+                displayColor = effect.phaseColorEnd;
+            }
+        }
+        glm::vec4 drawColor{displayColor.x, displayColor.y, displayColor.z, alpha};
 
         if (effect.replayType == "hitfx_particle" && !effect.texturePath.empty()) {
             if (!texturedHitParticlePath.empty() && texturedHitParticlePath != effect.texturePath) {

@@ -344,28 +344,69 @@ bool playerSplashBodyPoint(const Player& p, const glm::vec3& blast, glm::vec3& o
 void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
 {
     const bool rocket = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER;
-    const float rate = rocket ? 30.0f : 18.0f;
+    const bool grenade = projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER;
+    const bool rifle = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
+    const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+    const bool rifleTrail = rifle && cp(def, "projectileTrailEnabled", 1.0f) > 0.0f;
+    if (!rocket && !grenade && !rifleTrail)
+        return;
+
+    const float rate = rocket
+        ? 30.0f
+        : rifle
+            ? std::max(1.0f, cp(def, "projectileTrailEmitRate", 30.0f))
+            : 18.0f;
     projectile.smokeAccumulator += rate * dt;
     while (projectile.smokeAccumulator >= 1.0f)
     {
         projectile.smokeAccumulator -= 1.0f;
         EffectPart part;
-        // Trails use render position for smoothness
-        part.position = projectile.renderPosition;
+        // Trails use render position for smoothness. Rifle fire starts at the
+        // rear of the projectile, so it visibly comes out of the back.
+        const glm::vec3 direction = glm::length(projectile.renderVelocity) > 0.001f
+            ? glm::normalize(projectile.renderVelocity)
+            : glm::vec3(0.0f, 0.0f, 1.0f);
+        const float rearOffset = cp(def, "projectileTrailRearOffset", 0.35f);
+        part.position = projectile.renderPosition
+            - direction * (rifle ? rearOffset : 0.0f);
         part.velocity = rocket
             ? projectile.renderVelocity * -0.08f
-            : projectile.renderVelocity * 0.10f;
+            : rifle
+                ? -direction * cp(def, "projectileTrailParticleSpeed", 2.0f)
+                : projectile.renderVelocity * 0.10f;
         part.lifetime = 0.0f;
-        part.maxLifetime = rocket ? 0.8f : 0.25f;
-        part.scale = rocket ? 0.18f : 0.04f;
-        part.endScale = rocket ? 0.6f : 0.01f;
-        part.color = rocket
-            ? glm::vec3(0.55f, 0.55f, 0.55f)
-            : glm::vec3(1.0f, 0.65f, 0.15f);
-        part.alpha = rocket ? 0.55f : 0.9f;
-        part.gravity = rocket ? 0.0f : 8.0f;
-        part.affectedByGravity = !rocket;
-        part.replayType = rocket ? "net_rocket_trail" : "net_grenade_spark";
+        part.maxLifetime = rocket ? 0.8f
+            : rifle ? cp(def, "projectileTrailLifetimeTicks", 15.0f) / 60.0f : 0.25f;
+        part.scale = rocket ? 0.18f
+            : rifle ? cp(def, "projectileTrailStartScale", 0.12f) : 0.04f;
+        part.endScale = rocket ? 0.6f
+            : rifle ? cp(def, "projectileTrailEndScale", 0.035f) : 0.01f;
+        part.color = rocket ? glm::vec3(0.55f)
+            : rifle ? glm::vec3(1.0f) : glm::vec3(1.0f, 0.65f, 0.15f);
+        part.alpha = rocket ? 0.55f
+            : rifle ? cp(def, "projectileTrailAlpha", 0.9f) : 0.9f;
+        part.gravity = rocket || rifle ? 0.0f : 8.0f;
+        part.affectedByGravity = !rocket && !rifle;
+        if (rifle)
+        {
+            part.phaseColors = true;
+            part.phaseColorStart = {
+                cp(def, "projectileTrailWhiteR", 1.0f),
+                cp(def, "projectileTrailWhiteG", 1.0f),
+                cp(def, "projectileTrailWhiteB", 1.0f)};
+            part.phaseColorMiddle = {
+                cp(def, "projectileTrailOrangeR", 1.0f),
+                cp(def, "projectileTrailOrangeG", 0.3f),
+                cp(def, "projectileTrailOrangeB", 0.0f)};
+            part.phaseColorEnd = {
+                cp(def, "projectileTrailRedR", 0.8f),
+                cp(def, "projectileTrailRedG", 0.02f),
+                cp(def, "projectileTrailRedB", 0.0f)};
+            part.phaseColorStartTicks = cp(def, "projectileTrailWhiteTicks", 1.0f);
+            part.phaseColorMiddleTicks = cp(def, "projectileTrailOrangeTicks", 5.0f);
+        }
+        part.replayType = rocket ? "net_rocket_trail"
+            : rifle ? "net_projectile_trail" : "net_grenade_spark";
         EffectPartSystem::instance().spawn(part);
     }
 }

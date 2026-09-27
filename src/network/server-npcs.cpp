@@ -236,6 +236,8 @@ static void respawnServerNpc(Npc& npc)
     // Reapply the actor's role stats/loadout for the new life so role identity
     // is never lost across respawn.
     const ActorSpawnProfile profile = serverResolveActorSpawnProfile(npc.id);
+    if (!profile.avatarName.empty())
+        npc.avatarName = profile.avatarName;
     const int overrideHp = serverGameOverrides().maxHpOverride;
     const int maxHp = overrideHp > 0 ? overrideHp
         : (profile.health > 0 ? profile.health : npc.body.maxHp);

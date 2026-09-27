@@ -1,10 +1,10 @@
 {
   "id": "counterstrike",
   "name": "Counter Strike",
-  "description": "Tactical defuse mode. No ragdolds.",
+  "description": "Counter-Strike preset: first person, fixed team actors, rifle loadouts, and no world healthbars.",
   "team_names": ["RED", "BLUE"],
   "goal_value": 10,
-  "weapon_set_id": 1,
+  "weapon_set_id": 8,
   "time_limit_seconds": 120,
   "respawn_seconds": 0,
   "kill_heals": false,
@@ -15,6 +15,12 @@
   "intermission_seconds": 15,
   "results_seconds": 8,
   "camera_fov": 70,
+  "force_first_person": true,
+  "hide_healthbars": true,
   "ragdoll_enabled": false,
+  "roles": {
+    "counterstrike_red": 5,
+    "counterstrike_blue": 5
+  },
   "maps": ["atdm"]
 }

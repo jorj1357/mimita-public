@@ -45,6 +45,7 @@ public:
     int redScore() const { return mRedScore; }
     int blueScore() const { return mBlueScore; }
     float cameraFov() const { return mCameraFov; }
+    bool forceFirstPerson() const { return mForceFirstPerson; }
 
     // ── Bomb Tag state (replicated from server) ──────────────────────
     uint8_t bombOwnerType() const { return mBombOwnerType; }
@@ -95,6 +96,9 @@ private:
 
     // ── Gamemode visual overrides ──────────────────────────────────
     float mCameraFov = 0.0f;         // 0 = no override
+    bool mForceFirstPerson = false;
+    bool mFirstPersonApplied = false;
+    bool mPreviousThirdPerson = true;
     uint8_t mRagdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
     uint8_t mBloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
     bool mOverridesApplied = false;  // true if backups saved + overrides applied

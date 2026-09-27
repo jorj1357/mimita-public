@@ -193,6 +193,8 @@ struct ServerGamemodeState
     uint32_t bombExplosionCounter = 0;  // Total explosions this session
     // ── Gamemode visual overrides ───────────────────────────────────
     float cameraFov = 0.0f;         // 0 = no override
+    bool forceFirstPerson = false;
+    bool hideHealthbars = false;
     bool ragdollExplicit = false;   // true if gamemode defines ragdoll_enabled
     bool ragdollEnabled = false;    // value when ragdollExplicit is true
     bool bloodExplicit = false;     // true if gamemode defines blood_enabled
@@ -220,6 +222,7 @@ struct ActorSpawnProfile
     int health = 0;                       // 0 = no override
     int weaponSetId = 0;                  // 0 = no override
     std::string startingWeapon;
+    std::string avatarName;
     std::vector<std::string> weapons;     // resolved role loadout (may be empty)
     std::string movementPreset;           // resolved/validated role movement preset
     std::string behaviorProfileId;        // resolved/validated role behavior profile

@@ -64,6 +64,8 @@ struct Gamemode {
     // ── Visual/settings overrides (optional per-gamemode) ───────────
     // 0 / false + explicit=false means "no override, use user's current setting".
     float cameraFov = 0.0f;
+    bool forceFirstPerson = false;
+    bool hideHealthbars = false;
     bool ragdollEnabled = false;
     bool ragdollExplicit = false;
     bool bloodEnabled = false;

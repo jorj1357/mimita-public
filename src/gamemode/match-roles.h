@@ -24,6 +24,7 @@ struct MatchRoleDefinition
     std::string weaponSet;
     std::string startingWeapon;
     std::string behaviorProfile;
+    std::string avatarName;
 };
 
 class MatchRoleRegistry

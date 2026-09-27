@@ -13,9 +13,12 @@
 #include "auth/auth-system.h"
 #include "killfeed/killfeed.h"
 #include "config/settings-backup.h"
-#include "config/camera-config.h"
 #include "config/ragdoll-death-config.h"
 #include "config/impact-decals-config.h"
+#include "config/camera-config.h"
+#include "camera.h"
+#include "gamemode/gamemode.h"
+#include "gui/hud/healthbar-config.h"
 #include "debug/debug-log.h"
 
 #include <chrono>
@@ -73,6 +76,12 @@ void CommunityMatchClient::reset()
     mBombInactiveTicks = 0;
     mBombPos = glm::vec3(0.0f);
     mCameraFov = 0.0f;
+    mForceFirstPerson = false;
+    HealthbarConfig::instance().setModeVisibilityOverride(false);
+    if (mFirstPersonApplied) {
+        THE_CAMERA.thirdPerson = mPreviousThirdPerson;
+        mFirstPersonApplied = false;
+    }
     mRagdollEnabled = 0;
     mBloodEnabled = 0;
 
@@ -101,6 +110,20 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mMatchId = packet.duelId;
     mStateVersion = packet.stateVersion;
     mMode = packet.matchMode;
+    const Gamemode& modeConfig = GamemodeRegistry::instance().get(mMode);
+    mForceFirstPerson = modeConfig.forceFirstPerson;
+    HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
+    if (mForceFirstPerson && !mFirstPersonApplied) {
+        mPreviousThirdPerson = THE_CAMERA.thirdPerson;
+        THE_CAMERA.thirdPerson = false;
+        mFirstPersonApplied = true;
+        Debug::log(Debug::Category::General,
+            "[GAMEMODE OVERRIDE] Forced first person for mode=%s\n",
+            mMode.c_str());
+    } else if (!mForceFirstPerson && mFirstPersonApplied) {
+        THE_CAMERA.thirdPerson = mPreviousThirdPerson;
+        mFirstPersonApplied = false;
+    }
     mPhase = packet.phase;
     mPhaseTimer = packet.phaseTimer;
     mMatchStartTick = packet.matchStartTick;

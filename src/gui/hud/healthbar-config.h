@@ -34,6 +34,10 @@ public:
     bool reload();
     bool pollReload();
 
+    // Temporary in-memory mode policy. It never writes config/healthbar.json.
+    void setModeVisibilityOverride(bool hideWorldHealthbars);
+    bool worldHealthbarsVisible() const { return !mHideWorldHealthbarsForMode; }
+
     const HealthbarConfigData& data() const { return mData; }
     HealthbarConfigData& edit();
 
@@ -43,4 +47,5 @@ private:
     HealthbarConfigData mData;
     std::string mPath = "config/healthbar.json";
     int64_t mLastModified = 0;
+    bool mHideWorldHealthbarsForMode = false;
 };

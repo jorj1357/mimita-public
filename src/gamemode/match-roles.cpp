@@ -41,6 +41,7 @@ void readRole(const json& j, const std::string& fallbackId, MatchRoleDefinition&
     out.weaponSet = j.value("weapon_set", out.weaponSet);
     out.startingWeapon = j.value("starting_weapon", out.startingWeapon);
     out.behaviorProfile = j.value("behavior_profile", out.behaviorProfile);
+    out.avatarName = j.value("avatar", out.avatarName);
 }
 
 } // namespace

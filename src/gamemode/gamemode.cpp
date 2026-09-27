@@ -188,6 +188,8 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
 
         // ── Visual/settings overrides ───────────────────────────────
         next.cameraFov = std::max(0.0f, optFloat(root, "camera_fov", next.cameraFov));
+        next.forceFirstPerson = optBool(root, "force_first_person", next.forceFirstPerson);
+        next.hideHealthbars = optBool(root, "hide_healthbars", next.hideHealthbars);
         if (root.contains("ragdoll_enabled")) {
             next.ragdollExplicit = true;
             next.ragdollEnabled = root["ragdoll_enabled"].get<bool>();

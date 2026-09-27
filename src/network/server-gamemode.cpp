@@ -89,6 +89,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     out.roleId = def->id;
     out.health = def->health;
     out.startingWeapon = def->startingWeapon;
+    out.avatarName = def->avatarName;
 
     if (!def->movementPreset.empty()) {
         // Validate once through the cache so an unknown preset is caught here
@@ -381,6 +382,8 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
     // ── Visual/settings overrides from gamemode ────────────────────
     d.cameraFov = gm.cameraFov;
+    d.forceFirstPerson = gm.forceFirstPerson;
+    d.hideHealthbars = gm.hideHealthbars;
     d.ragdollExplicit = gm.ragdollExplicit;
     d.ragdollEnabled = gm.ragdollEnabled;
     d.bloodExplicit = gm.bloodExplicit;
@@ -1161,6 +1164,8 @@ void resetGamemodeActorsAtMapSpawn(
             npc.body.dead = false;
             npc.body.respawnTimer = 0.0f;
             npc.movementProfileId = profile.movementPreset;
+            if (!profile.avatarName.empty())
+                npc.avatarName = profile.avatarName;
             npc.navigator.reset();
             npc.traversal.reset();
             npc.prevHadTarget = false;

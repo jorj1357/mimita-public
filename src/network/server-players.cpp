@@ -360,6 +360,8 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
                    : (profile.health > 0 ? profile.health : 100);
     player.maxHealth = maxHp;
     player.health = maxHp;
+    if (!profile.avatarName.empty())
+        player.avatarName = profile.avatarName;
     // Role movement identity persists for this life; used by the shared kernel.
     player.movementProfileId = profile.movementPreset;
 

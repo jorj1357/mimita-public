@@ -127,6 +127,11 @@ bool HealthbarConfig::pollReload()
     return current != 0 && current != mLastModified && reload();
 }
 
+void HealthbarConfig::setModeVisibilityOverride(bool hideWorldHealthbars)
+{
+    mHideWorldHealthbarsForMode = hideWorldHealthbars;
+}
+
 HealthbarConfigData& HealthbarConfig::edit()
 {
     return mData;

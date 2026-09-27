@@ -841,6 +841,25 @@ WeaponDefinition createProjectileRifleDefinition() {
     def.customParams["projectileVisualFillG"] = 1.0f;
     def.customParams["projectileVisualFillB"] = 1.0f;
     def.customParams["projectileFillAlpha"] = 1.0f;
+    def.customParams["projectileTrailEnabled"] = 1.0f;
+    def.customParams["projectileTrailEmitRate"] = 30.0f;
+    def.customParams["projectileTrailLifetimeTicks"] = 15.0f;
+    def.customParams["projectileTrailRearOffset"] = 0.35f;
+    def.customParams["projectileTrailParticleSpeed"] = 2.0f;
+    def.customParams["projectileTrailStartScale"] = 0.12f;
+    def.customParams["projectileTrailEndScale"] = 0.035f;
+    def.customParams["projectileTrailAlpha"] = 0.9f;
+    def.customParams["projectileTrailWhiteTicks"] = 1.0f;
+    def.customParams["projectileTrailOrangeTicks"] = 5.0f;
+    def.customParams["projectileTrailWhiteR"] = 1.0f;
+    def.customParams["projectileTrailWhiteG"] = 1.0f;
+    def.customParams["projectileTrailWhiteB"] = 1.0f;
+    def.customParams["projectileTrailOrangeR"] = 1.0f;
+    def.customParams["projectileTrailOrangeG"] = 0.3f;
+    def.customParams["projectileTrailOrangeB"] = 0.0f;
+    def.customParams["projectileTrailRedR"] = 0.8f;
+    def.customParams["projectileTrailRedG"] = 0.02f;
+    def.customParams["projectileTrailRedB"] = 0.0f;
     return def;
 }
 

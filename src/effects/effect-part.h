@@ -33,6 +33,14 @@ struct EffectPart
     float scale = 1.0f;
     float endScale = 1.0f;
     float alpha = 1.0f;
+    // Optional age-based color cycle for lightweight client-only trails.
+    // The values are expressed in 60 Hz ticks so the visual is predictable.
+    bool phaseColors = false;
+    glm::vec3 phaseColorStart{1.0f};
+    glm::vec3 phaseColorMiddle{1.0f, 0.45f, 0.05f};
+    glm::vec3 phaseColorEnd{0.8f, 0.02f, 0.0f};
+    float phaseColorStartTicks = 1.0f;
+    float phaseColorMiddleTicks = 5.0f;
     float gravity = 0.0f;
     float drag = 0.0f;
     float thickness = 0.0f;

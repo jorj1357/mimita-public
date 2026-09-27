@@ -16,8 +16,11 @@ never kills arbitrary mimita.exe processes; only children that it launched.
 from __future__ import annotations
 
 import argparse
+import builtins
+import colorsys
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -37,10 +40,14 @@ DEV_ROOT = ROOT / ".dev"
 BUILD_ROOT = DEV_ROOT / "builds"
 STATE_PATH = DEV_ROOT / "state.json"
 PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
+DEFAULT_MAP_POOL_PATH = ROOT / "config" / "gamemode-good-maps.json"
 
 POLL_SECONDS = 0.15
 DEBOUNCE_SECONDS = 0.30
 KEEP_BUILDS = 5
+RAINBOW_SECONDS = 5.0
+SERVER_RETRY_DELAY = 1.5
+MAX_SERVER_RETRIES = 3
 RUNTIME_DLLS = (
     "libgcc_s_seh-1.dll",
     "libstdc++-6.dll",
@@ -56,7 +63,51 @@ WATCH_FILES = (
     ROOT / "build_agent.py",
     ROOT / "build_game_dll.py",
     ROOT / "build_toolchain.py",
+    DEFAULT_MAP_POOL_PATH,
 )
+
+
+def _rainbow_enabled() -> bool:
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+def _rainbowize(value: str) -> str:
+    if not value or not _rainbow_enabled():
+        return value
+    phase = (time.monotonic() % RAINBOW_SECONDS) / RAINBOW_SECONDS
+    visible = max(1, sum(1 for char in value if char not in "\r\n"))
+    index = 0
+    output = []
+    for char in value:
+        if char in "\r\n":
+            output.append(char)
+            continue
+        hue = (phase + (index / visible) * 0.72) % 1.0
+        red, green, blue = (round(channel * 255) for channel in colorsys.hsv_to_rgb(hue, 0.86, 1.0))
+        output.append(f"\x1b[38;2;{red};{green};{blue}m{char}")
+        index += 1
+    output.append("\x1b[0m")
+    return "".join(output)
+
+
+_status_clear_hook = None
+_status_rendering = False
+
+
+def dev_print(*values, sep=" ", end="\n", file=None, flush=False):
+    global _status_clear_hook
+    output = sep.join(str(value) for value in values)
+    target = sys.stdout if file is None else file
+    if target is sys.stdout and not _status_rendering and _status_clear_hook is not None:
+        _status_clear_hook()
+    if target in (sys.stdout, sys.stderr):
+        output = _rainbowize(output)
+    builtins.print(output, end=end, file=target, flush=flush)
+
+
+# All development-loop and build-child output uses the same five-second
+# moving rainbow when attached to a real terminal.
+print = dev_print
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -68,6 +119,36 @@ def write_json(path: Path, value: dict) -> None:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def allowed_dev_maps(profile: dict) -> list[str]:
+    configured = profile.get("allowed_maps_file", str(DEFAULT_MAP_POOL_PATH))
+    path = Path(configured)
+    if not path.is_absolute():
+        path = ROOT / path
+    try:
+        data = read_json(path)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"cannot read allowed map pool {path}: {error}") from error
+    maps = data.get("maps") if isinstance(data, dict) else None
+    if not isinstance(maps, list):
+        raise RuntimeError(f"allowed map pool has no maps array: {path}")
+    result = [str(item).strip() for item in maps if isinstance(item, str) and item.strip()]
+    if not result:
+        raise RuntimeError(f"allowed map pool is empty: {path}")
+    return result
+
+
+def select_dev_map(profile: dict) -> str:
+    maps = allowed_dev_maps(profile)
+    selection = str(profile.get("map_selection", "configured")).lower()
+    configured = str(profile.get("map", "")).strip()
+    if selection == "random":
+        return random.choice(maps)
+    if configured in maps:
+        return configured
+    print(f"[DEV] configured map {configured or '(empty)'} is not allowed; using {maps[0]}")
+    return maps[0]
 
 
 def file_signature(path: Path):
@@ -167,7 +248,10 @@ def publish_build(number: int) -> Path:
 class DevLoop:
     def __init__(self, profile: dict, auto_restart: bool):
         self.profile = profile
-        self.auto_restart = auto_restart
+        # Development sessions always keep the newest process alive. Retain
+        # the CLI argument for compatibility, but do not allow AUTO-RESTART
+        # to be switched off.
+        self.auto_restart = True
         self.stop_event = threading.Event()
         self.change_event = threading.Event()
         self.lock = threading.Lock()
@@ -183,6 +267,11 @@ class DevLoop:
         self.last_status_line = None
         self.room_file_path: Path | None = None
         self.room_code = None
+        self.server_retry_count = 0
+        self.next_auto_launch_at = 0.0
+        self.fallback_client = False
+        self.status_visible = False
+        self.status_line_count = 0
 
     def state(self, status: str = "idle") -> dict:
         return {
@@ -297,7 +386,10 @@ class DevLoop:
             return
 
         self.stop_processes()
+        self.fallback_client = False
         server_bind = self.profile.get("server_bind", "0.0.0.0:1357")
+        map_name = select_dev_map(self.profile)
+        print(f"[DEV] selected allowed map: {map_name}")
         room_fd, room_file_name = tempfile.mkstemp(prefix="mimita-dev-room-", suffix=".txt")
         os.close(room_fd)
         self.room_file_path = Path(room_file_name)
@@ -305,7 +397,7 @@ class DevLoop:
         server_args = [
             str(exe), "--server", "--bind", server_bind,
             "--name", str(self.profile.get("server_name", "MiMITA Dev Server")),
-            "--map", str(self.profile.get("map", "coolplace")),
+            "--map", map_name,
             "--mode", str(self.profile.get("mode", "sandbox")),
             "--gamemode", str(self.profile.get("gamemode", "sandbox")),
             "--weapon-set", str(self.profile.get("weapon_set", 1)),
@@ -363,11 +455,13 @@ class DevLoop:
             return
 
         self.room_code = room_code
+        self.server_retry_count = 0
+        self.fallback_client = False
         print(f"[DEV] ROOM CODE: {room_code}")
 
         client_args = [
             str(exe), "--room", room_code,
-            "--map", str(self.profile.get("map", "coolplace")),
+            "--map", map_name,
             "--name", str(self.profile.get("client_name", "NPC Dev")),
         ]
         print(f"[DEV] launching build {self.latest_build} client")
@@ -399,6 +493,49 @@ class DevLoop:
         self.running_build = None
         self.cleanup_room_file()
 
+    def launch_fallback_client(self) -> None:
+        """Keep one visible MiMITA process alive when the server binary crashes."""
+        if self.fallback_client:
+            return
+        if self.latest_build is None:
+            return
+        exe = BUILD_ROOT / f"{self.latest_build:04d}" / "mimita.exe"
+        if not exe.is_file():
+            return
+        print("[DEV] server retries exhausted; launching one fallback MiMITA client")
+        client = subprocess.Popen(
+            [str(exe)],
+            cwd=ROOT,
+            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+        )
+        self.processes = [client]
+        self.running_build = self.latest_build
+        self.fallback_client = True
+        self.last_message = "fallback client running; server startup failed"
+        self.save_state("fallback_client")
+        self.print_status()
+
+    def maintain_process(self) -> None:
+        live = [process for process in self.processes if process.poll() is None]
+        self.processes = live
+        # Keeping one MiMITA process alive is a safety invariant for this
+        # development loop, independent of the legacy AUTO-RESTART toggle.
+        if live or self.latest_build is None:
+            return
+        now = time.monotonic()
+        if now < self.next_auto_launch_at:
+            return
+        if self.server_retry_count < MAX_SERVER_RETRIES:
+            self.server_retry_count += 1
+            print(
+                f"[DEV] no MiMITA process is running; automatic server retry "
+                f"{self.server_retry_count}/{MAX_SERVER_RETRIES}"
+            )
+            self.next_auto_launch_at = now + SERVER_RETRY_DELAY
+            self.launch_latest()
+        else:
+            self.launch_fallback_client()
+
     def cleanup_room_file(self) -> None:
         if self.room_file_path is not None:
             try:
@@ -410,23 +547,56 @@ class DevLoop:
             self.room_file_path = None
         self.room_code = None
 
-    def print_status(self) -> None:
+    def _status_lines(self) -> list[str]:
+        lines = [
+            "",
+            f"RUNNING: {self.running_build or '(none)'}",
+            f"LATEST:  {self.latest_build or '(none)'}",
+            "AUTO-RESTART: ON",
+        ]
+        if self.latest_stale:
+            lines.append("LATEST BUILD IS STALE")
+        lines.append("[1] Switch to newest  [Q] Quit")
+        return lines
+
+    def print_status(self, force: bool = False) -> None:
         status_line = (
             self.running_build,
             self.latest_build,
-            self.auto_restart,
             self.latest_stale,
         )
-        if status_line == self.last_status_line:
+        if not force and status_line == self.last_status_line:
             return
         self.last_status_line = status_line
-        print()
-        print(f"RUNNING: {self.running_build or '(none)'}")
-        print(f"LATEST:  {self.latest_build or '(none)'}")
-        print(f"AUTO-RESTART: {'ON' if self.auto_restart else 'OFF'}")
-        if self.latest_stale:
-            print("LATEST BUILD IS STALE")
-        print("[1] Switch to newest  [2] Stay on current  [A] Toggle auto-restart  [Q] Quit")
+        self._render_status()
+
+    def _render_status(self) -> None:
+        global _status_rendering
+        if self.status_visible and _rainbow_enabled():
+            sys.stdout.write(f"\x1b[{self.status_line_count}A\x1b[0J")
+        lines = self._status_lines()
+        _status_rendering = True
+        try:
+            for line in lines:
+                dev_print(line)
+        finally:
+            _status_rendering = False
+        self.status_line_count = len(lines)
+        self.status_visible = True
+        sys.stdout.flush()
+
+    def _invalidate_status(self) -> None:
+        if not self.status_visible:
+            return
+        if _rainbow_enabled():
+            sys.stdout.write(f"\x1b[{self.status_line_count}A\x1b[0J")
+            sys.stdout.flush()
+        self.status_visible = False
+        self.status_line_count = 0
+
+    def refresh_status_animation(self) -> None:
+        if self.status_visible and _rainbow_enabled():
+            self._render_status()
 
     def key_commands(self) -> None:
         if os.name != "nt":
@@ -439,13 +609,14 @@ class DevLoop:
             self.launch_latest()
             self.print_status()
         elif key == "a":
-            self.auto_restart = not self.auto_restart
-            print(f"[DEV] auto-restart {'ON' if self.auto_restart else 'OFF'}")
-            self.save_state("idle")
+            print("[DEV] auto-restart is always ON")
+            self.print_status(force=True)
         elif key == "q":
             self.stop_event.set()
 
     def run(self) -> None:
+        global _status_clear_hook
+        _status_clear_hook = self._invalidate_status
         watcher = threading.Thread(target=self.watch, daemon=True)
         watcher.start()
         self.save_state("starting")
@@ -456,6 +627,7 @@ class DevLoop:
         try:
             while not self.stop_event.is_set():
                 self.key_commands()
+                self.maintain_process()
                 if self.build_pending:
                     self.change_event.clear()
                     time.sleep(DEBOUNCE_SECONDS)
@@ -463,9 +635,11 @@ class DevLoop:
                     continue
                 if self.change_event.wait(0.20):
                     self.build_pending = True
+                self.refresh_status_animation()
         finally:
             self.stop_event.set()
             self.stop_processes()
+            _status_clear_hook = None
             self.save_state("stopped")
             print("[DEV] stopped; daemon-owned game processes closed")
 
