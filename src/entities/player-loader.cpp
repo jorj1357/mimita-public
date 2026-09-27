@@ -433,6 +433,116 @@ void appendNodeRenderMesh(
     }
 }
 
+// ── Shared CPU model builders ─────────────────────────────────────
+// These build the skeleton and per-part collision triangles from an already
+// parsed GLB with no GL calls. They are used by Player::loadModel (after the
+// GL render mesh is loaded) and by Player::loadModelColliders (headless actors).
+static void buildNodeHierarchyFromModel(const tinygltf::Model& model, Player& player)
+{
+    player.nodes.clear();
+    player.nodes.resize(model.nodes.size());
+    player.restLocalTransforms.clear();
+    player.restLocalTransforms.resize(model.nodes.size(), glm::mat4(1.0f));
+    player.bodyColliders.clear();
+    player.bodyParts.clear();
+    player.bodyPartMeshes.clear();
+    player.perfectPoseSkeleton.nodes.clear();
+    player.perfectPoseSkeleton.nodes.resize(model.nodes.size());
+    player.perfectPoseSkeleton.restLocalTransforms.clear();
+    player.perfectPoseSkeleton.restLocalTransforms.resize(model.nodes.size(), glm::mat4(1.0f));
+    player.physicalBody.parts.clear();
+    player.physicalBody.partMeshes.clear();
+
+    for (int i = 0; i < (int)model.nodes.size(); ++i)
+    {
+        const tinygltf::Node& gltfNode = model.nodes[i];
+        TransformNode& node = player.nodes[i];
+        node.name = gltfNode.name;
+        node.localTransform = nodeMatrix(gltfNode);
+        player.restLocalTransforms[i] = node.localTransform;
+        node.worldTransform = node.localTransform;
+        node.children = gltfNode.children;
+
+        TransformNode& poseNode = player.perfectPoseSkeleton.nodes[i];
+        poseNode.name = gltfNode.name;
+        poseNode.localTransform = node.localTransform;
+        poseNode.worldTransform = node.worldTransform;
+        poseNode.children = node.children;
+        player.perfectPoseSkeleton.restLocalTransforms[i] = node.localTransform;
+
+        for (int child : gltfNode.children)
+            if (child >= 0 && child < (int)player.nodes.size())
+            {
+                player.nodes[child].parent = i;
+                player.perfectPoseSkeleton.nodes[child].parent = i;
+            }
+    }
+}
+
+// After applyBodypartConfigOverrides mutates restLocalTransforms, push the
+// result into the pose skeleton and legacy nodes so world transforms match.
+static void syncPoseSkeletonFromRestLocal(Player& player)
+{
+    for (int i = 0; i < (int)player.restLocalTransforms.size(); ++i) {
+        player.perfectPoseSkeleton.restLocalTransforms[i] = player.restLocalTransforms[i];
+        player.nodes[i].localTransform = player.restLocalTransforms[i];
+        player.perfectPoseSkeleton.nodes[i].localTransform = player.restLocalTransforms[i];
+    }
+}
+
+// Node-local collision triangles and render meshes per body part. The triangles
+// stay node-local; part.worldTransform (set by updateModelWorldTransforms)
+// places them in the world for both the renderer and the collision owner.
+// buildRenderMeshes must be false on a headless actor: appendNodeRenderMesh
+// resolves a GL texture and requires a context.
+static void buildBodyPartCollidersFromModel(const tinygltf::Model& model, Player& player,
+                                            bool buildRenderMeshes)
+{
+    for (int i = 0; i < (int)model.nodes.size(); ++i)
+    {
+        const std::string& name = player.nodes[i].name;
+        if (!isPlayerBodyPart(name))
+            continue;
+
+        Collider collider;
+        collider.name = name;
+        appendNodeCollider(model, i, collider);
+        player.bodyColliders.push_back(collider);
+
+        BodyPart part;
+        part.name = name;
+        part.nodeIndex = i;
+        part.collider = collider;
+        player.bodyParts.push_back(part);
+
+        PhysicalBodyPart physicalPart;
+        physicalPart.name = name;
+        physicalPart.nodeIndex = i;
+        physicalPart.collider = collider;
+        player.physicalBody.parts.push_back(physicalPart);
+
+        size_t renderVerts = 0;
+        if (buildRenderMeshes)
+        {
+            Mesh bodyMesh;
+            appendNodeRenderMesh(model, i, bodyMesh);
+            renderVerts = bodyMesh.verts.size();
+            player.bodyPartMeshes.push_back(bodyMesh);
+            player.physicalBody.partMeshes.push_back(bodyMesh);
+        }
+
+        Debug::log(
+            Debug::Category::GLB,
+            "[PLAYER GLB] body collider=%s localTriangles=%zu localVerts=%zu localMin=(%.2f %.2f %.2f) localMax=(%.2f %.2f %.2f)\n",
+            collider.name.c_str(),
+            collider.triangles.size(),
+            renderVerts,
+            collider.localMin.x, collider.localMin.y, collider.localMin.z,
+            collider.localMax.x, collider.localMax.y, collider.localMax.z
+        );
+    }
+}
+
 bool Player::loadModel(const char* path)
 {
     const std::string resolvedPath = resolveAssetPath(path);
@@ -478,44 +588,7 @@ bool Player::loadModel(const char* path)
         return modelLoaded;
     }
 
-    nodes.clear();
-    nodes.resize(model.nodes.size());
-    restLocalTransforms.clear();
-    restLocalTransforms.resize(model.nodes.size(), glm::mat4(1.0f));
-    bodyColliders.clear();
-    bodyParts.clear();
-    bodyPartMeshes.clear();
-    perfectPoseSkeleton.nodes.clear();
-    perfectPoseSkeleton.nodes.resize(model.nodes.size());
-    perfectPoseSkeleton.restLocalTransforms.clear();
-    perfectPoseSkeleton.restLocalTransforms.resize(model.nodes.size(), glm::mat4(1.0f));
-    physicalBody.parts.clear();
-    physicalBody.partMeshes.clear();
-
-    for (int i = 0; i < (int)model.nodes.size(); ++i)
-    {
-        const tinygltf::Node& gltfNode = model.nodes[i];
-        TransformNode& node = nodes[i];
-        node.name = gltfNode.name;
-        node.localTransform = nodeMatrix(gltfNode);
-        restLocalTransforms[i] = node.localTransform;
-        node.worldTransform = node.localTransform;
-        node.children = gltfNode.children;
-
-        TransformNode& poseNode = perfectPoseSkeleton.nodes[i];
-        poseNode.name = gltfNode.name;
-        poseNode.localTransform = node.localTransform;
-        poseNode.worldTransform = node.worldTransform;
-        poseNode.children = node.children;
-        perfectPoseSkeleton.restLocalTransforms[i] = node.localTransform;
-
-        for (int child : gltfNode.children)
-            if (child >= 0 && child < (int)nodes.size())
-            {
-                nodes[child].parent = i;
-                perfectPoseSkeleton.nodes[child].parent = i;
-            }
-    }
+    buildNodeHierarchyFromModel(model, *this);
 
     // ── Snapshot pristine (pre-override) skeleton + mesh data ─────────
     // Body-part overrides mutate restLocalTransforms/nodes per avatar, so
@@ -529,51 +602,9 @@ bool Player::loadModel(const char* path)
 
     // Apply body part config overrides from config/bodyparts.json + avatar overrides
     applyBodypartConfigOverrides(restLocalTransforms, nodes);
-    // Sync perfectPoseSkeleton and node localTransforms
-    for (int i = 0; i < (int)restLocalTransforms.size(); ++i) {
-        perfectPoseSkeleton.restLocalTransforms[i] = restLocalTransforms[i];
-        nodes[i].localTransform = restLocalTransforms[i];
-        perfectPoseSkeleton.nodes[i].localTransform = restLocalTransforms[i];
-    }
+    syncPoseSkeletonFromRestLocal(*this);
 
-    for (int i = 0; i < (int)model.nodes.size(); ++i)
-    {
-        const std::string& name = nodes[i].name;
-        if (!isPlayerBodyPart(name))
-            continue;
-
-        Collider collider;
-        collider.name = name;
-        appendNodeCollider(model, i, collider);
-        bodyColliders.push_back(collider);
-
-        BodyPart part;
-        part.name = name;
-        part.nodeIndex = i;
-        part.collider = collider;
-        bodyParts.push_back(part);
-
-        PhysicalBodyPart physicalPart;
-        physicalPart.name = name;
-        physicalPart.nodeIndex = i;
-        physicalPart.collider = collider;
-        physicalBody.parts.push_back(physicalPart);
-
-        Mesh bodyMesh;
-        appendNodeRenderMesh(model, i, bodyMesh);
-        bodyPartMeshes.push_back(bodyMesh);
-        physicalBody.partMeshes.push_back(bodyMesh);
-
-        Debug::log(
-            Debug::Category::GLB,
-            "[PLAYER GLB] body collider=%s localTriangles=%zu localVerts=%zu localMin=(%.2f %.2f %.2f) localMax=(%.2f %.2f %.2f)\n",
-            collider.name.c_str(),
-            collider.triangles.size(),
-            bodyMesh.verts.size(),
-            collider.localMin.x, collider.localMin.y, collider.localMin.z,
-            collider.localMax.x, collider.localMax.y, collider.localMax.z
-        );
-    }
+    buildBodyPartCollidersFromModel(model, *this, /*buildRenderMeshes=*/true);
 
     // Publish the full immutable parse result into the cache.
     cached.bodyColliders = bodyColliders;
@@ -586,6 +617,46 @@ bool Player::loadModel(const char* path)
     printf("[PLAYER GLB] hierarchy nodes=%zu bodyColliders=%zu root=plrOrigin expected\n",
            nodes.size(), bodyColliders.size());
     return modelLoaded;
+}
+
+bool Player::loadModelColliders(const char* path)
+{
+    const std::string resolvedPath = resolveAssetPath(path);
+    auto& cache = playerModelCache();
+
+    // Reuse an already-parsed model when a client has cached it. The cache
+    // holds the pristine skeleton; overrides are re-applied per actor.
+    auto cacheIt = cache.find(resolvedPath);
+    if (cacheIt != cache.end() && cacheIt->second.valid)
+    {
+        copyCachedModelIntoPlayer(cacheIt->second, *this);
+        applyBodypartConfigOverrides(restLocalTransforms, nodes);
+        syncPoseSkeletonFromRestLocal(*this);
+        updateModelWorldTransforms();
+        return !physicalBody.parts.empty();
+    }
+
+    tinygltf::TinyGLTF loader;
+    tinygltf::Model model;
+    std::string err;
+    std::string warn;
+    if (!loader.LoadBinaryFromFile(&model, &err, &warn, resolvedPath))
+    {
+        Debug::warn(Debug::Category::GLB,
+            "[PLAYER GLB HEADLESS] failed to load %s: %s\n",
+            resolvedPath.c_str(), err.c_str());
+        return false;
+    }
+
+    buildNodeHierarchyFromModel(model, *this);
+    applyBodypartConfigOverrides(restLocalTransforms, nodes);
+    syncPoseSkeletonFromRestLocal(*this);
+    buildBodyPartCollidersFromModel(model, *this, /*buildRenderMeshes=*/false);
+    updateModelWorldTransforms();
+
+    // Do not publish into the shared cache: this actor has no GL render mesh,
+    // and a cache entry with an empty render mesh would break later client loads.
+    return !physicalBody.parts.empty();
 }
 
 bool Player::loadCharacter(const std::string& characterName)

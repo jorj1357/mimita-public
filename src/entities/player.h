@@ -491,6 +491,12 @@ public:
     explicit Player(bool loadRenderModel);
     void reset();
     bool loadModel(const char* path);
+    // CPU-only: builds the skeleton and per-part collision triangles with no GL
+    // call, no GPU upload, and no render mesh. Used by NPC, headless-server, and
+    // replay actors so every actor, not just the local player, has real body
+    // triangles for the actor-triangle collision owner. Returns true when at
+    // least one body part with triangles was loaded.
+    bool loadModelColliders(const char* path);
     void applyReplayPose(
         const glm::vec3& rootPosition,
         float rootYaw,
@@ -553,6 +559,14 @@ public:
 
     // Previous frame body sample positions for limb sweep collisions
     std::vector<glm::vec3> previousBodySamplePositions;
+
+    // Weapon collision mesh: the weapon render mesh's triangles in the same
+    // model-local space as the rendered mesh, so the collider and the renderer
+    // share geometry. previousWeaponModelTransform is the sweep start for the
+    // actor-triangle solver (committed once per tick by the collision owner).
+    std::vector<CollisionTriangle> weaponColliderMesh;
+    std::string weaponColliderMeshPath;
+    glm::mat4 previousWeaponModelTransform{1.0f};
     Capsule weaponCollisionCapsule{};
     std::vector<Capsule> weaponCollisionCapsules;
     Capsule prevWeaponCollisionCapsule{}; // previous frame for sweep delta computation
