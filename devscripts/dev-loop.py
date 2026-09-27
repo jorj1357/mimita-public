@@ -336,9 +336,9 @@ def publish_build(number: int) -> Path:
 class DevLoop:
     def __init__(self, profile: dict, auto_restart: bool):
         self.profile = profile
-        # Development sessions always keep the newest process alive. Retain
-        # the CLI argument for compatibility, but do not allow AUTO-RESTART
-        # to be switched off.
+        # Development sessions keep one server/client pair. Retain the CLI
+        # argument for compatibility, but only successful builds and an
+        # explicit [1] launch may replace that pair.
         self.auto_restart = True
         self.stop_event = threading.Event()
         self.change_event = threading.Event()
@@ -643,7 +643,7 @@ class DevLoop:
             "",
             f"RUNNING: {self.running_build or '(none)'}",
             f"LATEST:  {self.latest_build or '(none)'}",
-            "AUTO-RESTART: ON",
+            "AUTO-RESTART: BUILD UPDATES ONLY",
         ]
         if self.latest_stale:
             lines.append("LATEST BUILD IS STALE")
