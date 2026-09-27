@@ -49,6 +49,12 @@ struct NpcNavigator
     glm::vec3 lastGoal{0.0f};
     bool hasLastGoal = false;
 
+    // Short local recovery used when the current route points into a wall.
+    bool backtrackActive = false;
+    glm::vec3 backtrackDirection{0.0f};
+    float backtrackRemaining = 0.0f;
+    float backtrackTimeRemaining = 0.0f;
+
     // Diagnostics.
     uint32_t planCount = 0;
     uint32_t repathCount = 0;
@@ -60,4 +66,7 @@ struct NpcNavigator
     void reset();
     // Force a replan on the next update (e.g. target teleported).
     void requestRepath() { repathTimer = 0.0f; hasLastGoal = false; }
+
+    void startBacktrack(const glm::vec3& blockedDirection,
+                        float distance, float duration);
 };

@@ -20,6 +20,7 @@
 #include <shellapi.h>
 
 #include "debug/debug-log.h"
+#include "devtools/terminal.h"
 #include "duel/duel-history.h"
 #include "duel/duel-queue.h"
 #include "game/game-state.h"
@@ -41,7 +42,7 @@ extern DuelManager gDuelManager;
 namespace PauseMenu {
 namespace {
 
-enum class View { Main, ConfirmLeave, Settings, Help };
+enum class View { Main, ConfirmLeave, ConfirmReset, Settings, Help };
 bool gOpen = false;
 View gView = View::Main;
 
@@ -158,7 +159,7 @@ void handleKey(GLFWwindow* window, int key, int action)
 {
     if (!gOpen || action != GLFW_PRESS) return;
     if (key != GLFW_KEY_ESCAPE) return;
-    if (gView == View::ConfirmLeave) gView = View::Main;
+    if (gView == View::ConfirmLeave || gView == View::ConfirmReset) close(window);
     else if (gView == View::Settings) gView = View::Main;
     else close(window);
 }
@@ -189,6 +190,17 @@ void render(GLFWwindow* window)
         return;
     }
 
+    if (gView == View::ConfirmReset) {
+        drawGuiElement(window, *layout.get("resetConfirmPanel"));
+        drawText(layout.get("resetConfirmText"), layout.get("resetConfirmText")->text);
+        if (drawGuiElement(window, *layout.get("resetConfirmYes")).clicked) {
+            close(window);
+            Terminal::instance().execute("explode");
+        }
+        if (drawGuiElement(window, *layout.get("resetConfirmNo")).clicked) gView = View::Main;
+        return;
+    }
+
     for (const char* id : {"menuPanel", "menuTitle"}) {
         if (const GuiElement* element = layout.get(id)) drawGuiElement(window, *element);
     }
@@ -208,6 +220,8 @@ void render(GLFWwindow* window)
         glfwSetClipboardString(window, value.c_str());
         NotificationSystem::instance().push("Code copied!", "Code: " + value, 180, {});
     }
+    if (const GuiElement* reset = layout.get("resetButton"); reset && drawGuiElement(window, *reset).clicked)
+        gView = View::ConfirmReset;
     if (const GuiElement* leave = layout.get("leaveButton"); leave && drawGuiElement(window, *leave).clicked) gView = View::ConfirmLeave;
     drawQuickControls(window, layout);
 }

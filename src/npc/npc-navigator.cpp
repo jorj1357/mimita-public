@@ -313,6 +313,28 @@ void NpcNavigator::reset()
     repathTimer = 0.0f;
     hasLastGoal = false;
     goal = NpcGoal{};
+    backtrackActive = false;
+    backtrackDirection = glm::vec3(0.0f);
+    backtrackRemaining = 0.0f;
+    backtrackTimeRemaining = 0.0f;
+}
+
+void NpcNavigator::startBacktrack(const glm::vec3& blockedDirection,
+                                  float distance, float duration)
+{
+    glm::vec3 planar = glm::vec3(blockedDirection.x, blockedDirection.y, 0.0f);
+    const float len = glm::length(planar);
+    if (len < 0.001f || distance <= 0.0f || duration <= 0.0f)
+        return;
+
+    backtrackDirection = -planar / len;
+    backtrackRemaining = distance;
+    backtrackTimeRemaining = duration;
+    backtrackActive = true;
+    path.clear();
+    pathGap.clear();
+    pathIndex = 0;
+    requestRepath();
 }
 
 NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World& world,
@@ -361,6 +383,27 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         pathGap.clear();
         pathIndex = 0;
         return result;
+    }
+
+    if (backtrackActive)
+    {
+        const glm::vec3 moved = npc.body.pos - npc.previousPosition;
+        backtrackRemaining -= glm::length(glm::vec2(moved.x, moved.y));
+        backtrackTimeRemaining -= dt;
+        if (backtrackRemaining <= 0.0f || backtrackTimeRemaining <= 0.0f)
+        {
+            backtrackActive = false;
+            requestRepath();
+        }
+        else
+        {
+            result.valid = true;
+            result.detour = true;
+            result.destination = dest;
+            result.waypoint = npc.body.pos + backtrackDirection;
+            result.dir = backtrackDirection;
+            return result;
+        }
     }
 
     // ── Decide whether to (re)plan ──────────────────────────────────

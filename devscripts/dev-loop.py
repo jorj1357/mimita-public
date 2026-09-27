@@ -251,6 +251,18 @@ def published_builds() -> list[Path]:
     )
 
 
+def newest_valid_published_build() -> int | None:
+    """Return the newest numbered artifact that contains a usable EXE."""
+    for path in published_builds():
+        exe = path / "mimita.exe"
+        try:
+            if exe.is_file() and exe.stat().st_size > 0:
+                return int(path.name)
+        except OSError:
+            continue
+    return None
+
+
 def publish_build(number: int) -> Path:
     source_exe = ROOT / "mimita.exe"
     if not source_exe.is_file():
@@ -298,11 +310,18 @@ class DevLoop:
         self.last_snapshot = snapshot_inputs()
         self.processes: list[subprocess.Popen] = []
         self.running_build = None
-        self.latest_build = None
+        self.latest_build = newest_valid_published_build()
         self.latest_generation = 0
-        self.latest_stale = False
+        # A disk-restored artifact is usable, but it has not been proven
+        # against this loop's current source snapshot yet. The initial build
+        # must validate the current tree before the artifact can be launched.
+        self.latest_stale = self.latest_build is not None
         self.build_pending = True
-        self.last_message = "starting"
+        self.last_message = (
+            f"restored published build {self.latest_build:04d}; validating current source"
+            if self.latest_build is not None
+            else "starting; no published build found"
+        )
         self.last_status_line = None
         self.room_file_path: Path | None = None
         self.room_code = None
@@ -410,13 +429,34 @@ class DevLoop:
 
         with self.lock:
             self.last_message = f"build failed with exit code {result}"
+            # The previous artifact is intentionally retained for inspection,
+            # but it must never be presented as current or launched by [1] or
+            # automatic process recovery.
+            self.latest_stale = True
             self.build_pending = False
         self.save_state("failed")
         print(f"[DEV] build failed with exit code {result}; current game was left running")
+        print("[DEV] compiler/build diagnostics (full build output was streamed above):")
+        diagnostics = [
+            line.rstrip()
+            for line in output
+            if any(marker in line.lower() for marker in (
+                "error:", "fatal error", "undefined reference", "collect2:",
+                "linker command failed", "build failed",
+            ))
+        ]
+        if diagnostics:
+            for line in diagnostics:
+                print(f"[DEV][BUILD ERROR] {line}")
+        else:
+            print("[DEV][BUILD ERROR] No filtered compiler diagnostic found; review the full output above.")
         return False
 
     def launch_latest(self) -> None:
         if self.latest_build is None:
+            return
+        if self.latest_stale:
+            print("[DEV] refusing to launch stale build; press [1] to retry the build")
             return
         build_dir = BUILD_ROOT / f"{self.latest_build:04d}"
         exe = build_dir / "mimita.exe"
@@ -561,6 +601,17 @@ class DevLoop:
         # development loop, independent of the legacy AUTO-RESTART toggle.
         if live or self.latest_build is None:
             return
+        if self.latest_stale:
+            # Never recover a dead process by relaunching an artifact that is
+            # known not to match the current source. Wait for [1] to queue a
+            # retry, which will print the compiler diagnostics on failure.
+            if not self.build_pending:
+                message = "latest build is stale; press [1] to retry the build"
+                if self.last_message != message:
+                    self.last_message = message
+                    self.save_state("stale_waiting")
+                    self.print_status(force=True)
+            return
         now = time.monotonic()
         if now < self.next_auto_launch_at:
             return
@@ -595,7 +646,7 @@ class DevLoop:
         ]
         if self.latest_stale:
             lines.append("LATEST BUILD IS STALE")
-        lines.append("[1] Switch to newest  [Q] Quit")
+        lines.append("[1] Build/retry or switch to newest  [Q] Quit")
         return lines
 
     def print_status(self, force: bool = False) -> None:
@@ -645,7 +696,14 @@ class DevLoop:
             return
         key = msvcrt.getwch().lower()
         if key == "1":
-            self.launch_latest()
+            if self.latest_stale or self.latest_build is None:
+                self.build_pending = True
+                self.change_event.clear()
+                self.last_message = "manual build retry queued"
+                self.save_state("build_queued")
+                print("[DEV] [1] queued a build retry; stale builds will not be launched")
+            else:
+                self.launch_latest()
             self.print_status()
         elif key == "a":
             print("[DEV] auto-restart is always ON")

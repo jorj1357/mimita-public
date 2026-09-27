@@ -9,6 +9,7 @@ static constexpr float COVER_CHECK_DIST = 4.0f;
 #include "physics/physics-types.h"
 #include "world/world.h"
 #include "npc/npc-internal.h"
+#include "npc/npc-difficulty-config.h"
 
 namespace {
 
@@ -112,32 +113,48 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
     glm::vec3 origin = npc.body.pos;
     origin.z += 0.5f;
 
-    float checkDist = 1.5f;
-    float stepAngle = glm::pi<float>() / 6.0f;
+    const auto& cfg = NpcDifficultyConfig::instance().settings();
+    if (!cfg.wallAvoidanceEnabled)
+        return desiredDir;
 
-    if (rayHitsAny(origin, desiredDir, checkDist, candidates, world))
+    const float checkDist = cfg.wallCastDistance;
+    if (!rayHitsAny(origin, desiredDir, checkDist, candidates, world))
+        return desiredDir;
+
+    // Search the closest useful escape direction first. This keeps the NPC
+    // moving naturally around a wall, but also allows it to back up when the
+    // forward, left, and right directions are all blocked.
+    const glm::vec3 left{-desiredDir.y, desiredDir.x, 0.0f};
+    const glm::vec3 right = -left;
+    const glm::vec3 candidatesByPreference[] = {
+        left, right,
+        glm::normalize(left - desiredDir),
+        glm::normalize(right - desiredDir),
+        -desiredDir,
+        glm::normalize(-desiredDir + left),
+        glm::normalize(-desiredDir + right)
+    };
+
+    glm::vec3 bestDir = -desiredDir;
+    float bestClearance = -1.0f;
+    for (const glm::vec3& altDir : candidatesByPreference)
     {
-        for (int side = 0; side < 4; ++side)
+        if (glm::length(altDir) < 0.001f)
+            continue;
+        float hitDistance = cfg.wallSearchDistance;
+        if (!rayHitsAny(origin, altDir, cfg.wallSearchDistance, candidates, world, &hitDistance))
+            return glm::normalize(altDir);
+        if (hitDistance > bestClearance)
         {
-            float angle = stepAngle * (side + 1);
-            for (float sign : {1.0f, -1.0f})
-            {
-                glm::vec3 altDir = desiredDir;
-                float c = std::cos(angle * sign);
-                float s = std::sin(angle * sign);
-                altDir = {altDir.x * c - altDir.y * s, altDir.x * s + altDir.y * c, 0.0f};
-
-                if (!rayHitsAny(origin, altDir, checkDist, candidates, world))
-                    return altDir;
-            }
+            bestClearance = hitDistance;
+            bestDir = glm::normalize(altDir);
         }
-        glm::vec3 perp{-desiredDir.y, desiredDir.x, 0.0f};
-        if (!rayHitsAny(origin, perp, checkDist, candidates, world))
-            return perp;
-        return -perp;
     }
 
-    return desiredDir;
+    // Every nearby direction is partly blocked. Move toward the direction
+    // with the most room so the shared collision solver can make progress;
+    // the normal stuck/repath logic will keep retrying on later ticks.
+    return bestDir;
 }
 
 glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir, const World& world)

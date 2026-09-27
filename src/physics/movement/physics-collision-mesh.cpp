@@ -37,6 +37,15 @@ bool pointInTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b,
     const glm::vec3 v0 = b - a;
     const glm::vec3 v1 = c - a;
     const glm::vec3 v2 = p - a;
+    const glm::vec3 planeNormal = glm::cross(v0, v1);
+    const float planeLength = glm::length(planeNormal);
+    if (planeLength < 1e-10f)
+        return false;
+    // Barycentric coordinates alone describe the triangle's projection. They
+    // must be paired with a plane-distance test, otherwise a huge wall can
+    // report points many meters in front of it as "inside" the triangle.
+    if (std::fabs(glm::dot(v2, planeNormal / planeLength)) > 1e-4f)
+        return false;
     const float d00 = glm::dot(v0, v0);
     const float d01 = glm::dot(v0, v1);
     const float d11 = glm::dot(v1, v1);
@@ -79,6 +88,38 @@ bool segmentTriangleIntersect(const glm::vec3& p, const glm::vec3& q,
         return false;
     const glm::vec3 hit = p + (q - p) * t;
     return pointInTriangle(hit, a, b, c);
+}
+
+// Same test as above, but reports only a crossing after the sweep has
+// actually started. A hit at t=0 belongs to the old pose and must not glue an
+// actor to a surface while it is leaving that surface.
+bool segmentTriangleIntersectAfterStart(const glm::vec3& p,
+                                        const glm::vec3& q,
+                                        const glm::vec3& a,
+                                        const glm::vec3& b,
+                                        const glm::vec3& c,
+                                        float& outT)
+{
+    const glm::vec3 n = glm::cross(b - a, c - a);
+    const float nLen = glm::length(n);
+    if (nLen < 1e-10f)
+        return false;
+    const glm::vec3 nn = n / nLen;
+    const float dp = glm::dot(p - a, nn);
+    const float dq = glm::dot(q - a, nn);
+    if (dp * dq > 0.0f)
+        return false;
+    const float denom = dp - dq;
+    if (std::fabs(denom) < 1e-12f)
+        return false;
+    const float t = dp / denom;
+    if (t <= 1e-4f || t > 1.0f + 1e-4f)
+        return false;
+    const glm::vec3 hit = p + (q - p) * t;
+    if (!pointInTriangle(hit, a, b, c))
+        return false;
+    outT = t;
+    return true;
 }
 
 // Triangle vs triangle: edges of each against the other, then containment.
@@ -244,20 +285,49 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
                 const CollisionTriangle& wt = world.collisionMesh.triangles[wi];
                 glm::vec3 hitCentroid(0.0f);
                 bool hit = false;
-                for (int si = 0; si <= sweepSteps; ++si) {
-                    const float alpha = (float)si / (float)sweepSteps;
-                    const glm::vec3 sa = pa + (a - pa) * alpha;
-                    const glm::vec3 sb = pb + (b - pb) * alpha;
-                    const glm::vec3 sc = pc + (c - pc) * alpha;
-                    ++triangleTests;
-                    if (triangleTriangleIntersect(sa, sb, sc,
-                                                   wt.a, wt.b, wt.c)) {
-                        hitCentroid = (sa + sb + sc) / 3.0f;
+                bool currentOverlap = triangleTriangleIntersect(
+                    a, b, c, wt.a, wt.b, wt.c);
+                ++triangleTests;
+                if (currentOverlap) {
+                    // A current overlap is a real penetration. Use the
+                    // current triangle's side of the surface for its normal.
+                    // Do not let an old pose decide where to push an actor
+                    // that is already moving away.
+                    hitCentroid = centroid;
+                    hit = true;
+                } else if (glm::dot(sweep, sweep) > 1e-8f) {
+                    // Check the three vertex paths directly so a thin world
+                    // triangle cannot fit between two fixed samples.
+                    float crossingT = 0.0f;
+                    if (segmentTriangleIntersectAfterStart(
+                            pa, a, wt.a, wt.b, wt.c, crossingT) ||
+                        segmentTriangleIntersectAfterStart(
+                            pb, b, wt.a, wt.b, wt.c, crossingT) ||
+                        segmentTriangleIntersectAfterStart(
+                            pc, c, wt.a, wt.b, wt.c, crossingT)) {
+                        hitCentroid = prevCentroid + sweep * crossingT;
                         hit = true;
-                        break;
                     }
-                    if (triangleTests >= kMaxTriangleTests)
-                        return contacts;
+
+                    // The previous pose is only the start of a sweep. It is
+                    // not itself a new contact: this deliberately starts at
+                    // the first intermediate pose, so "touch then walk away"
+                    // does not keep the actor glued to the old surface.
+                    for (int si = 1; !hit && si < sweepSteps; ++si) {
+                        const float alpha = (float)si / (float)sweepSteps;
+                        const glm::vec3 sa = pa + (a - pa) * alpha;
+                        const glm::vec3 sb = pb + (b - pb) * alpha;
+                        const glm::vec3 sc = pc + (c - pc) * alpha;
+                        ++triangleTests;
+                        if (triangleTriangleIntersect(sa, sb, sc,
+                                                       wt.a, wt.b, wt.c)) {
+                            hitCentroid = (sa + sb + sc) / 3.0f;
+                            hit = true;
+                            break;
+                        }
+                        if (triangleTests >= kMaxTriangleTests)
+                            return contacts;
+                    }
                 }
                 if (!hit)
                     continue;
@@ -267,15 +337,16 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
                 // one poking through a wall is pushed out, regardless of where
                 // the part's own triangle centroid sits.
                 glm::vec3 n = wt.normal;
-                if (glm::dot(sweep, sweep) > 1e-8f) {
+                if (currentOverlap) {
+                    if (glm::dot(p.pos - wt.a, n) < 0.0f)
+                        n = -n;
+                } else {
                     // For a swept hit, the response must oppose the part's
                     // travel. This also handles a triangle that crossed a
                     // wall and is already on the far side at the current
                     // tick, where the root position alone is misleading.
                     if (glm::dot(sweep, n) > 0.0f)
                         n = -n;
-                } else if (glm::dot(p.pos - wt.a, n) < 0.0f) {
-                    n = -n;
                 }
 
                 // Penetration: deepest body vertex behind the oriented plane.

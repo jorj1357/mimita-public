@@ -141,6 +141,12 @@ bool NpcDifficultyConfig::load(const std::string& path)
         next.freezeChance = std::max(0.0f, optFloat(root, "freezeChance", next.freezeChance));
         next.movementNoiseScale = std::max(0.0f, optFloat(root, "movementNoiseScale", next.movementNoiseScale));
         next.jukeFrequency = std::max(0.0f, optFloat(root, "jukeFrequency", next.jukeFrequency));
+        next.wallAvoidanceEnabled = optBool(root, "wallAvoidanceEnabled", next.wallAvoidanceEnabled);
+        next.wallCastDistance = std::clamp(optFloat(root, "wallCastDistance", next.wallCastDistance), 0.25f, 8.0f);
+        next.wallSearchDistance = std::clamp(optFloat(root, "wallSearchDistance", next.wallSearchDistance), 0.5f, 8.0f);
+        next.wallBacktrackEnabled = optBool(root, "wallBacktrackEnabled", next.wallBacktrackEnabled);
+        next.wallBacktrackDistance = std::clamp(optFloat(root, "wallBacktrackDistance", next.wallBacktrackDistance), 0.5f, 12.0f);
+        next.wallBacktrackDuration = std::clamp(optFloat(root, "wallBacktrackDuration", next.wallBacktrackDuration), 0.25f, 6.0f);
 
         // Force weapon mode
         next.forceWeapon = optString(root, "forceWeapon", next.forceWeapon);
@@ -272,6 +278,12 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["freezeChance"] = mData.freezeChance;
     j["movementNoiseScale"] = mData.movementNoiseScale;
     j["jukeFrequency"] = mData.jukeFrequency;
+    j["wallAvoidanceEnabled"] = mData.wallAvoidanceEnabled;
+    j["wallCastDistance"] = mData.wallCastDistance;
+    j["wallSearchDistance"] = mData.wallSearchDistance;
+    j["wallBacktrackEnabled"] = mData.wallBacktrackEnabled;
+    j["wallBacktrackDistance"] = mData.wallBacktrackDistance;
+    j["wallBacktrackDuration"] = mData.wallBacktrackDuration;
     j["forceWeapon"] = mData.forceWeapon;
 
     j["mirrorMovementEnabled"] = mData.mirrorMovementEnabled;

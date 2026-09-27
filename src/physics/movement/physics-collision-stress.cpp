@@ -366,6 +366,24 @@ bool collisionStressSelfTest(std::string* outSummary)
             ok = ok && sweptOk;
             summary += sweptOk ? "PASS " : "FAIL ";
             summary += "[COLLISION STRESS] swept limb crosses thin wall\n";
+
+            // A previous pose touching a wall must not glue the actor to it
+            // after the current pose has moved away.
+            PhysicalBodyPart leavingArm = sweptArm;
+            leavingArm.name = "leavingArm";
+            leavingArm.previousWorldTransform = glm::mat4(1.0f);
+            leavingArm.previousWorldTransform[3].x = 0.0f;
+            leavingArm.worldTransform = glm::mat4(1.0f);
+            leavingArm.worldTransform[3].x = -1.0f;
+            Player leavingPlayer(false);
+            leavingPlayer.pos = glm::vec3(0.0f, 0.0f, 1.0f);
+            leavingPlayer.physicalBody.parts.push_back(leavingArm);
+            const std::vector<RecoveryContact> leavingContacts =
+                collectBodyMeshContacts(leavingPlayer, sweptWorld);
+            const bool leavingOk = leavingContacts.empty();
+            ok = ok && leavingOk;
+            summary += leavingOk ? "PASS " : "FAIL ";
+            summary += "[COLLISION STRESS] limb leaves old wall contact\n";
         }
         else
         {

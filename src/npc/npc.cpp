@@ -837,9 +837,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
-    // Pre-gather collision triangles once for local navigation checks (3m covers obstacle, climbable, wall avoid)
+    const auto& npcDifficulty = NpcDifficultyConfig::instance().settings();
+    // Pre-gather collision triangles once for local navigation checks.
+    // The radius follows the configurable wall search distance.
     glm::vec3 gatherCenter = npc.body.pos + glm::vec3(0.0f, 0.0f, 0.5f);
-    AABB localBounds{gatherCenter - glm::vec3(3.0f), gatherCenter + glm::vec3(3.0f)};
+    const float navigationGatherDistance = std::max(3.0f, npcDifficulty.wallSearchDistance + 0.5f);
+    AABB localBounds{gatherCenter - glm::vec3(navigationGatherDistance), gatherCenter + glm::vec3(navigationGatherDistance)};
     static thread_local std::vector<int> nearCandidates;
     nearCandidates.clear();
         appendChunkTrianglesForAABB(world, localBounds, 0.0f, nearCandidates, "npcNearCandidates");
@@ -1030,7 +1033,34 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     {
         Perf::ScopedTimer _pathTimer("NpcPathfinding");
         if (glm::length(moveDir) > 0.001f)
+        {
+            const auto& navCfg = NpcDifficultyConfig::instance().settings();
+            const glm::vec3 requestedDir = moveDir;
+            const bool requestedBlocked = navCfg.wallAvoidanceEnabled &&
+                NpcNavigation::obstacleInDirection(
+                    npc, requestedDir, navCfg.wallCastDistance, world, nearCandidates);
             moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world, nearCandidates);
+
+            if (requestedBlocked)
+            {
+                // The current goal direction is not a usable route. Make the
+                // navigator throw away its cached path so the next tick can
+                // plan around the wall instead of repeatedly aiming at it.
+                npc.navigator.requestRepath();
+
+                const bool stillBlocked = NpcNavigation::obstacleInDirection(
+                    npc, moveDir, navCfg.wallCastDistance, world, nearCandidates);
+                if (stillBlocked && navCfg.wallBacktrackEnabled)
+                {
+                    npc.navigator.startBacktrack(
+                        requestedDir,
+                        navCfg.wallBacktrackDistance,
+                        navCfg.wallBacktrackDuration);
+                    moveDir = -glm::normalize(glm::vec3(
+                        requestedDir.x, requestedDir.y, 0.0f));
+                }
+            }
+        }
 
         if (NpcNavigation::isStuck(npc))
         {

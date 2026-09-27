@@ -66,6 +66,15 @@ struct NpcDifficultySettings {
     float movementNoiseScale = 1.0f;
     float jukeFrequency = 1.0f;
 
+    // Local wall recovery policy. Collision execution remains owned by the
+    // shared actor movement/collision path.
+    bool wallAvoidanceEnabled = true;
+    float wallCastDistance = 1.5f;
+    float wallSearchDistance = 3.0f;
+    bool wallBacktrackEnabled = true;
+    float wallBacktrackDistance = 5.0f;
+    float wallBacktrackDuration = 2.5f;
+
     // Force a specific weapon. When non-empty, NPCs always use this weapon
     // and ignore distance-based switching. Set to a weapon id to test it.
     std::string forceWeapon = "";
