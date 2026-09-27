@@ -38,6 +38,10 @@ struct ActorCollisionMesh {
 // Order is stable: body parts in physicalBody order, then the weapon.
 std::vector<ActorCollisionMesh> collectActorCollisionMeshes(Player& player);
 
+// Body parts only, in physicalBody order. Used where the weapon is handled by a
+// different owner (e.g. the legacy body-mesh contact path).
+std::vector<ActorCollisionMesh> collectActorBodyCollisionMeshes(Player& player);
+
 // Advance the sweep-start transforms to the desired pose. Call once per tick
 // after solving so the next tick's sweep starts where this one ended.
 void commitActorCollisionMeshes(Player& player);

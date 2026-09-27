@@ -141,6 +141,44 @@ collision representation:
 The active collision path is still unchanged; the collector is not yet called by
 `doCollisions`. Wiring it in is Phase 3+.
 
+## Phase 3 — the single triangle solver (added)
+
+`src/physics/movement/actor-triangle-solver.{h,cpp}` owns:
+
+- `ActorWorldContact { normal; point; impactVelocity; penetration;
+  timeOfImpact; worldTriangle; actorPart }`.
+- `ActorTriangleCollisionResult`.
+- `solveActorTriangleCollision(Player&, const World&, desiredMovement,
+  ActorTriangleCollisionResult&)`.
+
+Design and rules:
+
+- Captures the actor meshes **once** (safe previous + desired). Corrections
+  accumulate as a translation and are applied once at the end, so the safe pose
+  is never overwritten mid-solve. This is what stops a floor depenetration from
+  being re-read as a fresh downward sweep (the bug that flipped the floor
+  normal during development).
+- Broadphase: one union swept AABB (`makeSweptActorMeshAABB`) plus
+  `appendChunkTrianglesForAABB`; candidates are gathered once and reused.
+- Contacts: `collectActorMeshContacts` (shared with the legacy body path) tests
+  every mesh triangle swept from safe to desired plus current-pose penetration,
+  rejects t=0 old-pose hits, and orients normals toward the actor pose center.
+- Manifold: `mergeContactsByNormal` combines contacts whose normals agree within
+  0.95, keeping the deepest penetration and strongest part impact — one response
+  per surface, not per part.
+- Position: `solveBatchedCorrection` per iteration, clamped; final penetration
+  validation runs over up to 4 iterations.
+- Grounding: from the actor's own pose box lowest point, not the capsule. A
+  walkable normal near the lowest point grounds; a walkable contact high on the
+  body (hand on a ledge) does not.
+- `physics-collision-mesh.cpp` was refactored: the triangle math and budget loop
+  moved into `collectActorMeshContacts`; `collectBodyMeshContacts` now builds
+  body meshes, gathers candidates, and calls it, so the legacy path and the
+  solver share one contact implementation.
+
+`doCollisions` still does not call the solver; it runs alongside the legacy
+pipeline and is proven by `--actor-triangle-solve-selftest`.
+
 ## Grounded / contact facts
 
 - `applyCollisionContact` (`physics-collision-core.cpp:126`) sets

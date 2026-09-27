@@ -22,6 +22,7 @@
 #include "config/collision-config.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/movement-types.h"
+#include "physics/movement/actor-collision-mesh.h"
 
 class Player;
 class CollisionTriangle;
@@ -377,6 +378,24 @@ std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);
 // (and the previous transform for sweep) and tested against world triangles.
 // First version: brute-force within each part's broadphase AABB; optimize later.
 std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& world);
+
+// Generalized actor-mesh contact test: tests every triangle of every supplied
+// ActorCollisionMesh (swept from its previousTransform to its desiredTransform,
+// plus current-pose penetration) against the supplied world triangle
+// candidates. Shares the exact triangle math and budgets with the body path.
+// `actorPos` orients current-overlap normals toward the actor. The caller owns
+// broadphase candidate gathering so the cache/scratch path can be reused.
+std::vector<RecoveryContact> collectActorMeshContacts(
+    const World& world,
+    const std::vector<ActorCollisionMesh>& meshes,
+    const std::vector<int>& candidates,
+    const glm::vec3& actorPos);
+
+// Union swept AABB (previous + desired + move) of every supplied mesh, in local
+// triangle space transformed to world. Used to gather broadphase candidates.
+AABB makeSweptActorMeshAABB(
+    const std::vector<ActorCollisionMesh>& meshes,
+    const glm::vec3& move);
 
 // =====================================================
 // GLB collision pipeline

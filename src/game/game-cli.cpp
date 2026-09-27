@@ -39,6 +39,7 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/actor-triangle-spike.h"
 #include "physics/movement/actor-collision-mesh.h"
+#include "physics/movement/actor-triangle-solver.h"
 #include "debug/debug-log.h"
 #include "network/ice/ice-agent.h"
 #include "network/ice/ice-config.h"
@@ -223,6 +224,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = actorCollisionMeshSelfTest(&summary);
         printf("%s", summary.c_str());
         printf("[ACTOR COLLISION MESH SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--actor-triangle-solve-selftest") {
+        std::string summary;
+        const bool ok = actorTriangleSolverSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[ACTOR TRIANGLE SOLVE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         return true;
     }
 

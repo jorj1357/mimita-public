@@ -197,21 +197,7 @@ std::unordered_map<std::string, CachedWeapon>& weaponCache()
 
 std::vector<ActorCollisionMesh> collectActorCollisionMeshes(Player& player)
 {
-    std::vector<ActorCollisionMesh> meshes;
-    meshes.reserve(player.physicalBody.parts.size() + 2);
-
-    for (const PhysicalBodyPart& part : player.physicalBody.parts)
-    {
-        if (part.collider.triangles.empty())
-            continue;
-        ActorCollisionMesh mesh;
-        mesh.label = part.name.c_str();
-        mesh.localTriangles = &part.collider.triangles;
-        mesh.previousTransform = part.previousWorldTransform;
-        mesh.desiredTransform = part.worldTransform;
-        mesh.affectsMovement = true;
-        meshes.push_back(mesh);
-    }
+    std::vector<ActorCollisionMesh> meshes = collectActorBodyCollisionMeshes(player);
 
     if (!player.weaponColliderMesh.empty())
     {
@@ -225,6 +211,27 @@ std::vector<ActorCollisionMesh> collectActorCollisionMeshes(Player& player)
     }
 
     // Future held objects / tools append here with the same representation.
+
+    return meshes;
+}
+
+std::vector<ActorCollisionMesh> collectActorBodyCollisionMeshes(Player& player)
+{
+    std::vector<ActorCollisionMesh> meshes;
+    meshes.reserve(player.physicalBody.parts.size());
+
+    for (const PhysicalBodyPart& part : player.physicalBody.parts)
+    {
+        if (part.collider.triangles.empty())
+            continue;
+        ActorCollisionMesh mesh;
+        mesh.label = part.name.c_str();
+        mesh.localTriangles = &part.collider.triangles;
+        mesh.previousTransform = part.previousWorldTransform;
+        mesh.desiredTransform = part.worldTransform;
+        mesh.affectsMovement = true;
+        meshes.push_back(mesh);
+    }
 
     return meshes;
 }

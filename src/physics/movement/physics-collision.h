@@ -35,6 +35,10 @@ struct RecoveryContact
     int triangleIndex = -1;
     const Block* block = nullptr;
     const char* label = "recovery";
+    // Sweep parameter of the crossing for swept actor-mesh contacts in [0,1].
+    // 0 for a current-pose overlap. Appended so existing aggregate initializers
+    // keep working unchanged.
+    float timeOfImpact = 0.0f;
 };
 
 // Resolves ALL solid block collisions (no slopes)

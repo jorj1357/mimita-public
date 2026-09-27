@@ -12,6 +12,7 @@
 */
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/actor-collision-mesh.h"
 #include "physics/physics-types.h"
 #include "physics/config.h"
 #include "entities/player.h"
@@ -21,6 +22,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -217,51 +219,77 @@ glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a,
 
 } // namespace
 
-std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& world)
+// Local-space bounds of a mesh's triangles. Body parts carry collider localMin/
+// localMax, but the generic actor mesh only guarantees triangles, so derive a
+// box the same way. Cheap: triangle counts are small (12 for a part).
+static void localBoundsOfMesh(const ActorCollisionMesh& mesh,
+                              glm::vec3& outMin, glm::vec3& outMax)
+{
+    outMin = glm::vec3(std::numeric_limits<float>::max());
+    outMax = glm::vec3(-std::numeric_limits<float>::max());
+    if (!mesh.localTriangles)
+        return;
+    for (const CollisionTriangle& t : *mesh.localTriangles)
+        for (const glm::vec3& v : {t.a, t.b, t.c})
+        {
+            outMin = glm::min(outMin, v);
+            outMax = glm::max(outMax, v);
+        }
+}
+
+AABB makeSweptActorMeshAABB(const std::vector<ActorCollisionMesh>& meshes,
+                            const glm::vec3& move)
+{
+    AABB out;
+    out.min = glm::vec3(std::numeric_limits<float>::max());
+    out.max = glm::vec3(-std::numeric_limits<float>::max());
+    for (const ActorCollisionMesh& mesh : meshes)
+    {
+        glm::vec3 lo, hi;
+        localBoundsOfMesh(mesh, lo, hi);
+        if (lo.x > hi.x)
+            continue;
+        const AABB desired = transformedColliderAABB(lo, hi, mesh.desiredTransform);
+        const AABB previous = transformedColliderAABB(lo, hi, mesh.previousTransform);
+        AABB box = mergedAABB(desired, previous);
+        box.min += glm::min(glm::vec3(0.0f), move);
+        box.max += glm::max(glm::vec3(0.0f), move);
+        out.min = glm::min(out.min, box.min);
+        out.max = glm::max(out.max, box.max);
+    }
+    return out;
+}
+
+std::vector<RecoveryContact> collectActorMeshContacts(
+    const World& world,
+    const std::vector<ActorCollisionMesh>& meshes,
+    const std::vector<int>& candidates,
+    const glm::vec3& actorPos)
 {
     std::vector<RecoveryContact> contacts;
-    if (world.collisionMesh.triangles.empty())
+    if (world.collisionMesh.triangles.empty() || candidates.empty())
         return contacts;
 
     constexpr float kSkin = 0.01f;
     int triangleTests = 0;
 
-    for (const PhysicalBodyPart& part : p.physicalBody.parts)
+    for (const ActorCollisionMesh& mesh : meshes)
     {
-        if (part.collider.triangles.empty())
+        if (!mesh.localTriangles || mesh.localTriangles->empty())
             continue;
 
-        // The world query must cover the whole path, not only where the limb
-        // ended. Otherwise a fast arm can cross a thin wall between ticks and
-        // have no wall triangle in its candidate list.
-        const AABB currentBox = transformedColliderAABB(
-            part.collider.localMin, part.collider.localMax, part.worldTransform);
-        const AABB previousBox = transformedColliderAABB(
-            part.collider.localMin, part.collider.localMax,
-            part.previousWorldTransform);
-        const AABB partBox = mergedAABB(currentBox, previousBox);
-
-        std::vector<int> candidates;
-        appendChunkTrianglesForAABB(world, partBox, kSkin, candidates,
-                                    "bodyMeshGather");
-        if (candidates.empty())
-            continue;
-
-        // Do not pick an arbitrary prefix of the visible limb mesh. Every
-        // loaded model triangle participates; the global test budget remains
-        // the safety valve for pathological assets.
-        const int triCount = (int)part.collider.triangles.size();
+        const int triCount = (int)mesh.localTriangles->size();
         int partContacts = 0;
 
         for (int ti = 0; ti < triCount && partContacts < kMaxContactsPerPart; ++ti)
         {
-            const CollisionTriangle& lt = part.collider.triangles[ti];
-            const glm::vec3 a = glm::vec3(part.worldTransform * glm::vec4(lt.a, 1.0f));
-            const glm::vec3 b = glm::vec3(part.worldTransform * glm::vec4(lt.b, 1.0f));
-            const glm::vec3 c = glm::vec3(part.worldTransform * glm::vec4(lt.c, 1.0f));
-            const glm::vec3 pa = glm::vec3(part.previousWorldTransform * glm::vec4(lt.a, 1.0f));
-            const glm::vec3 pb = glm::vec3(part.previousWorldTransform * glm::vec4(lt.b, 1.0f));
-            const glm::vec3 pc = glm::vec3(part.previousWorldTransform * glm::vec4(lt.c, 1.0f));
+            const CollisionTriangle& lt = (*mesh.localTriangles)[ti];
+            const glm::vec3 a = glm::vec3(mesh.desiredTransform * glm::vec4(lt.a, 1.0f));
+            const glm::vec3 b = glm::vec3(mesh.desiredTransform * glm::vec4(lt.b, 1.0f));
+            const glm::vec3 c = glm::vec3(mesh.desiredTransform * glm::vec4(lt.c, 1.0f));
+            const glm::vec3 pa = glm::vec3(mesh.previousTransform * glm::vec4(lt.a, 1.0f));
+            const glm::vec3 pb = glm::vec3(mesh.previousTransform * glm::vec4(lt.b, 1.0f));
+            const glm::vec3 pc = glm::vec3(mesh.previousTransform * glm::vec4(lt.c, 1.0f));
 
             const glm::vec3 centroid = (a + b + c) / 3.0f;
             const glm::vec3 prevCentroid = (pa + pb + pc) / 3.0f;
@@ -269,10 +297,6 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
 
             const float maxVertexTravel = std::max({
                 glm::length(a - pa), glm::length(b - pb), glm::length(c - pc)});
-            // Sample often enough that a thin wall cannot fit between two
-            // triangle tests. This is a conservative first swept-triangle
-            // implementation; the tested vertices are still the real model
-            // collider vertices used by the renderer.
             const int sweepSteps = std::clamp(
                 (int)std::ceil(maxVertexTravel / 0.08f), 1, 64);
 
@@ -285,19 +309,14 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
                 const CollisionTriangle& wt = world.collisionMesh.triangles[wi];
                 glm::vec3 hitCentroid(0.0f);
                 bool hit = false;
+                float timeOfImpact = 0.0f;
                 bool currentOverlap = triangleTriangleIntersect(
                     a, b, c, wt.a, wt.b, wt.c);
                 ++triangleTests;
                 if (currentOverlap) {
-                    // A current overlap is a real penetration. Use the
-                    // current triangle's side of the surface for its normal.
-                    // Do not let an old pose decide where to push an actor
-                    // that is already moving away.
                     hitCentroid = centroid;
                     hit = true;
                 } else if (glm::dot(sweep, sweep) > 1e-8f) {
-                    // Check the three vertex paths directly so a thin world
-                    // triangle cannot fit between two fixed samples.
                     float crossingT = 0.0f;
                     if (segmentTriangleIntersectAfterStart(
                             pa, a, wt.a, wt.b, wt.c, crossingT) ||
@@ -306,13 +325,10 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
                         segmentTriangleIntersectAfterStart(
                             pc, c, wt.a, wt.b, wt.c, crossingT)) {
                         hitCentroid = prevCentroid + sweep * crossingT;
+                        timeOfImpact = crossingT;
                         hit = true;
                     }
 
-                    // The previous pose is only the start of a sweep. It is
-                    // not itself a new contact: this deliberately starts at
-                    // the first intermediate pose, so "touch then walk away"
-                    // does not keep the actor glued to the old surface.
                     for (int si = 1; !hit && si < sweepSteps; ++si) {
                         const float alpha = (float)si / (float)sweepSteps;
                         const glm::vec3 sa = pa + (a - pa) * alpha;
@@ -322,6 +338,7 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
                         if (triangleTriangleIntersect(sa, sb, sc,
                                                        wt.a, wt.b, wt.c)) {
                             hitCentroid = (sa + sb + sc) / 3.0f;
+                            timeOfImpact = alpha;
                             hit = true;
                             break;
                         }
@@ -332,24 +349,15 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
                 if (!hit)
                     continue;
 
-                // Normal points from the world surface toward the actor (the
-                // open side), so a limb poking through a floor is pushed up and
-                // one poking through a wall is pushed out, regardless of where
-                // the part's own triangle centroid sits.
                 glm::vec3 n = wt.normal;
                 if (currentOverlap) {
-                    if (glm::dot(p.pos - wt.a, n) < 0.0f)
+                    if (glm::dot(actorPos - wt.a, n) < 0.0f)
                         n = -n;
                 } else {
-                    // For a swept hit, the response must oppose the part's
-                    // travel. This also handles a triangle that crossed a
-                    // wall and is already on the far side at the current
-                    // tick, where the root position alone is misleading.
                     if (glm::dot(sweep, n) > 0.0f)
                         n = -n;
                 }
 
-                // Penetration: deepest body vertex behind the oriented plane.
                 const float s0 = glm::dot(a - wt.a, n);
                 const float s1 = glm::dot(b - wt.a, n);
                 const float s2 = glm::dot(c - wt.a, n);
@@ -359,8 +367,10 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
 
                 const glm::vec3 point = closestPointOnTriangle(
                     hitCentroid, wt.a, wt.b, wt.c);
-                contacts.push_back({n, point, sweep, penetration, wi, nullptr,
-                                    part.name.c_str()});
+                RecoveryContact rc{n, point, sweep, penetration, wi, nullptr,
+                                   mesh.label};
+                rc.timeOfImpact = timeOfImpact;
+                contacts.push_back(rc);
                 ++partContacts;
                 if (partContacts >= kMaxContactsPerPart)
                     break;
@@ -368,8 +378,6 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
         }
     }
 
-    // Dedup by (part label, world triangle), keeping the deepest contact so the
-    // solver does not apply the same surface many times.
     std::vector<RecoveryContact> merged;
     merged.reserve(contacts.size());
     for (const RecoveryContact& c : contacts)
@@ -392,3 +400,29 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
     }
     return merged;
 }
+
+std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& world)
+{
+    if (world.collisionMesh.triangles.empty())
+        return {};
+
+    constexpr float kSkin = 0.01f;
+    std::vector<ActorCollisionMesh> meshes = collectActorBodyCollisionMeshes(p);
+    std::vector<int> candidates;
+    for (const ActorCollisionMesh& mesh : meshes)
+    {
+        glm::vec3 lo, hi;
+        localBoundsOfMesh(mesh, lo, hi);
+        if (lo.x > hi.x)
+            continue;
+        const AABB currentBox = transformedColliderAABB(
+            lo, hi, mesh.desiredTransform);
+        const AABB previousBox = transformedColliderAABB(
+            lo, hi, mesh.previousTransform);
+        const AABB partBox = mergedAABB(currentBox, previousBox);
+        appendChunkTrianglesForAABB(world, partBox, kSkin, candidates,
+                                    "bodyMeshGather");
+    }
+    return collectActorMeshContacts(world, meshes, candidates, p.pos);
+}
+
