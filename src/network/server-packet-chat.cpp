@@ -1,4 +1,6 @@
 // 08 03 2026, 17 20
+// Build-fix note: keep this translation unit explicitly rebuildable because it
+// owns the server chat/command symbols consumed by server-packets.cpp.
 /* purpose
 * Handles server-side chat packet validation, rate limiting, and broadcast events.
 * Copies verified server player identity metadata into accepted chat messages.

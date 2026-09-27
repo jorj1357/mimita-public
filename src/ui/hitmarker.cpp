@@ -40,7 +40,7 @@ void hitmarkerVisualOnly(int damage)
     gHitmarkerTimer = hitmarkerDuration();
 }
 
-void drawHitmarker(float dt)
+void drawHitmarker(float dt, float screenX, float screenY)
 {
     const float duration = hitmarkerDuration();
 
@@ -58,8 +58,8 @@ void drawHitmarker(float dt)
             0.0f,
             1.0f);
 
-    float cx = uiScreenW() * 0.5f;
-    float cy = uiScreenH() * 0.5f;
+    const float cx = screenX >= 0.0f ? screenX : uiScreenW() * 0.5f;
+    const float cy = screenY >= 0.0f ? screenY : uiScreenH() * 0.5f;
 
     glm::vec4 color =
     {

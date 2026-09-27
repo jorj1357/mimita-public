@@ -582,3 +582,93 @@ Automated tests (test evidence):
 
 Pending. Two-client agreement and live behavior edits still require human
 observation.
+
+## Cold-build occurrence 9
+
+UTC time: 2026-09-27T15:26:13Z
+
+Related changelog:
+`docs/changelog/2026-09-27/20260927_112700-linker-stale-objects.md`
+
+### Why the cold build was required
+
+The reported linker failure was in the executable link and could not be
+verified by the live DLL path. A cold build was required to regenerate the
+affected server translation unit and prove that the executable links.
+
+### Exact cold source / boundary
+
+- `src/network/server-packet-chat.cpp` — server chat, NPC damage request,
+  server command, timeout, and void-death map-based definitions.
+- `build.py` — failed compiler cleanup for partial object/dependency artifacts.
+
+### Result needed from the new executable
+
+The server packet and server-loop references must resolve at link time and the
+game executable must be produced successfully.
+
+### Why it could not be applied through the live path
+
+The failure was in the cold executable link and the affected symbols are part
+of the process-wide server network loop, not a replaceable DLL-only change.
+
+### Smallest change that would make this hot
+
+Keep these server-kernel symbols in the cold executable, but move future
+server-policy changes behind the existing hot boundary. The build-system fix
+prevents a failed compiler from leaving a partial object that can poison a
+later incremental link.
+
+### Build result
+
+`SUCCESS` on 2026-09-27 after recompiling `server-packet-chat.cpp`.
+
+### Human review
+
+Pending. Runtime server startup and chat/NPC command behavior still require
+human observation.
+
+## Cold-build occurrence 10
+
+UTC time: 2026-09-27T15:40:39Z
+
+Related changelog:
+`docs/changelog/2026-09-27/20260927_114039-physical-hitmarker-aim-point.md`
+
+### Why the cold build was required
+
+The hitmarker draw-call signature and HUD ownership changed in the cold
+executable's UI translation units. A canonical build was required to compile
+the changed C++ and verify that the executable link still succeeds.
+
+### Exact cold source / boundary
+
+- `src/ui/hitmarker.{h,cpp}` — shared hitmarker presentation API and renderer.
+- `src/engine/engine-tick-ui-game-hud.cpp` — gameplay HUD call site.
+- `src/engine/engine-tick-ui-replay-hud.cpp` — removed duplicate replay-HUD call.
+
+### Result needed from the new executable
+
+The changed hitmarker API must compile and the game executable must link
+without duplicate or unresolved UI symbols.
+
+### Why it could not be applied through the live path
+
+This pass changes a C++ function signature and the cold executable's UI call
+graph. The active process uses the existing `.dev/builds/0023/mimita.exe`; a
+live DLL reload was not used to activate this cold UI boundary.
+
+### Smallest change that would make this hot
+
+Move the shared hitmarker draw API and gameplay HUD call graph behind the
+replaceable UI module boundary, including its exported ABI contract.
+
+### Build result
+
+`SUCCESS` on 2026-09-27. One changed translation unit compiled and the link
+completed successfully; active MiMITA processes were left running.
+
+### Human review
+
+Pending. Fire at a world target in physical aim mode and confirm the normal
+hitmarker appears at the world-projected crosshair rather than screen center.

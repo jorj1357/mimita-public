@@ -156,6 +156,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     };
 
     {
+        float hitmarkerX = uiScreenW() * 0.5f;
+        float hitmarkerY = uiScreenH() * 0.5f;
         glm::vec3 vel = replayViewedActor ? replayViewedActor->velocity : player.vel;
         bool grounded = replayViewedActor ? replayViewedActor->grounded : player.ground.onGround;
         bool shooting = replayViewedActor ? replayViewedActor->shooting : weapons.isShooting();
@@ -169,7 +171,13 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 // Crosshair sits on the laser impact instead of screen center.
             }
             drawCrosshair(cx, cy);
+            hitmarkerX = cx;
+            hitmarkerY = cy;
         }
+        // Keep hit feedback attached to the same projected aim point as the
+        // physical-aim crosshair, rather than using a second center-screen
+        // coordinate calculation in the hitmarker renderer.
+        drawHitmarker(dt, hitmarkerX, hitmarkerY);
     }
     if (player.spawnFlashTimer > 0.0f)
     {

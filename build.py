@@ -431,6 +431,15 @@ def compile_cpp_file(src):
     result = subprocess.run(cmd)
 
     if result.returncode != 0:
+        # A failed compiler can leave a partial object and dependency file.
+        # Remove both so the next incremental build cannot mistake the partial
+        # artifact for a valid translation unit and skip the real source.
+        for stale_path in (obj, dep_path(src)):
+            try:
+                if os.path.exists(stale_path):
+                    os.remove(stale_path)
+            except PermissionError:
+                pass
         return ("fail", src)
 
     return ("compiled", src)

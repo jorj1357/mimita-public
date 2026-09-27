@@ -1206,7 +1206,7 @@
       "maxBounceCount": 0.0,
       "splashLineOfSight": 0.0,
       "projectileVisualSphere": 1.0,
-      "projectileVisualRadius": 0.1,
+      "projectileVisualRadius": 1.0,
       "projectileVisualFillR": 1.0,
       "projectileVisualFillG": 1.0,
       "projectileVisualFillB": 1.0,

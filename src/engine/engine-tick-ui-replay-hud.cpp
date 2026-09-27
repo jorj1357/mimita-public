@@ -81,7 +81,6 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
         uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), scale, color);
     };
 
-    drawHitmarker(dt);
     // Persistent honest connection status. This NEVER lies: "Connected via ICE"
     // is no longer shown as healthy — the text reflects actual game packet
     // freshness via mpConnectionHealthText. Always drawn while a session is
