@@ -94,15 +94,18 @@ void recomputeWeaponCapsule(Player& p)
 // Uses fixed 5 samples per collider along the dominant axis.
 // Collect sphere samples from all body parts + weapon for contact testing.
 // Simple capsule-only: 5 samples along weapon grip→tip axis + body part spheres.
-std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p)
+std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p, bool includeBodyParts)
 {
     auto t0 = std::chrono::steady_clock::now();
     std::vector<BodyWeaponSphere> spheres;
     spheres.reserve(p.physicalBody.parts.size() + 64);
 
     glm::vec3 rootMove = p.vel * 0.0f;
+    (void)rootMove;
 
-    // 1. Body part spheres (one per part — no redundancy)
+    // 1. Body part spheres (one per part — no redundancy). Skipped when the
+    //    caller uses the per-part mesh-triangle path for body collision.
+    if (includeBodyParts)
     {
         auto tb0 = std::chrono::steady_clock::now();
         int partCount = 0;

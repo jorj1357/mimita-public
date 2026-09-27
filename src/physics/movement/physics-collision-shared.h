@@ -362,13 +362,21 @@ struct BodyWeaponSphere {
 };
 
 void recomputeWeaponCapsule(Player& p);
-std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p);
+std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p,
+                                                       bool includeBodyParts = true);
 std::vector<RecoveryContact> collectBodyWeaponContacts(
     const Player& p,
     const World& world,
     const std::vector<BodyWeaponSphere>& spheres
 );
 std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);
+
+// Body collision from each part's real mesh triangles (triangle-vs-triangle
+// against the world). This is "what you see is what the hitbox is": the collider
+// triangles loaded from the model are transformed by the part world transform
+// (and the previous transform for sweep) and tested against world triangles.
+// First version: brute-force within each part's broadphase AABB; optimize later.
+std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& world);
 
 // =====================================================
 // GLB collision pipeline

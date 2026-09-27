@@ -43,8 +43,16 @@ static int runBodyWeaponPass(
     auto t0 = std::chrono::steady_clock::now();
     p.updateModelWorldTransforms();
     recomputeWeaponCapsule(p);
-    std::vector<BodyWeaponSphere> bwSpheres = collectBodyWeaponSpheres(p);
-    if (bwSpheres.empty()) return -1;
+
+    // Body collision: real per-part mesh triangles when enabled, else the
+    // one-sphere-per-part approximation. Weapon collision stays on its
+    // configured spheres/capsule either way.
+    const bool useMeshBody = CollisionConfig::instance().bodyMeshCollision();
+    std::vector<BodyWeaponSphere> weaponSpheres = collectBodyWeaponSpheres(p, !useMeshBody);
+    std::vector<RecoveryContact> bwContacts;
+    if (useMeshBody)
+        bwContacts = collectBodyMeshContacts(p, world);
+    if (weaponSpheres.empty() && bwContacts.empty()) return -1;
 
     char rootTag[64];
     std::snprintf(rootTag, sizeof(rootTag), "Player_Body_RootPass_%d", pass);
@@ -52,7 +60,12 @@ static int runBodyWeaponPass(
     std::vector<int> sharedCandidates = gatherGLBTriangles(world, rootCap, p.aimDirection * 1.5f, rootTag);
     gBW.candidateCount = (int)sharedCandidates.size();
 
-    std::vector<RecoveryContact> bwContacts = collectBodyWeaponContacts(p, world, bwSpheres);
+    {
+        std::vector<RecoveryContact> weaponContacts =
+            collectBodyWeaponContacts(p, world, weaponSpheres);
+        bwContacts.insert(bwContacts.end(), weaponContacts.begin(),
+                          weaponContacts.end());
+    }
 
     // Weapon capsules: the weapon's solid bounding volume, tested exactly
     // against nearby world triangles.
@@ -157,9 +170,9 @@ static int runBodyWeaponPass(
     double totalMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
 
     BODY_LOG(
-        "[BODY PASS] pass=%d spheres=%zu candidates=%zu contacts=%zu elapsedMs=%.2f\n",
-        pass, bwSpheres.size(), sharedCandidates.size(),
-        bwContacts.size(), totalMs);
+        "[BODY PASS] pass=%d body=%s weaponSpheres=%zu candidates=%zu contacts=%zu elapsedMs=%.2f\n",
+        pass, useMeshBody ? "mesh" : "sphere", weaponSpheres.size(),
+        sharedCandidates.size(), bwContacts.size(), totalMs);
 
     return (int)bwContacts.size();
 }

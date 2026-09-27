@@ -8,9 +8,12 @@
 # Task
 
 - Task ID: v9-moving-limb-bounce
-- Summary: Make a moving body part / held tool bounce the whole body off world
-  geometry even when the root is still, add a configurable minimum low-speed
-  push, and mark the pink body-contact spark TO-DELETE (not removed).
+- Summary: (1) Make a moving body part / held tool bounce the whole body off
+  world geometry even when the root is still; (2) stop a limb from getting stuck
+  inside a walkable slope; (3) make the minimum push work for embedded limbs;
+  (4) replace the one-sphere-per-part body collision with the part's real mesh
+  triangles vs world triangles; (5) keep the pink spark (its TO-DELETE notes were
+  removed). See the Follow-up section below.
 - Status: CODE_COMPLETE / BUILD_VERIFIED / DETERMINISTIC_TEST_PASS /
   HUMAN_REVIEW_REQUIRED
 - Date, time, timezone: 2026-09-27T17:33:21Z, ISO 8601
@@ -146,3 +149,93 @@ the bounce in v9 and to mark old code TO-DELETE instead of deleting.
   (`collision-package-solver.cpp` etc.). That folder is an older clone and is
   not what the user runs. Those edits were not ported; this changelog records the
   v9 fix. The v8 working-tree edits can be discarded.
+
+# Follow-up (same session) — A/B/C unstick + D mesh limbs
+
+## Requested behavior
+
+The user runs `C:\mimita-v9`. Symptoms: the pink body-contact spark fires but the
+limb gets stuck inside the world (especially a walkable slope) instead of the
+body bouncing out; `minPush` had no effect; and the limb visibly sinks into the
+wall. Desired: keep the spark as a visual, fix the collision underneath, and
+eventually make limbs collide with their real mesh triangles ("what you see is
+what the hitbox is"), later applied to weapon shots too.
+
+## Changes
+
+### A — a walkable body contact is only ground when it is at the feet
+
+- `src/physics/movement/physics-collision-glb-body.cpp` (`runBodyWeaponPass`):
+  contacts are now split into `groundContacts` only when
+  `normal.z > MAX_WALKABLE_SLOPE_DOT` **and** `point.z <= feetZ + 0.15f` (the
+  same feet test `applyCollisionContact` uses). Everything else is a push
+  contact. Previously any walkable body contact (e.g. an arm on a shallow slope)
+  was treated as ground and never depenetrated.
+
+### B — body push contacts always depenetrate
+
+- `runBodyWeaponPass`: `solverContacts` is now
+  `bwRootContacts + bodyPushContacts` where `bodyPushContacts` includes the
+  walkable-non-foot contacts. A limb jammed into a walkable slope is pushed out
+  by `solveBatchedCorrection` + `p.pos += correction`.
+
+### C — minimum push works for embedded limbs
+
+- `src/physics/movement/physics-collision-shared.h`:
+  `respondVelocityAgainstNormal(Player&, normal, partVelocity, bodyContact,
+  penetration)`. The low-speed branch now pushes at least `bounceMinPush` when a
+  body contact is moving into the surface **or** is embedded
+  (`penetration > 0.002`). Root contacts (`bodyContact == false`) are unchanged.
+- `physics-collision-glb-body.cpp` passes `sweepDelta`, `true`, and
+  `pc.penetration` for body push contacts.
+
+### D — limbs use their real mesh triangles vs world triangles
+
+- New `src/physics/movement/physics-collision-mesh.cpp`:
+  `collectBodyMeshContacts(Player&, const World&)` transforms each part's real
+  collider triangles (`Collider::triangles`, loaded from the model) by
+  `worldTransform` (and `previousWorldTransform` for the sweep delta) and tests
+  them **triangle-vs-triangle** against world triangles within the part's
+  broadphase AABB. Contact normal comes from the world triangle oriented toward
+  the actor; penetration is the deepest body vertex behind the surface. First
+  version is brute-force with budgets (`kMaxPartTriangles = 512`,
+  `kMaxContactsPerPart = 64`, `kMaxTriangleTests = 200000`); dedup keeps the
+  deepest contact per (part, world triangle).
+- `physics-collision-body.cpp`: `collectBodyWeaponSpheres(p, includeBodyParts)`
+  so the mesh path can request weapon-only spheres.
+- `physics-collision-glb-body.cpp`: when `bodyMeshCollision` is on, body contacts
+  come from `collectBodyMeshContacts`; weapon contacts (spheres + capsule) are
+  unchanged.
+- `physics-collision-shared.h`: declaration added.
+- `src/config/collision-config.{h,cpp}` + `config/collision.json`:
+  `"bodyMeshCollision": true` (set false to fall back to the old sphere path).
+
+### Spark kept
+
+- Removed the TO-DELETE comments added earlier in `effect-part.h`,
+  `effect-part.cpp`, `effect-part-render.cpp`, `physics-collision-glb-body.cpp`,
+  and the `comment` in `config/hitfx.json`. `spawnBodyContactSpark` is unchanged.
+
+## Validation
+
+- Build: the running `devscripts/dev-loop.py` compiled every change live
+  (`.dev/state.json`: source generation 33, build 50,
+  `C:\mimita-v9\.dev\builds\0050`). `python build_agent.py` reported SUCCESS.
+- `.\mimita.exe --collision-selftest` (run from `C:\mimita-v9`):
+  - `PASS [COLLISION STRESS] moving limb bounces still root`
+  - `PASS [COLLISION STRESS] embedded limb contact min push`
+  - `PASS [COLLISION STRESS] embedded root contact no push`
+  - `PASS [COLLISION STRESS] resting root contact adds no push`
+  - `PASS [COLLISION STRESS] mesh limb triangle hits floor, pushes up`
+  - `[COLLISION SELFTEST] PASS` (all original cases still pass)
+
+## Human review still required
+
+- Watch a limb against a walkable slope: it should push the body out, not stick,
+  and the pink spark should still appear.
+- Watch limbs vs walls/floors with the real mesh triangles: the visual limb
+  should barely sink now. Confirm the frame rate is acceptable (first version is
+  brute-force).
+- Then decide whether to apply the same real-triangle approach to weapon shots
+  (hitscan/hit resolution) and to consolidate the two body-collision phases
+  (D follow-up / E).

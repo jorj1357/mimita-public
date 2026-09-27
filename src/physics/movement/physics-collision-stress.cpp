@@ -279,6 +279,57 @@ bool collisionStressSelfTest(std::string* outSummary)
         }
     }
 
+    // Real mesh-triangle limb collision: an arm triangle crossing the floor
+    // plane must produce a contact whose normal points up (toward the actor), so
+    // the limb is pushed out of the floor instead of down through it.
+    {
+        const CollisionConfig& cc = CollisionConfig::instance();
+        if (cc.bodyMeshCollision())
+        {
+            World meshWorld;
+            addStressQuad(meshWorld,
+                {-8.0f, -8.0f, 0.0f}, { 8.0f, -8.0f, 0.0f},
+                { 8.0f,  8.0f, 0.0f}, {-8.0f,  8.0f, 0.0f});
+            buildCollisionChunks(meshWorld, nullptr);
+
+            Player meshPlayer(false);
+            meshPlayer.pos = glm::vec3(0.0f, 0.0f, 1.0f); // actor above the floor
+
+            PhysicalBodyPart arm;
+            arm.name = "leftArm";
+            CollisionTriangle tri;
+            tri.a = glm::vec3(-1.0f, 0.0f, -0.2f); // pokes through the floor
+            tri.b = glm::vec3( 1.0f, 0.0f, -0.2f);
+            tri.c = glm::vec3( 0.0f, 1.0f,  0.3f);
+            tri.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+            arm.collider.triangles.push_back(tri);
+            arm.collider.localMin = glm::vec3(-1.0f, 0.0f, -0.2f);
+            arm.collider.localMax = glm::vec3(1.0f, 1.0f, 0.3f);
+            meshPlayer.physicalBody.parts.push_back(arm);
+
+            std::vector<RecoveryContact> meshContacts =
+                collectBodyMeshContacts(meshPlayer, meshWorld);
+            bool meshHit = false;
+            bool upNormal = false;
+            for (const RecoveryContact& c : meshContacts)
+            {
+                if (c.penetration <= 0.0f)
+                    continue;
+                meshHit = true;
+                if (c.normal.z > 0.5f)
+                    upNormal = true;
+            }
+            const bool meshOk = meshHit && upNormal;
+            ok = ok && meshOk;
+            summary += meshOk ? "PASS " : "FAIL ";
+            summary += "[COLLISION STRESS] mesh limb triangle hits floor, pushes up\n";
+        }
+        else
+        {
+            summary += "SKIP [COLLISION STRESS] body mesh collision disabled\n";
+        }
+    }
+
     if (outSummary)
         *outSummary = summary;
     return ok;

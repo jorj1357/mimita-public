@@ -29,6 +29,11 @@ public:
     // so a touching limb/tool still nudges the whole body.
     float bounceMinPush() const { return mBounceMinPush; }
 
+    // When true, limb collision uses each body part's real mesh triangles
+    // (triangle-vs-triangle against the world) instead of one AABB sphere per
+    // part. Toggle off to fall back to the sphere approximation.
+    bool bodyMeshCollision() const { return mBodyMeshCollision; }
+
 private:
     CollisionConfig();
 
@@ -39,6 +44,7 @@ private:
     float mBounceMaxSpeed = 45.0f;
     float mBounceCooldown = 0.05f;
     float mBounceMinPush = 0.1f;
+    bool mBodyMeshCollision = true;
 
     std::string mPath;
     std::filesystem::file_time_type mLastWrite{};

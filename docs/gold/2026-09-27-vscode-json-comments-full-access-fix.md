@@ -3,7 +3,7 @@
 * preserve the confirmed full-access workflow that fixed persistent JSON comment errors
 * record the screenshot evidence and the exact editor setting that solved it
 * make the result reproducible for future commented MiMITA config files
-* this file does NOT redefine the JSON runtime parser contract
+* this file records both the editor and runtime sides of the JSONC contract
 * this file does NOT claim every external JSON validator accepts comments
 * this file does NOT store credentials or private environment data
 */
@@ -62,6 +62,36 @@ already used comment-enabled parsing; the missing piece was the editor's
 workspace language association. Full access made it possible to enter the
 workspace settings and correct the editor behavior directly.
 
+## Runtime confirmation: aimbody and authored config comments
+
+The editor setting removes red underlines, but the game executable must also
+parse authored config as JSONC. MiMITA uses:
+
+```cpp
+nlohmann::json::parse(file, nullptr, true, true);
+```
+
+This includes `config/aimbody.json`. The aimbody issue initially appeared as
+`enabled=true` with no rotation because the strict parser rejected the
+commented-out line before loading the limb map. The loader was corrected to
+commit settings only after a successful parse, so comments no longer erase the
+active limb configuration during hot reload.
+
+## Build 40 lesson and confirmed fix
+
+The first Build 40 attempt exposed three compile errors after the parser
+conversion. These files called `json::parse(...)` without defining a local
+`json` alias:
+
+- `src/config/weapon-tracers-config.cpp`
+- `src/npc/npc-avatar.cpp`
+- `src/entities/player-animation-config.cpp`
+
+The calls were changed to explicit `nlohmann::json::parse(...)`. Build 40 then
+succeeded, and the developer confirmed that the JSON-comment configuration and
+aimbody behavior worked. VS Code JSONC mode is the editor fix; fully qualified
+parser calls are the compile-safe runtime fix.
+
 ## Reproduction checklist
 
 1. Open a commented config file under `C:\mimita-v9\config`.
@@ -70,6 +100,9 @@ workspace settings and correct the editor behavior directly.
 4. If necessary, click the language indicator and select `JSON with Comments`.
 5. Confirm comments are no longer red-underlined and the config remains at its
    original `.json` path.
+6. After a successful build, test a changed config in the running game and
+   verify the feature behavior; a green editor and a green build alone are not
+   runtime proof.
 
 ## Boundary
 

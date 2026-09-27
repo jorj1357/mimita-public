@@ -2,6 +2,7 @@
     "walkableSlopeDot": 0.80,
     "bodySampleRadius": 0.25,
     "maxStepHeight": 0.25,
+    "bodyMeshCollision": true,
     "bounce": {
         "enabled": true,
         "strength": 0.35,
@@ -9,6 +10,6 @@
         "minSpeed": 0.01,
         "maxSpeed": 999999.0,
         "cooldown": 0.01,
-        "minPush": 100.0
+        "minPush": 0.1
     }
 }

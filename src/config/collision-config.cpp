@@ -46,6 +46,8 @@ bool CollisionConfig::load(const std::string& path)
         json j;
         j = nlohmann::json::parse(file, nullptr, true, true);
 
+        mBodyMeshCollision = j.value("bodyMeshCollision", true);
+
         if (j.contains("bounce"))
         {
             const json& b = j["bounce"];

@@ -44,12 +44,14 @@ leave `enabled=true` paired with an empty limb map.
   previous valid settings until a new parse succeeds.
 - Build 40 exposed three missing `json` aliases in newly converted config
   readers; those calls now use the fully-qualified `nlohmann::json::parse`.
+- Build 40 subsequently completed successfully and the developer confirmed
+  the JSON-comment configuration and aimbody behavior worked.
 - Python compilation passed for JSONC and dev-loop tooling.
 - `git diff --check` passed.
 
 ## Remaining evidence
 
-The full C++ rebuild and live aimbody acceptance are pending because duplicate
-pre-existing dev-loop and MiMITA processes are still running and locking build
-outputs. No running process was terminated by this session. Build 40's first
-compile failure is fixed at source level; a clean compile is still required.
+The first Build 40 compile failure was fixed, then Build 40 completed and the
+developer accepted the resulting behavior. Earlier duplicate dev-loop and
+MiMITA processes remained outside this session's control; no running process
+was terminated.
