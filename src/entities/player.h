@@ -385,6 +385,12 @@ struct CollisionState {
         }
     }
 
+    // Moving-support carry: the physical entity the actor is currently standing
+    // on (0 = static world) and that entity's surface velocity. Used to carry the
+    // actor and to inherit velocity when support ends (e.g. jumping off a crate).
+    uint32_t supportEntityId = 0;
+    glm::vec3 supportVelocity{0.0f};
+
     // Diagnostics: track values that should never grow unbounded
     int diagPrevCandidates = 0;
     int diagCandidateGrowthFrames = 0;

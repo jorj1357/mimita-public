@@ -34,6 +34,15 @@ static bool computeBodyPartCenter(
     return true;
 }
 
+// TODO-DELETE (conditional): recomputeWeaponCapsule.
+// Builds the legacy weapon collision capsule from weaponCollisionWorld and the
+// grip/muzzle/radius config. The triangle owner instead uses the weapon render
+// mesh triangles (ensureActorWeaponColliderMeshFromEquipped +
+// actor-triangle-solver.cpp).
+// NOT deletable yet: combat/weapon-swordsword.cpp still calls it (sword swing
+// geometry), and the legacy body phase calls it. Migrate those consumers first.
+// DO NOT DELETE until human gameplay testing proves the triangle weapon path in
+// Dust 3 Siberia, Trainkinda, and Chain of Judgement.
 void recomputeWeaponCapsule(Player& p)
 {
     // The weaponCollisionWorld transform is needed by applyCollisionConfig to
@@ -94,6 +103,12 @@ void recomputeWeaponCapsule(Player& p)
 // Uses fixed 5 samples per collider along the dominant axis.
 // Collect sphere samples from all body parts + weapon for contact testing.
 // Simple capsule-only: 5 samples along weapon grip→tip axis + body part spheres.
+// TODO-DELETE: collectBodyWeaponSpheres — one AABB sphere per body part plus
+// JSON weapon spheres. Superseded by collectActorCollisionMeshes
+// (actor-collision-mesh.cpp), which supplies the real body/weapon triangles.
+// Kept until the legacy body phase and this sphere approximation are removed and
+// human gameplay testing proves the triangle path in Dust 3 Siberia, Trainkinda,
+// and Chain of Judgement. Consolidation target: collectActorCollisionMeshes.
 std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p, bool includeBodyParts)
 {
     auto t0 = std::chrono::steady_clock::now();
@@ -157,6 +172,13 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p, bool includeBo
 // Uses a single union broadphase gather for all spheres instead of per-sphere
 // uncached gathers. This eliminates ~250 heap allocations and ~250 spatial hash
 // queries per frame (6 substeps × 3 passes × ~15 spheres).
+// TODO-DELETE: collectBodyWeaponContacts — sphere-triangle contact test for the
+// legacy body/weapon spheres. Superseded by collectActorMeshContacts
+// (physics-collision-mesh.cpp) via solveActorTriangleCollision, which tests the
+// real actor triangles and produces the unified manifold.
+// Kept only for the legacy body phase. DO NOT DELETE until that phase is removed
+// and human gameplay testing proves the triangle path in Dust 3 Siberia,
+// Trainkinda, and Chain of Judgement.
 std::vector<RecoveryContact> collectBodyWeaponContacts(
     const Player& p,
     const World& world,
@@ -260,6 +282,14 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
     return contacts;
 }
 
+// TODO-DELETE (conditional): collectPlayerBodyCollisionSamples.
+// Produces 3 sample points per body part along the collider axis. It fed the
+// legacy root sweep broadphase and the debug recovery view; the triangle owner
+// uses the real part triangles and does not need samples.
+// NOT deletable yet: physics-collision-glb-sweep-slide.cpp and the debug branch
+// in physics-collision-dispatch.cpp still use it. Migrate those first. DO NOT
+// DELETE until human gameplay testing proves the triangle path in Dust 3
+// Siberia, Trainkinda, and Chain of Judgement.
 std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
 {
     std::vector<glm::vec3> samples;

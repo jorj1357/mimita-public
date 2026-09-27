@@ -12,6 +12,7 @@
 */
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,7 @@
 
 class Player;
 class World;
+struct PhysicalEntity;
 
 // One triangle contact between an actor part and the world.
 struct ActorWorldContact {
@@ -29,6 +31,10 @@ struct ActorWorldContact {
     float timeOfImpact = 0.0f;        // reserved; not yet computed
     int worldTriangle = -1;
     const char* actorPart = nullptr;
+    // Support entity for a moving-entity contact (0 = static world) and its
+    // surface velocity, used to carry the actor and inherit velocity on departure.
+    uint32_t entityId = 0;
+    glm::vec3 surfaceVelocity{0.0f};
 };
 
 struct ActorTriangleCollisionResult {
@@ -47,11 +53,15 @@ struct ActorTriangleCollisionResult {
 // the desired pose (player transforms previous = safe pose, world = desired
 // pose). Mutates player.pos and actor/weapon sweep-start transforms. Returns
 // true when any contact was found.
+// When `entities` is non-null, moving physical entities participate alongside
+// static world triangles and their contacts carry the entity id and surface
+// velocity. The default (null) preserves static-world-only behavior.
 bool solveActorTriangleCollision(
     Player& player,
     const World& world,
     const glm::vec3& desiredMovement,
-    ActorTriangleCollisionResult& result);
+    ActorTriangleCollisionResult& result,
+    const std::vector<PhysicalEntity>* entities = nullptr);
 
 // Deterministic Phase 3 test: synthetic box actor vs floor, wall, corner, and a
 // leaving-old-contact case.

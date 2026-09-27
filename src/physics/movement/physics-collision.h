@@ -40,6 +40,10 @@ struct RecoveryContact
     // 0 for a current-pose overlap. Appended so existing aggregate initializers
     // keep working unchanged.
     float timeOfImpact = 0.0f;
+    // Support entity for a moving-entity contact (0 = static world) and the
+    // surface velocity of that entity. Appended; existing initializers omit them.
+    uint32_t entityId = 0;
+    glm::vec3 surfaceVelocity{0.0f};
 };
 
 // =====================================================

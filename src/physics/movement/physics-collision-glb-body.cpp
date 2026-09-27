@@ -34,6 +34,23 @@ static MovementContactSource bodyWeaponContactSource(const char* label)
         : MovementContactSource::PlayerBody;
 }
 
+// TODO-DELETE: runBodyWeaponPass / doBodyWeaponCollisionPhase — superseded by
+// the actor-triangle solver.
+// Owner that replaces them: src/physics/movement/actor-triangle-solver.cpp
+// (solveActorTriangleCollision) plus
+// src/physics/movement/actor-collision-mesh.cpp (collectActorCollisionMeshes).
+// These functions run a separate body-mesh + weapon-sphere/capsule pass and
+// apply correction/response before the root sweep; the triangle owner instead
+// builds ONE manifold for body + weapon + world and responds once.
+// DO NOT DELETE until:
+//   1. human gameplay testing proves the triangle path is at least as good in
+//      Dust 3 Siberia, Trainkinda, and Chain of Judgement;
+//   2. the weapon JSON capsule/sphere config path (collectBodyWeaponSpheres /
+//      collectBodyWeaponContacts / recomputeWeaponCapsule) has been retired, and
+//      the in-game weapon render-mesh transform is verified against the
+//      collider mesh;
+//   3. the body-contact spark boundary is confirmed preserved by
+//      runActorTriangleCollisionStep (it currently is).
 static int runBodyWeaponPass(
     Player& p, const World& world, bool& groundedThisFrame,
     bool& groundedByWeapon, int pass, int maxPasses,
@@ -204,6 +221,9 @@ static int runBodyWeaponPass(
     return (int)bwContacts.size();
 }
 
+// TODO-DELETE: see the TODO-DELETE comment on runBodyWeaponPass above. This is
+// the same owner's public entry point (called by doGLBTriangleCollisions only
+// when config "actorTriangleSolver" is off).
 void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThisFrame)
 {
     auto t0 = std::chrono::steady_clock::now();

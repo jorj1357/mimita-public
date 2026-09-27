@@ -115,6 +115,10 @@ void doCollisions(
         doGLBTriangleCollisions(p, world, groundedThisFrame, dt);
         recoverInvalidPlayerCollisionState(p, frameStart, "glb");
 
+        // TODO-DELETE: legacy capsule/body-sample debug report. Depends on
+        // collectPlayerBodyCollisionSamples and collectGLBRecoveryContacts. When
+        // the triangle path is authoritative, draw from ActorTriangleCollisionResult
+        // instead. Not gameplay; remove with the legacy capsule owners.
         if (DebugConfig::DEBUG_COLLISION_SYSTEM) {
             Capsule debugCap = p.getCapsule();
             std::vector<int> debugCands = gatherGLBTriangles(world, debugCap, glm::vec3(0.0f), "Player_Debug_Dispatch");

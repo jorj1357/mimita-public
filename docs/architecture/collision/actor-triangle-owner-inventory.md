@@ -301,3 +301,39 @@ shared CPU loader: `WeaponViewModel::update` calls
 Deterministic coverage: `--canonical-contact-selftest` (metadata survival,
 sphere/mesh equivalence, sweep+surface velocity, label mapping, arm-on-slope
 keeps subshape and point, and dedup identity unchanged).
+
+## Stage C — generic moving physical entities (added)
+
+`src/physics/physical-entity.{h,cpp}` owns the one generic moving entity:
+
+- `PhysicalEntity { id; motion (Static/Kinematic/Dynamic); previousTransform;
+  transform; velocity; localTriangles; materialId; collidesWithActors }`. No
+  `MovingPlatform` class.
+- `PhysicalEntitySystem` (singleton) adds, finds, and advances them; `beginTick`
+  snapshots the previous transform and `moveKinematic` derives velocity from the
+  transform delta.
+- `collectActorEntityContacts` tests actor meshes against nearby entities by
+  reusing `collectActorMeshContacts` through a temporary world view of the
+  entity's world-space triangles, so entity collision is the same canonical
+  path. Contacts carry `entityId` and `surfaceVelocity`.
+
+Solver integration (`actor-triangle-solver.cpp`):
+
+- `solveActorTriangleCollision(..., const std::vector<PhysicalEntity>* entities =
+  nullptr)` folds entity contacts into the same manifold. The null default keeps
+  static-world-only behavior; `mergeContactsByNormal` never merges two different
+  entity ids.
+- `runActorTriangleCollisionStep` (opt-in `actorTriangleSolver` path) carries the
+  actor with the support entity while grounded and, on departure, adds the
+  support velocity to `player.vel` so a jump preserves it. `Player::CollisionState`
+  gained `supportEntityId` / `supportVelocity`.
+
+Runtime access: `crate_spawn [distance] [vx vy vz]` (`src/terminal/crate-commands.cpp`,
+registered from `main-systems.cpp`) spawns a 0.5 m-half box crate `distance`
+metres (default 5) along the local player's camera look direction, as a
+`Kinematic` entity; `crate_clear` removes them. `PhysicalEntitySystem::advanceKinematics`
+moves constant-velocity kinematic entities each frame
+(`engine-tick-combat.cpp`), and `drawPhysicalEntities` renders every entity as a
+filled box through the always-on production triangle flush
+(`engine-tick-render.cpp`). Collision/carry still requires the opt-in
+`actorTriangleSolver` toggle; the command logs a reminder when it is off.

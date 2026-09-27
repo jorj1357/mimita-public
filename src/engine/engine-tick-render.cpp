@@ -35,6 +35,7 @@
 #include "ragdoll/ragdoll-mode.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "physics/physical-entity.h"
 
 #include "pobjects/persistent-physics.h"
 #include "debug/debug-visuals.h"
@@ -620,6 +621,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
       Perf::state().renderPerf.hitBursts++;
       HitEffects::renderHitBursts(camera); }
     { MIMITA_PERF_SCOPE("Rendering::Debug::Visuals");
+    drawPhysicalEntities(camera);
     DebugVis::flushTris(camera);
     DebugVis::flushWeaponLines(camera);
     }

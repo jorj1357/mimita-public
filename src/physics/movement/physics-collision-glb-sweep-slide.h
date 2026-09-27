@@ -7,6 +7,10 @@ struct CollisionTraceSnapshot;
 class Player;
 class World;
 
+// TODO-DELETE: legacy root-capsule sweep/slide declaration. Superseded by
+// solveActorTriangleCollision (actor-triangle-solver.h). See the TODO-DELETE
+// comment at the definition in physics-collision-glb-sweep-slide.cpp for the
+// human-testing and step-up conditions that must be met before removal.
 void doGLBSweepSlide(
     Player& p,
     const World& world,

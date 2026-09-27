@@ -138,6 +138,7 @@ void registerCursorCommands();
 #include "terminal/weapon-commands.h"
 #include "terminal/weapon-bench-commands.h"
 #include "terminal/npc-commands.h"
+#include "terminal/crate-commands.h"
 #include "terminal/duel-commands.h"
 #include "terminal/actor-commands.h"
 #include "terminal/editor-commands.h"
@@ -417,6 +418,7 @@ void gameInitSubsystems(Engine& engine)
     registerDevOverlayCommands();
 
     registerNpcCommands();
+    registerCrateCommands();
     registerTransformDebugCommands();
 
     registerEditorCommands();

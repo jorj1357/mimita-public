@@ -20,6 +20,13 @@
 
 #define SPHERE_LOG(...) Debug::logThrottled(Debug::Category::Collision, "sphere-gather", 1.0f, __VA_ARGS__)
 
+// TODO-DELETE: gatherGLBTrianglesForSphere — uncached, per-call allocating
+// broadphase query. It has NO callers in the tree (only the extern declarations
+// in physics-collision-glb-main.cpp and physics-collision-glb-sweep-slide.cpp),
+// and the cached gatherGLBTriangles path is the required owner. Safe to delete
+// once the legacy emergency/debug code that declared it is removed and the tree
+// is rebuilt to confirm no references remain. Human gameplay testing is not the
+// blocker here (dead code); a grep + build is.
 std::vector<int> gatherGLBTrianglesForSphere(
     const World& world,
     glm::vec3 center,

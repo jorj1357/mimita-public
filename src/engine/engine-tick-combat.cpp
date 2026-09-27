@@ -39,6 +39,7 @@
 #include "replay/replay-editor.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "physics/physical-entity.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "gui/hud/chat-bubble.h"
 #include "game/duel.h"
@@ -111,6 +112,7 @@ void engineTickCombat(Engine& engine, float dt)
     }
     if (!replayPlaybackActive) {
         PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);
+        PhysicalEntitySystem::instance().advanceKinematics(dt);
     }
     if (!replayPlaybackActive) {
         // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.

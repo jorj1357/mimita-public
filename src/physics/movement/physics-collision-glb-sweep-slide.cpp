@@ -57,6 +57,18 @@ struct SweepSlideDiag {
     double seamMs = 0.0;
 };
 
+// TODO-DELETE: doGLBSweepSlide — superseded by the actor-triangle solver.
+// Owner that replaces it: src/physics/movement/actor-triangle-solver.cpp
+// (solveActorTriangleCollision). The triangle owner sweeps the actor's real body
+// and weapon triangles from the safe pose to the desired pose, so the root
+// capsule sweep/slide is no longer the gameplay collision authority for players.
+// DO NOT DELETE until human gameplay testing proves the triangle path is at least
+// as good as this in Dust 3 Siberia, Trainkinda, and Chain of Judgement, AND one
+// of these is decided:
+//   (a) step-up is reimplemented in the triangle owner (this function is the only
+//       place that lifts the actor over MAX_STEP_HEIGHT ledges), or
+//   (b) step-up is intentionally dropped by a spec decision.
+// Consolidation target: solveActorTriangleCollision (+ a new triangle step-up).
 void doGLBSweepSlide(
     Player& p,
     const World& world,

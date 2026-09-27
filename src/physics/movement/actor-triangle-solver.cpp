@@ -26,6 +26,7 @@
 #include "physics/config.h"
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/physical-entity.h"
 #include "map/map-loader-collision.h"
 #include "world/world.h"
 #include "entities/player.h"
@@ -56,7 +57,10 @@ void mergeContactsByNormal(const std::vector<RecoveryContact>& contacts,
         bool found = false;
         for (RecoveryContact& existing : merged)
         {
-            if (glm::dot(existing.normal, c.normal) >= 0.95f)
+            // Never merge two different support entities into one surface, or the
+            // moving-support identity would be lost from the manifold.
+            if (existing.entityId == c.entityId &&
+                glm::dot(existing.normal, c.normal) >= 0.95f)
             {
                 existing.normal = glm::normalize(existing.normal + c.normal);
                 existing.point = (existing.point + c.point) * 0.5f;
@@ -97,14 +101,16 @@ bool solveActorTriangleCollision(
     Player& player,
     const World& world,
     const glm::vec3& desiredMovement,
-    ActorTriangleCollisionResult& result)
+    ActorTriangleCollisionResult& result,
+    const std::vector<PhysicalEntity>* entities)
 {
     result = ActorTriangleCollisionResult{};
     result.startPos = player.pos;
     result.correctedPos = player.pos;
     result.remainingMovement = desiredMovement;
 
-    if (world.collisionMesh.triangles.empty())
+    const bool hasEntities = entities && !entities->empty();
+    if (world.collisionMesh.triangles.empty() && !hasEntities)
         return false;
 
     // Capture the safe pose ONCE. The safe previous transforms must not be
@@ -130,7 +136,8 @@ bool solveActorTriangleCollision(
     std::vector<RecoveryContact> allContacts;
     glm::vec3 accumulated(0.0f);
 
-    for (int iter = 0; iter < kMaxIterations && !candidates.empty(); ++iter)
+    for (int iter = 0; iter < kMaxIterations &&
+                       (!candidates.empty() || hasEntities); ++iter)
     {
         // Shift the whole capture (safe + desired) by the accumulated
         // correction so the sweep direction stays the tick's real motion.
@@ -147,6 +154,17 @@ bool solveActorTriangleCollision(
 
         std::vector<RecoveryContact> contacts =
             collectActorMeshContacts(world, meshes, candidates, refPoint);
+
+        // Moving physical entities join the same manifold, carrying the support
+        // entity id and surface velocity.
+        if (hasEntities)
+        {
+            std::vector<EntityActorContact> entityHits =
+                collectActorEntityContacts(meshes, *entities, refPoint);
+            for (EntityActorContact& eh : entityHits)
+                contacts.push_back(eh.contact);
+        }
+
         if (contacts.empty())
             break;
 
@@ -222,6 +240,8 @@ bool solveActorTriangleCollision(
         wc.timeOfImpact = c.timeOfImpact;
         wc.worldTriangle = c.triangleIndex;
         wc.actorPart = c.label;
+        wc.entityId = c.entityId;
+        wc.surfaceVelocity = c.surfaceVelocity;
         result.contacts.push_back(wc);
 
         const bool walkable = c.normal.z > MAX_WALKABLE_SLOPE_DOT;
@@ -287,10 +307,44 @@ bool runActorTriangleCollisionStep(
     player.updateModelWorldTransforms();
 
     ActorTriangleCollisionResult result;
-    solveActorTriangleCollision(player, world, totalMove, result);
+    const std::vector<PhysicalEntity>& entities =
+        PhysicalEntitySystem::instance().entities();
+    solveActorTriangleCollision(player, world, totalMove, result, &entities);
 
     if (result.grounded)
         groundedThisFrame = true;
+
+    // ── Moving-support carry ──────────────────────────────
+    // When the actor is grounded on a moving physical entity, carry it with the
+    // entity this tick. When support ends, hand the entity's velocity to the
+    // actor so jumping off preserves it instead of silently dropping it.
+    uint32_t supportId = 0;
+    glm::vec3 supportVelocity(0.0f);
+    if (result.grounded)
+    {
+        for (const ActorWorldContact& c : result.contacts)
+        {
+            if (c.entityId != 0 && c.normal.z > MAX_WALKABLE_SLOPE_DOT)
+            {
+                supportId = c.entityId;
+                supportVelocity = c.surfaceVelocity;
+                break;
+            }
+        }
+    }
+
+    CollisionState& collisionState = player.collision;
+    if (collisionState.supportEntityId != 0 && supportId == 0)
+        player.vel += collisionState.supportVelocity;
+
+    if (supportId != 0 && glm::dot(supportVelocity, supportVelocity) > 0.0f)
+    {
+        player.pos += supportVelocity * dt;
+        player.updateModelWorldTransforms();
+    }
+
+    collisionState.supportEntityId = supportId;
+    collisionState.supportVelocity = supportVelocity;
 
     // Body-contact spark: same boundary as the legacy body phase, fed by the
     // solver's final contact point. The weapon label does not spawn a body spark.

@@ -30,6 +30,10 @@ extern std::vector<int> gatherGLBTrianglesForSphere(
     const char* caller
 );
 
+// TODO-DELETE: this extern is only used to disable the legacy emergency search
+// path below; the uncached gatherGLBTrianglesForSphere (physics-collision-glb.cpp)
+// is a deletion candidate once the legacy emergency/debug code is removed.
+
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 struct CollisionFrameDiag {
@@ -145,6 +149,13 @@ void doGLBTriangleCollisions(
         }
     }
 
+    // NOTE: everything below this point is the LEGACY player GLB pipeline
+    // (body/weapon, root capsule sweep-slide, batched capsule depenetration,
+    // floor recovery, emergency stuck). The actor-triangle solver above
+    // (runActorTriangleCollisionStep) is the intended replacement owner. Each
+    // legacy phase below is marked TODO-DELETE with its own removal conditions.
+    // Do not delete a phase until the triangle path is accepted by human
+    // gameplay testing in Dust 3 Siberia, Trainkinda, and Chain of Judgement.
     CollisionFrameDiag diag;
     auto tFrameStart = std::chrono::steady_clock::now();
     constexpr float SURFACE_SLOP = 0.01f;
@@ -159,6 +170,9 @@ void doGLBTriangleCollisions(
     std::vector<int> candidates;
     candidates.reserve(512);
 
+    // TODO-DELETE: Phase 1 — body/weapon pass call. Superseded by the actor
+    // triangle solver (solveActorTriangleCollision). Remove when the toggle path
+    // is accepted and doBodyWeaponCollisionPhase is deleted.
     // ── 1. Body + weapon collision (before root capsule sweep) ──
     // Run first so weapon contacts push player position before the
     // root capsule sweep resolves. This prevents the weapon from
@@ -175,6 +189,9 @@ void doGLBTriangleCollisions(
         totalMove = (p.vel + p.externalImpulse) * dt;
     }
 
+    // TODO-DELETE: Phase 2 — root capsule sweep + slide. Superseded by the
+    // actor triangle solver. Step-up currently lives only here; either port it
+    // to the triangle owner or accept dropping it (spec decision) before delete.
     // ── 2. Sweep + slide ─────────────────────────────────
     {
         Perf::ScopedTimer _st("SweepSlide");
@@ -184,6 +201,9 @@ void doGLBTriangleCollisions(
         diag.sweepSlideMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
 
+    // TODO-DELETE: Phase 3 — batched root capsule depenetration. Superseded by
+    // the final-pose depenetration inside solveActorTriangleCollision. Depends
+    // on collectCapsuleRecoveryContacts, which other owners still use.
     // ── 3. Batched depenetration ─────────────────────────
     {
         Perf::ScopedTimer _dt("Depenetration");
@@ -231,6 +251,8 @@ void doGLBTriangleCollisions(
         diag.depenSolveMs = std::chrono::duration<float, std::milli>(t1 - t0).count() - diag.depenGatherMs;
     }
 
+    // TODO-DELETE: Phase 4 — floor recovery call. Superseded by triangle
+    // depenetration + triangle-only grounding. Remove with doFloorRecovery.
     // ── 4. Floor recovery ────────────────────────────────
     {
         Perf::ScopedTimer _fr("GroundDetection");
@@ -240,6 +262,11 @@ void doGLBTriangleCollisions(
         diag.floorRecoveryMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
 
+    // TODO-DELETE: Phase 5 — emergency stuck escape. This is the block that can
+    // teleport the actor and set p.vel = 0. The triangle owner depenetrates
+    // without erasing momentum; a rate-limited diagnostic replaces this. Remove
+    // only after human testing proves the triangle path never leaves the actor
+    // stuck in Dust 3 Siberia, Trainkinda, and Chain of Judgement.
     // ── 5. Emergency stuck escape ────────────────────────
     {
         Perf::ScopedTimer _es("CharVsWorld");
@@ -386,6 +413,9 @@ void doGLBTriangleCollisions(
         diag.stuckTrackMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
 
+    // TODO-DELETE: Phase 7 — legacy capsule/body-sample debug visualization.
+    // Depends on collectCapsuleRecoveryContacts / collectPlayerBodyCollisionSamples.
+    // Replace with a triangle-contact debug draw from ActorTriangleCollisionResult.
     // ── 7. Debug visualization ───────────────────────────
     {
         auto t0 = std::chrono::steady_clock::now();

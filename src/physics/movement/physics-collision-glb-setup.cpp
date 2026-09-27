@@ -273,6 +273,14 @@ static void extractEntityInfo(const char* caller, char* entity, int entitySize,
     }
 }
 
+// TODO-DELETE (consolidate): value-returning gatherGLBTriangles overload.
+// This wrapper allocates and copies a std::vector per call, which the collision
+// architecture hard rule forbids in the hot path; callers should use the
+// scratch-buffer overload below (void gatherGLBTriangles(out, ...)).
+// It is retained because the legacy pipeline and stress tests still call it.
+// Remove only after every caller passes a reusable buffer (PhysicsScratch) and a
+// rebuild confirms no value-returning call remains. This is an efficiency
+// consolidation, not a gameplay decision.
 std::vector<int> gatherGLBTriangles(
     const World& world,
     const Capsule& cap,

@@ -28,6 +28,9 @@
 #define SAFETY_LOG(...) Debug::logThrottled(Debug::Category::Collision, "safety-pass", 1.0f, __VA_ARGS__)
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
+// TODO-DELETE: applyPostSnapCorrection — helper for the legacy ground snap.
+// Superseded by solveActorTriangleCollision, which depenetrates the final pose.
+// Remove together with doGroundSnap.
 static void applyPostSnapCorrection(Player& p, const World& world, bool& groundedThisFrame)
 {
     constexpr float SURFACE_SLOP = 0.01f;
@@ -48,6 +51,12 @@ static void applyPostSnapCorrection(Player& p, const World& world, bool& grounde
         applyCollisionContact(p, groundedThisFrame, c.normal, c.point, c.penetration, c.triangleIndex, c.label);
 }
 
+// TODO-DELETE: doGroundSnap — legacy capsule snap-to-floor within 0.25 units.
+// It has NO caller in the active pipeline (dead), and the triangle owner grounds
+// from real foot contacts instead.
+// DO NOT DELETE until human gameplay testing confirms the triangle path does not
+// leave the actor hovering on slopes/seams in Dust 3 Siberia, Trainkinda, and
+// Chain of Judgement.
 void doGroundSnap(Player& p, const World& world, bool& groundedThisFrame)
 {
     auto t0 = std::chrono::steady_clock::now();
@@ -125,6 +134,13 @@ void doGroundSnap(Player& p, const World& world, bool& groundedThisFrame)
         groundCandidates.size(), feetZ, bestGroundZ, (int)snapped, bestTri, nRejected, elapsedMs);
 }
 
+// TODO-DELETE: doFloorRecovery — legacy capsule lift out of a walkable surface.
+// Superseded by solveActorTriangleCollision, which depenetrates the actor's real
+// triangles along the world normal (and the triangle path no longer needs the
+// capsule feet). Called by doGLBTriangleCollisions only when the
+// "actorTriangleSolver" toggle is off.
+// DO NOT DELETE until the legacy pipeline is removed AND human gameplay testing
+// proves the triangle path in Dust 3 Siberia, Trainkinda, and Chain of Judgement.
 void doFloorRecovery(Player& p, const World& world, bool& groundedThisFrame)
 {
     auto t0 = std::chrono::steady_clock::now();
@@ -182,6 +198,11 @@ void doFloorRecovery(Player& p, const World& world, bool& groundedThisFrame)
     }
 }
 
+// TODO-DELETE: doRotationSafetyPass — dead legacy capsule safety depenetration
+// (no caller). Same algorithm as the main batched depenetration; the triangle
+// owner validates the final pose instead.
+// DO NOT DELETE until human gameplay testing proves no rotation-induced
+// penetration remains in Dust 3 Siberia, Trainkinda, and Chain of Judgement.
 void doRotationSafetyPass(Player& p, const World& world, bool& groundedThisFrame, CollisionTraceSnapshot& trace)
 {
     auto t0 = std::chrono::steady_clock::now();
@@ -237,6 +258,11 @@ void doRotationSafetyPass(Player& p, const World& world, bool& groundedThisFrame
     }
 }
 
+// TODO-DELETE: doFinalSafetyPass — dead legacy final capsule depenetration
+// (no caller). Duplicate of the main depenetration; the triangle owner
+// re-validates the final pose.
+// DO NOT DELETE until human gameplay testing proves no residual penetration in
+// Dust 3 Siberia, Trainkinda, and Chain of Judgement.
 void doFinalSafetyPass(Player& p, const World& world, CollisionTraceSnapshot& trace)
 {
     auto t0 = std::chrono::steady_clock::now();

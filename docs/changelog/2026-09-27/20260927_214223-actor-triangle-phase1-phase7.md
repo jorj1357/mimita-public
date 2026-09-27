@@ -41,6 +41,7 @@
 
 - `docs/architecture/collision/actor-triangle-owner-inventory.md` (Phases 1–7).
 - `docs/architecture/collision/actor-triangle-phase0-spike.md`.
+- `docs/architecture/collision/actor-triangle-deletion-candidates.md`.
 - `src/physics/movement/actor-triangle-spike.{h,cpp}`.
 - `src/physics/movement/actor-collision-mesh.{h,cpp}`.
 - `src/physics/movement/actor-triangle-solver.{h,cpp}`.
@@ -71,6 +72,36 @@
   the legacy pipeline runs instead of freezing the actor.
 - Not yet handled by the toggle path: step-up (owned by legacy sweep-slide),
   in-game weapon-transform verification, NPC/server headless body triangles.
+
+# Phase 7.5 — TODO-DELETE annotations (no deletions)
+
+Every owner the migration intends to remove or consolidate now carries an
+in-code `TODO-DELETE` comment explaining what it is, what replaces it, and the
+exact condition (human gameplay testing in Dust 3 Siberia, Trainkinda, and Chain
+of Judgement; dependent consumer migration; or grep/build for dead code). Nothing
+was deleted. Files annotated:
+
+- `physics-collision-glb-sweep-slide.{h,cpp}` (`doGLBSweepSlide`)
+- `physics-collision-glb-body.{h,cpp}` (`runBodyWeaponPass`,
+  `doBodyWeaponCollisionPhase`)
+- `physics-collision-glb-contact.cpp` (`collectCapsuleRecoveryContacts`,
+  `collectGLBRecoveryContacts`)
+- `physics-collision-body.cpp` (`recomputeWeaponCapsule`,
+  `collectBodyWeaponSpheres`, `collectBodyWeaponContacts`,
+  `collectPlayerBodyCollisionSamples`)
+- `physics-collision-glb-safety.{h,cpp}` (`doGroundSnap`, `doFloorRecovery`,
+  `doRotationSafetyPass`, `doFinalSafetyPass`, `applyPostSnapCorrection`)
+- `physics-collision-glb-main.cpp` (legacy phase note + Phases 1–5, 7 blocks)
+- `physics-collision-dispatch.cpp` (legacy capsule debug report)
+- `physics-collision-glb.cpp` (`gatherGLBTrianglesForSphere`, dead)
+- `physics-collision-glb-setup.cpp` (value-returning `gatherGLBTriangles`)
+- `physics-collision-shared.h` (legacy body/weapon + capsule groups)
+- `physics-collision-stress.cpp` (capsule penetration verification)
+- `actor-triangle-spike.cpp` (Phase 0 probe)
+
+See `docs/architecture/collision/actor-triangle-deletion-candidates.md` for the
+full table, including the intentionally-kept owners (legacy block world,
+`getCapsule()`, NaN guard, player-vs-player capsule, remote/ragdoll, spark).
 
 # Validation
 

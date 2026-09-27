@@ -152,6 +152,12 @@ static CollisionStressResult runCollisionStressCase(const std::string& caseName)
         doCollisions(testPlayer, world, grounded, DT);
     }
 
+    // TODO-DELETE (consolidate): this case verifies penetration with the legacy
+    // root capsule (collectCapsuleRecoveryContacts). Once the active path is
+    // triangle-only, the stress cases must verify with the actor triangle meshes
+    // (ActorTriangleCollisionResult / collectActorMeshContacts) instead, so the
+    // test measures the same authority it exercises. Keep capsule verification
+    // until the toggle path is accepted by human gameplay testing.
     Capsule cap = testPlayer.getCapsule();
     std::vector<int> candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f));
     std::vector<RecoveryContact> contacts = collectCapsuleRecoveryContacts(world, cap, candidates);

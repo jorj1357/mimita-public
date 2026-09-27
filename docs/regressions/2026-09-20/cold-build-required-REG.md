@@ -721,3 +721,97 @@ reported `Nothing changed`.
 
 Pending. No default behavior changed; human review is needed once the opt-in
 `actorTriangleSolver` path is enabled.
+
+## Cold-build occurrence 12
+
+UTC time: 2026-09-27T21:57:25Z
+
+Related changelog:
+`docs/changelog/2026-09-27/20260927_215800-moving-entity-stage-c.md`
+
+### Why the cold build was required
+
+Stage C adds new C++ translation units (`physical-entity.{h,cpp}`), changes the
+public solver signature, and changes the player collision struct. A canonical
+build was required to compile the new sources and verify the link.
+
+### Exact cold source / boundary
+
+- `src/physics/physical-entity.{h,cpp}` — new entity type and system.
+- `src/physics/movement/actor-triangle-solver.{h,cpp}` — entity parameter and
+  moving-support carry.
+- `src/physics/movement/physics-collision.h` — contact entity/surface fields.
+- `src/entities/player.h` — `CollisionState::supportEntityId` /
+  `supportVelocity`.
+- `src/game/game-cli.cpp` — `--moving-crate-selftest`.
+
+### Result needed from the new executable
+
+The new `--moving-crate-selftest` must run and pass, and all existing collision
+self-tests must remain green.
+
+### Why it could not be applied through the live path
+
+The change is C++ in cold collision translation units and the executable's link
+script (new object file); the running process cannot load new object code.
+
+### Smallest change that would make this hot
+
+Move the physical-entity type and the actor-triangle solver behind the
+replaceable gameplay-module boundary with a stable exported ABI.
+
+### Build result
+
+`SUCCESS` on 2026-09-27. `mimita.exe` linked.
+
+### Human review
+
+Pending. Entities are not yet spawned by a game mode; the proof is deterministic
+only.
+
+## Cold-build occurrence 13
+
+UTC time: 2026-09-27T22:49:49Z
+
+Related changelog:
+`docs/changelog/2026-09-27/20260927_215800-moving-entity-stage-c.md`
+
+### Why the cold build was required
+
+The `crate_spawn` / `crate_clear` terminal commands add a new translation unit
+and register it from `main-systems.cpp`; kinematic advance and entity rendering
+were added to the engine tick files. A canonical build was required to compile
+and link the new command and call sites.
+
+### Exact cold source / boundary
+
+- `src/terminal/crate-commands.{h,cpp}` — new command registration.
+- `src/main-systems.cpp` — registers the commands.
+- `src/engine/engine-tick-combat.cpp` — `advanceKinematics(dt)`.
+- `src/engine/engine-tick-render.cpp` — `drawPhysicalEntities(camera)`.
+
+### Result needed from the new executable
+
+`crate_spawn` must exist in the terminal and `mimita.exe` must link; the moving
+crate self-test must still pass.
+
+### Why it could not be applied through the live path
+
+New object code and a new terminal command registration are in the cold
+executable; the running process cannot load them.
+
+### Smallest change that would make this hot
+
+Move terminal command registration and the entity draw/update call sites behind
+the replaceable gameplay-module boundary.
+
+### Build result
+
+`SUCCESS` on 2026-09-27. `mimita.exe` linked at 18:49:49 local; the binary
+contains the `crate_spawn` and `--moving-crate-selftest` strings.
+
+### Human review
+
+Pending. Spawn a crate in-game and verify it is visible and can be stood on with
+`actorTriangleSolver` enabled in `config/collision.json`.
+

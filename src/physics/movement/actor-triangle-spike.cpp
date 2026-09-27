@@ -44,6 +44,11 @@ bool finiteAabb(const glm::vec3& mn, const glm::vec3& mx)
 
 } // namespace
 
+// TODO-DELETE: actorTriangleSpike — Phase 0 feasibility probe, now superseded by
+// actorCollisionMeshSelfTest (actor-collision-mesh.cpp) which exercises the same
+// GL-free loaders plus the collector. Keep until the migration is accepted, then
+// remove this probe, its header, and the `--actor-triangle-spike` CLI command.
+// No gameplay risk; this is a diagnostic command.
 bool actorTriangleSpike(std::string* outSummary)
 {
     std::string report;

@@ -232,6 +232,18 @@ bool capsuleTriangleContact(
     return true;
 }
 
+// TODO-DELETE (conditional): collectCapsuleRecoveryContacts.
+// Superseded for actors by collectActorMeshContacts
+// (physics-collision-mesh.cpp), called from solveActorTriangleCollision, which
+// tests the actor's real body/weapon triangles instead of a root capsule.
+// This function is NOT deletable yet: it is still the contact producer for
+//   - the legacy player GLB pipeline (toggle off),
+//   - remote-body geometry safety (network/multiplayer-interpolation.cpp),
+//   - ragdoll vs world (physics/physical-body.cpp),
+//   - the collision stress tests (physics-collision-stress.cpp).
+// DO NOT DELETE until every one of those consumers has migrated to a triangle
+// or its own primitive owner AND human gameplay testing proves the triangle path
+// in Dust 3 Siberia, Trainkinda, and Chain of Judgement.
 std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
     const World& world,
     const Capsule& cap,
@@ -271,6 +283,12 @@ std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
     return contacts;
 }
 
+// TODO-DELETE: collectGLBRecoveryContacts — legacy capsule + body-sample
+// recovery used only by the legacy pipeline's debug/emergency search
+// (physics-collision-glb-main.cpp, physics-collision-dispatch.cpp). Superseded
+// by solveActorTriangleCollision, which produces the final actor contacts.
+// DO NOT DELETE until the legacy pipeline is removed AND human gameplay testing
+// proves the triangle path in Dust 3 Siberia, Trainkinda, and Chain of Judgement.
 std::vector<RecoveryContact> collectGLBRecoveryContacts(
     const World& world,
     const Capsule& cap,

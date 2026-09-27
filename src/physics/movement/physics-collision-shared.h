@@ -311,6 +311,9 @@ void gatherGLBTriangles(
     const char* caller = nullptr
 );
 
+// TODO-DELETE (conditional): superseded for actors by collectActorMeshContacts,
+// but still used by the legacy pipeline, remote geometry safety, ragdoll, and
+// stress tests. See the TODO-DELETE comment at the definition.
 std::vector<RecoveryContact> collectCapsuleRecoveryContacts(
     const World& world,
     const Capsule& cap,
@@ -384,6 +387,14 @@ extern BWInvestigate gBW;
 // =====================================================
 // Body / weapon capsule helpers
 // =====================================================
+
+// TODO-DELETE: this whole legacy body/weapon sphere + capsule group is
+// superseded by collectActorCollisionMeshes + solveActorTriangleCollision
+// (actor-collision-mesh.h / actor-triangle-solver.h). See the TODO-DELETE
+// comments at each definition in physics-collision-body.cpp. Do not remove until
+// the triangle path is accepted by human gameplay testing in Dust 3 Siberia,
+// Trainkinda, and Chain of Judgement and weapon-swordsword's use of
+// recomputeWeaponCapsule has migrated.
 
 struct BodyWeaponSphere {
     glm::vec3 center;
