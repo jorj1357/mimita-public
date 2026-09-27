@@ -19,6 +19,8 @@
 #include "npc/npc.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
+#include "debug/debug-visuals.h"
+#include "hot-reload/hot-reload-system.h"
 
 #include <algorithm>
 #include <cmath>
@@ -31,6 +33,11 @@ static float qhCp(const WeaponDefinition& def, const char* key, float fallback) 
     return (it != def.customParams.end()) ? it->second : fallback;
 }
 
+static bool qhUsesSphere(const WeaponDefinition& def)
+{
+    return qhCp(def, "hitboxSphere", 0.0f) > 0.5f;
+}
+
 // ── Capsule from right arm world transform ────────────────────
 
 Capsule WeaponQuickHit::computeArmCapsule(const Player& owner,
@@ -39,12 +46,32 @@ Capsule WeaponQuickHit::computeArmCapsule(const Player& owner,
     const float capsuleRadius = qhCp(def, "hitboxRadius", 0.22f);
     const float capsuleLength = qhCp(def, "hitboxLength", 0.85f);
 
-    // Find rightArm body part
+    // Find the actual hand edge of the right-arm collider. The longest local
+    // collider axis is the arm axis; its farther endpoint is the hand edge.
     glm::vec3 armCenter(0.0f);
     bool foundArm = false;
     for (const PhysicalBodyPart& part : owner.physicalBody.parts) {
         if (part.name == "rightArm") {
-            armCenter = glm::vec3(part.worldTransform[3]);
+            const glm::vec3 localCenter =
+                (part.collider.localMin + part.collider.localMax) * 0.5f;
+            const glm::vec3 boundsSize =
+                part.collider.localMax - part.collider.localMin;
+            int axis = boundsSize.y > boundsSize.x ? 1 : 0;
+            if (boundsSize.z > boundsSize[axis]) axis = 2;
+            glm::vec3 handPoint = localCenter;
+            const float minDistance = std::fabs(part.collider.localMin[axis]);
+            const float maxDistance = std::fabs(part.collider.localMax[axis]);
+            handPoint[axis] = maxDistance >= minDistance
+                ? part.collider.localMax[axis]
+                : part.collider.localMin[axis];
+            glm::vec3 handDirection(0.0f);
+            handDirection[axis] = handPoint[axis] >= 0.0f ? 1.0f : -1.0f;
+            const glm::vec3 handWorld = glm::vec3(
+                part.worldTransform * glm::vec4(handPoint, 1.0f));
+            const glm::vec3 directionWorld = glm::normalize(glm::vec3(
+                part.worldTransform * glm::vec4(handDirection, 0.0f)));
+            armCenter = handWorld + directionWorld *
+                qhCp(def, "handForwardOffset", capsuleLength);
             foundArm = true;
             break;
         }
@@ -63,11 +90,14 @@ Capsule WeaponQuickHit::computeArmCapsule(const Player& owner,
     if (glm::length(forward) < 0.001f) forward = glm::vec3(0.0f, 1.0f, 0.0f);
     forward = glm::normalize(forward);
 
-    // Capsule: A is at the arm center (shoulder area), B extends forward along the arm
+    // Capsule: A is at the arm center (shoulder area), B extends forward along the arm.
+    // A sphere weapon uses B as its one-tick right-hand center.
     Capsule cap;
     cap.a = armCenter;
-    cap.b = armCenter + forward * capsuleLength;
+    cap.b = qhUsesSphere(def) ? armCenter : armCenter + forward * capsuleLength;
     cap.r = capsuleRadius;
+    if (qhUsesSphere(def))
+        cap.a = cap.b;
     return cap;
 }
 
@@ -162,6 +192,35 @@ void WeaponQuickHit::update(QuickHitState& state, const WeaponDefinition& def,
     // Update current capsule from right arm
     state.currentArmCapsule = computeArmCapsule(owner, def);
 
+    if (qhCp(def, "debugHitboxEnabled", 0.0f) > 0.5f && qhUsesSphere(def)) {
+        GameQuickHitDebugVisualState visual{};
+        visual.position[0] = state.currentArmCapsule.a.x;
+        visual.position[1] = state.currentArmCapsule.a.y;
+        visual.position[2] = state.currentArmCapsule.a.z;
+        visual.radius = state.currentArmCapsule.r;
+        visual.color[0] = qhCp(def, "debugHitboxColorR", 1.0f);
+        visual.color[1] = qhCp(def, "debugHitboxColorG", 1.0f);
+        visual.color[2] = qhCp(def, "debugHitboxColorB", 1.0f);
+        visual.color[3] = qhCp(def, "debugHitboxAlpha", 0.85f);
+        visual.enabled = 1;
+
+        const GameAPI* api = HotReloadSystem::instance().gameAPI();
+        if (api && api->updateQuickHitDebugVisual)
+            api->updateQuickHitDebugVisual(
+                &HotReloadSystem::instance().gameMemory(), &visual);
+
+        if (visual.enabled) {
+            const glm::vec4 color(visual.color[0], visual.color[1],
+                                  visual.color[2], visual.color[3]);
+            const glm::vec3 position(visual.position[0], visual.position[1],
+                                     visual.position[2]);
+            if (visual.wireframe)
+                DebugVis::drawWeaponWireSphere(camera, position, visual.radius, color);
+            else
+                DebugVis::drawFilledSphere(camera, position, visual.radius, color);
+        }
+    }
+
     // Keep shoot effect timer alive while active
     runtime.shootEffectTimer = std::max(runtime.shootEffectTimer,
         (float)state.activeTicksRemaining / 60.0f);
@@ -184,15 +243,21 @@ void WeaponQuickHit::update(QuickHitState& state, const WeaponDefinition& def,
                     glm::vec3 partCenter = glm::vec3(part.worldTransform[3]);
                     float partRadius = 0.3f;
 
-                    // Test capsule vs sphere
-                    glm::vec3 seg = state.currentArmCapsule.b - state.currentArmCapsule.a;
-                    float segLen = glm::length(seg);
-                    if (segLen < 0.001f) continue;
-                    glm::vec3 segDir = seg / segLen;
-                    glm::vec3 toTarget = partCenter - state.currentArmCapsule.a;
-                    float tProj = glm::clamp(glm::dot(toTarget, segDir), 0.0f, segLen);
-                    glm::vec3 closest = state.currentArmCapsule.a + segDir * tProj;
-                    float dist = glm::length(closest - partCenter);
+                    const bool sphere = qhUsesSphere(def);
+                    glm::vec3 closest = state.currentArmCapsule.a;
+                    float dist = 0.0f;
+                    if (sphere) {
+                        dist = glm::length(closest - partCenter);
+                    } else {
+                        glm::vec3 seg = state.currentArmCapsule.b - state.currentArmCapsule.a;
+                        float segLen = glm::length(seg);
+                        if (segLen < 0.001f) continue;
+                        glm::vec3 segDir = seg / segLen;
+                        glm::vec3 toTarget = partCenter - state.currentArmCapsule.a;
+                        float tProj = glm::clamp(glm::dot(toTarget, segDir), 0.0f, segLen);
+                        closest = state.currentArmCapsule.a + segDir * tProj;
+                        dist = glm::length(closest - partCenter);
+                    }
                     float sumRadius = state.currentArmCapsule.r + partRadius;
 
                     if (dist < sumRadius) {
@@ -208,18 +273,33 @@ void WeaponQuickHit::update(QuickHitState& state, const WeaponDefinition& def,
                             glm::dot(glm::normalize(capsuleVel + glm::vec3(0.001f)),
                                      -contactNormal));
 
-                        float rawForce = impactSpeed * directness;
+                        const float centerForce = sphere
+                            ? std::clamp(1.0f - dist / std::max(sumRadius, 0.001f), 0.0f, 1.0f)
+                            : 0.0f;
+                        const float motionForce = std::clamp(impactSpeed /
+                            std::max(0.001f, qhCp(def, "maxForceSpeed", 20.0f)),
+                            0.0f, 1.0f);
+                        const float rawForce = sphere
+                            ? std::max(centerForce, motionForce)
+                            : impactSpeed * directness;
                         float forceDmgScale = qhCp(def, "forceDamageScale", 1.0f);
                         float forceDmgExp = qhCp(def, "forceDamageExponent", 1.35f);
                         float minDmg = qhCp(def, "minDamage", 1.0f);
                         float maxDmg = qhCp(def, "maxDamage", 100.0f);
-                        float damage = minDmg + std::pow(rawForce * forceDmgScale, forceDmgExp);
+                        float damage = sphere
+                            ? minDmg + (maxDmg - minDmg) * std::pow(
+                                std::clamp(rawForce * forceDmgScale, 0.0f, 1.0f), forceDmgExp)
+                            : minDmg + std::pow(rawForce * forceDmgScale, forceDmgExp);
                         damage = std::clamp(damage, minDmg, maxDmg);
 
                         float forceKbScale = qhCp(def, "forceKnockbackScale", 1.0f);
                         float maxKb = qhCp(def, "maxKnockback", 100.0f);
                         float minKb = qhCp(def, "minKnockback", 0.0f);
-                        float knockback = rawForce * forceKbScale;
+                        float knockback = sphere
+                            ? minKb + (maxKb - minKb) * std::pow(
+                                std::clamp(rawForce * forceKbScale, 0.0f, 1.0f),
+                                std::max(0.01f, qhCp(def, "forceKnockbackExponent", 1.0f)))
+                            : rawForce * forceKbScale;
                         knockback = std::clamp(knockback, minKb, maxKb);
 
                         glm::vec3 kbDir = glm::length(partCenter - closest) > 0.001f

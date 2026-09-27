@@ -82,3 +82,17 @@ objects may later become entities using only the components they need.
 
 New features must prefer shared actor components and systems over parallel
 player-only and NPC-only implementations.
+
+## Runtime kernel and hot gameplay boundary
+
+Entities and systems split into a stable kernel and replaceable gameplay code:
+
+- The kernel (cold, in `MiMITA.exe`) owns entity ids, sparse component storage,
+  generic events, tick scheduling, network authority, physics queries, and the
+  hot loader. It must not own gameplay policy.
+- Hot gameplay (in `src/hot-reload/modules/`) owns damage, projectile motion,
+  explosion policy, actor decisions, and gamemode rules. It acts on components
+  and events through a stable boundary.
+
+See `docs/architecture/live-development/hot-kernel.md` for the boundary, the
+generic event/behavior path, and the `HOT_RELOAD_BOUNDARY_VIOLATION` rule.

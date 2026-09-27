@@ -1,7 +1,9 @@
 // 08 25 2026, 00 00
 /* purpose
-* Declares QuickHit client-side state and per-frame update for the physical punch weapon.
-* Owns input routing, attack state machine, sound restart, pose snap, and capsule computation.
+* Declares QuickHit client-side state and per-frame update for short physical
+* contact weapons, including the one-tick Force Punch sphere.
+* Owns input routing, attack state machine, sound restart, pose snap, and hand
+* shape computation.
 * Does NOT own server-authoritative damage, swept collision validation, or episode batching.
 * Does NOT own packet transport, reliable gameplay events, or server rewind compensation.
 * Does NOT render remote player capsules or replicate hit effects over the network.

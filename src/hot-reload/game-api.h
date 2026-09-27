@@ -15,7 +15,7 @@
 #define MIMITA_GAME_EXPORT extern "C"
 #endif
 
-static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 2;
+static constexpr std::uint32_t MIMITA_GAME_API_VERSION = 3;
 
 struct GameEffectPartState {
     float position[3];
@@ -28,6 +28,15 @@ struct GameEffectPartState {
     std::uint8_t sticky;
     std::uint8_t affectedByGravity;
     std::uint8_t reserved;
+};
+
+struct GameQuickHitDebugVisualState {
+    float position[3];
+    float radius;
+    float color[4];
+    std::uint8_t enabled;
+    std::uint8_t wireframe;
+    std::uint8_t reserved[2];
 };
 
 using GameLogFn = void (MIMITA_GAME_CALL *)(const char* message);
@@ -52,6 +61,9 @@ using GameUpdateEffectsFn = void (MIMITA_GAME_CALL *)(
     GameEffectPartState* effects,
     std::uint32_t effectCount,
     float dt);
+using GameUpdateQuickHitDebugVisualFn = void (MIMITA_GAME_CALL *)(
+    GameMemory* memory,
+    GameQuickHitDebugVisualState* visual);
 
 struct GameAPI {
     std::uint32_t version;
@@ -59,6 +71,7 @@ struct GameAPI {
     GameOnReloadFn onReload;
     GameBeforeUnloadFn beforeUnload;
     GameUpdateEffectsFn updateEffects;
+    GameUpdateQuickHitDebugVisualFn updateQuickHitDebugVisual;
 };
 
 using GetGameAPIFn = bool (MIMITA_GAME_CALL *)(

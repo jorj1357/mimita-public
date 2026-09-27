@@ -591,10 +591,20 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         WeaponSwordsword::render(camera, mSwordswordState, *def, dummyPos);
     }
 
-    // QuickHit: render glowing capsule during active ticks
+    // QuickHit: render its active physical shape during active ticks.
     if (def->behaviorType == WeaponBehaviorType::QuickHit && mQuickHitState.active) {
         Capsule cap = mQuickHitState.currentArmCapsule;
-        if (glm::length(cap.b - cap.a) > 0.001f && cap.r > 0.001f) {
+        if (glm::length(cap.b - cap.a) <= 0.001f && cap.r > 0.001f) {
+            const auto param = [&](const char* key, float fallback) {
+                const auto it = def->customParams.find(key);
+                return it != def->customParams.end() ? it->second : fallback;
+            };
+            DebugVis::drawFilledSphere(camera, cap.a, cap.r,
+                {param("debugHitboxColorR", 1.0f),
+                 param("debugHitboxColorG", 1.0f),
+                 param("debugHitboxColorB", 1.0f),
+                 param("debugHitboxAlpha", 1.0f)});
+        } else if (glm::length(cap.b - cap.a) > 0.001f && cap.r > 0.001f) {
             DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 1.0f, 1.0f, 0.9f});
         }
     }
@@ -1247,6 +1257,21 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
     if (def->behaviorType == WeaponBehaviorType::QuickHit) {
         auto rtIt = player.weaponRuntimes.find(def->id);
         if (rtIt != player.weaponRuntimes.end() && rtIt->second.shootEffectTimer > 0.0f) {
+            if (def->customParams.count("hitboxSphere") &&
+                def->customParams.at("hitboxSphere") > 0.5f) {
+                const Capsule sphere = WeaponQuickHit::computeArmCapsule(player, *def);
+                const auto param = [&](const char* key, float fallback) {
+                    const auto it = def->customParams.find(key);
+                    return it != def->customParams.end() ? it->second : fallback;
+                };
+                DebugVis::drawFilledSphere(camera, sphere.a, sphere.r,
+                    {param("debugHitboxColorR", 1.0f),
+                     param("debugHitboxColorG", 1.0f),
+                     param("debugHitboxColorB", 1.0f),
+                     param("debugHitboxAlpha", 1.0f)});
+                return;
+            }
+
             // Compute approximate capsule from remote player position + aim direction
             glm::vec3 forward = player.aimDirection;
             if (glm::length(forward) < 0.001f) forward = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -1256,20 +1281,28 @@ void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, c
 
             float capsuleRadius = 0.22f;
             float capsuleLength = 0.85f;
+            bool sphere = false;
             auto rIt = def->customParams.find("hitboxRadius");
             if (rIt != def->customParams.end()) capsuleRadius = rIt->second;
             auto lIt = def->customParams.find("hitboxLength");
             if (lIt != def->customParams.end()) capsuleLength = lIt->second;
+            auto sIt = def->customParams.find("hitboxSphere");
+            if (sIt != def->customParams.end()) sphere = sIt->second > 0.5f;
+            auto hIt = def->customParams.find("handForwardOffset");
+            if (hIt != def->customParams.end()) capsuleLength = hIt->second;
 
             glm::vec3 shoulderOffset(0.0f, 0.0f, 1.2f);
             glm::vec3 armCenter = player.pos + shoulderOffset + forward * 0.6f;
             glm::vec3 armTip = armCenter + forward * capsuleLength;
 
             Capsule cap;
-            cap.a = armCenter;
+            cap.a = sphere ? armTip : armCenter;
             cap.b = armTip;
             cap.r = capsuleRadius;
-            DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 1.0f, 1.0f, 0.9f});
+            if (sphere)
+                DebugVis::drawFilledSphere(camera, cap.a, cap.r, {1.0f, 1.0f, 1.0f, 1.0f});
+            else
+                DebugVis::drawWeaponCapsuleWire(camera, cap, {1.0f, 1.0f, 1.0f, 0.9f});
         }
     }
 }

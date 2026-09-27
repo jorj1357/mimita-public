@@ -495,6 +495,22 @@ If they do not, report:
 unaccounted frame time
 Do not hide missing time.
 The long-term goal is to reduce every duration toward zero, while budgets provide measurable current targets.
+
+## JSONL frame-time profile
+
+The runtime measures every frame. Each named scope records its inclusive
+duration in memory with a parent frame ID; it does not write one line per
+scope per frame. Every 60 simulation ticks it emits one bounded JSONL summary
+for the preceding one-second window.
+
+Each summary contains frame count, total/average/min/max/p95/p99 frame time,
+simulation time, render time, present/swap time, unaccounted time, and
+contributors sorted from greatest total time to least total time. Each
+contributor includes call count, total time, average time, maximum time, and
+the worst frame ID. If contributor totals do not approximately equal the
+measured frame total, the record reports `unaccounted_frame_time`.
+
+Networked summaries also include active client/server generations and hashes.
 ________________
 
 

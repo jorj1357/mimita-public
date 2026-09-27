@@ -73,3 +73,16 @@ decision, resulting state, and rejection reason where applicable.
 When a visual feature is changed, first validate its configuration load, state,
 and command result. Human visual review is still required for appearance, but
 it should not be the only way to discover whether the feature works.
+
+## Live identity command
+
+`versioninfo` is a hot-package diagnostic command. It prints the running EXE
+path, process/PID, session, process uptime, local active generation/hash,
+server generation/hash/phase/tick, room/server identity, and the authoritative
+`events.jsonl` path. It also writes `versioninfo.executed` to that JSONL.
+
+The terminal dispatches hot-package commands before cold `ConsoleCommand`
+entries. The command implementation can therefore change in the DLL and be
+activated without restarting the EXE. The generic `runtime.info` capability
+is the single cold-owned fact provider; future diagnostic commands should use
+that same bridge instead of adding one cold command per report.

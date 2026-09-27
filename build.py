@@ -45,8 +45,15 @@ def stage_runtime_dlls():
             print("[RUNTIME] missing dependency: %s" % source)
             continue
         destination = os.path.join(ROOT, name)
-        shutil.copy2(source, destination)
-        print("[RUNTIME] staged %s" % name)
+        try:
+            shutil.copy2(source, destination)
+            print("[RUNTIME] staged %s" % name)
+        except PermissionError:
+            # A running root-local mimita.exe can keep a DLL mapped. The
+            # linker already succeeded, and the dev loop publishes its own
+            # DLL copies beside each numbered executable, so do not turn this
+            # convenience staging lock into a failed build.
+            print("[RUNTIME] destination locked; keeping existing %s" % name)
 
 try:
     COMPILER = compiler()
@@ -259,6 +266,13 @@ def source_changed(src):
         return True
 
     obj_time = os.path.getmtime(obj)
+
+    # Every C++ translation unit is compiled with ``-include pch.h``. GCC's
+    # generated .d files do not reliably list the precompiled-header artifact,
+    # so a changed PCH could otherwise leave old objects looking current.
+    # Treat the PCH as a shared dependency explicitly.
+    if os.path.exists(PCH_OUTPUT) and os.path.getmtime(PCH_OUTPUT) >= obj_time:
+        return True
 
     # read dependency file
     with open(dep, "r") as f:

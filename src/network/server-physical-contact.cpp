@@ -210,11 +210,14 @@ static bool buildPhysicalShape(ServerPlayer& attacker,
         // Approximate right arm position: shoulder height + forward extension
         const glm::vec3 shoulderOffset(0.0f, 0.0f, 1.2f);
         const glm::vec3 armCenter = attacker.pos + shoulderOffset + forward * 0.6f;
-        const glm::vec3 armTip = armCenter + forward * capsuleLength;
+        const glm::vec3 handCenter = armCenter + forward *
+            WeaponExecution::paramOr(def, "handForwardOffset", capsuleLength);
 
-        outShape.kind = WeaponExecution::PhysicalShapeKind::Capsule;
-        outShape.currentA = armCenter;
-        outShape.currentB = armTip;
+        const bool sphere = WeaponExecution::paramOr(def, "hitboxSphere", 0.0f) > 0.5f;
+        outShape.kind = sphere ? WeaponExecution::PhysicalShapeKind::Sphere
+                               : WeaponExecution::PhysicalShapeKind::Capsule;
+        outShape.currentA = sphere ? handCenter : armCenter;
+        outShape.currentB = sphere ? handCenter : armCenter + forward * capsuleLength;
         outShape.radius = capsuleRadius;
     }
     else
@@ -291,6 +294,7 @@ static void flushAndClearEpisodes(SOCKET sock,
 
 static int physicalContactDamage(const WeaponDefinition& def,
                                  const WeaponExecution::PhysicalContactShape& shape,
+                                 const WeaponExecution::PhysicalContactHit& hit,
                                  bool swordLunge,
                                  float dt)
 {
@@ -312,24 +316,24 @@ static int physicalContactDamage(const WeaponDefinition& def,
         const float travelDist = WeaponExecution::physicalShapeTravelDistance(shape);
         const float speed = travelDist / std::max(dt, 0.0001f);
 
-        // Directness: how aligned capsule velocity is with the contact normal
-        // Use shape direction as velocity proxy (previous->current)
-        glm::vec3 shapeDir = shape.currentB - shape.currentA;
-        float shapeLen = glm::length(shapeDir);
-        float directness = 1.0f;
-        if (shapeLen > 0.001f) {
-            shapeDir /= shapeLen;
-            // Use the hit normal if available, otherwise assume head-on
-            directness = 0.8f;
-        }
-
-        float rawForce = speed * directness;
+        const float sumRadius = std::max(0.001f,
+            shape.radius + WeaponExecution::paramOr(def, "targetBodyRadius", 0.65f));
+        const float centerForce = std::clamp(1.0f - hit.distance / sumRadius, 0.0f, 1.0f);
+        const float motionForce = std::clamp(speed /
+            std::max(0.001f, WeaponExecution::paramOr(def, "maxForceSpeed", 20.0f)),
+            0.0f, 1.0f);
+        const float rawForce = shape.kind == WeaponExecution::PhysicalShapeKind::Sphere
+            ? std::max(centerForce, motionForce)
+            : speed * 0.8f;
         float forceScale = WeaponExecution::paramOr(def, "forceDamageScale", 1.0f);
         float forceExp = WeaponExecution::paramOr(def, "forceDamageExponent", 1.35f);
         float minDmg = WeaponExecution::paramOr(def, "minDamage", 1.0f);
         float maxDmg = WeaponExecution::paramOr(def, "maxDamage", 100.0f);
 
-        float damage = minDmg + std::pow(rawForce * forceScale, forceExp);
+        float damage = shape.kind == WeaponExecution::PhysicalShapeKind::Sphere
+            ? minDmg + (maxDmg - minDmg) * std::pow(
+                std::clamp(rawForce * forceScale, 0.0f, 1.0f), forceExp)
+            : minDmg + std::pow(rawForce * forceScale, forceExp);
         return std::clamp((int)std::round(damage),
             (int)std::max(1.0f, minDmg), (int)std::max(1.0f, maxDmg));
     }
@@ -343,6 +347,7 @@ static int physicalContactDamage(const WeaponDefinition& def,
 }
 
 static glm::vec3 physicalContactKnockback(const WeaponDefinition& def,
+                                          const WeaponExecution::PhysicalContactShape& shape,
                                           const WeaponExecution::PhysicalContactHit& hit,
                                           int damage,
                                           bool swordLunge)
@@ -358,7 +363,24 @@ static glm::vec3 physicalContactKnockback(const WeaponDefinition& def,
         float forceKbScale = WeaponExecution::paramOr(def, "forceKnockbackScale", 1.0f);
         float maxKb = WeaponExecution::paramOr(def, "maxKnockback", 100.0f);
         float minKb = WeaponExecution::paramOr(def, "minKnockback", 0.0f);
-        float strength = std::clamp((float)damage * forceKbScale, minKb, maxKb);
+        float strength = 0.0f;
+        if (shape.kind == WeaponExecution::PhysicalShapeKind::Sphere) {
+            const float sumRadius = std::max(0.001f,
+                shape.radius + WeaponExecution::paramOr(def, "targetBodyRadius", 0.65f));
+            const float centerForce = std::clamp(1.0f - hit.distance / sumRadius, 0.0f, 1.0f);
+            const float speed = WeaponExecution::physicalShapeTravelDistance(shape) /
+                std::max(0.0001f, 1.0f / 60.0f);
+            const float motionForce = std::clamp(speed /
+                std::max(0.001f, WeaponExecution::paramOr(def, "maxForceSpeed", 20.0f)),
+                0.0f, 1.0f);
+            const float force = std::clamp(std::max(centerForce, motionForce) * forceKbScale,
+                                           0.0f, 1.0f);
+            const float exponent = std::max(0.01f,
+                WeaponExecution::paramOr(def, "forceKnockbackExponent", 1.0f));
+            strength = minKb + (maxKb - minKb) * std::pow(force, exponent);
+        } else {
+            strength = std::clamp((float)damage * forceKbScale, minKb, maxKb);
+        }
         return normal * strength;
     }
 
@@ -433,8 +455,8 @@ static void applyPhysicalContactHit(SOCKET sock,
         return;
 
     episode.lastSampleTick = tick;
-    const int damage = physicalContactDamage(def, shape, swordLunge, dt);
-    const glm::vec3 knockback = physicalContactKnockback(def, hit, damage, swordLunge);
+    const int damage = physicalContactDamage(def, shape, hit, swordLunge, dt);
+    const glm::vec3 knockback = physicalContactKnockback(def, shape, hit, damage, swordLunge);
     ServerDamageResult result = applyServerDamage(
         players, target, attacker.id, damage, knockback,
         ServerDamageSource::PhysicalContact);

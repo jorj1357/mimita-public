@@ -14,6 +14,12 @@ DEVELOPER = os.path.join(ROOT, "developer")
 LOCAL_MINGW_BIN = os.path.join(DEVELOPER, "toolchain", "mingw64", "bin")
 LOCAL_GLFW_ROOT = os.path.join(DEVELOPER, "glfw", "glfw-3.4.bin.WIN64")
 
+# Current shared Windows development installs. These are fallbacks only:
+# MIMITA_COMPILER, MIMITA_GLFW_INCLUDE, and MIMITA_GLFW_LIB still take
+# precedence, followed by the repository-local developer/ directory.
+SHARED_MINGW_BIN = r"C:\important\msys64\mingw64\bin"
+SHARED_GLFW_ROOT = r"C:\important\glfw-3.4.bin.WIN64"
+
 
 def _required_file(value, variable):
     path = os.path.abspath(value)
@@ -32,7 +38,11 @@ def compiler():
     found = (
         os.path.join(LOCAL_MINGW_BIN, "g++.exe")
         if os.path.isfile(os.path.join(LOCAL_MINGW_BIN, "g++.exe"))
-        else shutil.which("g++") or shutil.which("clang++")
+        else (
+            os.path.join(SHARED_MINGW_BIN, "g++.exe")
+            if os.path.isfile(os.path.join(SHARED_MINGW_BIN, "g++.exe"))
+            else shutil.which("g++") or shutil.which("clang++")
+        )
     )
     if found:
         return os.path.abspath(found)
@@ -56,7 +66,13 @@ def runtime_path(cxx):
 
 
 def glfw_include():
-    value = os.environ.get("MIMITA_GLFW_INCLUDE") or os.path.join(LOCAL_GLFW_ROOT, "include")
+    configured = os.environ.get("MIMITA_GLFW_INCLUDE")
+    if configured:
+        value = configured
+    elif os.path.isdir(os.path.join(LOCAL_GLFW_ROOT, "include")):
+        value = os.path.join(LOCAL_GLFW_ROOT, "include")
+    else:
+        value = os.path.join(SHARED_GLFW_ROOT, "include")
     if not value or not os.path.isdir(value):
         raise FileNotFoundError(
             "GLFW headers were not found. Set MIMITA_GLFW_INCLUDE to GLFW's "
@@ -66,7 +82,13 @@ def glfw_include():
 
 
 def glfw_lib():
-    value = os.environ.get("MIMITA_GLFW_LIB") or os.path.join(LOCAL_GLFW_ROOT, "lib-mingw-w64")
+    configured = os.environ.get("MIMITA_GLFW_LIB")
+    if configured:
+        value = configured
+    elif os.path.isdir(os.path.join(LOCAL_GLFW_ROOT, "lib-mingw-w64")):
+        value = os.path.join(LOCAL_GLFW_ROOT, "lib-mingw-w64")
+    else:
+        value = os.path.join(SHARED_GLFW_ROOT, "lib-mingw-w64")
     if not value or not os.path.isdir(value):
         raise FileNotFoundError(
             "GLFW libraries were not found. Set MIMITA_GLFW_LIB to GLFW's "

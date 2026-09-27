@@ -12,6 +12,7 @@
 #include "weapon-types.h"
 #include "weapon-audio.h"
 #include "weapon-execution.h"
+#include "spyknife-damage.h"
 #include "camera.h"
 #include "audio/audio.h"
 #include "config.h"
@@ -275,39 +276,18 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
 
 static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& def,
                                      Player& owner, uint32_t targetId, Player& target,
-                                     bool isBackstab, const glm::vec3& hitPoint)
+                                     bool isBackstab, const glm::vec3& hitPoint,
+                                     const SpyKnifeDamage::ImpactMetrics& impact)
 {
-    glm::vec3 bladeDir = glm::length(state.prevBladeOBB.center - hitPoint) > 0.001f
-        ? glm::normalize(hitPoint - state.prevBladeOBB.center)
+    glm::vec3 bladeDir = impact.speed > 0.001f
+        ? glm::normalize(target.pos - hitPoint)
         : owner.aimDirection;
-    float bladeSpeed = glm::length(state.prevBladeOBB.center - hitPoint) * 60.0f;
     glm::vec3 toTarget = target.pos - hitPoint;
     float toLen = glm::length(toTarget);
-
-    float directness = 0.0f;
-    float angleBonus = 0.0f;
-    if (toLen > 0.001f && bladeSpeed > 0.1f) {
-        directness = std::max(0.0f, glm::dot(bladeDir, toTarget / toLen));
-        angleBonus = directness * skCp(def, "angleDamageFactor", 10.0f);
-    }
-
-    float damage, kbForce;
-
-    if (isBackstab) {
-        damage = skCp(def, "backstabDamagePerTick", 999.0f);
-        kbForce = skCp(def, "backstabKnockback", 20.0f);
-    } else {
-        float baseDmg = skCp(def, "baseDamage", 15.0f);
-        float speedDmg = bladeSpeed * skCp(def, "speedDamageFactor", 20.0f) * 0.01f;
-        damage = baseDmg + speedDmg + angleBonus;
-        damage = std::clamp(damage, 1.0f, skCp(def, "maxDamage", 100.0f));
-
-        float baseKb = skCp(def, "baseKnockback", 30.0f);
-        float speedKb = bladeSpeed * skCp(def, "speedKnockbackFactor", 4.0f);
-        float angleKb = angleBonus * skCp(def, "angleKnockbackFactor", 2.0f);
-        kbForce = baseKb + speedKb + angleKb;
-        kbForce = std::clamp(kbForce, 0.0f, skCp(def, "maxKnockback", 200.0f));
-    }
+    const SpyKnifeDamage::Result damageResult =
+        SpyKnifeDamage::evaluate(def, impact, isBackstab);
+    const float damage = damageResult.damage;
+    const float kbForce = damageResult.knockback;
 
     int roundedDamage = std::max(1, (int)std::round(damage));
 
@@ -363,7 +343,7 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
 
     spyknifeLog("HIT id=%u name=%s damage=%d backstab=%d speed=%.1f directness=%.2f hpBefore=%d hpAfter=%d",
                 targetId, target.username.c_str(), roundedDamage, (int)isBackstab,
-                bladeSpeed, directness, hpBefore, target.currentHp);
+                impact.speed, impact.directness, hpBefore, target.currentHp);
 
     SpyKnifeHitResult hitResult;
     hitResult.targetId = targetId;
@@ -392,6 +372,9 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
     }
     hitResult.contactId = ++state.contactSerial;
     hitResult.targetIsNpc = true;
+    hitResult.impactSpeed = impact.speed;
+    hitResult.impactForce = impact.force;
+    hitResult.impactDirectness = impact.directness;
     state.pendingRemoteHits.push_back(hitResult);
 
     return roundedDamage;
@@ -428,6 +411,9 @@ static void flushSpyKnifeContactBatch(SpyKnifeState& state, size_t configuredMax
             out.contactId = hit.contactId;
             out.targetIsNpc = hit.targetIsNpc ? 1 : 0;
             out.isBackstab = hit.isBackstab ? 1 : 0;
+            out.impactSpeed = hit.impactSpeed;
+            out.impactForce = hit.impactForce;
+            out.impactDirectness = hit.impactDirectness;
             out.hitX = hit.hitPosition.x; out.hitY = hit.hitPosition.y; out.hitZ = hit.hitPosition.z;
             out.dirX = hit.direction.x; out.dirY = hit.direction.y; out.dirZ = hit.direction.z;
             out.boxCenterX = hit.hitboxCenter.x; out.boxCenterY = hit.hitboxCenter.y; out.boxCenterZ = hit.hitboxCenter.z;
@@ -613,7 +599,20 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                 spyknifeLog("BACKSTAB_CHECK id=%u name=%s backstab=%d",
                             npcId, remote.username.c_str(), (int)isBs);
 
-                int hitDamage = applySpyKnifeRemoteHit(state, def, owner, npcId, remote, isBs, hitPt);
+                const glm::vec3 bladeVelocity = (currBox.center - prevBox.center) / tickDt;
+                const glm::vec3 relativeVelocity = bladeVelocity - remote.vel;
+                const float impactSpeed = glm::length(relativeVelocity);
+                const glm::vec3 toTarget = remote.pos - hitPt;
+                const glm::vec3 impactNormal = glm::length(toTarget) > 0.001f
+                    ? glm::normalize(toTarget) : owner.aimDirection;
+                const float impactForce = std::max(0.0f,
+                    glm::dot(relativeVelocity, impactNormal));
+                const float impactDirectness = impactSpeed > 0.001f
+                    ? std::clamp(impactForce / impactSpeed, 0.0f, 1.0f) : 0.0f;
+                const SpyKnifeDamage::ImpactMetrics impact{
+                    impactSpeed, impactForce, impactDirectness};
+                int hitDamage = applySpyKnifeRemoteHit(
+                    state, def, owner, npcId, remote, isBs, hitPt, impact);
                 (void)hitDamage;
                 if (!state.pendingRemoteHits.empty())
                     state.pendingRemoteHits.back().targetIsNpc = targetIsNpc;

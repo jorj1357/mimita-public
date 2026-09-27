@@ -20,6 +20,8 @@ struct LaunchOptions
     bool client = false;
     std::string connect;
     bool connectExplicit = false;
+    std::string roomCode;
+    bool roomCodeExplicit = false;
     std::string bind = "0.0.0.0:1357";
     bool bindExplicit = false;
     std::string roomFilePath;

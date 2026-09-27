@@ -66,6 +66,20 @@ made hot-reloadable over time.
 The inventory is a starting map, not proof that every file currently has the
 same loader or reload behavior. Check the owning loader before changing one.
 
+## Presets without a JSON explosion
+
+An actor movement preset is one named data object, not one special code path.
+The actor stores an ID such as `juggernaut`, `runner`, or `tf2`. The shared
+movement system resolves that ID to one `MovementConfig` and uses the same
+movement functions for every actor.
+
+Presets may be authored in JSON or in hot C++ defaults. JSON is useful for
+value tables; hot C++ is useful for formulas and behavior. They must not create
+separate implementations. Resolve in this order: validated live override,
+selected JSON preset, selected hot-C++ preset, canonical default.
+
+The resolved preset ID, source, version, and hash must be written to JSONL.
+
 ## What should remain compiled
 
 Keep platform integration, memory ownership, serialization machinery, security

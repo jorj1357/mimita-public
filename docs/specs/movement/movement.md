@@ -2,6 +2,21 @@
 Date: July 21, 2026
 Status: Target default movement behavior and migration reference
 Scope: Player-controlled movement, collision, touch resets, knockback interaction, prediction, validation, and replication
+
+> ## HARD RULE — NO COOLDOWNS, NO BUFFERS, NO TIMER BALANCING
+>
+> Movement abilities are immediate. **If the user presses a button, do the thing
+> on the tick it is sampled.** There is **no input buffer** (no 150 ms or any
+> other press buffer), **no cooldown**, and **no timer-based gating** anywhere in
+> the movement path: dash, down-dash, jump, freeze, walk, air movement, and
+> contact reset. Abilities are gated only by their availability and a fresh
+> input edge. Do not add a timer as a substitute for a contact, an edge, or an
+> availability flag.
+>
+> The hot movement owns the input edge (the key-down transition). The input layer
+> only samples raw key state. Any buffer or cooldown added here is a regression:
+> see `docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`.
+
 ________________
 
 
@@ -409,6 +424,14 @@ Vertical movement remains unchanged.
 They must not silently replace the default instant movement style.
 ________________
 
+## 2026-09-20 freeze correction (authoritative)
+
+The older prose above saying that vertical movement remains active is superseded
+by this section. While freeze is active, both horizontal and vertical velocity
+are suppressed. Freeze strength decays exponentially over 300 fixed ticks:
+`strength = exp(-5.0f * elapsedTicks / 300.0f)`. Movement pass-through is
+`1.0f - strength`. At tick 300, strength is approximately 0.67%.
+
 ### Source mode baseline
 
 Source mode is the fundamental movement model for the TF2/Source-like preset.
@@ -610,9 +633,9 @@ Freeze is a held movement ability activated with E.
 Core goals:
 * Immediate horizontal stop
    * THE FRAME u press freeze, it does it 
-* Vertical movement remains active
+* Freeze suppresses vertical movement too.
 * Horizontal external knockback is retained
-* Freeze weakens over five seconds
+* Freeze strength decays exponentially for 300 fixed ticks (5 seconds at 60 Hz).
 * Touching anything restores full freeze
 * Releasing ends freeze immediately
 * Releasing and pressing again in midair does not recharge it
@@ -697,7 +720,9 @@ Freeze becomes weaker.
 More of the remaining impulse starts moving the player.
 
 
-At five seconds, remaining horizontal impulse passes through fully.
+At tick 300, remaining horizontal and vertical movement passes through at
+approximately 99.33%. The hot policy uses `exp(-5.0f * ticks / 300.0f)` for
+freeze strength and `1.0f - freezeStrength` for pass-through.
 Release and recharge
 * Releasing E immediately ends active freeze.
 * Re-pressing E without touching something does not restore full strength. It doenst even let u do a freeze bc u havent reset the ability.

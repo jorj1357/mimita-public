@@ -712,6 +712,41 @@ WeaponDefinition createQuickHitDefinition() {
     return def;
 }
 
+WeaponDefinition createForcePunchDefinition() {
+    WeaponDefinition def;
+    def.id = "force_punch";
+    def.displayName = "Force Punch";
+    def.slot = 13;
+    def.damage = 0.0f;
+    def.fireDelay = 0.0f;
+    def.magazineSize = 0;
+    def.behaviorType = WeaponBehaviorType::QuickHit;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+    def.soundShoot = "entity/falcon/falconhitquick";
+    def.customParams["activeHitboxTicks"] = 1.0f;
+    def.customParams["visualReturnTicks"] = 12.0f;
+    def.customParams["hitboxSphere"] = 1.0f;
+    def.customParams["hitboxRadius"] = 0.5f;
+    def.customParams["debugHitboxColorR"] = 1.0f;
+    def.customParams["debugHitboxColorG"] = 1.0f;
+    def.customParams["debugHitboxColorB"] = 1.0f;
+    def.customParams["debugHitboxAlpha"] = 1.0f;
+    def.customParams["handForwardOffset"] = 0.15f;
+    def.customParams["maxForceSpeed"] = 20.0f;
+    def.customParams["forceDamageScale"] = 1.0f;
+    def.customParams["forceDamageExponent"] = 1.0f;
+    def.customParams["minDamage"] = 5.0f;
+    def.customParams["maxDamage"] = 999.0f;
+    def.customParams["minKnockback"] = 0.0f;
+    def.customParams["maxKnockback"] = 999.0f;
+    def.customParams["forceKnockbackScale"] = 1.0f;
+    def.customParams["forceKnockbackExponent"] = 1.0f;
+    def.customParams["damageTickInterval"] = 1.0f / 60.0f;
+    def.customParams["targetBodyRadius"] = 0.65f;
+    return def;
+}
+
 WeaponDefinition createSpyKnifeDefinition() {
     WeaponDefinition def;
     def.id = "spyknife";
@@ -742,10 +777,16 @@ WeaponDefinition createSpyKnifeDefinition() {
     def.customParams["hitboxRotZ"] = 0.0f;
     def.customParams["hitboxAlpha"] = 0.5f;
     def.customParams["hitboxVisible"] = 1.0f;
-    def.customParams["baseDamage"] = 15.0f;
-    def.customParams["speedDamageFactor"] = 20.0f;
-    def.customParams["angleDamageFactor"] = 10.0f;
-    def.customParams["maxDamage"] = 100.0f;
+    def.customParams["baseDamage"] = 5.0f;
+    def.customParams["minDamage"] = 5.0f;
+    def.customParams["maxDamage"] = 999.0f;
+    def.customParams["speedDamageScale"] = 0.35f;
+    def.customParams["forceDamageScale"] = 0.65f;
+    def.customParams["angleDamageExponent"] = 1.0f;
+    def.customParams["impactDamageScale"] = 1.0f;
+    def.customParams["impactDamageExponent"] = 1.35f;
+    def.customParams["maxImpactSpeed"] = 250.0f;
+    def.customParams["maxImpactForce"] = 250.0f;
     def.customParams["baseKnockback"] = 30.0f;
     def.customParams["speedKnockbackFactor"] = 4.0f;
     def.customParams["angleKnockbackFactor"] = 2.0f;
@@ -773,8 +814,9 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createAdminRevolverDefinition());
     registerWeaponFromJson(createHafsDefinition());
     registerWeaponFromJson(createQuickHitDefinition());
+    registerWeaponFromJson(createForcePunchDefinition());
     registerWeaponFromJson(createSpyKnifeDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, spyknife");
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

@@ -1,3 +1,14 @@
+# No Cooldowns, No Buffers (Hard Rule)
+
+Movement and collision response are immediate. **If the user presses a button,
+do the thing on the tick it is sampled.** There is no input buffer, no cooldown,
+and no timer-based gating on dash, down-dash, jump, freeze, walk, air movement,
+or contact reset. Abilities are gated only by availability and a fresh input
+edge. Contact reset is a contact, not a timer. Do not add a timer as a
+substitute for a contact, an edge, or an availability flag. The hot movement
+owns the input edge; the input layer only samples raw key state. See
+`docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`.
+
 # Tick Rate Rule (Hard Rule)
 
 All gameplay collision, damage, and physics MUST run at the fixed 60Hz tick rate, never per-frame. The game uses `constexpr double kClientFixedDt = 1.0 / 60.0` in `engine-tick-combat.cpp`. Running collision per-frame means:

@@ -42,9 +42,13 @@ EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string&
 
     EffectPart e;
     e.position = position + glm::vec3(dn.worldOffsetX, dn.worldOffsetY, dn.worldOffsetZ) + jitter;
-    e.color = damage < 0 ? dn.healingColor : (damage >= 100 ? dn.criticalColor : dn.textColor);
+    const bool criticalDamage = damage >= dn.criticalDamageThreshold;
+    e.color = damage < 0 ? dn.healingColor : (criticalDamage ? dn.criticalColor : dn.textColor);
     e.velocity = glm::vec3(dn.moveX, dn.moveY, dn.moveZ) * dn.moveSpeed;
-    e.maxLifetime = std::max(0.01f, dn.lifetime);
+    const float criticalLifetime = dn.criticalLifetimeTicks > 0
+        ? static_cast<float>(dn.criticalLifetimeTicks) / 60.0f
+        : dn.lifetime;
+    e.maxLifetime = std::max(0.01f, criticalDamage ? criticalLifetime : dn.lifetime);
     e.lifetime = -std::max(0.0f, dn.spawnDelay);
     e.label = damage < 0 ? ("+" + std::to_string(-damage)) : std::to_string(damage);
     e.replayType = "damage_number";

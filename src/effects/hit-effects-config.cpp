@@ -376,6 +376,14 @@ bool HitEffects::loadConfig(const std::string& path)
                 cfg.damageNumber.lifetime = d["lifetime"];
                 markHitFxApplied("hitfx_lifetime");
             }
+            if (d.contains("criticalDamageThreshold")) {
+                cfg.damageNumber.criticalDamageThreshold = d["criticalDamageThreshold"];
+                markHitFxApplied("hitfx_critical_damage_threshold");
+            }
+            if (d.contains("criticalLifetimeTicks")) {
+                cfg.damageNumber.criticalLifetimeTicks = d["criticalLifetimeTicks"];
+                markHitFxApplied("hitfx_critical_lifetime_ticks");
+            }
             if (d.contains("startOpacity")) {
                 cfg.damageNumber.startOpacity = d["startOpacity"];
                 markHitFxApplied("hitfx_start_alpha");

@@ -1,9 +1,9 @@
 # 08 03 2026, 13 15
 # purpose
-# Rebuilds the hot-reload game DLL (build/mimita-game.dll) from src/effects/effect-part.cpp.
+# Rebuilds the hot-reload game DLL (build/mimita-game.dll) from the focused
+# hot-code source set, including effect simulation and debug presentation.
 # Skips the rebuild when the DLL is already newer than the source, and uses ccache.
 # Is invoked automatically at the start of every build.py run.
-# Does NOT compile any other source files or modify game source code.
 # Does NOT link mimita.exe or launch the game.
 
 import os
@@ -22,7 +22,10 @@ except FileNotFoundError as error:
     print(f"[TOOLCHAIN] {error}")
     sys.exit(2)
 BUILD_DIR = os.path.join(ROOT, "build")
-SOURCE = os.path.join(ROOT, "src", "effects", "effect-part.cpp")
+SOURCES = [
+    os.path.join(ROOT, "src", "effects", "effect-part.cpp"),
+    os.path.join(ROOT, "src", "hot-reload", "quick-hit-debug-visual.cpp"),
+]
 STAGING_DLL = os.path.join(BUILD_DIR, "mimita-game.build.dll")
 OUTPUT_DLL = os.path.join(BUILD_DIR, "mimita-game.dll")
 
@@ -32,7 +35,7 @@ os.environ.setdefault("CCACHE_DIR", os.path.join(BUILD_DIR, "ccache"))
 os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
 os.environ.setdefault("CCACHE_MAXSIZE", "8G")
 
-if os.path.exists(OUTPUT_DLL) and os.path.getmtime(SOURCE) < os.path.getmtime(OUTPUT_DLL):
+if os.path.exists(OUTPUT_DLL) and all(os.path.getmtime(source) < os.path.getmtime(OUTPUT_DLL) for source in SOURCES):
     print("[HOT RELOAD] DLL up to date, skipping")
     sys.exit(0)
 
@@ -52,7 +55,7 @@ command += [
     "-Iinclude",
     "-Isrc",
     f"-I{GLFW_INCLUDE}",
-    SOURCE,
+    *SOURCES,
     "-o",
     STAGING_DLL,
 ]

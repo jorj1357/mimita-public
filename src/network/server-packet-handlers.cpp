@@ -21,6 +21,7 @@
 #include "combat/weapon-fire.h"
 #include "persistence/persistence-emit.h"
 #include "combat/weapon-execution.h"
+#include "combat/spyknife-damage.h"
 #include "physics/movement/physics-collision.h"
 #include "debug/debug-log.h"
 
@@ -1127,6 +1128,21 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                 batch->attackerId, pkt.targetId, pkt.contactId, pkt.contactTick, tick);
             continue;
         }
+        const float maxImpactSpeed = std::max(0.0f,
+            WeaponExecution::paramOr(*def, "maxImpactSpeed", 250.0f));
+        const float maxImpactForce = std::max(0.0f,
+            WeaponExecution::paramOr(*def, "maxImpactForce", 250.0f));
+        if (!std::isfinite(pkt.impactSpeed) || !std::isfinite(pkt.impactForce) ||
+            !std::isfinite(pkt.impactDirectness) || pkt.impactSpeed < 0.0f ||
+            pkt.impactForce < 0.0f || pkt.impactDirectness < 0.0f ||
+            pkt.impactDirectness > 1.0f || pkt.impactSpeed > maxImpactSpeed ||
+            pkt.impactForce > maxImpactForce) {
+            Debug::warn(Debug::Category::Weapons,
+                "[SPYKNIFE_AUTH] CONTACT_REJECT reason=invalid_impact attacker=%u target=%u speed=%.2f force=%.2f directness=%.2f",
+                batch->attackerId, pkt.targetId, pkt.impactSpeed,
+                pkt.impactForce, pkt.impactDirectness);
+            continue;
+        }
         const float boxReach = glm::length(boxHalf) + serverContactRadius;
         if (glm::length(boxCenter - attacker.pos) > boxReach) {
             Debug::warn(Debug::Category::Weapons,
@@ -1134,12 +1150,11 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                 batch->attackerId, pkt.targetId, glm::length(boxCenter - attacker.pos), boxReach, pkt.contactId);
             continue;
         }
-        const int damage = pkt.isBackstab
-            ? (int)WeaponExecution::paramOr(*def, "backstabDamagePerTick", 999.0f)
-            : (int)WeaponExecution::paramOr(*def, "baseDamage", 15.0f);
-        const float kbStrength = pkt.isBackstab
-            ? WeaponExecution::paramOr(*def, "backstabKnockback", 20.0f)
-            : WeaponExecution::paramOr(*def, "baseKnockback", 30.0f);
+        const SpyKnifeDamage::Result damageResult = SpyKnifeDamage::evaluate(
+            *def, {pkt.impactSpeed, pkt.impactForce, pkt.impactDirectness},
+            pkt.isBackstab != 0);
+        const int damage = std::max(1, (int)std::round(damageResult.damage));
+        const float kbStrength = damageResult.knockback;
         glm::vec3 hitPos(pkt.hitX, pkt.hitY, pkt.hitZ);
 
         // NPC entity IDs are authoritative. Resolve NPCs before players.
@@ -1179,8 +1194,9 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         const bool killed = npc.health == 0;
 
         Debug::warn(Debug::Category::Weapons,
-            "[SPYKNIFE_AUTH] NPC_APPLIED attacker=%u target=%u damage=%d backstab=%d healthBefore=%d healthAfter=%d killed=%d dist=%.2f contactId=%u contactTick=%u serverTick=%u",
+            "[SPYKNIFE_AUTH] NPC_APPLIED attacker=%u target=%u damage=%d backstab=%d speed=%.2f force=%.2f directness=%.2f healthBefore=%d healthAfter=%d killed=%d dist=%.2f contactId=%u contactTick=%u serverTick=%u",
             batch->attackerId, pkt.targetId, intDamage, (int)pkt.isBackstab,
+            pkt.impactSpeed, pkt.impactForce, pkt.impactDirectness,
             healthBefore, npc.health, (int)killed, dist, pkt.contactId,
             pkt.contactTick, tick);
 
@@ -1248,8 +1264,9 @@ void handleSpyKnifeHitClaim(SOCKET sock,
     }
 
     Debug::warn(Debug::Category::Weapons,
-        "[SPYKNIFE_AUTH] PLAYER_APPLIED attacker=%u target=%u damage=%d backstab=%d dist=%.2f killed=%d contactId=%u contactTick=%u serverTick=%u",
-        batch->attackerId, pkt.targetId, damage, (int)pkt.isBackstab, dist,
+        "[SPYKNIFE_AUTH] PLAYER_APPLIED attacker=%u target=%u damage=%d backstab=%d speed=%.2f force=%.2f directness=%.2f dist=%.2f killed=%d contactId=%u contactTick=%u serverTick=%u",
+        batch->attackerId, pkt.targetId, damage, (int)pkt.isBackstab,
+        pkt.impactSpeed, pkt.impactForce, pkt.impactDirectness, dist,
         (int)result.killed, pkt.contactId, pkt.contactTick, tick);
     }
 }

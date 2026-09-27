@@ -1,7 +1,8 @@
 ```md
 # Regression Records
 
-Use this folder only for confirmed behavior regressions discovered through human review or playtesting.
+Use this folder for confirmed behavior regressions discovered through human review or playtesting, and for the
+dedicated cold-build debt record described below.
 
 Normal AI work history belongs in:
 
@@ -38,7 +39,8 @@ Rules:
 - Each independently tracked regression gets its own `*-REG.md` file.
 - The filename should be a short, descriptive, approximately three-word summary.
 - Use lowercase kebab-case.
-- A regression file is not append-only. Existing text may be corrected, reorganized, expanded, or deleted when appropriate.
+- A regression file keeps an append-only occurrence history. If an earlier statement needs correction, preserve the
+  original and add a dated correction note rather than rewriting history.
 - Repeated failures of the same underlying regression stay in the same regression file.
 
 ---
@@ -326,6 +328,40 @@ The previous solution was known to work until:
 ---
 
 ## Core Rule
+
+## Cold-build debt record
+
+Every intentional cold build required during an AI work session must append an occurrence to:
+
+`docs/regressions/2026-09-20/cold-build-required-REG.md`
+
+This dated file is the canonical record. The older root-level
+`docs/regressions/cold-build-required-REG.md` is a historical template and
+must not receive new occurrences. New cold-build debt belongs in the dated
+record above.
+
+This is the one exception to the normal "one independently tracked regression per file" rule. It is one persistent
+issue record for the repository's remaining cold-build boundary debt. Do not create a new cold-build file for every
+build, and do not edit `regressions-v1.md` for this purpose. Append a new `Cold-build occurrence N` section to the
+dedicated file each time.
+
+The occurrence must state:
+
+- UTC time and related changelog;
+- why the cold build was required;
+- the exact cold source, owner, or runtime boundary;
+- what result the session needed from the new executable;
+- why the result could not be activated through the live path;
+- the smallest code or architecture change that would make this work hot;
+- whether the cold build was completed, blocked, or still awaiting human review; and
+- the next migration/falsification step.
+
+A cold build is not automatically proof that user-visible behavior regressed. Use `Status: COLD-BUILD DEBT` for this
+record unless a separate human-confirmed behavior break also exists. If the same cold boundary is later removed,
+append the proof and mark that occurrence resolved; keep the history.
+
+The normal regression rule still applies to actual behavior breaks. A behavior regression gets its own file when it is
+independent of the cold-build debt record.
 
 Regression records answer:
 

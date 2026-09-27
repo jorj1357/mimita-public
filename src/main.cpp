@@ -314,18 +314,24 @@ int main(int argc, char** argv)
         return getReplayExportJob().state == ReplayExportJob::Done ? 0 : 1;
     }
 
-    // --connect <ip:port> on a normal GUI launch: boot straight into
-    // gameplay and auto-join the given server via direct UDP. This is the
-    // launcher path (mimita-launcher.py) for fast local playtests.
-    if (launchOptions.connectExplicit)
+    // Explicit launcher joins boot straight into gameplay. A room-code join
+    // uses the same asynchronous ICE path as the in-game server browser;
+    // --connect remains the direct-UDP path for local harnesses.
+    if (launchOptions.connectExplicit || launchOptions.roomCodeExplicit)
     {
-        Debug::log(Debug::Category::Networking,
-                   "[BOOT MODE] auto-connect full-client to %s\n",
-                   launchOptions.connect.c_str());
+        if (launchOptions.roomCodeExplicit)
+            Debug::log(Debug::Category::Networking,
+                       "[BOOT MODE] auto-join room %s\n",
+                       launchOptions.roomCode.c_str());
+        else
+            Debug::log(Debug::Category::Networking,
+                       "[BOOT MODE] auto-connect full-client to %s\n",
+                       launchOptions.connect.c_str());
         GAME_STATE = GAME_PLAYING;
         MultiplayerConnectInfo info;
         info.shouldConnect = true;
         info.directAddress = launchOptions.connect;
+        info.roomCode = launchOptions.roomCode;
         info.mapName = launchOptions.mapName;
         setPendingMultiplayerConnect(info);
     }

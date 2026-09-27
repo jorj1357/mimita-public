@@ -4,6 +4,7 @@ project(mimita_hot_reload LANGUAGES CXX)
 add_library(mimita-game SHARED
     src/debug/debug-diag.cpp
     src/effects/effect-part.cpp
+    src/hot-reload/quick-hit-debug-visual.cpp
     src/gui/gui-coord.cpp
     src/replay/replay-factory.cpp
     src/video/video-settings.cpp

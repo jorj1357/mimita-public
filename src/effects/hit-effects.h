@@ -128,6 +128,8 @@ struct DamageNumberConfig {
     bool occluded = false;
     float fontSize = 0.96f;
     float lifetime = 1.0f;
+    int criticalDamageThreshold = 100;
+    int criticalLifetimeTicks = 0;
     float startOpacity = 1.0f;
     float endOpacity = 0.0f;
     float fadeStart = 0.0f;

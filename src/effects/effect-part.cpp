@@ -12,6 +12,10 @@
 #include <algorithm>
 #include <cmath>
 
+void MIMITA_GAME_CALL gameUpdateQuickHitDebugVisual(
+    GameMemory* memory,
+    GameQuickHitDebugVisualState* visual);
+
 namespace {
 
 bool MIMITA_GAME_CALL gameOnReload(GameMemory* memory)
@@ -75,6 +79,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
     outAPI->onReload = gameOnReload;
     outAPI->beforeUnload = gameBeforeUnload;
     outAPI->updateEffects = gameUpdateEffects;
+    outAPI->updateQuickHitDebugVisual = gameUpdateQuickHitDebugVisual;
     return true;
 }
 

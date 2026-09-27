@@ -17,7 +17,7 @@ namespace MimitaNet {
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 30: ShotEvent/PelletBlastEvent become reliable (eventId+session+ACK) and
 // carry real damage/health; every bullet visual is guaranteed delivery.
-constexpr uint16_t PROTOCOL_VERSION = 34;
+constexpr uint16_t PROTOCOL_VERSION = 35;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -190,7 +190,8 @@ enum NetworkWeaponType : uint8_t
     NETWORK_WEAPON_HAFS = 6,
     NETWORK_WEAPON_GRENADE_LAUNCHER = 7,
     NETWORK_WEAPON_AA12 = 8,
-    NETWORK_WEAPON_SPYKNIFE = 9
+    NETWORK_WEAPON_SPYKNIFE = 9,
+    NETWORK_WEAPON_FORCE_PUNCH = 10
 };
 
 enum NetworkWeaponStateFlags : uint8_t
@@ -1390,6 +1391,9 @@ struct SpyKnifeContact
     uint8_t targetIsNpc = 0;
     uint8_t isBackstab = 0;
     uint16_t reserved = 0;
+    float impactSpeed = 0.0f;
+    float impactForce = 0.0f;
+    float impactDirectness = 0.0f;
     float hitX = 0.0f, hitY = 0.0f, hitZ = 0.0f;
     float dirX = 0.0f, dirY = 0.0f, dirZ = 1.0f;
     float boxCenterX = 0.0f, boxCenterY = 0.0f, boxCenterZ = 0.0f;

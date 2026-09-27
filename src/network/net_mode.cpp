@@ -30,6 +30,11 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.connect = argv[++i];
             options.connectExplicit = true;
         }
+        else if (std::strcmp(argv[i], "--room") == 0 && i + 1 < argc)
+        {
+            options.roomCode = argv[++i];
+            options.roomCodeExplicit = true;
+        }
         else if (std::strcmp(argv[i], "--bind") == 0 && i + 1 < argc)
         {
             options.bind = argv[++i];
@@ -88,6 +93,7 @@ void printLaunchUsage()
     printf("  mimita.exe --server [--bind 0.0.0.0:1357] [--timeout <secs>]\n");
     printf("  mimita.exe --server --udp-echo --bind 127.0.0.1:0 --timeout <secs>\n");
     printf("  mimita.exe --client --name client1 --connect 127.0.0.1:1357\n");
+    printf("  mimita.exe --client --name client1 --room <room-code>\n");
     printf("  mimita.exe --session <token>\n");
     printf("  mimita.exe --server --duel --gamemode duel --map <map>\n");
     printf("  --bind <addr:port> Server UDP bind address (IPv4; port 0 allowed for harnesses)\n");

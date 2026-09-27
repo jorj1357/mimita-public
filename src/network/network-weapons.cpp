@@ -37,6 +37,8 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_GRENADE_LAUNCHER;
     if (definition.id == "hafs")
         return NETWORK_WEAPON_HAFS;
+    if (definition.id == "force_punch")
+        return NETWORK_WEAPON_FORCE_PUNCH;
     return NETWORK_WEAPON_NONE;
 }
 
@@ -137,6 +139,7 @@ const char* networkWeaponTypeName(uint8_t type)
     case NETWORK_WEAPON_HAFS: return "hafs";
     case NETWORK_WEAPON_GRENADE_LAUNCHER: return "grenade_launcher";
     case NETWORK_WEAPON_AA12: return "aa12";
+    case NETWORK_WEAPON_FORCE_PUNCH: return "force_punch";
     default: return "unknown";
     }
 }
@@ -158,7 +161,9 @@ bool networkWeaponTypeIsMelee(uint8_t type)
 {
     return type == NETWORK_WEAPON_SWORDSWORD ||
         type == NETWORK_WEAPON_HAFS ||
-        type == NETWORK_WEAPON_GODBALL;
+        type == NETWORK_WEAPON_GODBALL ||
+        type == NETWORK_WEAPON_SPYKNIFE ||
+        type == NETWORK_WEAPON_FORCE_PUNCH;
 }
 
 } // namespace MimitaNet

@@ -82,7 +82,8 @@ bool HotReloadSystem::loadCandidate(const std::filesystem::path& sourceDLL)
         !getGameAPI(MIMITA_GAME_API_VERSION, &candidateAPI) ||
         candidateAPI.version != MIMITA_GAME_API_VERSION ||
         candidateAPI.structSize != sizeof(GameAPI) ||
-        !candidateAPI.updateEffects) {
+        !candidateAPI.updateEffects ||
+        !candidateAPI.updateQuickHitDebugVisual) {
         std::printf("[HOT RELOAD] reload failed: incompatible or incomplete GameAPI\n");
         FreeLibrary(candidateModule);
         std::filesystem::remove(tempDLL, error);
@@ -182,6 +183,7 @@ std::uint64_t HotReloadSystem::newestSourceWriteTime() const
     const std::filesystem::path root = std::filesystem::current_path();
     const std::filesystem::path sources[] = {
         root / "src" / "effects" / "effect-part.cpp",
+        root / "src" / "hot-reload" / "quick-hit-debug-visual.cpp",
         root / "src" / "hot-reload" / "game-api.h",
     };
 
