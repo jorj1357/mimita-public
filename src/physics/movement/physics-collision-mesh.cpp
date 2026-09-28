@@ -33,6 +33,16 @@ namespace {
 // Per-part / per-call budgets so a pathological model cannot freeze a frame.
 constexpr int kMaxContactsPerPart = 64;
 constexpr int kMaxTriangleTests = 200000;
+// Movement-only rounded feature radius. This is geometry policy, not a JSON
+// skin: triangle hitboxes remain exact, while the movement shell treats each
+// vertex as a sphere and each edge as a capsule.
+
+struct RoundedFeaturePair
+{
+    float distance = std::numeric_limits<float>::max();
+    glm::vec3 actorPoint{0.0f};
+    glm::vec3 worldPoint{0.0f};
+};
 
 bool pointInTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b,
                      const glm::vec3& c)
@@ -218,6 +228,93 @@ glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a,
     return a + ab * v + ac * w;
 }
 
+void considerRoundedFeature(RoundedFeaturePair& best,
+                            const glm::vec3& actorPoint,
+                            const glm::vec3& worldPoint)
+{
+    const float distance = glm::length(actorPoint - worldPoint);
+    if (distance < best.distance)
+    {
+        best.distance = distance;
+        best.actorPoint = actorPoint;
+        best.worldPoint = worldPoint;
+    }
+}
+
+// Closest points between two finite segments. Used only by the rounded
+// movement shell; exact triangle contacts remain the authoritative fallback.
+void considerSegmentPair(RoundedFeaturePair& best,
+                         const glm::vec3& a0, const glm::vec3& a1,
+                         const glm::vec3& b0, const glm::vec3& b1)
+{
+    const glm::vec3 d1 = a1 - a0;
+    const glm::vec3 d2 = b1 - b0;
+    const glm::vec3 r = a0 - b0;
+    const float aa = glm::dot(d1, d1);
+    const float ee = glm::dot(d2, d2);
+    const float f = glm::dot(d2, r);
+    float s = 0.0f;
+    float t = 0.0f;
+    constexpr float kEps = 1e-10f;
+    if (aa <= kEps && ee <= kEps)
+    {
+        considerRoundedFeature(best, a0, b0);
+        return;
+    }
+    if (aa <= kEps)
+    {
+        t = ee > kEps ? glm::clamp(f / ee, 0.0f, 1.0f) : 0.0f;
+    }
+    else
+    {
+        const float c = glm::dot(d1, r);
+        if (ee <= kEps)
+        {
+            s = glm::clamp(-c / aa, 0.0f, 1.0f);
+        }
+        else
+        {
+            const float b = glm::dot(d1, d2);
+            const float denom = aa * ee - b * b;
+            if (denom != 0.0f)
+                s = glm::clamp((b * f - c * ee) / denom, 0.0f, 1.0f);
+            t = (b * s + f) / ee;
+            if (t < 0.0f)
+            {
+                t = 0.0f;
+                s = glm::clamp(-c / aa, 0.0f, 1.0f);
+            }
+            else if (t > 1.0f)
+            {
+                t = 1.0f;
+                s = glm::clamp((b - c) / aa, 0.0f, 1.0f);
+            }
+        }
+    }
+    considerRoundedFeature(best, a0 + d1 * s, b0 + d2 * t);
+}
+
+RoundedFeaturePair closestRoundedTriangleFeatures(
+    const glm::vec3& a, const glm::vec3& b, const glm::vec3& c,
+    const glm::vec3& w0, const glm::vec3& w1, const glm::vec3& w2)
+{
+    RoundedFeaturePair best;
+    for (const glm::vec3& v : {a, b, c})
+        considerRoundedFeature(best, v, closestPointOnTriangle(v, w0, w1, w2));
+    for (const glm::vec3& v : {w0, w1, w2})
+        considerRoundedFeature(best, closestPointOnTriangle(v, a, b, c), v);
+    considerSegmentPair(best, a, b, w0, w1);
+    considerSegmentPair(best, a, b, w1, w2);
+    considerSegmentPair(best, a, b, w2, w0);
+    considerSegmentPair(best, b, c, w0, w1);
+    considerSegmentPair(best, b, c, w1, w2);
+    considerSegmentPair(best, b, c, w2, w0);
+    considerSegmentPair(best, c, a, w0, w1);
+    considerSegmentPair(best, c, a, w1, w2);
+    considerSegmentPair(best, c, a, w2, w0);
+    return best;
+}
+
 } // namespace
 
 // Local-space bounds of a mesh's triangles. Body parts carry collider localMin/
@@ -273,11 +370,12 @@ std::vector<RecoveryContact> collectActorMeshContacts(
     if (world.collisionMesh.triangles.empty() || candidates.empty())
         return contacts;
 
-    // Use the shared collision skin for actor triangles. The broadphase
-    // expansion is only a search margin; this is the actual contact slop.
+    // Use the shared collision skin for actor-triangle query bounds. It is a
+    // search/recovery margin; actual solver penetration is computed below.
     const float kSkin = std::max(0.0f, contactSkin >= 0.0f
                                            ? contactSkin
                                            : CollisionConfig::instance().collisionSkin());
+    const float queryMargin = std::max(kSkin, ACTOR_MOVEMENT_FEATURE_RADIUS);
     int triangleTests = 0;
 
     // Candidate gathering is done once for the swept actor, but each body part
@@ -299,8 +397,8 @@ std::vector<RecoveryContact> collectActorMeshContacts(
             meshBounds = mergedAABB(
                 transformedColliderAABB(localMin, localMax, mesh.previousTransform),
                 transformedColliderAABB(localMin, localMax, mesh.desiredTransform));
-            meshBounds.min -= glm::vec3(kSkin);
-            meshBounds.max += glm::vec3(kSkin);
+            meshBounds.min -= glm::vec3(queryMargin);
+            meshBounds.max += glm::vec3(queryMargin);
         }
 
         const int triCount = (int)mesh.localTriangles->size();
@@ -324,6 +422,13 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                 glm::length(a - pa), glm::length(b - pb), glm::length(c - pc)});
             const int sweepSteps = std::clamp(
                 (int)std::ceil(maxVertexTravel / 0.08f), 1, 64);
+            AABB actorTriangleBounds;
+            actorTriangleBounds.min = glm::min(glm::min(a, glm::min(b, c)),
+                                               glm::min(pa, glm::min(pb, pc)));
+            actorTriangleBounds.max = glm::max(glm::max(a, glm::max(b, c)),
+                                               glm::max(pa, glm::max(pb, pc)));
+            actorTriangleBounds.min -= glm::vec3(ACTOR_MOVEMENT_FEATURE_RADIUS);
+            actorTriangleBounds.max += glm::vec3(ACTOR_MOVEMENT_FEATURE_RADIUS);
 
             for (size_t ci = 0; ci < candidates.size(); ++ci)
             {
@@ -337,9 +442,17 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                 if (filterCandidatesByMeshAabb &&
                     !overlaps(meshBounds, candidateBounds))
                     continue;
+                // The rounded narrowphase is more expensive than the exact
+                // triangle test. AABB distance is a conservative rejection:
+                // if these expanded boxes do not touch, no sphere/capsule
+                // feature pair can be within the movement radius.
+                if (!overlaps(actorTriangleBounds, candidateBounds))
+                    continue;
                 const CollisionTriangle& wt = world.collisionMesh.triangles[wi];
                 glm::vec3 hitCentroid(0.0f);
                 bool hit = false;
+                bool roundedFeatureHit = false;
+                RoundedFeaturePair roundedFeature;
                 float timeOfImpact = 0.0f;
                 bool currentOverlap = triangleTriangleIntersect(
                     a, b, c, wt.a, wt.b, wt.c);
@@ -378,9 +491,36 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                     }
                 }
                 if (!hit)
-                    continue;
+                {
+                    // Rounded movement shell: the actor face is solid, its
+                    // edges are capsules, and its vertices are spheres. This
+                    // adds a real geometric gap, rather than inflating the
+                    // later correction or relying on a JSON skin value.
+                    roundedFeature = closestRoundedTriangleFeatures(
+                        a, b, c, wt.a, wt.b, wt.c);
+                    if (roundedFeature.distance > ACTOR_MOVEMENT_FEATURE_RADIUS)
+                        continue;
+                    hit = true;
+                    roundedFeatureHit = true;
+                    hitCentroid = roundedFeature.actorPoint;
+                    timeOfImpact = 0.0f;
+                }
 
                 glm::vec3 n = wt.normal;
+                float penetration = 0.0f;
+                glm::vec3 roundedNormal = n;
+                if (roundedFeatureHit)
+                {
+                    const glm::vec3 separation =
+                        roundedFeature.actorPoint - roundedFeature.worldPoint;
+                    const float separationLength = glm::length(separation);
+                    if (separationLength > 1e-5f)
+                        roundedNormal = separation / separationLength;
+                    else if (glm::dot(sweep, n) > 0.0f)
+                        roundedNormal = -n;
+                    n = roundedNormal;
+                    penetration = ACTOR_MOVEMENT_FEATURE_RADIUS - roundedFeature.distance;
+                }
                 if (currentOverlap) {
                     // Only flip when the actor is clearly on the other side.
                     // An embedded actor whose center lies on the plane must not
@@ -395,15 +535,56 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                 const float s0 = glm::dot(a - wt.a, n);
                 const float s1 = glm::dot(b - wt.a, n);
                 const float s2 = glm::dot(c - wt.a, n);
-                float penetration = std::max(0.0f, -std::min({s0, s1, s2}));
-                if (penetration < kSkin)
-                    penetration = kSkin;
+                const float rawPenetration =
+                    std::max(0.0f, -std::min({s0, s1, s2}));
+                // A triangle intersection at exactly a block edge can be a
+                // touching seam with no physical penetration. Do not inflate
+                // that into a full skin-sized blocking contact: that is what
+                // makes limbs snag on otherwise continuous block surfaces.
+                if (currentOverlap &&
+                    rawPenetration <= CollisionConfig::instance().edgeTouchTolerance())
+                    continue;
+
+                // The skin is a query/recovery margin, not physical
+                // penetration. Inflating every shallow triangle contact to
+                // the full skin makes a 0.1 skin behave like a spring and is
+                // the source of repeated edge bounces. Preserve real overlap;
+                // swept crossings get only the small solver slop needed to
+                // enter the correction manifold.
+                if (!roundedFeatureHit)
+                    penetration = rawPenetration;
+                if (!currentOverlap && !roundedFeatureHit)
+                    penetration = std::max(
+                        penetration,
+                        CollisionConfig::instance().edgeTouchTolerance());
 
                 const glm::vec3 point = closestPointOnTriangle(
                     hitCentroid, wt.a, wt.b, wt.c);
                 RecoveryContact rc{n, point, sweep, penetration, wi, nullptr,
                                    mesh.label};
                 rc.timeOfImpact = timeOfImpact;
+                // Keep the exact triangle normal for depenetration, but use a
+                // rounded feature normal for response. At a face interior the
+                // closest-point vector is the face normal; at an edge or
+                // vertex it points away from that feature, just like the
+                // normal of a capsule/sphere swept around the triangle. This
+                // prevents a limb corner from repeatedly choosing one hard
+                // triangle normal at a block seam while the exact triangle
+                // still prevents penetration.
+                const glm::vec3 featureVector = hitCentroid - point;
+                const float featureLength = glm::length(featureVector);
+                if (featureLength > 1e-5f)
+                {
+                    const glm::vec3 roundedNormal = featureVector / featureLength;
+                    if (glm::dot(roundedNormal, n) > 0.05f)
+                        rc.responseNormal = roundedNormal;
+                    else
+                        rc.responseNormal = n;
+                }
+                else
+                {
+                    rc.responseNormal = n;
+                }
                 contacts.push_back(rc);
                 ++partContacts;
                 if (partContacts >= kMaxContactsPerPart)

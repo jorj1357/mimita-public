@@ -3,7 +3,8 @@
     "bodySampleRadius": 0.25,
     "maxStepHeight": 0.25,
     "bodyMeshCollision": true,
-    "collisionSkin": 0.05,
+    "collisionSkin": 0.0,
+    "edgeTouchTolerance": 0.0,
     // "bodyMeshCollision": false,
     // Single authoritative actor-triangle solver for the local player. When true
     // the legacy capsule/body/emergency GLB pipeline is bypassed for players.

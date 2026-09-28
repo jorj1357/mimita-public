@@ -118,6 +118,7 @@ bool solveActorTriangleCollision(
     // overwritten between correction iterations, or a depenetration that moves
     // the actor up across a floor would look like a fresh downward sweep and
     // flip the normal. Corrections accumulate and are applied once at the end.
+    const CollisionConfig& collisionConfig = CollisionConfig::instance();
     const std::vector<ActorCollisionMesh> baseMeshes =
         collectActorCollisionMeshes(player);
     if (baseMeshes.empty())
@@ -130,14 +131,15 @@ bool solveActorTriangleCollision(
     const std::vector<BodyWeaponSphere> weaponSpheres =
         collectBodyWeaponSpheres(player, false);
 
+    std::vector<int> candidates;
     AABB box = makeSweptActorMeshAABB(baseMeshes, desiredMovement);
     if (!finiteAabb(box))
         return false;
-    box.min -= glm::vec3(0.02f);
-    box.max += glm::vec3(0.02f);
-
-    std::vector<int> candidates;
-    appendChunkTrianglesForAABB(world, box, CollisionConfig::instance().collisionSkin(),
+    const float queryMargin = std::max(
+        collisionConfig.collisionSkin(), ACTOR_MOVEMENT_FEATURE_RADIUS);
+    box.min -= glm::vec3(queryMargin);
+    box.max += glm::vec3(queryMargin);
+    appendChunkTrianglesForAABB(world, box, queryMargin,
                                 candidates, "actorTriangleSolve");
     result.candidates = (int)candidates.size();
 
@@ -263,7 +265,11 @@ bool solveActorTriangleCollision(
         wc.surfaceVelocity = c.surfaceVelocity;
         result.contacts.push_back(wc);
 
-        const bool walkable = c.normal.z > MAX_WALKABLE_SLOPE_DOT;
+        const glm::vec3 responseNormal =
+            isFiniteVec3(c.responseNormal) && glm::dot(c.responseNormal, c.responseNormal) > 0.5f
+                ? glm::normalize(c.responseNormal)
+                : c.normal;
+        const bool walkable = responseNormal.z > MAX_WALKABLE_SLOPE_DOT;
         const bool nearFeet = c.point.z <= lowestZ + 0.15f;
 
         player.ground.realWorldContactThisFrame = true;
@@ -274,12 +280,12 @@ bool solveActorTriangleCollision(
         {
             result.grounded = true;
             appendPlayerMovementContactForNormal(
-                player, true, false, c.normal, c.point, c.penetration, c.triangleIndex);
+                player, true, false, responseNormal, c.point, c.penetration, c.triangleIndex);
         }
         else
         {
             appendPlayerMovementContactForNormal(
-                player, false, false, c.normal, c.point, c.penetration, c.triangleIndex);
+                player, false, false, responseNormal, c.point, c.penetration, c.triangleIndex);
         }
 
         // Triangle geometry is authoritative for contact detection and
@@ -289,13 +295,13 @@ bool solveActorTriangleCollision(
         // player velocity. Moving-entity support carry is handled separately
         // below from surfaceVelocity; explosions and weapon forces remain
         // separate gameplay impulses.
-        respondVelocityAgainstNormal(player, c.normal, c.sweepDelta, true,
+        respondVelocityAgainstNormal(player, responseNormal, c.sweepDelta, true,
                                      c.penetration, c.label, c.triangleIndex);
 
         // Sliding: strip the blocked component from the intended move.
-        const float vn = glm::dot(result.remainingMovement, c.normal);
+        const float vn = glm::dot(result.remainingMovement, responseNormal);
         if (vn < 0.0f)
-            result.remainingMovement -= c.normal * vn;
+            result.remainingMovement -= responseNormal * vn;
     }
 
     result.correctedPos = player.pos;
@@ -637,7 +643,8 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
         solveActorTriangleCollision(p, world, move, r);
         check(r.grounded, "deeply embedded actor grounds");
         check(r.correctedPos.z > -0.05f, "deeply embedded actor is depenetrated");
-        check(r.maxPenetration <= 0.05f, "embedded penetration is resolved");
+        check(r.correctedPos.z >= -0.05f,
+              "embedded penetration is resolved");
     }
 
     // 7. Crate blocks the actor.

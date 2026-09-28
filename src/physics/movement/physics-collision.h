@@ -44,7 +44,17 @@ struct RecoveryContact
     // surface velocity of that entity. Appended; existing initializers omit them.
     uint32_t entityId = 0;
     glm::vec3 surfaceVelocity{0.0f};
+    // Rounded response normal for actor-mesh feature contacts. `normal` stays
+    // the exact world-triangle normal used for depenetration; this normal is
+    // used only for movement response so an edge/vertex behaves like a rounded
+    // feature instead of a zero-radius snag point.
+    glm::vec3 responseNormal{0.0f, 0.0f, 1.0f};
 };
+
+// Fixed movement-geometry shell. This is deliberately code-owned: it defines
+// the rounded triangle feature shape and is not the configurable broadphase
+// skin in collision.json.
+inline constexpr float ACTOR_MOVEMENT_FEATURE_RADIUS = 0.025f;
 
 // =====================================================
 // Canonical contact adapters

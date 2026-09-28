@@ -42,6 +42,9 @@ public:
 
     // Shared actor/world contact margin. Hot-reloadable from collision.json.
     float collisionSkin() const { return mCollisionSkin; }
+    // Static triangle touches below this depth are treated as seam/edge
+    // contact, not as a penetrating blocking surface.
+    float edgeTouchTolerance() const { return mEdgeTouchTolerance; }
 
 private:
     CollisionConfig();
@@ -56,6 +59,7 @@ private:
     bool mBodyMeshCollision = true;
     bool mActorTriangleSolver = false;
     float mCollisionSkin = 0.05f;
+    float mEdgeTouchTolerance = 0.002f;
 
     std::string mPath;
     std::filesystem::file_time_type mLastWrite{};

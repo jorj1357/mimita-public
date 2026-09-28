@@ -49,6 +49,8 @@ bool CollisionConfig::load(const std::string& path)
         mBodyMeshCollision = j.value("bodyMeshCollision", true);
         mActorTriangleSolver = j.value("actorTriangleSolver", false);
         mCollisionSkin = std::clamp(j.value("collisionSkin", 0.05f), 0.0f, 0.25f);
+        mEdgeTouchTolerance = std::clamp(
+            j.value("edgeTouchTolerance", 0.002f), 0.0f, 0.05f);
 
         if (j.contains("bounce"))
         {
@@ -71,9 +73,10 @@ bool CollisionConfig::load(const std::string& path)
         mLastCheck = std::chrono::steady_clock::now();
 
         Debug::log(Debug::Category::Collision,
-            "[COLLISION CONFIG] skin=%.3f bounce enabled=%d strength=%.3f friction=%.2f "
+            "[COLLISION CONFIG] skin=%.3f edgeTouch=%.4f bounce enabled=%d strength=%.3f friction=%.2f "
             "minSpeed=%.2f maxSpeed=%.2f cooldown=%.3f minPush=%.3f\n",
-            mCollisionSkin, (int)mBounceEnabled, mBounceStrength, mBounceFriction,
+            mCollisionSkin, mEdgeTouchTolerance, (int)mBounceEnabled,
+            mBounceStrength, mBounceFriction,
             mBounceMinSpeed, mBounceMaxSpeed, mBounceCooldown, mBounceMinPush);
         return true;
     }

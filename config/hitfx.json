@@ -369,7 +369,7 @@
         // "color": [1.0, 1.0, 0.9],
         "color": [0.0, 0.0, 0.0],
         "alpha": 1.0,
-        "lifetimeTicks": 12,
+        "lifetimeTicks": 1,
         "baseLength": 0.1,
         "baseRadius": 0.05,
         "speedScale": 0.01,
