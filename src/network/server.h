@@ -160,6 +160,8 @@ struct ServerInput
     bool downDashPressed = false;
     bool attackPressed = false;
     bool freezeHeld = false;
+    bool flyUp = false;
+    bool flyDown = false;
     uint32_t tick = 0;
 };
 
@@ -252,6 +254,8 @@ struct ServerPlayer
     // True for the FIRST player to join — the server host. Only the host may
     // issue server-authoritative commands (healthall / setspawn / npc_delete_all).
     bool isHost = false;
+    bool flyEnabled = false;
+    float flySpeedMultiplier = 1.0f;
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     float yaw = 0.0f;

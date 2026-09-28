@@ -38,7 +38,9 @@ enum MovementReportFlags : uint32_t
     MOVEMENT_REPORT_JUMP_HELD = 1u << 12,
     MOVEMENT_REPORT_DASH_PRESSED = 1u << 13,
     MOVEMENT_REPORT_DOWN_DASH_PRESSED = 1u << 14,
-    MOVEMENT_REPORT_FREEZE_HELD = 1u << 15
+    MOVEMENT_REPORT_FREEZE_HELD = 1u << 15,
+    MOVEMENT_REPORT_FLY_UP = 1u << 16,
+    MOVEMENT_REPORT_FLY_DOWN = 1u << 17
 };
 
 struct ClientMovementReport

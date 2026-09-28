@@ -17,11 +17,20 @@
 #include "physics/physical-entity.h"
 #include "procedural/procedural-world.h"
 #include "network/community-match-client.h"
+#include "world/world-gltf-loader.h"
 
 namespace {
 
 uint32_t gDoorEntityId = 0;
 uint32_t gAppliedRoom = 0xFFFFFFFFu;
+World gRoomTemplate;
+std::string gRoomTemplatePath;
+bool gRoomTemplateLoaded = false;
+bool gRoomInstancesApplied = false;
+uint32_t gAppliedGeneratedRooms = 0;
+size_t gBaseVertexCount = 0;
+size_t gBaseBatchCount = 0;
+size_t gBaseCollisionCount = 0;
 
 void removeDoor()
 {
@@ -33,6 +42,31 @@ void removeDoor()
     }
 }
 
+void removeRoomInstances(World& world)
+{
+    if (!gRoomInstancesApplied)
+        return;
+    truncateWorldInstances(world, gBaseVertexCount, gBaseBatchCount,
+                            gBaseCollisionCount);
+    gRoomInstancesApplied = false;
+    gAppliedGeneratedRooms = 0;
+}
+
+bool ensureRoomTemplate(const std::string& path)
+{
+    if (gRoomTemplateLoaded && gRoomTemplatePath == path)
+        return true;
+    if (!loadWorldTemplate(path.c_str(), gRoomTemplate))
+    {
+        gRoomTemplateLoaded = false;
+        gRoomTemplatePath.clear();
+        return false;
+    }
+    gRoomTemplateLoaded = true;
+    gRoomTemplatePath = path;
+    return true;
+}
+
 } // anonymous namespace
 
 void clientProceduralWorldReset()
@@ -41,16 +75,21 @@ void clientProceduralWorldReset()
     // our handle so the next tick re-creates it from replicated state.
     gDoorEntityId = 0;
     gAppliedRoom = 0xFFFFFFFFu;
+    gRoomInstancesApplied = false;
+    gAppliedGeneratedRooms = 0;
+    gBaseVertexCount = 0;
+    gBaseBatchCount = 0;
+    gBaseCollisionCount = 0;
 }
 
-void clientProceduralWorldTick()
+void clientProceduralWorldTick(World& world)
 {
     const MimitaNet::ProceduralWorldNetworkState& p =
         MimitaNet::CommunityMatchClient::instance().procedural();
 
-    const bool wantDoor = p.enabled != 0 && p.exitLocked != 0 && p.currentRoom >= 1;
-    if (!wantDoor)
+    if (p.enabled == 0 || p.generatedRooms == 0)
     {
+        removeRoomInstances(world);
         removeDoor();
         return;
     }
@@ -66,6 +105,33 @@ void clientProceduralWorldTick()
         MimitaProcedural::proceduralRoomById(mode->roomId);
     if (!room)
         return;
+
+    if (!ensureRoomTemplate(room->geometryPath))
+        return;
+
+    if (!gRoomInstancesApplied)
+    {
+        gBaseVertexCount = world.mesh.verts.size();
+        gBaseBatchCount = world.mesh.batches.size();
+        gBaseCollisionCount = world.collisionMesh.triangles.size();
+        gRoomInstancesApplied = true;
+    }
+
+    while (gAppliedGeneratedRooms < p.generatedRooms)
+    {
+        ++gAppliedGeneratedRooms;
+        appendWorldInstance(
+            world, gRoomTemplate,
+            MimitaProcedural::proceduralRoomTransform(
+                *mode, gAppliedGeneratedRooms - 1));
+    }
+
+    const bool wantDoor = p.exitLocked != 0 && p.currentRoom >= 1;
+    if (!wantDoor)
+    {
+        removeDoor();
+        return;
+    }
 
     const glm::vec3 exit =
         MimitaProcedural::proceduralRoomExit(*mode, *room, p.currentRoom);

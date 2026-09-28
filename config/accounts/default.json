@@ -1,6 +1,6 @@
 {
   "settings": {
-    "avatar_name": "jason",
+    "avatar_name": "abusivegirlheadless4",
     "bloodfx": false,
     "character_name": "DefaultGuy",
     "collision_bounce_max_speed": 45.0,
@@ -13,9 +13,9 @@
     "fov": 112.33551788330078,
     "freecam_speed": 18.0,
     "graphics_preset": "Max",
-    "master_volume": 0.0,
+    "master_volume": 0.019999999552965164,
     "music_muted": false,
-    "music_volume": 0.0,
+    "music_volume": 0.019999999552965164,
     "outfit_png": "assets/outfits/suitv4debug.png",
     "resolution": "1024x768",
     "sensitivity": 0.14884868264198303,

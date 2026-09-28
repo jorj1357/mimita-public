@@ -96,6 +96,16 @@ struct WeaponDefinition {
     float projectileRadius = 0.0f;
     float projectileLifetime = 5.0f;
 
+    // ── Impact / destructible geometry (hot reloadable) ──────────────────
+    // Physical projectile properties consumed by the generalized ImpactSystem.
+    // Kept on the weapon so there is no second projectile registry.
+    float projectileMass = 0.02f;        // kg
+    float projectileDensity = 7800.0f;   // kg/m^3
+    uint32_t projectileShapeId = 0;      // MimitaImpact::ImpactShape (0 = sphere)
+    float projectileBaseRadius = 0.01f;  // m; floor of a generated cut radius
+    float cutEnergyScale = 1.0f;         // scales effective cut energy
+    float penetrationScale = 1.0f;       // reserved: scales penetration depth
+
     // ── Impulse / knockback (Source/TF2-style, hot reloadable) ───────────
     // Self-push (recoil impulse) on fire. 0 = fall back to the player setting.
     float shooterKnockback = 0.0f;

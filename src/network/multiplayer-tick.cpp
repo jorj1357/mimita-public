@@ -108,6 +108,10 @@ uint32_t movementReportFlagsFromMpInput(const MpInput& input)
         flags |= MOVEMENT_REPORT_DOWN_DASH_PRESSED;
     if (input.freezeHeld)
         flags |= MOVEMENT_REPORT_FREEZE_HELD;
+    if (input.flyUp)
+        flags |= MOVEMENT_REPORT_FLY_UP;
+    if (input.flyDown)
+        flags |= MOVEMENT_REPORT_FLY_DOWN;
     return flags;
 }
 

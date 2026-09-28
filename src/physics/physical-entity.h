@@ -21,6 +21,7 @@
 #include "physics/physics-types.h"
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/physics-collision.h"
+#include "impact/destructible-geometry.h"
 
 // Static never moves; Kinematic is moved by its owner (transform is set, velocity
 // derived) and is infinite-mass; Dynamic is integrated by the fixed-step rigid
@@ -73,7 +74,10 @@ struct PhysicalEntity {
     uint8_t supportGraceTicks = 0;
     float strength = 100.0f;
     float health = 100.0f;
-    bool destructible = false;
+    // Authoritative destruction state (box minus spherical cuts). `enabled`
+    // replaces the old boolean flag; generated triangles live in
+    // localTriangles. See impact/destructible-geometry.h.
+    MimitaImpact::DestructibleGeometry destructible;
     bool sleeping = false;
     uint64_t lastPlayerPushTick = 0;
     std::vector<CollisionTriangle> localTriangles;   // entity-local

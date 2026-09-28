@@ -118,3 +118,6 @@
   correction is not displayed as a one-tick visual snap.
 - Added deterministic coverage for two dynamic crates exchanging momentum and
   separating instead of remaining overlapped.
+- Tuned generated crates to right themselves faster: lower angular damping,
+  stronger resting righting torque, less aggressive support damping, and an
+  18-tick stable-rest requirement instead of 45 ticks.

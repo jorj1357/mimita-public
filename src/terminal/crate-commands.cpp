@@ -24,6 +24,8 @@
 #include "terminal/terminal-state.h"
 #include "physics/physical-entity.h"
 #include "config/collision-config.h"
+#include "config/material-config.h"
+#include "impact/impact-system.h"
 
 namespace {
 
@@ -120,30 +122,42 @@ void registerCrateCommands()
             buildBoxCollisionTriangles(crateTriangles, glm::vec3(0.0f),
                                        glm::vec3(kCrateHalfExtent));
 
+            // Material table owns density/health/cut behavior. Load lazily.
+            MimitaImpact::MaterialConfig& materials = MimitaImpact::MaterialConfig::instance();
+            if (materials.revision() == 0)
+                materials.load();
+            const uint32_t materialId = MimitaImpact::materialIdForName("wood");
+            const MimitaImpact::MaterialDefinition& material = materials.find(materialId);
+
             PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
             const uint32_t id = system.add(
                 crateTriangles,
                 glm::translate(glm::mat4(1.0f), spawnPos),
                 PhysicalEntityMotion::Dynamic,
-                /*materialId=*/1u);
+                materialId);
             if (PhysicalEntity* e = system.find(id))
             {
                 e->velocity = velocity;
                 e->shape = PhysicalEntityShape::Box;
                 e->halfExtents = glm::vec3(kCrateHalfExtent);
-                e->density = 1.0f;
+                e->density = material.density;
                 e->mass = e->density * crateVolume(*e);
                 e->friction = 0.7f;
                 e->restitution = 0.0f;
                 e->linearDamping = 0.15f;
-                e->angularDamping = 4.0f;
+                e->angularDamping = 2.5f;
                 e->maxAngularSpeed = 6.0f;
-                e->strength = 100.0f;
-                e->health = e->strength;
-                e->destructible = true;
+                e->rightingStrength = 28.0f;
+                e->sleepRequiredTicks = 18;
+                e->materialId = materialId;
+                e->strength = material.strength;
                 e->modelPath = "generated:crate-box";
                 e->texturePath = "assets/textureshq/clouds11.png";
                 e->persistenceId = "crate-" + std::to_string(id);
+                // Build the authoritative destructible record (box minus cuts)
+                // and replace the collision mesh with the generated triangles.
+                MimitaImpact::ImpactSystem::instance().initializeEntity(
+                    *e, materialId, glm::vec3(kCrateHalfExtent));
             }
 
             char buf[192];
@@ -171,6 +185,34 @@ void registerCrateCommands()
             });
             if (count == 0)
                 Terminal::instance().addLog("[CRATE] no active crates");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "crate_material",
+        "Set the impact material for every active crate (e.g. wood, steel)",
+        "crate_material <name>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty())
+            {
+                Terminal::instance().addLog("[CRATE] usage: crate_material <name>");
+                return;
+            }
+            MimitaImpact::MaterialConfig& materials = MimitaImpact::MaterialConfig::instance();
+            if (materials.revision() == 0)
+                materials.load();
+            const uint32_t materialId = MimitaImpact::materialIdForName(args[0]);
+            const MimitaImpact::MaterialDefinition& material = materials.find(materialId);
+            forEachActiveCrate([&](PhysicalEntity& e) {
+                e.materialId = materialId;
+                e.destructible.materialId = materialId;
+                e.strength = material.strength;
+                e.destructible.maxHealth = material.strength;
+                e.destructible.health = material.strength;
+            });
+            Terminal::instance().addLog(
+                "[CRATE] material set to " + material.id +
+                " (density=" + std::to_string(material.density) + ")");
         }
     });
 

@@ -39,6 +39,7 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/actor-triangle-spike.h"
 #include "physics/physical-entity.h"
+#include "impact/impact-system.h"
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/actor-triangle-solver.h"
 #include "debug/debug-log.h"
@@ -249,6 +250,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = physicalEntitySelfTest(&summary);
         printf("%s", summary.c_str());
         printf("[MOVING CRATE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--destructible-selftest") {
+        std::string summary;
+        const bool ok = MimitaImpact::destructibleSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[DESTRUCTIBLE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         return true;
     }
 

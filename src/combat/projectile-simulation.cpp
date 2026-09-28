@@ -380,10 +380,13 @@ ProjectileStepResult simulateProjectileTick(
     static constexpr int MAX_BOUNCE_ITER = 4;
     static thread_local std::vector<int> triCandidates;
     static thread_local std::vector<SweptPlayerCapsule> capsuleCandidates;
+    static thread_local std::vector<SweptEntityTriangle> entityCandidates;
     triCandidates.clear();
     capsuleCandidates.clear();
+    entityCandidates.clear();
     triCandidates.reserve(64);
     capsuleCandidates.reserve(16);
+    entityCandidates.reserve(32);
 
     for (int s = 0; s < subSteps && !state.exploded && !state.sleeping; ++s)
     {
@@ -422,25 +425,30 @@ ProjectileStepResult simulateProjectileTick(
             // Gather all candidates
             struct CollisionCandidate {
                 float t;
-                int type; // 0=world, 1=player
+                int type; // 0=world, 1=player, 2=entity
                 int triIdx;       // valid when type==0
                 int capsuleIdx;   // valid when type==1
+                int entityTriIdx; // valid when type==2
                 uint32_t playerId;
                 uint32_t spawnGeneration;
+                uint32_t entityId;
                 glm::vec3 hitPos;
                 glm::vec3 hitNormal;
                 float impactSpeed;
                 // Deterministic ordering:
                 // 1. smaller t wins
-                // 2. equal t: world (0) beats player (1)
-                // 3. equal t, same type: lower triIdx / lower playerId wins
+                // 2. equal t: world (0) beats player (1) beats entity (2)
+                // 3. equal t, same type: lower triIdx / playerId / entityId wins
                 // 4. equal t, same player: lower spawnGeneration wins
                 bool operator<(const CollisionCandidate& o) const {
                     if (std::fabs(t - o.t) > 1e-8f) return t < o.t;
                     if (type != o.type) return type < o.type;
                     if (type == 0) return triIdx < o.triIdx;
-                    if (playerId != o.playerId) return playerId < o.playerId;
-                    return spawnGeneration < o.spawnGeneration;
+                    if (type == 1) {
+                        if (playerId != o.playerId) return playerId < o.playerId;
+                        return spawnGeneration < o.spawnGeneration;
+                    }
+                    return entityId < o.entityId;
                 }
             };
             CollisionCandidate best{};
@@ -486,8 +494,28 @@ ProjectileStepResult simulateProjectileTick(
                 }
             }
 
+            entityCandidates.clear();
+            world.queryEntityTrianglesSwept(state.position, proposedPos, config.radius,
+                                            entityCandidates);
+            for (int ei = 0; ei < (int)entityCandidates.size(); ++ei)
+            {
+                const SweptEntityTriangle& et = entityCandidates[ei];
+                float t; glm::vec3 hp, hn;
+                if (sweepSphereTriangle(prevPos, proposedPos, config.radius,
+                                        et.triangle, t, hp, hn))
+                {
+                    CollisionCandidate c{};
+                    c.t = t; c.type = 2; c.entityTriIdx = ei; c.entityId = et.entityId;
+                    c.hitPos = hp; c.hitNormal = hn;
+                    c.impactSpeed = glm::dot(-state.velocity, hn);
+                    if (c < best) best = c;
+                }
+            }
+
             float earliestT = best.t;
             int earliestCapsuleIdx = (best.type == 1 && best.t <= 1.0f) ? best.capsuleIdx : -1;
+            const bool earliestIsEntity = (best.type == 2 && best.t <= 1.0f);
+            const uint32_t earliestEntityId = best.entityId;
             glm::vec3 earliestHitPos = best.hitPos;
             glm::vec3 earliestNormal = best.hitNormal;
             float earliestImpactSpeed = best.impactSpeed;
@@ -516,6 +544,15 @@ ProjectileStepResult simulateProjectileTick(
                     result.impactSpeed = earliestImpactSpeed;
                     result.hitPlayerId = cap.playerId;
                     result.hitPlayerSpawnGeneration = cap.spawnGeneration;
+                    return result;
+                }
+                else if (earliestIsEntity)
+                {
+                    result.type = ProjectileCollisionType::EntityImpact;
+                    result.hitPosition = earliestHitPos;
+                    result.hitNormal = earliestNormal;
+                    result.impactSpeed = earliestImpactSpeed;
+                    result.hitEntityId = earliestEntityId;
                     return result;
                 }
                 else

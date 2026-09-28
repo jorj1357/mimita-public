@@ -37,6 +37,7 @@
 #include "input/input-state.h"
 #include "config.h"
 #include "debug/debug-log.h"
+#include "terminal/terminal-state.h"
 
 static float shortestAngleDegrees(float from, float to)
 {
@@ -189,6 +190,35 @@ static void physicsMainUpdate_Internal(
     dt = movementClampStepDelta(dt, movementConfig);
     if (dt <= 0.0f)
         return;
+
+    // Keep local flight responsive like freecam. The server repeats this
+    // movement from the networked buttons and remains authoritative.
+    if (MP_CONTEXT.active && MP_CONTEXT.flyEnabled)
+    {
+        glm::vec3 forward = camForward;
+        forward.z = 0.0f;
+        if (glm::length(forward) > 0.0001f)
+            forward = glm::normalize(forward);
+        else
+            forward = {1.0f, 0.0f, 0.0f};
+        glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 0, 1)));
+        glm::vec3 direction = right * wishMoveXY.x + forward * wishMoveXY.y;
+        const auto& inputCommands = InputCommandSystem::instance();
+        if (inputCommands.getState("freeze").held) direction.z += 1.0f;
+        if (inputCommands.getState("down_dash").held) direction.z -= 1.0f;
+        if (glm::length(direction) > 1.0f)
+            direction = glm::normalize(direction);
+        float speed = 5.0f * std::clamp(MP_CONTEXT.flySpeedMultiplier, 0.01f, 100.0f);
+        if (inputCommands.getState("dash").held) speed *= 3.0f;
+        p.vel = direction * speed;
+        p.pos += p.vel * dt;
+        p.ground.onGround = false;
+        p.ground.stableOnGround = false;
+        p.ground.hasWorldContact = false;
+        p.ground.realWorldContactThisFrame = false;
+        p.updateModelWorldTransforms();
+        return;
+    }
 
     ++p.movementSimulationTick;
     p.movementContacts.clear();

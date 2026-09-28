@@ -1545,7 +1545,8 @@ void serverGamemodeTick(SOCKET sock,
                     serverProceduralWorldTeleportTarget(entrance))
                 {
                     beginAuthoritativeTransform(pit->second, entrance,
-                                                glm::vec3(0.0f), pit->second.yaw,
+                                                glm::vec3(0.0f),
+                                                d.procedural.playerSpawnYaw,
                                                 "procedural_start");
                 }
             }

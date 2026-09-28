@@ -18,6 +18,7 @@
 #include "network/community-match-client.h"
 #include "gamemode/match-roles.h"
 #include "gamemode/gamemode.h"
+#include "config/player-settings.h"
 
 namespace {
 
@@ -35,17 +36,29 @@ const char* actorStateName(MimitaNet::ActorState state)
 const MatchRoleDefinition* resolvePreset(const std::vector<std::string>& args)
 {
     if (args.empty()) return nullptr;
-    const auto presets = MatchRoleRegistry::instance().actorPresets();
+    auto presets = MatchRoleRegistry::instance().actorPresets();
+    if (presets.empty()) {
+        MatchRoleRegistry::instance().loadActorPresets();
+        presets = MatchRoleRegistry::instance().actorPresets();
+    }
     const std::string& token = args[0];
     if (!token.empty() && token.find_first_not_of("0123456789") == std::string::npos) {
         const int index = std::stoi(token);
         return index >= 1 && index <= (int)presets.size() ? presets[index - 1] : nullptr;
     }
-    return MatchRoleRegistry::instance().getActorPreset(token);
+    const MatchRoleDefinition* preset = MatchRoleRegistry::instance().getActorPreset(token);
+    if (!preset) {
+        MatchRoleRegistry::instance().loadActorPresets();
+        preset = MatchRoleRegistry::instance().getActorPreset(token);
+    }
+    return preset;
 }
 
 const MatchRoleDefinition* currentPreset()
 {
+    const auto& clientPreset = MimitaNet::CommunityMatchClient::instance().actorPresetId();
+    if (!clientPreset.empty())
+        return MatchRoleRegistry::instance().getActorPreset(clientPreset);
     const auto& d = MimitaNet::serverGamemodeState();
     std::string modeId = d.matchMode;
     if (modeId.empty()) modeId = MimitaNet::CommunityMatchClient::instance().mode();
@@ -118,7 +131,11 @@ void registerActorCommands()
         "List actor presets alphabetically with convenience indices",
         "actor_preset_list",
         [](const std::vector<std::string>&) {
-            const auto presets = MatchRoleRegistry::instance().actorPresets();
+            auto presets = MatchRoleRegistry::instance().actorPresets();
+            if (presets.empty()) {
+                MatchRoleRegistry::instance().loadActorPresets();
+                presets = MatchRoleRegistry::instance().actorPresets();
+            }
             if (presets.empty()) {
                 Terminal::instance().addLog("actor_preset_list: no presets loaded");
                 return;
@@ -146,6 +163,7 @@ void registerActorCommands()
                 Terminal::instance().addLog("actor_preset: unknown preset or index");
                 return;
             }
+            MimitaNet::CommunityMatchClient::instance().applyActorPreset(*preset);
             char buf[512];
             snprintf(buf, sizeof(buf),
                 "actor_preset: id=%s fov=%.0f forcedFov=%d firstPersonForced=%d movement=%s weaponSet=%s health=%d avatar=%s",
@@ -155,6 +173,21 @@ void registerActorCommands()
                 preset->weaponSet.empty() ? "none" : preset->weaponSet.c_str(),
                 preset->health, preset->avatarName.empty() ? "none" : preset->avatarName.c_str());
             Terminal::instance().addLog(buf);
+        },
+        "2026-09-28",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "actor_preset_reset",
+        "Restore the camera, perspective, and avatar values saved before the actor preset",
+        "actor_preset_reset",
+        [](const std::vector<std::string>&) {
+            const bool hadPreset = !MimitaNet::CommunityMatchClient::instance().actorPresetId().empty();
+            MimitaNet::CommunityMatchClient::instance().resetActorPreset();
+            Terminal::instance().addLog(hadPreset
+                ? "actor_preset_reset: restored previous settings"
+                : "actor_preset_reset: no manual actor preset is active");
         },
         "2026-09-28",
         CommandCategory::Debug

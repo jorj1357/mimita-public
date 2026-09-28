@@ -378,6 +378,8 @@ struct MultiplayerContext
     uint64_t pendingTeleportSentMs = 0;
     bool awaitingTeleportAck = false;
     bool awaitingExplodeDeath = false;
+    bool flyEnabled = false;
+    float flySpeedMultiplier = 1.0f;
     uint64_t explodeRequestLastSendMs = 0;
     bool teleportResync = false;
     // Set when a snapshot tick gap indicates a blackout/reconnect. The local
@@ -811,6 +813,8 @@ struct MpInput
     bool downDashPressed = false;
     bool attackPressed = false;
     bool freezeHeld = false;
+    bool flyUp = false;
+    bool flyDown = false;
     int equippedSlot = 0;
     uint8_t weaponState = 0;
     float sizeScale = 1.0f;

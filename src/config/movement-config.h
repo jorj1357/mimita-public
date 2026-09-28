@@ -41,6 +41,9 @@ public:
     std::string selectorPath() const { return mSelectorPath; }
     std::vector<std::string> availablePresets() const;
 
+    // Replace active in-memory movement values without writing JSON.
+    void applyRuntimeConfig(const MovementConfig& config, const std::string& presetName);
+
     // Runtime-only toggle for the bhop debug overlay. Not persisted; a config
     // reload resets it to the preset's debug_draw_enabled value.
     void setDebugDrawEnabled(bool enabled) { mConfig.debugDrawEnabled = enabled; }

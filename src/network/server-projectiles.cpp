@@ -32,6 +32,8 @@
 #include "combat/weapon-types.h"
 #include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/physical-entity.h"
+#include "impact/impact-system.h"
 
 namespace MimitaNet {
 namespace {
@@ -516,6 +518,52 @@ public:
                           return a.playerId < b.playerId;
                       return a.spawnGeneration < b.spawnGeneration;
                   });
+    }
+
+    void queryEntityTrianglesSwept(const glm::vec3& from,
+                                   const glm::vec3& to,
+                                   float radius,
+                                   std::vector<SweptEntityTriangle>& out) const override
+    {
+        AABB queryBounds;
+        queryBounds.min = glm::min(from, to) - glm::vec3(radius);
+        queryBounds.max = glm::max(from, to) + glm::vec3(radius);
+
+        for (const PhysicalEntity& entity : PhysicalEntitySystem::instance().entities())
+        {
+            if (entity.localTriangles.empty())
+                continue;
+            // Cheap reject: transform the entity centre and compare against a
+            // padded sphere radius derived from its half extents.
+            const glm::vec3 centre(entity.transform[3]);
+            const float entityRadius = glm::length(entity.halfExtents) + radius + 0.05f;
+            const glm::vec3 closest = glm::clamp(centre, queryBounds.min, queryBounds.max);
+            if (glm::length(centre - closest) > entityRadius)
+                continue;
+
+            for (const CollisionTriangle& tri : entity.localTriangles)
+            {
+                SweptEntityTriangle swept;
+                swept.entityId = entity.id;
+                swept.triangle.a = glm::vec3(entity.transform * glm::vec4(tri.a, 1.0f));
+                swept.triangle.b = glm::vec3(entity.transform * glm::vec4(tri.b, 1.0f));
+                swept.triangle.c = glm::vec3(entity.transform * glm::vec4(tri.c, 1.0f));
+                // Recompute the plane normal from the transformed vertices so a
+                // rotating entity keeps a correct surface normal.
+                const glm::vec3 n = glm::cross(swept.triangle.b - swept.triangle.a,
+                                               swept.triangle.c - swept.triangle.a);
+                swept.triangle.normal = glm::length(n) > 1e-9f
+                    ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
+
+                AABB triBounds;
+                triBounds.min = glm::min(swept.triangle.a,
+                                 glm::min(swept.triangle.b, swept.triangle.c)) - glm::vec3(radius);
+                triBounds.max = glm::max(swept.triangle.a,
+                                 glm::max(swept.triangle.b, swept.triangle.c)) + glm::vec3(radius);
+                if (overlaps(queryBounds, triBounds))
+                    out.push_back(swept);
+            }
+        }
     }
 
 private:
@@ -1667,6 +1715,50 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
 #endif
 }
 
+// Builds and submits the generalized impact event for a projectile that hit a
+// physical entity (destructible-crate first slice). Only the projectile rifle
+// creates cuts in this slice; other projectiles still explode normally.
+void submitEntityImpact(const ServerProjectile& projectile,
+                        const ProjectileStepResult& step,
+                        uint32_t tick)
+{
+    PhysicalEntity* entity = PhysicalEntitySystem::instance().find(step.hitEntityId);
+    if (!entity)
+        return;
+
+    const WeaponDefinition* def = WeaponRegistry::instance().get("projectile_rifle");
+
+    MimitaImpact::ImpactEvent impact;
+    impact.simulationTick = tick;
+    impact.source = MimitaImpact::ImpactSource::Projectile;
+    impact.target = MimitaImpact::ImpactTarget::PhysicalEntity;
+    impact.sourceEntityId = projectile.id;
+    impact.targetEntityId = entity->id;
+    impact.worldPoint = step.hitPosition;
+    impact.worldNormal = step.hitNormal;
+    impact.worldDirection = glm::length(projectile.velocity) > 0.001f
+        ? glm::normalize(projectile.velocity)
+        : glm::vec3(0.0f, 1.0f, 0.0f);
+    impact.speed = glm::length(projectile.velocity);
+    if (def)
+    {
+        impact.mass = def->projectileMass;
+        impact.density = def->projectileDensity;
+        impact.radius = def->projectileBaseRadius;
+        impact.shapeId = def->projectileShapeId;
+        impact.cutScale = def->cutEnergyScale;
+        impact.damage = def->damage;
+    }
+    else
+    {
+        impact.mass = 0.02f;
+        impact.radius = 0.01f;
+    }
+    impact.materialId = entity->materialId;
+
+    MimitaImpact::ImpactSystem::instance().submit(impact);
+}
+
 void tickServerProjectiles(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -1733,7 +1825,8 @@ void tickServerProjectiles(SOCKET sock,
                 projectile.simulationTick = stepTick;
                 if (state.sleeping || state.bounceCount > previousBounceCount ||
                     step.type == ProjectileCollisionType::WorldBounce ||
-                    step.type == ProjectileCollisionType::WorldImpact)
+                    step.type == ProjectileCollisionType::WorldImpact ||
+                    step.type == ProjectileCollisionType::EntityImpact)
                 {
                     projectile.worldTouched = true;
                 }
@@ -1781,6 +1874,14 @@ void tickServerProjectiles(SOCKET sock,
                     explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
                                       step.hitNormal,
                                       "world", 0, tick, stepTick, totalPacketsOut);
+                }
+                else if (step.type == ProjectileCollisionType::EntityImpact && projectile.explodeOnWorldImpact)
+                {
+                    if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE)
+                        submitEntityImpact(projectile, step, stepTick);
+                    explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
+                                      step.hitNormal,
+                                      "entity", 0, tick, stepTick, totalPacketsOut);
                 }
 
                 if (!projectile.exploded &&

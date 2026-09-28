@@ -52,6 +52,9 @@ struct ProceduralWorldState
     // ── Server-only bookkeeping (not replicated) ─────────────────────
     std::string modeId;
     std::string roomId;
+    glm::vec3 playerSpawnLocal{0.0f};
+    float playerSpawnYaw = 0.0f;
+    bool playerSpawnFromGlb = false;
     // Every procedural encounter NPC id (mirrors + real NpcSystem bodies).
     // Used to suppress respawn and to remove only procedural actors on stop.
     std::unordered_set<uint32_t> encounterNpcIds;

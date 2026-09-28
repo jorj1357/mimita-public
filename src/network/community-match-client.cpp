@@ -20,6 +20,8 @@
 #include "camera.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "config/player-settings.h"
+#include "config/movement-config.h"
 #include "gui/hud/healthbar-config.h"
 #include "debug/debug-log.h"
 
@@ -50,6 +52,7 @@ CommunityMatchClient& CommunityMatchClient::instance()
 
 void CommunityMatchClient::reset()
 {
+    resetActorPreset();
     // Restore backups if overrides were applied
     if (mOverridesApplied) {
         SettingsBackup::instance().restoreBackups();
@@ -95,6 +98,62 @@ void CommunityMatchClient::reset()
 
     MatchLeaderboard::instance().clear();
     KillfeedManager::instance().clear();
+}
+
+bool CommunityMatchClient::applyActorPreset(const MatchRoleDefinition& preset)
+{
+    if (mActorPresetApplied)
+        resetActorPreset();
+
+    mActorPresetPreviousFov = CamConfig::instance().data().fov;
+    mActorPresetPreviousPlayerFov = GetPlayerSettings().fov;
+    mActorPresetPreviousThirdPerson = THE_CAMERA.thirdPerson;
+    mActorPresetPreviousAvatar = GetPlayerSettings().avatarName;
+    mActorPresetPreviousMovement = MovementJsonConfig::instance().config();
+    mActorPresetPreviousMovementName = MovementJsonConfig::instance().activePresetName();
+    mActorPresetId = preset.id;
+    mActorPresetApplied = true;
+
+    if (preset.forceFov && preset.cameraFov > 0.0f) {
+        CamConfig::instance().data().fov = preset.cameraFov;
+        GetPlayerSettings().fov = preset.cameraFov;
+    }
+    if (preset.forceFirstPerson)
+        THE_CAMERA.thirdPerson = false;
+    if (preset.avatarForced && !preset.avatarName.empty())
+        GetPlayerSettings().avatarName = preset.avatarName;
+    if (!preset.movementPreset.empty()) {
+        MovementConfig movement;
+        if (MovementJsonConfig::instance().loadPresetInto(preset.movementPreset, movement))
+            MovementJsonConfig::instance().applyRuntimeConfig(movement, preset.movementPreset);
+    }
+
+    Debug::log(Debug::Category::General,
+        "[ACTOR PRESET] applied id=%s fov=%.0f forcedFov=%d firstPerson=%d avatar=%s movement=%s weaponSet=%s\n",
+        preset.id.c_str(), preset.cameraFov, (int)preset.forceFov,
+        (int)preset.forceFirstPerson,
+        preset.avatarName.empty() ? "none" : preset.avatarName.c_str(),
+        preset.movementPreset.empty() ? "none" : preset.movementPreset.c_str(),
+        preset.weaponSet.empty() ? "none" : preset.weaponSet.c_str());
+    return true;
+}
+
+void CommunityMatchClient::resetActorPreset()
+{
+    if (!mActorPresetApplied)
+        return;
+    CamConfig::instance().data().fov = mActorPresetPreviousFov;
+    GetPlayerSettings().fov = mActorPresetPreviousPlayerFov;
+    THE_CAMERA.thirdPerson = mActorPresetPreviousThirdPerson;
+    GetPlayerSettings().avatarName = mActorPresetPreviousAvatar;
+    MovementJsonConfig::instance().applyRuntimeConfig(
+        mActorPresetPreviousMovement, mActorPresetPreviousMovementName);
+    Debug::log(Debug::Category::General,
+        "[ACTOR PRESET] reset id=%s restoredFov=%.0f restoredThirdPerson=%d\n",
+        mActorPresetId.c_str(), mActorPresetPreviousFov,
+        (int)mActorPresetPreviousThirdPerson);
+    mActorPresetApplied = false;
+    mActorPresetId.clear();
 }
 
 void CommunityMatchClient::onState(const DuelStatePacket& packet)

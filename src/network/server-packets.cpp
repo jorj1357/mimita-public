@@ -254,6 +254,10 @@ void applyAcceptedInputPresentation(ServerPlayer& player,
         (report.movementFlags & MOVEMENT_REPORT_DOWN_DASH_PRESSED) != 0;
     player.input.freezeHeld =
         (report.movementFlags & MOVEMENT_REPORT_FREEZE_HELD) != 0;
+    player.input.flyUp =
+        (report.movementFlags & MOVEMENT_REPORT_FLY_UP) != 0;
+    player.input.flyDown =
+        (report.movementFlags & MOVEMENT_REPORT_FLY_DOWN) != 0;
 
     player.weaponState = input.weaponState;
     applyEquipIntentFromInput(player, input, "accepted-input");

@@ -43,10 +43,22 @@ void registerProceduralWorldCommands()
             Terminal::instance().addLog(
                 "[PROCEDURAL] commands:\n"
                 "  procedural_world_start <mode> [seed] - host: start a procedural mode\n"
+                "  pwsids - start infinite_dungeon_slayer\n"
                 "  procedural_world_info - print replicated room state\n"
                 "  procedural_world_generate_next - host/dev: generate next room\n"
                 "  procedural_world_teleport_highest - teleport to highest accessible room\n"
                 "  procedural_world_stop - host: disable and remove procedural state");
+        },
+        "2026-09-28",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "pwsids",
+        "Start Infinite Dungeon Slayer",
+        "pwsids",
+        [](const std::vector<std::string>&) {
+            sendToServer("procedural_world_start infinite_dungeon_slayer");
         },
         "2026-09-28",
         CommandCategory::Debug

@@ -208,6 +208,27 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonString(root, "pose_id", def.poseId);
 }
 
+void applyWeaponProjectileImpactJson(WeaponDefinition& def, const json& root)
+{
+    // Top-level keys win; custom_params act as a fallback, matching knockback.
+    const auto readFloatKey = [&root](const char* key, float& out) {
+        if (root.contains(key) && root[key].is_number())
+            out = root[key].get<float>();
+        else if (root.contains("custom_params") && root["custom_params"].is_object() &&
+                 root["custom_params"].contains(key) &&
+                 root["custom_params"][key].is_number())
+            out = root["custom_params"][key].get<float>();
+    };
+    readFloatKey("projectile_mass", def.projectileMass);
+    readFloatKey("projectile_density", def.projectileDensity);
+    readFloatKey("projectile_base_radius", def.projectileBaseRadius);
+    readFloatKey("cut_energy_scale", def.cutEnergyScale);
+    readFloatKey("penetration_scale", def.penetrationScale);
+    float shape = (float)def.projectileShapeId;
+    readFloatKey("projectile_shape", shape);
+    def.projectileShapeId = (uint32_t)std::max(0.0f, shape);
+}
+
 void applyWeaponKnockbackJson(WeaponDefinition& def, const json& root)
 {
     // Top-level keys win; custom_params act as the legacy fallback.
@@ -279,6 +300,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
     applyWeaponSoundJson(def, root);
     applyWeaponCustomParamsJson(def, root);
     applyWeaponKnockbackJson(def, root);
+    applyWeaponProjectileImpactJson(def, root);
     applyWeaponRenderJson(def, root);
 
 }

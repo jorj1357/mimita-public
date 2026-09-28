@@ -519,11 +519,13 @@ class DevLoop:
             "--no-discord-notification",
             "--room-file", str(self.room_file_path),
         ]
-        # Leave --host-player unset for the automatic dev client. The server's
-        # existing empty-name rule makes the first room-code joiner the host,
-        # avoiding a mismatch between a profile label and the logged-in
-        # AuthSystem display name used by the real client.
+        # Give the server an explicit host identity. The client is launched
+        # with client_name below, so falling back to that same value keeps
+        # host-only commands working even when the profile omits a separate
+        # host_player_name.
         configured_host = str(self.profile.get("host_player_name", "")).strip()
+        if not configured_host:
+            configured_host = str(self.profile.get("client_name", "")).strip()
         if configured_host:
             server_args.extend(["--host-player", configured_host])
         if not self.profile.get("auto_map_rotation", False):

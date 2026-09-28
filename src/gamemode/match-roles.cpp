@@ -16,6 +16,7 @@
 #include "config/movement-config.h"
 #include "debug/debug-log.h"
 #include "utils/json-comments.h"
+#include "utils/path_utils.h"
 
 using json = nlohmann::json;
 
@@ -216,14 +217,34 @@ std::vector<const MatchRoleDefinition*> MatchRoleRegistry::actorPresets() const
 
 bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
 {
-    mPresetDirectory = directory;
+    std::filesystem::path resolvedDirectory = directory;
     std::error_code ec;
-    if (!std::filesystem::is_directory(directory, ec)) return false;
+    if (!std::filesystem::is_directory(resolvedDirectory, ec)) {
+        const std::filesystem::path exeDirectory = getExecutableDirectory();
+        const std::filesystem::path candidates[] = {
+            exeDirectory / directory,
+            exeDirectory / ".." / directory,
+            exeDirectory / ".." / ".." / directory
+        };
+        for (const auto& candidate : candidates) {
+            if (std::filesystem::is_directory(candidate, ec)) {
+                resolvedDirectory = std::filesystem::weakly_canonical(candidate, ec);
+                break;
+            }
+        }
+    }
+    if (!std::filesystem::is_directory(resolvedDirectory, ec)) {
+        Debug::warn(Debug::Category::Duel,
+            "[ACTOR PRESET] Missing directory %s (cwd=%s); no presets loaded.\n",
+            directory.c_str(), std::filesystem::current_path(ec).string().c_str());
+        return false;
+    }
+    mPresetDirectory = resolvedDirectory.string();
 
     mRoles.erase(std::remove_if(mRoles.begin(), mRoles.end(),
         [](const MatchRoleDefinition& role) { return role.actorPreset; }), mRoles.end());
     mPresetWrites.clear();
-    for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+    for (const auto& entry : std::filesystem::directory_iterator(resolvedDirectory, ec)) {
         if (ec || !entry.is_regular_file(ec) || entry.path().extension() != ".json") continue;
         std::ifstream file(entry.path());
         if (!file.is_open()) continue;
@@ -242,7 +263,7 @@ bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
     mIndexById.clear();
     for (int i = 0; i < (int)mRoles.size(); ++i) mIndexById[mRoles[i].id] = i + 1;
     Debug::warn(Debug::Category::Duel, "[ACTOR PRESET] Loaded %zu preset(s) from %s\n",
-        actorPresets().size(), directory.c_str());
+        actorPresets().size(), mPresetDirectory.c_str());
     return true;
 }
 

@@ -456,6 +456,13 @@ MovementJsonConfig& MovementJsonConfig::instance()
     return config;
 }
 
+void MovementJsonConfig::applyRuntimeConfig(const MovementConfig& config,
+                                            const std::string& presetName)
+{
+    mConfig = config;
+    mActivePreset = presetName;
+}
+
 MovementJsonConfig::MovementJsonConfig()
 {
     mConfig = defaultMovementConfig();

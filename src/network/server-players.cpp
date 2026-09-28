@@ -716,6 +716,32 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 
     p.projectileFireCooldown = std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
 
+    // Developer flight is server-authoritative: the client supplies only
+    // direction buttons; this branch owns speed and position.
+    if (p.flyEnabled)
+    {
+        glm::vec3 forward = p.input.camForward;
+        forward.z = 0.0f;
+        if (glm::length(forward) > 0.0001f)
+            forward = glm::normalize(forward);
+        else
+            forward = {1.0f, 0.0f, 0.0f};
+        glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 0, 1)));
+        glm::vec3 direction = right * p.input.wish.x + forward * p.input.wish.y;
+        if (p.input.flyUp) direction.z += 1.0f;
+        if (p.input.flyDown) direction.z -= 1.0f;
+        if (glm::length(direction) > 1.0f)
+            direction = glm::normalize(direction);
+        const float speed = 5.0f * std::clamp(p.flySpeedMultiplier, 0.01f, 100.0f);
+        p.vel = direction * speed;
+        p.pos += p.vel * SERVER_DT;
+        p.onGround = false;
+        p.movement.externalImpulse = glm::vec3(0.0f);
+        p.clientStateUpdated = false;
+        syncServerMovementRuntime(p, true);
+        return;
+    }
+
     // ── Server-side movement simulation from input commands (spec) ─────
     // The server simulates movement using the SAME kernel as the client.
     // Input commands are replayed in CHRONOLOGICAL order (lowest sequence

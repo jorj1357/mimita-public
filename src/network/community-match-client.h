@@ -14,7 +14,10 @@
 #include <vector>
 #include "network/packets.h"
 #include "gui/hud/match-leaderboard.h"
+#include "physics/movement/movement-types.h"
 #include <glm/glm.hpp>
+
+struct MatchRoleDefinition;
 
 namespace MimitaNet {
 
@@ -46,6 +49,9 @@ public:
     int blueScore() const { return mBlueScore; }
     float cameraFov() const { return mCameraFov; }
     bool forceFirstPerson() const { return mForceFirstPerson; }
+    bool applyActorPreset(const MatchRoleDefinition& preset);
+    void resetActorPreset();
+    const std::string& actorPresetId() const { return mActorPresetId; }
 
     // ── Bomb Tag state (replicated from server) ──────────────────────
     uint8_t bombOwnerType() const { return mBombOwnerType; }
@@ -107,6 +113,14 @@ private:
     uint8_t mRagdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
     uint8_t mBloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
     bool mOverridesApplied = false;  // true if backups saved + overrides applied
+    bool mActorPresetApplied = false;
+    float mActorPresetPreviousFov = 100.0f;
+    float mActorPresetPreviousPlayerFov = 100.0f;
+    bool mActorPresetPreviousThirdPerson = true;
+    std::string mActorPresetPreviousAvatar;
+    MovementConfig mActorPresetPreviousMovement;
+    std::string mActorPresetPreviousMovementName;
+    std::string mActorPresetId;
     std::vector<ReplicatedActorIdentity> mActors;
     ProceduralWorldNetworkState mProcedural;
 };

@@ -63,12 +63,21 @@ struct SweptPlayerCapsule
     float radius = 0.0f;
 };
 
+// A world-space triangle owned by a PhysicalEntity, tagged with its id so a hit
+// can be routed to the generalized ImpactSystem.
+struct SweptEntityTriangle
+{
+    uint32_t entityId = 0;
+    CollisionTriangle triangle;
+};
+
 enum class ProjectileCollisionType : uint8_t
 {
     None,
     WorldBounce,
     WorldImpact,
     PlayerImpact,
+    EntityImpact,
     LifetimeExpired
 };
 
@@ -81,6 +90,7 @@ struct ProjectileStepResult
     float travelDistance = 0.0f;
     uint32_t hitPlayerId = 0;
     uint32_t hitPlayerSpawnGeneration = 0;
+    uint32_t hitEntityId = 0;
     uint32_t triangleQueryCount = 0;
     uint32_t triangleCandidateTotal = 0;
     uint32_t triangleCandidateMax = 0;
@@ -99,6 +109,14 @@ struct CollisionWorldView
     virtual void queryPlayerCapsulesSwept(
         const glm::vec3& from, const glm::vec3& to, float radius,
         std::vector<SweptPlayerCapsule>& out) const = 0;
+    // Optional: physical-entity collision triangles. Default is empty so the
+    // pure physics kernel and existing test doubles are unaffected.
+    virtual void queryEntityTrianglesSwept(
+        const glm::vec3& from, const glm::vec3& to, float radius,
+        std::vector<SweptEntityTriangle>& out) const
+    {
+        (void)from; (void)to; (void)radius; (void)out;
+    }
 };
 
 ProjectileStepResult simulateProjectileTick(

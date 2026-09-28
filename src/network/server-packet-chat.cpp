@@ -30,7 +30,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <filesystem>
 
 // Global chat rate limiter instance
@@ -387,6 +389,34 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         } catch (...) {
             ack(false, "rejected: usage teampick <number>");
         }
+        return;
+    }
+
+    // Flight is a self-only developer movement mode. The server accepts the
+    // request for the sender and still owns the actual movement/position.
+    if (commandStr.rfind("fly ", 0) == 0)
+    {
+        try
+        {
+            const float multiplier = std::stof(commandStr.substr(4));
+            if (!std::isfinite(multiplier) || multiplier <= 0.0f)
+                throw std::invalid_argument("non-positive");
+            it->second.flyEnabled = true;
+            it->second.flySpeedMultiplier = std::clamp(multiplier, 0.01f, 100.0f);
+            ack(true, "applied: fly");
+        }
+        catch (...)
+        {
+            ack(false, "rejected: usage fly <positive speed multiplier>");
+        }
+        return;
+    }
+    if (commandStr == "unfly")
+    {
+        it->second.flyEnabled = false;
+        it->second.flySpeedMultiplier = 1.0f;
+        it->second.vel = glm::vec3(0.0f);
+        ack(true, "applied: unfly");
         return;
     }
 

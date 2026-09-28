@@ -99,6 +99,8 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.dashPressed = cmd.isDashPressed();
         mpInput.downDashPressed = cmd.isDownDashPressed();
         mpInput.freezeHeld = cmd.isFreezeHeld();
+        mpInput.flyUp = cmd.getState("freeze").held;
+        mpInput.flyDown = cmd.getState("down_dash").held;
         mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&
             glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED &&
             glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;

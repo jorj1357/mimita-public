@@ -25,6 +25,7 @@
 #include "physics/config.h"
 #include "physics/movement/actor-triangle-solver.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "impact/destructible-render.h"
 #include "world/world.h"
 #include "entities/player.h"
 #include "map/map-loader-collision.h"
@@ -410,7 +411,7 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                     e.velocity.x *= 0.65f;
                     e.velocity.y *= 0.65f;
                     applyRestingRightingTorque(e, (float)kFixedDt);
-                    e.angularVelocity *= 0.35f;
+                    e.angularVelocity *= 0.55f;
                 }
                 const bool upright = isBoxRestingUpright(e);
                 const bool stableCandidate = supported && upright &&
@@ -831,6 +832,9 @@ void drawPhysicalEntities(const Camera& camera)
     for (const PhysicalEntity& e : entities)
     {
         if (e.localTriangles.empty())
+            continue;
+        // Prefer the generated destructible mesh; fall back to the box.
+        if (drawGeneratedEntityMesh(e, camera))
             continue;
         drawTexturedPhysicalBox(camera, e);
     }

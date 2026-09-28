@@ -9,5 +9,7 @@
 
 #pragma once
 
-void clientProceduralWorldTick();
+#include "world/world.h"
+
+void clientProceduralWorldTick(World& world);
 void clientProceduralWorldReset();

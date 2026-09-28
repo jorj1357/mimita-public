@@ -9,6 +9,8 @@
 #include "procedural/procedural-world.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -21,6 +23,7 @@
 #include "network/server-gamemode.h"
 #include "npc/npc.h"
 #include "physics/physical-entity.h"
+#include "world/world-gltf-loader.h"
 
 using json = nlohmann::json;
 
@@ -310,7 +313,9 @@ void spawnEncounterRoom(ProceduralWorldState& p,
 {
     const std::vector<glm::vec3> spawns =
         MimitaProcedural::proceduralRoomEnemySpawns(mode, room, slot);
-    const uint32_t count = std::max(1u, mode.enemiesPerRoom);
+    // Infinite Dungeon Slayer difficulty grows with the room number:
+    // room 1 has 1 enemy, room 2 has 2, and so on.
+    const uint32_t count = std::max(1u, roomNumber);
     for (uint32_t i = 0; i < count; ++i)
     {
         ServerNpc npc;
@@ -374,6 +379,52 @@ bool serverProceduralWorldStart(const std::string& modeId, uint32_t seed,
     p.modeId = modeId;
     p.roomId = room->id;
     p.nextNpcId = 200000;
+    p.playerSpawnLocal = room->entrancePosition;
+    p.playerSpawnYaw = std::atan2(room->entranceDirection.y,
+                                  room->entranceDirection.x);
+
+    // Prefer the Blender-authored node named with "spawnpoint". The generic
+    // GLB extractor already applies the node hierarchy transforms, so the
+    // result is room-local and receives the same procedural room transform as
+    // the geometry and enemy spawns.
+    {
+        World spawnMetadata;
+        extractSpawnPointsFromGLB(spawnMetadata, room->geometryPath.c_str());
+        const SpawnPoint* selected = nullptr;
+        for (const SpawnPoint& candidate : spawnMetadata.spawnPoints)
+        {
+            std::string tag = candidate.tag;
+            std::transform(tag.begin(), tag.end(), tag.begin(),
+                           [](unsigned char c) { return (char)std::tolower(c); });
+            if (tag.find("spawnpoint") != std::string::npos)
+            {
+                selected = &candidate;
+                break;
+            }
+            if (!selected)
+                selected = &candidate;
+        }
+        if (selected)
+        {
+            p.playerSpawnLocal = selected->position;
+            const glm::vec3 forward =
+                selected->rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+            p.playerSpawnYaw = std::atan2(forward.y, forward.x);
+            p.playerSpawnFromGlb = true;
+            printf("[PROCEDURAL] player spawnpoint tag=%s local=(%.2f,%.2f,%.2f) "
+                   "yaw=%.2f\n",
+                   selected->tag.c_str(), p.playerSpawnLocal.x,
+                   p.playerSpawnLocal.y, p.playerSpawnLocal.z,
+                   p.playerSpawnYaw);
+        }
+        else
+        {
+            printf("[PROCEDURAL] no GLB spawnpoint found; using configured "
+                   "entrance local=(%.2f,%.2f,%.2f)\n",
+                   p.playerSpawnLocal.x, p.playerSpawnLocal.y,
+                   p.playerSpawnLocal.z);
+        }
+    }
     p.baseTriangleCount = world.triangles.size();
     p.geometryAppended = true;
 
@@ -510,9 +561,10 @@ bool serverProceduralWorldTeleportTarget(glm::vec3& outPosition)
     if (!mode || !room)
         return false;
     const uint32_t slot = std::max(p.highestAccessibleRoom, p.currentRoom);
-    outPosition = MimitaProcedural::proceduralRoomEntrance(*mode, *room, slot);
+    outPosition = MimitaProcedural::proceduralTransformPoint(
+        MimitaProcedural::proceduralRoomTransform(*mode, slot),
+        p.playerSpawnLocal);
     return true;
 }
 
 } // namespace MimitaNet
-

@@ -1,6 +1,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "devtools/terminal.h"
@@ -152,6 +155,52 @@ static bool parseTeleportPosition(
 
 void registerPlayerCommands()
 {
+    Terminal::instance().registerCommand({
+        "fly", "Enable server-authoritative free flight", "fly <speed multiplier>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 1)
+            {
+                Terminal::instance().addLog("[FLY] usage: fly <speed multiplier> (example: fly 1)");
+                return;
+            }
+            try
+            {
+                const float multiplier = std::stof(args[0]);
+                if (!std::isfinite(multiplier) || multiplier <= 0.0f)
+                    throw std::invalid_argument("non-positive");
+                auto& mp = MP_CONTEXT;
+                if (!mp.active)
+                {
+                    Terminal::instance().addLog("[FLY] not connected to a server");
+                    return;
+                }
+                mp.flyEnabled = true;
+                mp.flySpeedMultiplier = std::clamp(multiplier, 0.01f, 100.0f);
+                MimitaNet::mpSendServerCommand(
+                    mp, "fly " + std::to_string(mp.flySpeedMultiplier));
+                Terminal::instance().addLog(
+                    "[FLY] ON speed=" + std::to_string(mp.flySpeedMultiplier) +
+                    " (WASD, E up, Q down, Shift faster)");
+            }
+            catch (...)
+            {
+                Terminal::instance().addLog("[FLY] speed must be a positive number");
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "unfly", "Stop server-authoritative free flight", "unfly",
+        [](const std::vector<std::string>&) {
+            auto& mp = MP_CONTEXT;
+            mp.flyEnabled = false;
+            mp.flySpeedMultiplier = 1.0f;
+            if (mp.active)
+                MimitaNet::mpSendServerCommand(mp, "unfly");
+            Terminal::instance().addLog("[FLY] OFF");
+        }
+    });
+
     auto registerActionCommand = [](const char* name, const char* description) {
         Terminal::instance().registerCommand({
             name, description, name,
