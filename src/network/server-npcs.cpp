@@ -1007,6 +1007,10 @@ void simulateSharedNpcs(SOCKET sock,
     {
         if (!n.body.dead) continue;
         if (!npcRespawns) continue;
+        // Procedural encounter NPCs never revive: a room completes exactly when
+        // its alive count reaches zero. Dead bodies linger for their normal
+        // death presentation only.
+        if (serverProceduralWorldOwnsNpc(n.id)) continue;
         n.body.respawnTimer = std::max(0.0f, n.body.respawnTimer - SERVER_DT);
         if (n.body.respawnTimer <= 0.0f)
             respawnServerNpc(n);

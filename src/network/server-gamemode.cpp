@@ -242,6 +242,9 @@ void serverCommunityMapStart(const std::vector<std::string>& mapPool,
     state.mapOnly = true;
     state.mode = ServerMode::Sandbox;
     state.communityMode = "sandbox";
+    // Community/sandbox map runtime is not a duel: route its replicated
+    // DuelStatePacket to CommunityMatchClient, not DuelQueue.
+    state.matchMode = "sandbox";
     state.communityWeaponSetId = std::max(1, weaponSetId);
     state.communityWeaponSetExplicit = true;
     state.autoMapRotation = rules.autoMapRotation;
@@ -383,6 +386,17 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     // ── Visual/settings overrides from gamemode ────────────────────
     d.cameraFov = gm.cameraFov;
     d.forceFirstPerson = gm.forceFirstPerson;
+    if (!gm.actorPresetId.empty()) {
+        if (const MatchRoleDefinition* preset =
+                MatchRoleRegistry::instance().getActorPreset(gm.actorPresetId)) {
+            if (preset->forceFov) d.cameraFov = preset->cameraFov;
+            if (preset->forceFirstPerson) d.forceFirstPerson = true;
+        } else {
+            Debug::warn(Debug::Category::Duel,
+                "[ACTOR PRESET] gamemode %s references unknown preset %s\n",
+                resolvedGamemodeId.c_str(), gm.actorPresetId.c_str());
+        }
+    }
     d.hideHealthbars = gm.hideHealthbars;
     d.ragdollExplicit = gm.ragdollExplicit;
     d.ragdollEnabled = gm.ragdollEnabled;
@@ -509,6 +523,19 @@ void broadcastDuelState(SOCKET sock,
     pkt.cameraFov = d.cameraFov;
     pkt.ragdollEnabled = d.ragdollExplicit ? (d.ragdollEnabled ? 2 : 1) : 0;
     pkt.bloodEnabled = d.bloodExplicit ? (d.bloodEnabled ? 2 : 1) : 0;
+
+    // ── Procedural world (Infinite Dungeon Slayer) ─────────────────
+    pkt.procedural.enabled = d.procedural.enabled ? 1 : 0;
+    pkt.procedural.roomState = (uint8_t)d.procedural.roomState;
+    pkt.procedural.exitLocked = d.procedural.exitLocked ? 1 : 0;
+    pkt.procedural.seed = d.procedural.seed;
+    pkt.procedural.currentRoom = d.procedural.currentRoom;
+    pkt.procedural.generatedRooms = d.procedural.generatedRooms;
+    pkt.procedural.highestAccessibleRoom = d.procedural.highestAccessibleRoom;
+    pkt.procedural.aliveEncounterActors = d.procedural.aliveEncounterActors;
+    pkt.procedural.stateVersion = d.procedural.stateVersion;
+    std::snprintf(pkt.procedural.modeId, sizeof(pkt.procedural.modeId), "%s",
+                  d.procedural.modeId.c_str());
 
     // FFA top-3 leaderboard
     if (d.matchMode == "ffa") {
@@ -985,7 +1012,20 @@ void assignMatchParticipants(ServerGamemodeState& d,
         totalSlots += rc.second;
     }
 
-    for (size_t i = 0; i < d.participants.size() && totalSlots > 0; ++i) {
+    if (!gm.actorPresetId.empty()) {
+        if (MatchRoleRegistry::instance().getActorPreset(gm.actorPresetId)) {
+            for (uint32_t id : d.participants) {
+                ActorMatchDescriptor& desc = d.matchActors[id];
+                desc.roleId = gm.actorPresetId;
+                const MatchRoleDefinition* def =
+                    MatchRoleRegistry::instance().getActorPreset(desc.roleId);
+                desc.movementProfileId = def->movementPreset;
+                desc.weaponProfileId = def->weaponSet;
+                if (desc.controller == ActorController::Npc)
+                    desc.behaviorProfileId = def->behaviorProfile;
+            }
+        }
+    } else for (size_t i = 0; i < d.participants.size() && totalSlots > 0; ++i) {
         int best = -1;
         double bestScore = 0.0;
         for (int r = 0; r < (int)roles.size(); ++r) {
@@ -1024,7 +1064,8 @@ void assignMatchParticipants(ServerGamemodeState& d,
         ActorMatchDescriptor& desc = d.matchActors[id];
         int team = desc.teamId;
         if (team < 0 && (d.matchMode == "tdm" ||
-                         d.winCondition == "last_team_standing"))
+                         d.winCondition == "last_team_standing" ||
+                         !gm.actorPresetId.empty()))
             team = (int)(i % 2);
         desc.teamId = team;
         if (team >= 0)
@@ -1476,6 +1517,84 @@ void serverGamemodeTick(SOCKET sock,
             "[GAMEMODE LOADOUT] set=%d applied actors=%zu tick=%u\n",
             d.communityWeaponSetId, d.participants.size(), tick);
     }
+
+    // ── Procedural world (Infinite Dungeon Slayer) ─────────────────
+    // Apply host command requests first (this is the only place with the
+    // world, npcWorld, and npcSystem), then advance + replicate.
+    {
+        ServerGamemodeState::PendingProceduralRequest& req = d.pendingProcedural;
+        if (req.stop)
+        {
+            req.stop = false;
+            if (d.procedural.enabled)
+                serverProceduralWorldStop(world, npcWorld, npcs, npcSystem);
+        }
+        if (req.start)
+        {
+            req.start = false;
+            if (d.procedural.enabled)
+                serverProceduralWorldStop(world, npcWorld, npcs, npcSystem);
+            const std::string modeId = req.modeId;
+            const uint32_t seed = req.seed;
+            const uint32_t requester = req.requesterId;
+            if (serverProceduralWorldStart(modeId, seed, world, npcWorld, npcs))
+            {
+                glm::vec3 entrance;
+                auto pit = players.find(requester);
+                if (pit != players.end() &&
+                    serverProceduralWorldTeleportTarget(entrance))
+                {
+                    beginAuthoritativeTransform(pit->second, entrance,
+                                                glm::vec3(0.0f), pit->second.yaw,
+                                                "procedural_start");
+                }
+            }
+            else
+            {
+                ++d.stateVersion;
+                d.procedural.pendingDisableBroadcast = true;
+            }
+        }
+        if (req.generateNext)
+        {
+            // Auto-generation already handles this when a room completes; the
+            // command is retained as a developer aid and is a no-op here.
+            req.generateNext = false;
+        }
+        if (req.teleportHighest)
+        {
+            req.teleportHighest = false;
+            glm::vec3 entrance;
+            auto pit = players.find(req.teleportRequesterId);
+            if (pit != players.end() &&
+                serverProceduralWorldTeleportTarget(entrance))
+            {
+                beginAuthoritativeTransform(pit->second, entrance,
+                                            glm::vec3(0.0f), pit->second.yaw,
+                                            "procedural_teleport");
+            }
+        }
+    }
+
+    if (d.procedural.enabled || d.procedural.pendingDisableBroadcast)
+    {
+        bool changed = false;
+        if (d.procedural.enabled)
+            changed = serverProceduralWorldTick(sock, players, world, npcWorld,
+                                                npcs, npcSystem, tick);
+        if (changed || d.procedural.pendingDisableBroadcast ||
+            (tick - d.procedural.lastBroadcastTick) >= 30)
+        {
+            d.procedural.lastBroadcastTick = tick;
+            d.procedural.pendingDisableBroadcast = false;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+        }
+        // Procedural mode owns its own rooms; do not let sandbox map rotation
+        // or community scoring mutate that geometry while it is active.
+        if (d.procedural.enabled)
+            return;
+    }
+
     if (d.mapOnly)
     {
         const uint64_t now = nowMs();

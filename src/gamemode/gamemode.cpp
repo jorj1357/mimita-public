@@ -212,6 +212,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
 
         // ── Elimination / win rules (optional) ──────────────────────
         next.winCondition = optString(root, "win_condition", next.winCondition);
+        next.actorPresetId = optString(root, "actor_preset", next.actorPresetId);
 
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,

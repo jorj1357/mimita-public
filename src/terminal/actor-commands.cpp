@@ -17,6 +17,7 @@
 #include "network/server-gamemode.h"
 #include "network/community-match-client.h"
 #include "gamemode/match-roles.h"
+#include "gamemode/gamemode.h"
 
 namespace {
 
@@ -29,6 +30,31 @@ const char* actorStateName(MimitaNet::ActorState state)
         case MimitaNet::ActorState::Spectating: return "spectating";
     }
     return "unknown";
+}
+
+const MatchRoleDefinition* resolvePreset(const std::vector<std::string>& args)
+{
+    if (args.empty()) return nullptr;
+    const auto presets = MatchRoleRegistry::instance().actorPresets();
+    const std::string& token = args[0];
+    if (!token.empty() && token.find_first_not_of("0123456789") == std::string::npos) {
+        const int index = std::stoi(token);
+        return index >= 1 && index <= (int)presets.size() ? presets[index - 1] : nullptr;
+    }
+    return MatchRoleRegistry::instance().getActorPreset(token);
+}
+
+const MatchRoleDefinition* currentPreset()
+{
+    const auto& d = MimitaNet::serverGamemodeState();
+    std::string modeId = d.matchMode;
+    if (modeId.empty()) modeId = MimitaNet::CommunityMatchClient::instance().mode();
+    if (!modeId.empty()) {
+        const Gamemode& mode = GamemodeRegistry::instance().get(modeId);
+        if (!mode.actorPresetId.empty())
+            return MatchRoleRegistry::instance().getActorPreset(mode.actorPresetId);
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -84,6 +110,88 @@ void registerActorCommands()
             }
         },
         "2026-09-10",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "actor_preset_list",
+        "List actor presets alphabetically with convenience indices",
+        "actor_preset_list",
+        [](const std::vector<std::string>&) {
+            const auto presets = MatchRoleRegistry::instance().actorPresets();
+            if (presets.empty()) {
+                Terminal::instance().addLog("actor_preset_list: no presets loaded");
+                return;
+            }
+            char buf[256];
+            for (size_t i = 0; i < presets.size(); ++i) {
+                const std::string label = presets[i]->displayName.empty()
+                    ? std::string() : " - " + presets[i]->displayName;
+                snprintf(buf, sizeof(buf), "[%zu] %s%s", i + 1,
+                    presets[i]->id.c_str(), label.c_str());
+                Terminal::instance().addLog(buf);
+            }
+        },
+        "2026-09-28",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "actor_preset",
+        "Resolve an actor preset by stable ID or alphabetical list index",
+        "actor_preset <id|index>",
+        [](const std::vector<std::string>& args) {
+            const MatchRoleDefinition* preset = resolvePreset(args);
+            if (!preset) {
+                Terminal::instance().addLog("actor_preset: unknown preset or index");
+                return;
+            }
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                "actor_preset: id=%s fov=%.0f forcedFov=%d firstPersonForced=%d movement=%s weaponSet=%s health=%d avatar=%s",
+                preset->id.c_str(), preset->cameraFov, (int)preset->forceFov,
+                (int)preset->forceFirstPerson,
+                preset->movementPreset.empty() ? "none" : preset->movementPreset.c_str(),
+                preset->weaponSet.empty() ? "none" : preset->weaponSet.c_str(),
+                preset->health, preset->avatarName.empty() ? "none" : preset->avatarName.c_str());
+            Terminal::instance().addLog(buf);
+        },
+        "2026-09-28",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "actor_preset_info",
+        "Show one actor preset's effective rule references",
+        "actor_preset_info <id|index>",
+        [](const std::vector<std::string>& args) {
+            const MatchRoleDefinition* preset = resolvePreset(args);
+            if (!preset) {
+                Terminal::instance().addLog("actor_preset_info: unknown preset or index");
+                return;
+            }
+            char buf[512];
+            snprintf(buf, sizeof(buf), "id=%s display=%s movement=%s weaponSet=%s health=%d avatar=%s",
+                preset->id.c_str(), preset->displayName.empty() ? preset->id.c_str() : preset->displayName.c_str(),
+                preset->movementPreset.c_str(), preset->weaponSet.c_str(), preset->health,
+                preset->avatarName.c_str());
+            Terminal::instance().addLog(buf);
+        },
+        "2026-09-28",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "actor_preset_current",
+        "Show the actor preset selected by the active gamemode",
+        "actor_preset_current",
+        [](const std::vector<std::string>&) {
+            const MatchRoleDefinition* preset = currentPreset();
+            Terminal::instance().addLog(preset
+                ? "actor_preset_current: " + preset->id
+                : "actor_preset_current: none");
+        },
+        "2026-09-28",
         CommandCategory::Debug
     });
 }

@@ -21,6 +21,7 @@
 
 #include "network/server.h"
 #include "network/actor-match.h"
+#include "procedural/procedural-world.h"
 
 namespace MimitaNet {
 
@@ -199,6 +200,23 @@ struct ServerGamemodeState
     bool ragdollEnabled = false;    // value when ragdollExplicit is true
     bool bloodExplicit = false;     // true if gamemode defines blood_enabled
     bool bloodEnabled = false;      // value when bloodExplicit is true
+    // ── Procedural world (Infinite Dungeon Slayer) ──────────────────
+    // Server-owned room lifecycle state, replicated via DuelStatePacket.
+    MimitaProcedural::ProceduralWorldState procedural;
+    // Requests queued by server commands and applied on the next server tick,
+    // which owns the world, npcWorld, and npcSystem. Kept outside
+    // `procedural` so a start/stop reset cannot clobber a same-tick request.
+    struct PendingProceduralRequest
+    {
+        bool start = false;
+        std::string modeId;
+        uint32_t seed = 0;
+        uint32_t requesterId = 0;
+        bool stop = false;
+        bool generateNext = false;
+        bool teleportHighest = false;
+        uint32_t teleportRequesterId = 0;
+    } pendingProcedural;
 };
 
 // Singleton gamemode state for the current server process.
@@ -298,6 +316,39 @@ int serverCommunityWeaponNativeSlot(int logicalSlot);
 int serverCommunityWeaponLogicalSlot(const std::string& weaponId);
 void serverCommunityStartMatch(bool skipIntermission = false,
                                const std::string& requestedMode = {});
+
+// ── Procedural world (Infinite Dungeon Slayer) server API ─────────────
+// Starts the mode: loads the room recipe once, appends lobby + room 1
+// collision geometry to the headless worlds, spawns room 1's encounter, locks
+// its exit, and leaves replication to the match-state broadcast. Call
+// serverProceduralWorldStop first when restarting.
+bool serverProceduralWorldStart(const std::string& modeId, uint32_t seed,
+                                HeadlessWorld& world, World& npcWorld,
+                                std::unordered_map<uint32_t, ServerNpc>& npcs);
+
+// Advances the encounter each server tick. Returns true when the replicated
+// state changed (room completed / next room generated / door unlocked).
+bool serverProceduralWorldTick(SOCKET sock,
+                               std::unordered_map<uint32_t, ServerPlayer>& players,
+                               HeadlessWorld& world,
+                               World& npcWorld,
+                               std::unordered_map<uint32_t, ServerNpc>& npcs,
+                               NpcSystem& npcSystem,
+                               uint32_t tick);
+
+// Disables procedural mode and removes only procedural rooms, encounter NPCs,
+// and barriers. Unrelated sandbox/map/NPC state is left untouched.
+void serverProceduralWorldStop(HeadlessWorld& world, World& npcWorld,
+                               std::unordered_map<uint32_t, ServerNpc>& npcs,
+                               NpcSystem& npcSystem);
+
+// True when the id belongs to the active procedural encounter. Used to disable
+// normal NPC respawn for procedural actors.
+bool serverProceduralWorldOwnsNpc(uint32_t entityId);
+
+// World-space entrance of the highest accessible room. False when no procedural
+// mode is active.
+bool serverProceduralWorldTeleportTarget(glm::vec3& outPosition);
 
 // ── Bomb Tag server tick ──────────────────────────────────────────────
 // Called every server tick when matchMode == "bombtag".

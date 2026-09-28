@@ -336,10 +336,10 @@ def publish_build(number: int) -> Path:
 class DevLoop:
     def __init__(self, profile: dict, auto_restart: bool):
         self.profile = profile
-        # Development sessions keep one server/client pair. Retain the CLI
-        # argument for compatibility, but only successful builds and an
-        # explicit [1] launch may replace that pair.
-        self.auto_restart = True
+        # Builds always run while this loop is open. Auto-start only controls
+        # whether a successful build or an exited child may launch the EXE.
+        self.auto_restart = bool(auto_restart)
+        self.manual_launch_requested = False
         self.stop_event = threading.Event()
         self.change_event = threading.Event()
         self.lock = threading.Lock()
@@ -452,10 +452,12 @@ class DevLoop:
                 self.build_pending = self.latest_stale
             print(f"[DEV] published build {number}: {destination}")
             self.save_state("success")
-            # A successful publication is always the equivalent of pressing
-            # [1]. The toggle remains a compatibility/status setting, but a
-            # finished build must become the running build immediately.
-            if not self.latest_stale:
+            # A background build only launches when auto-start is ON. A [1]
+            # request is an explicit one-shot override and still launches
+            # even when auto-start is OFF.
+            should_launch = self.auto_restart or self.manual_launch_requested
+            if not self.latest_stale and should_launch:
+                self.manual_launch_requested = False
                 self.restart_latest()
             else:
                 self.print_status()
@@ -606,9 +608,9 @@ class DevLoop:
     def maintain_process(self) -> None:
         live = [process for process in self.processes if process.poll() is None]
         self.processes = live
-        # Keeping one MiMITA process alive is a safety invariant for this
-        # development loop, independent of the legacy AUTO-RESTART toggle.
-        if live or self.latest_build is None:
+        # Auto-start OFF means a dead/absent child stays absent until [1] is
+        # pressed. Auto-start ON preserves automatic recovery of a good build.
+        if not self.auto_restart or live or self.latest_build is None:
             return
         if self.latest_stale:
             # Never recover a dead process by relaunching an artifact that is
@@ -643,11 +645,11 @@ class DevLoop:
             "",
             f"RUNNING: {self.running_build or '(none)'}",
             f"LATEST:  {self.latest_build or '(none)'}",
-            "AUTO-RESTART: BUILD UPDATES ONLY",
+            f"AUTO-START: {'ON' if self.auto_restart else 'OFF'}",
         ]
         if self.latest_stale:
             lines.append("LATEST BUILD IS STALE")
-        lines.append("[1] Build/retry or switch to newest  [Q] Quit")
+        lines.append("[1] Build/retry or switch to newest  [A] Toggle auto-start  [Q] Quit")
         return lines
 
     def print_status(self, force: bool = False) -> None:
@@ -698,6 +700,7 @@ class DevLoop:
         key = msvcrt.getwch().lower()
         if key == "1":
             if self.latest_stale or self.latest_build is None:
+                self.manual_launch_requested = True
                 self.build_pending = True
                 self.change_event.clear()
                 self.last_message = "manual build retry queued"
@@ -707,7 +710,12 @@ class DevLoop:
                 self.launch_latest()
             self.print_status()
         elif key == "a":
-            print("[DEV] auto-restart is always ON")
+            self.auto_restart = not self.auto_restart
+            self.last_message = (
+                "auto-start enabled" if self.auto_restart else "auto-start disabled"
+            )
+            self.save_state("auto_start_toggled")
+            print(f"[DEV] auto-start {'ON' if self.auto_restart else 'OFF'}")
             self.print_status(force=True)
         elif key == "q":
             self.stop_event.set()

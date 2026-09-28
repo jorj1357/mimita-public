@@ -11,12 +11,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <numeric>
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glad/glad.h>
 
 #include "physics/config.h"
 #include "physics/movement/actor-triangle-solver.h"
@@ -26,6 +30,154 @@
 #include "map/map-loader-collision.h"
 #include "debug/debug-visuals.h"
 #include "camera.h"
+#include "renderer/renderer.h"
+#include "render/render-world.h"
+#include "world/texture-store.h"
+#include "map/map_common.h"
+
+extern Renderer* gRenderer;
+
+namespace {
+
+AABB entityWorldAABB(const PhysicalEntity& e);
+bool aabbOverlapsPadded(const AABB& a, const AABB& b, float pad);
+void resolveEntityContacts(std::vector<PhysicalEntity>& entities);
+
+void refreshBoxMassProperties(PhysicalEntity& e)
+{
+    const glm::vec3 dimensions = glm::max(e.halfExtents * 2.0f,
+                                          glm::vec3(0.001f));
+    const float m = std::max(e.mass, 0.0001f);
+    e.inertia = glm::vec3(
+        m * (dimensions.y * dimensions.y + dimensions.z * dimensions.z) / 12.0f,
+        m * (dimensions.x * dimensions.x + dimensions.z * dimensions.z) / 12.0f,
+        m * (dimensions.x * dimensions.x + dimensions.y * dimensions.y) / 12.0f);
+    e.inertia = glm::max(e.inertia, glm::vec3(0.0001f));
+    e.inverseInertia = 1.0f / e.inertia;
+}
+
+glm::vec3 inverseInertiaWorld(const PhysicalEntity& e, const glm::vec3& v)
+{
+    const glm::vec3 local = glm::inverse(e.orientation) * v;
+    return e.orientation * (local * e.inverseInertia);
+}
+
+void applyImpulseAtPoint(PhysicalEntity& e, const glm::vec3& impulse,
+                         const glm::vec3& point, bool wake = true)
+{
+    if (e.motion != PhysicalEntityMotion::Dynamic || e.mass <= 0.0f)
+        return;
+    const glm::vec3 center = glm::vec3(e.transform[3]) + e.orientation * e.centerOfMass;
+    e.velocity += impulse / e.mass;
+    e.angularVelocity += inverseInertiaWorld(e, glm::cross(point - center, impulse));
+    if (wake)
+    {
+        e.sleeping = false;
+        e.sleepTicks = 0;
+    }
+}
+
+void resolveWorldContactVelocity(PhysicalEntity& e,
+                                 const RecoveryContact& contact)
+{
+    if (e.motion != PhysicalEntityMotion::Dynamic || e.mass <= 0.0f)
+        return;
+    glm::vec3 normal = contact.responseNormal;
+    if (glm::dot(normal, normal) <= 1e-8f)
+        normal = contact.normal;
+    normal = glm::normalize(normal);
+
+    const glm::vec3 center = glm::vec3(e.transform[3]) +
+                             e.orientation * e.centerOfMass;
+    const glm::vec3 r = contact.point - center;
+    const glm::vec3 pointVelocity = e.velocity + glm::cross(e.angularVelocity, r);
+    const glm::vec3 rCrossNormal = glm::cross(r, normal);
+    const float normalMass = 1.0f / e.mass +
+        glm::dot(glm::cross(inverseInertiaWorld(e, rCrossNormal), r), normal);
+    const float normalSpeed = glm::dot(pointVelocity, normal);
+    float normalImpulse = 0.0f;
+    if (normalSpeed < 0.0f && normalMass > 1e-6f)
+    {
+        normalImpulse = -(1.0f + e.restitution) * normalSpeed / normalMass;
+        applyImpulseAtPoint(e, normal * normalImpulse, contact.point, false);
+    }
+
+    const glm::vec3 postNormalVelocity = e.velocity + glm::cross(e.angularVelocity, r);
+    const glm::vec3 tangentVelocity = postNormalVelocity -
+        normal * glm::dot(postNormalVelocity, normal);
+    const float tangentLength = glm::length(tangentVelocity);
+    if (tangentLength <= 1e-5f || normalMass <= 1e-6f)
+        return;
+    const glm::vec3 tangent = tangentVelocity / tangentLength;
+    const glm::vec3 rCrossTangent = glm::cross(r, tangent);
+    const float tangentMass = 1.0f / e.mass +
+        glm::dot(glm::cross(inverseInertiaWorld(e, rCrossTangent), r), tangent);
+    if (tangentMass <= 1e-6f)
+        return;
+    const float desiredTangentImpulse = -glm::dot(postNormalVelocity, tangent) /
+                                        tangentMass;
+    const float frictionLimit = e.friction * normalImpulse;
+    const float tangentImpulse = normalImpulse > 0.0f
+        ? glm::clamp(desiredTangentImpulse, -frictionLimit, frictionLimit)
+        : desiredTangentImpulse;
+    applyImpulseAtPoint(e, tangent * tangentImpulse, contact.point, false);
+}
+
+void rebuildTransformFromPose(PhysicalEntity& e)
+{
+    e.transform = glm::translate(glm::mat4(1.0f), glm::vec3(e.transform[3])) *
+                  glm::mat4_cast(glm::normalize(e.orientation));
+}
+
+bool isBoxRestingUpright(const PhysicalEntity& e)
+{
+    const glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
+    const glm::vec3 localAxes[] = {
+        glm::vec3(1.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 1.0f)
+    };
+    float best = 0.0f;
+    for (const glm::vec3& localAxis : localAxes)
+        best = std::max(best, std::fabs(glm::dot(e.orientation * localAxis, worldUp)));
+    return best >= e.restingUprightDot;
+}
+
+void applyRestingRightingTorque(PhysicalEntity& e, float dt)
+{
+    const glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
+    const glm::vec3 localAxes[] = {
+        glm::vec3(1.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 1.0f)
+    };
+    glm::vec3 selectedWorldAxis(0.0f);
+    float best = -1.0f;
+    for (const glm::vec3& localAxis : localAxes)
+    {
+        glm::vec3 axis = e.orientation * localAxis;
+        const float alignment = std::fabs(glm::dot(axis, worldUp));
+        if (alignment > best)
+        {
+            best = alignment;
+            selectedWorldAxis = glm::dot(axis, worldUp) >= 0.0f ? axis : -axis;
+        }
+    }
+    const float axisLength = glm::length(selectedWorldAxis);
+    if (axisLength <= 1e-5f)
+        return;
+    selectedWorldAxis /= axisLength;
+    const glm::vec3 errorAxis = glm::cross(selectedWorldAxis, worldUp);
+    const float errorLength = glm::length(errorAxis);
+    if (errorLength <= 1e-5f)
+        return;
+    const float errorAngle = std::atan2(errorLength,
+                                        glm::dot(selectedWorldAxis, worldUp));
+    e.angularVelocity += (errorAxis / errorLength) *
+                         (errorAngle * e.rightingStrength * dt);
+}
+
+} // namespace
 
 PhysicalEntitySystem& PhysicalEntitySystem::instance()
 {
@@ -37,6 +189,8 @@ void PhysicalEntitySystem::clear()
 {
     mEntities.clear();
     mNextId = 1;
+    mFixedAccumulator = 0.0;
+    mSimulationTick = 0;
 }
 
 uint32_t PhysicalEntitySystem::add(
@@ -50,8 +204,12 @@ uint32_t PhysicalEntitySystem::add(
     e.localTriangles = localTriangles;
     e.transform = transform;
     e.previousTransform = transform;
+    e.orientation = glm::normalize(glm::quat_cast(glm::mat3(transform)));
     e.motion = motion;
+    e.shape = PhysicalEntityShape::TriangleMesh;
     e.materialId = materialId;
+    e.persistenceId = "runtime-physical-" + std::to_string(e.id);
+    refreshBoxMassProperties(e);
     mEntities.push_back(std::move(e));
     return mEntities.back().id;
 }
@@ -76,6 +234,9 @@ PhysicalEntity* PhysicalEntitySystem::moveKinematic(uint32_t id,
     else
         e->velocity = glm::vec3(0.0f);
     e->transform = transform;
+    e->orientation = glm::normalize(glm::quat_cast(glm::mat3(transform)));
+    e->sleeping = false;
+    e->sleepTicks = 0;
     return e;
 }
 
@@ -87,19 +248,284 @@ PhysicalEntity* PhysicalEntitySystem::find(uint32_t id)
     return nullptr;
 }
 
-void PhysicalEntitySystem::advanceKinematics(float dt)
+bool PhysicalEntitySystem::remove(uint32_t id)
+{
+    for (auto it = mEntities.begin(); it != mEntities.end(); ++it)
+    {
+        if (it->id == id)
+        {
+            mEntities.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
 {
     if (dt <= 0.0f)
         return;
+    mFixedAccumulator = std::min(mFixedAccumulator + (double)dt, 0.25);
+    constexpr double kFixedDt = 1.0 / 60.0;
+    constexpr int kMaxSteps = 5;
+    int steps = 0;
+    while (mFixedAccumulator >= kFixedDt && steps++ < kMaxSteps)
+    {
+        mFixedAccumulator -= kFixedDt;
+        ++mSimulationTick;
+        for (PhysicalEntity& e : mEntities)
+        {
+            if ((e.motion != PhysicalEntityMotion::Kinematic &&
+                 e.motion != PhysicalEntityMotion::Dynamic) || e.sleeping)
+                continue;
+            refreshBoxMassProperties(e);
+            if (e.motion == PhysicalEntityMotion::Dynamic)
+            {
+                e.velocity.z = std::max(
+                    e.velocity.z + PHYS.gravity * e.gravityScale * (float)kFixedDt,
+                    -MAX_FALL_SPEED);
+                e.velocity *= std::max(0.0f, 1.0f - e.linearDamping * (float)kFixedDt);
+                e.angularVelocity *= std::max(0.0f, 1.0f - e.angularDamping * (float)kFixedDt);
+                const float angularSpeed = glm::length(e.angularVelocity);
+                if (angularSpeed > 1e-5f)
+                {
+                    const glm::vec3 axis = e.angularVelocity / angularSpeed;
+                    e.orientation = glm::normalize(
+                        glm::angleAxis(angularSpeed * (float)kFixedDt, axis) *
+                        e.orientation);
+                }
+                const float postDampingAngularSpeed = glm::length(e.angularVelocity);
+                if (e.maxAngularSpeed > 0.0f &&
+                    postDampingAngularSpeed > e.maxAngularSpeed)
+                    e.angularVelocity *= e.maxAngularSpeed / postDampingAngularSpeed;
+            }
+            if (glm::dot(e.velocity, e.velocity) <= 1e-8f &&
+                glm::dot(e.angularVelocity, e.angularVelocity) <= 1e-8f)
+                continue;
+            e.previousTransform = e.transform;
+            e.transform[3] += glm::vec4(e.velocity * (float)kFixedDt, 0.0f);
+            rebuildTransformFromPose(e);
+
+            // First Phase 3 slice: kinematic objects sweep their authored
+            // local triangles against the static world and slide instead of
+            // passing through it. Player/object contacts remain owned by the
+            // actor manifold below.
+            ActorCollisionMesh objectMesh;
+            objectMesh.label = "physicalEntity";
+            objectMesh.localTriangles = &e.localTriangles;
+            std::vector<ActorCollisionMesh> meshes{objectMesh};
+            std::vector<int> candidates;
+            std::vector<RecoveryContact> contacts;
+            for (int collisionPass = 0; collisionPass < 3; ++collisionPass)
+            {
+                meshes[0].previousTransform = e.previousTransform;
+                meshes[0].desiredTransform = e.transform;
+                const AABB sweepBox = makeSweptActorMeshAABB(
+                    meshes, glm::vec3(0.0f));
+                candidates.clear();
+                appendChunkTrianglesForAABB(world, sweepBox, 0.1f, candidates,
+                                            "physicalEntitySweep");
+                if (candidates.empty())
+                    break;
+                std::vector<RecoveryContact> passContacts = collectActorMeshContacts(
+                    world, meshes, candidates, glm::vec3(e.transform[3]),
+                    true, -1.0f);
+                if (passContacts.empty())
+                    break;
+                contacts = std::move(passContacts);
+                const glm::vec3 correction = solveBatchedCorrection(
+                    contacts, 0.01f, nullptr, nullptr,
+                    e.velocity * (float)kFixedDt, glm::vec3(e.transform[3]));
+                e.transform[3] += glm::vec4(correction, 0.0f);
+                for (const RecoveryContact& contact : contacts)
+                {
+                    if (e.motion == PhysicalEntityMotion::Dynamic)
+                    {
+                        resolveWorldContactVelocity(e, contact);
+                        // The impulse solver handles angular and frictional
+                        // response. Keep the final translational invariant as
+                        // strict as the player solver: a supported body may
+                        // never retain velocity into the supporting surface.
+                        const float into = glm::dot(e.velocity, contact.normal);
+                        if (into < 0.0f)
+                            e.velocity -= contact.normal * into;
+                        if (contact.normal.z > MAX_WALKABLE_SLOPE_DOT &&
+                            std::fabs(e.velocity.z) < 0.25f)
+                            e.velocity.z = 0.0f;
+                    }
+                    else
+                    {
+                        const float into = glm::dot(e.velocity, contact.normal);
+                        if (into < 0.0f)
+                            e.velocity -= contact.normal * into;
+                    }
+                }
+                if (glm::dot(correction, correction) < 1e-8f)
+                    break;
+            }
+            if (contacts.empty())
+            {
+                // Preserve a short support window across a one-tick rounded
+                // feature gap. Gravity still runs, so a body that genuinely
+                // leaves the surface cannot remain asleep on this grace path.
+                if (e.motion == PhysicalEntityMotion::Dynamic &&
+                    e.supportGraceTicks > 0 && glm::length(e.velocity) < 0.5f)
+                {
+                    --e.supportGraceTicks;
+                    e.velocity.x *= 0.65f;
+                    e.velocity.y *= 0.65f;
+                    e.angularVelocity *= 0.15f;
+                    if (glm::length(e.velocity) < std::max(0.5f, e.sleepLinearThreshold) &&
+                        glm::length(e.angularVelocity) < std::max(0.5f, e.sleepAngularThreshold))
+                        ++e.sleepTicks;
+                    if (e.sleepTicks >= e.sleepRequiredTicks)
+                    {
+                        e.velocity = glm::vec3(0.0f);
+                        e.angularVelocity = glm::vec3(0.0f);
+                        e.sleeping = true;
+                    }
+                }
+                continue;
+            }
+
+            if (e.motion == PhysicalEntityMotion::Dynamic)
+            {
+                bool supported = false;
+                for (const RecoveryContact& contact : contacts)
+                {
+                    if (contact.normal.z > MAX_WALKABLE_SLOPE_DOT)
+                    {
+                        supported = true;
+                        break;
+                    }
+                }
+                if (supported)
+                    e.supportGraceTicks = 3;
+                if (supported && glm::length(e.velocity) < 0.5f)
+                {
+                    // Static contact friction absorbs residual roll/spin once
+                    // the body is no longer meaningfully translating. This is
+                    // the rigid-body equivalent of the player's grounded
+                    // velocity projection, not a free rotation override.
+                    e.velocity.x *= 0.65f;
+                    e.velocity.y *= 0.65f;
+                    applyRestingRightingTorque(e, (float)kFixedDt);
+                    e.angularVelocity *= 0.35f;
+                }
+                const bool upright = isBoxRestingUpright(e);
+                const bool stableCandidate = supported && upright &&
+                    glm::length(e.velocity) < std::max(0.5f, e.sleepLinearThreshold) &&
+                    glm::length(e.angularVelocity) < std::max(0.5f, e.sleepAngularThreshold);
+                if (stableCandidate)
+                    ++e.sleepTicks;
+                else if (glm::length(e.velocity) > 1.0f ||
+                         glm::length(e.angularVelocity) > 1.0f)
+                    e.sleepTicks = 0;
+                if (e.sleepTicks >= e.sleepRequiredTicks)
+                {
+                    e.velocity = glm::vec3(0.0f);
+                    e.angularVelocity = glm::vec3(0.0f);
+                    e.sleeping = true;
+                }
+                if (!supported && contacts.size() >= 2 && glm::length(e.velocity) < 0.25f)
+                {
+                    glm::vec3 escape(0.0f);
+                    for (const RecoveryContact& contact : contacts)
+                        escape += contact.responseNormal;
+                    if (glm::dot(escape, escape) > 1e-6f)
+                    {
+                        e.velocity += glm::normalize(escape) * 0.15f;
+                        e.sleeping = false;
+                        e.sleepTicks = 0;
+                    }
+                }
+            }
+        }
+        resolveEntityContacts(mEntities);
+    }
+    if (steps >= kMaxSteps && mFixedAccumulator >= kFixedDt)
+        mFixedAccumulator = 0.0;
+}
+
+float PhysicalEntitySystem::renderAlpha() const
+{
+    constexpr double kFixedDt = 1.0 / 60.0;
+    return static_cast<float>(std::clamp(mFixedAccumulator / kFixedDt, 0.0, 1.0));
+}
+
+void PhysicalEntitySystem::applyPlayerPush(const Player& player, float dt)
+{
+    if (dt <= 0.0f)
+        return;
+    const glm::vec3 playerMin = player.pos + glm::vec3(-PLAYER_RADIUS, -PLAYER_RADIUS, 0.0f);
+    const glm::vec3 playerMax = player.pos + glm::vec3(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_HEIGHT);
+    const AABB playerBox{playerMin, playerMax};
+    glm::vec3 horizontalVelocity(player.vel.x, player.vel.y, 0.0f);
+    if (glm::dot(horizontalVelocity, horizontalVelocity) <= 1e-6f &&
+        glm::dot(player.inputWishMove, player.inputWishMove) > 1e-4f)
+        horizontalVelocity = glm::vec3(player.inputWishMove.x,
+                                       player.inputWishMove.y, 0.0f) *
+                             MAX_PLAYER_MOVE_SPEED;
+    if (glm::dot(horizontalVelocity, horizontalVelocity) <= 1e-6f)
+        return;
+
     for (PhysicalEntity& e : mEntities)
     {
-        if (e.motion != PhysicalEntityMotion::Kinematic)
+        if (e.motion != PhysicalEntityMotion::Dynamic || e.mass <= 0.0f)
             continue;
-        if (glm::dot(e.velocity, e.velocity) <= 0.0f)
+        if (e.lastPlayerPushTick == mSimulationTick)
             continue;
-        e.previousTransform = e.transform;
-        e.transform[3] += glm::vec4(e.velocity * dt, 0.0f);
+        const AABB objectBox = entityWorldAABB(e);
+        if (!aabbOverlapsPadded(playerBox, objectBox, 0.05f))
+            continue;
+
+        refreshBoxMassProperties(e);
+        glm::vec3 pushNormal = player.pos - glm::vec3(e.transform[3]);
+        pushNormal.z = 0.0f;
+        if (glm::dot(pushNormal, pushNormal) <= 1e-6f)
+            pushNormal = -horizontalVelocity;
+        pushNormal = glm::normalize(pushNormal);
+        const float into = glm::dot(horizontalVelocity, pushNormal);
+        if (into >= 0.0f)
+            continue;
+        const glm::vec3 contactPoint = glm::clamp(
+            player.pos, objectBox.min, objectBox.max);
+        constexpr float kPlayerMass = 80.0f;
+        applyImpulseAtPoint(e, -pushNormal * (-into) * kPlayerMass * 0.9f,
+                            contactPoint);
+        e.lastPlayerPushTick = mSimulationTick;
+        e.velocity.x = std::clamp(e.velocity.x, -MAX_PLAYER_MOVE_SPEED, MAX_PLAYER_MOVE_SPEED);
+        e.velocity.y = std::clamp(e.velocity.y, -MAX_PLAYER_MOVE_SPEED, MAX_PLAYER_MOVE_SPEED);
     }
+}
+
+void PhysicalEntitySystem::applyPlayerContactPush(
+    uint32_t entityId, const Player& player, const glm::vec3& point,
+    const glm::vec3& contactNormal)
+{
+    PhysicalEntity* e = find(entityId);
+    if (!e || e->motion != PhysicalEntityMotion::Dynamic || e->mass <= 0.0f ||
+        e->lastPlayerPushTick == mSimulationTick)
+        return;
+
+    glm::vec3 pushNormal(contactNormal.x, contactNormal.y, 0.0f);
+    if (glm::dot(pushNormal, pushNormal) <= 1e-6f)
+        return;
+    pushNormal = glm::normalize(pushNormal);
+    glm::vec3 incoming = player.vel + player.externalImpulse;
+    float into = std::max(0.0f, -glm::dot(incoming, pushNormal));
+    if (into <= 1e-4f && glm::dot(player.inputWishMove, player.inputWishMove) > 1e-4f)
+    {
+        const glm::vec3 wish(player.inputWishMove.x, player.inputWishMove.y, 0.0f);
+        into = std::max(0.0f, -glm::dot(glm::normalize(wish) * MAX_PLAYER_MOVE_SPEED,
+                                        pushNormal));
+    }
+    if (into <= 1e-4f)
+        return;
+
+    constexpr float kPlayerMass = 80.0f;
+    applyImpulseAtPoint(*e, -pushNormal * into * kPlayerMass * 0.9f, point);
+    e->lastPlayerPushTick = mSimulationTick;
 }
 
 void buildBoxCollisionTriangles(std::vector<CollisionTriangle>& out,
@@ -119,7 +545,7 @@ void buildBoxCollisionTriangles(std::vector<CollisionTriangle>& out,
         {mn.x, mx.y, mx.z},
     };
     const int quads[6][4] = {
-        {0, 1, 2, 3}, {4, 5, 6, 7}, {0, 1, 5, 4},
+        {0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4},
         {2, 3, 7, 6}, {1, 2, 6, 5}, {3, 0, 4, 7}
     };
     for (int q = 0; q < 6; ++q)
@@ -163,6 +589,81 @@ bool aabbOverlapsPadded(const AABB& a, const AABB& b, float pad)
            a.min.z - pad <= b.max.z && a.max.z + pad >= b.min.z;
 }
 
+void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
+{
+    constexpr float kSlop = 0.005f;
+    for (size_t i = 0; i < entities.size(); ++i)
+    {
+        PhysicalEntity& a = entities[i];
+        if (a.motion == PhysicalEntityMotion::Static || !a.collidesWithActors)
+            continue;
+        for (size_t j = i + 1; j < entities.size(); ++j)
+        {
+            PhysicalEntity& b = entities[j];
+            if (b.motion == PhysicalEntityMotion::Static || !b.collidesWithActors)
+                continue;
+            if (a.localTriangles.empty() || b.localTriangles.empty())
+                continue;
+
+            const AABB boxA = entityWorldAABB(a);
+            const AABB boxB = entityWorldAABB(b);
+            const glm::vec3 overlap(
+                std::min(boxA.max.x, boxB.max.x) - std::max(boxA.min.x, boxB.min.x),
+                std::min(boxA.max.y, boxB.max.y) - std::max(boxA.min.y, boxB.min.y),
+                std::min(boxA.max.z, boxB.max.z) - std::max(boxA.min.z, boxB.min.z));
+            if (overlap.x <= 0.0f || overlap.y <= 0.0f || overlap.z <= 0.0f)
+                continue;
+
+            const glm::vec3 centerA = (boxA.min + boxA.max) * 0.5f;
+            const glm::vec3 centerB = (boxB.min + boxB.max) * 0.5f;
+            const glm::vec3 delta = centerB - centerA;
+            int axis = 0;
+            if (overlap.y < overlap.x && overlap.y <= overlap.z) axis = 1;
+            else if (overlap.z < overlap.x && overlap.z < overlap.y) axis = 2;
+            glm::vec3 normal(0.0f);
+            normal[axis] = delta[axis] >= 0.0f ? 1.0f : -1.0f;
+
+            const float invMassA = a.motion == PhysicalEntityMotion::Dynamic && a.mass > 0.0f
+                ? 1.0f / a.mass : 0.0f;
+            const float invMassB = b.motion == PhysicalEntityMotion::Dynamic && b.mass > 0.0f
+                ? 1.0f / b.mass : 0.0f;
+            const float invMassTotal = invMassA + invMassB;
+            if (invMassTotal <= 1e-8f)
+                continue;
+
+            const float correction = std::max(0.0f, overlap[axis] - kSlop);
+            a.transform[3] -= glm::vec4(normal * correction * invMassA / invMassTotal, 0.0f);
+            b.transform[3] += glm::vec4(normal * correction * invMassB / invMassTotal, 0.0f);
+            a.sleeping = false;
+            b.sleeping = false;
+            a.sleepTicks = b.sleepTicks = 0;
+            a.supportGraceTicks = b.supportGraceTicks = 0;
+
+            const glm::vec3 point = (glm::max(boxA.min, boxB.min) +
+                                     glm::min(boxA.max, boxB.max)) * 0.5f;
+            const glm::vec3 centerOfMassA = glm::vec3(a.transform[3]) +
+                                            a.orientation * a.centerOfMass;
+            const glm::vec3 centerOfMassB = glm::vec3(b.transform[3]) +
+                                            b.orientation * b.centerOfMass;
+            const glm::vec3 relativeVelocity =
+                (b.velocity + glm::cross(b.angularVelocity, point - centerOfMassB)) -
+                (a.velocity + glm::cross(a.angularVelocity, point - centerOfMassA));
+            const float normalSpeed = glm::dot(relativeVelocity, normal);
+            if (normalSpeed >= 0.0f)
+                continue;
+
+            const float restitution = std::max(a.restitution, b.restitution);
+            const float impulseMagnitude = -(1.0f + restitution) * normalSpeed /
+                                           invMassTotal;
+            const glm::vec3 impulse = normal * impulseMagnitude;
+            if (invMassA > 0.0f)
+                applyImpulseAtPoint(a, -impulse, point);
+            if (invMassB > 0.0f)
+                applyImpulseAtPoint(b, impulse, point);
+        }
+    }
+}
+
 } // namespace
 
 std::vector<EntityActorContact> collectActorEntityContacts(
@@ -184,6 +685,9 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         if (!aabbOverlapsPadded(actorBox, entityWorldAABB(e), kPad))
             continue;
 
+        // TODO-DELETE 2026-09-28 [Phase 2]: this temporary world view is a
+        // migration bridge. Phase 3 should query the entity's cached world
+        // shape directly without allocating a World or copying triangles.
         // A temporary world view of the entity's current world-space triangles.
         // collectActorMeshContacts owns the one triangle-vs-triangle routine; the
         // entity reuses it instead of duplicating the math.
@@ -213,11 +717,112 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         {
             c.entityId = e.id;
             c.surfaceVelocity = e.velocity;
+            c.surfaceMass = e.motion == PhysicalEntityMotion::Dynamic ? e.mass : 0.0f;
+            c.surfaceRestitution = e.restitution;
             out.push_back(EntityActorContact{c, e.id});
         }
     }
     return out;
 }
+
+namespace {
+
+GLuint gPhysicalBoxVao = 0;
+GLuint gPhysicalBoxVbo = 0;
+
+void drawTexturedPhysicalBox(const Camera& camera, const PhysicalEntity& e)
+{
+    if (!gRenderer || !gRenderer->shaderProgram)
+        return;
+
+    // Six independent faces keep UVs simple and make this renderer reusable
+    // for imported box-shaped objects before a full GLB model renderer exists.
+    const glm::vec3 h = e.halfExtents;
+    const glm::vec3 p[8] = {
+        {-h.x, -h.y, -h.z}, { h.x, -h.y, -h.z},
+        { h.x,  h.y, -h.z}, {-h.x,  h.y, -h.z},
+        {-h.x, -h.y,  h.z}, { h.x, -h.y,  h.z},
+        { h.x,  h.y,  h.z}, {-h.x,  h.y,  h.z}
+    };
+    const int faces[6][4] = {
+        {0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4},
+        {3, 7, 6, 2}, {1, 2, 6, 5}, {0, 4, 7, 3}
+    };
+    const glm::vec3 normals[6] = {
+        {0, 0, -1}, {0, 0, 1}, {0, -1, 0},
+        {0, 1, 0}, {1, 0, 0}, {-1, 0, 0}
+    };
+    std::vector<Vertex> verts;
+    verts.reserve(36);
+    for (int face = 0; face < 6; ++face)
+    {
+        const int* f = faces[face];
+        const glm::vec2 uv[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+        const int order[6] = {0, 1, 2, 0, 2, 3};
+        for (int i : order)
+            verts.push_back({p[f[i]], normals[face], uv[i]});
+    }
+
+    if (!gPhysicalBoxVao)
+    {
+        glGenVertexArrays(1, &gPhysicalBoxVao);
+        glGenBuffers(1, &gPhysicalBoxVbo);
+    }
+    glUseProgram(gRenderer->shaderProgram);
+    const glm::mat4 view = camera.getView();
+    const glm::mat4 proj = camera.getProj((float)gRenderer->width,
+                                          (float)gRenderer->height);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"),
+                       1, GL_FALSE, [&]() {
+                           static glm::mat4 renderTransform(1.0f);
+                           const float alpha = PhysicalEntitySystem::instance().renderAlpha();
+                           const glm::vec3 previousPosition(e.previousTransform[3]);
+                           const glm::vec3 currentPosition(e.transform[3]);
+                           const glm::quat previousOrientation = glm::normalize(
+                               glm::quat_cast(glm::mat3(e.previousTransform)));
+                           renderTransform = glm::translate(
+                               glm::mat4(1.0f),
+                               glm::mix(previousPosition, currentPosition, alpha)) *
+                               glm::mat4_cast(glm::normalize(glm::slerp(
+                                   previousOrientation, e.orientation, alpha)));
+                           return &renderTransform[0][0];
+                       }());
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"),
+                       1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"),
+                       1, GL_FALSE, &proj[0][0]);
+    setUniforms(gRenderer->shaderProgram, camera.pos);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gTextures.getPath(e.texturePath));
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+    GLint cullModeWas = GL_BACK;
+    glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glBindVertexArray(gPhysicalBoxVao);
+    glBindBuffer(GL_ARRAY_BUFFER, gPhysicalBoxVbo);
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(),
+                 GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, pos));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, uv));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, normal));
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    if (!cullWasEnabled)
+        glDisable(GL_CULL_FACE);
+    glCullFace(cullModeWas);
+    glBindVertexArray(0);
+}
+
+} // namespace
 
 void drawPhysicalEntities(const Camera& camera)
 {
@@ -227,16 +832,7 @@ void drawPhysicalEntities(const Camera& camera)
     {
         if (e.localTriangles.empty())
             continue;
-        const AABB box = entityWorldAABB(e);
-        const glm::vec3 center = (box.min + box.max) * 0.5f;
-        const glm::vec3 half = (box.max - box.min) * 0.5f;
-        const glm::vec4 color =
-            (e.motion == PhysicalEntityMotion::Kinematic)
-                ? glm::vec4(0.85f, 0.45f, 0.12f, 1.0f)
-                : glm::vec4(0.45f, 0.45f, 0.50f, 1.0f);
-        DebugVis::drawFilledBox(camera, center, half, color);
-        DebugVis::drawWireBox(camera, center, half,
-                              glm::vec4(1.0f, 0.9f, 0.2f, 1.0f));
+        drawTexturedPhysicalBox(camera, e);
     }
 }
 
@@ -447,6 +1043,66 @@ bool physicalEntitySelfTest(std::string* outSummary)
         check(std::fabs(p.vel.x - velBeforeLeave) < 1e-4f,
               "leaving the crate does not zero inherited velocity");
         check(std::fabs(p.vel.x) > 0.1f, "inherited velocity remains after departure");
+    }
+
+    // 4. A Dynamic crate falls under the shared gravity value and settles on
+    // the same world triangle manifold instead of remaining a frozen kinematic
+    // debug object.
+    {
+        system.clear();
+        std::vector<CollisionTriangle> crate;
+        buildBoxCollisionTriangles(crate, glm::vec3(0.0f), glm::vec3(0.5f));
+        const uint32_t crateId = system.add(
+            crate, glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 5.0f)),
+            PhysicalEntityMotion::Dynamic);
+        PhysicalEntity* dynamicCrate = system.find(crateId);
+        dynamicCrate->mass = 20.0f;
+        for (int i = 0; i < 180; ++i)
+            system.advanceKinematics(1.0f / 60.0f, world);
+        check(dynamicCrate->transform[3].z > 0.45f &&
+                  dynamicCrate->transform[3].z < 0.65f,
+              "dynamic crate falls onto the floor");
+        check(std::fabs(dynamicCrate->velocity.z) < 0.01f,
+              "dynamic crate removes inward floor velocity");
+        check(dynamicCrate->sleeping, "resting dynamic crate enters sleep");
+
+        Player p(false);
+        p.pos = glm::vec3(0.9f, 0.9f, 0.2f);
+        p.vel = glm::vec3(-10.0f, -10.0f, 0.0f);
+        system.applyPlayerPush(p, 1.0f / 60.0f);
+        check(glm::length(dynamicCrate->angularVelocity) > 0.001f,
+              "off-center player push creates angular velocity");
+        system.advanceKinematics(1.0f / 60.0f, world);
+        check(glm::length(glm::eulerAngles(dynamicCrate->orientation)) > 0.0f,
+              "angular velocity changes crate orientation");
+    }
+
+    // 5. Dynamic crates exchange momentum through the same fixed-step owner.
+    {
+        system.clear();
+        std::vector<CollisionTriangle> crate;
+        buildBoxCollisionTriangles(crate, glm::vec3(0.0f), glm::vec3(0.5f));
+        const uint32_t leftId = system.add(
+            crate, glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.0f, 0.5f)),
+            PhysicalEntityMotion::Dynamic);
+        const uint32_t rightId = system.add(
+            crate, glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.0f, 0.5f)),
+            PhysicalEntityMotion::Dynamic);
+        PhysicalEntity* left = system.find(leftId);
+        PhysicalEntity* right = system.find(rightId);
+        left->gravityScale = 0.0f;
+        right->gravityScale = 0.0f;
+        left->velocity.x = 12.0f;
+        right->velocity.x = -12.0f;
+        left->restitution = 0.5f;
+        right->restitution = 0.5f;
+        for (int i = 0; i < 30; ++i)
+            system.advanceKinematics(1.0f / 60.0f, world);
+        check(left->velocity.x < 0.0f && right->velocity.x > 0.0f,
+              "dynamic crates exchange momentum");
+        check(glm::length(glm::vec3(right->transform[3]) -
+                          glm::vec3(left->transform[3])) >= 0.99f,
+              "dynamic crates do not remain overlapped");
     }
 
     system.clear();

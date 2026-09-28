@@ -12,6 +12,7 @@
 #include "network/server.h"
 #include "persistence/persistence-emit.h"
 #include "network/server-gamemode.h"
+#include "procedural/procedural-world.h"
 #include "network/multiplayer-context.h"
 #include "network/chat-rate-limiter.h"
 #include "void-death/void-death.h"
@@ -389,6 +390,18 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         return;
     }
 
+    // Procedural teleport uses the existing teleport request/authority path, so
+    // any player (not only the host) may request it. The server resolves the
+    // highest accessible room and moves the requester to that entrance.
+    if (commandStr == "procedural_world_teleport_highest")
+    {
+        ServerGamemodeState& state = serverGamemodeState();
+        state.pendingProcedural.teleportHighest = true;
+        state.pendingProcedural.teleportRequesterId = it->second.id;
+        ack(true, "applied: procedural_world_teleport_highest");
+        return;
+    }
+
     // Host-gate: only the player whose name matches the server host (or the
     // first joiner when no host name is set) may issue server-authoritative
     // commands. This also stops any client from deleting all NPCs.
@@ -599,6 +612,58 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             "%s [SERVER COMMAND] changemap -> %s by playerId=%u\n",
             serverTimestamp(), mapId.c_str(), it->second.id);
         ack(true, ("applied: changemap " + mapId).c_str());
+    }
+    else if (commandStr.rfind("procedural_world_start ", 0) == 0)
+    {
+        if (MimitaProcedural::proceduralWorldConfig().modes.empty())
+            MimitaProcedural::loadProceduralWorldConfig();
+        const std::string rest = commandStr.substr(23);
+        std::string modeId = rest;
+        uint32_t seed = MimitaProcedural::proceduralWorldConfig().defaultSeed;
+        const size_t space = rest.find(' ');
+        if (space != std::string::npos)
+        {
+            modeId = rest.substr(0, space);
+            try { seed = (uint32_t)std::stoul(rest.substr(space + 1)); }
+            catch (...) { /* keep default seed */ }
+        }
+        if (!MimitaProcedural::proceduralModeById(modeId))
+        {
+            ack(false, "rejected: unknown procedural mode");
+        }
+        else
+        {
+            ServerGamemodeState& state = serverGamemodeState();
+            state.pendingProcedural.start = true;
+            state.pendingProcedural.modeId = modeId;
+            state.pendingProcedural.seed = seed;
+            state.pendingProcedural.requesterId = it->second.id;
+            Debug::warn(Debug::Category::General,
+                "%s [SERVER COMMAND] procedural_world_start mode=%s seed=%u by playerId=%u\n",
+                serverTimestamp(), modeId.c_str(), seed, it->second.id);
+            ack(true, ("applied: procedural_world_start " + modeId).c_str());
+        }
+    }
+    else if (commandStr == "procedural_world_stop")
+    {
+        ServerGamemodeState& state = serverGamemodeState();
+        state.pendingProcedural.stop = true;
+        ack(true, "applied: procedural_world_stop");
+    }
+    else if (commandStr == "procedural_world_generate_next")
+    {
+        ServerGamemodeState& state = serverGamemodeState();
+        const auto& p = state.procedural;
+        if (p.enabled && p.roomState == MimitaProcedural::ProceduralRoomState::Active &&
+            p.aliveEncounterActors > 0)
+        {
+            ack(false, "rejected: current encounter still alive");
+        }
+        else
+        {
+            state.pendingProcedural.generateNext = true;
+            ack(true, "applied: procedural_world_generate_next");
+        }
     }
     else
     {

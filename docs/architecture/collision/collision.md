@@ -108,5 +108,37 @@ Collision contacts are the source of truth for grounded state.
 
 Timers may not invent collisions.
 
+## Current triangle thickness semantics — 2026-09-28
+
+The current actor-triangle path does not extrude triangles into permanent
+solid prisms. Its rounded-feature shell is owned by
+`MOVEMENT_FEATURE_SMOOTHNESS` in `src/physics/movement/physics-collision.h`:
+
+- default value: `0.1` engine units, treated as meters by the current physics
+  convention;
+- when the rounded path is active, it tests the finite features of both
+  triangles: vertex-to-triangle pairs behave as spheres, segment-to-segment
+  pairs behave as capsules, and face interiors retain the exact triangle
+  contact;
+- the shell is a narrow-phase distance test (`distance <= 0.1`) and produces
+  rounded response normals; it is not an independent infinite plane or a
+  permanent mesh expansion;
+- exact triangle intersection remains authoritative for penetration recovery;
+  the rounded feature vector is blended into the response normal so edges and
+  vertices do not select an infinitely sharp snag normal;
+- the broad phase is expanded by the same feature radius so nearby finite
+  features are not rejected before narrow phase. `collisionSkin` in
+  `config/collision.json` is a separate configurable query/recovery margin;
+  it does not redefine the `0.1` rounded feature radius;
+- because both the actor triangle and the world triangle participate in the
+  closest-feature query, adjacent faces can each produce contacts. Contact
+  merging and the response-normal rules prevent a shared seam from becoming a
+  repeated sharp bounce, but this is not a topological face weld.
+
+Physical entities now call this same rounded path for world contacts. GLB
+triangles and engine-generated triangles therefore share the same contact
+language once supplied to `collectActorMeshContacts`; the source format does
+not create a separate collision universe.
+
 ---
 

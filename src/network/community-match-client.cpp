@@ -9,6 +9,7 @@
 */
 #include "network/community-match-client.h"
 #include "network/multiplayer-context.h"
+#include "procedural/procedural-world-client.h"
 #include "terminal/terminal-state.h"
 #include "auth/auth-system.h"
 #include "killfeed/killfeed.h"
@@ -18,6 +19,7 @@
 #include "config/camera-config.h"
 #include "camera.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/match-roles.h"
 #include "gui/hud/healthbar-config.h"
 #include "debug/debug-log.h"
 
@@ -86,6 +88,10 @@ void CommunityMatchClient::reset()
     mBloodEnabled = 0;
 
     mActors.clear();
+    mProcedural = ProceduralWorldNetworkState{};
+    // Forget the client-side door handle so a map change cannot leave it
+    // pointing at a reused physical-entity id.
+    clientProceduralWorldReset();
 
     MatchLeaderboard::instance().clear();
     KillfeedManager::instance().clear();
@@ -110,8 +116,14 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mMatchId = packet.duelId;
     mStateVersion = packet.stateVersion;
     mMode = packet.matchMode;
+    // Server-owned procedural-world state. The client never derives room
+    // completion; it stores and renders exactly what the server sent.
+    mProcedural = packet.procedural;
     const Gamemode& modeConfig = GamemodeRegistry::instance().get(mMode);
-    mForceFirstPerson = modeConfig.forceFirstPerson;
+    const MatchRoleDefinition* actorPreset =
+        MatchRoleRegistry::instance().getActorPreset(modeConfig.actorPresetId);
+    mForceFirstPerson = modeConfig.forceFirstPerson ||
+        (actorPreset && actorPreset->forceFirstPerson);
     HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
     if (mForceFirstPerson && !mFirstPersonApplied) {
         mPreviousThirdPerson = THE_CAMERA.thirdPerson;

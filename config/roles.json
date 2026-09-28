@@ -26,26 +26,6 @@
       "weapon_set": "standard",
       "starting_weapon": "revolver",
       "behavior_profile": "nervous"
-    },
-    {
-      "id": "counterstrike_red",
-      "team": 0,
-      "health": 100,
-      "avatar": "jason",
-      "movement_preset": "counterstrike",
-      "weapon_set": "counterstrike_rifles",
-      "starting_weapon": "projectile_rifle",
-      "behavior_profile": "balanced"
-    },
-    {
-      "id": "counterstrike_blue",
-      "team": 1,
-      "health": 100,
-      "avatar": "angel",
-      "movement_preset": "counterstrike",
-      "weapon_set": "counterstrike_rifles",
-      "starting_weapon": "projectile_rifle",
-      "behavior_profile": "balanced"
     }
   ]
 }

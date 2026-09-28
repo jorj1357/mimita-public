@@ -17,7 +17,9 @@ namespace MimitaNet {
 constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 30: ShotEvent/PelletBlastEvent become reliable (eventId+session+ACK) and
 // carry real damage/health; every bullet visual is guaranteed delivery.
-constexpr uint16_t PROTOCOL_VERSION = 35;
+// 36: DuelStatePacket carries the server-authoritative procedural-world state
+// (Infinite Dungeon Slayer) so clients render rooms from server truth.
+constexpr uint16_t PROTOCOL_VERSION = 36;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -1066,6 +1068,34 @@ enum DuelStatePhase : uint8_t
     ,DUEL_PHASE_GO = 7
 };
 
+// Procedural-world room state (Infinite Dungeon Slayer). Rides inside the
+// existing authoritative match-state packet (DuelStatePacket) so there is one
+// replication loop. The client never decides room completion; it only applies
+// this server-owned state and reconstructs room geometry from seed + count.
+enum ProceduralRoomStateNetwork : uint8_t
+{
+    PROCEDURAL_ROOM_WAITING = 0,
+    PROCEDURAL_ROOM_ACTIVE = 1,
+    PROCEDURAL_ROOM_COMPLETE = 2
+};
+
+struct ProceduralWorldNetworkState
+{
+    uint8_t enabled = 0;
+    uint8_t roomState = PROCEDURAL_ROOM_WAITING;
+    uint8_t exitLocked = 0;
+    uint8_t reserved = 0;
+
+    char modeId[32] = {};
+
+    uint32_t seed = 0;
+    uint32_t currentRoom = 0;
+    uint32_t generatedRooms = 0;
+    uint32_t highestAccessibleRoom = 0;
+    uint32_t aliveEncounterActors = 0;
+    uint32_t stateVersion = 0;
+};
+
 struct DuelStatePacket
 {
     PacketHeader header;
@@ -1133,6 +1163,9 @@ struct DuelStatePacket
     uint8_t ragdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
     uint8_t bloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
     uint8_t reserved2[1] = {};
+    // ── Procedural world (Infinite Dungeon Slayer) ──────────────────
+    // Appended section: server-owned room state. All-zero means disabled.
+    ProceduralWorldNetworkState procedural = {};
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a

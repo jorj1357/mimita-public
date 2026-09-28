@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cfloat>
 #include <functional>
 #include <chrono>
 #include <cctype>
@@ -24,6 +25,7 @@
 #include <unordered_set>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/geometric.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include <tinygltf/tiny_gltf.h>
 
@@ -261,3 +263,151 @@ void extractSpawnPointsFromGLB(World& world, const char* path)
 
     printf("[SPAWN GLB] total spawn points extracted: %zu\n", world.spawnPoints.size());
 }
+
+bool loadWorldTemplate(const char* path, World& outTemplate)
+{
+    MapLoadTiming timing;
+    MapLoadMetrics metrics;
+    const std::string resolvedPath = resolveAssetPath(path);
+
+    World candidate;
+    candidate.renderRevision = outTemplate.renderRevision + 1;
+    candidate.mesh = loadGLB(resolvedPath.c_str(), true, &candidate.skyMesh,
+                             &timing, &metrics);
+
+    if (candidate.mesh.verts.empty())
+    {
+        Debug::warn(Debug::Category::World,
+                    "[PROCEDURAL] room template produced no verts path=%s", path);
+        releaseMeshGLResources(candidate.mesh);
+        return false;
+    }
+
+    buildCollisionMeshFromRenderMesh(candidate);
+    buildCollisionChunks(candidate, nullptr);
+
+    releaseMeshGLResources(outTemplate.mesh);
+    outTemplate = std::move(candidate);
+
+    Debug::log(Debug::Category::World,
+        "[PROCEDURAL] room template loaded path=%s verts=%zu collisionTris=%zu textures=%zu\n",
+        path, outTemplate.mesh.verts.size(),
+        outTemplate.collisionMesh.triangles.size(),
+        outTemplate.mesh.ownedTextures.size());
+    return true;
+}
+
+void appendWorldInstance(World& target, const World& templateWorld,
+                         const glm::mat4& transform)
+{
+    const Mesh& src = templateWorld.mesh;
+    Mesh& dst = target.mesh;
+
+    const size_t vertBase = dst.verts.size();
+    const glm::mat3 normalMatrix =
+        glm::transpose(glm::inverse(glm::mat3(transform)));
+
+    // Render vertices: position transformed, normal rotated. Batches keep the
+    // template's shared texture handles (not added to ownedTextures).
+    dst.verts.reserve(dst.verts.size() + src.verts.size());
+    for (const Vertex& v : src.verts)
+    {
+        Vertex out = v;
+        out.pos = glm::vec3(transform * glm::vec4(v.pos, 1.0f));
+        const glm::vec3 n = normalMatrix * v.normal;
+        const float len = glm::length(n);
+        out.normal = len > 0.0001f ? n / len : v.normal;
+        dst.verts.push_back(out);
+    }
+
+    dst.batches.reserve(dst.batches.size() + src.batches.size());
+    for (const Mesh::Batch& sb : src.batches)
+    {
+        Mesh::Batch b = sb;
+        b.first = sb.first + vertBase;
+        if (b.hasBounds)
+        {
+            const glm::vec3& mn = sb.boundsMin;
+            const glm::vec3& mx = sb.boundsMax;
+            glm::vec3 lo(FLT_MAX);
+            glm::vec3 hi(-FLT_MAX);
+            for (int i = 0; i < 8; ++i)
+            {
+                glm::vec3 corner((i & 1) ? mx.x : mn.x,
+                                 (i & 2) ? mx.y : mn.y,
+                                 (i & 4) ? mx.z : mn.z);
+                corner = glm::vec3(transform * glm::vec4(corner, 1.0f));
+                lo = glm::min(lo, corner);
+                hi = glm::max(hi, corner);
+            }
+            b.boundsMin = lo;
+            b.boundsMax = hi;
+        }
+        dst.batches.push_back(b);
+    }
+
+    // Collision triangles from the template's already-decimated collision mesh.
+    CollisionMeshCache& dc = target.collisionMesh;
+    const CollisionMeshCache& sc = templateWorld.collisionMesh;
+    const bool hadTriangles = !dc.triangles.empty();
+    glm::vec3 lo = hadTriangles ? dc.boundsMin : glm::vec3(FLT_MAX);
+    glm::vec3 hi = hadTriangles ? dc.boundsMax : glm::vec3(-FLT_MAX);
+    dc.triangles.reserve(dc.triangles.size() + sc.triangles.size());
+    for (const CollisionTriangle& t : sc.triangles)
+    {
+        CollisionTriangle nt;
+        nt.a = glm::vec3(transform * glm::vec4(t.a, 1.0f));
+        nt.b = glm::vec3(transform * glm::vec4(t.b, 1.0f));
+        nt.c = glm::vec3(transform * glm::vec4(t.c, 1.0f));
+        const glm::vec3 n = normalMatrix * t.normal;
+        const float len = glm::length(n);
+        nt.normal = len > 0.0001f ? n / len : t.normal;
+        dc.triangles.push_back(nt);
+        lo = glm::min(lo, glm::min(nt.a, glm::min(nt.b, nt.c)));
+        hi = glm::max(hi, glm::max(nt.a, glm::max(nt.b, nt.c)));
+    }
+    if (!sc.triangles.empty())
+    {
+        dc.boundsMin = lo;
+        dc.boundsMax = hi;
+    }
+
+    buildCollisionChunks(target, nullptr);
+    target.renderRevision += 1;
+}
+
+void truncateWorldInstances(World& target, size_t baseVertCount,
+                            size_t baseBatchCount, size_t baseCollisionCount)
+{
+    Mesh& mesh = target.mesh;
+    if (baseVertCount < mesh.verts.size())
+        mesh.verts.resize(baseVertCount);
+    if (baseBatchCount < mesh.batches.size())
+        mesh.batches.resize(baseBatchCount);
+
+    CollisionMeshCache& c = target.collisionMesh;
+    if (baseCollisionCount < c.triangles.size())
+        c.triangles.resize(baseCollisionCount);
+
+    if (c.triangles.empty())
+    {
+        c.boundsMin = glm::vec3(0.0f);
+        c.boundsMax = glm::vec3(0.0f);
+    }
+    else
+    {
+        glm::vec3 lo(FLT_MAX);
+        glm::vec3 hi(-FLT_MAX);
+        for (const CollisionTriangle& t : c.triangles)
+        {
+            lo = glm::min(lo, glm::min(t.a, glm::min(t.b, t.c)));
+            hi = glm::max(hi, glm::max(t.a, glm::max(t.b, t.c)));
+        }
+        c.boundsMin = lo;
+        c.boundsMax = hi;
+    }
+
+    buildCollisionChunks(target, nullptr);
+    target.renderRevision += 1;
+}
+

@@ -18,6 +18,8 @@
 struct MatchRoleDefinition
 {
     std::string id;
+    std::string displayName;
+    bool actorPreset = false;
     int team = -1;  // preferred team, -1 = any
     int health = 0; // 0 = no override (use default/legacy max health)
     std::string movementPreset;
@@ -25,6 +27,12 @@ struct MatchRoleDefinition
     std::string startingWeapon;
     std::string behaviorProfile;
     std::string avatarName;
+    bool avatarForced = false;
+    std::vector<std::string> allowedAvatars;
+    std::vector<int> allowedTeams;
+    float cameraFov = 0.0f;
+    bool forceFov = false;
+    bool forceFirstPerson = false;
 };
 
 class MatchRoleRegistry
@@ -33,10 +41,13 @@ public:
     static MatchRoleRegistry& instance();
 
     bool load(const std::string& path = "config/roles.json");
+    bool loadActorPresets(const std::string& directory = "config/actor-presets");
     bool pollReload();
 
     const MatchRoleDefinition* get(const std::string& id) const;
+    const MatchRoleDefinition* getActorPreset(const std::string& id) const;
     const std::vector<MatchRoleDefinition>& all() const { return mRoles; }
+    std::vector<const MatchRoleDefinition*> actorPresets() const;
 
     // Stable 1-based role index for the wire: 0 = none, 1..N = mRoles[i-1].
     int indexOf(const std::string& id) const;
@@ -50,6 +61,9 @@ private:
     std::string mPath = "config/roles.json";
     std::filesystem::file_time_type mLastWrite{};
     bool mWatchLogged = false;
+    std::string mPresetDirectory = "config/actor-presets";
+    std::unordered_map<std::string, std::filesystem::file_time_type> mPresetWrites;
+    std::string mSelectedActorPreset;
 };
 
 // Cache of parsed role movement presets. A preset name is resolved once through

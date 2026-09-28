@@ -16,31 +16,76 @@
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "physics/physics-types.h"
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/physics-collision.h"
 
 // Static never moves; Kinematic is moved by its owner (transform is set, velocity
-// derived) and is infinite-mass; Dynamic is free to be moved by physics later.
+// derived) and is infinite-mass; Dynamic is integrated by the fixed-step rigid
+// body owner with gravity, inertia, contact response, and sleep.
 enum class PhysicalEntityMotion : uint8_t {
     Static,
     Kinematic,
     Dynamic
 };
 
+enum class PhysicalEntityShape : uint8_t {
+    TriangleMesh,
+    Box,
+    Sphere,
+    Capsule,
+    Cylinder,
+    Cone
+};
+
 struct PhysicalEntity {
     uint32_t id = 0;
+    std::string persistenceId;
+    uint32_t ownerId = 0;
+    uint32_t networkOwnerId = 0;
     PhysicalEntityMotion motion = PhysicalEntityMotion::Static;
+    PhysicalEntityShape shape = PhysicalEntityShape::TriangleMesh;
     glm::mat4 previousTransform{1.0f};
     glm::mat4 transform{1.0f};
+    glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 velocity{0.0f};
+    glm::vec3 angularVelocity{0.0f};
+    glm::vec3 centerOfMass{0.0f};
+    glm::vec3 halfExtents{0.5f};
+    glm::vec3 inertia{1.0f};
+    glm::vec3 inverseInertia{1.0f};
+    float mass = 1.0f;
+    float density = 1.0f;
+    float friction = 0.6f;
+    float restitution = 0.0f;
+    float gravityScale = 1.0f;
+    float linearDamping = 0.15f;
+    float angularDamping = 2.0f;
+    float maxAngularSpeed = 8.0f;
+    float rightingStrength = 18.0f;
+    float restingUprightDot = 0.985f;
+    float sleepLinearThreshold = 0.25f;
+    float sleepAngularThreshold = 0.25f;
+    uint16_t sleepTicks = 0;
+    uint16_t sleepRequiredTicks = 45;
+    uint8_t supportGraceTicks = 0;
+    float strength = 100.0f;
+    float health = 100.0f;
+    bool destructible = false;
+    bool sleeping = false;
+    uint64_t lastPlayerPushTick = 0;
     std::vector<CollisionTriangle> localTriangles;   // entity-local
     uint32_t materialId = 0;
+    std::string modelPath;
+    std::string texturePath;
     bool collidesWithActors = true;
 };
 
 class Camera;
+class Player;
+struct World;
 
 class PhysicalEntitySystem {
 public:
@@ -65,18 +110,37 @@ public:
 
     // Advances every kinematic entity that has a nonzero velocity by velocity*dt,
     // and snaps previousTransform to the pre-move pose. Called once per tick.
-    void advanceKinematics(float dt);
+    void advanceKinematics(float dt, const World& world);
+
+    // Applies the local player's horizontal contact impulse to Dynamic
+    // entities. The actor solver calls this after its authoritative movement
+    // step so a push is visible on the next fixed physics tick.
+    void applyPlayerPush(const Player& player, float dt);
+
+    // Applies one contact-owned player impulse immediately, before the actor
+    // response projects the player's velocity away from the object.
+    void applyPlayerContactPush(uint32_t entityId, const Player& player,
+                                const glm::vec3& point,
+                                const glm::vec3& contactNormal);
 
     PhysicalEntity* find(uint32_t id);
 
+    // Removes one entity by id. Returns true when an entity was removed.
+    bool remove(uint32_t id);
+
     const std::vector<PhysicalEntity>& entities() const { return mEntities; }
     std::vector<PhysicalEntity>& entities() { return mEntities; }
+
+    uint64_t simulationTick() const { return mSimulationTick; }
+    float renderAlpha() const;
 
 private:
     PhysicalEntitySystem() = default;
 
     std::vector<PhysicalEntity> mEntities;
     uint32_t mNextId = 1;
+    double mFixedAccumulator = 0.0;
+    uint64_t mSimulationTick = 0;
 };
 
 // Appends the 12 triangles of an axis-aligned box centered at `center` with half
@@ -92,10 +156,12 @@ struct EntityActorContact {
     uint32_t entityId = 0;
 };
 
+// TODO-DELETE 2026-09-28 [Phase 2]: remove the temporary World allocation in
+// collectActorEntityContacts and route entity-local triangles through the
+// shared cached candidate/narrowphase path once Phase 3 owns object shapes.
 // Tests every actor collision mesh against nearby moving physical entities,
-// reusing the one actor-triangle contact routine (a temporary world view of the
-// entity's world-space triangles). Dynamic entities thus participate alongside
-// static world triangles in the same canonical contact vocabulary.
+// reusing the one actor-triangle contact routine. Dynamic entities thus
+// participate alongside static world triangles in the same contact vocabulary.
 std::vector<EntityActorContact> collectActorEntityContacts(
     const std::vector<ActorCollisionMesh>& meshes,
     const std::vector<PhysicalEntity>& entities,

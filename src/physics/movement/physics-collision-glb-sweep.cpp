@@ -211,6 +211,12 @@ bool sweepSphereTriangle(
         n = -n;
         dist = -dist;
     }
+    // A rounded actor can reach a floor triangle through its edge or vertex
+    // before the projected center reaches the face. For walkable surfaces,
+    // that edge normal is not the surface the player should bounce from: it
+    // can manufacture a sideways launch on an otherwise flat floor. Keep the
+    // rounded edge/point normals for walls and non-walkable geometry.
+    const bool walkableFace = n.z >= MAX_WALKABLE_SLOPE_DOT;
 
     float denom = glm::dot(move, n);
     if (denom < -ALMOST_ZERO)
@@ -240,7 +246,7 @@ bool sweepSphereTriangle(
             if (sweepSphereEdge(start, move, radius, ep[0], ep[1], t, en, epPt) && t < bestT)
             {
                 bestT = t;
-                bestN = en;
+                bestN = walkableFace ? n : en;
                 bestP = epPt;
                 hit = true;
             }
@@ -256,7 +262,7 @@ bool sweepSphereTriangle(
         if (sweepSpherePoint(start, move, radius, pt, t, pn, pp) && t < bestT)
         {
             bestT = t;
-            bestN = pn;
+            bestN = walkableFace ? n : pn;
             bestP = pp;
             hit = true;
         }

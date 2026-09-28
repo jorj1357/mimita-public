@@ -40,6 +40,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "physics/physical-entity.h"
+#include "procedural/procedural-world-client.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "gui/hud/chat-bubble.h"
 #include "game/duel.h"
@@ -111,8 +112,12 @@ void engineTickCombat(Engine& engine, float dt)
         NpcCombat::updateNpcProjectiles(world, npcSystem, camera, player, dt);
     }
     if (!replayPlaybackActive) {
+        // Mirror the server-authoritative procedural exit barrier as a client
+        // physical entity before the fixed-step actor/physics update runs.
+        clientProceduralWorldTick();
+        MIMITA_PERF_SCOPE("Combat::PhysicsEntities");
         PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);
-        PhysicalEntitySystem::instance().advanceKinematics(dt);
+        PhysicalEntitySystem::instance().advanceKinematics(dt, world);
     }
     if (!replayPlaybackActive) {
         // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.

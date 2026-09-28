@@ -151,6 +151,9 @@ bool solveActorTriangleCollision(
     {
         // Shift the whole capture (safe + desired) by the accumulated
         // correction so the sweep direction stays the tick's real motion.
+        // TODO-DELETE 2026-09-28 [Phase 2]: replace this per-iteration mesh
+        // vector copy with cached transformed/scratch storage after runtime
+        // profiling proves the shared cache is safe for every caller.
         std::vector<ActorCollisionMesh> meshes = baseMeshes;
         const glm::mat4 shift = glm::translate(glm::mat4(1.0f), accumulated);
         for (ActorCollisionMesh& m : meshes)
@@ -298,8 +301,33 @@ bool solveActorTriangleCollision(
         // player velocity. Moving-entity support carry is handled separately
         // below from surfaceVelocity; explosions and weapon forces remain
         // separate gameplay impulses.
-        respondVelocityAgainstNormal(player, responseNormal, c.sweepDelta, true,
-                                     c.penetration, c.label, c.triangleIndex);
+        const bool dynamicEntity = c.entityId != 0 && c.surfaceMass > 0.0f;
+        if (dynamicEntity)
+            PhysicalEntitySystem::instance().applyPlayerContactPush(
+                c.entityId, player, c.point, responseNormal);
+        if (dynamicEntity && CollisionConfig::instance().bounceEnabled())
+        {
+            constexpr float kPlayerMass = 80.0f;
+            const float objectMass = std::max(c.surfaceMass, 0.0001f);
+            const glm::vec3 incoming = player.vel + player.externalImpulse;
+            const float normalSpeed = glm::dot(incoming, responseNormal);
+            if (normalSpeed < 0.0f)
+            {
+                const float restitution = glm::clamp(c.surfaceRestitution, 0.0f, 1.0f);
+                const float impulse = -(1.0f + restitution) * normalSpeed /
+                    (1.0f / kPlayerMass + 1.0f / objectMass);
+                player.vel += responseNormal * (impulse / kPlayerMass);
+            }
+            else
+            {
+                projectVelocityAgainstNormal(player, responseNormal);
+            }
+        }
+        else
+        {
+            respondVelocityAgainstNormal(player, responseNormal, c.sweepDelta, true,
+                                         c.penetration, c.label, c.triangleIndex);
+        }
 
         // Sliding: strip the blocked component from the intended move.
         const float vn = glm::dot(result.remainingMovement, responseNormal);
@@ -383,6 +411,11 @@ bool runActorTriangleCollisionStep(
 
     collisionState.supportEntityId = supportId;
     collisionState.supportVelocity = supportVelocity;
+
+    // Dynamic physical entities receive the actor's horizontal contact impulse
+    // after the actor manifold has been solved. This preserves one collision
+    // owner while allowing a player to push a crate on the next fixed tick.
+    PhysicalEntitySystem::instance().applyPlayerPush(player, dt);
 
     // Body-contact spark: same boundary as the legacy body phase, fed by the
     // solver's final contact point. The weapon label does not spawn a body spark.

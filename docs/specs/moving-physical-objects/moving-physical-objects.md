@@ -18,6 +18,40 @@ todo 9 8 2026 1039 est jorj - do we need map editor fo rthis?
 **Created:** 2026-09-07T17:06:00-04:00  
 **Last updated:** 2026-09-09T10:01:00-04:00
 
+## Current branch implementation audit — 2026-09-28
+
+The current working branch uses `PhysicalEntitySystem` as the generic moving
+object owner. It is not yet networked or disk-persistent, but the active crate
+path now has one runtime record containing transform/orientation, linear and
+angular velocity, center of mass, box mass properties, density, friction,
+restitution, gravity/damping, health, render asset paths, ownership metadata,
+and sleep state.
+
+The current crate test object is an engine-generated 5 m box textured with
+`assets/textureshq/clouds11.png`. Its collision is twelve generated triangles,
+and its world contacts use the rounded actor-triangle feature path described in
+`docs/architecture/collision/collision.md`. The crate is now Dynamic: gravity,
+world correction, angular impulse response, player pushing, and delayed
+velocity-based sleeping run at the fixed 60 Hz object tick.
+
+The current network implementation remains server-authoritative for gameplay,
+but this branch has no physical-entity snapshot/impulse packet owner yet.
+Client-side crate prediction and reconciliation therefore remain a later
+network slice rather than an invented parallel transport path.
+
+For the current generated crate, density is the authoritative material input
+for mass: `mass = density * volume`. The fixed-volume 5 m crate therefore gets
+harder to push as density rises; `crate_mass` is only a convenience command
+that converts back into density. Resting is not allowed to sleep while the box
+is balanced on an edge: supported dynamic boxes receive a small center-of-mass
+righting torque and must be upright before entering sleep.
+
+Dynamic physical entities also run a fixed-tick pair-contact pass. Generated
+box crates currently use their world AABBs for broad pair rejection and a
+minimum-overlap axis for the pair normal, then exchange normal impulse using
+their inverse masses and restitution. This is the first crate-to-crate slice;
+exact imported-mesh pair manifolds remain a later shape-cache refinement.
+
 ## 1. Purpose
 
 MiMITA should treat the simulated world as a unified physical system rather than a collection of unrelated feature-specific systems.

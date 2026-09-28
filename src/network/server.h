@@ -585,6 +585,11 @@ struct ServerNpc
     // 10 seconds of broadcast history at 60 Hz so hit rewind always has the
     // exact pose the shooter rendered, even across long lag/blackout windows.
     static constexpr size_t MAX_POS_HISTORY = 600;
+    // ── Procedural world membership ─────────────────────────────────
+    // 0 = ordinary NPC (sandbox/gamemode). >= 1 = encounter NPC owned by the
+    // procedural world's room with this number. Procedural encounters never
+    // respawn and are removed together by procedural_world_stop.
+    uint32_t proceduralRoomNumber = 0;
 };
 
 // Shared actor lifecycle adapter for the authoritative NPC body. The NPC
@@ -731,6 +736,22 @@ std::string uniquePlayerName(
 
 // World loading
 bool loadHeadlessWorld(const char* path, HeadlessWorld& world);
+
+// Rebuilds the HeadlessWorld collision broadphase (chunks + sub-grids) from its
+// current triangle list. Shared by map load and procedural room appends.
+void buildHeadlessCollisionChunks(HeadlessWorld& world);
+
+// Appends a transformed copy of a template's collision triangles to an existing
+// HeadlessWorld and rebuilds its broadphase and bounds. Used by the server to
+// place procedural room instances so player/projectile collision matches the
+// client's appended World geometry.
+void appendHeadlessWorldInstance(HeadlessWorld& target,
+                                 const HeadlessWorld& templateWorld,
+                                 const glm::mat4& transform);
+
+// Removes appended triangles by truncating to baseTriangleCount and rebuilding
+// the broadphase and bounds.
+void truncateHeadlessWorld(HeadlessWorld& target, size_t baseTriangleCount);
 
 // Broadphase: gather candidate triangle indices intersecting an AABB
 // Uses HeadlessWorld's uniform spatial grid. Shared by player and projectile collision.

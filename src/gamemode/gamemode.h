@@ -74,6 +74,7 @@ struct Gamemode {
     // role id -> number of participants to assign that role. Empty means the
     // match falls back to the legacy team assignment and no roles.
     std::vector<std::pair<std::string, int>> roleCounts;
+    std::string actorPresetId;
     // ── Elimination / win rules (optional) ──────────────────────────
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
     // when only one team (or, in FFA, one actor) still has an in-play actor.

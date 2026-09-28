@@ -10,6 +10,7 @@
 #include "map/map-loader-collision.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/physics-collision-glb-sweep.h"
 #include "debug/debug-log.h"
 
 static void addStressTriangle(World& world, glm::vec3 a, glm::vec3 b, glm::vec3 c)
@@ -283,6 +284,29 @@ bool collisionStressSelfTest(std::string* outSummary)
         {
             summary += "SKIP [COLLISION STRESS] bounce disabled in config\n";
         }
+    }
+
+    // A rounded sweep reaching the edge of a walkable floor must keep the
+    // floor face normal. Otherwise the edge normal can launch the actor
+    // sideways from a flat surface.
+    {
+        CollisionTriangle edgeFloor;
+        edgeFloor.a = glm::vec3(0.0f, 0.0f, 0.0f);
+        edgeFloor.b = glm::vec3(1.0f, 0.0f, 0.0f);
+        edgeFloor.c = glm::vec3(0.0f, 1.0f, 0.0f);
+        edgeFloor.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        float hitTime = 1.0f;
+        glm::vec3 hitNormal(0.0f);
+        glm::vec3 hitPoint(0.0f);
+        const bool hit = sweepSphereTriangle(
+            glm::vec3(1.15f, 0.2f, 1.0f), glm::vec3(0.0f, 0.0f, -2.0f),
+            0.25f, edgeFloor, hitTime, hitNormal, hitPoint);
+        const bool floorNormal = hit && hitNormal.z > 0.95f &&
+                                 std::fabs(hitNormal.x) < 0.05f &&
+                                 std::fabs(hitNormal.y) < 0.05f;
+        ok = ok && floorNormal;
+        summary += floorNormal ? "PASS " : "FAIL ";
+        summary += "[COLLISION STRESS] walkable floor edge keeps face normal\n";
     }
 
     // Real mesh-triangle limb collision: an arm triangle crossing the floor

@@ -139,6 +139,7 @@ void registerCursorCommands();
 #include "terminal/weapon-bench-commands.h"
 #include "terminal/npc-commands.h"
 #include "terminal/crate-commands.h"
+#include "terminal/procedural-world-commands.h"
 #include "terminal/duel-commands.h"
 #include "terminal/actor-commands.h"
 #include "terminal/editor-commands.h"
@@ -241,6 +242,7 @@ void gameInitSubsystems(Engine& engine)
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
     MatchRoleRegistry::instance().load("config/roles.json");
+    MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
@@ -419,6 +421,7 @@ void gameInitSubsystems(Engine& engine)
 
     registerNpcCommands();
     registerCrateCommands();
+    registerProceduralWorldCommands();
     registerTransformDebugCommands();
 
     registerEditorCommands();

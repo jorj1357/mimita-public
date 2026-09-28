@@ -55,3 +55,23 @@ bool loadWorldFromGLB(
 );
 
 void extractSpawnPointsFromGLB(World& world, const char* path);
+
+// ── Reusable GLB-instance append ────────────────────────────────────────
+// Loads a GLB once into a standalone template World. The template owns its own
+// GL textures, shared by every instance appended from it, and must stay alive
+// while those instances are in the live World. Side effects of a full map load
+// (analytics, weapon preload, spawn extraction) are intentionally skipped.
+bool loadWorldTemplate(const char* path, World& outTemplate);
+
+// Appends a transformed copy of the template's render geometry and collision
+// triangles to `target`, then rebuilds the cached collision broadphase and
+// bumps renderRevision so the GPU mesh re-uploads. Batch texture handles are
+// reused from the template and are NOT added to target.mesh.ownedTextures.
+void appendWorldInstance(World& target, const World& templateWorld,
+                         const glm::mat4& transform);
+
+// Removes instances appended by appendWorldInstance by truncating the target's
+// render and collision arrays back to the recorded base counts, then rebuilding
+// the broadphase. The template's textures are not touched.
+void truncateWorldInstances(World& target, size_t baseVertCount,
+                            size_t baseBatchCount, size_t baseCollisionCount);

@@ -69,6 +69,11 @@ public:
     };
     const std::vector<ReplicatedActorIdentity>& actorIdentities() const { return mActors; }
 
+    // ── Procedural world (Infinite Dungeon Slayer) ───────────────────
+    // Server-owned room lifecycle state plus seed and generated-room counts.
+    // The client only applies this; it never decides room completion.
+    const ProceduralWorldNetworkState& procedural() const { return mProcedural; }
+
 private:
     std::string mMode;
     uint8_t mPhase = DUEL_PHASE_WAITING;
@@ -103,6 +108,7 @@ private:
     uint8_t mBloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
     bool mOverridesApplied = false;  // true if backups saved + overrides applied
     std::vector<ReplicatedActorIdentity> mActors;
+    ProceduralWorldNetworkState mProcedural;
 };
 
 }

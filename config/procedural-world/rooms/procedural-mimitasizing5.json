@@ -1,0 +1,21 @@
+{
+  "id": "procedural_mimitasizing5",
+  "geometry": "assets/maps/procedural-mimitasizing5-infdgnslr-v3.glb",
+  "entrance": {
+    "position": [-45.0, 0.0, 1.0],
+    "direction": [1.0, 0.0, 0.0]
+  },
+  "exit": {
+    "position": [51.0, 0.0, 30.5],
+    "direction": [1.0, 0.0, 0.0]
+  },
+  "enemySpawns": [
+    [-20.0, -20.0, 1.0],
+    [20.0, -20.0, 1.0],
+    [0.0, 0.0, 1.0],
+    [-20.0, 20.0, 1.0],
+    [20.0, 20.0, 1.0]
+  ],
+  "boundsMin": [-52.0, -52.0, -1.0],
+  "boundsMax": [52.0, 52.0, 103.0]
+}

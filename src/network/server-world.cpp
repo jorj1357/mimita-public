@@ -230,75 +230,9 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
     }
 
     // Build uniform spatial grid for broadphase collision queries
-    {
-        constexpr float CS = 6.0f;
-        constexpr int MAX_CHUNKS_PER_TRIANGLE = 256;
-        world.collisionChunkSize = CS;
-        world.collisionChunks.clear();
-        world.collisionLargeTriangles.clear();
-
-        decimateCollisionTriangleList(world.triangles,
-                                      CollisionLodConfig::instance().cellSize());
-
-        for (int i = 0; i < (int)world.triangles.size(); ++i)
-        {
-            AABB tb = makeTriangleAABB(world.triangles[i]);
-            glm::ivec3 c0 = collisionChunkCoord(tb.min, CS);
-            glm::ivec3 c1 = collisionChunkCoord(tb.max, CS);
-            int chunkCount = (c1.x - c0.x + 1) * (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
-            if (chunkCount > MAX_CHUNKS_PER_TRIANGLE)
-            {
-                world.collisionLargeTriangles.push_back(i);
-                continue;
-            }
-            for (int x = c0.x; x <= c1.x; ++x)
-            for (int y = c0.y; y <= c1.y; ++y)
-            for (int z = c0.z; z <= c1.z; ++z)
-                world.collisionChunks[glm::ivec3(x, y, z)].push_back(i);
-        }
-        printf("%s [SERVER WORLD] built collision grid: chunks=%zu largeTris=%zu\n",
-               serverTimestamp(), world.collisionChunks.size(), world.collisionLargeTriangles.size());
-
-        // Second-level sub-grid: divide each chunk into 4^3 sub-cells so projectile
-        // broadphase near dense geometry only tests touched sub-cells.
-        constexpr int SUBDIV = 4;
-        const float subSize = CS / (float)SUBDIV;
-        uint64_t totalSubRefs = 0;
-        for (const auto& kv : world.collisionChunks)
-        {
-            const glm::ivec3 chunkCoord = kv.first;
-            const glm::vec3 chunkMin = glm::vec3(chunkCoord) * CS;
-            HeadlessSubGrid sub;
-            sub.subSize = subSize;
-            for (int triIdx : kv.second)
-            {
-                if (triIdx < 0 || triIdx >= (int)world.triangles.size())
-                    continue;
-                const CollisionTriangle& tri = world.triangles[triIdx];
-                glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
-                glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
-                glm::ivec3 s0((int)std::floor((mn.x - chunkMin.x) / subSize),
-                              (int)std::floor((mn.y - chunkMin.y) / subSize),
-                              (int)std::floor((mn.z - chunkMin.z) / subSize));
-                glm::ivec3 s1((int)std::floor((mx.x - chunkMin.x) / subSize),
-                              (int)std::floor((mx.y - chunkMin.y) / subSize),
-                              (int)std::floor((mx.z - chunkMin.z) / subSize));
-                s0 = glm::clamp(s0, glm::ivec3(0), glm::ivec3(SUBDIV - 1));
-                s1 = glm::clamp(s1, glm::ivec3(0), glm::ivec3(SUBDIV - 1));
-                for (int x = s0.x; x <= s1.x; ++x)
-                for (int y = s0.y; y <= s1.y; ++y)
-                for (int z = s0.z; z <= s1.z; ++z)
-                {
-                    sub.cells[glm::ivec3(x, y, z)].push_back(triIdx);
-                    ++totalSubRefs;
-                }
-            }
-            world.collisionSubGrids[chunkCoord] = std::move(sub);
-        }
-        printf("%s [SERVER WORLD] built collision subgrids: %zu subSize=%.2f totalSubRefs=%llu\n",
-               serverTimestamp(), world.collisionSubGrids.size(), subSize,
-               (unsigned long long)totalSubRefs);
-    }
+    decimateCollisionTriangleList(world.triangles,
+                                  CollisionLodConfig::instance().cellSize());
+    buildHeadlessCollisionChunks(world);
 
     printf("%s [SERVER WORLD] loaded map collision triangles=%zu spawnpoints=%zu bounds=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
            serverTimestamp(), world.triangles.size(), world.spawnPoints.size(),
@@ -306,5 +240,127 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
            world.boundsMax.x, world.boundsMax.y, world.boundsMax.z);
     return !world.triangles.empty();
 }
+
+void buildHeadlessCollisionChunks(HeadlessWorld& world)
+{
+    constexpr float CS = 6.0f;
+    constexpr int MAX_CHUNKS_PER_TRIANGLE = 256;
+    world.collisionChunkSize = CS;
+    world.collisionChunks.clear();
+    world.collisionLargeTriangles.clear();
+    world.collisionSubGrids.clear();
+
+    for (int i = 0; i < (int)world.triangles.size(); ++i)
+    {
+        AABB tb = makeTriangleAABB(world.triangles[i]);
+        glm::ivec3 c0 = collisionChunkCoord(tb.min, CS);
+        glm::ivec3 c1 = collisionChunkCoord(tb.max, CS);
+        int chunkCount = (c1.x - c0.x + 1) * (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
+        if (chunkCount > MAX_CHUNKS_PER_TRIANGLE)
+        {
+            world.collisionLargeTriangles.push_back(i);
+            continue;
+        }
+        for (int x = c0.x; x <= c1.x; ++x)
+        for (int y = c0.y; y <= c1.y; ++y)
+        for (int z = c0.z; z <= c1.z; ++z)
+            world.collisionChunks[glm::ivec3(x, y, z)].push_back(i);
+    }
+    printf("%s [SERVER WORLD] built collision grid: chunks=%zu largeTris=%zu\n",
+           serverTimestamp(), world.collisionChunks.size(), world.collisionLargeTriangles.size());
+
+    // Second-level sub-grid: divide each chunk into 4^3 sub-cells so projectile
+    // broadphase near dense geometry only tests touched sub-cells.
+    constexpr int SUBDIV = 4;
+    const float subSize = CS / (float)SUBDIV;
+    uint64_t totalSubRefs = 0;
+    for (const auto& kv : world.collisionChunks)
+    {
+        const glm::ivec3 chunkCoord = kv.first;
+        const glm::vec3 chunkMin = glm::vec3(chunkCoord) * CS;
+        HeadlessSubGrid sub;
+        sub.subSize = subSize;
+        for (int triIdx : kv.second)
+        {
+            if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+                continue;
+            const CollisionTriangle& tri = world.triangles[triIdx];
+            glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
+            glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+            glm::ivec3 s0((int)std::floor((mn.x - chunkMin.x) / subSize),
+                          (int)std::floor((mn.y - chunkMin.y) / subSize),
+                          (int)std::floor((mn.z - chunkMin.z) / subSize));
+            glm::ivec3 s1((int)std::floor((mx.x - chunkMin.x) / subSize),
+                          (int)std::floor((mx.y - chunkMin.y) / subSize),
+                          (int)std::floor((mx.z - chunkMin.z) / subSize));
+            s0 = glm::clamp(s0, glm::ivec3(0), glm::ivec3(SUBDIV - 1));
+            s1 = glm::clamp(s1, glm::ivec3(0), glm::ivec3(SUBDIV - 1));
+            for (int x = s0.x; x <= s1.x; ++x)
+            for (int y = s0.y; y <= s1.y; ++y)
+            for (int z = s0.z; z <= s1.z; ++z)
+            {
+                sub.cells[glm::ivec3(x, y, z)].push_back(triIdx);
+                ++totalSubRefs;
+            }
+        }
+        world.collisionSubGrids[chunkCoord] = std::move(sub);
+    }
+    printf("%s [SERVER WORLD] built collision subgrids: %zu subSize=%.2f totalSubRefs=%llu\n",
+           serverTimestamp(), world.collisionSubGrids.size(), subSize,
+           (unsigned long long)totalSubRefs);
+}
+
+void appendHeadlessWorldInstance(HeadlessWorld& target,
+                                 const HeadlessWorld& templateWorld,
+                                 const glm::mat4& transform)
+{
+    const glm::mat3 normalMatrix =
+        glm::transpose(glm::inverse(glm::mat3(transform)));
+
+    target.triangles.reserve(target.triangles.size() + templateWorld.triangles.size());
+    for (const CollisionTriangle& t : templateWorld.triangles)
+    {
+        CollisionTriangle nt;
+        nt.a = glm::vec3(transform * glm::vec4(t.a, 1.0f));
+        nt.b = glm::vec3(transform * glm::vec4(t.b, 1.0f));
+        nt.c = glm::vec3(transform * glm::vec4(t.c, 1.0f));
+        const glm::vec3 n = normalMatrix * t.normal;
+        const float len = glm::length(n);
+        nt.normal = len > 0.0001f ? n / len : t.normal;
+        target.triangles.push_back(nt);
+
+        target.boundsMin = glm::min(target.boundsMin, glm::min(nt.a, glm::min(nt.b, nt.c)));
+        target.boundsMax = glm::max(target.boundsMax, glm::max(nt.a, glm::max(nt.b, nt.c)));
+    }
+
+    buildHeadlessCollisionChunks(target);
+}
+
+void truncateHeadlessWorld(HeadlessWorld& target, size_t baseTriangleCount)
+{
+    if (baseTriangleCount < target.triangles.size())
+        target.triangles.resize(baseTriangleCount);
+
+    if (target.triangles.empty())
+    {
+        target.boundsMin = glm::vec3(0.0f);
+        target.boundsMax = glm::vec3(0.0f);
+    }
+    else
+    {
+        glm::vec3 lo(FLT_MAX);
+        glm::vec3 hi(-FLT_MAX);
+        for (const CollisionTriangle& t : target.triangles)
+        {
+            lo = glm::min(lo, glm::min(t.a, glm::min(t.b, t.c)));
+            hi = glm::max(hi, glm::max(t.a, glm::max(t.b, t.c)));
+        }
+        target.boundsMin = lo;
+        target.boundsMax = hi;
+    }
+
+    buildHeadlessCollisionChunks(target);
+}
+
 
 } // namespace MimitaNet

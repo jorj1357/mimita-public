@@ -1,0 +1,18 @@
+{
+  "default_seed": 583294,
+  "modes": {
+    "infinite_dungeon_slayer": {
+      "id": "infinite_dungeon_slayer",
+      "name": "Infinite Dungeon Slayer",
+      "room": "procedural_mimitasizing5",
+      "enemies_per_room": 5,
+      "spacing": 104.0,
+      "origin": [0.0, 1000.0, 0.0],
+      "axis": [1.0, 0.0, 0.0],
+      "door_half_extents": [1.5, 13.0, 30.0]
+    }
+  },
+  "rooms": {
+    "procedural_mimitasizing5": "config/procedural-world/rooms/procedural-mimitasizing5.json"
+  }
+}

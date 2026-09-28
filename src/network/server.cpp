@@ -271,6 +271,7 @@ int runServer(const LaunchOptions& options)
     CommunityServerConfig::instance().load();
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
     MatchRoleRegistry::instance().load("config/roles.json");
+    MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
