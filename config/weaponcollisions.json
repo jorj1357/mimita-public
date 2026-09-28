@@ -147,7 +147,7 @@
   "projectile_rifle": {
     "enabled": true,
     "visible": false,
-    "collision_skin": 0.05,
+    "collision_skin": 0.02,
     "source": "capsule",
     "capsule": {
       "enabled": true,

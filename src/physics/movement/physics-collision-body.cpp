@@ -233,6 +233,19 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
 
             const CollisionTriangle& tri = world.collisionMesh.triangles[triIdx];
 
+            // The union gather is shared by all weapon samples, but a revolver
+            // capsule can still contain several samples while a slope chunk
+            // contains many triangles. Reject triangles outside this sample's
+            // swept sphere before paying for the narrowphase test.
+            const float queryRadius = bs.radius + skin;
+            AABB sphereBounds;
+            sphereBounds.min = glm::min(bs.center, bs.center + bs.sweepDelta) -
+                               glm::vec3(queryRadius);
+            sphereBounds.max = glm::max(bs.center, bs.center + bs.sweepDelta) +
+                               glm::vec3(queryRadius);
+            if (!overlaps(sphereBounds, makeTriangleAABB(tri)))
+                continue;
+
             // Sweep test: skip for static spheres (no movement delta)
             // to avoid paying for sweepSphereTriangle when it always early-outs.
             if (glm::dot(bs.sweepDelta, bs.sweepDelta) > 0.000001f)

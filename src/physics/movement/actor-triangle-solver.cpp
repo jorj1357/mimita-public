@@ -24,6 +24,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "physics/config.h"
+#include "config/collision-config.h"
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/physical-entity.h"
@@ -122,6 +123,13 @@ bool solveActorTriangleCollision(
     if (baseMeshes.empty())
         return false;
 
+    // Weapon collision is intentionally approximate on the active path: the
+    // JSON-defined spheres/capsules are stable, tunable hitboxes and avoid
+    // render-triangle corner normals. Keep this separate from body triangles
+    // so the actor solver still owns one authoritative response manifold.
+    const std::vector<BodyWeaponSphere> weaponSpheres =
+        collectBodyWeaponSpheres(player, false);
+
     AABB box = makeSweptActorMeshAABB(baseMeshes, desiredMovement);
     if (!finiteAabb(box))
         return false;
@@ -129,7 +137,7 @@ bool solveActorTriangleCollision(
     box.max += glm::vec3(0.02f);
 
     std::vector<int> candidates;
-    appendChunkTrianglesForAABB(world, box, COLLISION_GATHER_EXPANSION,
+    appendChunkTrianglesForAABB(world, box, CollisionConfig::instance().collisionSkin(),
                                 candidates, "actorTriangleSolve");
     result.candidates = (int)candidates.size();
 
@@ -154,6 +162,17 @@ bool solveActorTriangleCollision(
 
         std::vector<RecoveryContact> contacts =
             collectActorMeshContacts(world, meshes, candidates, refPoint);
+
+        // The weapon sphere/capsule collector uses the same world-triangle
+        // contact facts and response owner, but only needs to run once per
+        // correction pass. Do not re-add identical weapon contacts after the
+        // first positional correction.
+        if (iter == 0 && !weaponSpheres.empty())
+        {
+            std::vector<RecoveryContact> weaponContacts =
+                collectBodyWeaponContacts(player, world, weaponSpheres);
+            contacts.insert(contacts.end(), weaponContacts.begin(), weaponContacts.end());
+        }
 
         // Moving physical entities join the same manifold, carrying the support
         // entity id and surface velocity.
@@ -263,10 +282,13 @@ bool solveActorTriangleCollision(
                 player, false, false, c.normal, c.point, c.penetration, c.triangleIndex);
         }
 
-        // One response per distinct surface. The body/weapon part velocity is
-        // passed so a moving limb or weapon pushes the whole body. The contact
-        // identity is passed so a duplicate of the same contact is deduped
-        // instead of relying on a global cooldown.
+        // Triangle geometry is authoritative for contact detection and
+        // depenetration. The shared collision config now owns the response:
+        // bounce.enabled=false projects inward velocity only; true restores
+        // the authoritative limb/weapon rebound and applies it to the root
+        // player velocity. Moving-entity support carry is handled separately
+        // below from surfaceVelocity; explosions and weapon forces remain
+        // separate gameplay impulses.
         respondVelocityAgainstNormal(player, c.normal, c.sweepDelta, true,
                                      c.penetration, c.label, c.triangleIndex);
 
@@ -299,7 +321,14 @@ bool runActorTriangleCollisionStep(
     if (totalMove.z < -maxZStep)
         totalMove.z = -maxZStep;
 
-    // Keep the weapon collider mesh in sync with the equipped weapon.
+    // Initialize the JSON weapon collider before collecting actor meshes.
+    // Without this call, weaponCollisionDebug.valid remains false for the
+    // first active tick and the render-mesh triangle fallback is mistakenly
+    // added to the authoritative actor query, causing large FPS spikes.
+    recomputeWeaponCapsule(player);
+
+    // Keep the fallback weapon mesh in sync with the equipped weapon. When the
+    // JSON collider is valid, collectActorCollisionMeshes excludes this mesh.
     ensureActorWeaponColliderMeshFromEquipped(player);
 
     // Apply the desired pose: previous = safe, world = desired.
@@ -541,6 +570,7 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
         check(hit, "high-speed wall produces a contact");
         check(r.correctedPos.x <= 0.12f, "actor is stopped before the wall");
         check(std::fabs(p.vel.y - 3.0f) < 0.05f, "tangential momentum is preserved");
+        check(p.vel.x <= 0.05f, "wall contact removes inward velocity without bounce launch");
         check(glm::length(p.vel) > 0.01f, "collision does not zero velocity");
     }
 
@@ -670,8 +700,8 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
         check(weaponHit, "weapon render-mesh triangles produce a contact");
     }
 
-    // 10. 200 m/s impact: tangential momentum preserved, normal reflected by
-    // restitution, and velocity never zeroed by the collision.
+    // 10. 200 m/s impact: tangential momentum is preserved, but the normal
+    // component is projected away instead of reflecting the actor outward.
     {
         World world = makeWallWorld();
         Player p(false);
@@ -684,7 +714,10 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
 
         ActorTriangleCollisionResult r;
         solveActorTriangleCollision(p, world, move, r);
-        check(p.vel.x < 0.0f, "200 m/s normal momentum is reflected");
+        const bool bounceEnabled = CollisionConfig::instance().bounceEnabled();
+        check(bounceEnabled ? p.vel.x < -0.05f : std::fabs(p.vel.x) < 0.05f,
+              bounceEnabled ? "200 m/s normal momentum rebounds when bounce is enabled"
+                            : "200 m/s normal momentum is removed when bounce is disabled");
         check(std::fabs(p.vel.y - 120.0f) < 0.5f, "200 m/s tangential momentum is preserved");
         check(glm::length(p.vel) > 1.0f, "200 m/s impact does not zero velocity");
     }
@@ -713,4 +746,3 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
         *outSummary = report;
     return ok;
 }
-

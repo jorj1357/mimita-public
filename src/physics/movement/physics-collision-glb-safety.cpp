@@ -12,6 +12,7 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-glb-sweep.h"
 #include "physics/config.h"
+#include "config/collision-config.h"
 #include "world/world.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
@@ -285,7 +286,7 @@ void doFinalSafetyPass(Player& p, const World& world, CollisionTraceSnapshot& tr
                 finalMaxPen = std::max(finalMaxPen, fc.penetration);
             trace.maxPenetration = std::max(trace.maxPenetration, finalMaxPen);
 
-            if (finalMaxPen > COLLISION_SKIN * 0.5f)
+            if (finalMaxPen > CollisionConfig::instance().collisionSkin() * 0.5f)
             {
                 glm::vec3 finalCorrection = solveBatchedCorrection(finalSafetyContacts, SURFACE_SLOP);
                 float finalCorrLen = glm::length(finalCorrection);

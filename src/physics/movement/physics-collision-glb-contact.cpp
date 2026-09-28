@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 #include <cstdio>
 #include "world/world.h"
+#include "config/collision-config.h"
 #include "debug/debug-log.h"
 
 #define CONTACT_LOG(...) Debug::logThrottled(Debug::Category::Collision, "contact-collect", 1.0f, __VA_ARGS__)
@@ -201,7 +202,7 @@ bool capsuleTriangleContact(
     // Exact capsule-vs-triangle test: distance from the capsule axis segment to
     // the triangle. One exact test per triangle instead of sampling the capsule
     // at N points, so no penetration between samples is ever missed.
-    const float radius = cap.r + COLLISION_SKIN;
+    const float radius = cap.r + CollisionConfig::instance().collisionSkin();
     glm::vec3 segPt, triPt;
     const float distSq = closestSegmentTriangle(cap.a, cap.b, tri.a, tri.b, tri.c, segPt, triPt);
     if (distSq > radius * radius)
@@ -227,7 +228,8 @@ bool capsuleTriangleContact(
 
     out.normal = n;
     out.point = triPt;
-    out.penetration = std::max(0.0f, radius - dist - COLLISION_SKIN);
+    out.penetration = std::max(0.0f, radius - dist -
+                                         CollisionConfig::instance().collisionSkin());
     out.triangleIndex = triIndex;
     return true;
 }

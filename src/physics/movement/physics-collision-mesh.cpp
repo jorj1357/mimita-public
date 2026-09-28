@@ -15,6 +15,7 @@
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/physics-types.h"
 #include "physics/config.h"
+#include "config/collision-config.h"
 #include "entities/player.h"
 #include "world/world.h"
 
@@ -264,19 +265,43 @@ std::vector<RecoveryContact> collectActorMeshContacts(
     const World& world,
     const std::vector<ActorCollisionMesh>& meshes,
     const std::vector<int>& candidates,
-    const glm::vec3& actorPos)
+    const glm::vec3& actorPos,
+    bool filterCandidatesByMeshAabb,
+    float contactSkin)
 {
     std::vector<RecoveryContact> contacts;
     if (world.collisionMesh.triangles.empty() || candidates.empty())
         return contacts;
 
-    constexpr float kSkin = 0.01f;
+    // Use the shared collision skin for actor triangles. The broadphase
+    // expansion is only a search margin; this is the actual contact slop.
+    const float kSkin = std::max(0.0f, contactSkin >= 0.0f
+                                           ? contactSkin
+                                           : CollisionConfig::instance().collisionSkin());
     int triangleTests = 0;
 
+    // Candidate gathering is done once for the swept actor, but each body part
+    // still needs its own narrowphase AABB filter. Without this, a hand or
+    // weapon tests against every triangle near the whole actor, including
+    // triangles that belong only to another limb or nearby geometry.
     for (const ActorCollisionMesh& mesh : meshes)
     {
         if (!mesh.localTriangles || mesh.localTriangles->empty())
             continue;
+
+        AABB meshBounds;
+        if (filterCandidatesByMeshAabb)
+        {
+            glm::vec3 localMin, localMax;
+            localBoundsOfMesh(mesh, localMin, localMax);
+            if (localMin.x > localMax.x)
+                continue;
+            meshBounds = mergedAABB(
+                transformedColliderAABB(localMin, localMax, mesh.previousTransform),
+                transformedColliderAABB(localMin, localMax, mesh.desiredTransform));
+            meshBounds.min -= glm::vec3(kSkin);
+            meshBounds.max += glm::vec3(kSkin);
+        }
 
         const int triCount = (int)mesh.localTriangles->size();
         int partContacts = 0;
@@ -300,11 +325,17 @@ std::vector<RecoveryContact> collectActorMeshContacts(
             const int sweepSteps = std::clamp(
                 (int)std::ceil(maxVertexTravel / 0.08f), 1, 64);
 
-            for (int wi : candidates)
+            for (size_t ci = 0; ci < candidates.size(); ++ci)
             {
                 if (triangleTests >= kMaxTriangleTests)
                     return contacts;
+                const int wi = candidates[ci];
                 if (wi < 0 || wi >= (int)world.collisionMesh.triangles.size())
+                    continue;
+                const AABB candidateBounds = makeTriangleAABB(
+                    world.collisionMesh.triangles[wi]);
+                if (filterCandidatesByMeshAabb &&
+                    !overlaps(meshBounds, candidateBounds))
                     continue;
                 const CollisionTriangle& wt = world.collisionMesh.triangles[wi];
                 glm::vec3 hitCentroid(0.0f);
@@ -428,4 +459,3 @@ std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& wor
     }
     return collectActorMeshContacts(world, meshes, candidates, p.pos);
 }
-

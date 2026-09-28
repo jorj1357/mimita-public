@@ -13,6 +13,7 @@
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "config/player-settings.h"
+#include "config/collision-config.h"
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"
 
@@ -256,7 +257,7 @@ bool rejectBelowBlockTopContact(
     const float feetZ = cap.a.z - cap.r;
     const float tolerance = std::max(
         GetPlayerSettings().collisionSeamTolerance,
-        COLLISION_SKIN + 0.005f);
+        CollisionConfig::instance().collisionSkin() + 0.005f);
     if (feetZ + tolerance >= block.max.z)
         return false;
 

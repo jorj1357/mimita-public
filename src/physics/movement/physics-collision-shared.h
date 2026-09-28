@@ -430,7 +430,9 @@ std::vector<RecoveryContact> collectActorMeshContacts(
     const World& world,
     const std::vector<ActorCollisionMesh>& meshes,
     const std::vector<int>& candidates,
-    const glm::vec3& actorPos);
+    const glm::vec3& actorPos,
+    bool filterCandidatesByMeshAabb = true,
+    float contactSkin = -1.0f);
 
 // Union swept AABB (previous + desired + move) of every supplied mesh, in local
 // triangle space transformed to world. Used to gather broadphase candidates.

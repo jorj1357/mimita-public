@@ -40,6 +40,9 @@ public:
     // without a rebuild.
     bool actorTriangleSolver() const { return mActorTriangleSolver; }
 
+    // Shared actor/world contact margin. Hot-reloadable from collision.json.
+    float collisionSkin() const { return mCollisionSkin; }
+
 private:
     CollisionConfig();
 
@@ -52,6 +55,7 @@ private:
     float mBounceMinPush = 0.1f;
     bool mBodyMeshCollision = true;
     bool mActorTriangleSolver = false;
+    float mCollisionSkin = 0.05f;
 
     std::string mPath;
     std::filesystem::file_time_type mLastWrite{};

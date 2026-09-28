@@ -202,7 +202,11 @@ std::vector<ActorCollisionMesh> collectActorCollisionMeshes(Player& player)
 {
     std::vector<ActorCollisionMesh> meshes = collectActorBodyCollisionMeshes(player);
 
-    if (!player.weaponColliderMesh.empty())
+    // Configured weapons use their JSON sphere/capsule representation in the
+    // actor solver. Render-mesh triangles remain available as a fallback for
+    // tests or weapons without an initialized collider config, but they are
+    // too sharp and too expensive for the normal movement path.
+    if (!player.weaponCollisionDebug.valid && !player.weaponColliderMesh.empty())
     {
         ActorCollisionMesh mesh;
         mesh.label = "weapon";

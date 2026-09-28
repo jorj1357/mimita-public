@@ -205,7 +205,10 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         std::iota(candidates.begin(), candidates.end(), 0);
 
         std::vector<RecoveryContact> contacts =
-            collectActorMeshContacts(temp, meshes, candidates, actorPos);
+            // The temporary entity world has its own complete candidate list;
+            // keep the exact entity query intact until it has a real cached
+            // broadphase instead of applying the static-world part filter.
+            collectActorMeshContacts(temp, meshes, candidates, actorPos, false, 0.0f);
         for (RecoveryContact& c : contacts)
         {
             c.entityId = e.id;

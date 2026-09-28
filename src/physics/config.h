@@ -26,7 +26,6 @@ struct PlayerCapsule {
     float r;
 };
 
-constexpr float COLLISION_SKIN = 0.02f;
 inline float MAX_WALKABLE_SLOPE_DOT = 0.80f;
 inline float HOW_DEEP = 0.5f;
 inline float ALMOST_ZERO = 0.00001f;
@@ -58,12 +57,8 @@ constexpr float GROUND_RETURN_SPEED = -150.0f;
 constexpr float GROUND_RETURN_RECHARGE_TIME = 1.0f;
 inline float DASH_COOLDOWN = 0.001f;
 inline float SLOPE_OVERLAP = 0.1f;
-inline float SLOPE_SKIN = 0.02f;
 inline float BODY_SAMPLE_RADIUS = 0.15f;
 inline float MAX_STEP_HEIGHT = 0.25f;
-// Safety margin for the broadphase triangle overlap filter. The gather query
-// AABB already includes the capsule radius, so this is only numerical padding.
-inline float COLLISION_GATHER_EXPANSION = 0.25f;
 inline float SLOPE_VELOCITY_PUSHUP_MULT = 1.01f;
 inline float SLOPE_SNAP_DIST = 0.15f;
 inline float SLOPE_WALL_CLEARANCE = 2.5f;

@@ -19,6 +19,7 @@
 
 #include "debug/debug-log.h"
 #include "physics/config.h"
+#include "config/collision-config.h"
 
 using json = nlohmann::json;
 
@@ -177,7 +178,7 @@ MovementConfig defaultMovementConfig()
     config.frictionSizeExponent = -0.5f;
     config.almostZeroSpeed = ALMOST_ZERO;
     config.walkableSlopeDot = MAX_WALKABLE_SLOPE_DOT;
-    config.collisionSkin = COLLISION_SKIN;
+    config.collisionSkin = CollisionConfig::instance().collisionSkin();
     config.maximumStepHeight = MAX_STEP_HEIGHT;
     config.stableGroundGraceSeconds = 0.08f;
     config.landingMinimumAirborneSeconds = 0.08f;

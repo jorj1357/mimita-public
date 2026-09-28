@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <glm/glm.hpp>
 #include "physics/config.h"
+#include "config/collision-config.h"
 #include "world/world.h"
 #include "debug/debug-log.h"
 #include "perf/perf.h"
@@ -374,7 +375,9 @@ void gatherGLBTriangles(
     }
     recordQuery(sweepBounds, currentFrame, effectiveCaller);
 
-    appendChunkTrianglesForAABB(world, sweepBounds, COLLISION_GATHER_EXPANSION, out, "gatherGLBTriangles");
+    appendChunkTrianglesForAABB(world, sweepBounds,
+                                CollisionConfig::instance().collisionSkin(),
+                                out, "gatherGLBTriangles");
 
     auto t1 = std::chrono::steady_clock::now();
     float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();

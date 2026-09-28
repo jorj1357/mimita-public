@@ -3,11 +3,13 @@
     "bodySampleRadius": 0.25,
     "maxStepHeight": 0.25,
     "bodyMeshCollision": true,
+    "collisionSkin": 0.05,
     // "bodyMeshCollision": false,
     // Single authoritative actor-triangle solver for the local player. When true
     // the legacy capsule/body/emergency GLB pipeline is bypassed for players.
-    // Toggle here (hot reload) to A/B test; NPCs keep the legacy path.
-    "actorTriangleSolver": false,
+    // Local players use this owner. The legacy path remains only as a guarded
+    // fallback/NPC path until its TODO-DELETE acceptance gates are complete.
+    "actorTriangleSolver": true,
     "bounce": {
         "enabled": true,
         "strength": 0.35,
