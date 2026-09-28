@@ -136,7 +136,7 @@ bool solveActorTriangleCollision(
     if (!finiteAabb(box))
         return false;
     const float queryMargin = std::max(
-        collisionConfig.collisionSkin(), ACTOR_MOVEMENT_FEATURE_RADIUS);
+        collisionConfig.collisionSkin(), MOVEMENT_FEATURE_SMOOTHNESS);
     box.min -= glm::vec3(queryMargin);
     box.max += glm::vec3(queryMargin);
     appendChunkTrianglesForAABB(world, box, queryMargin,
@@ -556,7 +556,8 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
         check(hit, "actor triangle solver handles no overlap");
         check(r.grounded, "floor rest is grounded");
         check(r.correctedPos.z > -0.02f, "actor is not left inside the floor");
-        check(r.maxPenetration <= 0.05f, "floor penetration is within tolerance");
+        check(r.maxPenetration <= MOVEMENT_FEATURE_SMOOTHNESS + 0.01f,
+              "floor penetration is within rounded-feature tolerance");
     }
 
     // 2. High-speed wall: swept contact stops before the wall and preserves

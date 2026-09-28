@@ -375,7 +375,13 @@ std::vector<RecoveryContact> collectActorMeshContacts(
     const float kSkin = std::max(0.0f, contactSkin >= 0.0f
                                            ? contactSkin
                                            : CollisionConfig::instance().collisionSkin());
-    const float queryMargin = std::max(kSkin, ACTOR_MOVEMENT_FEATURE_RADIUS);
+    // A non-negative explicit skin is used by the moving-entity adapter. Keep
+    // that legacy entity contact contract exact until entity support normals
+    // are migrated to the rounded feature manifold as well.
+    const bool roundedFeatures = contactSkin < 0.0f;
+    const float queryMargin = roundedFeatures
+        ? std::max(kSkin, MOVEMENT_FEATURE_SMOOTHNESS)
+        : kSkin;
     int triangleTests = 0;
 
     // Candidate gathering is done once for the swept actor, but each body part
@@ -427,8 +433,11 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                                                glm::min(pa, glm::min(pb, pc)));
             actorTriangleBounds.max = glm::max(glm::max(a, glm::max(b, c)),
                                                glm::max(pa, glm::max(pb, pc)));
-            actorTriangleBounds.min -= glm::vec3(ACTOR_MOVEMENT_FEATURE_RADIUS);
-            actorTriangleBounds.max += glm::vec3(ACTOR_MOVEMENT_FEATURE_RADIUS);
+            if (roundedFeatures)
+            {
+                actorTriangleBounds.min -= glm::vec3(MOVEMENT_FEATURE_SMOOTHNESS);
+                actorTriangleBounds.max += glm::vec3(MOVEMENT_FEATURE_SMOOTHNESS);
+            }
 
             for (size_t ci = 0; ci < candidates.size(); ++ci)
             {
@@ -490,7 +499,7 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                             return contacts;
                     }
                 }
-                if (!hit)
+                if (!hit && roundedFeatures)
                 {
                     // Rounded movement shell: the actor face is solid, its
                     // edges are capsules, and its vertices are spheres. This
@@ -498,13 +507,15 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                     // later correction or relying on a JSON skin value.
                     roundedFeature = closestRoundedTriangleFeatures(
                         a, b, c, wt.a, wt.b, wt.c);
-                    if (roundedFeature.distance > ACTOR_MOVEMENT_FEATURE_RADIUS)
+                    if (roundedFeature.distance > MOVEMENT_FEATURE_SMOOTHNESS)
                         continue;
                     hit = true;
                     roundedFeatureHit = true;
                     hitCentroid = roundedFeature.actorPoint;
                     timeOfImpact = 0.0f;
                 }
+                if (!hit)
+                    continue;
 
                 glm::vec3 n = wt.normal;
                 float penetration = 0.0f;
@@ -519,7 +530,7 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                     else if (glm::dot(sweep, n) > 0.0f)
                         roundedNormal = -n;
                     n = roundedNormal;
-                    penetration = ACTOR_MOVEMENT_FEATURE_RADIUS - roundedFeature.distance;
+                    penetration = MOVEMENT_FEATURE_SMOOTHNESS - roundedFeature.distance;
                 }
                 if (currentOverlap) {
                     // Only flip when the actor is clearly on the other side.
@@ -571,7 +582,16 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                 // prevents a limb corner from repeatedly choosing one hard
                 // triangle normal at a block seam while the exact triangle
                 // still prevents penetration.
-                const glm::vec3 featureVector = hitCentroid - point;
+                glm::vec3 featureVector = hitCentroid - point;
+                if (roundedFeatures)
+                {
+                    const RoundedFeaturePair responseFeature =
+                        closestRoundedTriangleFeatures(a, b, c, wt.a, wt.b, wt.c);
+                    const glm::vec3 featureSeparation =
+                        responseFeature.actorPoint - responseFeature.worldPoint;
+                    if (glm::length(featureSeparation) > 1e-5f)
+                        featureVector = featureSeparation;
+                }
                 const float featureLength = glm::length(featureVector);
                 if (featureLength > 1e-5f)
                 {

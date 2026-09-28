@@ -175,7 +175,7 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         return out;
 
     const AABB actorBox = makeSweptActorMeshAABB(meshes, glm::vec3(0.0f));
-    constexpr float kPad = 0.05f;
+    const float kPad = std::max(0.05f, MOVEMENT_FEATURE_SMOOTHNESS);
 
     for (const PhysicalEntity& e : entities)
     {

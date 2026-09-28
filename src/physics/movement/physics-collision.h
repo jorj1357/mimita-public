@@ -51,10 +51,10 @@ struct RecoveryContact
     glm::vec3 responseNormal{0.0f, 0.0f, 1.0f};
 };
 
-// Fixed movement-geometry shell. This is deliberately code-owned: it defines
-// the rounded triangle feature shape and is not the configurable broadphase
-// skin in collision.json.
-inline constexpr float ACTOR_MOVEMENT_FEATURE_RADIUS = 0.1f;
+// Fixed movement-geometry smoothness. This is deliberately code-owned: it
+// rounds both actor and world triangle features and is not the configurable
+// broadphase skin in collision.json.
+inline constexpr float MOVEMENT_FEATURE_SMOOTHNESS = 0.1f;
 
 // =====================================================
 // Canonical contact adapters
