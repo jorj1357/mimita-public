@@ -515,6 +515,13 @@ enum class MovementWalkMode : uint8_t {
     Source = 2
 };
 
+enum class MovementJumpMode : uint8_t {
+    // Legacy behavior: a jump replaces the current vertical velocity.
+    Replace = 0,
+    // Add the configured jump impulse to the current vertical velocity.
+    Additive = 1
+};
+
 enum class MovementSpeedCapMode : uint8_t {
     None = 0,
     Hard = 1,
@@ -550,6 +557,9 @@ struct MovementConfig {
     float maximumDeltaSeconds = 0.033f;
 
     MovementWalkMode walkMode = MovementWalkMode::Override;
+    // Keep the legacy replacement behavior as the built-in fallback. Presets
+    // can opt into additive jumps explicitly (the active Source preset does).
+    MovementJumpMode jumpMode = MovementJumpMode::Replace;
     bool airControlEnabled = true;
     bool bunnyHopEnabled = false;
     bool autoBhopEnabled = true;

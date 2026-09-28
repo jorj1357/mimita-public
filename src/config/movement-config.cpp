@@ -58,6 +58,23 @@ bool parseWalkMode(const json& value, MovementWalkMode& out)
     return false;
 }
 
+bool parseJumpMode(const json& value, MovementJumpMode& out)
+{
+    if (!value.is_string())
+        return false;
+
+    const std::string mode = value.get<std::string>();
+    if (mode == "replace") {
+        out = MovementJumpMode::Replace;
+        return true;
+    }
+    if (mode == "additive" || mode == "add") {
+        out = MovementJumpMode::Additive;
+        return true;
+    }
+    return false;
+}
+
 bool parseImpulseFrictionMode(const json& value, MovementImpulseFrictionMode& out)
 {
     if (!value.is_string())
@@ -227,6 +244,12 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
         !parseWalkMode(root["movement_mode"], config.walkMode)) {
         Debug::error(Debug::Category::Physics,
             "[MOVEMENT CONFIG] Invalid movement_mode; expected \"mimita\", \"accel\", or \"source\".\n");
+    }
+
+    if (root.contains("jump_mode") &&
+        !parseJumpMode(root["jump_mode"], config.jumpMode)) {
+        Debug::error(Debug::Category::Physics,
+            "[MOVEMENT CONFIG] Invalid jump_mode; expected \"replace\" or \"additive\".\n");
     }
 
     if (root.contains("air_strafing") && root["air_strafing"].is_boolean())

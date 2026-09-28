@@ -125,6 +125,13 @@
     //
     // Matches the fast Source preset.
     "jump_velocity": 15.1,
+    // "jump_velocity": 10.0,
+
+    // Add the jump impulse to the current vertical velocity. This preserves
+    // upward/downward momentum instead of replacing it with jump_velocity.
+    // To restore the old behavior, change this to: "jump_mode": "replace"
+    // "jump_mode": "additive",
+    "jump_mode": "replace",
 
     // Maximum downward falling speed.
     //

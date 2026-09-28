@@ -369,10 +369,15 @@ glm::vec3 solveBatchedCorrection(
         }
     }
 
-    constexpr float MAX_AXIS_CORRECTION = 0.5f;
-    correction.x = glm::clamp(correction.x, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
-    correction.y = glm::clamp(correction.y, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
-    correction.z = glm::clamp(correction.z, -MAX_AXIS_CORRECTION, MAX_AXIS_CORRECTION);
+    // A swept actor may have travelled several metres in one tick. The
+    // correction must be allowed to reach the contact instead of being capped
+    // at 0.5m and leaving the actor beyond a thin wall. Normal gameplay-sized
+    // moves still retain the original 0.5m floor.
+    const float maxAxisCorrection = std::max(
+        0.5f, glm::length(intendedMove) + slop);
+    correction.x = glm::clamp(correction.x, -maxAxisCorrection, maxAxisCorrection);
+    correction.y = glm::clamp(correction.y, -maxAxisCorrection, maxAxisCorrection);
+    correction.z = glm::clamp(correction.z, -maxAxisCorrection, maxAxisCorrection);
 
     auto t1 = std::chrono::steady_clock::now();
     float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();

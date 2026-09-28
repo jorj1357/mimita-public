@@ -140,7 +140,7 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
         // simply embedded (penetrating), so a stick limb is pushed out. Root
         // contacts keep their old project-only behavior.
         const bool embedded =
-            bodyContact && (partInto > 0.0f || penetration > 0.002f);
+            bodyContact && (partInto > 0.0f || penetration > 0.0f);
         if (embedded && cfg.bounceMinPush() > 0.0f)
         {
             const float retention = 1.0f - cfg.bounceFriction();

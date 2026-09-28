@@ -39,6 +39,17 @@ float shortestSignedAngleDegrees(float from, float to)
     return wrapSignedDegrees(to - from);
 }
 
+void applyJumpVerticalVelocity(MovementState& state,
+                               const MovementConfig& config)
+{
+    const float jumpVelocity =
+        movementScaledJumpVelocity(config, state.sizeScale);
+    if (config.jumpMode == MovementJumpMode::Additive)
+        state.baseVelocity.z += jumpVelocity;
+    else
+        state.baseVelocity.z = jumpVelocity;
+}
+
 float signedAngleDegrees(glm::vec2 a, glm::vec2 b)
 {
     a = movementNormalizeDirectionOrZero(a);
@@ -1475,7 +1486,7 @@ void applyBasicJump(MovementState& state,
 
     if (movementCanGroundJump(state)) {
         state.dash.dashAvailable = true;
-        state.baseVelocity.z = movementScaledJumpVelocity(config, state.sizeScale);
+        applyJumpVerticalVelocity(state, config);
         state.ground.onGround = false;
         state.jump.coyoteTimerSeconds = 0.0f;
         state.jump.jumpIntentTimerSeconds = 0.0f;
@@ -1489,7 +1500,7 @@ void applyBasicJump(MovementState& state,
     }
 
     if (movementCanAirJump(state)) {
-        state.baseVelocity.z = movementScaledJumpVelocity(config, state.sizeScale);
+        applyJumpVerticalVelocity(state, config);
         --state.jump.airJumpsLeft;
         state.jump.airJumpArmed = false;
         state.jump.airJumpLocked = true;

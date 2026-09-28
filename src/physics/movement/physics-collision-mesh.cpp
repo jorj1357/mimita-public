@@ -568,6 +568,17 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                     penetration = std::max(
                         penetration,
                         CollisionConfig::instance().edgeTouchTolerance());
+                // A sweep can cross a thin wall even when the final triangle
+                // has little measurable plane penetration. Recover the part
+                // of the normal travel that happened after the hit instead
+                // of merely reporting a contact and leaving the actor inside.
+                if (!currentOverlap && !roundedFeatureHit && timeOfImpact > 0.0f)
+                {
+                    const float intoAfterHit = std::max(0.0f, -glm::dot(sweep, n));
+                    penetration = std::max(
+                        penetration,
+                        intoAfterHit * (1.0f - timeOfImpact));
+                }
 
                 const glm::vec3 point = closestPointOnTriangle(
                     hitCentroid, wt.a, wt.b, wt.c);
@@ -596,8 +607,17 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                 if (featureLength > 1e-5f)
                 {
                     const glm::vec3 roundedNormal = featureVector / featureLength;
-                    if (glm::dot(roundedNormal, n) > 0.05f)
-                        rc.responseNormal = roundedNormal;
+                    const float alignment = glm::dot(roundedNormal, n);
+                    if (alignment > 0.05f)
+                    {
+                        // Preserve enough of the exact world-face normal for
+                        // shallow impacts to retain an inward component. A
+                        // fully radial edge normal can become tangent to a
+                        // bevel and make bounce appear dead after another
+                        // contact already projected the velocity.
+                        rc.responseNormal = glm::normalize(
+                            n * 0.35f + roundedNormal * 0.65f);
+                    }
                     else
                         rc.responseNormal = n;
                 }

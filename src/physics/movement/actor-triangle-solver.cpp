@@ -213,8 +213,11 @@ bool solveActorTriangleCollision(
         const float len = glm::length(correction);
         if (len < 1e-5f)
             break;
-        if (len > kMaxCorrection)
-            correction *= kMaxCorrection / len;
+        const float maxCorrection = std::max(
+            kMaxCorrection,
+            glm::length(desiredMovement) + MOVEMENT_FEATURE_SMOOTHNESS + kSlop);
+        if (len > maxCorrection)
+            correction *= maxCorrection / len;
 
         accumulated += correction;
     }

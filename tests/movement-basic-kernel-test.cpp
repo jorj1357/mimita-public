@@ -528,6 +528,30 @@ void testAirJump()
     check(!secondEvents.didAirJump, "second air jump rejected with no charges");
 }
 
+void testAdditiveJumpMode()
+{
+    MovementConfig config = currentConfig();
+    config.jumpMode = MovementJumpMode::Additive;
+
+    MovementState state = defaultState(true);
+    state.baseVelocity.z = -2.0f;
+    MovementStepEvents events;
+    applyBasicJump(state, commandFor(glm::vec2(0.0f), false, true),
+                   config, kDt, &events);
+
+    check(events.didGroundJump, "additive jump emits ground event");
+    checkNear(state.baseVelocity.z, -2.0f + config.jumpVerticalSpeed,
+              kTolerance, "additive jump preserves existing vertical velocity");
+
+    config.jumpMode = MovementJumpMode::Replace;
+    state = defaultState(true);
+    state.baseVelocity.z = -2.0f;
+    applyBasicJump(state, commandFor(glm::vec2(0.0f), false, true),
+                   config, kDt, nullptr);
+    checkNear(state.baseVelocity.z, config.jumpVerticalSpeed,
+              kTolerance, "replace jump preserves legacy behavior");
+}
+
 void testCoyoteAndBufferTiming()
 {
     const MovementConfig config = currentConfig();
@@ -828,6 +852,7 @@ int main()
     testGroundJump();
     testHeldJump();
     testAirJump();
+    testAdditiveJumpMode();
     testCoyoteAndBufferTiming();
     testExternalImpulse();
     testEventReset();
