@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace MimitaImpact {
@@ -174,7 +175,7 @@ GeneratedDestructionMesh meshDestructibleChunk(
         mesh.renderVertices.push_back(v);
     };
 
-    auto emitTriangle = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
+    auto emitTriangle = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c)
     {
         if (mesh.collisionTriangles.size() >= triangleBudget)
         {
@@ -189,7 +190,13 @@ GeneratedDestructionMesh meshDestructibleChunk(
         const glm::vec3 center = (a + b + c) / 3.0f;
         const glm::vec3 outward = sdfGradient(geometry, center, cellSize * 0.5f);
         if (glm::dot(n, outward) < 0.0f)
+        {
+            // Flip the winding, not just the normal, so the face normal implied
+            // by the vertex order agrees with the outward surface. Rendering
+            // culling and projectile face-hit tests both rely on this.
+            std::swap(b, c);
             n = -n;
+        }
         CollisionTriangle tri;
         tri.a = a; tri.b = b; tri.c = c; tri.normal = n;
         mesh.collisionTriangles.push_back(tri);

@@ -571,6 +571,24 @@ namespace {
 AABB entityWorldAABB(const PhysicalEntity& e)
 {
     AABB box;
+    // Destructible geometry is always contained in the source box, so the world
+    // bound is a transform of ±halfExtents — no per-triangle scan in a hot loop.
+    if (e.destructible.enabled)
+    {
+        box.min = glm::vec3(1e30f);
+        box.max = glm::vec3(-1e30f);
+        const glm::vec3 he = e.halfExtents;
+        for (int c = 0; c < 8; ++c)
+        {
+            const glm::vec3 corner((c & 1) ? he.x : -he.x,
+                                   (c & 2) ? he.y : -he.y,
+                                   (c & 4) ? he.z : -he.z);
+            const glm::vec3 w = glm::vec3(e.transform * glm::vec4(corner, 1.0f));
+            box.min = glm::min(box.min, w);
+            box.max = glm::max(box.max, w);
+        }
+        return box;
+    }
     box.min = glm::vec3(1e30f);
     box.max = glm::vec3(-1e30f);
     for (const CollisionTriangle& t : e.localTriangles)
@@ -692,20 +710,36 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         // A temporary world view of the entity's current world-space triangles.
         // collectActorMeshContacts owns the one triangle-vs-triangle routine; the
         // entity reuses it instead of duplicating the math.
-        World temp;
-        temp.collisionMesh.triangles.reserve(e.localTriangles.size());
-        for (const CollisionTriangle& lt : e.localTriangles)
+        std::vector<CollisionTriangle> nearby;
+        if (e.destructible.enabled && !e.destructible.chunkTriangleRanges.empty())
         {
-            CollisionTriangle wt;
-            wt.a = glm::vec3(e.transform * glm::vec4(lt.a, 1.0f));
-            wt.b = glm::vec3(e.transform * glm::vec4(lt.b, 1.0f));
-            wt.c = glm::vec3(e.transform * glm::vec4(lt.c, 1.0f));
-            const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
-            const float len = glm::length(n);
-            wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
-            temp.collisionMesh.triangles.push_back(wt);
+            // Cached chunk broadphase: only chunks near the actor are transformed.
+            AABB query = actorBox;
+            query.min -= glm::vec3(kPad);
+            query.max += glm::vec3(kPad);
+            MimitaImpact::DestructibleGeometrySystem::instance().collectWorldTriangles(
+                e.destructible, e.transform, query, nearby);
+            if (nearby.empty())
+                continue;
+        }
+        else
+        {
+            nearby.reserve(e.localTriangles.size());
+            for (const CollisionTriangle& lt : e.localTriangles)
+            {
+                CollisionTriangle wt;
+                wt.a = glm::vec3(e.transform * glm::vec4(lt.a, 1.0f));
+                wt.b = glm::vec3(e.transform * glm::vec4(lt.b, 1.0f));
+                wt.c = glm::vec3(e.transform * glm::vec4(lt.c, 1.0f));
+                const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
+                const float len = glm::length(n);
+                wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+                nearby.push_back(wt);
+            }
         }
 
+        World temp;
+        temp.collisionMesh.triangles = std::move(nearby);
         std::vector<int> candidates(temp.collisionMesh.triangles.size());
         std::iota(candidates.begin(), candidates.end(), 0);
 

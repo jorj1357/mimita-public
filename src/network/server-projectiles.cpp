@@ -541,25 +541,38 @@ public:
             if (glm::length(centre - closest) > entityRadius)
                 continue;
 
-            for (const CollisionTriangle& tri : entity.localTriangles)
+            std::vector<CollisionTriangle> worldTriangles;
+            if (entity.destructible.enabled &&
+                !entity.destructible.chunkTriangleRanges.empty())
+            {
+                MimitaImpact::DestructibleGeometrySystem::instance().collectWorldTriangles(
+                    entity.destructible, entity.transform, queryBounds, worldTriangles);
+            }
+            else
+            {
+                worldTriangles.reserve(entity.localTriangles.size());
+                for (const CollisionTriangle& tri : entity.localTriangles)
+                {
+                    CollisionTriangle wt;
+                    wt.a = glm::vec3(entity.transform * glm::vec4(tri.a, 1.0f));
+                    wt.b = glm::vec3(entity.transform * glm::vec4(tri.b, 1.0f));
+                    wt.c = glm::vec3(entity.transform * glm::vec4(tri.c, 1.0f));
+                    const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
+                    wt.normal = glm::length(n) > 1e-9f
+                        ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
+                    worldTriangles.push_back(wt);
+                }
+            }
+
+            for (const CollisionTriangle& tri : worldTriangles)
             {
                 SweptEntityTriangle swept;
                 swept.entityId = entity.id;
-                swept.triangle.a = glm::vec3(entity.transform * glm::vec4(tri.a, 1.0f));
-                swept.triangle.b = glm::vec3(entity.transform * glm::vec4(tri.b, 1.0f));
-                swept.triangle.c = glm::vec3(entity.transform * glm::vec4(tri.c, 1.0f));
-                // Recompute the plane normal from the transformed vertices so a
-                // rotating entity keeps a correct surface normal.
-                const glm::vec3 n = glm::cross(swept.triangle.b - swept.triangle.a,
-                                               swept.triangle.c - swept.triangle.a);
-                swept.triangle.normal = glm::length(n) > 1e-9f
-                    ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
+                swept.triangle = tri;
 
                 AABB triBounds;
-                triBounds.min = glm::min(swept.triangle.a,
-                                 glm::min(swept.triangle.b, swept.triangle.c)) - glm::vec3(radius);
-                triBounds.max = glm::max(swept.triangle.a,
-                                 glm::max(swept.triangle.b, swept.triangle.c)) + glm::vec3(radius);
+                triBounds.min = glm::min(tri.a, glm::min(tri.b, tri.c)) - glm::vec3(radius);
+                triBounds.max = glm::max(tri.a, glm::max(tri.b, tri.c)) + glm::vec3(radius);
                 if (overlaps(queryBounds, triBounds))
                     out.push_back(swept);
             }

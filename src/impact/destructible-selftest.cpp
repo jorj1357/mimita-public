@@ -18,6 +18,7 @@
 
 #include "config/material-config.h"
 #include "impact/destructible-geometry.h"
+#include "combat/projectile-simulation.h"
 #include "physics/physical-entity.h"
 
 namespace MimitaImpact {
@@ -109,6 +110,44 @@ ImpactResult submitRifle(uint32_t targetId, const glm::vec3& point,
     ev.energy = ImpactSystem::kineticEnergy(mass, speed);
     return ImpactSystem::instance().submit(ev);
 }
+
+// Minimal CollisionWorldView that mirrors the server's entity query so the
+// shared projectile kernel can be driven against a real destructible crate.
+struct EntityOnlyWorld final : CollisionWorldView
+{
+    CollisionTriangle dummy{};
+
+    void queryTrianglesSwept(const glm::vec3&, const glm::vec3&, float,
+                             std::vector<int>&) const override {}
+    const CollisionTriangle& triangleAt(int) const override { return dummy; }
+    int triangleCount() const override { return 0; }
+    void queryPlayerCapsulesSwept(const glm::vec3&, const glm::vec3&, float,
+                                  std::vector<SweptPlayerCapsule>&) const override {}
+
+    void queryEntityTrianglesSwept(const glm::vec3& from, const glm::vec3& to,
+                                   float radius,
+                                   std::vector<SweptEntityTriangle>& out) const override
+    {
+        AABB query;
+        query.min = glm::min(from, to) - glm::vec3(radius);
+        query.max = glm::max(from, to) + glm::vec3(radius);
+        for (const PhysicalEntity& e : PhysicalEntitySystem::instance().entities())
+        {
+            if (e.localTriangles.empty())
+                continue;
+            std::vector<CollisionTriangle> worldTris;
+            DestructibleGeometrySystem::instance().collectWorldTriangles(
+                e.destructible, e.transform, query, worldTris);
+            for (const CollisionTriangle& tri : worldTris)
+            {
+                SweptEntityTriangle swept;
+                swept.entityId = e.id;
+                swept.triangle = tri;
+                out.push_back(swept);
+            }
+        }
+    }
+};
 
 } // anonymous namespace
 
@@ -303,6 +342,70 @@ bool destructibleSelfTest(std::string* outSummary)
         check(crate->localTriangles.size() <=
               DestructibleGeometrySystem::instance().maxTrianglesPerEntity,
               "triangle count stays within the budget");
+    }
+
+    // 10. Generated triangles have outward-consistent winding (front faces out).
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        submitRifle(id, glm::vec3(0, 0, 2.5f), glm::vec3(0, 0, 1), glm::vec3(0, 0, -1),
+                    0.02f, 900.0f, 0.01f);
+        PhysicalEntity* crate = system.find(id);
+        bool windingOk = crate != nullptr && !crate->localTriangles.empty();
+        if (crate)
+        {
+            for (const CollisionTriangle& t : crate->localTriangles)
+            {
+                const glm::vec3 gn = glm::cross(t.b - t.a, t.c - t.a);
+                if (glm::dot(gn, t.normal) <= 0.0f)
+                {
+                    windingOk = false;
+                    break;
+                }
+            }
+        }
+        check(windingOk, "generated triangles have outward-consistent winding");
+    }
+
+    // 11. Chunk broadphase returns a subset for a small query.
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        PhysicalEntity* crate = system.find(id);
+        std::vector<CollisionTriangle> nearby;
+        AABB query;
+        query.min = glm::vec3(-0.5f, -0.5f, 2.0f);
+        query.max = glm::vec3(0.5f, 0.5f, 3.0f);
+        DestructibleGeometrySystem::instance().collectWorldTriangles(
+            crate->destructible, glm::mat4(1.0f), query, nearby);
+        check(!nearby.empty() &&
+              nearby.size() < crate->destructible.collisionTriangles.size(),
+              "chunk broadphase limits a near query to nearby triangles");
+    }
+
+    // 12. The shared projectile kernel detects the crate (EntityImpact), which
+    // is what routes a rifle hit into the cut.
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        EntityOnlyWorld world;
+        ProjectilePhysicsState state;
+        state.position = glm::vec3(0.0f, 0.0f, -10.0f);
+        state.velocity = glm::vec3(0.0f, 0.0f, 900.0f);
+        ProjectilePhysicsConfig config;
+        config.radius = 0.1f;
+        config.lifetime = 3.0f;
+        config.bounceEnabled = false;
+        ProjectileStepResult step;
+        bool hit = false;
+        for (int i = 0; i < 20 && !hit; ++i)
+        {
+            step = simulateProjectileTick(state, config, world, 1.0f / 60.0f);
+            if (step.type == ProjectileCollisionType::EntityImpact)
+                hit = true;
+        }
+        check(hit && step.hitEntityId == id,
+              "projectile sweep detects the crate as EntityImpact");
     }
 
     if (outSummary)

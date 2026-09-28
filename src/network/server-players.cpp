@@ -720,14 +720,9 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     // direction buttons; this branch owns speed and position.
     if (p.flyEnabled)
     {
-        glm::vec3 forward = p.input.camForward;
-        forward.z = 0.0f;
-        if (glm::length(forward) > 0.0001f)
-            forward = glm::normalize(forward);
-        else
-            forward = {1.0f, 0.0f, 0.0f};
-        glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 0, 1)));
-        glm::vec3 direction = right * p.input.wish.x + forward * p.input.wish.y;
+        // The client already sends camera-relative world X/Y wish movement.
+        // Applying the camera basis here again would rotate it twice.
+        glm::vec3 direction(p.input.wish.x, p.input.wish.y, 0.0f);
         if (p.input.flyUp) direction.z += 1.0f;
         if (p.input.flyDown) direction.z -= 1.0f;
         if (glm::length(direction) > 1.0f)

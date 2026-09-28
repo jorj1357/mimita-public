@@ -128,6 +128,8 @@ void DestructibleGeometrySystem::refreshCachedArrays(DestructibleGeometry& geome
 {
     geometry.renderVertices.clear();
     geometry.collisionTriangles.clear();
+    geometry.chunkTriangleRanges.assign(geometry.chunks.size(),
+                                        DestructionTriangleRange{});
     size_t renderCount = 0;
     size_t triCount = 0;
     for (const DestructionChunk& chunk : geometry.chunks)
@@ -137,14 +139,87 @@ void DestructibleGeometrySystem::refreshCachedArrays(DestructibleGeometry& geome
     }
     geometry.renderVertices.reserve(renderCount);
     geometry.collisionTriangles.reserve(triCount);
-    for (const DestructionChunk& chunk : geometry.chunks)
+    uint32_t first = 0;
+    for (size_t i = 0; i < geometry.chunks.size(); ++i)
     {
+        const DestructionChunk& chunk = geometry.chunks[i];
+        geometry.chunkTriangleRanges[i].first = first;
+        geometry.chunkTriangleRanges[i].count =
+            (uint32_t)chunk.collisionTriangles.size();
+        first += (uint32_t)chunk.collisionTriangles.size();
         geometry.renderVertices.insert(geometry.renderVertices.end(),
                                        chunk.renderVertices.begin(),
                                        chunk.renderVertices.end());
         geometry.collisionTriangles.insert(geometry.collisionTriangles.end(),
                                            chunk.collisionTriangles.begin(),
                                            chunk.collisionTriangles.end());
+    }
+}
+
+void DestructibleGeometrySystem::collectWorldTriangles(
+    const DestructibleGeometry& geometry,
+    const glm::mat4& transform,
+    const AABB& queryWorld,
+    std::vector<CollisionTriangle>& out) const
+{
+    if (!geometry.enabled ||
+        geometry.chunkTriangleRanges.size() != geometry.chunks.size())
+    {
+        // Fallback: no per-chunk ranges (should not happen once initialized).
+        out.reserve(out.size() + geometry.collisionTriangles.size());
+        for (const CollisionTriangle& lt : geometry.collisionTriangles)
+        {
+            CollisionTriangle wt;
+            wt.a = glm::vec3(transform * glm::vec4(lt.a, 1.0f));
+            wt.b = glm::vec3(transform * glm::vec4(lt.b, 1.0f));
+            wt.c = glm::vec3(transform * glm::vec4(lt.c, 1.0f));
+            const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
+            const float len = glm::length(n);
+            wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            out.push_back(wt);
+        }
+        return;
+    }
+
+    for (size_t i = 0; i < geometry.chunks.size(); ++i)
+    {
+        const DestructionTriangleRange& range = geometry.chunkTriangleRanges[i];
+        if (range.count == 0)
+            continue;
+
+        // World AABB of the chunk (transform all 8 local corners).
+        const AABB& lb = geometry.chunks[i].localBounds;
+        AABB wb;
+        wb.min = glm::vec3(1e30f);
+        wb.max = glm::vec3(-1e30f);
+        for (int c = 0; c < 8; ++c)
+        {
+            const glm::vec3 corner((c & 1) ? lb.max.x : lb.min.x,
+                                   (c & 2) ? lb.max.y : lb.min.y,
+                                   (c & 4) ? lb.max.z : lb.min.z);
+            const glm::vec3 w = glm::vec3(transform * glm::vec4(corner, 1.0f));
+            wb.min = glm::min(wb.min, w);
+            wb.max = glm::max(wb.max, w);
+        }
+        if (queryWorld.min.x > wb.max.x || queryWorld.max.x < wb.min.x ||
+            queryWorld.min.y > wb.max.y || queryWorld.max.y < wb.min.y ||
+            queryWorld.min.z > wb.max.z || queryWorld.max.z < wb.min.z)
+            continue;
+
+        const uint32_t end = range.first + range.count;
+        out.reserve(out.size() + range.count);
+        for (uint32_t t = range.first; t < end; ++t)
+        {
+            const CollisionTriangle& lt = geometry.collisionTriangles[t];
+            CollisionTriangle wt;
+            wt.a = glm::vec3(transform * glm::vec4(lt.a, 1.0f));
+            wt.b = glm::vec3(transform * glm::vec4(lt.b, 1.0f));
+            wt.c = glm::vec3(transform * glm::vec4(lt.c, 1.0f));
+            const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
+            const float len = glm::length(n);
+            wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            out.push_back(wt);
+        }
     }
 }
 

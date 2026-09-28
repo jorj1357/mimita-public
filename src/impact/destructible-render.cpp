@@ -31,6 +31,9 @@ namespace {
 
 GLuint gDestructibleVao = 0;
 GLuint gDestructibleVbo = 0;
+uint32_t gUploadedEntityId = 0;
+uint64_t gUploadedRevision = 0;
+size_t gUploadedVertexCount = 0;
 
 } // anonymous namespace
 
@@ -87,16 +90,26 @@ bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
 
     glBindVertexArray(gDestructibleVao);
     glBindBuffer(GL_ARRAY_BUFFER, gDestructibleVbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 (GLsizeiptr)(geometry.renderVertices.size() * sizeof(Vertex)),
-                 geometry.renderVertices.data(), GL_DYNAMIC_DRAW);
+    const size_t vertexCount = geometry.renderVertices.size();
+    const bool needsUpload = entity.id != gUploadedEntityId ||
+                             geometry.geometryRevision != gUploadedRevision ||
+                             vertexCount != gUploadedVertexCount;
+    if (needsUpload)
+    {
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(vertexCount * sizeof(Vertex)),
+                     geometry.renderVertices.data(), GL_DYNAMIC_DRAW);
+        gUploadedEntityId = entity.id;
+        gUploadedRevision = geometry.geometryRevision;
+        gUploadedVertexCount = vertexCount;
+    }
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)geometry.renderVertices.size());
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)vertexCount);
 
     if (!cullWasEnabled)
         glDisable(GL_CULL_FACE);

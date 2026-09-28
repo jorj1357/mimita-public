@@ -40,6 +40,9 @@
   the existing movement-input path: the server owns fly permission, multiplier,
   and final position; clients send only movement buttons and reconcile to the
   authoritative result.
+- Follow-up fix: fly now advances the local movement simulation tick and uses
+  the camera-relative world vector that `pollInput()` already produces; the
+  client and server no longer rotate that vector twice.
 
 # Validation
 
@@ -47,6 +50,9 @@
   `mimita.exe`.
 - The same build compiled the fly command and movement/network changes and
   completed with `BUILD SUCCESS`.
+- The follow-up rebuild is currently blocked by a pre-existing unrelated
+  compile error in `src/impact/destructible-geometry.cpp:201` (`overlaps` is
+  not declared). No change was made to that unrelated file.
 - The prior normal build attempt could not launch because another
   `mimita.exe` held the file; this did not prevent the build-only link.
 - Runtime validation remains open: restart `dev-loop.py`, run `pwsids`, confirm

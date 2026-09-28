@@ -195,14 +195,9 @@ static void physicsMainUpdate_Internal(
     // movement from the networked buttons and remains authoritative.
     if (MP_CONTEXT.active && MP_CONTEXT.flyEnabled)
     {
-        glm::vec3 forward = camForward;
-        forward.z = 0.0f;
-        if (glm::length(forward) > 0.0001f)
-            forward = glm::normalize(forward);
-        else
-            forward = {1.0f, 0.0f, 0.0f};
-        glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 0, 1)));
-        glm::vec3 direction = right * wishMoveXY.x + forward * wishMoveXY.y;
+        // pollInput() has already converted WASD into camera-relative world
+        // X/Y movement. Do not rotate it by camForward a second time.
+        glm::vec3 direction(wishMoveXY.x, wishMoveXY.y, 0.0f);
         const auto& inputCommands = InputCommandSystem::instance();
         if (inputCommands.getState("freeze").held) direction.z += 1.0f;
         if (inputCommands.getState("down_dash").held) direction.z -= 1.0f;
@@ -216,6 +211,7 @@ static void physicsMainUpdate_Internal(
         p.ground.stableOnGround = false;
         p.ground.hasWorldContact = false;
         p.ground.realWorldContactThisFrame = false;
+        ++p.movementSimulationTick;
         p.updateModelWorldTransforms();
         return;
     }

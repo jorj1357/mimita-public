@@ -120,6 +120,14 @@ public:
     int rebuildDirtyChunks(DestructibleGeometry& geometry);
     int rebuildAll(DestructibleGeometry& geometry);
 
+    // Appends the world-space triangles of every chunk whose (transformed) bounds
+    // overlap queryWorld. This is the cached broadphase used by actor collision
+    // and projectiles so a near query never scans the whole generated mesh.
+    void collectWorldTriangles(const DestructibleGeometry& geometry,
+                               const glm::mat4& transform,
+                               const AABB& queryWorld,
+                               std::vector<CollisionTriangle>& out) const;
+
     // Safety cap: stop adding triangles once a single object exceeds this.
     size_t maxTrianglesPerEntity = 30000;
 
