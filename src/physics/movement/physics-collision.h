@@ -54,7 +54,7 @@ struct RecoveryContact
 // Fixed movement-geometry shell. This is deliberately code-owned: it defines
 // the rounded triangle feature shape and is not the configurable broadphase
 // skin in collision.json.
-inline constexpr float ACTOR_MOVEMENT_FEATURE_RADIUS = 0.025f;
+inline constexpr float ACTOR_MOVEMENT_FEATURE_RADIUS = 0.1f;
 
 // =====================================================
 // Canonical contact adapters
