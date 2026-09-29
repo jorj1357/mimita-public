@@ -1131,6 +1131,55 @@ collision owners until their callers are migrated to the shared contract.
 
 ---
 
+### Cold-build occurrence 21
+
+Time:
+`2026-09-29T19:01:50Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_190150-slope-edge-support-response.md`
+
+The actor-triangle solver response policy changed in cold C++ code. The live
+reload path cannot replace this collision owner, so the fix required a new
+executable.
+
+### Build result
+
+`python build_agent.py` returned `Status: SUCCESS`, return code 0. Build 0435
+ran `mimita.exe --collision-selftest` and returned `COLLISION SELFTEST PASS`.
+
+### Human review
+
+Pending. Reproduce the slope boundary and flat-surface down-dash case with the
+new executable. Inspect the bookmark run for `support_edge_promoted` and
+`landing_bounce_suppressed` before making another response change.
+
+---
+
+### Cold-build occurrence 22
+
+Time:
+`2026-09-29T19:19:05Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_191800-revert-slope-response-attempt-and-fix-bookmark-events.md`
+
+The failed support-response policy was reverted and the bookmark event
+category was changed in cold C++ code. A new executable was required; the
+existing JSONL logger remains the diagnostic path.
+
+### Build result
+
+`python build_agent.py` returned `Status: SUCCESS`, return code 0. Build 0441
+ran `mimita.exe --collision-selftest` and returned `COLLISION SELFTEST PASS`.
+
+### Human review
+
+Pending. Confirm that JSON-enabled bounce remains active and that the next
+bookmark appears in the current run's `events.jsonl` as `bookmark.created`.
+
+---
+
 ### Follow-up builds (same cold boundary, same session)
 
 Two further python build_agent.py runs were needed while iterating the same

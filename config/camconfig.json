@@ -1,7 +1,7 @@
 {
   "cameraSway": {
-    "enabled": false,
-    "amount": 10.0,
+    "enabled": true,
+    "amount": 5.0,
     "landingThreshold": 0.25,
     "landingPitchImpulse": -10.1,
     "landingRollImpulse": 0.0,

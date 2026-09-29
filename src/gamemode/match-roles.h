@@ -93,6 +93,7 @@ public:
     const MatchRoleDefinition* getActorPreset(const std::string& id) const;
     const std::vector<MatchRoleDefinition>& all() const { return mRoles; }
     std::vector<const MatchRoleDefinition*> actorPresets() const;
+    const std::string& actorPresetDirectory() const { return mPresetDirectory; }
 
     // Stable 1-based role index for the wire: 0 = none, 1..N = mRoles[i-1].
     int indexOf(const std::string& id) const;

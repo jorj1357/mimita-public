@@ -163,6 +163,7 @@ void readActorPreset(const json& j, const std::string& fallbackId,
     json flat = j;
     if (flat.contains("health") && flat["health"].is_object()) flat.erase("health");
     if (flat.contains("avatar") && flat["avatar"].is_object()) flat.erase("avatar");
+    if (flat.contains("team") && flat["team"].is_object()) flat.erase("team");
     readRole(flat, fallbackId, out);
     out.actorPreset = true;
     if (j.contains("displayName")) out.displayName = j.value("displayName", out.displayName);

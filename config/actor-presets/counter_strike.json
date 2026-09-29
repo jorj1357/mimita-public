@@ -8,7 +8,7 @@
     "perspective": "first_person",
     "force_perspective": true
   },
-  "movement_preset": "counterstrike",
+  "movement_preset": "heavy",
   "weapon_set": "counterstrike",
   "avatar": {
     "forced": true,

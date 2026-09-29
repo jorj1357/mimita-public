@@ -148,7 +148,12 @@ enum PacketType : uint8_t
     // ── Authoritative kill event (server → all clients) ─────────────
     // Single source for the live killfeed/chat line. Every viewer (killer,
     // victim, and observers) receives the same entry exactly once.
-    PACKET_KILL_EVENT = 68
+    PACKET_KILL_EVENT = 68,
+    // ── Ragdoll / physical-body limb state (owner → server → clients) ──
+    // The owning client sends its six limb world transforms at a low rate; the
+    // server relays to everyone else; remote clients interpolate and apply them
+    // to the replica skeleton (render + client hitboxes).
+    PACKET_RAGDOLL_STATE = 69
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1369,6 +1374,30 @@ struct PelletBlastEventPacket
     NetworkPelletResult pellets[MAX_NETWORK_PELLETS];
     PelletBlastTargetResult targets[MAX_PELLET_BLAST_TARGETS];
 };
+
+// ── Ragdoll / physical-body limb state replication ─────────────────────
+// Six limbs in the fixed order owned by ragdoll-replication.h. Raw floats to
+// keep packets.h independent of glm. 20-byte header + 12 + 6*28 = 200 bytes.
+struct RagdollLimbWire
+{
+    float px = 0.0f, py = 0.0f, pz = 0.0f;
+    float qx = 0.0f, qy = 0.0f, qz = 0.0f, qw = 1.0f;
+};
+
+struct RagdollStatePacket
+{
+    PacketHeader header;
+    uint32_t ownerPlayerId = 0;
+    uint32_t sourceTick = 0;
+    uint8_t active = 0;
+    uint8_t mode = 0;
+    uint8_t count = 0;
+    uint8_t reserved = 0;
+    RagdollLimbWire limbs[6];
+};
+
+static_assert(sizeof(RagdollStatePacket) <= MAX_GAME_DATAGRAM_BYTES,
+              "RagdollStatePacket exceeds the safe datagram size");
 
 // ── Godball state (position + velocity for remote visual replication) ──
 struct GodballStatePacket

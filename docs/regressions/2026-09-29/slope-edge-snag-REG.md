@@ -1,9 +1,9 @@
 # Walkable Slope and Edge Snag
 
 Time created: 2026-09-29T12:43:57Z
-Time last updated: 2026-09-29T12:56:53Z
+Time last updated: 2026-09-29T19:18:00Z
 
-Status: ATTEMPTED FIX (5)
+Status: ATTEMPTED FIX (6) — NOT FIXED
 
 Related specification:
 `docs/specs/movement/movement.md`
@@ -19,6 +19,8 @@ Related changelogs:
 - `docs/changelog/2026-09-28/20260928_011500-shallow-bevel-bounce-response.md`
 - `docs/changelog/2026-09-28/20260928_145841-walkable-edge-normal-fix.md`
 - `docs/changelog/2026-09-29/20260929_125653-slope-edge-jsonl-tracking.md`
+- `docs/changelog/2026-09-29/20260929_190150-slope-edge-support-response.md`
+- `docs/changelog/2026-09-29/20260929_191800-revert-slope-response-attempt-and-fix-bookmark-events.md`
 
 ---
 
@@ -213,3 +215,38 @@ destination from the v9 working directory, preserving the existing
 `logs/MM-DD-YYYY/<run>/events.jsonl` layout. A fresh executable still needs to
 be launched for live `logger.started` and collision records to be produced in
 the corrected location.
+
+## Attempted Fix 6 — Support-priority response and landing bounce suppression
+
+Time:
+`2026-09-29T19:01:50Z`
+
+Change tried:
+
+- Selected a nearby walkable near-feet contact as the response authority.
+- Promoted shallow edge contacts to the support normal.
+- Suppressed static landing bounce during downward movement.
+- Added JSONL fields for support promotion and landing-bounce suppression.
+
+Why it seemed plausible:
+
+The intended symptom was a slope edge being treated as a sideways wall, and a
+downward dash being pushed sideways by a body/edge contact. The manifold already
+had walkable, near-feet, surface-normal, and response-normal data, so making
+the support contact win appeared to be the smallest targeted correction.
+
+Result:
+
+The user reported that the slope snag and unwanted-collision behavior remained.
+The attempt also violated the required bounce contract: when JSON bounce is
+enabled, downward landings must still use the body/bounce response. The
+support-priority and landing-bounce behavior has therefore been reverted.
+
+What remains:
+
+- Existing JSONL collision tracing remains.
+- Bookmark logging was separately corrected to use the enabled `COLLISION`
+  category so bookmark records appear beside collision records.
+- This attempt is recorded as unsuccessful and must not be repeated as the
+  next hypothesis. The next fix should identify the exact unwanted contact or
+  later velocity writer from the bookmark-correlated trace first.

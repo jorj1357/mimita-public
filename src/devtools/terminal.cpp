@@ -106,7 +106,7 @@ void createBookmark()
         {"detail", ""}
     };
     StructuredLogger::instance().writeEvent(
-        StructuredCategory::General,
+        StructuredCategory::Collision,
         StructuredLevel::Important,
         "bookmark.created",
         "slope-edge-investigation",
@@ -133,7 +133,7 @@ void createBookmark()
         [bookmarkNumber, clientTick, serverTick, isoTime](const std::string& detail) {
             if (!detail.empty()) {
                 StructuredLogger::instance().writeEvent(
-                    StructuredCategory::General,
+                    StructuredCategory::Collision,
                     StructuredLevel::Important,
                     "bookmark.annotated",
                     "slope-edge-investigation",

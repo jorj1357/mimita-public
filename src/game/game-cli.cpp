@@ -48,6 +48,7 @@
 #include "network/ice/ice-test.h"
 #include "network/coordinator-client.h"
 #include "network/badconn/badconn.h"
+#include "gamemode/match-roles.h"
 
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
@@ -202,6 +203,50 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = MimitaNet::runSnapshotChunkSelfTest(&report);
         printf("%s", report.c_str());
         printf("[SNAPSHOT CHUNK SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--actor-preset-selftest") {
+        const std::string directory = argc > 2 ? argv[2] : "config/actor-presets";
+        std::error_code ec;
+        const auto cwd = std::filesystem::current_path(ec);
+        printf("[ACTOR PRESET SELFTEST] cwd=%s\n",
+               ec ? "unknown" : cwd.string().c_str());
+        printf("[ACTOR PRESET SELFTEST] requested_directory=%s\n", directory.c_str());
+
+        size_t jsonFiles = 0;
+        if (std::filesystem::is_directory(directory, ec)) {
+            for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+                if (ec) break;
+                std::error_code entryEc;
+                if (entry.is_regular_file(entryEc) && !entryEc &&
+                    entry.path().extension() == ".json") {
+                    ++jsonFiles;
+                    printf("[ACTOR PRESET SELFTEST] file=%s\n",
+                           entry.path().string().c_str());
+                }
+            }
+        }
+        printf("[ACTOR PRESET SELFTEST] json_files=%zu\n", jsonFiles);
+
+        auto& registry = MatchRoleRegistry::instance();
+        const bool loaded = registry.loadActorPresets(directory);
+        const auto presets = registry.actorPresets();
+        printf("[ACTOR PRESET SELFTEST] load_return=%d resolved_directory=%s count=%zu\n",
+               (int)loaded, registry.actorPresetDirectory().c_str(), presets.size());
+        for (const auto* preset : presets)
+            printf("[ACTOR PRESET SELFTEST] id=%s fov=%.1f first_person=%d movement=%s weapon_set=%s\n",
+                   preset->id.c_str(), preset->cameraFov, (int)preset->forceFirstPerson,
+                   preset->movementPreset.c_str(), preset->weaponSet.c_str());
+
+        const auto* counterStrike = registry.getActorPreset("counter_strike");
+        const bool ok = loaded && counterStrike != nullptr &&
+            counterStrike->cameraFov == 70.0f &&
+            counterStrike->forceFov && counterStrike->forceFirstPerson &&
+            counterStrike->movementPreset == "counterstrike" &&
+            counterStrike->weaponSet == "counterstrike";
+        printf("[ACTOR PRESET SELFTEST] counter_strike=%s\n", counterStrike ? "found" : "missing");
+        printf("[ACTOR PRESET SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

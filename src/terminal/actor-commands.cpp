@@ -9,6 +9,7 @@
 #include "terminal/actor-commands.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -137,7 +138,21 @@ void registerActorCommands()
                 presets = MatchRoleRegistry::instance().actorPresets();
             }
             if (presets.empty()) {
-                Terminal::instance().addLog("actor_preset_list: no presets loaded");
+                const auto& directory = MatchRoleRegistry::instance().actorPresetDirectory();
+                std::error_code ec;
+                size_t jsonFiles = 0;
+                if (std::filesystem::is_directory(directory, ec)) {
+                    for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+                        if (ec) break;
+                        if (entry.is_regular_file(ec) && entry.path().extension() == ".json")
+                            ++jsonFiles;
+                    }
+                }
+                char diagnostic[512];
+                snprintf(diagnostic, sizeof(diagnostic),
+                    "actor_preset_list: no presets loaded (directory=%s exists=%d json_files=%zu)",
+                    directory.c_str(), (int)std::filesystem::is_directory(directory, ec), jsonFiles);
+                Terminal::instance().addLog(diagnostic);
                 return;
             }
             char buf[256];
