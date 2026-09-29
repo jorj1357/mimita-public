@@ -103,6 +103,27 @@ requested:
   runs the aim body for physical or hybrid.
 - Active `config/aimbody.json` mode was set to `hybrid` for human testing.
 
+## Iteration 3 (same session): stable follow force + config-edit fix
+
+Two problems reported after testing hybrid:
+
+- **Explicit-spring blow-up.** `hybrid.position_gain`/`rotation_gain` were fed
+  into explicit Euler (`v += (err*gain - v*damp)*dt`). At `gain: 500` the term
+  `gain*dt ≈ 8.3` is far past the stability limit, so the body exploded and the
+  GLB body collision shoved `player.pos` off the map; reset could not recover
+  because the aim body stayed unstable. Replaced with a stable exponential
+  blend in `applyHybridSprings`: `alpha = 1 - exp(-rate*dt)`, orientation via
+  `slerp`, limb position via `position += delta*alpha`. Stable at any magnitude.
+- **Single follow-force knob.** `physical.hybrid` now exposes `follow_force`
+  (1.0 baseline, 10.0 = ten times harder to depart from the animations.json /
+  weapon / aimbody pose), `base_rate` (tracking rate at 1.0), and
+  `position_follow`. This is the "how hard limbs track the pose" control; it
+  also lets the arms follow the weapon/aim pose closely enough to aim up.
+- **Config edits no longer rebuild the aim body.** `updateAim` no longer calls
+  `reinitPreservingState` on `ragdoll.json` generation changes; tuning is read
+  live, so editing gains cannot reset the pose or move the player. Geometry
+  changes require toggling the mode off/on.
+
 ## Validation
 
 - `tests/physical-aim-torque-test.cpp`: compile and run with
@@ -115,6 +136,9 @@ requested:
     (the latter initially failed on a missing forward declaration of
     `quatToRotationVector`; a forward declaration was added and the rebuild
     returned `Status: SUCCESS`, return 0).
+  - Iteration-3 build recompiled `ragdoll-mode-config.cpp` and
+    `ragdoll-mode.cpp` after deleting their objects; `Status: SUCCESS`,
+    return 0.
   - Executable: `C:\mimita-v9\mimita.exe`.
 
 ## Pre-existing edits
@@ -132,9 +156,10 @@ from the body. Iteration 2 addresses this and adds the hybrid mode; the hybrid
 feel, limb alignment, and the specific limit values are not yet human-verified.
 
 Test `config/aimbody.json mode == "hybrid"` (currently active, hot-reloads) and
-verify: limbs follow animations/weapons but sway with fast look and movement;
-limbs stay within range; no limb ends up far in front of the torso; no folding
-through the body; hitbox matches the visible limb. Tune `physical.limits` and
-`physical.hybrid` in `ragdoll.json`. Multiplayer limb damage is expected to
+verify: `physical.hybrid.follow_force` makes limbs track the animation/weapon
+pose as hard as wanted (10.0 should look like default mode even at speed, and
+should aim the arms up); low values give sway. Confirm editing `ragdoll.json`
+(such as `follow_force` 500→50) no longer moves or drops the player. Tune
+`physical.limits` and `physical.hybrid`. Multiplayer limb damage is expected to
 disagree with the server's static body template until ragdoll pose replication
 exists.
