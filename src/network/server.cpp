@@ -142,7 +142,10 @@ bool isKnownPacketType(uint8_t type)
 {
     // 2026-08-29: TODO use an explicit switch here so future packet types
     // cannot be silently rejected by an outdated numeric range.
-    return type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION;
+    if (type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION)
+        return true;
+    // Newer gameplay packets above the legacy numeric range. Add each here.
+    return type == PACKET_RAGDOLL_STATE;
 }
 
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)

@@ -147,14 +147,8 @@ void readWeaponOverride(const json& j, ActorPresetWeaponOverride& out)
         }
     }
 
-    if (j.contains("presentation") && j["presentation"].is_object()) {
-        const auto& p = j["presentation"];
-        out.presentation.hasDamageNumbers = readOptional(p, "damage_numbers", "damageNumber", out.presentation.damageNumbers);
-        out.presentation.hasHitEffects = readOptional(p, "impact_effect", "hitEffects", out.presentation.hitEffects);
-        out.presentation.hasMuzzleFlash = readOptional(p, "tracer_enabled", "tracerEnabled", out.presentation.muzzleFlash);
-        out.hasTracerEnabled = readOptional(p, "tracer_enabled", "tracerEnabled", out.tracerEnabled);
-        out.hasTracerThickness = readOptional(p, "tracer_thickness", "tracerThickness", out.tracerThickness);
-    }
+    // Presentation is owned by the preset's top-level "presentation" block.
+    // Weapon overrides remain gameplay-only (damage/timing/ammo/hitscan).
 }
 
 void readActorPreset(const json& j, const std::string& fallbackId,

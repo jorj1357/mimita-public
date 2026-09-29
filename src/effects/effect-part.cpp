@@ -86,6 +86,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #else
 
 #include "effect-part.h"
+#include "combat/actor-preset-weapons.h"
 #include "combat/shot-profiler.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
@@ -115,6 +116,7 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
     const std::string& targetActorId,
     float sizeScale)
 {
+    if (!ActorPresetWeapons::hitEffectsEnabled()) return nullptr;
     const auto& ecfg = HitEffects::config().entityImpact;
     if (!ecfg.enabled || !HitEffects::config().core.entityImpact) return nullptr;
     if (gHitFxTraceEnabled) {
@@ -140,6 +142,7 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
 }
 
 EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale, glm::vec3 direction) {
+    if (!ActorPresetWeapons::worldImpactEffectsEnabled()) return nullptr;
     const auto& wcfg = HitEffects::config().worldImpact;
     if (!wcfg.enabled || !HitEffects::config().core.worldImpact) return nullptr;
     if (gHitFxTraceEnabled) {
@@ -166,6 +169,8 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
 }
 
 EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale, const std::string& weaponId, bool spawnVisual, bool spawnLighting) {
+    if (!ActorPresetWeapons::muzzleFlashEnabled())
+        return nullptr;
     const MuzzleFlashSettings& cfg = MuzzleFlashConfig::instance().data();
     const WeaponDefinition* weapon = weaponId.empty()
         ? nullptr : WeaponRegistry::instance().get(weaponId);
@@ -425,6 +430,7 @@ void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount)
 
 EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim)
 {
+    if (!ActorPresetWeapons::hitEffectsEnabled()) return nullptr;
     const auto& cfg = HitEffects::config().damageImpactSphere;
     if (!cfg.enabled) return nullptr;
     glm::vec3 dir = glm::length(direction) > 0.001f ? glm::normalize(direction) : glm::vec3(0.0f, 0.0f, 1.0f);

@@ -863,6 +863,62 @@ void handleGodballState(SOCKET sock,
     }
 }
 
+void handleRagdollState(SOCKET sock,
+                        std::unordered_map<uint32_t, ServerPlayer>& players,
+                        char* buffer, int bytes) {
+    if (bytes < (int)sizeof(RagdollStatePacket)) return;
+    RagdollStatePacket* pkt = reinterpret_cast<RagdollStatePacket*>(buffer);
+
+    // The owning client is the authenticated sender. Normalize the ownership
+    // field so receivers always attribute the pose to the sender.
+    const uint32_t ownerId = pkt->header.playerId;
+    auto it = players.find(ownerId);
+    if (it == players.end()) return;
+    pkt->ownerPlayerId = ownerId;
+    if (pkt->count > 6) pkt->count = 6;
+
+    // Store the pose for authoritative hit validation rewind.
+    ServerPlayer& p = it->second;
+    RagdollReplicationPose pose;
+    pose.active = pkt->active != 0;
+    pose.mode = pkt->mode;
+    pose.sourceTick = pkt->sourceTick;
+    pose.count = pkt->count;
+    for (int i = 0; i < pose.count; ++i) {
+        pose.limbs[i].position = {pkt->limbs[i].px, pkt->limbs[i].py, pkt->limbs[i].pz};
+        pose.limbs[i].orientation = glm::normalize(glm::quat(
+            pkt->limbs[i].qw, pkt->limbs[i].qx,
+            pkt->limbs[i].qy, pkt->limbs[i].qz));
+        pose.limbs[i].hitCenter = {pkt->limbs[i].hx, pkt->limbs[i].hy, pkt->limbs[i].hz};
+        // The hitbox comes from the owning client; clamp the extents so a
+        // malformed or hostile packet cannot claim an oversized hitbox.
+        pose.limbs[i].hitHalf = glm::clamp(
+            glm::vec3(pkt->limbs[i].hhx, pkt->limbs[i].hhy, pkt->limbs[i].hhz),
+            glm::vec3(0.0f), glm::vec3(1.0f));
+    }
+    if (pose.active) {
+        p.hasRagdollPose = true;
+        ServerPlayer::RagdollPoseSample sample;
+        sample.pose = pose;
+        sample.tick = pkt->sourceTick;
+        p.ragdollHistory.push_back(sample);
+        while (p.ragdollHistory.size() > 32)
+            p.ragdollHistory.pop_front();
+    } else {
+        p.hasRagdollPose = false;
+        p.ragdollHistory.clear();
+    }
+
+    for (auto& kv : players) {
+        if (kv.first == ownerId) continue;
+        if (kv.second.transport)
+            kv.second.transport->send(buffer, bytes);
+        else
+            sendto(sock, (const char*)buffer, bytes, 0,
+                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+    }
+}
+
 void handleGodballHitClaim(SOCKET sock,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
                            std::unordered_map<uint32_t, ServerNpc>& npcs,

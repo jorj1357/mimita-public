@@ -81,9 +81,9 @@ WeaponSystem::WeaponSystem() {
 const WeaponDefinition* WeaponSystem::getDefForSlot(int slot) const {
     if (slot <= 0) return nullptr;
     for (const auto& pair : WeaponRegistry::instance().all()) {
-        if (pair.second.slot == slot) {
-            return &pair.second;
-        }
+        const WeaponDefinition* effective = WeaponRegistry::instance().get(pair.first);
+        if (effective && effective->slot == slot)
+            return effective;
     }
     return nullptr;
 }

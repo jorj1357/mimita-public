@@ -82,18 +82,40 @@ static void startServerSwordAttack(ServerPlayer& attacker,
     attacker.hasLastPhysicalWeaponShape = false;
 }
 
-// Reconstruct body-part hitboxes from the standard player template at the
-// rewound pose (position + yaw). The template stores default-pose offsets from
-// the body root at yaw 0, so rotating by the target's yaw places each part
-// exactly where the model is. Same shape the client renders — no capsule.
-static void fillTargetBodyParts(WeaponExecution::PlayerTarget& targetDesc,
-                                const glm::vec3& pos, float yaw)
+// Build a target's body-part AABBs for hit validation. When the target has an
+// active replicated limb pose (ragdoll / physical / hybrid), use its
+// owner-computed hitboxes — the exact shapes the shooter rendered. Otherwise
+// fall back to the static default-pose template at the rewound pose + yaw.
+static void buildTargetBodyPartBoxes(
+    std::vector<WeaponExecution::PlayerTarget::BodyPartBox>& out,
+    const glm::vec3& pos, float yaw, const RagdollReplicationPose* pose)
 {
+    out.clear();
+
+    if (pose && pose->active && pose->count > 0)
+    {
+        out.reserve(pose->count);
+        for (int i = 0; i < pose->count && i < kRagdollLimbCount; ++i)
+        {
+            const RagdollLimbState& limb = pose->limbs[i];
+            if (glm::length(limb.hitHalf) <= 1e-5f)
+                continue;
+            WeaponExecution::PlayerTarget::BodyPartBox box;
+            box.center = limb.hitCenter;
+            box.half = limb.hitHalf;
+            box.bodyPart =
+                (WeaponExecution::HitBodyPart)ragdollReplicatedBodyPart(i);
+            out.push_back(box);
+        }
+        if (!out.empty())
+            return;
+    }
+
     if (const auto* tpl = standardPlayerBodyTemplate())
     {
         const float c = std::cos(yaw);
         const float s = std::sin(yaw);
-        targetDesc.bodyParts.reserve(tpl->size());
+        out.reserve(tpl->size());
         for (const auto& t : *tpl)
         {
             const glm::vec3 off(t.offset.x * c - t.offset.y * s,
@@ -103,9 +125,16 @@ static void fillTargetBodyParts(WeaponExecution::PlayerTarget& targetDesc,
             box.center = pos + off;
             box.half = t.half;
             box.bodyPart = (WeaponExecution::HitBodyPart)t.bodyPart;
-            targetDesc.bodyParts.push_back(box);
+            out.push_back(box);
         }
     }
+}
+
+static void fillTargetBodyParts(WeaponExecution::PlayerTarget& targetDesc,
+                                const glm::vec3& pos, float yaw,
+                                const RagdollReplicationPose* pose = nullptr)
+{
+    buildTargetBodyPartBoxes(targetDesc.bodyParts, pos, yaw, pose);
 }
 
 // Does the claimed hit point land inside any reconstructed body-part box
@@ -113,28 +142,22 @@ static void fillTargetBodyParts(WeaponExecution::PlayerTarget& targetDesc,
 // didn't specify one.
 static bool claimedHitInBodyParts(const glm::vec3& claimedHit,
                                   const glm::vec3& pos, float yaw,
-                                  float tolerance, uint8_t& claimPart)
+                                  float tolerance, uint8_t& claimPart,
+                                  const RagdollReplicationPose* pose = nullptr)
 {
-    if (const auto* tpl = standardPlayerBodyTemplate())
+    std::vector<WeaponExecution::PlayerTarget::BodyPartBox> boxes;
+    buildTargetBodyPartBoxes(boxes, pos, yaw, pose);
+    for (const auto& box : boxes)
     {
-        const float c = std::cos(yaw);
-        const float s = std::sin(yaw);
-        for (const auto& t : *tpl)
+        const glm::vec3 half = box.half + glm::vec3(tolerance);
+        if (claimedHit.x >= box.center.x - half.x && claimedHit.x <= box.center.x + half.x &&
+            claimedHit.y >= box.center.y - half.y && claimedHit.y <= box.center.y + half.y &&
+            claimedHit.z >= box.center.z - half.z && claimedHit.z <= box.center.z + half.z)
         {
-            const glm::vec3 off(t.offset.x * c - t.offset.y * s,
-                                t.offset.x * s + t.offset.y * c,
-                                t.offset.z);
-            const glm::vec3 ctr = pos + off;
-            const glm::vec3 half = t.half + glm::vec3(tolerance);
-            if (claimedHit.x >= ctr.x - half.x && claimedHit.x <= ctr.x + half.x &&
-                claimedHit.y >= ctr.y - half.y && claimedHit.y <= ctr.y + half.y &&
-                claimedHit.z >= ctr.z - half.z && claimedHit.z <= ctr.z + half.z)
-            {
-                if (claimPart == 0 || claimPart == 2)
-                    claimPart = t.bodyPart == 0 ? 2
-                        : (t.bodyPart == 1 ? 1 : 3);
-                return true;
-            }
+            if (claimPart == 0 || claimPart == 2)
+                claimPart = box.bodyPart == WeaponExecution::HitBodyPart::Head ? 1
+                    : (box.bodyPart == WeaponExecution::HitBodyPart::Leg ? 3 : 2);
+            return true;
         }
     }
     return false;
@@ -561,10 +584,16 @@ void handleAttackRequest(
             targetDesc.radius = PLAYER_RADIUS;
             targetDesc.height = PLAYER_HEIGHT;
             targetDesc.dead = target.dead;
-            // Reconstruct the victim's real body-part hitboxes (head/torso/
-            // arms/legs) at the rewound pose + rewound yaw from the standard
-            // body template — never an invisible capsule.
-            fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw);
+            // Prefer the victim's own replicated limb hitboxes (ragdoll /
+            // physical / hybrid) at the rewind tick; else the static body
+            // template at the rewound pose + yaw. Never an invisible capsule.
+            RagdollReplicationPose ragdollPose;
+            const RagdollReplicationPose* ragdollPosePtr = nullptr;
+            if (target.hasRagdollPose &&
+                getPlayerRagdollPoseAtTick(target, rewindTick, ragdollPose))
+                ragdollPosePtr = &ragdollPose;
+            fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw,
+                                ragdollPosePtr);
             targets.push_back(targetDesc);
         }
         // Also include NPCs as trace targets, validated at the pose the
@@ -714,10 +743,16 @@ void handleAttackRequest(
                                                 rewoundPos, rewoundYaw);
                             rewoundTargetPos = rewoundPos;
                             // Validate the claimed hit against the victim's
-                            // reconstructed body-part hitboxes (same template as
-                            // the re-trace) — never a capsule.
+                            // replicated limb hitboxes when present (same shapes
+                            // as the re-trace), else the static template.
+                            RagdollReplicationPose claimPose;
+                            const RagdollReplicationPose* claimPosePtr = nullptr;
+                            if (playerClaimIt->second.hasRagdollPose &&
+                                getPlayerRagdollPoseAtTick(playerClaimIt->second,
+                                                           rewindTick, claimPose))
+                                claimPosePtr = &claimPose;
                             if (claimedHitInBodyParts(claimedHit, rewoundPos, rewoundYaw,
-                                                      tolerance, claimPart))
+                                                      tolerance, claimPart, claimPosePtr))
                                 claimAccepted = true;
                         }
                     }

@@ -17,6 +17,7 @@
 #include "network/remote-entity-lifecycle.h"
 #include "network/connection-state.h"
 #include "entities/player.h"
+#include "ragdoll/ragdoll-replication.h"
 
 #include <string>
 #include <deque>
@@ -349,6 +350,10 @@ struct MultiplayerContext
     std::unordered_map<uint32_t, EntityInterpolationState> remotePlayerInterpolation;
     std::unordered_map<uint32_t, EntityInterpolationState> remoteNpcInterpolation;
     std::unordered_map<uint32_t, PlayerInfo> playerRegistry;
+    // Remote limb/ragdoll pose streams, keyed by owner player id. Sampled and
+    // applied to the replica skeleton (render + client hitboxes).
+    std::unordered_map<uint32_t, RagdollReplicationState> remoteRagdoll;
+    uint64_t lastRagdollSentMs = 0;
 
     // ── Remote avatar manifest/cache state ──────────────────────────
     // The manifest is tiny metadata. Image bytes are kept by SHA-256 and

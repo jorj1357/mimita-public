@@ -1382,6 +1382,10 @@ struct RagdollLimbWire
 {
     float px = 0.0f, py = 0.0f, pz = 0.0f;
     float qx = 0.0f, qy = 0.0f, qz = 0.0f, qw = 1.0f;
+    // Damage hitbox: world AABB center and half extents (owner-computed, same
+    // formula as the client's hit detection).
+    float hx = 0.0f, hy = 0.0f, hz = 0.0f;
+    float hhx = 0.0f, hhy = 0.0f, hhz = 0.0f;
 };
 
 struct RagdollStatePacket

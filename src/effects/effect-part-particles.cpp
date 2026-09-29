@@ -5,6 +5,7 @@
 * Does NOT own hit detection, config file parsing, or world rendering.
 */
 #include "effect-part.h"
+#include "combat/actor-preset-weapons.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "effects/hit-effects.h"
@@ -24,6 +25,7 @@ static float randomSignedRange(float amount)
 }
 
 EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string& victim, int damage) {
+    if (!ActorPresetWeapons::damageNumbersEnabled()) return nullptr;
     const auto& cfg = HitEffects::config();
     const auto& dn = cfg.damageNumber;
     if (!cfg.core.damageNumbers || !dn.enabled) return nullptr;

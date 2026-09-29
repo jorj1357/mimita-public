@@ -462,7 +462,10 @@ static bool isKnownPacketType(uint8_t type)
 {
     // 2026-08-29: TODO use an explicit switch here so future packet types
     // cannot be silently rejected by an outdated numeric range.
-    return type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION;
+    if (type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION)
+        return true;
+    // Newer gameplay packets above the legacy numeric range. Add each here.
+    return type == PACKET_RAGDOLL_STATE;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1952,6 +1955,11 @@ ServerPacketProcessResult processServerPacket(
     else if (header->type == PACKET_GODBALL_STATE)
     {
         handleGodballState(sock, players, buffer, bytes);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_RAGDOLL_STATE)
+    {
+        handleRagdollState(sock, players, buffer, bytes);
         result.handled = true;
     }
     else if (header->type == PACKET_GODBALL_HIT_CLAIM)

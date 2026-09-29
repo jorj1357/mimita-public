@@ -12,5 +12,10 @@ bool apply(const MatchRoleDefinition& preset);
 bool refresh();
 void clear();
 const std::string& activePresetId();
+bool damageNumbersEnabled();
+bool hitEffectsEnabled();
+bool worldImpactEffectsEnabled();
+bool bloodEffectsEnabled();
+bool muzzleFlashEnabled();
 
 } // namespace ActorPresetWeapons

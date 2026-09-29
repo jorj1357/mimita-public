@@ -1925,6 +1925,31 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
                                   ctx.interpolationRenderTick, dt, true);
     }
 
+    // ── Replicated limb / ragdoll poses for remote players ─────────────
+    // Applied after procedural animation so the wire pose owns the replica
+    // skeleton (and therefore the client hitboxes). Sampled behind real time so
+    // it sits between the two most recent low-rate frames.
+    {
+        static constexpr double kRagdollPresentationDelaySeconds = 0.10;
+        const double nowRecvMs = (double)nowMs();
+        for (auto& kv : ctx.remoteRagdoll)
+        {
+            auto playerIt = ctx.remotePlayers.find(kv.first);
+            if (playerIt == ctx.remotePlayers.end())
+            {
+                RagdollModeSystem::instance().clearReplicatedBody(kv.first);
+                continue;
+            }
+
+            RagdollReplicationPose pose;
+            if (kv.second.sample(nowRecvMs, kRagdollPresentationDelaySeconds, pose))
+                RagdollModeSystem::instance().applyReplicatedPose(
+                    playerIt->second, kv.first, pose);
+            else
+                RagdollModeSystem::instance().clearReplicatedBody(kv.first);
+        }
+    }
+
     // ── Remote-NPC position alignment diagnostic (once per second, aggregate) ─
     // Proves body / hitbox / muzzle alignment after the direct-render fix:
     // authoritative pos, rendered body pos, hitbox, muzzle, distances, velocity,

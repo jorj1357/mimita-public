@@ -388,7 +388,10 @@ bool solveActorTriangleCollision(
         glm::vec3 responseNormal = manifoldResponseNormal(c);
         const bool walkable = responseNormal.z > MAX_WALKABLE_SLOPE_DOT;
         const bool nearFeet = c.point.z <= lowestZ + 0.15f;
-        if (walkable && nearFeet && responseNormal.z > 0.90f)
+        // Only a numerically flat floor is canonicalized to world-up.  A
+        // real walkable slope must keep its oriented surface normal so the
+        // shared bounce response can return momentum relative to that slope.
+        if (walkable && nearFeet && responseNormal.z > 0.995f)
             responseNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
         const nlohmann::json contactFields = {

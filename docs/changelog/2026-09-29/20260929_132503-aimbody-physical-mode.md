@@ -124,6 +124,76 @@ Two problems reported after testing hybrid:
   live, so editing gains cannot reset the pose or move the player. Geometry
   changes require toggling the mode off/on.
 
+## Iteration 4 (same session): limb / ragdoll replication (Phase 6 first slice)
+
+Adds a valid networking path for limb state. The owning client sends its six
+limb world transforms at ~15 Hz; the server relays them to every other player;
+remote clients interpolate and apply them to the replica skeleton, so both
+rendering and client-side hitboxes follow the exact limbs. NPCs are viewers
+only, so they do not need to send. This is a first slice: the source is the
+owning client (not server-simulated), which is a noted trust boundary.
+
+New files:
+
+- `src/ragdoll/ragdoll-replication.h` — fixed six-limb pose, mode enum,
+  `interpolateReplicatedPose`, and the two-sample `RagdollReplicationState`.
+- `tests/ragdoll-replication-test.cpp` — limb mapping and buffer/interpolation.
+
+Wire and transport:
+
+- `src/network/packets.h` — `PACKET_RAGDOLL_STATE = 69`, `RagdollLimbWire`,
+  `RagdollStatePacket` (200 bytes, static_assert < 1200).
+- `src/network/server.cpp`, `server-packets.cpp` — `isKnownPacketType` also
+  accepts 69 (the legacy numeric range ends at 61).
+- `src/network/server-packet-handlers.cpp` + `server.h` — `handleRagdollState`
+  normalizes the owner from the sender and relays to all other players, modeled
+  on `handleGodballState`.
+- `src/network/multiplayer-tick.cpp` — receive branch pushes into
+  `ctx.remoteRagdoll`; send block emits the local pose at 15 Hz and one
+  inactive pose when it stops.
+- `src/network/multiplayer-context.h` — `remoteRagdoll` map + send timer.
+- `src/network/multiplayer-interpolation.cpp` — after procedural animation,
+  samples each owner's stream behind real time (100 ms) and applies it.
+- `src/network/multiplayer-tick.cpp` / `multiplayer-packets.cpp` — clear the
+  stream and cached bind body on despawn and disconnect.
+
+Ownership:
+
+- `src/ragdoll/ragdoll-mode.h/.cpp` — `replicatedPose()` / `clearReplicatedPose`
+  / `cacheReplicatedPose` (owner side), `applyReplicatedPose` /
+  `clearReplicatedBody` / `clearAllReplicatedBodies` (remote side, caches one
+  bind `RagdollBody` per owner so mesh alignment is exact).
+- `src/sim/simulate-tick.cpp` — clears the replicated pose each tick so a
+  stopped body sends one inactive frame.
+
+## Iteration 5 (same session): server validates the replicated pose
+
+The user asked the server to validate the replicated pose and make limb damage
+work for other players ("shooting the limbs = damage"), instead of the static
+default-pose template.
+
+- `src/ragdoll/ragdoll-replication.h`: each `RagdollLimbState` now also carries
+  `hitCenter` / `hitHalf` (the world AABB the owner computes with the exact
+  formula the client uses for hit detection), plus
+  `ragdollReplicatedBodyPart(limbIndex)`.
+- `src/ragdoll/ragdoll-mode.cpp`: `cacheReplicatedPose(const Player&, ...)`
+  fills the hitbox from `player.physicalBody.parts[].collider` and the refreshed
+  `worldTransform`. Ragdoll mode now refreshes world transforms before caching.
+- `src/network/packets.h`: `RagdollLimbWire` carries `hx/hy/hz` +
+  `hhx/hhy/hhz`. Packet is 344 bytes (still < 1200).
+- `src/network/multiplayer-tick.cpp`: send fills the hitbox fields; receive
+  parses them.
+- `src/network/server.h` / `server-players.cpp`: `ServerPlayer` stores a bounded
+  `ragdollHistory` (32 samples) and `hasRagdollPose`;
+  `getPlayerRagdollPoseAtTick` returns the interpolated pose nearest the rewind
+  tick.
+- `src/network/server-packet-handlers.cpp`: `handleRagdollState` stores the pose
+  in the history (and clears it when the body stops).
+- `src/network/server-attack.cpp`: `buildTargetBodyPartBoxes` prefers the
+  replicated limb hitboxes and falls back to the static template; used by both
+  the authoritative trace (`fillTargetBodyParts`) and the client-claim
+  validation (`claimedHitInBodyParts`), at the victim's rewind tick.
+
 ## Validation
 
 - `tests/physical-aim-torque-test.cpp`: compile and run with
@@ -138,6 +208,15 @@ Two problems reported after testing hybrid:
     returned `Status: SUCCESS`, return 0).
   - Iteration-3 build recompiled `ragdoll-mode-config.cpp` and
     `ragdoll-mode.cpp` after deleting their objects; `Status: SUCCESS`,
+    return 0.
+  - Iteration-4 build recompiled `multiplayer-interpolation.cpp`,
+    `multiplayer-packets.cpp`, `multiplayer-tick.cpp`,
+    `server-packet-handlers.cpp`, `server-packets.cpp`, `server.cpp`,
+    `ragdoll-mode.cpp`, `simulate-tick.cpp`; `Status: SUCCESS`, return 0.
+  - `tests/ragdoll-replication-test.cpp`: `4 passed, 0 failed`.
+  - Iteration-5 build recompiled `multiplayer-tick.cpp`, `server-attack.cpp`,
+    `server-packet-handlers.cpp`, `server-packets.cpp`, `server-players.cpp`,
+    `server.cpp`, `ragdoll-mode.cpp`, `simulate-tick.cpp`; `Status: SUCCESS`,
     return 0.
   - Executable: `C:\mimita-v9\mimita.exe`.
 

@@ -1,7 +1,7 @@
 # Walkable Slope and Edge Snag
 
 Time created: 2026-09-29T12:43:57Z
-Time last updated: 2026-09-29T19:18:00Z
+Time last updated: 2026-09-29T19:35:00Z
 
 Status: ATTEMPTED FIX (6) — NOT FIXED
 
@@ -250,3 +250,32 @@ What remains:
 - This attempt is recorded as unsuccessful and must not be repeated as the
   next hypothesis. The next fix should identify the exact unwanted contact or
   later velocity writer from the bookmark-correlated trace first.
+
+## Attempted Fix 7 — Restore surface-relative angled bounce
+
+Time:
+`2026-09-29T19:35:00Z`
+
+Change tried:
+
+- Kept the existing JSON-controlled `respondVelocityAgainstNormal()` path.
+- Changed the actor solver's near-feet normal canonicalization so only a
+  numerically flat floor (`normal.z > 0.995`) becomes world-up.
+- Walkable slopes and angled surfaces now retain their actual oriented surface
+  normal for bounce and sliding.
+- Added a deterministic collision-stress assertion that an angled surface
+  response contains both lateral and upward velocity when bounce is enabled.
+
+Why it seemed plausible:
+
+The shared response already reflects velocity against the supplied normal.
+The previous `normal.z > 0.90` rule converted a broad range of shallow slopes
+into `(0, 0, 1)`, which necessarily made their bounce look like a straight-up
+floor bounce. Restoring the actual slope normal is the smallest change that
+matches the requested old behavior without disabling JSON bounce or adding a
+second response owner.
+
+Result:
+
+The source-level change and deterministic self-test are pending the cold build
+and live slope/down-dash review. This is not yet a confirmed live fix.

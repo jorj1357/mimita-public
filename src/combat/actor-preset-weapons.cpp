@@ -11,6 +11,11 @@
 namespace ActorPresetWeapons {
 namespace {
 std::string gActivePreset;
+bool gDamageNumbersEnabled = true;
+bool gHitEffectsEnabled = true;
+bool gWorldImpactEffectsEnabled = true;
+bool gBloodEffectsEnabled = true;
+bool gMuzzleFlashEnabled = true;
 
 void applyPresentation(WeaponDefinition& weapon,
                        const ActorPresetPresentation& p)
@@ -54,6 +59,12 @@ bool apply(const MatchRoleDefinition& preset)
     for (auto& entry : effective)
         applyPresentation(entry.second, preset.presentation);
 
+    gDamageNumbersEnabled = !preset.presentation.hasDamageNumbers || preset.presentation.damageNumbers;
+    gHitEffectsEnabled = !preset.presentation.hasHitEffects || preset.presentation.hitEffects;
+    gWorldImpactEffectsEnabled = !preset.presentation.hasWorldImpactEffects || preset.presentation.worldImpactEffects;
+    gBloodEffectsEnabled = !preset.presentation.hasBloodEffects || preset.presentation.bloodEffects;
+    gMuzzleFlashEnabled = !preset.presentation.hasMuzzleFlash || preset.presentation.muzzleFlash;
+
     for (const auto& entry : preset.weaponOverrides) {
         auto it = effective.find(entry.first);
         if (it == effective.end())
@@ -78,11 +89,22 @@ void clear()
 {
     WeaponRegistry::instance().clearActiveDefinitions();
     gActivePreset.clear();
+    gDamageNumbersEnabled = true;
+    gHitEffectsEnabled = true;
+    gWorldImpactEffectsEnabled = true;
+    gBloodEffectsEnabled = true;
+    gMuzzleFlashEnabled = true;
 }
 
 const std::string& activePresetId()
 {
     return gActivePreset;
 }
+
+bool damageNumbersEnabled() { return gDamageNumbersEnabled; }
+bool hitEffectsEnabled() { return gHitEffectsEnabled; }
+bool worldImpactEffectsEnabled() { return gWorldImpactEffectsEnabled; }
+bool bloodEffectsEnabled() { return gBloodEffectsEnabled; }
+bool muzzleFlashEnabled() { return gMuzzleFlashEnabled; }
 
 } // namespace ActorPresetWeapons

@@ -1186,3 +1186,134 @@ Two further python build_agent.py runs were needed while iterating the same
 aim-body owner: one failed to compile agdoll-mode.cpp (missing forward
 declaration of `quatToRotationVector`) and the next returned `Status:
 SUCCESS`, return code 0. Same boundary as this occurrence, no new cold source.
+
+## Cold-build occurrence 18
+
+UTC time:
+`2026-09-29T19:40:01Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_132503-aimbody-physical-mode.md`
+
+### Why the cold build was required
+
+A new limb/ragdoll replication packet, server relay handler, and remote
+presentation were added. These live in cold network translation units and the
+ragdoll owner, so a relink was needed to exercise the path in-game.
+
+### Exact cold source / boundary
+
+- `src/network/packets.h`, `server.cpp`, `server-packets.cpp`,
+  `server-packet-handlers.cpp`, `server.h` — new packet and relay.
+- `src/network/multiplayer-tick.cpp`, `multiplayer-interpolation.cpp`,
+  `multiplayer-packets.cpp`, `multiplayer-context.h` — send/receive/apply.
+- `src/ragdoll/ragdoll-mode.cpp`, `src/sim/simulate-tick.cpp`.
+
+### Result needed from the new executable
+
+Compile the new packet path and let a human confirm that a remote client sees
+the owner's physical/hybrid/ragdoll limbs, interpolated, at render and hitbox
+positions.
+
+### Why it could not be applied through the live path
+
+The packet table, server dispatch, and presentation order are cold owners; a hot
+module cannot add a packet type or a fixed-tick apply step.
+
+### Build result
+
+`python build_agent.py` compiled the eight changed translation units and
+returned `Status: SUCCESS`, return code 0. Produced `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Two clients: one enters physical/hybrid (or toggles ragdoll) and moves;
+the other must see the limbs move with it, interpolated, with no popping.
+
+### Next migration/falsification step
+
+Decide server authority: either keep owner-authoritative limbs (current) or have
+the server simulate and validate the body, then feed server hitbox validation
+(`server-body-template` / `server-attack`) from the replicated pose.
+
+## Cold-build occurrence 19
+
+UTC time:
+`2026-09-29T19:50:04Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_132503-aimbody-physical-mode.md`
+
+### Why the cold build was required
+
+Server-side hit validation was changed to use the replicated limb hitboxes and
+the packet grew two new fields. These live in cold network/ragdoll translation
+units, so a relink was needed to validate shots against the physical pose.
+
+### Exact cold source / boundary
+
+- `src/ragdoll/ragdoll-replication.h`, `src/ragdoll/ragdoll-mode.cpp`.
+- `src/network/packets.h`, `multiplayer-tick.cpp`, `server.h`,
+  `server-players.cpp`, `server-packet-handlers.cpp`, `server-attack.cpp`.
+
+### Result needed from the new executable
+
+Compile the pose-carrying packet and validation path, then confirm in a live
+two-client match that shooting a physically-posed limb registers damage on that
+limb for both the re-trace and the client claim.
+
+### Why it could not be applied through the live path
+
+The packet layout, server validation, and rewind history are cold owners; a hot
+module cannot change the wire struct or the server trace.
+
+### Build result
+
+`python build_agent.py` compiled the eight changed translation units and
+returned `Status: SUCCESS`, return code 0. Produced `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Two clients: one enters ragdoll/physical/hybrid; the other shoots an
+outstretched limb and must see damage on that limb, at the rendered position.
+
+### Next migration/falsification step
+
+Decide whether the server should eventually simulate the body itself (true
+authority) rather than trust owner hitboxes, and extend the same replicated
+hitboxes to melee/physical-contact and explosion splash paths.
+
+---
+
+### Cold-build occurrence 23
+
+Time:
+`2026-09-29T19:50:19Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_195019-restore-angled-slope-bounce.md`
+
+The actor-triangle solver's surface-normal response and collision stress test
+changed in cold C++ translation units. A new executable was required to prove
+the linked self-test includes the restoration.
+
+### Build result
+
+The first build attempt hit a linker-state failure while the changed collision
+objects were being refreshed. A rerun returned `Status: SUCCESS` and produced
+the current executable under `.dev/builds/0462/mimita.exe`. Running that
+executable with `--collision-selftest` returned exit code 0 and
+`[COLLISION SELFTEST] PASS`, including
+`angled surface keeps lateral bounce`.
+
+### Human review
+
+Pending. Reproduce a downward dash into a slope and an angled edge in-game.
+Confirm that JSON bounce remains enabled, the player rebounds relative to the
+surface, and the bookmark-correlated `events.jsonl` records the contact's
+`surface_normal`, `response_normal`, and before/after velocity.
+
+### Next migration step
+
+Move this collision response owner into the live-reloadable movement module if
+the project requires changing the behavior without a cold executable relink.

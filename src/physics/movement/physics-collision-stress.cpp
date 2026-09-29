@@ -279,6 +279,23 @@ bool collisionStressSelfTest(std::string* outSummary)
             ok = ok && still;
             summary += still ? "PASS " : "FAIL ";
             summary += "[COLLISION STRESS] resting root contact adds no push\n";
+
+            // A down-dash into an angled surface must retain a lateral
+            // component.  This guards against canonicalizing walkable slope
+            // normals to world-up before the shared bounce response runs.
+            const glm::vec3 slopeNormal =
+                glm::normalize(glm::vec3(0.6f, 0.0f, 0.8f));
+            Player slopePlayer(false);
+            slopePlayer.vel = glm::vec3(0.0f);
+            slopePlayer.externalImpulse = glm::vec3(0.0f);
+            slopePlayer.collision.bounceCooldown = 0.0f;
+            respondVelocityAgainstNormal(
+                slopePlayer, slopeNormal, glm::vec3(-12.0f, 0.0f, -20.0f), true);
+            const bool angledBounce = slopePlayer.vel.x > 0.01f &&
+                                      slopePlayer.vel.z > 0.01f;
+            ok = ok && angledBounce;
+            summary += angledBounce ? "PASS " : "FAIL ";
+            summary += "[COLLISION STRESS] angled surface keeps lateral bounce\n";
         }
         else
         {

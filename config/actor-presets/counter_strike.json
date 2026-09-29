@@ -44,12 +44,18 @@
       },
       "damage_policy": {
         "allowed_body_parts": ["head"]
-      },
-      "presentation": {
-        "damage_numbers": false,
-        "impact_effect": false,
-        "tracer_enabled": true,
-        "tracer_thickness": 0.01
+      }
+    },
+    "shotgun": {
+      "damage": 20,
+      "fire_delay": 0.8,
+      "reload_time": 2.0,
+      "magazine_size": 8,
+      "reserve_ammo": 32,
+      "hitscan": {
+        "enabled": true,
+        "beam_thickness": 2.0,
+        "world_thickness": 0.0
       }
     }
   }

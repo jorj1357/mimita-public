@@ -12,6 +12,7 @@
 
 
 #include "combat/shot-profiler.h"
+#include "combat/actor-preset-weapons.h"
 #include "combat/weapon-registry.h"
 #include "effects/effect-part.h"
 #include "config/impact-decals-config.h"
@@ -49,9 +50,13 @@ void HitEffects::onHit(const HitEvent& event)
     const bool hitEffects = !weapon || weapon->hitEffectsEnabled;
     const bool worldImpactEffects = !weapon || weapon->worldImpactEffectsEnabled;
     const bool bloodEffects = !weapon || weapon->bloodEffectsEnabled;
+    const bool presetDamageNumbers = ActorPresetWeapons::damageNumbersEnabled();
+    const bool presetHitEffects = ActorPresetWeapons::hitEffectsEnabled();
+    const bool presetWorldImpactEffects = ActorPresetWeapons::worldImpactEffectsEnabled();
+    const bool presetBloodEffects = ActorPresetWeapons::bloodEffectsEnabled();
 
     // 1. Legacy contact sphere
-    if (gConfig.legacyContactSphere.enabled) {
+    if (gConfig.legacyContactSphere.enabled && presetHitEffects) {
         EffectPart e;
         e.position = event.position;
         const auto& l = gConfig.legacyContactSphere;
@@ -65,30 +70,30 @@ void HitEffects::onHit(const HitEvent& event)
     }
 
     // 2. Entity impact sphere (red)
-    if (event.hitEntity && gConfig.core.entityImpact && hitEffects) {
+    if (event.hitEntity && gConfig.core.entityImpact && hitEffects && presetHitEffects) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->impactSphereMs : nullptr);
         EffectPartSystem::instance().spawnEntityImpact(
             event.position, event.normal, event.attacker, event.victim);
     }
 
     // 3. World impact sphere (gray)
-    if (event.hitWorld && gConfig.core.worldImpact && worldImpactEffects) {
+    if (event.hitWorld && gConfig.core.worldImpact && worldImpactEffects && presetWorldImpactEffects) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->impactSphereMs : nullptr);
         EffectPartSystem::instance().spawnWorldImpact(event.position, event.normal, 1.0f, event.direction);
     }
 
     // 3b. World cracks along the surface at the hit point
-    if (event.hitWorld && gConfig.core.worldImpact && worldImpactEffects) {
+    if (event.hitWorld && gConfig.core.worldImpact && worldImpactEffects && presetWorldImpactEffects) {
         EffectPartSystem::instance().spawnWorldCracks(event.position, event.normal, event.direction);
     }
 
     // 4. Bullet impact hole
-    if (event.hitWorld && gConfig.core.bulletImpact && worldImpactEffects) {
+    if (event.hitWorld && gConfig.core.bulletImpact && worldImpactEffects && presetWorldImpactEffects) {
         EffectPartSystem::instance().spawnBulletImpact(event.position, event.normal);
     }
 
     // 5. Blood effect (gate: impact_decals.json blood.enabled is the single switch)
-    if (event.hitEntity && ImpactDecalsConfig::instance().data().blood.enabled && bloodEffects) {
+    if (event.hitEntity && ImpactDecalsConfig::instance().data().blood.enabled && bloodEffects && presetBloodEffects) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->bloodMs : nullptr);
         const float directness = glm::length(event.direction) > 0.001f &&
                                  glm::length(event.normal) > 0.001f
@@ -101,13 +106,13 @@ void HitEffects::onHit(const HitEvent& event)
     }
 
     // 6. Damage number - only for entity hits (not world geometry)
-    if (event.hitEntity && event.spawnDamageNumber && damageNumbers) {
+    if (event.hitEntity && event.spawnDamageNumber && damageNumbers && presetDamageNumbers) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->damageNumberMs : nullptr);
         EffectPartSystem::instance().spawnDamage(event.position, event.victim, event.damage);
     }
 
     // 6b. Red impact sphere at hit position
-    if (event.hitEntity && hitEffects && glm::length(event.direction) > 0.001f) {
+    if (event.hitEntity && hitEffects && presetHitEffects && glm::length(event.direction) > 0.001f) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->impactSphereMs : nullptr);
         EffectPartSystem::instance().spawnDamageImpactSphere(event.position, event.direction, event.victim);
     }
@@ -126,7 +131,7 @@ void HitEffects::onHit(const HitEvent& event)
     // 7. HitFX timeline (burst)
     {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->hitBurstMs : nullptr);
-        if (hitEffects)
+        if (hitEffects && presetHitEffects)
             spawnHitEffects(event.position, event.direction, event.normal, event.damage,
                             event.attacker, event.victim, false);
     }

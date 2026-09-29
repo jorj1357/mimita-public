@@ -66,6 +66,10 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     MIMITA_PERF_SCOPE("Simulation::SimulateTick");
     if (!sim.player || !sim.world || !sim.npcSystem) return;
 
+    // Recomputed below only while a physical body or ragdoll is running, so a
+    // stopped body sends one inactive pose to clear the remote replicas.
+    RagdollModeSystem::instance().clearReplicatedPose();
+
     if (!sim.player->dead) {
         // Handle ragdoll mode toggle
         static bool ragdollTogglePrev = false;

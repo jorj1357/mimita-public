@@ -240,11 +240,24 @@ bool handleGameCLI(int argc, char** argv)
                    preset->movementPreset.c_str(), preset->weaponSet.c_str());
 
         const auto* counterStrike = registry.getActorPreset("counter_strike");
+        const auto revolver = counterStrike && counterStrike->weaponOverrides.find("revolver") != counterStrike->weaponOverrides.end()
+            ? &counterStrike->weaponOverrides.at("revolver") : nullptr;
+        const auto shotgun = counterStrike && counterStrike->weaponOverrides.find("shotgun") != counterStrike->weaponOverrides.end()
+            ? &counterStrike->weaponOverrides.at("shotgun") : nullptr;
         const bool ok = loaded && counterStrike != nullptr &&
             counterStrike->cameraFov == 70.0f &&
             counterStrike->forceFov && counterStrike->forceFirstPerson &&
-            counterStrike->movementPreset == "counterstrike" &&
-            counterStrike->weaponSet == "counterstrike";
+            !counterStrike->movementPreset.empty() &&
+            counterStrike->weaponSet == "counterstrike" &&
+            revolver && revolver->hasDamage && revolver->damage == 100.0f &&
+            revolver->hasFireDelay && revolver->fireDelay == 0.8f &&
+            revolver->hasReloadTime && revolver->reloadTime == 2.2f &&
+            revolver->hasMagazineSize && revolver->magazineSize == 6 &&
+            revolver->hasReserveAmmo && revolver->reserveAmmo == 36 &&
+            shotgun && shotgun->hasDamage && shotgun->hasFireDelay &&
+            !counterStrike->presentation.damageNumbers &&
+            !counterStrike->presentation.hitEffects &&
+            !counterStrike->presentation.worldImpactEffects;
         printf("[ACTOR PRESET SELFTEST] counter_strike=%s\n", counterStrike ? "found" : "missing");
         printf("[ACTOR PRESET SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);

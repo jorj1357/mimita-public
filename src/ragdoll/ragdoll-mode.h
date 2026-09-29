@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -9,6 +10,7 @@
 
 #include "physics/physical-body.h"
 #include "entities/player.h"
+#include "ragdoll/ragdoll-replication.h"
 
 struct World;
 class Camera;
@@ -110,6 +112,19 @@ public:
                    const glm::vec3& camForward);
     bool aimActive() const { return mAimActive; }
 
+    // ── Limb replication ────────────────────────────────────────────
+    // Latest local pose to send (by the client send loop). active is false when
+    // neither ragdoll nor a physical body is running.
+    const RagdollReplicationPose& replicatedPose() const { return mReplicated; }
+    void clearReplicatedPose();
+
+    // Remote presentation: build/cache a bind body for the owner, then write the
+    // received limb pose into the replica skeleton (render + client hitboxes).
+    void applyReplicatedPose(Player& player, uint32_t ownerId,
+                             const RagdollReplicationPose& pose);
+    void clearReplicatedBody(uint32_t ownerId);
+    void clearAllReplicatedBodies() { mReplicatedBodies.clear(); }
+
     void render(const Camera& camera) const;
 
     glm::vec3 getHeadPosition() const;
@@ -169,6 +184,8 @@ private:
     void captureAimTargets(const Player& player, RagdollBody& b);
     void applyHybridSprings(RagdollBody& b, float dt);
     void clampAimRanges(const Player& player, RagdollBody& b, float beta);
+    void cacheReplicatedPose(const Player& player, const RagdollBody& b,
+                             uint8_t mode, uint32_t sourceTick);
 
     // Physics-only step shared by corpses (no input, no motors).
     void stepBody(RagdollBody& b, const World& world, float dt);
@@ -178,6 +195,8 @@ private:
     RagdollBody mAlive;
     RagdollBody mAim;
     bool mAimActive = false;
+    RagdollReplicationPose mReplicated;
+    std::unordered_map<uint32_t, RagdollBody> mReplicatedBodies;
     std::vector<RagdollCorpse> mCorpses;
     glm::vec3 mCameraSmoothPos{0.0f};
     bool mCameraSmoothInit = false;

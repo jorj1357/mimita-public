@@ -26,6 +26,7 @@
 #include "combat/weapon-quick-hit.h"
 #include "combat/weapon-spyknife.h"
 #include "vip/vip-appearance.h"
+#include "ragdoll/ragdoll-replication.h"
 
 #include <memory>
 
@@ -378,6 +379,18 @@ struct ServerPlayer
     bool physicalAttackIsLunge = false;
     float meleeCooldownTimer = 0.0f;
     std::deque<PositionHistoryEntry> posHistory;
+
+    // ── Replicated limb / ragdoll pose (owner-authoritative) ───────────
+    // Recent poses keyed by the owner's simulation tick, for hit validation
+    // rewind. When no active pose exists, validation falls back to the static
+    // body template.
+    struct RagdollPoseSample {
+        RagdollReplicationPose pose;
+        uint32_t tick = 0;
+    };
+    std::deque<RagdollPoseSample> ragdollHistory;
+    bool hasRagdollPose = false;
+
     // ── Per-tick rate limits ───────────────────────────────────────
     uint32_t shotsThisTick = 0;
     uint32_t attackPktsThisTick = 0;
@@ -797,6 +810,11 @@ void pushPositionHistory(ServerPlayer& p, uint32_t tick);
 bool getPositionAtTick(const ServerPlayer& p, uint32_t targetTick, glm::vec3& outPos);
 bool getPlayerPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
                          glm::vec3& outPos, float& outYaw);
+// Replicated limb pose nearest (or bracketing) the rewind tick. Returns false
+// when the player has no active replicated pose, so callers fall back to the
+// static body template.
+bool getPlayerRagdollPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
+                                RagdollReplicationPose& out);
 // Begin a new broadcast-smoothing segment toward the just-accepted report.
 void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick);
 // Advance the broadcast-smoothing segment by one server tick.
@@ -1005,6 +1023,9 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
                                uint32_t tick, uint64_t& totalPacketsOut,
                                                                DisagreementRetransmitState* retransmitState = nullptr);
 void handleGodballState(SOCKET sock,
+                        std::unordered_map<uint32_t, ServerPlayer>& players,
+                        char* buffer, int bytes);
+void handleRagdollState(SOCKET sock,
                         std::unordered_map<uint32_t, ServerPlayer>& players,
                         char* buffer, int bytes);
 void handleGodballHitClaim(SOCKET sock,

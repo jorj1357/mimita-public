@@ -30,6 +30,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "notifications/notifications.h"
 #include "gui/hud/reward-popup.h"
 #include "killfeed/killfeed.h"
@@ -122,6 +123,8 @@ static void eraseLocalReplica(MultiplayerContext& ctx, uint32_t entityId,
         return;
     const bool hadPlayer = ctx.remotePlayers.erase(entityId) != 0;
     const bool hadInterp = ctx.remotePlayerInterpolation.erase(entityId) != 0;
+    ctx.remoteRagdoll.erase(entityId);
+    RagdollModeSystem::instance().clearReplicatedBody(entityId);
     if (hadPlayer || hadInterp)
     {
         printf("[CLIENT LOCAL REPLICA DROP] playerId=%u entityId=%u reason=%s\n",
@@ -497,6 +500,8 @@ static void processSnapshotEntities(
                 it = ctx.remotePlayers.erase(it);
                 ctx.remotePlayerInterpolation.erase(eid);
                 ctx.playerRegistry.erase(eid);
+                ctx.remoteRagdoll.erase(eid);
+                RagdollModeSystem::instance().clearReplicatedBody(eid);
                 mpClearRemoteReconnectVisual(ctx, eid);
             }
             else
@@ -1652,6 +1657,32 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 }
             }
         }
+        else if (header->type == PACKET_RAGDOLL_STATE &&
+                 bytes >= (int)sizeof(RagdollStatePacket))
+        {
+            const RagdollStatePacket* rs =
+                reinterpret_cast<const RagdollStatePacket*>(buffer);
+            if (rs->ownerPlayerId != ctx.localPlayerId)
+            {
+                RagdollReplicationPose pose;
+                pose.active = rs->active != 0;
+                pose.mode = rs->mode;
+                pose.sourceTick = rs->sourceTick;
+                pose.count = rs->count > 6 ? 6 : rs->count;
+                for (int i = 0; i < pose.count; ++i) {
+                    pose.limbs[i].position =
+                        {rs->limbs[i].px, rs->limbs[i].py, rs->limbs[i].pz};
+                    pose.limbs[i].orientation = glm::normalize(glm::quat(
+                        rs->limbs[i].qw, rs->limbs[i].qx,
+                        rs->limbs[i].qy, rs->limbs[i].qz));
+                    pose.limbs[i].hitCenter =
+                        {rs->limbs[i].hx, rs->limbs[i].hy, rs->limbs[i].hz};
+                    pose.limbs[i].hitHalf =
+                        {rs->limbs[i].hhx, rs->limbs[i].hhy, rs->limbs[i].hhz};
+                }
+                ctx.remoteRagdoll[rs->ownerPlayerId].push(pose, (double)nowMs());
+            }
+        }
         else if (header->type == PACKET_SERVER_COMMAND_RESULT &&
                  bytes >= (int)sizeof(ServerCommandResultPacket))
         {
@@ -2046,6 +2077,49 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             mpSendPacket(ctx, &gb, sizeof(gb));
         }
 
+    }
+
+    // ── Limb / ragdoll state replication (~15 Hz, unreliable) ───────────
+    // Sends the local six-limb pose whenever a physical body or ragdoll is
+    // running, and one inactive pose when it stops so remotes fall back to
+    // procedural animation.
+    if (ctx.connected && ctx.localPlayerId)
+    {
+        static constexpr double kRagdollStateIntervalMs = 1000.0 / 15.0;
+        const double sinceMs = ctx.lastRagdollSentMs == 0
+            ? 1.0e9
+            : (double)(currentMs - ctx.lastRagdollSentMs);
+        if (sinceMs >= kRagdollStateIntervalMs)
+        {
+            const RagdollReplicationPose& pose =
+                RagdollModeSystem::instance().replicatedPose();
+            RagdollStatePacket rp{};
+            rp.header.type = PACKET_RAGDOLL_STATE;
+            rp.header.tick = ctx.tick;
+            rp.header.playerId = ctx.localPlayerId;
+            rp.ownerPlayerId = ctx.localPlayerId;
+            rp.sourceTick = pose.sourceTick;
+            rp.active = pose.active ? 1 : 0;
+            rp.mode = pose.mode;
+            rp.count = pose.count > 6 ? 6 : pose.count;
+            for (int i = 0; i < rp.count; ++i) {
+                rp.limbs[i].px = pose.limbs[i].position.x;
+                rp.limbs[i].py = pose.limbs[i].position.y;
+                rp.limbs[i].pz = pose.limbs[i].position.z;
+                rp.limbs[i].qx = pose.limbs[i].orientation.x;
+                rp.limbs[i].qy = pose.limbs[i].orientation.y;
+                rp.limbs[i].qz = pose.limbs[i].orientation.z;
+                rp.limbs[i].qw = pose.limbs[i].orientation.w;
+                rp.limbs[i].hx = pose.limbs[i].hitCenter.x;
+                rp.limbs[i].hy = pose.limbs[i].hitCenter.y;
+                rp.limbs[i].hz = pose.limbs[i].hitCenter.z;
+                rp.limbs[i].hhx = pose.limbs[i].hitHalf.x;
+                rp.limbs[i].hhy = pose.limbs[i].hitHalf.y;
+                rp.limbs[i].hhz = pose.limbs[i].hitHalf.z;
+            }
+            mpSendPacket(ctx, &rp, sizeof(rp));
+            ctx.lastRagdollSentMs = currentMs;
+        }
     }
 
     // ── Retry unacknowledged generic attack requests ────────────────────

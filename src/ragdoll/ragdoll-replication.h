@@ -37,7 +37,28 @@ enum RagdollReplicationMode : uint8_t {
 struct RagdollLimbState {
     glm::vec3 position{0.0f};
     glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};
+    // Damage hitbox for this limb, computed by the owner with the exact same
+    // formula the client uses for hit detection (world AABB center + node-local
+    // half). The server validates against these so a shot at a visually-posed
+    // limb registers on that limb, not the static default pose.
+    glm::vec3 hitCenter{0.0f};
+    glm::vec3 hitHalf{0.0f};
 };
+
+// Maps a replicated limb index to a damage body part (matches
+// WeaponExecution::HitBodyPart: 0 torso, 1 head, 2 leg), or -1 for none.
+enum RagdollReplicatedBodyPart : int {
+    RAGDOLL_BP_TORSO = 0,
+    RAGDOLL_BP_HEAD = 1,
+    RAGDOLL_BP_LEG = 2,
+};
+
+inline int ragdollReplicatedBodyPart(int limbIndex)
+{
+    if (limbIndex == 1) return RAGDOLL_BP_HEAD;
+    if (limbIndex == 4 || limbIndex == 5) return RAGDOLL_BP_LEG;
+    return RAGDOLL_BP_TORSO;
+}
 
 // Absolute world pose of each replicated limb (canonical body frame).
 struct RagdollReplicationPose {
@@ -61,6 +82,10 @@ inline RagdollReplicationPose interpolateReplicatedPose(
             glm::mix(a.limbs[i].position, b.limbs[i].position, t);
         out.limbs[i].orientation = glm::normalize(
             glm::slerp(a.limbs[i].orientation, b.limbs[i].orientation, t));
+        out.limbs[i].hitCenter =
+            glm::mix(a.limbs[i].hitCenter, b.limbs[i].hitCenter, t);
+        out.limbs[i].hitHalf =
+            glm::mix(a.limbs[i].hitHalf, b.limbs[i].hitHalf, t);
     }
     return out;
 }

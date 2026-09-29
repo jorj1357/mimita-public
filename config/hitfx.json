@@ -80,10 +80,11 @@
 
     "directionalShapes": {
         "elongatedSphere": {
+            // "enabled": true,
             "enabled": false,
             "alignToHitDirection": true,
             "startTick": 1,
-            "endTick": 222,
+            "endTick": 5,
             "lengthStart": 0.15,
             "lengthEnd": 10.0,
             "radiusStart": 0.08,
@@ -97,10 +98,11 @@
         },
 
         "impactDisc": {
-            "enabled": true,
+            // "enabled": true,
+            "enabled": false,
             "normalFacesHitDirection": true,
             "startTick": 1,
-            "endTick": 10,
+            "endTick": 120,
             "radiusStart": 0.1,
             "radiusEnd": 0.9,
             "thickness": 0.025,
@@ -228,7 +230,7 @@
 
     "walkBurst": {
         "enabled": false,
-        "lifetimeTicks": 6,
+        "lifetimeTicks": 62,
         "lengthStart": 0.3,
         "lengthEnd": 0.6,
         "radiusStart": 0.08,
@@ -267,7 +269,7 @@
     },
 
     "damageImpactSphere": {
-        "enabled": true,
+        "enabled": false,
         "shape": "sphere",
         "position_source": "hit_point",
         "direction_source": "bullet_direction",
@@ -276,7 +278,7 @@
         "local_dimensions": [1.0, 1.0, 1.0],
         "surface_offset": 0.0,
         "rotation_offset_degrees": [0.0, 0.0, 90.0],
-        "length": 0.001,
+        "length": 0.01,
         "radius": 0.5,
         "color": [1.0, 1.0, 1.0],
         "alpha": 1.0,
@@ -284,15 +286,17 @@
     },
 
     "entityImpact": {
+        // "enabled": false,
         "enabled": true,
         "color": [0.9, 0.02, 0.02],
-        "lifetime": 0.01,
+        "lifetime": 0.05,
         "startRadius": 2.0,
         "endRadius": 2.0
     },
 
     "worldImpact": {
         "enabled": true,
+        // "enabled": false,
         "color": [0.55, 0.55, 0.55],
         "lifetime": 0.1,
         "startRadius": 0.1,
@@ -323,7 +327,7 @@
 
     "footstep": {
         "color": [0.7, 0.7, 0.7],
-        "lifetime": 0.1,
+        "lifetime": 0.25,
         "startRadius": 0.5,
         "endRadius": 0.0
     },

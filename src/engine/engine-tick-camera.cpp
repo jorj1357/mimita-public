@@ -930,6 +930,7 @@ void engineTickCamera(Engine& engine, float dt)
         }
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
+        camera.fov = CamConfig::instance().data().fov;
         float eyeHeight = PLAYER_HEIGHT * 0.52f;
         camera.pos = player.pos + glm::vec3(0.0f, 0.0f, eyeHeight);
         // Apply punch for weapon recoil

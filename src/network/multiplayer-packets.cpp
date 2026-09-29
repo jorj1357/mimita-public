@@ -235,6 +235,8 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     mpResetAvatarNetwork(ctx);
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
+    ctx.remoteRagdoll.clear();
+    RagdollModeSystem::instance().clearAllReplicatedBodies();
     RagdollModeSystem::instance().clearCorpses();
     ctx.interpolationRenderTick = 0.0;
     ctx.interpolationClockStarted = false;
@@ -403,6 +405,8 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.remoteNpcs.clear();
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
+    ctx.remoteRagdoll.clear();
+    RagdollModeSystem::instance().clearAllReplicatedBodies();
     ctx.interpolationRenderTick = 0.0;
     ctx.interpolationClockStarted = false;
     ctx.interpolationClockLastUpdateMs = 0;
@@ -1110,6 +1114,8 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.remoteNpcs.clear();
     ctx.remotePlayerInterpolation.clear();
     ctx.remoteNpcInterpolation.clear();
+    ctx.remoteRagdoll.clear();
+    RagdollModeSystem::instance().clearAllReplicatedBodies();
     ctx.interpolationRenderTick = 0.0;
     ctx.interpolationClockStarted = false;
     ctx.interpolationClockLastUpdateMs = 0;

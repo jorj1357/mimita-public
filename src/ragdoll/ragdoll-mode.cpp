@@ -506,6 +506,101 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
 
     syncAimToPlayer(player, b);
     player.updateModelWorldTransforms();
+
+    cacheReplicatedPose(player, b,
+        AimBodyConfig::instance().hybridMode()
+            ? RAGDOLL_NET_HYBRID : RAGDOLL_NET_PHYSICAL,
+        (uint32_t)player.movementSimulationTick);
+}
+
+void RagdollModeSystem::cacheReplicatedPose(const Player& player,
+                                            const RagdollBody& b, uint8_t mode,
+                                            uint32_t sourceTick)
+{
+    mReplicated.active = true;
+    mReplicated.mode = mode;
+    mReplicated.sourceTick = sourceTick;
+    mReplicated.count = 0;
+    for (int i = 0; i < kRagdollLimbCount; ++i) {
+        const char* name = ragdollReplicatedPartName(i);
+        const int pi = findPartByName(b.parts, name);
+        if (pi < 0) continue;
+        RagdollLimbState& s = mReplicated.limbs[mReplicated.count];
+        s.position = b.parts[pi].body.position;
+        s.orientation = b.parts[pi].body.orientation;
+
+        // Damage hitbox using the exact formula the client's hit detection uses
+        // for a rendered part: world center of the collider box, node-local
+        // half extents (clamped), from the refreshed world transforms.
+        for (const PhysicalBodyPart& part : player.physicalBody.parts) {
+            if (part.name != name) continue;
+            const glm::vec3 localCenter =
+                (part.collider.localMin + part.collider.localMax) * 0.5f;
+            s.hitCenter = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+            s.hitHalf = glm::max(
+                (part.collider.localMax - part.collider.localMin) * 0.5f,
+                glm::vec3(0.12f));
+            break;
+        }
+        ++mReplicated.count;
+    }
+    if (mReplicated.count == 0)
+        mReplicated.active = false;
+}
+
+void RagdollModeSystem::clearReplicatedPose()
+{
+    mReplicated.active = false;
+    mReplicated.mode = RAGDOLL_NET_OFF;
+    mReplicated.count = 0;
+}
+
+void RagdollModeSystem::clearReplicatedBody(uint32_t ownerId)
+{
+    mReplicatedBodies.erase(ownerId);
+}
+
+void RagdollModeSystem::applyReplicatedPose(Player& player, uint32_t ownerId,
+                                            const RagdollReplicationPose& pose)
+{
+    if (!pose.active || pose.count == 0) {
+        clearReplicatedBody(ownerId);
+        return;
+    }
+
+    auto it = mReplicatedBodies.find(ownerId);
+    if (it == mReplicatedBodies.end())
+        it = mReplicatedBodies.emplace(ownerId, RagdollBody{}).first;
+    RagdollBody& b = it->second;
+
+    if (b.parts.empty()) {
+        // Bind from the model rest pose so meshLocal is the true body-to-mesh
+        // offset, exactly like local activation.
+        const size_t n = std::min(player.perfectPoseSkeleton.nodes.size(),
+                                  player.perfectPoseSkeleton.restLocalTransforms.size());
+        for (size_t i = 0; i < n; ++i)
+            player.perfectPoseSkeleton.nodes[i].localTransform =
+                player.perfectPoseSkeleton.restLocalTransforms[i];
+        player.updateModelWorldTransforms();
+        initParts(player, b);
+        if (b.parts.empty()) {
+            mReplicatedBodies.erase(it);
+            return;
+        }
+    }
+
+    for (int i = 0; i < pose.count && i < kRagdollLimbCount; ++i) {
+        const int pi = findPartByName(b.parts, ragdollReplicatedPartName(i));
+        if (pi < 0) continue;
+        RagdollModePart& part = b.parts[pi];
+        part.body.position = pose.limbs[i].position;
+        part.body.orientation = glm::normalize(pose.limbs[i].orientation);
+    }
+
+    // Authoritative movement root stays the replica's interpolated root; only
+    // the limb transforms come from the wire.
+    syncAimToPlayer(player, b);
+    player.updateModelWorldTransforms();
 }
 
 void RagdollModeSystem::initParts(const Player& player, RagdollBody& b)
@@ -883,6 +978,10 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
 
     // Step 9: Write the authoritative root and skeleton transforms.
     syncToPlayer(player, b);
+    player.updateModelWorldTransforms();
+
+    cacheReplicatedPose(player, b, RAGDOLL_NET_RAGDOLL,
+                        (uint32_t)player.movementSimulationTick);
 
     if (StructuredLogger::instance().shouldLog(StructuredCategory::Ragdoll, StructuredLevel::Trace)) {
         float totalKE = 0.0f;

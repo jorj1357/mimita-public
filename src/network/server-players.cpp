@@ -969,6 +969,43 @@ bool getPlayerPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
     return true;
 }
 
+bool getPlayerRagdollPoseAtTick(const ServerPlayer& p, uint32_t targetTick,
+                                RagdollReplicationPose& out)
+{
+    if (p.ragdollHistory.empty())
+        return false;
+
+    const auto& back = p.ragdollHistory.back();
+    if (targetTick >= back.tick) {
+        out = back.pose;
+        return out.active;
+    }
+    const auto& front = p.ragdollHistory.front();
+    if (targetTick <= front.tick) {
+        out = front.pose;
+        return out.active;
+    }
+
+    int lo = 0;
+    int hi = (int)p.ragdollHistory.size() - 1;
+    while (lo < hi - 1) {
+        const int mid = (lo + hi) / 2;
+        if (p.ragdollHistory[mid].tick <= targetTick)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    const auto& a = p.ragdollHistory[lo];
+    const auto& b = p.ragdollHistory[lo + 1];
+    if (!a.pose.active && !b.pose.active)
+        return false;
+    const float frac = (b.tick > a.tick)
+        ? float(targetTick - a.tick) / float(b.tick - a.tick)
+        : 0.0f;
+    out = interpolateReplicatedPose(a.pose, b.pose, frac);
+    return out.active;
+}
+
 void beginServerBroadcastInterp(ServerPlayer& player, uint32_t serverTick)
 {
     if (!player.hasAcceptedClientTransform)
