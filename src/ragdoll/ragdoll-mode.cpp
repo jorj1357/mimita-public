@@ -91,23 +91,6 @@ static bool raycastWorld(const World& world, const glm::vec3& origin,
     return hit;
 }
 
-// Build an orientation quaternion from a look direction using the ragdoll
-// convention: local +Y = forward, local +Z = up, local +X = right.
-static glm::quat lookRotation(glm::vec3 forward, glm::vec3 up)
-{
-    forward = glm::normalize(forward);
-    up = glm::normalize(up);
-
-    glm::vec3 right = glm::cross(forward, up);
-    if (glm::length(right) < 0.001f)
-        right = glm::cross(forward, glm::vec3(1.0f, 0.0f, 0.0f));
-    right = glm::normalize(right);
-
-    glm::vec3 trueUp = glm::normalize(glm::cross(right, forward));
-    glm::mat3 basis(right, forward, trueUp);
-    return glm::normalize(glm::quat_cast(basis));
-}
-
 // glm::quat_cast can return q or -q for the same rotation. Near the 90-degree
 // X rest pose this alternates hemispheres and flips a part (historically the
 // left leg). Canonicalize the sign so every part is consistently oriented.
@@ -212,6 +195,201 @@ void RagdollModeSystem::deactivate(Player& player)
 
     Debug::warn(Debug::Category::Ragdoll,
         "[RAGDOLL MODE] Deactivated\n");
+}
+
+// ── Normal-play physical aim body ───────────────────────────────────
+
+void RagdollModeSystem::activateAim(Player& player)
+{
+    // Bind from the model's rest pose so meshLocal captures the true body-to-
+    // mesh offset, exactly like ragdoll activation.
+    {
+        const size_t n = std::min(player.perfectPoseSkeleton.nodes.size(),
+                                  player.perfectPoseSkeleton.restLocalTransforms.size());
+        for (size_t i = 0; i < n; ++i)
+            player.perfectPoseSkeleton.nodes[i].localTransform =
+                player.perfectPoseSkeleton.restLocalTransforms[i];
+    }
+    player.updateModelWorldTransforms();
+
+    mAim = RagdollBody{};
+    mAim.torsoPosition = player.pos;
+    mAim.rootWorldPosition = player.pos;
+    initParts(player, mAim);
+    mAimActive = !mAim.parts.empty();
+
+    // Seed limb momentum from the current movement velocity so physical mode
+    // does not appear to freeze on entry (RAG-003 analog).
+    const float inherit =
+        glm::clamp(RagdollModeConfig::instance().data().physicalAim.limbInheritance,
+                   0.0f, 1.0f);
+    for (auto& part : mAim.parts)
+        part.body.linearVelocity = glm::mix(part.body.linearVelocity, player.vel, inherit);
+
+    Debug::log(Debug::Category::Ragdoll,
+        "[AIMBODY] activated parts=%zu stiffness=%.1f\n",
+        mAim.parts.size(),
+        RagdollModeConfig::instance().data().physicalAim.torsoTetherStiffness);
+}
+
+void RagdollModeSystem::deactivateAim(Player& player)
+{
+    for (int anc : mAim.rootAncestorNodes) {
+        if (anc >= 0 && anc < (int)player.perfectPoseSkeleton.nodes.size())
+            player.perfectPoseSkeleton.nodes[anc].localTransform =
+                player.perfectPoseSkeleton.restLocalTransforms[anc];
+    }
+    mAimActive = false;
+    mAim = RagdollBody{};
+    Debug::log(Debug::Category::Ragdoll, "[AIMBODY] deactivated\n");
+}
+
+// Pull the dynamic torso toward the authoritative movement root. The player
+// root is never moved by the body; this is a one-way kinematic tether whose
+// stiffness is editable in ragdoll.json (physical.torso_tether_stiffness).
+void RagdollModeSystem::tetherAimRoot(const Player& player, RagdollBody& b, float dt)
+{
+    if (b.torsoIndex < 0 || b.torsoIndex >= (int)b.parts.size()) return;
+    const auto& cfg = RagdollModeConfig::instance().data();
+    RigidBody& torso = b.parts[b.torsoIndex].body;
+
+    const glm::quat rootRot =
+        glm::angleAxis(glm::radians(player.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
+    // rootOffsetLocal stores the authoritative root in the torso bind frame, so
+    // the bind torso position is player.pos - rootRot * rootOffsetLocal.
+    const glm::vec3 target = player.pos - rootRot * b.rootOffsetLocal;
+
+    const float k = glm::clamp(cfg.physicalAim.torsoTetherStiffness * dt, 0.0f, 1.0f);
+    torso.position += (target - torso.position) * k;
+    // Feed the movement velocity so the joint solver sees consistent relative
+    // motion instead of reacting to an artificial teleport each tick.
+    torso.linearVelocity = player.vel;
+}
+
+void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForward, float dt)
+{
+    const auto& cfg = RagdollModeConfig::instance().data();
+
+    auto motor = [&](int idx, float weight) {
+        if (idx < 0 || idx >= (int)b.parts.size()) return;
+        RagdollModePart& part = b.parts[idx];
+        RigidBody& body = part.body;
+
+        glm::vec3 fwd = camForward;
+        if (glm::length(fwd) < 1e-5f) return;
+        glm::quat target = aimLookRotation(fwd, glm::vec3(0.0f, 0.0f, 1.0f))
+                         * part.aimOffset;
+
+        if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
+            const glm::vec3 torque = computeAimTorque(
+                body.orientation, target, body.angularVelocity, cfg.physicalAim, weight);
+            body.angularVelocity += torque * dt;
+        } else {
+            const glm::vec3 desiredVel = aimDesiredAngularVelocity(
+                body.orientation, target, cfg.physicalAim, weight);
+            const float blend = glm::clamp(dt * cfg.physicalAim.lookDamping, 0.0f, 1.0f);
+            body.angularVelocity += (desiredVel - body.angularVelocity) * blend;
+        }
+
+        const float cap = std::min(body.maxAngularSpeed, cfg.physicalAim.maxAngularSpeed);
+        const float spd = glm::length(body.angularVelocity);
+        if (cap > 0.0f && spd > cap)
+            body.angularVelocity *= cap / spd;
+    };
+
+    motor(b.headIndex, cfg.physicalAim.headWeight);
+    motor(b.torsoIndex, cfg.physicalAim.torsoWeight);
+}
+
+void RagdollModeSystem::syncAimToPlayer(Player& player, RagdollBody& b)
+{
+    if (b.torsoIndex < 0 || b.torsoIndex >= (int)b.parts.size()) return;
+    b.torsoPosition = b.parts[b.torsoIndex].body.position;
+
+    // Authoritative movement root. Unlike ragdoll sync, player.pos/vel are owned
+    // by the movement controller and are never written here.
+    glm::mat4 rootWorld = glm::translate(glm::mat4(1.0f), player.pos)
+                        * glm::mat4_cast(glm::angleAxis(
+                              glm::radians(player.yaw), glm::vec3(0.0f, 0.0f, 1.0f)));
+
+    for (int anc : b.rootAncestorNodes)
+        player.perfectPoseSkeleton.nodes[anc].localTransform = glm::mat4(1.0f);
+
+    // No render smoothing: the visible transform must equal the physics
+    // transform so damage hitboxes line up with what is drawn.
+    for (int i = 0; i < (int)b.parts.size(); ++i) {
+        RagdollModePart& part = b.parts[i];
+        if (part.nodeIndex < 0
+            || part.nodeIndex >= (int)player.perfectPoseSkeleton.nodes.size())
+            continue;
+
+        glm::mat4 childWorld = glm::translate(glm::mat4(1.0f), part.body.position)
+                             * glm::mat4_cast(part.body.orientation)
+                             * part.meshLocal;
+        glm::mat4 parentWorld = rootWorld;
+        if (part.skeletonParentPart >= 0
+            && part.skeletonParentPart < (int)b.parts.size()) {
+            const RagdollModePart& parent = b.parts[part.skeletonParentPart];
+            parentWorld = glm::translate(glm::mat4(1.0f), parent.body.position)
+                        * glm::mat4_cast(parent.body.orientation)
+                        * parent.meshLocal;
+        }
+
+        player.perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =
+            glm::inverse(parentWorld) * childWorld;
+    }
+}
+
+void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
+                                  const glm::vec3& camForward)
+{
+    if (!mAimActive) return;
+    const auto& cfg = RagdollModeConfig::instance().data();
+    RagdollBody& b = mAim;
+    b.activationTime += dt;
+
+    if (cfg.generation != mAppliedConfigGeneration) {
+        mAppliedConfigGeneration = cfg.generation;
+        if (!b.parts.empty())
+            reinitPreservingState(player, b);
+    }
+
+    tetherAimRoot(player, b, dt);
+    applyAimMotor(b, camForward, dt);
+
+    glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
+    for (auto& part : b.parts)
+        integrate(part.body, gravity, dt);
+
+    solveJoints(cfg.solverIterations, true, b);
+
+    if (cfg.worldCollision) {
+        for (auto& part : b.parts)
+            collideWithWorld(part.body, world, dt);
+    }
+
+    if (cfg.selfCollision)
+        selfCollision(b);
+
+    solveJoints(cfg.solverIterations / 2, true, b);
+
+    if (cfg.selfCollision) {
+        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
+    }
+
+    if (cfg.worldCollision) {
+        for (auto& part : b.parts)
+            depenetrateWorld(part.body, world, 2);
+    }
+
+    solveRotationLimits(1.0f, b);
+
+    // Re-assert the tether so gravity/collision cannot let the body drift from
+    // the player across the tick.
+    tetherAimRoot(player, b, dt);
+
+    syncAimToPlayer(player, b);
+    player.updateModelWorldTransforms();
 }
 
 void RagdollModeSystem::initParts(const Player& player, RagdollBody& b)
@@ -624,16 +802,30 @@ void RagdollModeSystem::applyControls(float dt, const InputState& input, const C
     (void)input;
     const auto& cfg = RagdollModeConfig::instance().data();
 
-    // Physically rotate a body toward the camera look direction. Uses a damped
-    // velocity controller (no overshoot) and the part's configured aim axes.
-    auto aimAtCamera = [&](RagdollModePart& part, float strength, float maxSpeed) {
+    // Physically rotate a body toward the camera look direction. No orientation
+    // is assigned directly; the controller sets angular velocity only. The
+    // damping model is selected in config: "look" is the historical velocity
+    // blend, "physical" is the PD torque model.
+    auto aimAtCamera = [&](RagdollModePart& part, float strength, float maxSpeed,
+                           float weight) {
         RigidBody& body = part.body;
 
         glm::vec3 upHint(0.0f, 0.0f, 1.0f);
         if (glm::length(glm::cross(camera.front, upHint)) < 0.05f)
             upHint = camera.up;
 
-        glm::quat target = lookRotation(camera.front, upHint) * part.aimOffset;
+        glm::quat target = aimLookRotation(camera.front, upHint) * part.aimOffset;
+
+        if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
+            const glm::vec3 torque = computeAimTorque(
+                body.orientation, target, body.angularVelocity, cfg.physicalAim, weight);
+            body.angularVelocity += torque * dt;
+            const float spd = glm::length(body.angularVelocity);
+            if (spd > maxSpeed && spd > 0.0f)
+                body.angularVelocity *= maxSpeed / spd;
+            return;
+        }
+
         glm::quat diff = glm::normalize(target * glm::inverse(body.orientation));
         float w = glm::clamp(diff.w, -1.0f, 1.0f);
         float angle = 2.0f * std::acos(std::fabs(w));
@@ -653,12 +845,14 @@ void RagdollModeSystem::applyControls(float dt, const InputState& input, const C
     };
 
     if (b.headIndex >= 0 && b.headIndex < (int)b.parts.size())
-        aimAtCamera(b.parts[b.headIndex], cfg.headRotationStrength, cfg.headRotationSpeed);
+        aimAtCamera(b.parts[b.headIndex], cfg.headRotationStrength,
+                    cfg.headRotationSpeed, cfg.physicalAim.headWeight);
 
     // The torso strongly wishes to face where the camera looks, so the body
     // reads clearly in third person. Strength and max speed are tunable.
     if (b.torsoIndex >= 0 && b.torsoIndex < (int)b.parts.size())
-        aimAtCamera(b.parts[b.torsoIndex], cfg.torsoLookSpring, cfg.torsoMaxAngularStep);
+        aimAtCamera(b.parts[b.torsoIndex], cfg.torsoLookSpring,
+                    cfg.torsoMaxAngularStep, cfg.physicalAim.torsoWeight);
 }
 
 static glm::vec3 quatToRotationVector(const glm::quat& q)

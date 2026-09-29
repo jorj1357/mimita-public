@@ -955,3 +955,52 @@ The build completed with `Status: SUCCESS`. The produced
 Pending. Launch the new executable from `C:\mimita-v9`, reproduce the slope
 snag, and verify that `logger.started` and collision events appear under
 `C:\mimita-v9\logs\MM-DD-YYYY\<run>\events.jsonl`.
+
+## Cold-build occurrence 17
+
+UTC time:
+`2026-09-29T13:24:29Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_132503-aimbody-physical-mode.md`
+
+### Why the cold build was required
+
+A new always-on normal-play physical aim body was added to
+`RagdollModeSystem` and hooked into the fixed tick in `simulate-tick.cpp`.
+These are cold sources compiled into the executable, so an executable relink was
+needed to inspect the behavior.
+
+### Exact cold source / boundary
+
+- `src/ragdoll/ragdoll-mode.cpp` — new aim-body solve path.
+- `src/ragdoll/ragdoll-mode-config.cpp` — new physical config parsing.
+- `src/sim/simulate-tick.cpp` — activation of the aim body.
+- `src/entities/aimbody-config.cpp` — new physical mode.
+- `src/ragdoll/physical-aim.h` — new controller header.
+
+### Result needed from the new executable
+
+Compile the new aim-body owner and let a human toggle
+`config/aimbody.json` mode to `physical` in-game to observe momentum, sway,
+and hitbox alignment.
+
+### Why it could not be applied through the live path
+
+The aim body activation and solve order live in the fixed-tick and ragdoll
+owner; changing them requires a relink of the executable, not a hot module.
+
+### Build result
+
+`python build_agent.py` compiled the four changed translation units and
+returned `Status: SUCCESS`, return code 0. Produced `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Launch the build, set `"mode": "physical"` in
+`config/aimbody.json`, and verify the behavior listed in the changelog.
+
+### Next migration/falsification step
+
+Move the physical-aim controller/config into the live-editable ownership so the
+goal, weights, and damping can be tuned without a relink.

@@ -1,5 +1,6 @@
 #include "ragdoll/ragdoll-mode-config.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -243,6 +244,32 @@ bool RagdollModeConfig::load(const std::string& path)
             const auto& h = root["head"];
             next.headRotationStrength = h.value("rotation_strength", next.headRotationStrength);
             next.headRotationSpeed = h.value("rotation_speed", next.headRotationSpeed);
+        }
+
+        // Physical aim controller. Every value is clamped so a malformed or
+        // hostile config cannot destabilize the solver.
+        if (root.contains("physical") && root["physical"].is_object()) {
+            const auto& pa = root["physical"];
+            PhysicalAimConfig& pc = next.physicalAim;
+            pc.torqueGain = std::clamp(
+                pa.value("torque_gain", pc.torqueGain), 0.0f, 200.0f);
+            pc.angularDamping = std::clamp(
+                pa.value("angular_damping", pc.angularDamping), 0.0f, 100.0f);
+            pc.maxAngularSpeed = std::clamp(
+                pa.value("max_angular_speed", pc.maxAngularSpeed), 0.0f, 100.0f);
+            pc.headWeight = std::clamp(
+                pa.value("head_weight", pc.headWeight), 0.0f, 4.0f);
+            pc.torsoWeight = std::clamp(
+                pa.value("torso_weight", pc.torsoWeight), 0.0f, 4.0f);
+            pc.limbInheritance = std::clamp(
+                pa.value("limb_inheritance", pc.limbInheritance), 0.0f, 1.0f);
+            pc.torsoTetherStiffness = std::clamp(
+                pa.value("torso_tether_stiffness", pc.torsoTetherStiffness),
+                0.0f, 240.0f);
+            const std::string dampingMode =
+                pa.value("damping_mode", std::string("physical"));
+            pc.damping = (dampingMode == "look")
+                ? PhysicalAimDamping::Look : PhysicalAimDamping::Physical;
         }
 
         if (root.contains("exit")) {

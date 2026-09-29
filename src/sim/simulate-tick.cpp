@@ -18,6 +18,7 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "npc/npc.h"
 #include "entities/player.h"
+#include "entities/aimbody-config.h"
 #include "world/world.h"
 #include "config.h"
 #include "debug/debug-log.h"
@@ -81,20 +82,36 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         }
         ragdollTogglePrev = ragdollToggleNow;
 
-        if (sim.player->ragdollModeActive && RagdollModeSystem::instance().isActive()) {
+        auto& ragdoll = RagdollModeSystem::instance();
+        if (sim.player->ragdollModeActive && ragdoll.isActive()) {
+            if (ragdoll.aimActive())
+                ragdoll.deactivateAim(*sim.player);
             MIMITA_PERF_SCOPE("RagdollModeUpdate");
             InputState ragdollInput = inputStateFromFrame(frame);
             ragdollInput.grabLeftHeld = frame.grabLeftHeld;
             ragdollInput.grabRightHeld = frame.grabRightHeld;
             ragdollInput.extendLeftMouse = frame.extendLeftMouse;
             ragdollInput.extendRightMouse = frame.extendRightMouse;
-            RagdollModeSystem::instance().update(TICK_DT, *sim.world, *sim.player,
-                ragdollInput, THE_CAMERA);
+            ragdoll.update(TICK_DT, *sim.world, *sim.player, ragdollInput, THE_CAMERA);
         } else {
             MIMITA_PERF_SCOPE("PhysicsMainUpdate");
+            InputState normalInput = inputStateFromFrame(frame);
             setCollisionEntityContext("Player", 0, false);
-            physicsMainUpdate(*sim.player, *sim.world, inputStateFromFrame(frame), TICK_DT);
+            physicsMainUpdate(*sim.player, *sim.world, normalInput, TICK_DT);
             clearCollisionEntityContext();
+
+            // Always-on physical aim body (aimbody.json mode == "physical").
+            // Runs after normal movement/animation so it owns the rendered pose
+            // and the client hitboxes for this tick.
+            if (AimBodyConfig::instance().physicalMode()) {
+                MIMITA_PERF_SCOPE("AimBodyUpdate");
+                if (!ragdoll.aimActive())
+                    ragdoll.activateAim(*sim.player);
+                ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
+                                  normalInput.camForward);
+            } else if (ragdoll.aimActive()) {
+                ragdoll.deactivateAim(*sim.player);
+            }
         }
     }
 

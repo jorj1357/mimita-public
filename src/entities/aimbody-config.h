@@ -29,6 +29,9 @@ public:
     bool enabled() const { return mEnabled; }
     void setEnabled(bool on) { mEnabled = on; }
     bool smoothMode() const { return mMode == "smooth"; }
+    // Experimental bodily-momentum mode: the normal-play body is physically
+    // simulated and the camera look is a wished orientation (torque, not snap).
+    bool physicalMode() const { return mMode == "physical"; }
     const std::string& mode() const { return mMode; }
     float smoothingFactor() const { return mSmoothingFactor; }
 

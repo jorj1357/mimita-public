@@ -92,6 +92,19 @@ public:
     void update(float dt, const World& world, Player& player,
                 const InputState& input, const Camera& camera);
 
+    // ── Normal-play physical aim body ───────────────────────────────
+    // An always-on active ragdoll used during normal movement (aimbody.json
+    // mode == "physical"). The movement controller stays authoritative: the
+    // torso is tethered to the player root, head+torso receive the look torque,
+    // and limbs inherit motion through the existing joint constraints. The
+    // result is written to the player's skeleton (render + client hitboxes);
+    // player.pos/player.vel are never overwritten.
+    void activateAim(Player& player);
+    void deactivateAim(Player& player);
+    void updateAim(float dt, const World& world, Player& player,
+                   const glm::vec3& camForward);
+    bool aimActive() const { return mAimActive; }
+
     void render(const Camera& camera) const;
 
     glm::vec3 getHeadPosition() const;
@@ -145,6 +158,9 @@ private:
     void processExtend(const InputState& input, const Camera& camera, float dt, RagdollBody& b);
     void selfCollision(RagdollBody& b);
     void syncToPlayer(Player& player, RagdollBody& b);
+    void syncAimToPlayer(Player& player, RagdollBody& b);
+    void applyAimMotor(RagdollBody& b, const glm::vec3& camForward, float dt);
+    void tetherAimRoot(const Player& player, RagdollBody& b, float dt);
 
     // Physics-only step shared by corpses (no input, no motors).
     void stepBody(RagdollBody& b, const World& world, float dt);
@@ -152,6 +168,8 @@ private:
 
     bool mActive = false;
     RagdollBody mAlive;
+    RagdollBody mAim;
+    bool mAimActive = false;
     std::vector<RagdollCorpse> mCorpses;
     glm::vec3 mCameraSmoothPos{0.0f};
     bool mCameraSmoothInit = false;

@@ -88,7 +88,12 @@ bool AimBodyConfig::load(const std::string& path)
         if (j.contains("enabled"))
             mEnabled = j.value("enabled", true);
         const std::string mode = j.value("mode", std::string("default"));
-        mMode = mode == "smooth" ? "smooth" : "default";
+        if (mode == "smooth")
+            mMode = "smooth";
+        else if (mode == "physical")
+            mMode = "physical";
+        else
+            mMode = "default";
         const float factor = j.value("smoothingFactor", 1.0f);
         mSmoothingFactor = std::isfinite(factor) && factor > 0.0f
             ? factor : 1.0f;

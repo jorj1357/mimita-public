@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 
+#include "ragdoll/physical-aim.h"
+
 struct RagdollModeCapsuleConfig {
     // Negative means "derive from the mesh collider bounds".
     float radius = -1.0f;
@@ -153,6 +155,11 @@ struct RagdollModeConfigData {
     // Head aim
     float headRotationStrength = 12.0f;
     float headRotationSpeed = 18.0f;
+
+    // Physical aim controller (normal-play "active ragdoll" and the ragdoll look
+    // motor). Owned here per ragdoll-retrograd.md section 46; selected by
+    // aimbody.json mode == "physical".
+    PhysicalAimConfig physicalAim;
 
     // Exit
     bool exitPreserveVelocity = true;
