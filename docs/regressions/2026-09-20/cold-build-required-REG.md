@@ -1317,3 +1317,50 @@ surface, and the bookmark-correlated `events.jsonl` records the contact's
 
 Move this collision response owner into the live-reloadable movement module if
 the project requires changing the behavior without a cold executable relink.
+
+## Cold-build occurrence 20
+
+UTC time:
+`2026-09-29T20:08:48Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_132503-aimbody-physical-mode.md`
+
+### Why the cold build was required
+
+The server movement authority changed: while a player reports an active ragdoll
+pose, `simulatePlayer` now accepts the client root instead of simulating
+movement. This is a cold server owner and needs a relink to test.
+
+### Exact cold source / boundary
+
+- `src/network/server-players.cpp` — `simulatePlayer` ragdoll branch.
+- `src/ragdoll/ragdoll-replication.h`, `src/network/packets.h`,
+  `multiplayer-tick.cpp`, `server-packet-handlers.cpp` — root on the wire.
+
+### Result needed from the new executable
+
+Compile the client-authoritative root path and let a human confirm that a
+ragdolled player's server position no longer drifts and no longer resets on
+death.
+
+### Why it could not be applied through the live path
+
+The server tick's movement authority and the wire packet layout are cold
+owners.
+
+### Build result
+
+`python build_agent.py` compiled the four changed translation units and
+returned `Status: SUCCESS`, return code 0. Produced `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Two clients: enter ragdoll, move far, and confirm no position reset /
+drift, and that others see the body at the right place.
+
+### Next migration/falsification step
+
+Decide whether the always-on physical/hybrid body should also be
+client-authoritative (current) or keep server movement simulation; and smooth
+the 15 Hz root on the server so the broadcast root does not step.

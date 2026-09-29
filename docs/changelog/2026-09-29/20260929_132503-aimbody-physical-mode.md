@@ -194,6 +194,28 @@ default-pose template.
   the authoritative trace (`fillTargetBodyParts`) and the client-claim
   validation (`claimedHitInBodyParts`), at the victim's rewind tick.
 
+## Iteration 6 (same session): server accepts the client-authoritative ragdoll root
+
+The user reported that the server position error climbed the further they moved
+while ragdolled, because the server kept simulating movement from input. The
+client is authoritative over its ragdoll body, so the server now treats the
+client's reported root as authoritative while a pose is active.
+
+- `src/ragdoll/ragdoll-replication.h`: `RagdollReplicationPose` gained
+  `rootPosition` / `rootYaw`; `interpolateReplicatedPose` interpolates them.
+- `src/network/packets.h`: `RagdollStatePacket` carries `rootX/rootY/rootZ/
+  rootYaw` (packet now 360 bytes).
+- `src/ragdoll/ragdoll-mode.cpp`: `cacheReplicatedPose` fills the root from
+  `player.pos` / `player.yaw`.
+- `src/network/multiplayer-tick.cpp` and `server-packet-handlers.cpp`: copy the
+  root through send/receive/store.
+- `src/network/server-players.cpp`: `simulatePlayer` now has a ragdoll branch
+  (after the fly branch, before movement simulation). While
+  `p.hasRagdollPose` and the latest pose is active, it sets `p.pos`/`p.yaw` from
+  the client root, derives `p.vel` from the delta, skips movement simulation,
+  and returns. The per-tick step is clamped to 4 m (240 m/s) so a malformed or
+  hostile packet cannot teleport; the clamp logs once per second.
+
 ## Validation
 
 - `tests/physical-aim-torque-test.cpp`: compile and run with
@@ -218,6 +240,11 @@ default-pose template.
     `server-packet-handlers.cpp`, `server-packets.cpp`, `server-players.cpp`,
     `server.cpp`, `ragdoll-mode.cpp`, `simulate-tick.cpp`; `Status: SUCCESS`,
     return 0.
+  - Iteration-6 build recompiled `multiplayer-tick.cpp`,
+    `server-packet-handlers.cpp`, `server-players.cpp`, `ragdoll-mode.cpp`;
+    `Status: SUCCESS`, return 0. (One build reported FAILED due to a race with
+    the background dev-loop rebuilding the same objects; the clean rebuild
+    succeeded.)
   - Executable: `C:\mimita-v9\mimita.exe`.
 
 ## Pre-existing edits

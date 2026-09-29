@@ -883,6 +883,8 @@ void handleRagdollState(SOCKET sock,
     pose.active = pkt->active != 0;
     pose.mode = pkt->mode;
     pose.sourceTick = pkt->sourceTick;
+    pose.rootPosition = {pkt->rootX, pkt->rootY, pkt->rootZ};
+    pose.rootYaw = pkt->rootYaw;
     pose.count = pkt->count;
     for (int i = 0; i < pose.count; ++i) {
         pose.limbs[i].position = {pkt->limbs[i].px, pkt->limbs[i].py, pkt->limbs[i].pz};

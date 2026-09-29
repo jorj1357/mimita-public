@@ -60,12 +60,16 @@ inline int ragdollReplicatedBodyPart(int limbIndex)
     return RAGDOLL_BP_TORSO;
 }
 
-// Absolute world pose of each replicated limb (canonical body frame).
+// Absolute world pose of each replicated limb (canonical body frame), plus the
+// owning client's authoritative root position/orientation. While `active`, the
+// server treats rootPosition/rootYaw as the player's authoritative state.
 struct RagdollReplicationPose {
     bool active = false;
     uint8_t mode = RAGDOLL_NET_OFF;
     uint32_t sourceTick = 0;
     uint8_t count = 0;
+    glm::vec3 rootPosition{0.0f};
+    float rootYaw = 0.0f;
     RagdollLimbState limbs[kRagdollLimbCount];
 };
 
@@ -77,6 +81,8 @@ inline RagdollReplicationPose interpolateReplicatedPose(
     RagdollReplicationPose out = b;
     out.active = a.active || b.active;
     out.count = b.count;
+    out.rootPosition = glm::mix(a.rootPosition, b.rootPosition, t);
+    out.rootYaw = a.rootYaw + (b.rootYaw - a.rootYaw) * t;
     for (int i = 0; i < out.count && i < kRagdollLimbCount; ++i) {
         out.limbs[i].position =
             glm::mix(a.limbs[i].position, b.limbs[i].position, t);

@@ -5,7 +5,7 @@
     "landingThreshold": 0.25,
     "landingPitchImpulse": -10.1,
     "landingRollImpulse": 0.0,
-    "springStiffness": 28.0,
+    "springStiffness": 10.0,
     "springDamping": 10.0,
     "maxPitch": 10.0,
     "maxRoll": 6.0

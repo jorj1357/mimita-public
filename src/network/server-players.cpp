@@ -738,6 +738,54 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         return;
     }
 
+    // ── Ragdoll / physical body: the owning client is authoritative ─────
+    // While the client reports an active ragdoll pose, normal movement is not
+    // simulated. The client's root is accepted as the authoritative state (the
+    // body is physically simulated on the owning client), bounded per tick so a
+    // malformed or hostile packet cannot teleport. This stops the server/
+    // client position error from climbing as the ragdoll moves.
+    if (p.hasRagdollPose && !p.ragdollHistory.empty())
+    {
+        const RagdollReplicationPose& pose = p.ragdollHistory.back().pose;
+        const glm::vec3 target = pose.rootPosition;
+        const bool finite = std::isfinite(target.x) &&
+                            std::isfinite(target.y) &&
+                            std::isfinite(target.z);
+        if (pose.active && pose.count > 0 && finite)
+        {
+            static constexpr float kMaxRagdollStepMeters = 4.0f;
+            const glm::vec3 before = p.pos;
+            const glm::vec3 delta = target - p.pos;
+            const float dist = glm::length(delta);
+            if (dist > kMaxRagdollStepMeters && dist > 1e-5f)
+                p.pos = p.pos + delta * (kMaxRagdollStepMeters / dist);
+            else
+                p.pos = target;
+
+            if (std::isfinite(pose.rootYaw))
+                p.yaw = pose.rootYaw;
+            // Non-imaginary velocity for interpolation/extrapolation of the
+            // root between low-rate poses.
+            p.vel = (p.pos - before) / std::max(SERVER_DT, 1e-4f);
+            p.onGround = false;
+            p.movement.externalImpulse = glm::vec3(0.0f);
+            p.clientStateUpdated = false;
+            syncServerMovementRuntime(p, true);
+
+            static uint64_t lastRagdollClampLogMs = 0;
+            if (dist > kMaxRagdollStepMeters && nowMs() - lastRagdollClampLogMs >= 1000)
+            {
+                lastRagdollClampLogMs = nowMs();
+                Debug::warn(Debug::Category::Networking,
+                    "[SERVER RAGDOLL CLAMP] playerId=%u dist=%.2f limit=%.2f "
+                    "accepted=(%.2f,%.2f,%.2f)\n",
+                    p.id, dist, kMaxRagdollStepMeters,
+                    p.pos.x, p.pos.y, p.pos.z);
+            }
+            return;
+        }
+    }
+
     // ── Server-side movement simulation from input commands (spec) ─────
     // The server simulates movement using the SAME kernel as the client.
     // Input commands are replayed in CHRONOLOGICAL order (lowest sequence

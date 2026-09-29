@@ -1668,6 +1668,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 pose.active = rs->active != 0;
                 pose.mode = rs->mode;
                 pose.sourceTick = rs->sourceTick;
+                pose.rootPosition = {rs->rootX, rs->rootY, rs->rootZ};
+                pose.rootYaw = rs->rootYaw;
                 pose.count = rs->count > 6 ? 6 : rs->count;
                 for (int i = 0; i < pose.count; ++i) {
                     pose.limbs[i].position =
@@ -2099,6 +2101,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             rp.header.playerId = ctx.localPlayerId;
             rp.ownerPlayerId = ctx.localPlayerId;
             rp.sourceTick = pose.sourceTick;
+            rp.rootX = pose.rootPosition.x;
+            rp.rootY = pose.rootPosition.y;
+            rp.rootZ = pose.rootPosition.z;
+            rp.rootYaw = pose.rootYaw;
             rp.active = pose.active ? 1 : 0;
             rp.mode = pose.mode;
             rp.count = pose.count > 6 ? 6 : pose.count;

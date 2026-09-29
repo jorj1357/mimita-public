@@ -1393,6 +1393,8 @@ struct RagdollStatePacket
     PacketHeader header;
     uint32_t ownerPlayerId = 0;
     uint32_t sourceTick = 0;
+    // Owning client's authoritative root while ragdolled (server accepts it).
+    float rootX = 0.0f, rootY = 0.0f, rootZ = 0.0f, rootYaw = 0.0f;
     uint8_t active = 0;
     uint8_t mode = 0;
     uint8_t count = 0;

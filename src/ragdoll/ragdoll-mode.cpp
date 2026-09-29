@@ -521,6 +521,9 @@ void RagdollModeSystem::cacheReplicatedPose(const Player& player,
     mReplicated.mode = mode;
     mReplicated.sourceTick = sourceTick;
     mReplicated.count = 0;
+    // The owning client's root is authoritative while the body is physical.
+    mReplicated.rootPosition = player.pos;
+    mReplicated.rootYaw = player.yaw;
     for (int i = 0; i < kRagdollLimbCount; ++i) {
         const char* name = ragdollReplicatedPartName(i);
         const int pi = findPartByName(b.parts, name);
