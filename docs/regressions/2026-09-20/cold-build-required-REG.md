@@ -1,7 +1,7 @@
 # Cold Build Required
 
 Time created: 2026-09-20T15:11:13Z
-Time last updated: 2026-09-24T03:15:13Z
+Time last updated: 2026-09-29T16:21:00Z
 
 Status: COLD-BUILD DEBT
 
@@ -1064,6 +1064,31 @@ Pending. Launch the build, set `"mode": "physical"` in
 
 Move the physical-aim controller/config into the live-editable ownership so the
 goal, weights, and damping can be tuned without a relink.
+
+### Cold-build occurrence 19
+
+Time:
+`2026-09-29T16:21:00Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_162100-collision-cleanup-pass-1-2.md`
+
+The collision cleanup removed compiled C++ translation units, declarations,
+and an active source file. This crosses the cold executable boundary because
+the live reload layer cannot remove those compiled owners.
+
+### Build evidence
+
+`python build_agent.py` returned `Status: SUCCESS`, return code 0. Build 0409
+ran `mimita.exe --collision-selftest` and returned `COLLISION SELFTEST PASS`.
+
+### Human review
+
+Pending. The cleanup did not claim that the slope/corner snag is fixed; launch
+the new executable and reproduce the bookmarked slope contact before making
+the next collision-owner deletion.
+
+---
 
 ### Follow-up builds (same cold boundary, same session)
 

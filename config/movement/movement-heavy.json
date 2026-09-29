@@ -41,13 +41,13 @@
     "max_speed": 25.0,
 
     // Keep server-side ground movement validation at the same speed.
-    "ground_speed": 30.0,
+    "ground_speed": 25.0,
 
     // Extremely high ground acceleration from the fast Source preset.
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 3.0,
+    "ground_acceleration": 5.0,
 
     // Ground friction from the fast Source preset.
     //
@@ -94,7 +94,7 @@
     // Air acceleration strength.
     //
     // Matches the fast Source preset.
-    "air_acceleration": 2.0,
+    "air_acceleration": 6.0,
 
     // Projection cap for Source-style air acceleration.
     //
@@ -104,7 +104,7 @@
     // building total speed.
     //
     // Matches the fast Source preset.
-    "air_max_wishspeed": 2.0,
+    "air_max_wishspeed": 3.0,
 
     // Historical Valve-style AirAccelerate behavior.
     //

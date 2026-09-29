@@ -22,18 +22,6 @@
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"
 
-extern std::vector<int> gatherGLBTrianglesForSphere(
-    const World& world,
-    glm::vec3 center,
-    float radius,
-    const glm::vec3& move,
-    const char* caller
-);
-
-// TODO-DELETE: this extern is only used to disable the legacy emergency search
-// path below; the uncached gatherGLBTrianglesForSphere (physics-collision-glb.cpp)
-// is a deletion candidate once the legacy emergency/debug code is removed.
-
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 
 struct CollisionFrameDiag {

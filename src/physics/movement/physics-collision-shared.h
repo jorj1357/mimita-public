@@ -287,14 +287,6 @@ bool sphereTriangleContact(
 // Triangle gathering helpers needed by stress tests
 // =====================================================
 
-std::vector<int> gatherGLBTrianglesForSphere(
-    const World& world,
-    glm::vec3 center,
-    float radius,
-    const glm::vec3& move,
-    const char* caller = nullptr
-);
-
 std::vector<int> gatherGLBTriangles(
     const World& world,
     const Capsule& cap,

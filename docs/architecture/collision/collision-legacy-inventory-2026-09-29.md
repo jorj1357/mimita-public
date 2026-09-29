@@ -2,7 +2,7 @@
 
 Time: `2026-09-29T15:54:28Z`
 
-Status: INVENTORY ONLY — NOTHING DELETED
+Status: INVENTORY UPDATED — CLEANUP PASSES 1 AND 2 COMPLETED
 
 Purpose: identify every collision/movement owner or migration bridge that can
 make the active implementation difficult to reason about. This document does
@@ -43,9 +43,6 @@ tests, and fallback behavior harder to prove.
 
 File: `src/physics/movement/physics-collision-glb-main.cpp`
 
-- `:33-35` — `gatherGLBTrianglesForSphere` extern used only by the old
-  emergency/debug path. Candidate after those declarations and consumers are
-  removed.
 - `:173-190` — Phase 1 `doBodyWeaponCollisionPhase`; replaced for local-player
   actors by `collectActorCollisionMeshes` plus the actor-triangle solver.
 - `:192-202` — Phase 2 `doGLBSweepSlide`; owns the old root-capsule sweep and
@@ -89,19 +86,10 @@ with sword/weapon callers migrated to an explicit weapon-contact contract.
 
 Files: `physics-collision-glb-safety.h/.cpp`
 
-- `applyPostSnapCorrection` (`:32-52`) — helper tied to the old ground-snap
-  family.
-- `doGroundSnap` (`:55-133`) — documented as no active caller; candidate dead
-  code, but retain until slope/seam hover acceptance is complete.
-- `doFloorRecovery` (`:138-200`) — active only through the legacy pipeline.
-- `doRotationSafetyPass` (`:202-259`) — documented as no caller; duplicate
-  capsule depenetration candidate.
-- `doFinalSafetyPass` (`:262-303`) — documented as no caller; another duplicate
-  final capsule depenetration candidate.
-
-The header exports all four safety functions even though two are documented as
-uncalled. That public surface makes deadness less obvious and should be
-verified with a symbol/caller check before deletion.
+- `doFloorRecovery` — active only through the legacy pipeline; retained.
+- `applyPostSnapCorrection`, `doGroundSnap`, `doRotationSafetyPass`, and
+  `doFinalSafetyPass` — removed in cleanup pass 2 after source caller search
+  found no active callers.
 
 ### 4. Legacy contact producers and broadphase wrappers
 
@@ -113,9 +101,6 @@ verified with a symbol/caller check before deletion.
 - `physics-collision-glb-contact.cpp:288-339` — `collectGLBRecoveryContacts`.
   Used by the old emergency/debug search and therefore still appears in the
   active legacy pipeline.
-- `physics-collision-glb.cpp:23-42` — `gatherGLBTrianglesForSphere`.
-  The source documents no callers beyond extern declarations. This is the
-  clearest deletion candidate, pending a clean reference search and build.
 - `physics-collision-glb-setup.cpp:277-286` — value-returning
   `gatherGLBTriangles` overload. It allocates/copies a vector and remains for
   the legacy pipeline and stress tests; the scratch-buffer overload is the

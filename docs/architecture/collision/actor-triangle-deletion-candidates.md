@@ -11,7 +11,7 @@
 # Actor-triangle deletion candidates
 
 Date: 2026-09-27
-Status: annotated in code with `TODO-DELETE`; nothing removed
+Status: annotated in code; cleanup passes 1 and 2 removed the dead entries below
 Replacement owner: `src/physics/movement/actor-triangle-solver.cpp`
 (`solveActorTriangleCollision`, `runActorTriangleCollisionStep`) plus
 `src/physics/movement/actor-collision-mesh.cpp` (`collectActorCollisionMeshes`,
@@ -50,11 +50,11 @@ need a grep/build to confirm no references remain.
 | `collectBodyWeaponContacts` | `physics-collision-body.cpp` | gameplay | body phase removed |
 | `collectPlayerBodyCollisionSamples` | `physics-collision-body.cpp` | conditional | sweep-slide + debug consumers removed |
 | `recomputeWeaponCapsule` | `physics-collision-body.cpp` | conditional | `combat/weapon-swordsword.cpp` migrated; body phase removed |
-| `doGroundSnap` | `physics-collision-glb-safety.cpp` | dead | grep/build only |
-| `doRotationSafetyPass` | `physics-collision-glb-safety.cpp` | dead | grep/build only |
-| `doFinalSafetyPass` | `physics-collision-glb-safety.cpp` | dead | grep/build only |
-| `applyPostSnapCorrection` | `physics-collision-glb-safety.cpp` | dead (helper) | `doGroundSnap` removed |
-| `gatherGLBTrianglesForSphere` | `physics-collision-glb.cpp` | dead | extern declarations removed; grep/build |
+| `doGroundSnap` | `physics-collision-glb-safety.cpp` | removed in cleanup pass 2 | source search/build |
+| `doRotationSafetyPass` | `physics-collision-glb-safety.cpp` | removed in cleanup pass 2 | source search/build |
+| `doFinalSafetyPass` | `physics-collision-glb-safety.cpp` | removed in cleanup pass 2 | source search/build |
+| `applyPostSnapCorrection` | `physics-collision-glb-safety.cpp` | removed in cleanup pass 2 | `doGroundSnap` removed |
+| `gatherGLBTrianglesForSphere` | `physics-collision-glb.cpp` | removed in cleanup pass 1 | source search/build |
 | value-returning `gatherGLBTriangles` | `physics-collision-glb-setup.cpp` | efficiency | callers use the scratch-buffer overload |
 | capsule penetration check in stress cases | `physics-collision-stress.cpp` | test | triangle-based verification added |
 | `actorTriangleSpike` | `actor-triangle-spike.cpp` | diagnostic | superseded by `actorCollisionMeshSelfTest` |

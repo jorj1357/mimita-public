@@ -29,14 +29,6 @@
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"
 
-extern std::vector<int> gatherGLBTrianglesForSphere(
-    const World& world,
-    glm::vec3 center,
-    float radius,
-    const glm::vec3& move,
-    const char* caller
-);
-
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 #define LOG_COLLISION(K, ...) Debug::logThrottled(Debug::Category::Collision, K, 0.25f, __VA_ARGS__)
 
