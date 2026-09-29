@@ -100,10 +100,10 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             physicsMainUpdate(*sim.player, *sim.world, normalInput, TICK_DT);
             clearCollisionEntityContext();
 
-            // Always-on physical aim body (aimbody.json mode == "physical").
-            // Runs after normal movement/animation so it owns the rendered pose
-            // and the client hitboxes for this tick.
-            if (AimBodyConfig::instance().physicalMode()) {
+            // Always-on physical aim body (aimbody.json mode == "physical" or
+            // "hybrid"). Runs after normal movement/animation so it owns the
+            // rendered pose and the client hitboxes for this tick.
+            if (AimBodyConfig::instance().bodyPhysicsMode()) {
                 MIMITA_PERF_SCOPE("AimBodyUpdate");
                 if (!ragdoll.aimActive())
                     ragdoll.activateAim(*sim.player);

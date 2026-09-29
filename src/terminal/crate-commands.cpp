@@ -140,7 +140,11 @@ void registerCrateCommands()
                 e->velocity = velocity;
                 e->shape = PhysicalEntityShape::Box;
                 e->halfExtents = glm::vec3(kCrateHalfExtent);
-                e->density = material.density;
+                // Gameplay density, not the material's physical density: the
+                // crate must stay light enough for a player push. `crate_density`
+                // / `crate_mass` still override this and always re-derive mass
+                // from density * volume.
+                e->density = 1.0f;
                 e->mass = e->density * crateVolume(*e);
                 e->friction = 0.7f;
                 e->restitution = 0.0f;

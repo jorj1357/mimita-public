@@ -19,6 +19,7 @@
 #include "network/net_mode.h"
 #include "network/server.h"
 #include "input/mouse-lock.h"
+#include "input/input-commands.h"
 #include "profile/local-profile-system.h"
 #include "auth/auth-system.h"
 #include "devtools/terminal.h"
@@ -389,4 +390,17 @@ void engineTickState(Engine& engine, float dt)
             (gameState == GAME_PLAYING && !duelMatchOver && MouseLock::locked() ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL));
     }
     gravePrev = graveDown;
+
+    // Backslash is the instant collision-investigation bookmark shortcut.
+    // It runs the same terminal command as typing `bookmark`, so the command
+    // and shortcut share one capture point and one JSONL event owner.
+    static bool bookmarkPrev = false;
+    bool bookmarkDown = glfwGetKey(engine.window(), GLFW_KEY_BACKSLASH) == GLFW_PRESS;
+    if (!PauseMenu::isOpen() && !Terminal::instance().isOpen() &&
+        !isChatOpen() &&
+        InputCommandSystem::instance().isKeyboardEnabled() &&
+        bookmarkDown && !bookmarkPrev) {
+        Terminal::instance().execute("bookmark");
+    }
+    bookmarkPrev = bookmarkDown;
 }

@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <chrono>
 #include <ctime>
+#include <windows.h>
 
 #include "config.h"
 #include "devtools/dev-config.h"
@@ -23,6 +24,190 @@
 #include "terminal/terminal-state.h"
 #include "game/spawn-override.h"
 #include "network/server.h"
+#include "debug/structured-log.h"
+#include "hot-reload/hot-reload-system.h"
+
+namespace {
+
+uint32_t gNextBookmarkNumber = 1;
+
+struct RuntimeTickSnapshot {
+    uint64_t clientTick = 0;
+    uint32_t serverTick = 0;
+    const char* serverTickSource = "unavailable";
+};
+
+RuntimeTickSnapshot captureRuntimeTicks()
+{
+    RuntimeTickSnapshot snapshot;
+    snapshot.clientTick = gpPlayer ? gpPlayer->movementSimulationTick : 0;
+    if (gpMpContext) {
+        snapshot.serverTick = gpMpContext->latestServerTick;
+        snapshot.serverTickSource = gpMpContext->active
+            ? "latest_received_server_tick" : "disconnected_context";
+    }
+    return snapshot;
+}
+
+std::string currentExecutablePath()
+{
+    char path[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameA(nullptr, path, MAX_PATH);
+    return length > 0 ? std::string(path, length) : std::string("(unknown)");
+}
+
+uint64_t processUptimeMs()
+{
+    FILETIME creation{}, exitTime{}, kernelTime{}, userTime{};
+    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exitTime,
+                         &kernelTime, &userTime))
+        return 0;
+
+    FILETIME now{};
+    GetSystemTimeAsFileTime(&now);
+    ULARGE_INTEGER start{};
+    start.LowPart = creation.dwLowDateTime;
+    start.HighPart = creation.dwHighDateTime;
+    ULARGE_INTEGER current{};
+    current.LowPart = now.dwLowDateTime;
+    current.HighPart = now.dwHighDateTime;
+    return current.QuadPart > start.QuadPart
+        ? (current.QuadPart - start.QuadPart) / 10000ull : 0;
+}
+
+std::string bookmarkIso8601Now()
+{
+    const std::time_t now = std::time(nullptr);
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &now);
+#else
+    gmtime_r(&now, &utc);
+#endif
+    char buffer[32]{};
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return buffer;
+}
+
+void createBookmark()
+{
+    const uint32_t bookmarkNumber = gNextBookmarkNumber++;
+    const std::string isoTime = bookmarkIso8601Now();
+    const RuntimeTickSnapshot ticks = captureRuntimeTicks();
+    const uint64_t clientTick = ticks.clientTick;
+    const uint32_t serverTick = ticks.serverTick;
+
+    nlohmann::json fields = {
+        {"bookmark_number", bookmarkNumber},
+        {"client_tick", clientTick},
+        {"server_tick", serverTick},
+        {"server_tick_source", ticks.serverTickSource},
+        {"iso8601_time", isoTime},
+        {"detail", ""}
+    };
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General,
+        StructuredLevel::Important,
+        "bookmark.created",
+        "slope-edge-investigation",
+        "manual bookmark captured before optional detail input",
+        static_cast<uint32_t>(clientTick),
+        fields,
+        __FILE__, __LINE__, __FUNCTION__);
+
+    Terminal& terminal = Terminal::instance();
+    terminal.addLog("Bookmark " + std::to_string(bookmarkNumber) +
+                    " saved: server tick " + std::to_string(serverTick) +
+                    ", client tick " + std::to_string(clientTick) +
+                    ", iso 8601 time: " + isoTime);
+    DevOverlay::instance().showNotification(
+        "Bookmark saved: server tick " + std::to_string(serverTick) +
+        ", client tick " + std::to_string(clientTick) +
+        ", iso 8601 time: " + isoTime, 6.0f);
+
+    if (!terminal.isOpen())
+        terminal.toggle();
+
+    terminal.requestInput(
+        "Write more detail here...",
+        [bookmarkNumber, clientTick, serverTick, isoTime](const std::string& detail) {
+            if (!detail.empty()) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::General,
+                    StructuredLevel::Important,
+                    "bookmark.annotated",
+                    "slope-edge-investigation",
+                    "manual bookmark detail submitted",
+                    static_cast<uint32_t>(clientTick),
+                    nlohmann::json{
+                        {"bookmark_number", bookmarkNumber},
+                        {"client_tick", clientTick},
+                        {"server_tick", serverTick},
+                        {"iso8601_time", isoTime},
+                        {"detail", detail}
+                    },
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            if (Terminal::instance().isOpen())
+                Terminal::instance().toggle();
+        });
+}
+
+void printVersionInfo()
+{
+    const RuntimeTickSnapshot ticks = captureRuntimeTicks();
+    const std::string exePath = currentExecutablePath();
+    const std::string eventsPath = StructuredLogger::instance().eventsPath();
+    const std::string runId = StructuredLogger::instance().runId();
+    const uint32_t hotGeneration = HotReloadSystem::instance().gameMemory().reloadCount;
+
+    const char* roleEnv = std::getenv("MIMITA_PROCESS_ROLE");
+    const std::string processRole = roleEnv && *roleEnv ? roleEnv : "client";
+    auto& terminal = Terminal::instance();
+    terminal.addLog("[VERSIONINFO] process=" +
+                    processRole +
+                    " pid=" + std::to_string(GetCurrentProcessId()) +
+                    " run_id=" + (runId.empty() ? "(none)" : runId) +
+                    " uptime_ms=" + std::to_string(processUptimeMs()));
+    terminal.addLog("[VERSIONINFO] exe=" + exePath);
+    terminal.addLog("[VERSIONINFO] events_jsonl=" +
+                    (eventsPath.empty() ? "(not initialized)" : eventsPath));
+    terminal.addLog("[VERSIONINFO] client_tick=" + std::to_string(ticks.clientTick) +
+                    " server_tick=" + std::to_string(ticks.serverTick) +
+                    " server_tick_source=" + ticks.serverTickSource);
+    terminal.addLog("[VERSIONINFO] hot_dll_loaded=" +
+                    std::string(HotReloadSystem::instance().loaded() ? "yes" : "no") +
+                    " hot_generation=" + std::to_string(hotGeneration));
+    terminal.addLog("[VERSIONINFO] room=" +
+                    (gpMpContext && !gpMpContext->currentRoomCode.empty()
+                        ? gpMpContext->currentRoomCode : "(none)") +
+                    " server=" +
+                    (gpMpContext && !gpMpContext->serverName.empty()
+                        ? gpMpContext->serverName : "(none)"));
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General,
+        StructuredLevel::Important,
+        "versioninfo.executed",
+        "runtime-identity",
+        "versioninfo command executed",
+        static_cast<uint32_t>(ticks.clientTick),
+        nlohmann::json{
+            {"exe_path", exePath},
+            {"events_jsonl", eventsPath},
+            {"run_id", runId},
+            {"pid", GetCurrentProcessId()},
+            {"uptime_ms", processUptimeMs()},
+            {"client_tick", ticks.clientTick},
+            {"server_tick", ticks.serverTick},
+            {"server_tick_source", ticks.serverTickSource},
+            {"hot_dll_loaded", HotReloadSystem::instance().loaded()},
+            {"hot_generation", hotGeneration}
+        },
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+} // namespace
 
 Terminal& Terminal::instance() {
     static Terminal t;
@@ -37,6 +222,30 @@ void Terminal::init(GLFWwindow* window) {
     registerTerminalBuiltins();
 
     registerTerminalBuiltins();
+
+    registerCommand({
+        "bookmark",
+        "Save an exact client/server tick bookmark and optional detail",
+        "bookmark",
+        [](const std::vector<std::string>& args) {
+            (void)args;
+            createBookmark();
+        },
+        "2026-09-29",
+        CommandCategory::Debug
+    });
+
+    registerCommand({
+        "versioninfo",
+        "Print the running EXE, process, ticks, hot state, and JSONL path",
+        "versioninfo",
+        [](const std::vector<std::string>& args) {
+            (void)args;
+            printVersionInfo();
+        },
+        "2026-09-29",
+        CommandCategory::Debug
+    });
 
     registerCommand({
         "npc_spawn_legacy",
@@ -402,19 +611,25 @@ void Terminal::executeCurrent() {
     addLog("] " + input);
     addHistory(input);
 
-    // Multi-command: split on ';'
-    size_t start = 0;
-    while (start < input.size()) {
-        while (start < input.size() && input[start] == ' ') start++;
-        size_t end = input.find(';', start);
-        if (end == std::string::npos) end = input.size();
-        std::string cmd = input.substr(start, end - start);
-        // Trim trailing spaces
-        while (!cmd.empty() && cmd.back() == ' ') cmd.pop_back();
-        if (!cmd.empty()) {
-            execute(cmd);
+    if (hasPendingInput()) {
+        // Interactive prompts must receive an empty Enter as a valid answer;
+        // do not discard it through the normal empty-command path.
+        execute(input);
+    } else {
+        // Multi-command: split on ';'
+        size_t start = 0;
+        while (start < input.size()) {
+            while (start < input.size() && input[start] == ' ') start++;
+            size_t end = input.find(';', start);
+            if (end == std::string::npos) end = input.size();
+            std::string cmd = input.substr(start, end - start);
+            // Trim trailing spaces
+            while (!cmd.empty() && cmd.back() == ' ') cmd.pop_back();
+            if (!cmd.empty()) {
+                execute(cmd);
+            }
+            start = end + 1;
         }
-        start = end + 1;
     }
 
     if (mTextState) {

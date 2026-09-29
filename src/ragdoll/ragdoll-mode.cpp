@@ -18,6 +18,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "entities/player.h"
+#include "entities/aimbody-config.h"
 #include "render/render-player.h"
 #include "input/input-state.h"
 #include "physics/physics-types.h"
@@ -100,6 +101,8 @@ static glm::quat quatFromMatrixCanonical(const glm::mat4& m)
     if (q.w < 0.0f) q = -q;
     return q;
 }
+
+static glm::vec3 quatToRotationVector(const glm::quat& q);
 
 RagdollModeSystem& RagdollModeSystem::instance()
 {
@@ -301,6 +304,108 @@ void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForwar
     motor(b.torsoIndex, cfg.physicalAim.torsoWeight);
 }
 
+// Capture the procedural animation pose (world transform per part) before
+// physics overwrites the skeleton. Hybrid springs pull the body toward it.
+void RagdollModeSystem::captureAimTargets(const Player& player, RagdollBody& b)
+{
+    for (auto& part : b.parts) {
+        if (part.nodeIndex < 0
+            || part.nodeIndex >= (int)player.perfectPoseSkeleton.nodes.size())
+            continue;
+        const glm::mat4& nodeWorld =
+            player.perfectPoseSkeleton.nodes[part.nodeIndex].worldTransform;
+        glm::mat4 bodyWorld = nodeWorld * glm::inverse(part.meshLocal);
+        part.aimTargetPosition = glm::vec3(bodyWorld[3]);
+        part.aimTargetOrientation = glm::normalize(glm::quat_cast(glm::mat3(bodyWorld)));
+    }
+}
+
+// Pull the body toward the procedural animation pose with a stable exponential
+// blend, so any follow force is safe (no explicit-spring blow-up). At high
+// follow force the limbs look like the default animation; at low force they lag
+// and carry momentum from movement, look, and impacts.
+void RagdollModeSystem::applyHybridSprings(RagdollBody& b, float dt)
+{
+    const auto& pc = RagdollModeConfig::instance().data().physicalAim;
+    const float rate = std::max(0.0f, pc.hybridBaseRate * pc.hybridFollowForce);
+    if (rate <= 1e-4f) return;
+    const float alpha = glm::clamp(1.0f - std::exp(-rate * dt), 0.0f, 1.0f);
+    const float retain = 1.0f - alpha;
+
+    for (auto& part : b.parts) {
+        RigidBody& body = part.body;
+
+        body.orientation = glm::normalize(
+            glm::slerp(body.orientation, part.aimTargetOrientation, alpha));
+        body.angularVelocity *= retain;
+
+        // The torso position is owned by the movement tether, not the animation.
+        if (part.parentIndex >= 0) {
+            const glm::vec3 delta = part.aimTargetPosition - body.position;
+            body.position += delta * (alpha * pc.hybridPositionFollow);
+            body.linearVelocity *= retain;
+        }
+    }
+}
+
+// Keep each limb inside its configured range of motion so the body cannot fold
+// or throw limbs far from their attachments. The torso is clamped relative to
+// the movement yaw frame; child limbs are clamped by swing magnitude.
+void RagdollModeSystem::clampAimRanges(const Player& player, RagdollBody& b, float beta)
+{
+    const auto& pc = RagdollModeConfig::instance().data().physicalAim;
+    beta = glm::clamp(beta, 0.0f, 1.0f);
+
+    if (b.torsoIndex >= 0 && b.torsoIndex < (int)b.parts.size()) {
+        RigidBody& torso = b.parts[b.torsoIndex].body;
+        const glm::quat rootRot =
+            glm::angleAxis(glm::radians(player.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
+        const glm::quat rel = glm::normalize(glm::inverse(rootRot) * torso.orientation);
+        const glm::vec3 rv = quatToRotationVector(rel);
+        const float pitch = glm::radians(pc.torsoMaxPitchDeg);
+        const float roll = glm::radians(pc.torsoMaxRollDeg);
+        glm::vec3 clamped(
+            glm::clamp(rv.x, -pitch, pitch),
+            rv.y,
+            glm::clamp(rv.z, -roll, roll));
+        glm::vec3 rejected = rv - clamped;
+        if (glm::length(rejected) > 1e-6f)
+            rotateBody(torso, rootRot * (-rejected * beta));
+    }
+
+    for (int pi = 0; pi < (int)b.parts.size(); ++pi) {
+        RagdollModePart& part = b.parts[pi];
+        if (part.parentIndex < 0 || part.parentIndex >= (int)b.parts.size()) continue;
+
+        float maxDeg = pc.headMaxSwingDeg;
+        if (part.name == "leftArm" || part.name == "rightArm")
+            maxDeg = pc.armMaxSwingDeg;
+        else if (part.name == "leftLeg" || part.name == "rightLeg")
+            maxDeg = pc.legMaxSwingDeg;
+        const float maxRad = glm::radians(maxDeg);
+        if (maxRad <= 0.0f) continue;
+
+        RigidBody& child = part.body;
+        RigidBody& parent = b.parts[part.parentIndex].body;
+        const glm::quat rel = glm::normalize(
+            glm::inverse(parent.orientation) * child.orientation);
+        const glm::quat delta = glm::normalize(
+            rel * glm::inverse(part.bindRelativeRotation));
+        const glm::vec3 rv = quatToRotationVector(delta);
+        const float ang = glm::length(rv);
+        if (ang <= maxRad + 1e-6f) continue;
+
+        const glm::vec3 rejected = rv - rv * (maxRad / ang);
+        const float invA = child.invInertia;
+        const float invB = parent.invInertia;
+        const float total = invA + invB;
+        if (total < 1e-8f) continue;
+        const glm::vec3 worldCorrection = parent.orientation * (-rejected);
+        rotateBody(child, worldCorrection * (beta * invA / total));
+        rotateBody(parent, -worldCorrection * (beta * invB / total));
+    }
+}
+
 void RagdollModeSystem::syncAimToPlayer(Player& player, RagdollBody& b)
 {
     if (b.torsoIndex < 0 || b.torsoIndex >= (int)b.parts.size()) return;
@@ -348,14 +453,22 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
     RagdollBody& b = mAim;
     b.activationTime += dt;
 
-    if (cfg.generation != mAppliedConfigGeneration) {
-        mAppliedConfigGeneration = cfg.generation;
-        if (!b.parts.empty())
-            reinitPreservingState(player, b);
-    }
+    // The aim body is intentionally NOT rebuilt when ragdoll.json changes.
+    // Its tuning is read live each tick, and rebuilding mid-play reset the
+    // skeleton and could shove the player when the physical pose no longer
+    // matched the movement root. Capsule/attachment geometry changes require
+    // toggling the mode off and on.
+
+    // Hybrid follows the procedural animation pose; capture it before physics
+    // overwrites the skeleton this tick.
+    const bool hybrid = AimBodyConfig::instance().hybridMode();
+    if (hybrid)
+        captureAimTargets(player, b);
 
     tetherAimRoot(player, b, dt);
     applyAimMotor(b, camForward, dt);
+    if (hybrid)
+        applyHybridSprings(b, dt);
 
     glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
     for (auto& part : b.parts)
@@ -382,6 +495,9 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
             depenetrateWorld(part.body, world, 2);
     }
 
+    // Range limits keep limbs near their attachments; then the attachment's own
+    // per-axis limits are enforced as a final pass.
+    clampAimRanges(player, b, 1.0f);
     solveRotationLimits(1.0f, b);
 
     // Re-assert the tether so gravity/collision cannot let the body drift from

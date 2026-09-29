@@ -42,6 +42,26 @@ struct PhysicalAimConfig {
     // look_damping when left at the default).
     float lookDamping = 12.0f;
     PhysicalAimDamping damping = PhysicalAimDamping::Physical;
+
+    // Per-limb range of motion. The torso is clamped relative to the movement
+    // root (pitch/roll); child limbs are clamped by swing magnitude relative to
+    // their bind orientation. Degrees.
+    float torsoMaxPitchDeg = 35.0f;
+    float torsoMaxRollDeg = 25.0f;
+    float headMaxSwingDeg = 55.0f;
+    float armMaxSwingDeg = 80.0f;
+    float legMaxSwingDeg = 45.0f;
+
+    // Hybrid (animation-following) tracking. All hybrid pose following is a
+    // stable exponential blend, so any follow force is safe. The effective
+    // tracking rate is baseRate * followForce (1/s): 1.0 is baseline, 10.0
+    // tracks the animation pose ten times harder. Higher = limbs look like the
+    // default animated pose even at high speed; lower = more sway and momentum.
+    float hybridFollowForce = 1.0f;
+    float hybridBaseRate = 12.0f;
+    // 0 = orientation-only following, 1 = limbs also follow their animated
+    // position. Multiplies the position blend fraction.
+    float hybridPositionFollow = 1.0f;
 };
 
 // Local +Y = forward, +Z = up, +X = right.

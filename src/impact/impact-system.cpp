@@ -86,10 +86,9 @@ void ImpactSystem::initializeEntity(PhysicalEntity& entity, uint32_t materialId,
     entity.destructible.maxHealth = material.strength;
     entity.destructible.materialId = materialId;
 
+    // Lazy: no geometry until the first cut, so the caller's authored box mesh
+    // (already in entity.localTriangles) stays authoritative at spawn.
     DestructibleGeometrySystem::instance().initialize(entity.destructible, halfExtents);
-
-    // Generated triangles become the entity's collision mesh.
-    entity.localTriangles = entity.destructible.collisionTriangles;
 }
 
 ImpactResult ImpactSystem::submit(const ImpactEvent& event)

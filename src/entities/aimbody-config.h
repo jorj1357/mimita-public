@@ -32,6 +32,11 @@ public:
     // Experimental bodily-momentum mode: the normal-play body is physically
     // simulated and the camera look is a wished orientation (torque, not snap).
     bool physicalMode() const { return mMode == "physical"; }
+    // Hybrid: the body is physically simulated but limbs are also sprung toward
+    // the procedural animation pose, so it follows animations and weapons while
+    // still carrying momentum and colliding.
+    bool hybridMode() const { return mMode == "hybrid"; }
+    bool bodyPhysicsMode() const { return physicalMode() || hybridMode(); }
     const std::string& mode() const { return mMode; }
     float smoothingFactor() const { return mSmoothingFactor; }
 

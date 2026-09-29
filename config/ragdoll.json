@@ -91,15 +91,35 @@
         "rotation_speed": 180.0
     },
     "physical": {
-        "comment": "Physical aim controller (aimbody.json mode physical, and the ragdoll look motor). damping_mode: physical = torque/PD, look = historical velocity blend. torso_tether_stiffness keeps the dynamic torso on the authoritative movement root.",
-        "torque_gain": 28.0,
-        "angular_damping": 5.0,
-        "max_angular_speed": 18.0,
+        // "comment":
+        //  "Physical aim controller (aimbody.json mode physical, and the ragdoll look motor). 
+        // damping_mode: physical = torque/PD, 
+        // look = historical velocity blend. 
+        // torso_tether_stiffness keeps the dynamic torso on the authoritative movement root.",
+        "torque_gain": 15.0,
+        "angular_damping": 2.0,
+        "max_angular_speed": 30.0,
         "head_weight": 1.0,
-        "torso_weight": 0.65,
+        "torso_weight": 1.0,
         "limb_inheritance": 1.0,
-        "torso_tether_stiffness": 40.0,
-        "damping_mode": "physical"
+        // "torso_tether_stiffness": 200.0,
+        "torso_tether_stiffness": 20.0,
+        "damping_mode": "physical",
+        // "damping_mode": "look",
+        "limits": {
+            "comment": "Range of motion in degrees. Torso is clamped relative to the movement root; child limbs are clamped by swing from their bind orientation.",
+            "torso_max_pitch_deg": 35.0,
+            "torso_max_roll_deg": 25.0,
+            "head_max_swing_deg": 55.0,
+            "arm_max_swing_deg": 80.0,
+            "leg_max_swing_deg": 45.0
+        },
+        "hybrid": {
+            "comment": "Hybrid mode tracking. follow_force is the single knob: 1.0 = baseline, 10.0 = limbs track the animations.json / weapon / aimbody pose ten times harder (looks like default mode even at speed). base_rate is the internal tracking rate at follow_force 1.0. position_follow 0 = orientation only, 1 = limbs also follow their animated position. All values are stable at any magnitude.",
+            "follow_force": 1.0,
+            "base_rate": 12.0,
+            "position_follow": 1.0
+        }
     },
     "exit": {
         "preserve_velocity": true,

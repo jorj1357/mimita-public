@@ -1,16 +1,29 @@
 {
-  "comment": "default preserves immediate aimbody behavior; smooth treats camera look as a wish direction and smoothly moves the body and configured limbs toward it; physical runs the body as an active ragdoll during normal play (torso tethered to the movement root, head+torso receive look torque, limbs inherit through joints) with all tuning in ragdoll.json physical.*. World Z is vertical and body yaw rotates around world Z. smoothingFactor 1.0 is approximately a 250 ms response; larger values are slower and smaller values are faster. Smooth mode never snaps. For each limb, gains scale camera look pitch into local pitch/yaw/roll rotations (default/smooth only). Camera sway is configured separately in camconfig.json.",
+  "comment": "default preserves immediate aimbody behavior; smooth treats camera look as a wish direction and smoothly moves the body and configured limbs toward it; physical runs the body as an active ragdoll during normal play (torso tethered to the movement root, head+torso receive look torque, limbs inherit through joints); hybrid does that but also springs limbs toward the procedural animation pose so it follows animations/weapons while carrying momentum. All physical tuning is in ragdoll.json physical.*. World Z is vertical and body yaw rotates around world Z. smoothingFactor 1.0 is approximately a 250 ms response; larger values are slower and smaller values are faster. Smooth mode never snaps. For each limb, gains scale camera look pitch into local pitch/yaw/roll rotations (default/smooth only). Camera sway is configured separately in camconfig.json.",
   "enabled": true,
   // "enabled": false,
   // "mode": "default",
-  "mode": "physical",
+  "mode": "hybrid", 
+  // "mode": "physical",
   "smoothingFactor": 1.0,
-  "limbs": {
+  // does this do antthing 2026 09 29 1132 jorj 
+  // "smoothingFactor": 0.01,
+  // "limbs": {
+  //   "head":     { "pitch": 0.0, "yaw": 0.0, "roll": -0.7 },
+  //   "torso":    { "pitch": 0.0, "yaw": 0.0, "roll": -0.2 },
+  //   "leftArm":  { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
+  //   "rightArm": { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
+  //   "leftLeg":  { "pitch": 0.0, "yaw": 0.0, "roll": 0.0 },
+  //   "rightLeg": { "pitch": 0.0, "yaw": 0.0, "roll": 0.0 }
+  // }
+  // for hybrid mode todo just make the logic actually  aim it wher i want it to look no json tricks
+    "limbs": {
     "head":     { "pitch": 0.0, "yaw": 0.0, "roll": -0.7 },
     "torso":    { "pitch": 0.0, "yaw": 0.0, "roll": -0.2 },
-    "leftArm":  { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
+    "leftArm":  { "pitch": 0.0, "yaw": 0.0, "roll": -1.0},
     "rightArm": { "pitch": 0.0, "yaw": 0.0, "roll": -1.0 },
     "leftLeg":  { "pitch": 0.0, "yaw": 0.0, "roll": 0.0 },
     "rightLeg": { "pitch": 0.0, "yaw": 0.0, "roll": 0.0 }
   }
+
 }

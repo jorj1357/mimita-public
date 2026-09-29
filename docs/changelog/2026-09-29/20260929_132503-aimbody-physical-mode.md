@@ -81,15 +81,41 @@ torque, never a snapped transform.
 - `docs/skills/spec-behavior-review-v1.md` was not run in this checkpoint; it
   should accompany the human-behavior review.
 
+## Iteration 2 (same session): range limits + hybrid mode
+
+After the first in-game check the physical mode was kept, and two changes were
+requested:
+
+- **Per-limb range limits.** `src/ragdoll/physical-aim.h` gained
+  `torsoMaxPitchDeg`, `torsoMaxRollDeg`, `headMaxSwingDeg`, `armMaxSwingDeg`,
+  `legMaxSwingDeg`, and hybrid spring gains. `clampAimRanges` in
+  `ragdoll-mode.cpp` clamps the torso's pitch/roll relative to the movement yaw
+  frame and clamps each child limb's swing from its bind orientation. Config:
+  `ragdoll.json physical.limits`.
+- **Hybrid mode.** `aimbody.json mode == "hybrid"`. `captureAimTargets` snapshots
+  the procedural animation pose before physics overwrites the skeleton, and
+  `applyHybridSprings` pulls each part's orientation (and limb positions) toward
+  it, on top of the look torque. Limbs therefore follow animations/weapons via
+  forces while still colliding and carrying momentum. Config:
+  `ragdoll.json physical.hybrid`.
+- `RagdollModePart` gained `aimTargetPosition` / `aimTargetOrientation`.
+- `AimBodyConfig` gained `hybridMode()` / `bodyPhysicsMode()`; `simulate-tick`
+  runs the aim body for physical or hybrid.
+- Active `config/aimbody.json` mode was set to `hybrid` for human testing.
+
 ## Validation
 
 - `tests/physical-aim-torque-test.cpp`: compile and run with
   `g++ -std=c++17 -O2 -Iinclude -Isrc -DGLM_ENABLE_EXPERIMENTAL tests/physical-aim-torque-test.cpp -o <tmp>`.
   Result: `5 passed, 0 failed`.
-- Cold build `python build_agent.py`: compiled
-  `aimbody-config.cpp`, `ragdoll-mode-config.cpp`, `ragdoll-mode.cpp`,
-  `simulate-tick.cpp`; `Status: SUCCESS`, return code 0. Executable:
-  `C:\mimita-v9\mimita.exe` (2026-09-29 09:24:29 local).
+- Cold builds `python build_agent.py`:
+  - First build compiled `aimbody-config.cpp`, `ragdoll-mode-config.cpp`,
+    `ragdoll-mode.cpp`, `simulate-tick.cpp`; `Status: SUCCESS`, return 0.
+  - Iteration-2 build compiled `ragdoll-mode-config.cpp` and `ragdoll-mode.cpp`
+    (the latter initially failed on a missing forward declaration of
+    `quatToRotationVector`; a forward declaration was added and the rebuild
+    returned `Status: SUCCESS`, return 0).
+  - Executable: `C:\mimita-v9\mimita.exe`.
 
 ## Pre-existing edits
 
@@ -101,10 +127,14 @@ the files listed above; the config/aimbody.json mode was intentionally left at
 
 ## Human review still needed
 
-In-game behavior is not yet observed. Set `"mode": "physical"` in
-`config/aimbody.json` (hot-reloads) and verify: look is a wish direction; head
-and torso lag and converge; a fast left/right look sends opposite momentum
-through the limbs; limbs keep their own velocity; no teleport or oscillation;
-limb hitboxes match the visible limbs. Multiplayer limb damage is expected to
+Physical mode was confirmed by the user to "feel good" but limbs ranged too far
+from the body. Iteration 2 addresses this and adds the hybrid mode; the hybrid
+feel, limb alignment, and the specific limit values are not yet human-verified.
+
+Test `config/aimbody.json mode == "hybrid"` (currently active, hot-reloads) and
+verify: limbs follow animations/weapons but sway with fast look and movement;
+limbs stay within range; no limb ends up far in front of the torso; no folding
+through the body; hitbox matches the visible limb. Tune `physical.limits` and
+`physical.hybrid` in `ragdoll.json`. Multiplayer limb damage is expected to
 disagree with the server's static body template until ragdoll pose replication
 exists.

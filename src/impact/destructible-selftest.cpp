@@ -124,25 +124,26 @@ struct EntityOnlyWorld final : CollisionWorldView
     void queryPlayerCapsulesSwept(const glm::vec3&, const glm::vec3&, float,
                                   std::vector<SweptPlayerCapsule>&) const override {}
 
-    void queryEntityTrianglesSwept(const glm::vec3& from, const glm::vec3& to,
-                                   float radius,
+    void queryEntityTrianglesSwept(const glm::vec3&, const glm::vec3&,
+                                   float,
                                    std::vector<SweptEntityTriangle>& out) const override
     {
-        AABB query;
-        query.min = glm::min(from, to) - glm::vec3(radius);
-        query.max = glm::max(from, to) + glm::vec3(radius);
         for (const PhysicalEntity& e : PhysicalEntitySystem::instance().entities())
         {
             if (e.localTriangles.empty())
                 continue;
-            std::vector<CollisionTriangle> worldTris;
-            DestructibleGeometrySystem::instance().collectWorldTriangles(
-                e.destructible, e.transform, query, worldTris);
-            for (const CollisionTriangle& tri : worldTris)
+            for (const CollisionTriangle& tri : e.localTriangles)
             {
+                CollisionTriangle wt;
+                wt.a = glm::vec3(e.transform * glm::vec4(tri.a, 1.0f));
+                wt.b = glm::vec3(e.transform * glm::vec4(tri.b, 1.0f));
+                wt.c = glm::vec3(e.transform * glm::vec4(tri.c, 1.0f));
+                const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
+                wt.normal = glm::length(n) > 1e-9f ? glm::normalize(n)
+                                                   : glm::vec3(0.0f, 0.0f, 1.0f);
                 SweptEntityTriangle swept;
                 swept.entityId = e.id;
-                swept.triangle = tri;
+                swept.triangle = wt;
                 out.push_back(swept);
             }
         }
@@ -319,19 +320,18 @@ bool destructibleSelfTest(std::string* outSummary)
               "crate remains collidable away from the hole");
     }
 
-    // 9. Only affected chunks rebuild; triangle count stays bounded.
+    // 9. A cut rebuilds the surface and the triangle count stays low and bounded.
     {
         system.clear();
         const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
         PhysicalEntity* crate = system.find(id);
-        const int totalChunks = crate->destructible.chunkCountPerAxis *
-                                crate->destructible.chunkCountPerAxis *
-                                crate->destructible.chunkCountPerAxis;
         const ImpactResult r = submitRifle(id, glm::vec3(0, 0, 2.5f),
                                            glm::vec3(0, 0, 1), glm::vec3(0, 0, -1),
                                            0.02f, 900.0f, 0.01f);
-        check(r.chunksRebuilt > 0 && r.chunksRebuilt < totalChunks,
-              "only affected chunks rebuild");
+        check(r.chunksRebuilt >= 1, "a cut rebuilds the surface");
+        check(crate->localTriangles.size() > 12 &&
+              crate->localTriangles.size() < 1000,
+              "destructible surface stays low-poly");
 
         for (int i = 0; i < 40; ++i)
         {
@@ -367,23 +367,7 @@ bool destructibleSelfTest(std::string* outSummary)
         check(windingOk, "generated triangles have outward-consistent winding");
     }
 
-    // 11. Chunk broadphase returns a subset for a small query.
-    {
-        system.clear();
-        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
-        PhysicalEntity* crate = system.find(id);
-        std::vector<CollisionTriangle> nearby;
-        AABB query;
-        query.min = glm::vec3(-0.5f, -0.5f, 2.0f);
-        query.max = glm::vec3(0.5f, 0.5f, 3.0f);
-        DestructibleGeometrySystem::instance().collectWorldTriangles(
-            crate->destructible, glm::mat4(1.0f), query, nearby);
-        check(!nearby.empty() &&
-              nearby.size() < crate->destructible.collisionTriangles.size(),
-              "chunk broadphase limits a near query to nearby triangles");
-    }
-
-    // 12. The shared projectile kernel detects the crate (EntityImpact), which
+    // 11. The shared projectile kernel detects the crate (EntityImpact), which
     // is what routes a rifle hit into the cut.
     {
         system.clear();

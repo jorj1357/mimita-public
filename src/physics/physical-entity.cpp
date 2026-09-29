@@ -320,7 +320,6 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             std::vector<ActorCollisionMesh> meshes{objectMesh};
             std::vector<int> candidates;
             std::vector<RecoveryContact> contacts;
-            std::vector<CollisionTriangle> nearbyLocal;
             for (int collisionPass = 0; collisionPass < 3; ++collisionPass)
             {
                 meshes[0].previousTransform = e.previousTransform;
@@ -334,36 +333,9 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                 if (candidates.empty())
                     break;
 
-                // Cached chunk broadphase: a body only needs the chunks that
-                // overlap the world triangles it could actually touch. Without
-                // this, a destructible body tests every generated triangle
-                // against the world each tick.
-                const std::vector<CollisionTriangle>* entityTriangles = &e.localTriangles;
-                if (e.destructible.enabled &&
-                    !e.destructible.chunkTriangleRanges.empty())
-                {
-                    AABB worldBounds;
-                    worldBounds.min = glm::vec3(1e30f);
-                    worldBounds.max = glm::vec3(-1e30f);
-                    for (int ci : candidates)
-                    {
-                        const CollisionTriangle& wtri =
-                            world.collisionMesh.triangles[(size_t)ci];
-                        const AABB tb = makeTriangleAABB(wtri);
-                        worldBounds.min = glm::min(worldBounds.min, tb.min);
-                        worldBounds.max = glm::max(worldBounds.max, tb.max);
-                    }
-                    worldBounds.min -= glm::vec3(0.1f);
-                    worldBounds.max += glm::vec3(0.1f);
-                    nearbyLocal.clear();
-                    MimitaImpact::DestructibleGeometrySystem::instance().collectLocalTriangles(
-                        e.destructible, e.transform, worldBounds, nearbyLocal);
-                    if (nearbyLocal.empty())
-                        break;
-                    entityTriangles = &nearbyLocal;
-                }
-                meshes[0].localTriangles = entityTriangles;
-
+                // The destructible mesh is intentionally low-poly (a box plus a
+                // bounded number of hole triangles), so the body sweeps its full
+                // local mesh directly; no per-entity broadphase is needed.
                 std::vector<RecoveryContact> passContacts = collectActorMeshContacts(
                     world, meshes, candidates, glm::vec3(e.transform[3]),
                     true, -1.0f);
@@ -747,31 +719,17 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         // collectActorMeshContacts owns the one triangle-vs-triangle routine; the
         // entity reuses it instead of duplicating the math.
         std::vector<CollisionTriangle> nearby;
-        if (e.destructible.enabled && !e.destructible.chunkTriangleRanges.empty())
+        nearby.reserve(e.localTriangles.size());
+        for (const CollisionTriangle& lt : e.localTriangles)
         {
-            // Cached chunk broadphase: only chunks near the actor are transformed.
-            AABB query = actorBox;
-            query.min -= glm::vec3(kPad);
-            query.max += glm::vec3(kPad);
-            MimitaImpact::DestructibleGeometrySystem::instance().collectWorldTriangles(
-                e.destructible, e.transform, query, nearby);
-            if (nearby.empty())
-                continue;
-        }
-        else
-        {
-            nearby.reserve(e.localTriangles.size());
-            for (const CollisionTriangle& lt : e.localTriangles)
-            {
-                CollisionTriangle wt;
-                wt.a = glm::vec3(e.transform * glm::vec4(lt.a, 1.0f));
-                wt.b = glm::vec3(e.transform * glm::vec4(lt.b, 1.0f));
-                wt.c = glm::vec3(e.transform * glm::vec4(lt.c, 1.0f));
-                const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
-                const float len = glm::length(n);
-                wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
-                nearby.push_back(wt);
-            }
+            CollisionTriangle wt;
+            wt.a = glm::vec3(e.transform * glm::vec4(lt.a, 1.0f));
+            wt.b = glm::vec3(e.transform * glm::vec4(lt.b, 1.0f));
+            wt.c = glm::vec3(e.transform * glm::vec4(lt.c, 1.0f));
+            const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
+            const float len = glm::length(n);
+            wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            nearby.push_back(wt);
         }
 
         World temp;
@@ -1181,7 +1139,7 @@ bool physicalEntitySelfTest(std::string* outSummary)
 
     // 6. A destructible dynamic crate keeps the full rigid-body behavior: it
     // falls under gravity and rests on the floor while using the generated
-    // collision mesh (not the original 12-triangle box).
+    // planar collision surface (built lazily on the first cut).
     {
         system.clear();
         std::vector<CollisionTriangle> box;
@@ -1196,15 +1154,21 @@ bool physicalEntitySelfTest(std::string* outSummary)
         destructible->friction = 0.7f;
         destructible->linearDamping = 0.15f;
         destructible->angularDamping = 2.5f;
-        // Keep the test mesh modest; the mesher reads these before building.
-        destructible->destructible.chunkCountPerAxis = 2;
-        destructible->destructible.cellsPerChunkAxis = 4;
         MimitaImpact::ImpactSystem::instance().initializeEntity(
             *destructible, MimitaImpact::materialIdForName("wood"),
             glm::vec3(0.5f));
+        // No geometry until the first cut; then the planar surface replaces the box.
+        const bool lazyMesh = destructible->localTriangles.size() == 12;
+        MimitaImpact::DestructionCutSphere cut;
+        cut.localCenter = glm::vec3(0.0f, 0.0f, 0.5f);
+        cut.radius = 0.2f;
+        MimitaImpact::DestructibleGeometrySystem::instance().addCut(
+            destructible->destructible, cut);
+        destructible->localTriangles = destructible->destructible.collisionTriangles;
         const bool generatedMesh = destructible->localTriangles.size() > 12;
         for (int i = 0; i < 180; ++i)
             system.advanceKinematics(1.0f / 60.0f, world);
+        check(lazyMesh, "destructible crate keeps the box mesh until the first cut");
         check(generatedMesh, "destructible crate uses the generated collision mesh");
         check(destructible->transform[3].z > 0.45f &&
                   destructible->transform[3].z < 0.65f,

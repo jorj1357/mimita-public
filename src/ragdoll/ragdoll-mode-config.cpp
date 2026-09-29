@@ -270,6 +270,30 @@ bool RagdollModeConfig::load(const std::string& path)
                 pa.value("damping_mode", std::string("physical"));
             pc.damping = (dampingMode == "look")
                 ? PhysicalAimDamping::Look : PhysicalAimDamping::Physical;
+
+            if (pa.contains("limits") && pa["limits"].is_object()) {
+                const auto& lim = pa["limits"];
+                pc.torsoMaxPitchDeg = std::clamp(
+                    lim.value("torso_max_pitch_deg", pc.torsoMaxPitchDeg), 0.0f, 180.0f);
+                pc.torsoMaxRollDeg = std::clamp(
+                    lim.value("torso_max_roll_deg", pc.torsoMaxRollDeg), 0.0f, 180.0f);
+                pc.headMaxSwingDeg = std::clamp(
+                    lim.value("head_max_swing_deg", pc.headMaxSwingDeg), 0.0f, 180.0f);
+                pc.armMaxSwingDeg = std::clamp(
+                    lim.value("arm_max_swing_deg", pc.armMaxSwingDeg), 0.0f, 180.0f);
+                pc.legMaxSwingDeg = std::clamp(
+                    lim.value("leg_max_swing_deg", pc.legMaxSwingDeg), 0.0f, 180.0f);
+            }
+
+            if (pa.contains("hybrid") && pa["hybrid"].is_object()) {
+                const auto& hy = pa["hybrid"];
+                pc.hybridFollowForce = std::clamp(
+                    hy.value("follow_force", pc.hybridFollowForce), 0.0f, 100.0f);
+                pc.hybridBaseRate = std::clamp(
+                    hy.value("base_rate", pc.hybridBaseRate), 0.0f, 240.0f);
+                pc.hybridPositionFollow = std::clamp(
+                    hy.value("position_follow", pc.hybridPositionFollow), 0.0f, 1.0f);
+            }
         }
 
         if (root.contains("exit")) {

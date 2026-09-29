@@ -542,27 +542,20 @@ public:
             if (glm::length(centre - closest) > entityRadius)
                 continue;
 
+            // localTriangles already holds the destructible surface once cut, so
+            // all entities share the same cheap per-triangle transform path.
             std::vector<CollisionTriangle> worldTriangles;
-            if (entity.destructible.enabled &&
-                !entity.destructible.chunkTriangleRanges.empty())
+            worldTriangles.reserve(entity.localTriangles.size());
+            for (const CollisionTriangle& tri : entity.localTriangles)
             {
-                MimitaImpact::DestructibleGeometrySystem::instance().collectWorldTriangles(
-                    entity.destructible, entity.transform, queryBounds, worldTriangles);
-            }
-            else
-            {
-                worldTriangles.reserve(entity.localTriangles.size());
-                for (const CollisionTriangle& tri : entity.localTriangles)
-                {
-                    CollisionTriangle wt;
-                    wt.a = glm::vec3(entity.transform * glm::vec4(tri.a, 1.0f));
-                    wt.b = glm::vec3(entity.transform * glm::vec4(tri.b, 1.0f));
-                    wt.c = glm::vec3(entity.transform * glm::vec4(tri.c, 1.0f));
-                    const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
-                    wt.normal = glm::length(n) > 1e-9f
-                        ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
-                    worldTriangles.push_back(wt);
-                }
+                CollisionTriangle wt;
+                wt.a = glm::vec3(entity.transform * glm::vec4(tri.a, 1.0f));
+                wt.b = glm::vec3(entity.transform * glm::vec4(tri.b, 1.0f));
+                wt.c = glm::vec3(entity.transform * glm::vec4(tri.c, 1.0f));
+                const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
+                wt.normal = glm::length(n) > 1e-9f
+                    ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
+                worldTriangles.push_back(wt);
             }
 
             for (const CollisionTriangle& tri : worldTriangles)

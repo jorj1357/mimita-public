@@ -92,6 +92,8 @@ bool AimBodyConfig::load(const std::string& path)
             mMode = "smooth";
         else if (mode == "physical")
             mMode = "physical";
+        else if (mode == "hybrid")
+            mMode = "hybrid";
         else
             mMode = "default";
         const float factor = j.value("smoothingFactor", 1.0f);

@@ -48,6 +48,11 @@ struct RagdollModePart {
     glm::vec3 renderPosition{0.0f};
     glm::quat renderOrientation{1.0f, 0.0f, 0.0f, 0.0f};
     bool renderSmoothed = false;
+
+    // Hybrid mode: the procedural animation pose for this part, captured before
+    // physics overwrites the skeleton. Springs pull the body toward it.
+    glm::vec3 aimTargetPosition{0.0f};
+    glm::quat aimTargetOrientation{1.0f, 0.0f, 0.0f, 0.0f};
 };
 
 struct RagdollGrabState {
@@ -161,6 +166,9 @@ private:
     void syncAimToPlayer(Player& player, RagdollBody& b);
     void applyAimMotor(RagdollBody& b, const glm::vec3& camForward, float dt);
     void tetherAimRoot(const Player& player, RagdollBody& b, float dt);
+    void captureAimTargets(const Player& player, RagdollBody& b);
+    void applyHybridSprings(RagdollBody& b, float dt);
+    void clampAimRanges(const Player& player, RagdollBody& b, float beta);
 
     // Physics-only step shared by corpses (no input, no motors).
     void stepBody(RagdollBody& b, const World& world, float dt);

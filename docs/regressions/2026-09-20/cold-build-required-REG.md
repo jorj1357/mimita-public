@@ -959,6 +959,66 @@ snag, and verify that `logger.started` and collision events appear under
 ## Cold-build occurrence 17
 
 UTC time:
+`2026-09-29T13:34:20Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_133420-bookmark-command.md`
+
+### Why the cold build was required
+
+The bookmark command and backslash shortcut are cold executable input and
+terminal owners. The feature must be present in the launched executable before
+the collision reproduction can capture a live bookmark.
+
+### Exact cold source / boundary
+
+- `src/devtools/terminal.cpp` — bookmark command, tick capture, JSONL events,
+  optional detail prompt, and confirmation notification.
+- `src/engine/engine-tick-state.cpp` — backslash edge-triggered shortcut.
+
+### Build result
+
+The existing `.dev/builds/0394/mimita.exe` was built successfully and passed
+the collision self-test. A later full build attempt is blocked by unrelated
+pre-existing declaration mismatches in `src/impact/destructible-geometry.*`.
+
+### Human review
+
+Pending. Run the new executable, press `\\` during a surface catch, press
+Enter at the prompt, and verify one `bookmark.created` record with the exact
+client/server ticks in `events.jsonl`.
+
+## Cold-build occurrence 18
+
+UTC time:
+`2026-09-29T15:47:50Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_154750-versioninfo-and-runtime-ownership.md`
+
+### Why the cold build was required
+
+The v9 terminal command registry is owned by the cold executable. Adding
+`versioninfo` required a new executable before the running process could report
+its own executable and authoritative JSONL path.
+
+### Exact cold source / boundary
+
+- `src/devtools/terminal.cpp` — `versioninfo` registration, process identity,
+  tick snapshot, hot state, and JSONL event.
+
+### Build result
+
+Build `0403` completed with `Status: SUCCESS`; its collision self-test passed.
+
+### Human review
+
+Pending. Run `versioninfo` in the active client terminal and paste its output
+when reporting the next collision reproduction.
+
+## Cold-build occurrence 17
+
+UTC time:
 `2026-09-29T13:24:29Z`
 
 Related changelog:
@@ -1004,3 +1064,10 @@ Pending. Launch the build, set `"mode": "physical"` in
 
 Move the physical-aim controller/config into the live-editable ownership so the
 goal, weights, and damping can be tuned without a relink.
+
+### Follow-up builds (same cold boundary, same session)
+
+Two further python build_agent.py runs were needed while iterating the same
+aim-body owner: one failed to compile agdoll-mode.cpp (missing forward
+declaration of `quatToRotationVector`) and the next returned `Status:
+SUCCESS`, return code 0. Same boundary as this occurrence, no new cold source.
