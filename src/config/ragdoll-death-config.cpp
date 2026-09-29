@@ -55,6 +55,22 @@ RagdollDeathConfig& RagdollDeathConfig::instance()
     return config;
 }
 
+void RagdollDeathConfig::setRuntimeEnabled(bool enabled)
+{
+    if (!mRuntimeOverride) {
+        mPreviousEnabled = mData.enabled;
+        mRuntimeOverride = true;
+    }
+    mData.enabled = enabled;
+}
+
+void RagdollDeathConfig::clearRuntimeOverride()
+{
+    if (!mRuntimeOverride) return;
+    mData.enabled = mPreviousEnabled;
+    mRuntimeOverride = false;
+}
+
 bool RagdollDeathConfig::load(const std::string& path)
 {
     mPath = path;

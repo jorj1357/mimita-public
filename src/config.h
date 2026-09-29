@@ -2,12 +2,8 @@
 
 namespace DebugConfig
 {
-    inline bool ENABLE_DEBUG_LOGS = true;
-
     inline bool GLB_VERBOSE = false;
     inline bool COLLISION_VERBOSE = false;
-    inline bool PHYSICS_VERBOSE = false;
-    inline bool RENDER_VERBOSE = false;
 
     inline float PRINT_INTERVAL = 0.25f;
 
@@ -36,7 +32,6 @@ namespace DebugConfig
     inline bool DEBUG_RAGDOLL = false;
     inline bool DEBUG_PERSISTENT_PHYSICS = false;
     inline bool DEBUG_NPC_DEATH = false;
-    inline bool DEBUG_NPC_DEATH_FREEZE = false;
     inline bool DEBUG_BLOOD_RAYS = false;
     inline bool DEBUG_BLOOD_HITS = false;
     inline bool DEBUG_BLOOD_FORCE = false;
@@ -77,9 +72,6 @@ namespace DebugConfig
     // Was true before 7/1/2026 — caused debugBodyWeaponPhase to run every 0.25s
     // doing a full second BodyWeapon pass (sphere gen + broadphase + triangle tests).
     // Also had a printf inside the rate-limited path.
-    // Collision diagnostics: always-on pipeline instrumentation.
-    // Set false to suppress all collision diagnostics.
-    inline bool DEBUG_COLLISION_DIAGNOSTICS = false;
     // Per-shot weapon timing summary (shotgun/AA12). Set 1 to enable.
     inline bool WEAPON_PERF_SHOTS = false;
     // Debug shot line: red beam + sphere. Set 0 to hide debug visuals.
@@ -131,7 +123,6 @@ namespace DebugConfig
     inline int    WORLD_XH_TRAIL_MODE = 0;        // 0=screen, 1=surface
 
     inline bool DEBUG_ROTATION = false;
-    inline bool DEBUG_AUTH = false;
     inline bool DEBUG_CHAT = false;
     inline bool DEBUG_DEATH_TIMELINE = false;
     inline bool DEBUG_DEATH_PERF = false;

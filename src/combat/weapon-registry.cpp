@@ -33,11 +33,30 @@ void WeaponRegistry::registerWeapon(const WeaponDefinition& def) {
 }
 
 const WeaponDefinition* WeaponRegistry::get(const std::string& id) const {
+    auto active = mActiveWeapons.find(id);
+    if (active != mActiveWeapons.end())
+        return &active->second;
     auto it = mWeapons.find(id);
     if (it != mWeapons.end()) {
         return &it->second;
     }
     return nullptr;
+}
+
+const WeaponDefinition* WeaponRegistry::getBase(const std::string& id) const {
+    auto it = mWeapons.find(id);
+    return it != mWeapons.end() ? &it->second : nullptr;
+}
+
+void WeaponRegistry::setActiveDefinitions(
+    std::unordered_map<std::string, WeaponDefinition> definitions)
+{
+    mActiveWeapons = std::move(definitions);
+}
+
+void WeaponRegistry::clearActiveDefinitions()
+{
+    mActiveWeapons.clear();
 }
 
 std::vector<std::string> WeaponRegistry::getAllIds() const {

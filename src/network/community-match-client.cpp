@@ -22,13 +22,12 @@
 #include "gamemode/match-roles.h"
 #include "config/player-settings.h"
 #include "config/movement-config.h"
+#include "combat/actor-preset-weapons.h"
 #include "gui/hud/healthbar-config.h"
 #include "debug/debug-log.h"
 
 #include <chrono>
 #include <cmath>
-#include <fstream>
-#include <nlohmann/json.hpp>
 
 namespace MimitaNet {
 
@@ -83,6 +82,8 @@ void CommunityMatchClient::reset()
     mCameraFov = 0.0f;
     mForceFirstPerson = false;
     HealthbarConfig::instance().setModeVisibilityOverride(false);
+    RagdollDeathConfig::instance().clearRuntimeOverride();
+    ImpactDecalsConfig::instance().clearRuntimeBloodOverride();
     if (mFirstPersonApplied) {
         THE_CAMERA.thirdPerson = mPreviousThirdPerson;
         mFirstPersonApplied = false;
@@ -102,15 +103,14 @@ void CommunityMatchClient::reset()
 
 bool CommunityMatchClient::applyActorPreset(const MatchRoleDefinition& preset)
 {
-    if (mActorPresetApplied)
-        resetActorPreset();
-
-    mActorPresetPreviousFov = CamConfig::instance().data().fov;
-    mActorPresetPreviousPlayerFov = GetPlayerSettings().fov;
-    mActorPresetPreviousThirdPerson = THE_CAMERA.thirdPerson;
-    mActorPresetPreviousAvatar = GetPlayerSettings().avatarName;
-    mActorPresetPreviousMovement = MovementJsonConfig::instance().config();
-    mActorPresetPreviousMovementName = MovementJsonConfig::instance().activePresetName();
+    if (!mActorPresetApplied) {
+        mActorPresetPreviousFov = CamConfig::instance().data().fov;
+        mActorPresetPreviousPlayerFov = GetPlayerSettings().fov;
+        mActorPresetPreviousThirdPerson = THE_CAMERA.thirdPerson;
+        mActorPresetPreviousAvatar = GetPlayerSettings().avatarName;
+        mActorPresetPreviousMovement = MovementJsonConfig::instance().config();
+        mActorPresetPreviousMovementName = MovementJsonConfig::instance().activePresetName();
+    }
     mActorPresetId = preset.id;
     mActorPresetApplied = true;
 
@@ -128,6 +128,8 @@ bool CommunityMatchClient::applyActorPreset(const MatchRoleDefinition& preset)
             MovementJsonConfig::instance().applyRuntimeConfig(movement, preset.movementPreset);
     }
 
+    ActorPresetWeapons::apply(preset);
+
     Debug::log(Debug::Category::General,
         "[ACTOR PRESET] applied id=%s fov=%.0f forcedFov=%d firstPerson=%d avatar=%s movement=%s weaponSet=%s\n",
         preset.id.c_str(), preset.cameraFov, (int)preset.forceFov,
@@ -136,6 +138,14 @@ bool CommunityMatchClient::applyActorPreset(const MatchRoleDefinition& preset)
         preset.movementPreset.empty() ? "none" : preset.movementPreset.c_str(),
         preset.weaponSet.empty() ? "none" : preset.weaponSet.c_str());
     return true;
+}
+
+void CommunityMatchClient::refreshActorPreset()
+{
+    if (!mActorPresetApplied) return;
+    const MatchRoleDefinition* preset =
+        MatchRoleRegistry::instance().getActorPreset(mActorPresetId);
+    if (preset) applyActorPreset(*preset);
 }
 
 void CommunityMatchClient::resetActorPreset()
@@ -148,6 +158,7 @@ void CommunityMatchClient::resetActorPreset()
     GetPlayerSettings().avatarName = mActorPresetPreviousAvatar;
     MovementJsonConfig::instance().applyRuntimeConfig(
         mActorPresetPreviousMovement, mActorPresetPreviousMovementName);
+    ActorPresetWeapons::clear();
     Debug::log(Debug::Category::General,
         "[ACTOR PRESET] reset id=%s restoredFov=%.0f restoredThirdPerson=%d\n",
         mActorPresetId.c_str(), mActorPresetPreviousFov,
@@ -179,9 +190,16 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     // completion; it stores and renders exactly what the server sent.
     mProcedural = packet.procedural;
     const Gamemode& modeConfig = GamemodeRegistry::instance().get(mMode);
+    std::string replicatedPresetId = packet.actorPresetId;
+    if (replicatedPresetId.empty()) replicatedPresetId = modeConfig.actorPresetId;
     const MatchRoleDefinition* actorPreset =
-        MatchRoleRegistry::instance().getActorPreset(modeConfig.actorPresetId);
-    mForceFirstPerson = modeConfig.forceFirstPerson ||
+        MatchRoleRegistry::instance().getActorPreset(replicatedPresetId);
+    if (actorPreset && mActorPresetId != actorPreset->id) {
+        applyActorPreset(*actorPreset);
+    } else if (!actorPreset && mActorPresetApplied && mActorPresetId == modeConfig.actorPresetId) {
+        resetActorPreset();
+    }
+    mForceFirstPerson = modeConfig.forceFirstPerson || packet.forceFirstPerson != 0 ||
         (actorPreset && actorPreset->forceFirstPerson);
     HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
     if (mForceFirstPerson && !mFirstPersonApplied) {
@@ -313,54 +331,20 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 
         // Apply ragdoll override
         if (newRagdoll != 0) {
-            auto& ragdollCfg = RagdollDeathConfig::instance();
             bool desiredEnabled = (newRagdoll == 2);
-            if (ragdollCfg.data().enabled != desiredEnabled) {
-                // Write to ragdolldeath.json
-                const std::string path = "config/ragdolldeath.json";
-                std::ifstream inFile(path);
-                if (inFile.is_open()) {
-                    nlohmann::json j;
-                    inFile >> j;
-                    inFile.close();
-                    j["enabled"] = desiredEnabled;
-                    std::ofstream outFile(path);
-                    if (outFile.is_open()) {
-                        outFile << j.dump(4);
-                        outFile.close();
-                        Debug::log(Debug::Category::General,
-                            "[GAMEMODE OVERRIDE] Ragdoll death set to %s\n",
-                            desiredEnabled ? "enabled" : "disabled");
-                    }
-                }
-            }
+            RagdollDeathConfig::instance().setRuntimeEnabled(desiredEnabled);
+            Debug::log(Debug::Category::General,
+                "[GAMEMODE OVERRIDE] Ragdoll death runtime value=%s\n",
+                desiredEnabled ? "enabled" : "disabled");
         }
 
         // Apply blood override
         if (newBlood != 0) {
-            auto& decalsCfg = ImpactDecalsConfig::instance();
             bool desiredEnabled = (newBlood == 2);
-            if (decalsCfg.data().blood.enabled != desiredEnabled) {
-                // Write to impact_decals.json
-                const std::string path = "config/impact_decals.json";
-                std::ifstream inFile(path);
-                if (inFile.is_open()) {
-                    nlohmann::json j;
-                    inFile >> j;
-                    inFile.close();
-                    if (j.contains("blood") && j["blood"].is_object()) {
-                        j["blood"]["enabled"] = desiredEnabled;
-                    }
-                    std::ofstream outFile(path);
-                    if (outFile.is_open()) {
-                        outFile << j.dump(4);
-                        outFile.close();
-                        Debug::log(Debug::Category::General,
-                            "[GAMEMODE OVERRIDE] Blood visuals set to %s\n",
-                            desiredEnabled ? "enabled" : "disabled");
-                    }
-                }
-            }
+            ImpactDecalsConfig::instance().setRuntimeBloodEnabled(desiredEnabled);
+            Debug::log(Debug::Category::General,
+                "[GAMEMODE OVERRIDE] Blood visuals runtime value=%s\n",
+                desiredEnabled ? "enabled" : "disabled");
         }
 
         mCameraFov = newFov;

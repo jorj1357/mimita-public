@@ -125,6 +125,9 @@ struct ServerGamemodeState
     // ── FFA/TDM match mode fields ──────────────────────────────────
     // Match mode: "duel", "ffa", "tdm"
     std::string matchMode = "duel";
+    // Host-only runtime actor-preset override. Empty means the gamemode's
+    // actor_preset/role assignment remains authoritative.
+    std::string actorPresetOverrideId;
 
     // Authoritative tick references for countdown/start/end
     uint32_t countdownStartTick = 0;
@@ -246,6 +249,8 @@ struct ActorSpawnProfile
     std::string behaviorProfileId;        // resolved/validated role behavior profile
 };
 ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId);
+bool serverActivateActorPreset(const std::string& presetId);
+void serverResetActorPreset();
 
 // Start the shared server runtime with the given mode rules. Duel, FFA, TDM,
 // and sandbox all use this same lifecycle owner.

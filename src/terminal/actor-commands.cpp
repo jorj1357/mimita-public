@@ -163,11 +163,15 @@ void registerActorCommands()
                 Terminal::instance().addLog("actor_preset: unknown preset or index");
                 return;
             }
-            MimitaNet::CommunityMatchClient::instance().applyActorPreset(*preset);
+            const bool serverContext = MimitaNet::serverGamemodeState().enabled;
+            const bool applied = serverContext
+                ? MimitaNet::serverActivateActorPreset(preset->id)
+                : MimitaNet::CommunityMatchClient::instance().applyActorPreset(*preset);
             char buf[512];
             snprintf(buf, sizeof(buf),
-                "actor_preset: id=%s fov=%.0f forcedFov=%d firstPersonForced=%d movement=%s weaponSet=%s health=%d avatar=%s",
-                preset->id.c_str(), preset->cameraFov, (int)preset->forceFov,
+                "actor_preset: id=%s scope=%s applied=%d fov=%.0f forcedFov=%d firstPersonForced=%d movement=%s weaponSet=%s health=%d avatar=%s",
+                preset->id.c_str(), serverContext ? "server" : "local", (int)applied,
+                preset->cameraFov, (int)preset->forceFov,
                 (int)preset->forceFirstPerson,
                 preset->movementPreset.empty() ? "none" : preset->movementPreset.c_str(),
                 preset->weaponSet.empty() ? "none" : preset->weaponSet.c_str(),
@@ -183,6 +187,11 @@ void registerActorCommands()
         "Restore the camera, perspective, and avatar values saved before the actor preset",
         "actor_preset_reset",
         [](const std::vector<std::string>&) {
+            if (MimitaNet::serverGamemodeState().enabled) {
+                MimitaNet::serverResetActorPreset();
+                Terminal::instance().addLog("actor_preset_reset: cleared server preset override");
+                return;
+            }
             const bool hadPreset = !MimitaNet::CommunityMatchClient::instance().actorPresetId().empty();
             MimitaNet::CommunityMatchClient::instance().resetActorPreset();
             Terminal::instance().addLog(hadPreset

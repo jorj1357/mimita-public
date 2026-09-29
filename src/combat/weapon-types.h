@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <glm/glm.hpp>
 
 class Camera;
@@ -88,6 +89,7 @@ struct WeaponDefinition {
     float fireDelay = 0.1f;
     float reloadTime = 1.0f;
     int magazineSize = 6;
+    int reserveSize = 0; // 0 = use legacy custom_params reserveAmmo
     int pelletCount = 1;
 
     float spread = 0.0f;
@@ -150,8 +152,19 @@ struct WeaponDefinition {
     // beamThickness so a thick entity-hit beam doesn't clip wall edges and
     // break the shotgun pellet pattern at the aim direction.
     float beamWorldThickness = 0.0f;
+    float tracerThickness = -1.0f; // < 0 = use the normal tracer setting
+    bool tracerEnabled = true;
     bool weaponCollisionEnabled = true;
     bool restricted = false;  // admin/dev weapons — not granted in normal loadout
+
+    // Runtime-only actor-preset policy. These fields are never written back
+    // to config/weapons.json.
+    std::unordered_set<std::string> allowedBodyParts;
+    bool damageNumbersEnabled = true;
+    bool hitEffectsEnabled = true;
+    bool worldImpactEffectsEnabled = true;
+    bool bloodEffectsEnabled = true;
+    bool muzzleFlashEnabled = true;
 
     std::unordered_map<std::string, float> customParams;
 

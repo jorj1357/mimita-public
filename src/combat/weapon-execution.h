@@ -169,7 +169,8 @@ WeaponExecutionType executionTypeForBehavior(WeaponBehaviorType behavior);
 float hitscanFalloffFactor(const WeaponDefinition& def, float distance);
 // "head" -> headshotMultiplier, limb -> limbDamageMultiplier (0.75), else 1.0.
 float hitscanPartMultiplier(const WeaponDefinition& def, const std::string& bodyPart);
-// round(def.damage * partMultiplier * falloff * angleFactor), floor 1.
+// round(def.damage * partMultiplier * falloff * angleFactor), floor 1 for
+// allowed body parts and exactly 0 for a disallowed body part.
 int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPart,
                          float distance, float angleFactor);
 int buildPelletDirections(const WeaponDefinition& def, const glm::vec3& aimDirection,

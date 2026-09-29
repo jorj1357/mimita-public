@@ -131,11 +131,15 @@ float hitscanPartMultiplier(const WeaponDefinition& def, const std::string& body
 int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPart,
                          float distance, float angleFactor)
 {
+    if (!def.allowedBodyParts.empty() &&
+        def.allowedBodyParts.find(bodyPart) == def.allowedBodyParts.end()) {
+        return 0;
+    }
     const float damage = def.damage
         * hitscanPartMultiplier(def, bodyPart)
         * hitscanFalloffFactor(def, distance)
         * std::clamp(angleFactor, 0.0f, 1.0f);
-    return std::max(1, (int)std::round(damage));
+    return damage <= 0.0f ? 0 : std::max(1, (int)std::round(damage));
 }
 
 WeaponExecutionType executionTypeForBehavior(WeaponBehaviorType behavior)
@@ -287,7 +291,8 @@ HitscanTraceResult traceHitscan(const WeaponDefinition& def,
             aggregateIt = result.aggregates.end() - 1;
         }
 
-        aggregateIt->damage += std::max(1, (int)std::round(closest.damage));
+        if (closest.damage > 0.0f)
+            aggregateIt->damage += std::max(1, (int)std::round(closest.damage));
         aggregateIt->pelletHits += 1;
         aggregateIt->knockback += closest.direction * (closest.damage * config.knockbackPerDamage);
         if (closest.headshot)

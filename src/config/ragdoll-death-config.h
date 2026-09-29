@@ -19,6 +19,8 @@ public:
 
     bool load(const std::string& path = "config/ragdolldeath.json");
     bool pollReload();
+    void setRuntimeEnabled(bool enabled);
+    void clearRuntimeOverride();
 
     bool enabled() const { return mData.enabled; }
     int totalTicks() const { return mData.totalTicks; }
@@ -35,4 +37,6 @@ private:
     std::string mPath = "config/ragdolldeath.json";
     std::filesystem::file_time_type mLastWrite{};
     bool mWatchLogged = false;
+    bool mRuntimeOverride = false;
+    bool mPreviousEnabled = true;
 };

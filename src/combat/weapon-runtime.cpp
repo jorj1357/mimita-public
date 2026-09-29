@@ -10,6 +10,8 @@
 
 int initialReserveAmmoForDefinition(const WeaponDefinition& def)
 {
+    if (def.reserveSize > 0)
+        return def.reserveSize;
     auto it = def.customParams.find("reserveAmmo");
     return (it != def.customParams.end()) ? (int)it->second : 1337;
 }

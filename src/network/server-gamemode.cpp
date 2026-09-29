@@ -20,6 +20,7 @@
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
 #include "combat/weapon-registry.h"
+#include "combat/actor-preset-weapons.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "network/community-server-config.h"
@@ -77,11 +78,14 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     ActorSpawnProfile out;
     const ServerGamemodeState& d = serverGamemodeState();
     auto it = d.matchActors.find(actorId);
-    if (it == d.matchActors.end() || it->second.roleId.empty())
+    if (it == d.matchActors.end())
         return out;
 
+    const std::string roleId = !d.actorPresetOverrideId.empty()
+        ? d.actorPresetOverrideId : it->second.roleId;
+    if (roleId.empty()) return out;
     const MatchRoleDefinition* def =
-        MatchRoleRegistry::instance().get(it->second.roleId);
+        MatchRoleRegistry::instance().get(roleId);
     if (!def)
         return out;
 
@@ -134,6 +138,58 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
         }
     }
     return out;
+}
+
+bool serverActivateActorPreset(const std::string& presetId)
+{
+    const MatchRoleDefinition* preset =
+        MatchRoleRegistry::instance().getActorPreset(presetId);
+    if (!preset) return false;
+
+    ServerGamemodeState& d = serverGamemodeState();
+    d.actorPresetOverrideId = preset->id;
+    d.cameraFov = preset->forceFov ? preset->cameraFov : d.cameraFov;
+    if (preset->forceFirstPerson) d.forceFirstPerson = true;
+    if (!preset->weaponSet.empty()) {
+        if (const CommunityWeaponSet* set =
+                CommunityServerConfig::instance().weaponSetByKey(preset->weaponSet)) {
+            d.communityWeaponSetId = set->id;
+            d.appliedCommunityWeaponSetId = 0;
+        }
+    }
+    ActorPresetWeapons::apply(*preset);
+    d.stateVersion++;
+    d.stateBroadcastPending = true;
+    Debug::log(Debug::Category::Duel,
+        "[ACTOR PRESET] host activated id=%s actors=%zu\n",
+        preset->id.c_str(), d.matchActors.size());
+    return true;
+}
+
+void serverResetActorPreset()
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    d.actorPresetOverrideId.clear();
+    const Gamemode& mode = GamemodeRegistry::instance().get(d.matchMode);
+    d.cameraFov = mode.cameraFov;
+    d.forceFirstPerson = mode.forceFirstPerson;
+    if (!mode.actorPresetId.empty()) {
+        if (const MatchRoleDefinition* preset =
+                MatchRoleRegistry::instance().getActorPreset(mode.actorPresetId)) {
+            ActorPresetWeapons::apply(*preset);
+            if (!preset->weaponSet.empty()) {
+                if (const CommunityWeaponSet* set =
+                        CommunityServerConfig::instance().weaponSetByKey(preset->weaponSet))
+                    d.communityWeaponSetId = set->id;
+            }
+        }
+    } else {
+        ActorPresetWeapons::clear();
+        d.communityWeaponSetId = mode.weaponSetId > 0 ? mode.weaponSetId : 1;
+    }
+    d.appliedCommunityWeaponSetId = 0;
+    d.stateVersion++;
+    d.stateBroadcastPending = true;
 }
 
 void serverStartMode(const ServerGamemodeState& rules)
@@ -360,6 +416,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
     // Set match mode from community mode id (used for routing and state machine)
     d.matchMode = resolvedGamemodeId;
+    d.actorPresetOverrideId.clear();
     // DEPRECATED: the old ServerMode enum and short-form matchMode strings
     // are kept for backward compatibility with duel/FFA/TDM code paths.
     // New modes should use matchMode directly (the community mode id).
@@ -391,11 +448,19 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
                 MatchRoleRegistry::instance().getActorPreset(gm.actorPresetId)) {
             if (preset->forceFov) d.cameraFov = preset->cameraFov;
             if (preset->forceFirstPerson) d.forceFirstPerson = true;
+            if (!preset->weaponSet.empty()) {
+                if (const CommunityWeaponSet* set =
+                        CommunityServerConfig::instance().weaponSetByKey(preset->weaponSet))
+                    d.communityWeaponSetId = set->id;
+            }
+            ActorPresetWeapons::apply(*preset);
         } else {
             Debug::warn(Debug::Category::Duel,
                 "[ACTOR PRESET] gamemode %s references unknown preset %s\n",
                 resolvedGamemodeId.c_str(), gm.actorPresetId.c_str());
         }
+    } else {
+        ActorPresetWeapons::clear();
     }
     d.hideHealthbars = gm.hideHealthbars;
     d.ragdollExplicit = gm.ragdollExplicit;
@@ -521,6 +586,10 @@ void broadcastDuelState(SOCKET sock,
 
     // ── Gamemode visual overrides ──────────────────────────────────
     pkt.cameraFov = d.cameraFov;
+    pkt.forceFirstPerson = d.forceFirstPerson ? 1 : 0;
+    const std::string presetId = !d.actorPresetOverrideId.empty()
+        ? d.actorPresetOverrideId : GamemodeRegistry::instance().get(d.matchMode).actorPresetId;
+    std::strncpy(pkt.actorPresetId, presetId.c_str(), sizeof(pkt.actorPresetId) - 1);
     pkt.ragdollEnabled = d.ragdollExplicit ? (d.ragdollEnabled ? 2 : 1) : 0;
     pkt.bloodEnabled = d.bloodExplicit ? (d.bloodEnabled ? 2 : 1) : 0;
 

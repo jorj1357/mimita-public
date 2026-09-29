@@ -733,7 +733,8 @@ void handleAttackRequest(
                         WeaponExecution::HitscanDamageAggregate agg;
                         agg.targetPlayerId = req->claimedTargetId;
                         agg.targetSpawnGeneration = claimedSpawnGen;
-                        agg.damage = std::max(1, (int)std::round(dmgF));
+                        agg.damage = dmgF <= 0.0f
+                            ? 0 : std::max(1, (int)std::round(dmgF));
                         agg.pelletHits = 1;
                         agg.hitPosition = claimedHit;
                         agg.hitNormal = glm::vec3(0.0f, 0.0f, 1.0f);

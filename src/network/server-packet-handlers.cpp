@@ -719,7 +719,8 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
                 r.bodyPart == 0 ? "head" : (r.bodyPart == 2 || r.bodyPart == 3 ? "leg" : "torso");
             const float dmgF = (float)WeaponExecution::computeHitscanDamage(
                 *def, bodyPart, nearest, 1.0f);
-            int pelletDamage = std::max(1, (int)std::round(dmgF));
+            int pelletDamage = dmgF <= 0.0f
+                ? 0 : std::max(1, (int)std::round(dmgF));
 
             // Accumulate per target
             bool found = false;

@@ -2,6 +2,8 @@
 
 #include "weapon-data.h"
 #include "weapon-registry.h"
+#include "actor-preset-weapons.h"
+#include "gamemode/match-roles.h"
 #include "../debug/debug-log.h"
 #include "../network/network-weapons.h"
 
@@ -192,6 +194,7 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonFloat(root, "fire_delay", def.fireDelay);
     weaponJsonFloat(root, "reload_time", def.reloadTime);
     weaponJsonInt(root, "magazine_size", def.magazineSize);
+    weaponJsonInt(root, "reserve_ammo", def.reserveSize);
     weaponJsonInt(root, "pellet_count", def.pelletCount);
     weaponJsonFloat(root, "spread", def.spread);
     weaponJsonFloat(root, "recoil", def.recoil);
@@ -364,6 +367,13 @@ bool reloadBuiltinWeaponsIfChanged()
     gWeaponConfigLastWrite = writeTime;
     gWeaponConfigHasWriteTime = true;
     registerBuiltinWeapons();
+    if (!ActorPresetWeapons::activePresetId().empty()) {
+        if (const MatchRoleDefinition* preset =
+                MatchRoleRegistry::instance().getActorPreset(
+                    ActorPresetWeapons::activePresetId())) {
+            ActorPresetWeapons::apply(*preset);
+        }
+    }
     Debug::log(Debug::Category::Weapons, "[WEAPON] hot reloaded %s", weaponConfigPath().c_str());
     return true;
 }

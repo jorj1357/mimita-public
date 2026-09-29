@@ -25,6 +25,7 @@
 #include "void-death/void-death.h"
 #include "combat/weapon-data.h"
 #include "combat/weapon-registry.h"
+#include "combat/actor-preset-weapons.h"
 #include "npc/npc.h"
 #include "npc/npc-difficulty-config.h"
 #include "npc/npc-combat-log.h"
@@ -586,7 +587,8 @@ int runServer(const LaunchOptions& options)
         RoleMovementCache::instance().pollReload();
 
         // Hot-reload config/roles.json so role/profile references apply live.
-    MatchRoleRegistry::instance().pollReload();
+    if (MatchRoleRegistry::instance().pollReload())
+        ActorPresetWeapons::refresh();
     BehaviorProfileRegistry::instance().pollReload();
     RoleMovementCache::instance().pollReload();
 
@@ -1123,7 +1125,8 @@ static void simulateOneServerTick(ListenServerState& state)
     }
     CommunityServerConfig::instance().pollReload();
     SpawnVelocityConfig::instance().pollReload();
-    MatchRoleRegistry::instance().pollReload();
+    if (MatchRoleRegistry::instance().pollReload())
+        ActorPresetWeapons::refresh();
     BehaviorProfileRegistry::instance().pollReload();
 
     {

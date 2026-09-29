@@ -1162,7 +1162,8 @@ struct DuelStatePacket
     float cameraFov = 0.0f;         // 0 = no override
     uint8_t ragdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
     uint8_t bloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
-    uint8_t reserved2[1] = {};
+    uint8_t forceFirstPerson = 0;
+    char actorPresetId[64] = {};
     // ── Procedural world (Infinite Dungeon Slayer) ──────────────────
     // Appended section: server-owned room state. All-zero means disabled.
     ProceduralWorldNetworkState procedural = {};

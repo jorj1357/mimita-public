@@ -152,6 +152,22 @@ ImpactDecalsConfig& ImpactDecalsConfig::instance()
     return config;
 }
 
+void ImpactDecalsConfig::setRuntimeBloodEnabled(bool enabled)
+{
+    if (!mRuntimeBloodOverride) {
+        mPreviousBloodEnabled = mData.blood.enabled;
+        mRuntimeBloodOverride = true;
+    }
+    mData.blood.enabled = enabled;
+}
+
+void ImpactDecalsConfig::clearRuntimeBloodOverride()
+{
+    if (!mRuntimeBloodOverride) return;
+    mData.blood.enabled = mPreviousBloodEnabled;
+    mRuntimeBloodOverride = false;
+}
+
 bool ImpactDecalsConfig::load(const std::string& path)
 {
     if (mPath != path)

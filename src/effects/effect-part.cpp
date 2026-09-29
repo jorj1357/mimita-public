@@ -167,6 +167,10 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
 
 EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId, float sizeScale, const std::string& weaponId, bool spawnVisual, bool spawnLighting) {
     const MuzzleFlashSettings& cfg = MuzzleFlashConfig::instance().data();
+    const WeaponDefinition* weapon = weaponId.empty()
+        ? nullptr : WeaponRegistry::instance().get(weaponId);
+    if (weapon && !weapon->muzzleFlashEnabled)
+        return nullptr;
     if (!spawnVisual && !spawnLighting) return nullptr;
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
@@ -254,10 +258,14 @@ EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const 
     // (weapons.json) so the visual matches the hitbox; the tracer JSON can
     // override it explicitly per weapon.
     float beamThickness = tc.thickness;
+    const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+    if (def && !def->tracerEnabled)
+        return nullptr;
     if (!tc.thicknessSet)
     {
-        const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
-        if (def && def->beamThickness > 0.0f)
+        if (def && def->tracerThickness >= 0.0f)
+            beamThickness = def->tracerThickness;
+        else if (def && def->beamThickness > 0.0f)
             beamThickness = def->beamThickness;
     }
     EffectPart e;

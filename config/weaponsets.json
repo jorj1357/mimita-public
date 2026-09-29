@@ -53,6 +53,14 @@
       "description": "Counter-Strike preset rifle loadout.",
       "role_only": true,
       "weapons": ["projectile_rifle"]
+    },
+    {
+      "id": 9,
+      "key": "counterstrike",
+      "name": "Counter-Strike (role)",
+      "description": "Counter-Strike revolver loadout.",
+      "role_only": true,
+      "weapons": ["revolver"]
     }
   ]
 }

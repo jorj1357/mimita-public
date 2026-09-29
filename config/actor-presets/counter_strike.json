@@ -1,17 +1,18 @@
 {
-  "schema": 1,
+  "schema": 2,
   "id": "counter_strike",
-  "displayName": "Counter-Strike",
+  "display_name": "Counter-Strike",
   "camera": {
     "fov": 70,
-    "forceFov": true,
+    "force_fov": true,
     "perspective": "first_person",
-    "forcePerspective": true
+    "force_perspective": true
   },
-  "movementPreset": "counterstrike",
-  "weaponSet": "counterstrike_rifles",
+  "movement_preset": "counterstrike",
+  "weapon_set": "counterstrike",
   "avatar": {
     "forced": true,
+    "name": "jason",
     "allowed": ["jason"]
   },
   "health": {
@@ -20,5 +21,36 @@
   },
   "team": {
     "allowed": [0, 1]
+  },
+  "presentation": {
+    "damage_numbers": false,
+    "hit_effects": false,
+    "world_impact_effects": false,
+    "blood_effects": false,
+    "muzzle_flash": false
+  },
+  "weapon_overrides": {
+    "revolver": {
+      "damage": 100,
+      "fire_delay": 0.8,
+      "reload_time": 2.2,
+      "magazine_size": 6,
+      "reserve_ammo": 36,
+      "hitscan": {
+        "enabled": true,
+        "beam_thickness": 0.0,
+        "world_thickness": 0.0,
+        "range": 1000.0
+      },
+      "damage_policy": {
+        "allowed_body_parts": ["head"]
+      },
+      "presentation": {
+        "damage_numbers": false,
+        "impact_effect": false,
+        "tracer_enabled": true,
+        "tracer_thickness": 0.01
+      }
+    }
   }
 }

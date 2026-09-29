@@ -12,8 +12,51 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <optional>
 
 #include "physics/movement/movement-types.h"
+
+struct ActorPresetPresentation
+{
+    bool hasDamageNumbers = false;
+    bool damageNumbers = true;
+    bool hasHitEffects = false;
+    bool hitEffects = true;
+    bool hasWorldImpactEffects = false;
+    bool worldImpactEffects = true;
+    bool hasBloodEffects = false;
+    bool bloodEffects = true;
+    bool hasMuzzleFlash = false;
+    bool muzzleFlash = true;
+};
+
+struct ActorPresetWeaponOverride
+{
+    bool hasDamage = false;
+    float damage = 0.0f;
+    bool hasFireDelay = false;
+    float fireDelay = 0.0f;
+    bool hasReloadTime = false;
+    float reloadTime = 0.0f;
+    bool hasMagazineSize = false;
+    int magazineSize = 0;
+    bool hasReserveAmmo = false;
+    int reserveAmmo = 0;
+    bool hasHitscan = false;
+    bool hitscan = true;
+    bool hasBeamThickness = false;
+    float beamThickness = 0.0f;
+    bool hasWorldThickness = false;
+    float worldThickness = 0.0f;
+    bool hasRange = false;
+    float range = 0.0f;
+    bool hasTracerEnabled = false;
+    bool tracerEnabled = true;
+    bool hasTracerThickness = false;
+    float tracerThickness = 0.0f;
+    std::vector<std::string> allowedBodyParts;
+    ActorPresetPresentation presentation;
+};
 
 struct MatchRoleDefinition
 {
@@ -33,6 +76,8 @@ struct MatchRoleDefinition
     float cameraFov = 0.0f;
     bool forceFov = false;
     bool forceFirstPerson = false;
+    ActorPresetPresentation presentation;
+    std::unordered_map<std::string, ActorPresetWeaponOverride> weaponOverrides;
 };
 
 class MatchRoleRegistry

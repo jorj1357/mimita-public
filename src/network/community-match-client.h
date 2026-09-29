@@ -50,6 +50,7 @@ public:
     float cameraFov() const { return mCameraFov; }
     bool forceFirstPerson() const { return mForceFirstPerson; }
     bool applyActorPreset(const MatchRoleDefinition& preset);
+    void refreshActorPreset();
     void resetActorPreset();
     const std::string& actorPresetId() const { return mActorPresetId; }
 

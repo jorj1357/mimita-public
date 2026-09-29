@@ -9,6 +9,7 @@
 #include "gamemode/match-roles.h"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 
 #include <nlohmann/json.hpp>
@@ -34,6 +35,55 @@ std::string fileNameOf(const std::string& path)
     return std::filesystem::path(path).filename().string();
 }
 
+bool isJsonFile(const std::filesystem::path& path)
+{
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+        [](unsigned char c) { return (char)std::tolower(c); });
+    return extension == ".json";
+}
+
+std::filesystem::path resolveActorPresetDirectory(const std::string& directory)
+{
+    std::vector<std::filesystem::path> candidates;
+    const std::filesystem::path requested(directory);
+
+    auto addCandidate = [&candidates](const std::filesystem::path& candidate) {
+        if (candidate.empty()) return;
+        for (const auto& existing : candidates) {
+            if (existing == candidate) return;
+        }
+        candidates.push_back(candidate);
+    };
+
+    // Keep an explicitly supplied absolute path authoritative.
+    addCandidate(requested);
+
+    std::error_code ec;
+    const auto cwd = std::filesystem::current_path(ec);
+    if (!ec)
+        addCandidate(cwd / requested);
+
+    // The game is sometimes launched from a build/staging directory. Walk up
+    // from the actual executable so config/actor-presets remains discoverable.
+    std::filesystem::path executableDirectory(getExecutableDirectory());
+    for (int level = 0; level < 6 && !executableDirectory.empty(); ++level) {
+        addCandidate(executableDirectory / requested);
+        const auto parent = executableDirectory.parent_path();
+        if (parent == executableDirectory) break;
+        executableDirectory = parent;
+    }
+
+    for (const auto& candidate : candidates) {
+        std::error_code candidateEc;
+        if (!std::filesystem::is_directory(candidate, candidateEc)) continue;
+        auto canonical = std::filesystem::weakly_canonical(candidate, candidateEc);
+        if (!candidateEc) return canonical;
+        return candidate;
+    }
+    return {};
+}
+
 void readRole(const json& j, const std::string& fallbackId, MatchRoleDefinition& out)
 {
     out.id = j.value("id", fallbackId);
@@ -45,6 +95,66 @@ void readRole(const json& j, const std::string& fallbackId, MatchRoleDefinition&
     out.startingWeapon = j.value("starting_weapon", out.startingWeapon);
     out.behaviorProfile = j.value("behavior_profile", out.behaviorProfile);
     out.avatarName = j.value("avatar", out.avatarName);
+}
+
+template <typename T>
+bool readOptional(const json& object, const char* snake, const char* camel, T& out)
+{
+    const char* key = object.contains(snake) ? snake : camel;
+    if (!object.contains(key)) return false;
+    try {
+        out = object.at(key).get<T>();
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void readPresentation(const json& j, ActorPresetPresentation& out)
+{
+    if (!j.is_object()) return;
+    out.hasDamageNumbers = readOptional(j, "damage_numbers", "damageNumbers", out.damageNumbers);
+    out.hasHitEffects = readOptional(j, "hit_effects", "hitEffects", out.hitEffects);
+    out.hasWorldImpactEffects = readOptional(j, "world_impact_effects", "worldImpactEffects", out.worldImpactEffects);
+    out.hasBloodEffects = readOptional(j, "blood_effects", "bloodEffects", out.bloodEffects);
+    out.hasMuzzleFlash = readOptional(j, "muzzle_flash", "muzzleFlash", out.muzzleFlash);
+}
+
+void readWeaponOverride(const json& j, ActorPresetWeaponOverride& out)
+{
+    if (!j.is_object()) return;
+    out.hasDamage = readOptional(j, "damage", "damage", out.damage);
+    out.hasFireDelay = readOptional(j, "fire_delay", "fireDelay", out.fireDelay);
+    out.hasReloadTime = readOptional(j, "reload_time", "reloadTime", out.reloadTime);
+    out.hasMagazineSize = readOptional(j, "magazine_size", "magazineSize", out.magazineSize);
+    out.hasReserveAmmo = readOptional(j, "reserve_ammo", "reserveAmmo", out.reserveAmmo);
+
+    if (j.contains("hitscan") && j["hitscan"].is_object()) {
+        const auto& h = j["hitscan"];
+        out.hasHitscan = readOptional(h, "enabled", "enabled", out.hitscan);
+        out.hasBeamThickness = readOptional(h, "beam_thickness", "beamThickness", out.beamThickness);
+        out.hasWorldThickness = readOptional(h, "world_thickness", "worldThickness", out.worldThickness);
+        out.hasRange = readOptional(h, "range", "range", out.range);
+    }
+
+    if (j.contains("damage_policy") && j["damage_policy"].is_object()) {
+        const auto& policy = j["damage_policy"];
+        const char* key = policy.contains("allowed_body_parts")
+            ? "allowed_body_parts" : "allowedBodyParts";
+        if (policy.contains(key) && policy[key].is_array()) {
+            for (const auto& part : policy[key])
+                if (part.is_string()) out.allowedBodyParts.push_back(part.get<std::string>());
+        }
+    }
+
+    if (j.contains("presentation") && j["presentation"].is_object()) {
+        const auto& p = j["presentation"];
+        out.presentation.hasDamageNumbers = readOptional(p, "damage_numbers", "damageNumber", out.presentation.damageNumbers);
+        out.presentation.hasHitEffects = readOptional(p, "impact_effect", "hitEffects", out.presentation.hitEffects);
+        out.presentation.hasMuzzleFlash = readOptional(p, "tracer_enabled", "tracerEnabled", out.presentation.muzzleFlash);
+        out.hasTracerEnabled = readOptional(p, "tracer_enabled", "tracerEnabled", out.tracerEnabled);
+        out.hasTracerThickness = readOptional(p, "tracer_thickness", "tracerThickness", out.tracerThickness);
+    }
 }
 
 void readActorPreset(const json& j, const std::string& fallbackId,
@@ -62,10 +172,22 @@ void readActorPreset(const json& j, const std::string& fallbackId,
     if (j.contains("camera") && j["camera"].is_object()) {
         const auto& camera = j["camera"];
         out.cameraFov = camera.value("fov", out.cameraFov);
-        out.forceFov = camera.value("forceFov", out.forceFov);
+        out.forceFov = camera.value("force_fov", camera.value("forceFov", out.forceFov));
         const std::string perspective = camera.value("perspective", "");
-        out.forceFirstPerson = camera.value("forcePerspective", out.forceFirstPerson)
+        out.forceFirstPerson = camera.value("force_perspective",
+            camera.value("forcePerspective", out.forceFirstPerson))
             && perspective == "first_person";
+    }
+
+    if (j.contains("presentation") && j["presentation"].is_object())
+        readPresentation(j["presentation"], out.presentation);
+
+    if (j.contains("weapon_overrides") && j["weapon_overrides"].is_object()) {
+        for (auto it = j["weapon_overrides"].begin(); it != j["weapon_overrides"].end(); ++it) {
+            ActorPresetWeaponOverride weapon;
+            readWeaponOverride(it.value(), weapon);
+            out.weaponOverrides[it.key()] = std::move(weapon);
+        }
     }
     if (j.contains("health") && j["health"].is_object()) {
         const auto& health = j["health"];
@@ -74,6 +196,7 @@ void readActorPreset(const json& j, const std::string& fallbackId,
     if (j.contains("avatar") && j["avatar"].is_object()) {
         const auto& avatar = j["avatar"];
         out.avatarForced = avatar.value("forced", out.avatarForced);
+        out.avatarName = avatar.value("name", out.avatarName);
         if (avatar.contains("allowed") && avatar["allowed"].is_array()) {
             for (const auto& item : avatar["allowed"])
                 if (item.is_string()) out.allowedAvatars.push_back(item.get<std::string>());
@@ -178,7 +301,7 @@ bool MatchRoleRegistry::pollReload()
             return rolesChanged;
         for (const auto& entry : std::filesystem::directory_iterator(mPresetDirectory, presetEc)) {
             if (presetEc) break;
-            if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+            if (!entry.is_regular_file() || !isJsonFile(entry.path())) continue;
             const std::string path = entry.path().string();
             const auto write = getLastWrite(path);
             auto it = mPresetWrites.find(path);
@@ -217,49 +340,69 @@ std::vector<const MatchRoleDefinition*> MatchRoleRegistry::actorPresets() const
 
 bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
 {
-    std::filesystem::path resolvedDirectory = directory;
-    std::error_code ec;
-    if (!std::filesystem::is_directory(resolvedDirectory, ec)) {
-        const std::filesystem::path exeDirectory = getExecutableDirectory();
-        const std::filesystem::path candidates[] = {
-            exeDirectory / directory,
-            exeDirectory / ".." / directory,
-            exeDirectory / ".." / ".." / directory
-        };
-        for (const auto& candidate : candidates) {
-            if (std::filesystem::is_directory(candidate, ec)) {
-                resolvedDirectory = std::filesystem::weakly_canonical(candidate, ec);
-                break;
-            }
-        }
-    }
-    if (!std::filesystem::is_directory(resolvedDirectory, ec)) {
+    const std::filesystem::path resolvedDirectory = resolveActorPresetDirectory(directory);
+    if (resolvedDirectory.empty()) {
+        std::error_code cwdEc;
+        const auto cwd = std::filesystem::current_path(cwdEc);
         Debug::warn(Debug::Category::Duel,
             "[ACTOR PRESET] Missing directory %s (cwd=%s); no presets loaded.\n",
-            directory.c_str(), std::filesystem::current_path(ec).string().c_str());
+            directory.c_str(), cwdEc ? "unknown" : cwd.string().c_str());
         return false;
     }
-    mPresetDirectory = resolvedDirectory.string();
 
-    mRoles.erase(std::remove_if(mRoles.begin(), mRoles.end(),
-        [](const MatchRoleDefinition& role) { return role.actorPreset; }), mRoles.end());
-    mPresetWrites.clear();
+    Debug::warn(Debug::Category::Duel,
+        "[ACTOR PRESET] Scanning directory: %s\n", resolvedDirectory.string().c_str());
+
+    std::vector<MatchRoleDefinition> loadedPresets;
+    std::unordered_map<std::string, std::filesystem::file_time_type> loadedWrites;
+    std::error_code ec;
     for (const auto& entry : std::filesystem::directory_iterator(resolvedDirectory, ec)) {
-        if (ec || !entry.is_regular_file(ec) || entry.path().extension() != ".json") continue;
+        if (ec) {
+            Debug::error(Debug::Category::Duel,
+                "[ACTOR PRESET] Directory scan failed for %s: %s\n",
+                resolvedDirectory.string().c_str(), ec.message().c_str());
+            break;
+        }
+        std::error_code entryEc;
+        if (!entry.is_regular_file(entryEc) || entryEc || !isJsonFile(entry.path())) continue;
+
+        const std::string path = entry.path().string();
+        Debug::log(Debug::Category::Duel,
+            "[ACTOR PRESET] Found JSON: %s\n", path.c_str());
         std::ifstream file(entry.path());
-        if (!file.is_open()) continue;
+        if (!file.is_open()) {
+            Debug::error(Debug::Category::Duel,
+                "[ACTOR PRESET] Cannot open %s\n", path.c_str());
+            continue;
+        }
         try {
             const json root = parseJsonConfig(file);
             MatchRoleDefinition def;
             readActorPreset(root, entry.path().stem().string(), def);
-            if (!def.id.empty()) mRoles.push_back(std::move(def));
-            mPresetWrites[entry.path().string()] = getLastWrite(entry.path().string());
+            if (def.id.empty()) {
+                Debug::error(Debug::Category::Duel,
+                    "[ACTOR PRESET] Ignoring %s because it has no id\n", path.c_str());
+                continue;
+            }
+            Debug::log(Debug::Category::Duel,
+                "[ACTOR PRESET] Loaded id=%s from %s\n", def.id.c_str(), path.c_str());
+            loadedPresets.push_back(std::move(def));
+            loadedWrites[path] = getLastWrite(path);
         } catch (const std::exception& e) {
             Debug::error(Debug::Category::Duel,
                 "[ACTOR PRESET] Error loading %s: %s. Keeping previous data.\n",
-                entry.path().string().c_str(), e.what());
+                path.c_str(), e.what());
         }
     }
+
+    // Replace only after the directory was found and scanned. A malformed
+    // file must not erase the last valid preset set.
+    mRoles.erase(std::remove_if(mRoles.begin(), mRoles.end(),
+        [](const MatchRoleDefinition& role) { return role.actorPreset; }), mRoles.end());
+    for (auto& preset : loadedPresets)
+        mRoles.push_back(std::move(preset));
+    mPresetDirectory = resolvedDirectory.string();
+    mPresetWrites = std::move(loadedWrites);
     mIndexById.clear();
     for (int i = 0; i < (int)mRoles.size(); ++i) mIndexById[mRoles[i].id] = i + 1;
     Debug::warn(Debug::Category::Duel, "[ACTOR PRESET] Loaded %zu preset(s) from %s\n",

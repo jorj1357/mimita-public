@@ -45,7 +45,10 @@ PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
 LAUNCH_MODE_PATH = ROOT / "devscripts" / "dev-launch-modes.json"
 DEFAULT_MAP_POOL_PATH = ROOT / "config" / "gamemode-good-maps.json"
 
-POLL_SECONDS = 0.15
+# Snapshotting the watched source tree takes about 60 ms on this checkout.
+# Polling at 150 ms consumed too much background CPU during client startup and
+# could briefly steal frame time from the newly launched game.
+POLL_SECONDS = 0.50
 DEBOUNCE_SECONDS = 0.30
 KEEP_BUILDS = 5
 RAINBOW_SECONDS = 5.0
@@ -373,6 +376,9 @@ class DevLoop:
         self.generation = 0
         self.last_snapshot = snapshot_inputs()
         self.processes: list[subprocess.Popen] = []
+        # Like the GUI-created server, the dedicated server is independent of
+        # the client/dev-loop lifetime. Only the client remains daemon-owned.
+        self.server_process: subprocess.Popen | None = None
         self.running_build = None
         self.latest_build = newest_valid_published_build()
         self.latest_generation = 0
@@ -528,79 +534,101 @@ class DevLoop:
             print(f"[DEV] missing published executable: {exe}")
             return
 
+        # Stop only the previous dev-loop client. A GUI-style server remains
+        # open until its own console is closed or an explicit server-stop
+        # action terminates it.
         self.stop_processes()
         server_bind = self.profile.get("server_bind", "0.0.0.0:1357")
         map_name = select_dev_map(self.profile)
         print(f"[DEV] selected allowed map: {map_name}")
-        room_fd, room_file_name = tempfile.mkstemp(prefix="mimita-dev-room-", suffix=".txt")
-        os.close(room_fd)
-        self.room_file_path = Path(room_file_name)
-        self.room_file_path.write_text("", encoding="utf-8")
-        server_args = [
-            str(exe), "--server", "--bind", server_bind,
-            "--name", str(self.profile.get("server_name", "MiMITA Dev Server")),
-            "--map", map_name,
-            "--mode", str(self.profile.get("mode", "sandbox")),
-            "--gamemode", str(self.profile.get("gamemode", "sandbox")),
-            "--weapon-set", str(self.profile.get("weapon_set", 1)),
-            "--npcs", str(self.profile.get("npc_count", 1)),
-            "--no-discord-notification",
-            "--room-file", str(self.room_file_path),
-        ]
-        server_args.extend(str(value) for value in self.launch_mode.get("server_args", []))
-        # Give the server an explicit host identity. The client is launched
-        # with client_name below, so falling back to that same value keeps
-        # host-only commands working even when the profile omits a separate
-        # host_player_name.
-        configured_host = str(self.profile.get("host_player_name", "")).strip()
-        if not configured_host:
-            configured_host = str(self.profile.get("client_name", "")).strip()
-        if configured_host:
-            server_args.extend(["--host-player", configured_host])
-        if not self.profile.get("auto_map_rotation", False):
-            server_args.append("--no-map-rotation")
-
-        print(f"[DEV] launching build {self.latest_build} server")
-        server = subprocess.Popen(
-            server_args,
-            cwd=ROOT,
-            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+        server_alive = (
+            self.server_process is not None
+            and self.server_process.poll() is None
+            and bool(self.room_code)
         )
-        self.processes = [server]
+        if server_alive:
+            room_code = self.room_code
+            print(
+                f"[DEV] reusing persistent server PID={self.server_process.pid} "
+                f"room={room_code}"
+            )
+        else:
+            self.server_process = None
+            self.room_code = None
+            room_fd, room_file_name = tempfile.mkstemp(prefix="mimita-dev-room-", suffix=".txt")
+            os.close(room_fd)
+            self.room_file_path = Path(room_file_name)
+            self.room_file_path.write_text("", encoding="utf-8")
+            server_args = [
+                str(exe), "--server", "--bind", server_bind,
+                "--name", str(self.profile.get("server_name", "MiMITA Dev Server")),
+                "--map", map_name,
+                "--mode", str(self.profile.get("mode", "sandbox")),
+                "--gamemode", str(self.profile.get("gamemode", "sandbox")),
+                "--weapon-set", str(self.profile.get("weapon_set", 1)),
+                "--npcs", str(self.profile.get("npc_count", 1)),
+                "--no-discord-notification",
+                "--room-file", str(self.room_file_path),
+            ]
+            server_args.extend(str(value) for value in self.launch_mode.get("server_args", []))
+            # Give the server an explicit host identity. The client is launched
+            # with client_name below, so falling back to that same value keeps
+            # host-only commands working even when the profile omits a separate
+            # host_player_name.
+            configured_host = str(self.profile.get("host_player_name", "")).strip()
+            if not configured_host:
+                configured_host = str(self.profile.get("client_name", "")).strip()
+            if configured_host:
+                server_args.extend(["--host-player", configured_host])
+            if not self.profile.get("auto_map_rotation", False):
+                server_args.append("--no-map-rotation")
 
-        # The dedicated server registers with the coordinator, then writes
-        # the room code. This is the same handshake the GUI uses before it
-        # starts the client join.
-        deadline = time.time() + 20.0
-        room_code = ""
-        while time.time() < deadline:
-            if server.poll() is not None:
-                self.last_message = (
-                    f"server exited before room-code handshake: {server.returncode}"
-                )
+            print(f"[DEV] launching build {self.latest_build} server")
+            server = subprocess.Popen(
+                server_args,
+                cwd=ROOT,
+                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+            )
+            self.server_process = server
+
+            # The dedicated server registers with the coordinator, then writes
+            # the room code. This is the same handshake the GUI uses before it
+            # starts the client join.
+            deadline = time.time() + 20.0
+            room_code = ""
+            while time.time() < deadline:
+                if server.poll() is not None:
+                    self.last_message = (
+                        f"server exited before room-code handshake: {server.returncode}"
+                    )
+                    self.save_state("server_failed")
+                    print(f"[DEV] {self.last_message}")
+                    self.server_process = None
+                    self.cleanup_room_file()
+                    self.print_status()
+                    return
+                try:
+                    room_code = self.room_file_path.read_text(encoding="utf-8").strip()
+                except OSError:
+                    room_code = ""
+                if room_code:
+                    break
+                time.sleep(0.1)
+
+            if not room_code:
+                self.last_message = "server did not publish a room code within 20 seconds"
                 self.save_state("server_failed")
                 print(f"[DEV] {self.last_message}")
-                self.stop_processes()
+                self.server_process = None
+                self.cleanup_room_file()
                 self.print_status()
                 return
-            try:
-                room_code = self.room_file_path.read_text(encoding="utf-8").strip()
-            except OSError:
-                room_code = ""
-            if room_code:
-                break
-            time.sleep(0.1)
 
-        if not room_code:
-            self.last_message = "server did not publish a room code within 20 seconds"
-            self.save_state("server_failed")
-            print(f"[DEV] {self.last_message}")
-            self.stop_processes()
-            self.print_status()
-            return
-
-        self.room_code = room_code
-        print(f"[DEV] ROOM CODE: {room_code}")
+            self.room_code = room_code
+            # The server has consumed the room-file handshake. Remove the
+            # temporary file like the GUI does, but retain room_code for reuse.
+            self.cleanup_room_file(clear_code=False)
+            print(f"[DEV] ROOM CODE: {room_code}")
 
         client_args = [
             str(exe), "--room", room_code,
@@ -635,7 +663,6 @@ class DevLoop:
                 process.kill()
         self.processes = []
         self.running_build = None
-        self.cleanup_room_file()
 
     def maintain_process(self) -> None:
         live = [process for process in self.processes if process.poll() is None]
@@ -661,7 +688,7 @@ class DevLoop:
             self.save_state("stopped_waiting")
             self.print_status(force=True)
 
-    def cleanup_room_file(self) -> None:
+    def cleanup_room_file(self, clear_code: bool = True) -> None:
         if self.room_file_path is not None:
             try:
                 self.room_file_path.unlink()
@@ -670,7 +697,8 @@ class DevLoop:
             except OSError as error:
                 print(f"[DEV] could not remove room file: {error}")
             self.room_file_path = None
-        self.room_code = None
+        if clear_code:
+            self.room_code = None
 
     def _status_lines(self) -> list[str]:
         lines = [
@@ -822,7 +850,7 @@ class DevLoop:
             self.stop_processes()
             _status_clear_hook = None
             self.save_state("stopped")
-            print("[DEV] stopped; daemon-owned game processes closed")
+            print("[DEV] stopped; client closed; persistent server left running")
 
 
 def main() -> int:

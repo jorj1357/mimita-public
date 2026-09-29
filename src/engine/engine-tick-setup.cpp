@@ -34,6 +34,8 @@
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "network/community-match-client.h"
+#include "combat/actor-preset-weapons.h"
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
@@ -136,7 +138,10 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
             }
         }
         GamemodeRegistry::instance().pollReload();
-        MatchRoleRegistry::instance().pollReload();
+        if (MatchRoleRegistry::instance().pollReload()) {
+            MimitaNet::CommunityMatchClient::instance().refreshActorPreset();
+            ActorPresetWeapons::refresh();
+        }
         BehaviorProfileRegistry::instance().pollReload();
         RoleMovementCache::instance().pollReload();
         GamemodeMapPool::instance().pollReload();

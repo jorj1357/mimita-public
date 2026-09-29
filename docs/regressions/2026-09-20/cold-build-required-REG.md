@@ -1090,6 +1090,47 @@ the next collision-owner deletion.
 
 ---
 
+### Cold-build occurrence 20
+
+Time:
+`2026-09-29T18:17:05Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_141705-config-header-prune.md`
+
+The session removed six unreferenced inline globals from `src/config.h`. The
+header is compiled into the cold executable, and the requested build
+checkpoint required the canonical executable build.
+
+### Result needed from the new executable
+
+Verify that the repository still compiles and links after the header cleanup.
+
+### Why it could not be applied through the live path
+
+The removed definitions are part of the cold C++ translation-unit boundary;
+the live reload path cannot remove C++ declarations from the executable.
+
+### Build result
+
+`python build_agent.py` returned `Status: SUCCESS`, return code 0; 216
+translation units compiled and 281 were skipped. Produced executable:
+`C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Not required for the removed, unreferenced debug globals; no gameplay behavior
+was intentionally changed. Runtime acceptance of the broader cleanup remains
+pending.
+
+### Next migration/falsification step
+
+Repeat the same reference audit for the next candidate only after confirming
+that no terminal/configuration surface depends on it; do not remove live
+collision owners until their callers are migrated to the shared contract.
+
+---
+
 ### Follow-up builds (same cold boundary, same session)
 
 Two further python build_agent.py runs were needed while iterating the same

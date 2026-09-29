@@ -12,6 +12,7 @@
 
 
 #include "combat/shot-profiler.h"
+#include "combat/weapon-registry.h"
 #include "effects/effect-part.h"
 #include "config/impact-decals-config.h"
 #include "debug/debug-visuals.h"
@@ -41,6 +42,14 @@ void HitEffects::onHit(const HitEvent& event)
     if (!gConfig.enabled) return;
     if (gShotProfiler) gShotProfiler->hitFxCalls++;
 
+    const WeaponDefinition* weapon = event.weaponId.empty()
+        ? nullptr : WeaponRegistry::instance().get(event.weaponId);
+    const bool damageNumbers = (!weapon || weapon->damageNumbersEnabled) &&
+        gConfig.core.damageNumbers;
+    const bool hitEffects = !weapon || weapon->hitEffectsEnabled;
+    const bool worldImpactEffects = !weapon || weapon->worldImpactEffectsEnabled;
+    const bool bloodEffects = !weapon || weapon->bloodEffectsEnabled;
+
     // 1. Legacy contact sphere
     if (gConfig.legacyContactSphere.enabled) {
         EffectPart e;
@@ -56,30 +65,30 @@ void HitEffects::onHit(const HitEvent& event)
     }
 
     // 2. Entity impact sphere (red)
-    if (event.hitEntity && gConfig.core.entityImpact) {
+    if (event.hitEntity && gConfig.core.entityImpact && hitEffects) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->impactSphereMs : nullptr);
         EffectPartSystem::instance().spawnEntityImpact(
             event.position, event.normal, event.attacker, event.victim);
     }
 
     // 3. World impact sphere (gray)
-    if (event.hitWorld && gConfig.core.worldImpact) {
+    if (event.hitWorld && gConfig.core.worldImpact && worldImpactEffects) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->impactSphereMs : nullptr);
         EffectPartSystem::instance().spawnWorldImpact(event.position, event.normal, 1.0f, event.direction);
     }
 
     // 3b. World cracks along the surface at the hit point
-    if (event.hitWorld && gConfig.core.worldImpact) {
+    if (event.hitWorld && gConfig.core.worldImpact && worldImpactEffects) {
         EffectPartSystem::instance().spawnWorldCracks(event.position, event.normal, event.direction);
     }
 
     // 4. Bullet impact hole
-    if (event.hitWorld && gConfig.core.bulletImpact) {
+    if (event.hitWorld && gConfig.core.bulletImpact && worldImpactEffects) {
         EffectPartSystem::instance().spawnBulletImpact(event.position, event.normal);
     }
 
     // 5. Blood effect (gate: impact_decals.json blood.enabled is the single switch)
-    if (event.hitEntity && ImpactDecalsConfig::instance().data().blood.enabled) {
+    if (event.hitEntity && ImpactDecalsConfig::instance().data().blood.enabled && bloodEffects) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->bloodMs : nullptr);
         const float directness = glm::length(event.direction) > 0.001f &&
                                  glm::length(event.normal) > 0.001f
@@ -92,13 +101,13 @@ void HitEffects::onHit(const HitEvent& event)
     }
 
     // 6. Damage number - only for entity hits (not world geometry)
-    if (event.hitEntity && event.spawnDamageNumber) {
+    if (event.hitEntity && event.spawnDamageNumber && damageNumbers) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->damageNumberMs : nullptr);
         EffectPartSystem::instance().spawnDamage(event.position, event.victim, event.damage);
     }
 
     // 6b. Red impact sphere at hit position
-    if (event.hitEntity && glm::length(event.direction) > 0.001f) {
+    if (event.hitEntity && hitEffects && glm::length(event.direction) > 0.001f) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->impactSphereMs : nullptr);
         EffectPartSystem::instance().spawnDamageImpactSphere(event.position, event.direction, event.victim);
     }
@@ -108,8 +117,8 @@ void HitEffects::onHit(const HitEvent& event)
         "[DAMAGE FEEDBACK] tick=%d frame=%d entity=%s damage=%d damageNumber=%d impactSphere=%d "
         "hitPos=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) lifetimeTicks=%d alpha=%.2f\n",
         gGlobalTick, gGlobalTick, event.victim.c_str(), event.damage,
-        (int)(event.hitEntity && gConfig.core.damageNumbers && gConfig.damageNumber.enabled),
-        (int)(event.hitEntity && glm::length(event.direction) > 0.001f),
+        (int)(event.hitEntity && damageNumbers && gConfig.damageNumber.enabled),
+        (int)(event.hitEntity && hitEffects && glm::length(event.direction) > 0.001f),
         event.position.x, event.position.y, event.position.z,
         event.direction.x, event.direction.y, event.direction.z,
         30, 0.5f);
@@ -117,8 +126,9 @@ void HitEffects::onHit(const HitEvent& event)
     // 7. HitFX timeline (burst)
     {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->hitBurstMs : nullptr);
-        spawnHitEffects(event.position, event.direction, event.normal, event.damage,
-                        event.attacker, event.victim, false);
+        if (hitEffects)
+            spawnHitEffects(event.position, event.direction, event.normal, event.damage,
+                            event.attacker, event.victim, false);
     }
 
     if (gHitFxTraceEnabled) {

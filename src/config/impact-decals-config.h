@@ -106,6 +106,8 @@ public:
 
     bool load(const std::string& path = "config/impact_decals.json");
     bool pollReload();
+    void setRuntimeBloodEnabled(bool enabled);
+    void clearRuntimeBloodOverride();
 
     const ImpactDecalsData& data() const { return mData; }
 
@@ -115,4 +117,6 @@ private:
     ImpactDecalsData mData;
     std::string mPath = "config/impact_decals.json";
     std::filesystem::file_time_type mLastWrite{};
+    bool mRuntimeBloodOverride = false;
+    bool mPreviousBloodEnabled = true;
 };
