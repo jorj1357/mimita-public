@@ -101,18 +101,18 @@
         "max_angular_speed": 30.0,
         "head_weight": 1.0,
         "torso_weight": 1.0,
-        // "limb_inheritance": 1.0,
-        "limb_inheritance": 0.0,
+        "limb_inheritance": 1.0,
+        // "limb_inheritance": 0.0,
         // "torso_tether_stiffness": 200.0,
         // "torso_tether_stiffness": 20.0,
         "torso_tether_stiffness": 1.0,
-        "damping_mode": "physical",
-        // "damping_mode": "look",
+        // "damping_mode": "physical",
+        "damping_mode": "look",
         "limits": {
             "comment": "Range of motion in degrees. Torso is clamped relative to the movement root; child limbs are clamped by swing from their bind orientation.",
             "torso_max_pitch_deg": 90.0,
             "torso_max_roll_deg": 90.0,
-            "head_max_swing_deg": 90.0,
+            "head_max_swing_deg": 45.0,
             "arm_max_swing_deg": 180.0,
             "leg_max_swing_deg": 65.0
         },
@@ -125,20 +125,33 @@
             //   1 = limbs also follow their animated position. 
             //   All values are stable at any magnitude.",
             // "follow_force": 10.0,
-            "follow_force": 100.0,
+            "follow_force": 50.0,
+            // "follow_force": 25.0,
+            // "follow_force": 35.0,
+            // "follow_force": 15.0,
+            // "follow_force": 5.0,
+            // "follow_force": 100.0,
             // "follow_force": 1.0,
             // "follow_force": 999.0,
             // "base_rate": 50.0,
-            "base_rate": 100.0,
+            // "base_rate": 100.0,
             // "base_rate": 999.0,
-            // "base_rate": 10.0,
+            "base_rate": 10.0,
             // "base_rate": 1.0,
             // "base_rate": 3.0,
             // "base_rate": 5.0,
-            "position_follow": 1.0
             // "position_follow": 100.0
             // "position_follow": 0.0
             // "position_follow": 0.5
+            "position_follow": 1.0,
+            // Arms-only tracking multiplier. 1.0 = same as follow_force/base_rate;
+            // 10.0 = the arms stick ten times harder to their aimbody/animation
+            // orientation, so moving fast does not leave the weapon aiming wrong.
+            "arms_follow_force": 1.0
+            // "arms_follow_force": 5.0
+            // "arms_follow_force": 10.0
+            // "arms_follow_force": 25.0
+            // "arms_follow_force": 50.0
         }
     },
     "exit": {

@@ -202,7 +202,7 @@ void RagdollModeSystem::deactivate(Player& player)
 
 // ── Normal-play physical aim body ───────────────────────────────────
 
-void RagdollModeSystem::activateAim(Player& player)
+void RagdollModeSystem::buildAimBody(Player& player)
 {
     // Bind from the model's rest pose so meshLocal captures the true body-to-
     // mesh offset, exactly like ragdoll activation.
@@ -222,17 +222,33 @@ void RagdollModeSystem::activateAim(Player& player)
     mAimActive = !mAim.parts.empty();
 
     // Seed limb momentum from the current movement velocity so physical mode
-    // does not appear to freeze on entry (RAG-003 analog).
+    // does not appear to freeze on entry (RAG-003 analog). On a lifecycle
+    // rebind this plants the rebuilt body at the authoritative position with
+    // the authoritative velocity instead of the stale pre-teleport state.
     const float inherit =
         glm::clamp(RagdollModeConfig::instance().data().physicalAim.limbInheritance,
                    0.0f, 1.0f);
     for (auto& part : mAim.parts)
         part.body.linearVelocity = glm::mix(part.body.linearVelocity, player.vel, inherit);
+}
 
+void RagdollModeSystem::activateAim(Player& player)
+{
+    buildAimBody(player);
     Debug::log(Debug::Category::Ragdoll,
         "[AIMBODY] activated parts=%zu stiffness=%.1f\n",
         mAim.parts.size(),
         RagdollModeConfig::instance().data().physicalAim.torsoTetherStiffness);
+}
+
+void RagdollModeSystem::rebindAimToAuthoritativePlayer(Player& player)
+{
+    if (!mAimActive && mAim.parts.empty())
+        return;
+    buildAimBody(player);
+    Debug::log(Debug::Category::Ragdoll,
+        "[AIMBODY] rebound to authoritative lifecycle parts=%zu pos=(%.2f,%.2f,%.2f)\n",
+        mAim.parts.size(), player.pos.x, player.pos.y, player.pos.z);
 }
 
 void RagdollModeSystem::deactivateAim(Player& player)
@@ -327,12 +343,20 @@ void RagdollModeSystem::captureAimTargets(const Player& player, RagdollBody& b)
 void RagdollModeSystem::applyHybridSprings(RagdollBody& b, float dt)
 {
     const auto& pc = RagdollModeConfig::instance().data().physicalAim;
-    const float rate = std::max(0.0f, pc.hybridBaseRate * pc.hybridFollowForce);
-    if (rate <= 1e-4f) return;
-    const float alpha = glm::clamp(1.0f - std::exp(-rate * dt), 0.0f, 1.0f);
-    const float retain = 1.0f - alpha;
+    const float baseRate = std::max(0.0f, pc.hybridBaseRate * pc.hybridFollowForce);
+    if (baseRate <= 1e-4f) return;
 
     for (auto& part : b.parts) {
+        // The arms can be tuned to track their aimbody/animation pose harder
+        // than the rest of the body, so fast movement does not leave the weapon
+        // lagging behind (which makes it aim the wrong way).
+        float rate = baseRate;
+        if (part.name == "leftArm" || part.name == "rightArm")
+            rate *= pc.hybridArmsFollowForce;
+        if (rate <= 1e-4f) continue;
+
+        const float alpha = glm::clamp(1.0f - std::exp(-rate * dt), 0.0f, 1.0f);
+        const float retain = 1.0f - alpha;
         RigidBody& body = part.body;
 
         body.orientation = glm::normalize(

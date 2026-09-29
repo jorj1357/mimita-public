@@ -1,11 +1,11 @@
 {
   "cameraSway": {
     "enabled": true,
-    "amount": 5.0,
+    "amount": 2.0,
     "landingThreshold": 0.25,
     "landingPitchImpulse": -10.1,
     "landingRollImpulse": 0.0,
-    "springStiffness": 10.0,
+    "springStiffness": 5.0,
     "springDamping": 10.0,
     "maxPitch": 10.0,
     "maxRoll": 6.0

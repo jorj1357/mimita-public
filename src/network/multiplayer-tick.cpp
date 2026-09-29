@@ -697,6 +697,46 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
                oldGen, spawn->spawnGeneration, spawn->health, spawn->weaponCount);
 }
 
+// Install the complete authoritative local transform for the current epoch. One
+// owner for both the per-frame reconcile and the pending-spawn application, so
+// gameplay simulation can never start from the temporary local fallback pose.
+void mpApplyAuthoritativeTransform(MultiplayerContext& ctx, Player& player)
+{
+    player.pos = ctx.localServerPosition;
+    player.vel = ctx.localServerVelocity;
+    player.yaw = ctx.localServerYaw;
+    player.ground.onGround = ctx.localServerOnGround;
+    player.externalImpulse = glm::vec3(0.0f);
+    player.syncLegacyStateToLayers();
+    player.updateModelWorldTransforms();
+    if ((uint32_t)ctx.localServerEpoch > ctx.transformEpoch)
+        ctx.transformEpoch = ctx.localServerEpoch;
+}
+
+// Local gameplay may only simulate once the authoritative spawn transform is
+// installed. This is the single lifecyle-readiness owner consumed by
+// simulateTick; it does not wait for the SpawnActivated round trip.
+bool mpLocalGameplaySimulationReady(const MultiplayerContext& ctx,
+                                    const Player& player)
+{
+    LocalGameplayReadiness view;
+    view.networked = ctx.active;
+    view.connected = ctx.connected;
+    view.mapReadyForPlayer =
+        ctx.clientMapReadySent &&
+        ctx.clientMapReadySentForPlayerId == ctx.localPlayerId;
+    view.waitingForMapLoad = ctx.waitingForMapLoad;
+    view.hasServerPosition = ctx.hasLocalServerPosition;
+    view.spawnTransformPending = ctx.pendingAuthoritativeSpawn.has_value();
+    view.hasSpawnGeneration = ctx.lastKnownSpawnGeneration != 0;
+    view.hasServerEpoch = ctx.localServerEpoch != 0;
+    view.outgoingEpochMatches = ctx.transformEpoch == ctx.localServerEpoch;
+    view.appliedEpochMatches = ctx.lastAppliedEpoch == ctx.localServerEpoch;
+    view.modelReady = !player.physicalBody.parts.empty()
+        && !player.perfectPoseSkeleton.nodes.empty();
+    return localGameplaySimulationReady(view);
+}
+
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const World& world)
 {
     // Network gameplay prediction advances on the same fixed 60 Hz clock as

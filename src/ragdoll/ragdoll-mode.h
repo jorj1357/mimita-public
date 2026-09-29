@@ -108,6 +108,11 @@ public:
     // player.pos/player.vel are never overwritten.
     void activateAim(Player& player);
     void deactivateAim(Player& player);
+    // Rebuild the active aim body from the current authoritative player pose and
+    // velocity. Called on every authoritative lifecycle discontinuity (spawn,
+    // respawn, teleport, map change, reconnect, transform-epoch change) so the
+    // body can never keep simulating from a stale pre-teleport position.
+    void rebindAimToAuthoritativePlayer(Player& player);
     void updateAim(float dt, const World& world, Player& player,
                    const glm::vec3& camForward);
     bool aimActive() const { return mAimActive; }
@@ -169,6 +174,9 @@ private:
 
     // Shared body construction / writeback, used by alive mode and corpses.
     void initParts(const Player& player, RagdollBody& b);
+    // Build the aim body from the player's rest pose and current movement state.
+    // Shared by first activation and lifecycle rebind.
+    void buildAimBody(Player& player);
     void reinitPreservingState(Player& player, RagdollBody& b);
     void applyControls(float dt, const InputState& input, const Camera& camera, RagdollBody& b);
     void solveJoints(int iterations, bool positionPass, RagdollBody& b);

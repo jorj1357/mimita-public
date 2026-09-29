@@ -91,7 +91,10 @@ struct MovementValidationConfig
     float worldBoundsPadding = 8.0f;
     float smallCorrectionDistance = 0.5f;
     float mediumCorrectionDistance = 5.0f;
-    float majorCorrectionDistance = 100.0f;
+    // Client/server position error above which the client hard-snaps to the
+    // authoritative position. Raised so the client stays authoritative for much
+    // larger errors (e.g. after leaving ragdoll) instead of snapping back.
+    float majorCorrectionDistance = 999.0f;
     int maximumAirJumps = 1;
     // Post-blackout drift correction: when a client skips this many simulation
     // ticks (inputs lost during a blackout/reconnect) AND reports a position

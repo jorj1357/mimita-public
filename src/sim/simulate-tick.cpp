@@ -28,6 +28,7 @@
 #include "void-death/void-death.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
+#include "network/multiplayer-context.h"
 #include "terminal/terminal-state.h"
 
 #include <cmath>
@@ -70,12 +71,33 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // stopped body sends one inactive pose to clear the remote replicas.
     RagdollModeSystem::instance().clearReplicatedPose();
 
+    // Local gameplay must not simulate until the authoritative spawn transform
+    // is installed. Otherwise the player visibly falls from the temporary local
+    // fallback position and a physical aim body binds against stale state.
+    // Networking, map loading, and the spawn handshake continue in engineTickNet.
+    auto& mpContext = MP_CONTEXT;
+    auto& ragdoll = RagdollModeSystem::instance();
+    if (mpContext.active &&
+        !MimitaNet::mpLocalGameplaySimulationReady(mpContext, *sim.player))
+    {
+        return;
+    }
+
+    // One lifecycle reset path: any new authoritative life (spawn, respawn,
+    // instant respawn, teleport, duel, map change, reconnect, or transform-epoch
+    // change) rebuilds the aim body at the new authoritative pose before it
+    // simulates, instead of letting the old body fall and tether across.
+    const uint64_t lifeId = MimitaNet::mpLocalLifecycleId(mpContext);
+    static uint64_t s_aimLifecycleId = 0;
+    if (ragdoll.aimActive() && lifeId != 0 && lifeId != s_aimLifecycleId)
+        ragdoll.rebindAimToAuthoritativePlayer(*sim.player);
+    s_aimLifecycleId = lifeId;
+
     if (!sim.player->dead) {
         // Handle ragdoll mode toggle
         static bool ragdollTogglePrev = false;
         bool ragdollToggleNow = frame.ragdollTogglePressed;
         if (ragdollToggleNow && !ragdollTogglePrev && RagdollModeConfig::instance().data().enabled) {
-            auto& ragdoll = RagdollModeSystem::instance();
             if (ragdoll.isActive()) {
                 ragdoll.deactivate(*sim.player);
                 sim.player->ragdollModeActive = false;
@@ -86,7 +108,6 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         }
         ragdollTogglePrev = ragdollToggleNow;
 
-        auto& ragdoll = RagdollModeSystem::instance();
         if (sim.player->ragdollModeActive && ragdoll.isActive()) {
             if (ragdoll.aimActive())
                 ragdoll.deactivateAim(*sim.player);

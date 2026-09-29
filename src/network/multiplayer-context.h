@@ -16,6 +16,7 @@
 #include "network/movement-validation.h"
 #include "network/remote-entity-lifecycle.h"
 #include "network/connection-state.h"
+#include "network/local-gameplay-readiness.h"
 #include "entities/player.h"
 #include "ragdoll/ragdoll-replication.h"
 
@@ -1015,5 +1016,26 @@ bool mpVisualTimelineReady(const MultiplayerContext& ctx, uint32_t shooterId,
 // Debug flags for damage/hit/net diagnostics (extern, set from terminal commands)
 extern bool gNetDamageDebug;
 extern bool gNetHitDebug;
+
+// ── Local gameplay readiness (single lifecycle owner) ─────────────────
+// Plain decision + lifecycle identity live in one pure header so live gameplay
+// and the standalone test share the exact same rule.
+inline uint64_t mpLocalLifecycleId(const MultiplayerContext& ctx)
+{
+    return localLifecycleId(ctx.localServerEpoch, ctx.lastKnownSpawnGeneration);
+}
+
+// True when the local player may run gameplay simulation (movement, gravity,
+// collision, aimbody/ragdoll). It requires the authoritative spawn transform to
+// be installed, but deliberately does NOT wait for the SpawnActivated round
+// trip, so instant respawn stays responsive. Returns true when the client is not
+// networked (single-player/replay) so those paths are unaffected.
+bool mpLocalGameplaySimulationReady(const MultiplayerContext& ctx,
+                                    const Player& player);
+
+// Install the complete authoritative local transform (position, velocity, yaw,
+// ground, external impulse) for the current epoch. Single owner shared by the
+// per-frame reconcile and the pending-authoritative-spawn application.
+void mpApplyAuthoritativeTransform(MultiplayerContext& ctx, Player& player);
 
 } // namespace MimitaNet

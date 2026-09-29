@@ -216,6 +216,27 @@ client's reported root as authoritative while a pose is active.
   and returns. The per-tick step is clamped to 4 m (240 m/s) so a malformed or
   hostile packet cannot teleport; the clamp logs once per second.
 
+## Iteration 7 (same session): raise the client hard-snap distance and keep the ragdoll exit clean
+
+The user asked to raise the "server position error snap back" limit from 100 to
+999 and to keep the client authoritative on leaving ragdoll.
+
+- `src/network/movement-validation.h`: `MovementValidationConfig::
+  majorCorrectionDistance` default raised 100.0 → 999.0. This is the threshold
+  the client's `classifyMovementCorrection` uses to call an error `Major`, which
+  (with the other conditions) triggers the catastrophic-divergence hard snap in
+  `multiplayer-reconcile.cpp`.
+- `src/config/networking-config.h` + `config/networkingconfig.json`
+  (`local_player_reconciliation.hard_snap_distance`) and
+  `config/networking/presets/default.json`: 100.0 → 999.0.
+- `src/network/multiplayer-reconcile.cpp`: the reconcile now builds its
+  `MovementValidationConfig` from `localReconciliation.hardSnapDistance`, so the
+  JSON key actually controls the snap (it was parsed but previously unused).
+- `src/network/server-players.cpp`: the ragdoll-authoritative branch now also
+  refreshes `lastAcceptedClientPosition/Velocity`,
+  `hasAcceptedClientTransform`, and `movementValidation.lastAcceptedClientTick`,
+  so leaving ragdoll cannot trip the post-gap drift correction.
+
 ## Validation
 
 - `tests/physical-aim-torque-test.cpp`: compile and run with
@@ -245,6 +266,8 @@ client's reported root as authoritative while a pose is active.
     `Status: SUCCESS`, return 0. (One build reported FAILED due to a race with
     the background dev-loop rebuilding the same objects; the clean rebuild
     succeeded.)
+  - Iteration-7 build recompiled `multiplayer-reconcile.cpp` and
+    `server-players.cpp`; `Status: SUCCESS`, return 0.
   - Executable: `C:\mimita-v9\mimita.exe`.
 
 ## Pre-existing edits

@@ -291,6 +291,9 @@ bool RagdollModeConfig::load(const std::string& path)
                     hy.value("follow_force", pc.hybridFollowForce), 0.0f, 100.0f);
                 pc.hybridBaseRate = std::clamp(
                     hy.value("base_rate", pc.hybridBaseRate), 0.0f, 240.0f);
+                pc.hybridArmsFollowForce = std::clamp(
+                    hy.value("arms_follow_force", pc.hybridArmsFollowForce),
+                    0.0f, 100.0f);
                 pc.hybridPositionFollow = std::clamp(
                     hy.value("position_follow", pc.hybridPositionFollow), 0.0f, 1.0f);
             }

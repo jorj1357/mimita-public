@@ -770,6 +770,13 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             p.onGround = false;
             p.movement.externalImpulse = glm::vec3(0.0f);
             p.clientStateUpdated = false;
+            // Keep the accepted-client state fresh so leaving ragdoll does not
+            // trip the post-gap correction (which would snap the client back).
+            p.lastAcceptedClientPosition = p.pos;
+            p.lastAcceptedClientVelocity = p.vel;
+            p.hasAcceptedClientTransform = true;
+            if (pose.sourceTick != 0)
+                p.movementValidation.lastAcceptedClientTick = pose.sourceTick;
             syncServerMovementRuntime(p, true);
 
             static uint64_t lastRagdollClampLogMs = 0;

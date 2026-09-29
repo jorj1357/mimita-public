@@ -52,25 +52,20 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
                ctx.localServerPosition.y,
                ctx.localServerPosition.z);
 
-        player.pos = ctx.localServerPosition;
-        player.vel = ctx.localServerVelocity;
-        player.yaw = ctx.localServerYaw;
-        player.ground.onGround = ctx.localServerOnGround;
-        player.externalImpulse = glm::vec3(0.0f);
-        player.syncLegacyStateToLayers();
-        player.updateModelWorldTransforms();
+        mpApplyAuthoritativeTransform(ctx, player);
         ctx.lastAppliedEpoch = ctx.localServerEpoch;
         ctx.localPlayerReconciled = true;
-
-        // Sync outgoing epoch so the client-transform gate uses the new epoch
-        if ((uint32_t)ctx.localServerEpoch > ctx.transformEpoch)
-            ctx.transformEpoch = ctx.localServerEpoch;
     }
 
     const glm::vec3 clientPosition = player.pos;
     const glm::vec3 correction = ctx.localServerPosition - player.pos;
     const float error = glm::length(correction);
-    const MovementValidationConfig correctionConfig;
+    // Wire the tunable hard-snap distance from config so
+    // config/networkingconfig.json local_player_reconciliation.hard_snap_distance
+    // actually controls when the client hard-snaps to the server position.
+    MovementValidationConfig correctionConfig;
+    correctionConfig.majorCorrectionDistance =
+        NetworkingConfig::instance().data().localReconciliation.hardSnapDistance;
     const MovementCorrectionClass correctionClass =
         classifyMovementCorrection(error, correctionConfig);
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
@@ -154,13 +149,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     if (applyPosition)
     {
         const glm::vec3 predictedPosition = player.pos;
-        player.pos = ctx.localServerPosition;
-        player.vel = ctx.localServerVelocity;
-        player.yaw = ctx.localServerYaw;
-        player.ground.onGround = ctx.localServerOnGround;
-        player.externalImpulse = glm::vec3(0.0f);
-        player.syncLegacyStateToLayers();
-        player.updateModelWorldTransforms();
+        mpApplyAuthoritativeTransform(ctx, player);
         ctx.lastAppliedEpoch = ctx.localServerEpoch;
 
         // Local-only correction indicator for the corrected player.

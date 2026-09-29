@@ -41,7 +41,7 @@
     "enabled": true,
     "correction_mode": "hard",
     "correction_duration_ms": 100,
-    "hard_snap_distance": 100.0
+    "hard_snap_distance": 999.0
   },
 
   "snapshot_buffer": {

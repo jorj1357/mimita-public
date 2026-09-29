@@ -376,9 +376,16 @@ class DevLoop:
         self.generation = 0
         self.last_snapshot = snapshot_inputs()
         self.processes: list[subprocess.Popen] = []
-        # Like the GUI-created server, the dedicated server is independent of
-        # the client/dev-loop lifetime. Only the client remains daemon-owned.
+        # Durable independent-server record, mirroring the GUI external-server
+        # contract. This is intentionally NOT part of self.processes (which is
+        # daemon-owned and terminated on shutdown). Only an explicit server-stop
+        # action may end the server.
         self.server_process: subprocess.Popen | None = None
+        self.server_pid: int | None = None
+        self.server_exe: str | None = None
+        self.server_args: list[str] = []
+        self.server_launch_ms: float = 0.0
+        self.server_unavailable = False
         self.running_build = None
         self.latest_build = newest_valid_published_build()
         self.latest_generation = 0
@@ -522,6 +529,84 @@ class DevLoop:
             print("[DEV][BUILD ERROR] No filtered compiler diagnostic found; review the full output above.")
         return False
 
+    def build_server_args(self, exe: Path, map_name: str,
+                          room_file_path: Path) -> list[str]:
+        """Dedicated-server arguments with GUI launchServerProcess semantics.
+
+        The flag set mirrors the GUI external-server path (bind, name, map,
+        mode, max players, weapon set, map rotation, password, room handshake,
+        host player, NPCs, Discord, optional duel). Profile values supply the
+        dev-specific settings; no listen-server path is used.
+        """
+        profile = self.profile
+        server_bind = str(profile.get("server_bind", "0.0.0.0:1357"))
+        npc_count = int(profile.get("npc_count", 1) or 0)
+        max_players = max(1, int(profile.get("max_players", 999) or 999))
+        rotation_minutes = max(1, min(9999, int(profile.get("map_rotation_minutes", 15) or 15)))
+        password_protected = "1" if profile.get("password_protected", False) else "0"
+        # Host identity falls back to the client name so host-only commands keep
+        # working even when the profile omits a separate host_player_name.
+        host_player = str(profile.get("host_player_name", "")).strip()
+        if not host_player:
+            host_player = str(profile.get("client_name", "")).strip()
+
+        args = [
+            str(exe), "--server", "--bind", server_bind,
+            "--name", str(profile.get("server_name", "MiMITA Dev Server")),
+            "--map", map_name,
+            "--mode", str(profile.get("mode", "sandbox")),
+            "--max-players", str(max_players),
+            "--weapon-set", str(profile.get("weapon_set", 1)),
+            "--map-rotation-minutes", str(rotation_minutes),
+            "--password-protected", password_protected,
+            "--password", str(profile.get("password", "")),
+            "--room-file", str(room_file_path),
+        ]
+        if host_player:
+            args.extend(["--host-player", host_player])
+        if npc_count > 0:
+            args.extend(["--npcs", str(npc_count)])
+        else:
+            args.append("--no-npcs")
+        if not profile.get("auto_map_rotation", False):
+            args.append("--no-map-rotation")
+        if not profile.get("discord_notification", False):
+            args.append("--no-discord-notification")
+        if profile.get("duel", False):
+            args.extend(["--duel", "--gamemode", str(profile.get("gamemode", "duel"))])
+        args.extend(str(value) for value in self.launch_mode.get("server_args", []))
+        return args
+
+    def server_health(self) -> bool:
+        """True when the durable external server process is still alive."""
+        process = self.server_process
+        return process is not None and process.poll() is None
+
+    def check_server_after_client(self) -> None:
+        """Observe and repair durable-server state after a client exits.
+
+        The server is never terminated here; only its liveness is checked and a
+        stale room code/file is cleared if it died unexpectedly.
+        """
+        if self.server_process is None:
+            return
+        code = self.server_process.poll()
+        if code is None:
+            print(f"[DEV SERVER] health check alive=1 pid={self.server_pid} "
+                  f"room={self.room_code}")
+            print(f"[DEV SERVER] client exited; server retained pid={self.server_pid} "
+                  f"room={self.room_code}")
+            return
+        print(f"[DEV SERVER] unexpected exit code={code} pid={self.server_pid} "
+              f"room={self.room_code}")
+        self.server_process = None
+        self.server_pid = None
+        self.server_exe = None
+        self.server_args = []
+        self.room_code = None
+        self.server_unavailable = True
+        self.cleanup_room_file()
+
     def launch_latest(self) -> None:
         if self.latest_build is None:
             return
@@ -538,51 +623,31 @@ class DevLoop:
         # open until its own console is closed or an explicit server-stop
         # action terminates it.
         self.stop_processes()
-        server_bind = self.profile.get("server_bind", "0.0.0.0:1357")
         map_name = select_dev_map(self.profile)
         print(f"[DEV] selected allowed map: {map_name}")
-        server_alive = (
-            self.server_process is not None
-            and self.server_process.poll() is None
-            and bool(self.room_code)
-        )
-        if server_alive:
+        if self.server_health() and bool(self.room_code):
             room_code = self.room_code
             print(
-                f"[DEV] reusing persistent server PID={self.server_process.pid} "
-                f"room={room_code}"
+                f"[DEV SERVER] reusing pid={self.server_pid} room={room_code} alive=1"
             )
         else:
+            # A dead server's room code must never be reused.
+            if self.server_process is not None:
+                code = self.server_process.poll()
+                print(f"[DEV SERVER] unexpected exit code={code} pid={self.server_pid} "
+                      f"room={self.room_code}")
             self.server_process = None
+            self.server_pid = None
+            self.server_exe = None
+            self.server_args = []
             self.room_code = None
+            self.server_unavailable = True
+            self.cleanup_room_file()
             room_fd, room_file_name = tempfile.mkstemp(prefix="mimita-dev-room-", suffix=".txt")
             os.close(room_fd)
             self.room_file_path = Path(room_file_name)
             self.room_file_path.write_text("", encoding="utf-8")
-            server_args = [
-                str(exe), "--server", "--bind", server_bind,
-                "--name", str(self.profile.get("server_name", "MiMITA Dev Server")),
-                "--map", map_name,
-                "--mode", str(self.profile.get("mode", "sandbox")),
-                "--gamemode", str(self.profile.get("gamemode", "sandbox")),
-                "--weapon-set", str(self.profile.get("weapon_set", 1)),
-                "--npcs", str(self.profile.get("npc_count", 1)),
-                "--no-discord-notification",
-                "--room-file", str(self.room_file_path),
-            ]
-            server_args.extend(str(value) for value in self.launch_mode.get("server_args", []))
-            # Give the server an explicit host identity. The client is launched
-            # with client_name below, so falling back to that same value keeps
-            # host-only commands working even when the profile omits a separate
-            # host_player_name.
-            configured_host = str(self.profile.get("host_player_name", "")).strip()
-            if not configured_host:
-                configured_host = str(self.profile.get("client_name", "")).strip()
-            if configured_host:
-                server_args.extend(["--host-player", configured_host])
-            if not self.profile.get("auto_map_rotation", False):
-                server_args.append("--no-map-rotation")
-
+            server_args = self.build_server_args(exe, map_name, self.room_file_path)
             print(f"[DEV] launching build {self.latest_build} server")
             server = subprocess.Popen(
                 server_args,
@@ -590,6 +655,12 @@ class DevLoop:
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
             )
             self.server_process = server
+            self.server_pid = server.pid
+            self.server_exe = str(exe)
+            self.server_args = list(server_args)
+            self.server_launch_ms = time.time() * 1000.0
+            self.server_unavailable = False
+            print(f"[DEV SERVER] launched pid={server.pid} args={' '.join(server_args[1:])}")
 
             # The dedicated server registers with the coordinator, then writes
             # the room code. This is the same handshake the GUI uses before it
@@ -602,8 +673,10 @@ class DevLoop:
                         f"server exited before room-code handshake: {server.returncode}"
                     )
                     self.save_state("server_failed")
-                    print(f"[DEV] {self.last_message}")
+                    print(f"[DEV SERVER] unexpected exit code={server.returncode} "
+                          f"pid={server.pid} before room handshake")
                     self.server_process = None
+                    self.server_pid = None
                     self.cleanup_room_file()
                     self.print_status()
                     return
@@ -620,6 +693,7 @@ class DevLoop:
                 self.save_state("server_failed")
                 print(f"[DEV] {self.last_message}")
                 self.server_process = None
+                self.server_pid = None
                 self.cleanup_room_file()
                 self.print_status()
                 return
@@ -628,6 +702,7 @@ class DevLoop:
             # The server has consumed the room-file handshake. Remove the
             # temporary file like the GUI does, but retain room_code for reuse.
             self.cleanup_room_file(clear_code=False)
+            print(f"[DEV SERVER] room={room_code} alive=1")
             print(f"[DEV] ROOM CODE: {room_code}")
 
         client_args = [
@@ -665,8 +740,13 @@ class DevLoop:
         self.running_build = None
 
     def maintain_process(self) -> None:
+        had_clients = bool(self.processes)
         live = [process for process in self.processes if process.poll() is None]
         self.processes = live
+        # The external server has an independent lifetime: after the client
+        # exits, keep it and verify it is still healthy.
+        if had_clients and not live:
+            self.check_server_after_client()
         # Auto-start OFF means a dead/absent child stays absent until [1] is
         # pressed. Auto-start ON preserves automatic recovery of a good build.
         if not self.auto_restart or live or self.latest_build is None:
@@ -708,6 +788,11 @@ class DevLoop:
             f"LATEST:  {self.latest_build or '(none)'}",
             f"AUTO-START: {'ON' if self.auto_restart else 'OFF'}",
         ]
+        if self.server_process is not None:
+            lines.append(
+                f"SERVER: pid={self.server_pid} room={self.room_code or '(none)'} "
+                f"{'alive' if self.server_health() else 'exited'}"
+            )
         if self.latest_stale:
             lines.append("LATEST BUILD IS STALE")
         lines.append("[1] Build/retry or launch  [2] Choose launch mode  [A] Auto-start  [Q] Quit")
@@ -847,8 +932,14 @@ class DevLoop:
                 self.refresh_status_animation()
         finally:
             self.stop_event.set()
+            # Only daemon-owned clients are terminated. The external server is
+            # never killed here; it keeps its own console/lifetime.
             self.stop_processes()
             _status_clear_hook = None
+            self.cleanup_room_file(clear_code=False)
+            if self.server_health():
+                print(f"[DEV SERVER] shutdown requested; server left running "
+                      f"pid={self.server_pid} room={self.room_code}")
             self.save_state("stopped")
             print("[DEV] stopped; client closed; persistent server left running")
 

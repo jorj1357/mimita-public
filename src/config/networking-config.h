@@ -110,7 +110,7 @@ struct LocalReconciliationConfig
     bool enabled = true;
     std::string correctionMode = "hard";
     double correctionDurationSeconds = 0.100;
-    float hardSnapDistance = 100.0f;
+    float hardSnapDistance = 999.0f;
 };
 
 struct SnapshotBufferConfig

@@ -365,9 +365,13 @@ void engineTickNet(Engine& engine, float dt)
                     "[SpawnVelocityReset] player=%u spawnGen=%u epoch=%u pending=%zu -> zero\n",
                     mpContext.localPlayerId, spawn.spawnGeneration, spawn.transformEpoch,
                     mpContext.pendingKnockbacks.size());
-            player.vel = {spawn.velX, spawn.velY, spawn.velZ};
-            player.externalImpulse = glm::vec3(0.0f);
             mpContext.pendingKnockbacks.clear();
+            // Install the complete authoritative transform now, before the next
+            // fixed simulation tick, so gameplay and the aim body can never
+            // start from the temporary local fallback position.
+            MimitaNet::mpApplyAuthoritativeTransform(mpContext, player);
+            mpContext.lastAppliedEpoch = mpContext.localServerEpoch;
+            mpContext.localPlayerReconciled = true;
 
             // Process every valid authoritative weapon entry via the canonical reconciler
             for (uint8_t i = 0; i < spawn.weaponCount; ++i)

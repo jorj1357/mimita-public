@@ -1364,3 +1364,102 @@ drift, and that others see the body at the right place.
 Decide whether the always-on physical/hybrid body should also be
 client-authoritative (current) or keep server movement simulation; and smooth
 the 15 Hz root on the server so the broadcast root does not step.
+
+## Cold-build occurrence 21
+
+UTC time:
+`2026-09-29T20:22:41Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_132503-aimbody-physical-mode.md`
+
+### Why the cold build was required
+
+The client hard-snap threshold default and the reconciliation config wiring
+changed, plus the server's accepted-client state on ragdoll exit. These are cold
+owners and need a relink to exercise.
+
+### Exact cold source / boundary
+
+- `src/network/movement-validation.h` — `majorCorrectionDistance` default.
+- `src/network/multiplayer-reconcile.cpp` — config wiring.
+- `src/network/server-players.cpp` — ragdoll-exit accepted state.
+- `src/config/networking-config.h` + `config/networkingconfig.json`.
+
+### Result needed from the new executable
+
+Confirm a ragdolled player no longer hard-snaps on leaving ragdoll and that the
+snap only occurs past 999 units.
+
+### Why it could not be applied through the live path
+
+The threshold is a compiled default plus a cold config parse read at load.
+
+### Build result
+
+`python build_agent.py` compiled the changed translation units and returned
+`Status: SUCCESS`, return code 0. Produced `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Enter and leave ragdoll while moving; confirm no position snap.
+
+### Next migration/falsification step
+
+Decide whether `remote_players.broadcast_source` should move from
+`server_sim` to a client-transform mode so other clients render the
+client-authoritative root as well.
+
+## Cold-build occurrence 24
+
+UTC time:
+`2026-09-29T20:54:55Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_205455-aimbody-lifecycle-devserver.md`
+
+### Why the cold build was required
+
+The hybrid aimbody startup gating, the shared authoritative-transform owner, and
+the aim-body rebind are C++ changes in cold translation units
+(`simulate-tick.cpp`, `multiplayer-tick.cpp`, `multiplayer-reconcile.cpp`,
+`engine-tick-net.cpp`, `ragdoll-mode.cpp`) that require a relink to test the
+client spawn lifecycle and hybrid physics against one executable.
+
+### Exact cold source / boundary
+
+- `src/network/local-gameplay-readiness.h` (new).
+- `src/network/multiplayer-context.h` readiness declarations.
+- `src/network/multiplayer-tick.cpp`, `src/network/multiplayer-reconcile.cpp`,
+  `src/engine/engine-tick-net.cpp`, `src/sim/simulate-tick.cpp`,
+  `src/ragdoll/ragdoll-mode.{h,cpp}`.
+
+### Result needed from the new executable
+
+With `config/aimbody.json` `"mode": "hybrid"`, confirm no visible fall from the
+`(1,5,60)` fallback, the first active position is the authoritative spawn, the
+hybrid body aligns immediately, and respawn/teleport do not leave a stale body.
+
+### Why it could not be applied through the live path
+
+The spawn lifecycle gate and the aim-body rebind are compiled into the client
+executable and are not part of the live-reloadable module surface.
+
+### Build result
+
+`python build_agent.py` first failed to link with a stale incremental object for
+`ragdoll-mode.cpp` (`undefined reference to
+RagdollModeSystem::rebindAimToAuthoritativePlayer`). After deleting the stale
+objects for the touched translation units and rebuilding, the build returned
+`Status: SUCCESS`, return code 0, and produced `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. The runtime hybrid startup, spawn alignment, teleport recovery, and
+dev-server persistence observations are described in the related changelog.
+
+### Next migration/falsification step
+
+If the aim-body lifecycle reset must be tuned without relinking, move the
+rebind trigger and readiness decision into a live-reloadable gameplay module
+rather than the fixed client tick.
