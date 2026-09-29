@@ -1,0 +1,642 @@
+{
+  "advanced": {
+    "head_back": {
+      "offset_x": -8,
+      "offset_y": 10,
+      "scale_x": 2.4324581623077393,
+      "scale_y": 5.332511901855469,
+      "texture": "Screenshot 2026-09-28 201826.png"
+    },
+    "head_bottom": {
+      "offset_x": -8,
+      "offset_y": 10,
+      "scale_x": 2.4324581623077393,
+      "scale_y": 5.332511901855469,
+      "texture": "Screenshot 2026-09-28 201826.png"
+    },
+    "head_front": {
+      "offset_x": -219,
+      "offset_y": -97,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.5647258758544922,
+      "texture": "Screenshot 2026-09-28 201826.png"
+    },
+    "head_left": {
+      "offset_x": -8,
+      "offset_y": 10,
+      "scale_x": 2.4324581623077393,
+      "scale_y": 5.332511901855469,
+      "texture": "Screenshot 2026-09-28 201826.png"
+    },
+    "head_right": {
+      "offset_x": -8,
+      "offset_y": 10,
+      "scale_x": 2.4324581623077393,
+      "scale_y": 5.332511901855469,
+      "texture": "Screenshot 2026-09-28 201826.png"
+    },
+    "head_top": {
+      "offset_x": -8,
+      "offset_y": 10,
+      "scale_x": 2.4324581623077393,
+      "scale_y": 5.332511901855469,
+      "texture": "Screenshot 2026-09-28 201826.png"
+    },
+    "leftArm_back": {
+      "offset_x": -235,
+      "offset_y": 49,
+      "rotation": -178.89840698242188,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.4962207078933716,
+      "texture": "Screenshot 2026-09-28 201835.png"
+    },
+    "leftArm_bottom": "Screenshot 2026-09-28 201820.png",
+    "leftArm_front": {
+      "offset_x": -235,
+      "offset_y": 49,
+      "rotation": -178.89840698242188,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.4962207078933716,
+      "texture": "Screenshot 2026-09-28 201835.png"
+    },
+    "leftArm_left": {
+      "offset_x": -235,
+      "offset_y": 49,
+      "rotation": -178.89840698242188,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.4962207078933716,
+      "texture": "Screenshot 2026-09-28 201835.png"
+    },
+    "leftArm_right": {
+      "offset_x": -235,
+      "offset_y": 49,
+      "rotation": -178.89840698242188,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.4962207078933716,
+      "texture": "Screenshot 2026-09-28 201835.png"
+    },
+    "leftArm_top": "Screenshot 2026-09-28 201820.png",
+    "leftLeg_back": {
+      "offset_x": -3,
+      "offset_y": 53,
+      "rotation": -179.724609375,
+      "scale_x": 2.181272506713867,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-09-28 201904.png"
+    },
+    "leftLeg_bottom": "Screenshot 2026-09-28 201820.png",
+    "leftLeg_front": {
+      "offset_x": -3,
+      "offset_y": 53,
+      "rotation": -179.724609375,
+      "scale_x": 2.181272506713867,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-09-28 201904.png"
+    },
+    "leftLeg_left": {
+      "offset_x": -3,
+      "offset_y": 53,
+      "rotation": -179.724609375,
+      "scale_x": 2.181272506713867,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-09-28 201904.png"
+    },
+    "leftLeg_right": {
+      "offset_x": -3,
+      "offset_y": 53,
+      "rotation": -179.724609375,
+      "scale_x": 2.181272506713867,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-09-28 201904.png"
+    },
+    "leftLeg_top": "Screenshot 2026-09-28 201820.png",
+    "rightArm_back": {
+      "offset_x": -235,
+      "offset_y": 49,
+      "rotation": -178.89840698242188,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.4962207078933716,
+      "texture": "Screenshot 2026-09-28 201835.png"
+    },
+    "rightArm_bottom": "Screenshot 2026-09-28 201820.png",
+    "rightArm_front": {
+      "offset_x": -235,
+      "offset_y": 49,
+      "rotation": -178.89840698242188,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.4962207078933716,
+      "texture": "Screenshot 2026-09-28 201835.png"
+    },
+    "rightArm_left": {
+      "offset_x": -235,
+      "offset_y": 49,
+      "rotation": -178.89840698242188,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.4962207078933716,
+      "texture": "Screenshot 2026-09-28 201835.png"
+    },
+    "rightArm_right": {
+      "offset_x": -235,
+      "offset_y": 49,
+      "rotation": -178.89840698242188,
+      "scale_x": 0.05761157348752022,
+      "scale_y": 1.4962207078933716,
+      "texture": "Screenshot 2026-09-28 201835.png"
+    },
+    "rightArm_top": "Screenshot 2026-09-28 201820.png",
+    "rightLeg_back": {
+      "offset_x": -3,
+      "offset_y": 53,
+      "rotation": -179.724609375,
+      "scale_x": 2.181272506713867,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-09-28 201904.png"
+    },
+    "rightLeg_bottom": "Screenshot 2026-09-28 201820.png",
+    "rightLeg_front": {
+      "offset_x": -3,
+      "offset_y": 53,
+      "rotation": -179.724609375,
+      "scale_x": 2.181272506713867,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-09-28 201904.png"
+    },
+    "rightLeg_left": {
+      "offset_x": -3,
+      "offset_y": 53,
+      "rotation": -179.724609375,
+      "scale_x": 2.181272506713867,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-09-28 201904.png"
+    },
+    "rightLeg_right": {
+      "offset_x": -3,
+      "offset_y": 53,
+      "rotation": -179.724609375,
+      "scale_x": 2.181272506713867,
+      "scale_y": 0.10328170657157898,
+      "texture": "Screenshot 2026-09-28 201904.png"
+    },
+    "rightLeg_top": "Screenshot 2026-09-28 201820.png",
+    "torso_back": {
+      "offset_x": 28,
+      "offset_y": -60,
+      "rotation": 179.66949462890625,
+      "scale_x": 1.5875608921051025,
+      "scale_y": 4.1450886726379395,
+      "texture": "Screenshot 2026-09-28 201820.png"
+    },
+    "torso_bottom": {
+      "offset_x": -12,
+      "texture": "Screenshot 2026-09-28 201820.png"
+    },
+    "torso_front": {
+      "offset_x": 28,
+      "offset_y": -60,
+      "rotation": 179.66949462890625,
+      "scale_x": 1.5875608921051025,
+      "scale_y": 4.1450886726379395,
+      "texture": "Screenshot 2026-09-28 201840.png"
+    },
+    "torso_left": {
+      "offset_x": 28,
+      "offset_y": -60,
+      "rotation": 179.66949462890625,
+      "scale_x": 1.5875608921051025,
+      "scale_y": 4.1450886726379395,
+      "texture": "Screenshot 2026-09-28 201820.png"
+    },
+    "torso_right": {
+      "offset_x": 28,
+      "offset_y": -60,
+      "rotation": 179.66949462890625,
+      "scale_x": 1.5875608921051025,
+      "scale_y": 4.1450886726379395,
+      "texture": "Screenshot 2026-09-28 201820.png"
+    },
+    "torso_top": {
+      "offset_x": -12,
+      "texture": "Screenshot 2026-09-28 201820.png"
+    }
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_cb3b330533cf64d6",
+  "bodyparts": {
+    "head": {
+      "offset": [
+        0,
+        1.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftArm": {
+      "offset": [
+        0,
+        1.0,
+        -0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftLeg": {
+      "offset": [
+        0,
+        -0.1,
+        0.25
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightArm": {
+      "offset": [
+        0,
+        1.0,
+        0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightLeg": {
+      "offset": [
+        0,
+        -0.1,
+        -0.25
+      ],
+      "rotation": [
+        0,
+        180,
+        0
+      ],
+      "scale": [
+        -1,
+        1,
+        1
+      ]
+    },
+    "torso": {
+      "offset": [
+        0,
+        0.4,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [
+    {
+      "anchor_part": "head",
+      "attachTo": "head",
+      "choice": "juggernaut-head.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "juggernaut-head.glb",
+      "id": "juggernaut-head.glb",
+      "offset": [
+        0.8598523139953613,
+        -2.7432682514190674,
+        0.6992034912109375
+      ],
+      "rotation": [
+        -97.10527038574219,
+        -9.528778076171875,
+        0.0
+      ],
+      "scale": [
+        0.8376375436782837,
+        1.3942852020263672,
+        0.9285188317298889
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 0.7190940380096436,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "image": "Screenshot 2026-09-28 201904.png",
+        "offset_x": -897.4908447265625,
+        "offset_y": -915.8507080078125,
+        "opacity": 1.0,
+        "rotation": 248.13339233398438,
+        "scale_x": 6.382925033569336,
+        "scale_y": 0.6969934105873108
+      },
+      "type": ""
+    },
+    {
+      "anchor_part": "torso",
+      "attachTo": "torso",
+      "choice": "juggernaut-torso.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "juggernaut-torso.glb",
+      "id": "juggernaut-torso.glb",
+      "offset": [
+        2.2368412017822266,
+        -3.0875155925750732,
+        0.33200693130493164
+      ],
+      "rotation": [
+        -92.97430419921875,
+        -2.093048095703125,
+        -1.266845703125
+      ],
+      "scale": [
+        0.7013156414031982,
+        1.0194000005722046,
+        1.2466031312942505
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 1.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "image": "Screenshot 2026-09-28 201835.png",
+        "offset_x": 236.22998046875,
+        "offset_y": 0.0,
+        "opacity": 1.0,
+        "rotation": 0.0,
+        "scale_x": 6.634110450744629,
+        "scale_y": 1.0
+      },
+      "type": ""
+    },
+    {
+      "anchor_part": "leftLeg",
+      "attachTo": "leftLeg",
+      "choice": "juggernaut-leftleg.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "juggernaut-leftleg.glb",
+      "id": "juggernaut-leftleg.glb",
+      "offset": [
+        0.0,
+        -1.7564263343811035,
+        0.5844545364379883
+      ],
+      "rotation": [
+        -90.4957275390625,
+        -7.050201416015625,
+        -4.571624755859375
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 1.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "image": "Screenshot 2026-09-28 201840.png",
+        "offset_x": 0.0,
+        "offset_y": 0.0,
+        "opacity": 1.0,
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 6.656945705413818
+      },
+      "type": ""
+    },
+    {
+      "anchor_part": "rightLeg",
+      "attachTo": "rightLeg",
+      "choice": "juggernaut-rightleg.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "juggernaut-rightleg.glb",
+      "id": "juggernaut-rightleg.glb",
+      "offset": [
+        0.010709285736083984,
+        -1.7564263343811035,
+        0.010709285736083984
+      ],
+      "rotation": [
+        -89.6695327758789,
+        -1.266845703125,
+        -1.266845703125
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 1.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "image": "Screenshot 2026-09-28 201835.png",
+        "offset_x": 0.0,
+        "offset_y": 254.58984375,
+        "opacity": 1.0,
+        "rotation": 0.0,
+        "scale_x": 6.223079204559326,
+        "scale_y": 1.0
+      },
+      "type": ""
+    },
+    {
+      "anchor_part": "leftArm",
+      "attachTo": "leftArm",
+      "choice": "juggernaut-leftarm.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": false,
+      "glb": "juggernaut-leftarm.glb",
+      "id": "juggernaut-leftarm.glb",
+      "offset": [
+        2.2368412017822266,
+        1.3417987823486328,
+        0.19430828094482422
+      ],
+      "rotation": [
+        91.26678466796875,
+        -0.4406585693359375,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 1.0,
+        "color": [
+          0.9944918751716614,
+          1.0,
+          1.0
+        ],
+        "image": "Screenshot 2026-09-28 201826.png",
+        "offset_x": 511.6278076171875,
+        "offset_y": 0.0,
+        "opacity": 1.0,
+        "rotation": 70.50182342529297,
+        "scale_x": 7.501843452453613,
+        "scale_y": 1.0
+      },
+      "type": ""
+    },
+    {
+      "anchor_part": "rightArm",
+      "attachTo": "rightArm",
+      "choice": "juggernaut-rightarm.glb",
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "glb": "juggernaut-rightarm.glb",
+      "id": "juggernaut-rightarm.glb",
+      "offset": [
+        -0.10403966903686523,
+        1.2958993911743164,
+        -0.9302330017089844
+      ],
+      "rotation": [
+        85.48345947265625,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "",
+      "texture": {
+        "brightness": 1.0,
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "image": "Screenshot 2026-09-28 201840.png",
+        "offset_x": 0.0,
+        "offset_y": 0.0,
+        "opacity": 1.0,
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 6.656945705413818
+      },
+      "type": ""
+    }
+  ],
+  "created_at": "2026-07-10T18:44:15Z",
+  "format_version": 1,
+  "name": "juggernautv1",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-09-28T20:37:21Z"
+}

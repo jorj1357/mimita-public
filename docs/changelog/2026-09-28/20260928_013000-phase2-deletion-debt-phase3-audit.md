@@ -121,3 +121,22 @@
 - Tuned generated crates to right themselves faster: lower angular damping,
   stronger resting righting torque, less aggressive support damping, and an
   18-tick stable-rest requirement instead of 45 ticks.
+
+## Actor seam and near-ground follow-up
+
+- Added a code-owned touching-face seam rule for opposite-facing world contacts
+  within 0.015 m, removing the non-blocking interior side of touching block
+  faces instead of treating it as a second wall.
+- Flat walkable responses near the feet now use the upward support normal for
+  velocity response, preventing a rounded limb/edge contact from launching the
+  player sideways while exact triangle correction remains authoritative.
+- Added a 0.05 m/s near-ground tolerance that preserves grounded state across
+  tiny rounded-feature gaps; jump/down-dash vertical speeds do not qualify.
+- Added close-feature reduction for one actor part at a connected slope-to-wall
+  edge. When independent triangle queries report both surfaces within the
+  rounded-feature radius, the manifold keeps the normal that actually blocks
+  the current movement instead of creating an artificial wedge.
+- Preserved the oriented original face normal on each contact. Walkable slopes
+  now use that face normal for movement response while retaining rounded feature
+  normals for exact recovery and non-walkable edge safety, preventing a finite
+  slope edge from acting as an invisible radial wall.

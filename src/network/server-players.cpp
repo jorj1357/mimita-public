@@ -351,13 +351,14 @@ static void getInitialInventory(std::vector<std::string>& out, int setId)
 // ── Centralized spawn/respawn reset ──────────────────────────────────
 void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
 {
-    // Health and death. A role health override applies unless a host healthall
-    // override is set (the debug override wins, preserving its behavior).
+    // Health and death. A self-only healthme override applies to this player
+    // only; the host-wide healthall override remains the stronger global one.
     player.dead = false;
     const ActorSpawnProfile profile = serverResolveActorSpawnProfile(player.id);
     const int overrideHp = serverGameOverrides().maxHpOverride;
     const int maxHp = overrideHp > 0 ? overrideHp
-                   : (profile.health > 0 ? profile.health : 100);
+                   : (player.healthOverrideEnabled ? player.healthOverrideValue
+                   : (profile.health > 0 ? profile.health : 100));
     player.maxHealth = maxHp;
     player.health = maxHp;
     if (!profile.avatarName.empty())

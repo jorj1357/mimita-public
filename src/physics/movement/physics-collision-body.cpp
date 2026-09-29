@@ -143,17 +143,60 @@ std::vector<BodyWeaponSphere> collectBodyWeaponSpheres(Player& p, bool includeBo
         gBW.bodyPartSpheresMs = std::chrono::duration<float, std::milli>(tb1 - tb0).count();
     }
 
-    // 2. Weapon collision spheres — JSON only, no fallback.
+    // 2. Weapon collision samples. The active actor-triangle solver still uses
+    // the old simple weapon hitbox mode here: explicit JSON spheres plus
+    // sampled spheres for configured capsules. Weapon render triangles stay a
+    // fallback only; they are not part of the normal weapon-world path yet.
     {
         auto tw0 = std::chrono::steady_clock::now();
-        if (p.weaponCollisionDebug.fromJsonConfig && p.weaponCollisionDebug.valid)
+        const auto& wcd = p.weaponCollisionDebug;
+        if (wcd.valid)
         {
-            const auto& wcd = p.weaponCollisionDebug;
-            gBW.weaponCapsuleSphereCount = (int)wcd.spheres.size();
-            for (const auto& ds : wcd.spheres)
+            if (wcd.fromJsonConfig)
             {
-                if (!ds.collidesWithWorld) continue;
-                spheres.push_back({ds.currentCenter, ds.radius, ds.name.c_str(), ds.sweepDelta});
+                gBW.weaponCapsuleSphereCount = (int)wcd.spheres.size();
+                for (const auto& ds : wcd.spheres)
+                {
+                    if (!ds.collidesWithWorld) continue;
+                    spheres.push_back({ds.currentCenter, ds.radius,
+                                       ds.name.c_str(), ds.sweepDelta});
+                }
+            }
+            else if (wcd.capsuleMode)
+            {
+                // Capsule mode is the simple pre-triangle weapon collider.
+                // Sample each configured capsule like the existing JSON mode
+                // does, so the active solver receives the same world contacts
+                // without introducing a second collision response owner.
+                constexpr int CAPSULE_SAMPLES = 8;
+                const auto addCapsuleSamples = [&](const WeaponColliderDebugCapsule& cap) {
+                    if (!cap.enabled || cap.radius <= 0.0f) return;
+                    for (int si = 0; si < CAPSULE_SAMPLES; ++si)
+                    {
+                        const float t = (CAPSULE_SAMPLES > 1)
+                            ? static_cast<float>(si) / static_cast<float>(CAPSULE_SAMPLES - 1)
+                            : 0.5f;
+                        const glm::vec3 current =
+                            cap.currentStart + (cap.currentEnd - cap.currentStart) * t;
+                        const glm::vec3 previous =
+                            cap.previousStart + (cap.previousEnd - cap.previousStart) * t;
+                        spheres.push_back({current, cap.radius, "weapon",
+                                           current - previous});
+                    }
+                };
+
+                if (!wcd.capsules.empty())
+                {
+                    for (const auto& cap : wcd.capsules)
+                        addCapsuleSamples(cap);
+                }
+                else
+                {
+                    addCapsuleSamples(wcd.capsule);
+                }
+                gBW.weaponCapsuleSphereCount =
+                    static_cast<int>(spheres.size()) -
+                    (includeBodyParts ? gBW.bodyPartSphereCount : 0);
             }
         }
         auto tw1 = std::chrono::steady_clock::now();

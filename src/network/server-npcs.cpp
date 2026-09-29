@@ -17,6 +17,7 @@
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-combat.h"
+#include "npc/npc-difficulty-config.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-combat-log.h"
 #include "debug/structured-log.h"
@@ -258,7 +259,7 @@ static void respawnServerNpc(Npc& npc)
         npcApplyLoadout(npc, profile.weapons, profile.startingWeapon);
     npc.body.killedBy.clear();
     npc.body.spawnFlashTimer = 10.0f;
-    npc.attackCooldown = 0.0f;
+    npc.attackCooldown = npcSpawnFireDelaySeconds(npc);
     resetAllWeaponRuntimesForSpawn(npc.body, "server-npc-respawn");
     finalizeServerNpcSpawn(npc, ActorSpawnReason::Respawn);
     printf("%s [SERVER NPC RESPAWN] id=%u pos=(%.2f,%.2f,%.2f)\n",
@@ -710,8 +711,9 @@ void simulateSharedNpcs(SOCKET sock,
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
 
-    // Each NPC targets its own nearest HOSTILE actor: live players and other
-    // NPCs. Unteamed modes (FFA/sandbox) make everyone hostile; TDM only enemies.
+    // Each NPC targets its own nearest actor according to npc-difficulty.json:
+    // targetMode=closest preserves nearest-hostile behavior, while player
+    // selects the nearest live human player and excludes NPC targets.
     // Damage stays server-authoritative: an NPC's damage to its mirror is routed
     // onto the real target, so NPCs behave exactly like players.
     auto actorsAreHostile = [](int a, int b) {
@@ -722,6 +724,9 @@ void simulateSharedNpcs(SOCKET sock,
         auto it = npcs.find(npc.id);
         return it != npcs.end() ? it->second.matchTeam : npc.body.matchTeam;
     };
+    const auto& npcDifficulty = NpcDifficultyConfig::instance().settings();
+    const bool playersOnly = npcDifficulty.targetMode == "player";
+    const bool allowNpcTargets = npcDifficulty.damageOtherNpcs && !playersOnly;
 
     for (Npc& n : npcSystem.all())
     {
@@ -733,7 +738,30 @@ void simulateSharedNpcs(SOCKET sock,
         ServerPlayer* nearestPlayer = nullptr;
         Npc* nearestNpc = nullptr;
 
-        if (n.behavior.active)
+        auto chooseNearestPlayer = [&]() {
+            float bestD2 = std::numeric_limits<float>::max();
+            for (auto& kv : players)
+            {
+                ServerPlayer& p = kv.second;
+                if (p.dead || p.connectionStale) continue;
+                const glm::vec3 d = p.pos - n.body.pos;
+                const float d2 = glm::dot(d, d);
+                if (d2 < bestD2)
+                {
+                    bestD2 = d2;
+                    nearestPlayer = &p;
+                    nearestNpc = nullptr;
+                }
+            }
+        };
+
+        if (playersOnly)
+        {
+            // Explicit player mode intentionally ignores teams: every NPC
+            // attacks the nearest live human rather than another NPC.
+            chooseNearestPlayer();
+        }
+        else if (n.behavior.active)
         {
             // Scored target selection. Weights come only from the behavior
             // profile; the legacy nearest-hostile path is used without one.
@@ -764,7 +792,7 @@ void simulateSharedNpcs(SOCKET sock,
                 if (s > bestScore) { bestScore = s; nearestPlayer = &p; nearestNpc = nullptr; }
                 if (isCurrent) currentScore = s;
             }
-            for (Npc& other : npcSystem.all())
+            if (allowNpcTargets) for (Npc& other : npcSystem.all())
             {
                 if (&other == &n) continue;
                 if (other.body.dead || other.body.currentHp <= 0) continue;
@@ -817,7 +845,7 @@ void simulateSharedNpcs(SOCKET sock,
                 const float d2 = glm::dot(d, d);
                 if (d2 < bestD2) { bestD2 = d2; nearestPlayer = &p; nearestNpc = nullptr; }
             }
-            for (Npc& other : npcSystem.all())
+            if (allowNpcTargets) for (Npc& other : npcSystem.all())
             {
                 if (&other == &n) continue;
                 if (other.body.dead || other.body.currentHp <= 0) continue;

@@ -42,6 +42,7 @@ BUILD_ROOT = DEV_ROOT / "builds"
 STATE_PATH = DEV_ROOT / "state.json"
 LOCK_PATH = DEV_ROOT / "dev-loop.lock"
 PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
+LAUNCH_MODE_PATH = ROOT / "devscripts" / "dev-launch-modes.json"
 DEFAULT_MAP_POOL_PATH = ROOT / "config" / "gamemode-good-maps.json"
 
 POLL_SECONDS = 0.15
@@ -64,6 +65,7 @@ WATCH_FILES = (
     ROOT / "build_game_dll.py",
     ROOT / "build_toolchain.py",
     DEFAULT_MAP_POOL_PATH,
+    LAUNCH_MODE_PATH,
 )
 
 
@@ -269,6 +271,25 @@ def load_profile(name: str) -> dict:
     return profile
 
 
+def load_launch_mode(mode_id: str) -> dict:
+    """Load the small JSON table that maps dev-loop mode numbers to args."""
+    try:
+        config = read_json(LAUNCH_MODE_PATH)
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"[DEV] launch-mode config invalid {LAUNCH_MODE_PATH}: {error}") from error
+    modes = config.get("modes") if isinstance(config, dict) else None
+    mode = modes.get(str(mode_id)) if isinstance(modes, dict) else None
+    if not isinstance(mode, dict):
+        available = ", ".join(sorted(modes.keys())) if isinstance(modes, dict) else "(none)"
+        raise SystemExit(f"[DEV] unknown launch mode {mode_id}; available: {available}")
+    for key in ("server_args", "client_args"):
+        if not isinstance(mode.get(key, []), list) or not all(
+            isinstance(value, (str, int, float)) for value in mode.get(key, [])
+        ):
+            raise SystemExit(f"[DEV] launch mode {mode_id} has invalid {key}")
+    return mode
+
+
 def next_build_number() -> int:
     numbers = []
     if BUILD_ROOT.is_dir():
@@ -334,8 +355,14 @@ def publish_build(number: int) -> Path:
 
 
 class DevLoop:
-    def __init__(self, profile: dict, auto_restart: bool):
+    def __init__(self, profile: dict, auto_restart: bool, launch_mode: str | None = None):
         self.profile = profile
+        self.launch_mode_id = str(
+            launch_mode if launch_mode is not None
+            else profile.get("launch_mode", 1)
+        )
+        self.launch_mode = load_launch_mode(self.launch_mode_id)
+        self.mode_picker_open = False
         # Builds always run while this loop is open. Auto-start only controls
         # whether a successful build or an exited child may launch the EXE.
         self.auto_restart = bool(auto_restart)
@@ -368,6 +395,7 @@ class DevLoop:
     def state(self, status: str = "idle") -> dict:
         return {
             "profile": self.profile.get("name", "unnamed"),
+            "launch_mode": self.launch_mode_id,
             "running_build": self.running_build,
             "latest_successful_build": self.latest_build,
             "source_generation": self.generation,
@@ -519,6 +547,7 @@ class DevLoop:
             "--no-discord-notification",
             "--room-file", str(self.room_file_path),
         ]
+        server_args.extend(str(value) for value in self.launch_mode.get("server_args", []))
         # Give the server an explicit host identity. The client is launched
         # with client_name below, so falling back to that same value keeps
         # host-only commands working even when the profile omits a separate
@@ -578,6 +607,7 @@ class DevLoop:
             "--map", map_name,
             "--name", str(self.profile.get("client_name", "NPC Dev")),
         ]
+        client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
         print(f"[DEV] launching build {self.latest_build} client")
         client = subprocess.Popen(
             client_args,
@@ -645,14 +675,34 @@ class DevLoop:
     def _status_lines(self) -> list[str]:
         lines = [
             "",
+            f"LAUNCH MODE: {self.launch_mode_id} ({self.launch_mode.get('name', 'unnamed')})",
             f"RUNNING: {self.running_build or '(none)'}",
             f"LATEST:  {self.latest_build or '(none)'}",
             f"AUTO-START: {'ON' if self.auto_restart else 'OFF'}",
         ]
         if self.latest_stale:
             lines.append("LATEST BUILD IS STALE")
-        lines.append("[1] Build/retry or switch to newest  [A] Toggle auto-start  [Q] Quit")
+        lines.append("[1] Build/retry or launch  [2] Choose launch mode  [A] Auto-start  [Q] Quit")
         return lines
+
+    def show_launch_modes(self) -> None:
+        try:
+            config = read_json(LAUNCH_MODE_PATH)
+            modes = config.get("modes", {}) if isinstance(config, dict) else {}
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"[DEV] could not read launch modes: {error}")
+            return
+        if not isinstance(modes, dict) or not modes:
+            print("[DEV] no launch modes are configured")
+            return
+        self.mode_picker_open = True
+        print("[DEV] Choose a launch mode. Press its number:")
+        for mode_id in sorted(modes, key=lambda value: (not str(value).isdigit(), str(value))):
+            mode = modes[mode_id]
+            name = mode.get("name", "unnamed") if isinstance(mode, dict) else "unnamed"
+            selected = " (selected)" if str(mode_id) == self.launch_mode_id else ""
+            print(f"[DEV]   {mode_id} = {name}{selected}")
+        print("[DEV] Mode selection changes the next server/client launch.")
 
     def print_status(self, force: bool = False) -> None:
         status_line = (
@@ -700,6 +750,28 @@ class DevLoop:
         if not msvcrt.kbhit():
             return
         key = msvcrt.getwch().lower()
+        if self.mode_picker_open:
+            try:
+                selected = load_launch_mode(key)
+            except SystemExit:
+                selected = None
+            if selected is not None:
+                self.launch_mode_id = key
+                self.launch_mode = selected
+                self.mode_picker_open = False
+                self.last_message = (
+                    f"launch mode {key} selected: {selected.get('name', 'unnamed')}"
+                )
+                self.save_state("launch_mode_selected")
+                print(f"[DEV] selected launch mode {key}: {selected.get('name', 'unnamed')}")
+                self.print_status(force=True)
+            elif key == "q":
+                self.mode_picker_open = False
+                print("[DEV] launch mode selection cancelled")
+            return
+        if key == "2":
+            self.show_launch_modes()
+            return
         if key == "1":
             if self.latest_stale or self.latest_build is None:
                 self.manual_launch_requested = True
@@ -729,6 +801,7 @@ class DevLoop:
         watcher.start()
         self.save_state("starting")
         print(f"[DEV] profile={self.profile.get('name', 'unnamed')}")
+        print(f"[DEV] launch mode={self.launch_mode_id} ({self.launch_mode.get('name', 'unnamed')})")
         print(f"[DEV] root={ROOT}")
         print("[DEV] one build at a time; edits during a build queue another build")
 
@@ -756,11 +829,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="MiMITA incremental development loop")
     parser.add_argument("--profile", default="npc-navigation")
     parser.add_argument("--auto-restart", action="store_true")
+    parser.add_argument(
+        "--launch-mode",
+        help="numeric dev launch mode from devscripts/dev-launch-modes.json",
+    )
     args = parser.parse_args()
     owner_pid = acquire_dev_loop_lock()
     profile = load_profile(args.profile)
     try:
-        DevLoop(profile, args.auto_restart).run()
+        DevLoop(profile, args.auto_restart, args.launch_mode).run()
     finally:
         release_dev_loop_lock(owner_pid)
     return 0

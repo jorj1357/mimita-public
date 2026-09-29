@@ -138,6 +138,24 @@ solid prisms. Its rounded-feature shell is owned by
 Physical entities now call this same rounded path for world contacts. GLB
 triangles and engine-generated triangles therefore share the same contact
 language once supplied to `collectActorMeshContacts`; the source format does
+not change the feature semantics.
+
+The actor manifold also applies a small code-owned touching-face seam rule:
+opposite-facing world contacts whose points are within 0.015 m are treated as
+an internal block seam, and only the blocking/deeper side is retained. This is
+separate from `collisionSkin` and `edgeTouchTolerance`; those values must not
+be used to fake a topological weld.
+
+For a single actor part at a connected slope-to-wall edge, the manifold also
+collapses nearby non-opposing feature contacts and retains the normal that
+blocks the current movement direction. This avoids turning one geometric edge
+into an artificial two-normal wedge while preserving separate contacts at
+real corners.
+
+Walkable finite slopes additionally retain their oriented original face normal
+for actor movement response. Their rounded edge normal remains available for
+non-walkable edge safety and exact depenetration, but the end of a walkable
+slope is not allowed to become a radial invisible wall.
 not create a separate collision universe.
 
 ---

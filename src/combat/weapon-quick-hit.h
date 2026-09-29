@@ -26,6 +26,7 @@ struct World;
 
 struct QuickHitState {
     bool active = false;
+    uint32_t startupTicksRemaining = 0;
     uint32_t activeTicksRemaining = 0;
     uint32_t visualReturnTicksRemaining = 0;
     uint32_t attackSequenceId = 0;

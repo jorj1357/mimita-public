@@ -18,6 +18,7 @@
     "ground_dash_impulse": 118.0,
     "air_dash_impulse": 62.0,
     "down_dash_speed": -110.0,
+    "external_impulse_resistance_multiplier": 1.0,
     "dash_enabled": true,
     "down_dash_enabled": true,
     "freeze_enabled": true

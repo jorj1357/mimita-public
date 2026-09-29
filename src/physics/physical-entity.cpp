@@ -25,7 +25,10 @@
 #include "physics/config.h"
 #include "physics/movement/actor-triangle-solver.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "config/material-config.h"
+#include "impact/destructible-geometry.h"
 #include "impact/destructible-render.h"
+#include "impact/impact-system.h"
 #include "world/world.h"
 #include "entities/player.h"
 #include "map/map-loader-collision.h"
@@ -317,10 +320,12 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             std::vector<ActorCollisionMesh> meshes{objectMesh};
             std::vector<int> candidates;
             std::vector<RecoveryContact> contacts;
+            std::vector<CollisionTriangle> nearbyLocal;
             for (int collisionPass = 0; collisionPass < 3; ++collisionPass)
             {
                 meshes[0].previousTransform = e.previousTransform;
                 meshes[0].desiredTransform = e.transform;
+                meshes[0].localTriangles = &e.localTriangles;
                 const AABB sweepBox = makeSweptActorMeshAABB(
                     meshes, glm::vec3(0.0f));
                 candidates.clear();
@@ -328,6 +333,37 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                                             "physicalEntitySweep");
                 if (candidates.empty())
                     break;
+
+                // Cached chunk broadphase: a body only needs the chunks that
+                // overlap the world triangles it could actually touch. Without
+                // this, a destructible body tests every generated triangle
+                // against the world each tick.
+                const std::vector<CollisionTriangle>* entityTriangles = &e.localTriangles;
+                if (e.destructible.enabled &&
+                    !e.destructible.chunkTriangleRanges.empty())
+                {
+                    AABB worldBounds;
+                    worldBounds.min = glm::vec3(1e30f);
+                    worldBounds.max = glm::vec3(-1e30f);
+                    for (int ci : candidates)
+                    {
+                        const CollisionTriangle& wtri =
+                            world.collisionMesh.triangles[(size_t)ci];
+                        const AABB tb = makeTriangleAABB(wtri);
+                        worldBounds.min = glm::min(worldBounds.min, tb.min);
+                        worldBounds.max = glm::max(worldBounds.max, tb.max);
+                    }
+                    worldBounds.min -= glm::vec3(0.1f);
+                    worldBounds.max += glm::vec3(0.1f);
+                    nearbyLocal.clear();
+                    MimitaImpact::DestructibleGeometrySystem::instance().collectLocalTriangles(
+                        e.destructible, e.transform, worldBounds, nearbyLocal);
+                    if (nearbyLocal.empty())
+                        break;
+                    entityTriangles = &nearbyLocal;
+                }
+                meshes[0].localTriangles = entityTriangles;
+
                 std::vector<RecoveryContact> passContacts = collectActorMeshContacts(
                     world, meshes, candidates, glm::vec3(e.transform[3]),
                     true, -1.0f);
@@ -1141,6 +1177,38 @@ bool physicalEntitySelfTest(std::string* outSummary)
         check(glm::length(glm::vec3(right->transform[3]) -
                           glm::vec3(left->transform[3])) >= 0.99f,
               "dynamic crates do not remain overlapped");
+    }
+
+    // 6. A destructible dynamic crate keeps the full rigid-body behavior: it
+    // falls under gravity and rests on the floor while using the generated
+    // collision mesh (not the original 12-triangle box).
+    {
+        system.clear();
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(0.5f));
+        const uint32_t id = system.add(
+            box, glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 5.0f)),
+            PhysicalEntityMotion::Dynamic);
+        PhysicalEntity* destructible = system.find(id);
+        destructible->halfExtents = glm::vec3(0.5f);
+        destructible->density = 700.0f;
+        destructible->mass = 700.0f;
+        destructible->friction = 0.7f;
+        destructible->linearDamping = 0.15f;
+        destructible->angularDamping = 2.5f;
+        // Keep the test mesh modest; the mesher reads these before building.
+        destructible->destructible.chunkCountPerAxis = 2;
+        destructible->destructible.cellsPerChunkAxis = 4;
+        MimitaImpact::ImpactSystem::instance().initializeEntity(
+            *destructible, MimitaImpact::materialIdForName("wood"),
+            glm::vec3(0.5f));
+        const bool generatedMesh = destructible->localTriangles.size() > 12;
+        for (int i = 0; i < 180; ++i)
+            system.advanceKinematics(1.0f / 60.0f, world);
+        check(generatedMesh, "destructible crate uses the generated collision mesh");
+        check(destructible->transform[3].z > 0.45f &&
+                  destructible->transform[3].z < 0.65f,
+              "destructible dynamic crate falls onto the floor");
     }
 
     system.clear();

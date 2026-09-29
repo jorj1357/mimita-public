@@ -113,3 +113,96 @@ identity. Normal GUI joins still use the authenticated profile name, and the
 - The server started through the room-file and room-code/ICE path.
 - The automatic client joined with the matching host identity.
 - Human test: `healthall 999` succeeded and changed health for all entities.
+
+---
+
+## Regression Occurrence 2 — host commands became unavailable again
+
+Time:
+`2026-09-28T22:55:22Z`
+
+### Observed
+
+The user reported that host commands such as `procedural_world_start
+infinite_dungeon_slayer` and `healthall 999` again reported that the connected
+player was not the host, even though that player launched the development
+server. This repeated after leaving and joining a new server session.
+
+### Expected behavior
+
+The first accepted player session for a development server must retain host
+authority for the lifetime of that server session. A reconnect must preserve
+that same authority. Host commands must reach the existing server command
+path and be accepted without depending on a display-name spelling.
+
+### Confirmed cause
+
+The earlier repair still allowed `ServerPlayer::isHost` to be recomputed from
+the player name in `computeHostFlag`. The server stored the launcher value in
+`gServerHostPlayerName`, while the actual name could come from authentication,
+the room-code join path, or a later client identity. A name mismatch therefore
+made the real first client a non-host. This was the same fragile boundary that
+the previous occurrence had only partially protected.
+
+Evidence:
+
+- `src/network/server-packets.cpp` previously compared the raw join name with
+  `gServerHostPlayerName`.
+- `src/network/server-packet-chat.cpp` rejected every host command solely from
+  `it->second.isHost`.
+- `devscripts/dev-loop.py` launches the server with `--host-player`, while the
+  client identity is carried through a separate join path.
+
+### Wrong code
+
+```cpp
+p.isHost = computeHostFlag(rawName, players.size());
+```
+
+The ICE/room-code path used the equivalent name comparison with `join->name`.
+
+### Corrected code
+
+```cpp
+void assignHostFlag(ServerPlayer& player, bool existingId)
+{
+    if (existingId && player.isHost && gServerHostPlayerId == 0)
+        gServerHostPlayerId = player.id;
+    if (!existingId && gServerHostPlayerId == 0)
+        gServerHostPlayerId = player.id;
+    player.isHost = gServerHostPlayerId == player.id;
+}
+```
+
+Both Hello and room-code join paths now call this same helper. The server
+resets `gServerHostPlayerId` at the beginning of a new server session, assigns
+the first accepted player ID as owner, and keeps that ID on reconnect.
+
+### Fix
+
+Host authority is now a server-session identity, not a display-name guess.
+`--host-player` remains useful as advertised metadata, but it no longer grants
+or removes authority. A player name can change without changing who owns the
+server session.
+
+The rejection diagnostic also reports the authoritative `hostPlayerId`, so a
+future failure immediately shows which identity the server believes owns the
+session.
+
+### Prevention
+
+- Never use display names as authorization keys.
+- Test both legacy Hello and room-code/ICE join paths.
+- Test reconnect using the same reconnect token and verify `isHost` remains
+  true for the original player ID.
+- Run `healthall 999`, `mapchange 1`, and
+  `procedural_world_start infinite_dungeon_slayer` after a fresh dev-loop
+  launch and after reconnect.
+- Preserve the `[SERVER HOST OWNER]` and `hostPlayerId` logs in future network
+  investigations.
+
+### Proof status
+
+Status remains `ATTEMPTED FIX (2)` until live human testing observes the
+commands accepted in a fresh `dev-loop.py` session and after reconnect. Source
+inspection confirms both join paths now share one stable-ID owner.

@@ -45,6 +45,15 @@ float random01(unsigned int& state)
     return (float)((state >> 8) & 0x00ffffffu) / (float)0x01000000u;
 }
 
+float npcSpawnFireDelaySeconds(Npc& npc)
+{
+    const auto& cfg = NpcDifficultyConfig::instance().settings();
+    const int span = cfg.spawnFireDelayMaxTicks - cfg.spawnFireDelayMinTicks + 1;
+    const int ticks = cfg.spawnFireDelayMinTicks +
+        static_cast<int>(random01(npc.rngState) * static_cast<float>(std::max(1, span)));
+    return static_cast<float>(ticks) / 60.0f;
+}
+
 glm::vec3 randomPlanarDirection(unsigned int& state)
 {
     float angle = random01(state) * glm::two_pi<float>();
@@ -218,6 +227,7 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
 {
     tuning = tuningForDifficulty(difficulty);
     rngState = 0x9e3779b9u ^ (id * 747796405u);
+    attackCooldown = npcSpawnFireDelaySeconds(*this);
     body.reset();
     body.username = customName.empty() ? "NPC-" + std::to_string(id) : customName;
     body.currentHp = body.maxHp;

@@ -51,6 +51,10 @@ struct RecoveryContact
     // used only for movement response so an edge/vertex behaves like a rounded
     // feature instead of a zero-radius snag point.
     glm::vec3 responseNormal{0.0f, 0.0f, 1.0f};
+    // Oriented original face normal. Walkable slope contacts use this for
+    // movement response so a finite slope edge does not become an invisible
+    // radial wall.
+    glm::vec3 surfaceNormal{0.0f, 0.0f, 1.0f};
 };
 
 // Fixed movement-geometry smoothness. This is deliberately code-owned: it

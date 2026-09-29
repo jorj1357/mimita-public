@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
@@ -19,6 +20,38 @@ namespace {
 double nowSeconds() {
     static const auto start = std::chrono::steady_clock::now();
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+std::string wallTimestampUtc() {
+    const auto now = std::chrono::system_clock::now();
+    const auto t = std::chrono::system_clock::to_time_t(now);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()) % 1000;
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &t);
+#else
+    gmtime_r(&t, &utc);
+#endif
+    char buf[32]{};
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &utc);
+    char out[40]{};
+    std::snprintf(out, sizeof(out), "%s.%03lldZ", buf,
+                  static_cast<long long>(ms.count()));
+    return out;
+}
+
+const char* processRole() {
+    const char* commandLine = GetCommandLineA();
+    return commandLine && (std::strstr(commandLine, "--server") ||
+                           std::strstr(commandLine, "-server"))
+        ? "server" : "client";
+}
+
+HANDLE eventsFileMutex() {
+    static HANDLE handle = CreateMutexA(nullptr, FALSE,
+                                        "Local\\MiMITA_v9_events_jsonl_v1");
+    return handle;
 }
 }
 
@@ -320,30 +353,37 @@ void StructuredLogger::createLogDir() {
 #else
     localtime_r(&t, &local);
 #endif
-    char dateBuf[16];
+    char dateBuf[16]{};
+    char runBuf[32]{};
+    // Keep the v9 log root in the repository working directory. Timestamped
+    // .dev/builds executables must not create a second log universe beside
+    // themselves. The date folder matches the existing v9 logs layout.
     std::strftime(dateBuf, sizeof(dateBuf), "%m-%d-%Y", &local);
-    std::string relPath = "logs/" + std::string(dateBuf);
+    std::strftime(runBuf, sizeof(runBuf), "%Y%m%d_%H%M%S", &local);
+    mRunId = runBuf;
+    std::string relPath = "logs/" + std::string(dateBuf) + "/" + mRunId;
 
-    // Resolve log directory from executable directory first, fallback to relative
+    const char* sharedPath = std::getenv("MIMITA_EVENTS_FILE");
+    if (sharedPath && *sharedPath)
+        mEventsPath = sharedPath;
+    else
+        mEventsPath = relPath + "/events.jsonl";
+
+    // Resolve logs from the current v9 working directory, not the executable
+    // directory. This keeps .dev/builds/<id>/mimita.exe writing into the
+    // repository's C:\mimita-v9\logs folder.
     mLogDir = relPath;
-    {
-        std::string exeDir = getExecutableDirectory();
-        std::string candidate = exeDir + relPath;
-        std::error_code ec;
-        if (std::filesystem::create_directories(candidate, ec) || !ec)
-        {
-            // Successfully created or already exists
-            mLogDir = candidate;
-        }
-        else
-        {
-            // Fallback to relative path
-            std::filesystem::create_directories(relPath, ec);
-            printf("[STRUCTURED LOG] WARNING: could not create log dir at %s (error=%d). Falling back to %s\n",
-                   candidate.c_str(), ec.value(), relPath.c_str());
-        }
-    }
-    printf("[STRUCTURED LOG] log directory: %s\n", mLogDir.c_str());
+    std::error_code ec;
+    std::filesystem::create_directories(mLogDir, ec);
+    if (ec)
+        printf("[STRUCTURED LOG] WARNING: could not create log dir at %s (error=%d)\n",
+               mLogDir.c_str(), ec.value());
+    if (!(sharedPath && *sharedPath))
+        mEventsPath = mLogDir + "/events.jsonl";
+    else
+        std::filesystem::create_directories(
+            std::filesystem::path(mEventsPath).parent_path());
+    printf("[STRUCTURED LOG] events path: %s\n", mEventsPath.c_str());
 }
 
 // ── Category file ───────────────────────────────────────────
@@ -572,42 +612,50 @@ void StructuredLogger::writeSummary() {
 void StructuredLogger::init() {
     if (mInitialized) return;
 
-    mRunId = runTimestamp();
     loadConfig();
     if (!mConfig.enabled) return;
 
     createLogDir();
-
-    // Open category files for enabled categories
-    for (int i = 0; i < (int)StructuredCategory::Count; i++) {
-        openCategoryFile((StructuredCategory)i);
+    mEventsFile = fopen(mEventsPath.c_str(), "ab");
+    if (!mEventsFile) {
+        printf("[STRUCTURED LOG] ERROR: could not open events path: %s\n",
+               mEventsPath.c_str());
+        return;
     }
-
-    writeStartupMetadata();
     mInitialized = true;
 
+    writeEvent(StructuredCategory::General, StructuredLevel::Important,
+               "logger.started", "", "canonical JSONL logger started", 0,
+               {{"path", mEventsPath}, {"run_id", mRunId},
+                {"process", processRole()},
+                {"pid", static_cast<unsigned long long>(GetCurrentProcessId())}});
+
     Debug::log(Debug::Category::General,
-        "[STRUCTURED_LOG] Initialized: dir=%s run=%s\n",
-        mLogDir.c_str(), mRunId.c_str());
+        "[STRUCTURED_LOG] Initialized: events=%s run=%s\n",
+        mEventsPath.c_str(), mRunId.c_str());
 }
 
 void StructuredLogger::shutdown() {
     if (!mInitialized) return;
 
-    writeSummary();
+    writeEvent(StructuredCategory::General, StructuredLevel::Important,
+               "logger.stopped", "", "canonical JSONL logger stopped", 0,
+               {{"path", mEventsPath}, {"run_id", mRunId}});
 
     for (int i = 0; i < (int)StructuredCategory::Count; i++) {
         if (mCategoryFiles[i]) {
-            fprintf(mCategoryFiles[i], "\n--- End of log ---\n");
             fclose(mCategoryFiles[i]);
             mCategoryFiles[i] = nullptr;
         }
     }
 
+    if (mEventsFile) {
+        fflush(mEventsFile);
+        fclose(mEventsFile);
+        mEventsFile = nullptr;
+    }
+
     mInitialized = false;
-    Debug::log(Debug::Category::General,
-        "[STRUCTURED_LOG] Shutdown complete: dir=%s run=%s\n",
-        mLogDir.c_str(), mRunId.c_str());
 }
 
 // ── Config polling (hot-reload) ─────────────────────────────
@@ -662,12 +710,9 @@ void StructuredLogger::pollConfig() {
                     return mConfig.replay;
                 }();
 
-                if (newCfg.fileOutput && !mCategoryFiles[i]) {
-                    openCategoryFile(cat);
-                } else if (!newCfg.fileOutput && mCategoryFiles[i]) {
-                    fclose(mCategoryFiles[i]);
-                    mCategoryFiles[i] = nullptr;
-                }
+                // Category routing now affects the shared events.jsonl stream;
+                // do not reopen the retired per-category .txt files.
+                (void)newCfg;
             }
         }
 
@@ -763,149 +808,70 @@ void StructuredLogger::write(const Entry& e) {
     uint64_t& counter = mEventCounters[idx];
     counter++;
 
-    // Build structured log line
-    char buf[4096];
-    int pos = 0;
-
-    // Header
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "[%s]\n", timestamp().c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Level: %s\n", levelToString(e.level).c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Category: %s\n", categoryName(e.category).c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Event ID: %s_%06llu\n", categoryName(e.category).c_str(),
-        (unsigned long long)counter);
-    if (!e.correlationId.empty())
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Correlation ID: %s\n", e.correlationId.c_str());
-    if (!e.reason.empty())
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Reason: %s\n", e.reason.c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Source: %s\n", e.sourceFile.c_str());
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Line: %d\n", e.sourceLine);
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-        "Function: %s\n", e.functionName.c_str());
-    if (e.tick > 0)
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Tick: %u\n", e.tick);
-    if (e.frame > 0)
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Frame: %u\n", e.frame);
-
-    // Numeric fields
-    for (size_t i = 0; i < e.numericKeys.size(); i++) {
-        const std::string& key = e.numericKeys[i];
-        double expected = i < e.numericExpected.size() ? e.numericExpected[i] : 0.0;
-        double actual = i < e.numericActual.size() ? e.numericActual[i] : 0.0;
-
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "  %s:\n", key.c_str());
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "    Expected: %.6f\n", expected);
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "    Actual:   %.6f\n", actual);
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "    Difference: %.6f\n", actual - expected);
-
-        if (e.tolerance > 0.0) {
-            double diff = std::fabs(actual - expected);
-            pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-                "    Tolerance: %.6f\n", e.tolerance);
-            pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-                "    Status: %s\n", diff <= e.tolerance ? "PASS" : "FAIL");
-        }
+    nlohmann::json fields = nlohmann::json::object();
+    for (size_t i = 0; i < e.numericKeys.size(); ++i) {
+        const double expected = i < e.numericExpected.size() ? e.numericExpected[i] : 0.0;
+        const double actual = i < e.numericActual.size() ? e.numericActual[i] : 0.0;
+        fields[e.numericKeys[i]] = {{"expected", expected},
+                                    {"actual", actual},
+                                    {"difference", actual - expected}};
     }
+    writeEvent(e.category, e.level,
+               e.eventId.empty() ? "debug.log" : e.eventId,
+               e.correlationId, e.reason, e.tick, fields,
+               e.sourceFile.c_str(), e.sourceLine, e.functionName.c_str());
+}
 
-    if (!e.message.empty())
-        pos += std::snprintf(buf + pos, sizeof(buf) - pos,
-            "Message: %s\n", e.message.c_str());
+void StructuredLogger::writeEvent(StructuredCategory category,
+                                  StructuredLevel level,
+                                  const std::string& eventName,
+                                  const std::string& correlationId,
+                                  const std::string& reason,
+                                  uint32_t tick,
+                                  const nlohmann::json& fields,
+                                  const char* sourceFile,
+                                  int sourceLine,
+                                  const char* functionName)
+{
+    if (!mInitialized || !mConfig.enabled || !shouldLog(category, level)) return;
+    const int idx = static_cast<int>(category);
+    if (idx < 0 || idx >= static_cast<int>(StructuredCategory::Count)) return;
 
-    pos += std::snprintf(buf + pos, sizeof(buf) - pos, "\n");
+    const uint64_t sequence = ++mEventCounters[idx];
+    nlohmann::json record = {
+        {"wall_time", wallTimestampUtc()},
+        {"t", nowSeconds()},
+        {"seq", ++mSequence},
+        {"run_id", mRunId},
+        {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+        {"process", processRole()},
+        {"level", levelToString(level)},
+        {"category", categoryName(category)},
+        {"event", eventName},
+        {"event_id", categoryName(category) + "_" + std::to_string(sequence)},
+        {"tick", tick},
+        {"source", sourceFile ? sourceFile : ""},
+        {"line", sourceLine},
+        {"func", functionName ? functionName : ""},
+        {"fields", fields}
+    };
+    if (!correlationId.empty()) record["correlation_id"] = correlationId;
+    if (!reason.empty()) record["reason"] = reason;
+    writeJsonLine(record, static_cast<int>(level) <=
+                           static_cast<int>(StructuredLevel::Important));
+}
 
-    std::string fileLine(buf);
-    std::string consoleLine;
-    {
-        char cbuf[512];
-        int cp = 0;
-        cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp,
-            "[%s][%s] %s%s%s", categoryName(e.category).c_str(),
-            levelToString(e.level).c_str(), e.reason.c_str(),
-            e.reason.empty() ? "" : " ", e.message.c_str());
-        if (!e.numericKeys.empty()) {
-            for (size_t i = 0; i < e.numericKeys.size(); i++) {
-                double expected = i < e.numericExpected.size() ? e.numericExpected[i] : 0.0;
-                double actual = i < e.numericActual.size() ? e.numericActual[i] : 0.0;
-                cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp,
-                    " %s: exp=%.4f act=%.4f diff=%.4f",
-                    e.numericKeys[i].c_str(), expected, actual, actual - expected);
-            }
-        }
-        cp += std::snprintf(cbuf + cp, sizeof(cbuf) - cp, "\n");
-        consoleLine = cbuf;
-    }
-
-    // ── Check if this category is throttled ───────────────────────
-    auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
-        switch (e.category) {
-            case StructuredCategory::General:         return mConfig.general;
-            case StructuredCategory::Glb:             return mConfig.glb;
-            case StructuredCategory::Replay:      return mConfig.replay;
-            case StructuredCategory::Camera:      return mConfig.camera;
-            case StructuredCategory::Audio:       return mConfig.audio;
-            case StructuredCategory::Physics:     return mConfig.physics;
-            case StructuredCategory::Performance: return mConfig.performance;
-            case StructuredCategory::Collision:   return mConfig.collision;
-            case StructuredCategory::NpcCombat:   return mConfig.npcCombat;
-            case StructuredCategory::NpcMovement: return mConfig.npcMovement;
-            case StructuredCategory::Ragdoll:     return mConfig.ragdoll;
-            case StructuredCategory::Weapons:     return mConfig.weapons;
-            case StructuredCategory::Animation:   return mConfig.animation;
-            case StructuredCategory::Gui:         return mConfig.gui;
-            case StructuredCategory::Avatar:      return mConfig.avatar;
-            case StructuredCategory::Network:     return mConfig.network;
-            case StructuredCategory::World:       return mConfig.world;
-            case StructuredCategory::Duel:        return mConfig.duel;
-            case StructuredCategory::Auth:        return mConfig.auth;
-            case StructuredCategory::Chat:        return mConfig.chat;
-            case StructuredCategory::Vip:         return mConfig.vip;
-            case StructuredCategory::Rendering:   return mConfig.rendering;
-            case StructuredCategory::GlbModels:   return mConfig.glbModels;
-            case StructuredCategory::Executable:  return mConfig.executable;
-            default: return mConfig.replay;
-        }
-    }();
-
-    if (catCfg.throttleSeconds > 0.0f)
-    {
-        // Buffer instead of writing immediately
-        ThrottledBuffer& tb = mThrottledBuffers[idx];
-        tb.lines.push_back(fileLine);
-        if (mConfig.consoleOutput)
-            tb.consoleLines.push_back(consoleLine);
-
-        // Flush if enough time has passed
-        double now = nowSeconds();
-        if (now - tb.lastFlushTime >= (double)catCfg.throttleSeconds)
-            flushThrottled(idx);
-        return;
-    }
-
-    // ── Non-throttled: write immediately ──────────────────────────
-    {
-        LogManager::instance().write(fileLine.c_str());
-        FILE* f = mCategoryFiles[idx];
-        if (f) {
-            fprintf(f, "%s", fileLine.c_str());
-            fflush(f);
-        }
-    }
-
-    if (mConfig.consoleOutput)
-        LogManager::instance().writeConsole(consoleLine.c_str(), (int)consoleLine.size());
+void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
+{
+    if (!mEventsFile) return;
+    const std::string line = record.dump() + "\n";
+    static std::mutex writeMutex;
+    std::lock_guard<std::mutex> lock(writeMutex);
+    HANDLE named = eventsFileMutex();
+    if (named) WaitForSingleObject(named, INFINITE);
+    std::fwrite(line.data(), 1, line.size(), mEventsFile);
+    if (flush) std::fflush(mEventsFile);
+    if (named) ReleaseMutex(named);
 }
 
 void StructuredLogger::flushThrottled(int catIdx) {

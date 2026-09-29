@@ -18,6 +18,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <cstdarg>
 #include <cstdio>
+#include <nlohmann/json.hpp>
 
 // ── Structured debug logger ─────────────────────────────────
 // Extends the existing Debug::log system with:
@@ -169,6 +170,18 @@ public:
     // Write a structured entry
     void write(const Entry& e);
 
+    // Write one searchable record to the canonical append-only events.jsonl
+    // stream. The logger owns the file and its universal fields.
+    void writeEvent(StructuredCategory category, StructuredLevel level,
+                    const std::string& eventName,
+                    const std::string& correlationId,
+                    const std::string& reason,
+                    uint32_t tick,
+                    const nlohmann::json& fields = nlohmann::json::object(),
+                    const char* sourceFile = nullptr,
+                    int sourceLine = 0,
+                    const char* functionName = nullptr);
+
     void writeFormatted(StructuredCategory category, StructuredLevel level,
                         const char* sourceFile, int sourceLine,
                         const char* functionName, const char* format, ...);
@@ -196,6 +209,7 @@ public:
     // Public accessors for performance profiler routing
     const std::string& logDir() const { return mLogDir; }
     const std::string& runId() const { return mRunId; }
+    const std::string& eventsPath() const { return mEventsPath; }
 
 private:
     StructuredLogger() = default;
@@ -214,11 +228,15 @@ private:
     std::string categoryDirName(StructuredCategory cat) const;
     std::string timestamp() const;
     std::string runTimestamp() const;
+    void writeJsonLine(const nlohmann::json& record, bool flush = true);
 
     StructuredLogConfig mConfig;
     bool mInitialized = false;
     std::string mLogDir;       // logs/YYYY-MM-DD/
-    std::string mRunId;        // HHMMSS used for all files this run
+    std::string mRunId;        // yyyymmdd_hhmmss for this run
+    std::string mEventsPath;   // logs/yyyy-mm-dd/yyyymmdd_hhmmss/events.jsonl
+    FILE* mEventsFile = nullptr;
+    uint64_t mSequence = 0;
     uint64_t mEventCounters[(int)StructuredCategory::Count] = {};
 
     // Category file handles (nullptr = not open for this run)

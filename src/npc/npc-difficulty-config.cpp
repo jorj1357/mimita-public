@@ -48,6 +48,13 @@ bool optBool(const json& root, const char* key, bool fallback)
     return fallback;
 }
 
+int optInt(const json& root, const char* key, int fallback)
+{
+    if (root.contains(key) && root[key].is_number_integer())
+        return root[key].get<int>();
+    return fallback;
+}
+
 std::string optString(const json& root, const char* key, const std::string& fallback)
 {
     if (root.contains(key) && root[key].is_string())
@@ -103,10 +110,22 @@ bool NpcDifficultyConfig::load(const std::string& path)
         next.damageMultiplier = std::max(0.0f, optFloat(root, "damageMultiplier", next.damageMultiplier));
         next.fireDelayMin = std::max(0.0f, optFloat(root, "fireDelayMin", next.fireDelayMin));
         next.fireDelayMax = std::max(0.0f, optFloat(root, "fireDelayMax", next.fireDelayMax));
+        next.spawnFireDelayMinTicks = std::max(0, optInt(
+            root, "spawnFireDelayMinTicks", next.spawnFireDelayMinTicks));
+        next.spawnFireDelayMaxTicks = std::max(next.spawnFireDelayMinTicks, optInt(
+            root, "spawnFireDelayMaxTicks", next.spawnFireDelayMaxTicks));
         next.aggressionBonus = optFloat(root, "aggressionBonus", next.aggressionBonus);
         next.npcHitRadius = std::max(0.0f, optFloat(root, "npcHitRadius", next.npcHitRadius));
         next.forceHit = optBool(root, "forceHit", next.forceHit);
         next.npcDebugVisuals = optBool(root, "npcDebugVisuals", next.npcDebugVisuals);
+        next.targetMode = lowercaseCopy(optString(root, "targetMode", next.targetMode));
+        if (next.targetMode != "closest" && next.targetMode != "player") {
+            Debug::warn(Debug::Category::NpcCombat,
+                "[NPC DIFFICULTY] Invalid targetMode '%s'; using 'closest'.\n",
+                next.targetMode.c_str());
+            next.targetMode = "closest";
+        }
+        next.damageOtherNpcs = optBool(root, "damageOtherNpcs", next.damageOtherNpcs);
         next.turnSpeed = std::max(0.0f, optFloat(root, "turnSpeed", next.turnSpeed));
         next.aimAtTargetMin = std::max(0.0f, optFloat(root, "aimAtTargetMin", next.aimAtTargetMin));
         next.aimAtTargetMax = std::max(0.0f, optFloat(root, "aimAtTargetMax", next.aimAtTargetMax));
@@ -202,12 +221,14 @@ bool NpcDifficultyConfig::load(const std::string& path)
         ++mRevision;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::NpcCombat,
-            "[NPC DIFFICULTY] Loaded %s: maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] aggressionBonus=%.2f hitRadius=%.2f forceHit=%d panic=%d loadout=%zu mirror=%d\n",
+            "[NPC DIFFICULTY] Loaded %s: maxErr=%.1fdeg diffScale=%.2f dmg=%.2fx fireDelay=[%.2f,%.2f] spawnFireDelayTicks=[%d,%d] aggressionBonus=%.2f hitRadius=%.2f forceHit=%d panic=%d targetMode=%s damageOtherNpcs=%d loadout=%zu mirror=%d\n",
             fileName.c_str(),
             mData.maxAngularErrorDegrees, mData.difficultyErrorScale,
             mData.damageMultiplier, mData.fireDelayMin, mData.fireDelayMax,
+            mData.spawnFireDelayMinTicks, mData.spawnFireDelayMaxTicks,
             mData.aggressionBonus, mData.npcHitRadius, (int)mData.forceHit,
-            (int)mData.hitReactionEnabled, mData.weaponLoadout.size(),
+            (int)mData.hitReactionEnabled, mData.targetMode.c_str(),
+            (int)mData.damageOtherNpcs, mData.weaponLoadout.size(),
             (int)mData.mirrorMovementEnabled);
         return true;
     } catch (const json::parse_error& e) {
@@ -255,10 +276,14 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["damageMultiplier"] = mData.damageMultiplier;
     j["fireDelayMin"] = mData.fireDelayMin;
     j["fireDelayMax"] = mData.fireDelayMax;
+    j["spawnFireDelayMinTicks"] = mData.spawnFireDelayMinTicks;
+    j["spawnFireDelayMaxTicks"] = mData.spawnFireDelayMaxTicks;
     j["aggressionBonus"] = mData.aggressionBonus;
     j["npcHitRadius"] = mData.npcHitRadius;
     j["forceHit"] = mData.forceHit;
     j["npcDebugVisuals"] = mData.npcDebugVisuals;
+    j["targetMode"] = mData.targetMode;
+    j["damageOtherNpcs"] = mData.damageOtherNpcs;
     j["turnSpeed"] = mData.turnSpeed;
     j["aimAtTargetMin"] = mData.aimAtTargetMin;
     j["aimAtTargetMax"] = mData.aimAtTargetMax;

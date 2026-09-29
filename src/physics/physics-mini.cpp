@@ -193,7 +193,9 @@ static void physicsMainUpdate_Internal(
 
     // Keep local flight responsive like freecam. The server repeats this
     // movement from the networked buttons and remains authoritative.
-    if (MP_CONTEXT.active && MP_CONTEXT.flyEnabled)
+    // Dedicated/headless server simulation has no client multiplayer context.
+    // Never dereference the optional global through MP_CONTEXT on that path.
+    if (gpMpContext && gpMpContext->active && gpMpContext->flyEnabled)
     {
         // pollInput() has already converted WASD into camera-relative world
         // X/Y movement. Do not rotate it by camForward a second time.

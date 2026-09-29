@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
+#include "procedural/procedural-world.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
 #include "npc/npc-behavior.h"
@@ -225,6 +226,7 @@ std::vector<std::string> communityMapPool()
 } // namespace
 
 std::string gServerHostPlayerName;
+uint32_t gServerHostPlayerId = 0;
 
 ServerGameOverrides& serverGameOverrides()
 {
@@ -249,6 +251,9 @@ bool isServerHost()
 
 int runServer(const LaunchOptions& options)
 {
+    // A new server process/session gets exactly one host owner: its first
+    // accepted player connection. Reconnects keep that player ID.
+    gServerHostPlayerId = 0;
     setvbuf(stdout, nullptr, _IONBF, 0);
 
     // Disable audio on dedicated server — it only wastes resources
@@ -407,6 +412,11 @@ int runServer(const LaunchOptions& options)
     uint64_t totalPacketsOut = 0;
     ServerPacketStats transportStats;
     DisagreementRetransmitState disagreementRetransmit;
+
+    // A dev-loop/CLI procedural mode becomes active for the first real client
+    // instead of starting before a player exists. This lets the existing
+    // procedural command owner perform the normal authoritative teleport.
+    bool automaticProceduralStartQueued = false;
 
     // ── Dedicated server ICE support ──
     ListenServerState dedicatedIceState;
@@ -672,6 +682,38 @@ int runServer(const LaunchOptions& options)
                                nextProjectileId, tick, totalPacketsOut);
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
+
+            if (!options.proceduralMode.empty() &&
+                !automaticProceduralStartQueued &&
+                !serverGamemodeState().procedural.enabled &&
+                !players.empty())
+            {
+                if (MimitaProcedural::proceduralWorldConfig().modes.empty())
+                    MimitaProcedural::loadProceduralWorldConfig();
+                const auto* mode = MimitaProcedural::proceduralModeById(
+                    options.proceduralMode);
+                if (mode)
+                {
+                    auto firstPlayer = players.begin();
+                    ServerGamemodeState& gamemode = serverGamemodeState();
+                    gamemode.pendingProcedural.start = true;
+                    gamemode.pendingProcedural.modeId = options.proceduralMode;
+                    gamemode.pendingProcedural.seed = options.proceduralSeed != 0
+                        ? options.proceduralSeed
+                        : MimitaProcedural::proceduralWorldConfig().defaultSeed;
+                    gamemode.pendingProcedural.requesterId = firstPlayer->first;
+                    automaticProceduralStartQueued = true;
+                    printf("%s [PROCEDURAL AUTO START] mode=%s seed=%u requesterId=%u\n",
+                           serverTimestamp(), options.proceduralMode.c_str(),
+                           gamemode.pendingProcedural.seed, firstPlayer->first);
+                }
+                else
+                {
+                    printf("%s [PROCEDURAL AUTO START] rejected unknown mode=%s\n",
+                           serverTimestamp(), options.proceduralMode.c_str());
+                    automaticProceduralStartQueued = true;
+                }
+            }
 
             tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
                          pendingIceTransports);

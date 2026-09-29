@@ -24,6 +24,7 @@
 #include "persistence/persistence-emit.h"
 
 #include <cmath>
+#include <algorithm>
 #include <vector>
 
 namespace MimitaNet {
@@ -1096,10 +1097,18 @@ void handleAttackRequest(
         {
             // Start server-side quick hit attack
             shooter.physicalAttackIsLunge = false;
-            shooter.physicalAttackTimeline.start(15, 8, 15);
+            const uint32_t startupTicks = static_cast<uint32_t>(std::max(
+                0.0f, WeaponExecution::paramOr(*def, "attackStartupTicks", 15.0f)));
+            const uint32_t activeTicks = static_cast<uint32_t>(std::max(
+                0.0f, WeaponExecution::paramOr(*def, "attackActiveTicks",
+                    WeaponExecution::paramOr(*def, "activeHitboxTicks", 30.0f))));
+            const uint32_t recoveryTicks = static_cast<uint32_t>(std::max(
+                0.0f, WeaponExecution::paramOr(*def, "attackRecoveryTicks", 15.0f)));
+            shooter.physicalAttackTimeline.start(
+                startupTicks, activeTicks, recoveryTicks);
             shooter.quickHitState.active = true;
-            shooter.quickHitState.activeTicksRemaining =
-                (uint32_t)WeaponExecution::paramOr(*def, "activeHitboxTicks", 30.0f);
+            shooter.quickHitState.startupTicksRemaining = startupTicks;
+            shooter.quickHitState.activeTicksRemaining = activeTicks;
             shooter.quickHitState.attackSequenceId++;
             if (shooter.quickHitState.attackSequenceId == 0)
                 shooter.quickHitState.attackSequenceId = 1;

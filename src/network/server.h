@@ -92,10 +92,12 @@ struct ServerGameOverrides
     glm::vec3 spawnOverridePosition{0.0f};
 };
 ServerGameOverrides& serverGameOverrides();
-// The player name that launched/owns this server (from --host-player or launch
-// settings). The first player joining with this name is treated as the host and
-// may issue host-only commands. Empty = first joiner is host.
+// Display name advertised by the launcher. It is informational only; host
+// authority is assigned to the first accepted player session by stable ID.
 extern std::string gServerHostPlayerName;
+// Stable server-session owner. Names can change between launcher/auth/join
+// paths, so they must never decide host authority.
+extern uint32_t gServerHostPlayerId;
 // True when this process is the server host: dedicated (--server) or running a
 // listen server. Terminal commands gate on this.
 bool isServerHost();
@@ -263,6 +265,9 @@ struct ServerPlayer
     // Role-resolved life maximum (includes any healthall override at spawn).
     // Used by kill-heal and damage clamping so role health is not overwritten.
     int maxHealth = 100;
+    // Self-only developer health override, reapplied by authoritative respawn.
+    bool healthOverrideEnabled = false;
+    int healthOverrideValue = 100;
     // Effective weapon/loadout set for this life (role weapon_set or the
     // gamemode's community set). 0 = unrestricted/legacy.
     int weaponSetId = 0;

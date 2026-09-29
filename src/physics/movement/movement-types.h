@@ -667,6 +667,9 @@ struct MovementConfig {
     float freezeDashMinimumPassThrough = 0.001f;
 
     float maximumExternalImpulseSpeed = 0.0f;
+    // Divisor for incoming external impulse/knockback. 1 = unchanged,
+    // 10 = one tenth strength, 0.1 = ten times strength.
+    float externalImpulseResistanceMultiplier = 1.0f;
     float externalImpulseDecay = 0.0f;
     float externalImpulseSteerRate = 0.0f;
     float externalImpulseBrakeRate = 0.0f;

@@ -1,0 +1,18 @@
+{
+  "modes": {
+    "1": {
+      "name": "current",
+      "server_args": [],
+      "client_args": []
+    },
+    "2": {
+      "name": "infinite_dungeon_slayer",
+      "server_args": [
+        "--procedural-mode",
+        "infinite_dungeon_slayer",
+        "--no-npcs"
+      ],
+      "client_args": []
+    }
+  }
+}

@@ -47,25 +47,23 @@ std::string boundedPacketString(const char* value, size_t capacity)
     return std::string(value, len);
 }
 
-// True when the joining player is the server host: their name matches the
-// server's host player name (from --host-player / launch settings),
-// case-insensitively. Empty host name = the first joiner is host. Used by
-// both join paths (HelloPacket and join request) so hosts are recognized
-// regardless of how they connect.
-bool computeHostFlag(const char* rawName, size_t playerCount)
+// Host authority belongs to the first accepted player session, not a display
+// name. The same player ID is reused by reconnect, so host commands survive a
+// temporary connection loss and launcher/auth name differences cannot revoke
+// host access.
+void assignHostFlag(ServerPlayer& player, bool existingId)
 {
-    const std::string hostName = gServerHostPlayerName;
-    if (hostName.empty())
-        return playerCount <= 1;
-    size_t a = 0, b = 0;
-    while (a < std::strlen(rawName) && b < hostName.size())
+    const uint32_t previousHostId = gServerHostPlayerId;
+    if (existingId && player.isHost && gServerHostPlayerId == 0)
+        gServerHostPlayerId = player.id;
+    if (!existingId && gServerHostPlayerId == 0)
+        gServerHostPlayerId = player.id;
+    player.isHost = gServerHostPlayerId == player.id;
+    if (previousHostId != gServerHostPlayerId)
     {
-        if (std::tolower((unsigned char)rawName[a]) !=
-            std::tolower((unsigned char)hostName[b]))
-            return false;
-        ++a; ++b;
+        printf("%s [SERVER HOST OWNER] playerId=%u name=\"%s\" reason=first-accepted-session\n",
+               serverTimestamp(), gServerHostPlayerId, player.name.c_str());
     }
-    return a == std::strlen(rawName) && b == hostName.size();
 }
 
 uint16_t validClientVisualStateFlags(uint16_t flags)
@@ -880,10 +878,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     p.avatarName = boundedPacketString(
         reinterpret_cast<const HelloPacket*>(buffer)->avatarName, 16);
 
-    // The host is the player whose name matches the server's host player name
-    // (whoever launched/owns the server). Set on every join AND reconnect so the
-    // host flag survives reconnects. Case-insensitive; works with no account.
-    p.isHost = computeHostFlag(rawName, players.size());
+    assignHostFlag(p, existingId != 0);
 
     if (!existingId)
     {
@@ -1513,9 +1508,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.progressionTicket = hasVerifiedVipTicket ? vipTicket : std::string();
     p.name = uniquePlayerName(players, boundedPacketString(join->name, sizeof(join->name)), id);
     p.avatarName = boundedPacketString(join->avatarName, sizeof(join->avatarName));
-    // Host detection for the ICE/room-code join path (the host connects this
-    // way). Same rule as handleHello so host-only commands work for the host.
-    p.isHost = computeHostFlag(join->name, players.size());
+    // Same stable-ID host rule as the legacy Hello path.
+    assignHostFlag(p, existingId != 0);
     if (hasVerifiedVipTicket)
     {
         p.vipAccountId = verifiedVipAccountId;

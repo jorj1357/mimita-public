@@ -306,6 +306,8 @@ void registerDebugCommands()
 
             if (args[0] == "default" || args[0] == "reset") {
                 DevOverrides::playerHealthOverrideEnabled = false;
+                if (::gpMpContext && ::gpMpContext->active)
+                    MimitaNet::mpSendServerCommand(*::gpMpContext, "healthme default");
                 Debug::warn(Debug::Category::General,
                     "\n==================================\n"
                     "Player Health Override Disabled\n"
@@ -322,8 +324,24 @@ void registerDebugCommands()
                 return;
             }
 
-            if (value < 0) {
-                Terminal::instance().addLog("[HEALTHME] Negative values not allowed.");
+            if (value <= 0) {
+                Terminal::instance().addLog("[HEALTHME] Value must be a positive integer.");
+                return;
+            }
+
+            // In a networked session the server owns health and respawn.
+            // Keep the local value responsive, then send the self-only command
+            // through the authoritative server path.
+            if (::gpMpContext && ::gpMpContext->active)
+            {
+                DevOverrides::playerHealthOverrideEnabled = true;
+                DevOverrides::playerHealthOverrideValue = value;
+                player.maxHp = value;
+                player.currentHp = value;
+                MimitaNet::mpSendServerCommand(*::gpMpContext,
+                    "healthme " + std::to_string(value));
+                Terminal::instance().addLog(std::string("[HEALTHME] Sent self-only HP override to server: ") +
+                                             std::to_string(value));
                 return;
             }
 

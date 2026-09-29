@@ -1,5 +1,6 @@
 {
   "name": "npc-navigation",
+  "launch_mode": 1,
   "map": "coolplace",
   "map_selection": "random",
   "allowed_maps_file": "config/gamemode-good-maps.json",

@@ -585,6 +585,9 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                 RecoveryContact rc{n, point, sweep, penetration, wi, nullptr,
                                    mesh.label};
                 rc.timeOfImpact = timeOfImpact;
+                rc.surfaceNormal = wt.normal;
+                if (glm::dot(rc.surfaceNormal, n) < 0.0f)
+                    rc.surfaceNormal = -rc.surfaceNormal;
                 // Keep the exact triangle normal for depenetration, but use a
                 // rounded feature normal for response. At a face interior the
                 // closest-point vector is the face normal; at an edge or

@@ -815,3 +815,143 @@ contains the `crate_spawn` and `--moving-crate-selftest` strings.
 Pending. Spawn a crate in-game and verify it is visible and can be stood on with
 `actorTriangleSolver` enabled in `config/collision.json`.
 
+## Cold-build occurrence 14
+
+UTC time: 2026-09-29T01:09:21Z
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_011000-force-punch-knockback-tuning.md`
+
+### Why the cold build was required
+
+The requested Force Punch timing and movement knockback-resistance behavior
+change C++ movement and weapon execution owners. A cold executable was needed
+to prove the changed fixed-tick code could compile and link.
+
+### Exact cold source / boundary
+
+- `src/combat/weapon-quick-hit.{h,cpp}` — client QuickHit startup gating.
+- `src/network/server-attack.cpp` — authoritative QuickHit timeline values.
+- `src/physics/movement/movement-types.h` — movement preset field.
+- `src/config/movement-config.cpp` — movement JSON parsing/default.
+- `src/physics/movement/movement-step.cpp` — impulse consumption scaling.
+
+### Result needed from the new executable
+
+Force Punch should wait for the JSON-configured startup ticks before its
+physical contact becomes active, and the selected movement preset should scale
+incoming external impulse by the configured resistance multiplier.
+
+### Why it could not be applied through the live path
+
+These owners are currently compiled into the executable rather than exposed as
+replaceable hot gameplay-module functions.
+
+### Build result
+
+The changed translation units compiled successfully. The final link failed on
+unrelated existing unresolved terminal/config symbols including
+`registerWeaponCommands`, `registerDebugCommands`, and
+`pollWorldCrosshairConfig`; no running process was closed or replaced. A retry
+returned `SUCCESS / Nothing changed`, but did not relink a new executable.
+
+### Smallest change that would make this hot
+
+Expose QuickHit timing policy and movement impulse shaping behind the existing
+hot movement/gameplay module boundary, while keeping fixed-tick state ownership
+and network authority in the executable.
+
+### Human review
+
+Pending. A successful link and in-game test are still required.
+
+## Cold-build occurrence 15
+
+UTC time: 2026-09-29T12:56:53Z
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_125653-slope-edge-jsonl-tracking.md`
+
+### Why the cold build was required
+
+The canonical JSONL writer and actor-triangle collision event call sites are
+compiled C++ owners. A new executable was required to verify that the logger
+and collision instrumentation compile, link, and coexist with the existing
+collision self-tests.
+
+### Exact cold source / boundary
+
+- `src/debug/structured-log.{h,cpp}` — canonical `events.jsonl` writer,
+  universal fields, run directory, and shared-file environment path.
+- `src/physics/movement/actor-triangle-solver.cpp` — fixed-tick contact
+  before/after response and solve-summary events.
+
+### Result needed from the new executable
+
+The new executable needed to run `--collision-selftest` successfully and be
+capable of producing the collision event sequence during a live reproduction.
+
+### Why it could not be applied through the live path
+
+These logger and collision call sites are part of the cold executable. The
+currently available live module path does not replace the v9 central logger or
+the active actor-triangle solver call sites.
+
+### Build result
+
+The first build caught and was corrected for an instrumentation-only field
+name error. The corrected build completed with `Status: SUCCESS`; the produced
+`.dev/builds/0381/mimita.exe --collision-selftest` returned
+`[COLLISION SELFTEST] PASS`.
+
+### Smallest change that would make this hot
+
+Expose the stable JSONL logging capability and collision event emission through
+the existing replaceable gameplay/logger boundary, while keeping the logger
+file handle and fixed-tick state cold.
+
+### Human review
+
+Pending. Launch the produced build, reproduce the slope snag, verify the active
+`events.jsonl` path, and inspect the correlated before/after/summary records.
+
+## Cold-build occurrence 16
+
+UTC time:
+`2026-09-29T13:13:49Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_131349-jsonl-root-path-fix.md`
+
+### Why the cold build was required
+
+The canonical JSONL logger path owner changed so timestamped development
+executables write into the v9 repository log root instead of creating a second
+log tree under `.dev/builds/<id>/logs`.
+
+### Exact cold source / boundary
+
+- `src/debug/structured-log.cpp` — default log-directory resolution and
+  `events.jsonl` destination.
+
+### Result needed from the new executable
+
+The produced executable needed to compile with the corrected path owner and
+pass the collision self-test before live slope reproduction.
+
+### Why it could not be applied through the live path
+
+The destination is selected during cold logger initialization in the
+executable. The existing live path cannot replace that initialization owner.
+
+### Build result
+
+The build completed with `Status: SUCCESS`. The produced
+`.dev/builds/0382/mimita.exe --collision-selftest` returned
+`[COLLISION SELFTEST] PASS`.
+
+### Human review
+
+Pending. Launch the new executable from `C:\mimita-v9`, reproduce the slope
+snag, and verify that `logger.started` and collision events appear under
+`C:\mimita-v9\logs\MM-DD-YYYY\<run>\events.jsonl`.

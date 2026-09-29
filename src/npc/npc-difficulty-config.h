@@ -26,10 +26,14 @@ struct NpcDifficultySettings {
     float damageMultiplier = 1.0f;        // scales weapon damage when an NPC hits the player
     float fireDelayMin = 0.3f;            // fastest shot interval override (0 = use weapon)
     float fireDelayMax = 0.7f;            // slowest shot interval
+    int spawnFireDelayMinTicks = 1;       // first-fire delay after spawn/respawn, fixed 60 Hz server ticks
+    int spawnFireDelayMaxTicks = 60;
     float aggressionBonus = 0.05f;        // pushes shot timing toward fireDelayMin
     float npcHitRadius = 0.4f;            // NPC bullet radius; thin so aim error actually matters
     bool forceHit = false;                // debug: zero aim error, every shot connects
     bool npcDebugVisuals = false;         // draw NPC aim/LOS debug lines in-game
+    std::string targetMode = "closest";  // "closest" = current hostile behavior; "player" = nearest human player only
+    bool damageOtherNpcs = true;           // whether NPCs may select and damage other NPCs
 
     // Facing/turn tuning (hot-reloaded). The NPC switches between two facing
     // modes: "aim at target" (dominant, long stretches) and "face movement"

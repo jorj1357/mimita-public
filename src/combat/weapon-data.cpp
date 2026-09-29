@@ -725,6 +725,9 @@ WeaponDefinition createForcePunchDefinition() {
     def.usesPhysicsProjectile = false;
     def.soundShoot = "entity/falcon/falconhitquick";
     def.customParams["activeHitboxTicks"] = 1.0f;
+    def.customParams["attackStartupTicks"] = 15.0f;
+    def.customParams["attackActiveTicks"] = 1.0f;
+    def.customParams["attackRecoveryTicks"] = 15.0f;
     def.customParams["visualReturnTicks"] = 12.0f;
     def.customParams["hitboxSphere"] = 1.0f;
     def.customParams["hitboxRadius"] = 0.5f;

@@ -432,15 +432,52 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         return;
     }
 
+    // Self-only health is a player action, not a host-wide server override.
+    // Keep it before the host gate so every player can change only their own
+    // authoritative spawn health.
+    if (commandStr.rfind("healthme ", 0) == 0)
+    {
+        const std::string arg = commandStr.substr(9);
+        if (arg == "default" || arg == "reset")
+        {
+            it->second.healthOverrideEnabled = false;
+            it->second.healthOverrideValue = 100;
+            ack(true, "applied: healthme default (normal health on next respawn)");
+            return;
+        }
+
+        try
+        {
+            const int value = std::stoi(arg);
+            if (value <= 0)
+                throw std::invalid_argument("non-positive");
+            it->second.healthOverrideEnabled = true;
+            it->second.healthOverrideValue = value;
+            it->second.maxHealth = value;
+            if (!it->second.dead)
+                it->second.health = value;
+            Debug::warn(Debug::Category::Networking,
+                "%s [SERVER COMMAND] healthme playerId=%u hp=%d (self-only, persists through respawn)\n",
+                serverTimestamp(), it->second.id, value);
+            ack(true, ("applied: healthme " + std::to_string(value) +
+                       " (self-only, persists through respawn)").c_str());
+        }
+        catch (...)
+        {
+            ack(false, "rejected: usage healthme <positive hp>|default");
+        }
+        return;
+    }
+
     // Host-gate: only the player whose name matches the server host (or the
     // first joiner when no host name is set) may issue server-authoritative
     // commands. This also stops any client from deleting all NPCs.
     if (!it->second.isHost)
     {
         Debug::warn(Debug::Category::Networking,
-            "%s [SERVER COMMAND REJECT] playerId=%u name=\"%s\" cmd=\"%s\" reason=not-host\n",
+            "%s [SERVER COMMAND REJECT] playerId=%u name=\"%s\" cmd=\"%s\" reason=not-host hostPlayerId=%u\n",
             serverTimestamp(), it->second.id, it->second.name.c_str(),
-            commandStr.c_str());
+            commandStr.c_str(), gServerHostPlayerId);
         ack(false, "rejected: not host");
         return;
     }

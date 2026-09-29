@@ -1571,7 +1571,12 @@ void applyPreCollisionBasicMovement(MovementState& state,
     // TO REVERT: delete this block and external impulse goes back to the old
     // separate-tank decay behavior (impulse_friction_mode / external_impulse_decay
     // / impulse_carry_seconds in the movement preset), restoring the old tests.
-    const glm::vec3 pendingImpulse = state.externalImpulse;
+    const float impulseResistance = std::max(
+        0.0001f, config.externalImpulseResistanceMultiplier);
+    // The stored impulse remains authoritative and is consumed once here.
+    // The preset controls how strongly it becomes movement velocity:
+    // 1.0 = unchanged, 10.0 = 10x less, 0.1 = 10x more.
+    const glm::vec3 pendingImpulse = state.externalImpulse / impulseResistance;
     if (glm::length(pendingImpulse) > 0.0001f)
     {
         glm::vec2 impulseXY(pendingImpulse.x, pendingImpulse.y);

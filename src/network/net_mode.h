@@ -29,6 +29,10 @@ struct LaunchOptions
     std::string sessionToken;
     std::string mapName;
     std::string hostPlayerName;
+    // Optional server-start mode. When set, the server starts this procedural
+    // mode automatically as soon as the first client joins.
+    std::string proceduralMode;
+    uint32_t proceduralSeed = 0;
     uint32_t maxPlayers = 999;
     bool passwordProtected = false;
     std::string password;

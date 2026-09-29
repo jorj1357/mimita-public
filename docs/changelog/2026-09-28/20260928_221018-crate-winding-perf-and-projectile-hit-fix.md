@@ -55,6 +55,12 @@
     `halfExtents` box, which always contains the generated geometry).
   - `collectActorEntityContacts` uses `collectWorldTriangles` for destructible
     entities so only nearby chunks are transformed/copied.
+  - `advanceKinematics` (entity-vs-world) uses `collectLocalTriangles` to test
+    only the entity chunks overlapping the gathered world triangles, instead of
+    every generated triangle each tick. This preserves the rigid-body response
+    while keeping the generated mesh out of the hot loop.
+- `src/impact/destructible-geometry.h/.cpp`: added `collectLocalTriangles` (the
+  local-space twin of `collectWorldTriangles`).
 - `src/network/server-projectiles.cpp`: `queryEntityTrianglesSwept` uses
   `collectWorldTriangles` (chunk broadphase) instead of transforming the whole
   mesh for every projectile substep.
@@ -75,7 +81,9 @@
   `chunk broadphase limits a near query to nearby triangles`, and
   `projectile sweep detects the crate as EntityImpact`.
 - `mimita.exe --moving-crate-selftest` still reported PASS (no motion
-  regression).
+  regression), including a new check that a dynamic crate built through
+  `ImpactSystem::initializeEntity` (generated collision mesh) still falls under
+  gravity and rests on the floor.
 - Runtime validation remains open: spawn a crate with `crate_spawn`, shoot it
   with the projectile rifle, and confirm (1) no backfaces, (2) a visible hole
   appears on each hit, and (3) FPS stays normal while standing on/next to the
@@ -83,6 +91,11 @@
 
 # Residual notes
 
+- The rifle speed (900 m/s) is not the failure cause: the kernel uses swept
+  sphere-vs-triangle collision, not discrete point tests, so a fast projectile
+  does not tunnel as long as the triangle winding faces outward. The tunneling
+  came from inverted winding skipping the face test; `--destructible-selftest`
+  now drives a 900 m/s sweep into the crate and asserts `EntityImpact`.
 - The temporary `World` bridge in `collectActorEntityContacts` still exists
   (marked TODO-DELETE Phase 2); the chunk ranges reduce its cost but a future
   pass should query cached world triangles directly.

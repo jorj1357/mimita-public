@@ -48,6 +48,10 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.mapName = argv[++i];
         else if (std::strcmp(argv[i], "--host-player") == 0 && i + 1 < argc)
             options.hostPlayerName = argv[++i];
+        else if (std::strcmp(argv[i], "--procedural-mode") == 0 && i + 1 < argc)
+            options.proceduralMode = argv[++i];
+        else if (std::strcmp(argv[i], "--procedural-seed") == 0 && i + 1 < argc)
+            options.proceduralSeed = (uint32_t)std::strtoul(argv[++i], nullptr, 10);
         else if (std::strcmp(argv[i], "--max-players") == 0 && i + 1 < argc)
             options.maxPlayers = (uint32_t)std::max(1, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--password-protected") == 0 && i + 1 < argc)
@@ -105,6 +109,8 @@ void printLaunchUsage()
     printf("  --no-map-rotation Disable automatic community map rotation\n");
     printf("  --map-rotation-minutes <1-9999> Automatic map rotation interval\n");
     printf("  --no-discord-notification Disable the server-live Discord announcement\n");
+    printf("  --procedural-mode <id> Start a procedural mode after the first client joins\n");
+    printf("  --procedural-seed <n> Seed for an automatic procedural mode start\n");
     printf("  --ice             ICE NAT traversal is always enabled\n");
     printf("No args keeps the normal single-player/menu flow.\n");
 }

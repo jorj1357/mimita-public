@@ -223,6 +223,50 @@ void DestructibleGeometrySystem::collectWorldTriangles(
     }
 }
 
+void DestructibleGeometrySystem::collectLocalTriangles(
+    const DestructibleGeometry& geometry,
+    const glm::mat4& transform,
+    const AABB& queryWorld,
+    std::vector<CollisionTriangle>& out) const
+{
+    if (!geometry.enabled ||
+        geometry.chunkTriangleRanges.size() != geometry.chunks.size())
+    {
+        out.insert(out.end(), geometry.collisionTriangles.begin(),
+                   geometry.collisionTriangles.end());
+        return;
+    }
+
+    for (size_t i = 0; i < geometry.chunks.size(); ++i)
+    {
+        const DestructionTriangleRange& range = geometry.chunkTriangleRanges[i];
+        if (range.count == 0)
+            continue;
+
+        const AABB& lb = geometry.chunks[i].localBounds;
+        AABB wb;
+        wb.min = glm::vec3(1e30f);
+        wb.max = glm::vec3(-1e30f);
+        for (int c = 0; c < 8; ++c)
+        {
+            const glm::vec3 corner((c & 1) ? lb.max.x : lb.min.x,
+                                   (c & 2) ? lb.max.y : lb.min.y,
+                                   (c & 4) ? lb.max.z : lb.min.z);
+            const glm::vec3 w = glm::vec3(transform * glm::vec4(corner, 1.0f));
+            wb.min = glm::min(wb.min, w);
+            wb.max = glm::max(wb.max, w);
+        }
+        if (queryWorld.min.x > wb.max.x || queryWorld.max.x < wb.min.x ||
+            queryWorld.min.y > wb.max.y || queryWorld.max.y < wb.min.y ||
+            queryWorld.min.z > wb.max.z || queryWorld.max.z < wb.min.z)
+            continue;
+
+        const uint32_t end = range.first + range.count;
+        out.insert(out.end(), geometry.collisionTriangles.begin() + range.first,
+                   geometry.collisionTriangles.begin() + end);
+    }
+}
+
 int DestructibleGeometrySystem::rebuildAll(DestructibleGeometry& geometry)
 {
     for (DestructionChunk& chunk : geometry.chunks)

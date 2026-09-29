@@ -118,7 +118,11 @@ void WeaponQuickHit::startAttack(QuickHitState& state, const WeaponDefinition& d
     if (state.attackSequenceId == 0) state.attackSequenceId = 1;
 
     // Reset attack timers
-    state.activeTicksRemaining = (uint32_t)qhCp(def, "activeHitboxTicks", 30.0f);
+    state.startupTicksRemaining = (uint32_t)std::max(
+        0.0f, qhCp(def, "attackStartupTicks", 0.0f));
+    state.activeTicksRemaining = (uint32_t)std::max(
+        0.0f, qhCp(def, "attackActiveTicks",
+                   qhCp(def, "activeHitboxTicks", 30.0f)));
     state.visualReturnTicksRemaining = (uint32_t)qhCp(def, "visualReturnTicks", 60.0f);
 
     // Compute forward from camera
@@ -227,9 +231,16 @@ void WeaponQuickHit::update(QuickHitState& state, const WeaponDefinition& def,
     runtime.customFloats["swordPoseState"] = 3.0f;
 
     // Sweep capsule against NPCs every tick within this frame
-    if (state.activeTicksRemaining > 0) {
-        for (uint32_t t = 0; t < ticksThisFrame && state.activeTicksRemaining > 0; t++) {
-            state.activeTicksRemaining--;
+    if (state.startupTicksRemaining > 0 || state.activeTicksRemaining > 0) {
+        for (uint32_t t = 0; t < ticksThisFrame &&
+                            (state.startupTicksRemaining > 0 ||
+                             state.activeTicksRemaining > 0); t++) {
+            if (state.startupTicksRemaining > 0) {
+                --state.startupTicksRemaining;
+                continue;
+            }
+
+            --state.activeTicksRemaining;
 
             // Sweep collision against NPCs
             for (Npc& npc : npcs.all()) {
@@ -340,7 +351,9 @@ void WeaponQuickHit::update(QuickHitState& state, const WeaponDefinition& def,
     }
 
     // End attack when both counters are done
-    if (state.activeTicksRemaining == 0 && state.visualReturnTicksRemaining == 0) {
+    if (state.startupTicksRemaining == 0 &&
+        state.activeTicksRemaining == 0 &&
+        state.visualReturnTicksRemaining == 0) {
         state.active = false;
         state.hasPreviousCapsule = false;
         runtime.shootEffectTimer = 0.0f;

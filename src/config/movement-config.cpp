@@ -185,6 +185,7 @@ MovementConfig defaultMovementConfig()
     config.freezeCurveExponent = 4.0f;
     config.freezeDashMinimumPassThrough = 0.001f;
     config.maximumExternalImpulseSpeed = MAX_EXTERNAL_IMPULSE_SPEED;
+    config.externalImpulseResistanceMultiplier = 1.0f;
     config.externalImpulseDecay = EXTERNAL_IMPULSE_DECAY;
     config.externalImpulseSteerRate = EXTERNAL_IMPULSE_STEER_RATE;
     config.externalImpulseBrakeRate = EXTERNAL_IMPULSE_BRAKE_RATE;
@@ -362,6 +363,10 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     readFloat("external_impulse_decay", config.externalImpulseDecay);
     readFloat("max_external_impulse_speed", config.maximumExternalImpulseSpeed);
     readFloat("external_impulse_max_speed", config.maximumExternalImpulseSpeed);
+    readFloat("external_impulse_resistance_multiplier",
+              config.externalImpulseResistanceMultiplier);
+    config.externalImpulseResistanceMultiplier = std::max(
+        0.0001f, config.externalImpulseResistanceMultiplier);
     readFloat("ground_dash_impulse", config.groundDashImpulse);
     readFloat("air_dash_impulse", config.airDashImpulse);
     readFloat("down_dash_speed", config.downDashVerticalSpeed);

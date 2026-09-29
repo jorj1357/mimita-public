@@ -128,6 +128,13 @@ public:
                                const AABB& queryWorld,
                                std::vector<CollisionTriangle>& out) const;
 
+    // Same chunk broadphase, but appends the (untransformed) local-space
+    // triangles so a rigid-body solver can sweep them with its own transforms.
+    void collectLocalTriangles(const DestructibleGeometry& geometry,
+                               const glm::mat4& transform,
+                               const AABB& queryWorld,
+                               std::vector<CollisionTriangle>& out) const;
+
     // Safety cap: stop adding triangles once a single object exceeds this.
     size_t maxTrianglesPerEntity = 30000;
 

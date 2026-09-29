@@ -10,6 +10,9 @@ float clamp01(float v);
 float difficulty01(float difficulty);
 float random01(unsigned int& state);
 glm::vec3 randomPlanarDirection(unsigned int& state);
+// Randomized first-fire delay for a new NPC life, expressed as fixed 60 Hz
+// server ticks in JSON and converted to the shared cooldown's seconds here.
+float npcSpawnFireDelaySeconds(Npc& npc);
 
 // Situational jump: returns true if NPC should jump (obstacle, stuck)
 bool shouldJump(Npc& npc, float d01, const World& world);

@@ -30,6 +30,7 @@
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-types.h"
+#include "npc/npc-difficulty-config.h"
 #include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/physical-entity.h"
@@ -790,7 +791,10 @@ void explodeProjectile(SOCKET sock,
             (def ? def->victimKnockbackVerticalFraction : 0.0f);
 
         auto npcIt = npcs.find(directTargetId);
-        if (directTargetId != 0 && npcIt != npcs.end() && npcIt->second.health > 0)
+        const bool directNpcTarget = directTargetId != 0 &&
+            npcIt != npcs.end() && npcIt->second.health > 0;
+        const bool npcFriendlyFire = NpcDifficultyConfig::instance().settings().damageOtherNpcs;
+        if (directNpcTarget && (projectile.ownerNpcId == 0 || npcFriendlyFire))
         {
             ServerNpc& npc = npcIt->second;
             npc.health -= damageValue;
@@ -817,7 +821,7 @@ void explodeProjectile(SOCKET sock,
                 npc, damageValue, killed, position, npc.pos,
                 shotDir, -shotDir, projectile.weaponType);
         }
-        else if (directTargetId != 0)
+        else if (directTargetId != 0 && !directNpcTarget)
         {
             auto playerIt = players.find(directTargetId);
             if (playerIt != players.end() && !playerIt->second.dead)
@@ -1009,6 +1013,10 @@ void explodeProjectile(SOCKET sock,
             continue;
         // Skip the NPC that fired this projectile (no self-damage)
         if (projectile.ownerNpcId != 0 && npc.entityId == projectile.ownerNpcId)
+            continue;
+        // The live NPC difficulty policy controls NPC-owned splash damage too.
+        if (projectile.ownerNpcId != 0 &&
+            !NpcDifficultyConfig::instance().settings().damageOtherNpcs)
             continue;
 
         glm::vec3 historicalNpcPos = npc.pos;
