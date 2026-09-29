@@ -235,6 +235,16 @@ inline AABB makeTriangleAABB(const CollisionTriangle& tri)
     };
 }
 
+// Cached world-triangle bounds. Falls back to a live computation when a caller
+// built triangles without populating the cache (tests, direct pushes). The cache
+// is filled by buildCollisionChunks for every world that has chunks.
+inline AABB collisionTriangleAABB(const CollisionMeshCache& mesh, int index)
+{
+    if (index >= 0 && index < (int)mesh.triangleAABBs.size())
+        return mesh.triangleAABBs[index];
+    return makeTriangleAABB(mesh.triangles[index]);
+}
+
 inline AABB makePlayerAABB(const Player& p)
 {
     float s = std::max(p.sizeScale, 0.001f);
@@ -376,6 +386,16 @@ struct BWInvestigate {
 };
 extern BWInvestigate gBW;
 
+// Per-solve actor-narrowphase counters. Reset by solveActorTriangleCollision
+// before its correction loop and accumulated by collectActorMeshContactsInto,
+// so the broadphase/narrowphase split can be measured from the solve summary.
+struct ActorNarrowphaseStats {
+    int candidatePairs = 0;      // actor-triangle x candidate AABB tests
+    int triangleTests = 0;       // narrowphase triangle/segment tests
+    int roundedFeatureCalls = 0; // closestRoundedTriangleFeatures calls
+};
+extern ActorNarrowphaseStats gActorNarrowphase;
+
 // =====================================================
 // Body / weapon capsule helpers
 // =====================================================
@@ -423,6 +443,17 @@ std::vector<RecoveryContact> collectActorMeshContacts(
     const std::vector<ActorCollisionMesh>& meshes,
     const std::vector<int>& candidates,
     const glm::vec3& actorPos,
+    bool filterCandidatesByMeshAabb = true,
+    float contactSkin = -1.0f);
+
+// Scratch-buffer form: appends into `out` (cleared first) so the fixed-tick
+// solver never allocates a contact vector per correction iteration.
+void collectActorMeshContactsInto(
+    const World& world,
+    const std::vector<ActorCollisionMesh>& meshes,
+    const std::vector<int>& candidates,
+    const glm::vec3& actorPos,
+    std::vector<RecoveryContact>& out,
     bool filterCandidatesByMeshAabb = true,
     float contactSkin = -1.0f);
 

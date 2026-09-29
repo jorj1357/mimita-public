@@ -28,6 +28,8 @@
 
 #include <glm/glm.hpp>
 
+ActorNarrowphaseStats gActorNarrowphase;
+
 namespace {
 
 // Per-part / per-call budgets so a pathological model cannot freeze a frame.
@@ -358,17 +360,18 @@ AABB makeSweptActorMeshAABB(const std::vector<ActorCollisionMesh>& meshes,
     return out;
 }
 
-std::vector<RecoveryContact> collectActorMeshContacts(
+void collectActorMeshContactsInto(
     const World& world,
     const std::vector<ActorCollisionMesh>& meshes,
     const std::vector<int>& candidates,
     const glm::vec3& actorPos,
+    std::vector<RecoveryContact>& contacts,
     bool filterCandidatesByMeshAabb,
     float contactSkin)
 {
-    std::vector<RecoveryContact> contacts;
+    contacts.clear();
     if (world.collisionMesh.triangles.empty() || candidates.empty())
-        return contacts;
+        return;
 
     // Use the shared collision skin for actor-triangle query bounds. It is a
     // search/recovery margin; actual solver penetration is computed below.
@@ -442,12 +445,13 @@ std::vector<RecoveryContact> collectActorMeshContacts(
             for (size_t ci = 0; ci < candidates.size(); ++ci)
             {
                 if (triangleTests >= kMaxTriangleTests)
-                    return contacts;
+                    return;
                 const int wi = candidates[ci];
                 if (wi < 0 || wi >= (int)world.collisionMesh.triangles.size())
                     continue;
-                const AABB candidateBounds = makeTriangleAABB(
-                    world.collisionMesh.triangles[wi]);
+                ++gActorNarrowphase.candidatePairs;
+                const AABB candidateBounds = collisionTriangleAABB(
+                    world.collisionMesh, wi);
                 if (filterCandidatesByMeshAabb &&
                     !overlaps(meshBounds, candidateBounds))
                     continue;
@@ -466,6 +470,7 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                 bool currentOverlap = triangleTriangleIntersect(
                     a, b, c, wt.a, wt.b, wt.c);
                 ++triangleTests;
+                ++gActorNarrowphase.triangleTests;
                 if (currentOverlap) {
                     hitCentroid = centroid;
                     hit = true;
@@ -488,6 +493,7 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                         const glm::vec3 sb = pb + (b - pb) * alpha;
                         const glm::vec3 sc = pc + (c - pc) * alpha;
                         ++triangleTests;
+                ++gActorNarrowphase.triangleTests;
                         if (triangleTriangleIntersect(sa, sb, sc,
                                                        wt.a, wt.b, wt.c)) {
                             hitCentroid = (sa + sb + sc) / 3.0f;
@@ -496,7 +502,7 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                             break;
                         }
                         if (triangleTests >= kMaxTriangleTests)
-                            return contacts;
+                            return;
                     }
                 }
                 if (!hit && roundedFeatures)
@@ -505,6 +511,7 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                     // edges are capsules, and its vertices are spheres. This
                     // adds a real geometric gap, rather than inflating the
                     // later correction or relying on a JSON skin value.
+                    ++gActorNarrowphase.roundedFeatureCalls;
                     roundedFeature = closestRoundedTriangleFeatures(
                         a, b, c, wt.a, wt.b, wt.c);
                     if (roundedFeature.distance > MOVEMENT_FEATURE_SMOOTHNESS)
@@ -599,6 +606,7 @@ std::vector<RecoveryContact> collectActorMeshContacts(
                 glm::vec3 featureVector = hitCentroid - point;
                 if (roundedFeatures)
                 {
+                    ++gActorNarrowphase.roundedFeatureCalls;
                     const RoundedFeaturePair responseFeature =
                         closestRoundedTriangleFeatures(a, b, c, wt.a, wt.b, wt.c);
                     const glm::vec3 featureSeparation =
@@ -636,27 +644,42 @@ std::vector<RecoveryContact> collectActorMeshContacts(
         }
     }
 
-    std::vector<RecoveryContact> merged;
-    merged.reserve(contacts.size());
+    static thread_local std::vector<RecoveryContact> s_merged;
+    s_merged.clear();
+    s_merged.reserve(contacts.size());
     for (const RecoveryContact& c : contacts)
     {
         int found = -1;
-        for (size_t j = 0; j < merged.size(); ++j)
+        for (size_t j = 0; j < s_merged.size(); ++j)
         {
-            if (merged[j].triangleIndex == c.triangleIndex &&
-                merged[j].label && c.label &&
-                std::strcmp(merged[j].label, c.label) == 0)
+            if (s_merged[j].triangleIndex == c.triangleIndex &&
+                s_merged[j].label && c.label &&
+                std::strcmp(s_merged[j].label, c.label) == 0)
             {
                 found = (int)j;
                 break;
             }
         }
         if (found < 0)
-            merged.push_back(c);
-        else if (c.penetration > merged[found].penetration)
-            merged[found] = c;
+            s_merged.push_back(c);
+        else if (c.penetration > s_merged[found].penetration)
+            s_merged[found] = c;
     }
-    return merged;
+    contacts.swap(s_merged);
+}
+
+std::vector<RecoveryContact> collectActorMeshContacts(
+    const World& world,
+    const std::vector<ActorCollisionMesh>& meshes,
+    const std::vector<int>& candidates,
+    const glm::vec3& actorPos,
+    bool filterCandidatesByMeshAabb,
+    float contactSkin)
+{
+    std::vector<RecoveryContact> out;
+    collectActorMeshContactsInto(world, meshes, candidates, actorPos, out,
+                                 filterCandidatesByMeshAabb, contactSkin);
+    return out;
 }
 
 std::vector<RecoveryContact> collectBodyMeshContacts(Player& p, const World& world)

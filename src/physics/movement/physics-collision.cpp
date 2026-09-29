@@ -79,7 +79,7 @@ void appendChunkTrianglesForAABB(
     {
         for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
         {
-            AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[i]);
+            AABB triBounds = collisionTriangleAABB(world.collisionMesh, i);
             triBounds.min -= glm::vec3(expansion);
             triBounds.max += glm::vec3(expansion);
             if (overlaps(clamped, triBounds))
@@ -155,7 +155,7 @@ void appendChunkTrianglesForAABB(
             return false;
         s_triGen[triIndex] = s_gen;
 
-        AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[triIndex]);
+        AABB triBounds = collisionTriangleAABB(world.collisionMesh, triIndex);
         triBounds.min -= glm::vec3(expansion);
         triBounds.max += glm::vec3(expansion);
         if (overlaps(clamped, triBounds))
@@ -187,7 +187,7 @@ void appendChunkTrianglesForAABB(
                 return;
             s_triGen[triIndex] = s_gen;
 
-            AABB triBounds = makeTriangleAABB(world.collisionMesh.triangles[triIndex]);
+            AABB triBounds = collisionTriangleAABB(world.collisionMesh, triIndex);
             triBounds.min -= glm::vec3(expansion);
             triBounds.max += glm::vec3(expansion);
             if (overlaps(clamped, triBounds))

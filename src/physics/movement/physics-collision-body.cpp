@@ -286,7 +286,7 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
                                glm::vec3(queryRadius);
             sphereBounds.max = glm::max(bs.center, bs.center + bs.sweepDelta) +
                                glm::vec3(queryRadius);
-            if (!overlaps(sphereBounds, makeTriangleAABB(tri)))
+            if (!overlaps(sphereBounds, collisionTriangleAABB(world.collisionMesh, triIdx)))
                 continue;
 
             // Sweep test: skip for static spheres (no movement delta)

@@ -160,6 +160,11 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
     world.collisionChunks.clear();
     world.collisionLargeTriangles.clear();
 
+    // Cache per-triangle bounds once. The actor narrowphase and broadphase
+    // overlap filters read these instead of recomputing makeTriangleAABB for
+    // every candidate/actor-triangle pair.
+    world.collisionMesh.triangleAABBs.resize(world.collisionMesh.triangles.size());
+
     uint64_t totalRefs = 0;
     uint64_t maxChunks = 0;
     double maxBounds = 0;
@@ -170,6 +175,7 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
         const CollisionTriangle& tri = world.collisionMesh.triangles[i];
         glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
         glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+        world.collisionMesh.triangleAABBs[i] = AABB{mn, mx};
         glm::ivec3 c0 = collisionChunkCoord(mn, world.collisionChunkSize);
         glm::ivec3 c1 = collisionChunkCoord(mx, world.collisionChunkSize);
 

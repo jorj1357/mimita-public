@@ -705,6 +705,14 @@ std::vector<EntityActorContact> collectActorEntityContacts(
     const AABB actorBox = makeSweptActorMeshAABB(meshes, glm::vec3(0.0f));
     const float kPad = std::max(0.05f, MOVEMENT_FEATURE_SMOOTHNESS);
 
+    // Reused per-thread bridge storage. The entity world-space triangles and
+    // candidate list are refilled in place, so a touched crate no longer
+    // allocates a World, a triangle vector, and a candidate vector per entity
+    // per correction iteration. collectActorMeshContacts still owns the one
+    // triangle-vs-triangle routine; the entity reuses it.
+    static thread_local World s_entityWorld;
+    static thread_local std::vector<int> s_entityCandidates;
+
     for (const PhysicalEntity& e : entities)
     {
         if (!e.collidesWithActors || e.localTriangles.empty())
@@ -712,14 +720,11 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         if (!aabbOverlapsPadded(actorBox, entityWorldAABB(e), kPad))
             continue;
 
-        // TODO-DELETE 2026-09-28 [Phase 2]: this temporary world view is a
-        // migration bridge. Phase 3 should query the entity's cached world
-        // shape directly without allocating a World or copying triangles.
-        // A temporary world view of the entity's current world-space triangles.
-        // collectActorMeshContacts owns the one triangle-vs-triangle routine; the
-        // entity reuses it instead of duplicating the math.
-        std::vector<CollisionTriangle> nearby;
-        nearby.reserve(e.localTriangles.size());
+        CollisionMeshCache& cache = s_entityWorld.collisionMesh;
+        cache.triangles.clear();
+        cache.triangleAABBs.clear();
+        cache.triangles.reserve(e.localTriangles.size());
+        cache.triangleAABBs.reserve(e.localTriangles.size());
         for (const CollisionTriangle& lt : e.localTriangles)
         {
             CollisionTriangle wt;
@@ -729,19 +734,20 @@ std::vector<EntityActorContact> collectActorEntityContacts(
             const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
             const float len = glm::length(n);
             wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
-            nearby.push_back(wt);
+            cache.triangleAABBs.push_back(makeTriangleAABB(wt));
+            cache.triangles.push_back(wt);
         }
 
-        World temp;
-        temp.collisionMesh.triangles = std::move(nearby);
-        std::vector<int> candidates(temp.collisionMesh.triangles.size());
-        std::iota(candidates.begin(), candidates.end(), 0);
+        s_entityCandidates.resize(cache.triangles.size());
+        std::iota(s_entityCandidates.begin(), s_entityCandidates.end(), 0);
 
         std::vector<RecoveryContact> contacts =
-            // The temporary entity world has its own complete candidate list;
-            // keep the exact entity query intact until it has a real cached
-            // broadphase instead of applying the static-world part filter.
-            collectActorMeshContacts(temp, meshes, candidates, actorPos, false, 0.0f);
+            // The entity candidate list is complete for this entity; keep the
+            // exact entity query intact instead of applying the static-world
+            // part filter. Cached triangle AABBs still accelerate the overlap
+            // rejection inside the narrowphase.
+            collectActorMeshContacts(s_entityWorld, meshes, s_entityCandidates,
+                                     actorPos, false, 0.0f);
         for (RecoveryContact& c : contacts)
         {
             c.entityId = e.id;

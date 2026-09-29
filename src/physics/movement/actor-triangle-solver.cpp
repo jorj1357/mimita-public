@@ -14,6 +14,7 @@
 #include "physics/movement/actor-triangle-solver.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -221,6 +222,8 @@ bool solveActorTriangleCollision(
     result.correctedPos = player.pos;
     result.remainingMovement = desiredMovement;
     const glm::vec3 velocityBeforeSolve = player.vel;
+    const auto solveStart = std::chrono::steady_clock::now();
+    gActorNarrowphase = ActorNarrowphaseStats{};
 
     const bool hasEntities = entities && !entities->empty();
     if (world.collisionMesh.triangles.empty() && !hasEntities)
@@ -255,7 +258,14 @@ bool solveActorTriangleCollision(
                                 candidates, "actorTriangleSolve");
     result.candidates = (int)candidates.size();
 
-    std::vector<RecoveryContact> allContacts;
+    // Reused fixed-tick scratch. The correction loop no longer allocates a mesh
+    // vector, a contact vector, or an accumulated-contact vector per iteration.
+    static thread_local std::vector<ActorCollisionMesh> s_meshes;
+    static thread_local std::vector<RecoveryContact> s_contacts;
+    static thread_local std::vector<RecoveryContact> s_allContacts;
+    static thread_local std::vector<RecoveryContact> s_manifold;
+    s_allContacts.clear();
+
     glm::vec3 accumulated(0.0f);
 
     for (int iter = 0; iter < kMaxIterations &&
@@ -263,22 +273,18 @@ bool solveActorTriangleCollision(
     {
         // Shift the whole capture (safe + desired) by the accumulated
         // correction so the sweep direction stays the tick's real motion.
-        // TODO-DELETE 2026-09-28 [Phase 2]: replace this per-iteration mesh
-        // vector copy with cached transformed/scratch storage after runtime
-        // profiling proves the shared cache is safe for every caller.
-        std::vector<ActorCollisionMesh> meshes = baseMeshes;
+        s_meshes = baseMeshes;
         const glm::mat4 shift = glm::translate(glm::mat4(1.0f), accumulated);
-        for (ActorCollisionMesh& m : meshes)
+        for (ActorCollisionMesh& m : s_meshes)
         {
             m.previousTransform = shift * m.previousTransform;
             m.desiredTransform = shift * m.desiredTransform;
         }
 
-        const AABB poseBox = makeSweptActorMeshAABB(meshes, glm::vec3(0.0f));
+        const AABB poseBox = makeSweptActorMeshAABB(s_meshes, glm::vec3(0.0f));
         const glm::vec3 refPoint = (poseBox.min + poseBox.max) * 0.5f;
 
-        std::vector<RecoveryContact> contacts =
-            collectActorMeshContacts(world, meshes, candidates, refPoint);
+        collectActorMeshContactsInto(world, s_meshes, candidates, refPoint, s_contacts);
 
         // The weapon sphere/capsule collector uses the same world-triangle
         // contact facts and response owner, but only needs to run once per
@@ -288,7 +294,7 @@ bool solveActorTriangleCollision(
         {
             std::vector<RecoveryContact> weaponContacts =
                 collectBodyWeaponContacts(player, world, weaponSpheres);
-            contacts.insert(contacts.end(), weaponContacts.begin(), weaponContacts.end());
+            s_contacts.insert(s_contacts.end(), weaponContacts.begin(), weaponContacts.end());
         }
 
         // Moving physical entities join the same manifold, carrying the support
@@ -296,31 +302,31 @@ bool solveActorTriangleCollision(
         if (hasEntities)
         {
             std::vector<EntityActorContact> entityHits =
-                collectActorEntityContacts(meshes, *entities, refPoint);
+                collectActorEntityContacts(s_meshes, *entities, refPoint);
             for (EntityActorContact& eh : entityHits)
-                contacts.push_back(eh.contact);
+                s_contacts.push_back(eh.contact);
         }
 
-        if (contacts.empty())
+        if (s_contacts.empty())
             break;
 
         result.iterations = iter + 1;
         result.anyImpact = true;
 
         float iterMaxPen = 0.0f;
-        for (const RecoveryContact& c : contacts)
+        for (const RecoveryContact& c : s_contacts)
             iterMaxPen = std::max(iterMaxPen, c.penetration);
         // Report the residual of the latest iteration, not the peak: it is the
         // penetration the actor is left with after correction.
         result.maxPenetration = iterMaxPen;
 
-        allContacts.insert(allContacts.end(), contacts.begin(), contacts.end());
+        s_allContacts.insert(s_allContacts.end(), s_contacts.begin(), s_contacts.end());
 
         if (iterMaxPen <= kSlop)
             break;
 
         glm::vec3 correction = solveBatchedCorrection(
-            contacts, kSlop, nullptr, nullptr, desiredMovement,
+            s_contacts, kSlop, nullptr, nullptr, desiredMovement,
             player.pos + accumulated);
         if (!isFiniteVec3(correction))
             break;
@@ -337,23 +343,24 @@ bool solveActorTriangleCollision(
         accumulated += correction;
     }
 
-    if (!allContacts.empty())
+    if (!s_allContacts.empty())
     {
         player.pos += accumulated;
         player.updateModelWorldTransforms();
     }
 
-    if (allContacts.empty())
+    if (s_allContacts.empty())
     {
         result.correctedPos = player.pos;
         return false;
     }
 
     // One manifold for the whole actor.
-    std::vector<RecoveryContact> manifold;
-    mergeContactsByNormal(allContacts, manifold);
-    removeTouchingFaceSeams(manifold, desiredMovement);
-    collapseCloseFeatureContacts(manifold, desiredMovement);
+    s_manifold.clear();
+    mergeContactsByNormal(s_allContacts, s_manifold);
+    removeTouchingFaceSeams(s_manifold, desiredMovement);
+    collapseCloseFeatureContacts(s_manifold, desiredMovement);
+    std::vector<RecoveryContact>& manifold = s_manifold;
 
     // Strongest impact first, so the dominant surface owns the response and any
     // later rate limiting cannot mute it.
@@ -501,7 +508,13 @@ bool solveActorTriangleCollision(
          {"contact_count", result.contacts.size()},
          {"iterations", result.iterations},
          {"max_penetration", result.maxPenetration},
-         {"grounded", result.grounded}},
+         {"grounded", result.grounded},
+         {"candidates", result.candidates},
+         {"candidate_pairs", gActorNarrowphase.candidatePairs},
+         {"triangle_tests", gActorNarrowphase.triangleTests},
+         {"rounded_feature_calls", gActorNarrowphase.roundedFeatureCalls},
+         {"solve_ms", std::chrono::duration<double, std::milli>(
+              std::chrono::steady_clock::now() - solveStart).count()}},
         __FILE__, __LINE__, __FUNCTION__);
     commitActorCollisionMeshes(player);
     return true;

@@ -116,6 +116,10 @@ struct AABB {
 struct CollisionMeshCache
 {
     std::vector<CollisionTriangle> triangles;
+    // Cached per-triangle AABB, parallel to `triangles`. Built once when the
+    // world collision mesh/chunks are built so the actor narrowphase never
+    // recomputes a world triangle's bounds inside a per-pair loop.
+    std::vector<AABB> triangleAABBs;
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
 
@@ -123,6 +127,7 @@ struct CollisionMeshCache
     void clear()
     {
         triangles.clear();
+        triangleAABBs.clear();
         boundsMin = glm::vec3(0.0f);
         boundsMax = glm::vec3(0.0f);
     }

@@ -1463,3 +1463,97 @@ dev-server persistence observations are described in the related changelog.
 If the aim-body lifecycle reset must be tuned without relinking, move the
 rebind trigger and readiness decision into a live-reloadable gameplay module
 rather than the fixed client tick.
+
+## Cold-build occurrence 22
+
+UTC time:
+`2026-09-29T21:29:13Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_132503-aimbody-physical-mode.md`
+
+### Why the cold build was required
+
+A new per-limb hybrid config value (`arms_follow_force`) and per-part tracking
+rate were added to cold ragdoll owners.
+
+### Exact cold source / boundary
+
+- `src/ragdoll/physical-aim.h`, `ragdoll-mode-config.cpp`,
+  `ragdoll-mode.cpp`.
+
+### Result needed from the new executable
+
+Confirm that raising `physical.hybrid.arms_follow_force` keeps the arms on
+their aimbody/animation orientation while moving fast, so the weapon does not
+aim the wrong way.
+
+### Why it could not be applied through the live path
+
+The hybrid update runs in the cold fixed tick.
+
+### Build result
+
+`python build_agent.py` compiled the two changed translation units and
+returned `Status: SUCCESS`, return code 0. Produced `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Move fast with hybrid mode and tune `arms_follow_force`.
+
+## Cold-build occurrence 25
+
+UTC time:
+`2026-09-29T21:54:27Z`
+
+Related changelog:
+`docs/changelog/2026-09-29/20260929_175427-actor-collision-acceleration-stage1.md`
+
+### Why the cold build was required
+
+The accelerated actor-collision increment changes `CollisionMeshCache`
+(embedded by value in `World`), the actor narrowphase signature, the
+`collision.json`-independent scratch path, and the physical-entity contact
+bridge. These are cold fixed-tick owners and need a relink to run the collision
+self-tests and in-game movement against one executable.
+
+### Exact cold source / boundary
+
+- `src/physics/physics-types.h` (`CollisionMeshCache::triangleAABBs`).
+- `src/physics/movement/physics-collision-shared.h`,
+  `physics-collision-mesh.cpp`, `physics-collision.cpp`,
+  `physics-collision-body.cpp`, `actor-triangle-solver.cpp`.
+- `src/map/map-loader-collision.cpp`.
+- `src/physics/physical-entity.cpp`.
+
+### Result needed from the new executable
+
+Confirm the collision self-tests still pass (candidate sets, contact parity,
+crate behavior) and that the crate/entity path no longer allocates a temporary
+`World` per iteration.
+
+### Why it could not be applied through the live path
+
+Collision runs in the cold fixed tick; the cached-AABB layout and the
+scratch-buffer narrowphase are compiled into the client/server executable.
+
+### Build result
+
+`python build_agent.py`: one build failed with
+`too few arguments to function 'collectActorMeshContactsInto'` because the
+default arguments were added after the first compile; after adding the defaults
+the build returned `Status: SUCCESS`, return code 0. Produced
+`C:\mimita-v9\mimita.exe`. Self-tests run against it: actor-triangle-solve 26/26,
+collision 19/19, moving-crate 23/23, subgrid PASS.
+
+### Human review
+
+Pending. Play near the reported cylinder and crate to confirm the FPS drop is
+gone or reduced and collision feel is unchanged.
+
+### Next migration/falsification step
+
+Read the new `collision.solve.summary` counters (`candidate_pairs`,
+`triangle_tests`, `rounded_feature_calls`, `solve_ms`) in a dense map. If the
+candidate scan still dominates, build the per-chunk BVH (Stage 2); if the
+rounded-feature narrowphase dominates, optimize that instead.

@@ -237,6 +237,22 @@ The user asked to raise the "server position error snap back" limit from 100 to
   `hasAcceptedClientTransform`, and `movementValidation.lastAcceptedClientTick`,
   so leaving ragdoll cannot trip the post-gap drift correction.
 
+## Iteration 8 (same session): arms-only follow multiplier
+
+Fast movement left the arms lagging the aimbody/animation pose, so the weapon
+aimed the wrong way (moving left → gun points right). Added a dedicated arms
+tracking multiplier.
+
+- `src/ragdoll/physical-aim.h`: `PhysicalAimConfig::hybridArmsFollowForce`
+  (default 1.0).
+- `src/ragdoll/ragdoll-mode-config.cpp`: parse/clamp `physical.hybrid.
+  arms_follow_force` (0..100).
+- `src/ragdoll/ragdoll-mode.cpp`: `applyHybridSprings` now computes the tracking
+  rate per part and multiplies `leftArm`/`rightArm` by `arms_follow_force`, so
+  the arms stick harder to the captured animation/aimbody orientation while the
+  rest of the body keeps the general `follow_force` / `base_rate`.
+- `config/ragdoll.json`: documented `arms_follow_force` (1.0 baseline).
+
 ## Validation
 
 - `tests/physical-aim-torque-test.cpp`: compile and run with
@@ -268,6 +284,8 @@ The user asked to raise the "server position error snap back" limit from 100 to
     succeeded.)
   - Iteration-7 build recompiled `multiplayer-reconcile.cpp` and
     `server-players.cpp`; `Status: SUCCESS`, return 0.
+  - Iteration-8 build recompiled `ragdoll-mode-config.cpp` and
+    `ragdoll-mode.cpp`; `Status: SUCCESS`, return 0.
   - Executable: `C:\mimita-v9\mimita.exe`.
 
 ## Pre-existing edits
