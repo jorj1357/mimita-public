@@ -519,6 +519,13 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
     }
     if (steps >= kMaxSteps && mFixedAccumulator >= kFixedDt)
         mFixedAccumulator = 0.0;
+
+    // Drain queued destruction cuts once per fixed tick, batched and budgeted so
+    // a burst of shots cannot blow a frame. This is the 60 Hz destruction owner;
+    // ImpactSystem still decides the cut and owns fracture.
+    MimitaImpact::ImpactSystem::instance().flushPendingCuts(
+        MimitaImpact::ImpactSystem::kMaxCutsPerEntityPerTick,
+        MimitaImpact::ImpactSystem::kCutBudgetMsPerTick);
 }
 
 float PhysicalEntitySystem::renderAlpha() const

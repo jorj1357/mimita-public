@@ -55,6 +55,20 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         mpApplyAuthoritativeTransform(ctx, player);
         ctx.lastAppliedEpoch = ctx.localServerEpoch;
         ctx.localPlayerReconciled = true;
+
+        if (ctx.proceduralTeleportPending &&
+            ctx.localServerEpoch != ctx.proceduralTeleportStartEpoch)
+        {
+            printf("[CLIENT PROCEDURAL TELEPORT COMPLETE] playerId=%u "
+                   "epoch=%u position=(%.2f,%.2f,%.2f)\n",
+                   ctx.localPlayerId,
+                   (unsigned)ctx.localServerEpoch,
+                   ctx.localServerPosition.x,
+                   ctx.localServerPosition.y,
+                   ctx.localServerPosition.z);
+            ctx.proceduralTeleportPending = false;
+            ctx.teleportResync = true;
+        }
     }
 
     const glm::vec3 clientPosition = player.pos;

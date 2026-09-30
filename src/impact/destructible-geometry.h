@@ -111,6 +111,11 @@ struct DestructibleGeometry
     uint64_t nextCutId = 1;
     uint32_t materialId = 0;
 
+    // Cuts accepted into the authoritative history but not yet applied to the
+    // surface. ImpactSystem enqueues here so a rapid burst becomes one batched
+    // rebuild per flush instead of one O(triangle) rebuild per shot.
+    uint32_t pendingCutCount = 0;
+
     // Incremental-rebuild session owned by the boolean wrapper. Caches the
     // running result so a new cut subtracts only the new cutter; game code
     // treats it as an opaque handle.
@@ -183,6 +188,19 @@ public:
     // failed (in which case the cut is rolled back and lastError is set).
     int addCut(DestructibleGeometry& geometry, const DestructionCut& cut);
 
+    // Appends one cut to the authoritative history WITHOUT rebuilding. The
+    // surface is generated on the next flushQueuedCuts, batched with any other
+    // queued cuts. Returns the stored cut id (0 when disabled).
+    uint64_t enqueueCut(DestructibleGeometry& geometry, const DestructionCut& cut);
+
+    // Applies every queued cut in one batched rebuild. `maxCutsThisFlush` > 0
+    // caps how many queued cuts are applied this call (the rest wait for the
+    // next flush) so a burst cannot blow one frame. Returns:
+    //   1  surface changed,
+    //   0  nothing queued / no material removed / failed (lastError set),
+    //  -1  cut(s) were skipped because the triangle budget was exceeded.
+    int flushQueuedCuts(DestructibleGeometry& geometry, uint32_t maxCutsThisFlush = 0);
+
     // Rebuilds the surface from the stored cuts (used after bulk changes).
     int rebuildAll(DestructibleGeometry& geometry);
 
@@ -202,7 +220,9 @@ public:
 private:
     DestructibleGeometrySystem() = default;
 
-    bool rebuild(DestructibleGeometry& geometry);
+    // Applies up to `maxNewCuts` not-yet-applied cutters (0 = all) in one
+    // batched rebuild. Returns true when the surface changed.
+    bool rebuild(DestructibleGeometry& geometry, uint32_t maxNewCuts = 0);
 };
 
 } // namespace MimitaImpact

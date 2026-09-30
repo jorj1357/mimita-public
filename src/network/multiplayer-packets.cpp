@@ -278,6 +278,9 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingTeleportPosition = glm::vec3(0.0f);
     ctx.pendingTeleportSentMs = 0;
     ctx.awaitingTeleportAck = false;
+    ctx.proceduralTeleportStartEpoch = 0;
+    ctx.proceduralTeleportSentMs = 0;
+    ctx.proceduralTeleportPending = false;
     ctx.awaitingExplodeDeath = false;
     ctx.explodeRequestLastSendMs = 0;
     ctx.teleportResync = false;
@@ -428,6 +431,9 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.pendingTeleportPosition = glm::vec3(0.0f);
     ctx.pendingTeleportSentMs = 0;
     ctx.awaitingTeleportAck = false;
+    ctx.proceduralTeleportStartEpoch = 0;
+    ctx.proceduralTeleportSentMs = 0;
+    ctx.proceduralTeleportPending = false;
     ctx.awaitingExplodeDeath = false;
     ctx.localServerVelocity = glm::vec3(0.0f);
     ctx.localServerYaw = 0.0f;
@@ -639,6 +645,19 @@ void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return;
+
+    if (command == "procedural_world_teleport_highest")
+    {
+        // The server chooses the destination.  Mark the handoff before the
+        // command leaves the client so the next movement packet cannot carry
+        // the old predicted room position while the command is in flight.
+        ctx.proceduralTeleportStartEpoch = ctx.transformEpoch;
+        ctx.proceduralTeleportSentMs = nowMs();
+        ctx.proceduralTeleportPending = true;
+        ctx.teleportResync = true;
+        printf("[CLIENT PROCEDURAL TELEPORT BEGIN] playerId=%u startEpoch=%u\n",
+               ctx.localPlayerId, (unsigned)ctx.proceduralTeleportStartEpoch);
+    }
 
     ServerCommandPacket packet{};
     packet.header.type = PACKET_SERVER_COMMAND;

@@ -1059,6 +1059,12 @@ void handleInputPacket(const char* buffer, int bytes,
     if (equipLifecycleMatches)
         applyEquipIntentFromInput(p, *in, "owned-input");
 
+    // A movement packet can already be in flight when the server assigns a
+    // new authoritative transform.  Keep that handoff local to the player;
+    // an old packet must never become a visible POSITION CORRECTION event.
+    const bool transformHandoffPending =
+        p.awaitingAuthoritativeTransformAck;
+
     MovementValidationResult result =
         validateClientMovementReport(p, report, validationContext, validationConfig);
     applyMovementValidationCounters(p.movementValidation, result, report);
@@ -1141,6 +1147,7 @@ void handleInputPacket(const char* buffer, int bytes,
     // Server corrected the client's claimed movement (out of bounds, geometry
     // block). Broadcast a disagreement so clients can show the correction.
     if (result.decision == MovementValidationDecision::Correct &&
+        !transformHandoffPending &&
         retransmitState && totalPacketsOut && sock != INVALID_SOCKET)
     {
         const glm::vec3 correction =

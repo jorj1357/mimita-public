@@ -14,9 +14,9 @@
   "win_condition": "npc_waves",
   "wave_start_count": 1,
   "wave_increment": 1,
-  "npcs_per_wave": 10,
+  "npcs_per_wave": 99,
   "lives": 999,
   "wave_banner_seconds": 1,
   "wave_stagger_enabled": true,
-  "wave_npcs_per_tick": 10
+  "wave_npcs_per_tick": 99
 }

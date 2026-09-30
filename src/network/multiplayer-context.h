@@ -391,6 +391,14 @@ struct MultiplayerContext
     glm::vec3 pendingTeleportPosition{0.0f};
     uint64_t pendingTeleportSentMs = 0;
     bool awaitingTeleportAck = false;
+    // Procedural highest-room teleport is server-targeted, so the client does
+    // not know the destination when the command is sent.  Freeze outgoing
+    // movement reports until a newer authoritative epoch arrives and is
+    // applied locally; otherwise old predicted positions can trigger a
+    // server correction before the teleport snapshot reaches this client.
+    uint16_t proceduralTeleportStartEpoch = 0;
+    uint64_t proceduralTeleportSentMs = 0;
+    bool proceduralTeleportPending = false;
     bool awaitingExplodeDeath = false;
     bool flyEnabled = false;
     float flySpeedMultiplier = 1.0f;

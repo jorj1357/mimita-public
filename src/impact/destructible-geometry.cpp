@@ -217,12 +217,22 @@ void DestructibleGeometrySystem::release(DestructibleGeometry& geometry)
     geometry.enabled = false;
 }
 
-bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry)
+bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
+                                         uint32_t maxNewCuts)
 {
+    // Apply at most maxNewCuts of the not-yet-applied cutters (0 = all), so a
+    // burst can be drained across several frames. The session already knows how
+    // many it has applied, so only the new cutters are subtracted.
+    const uint32_t appliedSoFar = geometry.cuts.size() - geometry.pendingCutCount;
+    const uint32_t newCuts = (maxNewCuts == 0)
+        ? geometry.pendingCutCount
+        : std::min(maxNewCuts, geometry.pendingCutCount);
+    const size_t lastCut = (size_t)appliedSoFar + newCuts;
+
     std::vector<BooleanCutter> cutters;
-    cutters.reserve(geometry.cuts.size());
-    for (const DestructionCut& cut : geometry.cuts)
-        cutters.push_back(cut.cutter);
+    cutters.reserve(lastCut);
+    for (size_t i = 0; i < lastCut; ++i)
+        cutters.push_back(geometry.cuts[i].cutter);
 
     const BooleanCutResult result = booleanSubtractIncremental(
         geometry.booleanSessionId, geometry.baseMesh, cutters);
@@ -234,6 +244,13 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry)
         geometry.lastError = BooleanError::ResultTooLarge;
         return false;
     }
+
+    // The cutters applied but removed nothing (they sat in empty space). The
+    // history still advances; the surface is unchanged, so skip the O(triangle)
+    // conversion, mass integration, and revision bump.
+    geometry.pendingCutCount -= newCuts;
+    if (!result.changed)
+        return false;
 
     fillSurface(geometry, result.mesh);
 
@@ -257,6 +274,31 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry)
     return true;
 }
 
+uint64_t DestructibleGeometrySystem::enqueueCut(DestructibleGeometry& geometry,
+                                                DestructionCut cut)
+{
+    if (!geometry.enabled)
+        return 0;
+
+    if (cut.cutId == 0)
+        cut.cutId = geometry.nextCutId++;
+    geometry.cuts.push_back(cut);
+    ++geometry.pendingCutCount;
+    return cut.cutId;
+}
+
+int DestructibleGeometrySystem::flushQueuedCuts(DestructibleGeometry& geometry,
+                                                uint32_t maxCutsThisFlush)
+{
+    if (!geometry.enabled || geometry.pendingCutCount == 0)
+        return 0;
+    if (rebuild(geometry, maxCutsThisFlush))
+        return 1;
+    // rebuild returning false is either "no material removed" (still success)
+    // or a real failure. Distinguish by lastError.
+    return geometry.lastError == BooleanError::None ? 0 : -1;
+}
+
 std::vector<BooleanPiece> DestructibleGeometrySystem::decomposePieces(
     const DestructibleGeometry& geometry) const
 {
@@ -273,17 +315,18 @@ int DestructibleGeometrySystem::addCut(DestructibleGeometry& geometry,
     if (!geometry.enabled)
         return 0;
 
-    DestructionCut stored = cut;
-    if (stored.cutId == 0)
-        stored.cutId = geometry.nextCutId++;
-    geometry.cuts.push_back(stored);
-
-    if (!rebuild(geometry))
+    const uint64_t id = enqueueCut(geometry, cut);
+    // Apply every queued cut immediately (immediate API). A no-op cut still
+    // counts as accepted history and reports 1 for compatibility.
+    const int flushed = flushQueuedCuts(geometry, 0);
+    if (flushed < 0)
     {
         // Roll back so an invalid cut never corrupts the authoritative history.
         geometry.cuts.pop_back();
-        if (stored.cutId != 0)
-            geometry.nextCutId = stored.cutId;
+        if (geometry.pendingCutCount > 0)
+            --geometry.pendingCutCount;
+        if (id != 0)
+            geometry.nextCutId = id;
         return 0;
     }
     return 1;
@@ -293,6 +336,8 @@ int DestructibleGeometrySystem::rebuildAll(DestructibleGeometry& geometry)
 {
     if (!geometry.enabled)
         return 0;
+    // A full rebuild replays all history, so treat every cut as pending.
+    geometry.pendingCutCount = (uint32_t)geometry.cuts.size();
     return rebuild(geometry) ? 1 : 0;
 }
 

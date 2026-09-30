@@ -520,6 +520,8 @@ BooleanCutResult booleanSubtractIncremental(uint64_t sessionId,
         session.running = std::move(imported);
     }
 
+    const double volumeBefore = session.running.Volume();
+
     for (size_t i = session.appliedCuts; i < cutters.size(); ++i)
     {
         const BooleanCutter& cutter = cutters[i];
@@ -562,6 +564,22 @@ BooleanCutResult booleanSubtractIncremental(uint64_t sessionId,
         }
         session.running = std::move(next);
         session.appliedCuts = i + 1;
+    }
+
+    // A cutter that removed no material (it sat entirely inside already-empty
+    // space) leaves the solid unchanged. Report that honestly and skip the
+    // O(triangle) mesh export entirely: the caller keeps its existing surface.
+    if (session.appliedCuts > 0)
+    {
+        const double volumeAfter = session.running.Volume();
+        if (volumeAfter >= volumeBefore - 1e-9)
+        {
+            result.changed = false;
+            result.success = true;
+            result.remainingVolume = (float)volumeAfter;
+            result.triangleCount = (uint32_t)session.running.NumTri();
+            return result;
+        }
     }
 
     fillResult(session.running, session.baseRunId, base, result);

@@ -342,73 +342,108 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
         }
     }
 
-    const auto booleanStart = std::chrono::steady_clock::now();
-    const int rebuilt =
-        DestructibleGeometrySystem::instance().addCut(entity->destructible, cut);
-    const float booleanMs = std::chrono::duration<float, std::milli>(
-        std::chrono::steady_clock::now() - booleanStart).count();
+    // Accept the cut into the authoritative history now, but defer the surface
+    // rebuild to the per-tick flush. A rapid burst thus becomes one batched
+    // rebuild per entity (drained under the flush budget) instead of one
+    // O(triangle) rebuild per shot on the main thread.
+    const uint64_t cutId = DestructibleGeometrySystem::instance().enqueueCut(
+        entity->destructible, cut);
 
     entity->destructible.health =
         std::max(0.0f, entity->destructible.health - damage);
-    entity->localTriangles = entity->destructible.collisionTriangles;
-    // Material was removed: follow it with the rigid-body mass, center of mass,
-    // and inertia immediately (the per-tick owner reads the same cached values).
-    if (rebuilt != 0)
-        refreshEntityMassProperties(*entity);
-
-    // Fracture: if the cut disconnected the object or left it hanging off its
-    // support, split it into independent bodies. The trigger was recorded by
-    // the rebuild; this owns spawning and the primary-piece keep rule.
-    if (rebuilt != 0 &&
-        entity->destructible.lastFractureReason != FractureReason::None)
-    {
-        std::vector<uint32_t> fragments = applyFracture(*entity, result, false);
-        if (!fragments.empty())
-        {
-            result.fractured = true;
-            result.fragmentCount = (uint32_t)fragments.size();
-            Debug::log(Debug::Category::General,
-                "[FRACTURE] entity=%u reason=%u pieces=%zu vol=%.4f\n",
-                event.targetEntityId, (unsigned)entity->destructible.lastFractureReason,
-                fragments.size() + 1, entity->destructible.remainingVolume);
-        }
-    }
-
-    // Bounded, categorized diagnostics at the boolean owner. Failures always
-    // record; successful cuts are rate-limited so a long burst stays readable.
-    if (rebuilt == 0)
-    {
-        Debug::error(Debug::Category::General,
-            "[BOOLEAN] FAILED entity=%u src=%u radius=%.3f cuts=%zu triLimit=%zu "
-            "bool=%.2fms err=%u\n",
-            event.targetEntityId, resolved.sourceEntityId, radius,
-            entity->destructible.cuts.size(),
-            DestructibleGeometrySystem::instance().maxTrianglesPerEntity,
-            booleanMs, (unsigned)entity->destructible.lastError);
-    }
-    else if ((mCutLogCounter++ % 4u) == 0u)
-    {
-        Debug::log(Debug::Category::General,
-            "[BOOLEAN] entity=%u src=%u radius=%.3f cuts=%zu tris=%zu vol=%.4f "
-            "mass=%.1f com=(%.3f %.3f %.3f) comps=%u shells=%u bool=%.2fms\n",
-            event.targetEntityId, resolved.sourceEntityId, radius,
-            entity->destructible.cuts.size(), entity->localTriangles.size(),
-            entity->destructible.remainingVolume, entity->mass,
-            entity->centerOfMass.x, entity->centerOfMass.y, entity->centerOfMass.z,
-            entity->destructible.componentCount,
-            entity->destructible.shellCount, booleanMs);
-    }
 
     result.applied = true;
-    result.cutCreated = rebuilt != 0;
+    result.cutCreated = cutId != 0;
+    result.pending = cutId != 0;
     result.cutRadius = radius;
     result.damage = damage;
-    result.chunksRebuilt = rebuilt;
-    result.triangleCount = (uint32_t)entity->localTriangles.size();
-    result.componentCount = entity->destructible.componentCount;
-    result.remainingVolume = entity->destructible.remainingVolume;
-    result.error = entity->destructible.lastError;
+    result.fragmentCount = 0;
+    result.error = BooleanError::None;
     return result;
+}
+
+void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
+{
+    const auto start = std::chrono::steady_clock::now();
+    PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
+    DestructibleGeometrySystem& geometrySystem = DestructibleGeometrySystem::instance();
+
+    // Snapshot ids first: applying a fracture spawns entities and reallocates
+    // the system's storage, so a live pointer/iterator is unsafe across a
+    // flush.
+    std::vector<uint32_t> pendingIds;
+    for (const PhysicalEntity& e : system.entities())
+        if (e.destructible.enabled && e.destructible.pendingCutCount != 0)
+            pendingIds.push_back(e.id);
+
+    for (uint32_t id : pendingIds)
+    {
+        PhysicalEntity* entity = system.find(id);
+        if (!entity || !entity->destructible.enabled ||
+            entity->destructible.pendingCutCount == 0)
+            continue;
+
+        const auto booleanStart = std::chrono::steady_clock::now();
+        const int flushed = geometrySystem.flushQueuedCuts(entity->destructible,
+                                                           maxCutsPerEntity);
+        const float booleanMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - booleanStart).count();
+
+        if (flushed < 0)
+        {
+            Debug::error(Debug::Category::General,
+                "[BOOLEAN] FLUSH FAILED entity=%u pending=%u triLimit=%zu "
+                "bool=%.2fms err=%u\n",
+                id, entity->destructible.pendingCutCount,
+                geometrySystem.maxTrianglesPerEntity, booleanMs,
+                (unsigned)entity->destructible.lastError);
+            continue;
+        }
+        if (flushed == 0)
+            continue;
+
+        // Surface changed: publish geometry and mass.
+        entity->localTriangles = entity->destructible.collisionTriangles;
+        refreshEntityMassProperties(*entity);
+
+        // Fracture can reallocate the entity vector; re-fetch after it.
+        if (entity->destructible.lastFractureReason != FractureReason::None)
+        {
+            ImpactResult fractureResult;
+            const std::vector<uint32_t> fragments =
+                applyFracture(*entity, fractureResult, false);
+            if (!fragments.empty())
+            {
+                Debug::log(Debug::Category::General,
+                    "[FRACTURE] entity=%u reason=%u pieces=%zu vol=%.4f\n",
+                    id, (unsigned)entity->destructible.lastFractureReason,
+                    fragments.size() + 1, entity->destructible.remainingVolume);
+            }
+            entity = system.find(id);
+            if (!entity)
+                continue;
+        }
+
+        if ((mCutLogCounter++ % 4u) == 0u)
+        {
+            Debug::log(Debug::Category::General,
+                "[BOOLEAN] entity=%u cuts=%zu tris=%zu vol=%.4f mass=%.1f "
+                "com=(%.3f %.3f %.3f) comps=%u shells=%u bool=%.2fms\n",
+                id, entity->destructible.cuts.size(), entity->localTriangles.size(),
+                entity->destructible.remainingVolume, entity->mass,
+                entity->centerOfMass.x, entity->centerOfMass.y, entity->centerOfMass.z,
+                entity->destructible.componentCount,
+                entity->destructible.shellCount, booleanMs);
+        }
+
+        if (budgetMs > 0.0f)
+        {
+            const float spent = std::chrono::duration<float, std::milli>(
+                std::chrono::steady_clock::now() - start).count();
+            if (spent >= budgetMs)
+                break;
+        }
+    }
 }
 
 } // namespace MimitaImpact

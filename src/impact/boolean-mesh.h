@@ -76,6 +76,13 @@ enum class BooleanError : uint8_t
 struct BooleanCutResult
 {
     bool success = false;
+
+    // False when the subtract removed no material (the cutter was entirely
+    // inside already-empty space). `mesh` is still valid, but it is identical
+    // to the previous surface. Callers use this to avoid rebuilding collision,
+    // render, and mass data for a no-op cut.
+    bool changed = true;
+
     BooleanMesh mesh;
     float remainingVolume = 0.0f;
     uint32_t triangleCount = 0;

@@ -167,7 +167,17 @@ ImpactResult submitRifle(uint32_t targetId, const glm::vec3& point,
     ev.sizeScale = sizeScale;
     ev.cutScale = 1.0f;
     ev.energy = ImpactSystem::kineticEnergy(mass, speed);
-    return ImpactSystem::instance().submit(ev);
+    ImpactResult result = ImpactSystem::instance().submit(ev);
+    // Production defers the surface rebuild to the fixed tick; tests inspect
+    // geometry immediately, so flush here (unbudgeted).
+    ImpactSystem::instance().flushPendingCuts();
+    if (PhysicalEntity* e = PhysicalEntitySystem::instance().find(targetId))
+    {
+        result.triangleCount = (uint32_t)e->localTriangles.size();
+        result.componentCount = e->destructible.componentCount;
+        result.remainingVolume = e->destructible.remainingVolume;
+    }
+    return result;
 }
 
 // Minimal CollisionWorldView that mirrors the server's entity query so the

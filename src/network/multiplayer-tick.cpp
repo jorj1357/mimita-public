@@ -1924,7 +1924,26 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     const bool inputDue =
         ctx.lastInputSentMs == 0 ||
         (double)(currentMs - ctx.lastInputSentMs) >= inputIntervalMs;
-    if (ctx.connected && ctx.localPlayerId && input && inputDue)
+
+    // procedural_world_teleport_highest has no client-known destination.
+    // Do not send the old predicted transform while waiting for the server's
+    // newer epoch.  The server command itself uses its separate reliable
+    // command packet, so suppressing this movement packet cannot cancel the
+    // teleport request.
+    if (ctx.proceduralTeleportPending &&
+        currentMs - ctx.proceduralTeleportSentMs >= 3000)
+    {
+        // A lost command must not freeze movement forever.  The server-side
+        // transform-ack timeout is also bounded, so use the same recovery
+        // principle here and allow normal input to resume.
+        printf("[CLIENT PROCEDURAL TELEPORT TIMEOUT] playerId=%u startEpoch=%u\n",
+               ctx.localPlayerId, (unsigned)ctx.proceduralTeleportStartEpoch);
+        ctx.proceduralTeleportPending = false;
+        ctx.teleportResync = true;
+    }
+
+    if (ctx.connected && ctx.localPlayerId && input && inputDue &&
+        !ctx.proceduralTeleportPending)
     {
         InputPacket in{};
         in.header.type = PACKET_INPUT;
