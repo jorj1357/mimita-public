@@ -347,12 +347,9 @@ void RagdollModeSystem::applyHybridSprings(RagdollBody& b, float dt)
     if (baseRate <= 1e-4f) return;
 
     for (auto& part : b.parts) {
-        // The arms can be tuned to track their aimbody/animation pose harder
-        // than the rest of the body, so fast movement does not leave the weapon
-        // lagging behind (which makes it aim the wrong way).
+        // Arm sway correction runs after physics below. Keeping this pre-physics
+        // rate shared prevents the old arm multiplier from saturating here.
         float rate = baseRate;
-        if (part.name == "leftArm" || part.name == "rightArm")
-            rate *= pc.hybridArmsFollowForce;
         if (rate <= 1e-4f) continue;
 
         const float alpha = glm::clamp(1.0f - std::exp(-rate * dt), 0.0f, 1.0f);
@@ -369,6 +366,38 @@ void RagdollModeSystem::applyHybridSprings(RagdollBody& b, float dt)
             body.position += delta * (alpha * pc.hybridPositionFollow);
             body.linearVelocity *= retain;
         }
+    }
+}
+
+// Reduce movement-induced arm sway after joints and collision have finished.
+// The target preserves the intended arm pose relative to the torso's current
+// orientation, rather than pulling toward a stale world-space angle.
+void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b, float dt)
+{
+    const auto& pc = RagdollModeConfig::instance().data().physicalAim;
+    if (b.torsoIndex < 0 || b.torsoIndex >= (int)b.parts.size()) return;
+
+    const float force = std::max(0.0f, pc.hybridArmsFollowForce);
+    if (force <= 1e-4f) return;
+
+    const glm::quat targetTorso =
+        b.parts[b.torsoIndex].aimTargetOrientation;
+    const glm::quat currentTorso =
+        b.parts[b.torsoIndex].body.orientation;
+
+    for (auto& part : b.parts) {
+        if (part.name != "leftArm" && part.name != "rightArm") continue;
+
+        const glm::quat armRelativeToTargetTorso = glm::normalize(
+            glm::inverse(targetTorso) * part.aimTargetOrientation);
+        const glm::quat centeredTarget = glm::normalize(
+            currentTorso * armRelativeToTargetTorso);
+        const float alpha = glm::clamp(
+            1.0f - std::exp(-force * dt), 0.0f, 1.0f);
+
+        part.body.orientation = glm::normalize(
+            glm::slerp(part.body.orientation, centeredTarget, alpha));
+        part.body.angularVelocity *= (1.0f - alpha);
     }
 }
 
@@ -518,6 +547,9 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
         for (auto& part : b.parts)
             depenetrateWorld(part.body, world, 2);
     }
+
+    if (hybrid)
+        stabilizeHybridArms(b, dt);
 
     // Range limits keep limbs near their attachments; then the attachment's own
     // per-axis limits are enforced as a final pass.

@@ -59,10 +59,9 @@ struct PhysicalAimConfig {
     // default animated pose even at high speed; lower = more sway and momentum.
     float hybridFollowForce = 1.0f;
     float hybridBaseRate = 12.0f;
-    // Extra multiplier on the two arms' tracking rate. 1.0 = same as the rest of
-    // the body; higher makes the arms stick much harder to their aimbody /
-    // animation orientation so a fast-moving player's weapon does not lag and
-    // aim wrong (moving left making the gun point right).
+    // Post-physics arm sway correction rate (1/s). Zero leaves arm sway fully
+    // physical; higher values keep each arm closer to its aimbody/animation
+    // pose relative to the current torso.
     float hybridArmsFollowForce = 1.0f;
     // 0 = orientation-only following, 1 = limbs also follow their animated
     // position. Multiplies the position blend fraction.

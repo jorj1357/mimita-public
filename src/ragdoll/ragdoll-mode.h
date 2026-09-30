@@ -191,6 +191,7 @@ private:
     void tetherAimRoot(const Player& player, RagdollBody& b, float dt);
     void captureAimTargets(const Player& player, RagdollBody& b);
     void applyHybridSprings(RagdollBody& b, float dt);
+    void stabilizeHybridArms(RagdollBody& b, float dt);
     void clampAimRanges(const Player& player, RagdollBody& b, float beta);
     void cacheReplicatedPose(const Player& player, const RagdollBody& b,
                              uint8_t mode, uint32_t sourceTick);

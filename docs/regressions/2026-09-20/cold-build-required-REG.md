@@ -1563,3 +1563,52 @@ Read the `collision.solve.summary` counters (`candidate_pairs`,
 `collision.narrowphase.compare` diff with `actorCollisionComparison` enabled. If
 the rounded-feature narrowphase now dominates, optimize that; if the candidate
 gather dominates, consider a persistent per-chunk tree.
+
+## Cold-build occurrence 26
+
+UTC time:
+`2026-09-30T15:07:52Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_110900-hybrid-arm-sway-correction.md`
+
+### Why the cold build was required
+
+The hybrid arm correction changes the cold ragdoll fixed-tick owner so the
+requested arm behavior could be compiled into a new executable.
+
+### Exact cold source / boundary
+
+- `src/ragdoll/ragdoll-mode.cpp`
+- `src/ragdoll/ragdoll-mode.h`
+- `src/ragdoll/physical-aim.h`
+
+The active hybrid solve order is compiled into the executable and is not
+replaceable through the current live module path.
+
+### Result needed from the new executable
+
+Compile the new post-physics torso-relative arm correction so human playtesting
+can compare left/right movement sway with `arms_follow_force` tuning.
+
+### Why it could not be applied through the live path
+
+`RagdollModeSystem::updateAim` and `applyHybridSprings` run in the cold fixed
+tick. The available live build cannot replace this owner.
+
+### Build result
+
+The first incremental build reported `SUCCESS` with `Nothing changed` and was
+not accepted as proof. After removing the exact stale ragdoll object and
+dependency files, `python build_agent.py` returned `BUILD SUCCESS`, compiled 1
+translation unit, skipped 496, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Move left and right in hybrid mode and confirm the arms retain the
+centered torso-relative aim while still showing editable natural sway.
+
+### Next migration/falsification step
+
+Move hybrid arm presentation policy behind the live behavior boundary if this
+setting needs tuning without a cold executable build.

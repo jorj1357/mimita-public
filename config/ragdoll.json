@@ -105,7 +105,8 @@
         // "limb_inheritance": 0.0,
         // "torso_tether_stiffness": 200.0,
         // "torso_tether_stiffness": 20.0,
-        "torso_tether_stiffness": 1.0,
+        // "torso_tether_stiffness": 1.0,
+        "torso_tether_stiffness": 0.01,
         // "damping_mode": "physical",
         "damping_mode": "look",
         "limits": {
@@ -125,33 +126,38 @@
             //   1 = limbs also follow their animated position. 
             //   All values are stable at any magnitude.",
             // "follow_force": 10.0,
+            "follow_force": 20.0,
             // "follow_force": 50.0,
             // "follow_force": 25.0,
             // "follow_force": 35.0,
             // "follow_force": 15.0,
             // "follow_force": 5.0,
-            "follow_force": 100.0,
+            // "follow_force": 100.0,
             // "follow_force": 1.0,
             // "follow_force": 999.0,
-            "base_rate": 50.0,
+            // "follow_force": 999999.0,
+            // "base_rate": 50.0,
             // "base_rate": 100.0,
+            "base_rate": 20.0,
             // "base_rate": 999.0,
             // "base_rate": 10.0,
             // "base_rate": 1.0,
             // "base_rate": 3.0,
             // "base_rate": 5.0,
-            // "position_follow": 100.0
-            // "position_follow": 0.0
-            // "position_follow": 0.5
+            // "position_follow": 100.0,
+            // "position_follow": 0.0,
+            // "position_follow": 0.5,
+            // "position_follow": 0.01,
             "position_follow": 1.0,
-            // Arms-only tracking multiplier. 1.0 = same as follow_force/base_rate;
-            // 10.0 = the arms stick ten times harder to their aimbody/animation
-            // orientation, so moving fast does not leave the weapon aiming wrong.
+            // Arms-only post-physics sway correction rate (1/s). 0 = fully
+            // physical sway; higher values keep the arm closer to its centered
+            // aimbody/animation pose relative to the torso.
             // "arms_follow_force": 1.0
             // "arms_follow_force": 5.0
             // "arms_follow_force": 10.0
             // "arms_follow_force": 25.0
-            "arms_follow_force": 50.0
+            // "arms_follow_force": 50.0
+            "arms_follow_force": 0.0
         }
     },
     "exit": {
