@@ -8,6 +8,7 @@
 
 #include "impact/impact-system.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -18,7 +19,9 @@
 
 #include "config/material-config.h"
 #include "impact/destructible-geometry.h"
+#include "impact/destructible-mesh-loader.h"
 #include "combat/projectile-simulation.h"
+#include "physics/mesh-mass-properties.h"
 #include "physics/physical-entity.h"
 
 namespace MimitaImpact {
@@ -59,6 +62,45 @@ bool rayHitsMesh(const std::vector<CollisionTriangle>& triangles,
             return true;
     }
     return false;
+}
+
+// Closed octahedron with vertices at +/-r on each axis, outward CCW.
+BooleanMesh makeOctahedron(float r, uint32_t materialId)
+{
+    const glm::vec3 v[6] = {
+        { r, 0, 0}, {-r, 0, 0}, {0,  r, 0},
+        {0, -r, 0}, {0, 0,  r}, {0, 0, -r}
+    };
+    const int tri[8][3] = {
+        {0, 2, 4}, {1, 4, 2}, {1, 3, 4}, {0, 4, 3},
+        {0, 5, 2}, {1, 2, 5}, {1, 5, 3}, {0, 3, 5}
+    };
+    BooleanMesh mesh;
+    for (int t = 0; t < 8; ++t)
+    {
+        const glm::vec3 a = v[tri[t][0]];
+        const glm::vec3 b = v[tri[t][1]];
+        const glm::vec3 c = v[tri[t][2]];
+        glm::vec3 n = glm::cross(b - a, c - a);
+        const float len = glm::length(n);
+        if (len <= 1e-9f)
+            continue;
+        n /= len;
+        const uint32_t base = (uint32_t)mesh.vertices.size();
+        for (const glm::vec3& p : {a, b, c})
+        {
+            BooleanMeshVertex out;
+            out.position = p;
+            out.normal = n;
+            out.uv = glm::vec2(0.0f);
+            out.materialId = materialId;
+            mesh.vertices.push_back(out);
+        }
+        mesh.indices.push_back(base);
+        mesh.indices.push_back(base + 1u);
+        mesh.indices.push_back(base + 2u);
+    }
+    return mesh;
 }
 
 uint64_t checksumMesh(const PhysicalEntity& entity)
@@ -214,17 +256,37 @@ bool destructibleSelfTest(std::string* outSummary)
                                            glm::vec3(0, 0, 1), glm::vec3(0, 0, -1),
                                            0.02f, 900.0f, 0.01f);
         check(r.applied && r.cutCreated, "projectile impact applied");
-        check(crate && crate->destructible.sphereCuts.size() == 1,
+        check(crate && crate->destructible.cuts.size() == 1,
               "one projectile stores exactly one cut");
-        if (crate && !crate->destructible.sphereCuts.empty())
+        if (crate && !crate->destructible.cuts.empty())
         {
-            const glm::vec3 local = crate->destructible.sphereCuts[0].localCenter;
+            const glm::vec3 local = crate->destructible.cuts[0].cutter.localCenter;
             check(std::fabs(local.x) < 1e-3f && std::fabs(local.y) < 1e-3f &&
                   std::fabs(local.z - 2.5f) < 1e-3f,
                   "cut stored in crate-local coordinates");
             check(r.cutRadius > 0.05f && r.cutRadius <= 1.5f,
                   "cut radius within material clamp");
         }
+    }
+
+    // 3b. A localized cut must not shrink the whole crate. The old surface-nets
+    // grid had no outside-air border and eroded the entire shell; the corner of
+    // the crate must stay at the authored half extent after one small cut.
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        submitRifle(id, glm::vec3(0.0f, 0.0f, 2.5f), glm::vec3(0, 0, 1),
+                    glm::vec3(0, 0, -1), 0.02f, 900.0f, 0.01f);
+        PhysicalEntity* crate = system.find(id);
+        float maxCoord = 0.0f;
+        if (crate)
+            for (const CollisionTriangle& t : crate->localTriangles)
+                for (const glm::vec3& v : {t.a, t.b, t.c})
+                    maxCoord = std::max(maxCoord,
+                        std::max(std::fabs(v.x), std::max(std::fabs(v.y), std::fabs(v.z))));
+        check(crate && !crate->localTriangles.empty() &&
+              std::fabs(maxCoord - 2.5f) < 1e-3f,
+              "localized cut does not shrink the whole crate");
     }
 
     // 4. Shallow hit damages less than a direct hit.
@@ -266,8 +328,8 @@ bool destructibleSelfTest(std::string* outSummary)
         const ImpactResult r = submitRifle(id, glm::vec3(0, 0, 2.5f),
                                            glm::vec3(0, 0, 1), glm::vec3(0, 0, -1),
                                            0.02f, 900.0f, 0.01f);
-        const glm::vec3 cutCenter = crate ? crate->destructible.sphereCuts[0].localCenter
-                                          : glm::vec3(0.0f);
+        const glm::vec3 cutCenter = crate && !crate->destructible.cuts.empty()
+            ? crate->destructible.cuts[0].cutter.localCenter : glm::vec3(0.0f);
         // A point just inside the cut (toward the crate interior) is empty.
         const glm::vec3 inside = cutCenter + glm::vec3(0.0f, 0.0f, -r.cutRadius * 0.5f);
         check(destructibleCrateDistance(crate->destructible, inside) > 0.0f,
@@ -293,12 +355,14 @@ bool destructibleSelfTest(std::string* outSummary)
         system.clear();
         const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
         PhysicalEntity* crate = system.find(id);
-        DestructionCutSphere c1;
-        c1.localCenter = glm::vec3(1.25f, 0.0f, 0.0f);
-        c1.radius = 1.5f;
-        DestructionCutSphere c2;
-        c2.localCenter = glm::vec3(-1.25f, 0.0f, 0.0f);
-        c2.radius = 1.5f;
+        DestructionCut c1;
+        c1.cutter.type = BooleanCutterType::Sphere;
+        c1.cutter.localCenter = glm::vec3(1.25f, 0.0f, 0.0f);
+        c1.cutter.radius = 1.5f;
+        DestructionCut c2;
+        c2.cutter.type = BooleanCutterType::Sphere;
+        c2.cutter.localCenter = glm::vec3(-1.25f, 0.0f, 0.0f);
+        c2.cutter.radius = 1.5f;
         DestructibleGeometrySystem::instance().addCut(crate->destructible, c1);
         DestructibleGeometrySystem::instance().addCut(crate->destructible, c2);
         check(!rayHitsMesh(crate->destructible.collisionTriangles,
@@ -390,6 +454,125 @@ bool destructibleSelfTest(std::string* outSummary)
         }
         check(hit && step.hitEntityId == id,
               "projectile sweep detects the crate as EntityImpact");
+    }
+
+    // 12. The mesh mass-properties integrator matches the analytic box. A box
+    // with half extents (1,2,3) has volume 48 and, at unit density, the
+    // diagonal inertia (208, 160, 80).
+    {
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(1.0f, 2.0f, 3.0f));
+        const MeshMassProperties mp = computeMeshMassProperties(box);
+        check(mp.valid, "box mesh mass properties are valid");
+        check(std::fabs(mp.volume - 48.0f) < 0.01f,
+              "mesh volume matches the analytic box volume");
+        check(glm::length(mp.centerOfMass) < 1e-4f,
+              "box center of mass is the origin");
+        check(std::fabs(mp.unitInertiaDiagonal.x - 208.0f) < 0.1f &&
+              std::fabs(mp.unitInertiaDiagonal.y - 160.0f) < 0.1f &&
+              std::fabs(mp.unitInertiaDiagonal.z - 80.0f) < 0.1f,
+              "mesh inertia matches the analytic box diagonal");
+    }
+
+    // 13. A cut removes mass, moves the center of mass away from the hole, and
+    // updates inertia. The values are cached per geometry revision.
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        PhysicalEntity* crate = system.find(id);
+        crate->density = 1.0f;
+        crate->mass = 125.0f;
+        refreshEntityMassProperties(*crate);
+        const float massBefore = crate->mass;
+        const glm::vec3 inertiaBefore = crate->inertia;
+
+        DestructionCut cut;
+        cut.cutter.type = BooleanCutterType::Sphere;
+        cut.cutter.localCenter = glm::vec3(0.0f, 0.0f, 2.0f);
+        cut.cutter.radius = 1.0f;
+        const bool cutOk = DestructibleGeometrySystem::instance().addCut(
+            crate->destructible, cut) == 1;
+        crate->localTriangles = crate->destructible.collisionTriangles;
+        refreshEntityMassProperties(*crate);
+
+        check(cutOk, "asymmetric cut is applied");
+        check(crate->mass < massBefore && crate->mass > massBefore * 0.9f,
+              "cut removes a proportional amount of mass");
+        check(crate->destructible.massCenterOfMass.z < -0.005f &&
+              std::fabs(crate->destructible.massCenterOfMass.x) < 1e-3f,
+              "center of mass moves away from the cut");
+        check(glm::length(crate->centerOfMass -
+                          crate->destructible.massCenterOfMass) < 1e-5f,
+              "physics uses the cached center of mass");
+        check(crate->inertia != inertiaBefore,
+              "inertia updates with the remaining material");
+    }
+
+    // 14. An authored closed mesh (the shape a GLB import produces) is destructible
+// through the same owner as the crate: populated surface, mesh-derived mass, and
+// a real cut.
+    {
+        system.clear();
+        const BooleanMesh octahedron = makeOctahedron(1.0f, 0);
+        std::string reason;
+        check(booleanValidate(octahedron, &reason) == BooleanError::None,
+              "authored closed mesh validates as a manifold");
+
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(1.0f));
+        const uint32_t id = system.add(
+            box, glm::mat4(1.0f), PhysicalEntityMotion::Dynamic);
+        PhysicalEntity* e = system.find(id);
+        e->halfExtents = glm::vec3(1.0f);
+        e->density = 2.0f;
+        ImpactSystem::instance().initializeEntityFromMesh(
+            *e, octahedron, glm::vec3(1.0f), materialIdForName("wood"));
+
+        check(!e->localTriangles.empty(),
+              "imported mesh populates collision triangles at spawn");
+        check(std::fabs(e->destructible.remainingVolume - 4.0f / 3.0f) < 0.01f,
+              "imported mesh volume matches the octahedron");
+        check(e->destructible.massFromMesh,
+              "imported mesh uses mesh-derived mass properties");
+
+        const float massBefore = e->mass;
+        const size_t trianglesBefore = e->localTriangles.size();
+        const ImpactResult r = submitRifle(id, glm::vec3(0, 0, 0.5f),
+                                           glm::vec3(0, 0, 1), glm::vec3(0, 0, -1),
+                                           0.02f, 900.0f, 0.01f);
+        check(r.applied && r.cutCreated, "rifle cut applies to an imported mesh");
+        check(e->localTriangles.size() != trianglesBefore,
+              "imported mesh surface regenerates after a cut");
+        check(e->mass < massBefore, "imported mesh loses mass after a cut");
+    }
+
+    // 15. The GLB loader is GL-free and never lets bad input into gameplay: a
+    // missing file and a typical (non-watertight) weapon model both come back
+    // with a reason, and a successful load always carries finite bounds.
+    {
+        const DestructibleMeshLoad missing =
+            loadDestructibleMeshFromGLB("assets/does-not-exist.glb");
+        check(!missing.success && !missing.error.empty(),
+              "missing GLB is rejected with a reason");
+
+        const DestructibleMeshLoad weapon = loadDestructibleMeshFromGLB(
+            "assets/objects/weapons/mimita-revolver-v1.glb");
+        check(!weapon.success ||
+                  (weapon.mesh.triangleCount() > 0 && weapon.halfExtents.x > 0.0f),
+              "GLB loader imports a closed mesh or rejects it cleanly");
+        if (!weapon.success)
+            check(!weapon.error.empty(), "rejected GLB reports the reason");
+
+        const DestructibleMeshLoad sword = loadDestructibleMeshFromGLB(
+            "assets/objects/things/cosmetics/sword1.glb");
+        check(sword.success && sword.mesh.triangleCount() > 0 &&
+                  sword.halfExtents.x > 0.0f,
+              "a real watertight GLB imports as a closed destructible mesh");
+
+        const DestructibleMeshLoad openMap =
+            loadDestructibleMeshFromGLB("assets/maps/colltest.glb");
+        check(!openMap.success && !openMap.error.empty(),
+              "a non-watertight GLB is rejected with a reason");
     }
 
     if (outSummary)

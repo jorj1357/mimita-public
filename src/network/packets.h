@@ -19,7 +19,7 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // carry real damage/health; every bullet visual is guaranteed delivery.
 // 36: DuelStatePacket carries the server-authoritative procedural-world state
 // (Infinite Dungeon Slayer) so clients render rooms from server truth.
-constexpr uint16_t PROTOCOL_VERSION = 38;
+constexpr uint16_t PROTOCOL_VERSION = 39;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -153,7 +153,15 @@ enum PacketType : uint8_t
     // The owning client sends its six limb world transforms at a low rate; the
     // server relays to everyone else; remote clients interpolate and apply them
     // to the replica skeleton (render + client hitboxes).
-    PACKET_RAGDOLL_STATE = 69
+    PACKET_RAGDOLL_STATE = 69,
+    // ── Destructible physical-entity replication (server → clients) ──
+    // Spawn/despawn/cut are reliable gameplay events; state is an unreliable
+    // per-tick transform broadcast. Entity ids are the server's runtime
+    // PhysicalEntity ids, so a client mirror never becomes an authority.
+    PACKET_PHYSICAL_ENTITY_SPAWN = 70,
+    PACKET_PHYSICAL_ENTITY_DESPAWN = 71,
+    PACKET_PHYSICAL_ENTITY_STATE = 72,
+    PACKET_ENTITY_CUT_EVENT = 73
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1733,6 +1741,94 @@ static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too l
 static_assert(sizeof(PlayerRespawnedPacket) <= 584, "PlayerRespawnedPacket is too large");
 static_assert(sizeof(BombTagStatePacket) <= 96, "BombTagStatePacket is too large");
 static_assert(sizeof(BombTagPassEventPacket) <= 96, "BombTagPassEventPacket is too large");
+
+// ── Destructible physical-entity replication ─────────────────────────
+// The base geometry is never sent as triangles. A client mirror rebuilds the
+// same canonical base from `sourceKind` (authored box half extents, or a GLB
+// path) and then applies the same ordered cut events, exactly like the server.
+#pragma pack(push, 1)
+
+enum PhysicalEntitySource : uint8_t
+{
+    PHYSICAL_ENTITY_SOURCE_BOX = 0,
+    PHYSICAL_ENTITY_SOURCE_GLB = 1
+};
+
+constexpr int MAX_PHYSICAL_ENTITY_PATH_BYTES = 128;
+constexpr int MAX_PHYSICAL_ENTITY_STATE_ENTRIES = 16;
+
+struct PhysicalEntitySpawnEventPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t networkId = 0;
+    uint8_t motion = 0;      // PhysicalEntityMotion
+    uint8_t sourceKind = 0;  // PhysicalEntitySource
+    uint16_t reserved = 0;
+    uint32_t materialId = 0;
+    float halfExtents[3] = {0.5f, 0.5f, 0.5f};
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    float orientation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    float velocity[3] = {0.0f, 0.0f, 0.0f};
+    float angularVelocity[3] = {0.0f, 0.0f, 0.0f};
+    float density = 1.0f;
+    char modelPath[MAX_PHYSICAL_ENTITY_PATH_BYTES] = {0};
+    char texturePath[MAX_PHYSICAL_ENTITY_PATH_BYTES] = {0};
+};
+
+struct PhysicalEntityDespawnEventPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t networkId = 0;
+};
+
+struct PhysicalEntityStateEntry
+{
+    uint32_t networkId = 0;
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    float orientation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    float velocity[3] = {0.0f, 0.0f, 0.0f};
+    float angularVelocity[3] = {0.0f, 0.0f, 0.0f};
+};
+
+struct PhysicalEntityStatePacket
+{
+    PacketHeader header;
+    uint16_t entityCount = 0;
+    uint16_t reserved = 0;
+    PhysicalEntityStateEntry entities[MAX_PHYSICAL_ENTITY_STATE_ENTRIES];
+};
+
+struct PhysicalEntityCutEventPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t networkId = 0;
+    uint32_t cutId = 0;
+    uint32_t sourceEntityId = 0;
+    uint64_t predictionKey = 0;
+    uint8_t cutterType = 0;
+    uint32_t materialId = 0;
+    float localCenter[3] = {0.0f, 0.0f, 0.0f};
+    float localDirection[3] = {0.0f, 0.0f, 1.0f};
+    float radius = 0.0f;
+    float length = 0.0f;
+    float damage = 0.0f;
+    float energy = 0.0f;
+};
+
+#pragma pack(pop)
+
+static_assert(sizeof(PhysicalEntitySpawnEventPacket) <= 384,
+              "PhysicalEntitySpawnEventPacket is too large");
+static_assert(sizeof(PhysicalEntityStatePacket) < MAX_GAME_DATAGRAM_BYTES,
+              "PhysicalEntityStatePacket exceeds the safe datagram limit");
+static_assert(sizeof(PhysicalEntityCutEventPacket) <= 96,
+              "PhysicalEntityCutEventPacket is too large");
 
 bool validHeader(const PacketHeader& header, uint8_t expectedType);
 

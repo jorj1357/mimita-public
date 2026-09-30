@@ -31,6 +31,8 @@ namespace MimitaProcedural {
 namespace {
 
 ProceduralWorldConfig gConfig;
+std::string gConfigPath = "config/procedural-world.json";
+std::unordered_map<std::string, std::filesystem::file_time_type> gConfigTimes;
 
 glm::vec3 readVec3(const json& j, const char* key, glm::vec3 def)
 {
@@ -83,6 +85,25 @@ bool loadRoomDefinition(const std::string& path, ProceduralRoomDefinition& out)
         out.enemySpawns = readVec3List(j, "enemySpawns");
         out.boundsMin = readVec3(j, "boundsMin", out.boundsMin);
         out.boundsMax = readVec3(j, "boundsMax", out.boundsMax);
+        if (j.contains("spawnpoint") && j["spawnpoint"].is_object())
+        {
+            out.hasPlayerSpawn = true;
+            out.playerSpawnPosition = readVec3(
+                j["spawnpoint"], "position", out.playerSpawnPosition);
+            out.playerSpawnRotationDegrees = readVec3(
+                j["spawnpoint"], "rotation_degrees",
+                out.playerSpawnRotationDegrees);
+        }
+        if (j.contains("door") && j["door"].is_object())
+        {
+            out.hasDoor = true;
+            out.doorPosition = readVec3(
+                j["door"], "position", out.exitPosition);
+            out.doorRotationDegrees = readVec3(
+                j["door"], "rotation_degrees", out.doorRotationDegrees);
+            out.doorHalfExtents = readVec3(
+                j["door"], "half_extents", out.doorHalfExtents);
+        }
     }
     catch (const std::exception& e)
     {
@@ -107,6 +128,7 @@ bool loadProceduralWorldConfig(const std::string& modeConfigPath)
 
     ProceduralWorldConfig candidate;
     candidate.defaultSeed = gConfig.defaultSeed;
+    std::vector<std::string> roomSourcePaths;
     try
     {
         json j = json::parse(file, nullptr, true, true);
@@ -137,6 +159,7 @@ bool loadProceduralWorldConfig(const std::string& modeConfigPath)
             {
                 if (!it.value().is_string()) continue;
                 const std::string roomPath = it.value().get<std::string>();
+                roomSourcePaths.push_back(roomPath);
                 ProceduralRoomDefinition room;
                 if (loadRoomDefinition(roomPath, room))
                     candidate.rooms[room.id] = room;
@@ -160,10 +183,35 @@ bool loadProceduralWorldConfig(const std::string& modeConfigPath)
     }
 
     gConfig = std::move(candidate);
+    gConfigPath = modeConfigPath;
+    gConfigTimes.clear();
+    auto rememberTime = [](const std::string& path) {
+        std::error_code ec;
+        const auto time = std::filesystem::last_write_time(path, ec);
+        if (!ec) gConfigTimes[path] = time;
+    };
+    rememberTime(modeConfigPath);
+    for (const std::string& path : roomSourcePaths)
+        rememberTime(path);
     Debug::log(Debug::Category::General,
                "[PROCEDURAL] loaded config modes=%zu rooms=%zu defaultSeed=%u\n",
                gConfig.modes.size(), gConfig.rooms.size(), gConfig.defaultSeed);
     return true;
+}
+
+bool reloadProceduralWorldConfigIfChanged()
+{
+    if (gConfig.modes.empty())
+        return loadProceduralWorldConfig(gConfigPath);
+    std::error_code ec;
+    for (const auto& entry : gConfigTimes)
+    {
+        const auto time = std::filesystem::last_write_time(entry.first, ec);
+        if (!ec && time != entry.second)
+            return loadProceduralWorldConfig(gConfigPath);
+        ec.clear();
+    }
+    return false;
 }
 
 const ProceduralWorldConfig& proceduralWorldConfig()
@@ -214,6 +262,29 @@ glm::vec3 proceduralRoomExit(const ProceduralModeDefinition& mode,
 {
     return proceduralTransformPoint(proceduralRoomTransform(mode, roomSlot),
                                     room.exitPosition);
+}
+
+glm::mat4 proceduralRoomDoorTransform(const ProceduralModeDefinition& mode,
+                                      const ProceduralRoomDefinition& room,
+                                      uint32_t roomSlot)
+{
+    const glm::vec3 position = room.hasDoor ? room.doorPosition
+                                            : room.exitPosition;
+    const glm::vec3 degrees = room.hasDoor ? room.doorRotationDegrees
+                                           : glm::vec3(0.0f);
+    glm::mat4 local = glm::translate(glm::mat4(1.0f), position);
+    local = glm::rotate(local, glm::radians(degrees.z), glm::vec3(0, 0, 1));
+    local = glm::rotate(local, glm::radians(degrees.y), glm::vec3(0, 1, 0));
+    local = glm::rotate(local, glm::radians(degrees.x), glm::vec3(1, 0, 0));
+    return proceduralRoomTransform(mode, roomSlot) * local;
+}
+
+glm::vec3 proceduralRoomDoorHalfExtents(
+    const ProceduralModeDefinition& mode,
+    const ProceduralRoomDefinition& room)
+{
+    return room.hasDoor && glm::length(room.doorHalfExtents) > 0.0001f
+        ? room.doorHalfExtents : mode.doorHalfExtents;
 }
 
 std::vector<glm::vec3> proceduralRoomEnemySpawns(
@@ -278,14 +349,24 @@ void addBarrier(ProceduralWorldState& p, const ProceduralModeDefinition& mode,
                 const ProceduralRoomDefinition& room, uint32_t slot,
                 HeadlessWorld& world)
 {
-    const glm::vec3 exit =
-        MimitaProcedural::proceduralRoomExit(mode, room, slot);
+    const glm::mat4 transform = MimitaProcedural::proceduralRoomDoorTransform(
+        mode, room, slot);
+    const glm::vec3 half = MimitaProcedural::proceduralRoomDoorHalfExtents(
+        mode, room);
     std::vector<CollisionTriangle> tris;
-    buildBoxCollisionTriangles(tris, exit, mode.doorHalfExtents);
+    buildBoxCollisionTriangles(tris, glm::vec3(0.0f), half);
+    for (CollisionTriangle& triangle : tris)
+    {
+        triangle.a = MimitaProcedural::proceduralTransformPoint(transform, triangle.a);
+        triangle.b = MimitaProcedural::proceduralTransformPoint(transform, triangle.b);
+        triangle.c = MimitaProcedural::proceduralTransformPoint(transform, triangle.c);
+        triangle.normal = glm::normalize(glm::cross(triangle.b - triangle.a,
+                                                    triangle.c - triangle.a));
+    }
     p.barrierTriangleCount = tris.size();
     appendWorldTriangles(world, tris);
     p.barrierActive = true;
-    p.currentBarrierTransform = glm::translate(glm::mat4(1.0f), exit);
+    p.currentBarrierTransform = transform;
     p.exitLocked = true;
 }
 
@@ -379,14 +460,18 @@ bool serverProceduralWorldStart(const std::string& modeId, uint32_t seed,
     p.modeId = modeId;
     p.roomId = room->id;
     p.nextNpcId = 200000;
-    p.playerSpawnLocal = room->entrancePosition;
+    p.playerSpawnLocal = room->hasPlayerSpawn ? room->playerSpawnPosition
+                                              : room->entrancePosition;
     p.playerSpawnYaw = std::atan2(room->entranceDirection.y,
                                   room->entranceDirection.x);
+    if (room->hasPlayerSpawn)
+        p.playerSpawnYaw = glm::radians(room->playerSpawnRotationDegrees.z);
 
     // Prefer the Blender-authored node named with "spawnpoint". The generic
     // GLB extractor already applies the node hierarchy transforms, so the
     // result is room-local and receives the same procedural room transform as
     // the geometry and enemy spawns.
+    if (!room->hasPlayerSpawn)
     {
         World spawnMetadata;
         extractSpawnPointsFromGLB(spawnMetadata, room->geometryPath.c_str());
@@ -462,12 +547,21 @@ bool serverProceduralWorldTick(SOCKET /*sock*/,
     if (!p.enabled)
         return false;
 
+    const bool configChanged = MimitaProcedural::reloadProceduralWorldConfigIfChanged();
     const ProceduralModeDefinition* mode =
         MimitaProcedural::proceduralModeById(p.modeId);
     const ProceduralRoomDefinition* room =
         MimitaProcedural::proceduralRoomById(p.roomId);
     if (!mode || !room)
         return false;
+
+    if (configChanged && p.barrierActive)
+    {
+        removeBarrier(p, world);
+        addBarrier(p, *mode, *room, p.currentRoom, world);
+        buildNpcWorldCollision(npcWorld, world);
+        ++p.stateVersion;
+    }
 
     uint32_t total = 0;
     uint32_t alive = 0;

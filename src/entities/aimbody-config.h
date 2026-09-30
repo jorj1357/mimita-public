@@ -36,6 +36,10 @@ public:
     // the procedural animation pose, so it follows animations and weapons while
     // still carrying momentum and colliding.
     bool hybridMode() const { return mMode == "hybrid"; }
+    // In hybrid body mode, choose whether the arms keep the physical hybrid
+    // target or are driven toward their normal default aimbody pose.
+    bool armsDefaultMode() const { return mArmsMode == "default"; }
+    const std::string& armsMode() const { return mArmsMode; }
     bool bodyPhysicsMode() const { return physicalMode() || hybridMode(); }
     const std::string& mode() const { return mMode; }
     float smoothingFactor() const { return mSmoothingFactor; }
@@ -65,6 +69,7 @@ private:
 
     bool mEnabled = true;
     std::string mMode = "default";
+    std::string mArmsMode = "hybrid";
     float mSmoothingFactor = 1.0f;
     std::unordered_map<std::string, LimbAim> mLimbs;
     std::string mPath = "config/aimbody.json";

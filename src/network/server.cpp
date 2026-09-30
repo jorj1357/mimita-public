@@ -416,6 +416,7 @@ int runServer(const LaunchOptions& options)
     uint64_t totalPacketsOut = 0;
     ServerPacketStats transportStats;
     DisagreementRetransmitState disagreementRetransmit;
+    PhysicalEntityReplicationState physicalEntityReplication;
 
     // A dev-loop/CLI procedural mode becomes active for the first real client
     // instead of starting before a player exists. This lets the existing
@@ -729,6 +730,8 @@ int runServer(const LaunchOptions& options)
                                     &transportStats, &disagreementRetransmit);
 
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
+            serverReplicatePhysicalEntities(sock, players, tick, totalPacketsOut,
+                                            physicalEntityReplication);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
             serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
@@ -1217,6 +1220,9 @@ static void simulateOneServerTick(ListenServerState& state)
 
         buildAndSendSnapshot(state.sock, state.players, state.npcs,
                              state.tick, state.totalPacketsOut);
+        serverReplicatePhysicalEntities(state.sock, state.players, state.tick,
+                                        state.totalPacketsOut,
+                                        state.physicalEntityReplication);
 
         tickDisagreementRetransmit(state.sock, state.players,
                                    state.disagreementRetransmit,

@@ -302,6 +302,8 @@ int main(int argc, char** argv)
     Engine engine;
     gameInit(argc, argv, engine);
 
+    bool startupCommandsExecuted = false;
+
     // ── Export subprocess mode: run the export and exit ────────────────
     if (gExportSubprocessMode) {
         if (gExportClipPath.empty()) {
@@ -340,6 +342,22 @@ int main(int argc, char** argv)
     while (engine.running())
     {
         engineTick(engine);
+
+        // Startup commands belong to the visible client terminal, not the
+        // headless server. Wait until the room connection and the gameplay
+        // world are both ready so commands such as crate_spawn can safely use
+        // the local player and camera.
+        if (!startupCommandsExecuted && !launchOptions.startupCommands.empty() &&
+            gpMpContext && gpMpContext->connected && gpWorldLoaded && *gpWorldLoaded)
+        {
+            for (const std::string& command : launchOptions.startupCommands)
+            {
+                Debug::log(Debug::Category::General,
+                           "[STARTUP COMMAND] executing: %s", command.c_str());
+                Terminal::instance().execute(command);
+            }
+            startupCommandsExecuted = true;
+        }
     }
     AnalyticsManager::instance().shutdown();
     StructuredLogger::instance().shutdown();

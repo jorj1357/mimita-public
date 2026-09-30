@@ -46,6 +46,12 @@ struct PhysicalEntity {
     std::string persistenceId;
     uint32_t ownerId = 0;
     uint32_t networkOwnerId = 0;
+
+    // Server-assigned identity used by destruction replication. Local entities
+    // use their runtime id; client mirrors keep the server's value and are
+    // marked serverDriven so they are never simulated locally.
+    uint32_t networkId = 0;
+    bool serverDriven = false;
     PhysicalEntityMotion motion = PhysicalEntityMotion::Static;
     PhysicalEntityShape shape = PhysicalEntityShape::TriangleMesh;
     glm::mat4 previousTransform{1.0f};
@@ -129,8 +135,24 @@ public:
 
     PhysicalEntity* find(uint32_t id);
 
+    // Finds a replicated mirror by its server network id. Local (authoritative)
+    // entities are not returned; mirrors are the only serverDriven entities.
+    PhysicalEntity* findByNetworkId(uint32_t networkId);
+
+    // Creates a client mirror of a server entity: same network id, marked
+    // serverDriven so the fixed tick never simulates or pushes it. Returns the
+    // local id, or 0 when a mirror for `networkId` already exists.
+    uint32_t addReplicated(uint32_t networkId,
+                           const std::vector<CollisionTriangle>& localTriangles,
+                           const glm::mat4& transform,
+                           PhysicalEntityMotion motion,
+                           uint32_t materialId);
+
     // Removes one entity by id. Returns true when an entity was removed.
     bool remove(uint32_t id);
+
+    // Removes a replicated mirror by network id. Local entities are untouched.
+    bool removeByNetworkId(uint32_t networkId);
 
     const std::vector<PhysicalEntity>& entities() const { return mEntities; }
     std::vector<PhysicalEntity>& entities() { return mEntities; }
@@ -146,6 +168,12 @@ private:
     double mFixedAccumulator = 0.0;
     uint64_t mSimulationTick = 0;
 };
+
+// Re-derives mass, center of mass, and inertia: from the cached cut surface
+// when the entity is destructible and has been cut, otherwise from the box.
+// Same owner as the per-tick refresh; callers use it right after a cut so the
+// change is visible immediately instead of one fixed tick later.
+void refreshEntityMassProperties(PhysicalEntity& entity);
 
 // Appends the 12 triangles of an axis-aligned box centered at `center` with half
 // extents `half`, in entity-local space, with outward normals.

@@ -57,6 +57,10 @@ public:
         const glm::vec3& from, const glm::vec3& to, float radius,
         std::vector<SweptPlayerCapsule>& out) const override;
 
+    void queryEntityTrianglesSwept(
+        const glm::vec3& from, const glm::vec3& to, float radius,
+        std::vector<SweptEntityTriangle>& out) const override;
+
 private:
     const CollisionMeshCache& mCollisionMesh;
     float mCollisionChunkSize;

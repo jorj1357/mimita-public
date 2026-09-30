@@ -144,8 +144,14 @@ def allowed_dev_maps(profile: dict) -> list[str]:
     return result
 
 
-def select_dev_map(profile: dict) -> str:
+def select_dev_map(profile: dict, requested_map: str = "") -> str:
     maps = allowed_dev_maps(profile)
+    if requested_map:
+        requested_map = requested_map.strip()
+        if requested_map in maps:
+            return requested_map
+        print(f"[DEV] launch-mode map {requested_map} is not allowed; using {maps[0]}")
+        return maps[0]
     selection = str(profile.get("map_selection", "configured")).lower()
     configured = str(profile.get("map", "")).strip()
     if selection == "random":
@@ -623,7 +629,10 @@ class DevLoop:
         # open until its own console is closed or an explicit server-stop
         # action terminates it.
         self.stop_processes()
-        map_name = select_dev_map(self.profile)
+        map_name = select_dev_map(
+            self.profile,
+            str(self.launch_mode.get("map", "")),
+        )
         print(f"[DEV] selected allowed map: {map_name}")
         if self.server_health() and bool(self.room_code):
             room_code = self.room_code

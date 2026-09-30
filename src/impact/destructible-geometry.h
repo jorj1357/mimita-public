@@ -1,10 +1,15 @@
-// 2026-09-28
+// 2026-09-30
 /* purpose
 * Define the authoritative destructible-geometry record and its owner.
-* A shape is stored as an original box minus a list of spherical cuts; generated
-* triangles are a rebuildable cache, never the source of truth. Meshing is lazy:
-* nothing is generated until the first cut, so an untouched object keeps the
-* cheap 12-triangle box the caller authored.
+* A shape is stored as a canonical base mesh (box for now) plus an ordered list
+* of boolean cutters; the generated triangles are a rebuildable cache, never the
+* source of truth. Rebuilding replays the cut history through the MiMITA boolean
+* wrapper (impact/boolean-mesh.h), so Manifold types never reach this layer.
+* Meshing is lazy: nothing is generated until the first cut, so an untouched
+* object keeps the cheap 12-triangle box the caller authored.
+* Each rebuild also caches the mass properties of the remaining material
+* (volume, center of mass, diagonal unit inertia) for the physics owner, so
+* rigid-body mass is never re-integrated on the fixed tick.
 * Does NOT render, send packets, or own rigid-body motion (PhysicalEntitySystem
 * still owns collision + transforms).
 * Does NOT decide whether a cut is created (ImpactSystem owns that).
@@ -17,21 +22,26 @@
 
 #include <glm/glm.hpp>
 
+#include "impact/boolean-mesh.h"
 #include "map/map_common.h"          // Vertex
 #include "physics/physics-types.h"   // CollisionTriangle, AABB
 
 namespace MimitaImpact {
 
-// One subtractive sphere cut, stored in the object's local space.
-struct DestructionCutSphere
+// One authoritative subtractive cut: a MiMITA boolean cutter plus the gameplay
+// metadata needed to identify and reconcile it across prediction and authority.
+struct DestructionCut
 {
     uint64_t cutId = 0;
-    glm::vec3 localCenter{0.0f};
-    float radius = 0.0f;
+    BooleanCutter cutter;
     float damage = 0.0f;
     float energy = 0.0f;
     uint32_t materialId = 0;
     uint32_t sourceEntityId = 0;
+
+    // Stable identity of the predictive source (projectile id / fire serial) so
+    // the same shot is never applied twice.
+    uint64_t predictionKey = 0;
 };
 
 // Authoritative compact destruction state embedded in PhysicalEntity.
@@ -45,56 +55,89 @@ struct DestructibleGeometry
     // Source box half size (local space, centred at the origin).
     glm::vec3 halfExtents{0.5f};
 
-    glm::vec3 localOrigin{0.0f};   // AABB min
-    glm::vec3 localExtent{1.0f};   // AABB size
-
-    std::vector<DestructionCutSphere> sphereCuts;
+    // Canonical base mesh (local space, centred at the origin) and the ordered
+    // authoritative cut history. Both are the truth; the surface below is cache.
+    BooleanMesh baseMesh;
+    std::vector<DestructionCut> cuts;
 
     uint64_t geometryRevision = 0;
     uint64_t nextCutId = 1;
     uint32_t materialId = 0;
 
-    // Cached low-poly surface consumed by collision + rendering. Empty until the
-    // first cut; the caller keeps its authored box mesh until then.
+    // Incremental-rebuild session owned by the boolean wrapper. Caches the
+    // running result so a new cut subtracts only the new cutter; game code
+    // treats it as an opaque handle.
+    uint64_t booleanSessionId = 0;
+
+    // Diagnostics from the most recent rebuild. `baseVolume` is the authored
+    // box volume so mass/moment-of-inertia scale with the material that remains.
+    float baseVolume = 0.0f;
+    float remainingVolume = 0.0f;
+    uint32_t shellCount = 0;
+    uint32_t componentCount = 0;
+    BooleanError lastError = BooleanError::None;
+
+    // Mass properties of the current cut surface, integrated once per rebuild
+    // (never per tick). `unitInertiaDiagonal` is about the center of mass at
+    // unit density, on the local axes. `massFromMesh` marks an authored mesh
+    // base, where these values are valid before the first cut too.
+    glm::vec3 massCenterOfMass{0.0f};
+    glm::vec3 unitInertiaDiagonal{1.0f};
+    bool massFromMesh = false;
+
+    // Cached surface consumed by collision + rendering. Empty until the first
+    // cut; the caller keeps its authored box mesh until then.
     std::vector<Vertex> renderVertices;
     std::vector<CollisionTriangle> collisionTriangles;
 };
 
-// ── Signed-distance helpers (solid < 0, empty > 0) ──────────────────────
+// ── Signed-distance helpers (solid < 0, empty > 0). Test/diagnostic only. ──
 float boxDistance(glm::vec3 p, glm::vec3 halfSize);
 float sphereDistance(glm::vec3 p, glm::vec3 center, float radius);
 
-// Original box minus every stored sphere cut.
+// Original base box minus every stored cut (sphere or capsule).
 float destructibleCrateDistance(const DestructibleGeometry& geometry,
                                 glm::vec3 localPoint);
 
 // ── Owner ───────────────────────────────────────────────────────────────
-// Stores cuts and rebuilds the planar surface lazily. A cut rebuilds the whole
-// surface from the stored spheres, which is what keeps the triangle count low
-// and bounded (an uncut box is 12 triangles; each hole adds a fixed number).
+// Stores the base mesh + cut history and rebuilds the surface lazily by
+// replaying the history through the boolean wrapper.
 class DestructibleGeometrySystem
 {
 public:
     static DestructibleGeometrySystem& instance();
 
-    // Resets the record for a fresh box. Emits no geometry: the caller's box
-    // mesh remains authoritative until addCut is called.
+    // Resets the record for a fresh box (using geometry.materialId). Emits no
+    // geometry: the caller's box mesh remains authoritative until addCut.
     void initialize(DestructibleGeometry& geometry, glm::vec3 halfExtents);
 
-    // Stores one cut and rebuilds the surface. Returns 1 when the surface was
-    // (re)generated, 0 when the record is disabled.
-    int addCut(DestructibleGeometry& geometry, const DestructionCutSphere& cut);
+    // Resets the record to an authored closed mesh (for example imported from a
+    // GLB). `halfExtents` is the local AABB half size. Unlike the box path this
+    // immediately fills render/collision triangles and mesh-derived mass
+    // properties, because there is no authored fallback mesh to keep.
+    void initializeFromMesh(DestructibleGeometry& geometry, BooleanMesh baseMesh,
+                            glm::vec3 halfExtents);
+
+    // Drops the wrapper's cached running result for this record. Call when the
+    // owning entity is removed so the wrapper does not retain geometry.
+    void release(DestructibleGeometry& geometry);
+
+    // Stores one cut and rebuilds by replaying the history. Returns 1 when the
+    // surface was (re)generated, 0 when the record is disabled or the boolean
+    // failed (in which case the cut is rolled back and lastError is set).
+    int addCut(DestructibleGeometry& geometry, const DestructionCut& cut);
 
     // Rebuilds the surface from the stored cuts (used after bulk changes).
     int rebuildAll(DestructibleGeometry& geometry);
 
-    // Safety cap for the generated surface.
-    size_t maxTrianglesPerEntity = 30000;
+    // Safety cap for the generated surface. Cuts that would exceed it are
+    // rejected and logged rather than allowed to stall the game.
+    size_t maxTrianglesPerEntity = 120000;
 
 private:
     DestructibleGeometrySystem() = default;
 
-    void rebuild(DestructibleGeometry& geometry);
+    bool rebuild(DestructibleGeometry& geometry);
 };
 
 } // namespace MimitaImpact

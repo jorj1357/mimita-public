@@ -11,6 +11,7 @@
 #include "game/game-cli.h"
 #include "combat/weapon-runtime.h"
 #include "network/snapshot-chunks.h"
+#include "network/destruction-replication-selftest.h"
 #include <cstdio>
 #include <algorithm>
 #include <cstdlib>
@@ -316,6 +317,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = MimitaImpact::destructibleSelfTest(&summary);
         printf("%s", summary.c_str());
         printf("[DESTRUCTIBLE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--destruction-replication-selftest") {
+        std::string summary;
+        const bool ok = MimitaNet::destructionReplicationSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[DESTRUCTION REPLICATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         return true;
     }
 

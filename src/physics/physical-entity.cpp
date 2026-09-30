@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <numeric>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -47,8 +48,25 @@ AABB entityWorldAABB(const PhysicalEntity& e);
 bool aabbOverlapsPadded(const AABB& a, const AABB& b, float pad);
 void resolveEntityContacts(std::vector<PhysicalEntity>& entities);
 
-void refreshBoxMassProperties(PhysicalEntity& e)
+void refreshMassProperties(PhysicalEntity& e)
 {
+    // Once material has been removed, the box formulas no longer describe the
+    // body. Mass, center of mass, and inertia come from the cached cut surface
+    // (integrated once per geometry revision by DestructibleGeometrySystem), so
+    // this per-tick path stays a read, not an integration.
+    const MimitaImpact::DestructibleGeometry& d = e.destructible;
+    if (d.enabled && d.remainingVolume > 0.0001f &&
+        (d.geometryRevision > 0 || d.massFromMesh))
+    {
+        e.mass = std::max(e.density * d.remainingVolume, 0.0001f);
+        e.centerOfMass = d.massCenterOfMass;
+        e.inertia = (e.mass / d.remainingVolume) * d.unitInertiaDiagonal;
+        e.inertia = glm::max(e.inertia, glm::vec3(0.0001f));
+        e.inverseInertia = 1.0f / e.inertia;
+        return;
+    }
+
+    e.centerOfMass = glm::vec3(0.0f);
     const glm::vec3 dimensions = glm::max(e.halfExtents * 2.0f,
                                           glm::vec3(0.001f));
     const float m = std::max(e.mass, 0.0001f);
@@ -183,6 +201,11 @@ void applyRestingRightingTorque(PhysicalEntity& e, float dt)
 
 } // namespace
 
+void refreshEntityMassProperties(PhysicalEntity& e)
+{
+    refreshMassProperties(e);
+}
+
 PhysicalEntitySystem& PhysicalEntitySystem::instance()
 {
     static PhysicalEntitySystem system;
@@ -191,6 +214,8 @@ PhysicalEntitySystem& PhysicalEntitySystem::instance()
 
 void PhysicalEntitySystem::clear()
 {
+    for (PhysicalEntity& e : mEntities)
+        MimitaImpact::DestructibleGeometrySystem::instance().release(e.destructible);
     mEntities.clear();
     mNextId = 1;
     mFixedAccumulator = 0.0;
@@ -213,7 +238,8 @@ uint32_t PhysicalEntitySystem::add(
     e.shape = PhysicalEntityShape::TriangleMesh;
     e.materialId = materialId;
     e.persistenceId = "runtime-physical-" + std::to_string(e.id);
-    refreshBoxMassProperties(e);
+    e.networkId = e.id;
+    refreshMassProperties(e);
     mEntities.push_back(std::move(e));
     return mEntities.back().id;
 }
@@ -252,12 +278,49 @@ PhysicalEntity* PhysicalEntitySystem::find(uint32_t id)
     return nullptr;
 }
 
+PhysicalEntity* PhysicalEntitySystem::findByNetworkId(uint32_t networkId)
+{
+    if (networkId == 0)
+        return nullptr;
+    for (PhysicalEntity& e : mEntities)
+        if (e.serverDriven && e.networkId == networkId)
+            return &e;
+    return nullptr;
+}
+
+uint32_t PhysicalEntitySystem::addReplicated(
+    uint32_t networkId,
+    const std::vector<CollisionTriangle>& localTriangles,
+    const glm::mat4& transform,
+    PhysicalEntityMotion motion,
+    uint32_t materialId)
+{
+    if (networkId == 0 || findByNetworkId(networkId))
+        return 0;
+    const uint32_t localId = add(localTriangles, transform, motion, materialId);
+    if (PhysicalEntity* e = find(localId))
+    {
+        e->networkId = networkId;
+        e->serverDriven = true;
+        e->sleeping = false;
+        e->sleepTicks = 0;
+    }
+    return localId;
+}
+
+bool PhysicalEntitySystem::removeByNetworkId(uint32_t networkId)
+{
+    PhysicalEntity* e = findByNetworkId(networkId);
+    return e ? remove(e->id) : false;
+}
+
 bool PhysicalEntitySystem::remove(uint32_t id)
 {
     for (auto it = mEntities.begin(); it != mEntities.end(); ++it)
     {
         if (it->id == id)
         {
+            MimitaImpact::DestructibleGeometrySystem::instance().release(it->destructible);
             mEntities.erase(it);
             return true;
         }
@@ -279,10 +342,11 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
         ++mSimulationTick;
         for (PhysicalEntity& e : mEntities)
         {
-            if ((e.motion != PhysicalEntityMotion::Kinematic &&
-                 e.motion != PhysicalEntityMotion::Dynamic) || e.sleeping)
+            if (e.serverDriven ||
+                ((e.motion != PhysicalEntityMotion::Kinematic &&
+                  e.motion != PhysicalEntityMotion::Dynamic) || e.sleeping))
                 continue;
-            refreshBoxMassProperties(e);
+            refreshMassProperties(e);
             if (e.motion == PhysicalEntityMotion::Dynamic)
             {
                 e.velocity.z = std::max(
@@ -480,7 +544,8 @@ void PhysicalEntitySystem::applyPlayerPush(const Player& player, float dt)
 
     for (PhysicalEntity& e : mEntities)
     {
-        if (e.motion != PhysicalEntityMotion::Dynamic || e.mass <= 0.0f)
+        if (e.serverDriven || e.motion != PhysicalEntityMotion::Dynamic ||
+            e.mass <= 0.0f)
             continue;
         if (e.lastPlayerPushTick == mSimulationTick)
             continue;
@@ -488,7 +553,7 @@ void PhysicalEntitySystem::applyPlayerPush(const Player& player, float dt)
         if (!aabbOverlapsPadded(playerBox, objectBox, 0.05f))
             continue;
 
-        refreshBoxMassProperties(e);
+        refreshMassProperties(e);
         glm::vec3 pushNormal = player.pos - glm::vec3(e.transform[3]);
         pushNormal.z = 0.0f;
         if (glm::dot(pushNormal, pushNormal) <= 1e-6f)
@@ -513,8 +578,8 @@ void PhysicalEntitySystem::applyPlayerContactPush(
     const glm::vec3& contactNormal)
 {
     PhysicalEntity* e = find(entityId);
-    if (!e || e->motion != PhysicalEntityMotion::Dynamic || e->mass <= 0.0f ||
-        e->lastPlayerPushTick == mSimulationTick)
+    if (!e || e->serverDriven || e->motion != PhysicalEntityMotion::Dynamic ||
+        e->mass <= 0.0f || e->lastPlayerPushTick == mSimulationTick)
         return;
 
     glm::vec3 pushNormal(contactNormal.x, contactNormal.y, 0.0f);
@@ -622,12 +687,16 @@ void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
     for (size_t i = 0; i < entities.size(); ++i)
     {
         PhysicalEntity& a = entities[i];
-        if (a.motion == PhysicalEntityMotion::Static || !a.collidesWithActors)
+        // A client mirror follows server transforms and must never be pushed by
+        // local entity-vs-entity resolution.
+        if (a.serverDriven || a.motion == PhysicalEntityMotion::Static ||
+            !a.collidesWithActors)
             continue;
         for (size_t j = i + 1; j < entities.size(); ++j)
         {
             PhysicalEntity& b = entities[j];
-            if (b.motion == PhysicalEntityMotion::Static || !b.collidesWithActors)
+            if (b.serverDriven || b.motion == PhysicalEntityMotion::Static ||
+                !b.collidesWithActors)
                 continue;
             if (a.localTriangles.empty() || b.localTriangles.empty())
                 continue;
@@ -713,6 +782,19 @@ std::vector<EntityActorContact> collectActorEntityContacts(
     static thread_local World s_entityWorld;
     static thread_local std::vector<int> s_entityCandidates;
 
+    // World-space expansion is stable while an entity rests. Cache it per
+    // entity id and recompute only when the pose or generated surface changed,
+    // so the solver's repeated calls per tick reuse the transform work.
+    struct EntitySurfaceCache
+    {
+        bool valid = false;
+        uint64_t revision = 0;
+        glm::mat4 transform{0.0f};
+        CollisionMeshCache meshCache;
+    };
+    static thread_local std::unordered_map<uint32_t, EntitySurfaceCache>
+        s_entitySurfaceCache;
+
     for (const PhysicalEntity& e : entities)
     {
         if (!e.collidesWithActors || e.localTriangles.empty())
@@ -720,25 +802,42 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         if (!aabbOverlapsPadded(actorBox, entityWorldAABB(e), kPad))
             continue;
 
-        CollisionMeshCache& cache = s_entityWorld.collisionMesh;
-        cache.triangles.clear();
-        cache.triangleAABBs.clear();
-        cache.triangles.reserve(e.localTriangles.size());
-        cache.triangleAABBs.reserve(e.localTriangles.size());
-        for (const CollisionTriangle& lt : e.localTriangles)
+        if (s_entitySurfaceCache.size() > 128)
+            s_entitySurfaceCache.clear();
+        EntitySurfaceCache& entry = s_entitySurfaceCache[e.id];
+        const bool cacheHit =
+            entry.valid &&
+            entry.revision == e.destructible.geometryRevision &&
+            entry.transform == e.transform &&
+            entry.meshCache.triangles.size() == e.localTriangles.size();
+        if (!cacheHit)
         {
-            CollisionTriangle wt;
-            wt.a = glm::vec3(e.transform * glm::vec4(lt.a, 1.0f));
-            wt.b = glm::vec3(e.transform * glm::vec4(lt.b, 1.0f));
-            wt.c = glm::vec3(e.transform * glm::vec4(lt.c, 1.0f));
-            const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
-            const float len = glm::length(n);
-            wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
-            cache.triangleAABBs.push_back(makeTriangleAABB(wt));
-            cache.triangles.push_back(wt);
+            entry.valid = true;
+            entry.revision = e.destructible.geometryRevision;
+            entry.transform = e.transform;
+            CollisionMeshCache& cache = entry.meshCache;
+            cache.triangles.clear();
+            cache.triangleAABBs.clear();
+            cache.triangles.reserve(e.localTriangles.size());
+            cache.triangleAABBs.reserve(e.localTriangles.size());
+            for (const CollisionTriangle& lt : e.localTriangles)
+            {
+                CollisionTriangle wt;
+                wt.a = glm::vec3(e.transform * glm::vec4(lt.a, 1.0f));
+                wt.b = glm::vec3(e.transform * glm::vec4(lt.b, 1.0f));
+                wt.c = glm::vec3(e.transform * glm::vec4(lt.c, 1.0f));
+                const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
+                const float len = glm::length(n);
+                wt.normal = len > 1e-8f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+                cache.triangleAABBs.push_back(makeTriangleAABB(wt));
+                cache.triangles.push_back(wt);
+            }
         }
 
-        s_entityCandidates.resize(cache.triangles.size());
+        // Swap the cached expansion in for the query, then back out, so a cache
+        // hit costs no per-triangle copy.
+        std::swap(s_entityWorld.collisionMesh, entry.meshCache);
+        s_entityCandidates.resize(s_entityWorld.collisionMesh.triangles.size());
         std::iota(s_entityCandidates.begin(), s_entityCandidates.end(), 0);
 
         std::vector<RecoveryContact> contacts =
@@ -748,6 +847,8 @@ std::vector<EntityActorContact> collectActorEntityContacts(
             // rejection inside the narrowphase.
             collectActorMeshContacts(s_entityWorld, meshes, s_entityCandidates,
                                      actorPos, false, 0.0f);
+        std::swap(s_entityWorld.collisionMesh, entry.meshCache);
+
         for (RecoveryContact& c : contacts)
         {
             c.entityId = e.id;
@@ -1165,9 +1266,10 @@ bool physicalEntitySelfTest(std::string* outSummary)
             glm::vec3(0.5f));
         // No geometry until the first cut; then the planar surface replaces the box.
         const bool lazyMesh = destructible->localTriangles.size() == 12;
-        MimitaImpact::DestructionCutSphere cut;
-        cut.localCenter = glm::vec3(0.0f, 0.0f, 0.5f);
-        cut.radius = 0.2f;
+        MimitaImpact::DestructionCut cut;
+        cut.cutter.type = MimitaImpact::BooleanCutterType::Sphere;
+        cut.cutter.localCenter = glm::vec3(0.0f, 0.0f, 0.5f);
+        cut.cutter.radius = 0.2f;
         MimitaImpact::DestructibleGeometrySystem::instance().addCut(
             destructible->destructible, cut);
         destructible->localTriangles = destructible->destructible.collisionTriangles;

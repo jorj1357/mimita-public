@@ -1147,6 +1147,16 @@ void buildAndSendSnapshot(SOCKET sock,
                           const std::unordered_map<uint32_t, ServerNpc>& npcs,
                           uint32_t tick, uint64_t& totalPacketsOut);
 
+// Replicates destructible PhysicalEntity state to every client: a reliable
+// spawn when an entity first appears, reliable cut events as its ordered cut
+// history grows, an unreliable transform state broadcast every other tick, and
+// a reliable despawn when it is removed. The authoritative simulation stays in
+// PhysicalEntitySystem; this only mirrors it.
+void serverReplicatePhysicalEntities(SOCKET sock,
+                                     std::unordered_map<uint32_t, ServerPlayer>& players,
+                                     uint32_t tick, uint64_t& totalPacketsOut,
+                                     PhysicalEntityReplicationState& state);
+
 void logSnapshotEntity(const SnapshotEntity& entity);
 
 // Send a disagreement event to all connected players.
@@ -1260,6 +1270,16 @@ struct ServerLaunchSettings
     std::string resolvedMapPath;
 };
 
+// Server-side bookkeeping for destructible physical-entity replication.
+// Edges are detected by comparing the authoritative entity list against what
+// each client was already told: spawn on first sight, cut events when the
+// geometry revision grows, despawn when the entity disappears.
+struct PhysicalEntityReplicationState
+{
+    // networkId -> number of authoritative cuts already broadcast.
+    std::unordered_map<uint32_t, uint32_t> broadcastCuts;
+};
+
 // ─── Listen Server (host runs server in same process) ──────────────────────
 
 struct ListenServerState
@@ -1308,6 +1328,7 @@ struct ListenServerState
     std::string publicIp;
     std::string hostSessionId;
     DisagreementRetransmitState disagreementRetransmit;
+    PhysicalEntityReplicationState physicalEntityReplication;
 
     // ── Real NPC simulation (reuses the client NpcSystem) ─────────
     std::unique_ptr<NpcSystem> npcSystem;

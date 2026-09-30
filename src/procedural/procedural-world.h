@@ -89,6 +89,16 @@ struct ProceduralRoomDefinition
     // Real bounds measured from the updated GLB (used for placement).
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
+    // Optional JSON-owned player spawn. When present, this is the source of
+    // truth instead of a Blender GLB spawn node.
+    bool hasPlayerSpawn = false;
+    glm::vec3 playerSpawnPosition{0.0f};
+    glm::vec3 playerSpawnRotationDegrees{0.0f};
+    // Door is room-local and can be tuned without changing the mode recipe.
+    bool hasDoor = false;
+    glm::vec3 doorPosition{0.0f};
+    glm::vec3 doorRotationDegrees{0.0f};
+    glm::vec3 doorHalfExtents{0.0f};
 };
 
 // Mode recipe (config/procedural-world.json: modes.<id>).
@@ -117,6 +127,10 @@ struct ProceduralWorldConfig
 bool loadProceduralWorldConfig(
     const std::string& modeConfigPath = "config/procedural-world.json");
 
+// Reloads the mode/room JSON only when one of its source files changed.
+// Returns true when a new valid config was installed.
+bool reloadProceduralWorldConfigIfChanged();
+
 const ProceduralWorldConfig& proceduralWorldConfig();
 const ProceduralModeDefinition* proceduralModeById(const std::string& id);
 const ProceduralRoomDefinition* proceduralRoomById(const std::string& id);
@@ -137,6 +151,12 @@ glm::vec3 proceduralRoomEntrance(const ProceduralModeDefinition& mode,
 glm::vec3 proceduralRoomExit(const ProceduralModeDefinition& mode,
                              const ProceduralRoomDefinition& room,
                              uint32_t roomSlot);
+glm::mat4 proceduralRoomDoorTransform(const ProceduralModeDefinition& mode,
+                                      const ProceduralRoomDefinition& room,
+                                      uint32_t roomSlot);
+glm::vec3 proceduralRoomDoorHalfExtents(
+    const ProceduralModeDefinition& mode,
+    const ProceduralRoomDefinition& room);
 std::vector<glm::vec3> proceduralRoomEnemySpawns(
     const ProceduralModeDefinition& mode,
     const ProceduralRoomDefinition& room,

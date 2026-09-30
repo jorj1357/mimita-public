@@ -996,6 +996,16 @@ void mpSweepHitClaims(MultiplayerContext& ctx);
 void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt);
 void mpSendPelletBlastRequest(MultiplayerContext& ctx, uint8_t weapon, const glm::vec3& origin, const glm::vec3& baseDirection, uint32_t spreadSeed);
 void mpProcessPelletBlastEventPacket(MultiplayerContext& ctx, const PelletBlastEventPacket* event);
+
+// Destructible physical-entity replication (multiplayer-physical-entities.cpp)
+void mpProcessPhysicalEntitySpawnEventPacket(MultiplayerContext& ctx,
+                                             const PhysicalEntitySpawnEventPacket* event);
+void mpProcessPhysicalEntityDespawnEventPacket(MultiplayerContext& ctx,
+                                               const PhysicalEntityDespawnEventPacket* event);
+void mpProcessPhysicalEntityStatePacket(MultiplayerContext& ctx,
+                                        const PhysicalEntityStatePacket* event);
+void mpProcessEntityCutEventPacket(MultiplayerContext& ctx,
+                                   const PhysicalEntityCutEventPacket* event);
 void mpReleaseTimelineEvents(MultiplayerContext& ctx);
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);

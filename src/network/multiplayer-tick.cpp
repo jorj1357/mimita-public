@@ -1756,6 +1756,37 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.localPingMs = (int)std::min<uint64_t>(
                 9999, nowMs() - ping->clientTimeMs);
         }
+        else if (header->type == PACKET_PHYSICAL_ENTITY_SPAWN &&
+                 bytes >= (int)sizeof(PhysicalEntitySpawnEventPacket))
+        {
+            const PhysicalEntitySpawnEventPacket* spawn =
+                reinterpret_cast<const PhysicalEntitySpawnEventPacket*>(buffer);
+            if (mpAcceptReliableEventOnce(ctx, spawn->eventId, spawn->eventSessionId))
+                mpProcessPhysicalEntitySpawnEventPacket(ctx, spawn);
+        }
+        else if (header->type == PACKET_PHYSICAL_ENTITY_DESPAWN &&
+                 bytes >= (int)sizeof(PhysicalEntityDespawnEventPacket))
+        {
+            const PhysicalEntityDespawnEventPacket* despawn =
+                reinterpret_cast<const PhysicalEntityDespawnEventPacket*>(buffer);
+            if (mpAcceptReliableEventOnce(ctx, despawn->eventId, despawn->eventSessionId))
+                mpProcessPhysicalEntityDespawnEventPacket(ctx, despawn);
+        }
+        else if (header->type == PACKET_ENTITY_CUT_EVENT &&
+                 bytes >= (int)sizeof(PhysicalEntityCutEventPacket))
+        {
+            const PhysicalEntityCutEventPacket* cut =
+                reinterpret_cast<const PhysicalEntityCutEventPacket*>(buffer);
+            if (mpAcceptReliableEventOnce(ctx, cut->eventId, cut->eventSessionId))
+                mpProcessEntityCutEventPacket(ctx, cut);
+        }
+        else if (header->type == PACKET_PHYSICAL_ENTITY_STATE &&
+                 bytes >= (int)sizeof(PhysicalEntityStatePacket))
+        {
+            const PhysicalEntityStatePacket* state =
+                reinterpret_cast<const PhysicalEntityStatePacket*>(buffer);
+            mpProcessPhysicalEntityStatePacket(ctx, state);
+        }
     };
 
     // ── Poll ICE transport (if available) ──

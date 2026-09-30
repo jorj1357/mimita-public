@@ -63,6 +63,11 @@ struct PhysicalAimConfig {
     // physical; higher values keep each arm closer to its aimbody/animation
     // pose relative to the current torso.
     float hybridArmsFollowForce = 1.0f;
+    // Arm-only default-pose assistance. 1.0 preserves the current hybrid
+    // behavior; 10.0 makes the arms 10x more resistant to movement sway and
+    // blends them 90% toward their per-arm aimbody/animation pose while the
+    // rest of the body stays physical.
+    float hybridArmsCameraFollow = 1.0f;
     // 0 = orientation-only following, 1 = limbs also follow their animated
     // position. Multiplies the position blend fraction.
     float hybridPositionFollow = 1.0f;

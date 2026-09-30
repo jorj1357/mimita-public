@@ -94,8 +94,13 @@ void clientProceduralWorldTick(World& world)
         return;
     }
 
+    bool configChanged = false;
     if (MimitaProcedural::proceduralWorldConfig().modes.empty())
         MimitaProcedural::loadProceduralWorldConfig();
+    else
+        configChanged = MimitaProcedural::reloadProceduralWorldConfigIfChanged();
+    if (configChanged)
+        removeDoor();
 
     const MimitaProcedural::ProceduralModeDefinition* mode =
         MimitaProcedural::proceduralModeById(p.modeId);
@@ -133,9 +138,10 @@ void clientProceduralWorldTick(World& world)
         return;
     }
 
-    const glm::vec3 exit =
-        MimitaProcedural::proceduralRoomExit(*mode, *room, p.currentRoom);
-    const glm::mat4 transform = glm::translate(glm::mat4(1.0f), exit);
+    const glm::mat4 transform = MimitaProcedural::proceduralRoomDoorTransform(
+        *mode, *room, p.currentRoom);
+    const glm::vec3 half = MimitaProcedural::proceduralRoomDoorHalfExtents(
+        *mode, *room);
 
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
     PhysicalEntity* door = gDoorEntityId != 0 ? system.find(gDoorEntityId) : nullptr;
@@ -143,19 +149,16 @@ void clientProceduralWorldTick(World& world)
     if (!door)
     {
         std::vector<CollisionTriangle> triangles;
-        buildBoxCollisionTriangles(triangles, glm::vec3(0.0f), mode->doorHalfExtents);
+        buildBoxCollisionTriangles(triangles, glm::vec3(0.0f), half);
         gDoorEntityId = system.add(triangles, transform, PhysicalEntityMotion::Static);
         door = system.find(gDoorEntityId);
         if (door)
-            door->halfExtents = mode->doorHalfExtents;
+            door->halfExtents = half;
         gAppliedRoom = p.currentRoom;
         return;
     }
 
-    if (gAppliedRoom != p.currentRoom)
-    {
-        system.moveKinematic(gDoorEntityId, transform, 0.0f);
-        gAppliedRoom = p.currentRoom;
-    }
-    door->halfExtents = mode->doorHalfExtents;
+    system.moveKinematic(gDoorEntityId, transform, 0.0f);
+    gAppliedRoom = p.currentRoom;
+    door->halfExtents = half;
 }

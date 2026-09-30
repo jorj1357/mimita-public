@@ -13,6 +13,28 @@
         "--no-npcs"
       ],
       "client_args": []
+    },
+    "3": {
+      "name": "crate_testing_funworld3",
+      "server_args": [
+        "--no-npcs"
+      ],
+      "client_args": [
+        "--startup-command",
+        "crate_spawn"
+      ],
+      "map": "funworld3"
+    },
+      "4": {
+      "name": "funworld3nothing",
+      "server_args": [
+        "--no-npcs"
+      ],
+      "client_args": [
+        "--startup-command",
+        "help"
+      ],
+      "map": "funworld3"
     }
   }
 }

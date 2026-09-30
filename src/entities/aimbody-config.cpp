@@ -66,6 +66,7 @@ bool AimBodyConfig::load(const std::string& path)
     if (!file.is_open()) {
         mEnabled = true;
         mMode = "default";
+        mArmsMode = "hybrid";
         mSmoothingFactor = 1.0f;
         mLimbs.clear();
         Debug::warn(Debug::Category::Animation,
@@ -96,6 +97,8 @@ bool AimBodyConfig::load(const std::string& path)
             mMode = "hybrid";
         else
             mMode = "default";
+        const std::string armsMode = j.value("arms_mode", std::string("hybrid"));
+        mArmsMode = armsMode == "default" ? "default" : "hybrid";
         const float factor = j.value("smoothingFactor", 1.0f);
         mSmoothingFactor = std::isfinite(factor) && factor > 0.0f
             ? factor : 1.0f;
@@ -127,6 +130,7 @@ bool AimBodyConfig::save()
     j["comment"] = "default preserves immediate aimbody behavior; smooth treats camera look as a wish direction. World Z is vertical and body yaw rotates around world Z. smoothingFactor 1.0 is approximately a 250 ms response; larger is slower and smaller is faster. Smooth mode never snaps. Camera sway is configured separately in camconfig.json.";
     j["enabled"] = mEnabled;
     j["mode"] = mMode;
+    j["arms_mode"] = mArmsMode;
     j["smoothingFactor"] = mSmoothingFactor;
     json limbs = json::object();
     for (const auto& [name, limb] : mLimbs) {

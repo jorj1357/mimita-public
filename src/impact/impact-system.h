@@ -16,6 +16,7 @@
 
 #include <glm/glm.hpp>
 
+#include "impact/boolean-mesh.h"
 #include "impact/impact-event.h"
 
 struct PhysicalEntity;
@@ -29,6 +30,10 @@ struct ImpactResult
     float cutRadius = 0.0f;
     float damage = 0.0f;
     int chunksRebuilt = 0;
+    uint32_t triangleCount = 0;
+    uint32_t componentCount = 0;
+    float remainingVolume = 0.0f;
+    BooleanError error = BooleanError::None;
 };
 
 class ImpactSystem
@@ -45,6 +50,13 @@ public:
     void initializeEntity(PhysicalEntity& entity, uint32_t materialId,
                           glm::vec3 halfExtents);
 
+    // Builds the destructible record from an authored closed mesh (for example
+    // imported from a GLB). Unlike the box path the entity needs no authored
+    // fallback surface: render/collision triangles and mesh-derived mass
+    // properties are filled immediately.
+    void initializeEntityFromMesh(PhysicalEntity& entity, BooleanMesh baseMesh,
+                                  glm::vec3 halfExtents, uint32_t materialId);
+
     // ── Deterministic impact math (public for tests) ────────────────────
     static float kineticEnergy(float mass, float speed);
     static float impactAngleFactor(const glm::vec3& projectileDirection,
@@ -57,6 +69,7 @@ private:
 
     uint64_t mNextEventId = 1;
     uint32_t mIgnoredLogCounter = 0;
+    uint32_t mCutLogCounter = 0;
 };
 
 // Deterministic self-test for the destructible-impact slice. Returns true when

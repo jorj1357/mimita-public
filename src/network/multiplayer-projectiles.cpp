@@ -40,6 +40,8 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
+#include "impact/impact-system.h"
+#include "physics/physical-entity.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "replay/replay.h"
@@ -1794,6 +1796,41 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                 simulateProjectileTick(state, config, physicsWorld, simulationDt);
             applyPhysicsState(projectile, state);
             projectile.distanceTraveled += step.travelDistance;
+
+            // Local projectile prediction also applies the same deterministic
+            // boolean cut to a physical entity. The server remains authoritative
+            // and the ImpactSystem deduplicates the shared listen-server case.
+if (step.type == ProjectileCollisionType::EntityImpact &&
+        projectile.predicted &&
+        projectile.ownerPlayerId == ctx.localPlayerId &&
+        projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
+        // Never predict a cut on a server mirror: the reliable server cut event
+        // owns that geometry.
+        !(PhysicalEntitySystem::instance().find(step.hitEntityId) &&
+          PhysicalEntitySystem::instance().find(step.hitEntityId)->serverDriven))
+            {
+                const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+                MimitaImpact::ImpactEvent impact;
+                impact.simulationTick = 0;
+                impact.source = MimitaImpact::ImpactSource::Projectile;
+                impact.target = MimitaImpact::ImpactTarget::PhysicalEntity;
+                impact.sourceEntityId = projectile.projectileId != 0
+                    ? projectile.projectileId : projectile.fireSerial;
+                impact.targetEntityId = step.hitEntityId;
+                impact.worldPoint = step.hitPosition;
+                impact.worldNormal = step.hitNormal;
+                impact.worldDirection = glm::length(projectile.velocity) > 0.001f
+                    ? glm::normalize(projectile.velocity)
+                    : glm::vec3(0.0f, 0.0f, 1.0f);
+                impact.speed = std::max(step.impactSpeed,
+                                        glm::length(projectile.velocity));
+                impact.mass = def ? def->projectileMass : 0.02f;
+                impact.density = def ? def->projectileDensity : 7800.0f;
+                impact.radius = def ? def->projectileBaseRadius : 0.01f;
+                impact.shapeId = def ? def->projectileShapeId : 0;
+                impact.cutScale = def ? def->cutEnergyScale : 1.0f;
+                MimitaImpact::ImpactSystem::instance().submit(impact);
+            }
             if (state.sleeping || step.type == ProjectileCollisionType::WorldBounce ||
                 step.type == ProjectileCollisionType::WorldImpact)
                 projectile.worldTouched = true;

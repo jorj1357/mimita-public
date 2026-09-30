@@ -11,6 +11,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace MimitaNet {
 
@@ -47,6 +48,9 @@ struct LaunchOptions
     bool autoMapRotation = true;
     uint32_t mapRotationMinutes = 15;
     bool discordNotification = true;
+    // Client-only terminal commands executed once after the room connection
+    // and gameplay world/player are ready.
+    std::vector<std::string> startupCommands;
 };
 
 LaunchOptions parseLaunchOptions(int argc, char** argv);

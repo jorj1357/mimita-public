@@ -2,6 +2,8 @@
 developer/
 node_modules/
 website/node_modules/
+# Regenerable prebuilt vendored dependency (Manifold static lib + headers).
+external/manifold-prebuilt/
 
 # ── Build output ──────────────────────────────────────────────────────────────
 build/

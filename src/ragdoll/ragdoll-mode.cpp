@@ -378,7 +378,8 @@ void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b, float dt)
     if (b.torsoIndex < 0 || b.torsoIndex >= (int)b.parts.size()) return;
 
     const float force = std::max(0.0f, pc.hybridArmsFollowForce);
-    if (force <= 1e-4f) return;
+    const float cameraFollow = std::max(1.0f, pc.hybridArmsCameraFollow);
+    const bool armsDefaultMode = AimBodyConfig::instance().armsDefaultMode();
 
     const glm::quat targetTorso =
         b.parts[b.torsoIndex].aimTargetOrientation;
@@ -392,12 +393,37 @@ void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b, float dt)
             glm::inverse(targetTorso) * part.aimTargetOrientation);
         const glm::quat centeredTarget = glm::normalize(
             currentTorso * armRelativeToTargetTorso);
-        const float alpha = glm::clamp(
-            1.0f - std::exp(-force * dt), 0.0f, 1.0f);
+
+        // At 1.0 this extra branch is inert. Above 1.0, blend toward the
+        // exact per-arm procedural/default target captured before physics.
+        // This keeps weapon-specific attachment rotations out of the arm
+        // target; the weapon renderer already applies those rotations.
+        glm::quat target = centeredTarget;
+        float alpha = 0.0f;
+        if (armsDefaultMode || cameraFollow > 1.0f) {
+            const float defaultBlend =
+                armsDefaultMode ? 1.0f : glm::clamp(
+                    (cameraFollow - 1.0f) / cameraFollow, 0.0f, 1.0f);
+            target = glm::normalize(glm::slerp(
+                part.body.orientation, centeredTarget, defaultBlend));
+            const float extraRate = std::max(1.0f, pc.hybridBaseRate)
+                                  * (armsDefaultMode
+                                      ? std::max(1.0f, cameraFollow)
+                                      : cameraFollow - 1.0f);
+            alpha = glm::clamp(
+                1.0f - std::exp(-extraRate * dt), 0.0f, 1.0f);
+        } else if (force > 1e-4f) {
+            alpha = glm::clamp(
+                1.0f - std::exp(-force * dt), 0.0f, 1.0f);
+        }
+
+        if (alpha <= 1e-4f) continue;
 
         part.body.orientation = glm::normalize(
-            glm::slerp(part.body.orientation, centeredTarget, alpha));
-        part.body.angularVelocity *= (1.0f - alpha);
+            glm::slerp(part.body.orientation, target, alpha));
+        const float velocityRetention = cameraFollow > 1.0f
+            ? (1.0f / cameraFollow) : (1.0f - alpha);
+        part.body.angularVelocity *= velocityRetention;
     }
 }
 

@@ -294,6 +294,9 @@ bool RagdollModeConfig::load(const std::string& path)
                 pc.hybridArmsFollowForce = std::clamp(
                     hy.value("arms_follow_force", pc.hybridArmsFollowForce),
                     0.0f, 100.0f);
+                pc.hybridArmsCameraFollow = std::clamp(
+                    hy.value("arms_camera_follow", pc.hybridArmsCameraFollow),
+                    1.0f, 100.0f);
                 pc.hybridPositionFollow = std::clamp(
                     hy.value("position_follow", pc.hybridPositionFollow), 0.0f, 1.0f);
             }

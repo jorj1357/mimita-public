@@ -1612,3 +1612,314 @@ centered torso-relative aim while still showing editable natural sway.
 
 Move hybrid arm presentation policy behind the live behavior boundary if this
 setting needs tuning without a cold executable build.
+
+## Cold-build occurrence 27
+
+UTC time:
+`2026-09-30T15:29:41Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_110900-hybrid-arm-sway-correction.md`
+
+### Why the cold build was required
+
+The follow-up added the camera-directed arm scale and changed the cold ragdoll
+configuration owner and hybrid fixed-tick implementation.
+
+### Exact cold source / boundary
+
+- `src/ragdoll/physical-aim.h`
+- `src/ragdoll/ragdoll-mode-config.cpp`
+- `src/ragdoll/ragdoll-mode.cpp`
+- `src/ragdoll/ragdoll-mode.h`
+
+### Result needed from the new executable
+
+Compile `physical.hybrid.arms_camera_follow` so values `1.0` and `10.0` can be
+compared in hybrid mode.
+
+### Why it could not be applied through the live path
+
+The hybrid arm solve and ragdoll config owner are in the cold fixed-tick
+executable and are not currently exposed through the live module boundary.
+
+### Build result
+
+`python build_agent.py` returned `BUILD SUCCESS`, compiled 3 translation units,
+skipped 494, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Set `arms_camera_follow` to `10.0`, launch the new executable, move
+left/right, and compare the arms against the `1.0` behavior.
+
+### Next migration/falsification step
+
+Move the hybrid arm camera policy behind the live behavior boundary if repeated
+tuning is required without cold builds.
+
+## Cold-build occurrence 29
+
+UTC time:
+`2026-09-30T15:37:00Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_113700-dev-launch-crate-mode.md`
+
+### Why the cold build was required
+
+The new launch-mode startup-command contract adds a client command-line field
+and executes it from the full client main loop after the multiplayer world is
+ready.
+
+### Exact cold source / boundary
+
+- `src/main.cpp`
+- `src/network/net_mode.cpp`
+- `src/network/net_mode.h`
+
+### Result needed from the new executable
+
+Compile the `--startup-command` parser and the one-shot post-load execution
+path so launch mode 3 can run `crate_spawn` in the loaded client.
+
+### Why it could not be applied through the live path
+
+The command-line parser and full-client main-loop owner are cold executable
+code. The current live module cannot replace process startup or the top-level
+loop.
+
+### Build result
+
+`python build.py build-only` returned success and updated the executable. The
+resulting executable contains both `--startup-command` and `crate_spawn`.
+
+### Human review
+
+Pending. Start dev-loop launch mode 3, confirm the server uses `funworld3` with
+zero NPCs, confirm the client enters the map, and confirm exactly one crate is
+spawned after player/world load.
+
+### Next migration/falsification step
+
+If startup commands become frequently edited, move the post-load command policy
+behind the live development boundary while keeping CLI parsing as cold startup
+mechanism.
+
+## Cold-build occurrence 28
+
+UTC time:
+`2026-09-30T15:37:00Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_113700-infinite-dungeon-room-config.md`
+
+### Why the cold build was required
+
+The procedural-world spawn and door policy owner is compiled into the current
+executable. The requested behavior needed the new JSON fields and runtime
+reload call sites compiled into that owner.
+
+### Exact cold source / boundary
+
+- `src/procedural/procedural-world.cpp`
+- `src/procedural/procedural-world.h`
+- `src/procedural/procedural-world-client.cpp`
+
+The server fixed-tick procedural owner and client procedural-world tick are not
+currently replaceable through the available live build entry.
+
+### Result needed from the new executable
+
+Compile JSON-owned player spawn selection, rotation-aware door collision, and
+timestamp-based door reload for the running Infinite Dungeon Slayer mode.
+
+### Why it could not be applied through the live path
+
+The documented `devscripts/live-build.py` entry is absent in this checkout, and
+the current procedural files are built through the cold executable path.
+
+### Build result
+
+`python build_agent.py` returned `BUILD SUCCESS`, compiled 10 translation units,
+skipped 487, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Run `pwsids`, verify the first-room spawn and room progression, then
+edit the room door JSON during the active session and observe the live change.
+
+### Next migration/falsification step
+
+Expose the procedural-world policy and reload boundary through the stable live
+module, or provide the missing live-build entry, before the next tuning pass.
+
+## Cold-build occurrence 31
+
+UTC time:
+`2026-09-30T15:56:50Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_110900-hybrid-arm-sway-correction.md`
+
+### Why the cold build was required
+
+The camera-follow target needed to use the equipped weapon's actual local
+grip-to-muzzle axis instead of assuming the generic local `+Y` axis.
+
+### Exact cold source / boundary
+
+- `src/ragdoll/ragdoll-mode.cpp`
+
+### Result needed from the new executable
+
+Compile the automatic weapon-axis correction so the arms point along the
+camera-forward line instead of approximately 90 degrees toward the ground.
+
+### Why it could not be applied through the live path
+
+The hybrid arm solve is part of the cold fixed-tick executable and is not
+currently exposed through the live module boundary.
+
+### Build result
+
+`python build_agent.py` returned `BUILD SUCCESS`, compiled 1 translation unit,
+skipped 496, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Check camera-forward, camera-up, camera-down, and left/right movement
+at `arms_camera_follow: 10.0`.
+
+### Next migration/falsification step
+
+If this axis correction needs more tuning, move the camera-follow arm policy
+behind the live behavior boundary so it can be adjusted without a cold build.
+
+## Cold-build occurrence 32
+
+UTC time:
+`2026-09-30T16:07:26Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_110900-hybrid-arm-sway-correction.md`
+
+### Why the cold build was required
+
+Attempt 5 changes the cold hybrid ragdoll arm solver so high
+`arms_camera_follow` values blend toward each arm's captured default
+aimbody/animation pose instead of a weapon-derived camera orientation.
+
+### Exact cold source / boundary
+
+- `src/ragdoll/ragdoll-mode.cpp`
+- `src/ragdoll/ragdoll-mode.h`
+- `src/ragdoll/physical-aim.h`
+- `config/ragdoll.json`
+
+### Result needed from the new executable
+
+Compile the general all-weapons arm target blend while preserving the existing
+physical torso, legs, movement, and weapon attachment behavior.
+
+### Why it could not be applied through the live path
+
+The hybrid arm fixed-tick solver is part of the cold executable and is not
+currently exposed through the live module boundary.
+
+### Build result
+
+`python build_agent.py` returned `BUILD SUCCESS`, compiled 1 translation unit,
+skipped 496, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. The dedicated review space is in
+`docs/regressions/2026-09-30/hybrid-arm-camera-aim-REG.md`.
+
+## Cold-build occurrence 33
+
+UTC time:
+`2026-09-30T16:09:09Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_110900-hybrid-arm-sway-correction.md`
+
+### Why the cold build was required
+
+The arm-only `arms_mode` setting and the attempt-5 target blend changed the
+compiled aimbody configuration owner and hybrid ragdoll solver.
+
+### Exact cold source / boundary
+
+- `config/aimbody.json`
+- `src/entities/aimbody-config.h`
+- `src/entities/aimbody-config.cpp`
+- `src/ragdoll/ragdoll-mode.cpp`
+- `src/ragdoll/ragdoll-mode.h`
+- `src/ragdoll/physical-aim.h`
+- `config/ragdoll.json`
+
+### Result needed from the new executable
+
+Allow only the arms to choose default-style or hybrid-style behavior while
+keeping the rest of the body physical and preserving all weapon-specific
+attachment transforms.
+
+### Why it could not be applied through the live path
+
+The hybrid arm fixed-tick solver and the aimbody configuration owner are not
+currently exposed through the live module boundary.
+
+### Build result
+
+`python build_agent.py` returned `BUILD SUCCESS`, compiled 7 translation units,
+skipped 490, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Use the review space in
+`docs/regressions/2026-09-30/hybrid-arm-camera-aim-REG.md`.
+
+## Cold-build occurrence 30
+
+UTC time:
+`2026-09-30T15:50:35Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_110900-hybrid-arm-sway-correction.md`
+
+### Why the cold build was required
+
+The camera-directed arm target needed a correction in the cold hybrid ragdoll
+solve so it uses the weapon's actual local forward axis and attachment frame.
+
+### Exact cold source / boundary
+
+- `src/ragdoll/ragdoll-mode.cpp`
+- `src/ragdoll/ragdoll-mode.h`
+
+### Result needed from the new executable
+
+Compile the corrected camera-follow target so `arms_camera_follow: 10.0`
+aims the weapon and arms along camera forward instead of sideways or backward.
+
+### Why it could not be applied through the live path
+
+The hybrid arm solve is part of the cold fixed-tick executable and is not
+currently exposed through the live module boundary.
+
+### Build result
+
+`python build_agent.py` returned `BUILD SUCCESS`, compiled 13 translation
+units, skipped 484, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Launch the new executable with hybrid mode and verify camera-forward,
+camera-up, camera-down, and left/right movement behavior.
+
+### Next migration/falsification step
+
+If the arm camera behavior needs repeated tuning, move this policy behind the
+live behavior boundary so it can be adjusted without a cold build.

@@ -166,20 +166,35 @@ PCH_OUTPUT = os.path.join(SRC_DIR, "pch.h.gch")
 
 LIBJUICE_DIR = os.path.join(ROOT, "external", "libjuice")
 
+# Vendored Manifold (true boolean CSG). The static library and headers are
+# produced by tools/build_manifold.py into external/manifold-prebuilt/ (ignored
+# by Git). MANIFOLD_PAR=-1 must match the library build (parallel backend off).
+MANIFOLD_PREBUILT = os.path.join(ROOT, "external", "manifold-prebuilt")
+MANIFOLD_INCLUDE = os.path.join(MANIFOLD_PREBUILT, "include")
+MANIFOLD_LIB = os.path.join(MANIFOLD_PREBUILT, "lib", "libmanifold.a")
+
+if not os.path.isfile(MANIFOLD_LIB):
+    print("[TOOLCHAIN] Vendored Manifold was not found at " + MANIFOLD_LIB)
+    print("[TOOLCHAIN] Run: python tools/build_manifold.py")
+    sys.exit(2)
+
 INCLUDE_FLAGS = [
     "-Iinclude",
     "-Isrc",
     f"-I{GLFW_INCLUDE}",
     f"-I{LIBJUICE_DIR}/include",
+    f"-I{MANIFOLD_INCLUDE}",
 ]
 
 DEFINE_FLAGS = [
     "-DGLM_ENABLE_EXPERIMENTAL",
     "-DJUICE_STATIC",
+    "-DMANIFOLD_PAR=-1",
 ]
 
 LIB_FLAGS = [
     f"-L{GLFW_LIB}",
+    MANIFOLD_LIB,
 ]
 
 LINK_LIBS = [

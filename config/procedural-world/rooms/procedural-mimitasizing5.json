@@ -9,6 +9,15 @@
     "position": [51.0, 0.0, 30.5],
     "direction": [1.0, 0.0, 0.0]
   },
+  "spawnpoint": {
+    "position": [-45.0, 0.0, 1.0],
+    "rotation_degrees": [0.0, 0.0, 0.0]
+  },
+  "door": {
+    "position": [51.0, 0.0, 30.5],
+    "rotation_degrees": [0.0, 0.0, 0.0],
+    "half_extents": [1.5, 13.0, 30.0]
+  },
   "enemySpawns": [
     [-20.0, -20.0, 1.0],
     [20.0, -20.0, 1.0],
