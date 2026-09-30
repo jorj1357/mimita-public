@@ -1175,7 +1175,7 @@
     "victim_knockback_per_damage": 0.15,
     "victim_knockback_vertical_fraction": 0.12,
     "enemy_impulse_multiplier": 1.0,
-    "projectile_speed": 500.0,
+    "projectile_speed": 100.0,
     "projectile_radius": 0.6,
     "projectile_lifetime": 3.0,
     "projectile_mass": 0.02,

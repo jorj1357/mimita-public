@@ -161,8 +161,8 @@
             // 1.0 = current hybrid arm behavior. 10.0 = movement affects the
             // arms 10x less and the arms are 90% closer to their default
             // aimbody/animation pose. Weapon attachment offsets stay weapon-owned.
-            // "arms_camera_follow": 1.0
-            "arms_camera_follow": 10.0
+            "arms_camera_follow": 1.0
+            // "arms_camera_follow": 10.0
             // "arms_camera_follow": 2.0
         }
     },
