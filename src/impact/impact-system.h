@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -34,6 +35,13 @@ struct ImpactResult
     uint32_t componentCount = 0;
     float remainingVolume = 0.0f;
     BooleanError error = BooleanError::None;
+
+    // Fracture outcome. `fractured` is true when the hit split the object into
+    // independent bodies; `fragmentCount` is how many new entities were spawned
+    // (the hit entity keeps the largest piece).
+    bool fractured = false;
+    uint32_t fragmentCount = 0;
+    uint32_t fragmentEntityIds[16] = {0};
 };
 
 class ImpactSystem
@@ -56,6 +64,16 @@ public:
     // properties are filled immediately.
     void initializeEntityFromMesh(PhysicalEntity& entity, BooleanMesh baseMesh,
                                   glm::vec3 halfExtents, uint32_t materialId);
+
+    // Splits a cut object into independent rigid bodies when its last rebuild
+    // disconnected or unbalanced it. The hit entity keeps the largest piece;
+    // other pieces become new Dynamic entities with deterministic network ids
+    // (so a client reproducing a replicated cut derives the same pieces without
+    // an extra packet). `serverDriven` marks the children as non-authoritative
+    // mirrors on a client. Returns the spawned entity ids. Safe to call when no
+    // fracture is warranted (returns empty).
+    std::vector<uint32_t> applyFracture(PhysicalEntity& entity, ImpactResult& result,
+                                        bool serverDriven);
 
     // ── Deterministic impact math (public for tests) ────────────────────
     static float kineticEnergy(float mass, float speed);

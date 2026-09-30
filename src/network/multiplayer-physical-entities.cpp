@@ -188,9 +188,28 @@ void mpProcessEntityCutEventPacket(MultiplayerContext&,
         std::max(0.0f, e->destructible.health - event->damage);
     refreshEntityMassProperties(*e);
 
-    printf("[PHYS CLIENT] cut networkId=%u cutId=%u tris=%zu vol=%.4f\n",
-           event->networkId, event->cutId, e->localTriangles.size(),
-           e->destructible.remainingVolume);
+    // Reproduce the server's fracture decision deterministically. The pieces,
+    // their order, and their network ids all derive from the same base + ordered
+    // cuts, so no extra packet is needed. Children are serverDriven mirrors.
+    size_t fragmentCount = 0;
+    if (e->destructible.lastFractureReason != MimitaImpact::FractureReason::None)
+    {
+        MimitaImpact::ImpactResult fractureResult;
+        const std::vector<uint32_t> fragments =
+            MimitaImpact::ImpactSystem::instance().applyFracture(
+                *e, fractureResult, true);
+        fragmentCount = fragments.size();
+        // applyFracture may have reallocated entity storage; re-resolve.
+        e = PhysicalEntitySystem::instance().findByNetworkId(event->networkId);
+    }
+    if (fragmentCount > 0)
+        printf("[PHYS CLIENT] fracture networkId=%u pieces=%zu\n",
+               event->networkId, fragmentCount + 1);
+
+    if (e)
+        printf("[PHYS CLIENT] cut networkId=%u cutId=%u tris=%zu vol=%.4f\n",
+               event->networkId, event->cutId, e->localTriangles.size(),
+               e->destructible.remainingVolume);
 }
 
 } // namespace MimitaNet

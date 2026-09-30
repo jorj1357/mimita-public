@@ -16,6 +16,8 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <glm/gtc/quaternion.hpp>
+
 #include "config/material-config.h"
 #include "debug/debug-log.h"
 #include "impact/destructible-geometry.h"
@@ -38,7 +40,131 @@ uint32_t effectiveMaterialId(const PhysicalEntity& entity)
         : entity.materialId;
 }
 
+// Deterministic network id for fracture fragment `pieceIndex` (1-based) of a
+// parent. Both the server and every client derive the same value from the
+// parent's network id and the deterministic piece order, so no extra packet is
+// needed to name the pieces.
+uint32_t fragmentNetworkId(uint32_t parentNetworkId, uint32_t pieceIndex)
+{
+    // Set a high bit so a generated fragment id cannot collide with the small
+    // runtime entity ids the server otherwise assigns. Deterministic on both
+    // sides (parent network id + piece order), so no packet is needed.
+    return 0x40000000u | ((parentNetworkId & 0x7fffffu) << 4) | (pieceIndex & 0xfu);
+}
+
 } // anonymous namespace
+
+// Splits `entity` into independent rigid bodies after a cut disconnected or
+// unbalanced it. The hit entity keeps the largest piece (stable id/network id);
+// each other piece becomes a new Dynamic PhysicalEntity that inherits material,
+// density, mesh-derived mass, world pose, and a velocity seeded from the parent
+// body's motion at that piece's centroid. Shared by the authoritative server
+// and by clients reproducing a replicated cut. `serverDriven` marks the spawned
+// children as non-authoritative mirrors. Returns the spawned entity ids.
+std::vector<uint32_t> ImpactSystem::applyFracture(PhysicalEntity& entity,
+                                                  ImpactResult& result,
+                                                  bool serverDriven)
+{
+    std::vector<uint32_t> spawned;
+    DestructibleGeometrySystem& geometrySystem = DestructibleGeometrySystem::instance();
+    std::vector<BooleanPiece> pieces = geometrySystem.decomposePieces(entity.destructible);
+    if (pieces.size() < 2)
+        return spawned;
+
+    const uint32_t maxFragments =
+        std::max(1u, geometrySystem.fractureTuning.maxFragmentsPerEvent);
+    const float minFraction =
+        std::max(0.0f, geometrySystem.fractureTuning.minPieceVolumeFraction);
+    const float minVolume =
+        minFraction * std::max(entity.destructible.baseVolume, 1e-6f);
+
+    PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
+    const uint32_t parentId = entity.id;
+    const glm::mat4 parentTransform = entity.transform;
+    const glm::quat parentOrientation = entity.orientation;
+    const glm::vec3 parentVelocity = entity.velocity;
+    const glm::vec3 parentAngular = entity.angularVelocity;
+    const glm::vec3 parentCom = entity.destructible.massCenterOfMass;
+    const glm::vec3 parentHalfExtents = entity.halfExtents;
+    const PhysicalEntityShape parentShape = entity.shape;
+    const float parentDensity = entity.density;
+    const float parentFriction = entity.friction;
+    const float parentRestitution = entity.restitution;
+    const float parentLinearDamping = entity.linearDamping;
+    const float parentAngularDamping = entity.angularDamping;
+    const float parentMaxAngularSpeed = entity.maxAngularSpeed;
+    const bool parentCollidesWithActors = entity.collidesWithActors;
+    const std::string parentTexturePath = entity.texturePath;
+    const std::string parentModelPath = entity.modelPath;
+
+    // pieces[0] is the largest and keeps the original entity.
+    const uint32_t materialId = effectiveMaterialId(entity);
+    const uint32_t parentNetworkId = entity.networkId != 0 ? entity.networkId
+                                                           : entity.id;
+
+    uint32_t spawnedCount = 0;
+    for (size_t i = 1; i < pieces.size() && spawnedCount < maxFragments; ++i)
+    {
+        const BooleanPiece& piece = pieces[i];
+        if (piece.volume < minVolume || piece.mesh.empty())
+            continue;
+
+        // World pose of the piece: the parent transform already carries the
+        // parent's translation; the piece geometry is in parent-local space, so
+        // the child starts coincident and simply needs its own transform.
+        const uint32_t childId = system.add(
+            std::vector<CollisionTriangle>{}, parentTransform,
+            PhysicalEntityMotion::Dynamic, materialId);
+        PhysicalEntity* child = system.find(childId);
+        if (!child)
+            continue;
+
+        child->networkId = fragmentNetworkId(parentNetworkId, (uint32_t)i);
+        child->serverDriven = serverDriven;
+        child->shape = parentShape;
+        child->materialId = materialId;
+        child->density = parentDensity;
+        child->friction = parentFriction;
+        child->restitution = parentRestitution;
+        child->linearDamping = parentLinearDamping;
+        child->angularDamping = parentAngularDamping;
+        child->maxAngularSpeed = parentMaxAngularSpeed;
+        child->collidesWithActors = parentCollidesWithActors;
+        child->texturePath = parentTexturePath;
+        child->modelPath = parentModelPath;
+
+        ImpactSystem::instance().initializeEntityFromMesh(
+            *child, piece.mesh, parentHalfExtents, materialId);
+
+        // Velocity at the piece centroid from the parent's rigid-body motion:
+        // v = v_cm + omega x (r - com). Off-center pieces fly outward, which is
+        // what makes a burst look physical.
+        const glm::vec3 r = parentOrientation * (piece.centroid - parentCom);
+        child->velocity = parentVelocity + glm::cross(parentAngular, r);
+        child->angularVelocity = parentAngular;
+
+        if (spawned.size() < 16)
+            result.fragmentEntityIds[spawned.size()] = childId;
+        spawned.push_back(childId);
+        ++spawnedCount;
+    }
+
+    // Keep only the primary piece on the original entity: rebuild it from the
+    // largest shell so the hit entity never retains a disconnected fragment.
+    // `system.add` above may have reallocated storage, so re-fetch the entity
+    // by id rather than trusting the pointer.
+    if (spawnedCount > 0)
+    {
+        PhysicalEntity* primary = system.find(parentId);
+        if (primary)
+        {
+            ImpactSystem::instance().initializeEntityFromMesh(
+                *primary, pieces[0].mesh, primary->halfExtents, materialId);
+            primary->localTriangles = primary->destructible.collisionTriangles;
+        }
+    }
+    return spawned;
+}
 
 ImpactSystem& ImpactSystem::instance()
 {
@@ -205,6 +331,24 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
     // and inertia immediately (the per-tick owner reads the same cached values).
     if (rebuilt != 0)
         refreshEntityMassProperties(*entity);
+
+    // Fracture: if the cut disconnected the object or left it hanging off its
+    // support, split it into independent bodies. The trigger was recorded by
+    // the rebuild; this owns spawning and the primary-piece keep rule.
+    if (rebuilt != 0 &&
+        entity->destructible.lastFractureReason != FractureReason::None)
+    {
+        std::vector<uint32_t> fragments = applyFracture(*entity, result, false);
+        if (!fragments.empty())
+        {
+            result.fractured = true;
+            result.fragmentCount = (uint32_t)fragments.size();
+            Debug::log(Debug::Category::General,
+                "[FRACTURE] entity=%u reason=%u pieces=%zu vol=%.4f\n",
+                event.targetEntityId, (unsigned)entity->destructible.lastFractureReason,
+                fragments.size() + 1, entity->destructible.remainingVolume);
+        }
+    }
 
     // Bounded, categorized diagnostics at the boolean owner. Failures always
     // record; successful cuts are rate-limited so a long burst stays readable.

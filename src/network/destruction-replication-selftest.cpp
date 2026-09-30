@@ -28,6 +28,19 @@
 namespace MimitaNet {
 namespace {
 
+// Two lobes joined by a thin neck; cutting the neck separates it into pieces.
+MimitaImpact::BooleanMesh makeDumbbell()
+{
+    std::vector<MimitaImpact::BooleanMesh> parts;
+    parts.push_back(MimitaImpact::buildBooleanBoxMeshAt(
+        glm::vec3(-1.3f, 0.0f, 0.0f), glm::vec3(0.8f), 0));
+    parts.push_back(MimitaImpact::buildBooleanBoxMeshAt(
+        glm::vec3(1.3f, 0.0f, 0.0f), glm::vec3(0.8f), 0));
+    parts.push_back(MimitaImpact::buildBooleanBoxMeshAt(
+        glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.4f, 0.25f, 0.25f), 0));
+    return MimitaImpact::booleanUnion(parts, 0);
+}
+
 uint64_t checksumTriangles(const std::vector<CollisionTriangle>& triangles)
 {
     uint64_t sum = 1469598103934665603ull;
@@ -158,6 +171,10 @@ bool destructionReplicationSelfTest(std::string* outSummary)
     const uint64_t serverChecksum = checksumTriangles(server->localTriangles);
     const float serverVolume = server->destructible.remainingVolume;
     const float serverMass = server->mass;
+    // Copy the authoritative cut history now: adding the client mirror below
+    // can reallocate PhysicalEntitySystem storage and invalidate `server`.
+    const std::vector<MimitaImpact::DestructionCut> serverCuts =
+        server->destructible.cuts;
 
     // ── Client: a fresh context applies the same spawn + cut events ──
     MultiplayerContext ctx;
@@ -173,10 +190,10 @@ bool destructionReplicationSelfTest(std::string* outSummary)
           "mirror is marked serverDriven so the tick never simulates it");
 
     PhysicalEntityCutEventPacket cutPktA{};
-    fillCut(kNetworkId, server->destructible.cuts[0], cutPktA, 2);
+    fillCut(kNetworkId, serverCuts[0], cutPktA, 2);
     mpProcessEntityCutEventPacket(ctx, &cutPktA);
     PhysicalEntityCutEventPacket cutPktB{};
-    fillCut(kNetworkId, server->destructible.cuts[1], cutPktB, 3);
+    fillCut(kNetworkId, serverCuts[1], cutPktB, 3);
     mpProcessEntityCutEventPacket(ctx, &cutPktB);
 
     mirror = system.findByNetworkId(kNetworkId);
@@ -224,6 +241,90 @@ bool destructionReplicationSelfTest(std::string* outSummary)
           "despawn leaves the authoritative entity untouched");
 
     system.clear();
+
+    // ── Fracture replicates deterministically ────────────────────────
+    // The server severs a dumbbell's neck; the client applies the same ordered
+    // cut and must arrive at the same independent pieces, with children marked
+    // serverDriven.
+    {
+        constexpr uint32_t kFractureNetworkId = 7777;
+        const MimitaImpact::BooleanMesh dumbbell = makeDumbbell();
+        if (dumbbell.triangleCount() > 0)
+        {
+            std::vector<CollisionTriangle> box;
+            buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(2.0f));
+            const uint32_t serverId = system.add(
+                box, glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 4.0f)),
+                PhysicalEntityMotion::Dynamic, MimitaImpact::materialIdForName("wood"));
+            PhysicalEntity* serverEntity = system.find(serverId);
+            serverEntity->networkId = kFractureNetworkId;
+            serverEntity->halfExtents = glm::vec3(2.0f);
+            serverEntity->density = 1.0f;
+            MimitaImpact::ImpactSystem::instance().initializeEntityFromMesh(
+                *serverEntity, dumbbell, glm::vec3(2.0f),
+                MimitaImpact::materialIdForName("wood"));
+
+            MimitaImpact::DestructionCut neck;
+            neck.cutter.type = MimitaImpact::BooleanCutterType::Sphere;
+            neck.cutter.localCenter = glm::vec3(0.0f);
+            neck.cutter.radius = 0.5f;
+            neck.sourceEntityId = 11;
+            neck.predictionKey = 5001;
+            MimitaImpact::DestructibleGeometrySystem::instance().addCut(
+                serverEntity->destructible, neck);
+            serverEntity->localTriangles = serverEntity->destructible.collisionTriangles;
+
+            // Server applies the fracture through the same entry point.
+            MimitaImpact::ImpactResult serverFracture;
+            std::vector<uint32_t> serverFragments =
+                MimitaImpact::ImpactSystem::instance().applyFracture(
+                    *serverEntity, serverFracture, false);
+            check(!serverFragments.empty(),
+                  "server fractures the disconnected dumbbell");
+
+            const uint32_t expectedChildNet =
+                0x40000000u | ((kFractureNetworkId & 0x7fffffu) << 4) | 1u;
+
+            // Client mirror: spawn + the same cut + the same fracture.
+            MultiplayerContext fractureCtx;
+            fractureCtx.reliableEventSessionId = 77;
+            PhysicalEntitySpawnEventPacket spawnPkt{};
+            spawnPkt.eventId = 10;
+            spawnPkt.eventSessionId = 77;
+            spawnPkt.networkId = kFractureNetworkId;
+            spawnPkt.motion = (uint8_t)PhysicalEntityMotion::Dynamic;
+            // The server's base is an authored dumbbell, not a box. There is no
+            // "send mesh" path by design, so the client is given the same base
+            // explicitly below (in production it would import the same GLB).
+            spawnPkt.sourceKind = PHYSICAL_ENTITY_SOURCE_BOX;
+            spawnPkt.halfExtents[0] = 2.0f;
+            spawnPkt.halfExtents[1] = 2.0f;
+            spawnPkt.halfExtents[2] = 2.0f;
+            spawnPkt.materialId = MimitaImpact::materialIdForName("wood");
+            mpProcessPhysicalEntitySpawnEventPacket(fractureCtx, &spawnPkt);
+            PhysicalEntity* mirror = system.findByNetworkId(kFractureNetworkId);
+            if (mirror)
+            {
+                MimitaImpact::ImpactSystem::instance().initializeEntityFromMesh(
+                    *mirror, makeDumbbell(), glm::vec3(2.0f),
+                    MimitaImpact::materialIdForName("wood"));
+
+                PhysicalEntityCutEventPacket cutPkt{};
+                cutPkt.eventId = 11;
+                cutPkt.eventSessionId = 77;
+                cutPkt.networkId = kFractureNetworkId;
+                cutPkt.cutId = 1;
+                cutPkt.cutterType = (uint8_t)MimitaImpact::BooleanCutterType::Sphere;
+                cutPkt.radius = 0.5f;
+                mpProcessEntityCutEventPacket(fractureCtx, &cutPkt);
+            }
+
+            PhysicalEntity* child = system.findByNetworkId(expectedChildNet);
+            check(child != nullptr && child->serverDriven,
+                  "client reproduces the fracture piece with the same network id");
+        }
+        system.clear();
+    }
 
     if (outSummary)
         *outSummary = report;

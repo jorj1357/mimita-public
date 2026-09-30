@@ -28,6 +28,53 @@
 
 namespace MimitaImpact {
 
+// Why a rebuild decided the object should split into independent bodies.
+enum class FractureReason : uint8_t
+{
+    None = 0,
+    // A cut disconnected the material into more than one solid piece.
+    DisconnectedComponent,
+    // One piece is left, but its center of mass no longer projects over its
+    // remaining support footprint (too much removed on one side).
+    UnbalancedSupport
+};
+
+// Per-entity fracture tuning. Values are deliberately permissive by default so
+// a normal crate only fractures when it genuinely loses its support.
+struct FractureTuning
+{
+    bool enabled = true;
+
+    // A disconnected piece only detaches when it is at least this fraction of
+    // the original volume. Smaller slivers stay welded so a surface nick does
+    // not shatter the object into dust.
+    float minPieceVolumeFraction = 0.02f;
+
+    // Unbalanced-support heuristic (destructible-world.md 21/24): the remaining
+    // piece is effectively supported only on one side once its center of mass
+    // has drifted off-center. Fires when:
+    //   material was removed (remaining < maxRemainingFraction), and
+    //   horizontal center-of-mass offset > comOffsetFraction * half extent.
+    // Tuned aggressively on purpose; the first human pass should retune these.
+    float maxRemainingFraction = 0.98f;
+    float comOffsetFraction = 0.12f;
+
+    // Cap on detached bodies produced by one fracture event (spec budget).
+    uint32_t maxFragmentsPerEvent = 12;
+};
+
+// A decision returned by the fracture trigger. `primaryPiece` is the index of
+// the piece that should keep the original entity; the rest are detached.
+struct FractureDecision
+{
+    bool shouldFracture = false;
+    FractureReason reason = FractureReason::None;
+    size_t primaryPiece = 0;
+
+    // Fraction 0..1 of removed mass on the unsupported side (diagnostics).
+    float imbalance = 0.0f;
+};
+
 // One authoritative subtractive cut: a MiMITA boolean cutter plus the gameplay
 // metadata needed to identify and reconcile it across prediction and authority.
 struct DestructionCut
@@ -89,6 +136,10 @@ struct DestructibleGeometry
     // cut; the caller keeps its authored box mesh until then.
     std::vector<Vertex> renderVertices;
     std::vector<CollisionTriangle> collisionTriangles;
+
+    // Diagnostics from the most recent rebuild's fracture check.
+    FractureReason lastFractureReason = FractureReason::None;
+    float lastImbalance = 0.0f;
 };
 
 // ── Signed-distance helpers (solid < 0, empty > 0). Test/diagnostic only. ──
@@ -98,6 +149,11 @@ float sphereDistance(glm::vec3 p, glm::vec3 center, float radius);
 // Original base box minus every stored cut (sphere or capsule).
 float destructibleCrateDistance(const DestructibleGeometry& geometry,
                                 glm::vec3 localPoint);
+
+// Evaluates whether the current surface should fracture. Read-only; does not
+// mutate the record or spawn bodies.
+FractureDecision evaluateFracture(const DestructibleGeometry& geometry,
+                                  const FractureTuning& tuning);
 
 // ── Owner ───────────────────────────────────────────────────────────────
 // Stores the base mesh + cut history and rebuilds the surface lazily by
@@ -133,6 +189,15 @@ public:
     // Safety cap for the generated surface. Cuts that would exceed it are
     // rejected and logged rather than allowed to stall the game.
     size_t maxTrianglesPerEntity = 120000;
+
+    // Fracture trigger tuning (hot-tunable in code for now).
+    FractureTuning fractureTuning;
+
+    // Separates the current surface into its independent solid pieces, largest
+    // first. Only call after evaluateFracture reports shouldFracture; returns an
+    // empty vector on failure so the caller can keep the object whole.
+    std::vector<BooleanPiece> decomposePieces(
+        const DestructibleGeometry& geometry) const;
 
 private:
     DestructibleGeometrySystem() = default;

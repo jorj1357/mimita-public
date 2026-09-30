@@ -11,9 +11,11 @@
 
 # Manifold Destructible Integration Plan
 
-Status: dependency vendored, wrapper implemented, first gameplay slice wired and
-self-tested. Multiplayer cut replication, mass/inertia updates, fracture, and
-arbitrary imported meshes remain later slices.
+Status: dependency vendored, wrapper implemented, gameplay slice wired and
+self-tested. Mass/centre-of-mass/inertia follow the cut surface, the rebuild is
+incremental, arbitrary watertight GLBs can be imported as destructible objects,
+and one server replicates destruction to all clients. Automatic fracture and
+runtime/human acceptance remain.
 
 Related documents:
 
@@ -345,22 +347,29 @@ local projectile hit
 Server (authority): validates projectile and hit, applies the cut, broadcasts an
 authoritative cut event. All clients apply the same cut once.
 
-Because there is no crate/cut packet yet, the next networking slice must add:
+Implemented (2026-09-30) as four packets in `src/network/packets.h`, driven by
+`serverReplicatePhysicalEntities` and applied by
+`src/network/multiplayer-physical-entities.cpp`:
 
-1. A stable physical-entity network id (the entity already has a runtime `id`
-   and a `persistenceId`; a network id/packet family must be added).
-2. A `CrateCutEvent` (or generic `DestructionCutEvent`) packet with:
-   entity id, authoritative cut id, prediction key, server tick, local impact
-   position (or authoritative world impact), local direction, cutter type,
-   radius, capsule length, impact scale, geometry revision before and after.
-3. Deduplication by explicit cut identity (`(entityId, cutId)`), not approximate
-   position.
-4. Reconciliation: the predicting client reconciles its predicted cut with the
-   server event instead of applying it twice. All clients start from the same
-   canonical base mesh and apply cuts in the same order.
+1. `PACKET_PHYSICAL_ENTITY_SPAWN` (reliable): network id, motion, material,
+   half extents, pose, density, and either a box source or a GLB `modelPath`.
+   The client rebuilds the same canonical base — no triangles are sent.
+2. `PACKET_ENTITY_CUT_EVENT` (reliable): network id, ordered `cutId`, prediction
+   key, cutter type/center/direction/radius/length, damage, energy. Applied in
+   order; a re-sent `cutId` is ignored, matching section 9.3's explicit identity
+   `(networkId, cutId)` instead of approximate position.
+3. `PACKET_PHYSICAL_ENTITY_STATE` (unreliable, 30 Hz): transform/velocity for
+   visible motion between reliable events.
+4. `PACKET_PHYSICAL_ENTITY_DESPAWN` (reliable): removes the mirror.
 
-Do not send generated triangle meshes over the network for this milestone. Do
-not allow clients to send arbitrary geometry.
+Mirrors are created through `PhysicalEntitySystem::addReplicated`, marked
+`serverDriven`, and are skipped by the fixed tick, entity-vs-entity contacts,
+player push, and `ImpactSystem::submit`, so a client can never become an
+authority for the cut history. Entities use their runtime id as the network id.
+
+Remaining: a dedicated server owns no `PhysicalEntity` crates, so server-side
+destruction there needs a server spawn path. Do not send generated triangle
+meshes over the network; do not allow clients to send arbitrary geometry.
 
 ---
 
@@ -433,12 +442,16 @@ Still to add:
 - No-op when a shot misses.
 - Component count reported for a fractured/disconnected result (fracture still
   off).
-- Networking: prediction shown immediately; server sends one cut; predicting
-  client does not double-apply; a second client sees the same hole; out-of-order
-  or duplicate events rejected; revisions converge.
-- Performance: one shot measured; 10 shots responsive; 100 shots do not rebuild
-  the world; walking near the crate triggers no rebuild.
-- Human visual/multiplayer acceptance (not performed).
+- Networking (deterministic self-test
+  `mimita.exe --destruction-replication-selftest`, passing): mirror is built from
+  the spawn event and marked `serverDriven`; mirror geometry, volume, and mass
+  match the server after the ordered cut events; a re-sent cut is ignored; the
+  state packet moves the mirror; despawn removes only the mirror.
+- Import (`mimita.exe --destructible-selftest`): an authored octahedron and a
+  real watertight GLB import, cut, and lose mass; a non-watertight GLB and a
+  missing file are rejected with a reason.
+- Human visual/multiplayer acceptance (not performed): two real clients must see
+  the same hole, and a GLB object must render and cut in-game.
 
 ---
 
@@ -559,10 +572,59 @@ Invalid input must be rejected and logged, never passed into gameplay.
 - Mass, center of mass, and diagonal inertia now follow the material that
   remains after each cut (diagonal approximation; the full tensor and principal
   axes are not modeled).
-- Automatic fracture is not implemented; disconnected pieces stay one owner.
-- Separate-process multiplayer cut replication is not implemented.
+- Automatic fracture is implemented but was not runtime-tuned. The balance
+  heuristic is geometric (volume + horizontal center-of-mass drift), not a real
+  support/contact polygon, so expect to retune `FractureTuning` after human
+  testing. See 13.4.
+- Multiplayer cut replication now exists for one server; a dedicated server still
+  does not own any `PhysicalEntity` crates, so destruction there needs a
+  server-side spawn path.
 - Manifold's auto segment count is coarse; the wrapper overrides it, but very
   small cutters still need enough segments to look round.
+
+---
+
+## 13.4 Fracture (implemented — best attempt, needs runtime tuning)
+
+Fracture splits one object into several independent rigid bodies when a cut
+disconnects or unbalances it. Implements `destructible-world.md` sections 13, 14,
+20, 21, 24, 27, 28, and 31.
+
+Detection and ownership:
+
+1. `BooleanCutResult.componentCount` (from `Manifold::Decompose()`, positive
+   shells) drives the disconnected case: `> 1` means the object broke apart.
+2. `evaluateFracture` (`destructible-geometry.{h,cpp}`) also fires on an
+   unbalanced single piece: material was removed and the horizontal center of
+   mass drifted past `comOffsetFraction` of the half extent. Tuning lives in
+   `FractureTuning` (aggressive by default; retune after human testing).
+3. `ImpactSystem::applyFracture` is the single owner. `booleanDecomposePieces`
+   returns each closed shell largest-volume-first; the hit entity keeps
+   `pieces[0]` (stable runtime and network id), and every other accepted piece
+   becomes a new Dynamic `PhysicalEntity`.
+4. Material inheritance (`destructible-world.md` 13/14): children copy material
+   id, density, friction, restitution, damping, texture, and collidesWithActors.
+   Mass comes from the piece's own mesh volume via `initializeEntityFromMesh`.
+5. Velocity seeding: `v = v_parent + omega_parent x (r - com_parent)` at the
+   piece centroid, so off-center pieces fly outward.
+6. Budget (`destructible-world.md` 44): `maxFragmentsPerEvent` caps bodies per
+   event; `minPieceVolumeFraction` keeps tiny slivers welded.
+
+Networking (`destructible-world.md` 28, "replicate causes"):
+
+- Fragment network ids are deterministic:
+  `0x40000000 | (parentNetworkId << 4) | pieceIndex`. The high bit avoids
+  colliding with small runtime ids.
+- The server and every client rebuild the same base and apply the same ordered
+  cuts, so they derive the same pieces in the same order with no extra packet.
+- A client runs the same `applyFracture(..., serverDriven=true)` after applying a
+  replicated cut, so mirrors match the server; the server's own spawn packets
+  reconcile by network id.
+
+Known limits to tune after human acceptance: the balance heuristic is
+geometric only (no real support/contact polygon); a fragment is still one mesh
+shell (no further chipping); dedicated-server crate spawn is still absent;
+`FractureTuning` is code-level, not yet hot-reloadable config.
 
 ---
 
@@ -574,11 +636,10 @@ Invalid input must be rejected and logged, never passed into gameplay.
 4. Keep Manifold headers inside `src/impact/boolean-mesh.cpp` only.
 5. Preserve the canonical-base + cut-history model; never feed a previous output
    back in as the base.
-6. Mass/COM/inertia (13.1) is implemented. Performance (13.2) and GLB breadth
-   (13.3) remain.
-7. Add the cut-event packet and reconciliation per section 9 before claiming
-   multiplayer destruction.
-8. Separate source, dependency-build, MiMITA-build, selftest, runtime, and human
+6. Mass/COM/inertia (13.1), incremental performance (13.2), GLB breadth (13.3),
+   one-server multiplayer replication (section 9), and automatic fracture (13.4)
+   are implemented. Runtime/human acceptance and fracture tuning remain.
+7. Separate source, dependency-build, MiMITA-build, selftest, runtime, and human
    acceptance evidence. Do not claim visual or multiplayer success until the
    running client and server visibly demonstrate it.
 9. Record a changelog for every repository-touching session.

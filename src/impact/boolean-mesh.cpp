@@ -237,6 +237,28 @@ glm::vec3 meshHalfExtent(const BooleanMesh& mesh)
     return glm::max(half, glm::vec3(0.5f));
 }
 
+// Signed-tetrahedron centroid of a closed mesh, used to seed a fractured
+// piece's velocity about the parent. Falls back to the first vertex if the
+// mesh is degenerate.
+glm::vec3 computeCentroid(const BooleanMesh& mesh)
+{
+    double volume = 0.0;
+    glm::dvec3 moment(0.0);
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
+    {
+        const glm::dvec3 a(mesh.vertices[mesh.indices[i]].position);
+        const glm::dvec3 b(mesh.vertices[mesh.indices[i + 1]].position);
+        const glm::dvec3 c(mesh.vertices[mesh.indices[i + 2]].position);
+        const double v = glm::dot(a, glm::cross(b, c)) / 6.0;
+        volume += v;
+        moment += v * (a + b + c) / 4.0;
+    }
+    if (std::fabs(volume) < 1e-12)
+        return mesh.vertices.empty() ? glm::vec3(0.0f)
+                                     : mesh.vertices[0].position;
+    return glm::vec3(moment / volume);
+}
+
 manifold::Manifold buildCapsule(const BooleanCutter& cutter)
 {
     const double r = (double)std::max(cutter.radius, 0.0f);
@@ -301,6 +323,44 @@ uint64_t gSessionClock = 0;
 constexpr size_t kMaxSessions = 512;
 
 } // namespace
+
+BooleanMesh buildBooleanBoxMeshAt(const glm::vec3& center, const glm::vec3& halfExtents,
+                                  uint32_t materialId)
+{
+    const glm::vec3 h = glm::max(halfExtents, glm::vec3(1e-3f));
+    const float p[8][3] = {
+        {center.x - h.x, center.y - h.y, center.z - h.z},
+        {center.x + h.x, center.y - h.y, center.z - h.z},
+        {center.x + h.x, center.y + h.y, center.z - h.z},
+        {center.x - h.x, center.y + h.y, center.z - h.z},
+        {center.x - h.x, center.y - h.y, center.z + h.z},
+        {center.x + h.x, center.y - h.y, center.z + h.z},
+        {center.x + h.x, center.y + h.y, center.z + h.z},
+        {center.x - h.x, center.y + h.y, center.z + h.z},
+    };
+    const uint32_t tri[12][3] = {
+        {4, 5, 6}, {4, 6, 7}, {1, 0, 3}, {1, 3, 2}, {0, 4, 7}, {0, 7, 3},
+        {5, 1, 2}, {5, 2, 6}, {0, 1, 5}, {0, 5, 4}, {3, 7, 6}, {3, 6, 2},
+    };
+
+    BooleanMesh mesh;
+    mesh.vertices.resize(8);
+    for (int v = 0; v < 8; ++v)
+    {
+        const glm::vec3 position(p[v][0], p[v][1], p[v][2]);
+        BooleanMeshVertex& out = mesh.vertices[v];
+        out.position = position;
+        out.normal = glm::normalize(position - center);
+        out.uv = glm::vec2((position.x - center.x) / (2.0f * h.x) + 0.5f,
+                           (position.y - center.y) / (2.0f * h.y) + 0.5f);
+        out.materialId = materialId;
+    }
+    mesh.indices.reserve(36);
+    for (int t = 0; t < 12; ++t)
+        for (int c = 0; c < 3; ++c)
+            mesh.indices.push_back(tri[t][c]);
+    return mesh;
+}
 
 BooleanMesh buildBooleanBoxMesh(const glm::vec3& halfExtents, uint32_t materialId)
 {
@@ -547,6 +607,98 @@ BooleanError booleanValidate(const BooleanMesh& mesh, std::string* reason)
         return mapError(m.Status());
     }
     return BooleanError::None;
+}
+
+BooleanMesh booleanUnion(const std::vector<BooleanMesh>& meshes, uint32_t materialId)
+{
+    BooleanMesh result;
+    if (meshes.empty())
+        return result;
+
+    manifold::Manifold accumulated;
+    bool haveAny = false;
+    for (const BooleanMesh& mesh : meshes)
+    {
+        if (mesh.indices.size() < 3u || mesh.vertices.empty())
+            continue;
+        manifold::MeshGL gl = toMeshGL(mesh);
+        gl.runOriginalID = {manifold::Manifold::ReserveIDs(1)};
+        gl.runIndex = {0u};
+        manifold::Manifold imported(gl);
+        if (imported.Status() != manifold::Manifold::Error::NoError ||
+            imported.IsEmpty())
+            return result;
+        accumulated = haveAny ? (accumulated + imported) : imported;
+        if (accumulated.Status() != manifold::Manifold::Error::NoError)
+            return result;
+        haveAny = true;
+    }
+    if (!haveAny || accumulated.IsEmpty())
+        return result;
+
+    const glm::vec3 half = meshHalfExtent(meshes[0]);
+    result = fromMeshGL(accumulated.GetMeshGL(), 0u, materialId, half);
+    if (result.indices.empty())
+        result.vertices.clear();
+    return result;
+}
+
+std::vector<BooleanPiece> booleanDecomposePieces(const BooleanMesh& base,
+                                                 const std::vector<BooleanCutter>& cutters)
+{
+    std::vector<BooleanPiece> pieces;
+    if (base.indices.size() < 3u || base.vertices.empty())
+        return pieces;
+
+    // Reconstruct the same accumulated solid the rebuild uses.
+    manifold::MeshGL baseGL = toMeshGL(base);
+    const uint32_t baseRunId = manifold::Manifold::ReserveIDs(1);
+    baseGL.runOriginalID = {baseRunId};
+    baseGL.runIndex = {0u};
+    manifold::Manifold difference(baseGL);
+    if (difference.Status() != manifold::Manifold::Error::NoError ||
+        difference.IsEmpty())
+        return pieces;
+
+    for (const BooleanCutter& cutter : cutters)
+    {
+        if (!(cutter.radius > 0.0f))
+            return {};
+        manifold::Manifold cutterManifold = (cutter.type == BooleanCutterType::Capsule)
+            ? buildCapsule(cutter)
+            : manifold::Manifold::Sphere((double)cutter.radius,
+                                         circularSegmentsForRadius(cutter.radius))
+                  .Translate(toVec3(cutter.localCenter));
+        if (cutterManifold.Status() != manifold::Manifold::Error::NoError ||
+            cutterManifold.IsEmpty())
+            return {};
+        difference = difference - cutterManifold;
+        if (difference.Status() != manifold::Manifold::Error::NoError ||
+            difference.IsEmpty())
+            return {};
+    }
+
+    const std::vector<manifold::Manifold> shells = difference.Decompose();
+    const glm::vec3 half = meshHalfExtent(base);
+    for (const manifold::Manifold& shell : shells)
+    {
+        const double volume = shell.Volume();
+        if (!(volume > 1e-6))
+            continue; // interior cavity / negative or empty shell: not matter.
+        BooleanPiece piece;
+        piece.mesh = fromMeshGL(shell.GetMeshGL(), baseRunId,
+                                base.vertices[0].materialId, half);
+        piece.volume = (float)volume;
+        if (!piece.mesh.empty())
+            piece.centroid = computeCentroid(piece.mesh);
+        pieces.push_back(std::move(piece));
+    }
+
+    std::sort(pieces.begin(), pieces.end(),
+              [](const BooleanPiece& a, const BooleanPiece& b) {
+                  return a.volume > b.volume;
+              });
+    return pieces;
 }
 
 } // namespace MimitaImpact

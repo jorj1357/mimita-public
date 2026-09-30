@@ -103,6 +103,21 @@ BooleanMesh makeOctahedron(float r, uint32_t materialId)
     return mesh;
 }
 
+// Two solid lobes joined by a thin neck, as one manifold. Cutting the neck must
+// separate it into two independent pieces. Built by unioning boxes.
+BooleanMesh makeDumbbell(float lobeOffset, float lobeHalf,
+                         float neckHalf, float neckLength)
+{
+    std::vector<BooleanMesh> parts;
+    parts.push_back(buildBooleanBoxMeshAt(glm::vec3(-lobeOffset, 0.0f, 0.0f),
+                                          glm::vec3(lobeHalf), 0));
+    parts.push_back(buildBooleanBoxMeshAt(glm::vec3(lobeOffset, 0.0f, 0.0f),
+                                          glm::vec3(lobeHalf), 0));
+    parts.push_back(buildBooleanBoxMeshAt(glm::vec3(0.0f, 0.0f, 0.0f),
+                                          glm::vec3(neckLength, neckHalf, neckHalf), 0));
+    return booleanUnion(parts, 0);
+}
+
 uint64_t checksumMesh(const PhysicalEntity& entity)
 {
     uint64_t sum = 1469598103934665603ull;
@@ -573,6 +588,136 @@ bool destructibleSelfTest(std::string* outSummary)
             loadDestructibleMeshFromGLB("assets/maps/colltest.glb");
         check(!openMap.success && !openMap.error.empty(),
               "a non-watertight GLB is rejected with a reason");
+    }
+
+    // 16. The fracture trigger is silent on a healthy shape and fires when a cut
+    // disconnects the material. A dumbbell base cut through its thin neck must
+    // separate into two pieces.
+    {
+        system.clear();
+        const BooleanMesh dumbbell = makeDumbbell(1.3f, 0.8f, 0.25f, 1.4f);
+        std::string reason;
+        const BooleanError valid = booleanValidate(dumbbell, &reason);
+        check(valid == BooleanError::None && dumbbell.triangleCount() > 0,
+              "the dumbbell base is a closed manifold");
+
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(2.0f));
+        const uint32_t id = system.add(
+            box, glm::mat4(1.0f), PhysicalEntityMotion::Dynamic);
+        PhysicalEntity* e = system.find(id);
+        e->halfExtents = glm::vec3(2.0f);
+        ImpactSystem::instance().initializeEntityFromMesh(
+            *e, dumbbell, glm::vec3(2.0f), materialIdForName("wood"));
+        check(evaluateFracture(e->destructible,
+                               DestructibleGeometrySystem::instance().fractureTuning)
+                  .reason == FractureReason::None,
+              "an uncut dumbbell does not want to fracture");
+
+        // A sphere at the neck, larger than the neck cross-section, severs it.
+        DestructionCut neck;
+        neck.cutter.type = BooleanCutterType::Sphere;
+        neck.cutter.localCenter = glm::vec3(0.0f, 0.0f, 0.0f);
+        neck.cutter.radius = 0.5f;
+        DestructibleGeometrySystem::instance().addCut(e->destructible, neck);
+        e->localTriangles = e->destructible.collisionTriangles;
+        const FractureDecision decision = evaluateFracture(
+            e->destructible, DestructibleGeometrySystem::instance().fractureTuning);
+        check(decision.shouldFracture &&
+                  decision.reason == FractureReason::DisconnectedComponent,
+              "cutting the neck triggers component fracture");
+
+        std::vector<BooleanPiece> pieces =
+            DestructibleGeometrySystem::instance().decomposePieces(e->destructible);
+        check(pieces.size() >= 2, "decompose returns the disconnected pieces");
+        check(!pieces.empty() && pieces[0].volume >= pieces.back().volume,
+              "pieces are ordered largest first");
+    }
+
+    // 17. Cutting a supporting neck off one side unbalances the remaining piece:
+    // the center of mass leaves the support footprint and fracture fires as
+    // UnbalancedSupport without a disconnected component.
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        PhysicalEntity* crate = system.find(id);
+        // Remove a large off-center lobe from the +X side. The single remaining
+        // piece's center of mass shifts to -X, away from the support footprint.
+        DestructionCut lobe;
+        lobe.cutter.type = BooleanCutterType::Sphere;
+        lobe.cutter.localCenter = glm::vec3(2.0f, 0.0f, 0.0f);
+        lobe.cutter.radius = 2.0f;
+        DestructibleGeometrySystem::instance().addCut(crate->destructible, lobe);
+        crate->localTriangles = crate->destructible.collisionTriangles;
+
+        const FractureDecision decision = evaluateFracture(
+            crate->destructible, DestructibleGeometrySystem::instance().fractureTuning);
+        check(crate->destructible.componentCount == 1,
+              "the unbalanced cut leaves one connected piece");
+        check(decision.shouldFracture &&
+                  decision.reason == FractureReason::UnbalancedSupport,
+              "an off-center cut triggers support fracture");
+        check(crate->destructible.massCenterOfMass.x < -0.05f,
+              "center of mass moved away from the removed side");
+    }
+
+    // 18. End-to-end: a dynamic dumbbell whose neck is cut fractures through
+    // the real ImpactSystem path into independent bodies; the hit entity keeps
+    // the largest piece and children inherit material, mass, and motion.
+    {
+        system.clear();
+        const BooleanMesh dumbbell = makeDumbbell(1.3f, 0.8f, 0.25f, 1.4f);
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(2.0f));
+        const uint32_t id = system.add(
+            box, glm::mat4(1.0f), PhysicalEntityMotion::Dynamic,
+            materialIdForName("wood"));
+        PhysicalEntity* e = system.find(id);
+        e->halfExtents = glm::vec3(2.0f);
+        e->density = 1.0f;
+        e->velocity = glm::vec3(0.0f, 0.0f, -1.0f);
+        e->angularVelocity = glm::vec3(0.0f, 0.0f, 2.0f);
+        ImpactSystem::instance().initializeEntityFromMesh(
+            *e, dumbbell, glm::vec3(2.0f), materialIdForName("wood"));
+        const size_t before = system.entities().size();
+
+        // Sever the neck directly, then submit a shot that observes the
+        // disconnection and runs the fracture spawner.
+        DestructionCut neck;
+        neck.cutter.type = BooleanCutterType::Sphere;
+        neck.cutter.localCenter = glm::vec3(0.0f);
+        neck.cutter.radius = 0.5f;
+        DestructibleGeometrySystem::instance().addCut(e->destructible, neck);
+        e->localTriangles = e->destructible.collisionTriangles;
+        refreshEntityMassProperties(*e);
+
+        const ImpactResult result = submitRifle(id, glm::vec3(0, 0, 2.0f),
+                                                glm::vec3(0, 0, 1), glm::vec3(0, 0, -1),
+                                                0.02f, 900.0f, 0.01f);
+        check(result.fractured && result.fragmentCount >= 1,
+              "a disconnected dynamic object fractures into bodies");
+        check(system.entities().size() > before,
+              "fracture adds independent entities");
+        check(system.find(id) != nullptr,
+              "the hit entity keeps the primary piece");
+
+        bool fragmentsValid = result.fragmentCount >= 1;
+        for (uint32_t i = 0; i < result.fragmentCount; ++i)
+        {
+            PhysicalEntity* child = system.find(result.fragmentEntityIds[i]);
+            if (!child || child->motion != PhysicalEntityMotion::Dynamic ||
+                child->mass <= 0.0f || child->localTriangles.empty() ||
+                child->serverDriven)
+                fragmentsValid = false;
+        }
+        check(fragmentsValid,
+              "each fragment is an independent dynamic body with mass and collision");
+
+        // The primary piece should be the larger lobe, so the original entity's
+        // mass is comparable to a child's, and all pieces share the material.
+        check(result.fragmentCount >= 1 && system.find(id) != nullptr &&
+                  system.find(id)->destructible.materialId == materialIdForName("wood"),
+              "the primary piece keeps the source material");
     }
 
     if (outSummary)

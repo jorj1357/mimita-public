@@ -65,6 +65,11 @@ struct Player;
 
 namespace MimitaNet {
 
+// Bookkeeping for destructible physical-entity replication. Defined near
+// ListenServerState; declared early because post-tick helpers above that
+// definition take it by reference.
+struct PhysicalEntityReplicationState;
+
 // Simulation rate shared with client via simulation-constants.h
 constexpr float SERVER_TICK_RATE = static_cast<float>(GAMEPLAY_SIMULATION_HZ);
 constexpr float SERVER_DT = GAMEPLAY_FIXED_DT;

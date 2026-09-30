@@ -60,6 +60,47 @@ float destructibleCrateDistance(const DestructibleGeometry& geometry,
     return result;
 }
 
+// ── Fracture evaluation ─────────────────────────────────────────────────
+FractureDecision evaluateFracture(const DestructibleGeometry& geometry,
+                                  const FractureTuning& tuning)
+{
+    FractureDecision decision;
+    if (!tuning.enabled || !geometry.enabled)
+        return decision;
+
+    // (1) Disconnected components: a cut removed the material connecting two
+    // solids. The boolean already reports this for free.
+    if (geometry.componentCount >= 2 && geometry.baseVolume > 1e-6f)
+    {
+        decision.shouldFracture = true;
+        decision.reason = FractureReason::DisconnectedComponent;
+        return decision;
+    }
+
+    // (2) Unbalanced support: one solid piece left, but it is a minority of the
+    // original material and its remaining center of mass has drifted off-center,
+    // so it is effectively supported only on one side (destructible-world.md 21,
+    // 24). MiMITA is Z-up; balance is judged in the horizontal XY plane.
+    if (geometry.componentCount == 1 && geometry.baseVolume > 1e-6f)
+    {
+        const float remainingFraction =
+            geometry.remainingVolume / geometry.baseVolume;
+        const glm::vec3 he = glm::max(geometry.halfExtents, glm::vec3(1e-4f));
+        const glm::vec2 offset(geometry.massCenterOfMass.x / he.x,
+                               geometry.massCenterOfMass.y / he.y);
+        const float offsetFraction = glm::length(offset);
+
+        if (remainingFraction < tuning.maxRemainingFraction &&
+            offsetFraction > tuning.comOffsetFraction)
+        {
+            decision.shouldFracture = true;
+            decision.reason = FractureReason::UnbalancedSupport;
+            decision.imbalance = offsetFraction;
+        }
+    }
+    return decision;
+}
+
 namespace {
 
 uint64_t gNextSessionId = 1;
@@ -206,8 +247,24 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry)
     // integrals subtract them.
     applyMassFromTriangles(geometry, geometry.collisionTriangles);
 
+    // Record why (if at all) this surface should split. The trigger is
+    // read-only; the caller (ImpactSystem) owns spawning the detached bodies.
+    const FractureDecision fracture = evaluateFracture(geometry, fractureTuning);
+    geometry.lastFractureReason = fracture.reason;
+    geometry.lastImbalance = fracture.imbalance;
+
     ++geometry.geometryRevision;
     return true;
+}
+
+std::vector<BooleanPiece> DestructibleGeometrySystem::decomposePieces(
+    const DestructibleGeometry& geometry) const
+{
+    std::vector<BooleanCutter> cutters;
+    cutters.reserve(geometry.cuts.size());
+    for (const DestructionCut& cut : geometry.cuts)
+        cutters.push_back(cut.cutter);
+    return booleanDecomposePieces(geometry.baseMesh, cutters);
 }
 
 int DestructibleGeometrySystem::addCut(DestructibleGeometry& geometry,

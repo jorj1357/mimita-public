@@ -97,6 +97,15 @@ struct BooleanCutResult
 // the authoritative cut history is applied to.
 BooleanMesh buildBooleanBoxMesh(const glm::vec3& halfExtents, uint32_t materialId);
 
+// Builds a box centered at `center` in local space (same conventions as
+// buildBooleanBoxMesh). Used with booleanUnion to author compound bases.
+BooleanMesh buildBooleanBoxMeshAt(const glm::vec3& center, const glm::vec3& halfExtents,
+                                  uint32_t materialId);
+
+// Unions closed meshes into one manifold. Empty result on failure. Used to
+// author compound destructible bases (for example a shape with a thin waist).
+BooleanMesh booleanUnion(const std::vector<BooleanMesh>& meshes, uint32_t materialId);
+
 // Subtracts one cutter from `base`. `base` must already be the accumulated
 // result of the previous cuts; the caller keeps the canonical base plus the cut
 // history and can rebuild by replaying. Returns a fully self-describing result;
@@ -132,5 +141,21 @@ void booleanSessionRelease(uint64_t sessionId);
 // Coincident positions are welded via merge vectors before import, so a
 // triangle soup with duplicated seam vertices can still be valid.
 BooleanError booleanValidate(const BooleanMesh& mesh, std::string* reason = nullptr);
+
+// One separated solid piece of a boolean result (one positive-volume shell).
+struct BooleanPiece
+{
+    BooleanMesh mesh;          // closed, outward-wound, local space
+    float volume = 0.0f;       // signed volume magnitude
+    glm::vec3 centroid{0.0f};  // local-space centroid for velocity seeding
+};
+
+// Decomposes the canonical base minus the full ordered cut history into its
+// separated solid pieces, largest volume first. A shape with a single connected
+// solid returns exactly one piece. Interior cavities (negative-volume shells)
+// are not returned; only matter. Used to fracture a cut object into independent
+// bodies; returns an empty vector on failure.
+std::vector<BooleanPiece> booleanDecomposePieces(const BooleanMesh& base,
+                                                 const std::vector<BooleanCutter>& cutters);
 
 } // namespace MimitaImpact
