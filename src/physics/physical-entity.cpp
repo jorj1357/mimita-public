@@ -25,6 +25,7 @@
 
 #include "physics/config.h"
 #include "physics/movement/actor-triangle-solver.h"
+#include "physics/movement/collision-aabb-tree.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "config/material-config.h"
 #include "impact/destructible-geometry.h"
@@ -791,6 +792,9 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         uint64_t revision = 0;
         glm::mat4 transform{0.0f};
         CollisionMeshCache meshCache;
+        // Spatial tree over the cached world triangles, so the actor narrowphase
+        // queries only nearby crate triangles instead of scanning all of them.
+        AabbTree tree;
     };
     static thread_local std::unordered_map<uint32_t, EntitySurfaceCache>
         s_entitySurfaceCache;
@@ -832,6 +836,11 @@ std::vector<EntityActorContact> collectActorEntityContacts(
                 cache.triangleAABBs.push_back(makeTriangleAABB(wt));
                 cache.triangles.push_back(wt);
             }
+            // Index the surface once per revision so a per-iteration query does
+            // not linearly scan hundreds of cut triangles.
+            std::vector<int> primitives(cache.triangles.size());
+            std::iota(primitives.begin(), primitives.end(), 0);
+            entry.tree.build(primitives, cache.triangleAABBs);
         }
 
         // Swap the cached expansion in for the query, then back out, so a cache
@@ -840,13 +849,13 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         s_entityCandidates.resize(s_entityWorld.collisionMesh.triangles.size());
         std::iota(s_entityCandidates.begin(), s_entityCandidates.end(), 0);
 
-        std::vector<RecoveryContact> contacts =
-            // The entity candidate list is complete for this entity; keep the
-            // exact entity query intact instead of applying the static-world
-            // part filter. Cached triangle AABBs still accelerate the overlap
-            // rejection inside the narrowphase.
-            collectActorMeshContacts(s_entityWorld, meshes, s_entityCandidates,
-                                     actorPos, false, 0.0f);
+        std::vector<RecoveryContact> contacts;
+        // The entity candidate list is complete for this entity; keep the exact
+        // entity query intact instead of applying the static-world part filter.
+        // The per-entity tree prunes which crate triangles the actor narrowphase
+        // actually tests.
+        collectActorMeshContactsInto(s_entityWorld, meshes, s_entityCandidates,
+                                     actorPos, contacts, false, 0.0f, &entry.tree);
         std::swap(s_entityWorld.collisionMesh, entry.meshCache);
 
         for (RecoveryContact& c : contacts)

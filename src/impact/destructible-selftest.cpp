@@ -151,7 +151,8 @@ uint32_t makeCrate(PhysicalEntitySystem& system, glm::vec3 position, float half)
 
 ImpactResult submitRifle(uint32_t targetId, const glm::vec3& point,
                          const glm::vec3& normal, const glm::vec3& direction,
-                         float mass, float speed, float radius)
+                         float mass, float speed, float radius,
+                         float sizeScale = 0.0f)
 {
     ImpactEvent ev;
     ev.source = ImpactSource::Projectile;
@@ -163,6 +164,7 @@ ImpactResult submitRifle(uint32_t targetId, const glm::vec3& point,
     ev.mass = mass;
     ev.speed = speed;
     ev.radius = radius;
+    ev.sizeScale = sizeScale;
     ev.cutScale = 1.0f;
     ev.energy = ImpactSystem::kineticEnergy(mass, speed);
     return ImpactSystem::instance().submit(ev);
@@ -718,6 +720,86 @@ bool destructibleSelfTest(std::string* outSummary)
         check(result.fragmentCount >= 1 && system.find(id) != nullptr &&
                   system.find(id)->destructible.materialId == materialIdForName("wood"),
               "the primary piece keeps the source material");
+    }
+
+    // 19. Hole size is config-driven and follows force AND projectile size.
+    // A big/slow projectile and a small/fast one can produce different holes;
+    // both `radius` (size) and energy (force) must influence the result.
+    {
+        const MaterialDefinition& mat =
+            MaterialConfig::instance().find(materialIdForName("wood"));
+
+        ImpactEvent base;
+        base.worldDirection = glm::vec3(0, 0, -1);
+        base.worldNormal = glm::vec3(0, 0, 1);
+        base.radius = 0.3f;
+        base.cutScale = 1.0f;
+
+        // Force: identical size, more energy -> bigger hole.
+        ImpactEvent slow = base, fast = base;
+        slow.energy = ImpactSystem::kineticEnergy(0.02f, 100.0f);
+        fast.energy = ImpactSystem::kineticEnergy(0.02f, 800.0f);
+        const float slowR = ImpactSystem::calculateCutRadius(slow, mat);
+        const float fastR = ImpactSystem::calculateCutRadius(fast, mat);
+        check(fastR > slowR, "more force cuts a bigger hole at equal size");
+
+        // Size: identical force, bigger projectile -> bigger hole.
+        ImpactEvent small = base, big = base;
+        small.radius = 0.1f;
+        big.radius = 0.8f;
+        small.sizeScale = big.sizeScale = 1.0f;
+        small.energy = big.energy = ImpactSystem::kineticEnergy(0.02f, 400.0f);
+        const float smallR = ImpactSystem::calculateCutRadius(small, mat);
+        const float bigR = ImpactSystem::calculateCutRadius(big, mat);
+        check(bigR > smallR, "a bigger projectile cuts a bigger hole at equal force");
+
+        // Size scale 0 == force only, so a huge projectile can be neutralized.
+        ImpactEvent noSize = base;
+        noSize.radius = 0.8f;
+        noSize.sizeScale = 0.0f;
+        noSize.energy = ImpactSystem::kineticEnergy(0.02f, 400.0f);
+        check(ImpactSystem::calculateCutRadius(noSize, mat) < bigR,
+              "cut_radius_scale=0 removes the projectile-size contribution");
+    }
+
+    // 20. One shot makes a real hole; every shot does, not just occasionally.
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        PhysicalEntity* crate = system.find(id);
+        // A rifle-sized projectile: radius 0.6 with size feeding the hole.
+        int holesMade = 0;
+        for (int i = 0; i < 10; ++i)
+        {
+            // Distinct spots so this measures "every shot cuts" not deepening.
+            const float s = (float)(i - 5) * 0.2f;
+            const ImpactResult r = submitRifle(id, glm::vec3(s, 0.0f, 2.5f),
+                                               glm::vec3(0, 0, 1), glm::vec3(0, 0, -1),
+                                               0.02f, 100.0f, 0.6f, 1.0f);
+            if (r.cutCreated)
+                ++holesMade;
+        }
+        check(holesMade == 10, "every rifle shot creates a hole");
+        check(crate->destructible.cuts.size() == 10,
+              "each shot stores one cut");
+    }
+
+    // 21. Repeated shots on the same axis tunnel through the object: after
+    // enough hits the ray along that axis passes through empty space.
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        PhysicalEntity* crate = system.find(id);
+        const glm::vec3 rayDir(0.0f, 0.0f, 1.0f);
+        // Shoot the same world axis repeatedly.
+        for (int i = 0; i < 12; ++i)
+            submitRifle(id, glm::vec3(0.0f, 0.0f, -3.5f), glm::vec3(0, 0, 1),
+                        rayDir, 0.02f, 100.0f, 0.6f, 1.0f, 0.0f);
+
+        const bool tunnelled = !rayHitsMesh(crate->localTriangles,
+                                            glm::vec3(0.0f, 0.0f, -4.0f),
+                                            rayDir, 8.0f);
+        check(tunnelled, "repeated same-axis shots tunnel through the object");
     }
 
     if (outSummary)

@@ -1923,3 +1923,47 @@ camera-up, camera-down, and left/right movement behavior.
 
 If the arm camera behavior needs repeated tuning, move this policy behind the
 live behavior boundary so it can be adjusted without a cold build.
+
+## Cold-build occurrence 34
+
+UTC time:
+`2026-09-30T20:40:00Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_164000-procedural-teleport-handoff.md`
+
+### Why the cold build was required
+
+The procedural client room-slot owner and server movement-validation teleport
+handoff are cold executable owners. The requested correction needed both owners
+compiled into the executable.
+
+### Exact cold source / boundary
+
+- `src/procedural/procedural-world-client.cpp`
+- `src/network/movement-validation.cpp`
+
+### Result needed from the new executable
+
+Make the client render the same room slots as the server and keep the server at
+the exact authoritative teleport target until the new transform epoch is
+acknowledged.
+
+### Why it could not be applied through the live path
+
+The available live build path does not replace these cold owners.
+
+### Build result
+
+`python build_agent.py` returned `BUILD SUCCESS`, compiled 5 translation units,
+skipped 498, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Run `pwsids` in the new executable and verify the room, spawnpoint,
+teleport handoff, and normal movement after acknowledgement.
+
+### Next migration/falsification step
+
+Move the procedural room-slot presentation and teleport handoff policy behind
+the stable live boundary if further live tuning is required.
