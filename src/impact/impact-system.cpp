@@ -198,11 +198,21 @@ float ImpactSystem::calculateCutRadius(const ImpactEvent& impact,
         impact.cutScale *
         material.holeEnergyScale;
 
-    const float radius =
-        impact.radius +
+    // The hole is driven by two independent, config-controlled terms:
+    //   force: how much kinetic energy reaches the material (cbrt-compressed so
+    //          the radius grows sensibly across a huge energy range), and
+    //   size:  the source cross-section scaled by the weapon's `sizeScale`.
+    // A small projectile with huge force still cuts a big hole; a large
+    // projectile with little force cuts a small one. The projectile radius is
+    // the floor, so a hole is never thinner than the thing that made it.
+    const float sourceRadius = std::max(impact.radius, 0.0f);
+    const float forceRadius =
         std::cbrt(std::max(effectiveEnergy, 0.0f)) * kCutRadiusEnergyScale;
+    const float sizeRadius = sourceRadius * std::max(impact.sizeScale, 0.0f);
+    const float radius = sourceRadius + forceRadius + sizeRadius;
 
-    return glm::clamp(radius, impact.radius, std::max(impact.radius, material.maxCutRadius));
+    return glm::clamp(radius, sourceRadius,
+                      std::max(sourceRadius, material.maxCutRadius));
 }
 
 void ImpactSystem::initializeEntity(PhysicalEntity& entity, uint32_t materialId,
@@ -302,14 +312,23 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
     cut.sourceEntityId = resolved.sourceEntityId;
     cut.predictionKey = resolved.eventId;
 
-    // A listen server and its local client can observe the same predicted
-    // projectile. The authoritative cut must not be added twice when both
-    // sides submit the same impact. Identity is (source, local position), not
-    // approximate world position.
+    // A listen server and its local client can both submit the same shot, and
+    // the same physical spot can resolve to a slightly different local centre
+    // each time (sweep contact point, surface roughened by earlier cuts). Dedup
+    // by source identity plus a tolerance scaled to the cut size, not a fixed
+    // 1e-4 that rejects almost nothing real. A shared predictionKey is exact.
     for (const DestructionCut& existing : entity->destructible.cuts)
     {
-        if (existing.sourceEntityId == cut.sourceEntityId &&
-            glm::length(existing.cutter.localCenter - cut.cutter.localCenter) < 0.0001f)
+        if (existing.sourceEntityId != cut.sourceEntityId)
+            continue;
+        const bool sameKey = cut.predictionKey != 0 &&
+                             existing.predictionKey == cut.predictionKey;
+        const float matchRadius =
+            0.5f * std::max(existing.cutter.radius, cut.cutter.radius);
+        const bool sameSpot =
+            glm::length(existing.cutter.localCenter - cut.cutter.localCenter) <=
+            std::max(matchRadius, 0.01f);
+        if (sameKey || sameSpot)
         {
             result.applied = true;
             result.cutCreated = false;

@@ -62,10 +62,15 @@ struct ImpactEvent
     float speed = 0.0f;          // m/s along worldDirection
     float mass = 0.0f;           // kg
     float density = 0.0f;        // kg/m^3
-    float radius = 0.0f;         // source cross-section / shape radius
+    float radius = 0.0f;         // source cross-section / shape radius (m)
     float energy = 0.0f;         // computed by ImpactSystem (J)
     float damage = 0.0f;         // source-declared nominal damage
     float penetration = 0.0f;    // reserved: penetration depth
+
+    // Source-declared scale on the hole-size contribution from `radius`. A
+    // large projectile with small force cuts a small hole; a small projectile
+    // with huge force cuts a big hole. 0 = size does not influence the hole.
+    float sizeScale = 1.0f;
 
     uint32_t materialId = 0;     // target material (resolved by the target)
     uint32_t shapeId = 0;        // ImpactShape

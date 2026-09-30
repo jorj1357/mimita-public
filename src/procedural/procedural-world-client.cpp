@@ -122,13 +122,16 @@ void clientProceduralWorldTick(World& world)
         gRoomInstancesApplied = true;
     }
 
-    while (gAppliedGeneratedRooms < p.generatedRooms)
+    // Slot 0 is the lobby and combat room N is slot N on the server. Render
+    // the same inclusive range so client geometry matches the authoritative
+    // teleport coordinates.
+    while (gAppliedGeneratedRooms <= p.generatedRooms)
     {
-        ++gAppliedGeneratedRooms;
         appendWorldInstance(
             world, gRoomTemplate,
             MimitaProcedural::proceduralRoomTransform(
-                *mode, gAppliedGeneratedRooms - 1));
+                *mode, gAppliedGeneratedRooms));
+        ++gAppliedGeneratedRooms;
     }
 
     const bool wantDoor = p.exitLocked != 0 && p.currentRoom >= 1;

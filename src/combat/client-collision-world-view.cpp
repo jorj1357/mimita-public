@@ -199,14 +199,12 @@ void ClientCollisionWorldView::queryEntityTrianglesSwept(
 
         for (const CollisionTriangle& local : entity.localTriangles)
         {
+            // Transform once and reject on the triangle AABB before writing the
+            // output; no intermediate world-triangle vector is allocated.
             CollisionTriangle worldTriangle;
             worldTriangle.a = glm::vec3(entity.transform * glm::vec4(local.a, 1.0f));
             worldTriangle.b = glm::vec3(entity.transform * glm::vec4(local.b, 1.0f));
             worldTriangle.c = glm::vec3(entity.transform * glm::vec4(local.c, 1.0f));
-            const glm::vec3 n = glm::cross(worldTriangle.b - worldTriangle.a,
-                                           worldTriangle.c - worldTriangle.a);
-            worldTriangle.normal = glm::length(n) > 1e-9f
-                ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
 
             AABB triangleBounds;
             triangleBounds.min = glm::min(worldTriangle.a,
@@ -217,6 +215,11 @@ void ClientCollisionWorldView::queryEntityTrianglesSwept(
                                  glm::vec3(radius);
             if (!overlaps(queryBounds, triangleBounds))
                 continue;
+
+            const glm::vec3 n = glm::cross(worldTriangle.b - worldTriangle.a,
+                                           worldTriangle.c - worldTriangle.a);
+            worldTriangle.normal = glm::length(n) > 1e-9f
+                ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
 
             SweptEntityTriangle swept;
             swept.entityId = entity.id;

@@ -1826,7 +1826,10 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                                         glm::length(projectile.velocity));
                 impact.mass = def ? def->projectileMass : 0.02f;
                 impact.density = def ? def->projectileDensity : 7800.0f;
-                impact.radius = def ? def->projectileBaseRadius : 0.01f;
+                impact.radius = def
+                    ? std::max(def->projectileRadius, def->projectileBaseRadius)
+                    : 0.01f;
+                impact.sizeScale = def ? def->cutRadiusScale : 0.0f;
                 impact.shapeId = def ? def->projectileShapeId : 0;
                 impact.cutScale = def ? def->cutEnergyScale : 1.0f;
                 MimitaImpact::ImpactSystem::instance().submit(impact);

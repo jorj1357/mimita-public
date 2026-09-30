@@ -1183,6 +1183,7 @@
     "projectile_shape": 0,
     "projectile_base_radius": 0.01,
     "cut_energy_scale": 1.0,
+    "cut_radius_scale": 1.0,
     "penetration_scale": 1.0,
     "behavior_type": "projectile",
     "fire_mode": "automatic",

@@ -542,33 +542,32 @@ public:
             if (glm::length(centre - closest) > entityRadius)
                 continue;
 
-            // localTriangles already holds the destructible surface once cut, so
-            // all entities share the same cheap per-triangle transform path.
-            std::vector<CollisionTriangle> worldTriangles;
-            worldTriangles.reserve(entity.localTriangles.size());
+            // localTriangles already holds the destructible surface once cut.
+            // Transform each triangle once, inline into the output, and reject
+            // with a per-triangle AABB before it is ever copied. No intermediate
+            // world-triangle vector, so a sweep near a cut crate allocates
+            // nothing per entity per substep.
             for (const CollisionTriangle& tri : entity.localTriangles)
             {
                 CollisionTriangle wt;
                 wt.a = glm::vec3(entity.transform * glm::vec4(tri.a, 1.0f));
                 wt.b = glm::vec3(entity.transform * glm::vec4(tri.b, 1.0f));
                 wt.c = glm::vec3(entity.transform * glm::vec4(tri.c, 1.0f));
+
+                AABB triBounds;
+                triBounds.min = glm::min(wt.a, glm::min(wt.b, wt.c)) - glm::vec3(radius);
+                triBounds.max = glm::max(wt.a, glm::max(wt.b, wt.c)) + glm::vec3(radius);
+                if (!overlaps(queryBounds, triBounds))
+                    continue;
+
                 const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
                 wt.normal = glm::length(n) > 1e-9f
                     ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
-                worldTriangles.push_back(wt);
-            }
 
-            for (const CollisionTriangle& tri : worldTriangles)
-            {
                 SweptEntityTriangle swept;
                 swept.entityId = entity.id;
-                swept.triangle = tri;
-
-                AABB triBounds;
-                triBounds.min = glm::min(tri.a, glm::min(tri.b, tri.c)) - glm::vec3(radius);
-                triBounds.max = glm::max(tri.a, glm::max(tri.b, tri.c)) + glm::vec3(radius);
-                if (overlaps(queryBounds, triBounds))
-                    out.push_back(swept);
+                swept.triangle = wt;
+                out.push_back(swept);
             }
         }
     }
@@ -1758,7 +1757,11 @@ void submitEntityImpact(const ServerProjectile& projectile,
     {
         impact.mass = def->projectileMass;
         impact.density = def->projectileDensity;
-        impact.radius = def->projectileBaseRadius;
+        // Use the projectile's real cross-section (its swept radius), not just
+        // the tiny base radius, so the hole matches the visible projectile. The
+        // weapon's cutRadiusScale decides how strongly size feeds the hole.
+        impact.radius = std::max(def->projectileRadius, def->projectileBaseRadius);
+        impact.sizeScale = def->cutRadiusScale;
         impact.shapeId = def->projectileShapeId;
         impact.cutScale = def->cutEnergyScale;
         impact.damage = def->damage;

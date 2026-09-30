@@ -109,6 +109,12 @@ struct WeaponDefinition {
     uint32_t projectileShapeId = 0;      // MimitaImpact::ImpactShape (0 = sphere)
     float projectileBaseRadius = 0.01f;  // m; floor of a generated cut radius
     float cutEnergyScale = 1.0f;         // scales effective cut energy
+    // Scales the cut radius contribution from projectile size relative to its
+    // force (kinetic energy). The generated hole radius is
+    //   cutEnergyScale * forceRadius + projectileBaseRadius
+    // scaled by an explicit size term, so a small fast projectile can still cut
+    // a big hole while a big slow one cuts a small hole. 0 = force only.
+    float cutRadiusScale = 1.0f;
     float penetrationScale = 1.0f;       // reserved: scales penetration depth
 
     // ── Impulse / knockback (Source/TF2-style, hot reloadable) ───────────

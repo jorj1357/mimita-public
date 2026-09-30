@@ -10,7 +10,7 @@
     "direction": [1.0, 0.0, 0.0]
   },
   "spawnpoint": {
-    "position": [-45.0, 0.0, 1.0],
+    "position": [-25.0, 0.0, 1.0],
     "rotation_degrees": [0.0, 0.0, 0.0]
   },
   "door": {

@@ -227,6 +227,7 @@ void applyWeaponProjectileImpactJson(WeaponDefinition& def, const json& root)
     readFloatKey("projectile_density", def.projectileDensity);
     readFloatKey("projectile_base_radius", def.projectileBaseRadius);
     readFloatKey("cut_energy_scale", def.cutEnergyScale);
+    readFloatKey("cut_radius_scale", def.cutRadiusScale);
     readFloatKey("penetration_scale", def.penetrationScale);
     float shape = (float)def.projectileShapeId;
     readFloatKey("projectile_shape", shape);

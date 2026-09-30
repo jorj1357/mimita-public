@@ -561,6 +561,13 @@ MovementValidationResult validateClientMovementReport(
         if (report.lifecycle.transformEpoch != player.authoritativeTransformEpoch)
             return reject(MovementValidationReason::TransformEpochMismatch);
 
+        // The first matching-epoch report is a teleport acknowledgement, not
+        // a movement trajectory. The client can still contain one predicted
+        // frame when the new epoch arrives, so keep the server at the exact
+        // authoritative target and clear motion for this handoff.
+        result.acceptedState.position = player.authoritativeTransformPosition;
+        result.acceptedState.baseVelocity = glm::vec3(0.0f);
+        result.acceptedState.externalImpulse = glm::vec3(0.0f);
         result.clearsAuthoritativeTransformAck = true;
     }
 
