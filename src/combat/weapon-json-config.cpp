@@ -190,6 +190,7 @@ void applyWeaponIdentityJson(WeaponDefinition& def, const json& root)
 void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
 {
     weaponJsonFloat(root, "damage", def.damage);
+    weaponJsonFloat(root, "damage_scale", def.damageScale);
     weaponJsonFloat(root, "headshot_multiplier", def.headshotMultiplier);
     weaponJsonFloat(root, "fire_delay", def.fireDelay);
     weaponJsonFloat(root, "reload_time", def.reloadTime);

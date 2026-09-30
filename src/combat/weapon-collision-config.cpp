@@ -40,6 +40,18 @@ static bool parseCapsuleConfig(const json& root, WeaponCollisionCapsuleConfig& o
     return true;
 }
 
+static bool parseBoxConfig(const json& root, WeaponCollisionBoxConfig& out) {
+    out.name = root.value("name", "box");
+    out.enabled = root.value("enabled", true);
+    if (root.contains("center")) parseVec3(root["center"], out.center);
+    else if (root.contains("offset")) parseVec3(root["offset"], out.center);
+    if (root.contains("half_size")) parseVec3(root["half_size"], out.halfSize);
+    else if (root.contains("halfSize")) parseVec3(root["halfSize"], out.halfSize);
+    if (root.contains("scale")) parseVec3(root["scale"], out.scale);
+    if (root.contains("rotation_degrees")) parseVec3(root["rotation_degrees"], out.rotationDegrees);
+    return true;
+}
+
 static bool parseSphereConfig(const json& j, WeaponCollisionSphereConfig& out) {
     out.name = j.value("name", "sphere");
     out.enabled = j.value("enabled", true);
@@ -100,6 +112,21 @@ static bool parseOneWeapon(const std::string& weaponId, const json& root, Weapon
                 cc.radius = 0.08f;
             }
             out.capsules.push_back(std::move(cc));
+        }
+    }
+
+    if (root.contains("boxes") && root["boxes"].is_array()) {
+        out.boxes.clear();
+        for (const auto& item : root["boxes"]) {
+            if (!item.is_object()) continue;
+            WeaponCollisionBoxConfig box;
+            parseBoxConfig(item, box);
+            if (box.halfSize.x <= 0.0f || box.halfSize.y <= 0.0f || box.halfSize.z <= 0.0f) {
+                Debug::warn(Debug::Category::Weapons,
+                    "[WEAPON COLLISIONS JSON] ERROR %s.boxes[].half_size must be > 0", weaponId.c_str());
+                continue;
+            }
+            out.boxes.push_back(std::move(box));
         }
     }
 
@@ -202,6 +229,10 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
     const std::string& weaponId = player.equippedWeaponId;
     if (weaponId.empty()) return;
 
+    const bool wasJsonMesh = player.weaponCollisionDebug.usesJsonMesh &&
+        player.weaponColliderMeshPath == "__weaponcollisions_json_boxes__";
+    player.weaponCollisionDebug.usesJsonMesh = false;
+
     const WeaponCollisionEntry* entry = get(weaponId);
     WeaponCollisionRuntimeDebug& dbg = player.weaponCollisionDebug;
 
@@ -231,10 +262,59 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
         return m;
     };
 
+    if (entry->source == "boxes" && !entry->boxes.empty()) {
+        auto buildBox = [](const WeaponCollisionBoxConfig& box,
+                           std::vector<CollisionTriangle>& out) {
+            glm::mat4 rot(1.0f);
+            rot = glm::rotate(rot, glm::radians(box.rotationDegrees.x), glm::vec3(1,0,0));
+            rot = glm::rotate(rot, glm::radians(box.rotationDegrees.y), glm::vec3(0,1,0));
+            rot = glm::rotate(rot, glm::radians(box.rotationDegrees.z), glm::vec3(0,0,1));
+            const glm::vec3 h = box.halfSize * box.scale;
+            const glm::mat4 xform = glm::translate(glm::mat4(1.0f), box.center) * rot;
+            const glm::vec3 v[8] = {
+                {-h.x,-h.y,-h.z}, { h.x,-h.y,-h.z}, { h.x, h.y,-h.z}, {-h.x, h.y,-h.z},
+                {-h.x,-h.y, h.z}, { h.x,-h.y, h.z}, { h.x, h.y, h.z}, {-h.x, h.y, h.z}
+            };
+            const int f[36] = {0,2,1, 0,3,2, 4,5,6, 4,6,7,
+                               0,1,5, 0,5,4, 3,7,6, 3,6,2,
+                               0,4,7, 0,7,3, 1,2,6, 1,6,5};
+            for (int i = 0; i < 36; i += 3) {
+                CollisionTriangle t;
+                t.a = glm::vec3(xform * glm::vec4(v[f[i]], 1.0f));
+                t.b = glm::vec3(xform * glm::vec4(v[f[i + 1]], 1.0f));
+                t.c = glm::vec3(xform * glm::vec4(v[f[i + 2]], 1.0f));
+                const glm::vec3 n = glm::cross(t.b - t.a, t.c - t.a);
+                const float len = glm::length(n);
+                if (len > 0.000001f) { t.normal = n / len; out.push_back(t); }
+            }
+        };
+        player.weaponColliderMesh.clear();
+        for (const auto& box : entry->boxes)
+            if (box.enabled) buildBox(box, player.weaponColliderMesh);
+        player.weaponColliderMeshPath = "__weaponcollisions_json_boxes__";
+        if (!wasJsonMesh)
+            player.previousWeaponModelTransform = player.weaponModelTransform;
+        dbg.valid = !player.weaponColliderMesh.empty();
+        dbg.fromJsonConfig = false;
+        dbg.capsuleMode = false;
+        dbg.usesJsonMesh = dbg.valid;
+        dbg.spheres.clear();
+        dbg.capsules.clear();
+        dbg.capsule.enabled = false;
+        player.collision.hasWeaponCollisionCapsule = false;
+        return;
+    }
+
     if (entry->source != "json") {
         // Capsule mode (default): process ALL enabled capsules from both the
         // singular "capsule" and plural "capsules" array. Each is transformed
         // to world space via weaponCollisionWorld for collision and wireframe.
+        // Keep the last tick's current endpoints as this tick's previous
+        // endpoints. Rebuilding the JSON representation every fixed tick is
+        // expected, but resetting previous=current here turns the swept
+        // capsule into a static overlap test and lets fast blades tunnel into
+        // walls.
+        const std::vector<WeaponColliderDebugCapsule> previousCapsules = dbg.capsules;
         dbg.capsuleMode = true;
         dbg.fromJsonConfig = false;
         dbg.valid = true;
@@ -269,8 +349,13 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
             debugCap.radius = localRadius;
             debugCap.currentStart = worldStart;
             debugCap.currentEnd = worldEnd;
-            debugCap.previousStart = worldStart;
-            debugCap.previousEnd = worldEnd;
+            if (i < previousCapsules.size() && previousCapsules[i].enabled) {
+                debugCap.previousStart = previousCapsules[i].currentStart;
+                debugCap.previousEnd = previousCapsules[i].currentEnd;
+            } else {
+                debugCap.previousStart = worldStart;
+                debugCap.previousEnd = worldEnd;
+            }
             dbg.capsules.push_back(debugCap);
 
             // World-space collision capsule

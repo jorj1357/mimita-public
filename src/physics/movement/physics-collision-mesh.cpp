@@ -13,9 +13,11 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/actor-collision-mesh.h"
+#include "physics/movement/collision-aabb-tree.h"
 #include "physics/physics-types.h"
 #include "physics/config.h"
 #include "config/collision-config.h"
+#include "debug/structured-log.h"
 #include "entities/player.h"
 #include "world/world.h"
 
@@ -360,6 +362,52 @@ AABB makeSweptActorMeshAABB(const std::vector<ActorCollisionMesh>& meshes,
     return out;
 }
 
+// Debug-only comparison of the linear candidate scan against the AABB-tree
+// pair traversal. Contacts are keyed by (world triangle, actor part label).
+static void logActorNarrowphaseComparison(
+    const std::vector<RecoveryContact>& linear,
+    const std::vector<RecoveryContact>& tree)
+{
+    auto matches = [](const RecoveryContact& a, const RecoveryContact& b) {
+        return a.triangleIndex == b.triangleIndex &&
+               a.label && b.label && std::strcmp(a.label, b.label) == 0;
+    };
+    int missingInTree = 0;
+    int extraInTree = 0;
+    float maxPenetrationDelta = 0.0f;
+    for (const RecoveryContact& c : linear)
+    {
+        const RecoveryContact* found = nullptr;
+        for (const RecoveryContact& t : tree)
+            if (matches(c, t)) { found = &t; break; }
+        if (!found)
+            ++missingInTree;
+        else
+            maxPenetrationDelta = std::max(
+                maxPenetrationDelta, std::fabs(found->penetration - c.penetration));
+    }
+    for (const RecoveryContact& t : tree)
+    {
+        bool found = false;
+        for (const RecoveryContact& c : linear)
+            if (matches(c, t)) { found = true; break; }
+        if (!found)
+            ++extraInTree;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Collision, StructuredLevel::Verbose,
+        "collision.narrowphase.compare", "actor-collision-acceleration",
+        "linear vs AABB-tree actor narrowphase",
+        0,
+        {{"linear_contacts", (int)linear.size()},
+         {"tree_contacts", (int)tree.size()},
+         {"missing_in_tree", missingInTree},
+         {"extra_in_tree", extraInTree},
+         {"max_penetration_delta", maxPenetrationDelta},
+         {"set_equal", missingInTree == 0 && extraInTree == 0}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 void collectActorMeshContactsInto(
     const World& world,
     const std::vector<ActorCollisionMesh>& meshes,
@@ -367,8 +415,26 @@ void collectActorMeshContactsInto(
     const glm::vec3& actorPos,
     std::vector<RecoveryContact>& contacts,
     bool filterCandidatesByMeshAabb,
-    float contactSkin)
+    float contactSkin,
+    const AabbTree* worldTree,
+    bool comparison)
 {
+    // Comparison mode: produce the authoritative linear result, also produce the
+    // accelerated result, log the diff, and keep the linear result so behavior is
+    // unchanged while validating.
+    if (comparison && worldTree && !worldTree->empty())
+    {
+        collectActorMeshContactsInto(world, meshes, candidates, actorPos, contacts,
+                                     filterCandidatesByMeshAabb, contactSkin,
+                                     nullptr, false);
+        static thread_local std::vector<RecoveryContact> s_compare;
+        collectActorMeshContactsInto(world, meshes, candidates, actorPos, s_compare,
+                                     filterCandidatesByMeshAabb, contactSkin,
+                                     worldTree, false);
+        logActorNarrowphaseComparison(contacts, s_compare);
+        return;
+    }
+
     contacts.clear();
     if (world.collisionMesh.triangles.empty() || candidates.empty())
         return;
@@ -442,11 +508,23 @@ void collectActorMeshContactsInto(
                 actorTriangleBounds.max += glm::vec3(MOVEMENT_FEATURE_SMOOTHNESS);
             }
 
-            for (size_t ci = 0; ci < candidates.size(); ++ci)
+            // AABB-tree pair traversal: only candidates whose bounds overlap the
+            // swept actor triangle are visited. Without a tree the whole gathered
+            // candidate list is scanned (the original behavior).
+            static thread_local std::vector<int> s_triCandidates;
+            const bool useTree = worldTree && !worldTree->empty();
+            if (useTree)
+            {
+                s_triCandidates.clear();
+                worldTree->query(actorTriangleBounds, s_triCandidates);
+            }
+            const std::vector<int>& scan = useTree ? s_triCandidates : candidates;
+
+            for (size_t ci = 0; ci < scan.size(); ++ci)
             {
                 if (triangleTests >= kMaxTriangleTests)
                     return;
-                const int wi = candidates[ci];
+                const int wi = scan[ci];
                 if (wi < 0 || wi >= (int)world.collisionMesh.triangles.size())
                     continue;
                 ++gActorNarrowphase.candidatePairs;

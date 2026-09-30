@@ -206,7 +206,8 @@ std::vector<ActorCollisionMesh> collectActorCollisionMeshes(Player& player)
     // actor solver. Render-mesh triangles remain available as a fallback for
     // tests or weapons without an initialized collider config, but they are
     // too sharp and too expensive for the normal movement path.
-    if (!player.weaponCollisionDebug.valid && !player.weaponColliderMesh.empty())
+    if ((!player.weaponCollisionDebug.valid || player.weaponCollisionDebug.usesJsonMesh) &&
+        !player.weaponColliderMesh.empty())
     {
         ActorCollisionMesh mesh;
         mesh.label = "weapon";
@@ -360,6 +361,8 @@ bool ensureActorWeaponColliderMeshFromEquipped(Player& player)
         player.weaponColliderMeshPath.clear();
         return false;
     }
+    if (player.weaponCollisionDebug.usesJsonMesh)
+        return !player.weaponColliderMesh.empty();
 
     // The viewmodel sets weaponModelTransform when a weapon model is active.
     // The identity placeholder (translation ~0) means "no world attachment", so

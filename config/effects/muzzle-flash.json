@@ -2,7 +2,7 @@
   "enabled": true,
   "color": [1.0, 1.0, 1.0],
   "lifetime": 0.0166,
-  "scale": 1.15,
+  "scale": 0.5,
   "endScale": 0.15,
-  "alpha": 1.0
+  "alpha": 0.5
 }

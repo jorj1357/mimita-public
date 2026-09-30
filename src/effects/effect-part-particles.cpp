@@ -62,11 +62,10 @@ EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string&
 }
 
 void EffectPartSystem::updateBloodParticles(float dt) {
-    const glm::vec3 bloodGravity(0.0f, 0.0f, -2.5f);
     constexpr float BLOOD_AIR_DRAG = 0.97f;
     for (BloodParticle& particle : mBloodParticles) {
         particle.position += particle.velocity * dt;
-        particle.velocity += bloodGravity * dt;
+        particle.velocity.z -= std::max(0.0f, particle.gravity) * dt;
         particle.velocity *= std::pow(BLOOD_AIR_DRAG, dt * 60.0f);
         particle.age += dt;
         float fadeStart = particle.lifetime * 0.4f;

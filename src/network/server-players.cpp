@@ -619,7 +619,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         // One-life / no-respawn mode: the actor remains dead for the round
         // (Spectating in the match state) and never revives here, even if a
         // client requests an instant respawn.
-        if (!serverMatchRespawnsEnabled())
+        if (!serverPlayerRespawnsEnabled(p.id))
         {
             p.instantRespawnRequested = false;
             return;

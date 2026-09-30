@@ -73,6 +73,7 @@ struct WeaponCollisionRuntimeDebug {
     bool visibleFromConfig = false;  // from weaponcollisions.json "visible" field
     bool fromJsonConfig = false; // true when JSON config drives this data
     bool capsuleMode = false;    // true = smooth capsule collision (default), false = JSON spheres
+    bool usesJsonMesh = false;   // true = weaponColliderMesh is generated from weaponcollisions.json
     float collisionSkin = 0.04f; // per-weapon skin from config, defaults to 0.04
 };
 

@@ -811,6 +811,7 @@ WeaponDefinition createProjectileRifleDefinition() {
     def.slot = 14;
     def.modelPath = "assets/objects/weapons/mimita-revolver-v1.glb";
     def.damage = 250.0f;
+    def.damageScale = 1.0f;
     def.headshotMultiplier = 2.0f;
     def.fireDelay = 1.0f / 60.0f;
     def.reloadTime = 1.5f;
@@ -866,6 +867,31 @@ WeaponDefinition createProjectileRifleDefinition() {
     return def;
 }
 
+WeaponDefinition createHitscanRifleDefinition() {
+    // Keep the same viewmodel/handling family as the projectile rifle, but
+    // route each shot through the authoritative generic hitscan AttackRequest
+    // path. The JSON entry supplies the user-facing tuning and can hot-reload.
+    WeaponDefinition def = createProjectileRifleDefinition();
+    def.id = "hitscan_rifle";
+    def.displayName = "Hitscan Rifle";
+    def.slot = 15;
+    def.projectileSpeed = 0.0f;
+    def.projectileRadius = 0.0f;
+    def.projectileLifetime = 0.0f;
+    def.behaviorType = WeaponBehaviorType::Hitscan;
+    def.executionType = WeaponExecutionType::Hitscan;
+    def.hitscan = true;
+    def.usesPhysicsProjectile = false;
+    def.networkMode = WeaponNetworkMode::Normal;
+    def.customParams.clear();
+    def.customParams["reserveAmmo"] = 99999.0f;
+    def.customParams["distanceFalloffStart"] = 1000.0f;
+    def.customParams["distanceFalloffEnd"] = 1200.0f;
+    def.customParams["minDamageFraction"] = 0.25f;
+    def.customParams["range"] = 1200.0f;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -882,7 +908,8 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createForcePunchDefinition());
     registerWeaponFromJson(createSpyKnifeDefinition());
     registerWeaponFromJson(createProjectileRifleDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife, projectile_rifle");
+    registerWeaponFromJson(createHitscanRifleDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife, projectile_rifle, hitscan_rifle");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

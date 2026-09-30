@@ -241,7 +241,8 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
     body.syncLegacyStateToLayers();
     previousPosition = body.pos;
 
-    wakeupTimer = 3.0f;  // 180 ticks @ 60 Hz
+    wakeupTimer = static_cast<float>(
+        NpcDifficultyConfig::instance().settings().spawnActionDelayTicks) / 60.0f;
 
     stateMachine.nextDecisionTime = 0.0f;
     stateMachine.wanderTarget = spawn + randomPlanarDirection(rngState) * 5.0f;

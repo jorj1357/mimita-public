@@ -66,6 +66,13 @@ void CommunityMatchClient::reset()
     mServerTickAnchorMs = 0;
     mGoVisibleUntilTick = 0;
     mSawGoThisMatch = false;
+    mWaveBannerVisible = false;
+    mWaveNumber = 0;
+    mWaveNpcTarget = 0;
+    mWaveNpcSpawned = 0;
+    mWaveLivesRemaining = 0;
+    mWaveHighest = 0;
+    mMatchOver = false;
     mTimeLimitSeconds = 0;
     mGoal = 0;
     mRedScore = 0;
@@ -217,6 +224,13 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mPhaseTimer = packet.phaseTimer;
     mMatchStartTick = packet.matchStartTick;
     mServerTick = packet.serverTick;
+    mWaveBannerVisible = packet.waveBannerVisible != 0;
+    mWaveNumber = packet.waveNumber;
+    mWaveNpcTarget = packet.waveNpcTarget;
+    mWaveNpcSpawned = packet.waveNpcSpawned;
+    mWaveLivesRemaining = packet.waveLivesRemaining;
+    mWaveHighest = packet.waveHighest;
+    mMatchOver = packet.matchOver != 0;
     mServerTickAnchorMs = clientSteadyNowMs();
     if (packet.phase == DUEL_PHASE_GO)
     {

@@ -11,6 +11,14 @@
     // Local players use this owner. The legacy path remains only as a guarded
     // fallback/NPC path until its TODO-DELETE acceptance gates are complete.
     "actorTriangleSolver": true,
+    // Prune actor-triangle vs world-triangle pairs with a per-solve AABB tree
+    // instead of scanning the whole candidate list. Semantics are unchanged; it
+    // only decides which pairs are worth the narrowphase test.
+    "actorCollisionAccelerated": true,
+    // Debug only: run the linear scan and the AABB-tree path on the same input
+    // and log a structured diff (collision.narrowphase.compare). Leave false in
+    // normal play; it roughly doubles actor narrowphase cost while enabled.
+    "actorCollisionComparison": false,
     "bounce": {
         "enabled": true,
         "strength": 0.35,

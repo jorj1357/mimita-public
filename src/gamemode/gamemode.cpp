@@ -213,6 +213,13 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         // ── Elimination / win rules (optional) ──────────────────────
         next.winCondition = optString(root, "win_condition", next.winCondition);
         next.actorPresetId = optString(root, "actor_preset", next.actorPresetId);
+        next.waveStartCount = std::max(1, optInt(root, "wave_start_count", next.waveStartCount));
+        next.waveIncrement = std::max(0, optInt(root, "wave_increment", next.waveIncrement));
+        next.waveNpcsPerWave = std::max(0, optInt(root, "npcs_per_wave", next.waveNpcsPerWave));
+        next.lives = std::max(1, optInt(root, "lives", next.lives));
+        next.waveBannerSeconds = std::max(0.0f, optFloat(root, "wave_banner_seconds", next.waveBannerSeconds));
+        next.waveStaggerEnabled = optBool(root, "wave_stagger_enabled", next.waveStaggerEnabled);
+        next.waveNpcsPerTick = std::max(1, optInt(root, "wave_npcs_per_tick", next.waveNpcsPerTick));
 
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,

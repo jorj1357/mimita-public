@@ -19,7 +19,7 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // carry real damage/health; every bullet visual is guaranteed delivery.
 // 36: DuelStatePacket carries the server-authoritative procedural-world state
 // (Infinite Dungeon Slayer) so clients render rooms from server truth.
-constexpr uint16_t PROTOCOL_VERSION = 36;
+constexpr uint16_t PROTOCOL_VERSION = 38;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -1152,6 +1152,14 @@ struct DuelStatePacket
     float goSeconds = 0.0f;            // GO! overlay duration; lets the client
                                        // show GO even if the GO-phase packet is
                                        // missed while loading
+    uint32_t waveNumber = 0;
+    uint32_t waveNpcTarget = 0;
+    uint32_t waveNpcSpawned = 0;
+    uint32_t waveBannerUntilTick = 0;
+    uint8_t waveBannerVisible = 0;
+    uint8_t waveReserved[3] = {};
+    int32_t waveLivesRemaining = 0;
+    uint32_t waveHighest = 0;
     // FFA top-3 leaderboard (for HUD rendering)
     uint32_t ffaLeaderIds[3] = {};
     int32_t ffaLeaderScores[3] = {};

@@ -1,0 +1,22 @@
+{
+  "id": "npc_waves",
+  "name": "NPC Waves",
+  "description": "Survive increasingly large waves of NPCs.",
+  "goal_value": 0,
+  "time_limit_seconds": 0,
+  "respawn_seconds": 0,
+  "kill_heals": true,
+  "countdown_seconds": 0.01,
+  "go_seconds": 0.01,
+  "intermission_seconds": 5,
+  "results_seconds": 0,
+  "weapon_set_id": 1,
+  "win_condition": "npc_waves",
+  "wave_start_count": 1,
+  "wave_increment": 1,
+  "npcs_per_wave": 10,
+  "lives": 999,
+  "wave_banner_seconds": 1,
+  "wave_stagger_enabled": true,
+  "wave_npcs_per_tick": 10
+}

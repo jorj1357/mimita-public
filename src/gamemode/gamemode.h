@@ -79,6 +79,13 @@ struct Gamemode {
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
     // when only one team (or, in FFA, one actor) still has an in-play actor.
     std::string winCondition;
+    int waveStartCount = 1;
+    int waveIncrement = 1;
+    int waveNpcsPerWave = 0; // >0: target = wave number * this value
+    int lives = 3;
+    float waveBannerSeconds = 3.0f;
+    bool waveStaggerEnabled = true;
+    int waveNpcsPerTick = 10;
 };
 
 class GamemodeRegistry {

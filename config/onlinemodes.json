@@ -63,6 +63,14 @@
       "description": "One life. Last team standing wins.",
       "teams": 2,
       "score_limit": 0
+    },
+    {
+      "id": "npc_waves",
+      "gamemode_id": "npc_waves",
+      "name": "NPC Waves",
+      "description": "Survive increasingly large waves of NPCs.",
+      "teams": 0,
+      "score_limit": 0
     }
   ]
 }

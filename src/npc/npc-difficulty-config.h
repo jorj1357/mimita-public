@@ -28,6 +28,8 @@ struct NpcDifficultySettings {
     float fireDelayMax = 0.7f;            // slowest shot interval
     int spawnFireDelayMinTicks = 1;       // first-fire delay after spawn/respawn, fixed 60 Hz server ticks
     int spawnFireDelayMaxTicks = 60;
+    int spawnActionDelayTicks = 1;        // full movement + shooting delay after spawn/respawn
+    bool freezeDuringWaveBanner = true;   // npc_waves: keep spawned NPCs still and silent while WAVE banner is visible
     float aggressionBonus = 0.05f;        // pushes shot timing toward fireDelayMin
     float npcHitRadius = 0.4f;            // NPC bullet radius; thin so aim error actually matters
     bool forceHit = false;                // debug: zero aim error, every shot connects

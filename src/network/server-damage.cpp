@@ -129,10 +129,11 @@ static ServerDamageResult applyPlayerDamageLegacy(
     if (target.health == 0)
     {
         target.dead = true;
+        serverConsumeNpcWaveLife(target.id);
         // Honor the active gamemode's respawn rule. One-life modes set a
         // negative timer so the respawn pump never revives the actor and the
         // match state advances it to Spectating.
-        target.respawnSeconds = serverMatchRespawnsEnabled()
+        target.respawnSeconds = serverPlayerRespawnsEnabled(target.id)
             ? serverMatchRespawnSeconds()
             : -1.0f;
         target.vel = glm::vec3(0.0f);

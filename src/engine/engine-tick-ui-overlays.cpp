@@ -654,8 +654,27 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                         {"{seconds}", std::to_string((int)std::ceil(std::max(0.0f, match.phaseTimer())))}}));
                 }
 
-                if (match.phase() == MimitaNet::DUEL_PHASE_COUNTDOWN ||
-                    match.goVisible()) {
+                if (match.waveBannerVisible()) {
+                    drawCentered("waveText", textTemplate("waveText", {
+                        {"{number}", std::to_string(match.waveNumber())},
+                        {"{wave}", std::to_string(match.waveNumber())}}));
+                }
+
+                if (match.mode() == "npc_waves" && match.waveLivesRemaining() > 0 &&
+                    match.phase() != MimitaNet::DUEL_PHASE_RESULTS) {
+                    drawCentered("livesText", textTemplate("livesText", {
+                        {"{lives}", std::to_string(match.waveLivesRemaining())}}));
+                }
+
+                if (match.mode() == "npc_waves" && match.matchOver() &&
+                    match.waveLivesRemaining() <= 0) {
+                    drawCentered("gameOverText", textTemplate("gameOverText", {
+                        {"{highest_wave}", std::to_string(match.waveHighest())}}));
+                }
+
+                if (!match.waveBannerVisible() &&
+                    (match.phase() == MimitaNet::DUEL_PHASE_COUNTDOWN ||
+                     match.goVisible())) {
                     const GuiElement* countdownElement = matchLayout.get("countdownText");
                     const uint32_t ticksLeft = match.matchStartTick() > match.serverTick()
                         ? match.matchStartTick() - match.serverTick() : 0;

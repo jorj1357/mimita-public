@@ -317,6 +317,7 @@ void EffectPartSystem::spawnBloodEffect(
         BloodParticle particle;
         particle.position = hitPoint + direction * 0.05f;
         particle.velocity = direction * speed;
+        particle.gravity = spray.gravity;
         particle.color = glm::vec3(
             std::clamp(bloodCfg.color.x * jr, 0.0f, 1.0f),
             std::clamp(bloodCfg.color.y * jg, 0.0f, 1.0f),

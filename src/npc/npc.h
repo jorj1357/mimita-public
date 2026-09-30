@@ -96,7 +96,7 @@ public:
     float lastFrictionDelta = 0.0f;
     float lastFinalSpeed = 0.0f;
     float hitReactionTimer = 0.0f;
-    float wakeupTimer = 0.0f;  // seconds of spawn delay before NPC becomes active
+    float wakeupTimer = 0.0f;  // JSON-controlled fixed-tick spawn delay
 
     // Bomb tag behavior flags
     bool bombTagActive = false;

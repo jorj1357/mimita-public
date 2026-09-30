@@ -28,6 +28,7 @@
 #include "config/collision-config.h"
 #include "debug/structured-log.h"
 #include "physics/movement/actor-collision-mesh.h"
+#include "physics/movement/collision-aabb-tree.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/physical-entity.h"
 #include "map/map-loader-collision.h"
@@ -258,6 +259,21 @@ bool solveActorTriangleCollision(
                                 candidates, "actorTriangleSolve");
     result.candidates = (int)candidates.size();
 
+    // AABB tree over the gathered world candidates, built once per solve and
+    // reused by every correction iteration. It only prunes pairs; the
+    // narrowphase and response are unchanged.
+    const bool accelerated = collisionConfig.actorCollisionAccelerated();
+    static thread_local AabbTree s_worldTree;
+    const AabbTree* worldTree = nullptr;
+    if (accelerated && !candidates.empty() &&
+        world.collisionMesh.triangleAABBs.size() ==
+            world.collisionMesh.triangles.size())
+    {
+        s_worldTree.build(candidates, world.collisionMesh.triangleAABBs);
+        worldTree = &s_worldTree;
+    }
+    const bool comparison = collisionConfig.actorCollisionComparison();
+
     // Reused fixed-tick scratch. The correction loop no longer allocates a mesh
     // vector, a contact vector, or an accumulated-contact vector per iteration.
     static thread_local std::vector<ActorCollisionMesh> s_meshes;
@@ -284,7 +300,8 @@ bool solveActorTriangleCollision(
         const AABB poseBox = makeSweptActorMeshAABB(s_meshes, glm::vec3(0.0f));
         const glm::vec3 refPoint = (poseBox.min + poseBox.max) * 0.5f;
 
-        collectActorMeshContactsInto(world, s_meshes, candidates, refPoint, s_contacts);
+        collectActorMeshContactsInto(world, s_meshes, candidates, refPoint, s_contacts,
+                                     true, -1.0f, worldTree, comparison);
 
         // The weapon sphere/capsule collector uses the same world-triangle
         // contact facts and response owner, but only needs to run once per

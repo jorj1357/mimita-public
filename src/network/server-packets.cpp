@@ -1314,8 +1314,9 @@ void handleExplodeRequest(const char* buffer, int bytes,
     ServerPlayer& p = it->second;
     p.health = 0;
     p.dead = true;
+    serverConsumeNpcWaveLife(p.id);
     emitPvPKillPersistenceEvent(players, p.id, p.id, "self", header->tick, p.pos, p.pos);
-    p.respawnSeconds = serverMatchRespawnsEnabled()
+    p.respawnSeconds = serverPlayerRespawnsEnabled(p.id)
         ? serverMatchRespawnSeconds() : -1.0f;
     p.vel = glm::vec3(0.0f);
     printf("%s [SERVER DEATH] playerId=%u cause=explode respawn=instant\n",

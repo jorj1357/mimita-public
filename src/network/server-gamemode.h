@@ -173,6 +173,24 @@ struct ServerGamemodeState
     bool killHeals = true;
     std::string winCondition;
 
+    bool npcWaves = false;
+    uint32_t waveNumber = 0;
+    int waveStartCount = 1;
+    int waveIncrement = 1;
+    int waveNpcsPerWave = 0;
+    int waveLives = 3;
+    int waveLivesRemaining = 3;
+    uint32_t waveHighest = 0;
+    float waveBannerSeconds = 3.0f;
+    bool waveStaggerEnabled = true;
+    int waveNpcsPerTick = 10;
+    uint32_t waveNpcTarget = 0;
+    uint32_t waveNpcSpawned = 0;
+    uint32_t waveNextNpcId = 100000;
+    uint32_t waveBannerUntilTick = 0;
+    bool waveBannerVisible = false;
+    bool waveRunOver = false;
+
     // Match event counter for KillEvent IDs
     uint32_t killEventCounter = 0;
 
@@ -229,6 +247,8 @@ ServerGamemodeState& serverGamemodeState();
 // ServerGamemodeState so damage/respawn/NPC code has one source of truth.
 // serverMatchRespawnsEnabled: false => one-life; dead actors become Spectating.
 bool serverMatchRespawnsEnabled();
+bool serverPlayerRespawnsEnabled(uint32_t playerId);
+void serverConsumeNpcWaveLife(uint32_t playerId);
 // Effective respawn delay in seconds (unset falls back to the legacy 0.01s).
 float serverMatchRespawnSeconds();
 

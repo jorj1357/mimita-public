@@ -81,6 +81,18 @@
       "elements": {
         "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] }
       }
+    },
+    "npc_waves": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "intermissionText": { "type": "text", "text": "INTERMISSION {seconds}", "x": 960, "y": 400, "fontSize": 0.6, "textColor": [1, 1, 1, 0.9] },
+        "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 100, "fontSize": 2.5, "textColor": [1, 1, 1, 1] },
+        "waveText": { "type": "text", "text": "WAVE {number}", "x": 960, "y": 100, "fontSize": 2.2, "textColor": [1, 0.82, 0.2, 1] },
+        "livesText": { "type": "text", "text": "LIVES {lives}", "x": 960, "y": 145, "fontSize": 0.55, "textColor": [1, 1, 1, 0.9] },
+        "gameOverText": { "type": "text", "text": "GAME OVER - HIGHEST WAVE: {highest_wave}", "x": 960, "y": 250, "fontSize": 1.1, "textColor": [1, 0.25, 0.2, 1] }
+      }
     }
   }
 }

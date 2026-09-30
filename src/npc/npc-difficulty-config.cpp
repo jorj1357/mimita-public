@@ -114,6 +114,10 @@ bool NpcDifficultyConfig::load(const std::string& path)
             root, "spawnFireDelayMinTicks", next.spawnFireDelayMinTicks));
         next.spawnFireDelayMaxTicks = std::max(next.spawnFireDelayMinTicks, optInt(
             root, "spawnFireDelayMaxTicks", next.spawnFireDelayMaxTicks));
+        next.spawnActionDelayTicks = std::max(0, optInt(
+            root, "spawnActionDelayTicks", next.spawnActionDelayTicks));
+        next.freezeDuringWaveBanner = optBool(
+            root, "freezeDuringWaveBanner", next.freezeDuringWaveBanner);
         next.aggressionBonus = optFloat(root, "aggressionBonus", next.aggressionBonus);
         next.npcHitRadius = std::max(0.0f, optFloat(root, "npcHitRadius", next.npcHitRadius));
         next.forceHit = optBool(root, "forceHit", next.forceHit);
@@ -278,6 +282,8 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["fireDelayMax"] = mData.fireDelayMax;
     j["spawnFireDelayMinTicks"] = mData.spawnFireDelayMinTicks;
     j["spawnFireDelayMaxTicks"] = mData.spawnFireDelayMaxTicks;
+    j["spawnActionDelayTicks"] = mData.spawnActionDelayTicks;
+    j["freezeDuringWaveBanner"] = mData.freezeDuringWaveBanner;
     j["aggressionBonus"] = mData.aggressionBonus;
     j["npcHitRadius"] = mData.npcHitRadius;
     j["forceHit"] = mData.forceHit;

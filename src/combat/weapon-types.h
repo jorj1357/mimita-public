@@ -85,6 +85,9 @@ struct WeaponDefinition {
     float weaponScale = 1.0f;
 
     float damage = 0.0f;
+    // Per-weapon multiplier applied by the shared hitscan damage model.
+    // Keeps JSON tuning separate from the base damage value.
+    float damageScale = 1.0f;
     float headshotMultiplier = 2.0f;
     float fireDelay = 0.1f;
     float reloadTime = 1.0f;

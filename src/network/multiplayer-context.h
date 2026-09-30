@@ -163,6 +163,12 @@ struct NetworkShotEvent
 
 struct NetworkProjectile
 {
+    struct TrailSample
+    {
+        glm::vec3 position{0.0f};
+        uint32_t tick = 0;
+    };
+
     uint32_t projectileId = 0;
     uint32_t ownerPlayerId = 0;
     uint32_t fireSerial = 0;
@@ -187,6 +193,8 @@ struct NetworkProjectile
     float angularDrag = 0.0f;
     float distanceTraveled = 0.0f;
     float smokeAccumulator = 0.0f;
+    float trailSampleAccumulator = 0.0f;
+    std::deque<TrailSample> trailHistory;
     int bounceCount = 0;
     int maxBounceCount = 0;
     bool predicted = false;

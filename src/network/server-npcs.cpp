@@ -205,6 +205,8 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
 
 void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
 {
+    npc.wakeupTimer = static_cast<float>(
+        NpcDifficultyConfig::instance().settings().spawnActionDelayTicks) / 60.0f;
     ActorSpawnEvent lifecycleEvent;
     lifecycleEvent.entityId = npc.id;
     lifecycleEvent.actorKind = ActorKind::Npc;
@@ -727,10 +729,15 @@ void simulateSharedNpcs(SOCKET sock,
     const auto& npcDifficulty = NpcDifficultyConfig::instance().settings();
     const bool playersOnly = npcDifficulty.targetMode == "player";
     const bool allowNpcTargets = npcDifficulty.damageOtherNpcs && !playersOnly;
+    const bool freezeWaveBanner = serverGamemodeState().npcWaves
+        && serverGamemodeState().waveBannerVisible
+        && npcDifficulty.freezeDuringWaveBanner;
 
     for (Npc& n : npcSystem.all())
     {
         if (n.body.dead || n.body.currentHp <= 0)
+            continue;
+        if (freezeWaveBanner)
             continue;
 
         const uint32_t prevTarget = n.serverTargetId;

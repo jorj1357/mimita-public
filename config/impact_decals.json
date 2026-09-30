@@ -46,7 +46,8 @@
       "lifetimeMin": 0.1,
       "lifetimeMax": 0.5,
       "alphaMin": 0.7,
-      "alphaMax": 0.95
+      "alphaMax": 0.95,
+      "gravity": 2.5
     },
     "force": {
       "maxDistance": 2.0,

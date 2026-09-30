@@ -135,7 +135,7 @@ int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPar
         def.allowedBodyParts.find(bodyPart) == def.allowedBodyParts.end()) {
         return 0;
     }
-    const float damage = def.damage
+    const float damage = def.damage * std::max(0.0f, def.damageScale)
         * hitscanPartMultiplier(def, bodyPart)
         * hitscanFalloffFactor(def, distance)
         * std::clamp(angleFactor, 0.0f, 1.0f);

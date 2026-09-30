@@ -48,6 +48,8 @@ bool CollisionConfig::load(const std::string& path)
 
         mBodyMeshCollision = j.value("bodyMeshCollision", true);
         mActorTriangleSolver = j.value("actorTriangleSolver", false);
+        mActorCollisionAccelerated = j.value("actorCollisionAccelerated", true);
+        mActorCollisionComparison = j.value("actorCollisionComparison", false);
         mCollisionSkin = std::clamp(j.value("collisionSkin", 0.05f), 0.0f, 0.25f);
         mEdgeTouchTolerance = std::clamp(
             j.value("edgeTouchTolerance", 0.002f), 0.0f, 0.05f);

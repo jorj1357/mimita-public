@@ -21,7 +21,8 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
 {
     if (definition.id == "revolver" ||
         definition.id == "op_revolver" ||
-        definition.id == "admin_revolver")
+        definition.id == "admin_revolver" ||
+        definition.id == "hitscan_rifle")
         return NETWORK_WEAPON_REVOLVER;
     if (definition.id == "godball")
         return NETWORK_WEAPON_GODBALL;
@@ -51,6 +52,7 @@ uint8_t networkWeaponTypeForSlot(int slot)
     case 1:
     case 5:
     case 9:
+    case 15:
         return NETWORK_WEAPON_REVOLVER;
     case 2:
         return NETWORK_WEAPON_GODBALL;

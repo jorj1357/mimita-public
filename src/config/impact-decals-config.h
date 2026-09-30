@@ -26,6 +26,7 @@ struct ImpactDecalSprayConfig {
     float lifetimeMax = 3.0f;
     float alphaMin = 0.6f;
     float alphaMax = 0.95f;
+    float gravity = 2.5f;
 };
 
 struct ImpactForceConfig {

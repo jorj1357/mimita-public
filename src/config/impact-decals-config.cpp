@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <cmath>
 
 #include <nlohmann/json.hpp>
 
@@ -73,6 +74,9 @@ static void readSpray(const json& j, ImpactDecalSprayConfig& cfg)
     cfg.lifetimeMax = readJsonFloat(s, "lifetimeMax", cfg.lifetimeMax);
     cfg.alphaMin = readJsonFloat(s, "alphaMin", cfg.alphaMin);
     cfg.alphaMax = readJsonFloat(s, "alphaMax", cfg.alphaMax);
+    cfg.gravity = readJsonFloat(s, "gravity", cfg.gravity);
+    if (!std::isfinite(cfg.gravity) || cfg.gravity < 0.0f)
+        cfg.gravity = 0.0f;
 }
 
 static void readForce(const json& j, ImpactForceConfig& cfg)

@@ -448,6 +448,7 @@ std::vector<RecoveryContact> collectActorMeshContacts(
 
 // Scratch-buffer form: appends into `out` (cleared first) so the fixed-tick
 // solver never allocates a contact vector per correction iteration.
+struct AabbTree;
 void collectActorMeshContactsInto(
     const World& world,
     const std::vector<ActorCollisionMesh>& meshes,
@@ -455,7 +456,9 @@ void collectActorMeshContactsInto(
     const glm::vec3& actorPos,
     std::vector<RecoveryContact>& out,
     bool filterCandidatesByMeshAabb = true,
-    float contactSkin = -1.0f);
+    float contactSkin = -1.0f,
+    const AabbTree* worldTree = nullptr,
+    bool comparison = false);
 
 // Union swept AABB (previous + desired + move) of every supplied mesh, in local
 // triangle space transformed to world. Used to gather broadphase candidates.

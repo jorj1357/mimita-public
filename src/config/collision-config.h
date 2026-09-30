@@ -40,6 +40,13 @@ public:
     // without a rebuild.
     bool actorTriangleSolver() const { return mActorTriangleSolver; }
 
+    // When true, the actor narrowphase prunes candidate pairs with a per-solve
+    // AABB tree instead of scanning the candidate list. Hot-reloadable.
+    bool actorCollisionAccelerated() const { return mActorCollisionAccelerated; }
+    // When true (debug only), the actor narrowphase runs the linear scan and the
+    // AABB-tree path on the same input and logs a structured diff. Hot-reloadable.
+    bool actorCollisionComparison() const { return mActorCollisionComparison; }
+
     // Shared actor/world contact margin. Hot-reloadable from collision.json.
     float collisionSkin() const { return mCollisionSkin; }
     // Static triangle touches below this depth are treated as seam/edge
@@ -58,6 +65,8 @@ private:
     float mBounceMinPush = 0.1f;
     bool mBodyMeshCollision = true;
     bool mActorTriangleSolver = false;
+    bool mActorCollisionAccelerated = true;
+    bool mActorCollisionComparison = false;
     float mCollisionSkin = 0.05f;
     float mEdgeTouchTolerance = 0.002f;
 

@@ -66,6 +66,9 @@ void recomputeWeaponCapsule(Player& p)
         p.weaponCollisionDebug.spheres.clear();
         p.weaponCollisionDebug.capsule.enabled = false;
         p.weaponCollisionDebug.capsules.clear();
+        p.weaponCollisionDebug.usesJsonMesh = false;
+        p.weaponColliderMesh.clear();
+        p.weaponColliderMeshPath.clear();
         p.collision.hasWeaponCollisionCapsule = false;
         p.weaponModelTransform = glm::mat4(1.0f);
         return;
@@ -73,6 +76,9 @@ void recomputeWeaponCapsule(Player& p)
 
     // Apply JSON config — this is the ONLY source of weapon collision data.
     WeaponCollisionJsonConfig::instance().applyCollisionConfig(p);
+
+    if (p.weaponCollisionDebug.usesJsonMesh)
+        return;
 
     // Capsule mode (default): rebuild the world-space weapon collision capsule
     // from the local capsule shape (model-derived or config-overridden) via the

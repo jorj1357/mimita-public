@@ -77,6 +77,7 @@ struct BloodParticle
     float size = 0.05f;
     float age = 0.0f;
     float lifetime = 0.5f;
+    float gravity = 2.5f;
     float alpha = 1.0f;
     float rotation = 0.0f;
     float stretch = 1.0f;

@@ -26,6 +26,15 @@ struct WeaponCollisionCapsuleConfig {
     glm::vec3 rotationDegrees{0.0f};
 };
 
+struct WeaponCollisionBoxConfig {
+    std::string name;
+    bool enabled = true;
+    glm::vec3 center{0.0f};
+    glm::vec3 halfSize{0.1f};
+    glm::vec3 scale{1.0f};
+    glm::vec3 rotationDegrees{0.0f};
+};
+
 struct WeaponCollisionGeneratedSpheresConfig {
     bool enabled = false;
     int count = 8;
@@ -45,6 +54,7 @@ struct WeaponCollisionEntry {
     WeaponCollisionCapsuleConfig capsule;
     // New: plural capsules array
     std::vector<WeaponCollisionCapsuleConfig> capsules;
+    std::vector<WeaponCollisionBoxConfig> boxes;
     std::vector<WeaponCollisionSphereConfig> spheres;
     WeaponCollisionGeneratedSpheresConfig generatedSpheres;
 };

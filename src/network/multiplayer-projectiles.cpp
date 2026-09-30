@@ -411,6 +411,35 @@ void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
     }
 }
 
+void recordProjectileTrailSample(NetworkProjectile& projectile, float dt)
+{
+    const bool rifle = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
+    if (!rifle)
+        return;
+
+    const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+    const int sampleTicks = std::clamp(
+        (int)std::round(cp(def, "projectileTrailHistoryTicks", 10.0f)), 0, 120);
+    if (sampleTicks <= 0 || cp(def, "projectileTrailEnabled", 1.0f) <= 0.0f)
+    {
+        projectile.trailHistory.clear();
+        projectile.trailSampleAccumulator = 0.0f;
+        return;
+    }
+
+    projectile.trailSampleAccumulator += std::max(0.0f, dt) * 60.0f;
+    while (projectile.trailSampleAccumulator >= 1.0f)
+    {
+        projectile.trailSampleAccumulator -= 1.0f;
+        const uint32_t nextTick = projectile.trailHistory.empty()
+            ? 0u : projectile.trailHistory.back().tick + 1u;
+        projectile.trailHistory.push_back({projectile.renderPosition, nextTick});
+    }
+
+    while ((int)projectile.trailHistory.size() > sampleTicks + 1)
+        projectile.trailHistory.pop_front();
+}
+
 uint64_t reliableEventKey(uint32_t eventSessionId, uint32_t eventId)
 {
     return ((uint64_t)eventSessionId << 32) | (uint64_t)eventId;
@@ -2035,6 +2064,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
         }
 
         spawnProjectileTrail(projectile, dt);
+        recordProjectileTrailSample(projectile, dt);
         ++it;
     }
 }
@@ -2047,7 +2077,52 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
         if (projectile.exploded)
             continue;
         ProjectileVisualConfig cfg = projectileVisualConfig(projectile.weaponType);
+
+        // Rifle projectiles are intentionally rendered as a bright sphere from
+        // the weapon definition.  This remains visible even when the texture
+        // path used by the shared mesh renderer is unavailable.
         renderProjectile(camera, projectile.renderPosition, projectile.renderRotation, cfg);
+
+        if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
+            !projectile.trailHistory.empty())
+        {
+            const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+            const float sizeMultiplier = std::clamp(
+                cp(def, "projectileTrailHistorySizeMultiplier", 0.82f), 0.01f, 2.0f);
+            const float darkenMultiplier = std::clamp(
+                cp(def, "projectileTrailHistoryDarkenMultiplier", 0.72f), 0.0f, 1.0f);
+            const float alphaMultiplier = std::clamp(
+                cp(def, "projectileTrailHistoryAlphaMultiplier", 0.78f), 0.0f, 1.0f);
+            const int maxSamples = std::clamp(
+                (int)std::round(cp(def, "projectileTrailHistoryRenderSamples", 10.0f)),
+                0, 120);
+            int rendered = 0;
+            float scale = sizeMultiplier;
+            for (auto it = projectile.trailHistory.rbegin();
+                 it != projectile.trailHistory.rend() && rendered < maxSamples; ++it)
+            {
+                // The newest history sample is the current position; the main
+                // projectile above owns that draw, so start at the previous tick.
+                if (rendered == 0 &&
+                    glm::length(it->position - projectile.renderPosition) < 0.001f)
+                    continue;
+
+                ProjectileVisualConfig trailCfg = cfg;
+                trailCfg.radius *= scale;
+                trailCfg.length *= scale;
+                trailCfg.scale *= scale;
+                trailCfg.fillColor *= std::pow(darkenMultiplier,
+                                               (float)(rendered + 1));
+                trailCfg.fillAlpha *= std::pow(alphaMultiplier,
+                                               (float)(rendered + 1));
+                trailCfg.outlineEnabled = false;
+                trailCfg.glowEnabled = false;
+                renderProjectile(camera, it->position, projectile.renderRotation,
+                                 trailCfg);
+                scale *= sizeMultiplier;
+                ++rendered;
+            }
+        }
     }
 }
 

@@ -43,6 +43,11 @@ public:
     // True while the GO! overlay should be visible. It stays true for the
     // server-sent GO window even if the ACTIVE packet arrives before render.
     bool goVisible() const;
+    bool waveBannerVisible() const { return mWaveBannerVisible; }
+    uint32_t waveNumber() const { return mWaveNumber; }
+    int waveLivesRemaining() const { return mWaveLivesRemaining; }
+    uint32_t waveHighest() const { return mWaveHighest; }
+    bool matchOver() const { return mMatchOver; }
     int timeLimitSeconds() const { return mTimeLimitSeconds; }
     int goal() const { return mGoal; }
     int redScore() const { return mRedScore; }
@@ -90,6 +95,13 @@ private:
     uint64_t mServerTickAnchorMs = 0;  // client steady-clock ms when mServerTick was received
     uint32_t mGoVisibleUntilTick = 0;  // server tick at which the GO! window ends
     bool mSawGoThisMatch = false;      // true once a GO-phase packet was applied
+    bool mWaveBannerVisible = false;
+    uint32_t mWaveNumber = 0;
+    uint32_t mWaveNpcTarget = 0;
+    uint32_t mWaveNpcSpawned = 0;
+    int mWaveLivesRemaining = 0;
+    uint32_t mWaveHighest = 0;
+    bool mMatchOver = false;
     int mTimeLimitSeconds = 0;
     int mGoal = 0;
     int mRedScore = 0;

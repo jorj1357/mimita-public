@@ -1507,24 +1507,27 @@ UTC time:
 `2026-09-29T21:54:27Z`
 
 Related changelog:
-`docs/changelog/2026-09-29/20260929_175427-actor-collision-acceleration-stage1.md`
+`docs/changelog/2026-09-29/20260929_175427-actor-collision-acceleration.md`
 
 ### Why the cold build was required
 
 The accelerated actor-collision increment changes `CollisionMeshCache`
-(embedded by value in `World`), the actor narrowphase signature, the
-`collision.json`-independent scratch path, and the physical-entity contact
-bridge. These are cold fixed-tick owners and need a relink to run the collision
-self-tests and in-game movement against one executable.
+(embedded by value in `World`), the actor narrowphase signature, the new
+AABB-tree pair traversal, the `collision.json` scratch path, and the
+physical-entity contact bridge. These are cold fixed-tick owners and need a
+relink to run the collision self-tests and in-game movement against one
+executable.
 
 ### Exact cold source / boundary
 
 - `src/physics/physics-types.h` (`CollisionMeshCache::triangleAABBs`).
 - `src/physics/movement/physics-collision-shared.h`,
   `physics-collision-mesh.cpp`, `physics-collision.cpp`,
-  `physics-collision-body.cpp`, `actor-triangle-solver.cpp`.
+  `physics-collision-body.cpp`, `actor-triangle-solver.cpp`,
+  `collision-aabb-tree.h` (new).
 - `src/map/map-loader-collision.cpp`.
 - `src/physics/physical-entity.cpp`.
+- `src/config/collision-config.{h,cpp}`, `config/collision.json`.
 
 ### Result needed from the new executable
 
@@ -1542,9 +1545,11 @@ scratch-buffer narrowphase are compiled into the client/server executable.
 `python build_agent.py`: one build failed with
 `too few arguments to function 'collectActorMeshContactsInto'` because the
 default arguments were added after the first compile; after adding the defaults
-the build returned `Status: SUCCESS`, return code 0. Produced
-`C:\mimita-v9\mimita.exe`. Self-tests run against it: actor-triangle-solve 26/26,
-collision 19/19, moving-crate 23/23, subgrid PASS.
+the build returned `Status: SUCCESS`, return code 0. A later build added the
+AABB-tree pair traversal and comparison mode and also returned `Status: SUCCESS`.
+Produced `C:\mimita-v9\mimita.exe`. Self-tests run against it with acceleration
+enabled: actor-triangle-solve 26/26, collision 19/19, moving-crate 23/23, subgrid
+9/9; `tests/collision-aabb-tree-test.cpp` 5/5; comparison-mode smoke 26/26.
 
 ### Human review
 
@@ -1553,7 +1558,8 @@ gone or reduced and collision feel is unchanged.
 
 ### Next migration/falsification step
 
-Read the new `collision.solve.summary` counters (`candidate_pairs`,
-`triangle_tests`, `rounded_feature_calls`, `solve_ms`) in a dense map. If the
-candidate scan still dominates, build the per-chunk BVH (Stage 2); if the
-rounded-feature narrowphase dominates, optimize that instead.
+Read the `collision.solve.summary` counters (`candidate_pairs`,
+`triangle_tests`, `rounded_feature_calls`, `solve_ms`) in a dense map and the
+`collision.narrowphase.compare` diff with `actorCollisionComparison` enabled. If
+the rounded-feature narrowphase now dominates, optimize that; if the candidate
+gather dominates, consider a persistent per-chunk tree.
