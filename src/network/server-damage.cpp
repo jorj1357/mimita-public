@@ -101,6 +101,16 @@ static ServerDamageResult applyPlayerDamageLegacy(
         return result;
     }
 
+    if (target.teleportInvulnerabilityTicks > 0)
+    {
+        target.health = target.maxHealth > 0 ? target.maxHealth : serverMaxHp();
+        DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
+            "reason=teleport-invulnerability ticks=%u health=%d",
+            target.id, attackerPlayerId, damageSourceName(source),
+            (unsigned)target.teleportInvulnerabilityTicks, target.health);
+        return result;
+    }
+
     // Team-based friendly fire filtering: teammates cannot damage each other.
     // Self-damage (attacker == target) is always allowed for rocket jumping.
     if (attackerPlayerId != target.id && target.matchTeam >= 0)

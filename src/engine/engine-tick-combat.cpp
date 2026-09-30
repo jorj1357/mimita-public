@@ -115,6 +115,8 @@ void engineTickCombat(Engine& engine, float dt)
         // Mirror the server-authoritative procedural exit barrier as a client
         // physical entity before the fixed-step actor/physics update runs.
         clientProceduralWorldTick(world);
+        for (int i = 0; i < clientSteps; ++i)
+            clientProceduralTeleportShieldTick();
         MIMITA_PERF_SCOPE("Combat::PhysicsEntities");
         PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);
         PhysicalEntitySystem::instance().advanceKinematics(dt, world);

@@ -1803,8 +1803,7 @@ void serverGamemodeTick(SOCKET sock,
                 if (pit != players.end() &&
                     serverProceduralWorldTeleportTarget(entrance))
                 {
-                    beginAuthoritativeTransform(pit->second, entrance,
-                                                glm::vec3(0.0f),
+                    beginAuthoritativeTeleport(pit->second, entrance,
                                                 d.procedural.playerSpawnYaw,
                                                 "procedural_start");
                 }
@@ -1829,9 +1828,9 @@ void serverGamemodeTick(SOCKET sock,
             if (pit != players.end() &&
                 serverProceduralWorldTeleportTarget(entrance))
             {
-                beginAuthoritativeTransform(pit->second, entrance,
-                                            glm::vec3(0.0f), pit->second.yaw,
-                                            "procedural_teleport");
+                beginAuthoritativeTeleport(pit->second, entrance,
+                                            pit->second.yaw,
+                                            "procedural_teleport", 60);
             }
         }
     }

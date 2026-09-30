@@ -16,6 +16,7 @@
 #include "network/community-match-client.h"
 #include "network/multiplayer-context.h"
 #include "terminal/terminal-state.h"
+#include "procedural/procedural-world-client.h"
 
 namespace {
 
@@ -121,7 +122,8 @@ void registerProceduralWorldCommands()
         "Teleport to the highest accessible procedural room entrance",
         "procedural_world_teleport_highest",
         [](const std::vector<std::string>&) {
-            sendToServer("procedural_world_teleport_highest");
+            if (sendToServer("procedural_world_teleport_highest"))
+                clientProceduralTeleportShieldStart();
         },
         "2026-09-28",
         CommandCategory::Debug

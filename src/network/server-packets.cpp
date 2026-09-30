@@ -1296,7 +1296,7 @@ void handleTeleportRequest(const char* buffer, int bytes,
         requestedPosition,
         world.boundsMin - glm::vec3(2.0f),
         world.boundsMax + glm::vec3(2.0f));
-    beginAuthoritativeTransform(p, clampedPos, glm::vec3(0.0f), p.yaw, "teleport");
+    beginAuthoritativeTeleport(p, clampedPos, p.yaw, "teleport");
     p.onGround = false;
     printf("%s [SERVER TELEPORT] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u\n",
            serverTimestamp(), p.id, clampedPos.x, clampedPos.y, clampedPos.z, (unsigned)p.transformEpoch);
@@ -2156,6 +2156,21 @@ void beginAuthoritativeTransform(ServerPlayer& player,
            serverTimestamp(), player.id, reason,
            (unsigned)player.transformEpoch,
            position.x, position.y, position.z);
+}
+
+void beginAuthoritativeTeleport(ServerPlayer& player,
+    const glm::vec3& position, float yaw, const char* reason,
+    uint16_t invulnerabilityTicks)
+{
+    beginAuthoritativeTransform(player, position, glm::vec3(0.0f), yaw, reason);
+    player.onGround = false;
+    player.teleportInvulnerabilityTicks = invulnerabilityTicks;
+    if (invulnerabilityTicks > 0)
+    {
+        player.dead = false;
+        player.health = player.maxHealth > 0 ? player.maxHealth : serverMaxHp();
+        player.movement.movementEnabled = true;
+    }
 }
 
 std::string generateReconnectToken()

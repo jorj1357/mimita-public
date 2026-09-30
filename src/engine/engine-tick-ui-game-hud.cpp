@@ -19,6 +19,7 @@
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "network/multiplayer-context.h"
+#include "procedural/procedural-world-client.h"
 #include "network/community-server-config.h"
 #include "combat/death-system.h"
 #include "effects/effect-part.h"
@@ -68,6 +69,7 @@ extern bool gReplayCinematicMode;
 
 void engineTickUIGameHUD(Engine& engine, float dt)
 {
+    clientProceduralTeleportShieldRenderUi();
     Player& player = THE_PLAYER;
     Camera& camera = THE_CAMERA;
     World& world = THE_WORLD;

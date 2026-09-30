@@ -11,5 +11,13 @@
 
 #include "world/world.h"
 
+class Camera;
+class Player;
+
 void clientProceduralWorldTick(World& world);
 void clientProceduralWorldReset();
+void clientProceduralTeleportShieldStart();
+void clientProceduralTeleportShieldTick();
+void clientProceduralTeleportShieldRender(const Player& player,
+                                          const Camera& camera);
+void clientProceduralTeleportShieldRenderUi();

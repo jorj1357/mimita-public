@@ -564,7 +564,14 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         }
         auto oldIt = npcs.find(sn.entityId);
         if (oldIt != npcs.end())
+        {
             sn.posHistory = std::move(oldIt->second.posHistory);
+            // Procedural room membership belongs to the authoritative
+            // ServerNpc record. Preserve it when rebuilding the broadcast
+            // map, otherwise a dungeon NPC becomes room 0 on the next tick
+            // and room-clear detection can never find it.
+            sn.proceduralRoomNumber = oldIt->second.proceduralRoomNumber;
+        }
         next[sn.entityId] = std::move(sn);
         npcIdsAlive.insert(sn.entityId);
     }

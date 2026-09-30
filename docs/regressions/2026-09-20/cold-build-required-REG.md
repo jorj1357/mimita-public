@@ -1967,3 +1967,64 @@ teleport handoff, and normal movement after acknowledgement.
 
 Move the procedural room-slot presentation and teleport handoff policy behind
 the stable live boundary if further live tuning is required.
+
+## Cold-build occurrence 35
+
+UTC time:
+`2026-09-30T20:43:20Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_164000-procedural-teleport-handoff.md`
+
+### Why the cold build was required
+
+The procedural NPC membership preservation is owned by the cold server
+executable. The room-clear correction needed that owner compiled into the
+executable.
+
+### Exact cold source / boundary
+
+- `src/network/server-npcs.cpp`
+
+### Build result
+
+`python build_agent.py` returned `BUILD SUCCESS`, compiled 1 translation unit,
+skipped 502, and linked `C:\mimita-v9\mimita.exe`.
+
+### Human review
+
+Pending. Verify room 1 clears immediately after its one NPC dies and room 2
+spawns two NPCs.
+
+## Cold-build occurrence 36
+
+UTC time:
+`2026-09-30T21:01:24Z`
+
+Related changelog:
+`docs/changelog/2026-09-30/20260930_164000-procedural-teleport-handoff.md`
+
+### Why the cold build was required
+
+The authoritative teleport, fixed-tick invulnerability, and client shield
+rendering are cold executable owners. The requested behavior needed those
+owners compiled and linked into the executable.
+
+### Exact cold source / boundary
+
+- `src/network/server-packets.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-damage.cpp`
+- `src/procedural/procedural-world-client.cpp`
+
+### Build result
+
+The clean build completed successfully, and the final incremental build
+returned `BUILD SUCCESS`, compiled 1 changed translation unit, skipped 502,
+and linked `C:\mimita-v9\mimita.exe`. The preceding clean/integration build
+compiled the other new owners before this final correction.
+
+### Human review
+
+Pending. Test the exact-room teleport, 60-tick protection/countdown, and
+room-owned door replacement in a live Infinite Dungeon Slayer session.

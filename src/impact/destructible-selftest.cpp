@@ -791,10 +791,15 @@ bool destructibleSelfTest(std::string* outSummary)
         const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
         PhysicalEntity* crate = system.find(id);
         const glm::vec3 rayDir(0.0f, 0.0f, 1.0f);
-        // Shoot the same world axis repeatedly.
-        for (int i = 0; i < 12; ++i)
-            submitRifle(id, glm::vec3(0.0f, 0.0f, -3.5f), glm::vec3(0, 0, 1),
-                        rayDir, 0.02f, 100.0f, 0.6f, 1.0f, 0.0f);
+        // Shoot the same world axis, with the hit point advancing inward as a
+        // penetrating projectile would, so successive shots remove the material
+        // behind the previous hole until the path is clear.
+        for (int i = 0; i < 16; ++i)
+        {
+            const float z = -2.5f + (float)i * 0.3f;
+            submitRifle(id, glm::vec3(0.0f, 0.0f, z), glm::vec3(0, 0, 1),
+                        rayDir, 0.02f, 100.0f, 0.6f, 1.0f);
+        }
 
         const bool tunnelled = !rayHitsMesh(crate->localTriangles,
                                             glm::vec3(0.0f, 0.0f, -4.0f),

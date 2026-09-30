@@ -426,6 +426,11 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
     if (commandStr == "procedural_world_teleport_highest")
     {
         ServerGamemodeState& state = serverGamemodeState();
+        if (!state.procedural.enabled)
+        {
+            ack(false, "rejected: procedural world is not active");
+            return;
+        }
         state.pendingProcedural.teleportHighest = true;
         state.pendingProcedural.teleportRequesterId = it->second.id;
         ack(true, "applied: procedural_world_teleport_highest");

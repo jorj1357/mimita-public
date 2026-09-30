@@ -317,23 +317,28 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
     // each time (sweep contact point, surface roughened by earlier cuts). Dedup
     // by source identity plus a tolerance scaled to the cut size, not a fixed
     // 1e-4 that rejects almost nothing real. A shared predictionKey is exact.
-    for (const DestructionCut& existing : entity->destructible.cuts)
+    // Only a shot with a real source identity can be a duplicate. A zero
+    // source is an untracked impact and must always cut.
+    if (cut.sourceEntityId != 0)
     {
-        if (existing.sourceEntityId != cut.sourceEntityId)
-            continue;
-        const bool sameKey = cut.predictionKey != 0 &&
-                             existing.predictionKey == cut.predictionKey;
-        const float matchRadius =
-            0.5f * std::max(existing.cutter.radius, cut.cutter.radius);
-        const bool sameSpot =
-            glm::length(existing.cutter.localCenter - cut.cutter.localCenter) <=
-            std::max(matchRadius, 0.01f);
-        if (sameKey || sameSpot)
+        for (const DestructionCut& existing : entity->destructible.cuts)
         {
-            result.applied = true;
-            result.cutCreated = false;
-            result.cutRadius = existing.cutter.radius;
-            return result;
+            if (existing.sourceEntityId != cut.sourceEntityId)
+                continue;
+            const bool sameKey = cut.predictionKey != 0 &&
+                                 existing.predictionKey == cut.predictionKey;
+            const float matchRadius =
+                0.25f * std::max(existing.cutter.radius, cut.cutter.radius);
+            const bool sameSpot =
+                glm::length(existing.cutter.localCenter - cut.cutter.localCenter) <=
+                std::max(matchRadius, 0.01f);
+            if (sameKey || sameSpot)
+            {
+                result.applied = true;
+                result.cutCreated = false;
+                result.cutRadius = existing.cutter.radius;
+                return result;
+            }
         }
     }
 

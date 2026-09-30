@@ -10,11 +10,17 @@
 #include "procedural/procedural-world-client.h"
 
 #include <vector>
+#include <cstdio>
+#include <cstring>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "physics/physical-entity.h"
+#include "camera.h"
+#include "debug/debug-visuals.h"
+#include "entities/player.h"
+#include "gui/ui-system.h"
 #include "procedural/procedural-world.h"
 #include "network/community-match-client.h"
 #include "world/world-gltf-loader.h"
@@ -31,6 +37,7 @@ uint32_t gAppliedGeneratedRooms = 0;
 size_t gBaseVertexCount = 0;
 size_t gBaseBatchCount = 0;
 size_t gBaseCollisionCount = 0;
+uint16_t gTeleportShieldTicks = 0;
 
 void removeDoor()
 {
@@ -80,6 +87,44 @@ void clientProceduralWorldReset()
     gBaseVertexCount = 0;
     gBaseBatchCount = 0;
     gBaseCollisionCount = 0;
+    gTeleportShieldTicks = 0;
+}
+
+void clientProceduralTeleportShieldStart()
+{
+    gTeleportShieldTicks = 60;
+}
+
+void clientProceduralTeleportShieldTick()
+{
+    if (gTeleportShieldTicks > 0)
+        --gTeleportShieldTicks;
+}
+
+void clientProceduralTeleportShieldRender(const Player& player,
+                                          const Camera& camera)
+{
+    if (gTeleportShieldTicks == 0)
+        return;
+
+    DebugVis::drawFilledSphere(
+        camera, player.pos + glm::vec3(0.0f, 0.0f, 0.9f), 0.9f,
+        glm::vec4(0.45f, 1.0f, 0.92f, 0.28f),
+        glm::vec3(1.15f, 1.15f, 2.2f));
+}
+
+void clientProceduralTeleportShieldRenderUi()
+{
+    if (gTeleportShieldTicks == 0)
+        return;
+
+    char text[64];
+    std::snprintf(text, sizeof(text), "TELEPORT SHIELD: %u",
+                  (unsigned)gTeleportShieldTicks);
+    const float scale = 0.36f;
+    const float width = static_cast<float>(std::strlen(text)) * scale * 8.0f;
+    uiDrawText(text, uiScreenW() * 0.5f - width * 0.5f, 54.0f, scale,
+               glm::vec4(0.45f, 1.0f, 0.92f, 1.0f));
 }
 
 void clientProceduralWorldTick(World& world)
@@ -146,6 +191,11 @@ void clientProceduralWorldTick(World& world)
     const glm::vec3 half = MimitaProcedural::proceduralRoomDoorHalfExtents(
         *mode, *room);
 
+    // A room owns its own door. Do not move the previous room's entity to the
+    // new room: remove room N's door, then create a fresh room N+1 door.
+    if (gAppliedRoom != 0xFFFFFFFFu && gAppliedRoom != p.currentRoom)
+        removeDoor();
+
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
     PhysicalEntity* door = gDoorEntityId != 0 ? system.find(gDoorEntityId) : nullptr;
 
@@ -161,7 +211,8 @@ void clientProceduralWorldTick(World& world)
         return;
     }
 
-    system.moveKinematic(gDoorEntityId, transform, 0.0f);
+    // Keep the existing door fixed for this room. A new room takes the branch
+    // above and receives a new physical entity instead of a fast-moving door.
     gAppliedRoom = p.currentRoom;
     door->halfExtents = half;
 }

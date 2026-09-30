@@ -418,6 +418,10 @@ struct ServerPlayer
     uint32_t lastNpcDamageTick = 0;
     uint16_t transformEpoch = 0;
 
+    // Short protection window granted by a procedural-room teleport. This is
+    // server-owned and counted in fixed 60 Hz ticks; clients cannot extend it.
+    uint16_t teleportInvulnerabilityTicks = 0;
+
     // ── Input command buffer for server-side movement simulation ──────
     // Spec: server stores received input commands and simulates movement
     // from them using the shared movement kernel.
@@ -1141,6 +1145,13 @@ const std::string& getServerMapId();
 void beginAuthoritativeTransform(ServerPlayer& player,
     const glm::vec3& position, const glm::vec3& velocity, float yaw,
     const char* reason);
+
+// Shared discontinuous movement handoff. Teleports use this owner so the
+// server position, movement runtime, epoch, and optional protection window
+// are reset together.
+void beginAuthoritativeTeleport(ServerPlayer& player,
+    const glm::vec3& position, float yaw, const char* reason,
+    uint16_t invulnerabilityTicks = 0);
 
 // Post-tick helpers
 void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,

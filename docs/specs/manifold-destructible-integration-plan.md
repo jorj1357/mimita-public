@@ -392,6 +392,31 @@ meshes over the network; do not allow clients to send arbitrary geometry.
 
 ---
 
+## 10.1 Cut size (force × projectile size)
+
+The generated hole radius is config-driven from two independent contributions,
+so a small projectile with huge force can cut a big hole and a big projectile
+with little force a small one:
+
+```text
+sourceRadius = max(weapon.projectile_radius, weapon.projectile_base_radius)
+forceRadius  = cbrt(energy * angle * cut_energy_scale * material.holeEnergyScale)
+               * kCutRadiusEnergyScale
+sizeRadius   = sourceRadius * weapon.cut_radius_scale
+radius       = clamp(sourceRadius + forceRadius + sizeRadius,
+                     sourceRadius, material.maxCutRadius)
+```
+
+- `cut_energy_scale` (force) and `cut_radius_scale` (size) live in
+  `config/weapons.json` per weapon and are hot-reloadable.
+- `cut_radius_scale = 0` makes the hole force-only.
+- `ImpactEvent::sizeScale` carries the size term into the shared ImpactSystem so
+  no weapon-specific logic leaks in.
+- Both the server and the local prediction build the same event, so the hole is
+  identical on all clients.
+
+---
+
 ## 11. Diagnostics and performance
 
 Implemented diagnostics: per cut — entity id, source, radius, cut count, input
@@ -399,16 +424,23 @@ and output triangle counts, remaining volume, component/shell counts, boolean
 duration; failures recorded separately (invalid target, invalid cutter, boolean
 error, empty result, excessive triangle count).
 
-Known costs and guidance:
+Known costs and guidance (2026-09-30 status):
 
-- `DestructibleGeometrySystem::rebuild` replays the whole cut history each time
-  (`O(cuts)` Manifold subtractions). Fine for tens of cuts; for 999-shot bursts
-  this must become incremental (cache the running in-memory `Manifold`) and/or
-  move to a worker with the final swap on the physics tick.
-- `collectActorEntityContacts` rebuilds every entity's world triangles on every
-  solver iteration. This already existed and is the likely main frame cost when
-  near/touching a crate; cache transformed triangles per `(entity, geometryRevision,
-  transform)` when optimizing.
+- `DestructibleGeometrySystem::rebuild` is incremental now
+  (`booleanSubtractIncremental` caches the running in-memory `Manifold`), so a
+  new cut only subtracts the new cutter. A full replay still happens after a
+  rollback or a mesh re-initialize.
+- `collectActorEntityContacts` caches each entity's world-space expansion per
+  `(id, geometryRevision, transform)` *and* builds an `AabbTree` over it, passed
+  to `collectActorMeshContactsInto`, so the per-iteration narrowphase prunes by
+  the tree instead of scanning every crate triangle.
+- The projectiles' `queryEntityTrianglesSwept` (client and server) no longer
+  allocate an intermediate world-triangle vector; each triangle is transformed
+  and AABB-rejected inline.
+- Still linear/costly: the swept projectile query still transforms all entity
+  triangles of an overlapping entity (no per-entity tree for projectiles yet),
+  and there is no per-frame destruction/entity budget. These are the next perf
+  steps if the smaller fixes are not enough.
 - The generated-mesh render path uploads only when `(entity id, geometryRevision,
   vertex count)` changes. The box fallback re-uploads every frame.
 - Do not allocate large temporary arrays inside fixed-tick collision loops. Keep

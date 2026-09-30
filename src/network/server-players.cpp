@@ -589,6 +589,9 @@ void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uin
 
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 {
+    if (p.teleportInvulnerabilityTicks > 0)
+        --p.teleportInvulnerabilityTicks;
+
     // Apply input yaw BEFORE any non-dead early return.
     // Orientation comes from current input and must update every frame,
     // even when clientStateUpdated causes an early return.

@@ -36,6 +36,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "physics/physical-entity.h"
+#include "procedural/procedural-world-client.h"
 
 #include "pobjects/persistent-physics.h"
 #include "debug/debug-visuals.h"
@@ -435,6 +436,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         { MIMITA_PERF_SCOPE("Rendering::Actors::LocalPlayer");
           Perf::state().renderPerf.actorLocal++;
           renderPlayer(player, camera); }
+        clientProceduralTeleportShieldRender(player, camera);
         // Draw the local weapon now while the shared viewmodel still contains
         // the local transform calculated during WeaponSystem::update().
         // This prevents renderRemoteWeapon (below) from overwriting the transform
