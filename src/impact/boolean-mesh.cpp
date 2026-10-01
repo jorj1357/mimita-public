@@ -30,8 +30,13 @@ constexpr uint32_t kPropsPerVertex = 5; // x, y, z, u, v
 // segment count with radius so a hole keeps a roughly constant edge length.
 int circularSegmentsForRadius(float radius)
 {
-    const int estimate = (int)std::ceil((2.0f * 3.14159265f * radius) / 0.05f);
-    return std::clamp(estimate, 8, 48);
+    // Target a coarse-but-round edge length and cap the count. A rifle-scale
+    // hole (r ~1.3 m) previously hit the 48 cap and dominated the generated
+    // triangle count; 24 keeps the rim round while roughly halving the surface
+    // a cut adds. Raise the cap only if a human review says the holes look
+    // faceted (see manifold-destructible-integration-plan.md section 11).
+    const int estimate = (int)std::ceil((2.0f * 3.14159265f * radius) / 0.1f);
+    return std::clamp(estimate, 8, 24);
 }
 
 manifold::vec3 toVec3(const glm::vec3& v)

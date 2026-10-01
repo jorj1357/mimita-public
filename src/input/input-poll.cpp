@@ -104,6 +104,15 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.extendLeftMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     in.extendRightMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
 
+    static bool fisterFistPrev = false;
+    const bool fisterFist = in.extendLeftMouse;
+    in.fisterTogglePressed = glfwGetKey(win, GLFW_KEY_F8) == GLFW_PRESS;
+    in.fisterFistHeld = fisterFist;
+    in.fisterFistPressed = fisterFist && !fisterFistPrev;
+    in.fisterParryHeld = in.extendRightMouse;
+    in.fisterGrabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
+    fisterFistPrev = fisterFist;
+
     return in;
 }
 
@@ -176,6 +185,11 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     frame.grabRightHeld = glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS;
     frame.extendLeftMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     frame.extendRightMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
+    frame.fisterTogglePressed = glfwGetKey(win, GLFW_KEY_F8) == GLFW_PRESS;
+    frame.fisterFistHeld = frame.extendLeftMouse;
+    frame.fisterParryHeld = frame.extendRightMouse;
+    frame.fisterGrabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
 
     consumeTerminalInputOverride();
     return frame;

@@ -16,6 +16,7 @@
 #include <glm/glm.hpp>
 
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/collision-aabb-tree.h"
 #include "physics/physical-entity.h"
 
 ClientCollisionWorldView::ClientCollisionWorldView(
@@ -186,6 +187,7 @@ void ClientCollisionWorldView::queryEntityTrianglesSwept(
     queryBounds.min = glm::min(from, to) - glm::vec3(radius);
     queryBounds.max = glm::max(from, to) + glm::vec3(radius);
 
+    static thread_local std::vector<int> triHits;
     for (const PhysicalEntity& entity : PhysicalEntitySystem::instance().entities())
     {
         if (entity.localTriangles.empty())
@@ -197,33 +199,20 @@ void ClientCollisionWorldView::queryEntityTrianglesSwept(
         if (glm::length(center - closest) > entityRadius)
             continue;
 
-        for (const CollisionTriangle& local : entity.localTriangles)
+        // Reuse the shared cached world expansion + AABB tree so a sweep near a
+        // cut crate transforms and indexes the surface once per geometry
+        // revision instead of once per substep.
+        const EntitySurfaceCacheView view = cachedEntitySurface(entity);
+        triHits.clear();
+        view.tree->query(queryBounds, triHits);
+        // Restore local-triangle order so the deterministic first-hit tie-break
+        // stays identical to the previous linear scan.
+        std::sort(triHits.begin(), triHits.end());
+        for (int idx : triHits)
         {
-            // Transform once and reject on the triangle AABB before writing the
-            // output; no intermediate world-triangle vector is allocated.
-            CollisionTriangle worldTriangle;
-            worldTriangle.a = glm::vec3(entity.transform * glm::vec4(local.a, 1.0f));
-            worldTriangle.b = glm::vec3(entity.transform * glm::vec4(local.b, 1.0f));
-            worldTriangle.c = glm::vec3(entity.transform * glm::vec4(local.c, 1.0f));
-
-            AABB triangleBounds;
-            triangleBounds.min = glm::min(worldTriangle.a,
-                                          glm::min(worldTriangle.b, worldTriangle.c)) -
-                                 glm::vec3(radius);
-            triangleBounds.max = glm::max(worldTriangle.a,
-                                          glm::max(worldTriangle.b, worldTriangle.c)) +
-                                 glm::vec3(radius);
-            if (!overlaps(queryBounds, triangleBounds))
-                continue;
-
-            const glm::vec3 n = glm::cross(worldTriangle.b - worldTriangle.a,
-                                           worldTriangle.c - worldTriangle.a);
-            worldTriangle.normal = glm::length(n) > 1e-9f
-                ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
-
             SweptEntityTriangle swept;
             swept.entityId = entity.id;
-            swept.triangle = worldTriangle;
+            swept.triangle = view.meshCache->triangles[idx];
             out.push_back(swept);
         }
     }

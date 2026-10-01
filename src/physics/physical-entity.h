@@ -96,6 +96,7 @@ struct PhysicalEntity {
 class Camera;
 class Player;
 struct World;
+struct AabbTree;
 
 class PhysicalEntitySystem {
 public:
@@ -180,6 +181,21 @@ void refreshEntityMassProperties(PhysicalEntity& entity);
 void buildBoxCollisionTriangles(std::vector<CollisionTriangle>& out,
                                 const glm::vec3& center,
                                 const glm::vec3& half);
+
+// Cached world-space expansion of one entity's local collision surface.
+struct EntitySurfaceCacheView
+{
+    CollisionMeshCache* meshCache = nullptr; // world triangles + per-tri AABBs
+    const AabbTree* tree = nullptr;          // index over meshCache->triangles
+};
+
+// Returns `entity`'s cached world-space collision surface, rebuilding it only
+// when the entity id, destructible geometry revision, transform, or triangle
+// count changed. Shared by the actor contact pass and the projectile entity
+// sweep so the transform work and spatial index are built once per revision
+// instead of once per query. Thread-local and transient: the returned pointers
+// are invalidated by the next call for a different revision or pose.
+EntitySurfaceCacheView cachedEntitySurface(const PhysicalEntity& entity);
 
 // One actor-vs-entity contact. `contact.label` is the actor part, `contact.entityId`
 // is the support entity, and `contact.surfaceVelocity` is that entity's velocity.

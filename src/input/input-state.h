@@ -31,4 +31,10 @@ struct InputState {
     bool grabRightHeld = false;
     bool extendLeftMouse = false;
     bool extendRightMouse = false;
+
+    bool fisterTogglePressed = false;
+    bool fisterFistHeld = false;
+    bool fisterFistPressed = false;
+    bool fisterParryHeld = false;
+    bool fisterGrabHeld = false;
 };

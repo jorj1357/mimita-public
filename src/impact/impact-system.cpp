@@ -312,10 +312,48 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
         const glm::vec3 localDir = glm::normalize(
             glm::vec3(inverse * glm::vec4(resolved.worldDirection, 0.0f)));
         const float half = 0.5f * resolved.boreLength;
+
+        // Repeated shots resolve to the same entry surface: the projectile
+        // sweep stops at the first lip of the crater it already made, so the
+        // cut would land in already-empty space and be a no-op (the reported
+        // "shooting the same hole does not deepen" regression). Walk the bore
+        // forward: find every bore on this entity aimed the same way whose axis
+        // passes through the new entry, then begin this one past the deepest
+        // end of that tunnel family so it deepens each shot. Deterministic from
+        // the cut history, so every peer reaches the same geometry.
+        const float sameEntry = std::max(0.35f * radius, 0.05f);
+        float deepestAlongAxis = 0.0f;
+        bool haveAxis = false;
+        for (const DestructionCut& existing : entity->destructible.cuts)
+        {
+            if (existing.cutter.type != BooleanCutterType::Capsule)
+                continue;
+            if (glm::dot(existing.cutter.localDirection, localDir) < 0.9f)
+                continue;
+            const glm::vec3 start = existing.cutter.localCenter -
+                existing.cutter.localDirection *
+                    (0.5f * existing.cutter.length);
+            const glm::vec3 offset = localPoint - start;
+            const glm::vec3 perp = offset -
+                existing.cutter.localDirection *
+                    glm::dot(offset, existing.cutter.localDirection);
+            if (glm::length(perp) > sameEntry)
+                continue;
+            const glm::vec3 end = start +
+                existing.cutter.localDirection * existing.cutter.length;
+            const float along = glm::dot(end - localPoint, localDir);
+            if (!haveAxis || along > deepestAlongAxis)
+            {
+                deepestAlongAxis = along;
+                haveAxis = true;
+            }
+        }
+
         cut.cutter.type = BooleanCutterType::Capsule;
         cut.cutter.localDirection = localDir;
         cut.cutter.length = resolved.boreLength;
-        cut.cutter.localCenter = localPoint + localDir * half;
+        cut.cutter.localCenter = localPoint +
+            localDir * (haveAxis ? deepestAlongAxis + 0.5f * half : 0.5f * half);
     }
     else
     {

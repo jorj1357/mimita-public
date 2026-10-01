@@ -29,7 +29,11 @@ static glm::vec3 closestPointOnTriangle(
     if (d3 >= 0.0f && d4 <= d3) return b;
     glm::vec3 cp = p - c;
     float d5 = glm::dot(ab, cp), d6 = glm::dot(ac, cp);
-    if (d5 >= 0.0f && d6 >= 0.0f) return c;
+    // Vertex C region (Ericson, ClosestPtPointTriangle): the point is beyond C
+    // when d6 >= 0 and d5 <= d6. The previous test (d5 >= 0 && d6 >= 0) rarely
+    // fired for points past C and let the interior branch return a plane point
+    // outside the triangle, fabricating a sphere overlap where none exists.
+    if (d6 >= 0.0f && d5 <= d6) return c;
     float vc = d1 * d4 - d3 * d2;
     if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
         return a + (d1 / (d1 - d3)) * ab;

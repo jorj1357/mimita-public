@@ -38,6 +38,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "terminal/terminal-state.h"
+#include "fister/fister-port.h"
 
 static float shortestAngleDegrees(float from, float to)
 {
@@ -366,6 +367,9 @@ void physicsMainUpdate(
     int subSteps,
     const MovementConfig* overrideConfig
 ){
+    if (FisterPort::tick(p, world, input, dt))
+        return;
+
     // Use buffered actions so quick presses survive frame drops.
     // consumeBuffered* returns true if a press happened within the buffer window,
     // and clears the buffer to prevent double-consumption.

@@ -33,6 +33,7 @@
 #include "npc/npc-difficulty-config.h"
 #include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/collision-aabb-tree.h"
 #include "physics/physical-entity.h"
 #include "impact/impact-system.h"
 
@@ -530,6 +531,7 @@ public:
         queryBounds.min = glm::min(from, to) - glm::vec3(radius);
         queryBounds.max = glm::max(from, to) + glm::vec3(radius);
 
+        static thread_local std::vector<int> triHits;
         for (const PhysicalEntity& entity : PhysicalEntitySystem::instance().entities())
         {
             if (entity.localTriangles.empty())
@@ -543,30 +545,20 @@ public:
                 continue;
 
             // localTriangles already holds the destructible surface once cut.
-            // Transform each triangle once, inline into the output, and reject
-            // with a per-triangle AABB before it is ever copied. No intermediate
-            // world-triangle vector, so a sweep near a cut crate allocates
-            // nothing per entity per substep.
-            for (const CollisionTriangle& tri : entity.localTriangles)
+            // Reuse the shared cached world expansion + AABB tree so a sweep
+            // near a cut crate transforms and indexes the surface once per
+            // geometry revision instead of once per substep.
+            const EntitySurfaceCacheView view = cachedEntitySurface(entity);
+            triHits.clear();
+            view.tree->query(queryBounds, triHits);
+            // Restore local-triangle order so the deterministic first-hit
+            // tie-break stays identical to the previous linear scan.
+            std::sort(triHits.begin(), triHits.end());
+            for (int idx : triHits)
             {
-                CollisionTriangle wt;
-                wt.a = glm::vec3(entity.transform * glm::vec4(tri.a, 1.0f));
-                wt.b = glm::vec3(entity.transform * glm::vec4(tri.b, 1.0f));
-                wt.c = glm::vec3(entity.transform * glm::vec4(tri.c, 1.0f));
-
-                AABB triBounds;
-                triBounds.min = glm::min(wt.a, glm::min(wt.b, wt.c)) - glm::vec3(radius);
-                triBounds.max = glm::max(wt.a, glm::max(wt.b, wt.c)) + glm::vec3(radius);
-                if (!overlaps(queryBounds, triBounds))
-                    continue;
-
-                const glm::vec3 n = glm::cross(wt.b - wt.a, wt.c - wt.a);
-                wt.normal = glm::length(n) > 1e-9f
-                    ? glm::normalize(n) : glm::vec3(0.0f, 0.0f, 1.0f);
-
                 SweptEntityTriangle swept;
                 swept.entityId = entity.id;
-                swept.triangle = wt;
+                swept.triangle = view.meshCache->triangles[idx];
                 out.push_back(swept);
             }
         }

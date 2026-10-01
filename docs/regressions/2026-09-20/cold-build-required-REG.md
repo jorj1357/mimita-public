@@ -2028,3 +2028,61 @@ compiled the other new owners before this final correction.
 
 Pending. Test the exact-room teleport, 60-tick protection/countdown, and
 room-owned door replacement in a live Infinite Dungeon Slayer session.
+
+## Cold-build occurrence 37
+
+UTC time:
+`2026-10-01T13:43:29Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_134329-destructible-crater-penetration.md`
+
+### Why the cold build was required
+
+The destructible penetration fix lives in the shared projectile sweep and the
+boolean wrapper, both cold executable owners. The self-tests (`--destructible`,
+`--moving-crate`, `--destruction-replication`) are compiled into the executable,
+so proving the fix required a relink; there is no live-reload path for these
+translation units in this build.
+
+### Exact cold source / boundary
+
+- `src/combat/projectile-simulation.cpp` (projectile sweep narrowphase)
+- `src/impact/boolean-mesh.cpp` (cutter tessellation)
+- `src/physics/physical-entity.{h,cpp}` (shared cached entity surface)
+- `src/network/server-projectiles.cpp` (server projectile entity query)
+- `src/combat/client-collision-world-view.cpp` (client projectile entity query)
+- `src/impact/destructible-selftest.cpp` (full-chain self-test)
+
+### Build result
+
+`python build.py build-only` completed successfully and relinked
+`C:\mimita-v9\mimita.exe`. Each incremental run recompiled the changed
+translation units (verified by object mtimes) and linked a fresh executable.
+`mimita.exe --destructible-selftest`, `--moving-crate-selftest`, and
+`--destruction-replication-selftest` all reported PASS after the final build.
+
+### What the cold build was needed to prove
+
+That the corrected `closestPointOnTriangle` vertex-C region test stops the
+phantom sphere/triangle overlap at a crater's entry plane, so repeated shots on
+one crater monotonically deepen it and eventually penetrate the crate, without
+regressing actor contacts, moving crates, or destruction replication.
+
+### Why live activation was impossible
+
+The projectile kernel, boolean wrapper, and entity query are statically linked
+into the executable; the project's live path does not hot-replace these cold
+owners.
+
+### Smallest change that would make this hot
+
+Expose the projectile narrowphase and boolean wrapper as replaceable game
+modules under the live-code-development contract so a kernel fix can be loaded
+without a full relink. Until then, a cold build is required for these owners.
+
+### Next migration/falsification step
+
+Measure whether the shared entity surface cache and AABB tree survive a runtime
+stress pass (many moving entities + repeated cuts) without cache thrash; if they
+do not help, the tree query can be falsified and removed.

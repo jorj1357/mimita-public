@@ -48,6 +48,10 @@ static InputState inputStateFromFrame(const InputFrame& frame)
     state.downDashPressed = frame.downDashPressed;
     state.freezeHeld = frame.freezeHeld;
     state.freezePressed = frame.freezePressed;
+    state.fisterTogglePressed = frame.fisterTogglePressed;
+    state.fisterFistHeld = frame.fisterFistHeld;
+    state.fisterParryHeld = frame.fisterParryHeld;
+    state.fisterGrabHeld = frame.fisterGrabHeld;
 
     float yawRad = glm::radians(frame.lookYaw);
     float pitchRad = glm::radians(frame.lookPitch);

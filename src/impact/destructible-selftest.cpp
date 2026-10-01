@@ -950,34 +950,8 @@ bool destructibleSelfTest(std::string* outSummary)
             if (!hit)
             {
                 // The kernel found no surface along the ray: the tunnel is open.
-                report += "  INFO: shot ";
-                report += std::to_string(shot);
-                report += " no surface -> tunnel\n";
                 tunnelled = true;
                 break;
-            }
-            {
-                int nearEntry = 0;
-                for (const CollisionTriangle& t : crate->localTriangles)
-                    for (const glm::vec3& v : {t.a, t.b, t.c})
-                        if (glm::length(v - glm::vec3(0, 0, -2.5)) < 0.25f)
-                            ++nearEntry;
-                char info[260];
-                const DestructionCut& lc = crate->destructible.cuts.empty()
-                    ? DestructionCut{} : crate->destructible.cuts.back();
-                std::snprintf(info, sizeof(info),
-                    "  INFO: shot %d hit=(%.2f %.2f %.2f) n=(%.2f %.2f %.2f) cutType=%u c=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f) r=%.2f len=%.2f tris=%zu vol=%.3f\n",
-                    shot, step.hitPosition.x, step.hitPosition.y, step.hitPosition.z,
-                    step.hitNormal.x, step.hitNormal.y, step.hitNormal.z,
-                    (unsigned)lc.cutter.type,
-                    lc.cutter.localCenter.x, lc.cutter.localCenter.y, lc.cutter.localCenter.z,
-                    lc.cutter.localDirection.x, lc.cutter.localDirection.y, lc.cutter.localDirection.z,
-                    lc.cutter.radius, lc.cutter.length,
-                    crate->localTriangles.size(), crate->destructible.remainingVolume);
-                report += info;
-                char ne[64];
-                std::snprintf(ne, sizeof(ne), "      nearEntry=%d\n", nearEntry);
-                report += ne;
             }
 
             // Cut at the surface the bolt reached, then advance a little past it

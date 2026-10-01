@@ -1,0 +1,16 @@
+{
+  "enabled": false,
+  "version": 1,
+  "terrain_impacts": false,
+  "target_policy": "players_and_npcs_only",
+  "body_model": "assets/fister/model/john_fister.glb",
+  "body_height": 2.6,
+  "health": 200,
+  "controls": {
+    "toggle": "F8",
+    "fist": "mouse_left",
+    "parry": "mouse_right",
+    "grab": "E"
+  },
+  "notes": "v1 Fister impacts never damage or modify destructible terrain."
+}

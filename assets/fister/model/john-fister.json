@@ -1,0 +1,60 @@
+{
+  "name": "John Fister",
+  "source": "Fister dev branch: shared/gameplay/GameWorld.ts JOHN_FISTER_COSMETICS, packages/fister-client/src/graphics/PlayerMesh.ts",
+  "space": "Avatar space: Y up, the avatar faces +Z, units as in Fister (treated as metres). The origin (avatar root) is 1.0 above the feet. NOTE: the mesh named rightArm sits at +X, which is the avatar's anatomical left because he faces +Z.",
+  "height": 2.6,
+  "feetY": -1.0,
+  "headTopY": 1.6,
+  "physicsCapsule": { "radius": 0.4, "height": 1.6, "centreAboveFeet": 0.8, "mass": 72 },
+  "hierarchy": "All six parts are siblings under the root. Limbs are not children of the torso: poses move and rotate each part independently, and the punching arm translates 1.5 units forward from the shoulder.",
+  "rotationOrder": "Euler XYZ, radians, about each part's pivot",
+  "flipPivotY": 0.75,
+  "parts": {
+    "torso":    { "size": [1.0, 1.0, 0.5],   "origin": [0.0, 0.5, 0.0],   "boxCentreInPart": [0.0, 0.0, 0.0],  "pivot": "box centre",     "color": "#FBD7A7" },
+    "head":     { "size": [0.6, 0.6, 0.6],   "origin": [0.0, 1.3, 0.0],   "boxCentreInPart": [0.0, 0.0, 0.0],  "pivot": "box centre",     "color": "#FAD7B2" },
+    "leftArm":  { "size": [0.35, 1.0, 0.35], "origin": [-0.7, 1.0, 0.0],  "boxCentreInPart": [0.0, -0.5, 0.0], "pivot": "top (shoulder)", "color": "#FAD7B2" },
+    "rightArm": { "size": [0.35, 1.0, 0.35], "origin": [0.7, 1.0, 0.0],   "boxCentreInPart": [0.0, -0.5, 0.0], "pivot": "top (shoulder)", "color": "#FAD7B2", "role": "the punching and charging arm" },
+    "leftLeg":  { "size": [0.4, 1.0, 0.4],   "origin": [-0.25, 0.0, 0.0], "boxCentreInPart": [0.0, -0.5, 0.0], "pivot": "top (hip)",      "color": "#5C66F5" },
+    "rightLeg": { "size": [0.4, 1.0, 0.4],   "origin": [0.25, 0.0, 0.0],  "boxCentreInPart": [0.0, -0.5, 0.0], "pivot": "top (hip)",      "color": "#6168F5" }
+  },
+  "outline": { "style": "inverted hull", "color": "#080808", "thicknessPerSide": 0.03 },
+  "shading": "Flat colour per part, three-band cel shading in the original (bands at 0.42 / 0.74 / 1.0 of light).",
+  "outfit": {
+    "hat": {
+      "id": "Yeehaw", "file": "source/Yeehaw.glb", "parent": "head",
+      "offset": [0.0, 0.29, 0.0], "scale": 0.164, "rotationDegrees": [0.0, 270.0, 0.0],
+      "notes": "Untextured: four dark-brown meshes and a gold star."
+    },
+    "shirt": {
+      "id": "parriedchud_shirt", "file": "source/parriedchud_shirt.jpg", "color": "#f700ff",
+      "body": { "parent": "torso", "box": [1.01, 1.01, 0.51], "centre": [0.0, 0.0, 0.0] },
+      "front": { "parent": "torso", "plane": [1.012, 1.012], "z": 0.258, "notes": "The image covers the whole chest; no back, top or bottom image." },
+      "sleeves": { "parents": ["leftArm", "rightArm"], "box": [0.36, 0.5, 0.36], "centre": [0.0, -0.24, 0.0] }
+    },
+    "face": {
+      "id": "chudface", "file": "source/chudface.png", "parent": "head",
+      "plane": [0.55, 0.55], "offset": [0.0, 0.0, 0.31], "blend": "alpha"
+    },
+    "badge": {
+      "id": "fistedagainbadge", "file": "source/fistedagainbadge.glb", "parent": "torso",
+      "offset": [-0.55, -0.01, 0.25], "scale": 2.0, "rotationRadians": [1.5707963, 0.0, 0.0],
+      "notes": "Textured (embedded image). It overhangs the torso's -X edge slightly, as in the original."
+    },
+    "none": ["gloves", "shoes", "pants", "cape", "trail"]
+  },
+  "ragdoll": {
+    "masses": { "torso": 30, "head": 8, "arm": 5, "leg": 12 },
+    "joints": {
+      "neck":     { "onTorso": [0.0, 0.5, 0.0],    "onChild": [0.0, -0.3, 0.0], "coneDegrees": 40, "twistDegrees": 45 },
+      "shoulder": { "onTorso": ["+/-0.5", 0.35, 0.0], "onChild": [0.0, 0.5, 0.0], "coneDegrees": 75, "twistDegrees": 60 },
+      "hip":      { "onTorso": ["+/-0.2", -0.5, 0.0], "onChild": [0.0, 0.5, 0.0], "coneDegrees": 60, "twistDegrees": 30 }
+    },
+    "damping": { "linear": 0.1, "angular": 3.0 }, "friction": 0.3, "restitution": 0.1
+  },
+  "camera": {
+    "default": "third person",
+    "anchor": "head position + 1.25 up", "distance": 5.0, "tiltDegrees": 16, "fovVerticalDegrees": 120,
+    "speedFovPushDegrees": 6
+  },
+  "health": { "max": 200, "regeneration": "none; a successful parry heals fully" }
+}

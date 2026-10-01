@@ -456,10 +456,17 @@ Known costs and guidance (2026-09-30 status):
 - The projectiles' `queryEntityTrianglesSwept` (client and server) no longer
   allocate an intermediate world-triangle vector; each triangle is transformed
   and AABB-rejected inline.
-- Still linear/costly: the swept projectile query still transforms all entity
-  triangles of an overlapping entity (no per-entity tree for projectiles yet).
-  A per-entity projectile AabbTree and triangle simplification are the next perf
-  steps if the batched flush is not enough.
+- Shared entity surface cache + tree (2026-10-01): the world-space expansion
+  and `AabbTree` previously private to `collectActorEntityContacts` now live in
+  one owner, `cachedEntitySurface` (`src/physics/physical-entity.{h,cpp}`). The
+  server and client projectile entity queries reuse it and query the tree
+  instead of re-transforming the whole surface per substep. The cache key is
+  `(id, geometryRevision, transform, triangle count)`.
+- Cutter tessellation (2026-10-01): `circularSegmentsForRadius` now targets a
+  0.1 m edge length and clamps to `[8, 24]` (was `0.05` / `[8, 48]`). A
+  rifle-scale rim (r ~1.29) no longer hits the 48 cap; generated triangles after
+  five self-test shots fell from 2116 to 814. Raise the cap only if human review
+  reports faceted holes.
 - The generated-mesh render path uploads only when `(entity id, geometryRevision,
   vertex count)` changes. The box fallback re-uploads every frame.
 - Do not allocate large temporary arrays inside fixed-tick collision loops. Keep
@@ -487,9 +494,19 @@ Implemented / passing (`mimita.exe --destructible-selftest`,
 - Projectile sweep detects the crate (`EntityImpact`).
 - Same `PhysicalEntity` falls, rests, collides; sleep and player push still work.
 
+Implemented 2026-10-01:
+
+- Repeated same-spot deepening and eventual penetration are now covered by
+  `mimita.exe --destructible-selftest` test 23, which drives the real projectile
+  kernel and asserts no cut-history stall, each shot reaching a deeper surface,
+  and a fully open tunnel. The blocking bug was
+  `closestPointOnTriangle`'s wrong vertex-C region test
+  (`src/combat/projectile-simulation.cpp`), which returned a point outside a
+  crater-rim triangle and fabricated a sphere overlap on the entry plane.
+
 Still to add:
 
-- Multiple separated cuts; repeated same-spot deepening.
+- Multiple separated cuts.
 - No-op when a shot misses.
 - Component count reported for a fractured/disconnected result (fracture still
   off).
