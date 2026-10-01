@@ -2412,3 +2412,53 @@ Run a real hole-cutting session and read `PERFORMANCE_FRAME`
 `max_destruction_ms`; if a single cut still spikes, the remaining cost is inside
 Manifold's subtraction on the grown running solid and should be moved to a
 worker/incremental job (spec section 45).
+
+## Cold-build occurrence 44
+
+UTC time:
+`2026-10-01T21:28:37Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_212837-fracture-incremental-decompose.md`
+
+### Why the cold build was required
+
+The boolean wrapper, the destructible-geometry fracture path, the flush loop, and
+the config/self-test are cold executable owners. Verifying the incremental
+decompose, the disconnected-only default, the cooldown/budget, and the cut
+batching required compiling and linking.
+
+### Exact cold source / boundary
+
+- `src/impact/boolean-mesh.{h,cpp}`
+- `src/impact/destructible-geometry.{h,cpp}`, `impact-system.cpp`,
+  `destructible-world-config.cpp`, `destructible-selftest.cpp`
+- `src/physics/physical-entity.cpp`
+- `config/destructible-world.json` (hot)
+
+### Build result
+
+`python build.py build-only` completed successfully. All five self-tests PASS.
+`--physical-perf-selftest`: moving 2.6 ms/tick (TARGET 4 ms MET); full-auto drain
+avg 0.26 ms / max 0.86 ms per flush.
+
+### What the cold build was needed to prove
+
+That fracture no longer replays the cut history, that ordinary holey crates no
+longer fracture, that a full-auto burst drains within a fraction of a ms per
+flush, and that the updated config parses.
+
+### Why live activation was impossible
+
+These owners are statically linked; only the JSON config is hot.
+
+### Smallest change that would make this hot
+
+Move the boolean wrapper + fracture path behind the live-module boundary so cut
+and fracture tuning reload without a relink.
+
+### Next migration/falsification step
+
+If a live burst still spikes, measure `max_destruction_ms` for a single subtract
+on the grown running solid; if that single op is the cost, move the CSG to a
+worker/incremental job (spec section 45).

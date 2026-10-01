@@ -127,6 +127,14 @@ bool DestructibleWorldConfig::load(const std::string& path)
 
         if (fracture.contains("enabled") && fracture["enabled"].is_boolean())
             mFractureTuning.enabled = fracture["enabled"].get<bool>();
+        if (fracture.contains("unbalancedEnabled") &&
+            fracture["unbalancedEnabled"].is_boolean())
+            mFractureTuning.unbalancedEnabled =
+                fracture["unbalancedEnabled"].get<bool>();
+        if (fracture.contains("fractureCooldownTicks") &&
+            fracture["fractureCooldownTicks"].is_number_unsigned())
+            mFractureTuning.fractureCooldownTicks =
+                fracture["fractureCooldownTicks"].get<uint32_t>();
         if (fracture.contains("minPieceVolumeFraction") &&
             fracture["minPieceVolumeFraction"].is_number())
             mFractureTuning.minPieceVolumeFraction =

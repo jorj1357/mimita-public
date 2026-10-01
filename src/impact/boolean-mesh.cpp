@@ -699,6 +699,40 @@ BooleanMesh booleanUnion(const std::vector<BooleanMesh>& meshes, uint32_t materi
     return result;
 }
 
+namespace {
+
+// Splits one accumulated solid into its positive-volume pieces, largest first.
+// Shared by the full-replay path and the incremental (cached running solid)
+// path so a fracture never has to re-subtract the whole cut history.
+std::vector<BooleanPiece> decomposeManifold(const manifold::Manifold& difference,
+                                            uint32_t baseRunId,
+                                            const BooleanMesh& base)
+{
+    std::vector<BooleanPiece> pieces;
+    const std::vector<manifold::Manifold> shells = difference.Decompose();
+    const glm::vec3 half = meshHalfExtent(base);
+    for (const manifold::Manifold& shell : shells)
+    {
+        const double volume = shell.Volume();
+        if (!(volume > 1e-6))
+            continue; // interior cavity / negative or empty shell: not matter.
+        BooleanPiece piece;
+        piece.mesh = fromMeshGL(shell.GetMeshGL(), baseRunId,
+                                base.vertices[0].materialId, half);
+        piece.volume = (float)volume;
+        if (!piece.mesh.empty())
+            piece.centroid = computeCentroid(piece.mesh);
+        pieces.push_back(std::move(piece));
+    }
+    std::sort(pieces.begin(), pieces.end(),
+              [](const BooleanPiece& a, const BooleanPiece& b) {
+                  return a.volume > b.volume;
+              });
+    return pieces;
+}
+
+} // anonymous namespace
+
 std::vector<BooleanPiece> booleanDecomposePieces(const BooleanMesh& base,
                                                  const std::vector<BooleanCutter>& cutters)
 {
@@ -734,27 +768,23 @@ std::vector<BooleanPiece> booleanDecomposePieces(const BooleanMesh& base,
             return {};
     }
 
-    const std::vector<manifold::Manifold> shells = difference.Decompose();
-    const glm::vec3 half = meshHalfExtent(base);
-    for (const manifold::Manifold& shell : shells)
-    {
-        const double volume = shell.Volume();
-        if (!(volume > 1e-6))
-            continue; // interior cavity / negative or empty shell: not matter.
-        BooleanPiece piece;
-        piece.mesh = fromMeshGL(shell.GetMeshGL(), baseRunId,
-                                base.vertices[0].materialId, half);
-        piece.volume = (float)volume;
-        if (!piece.mesh.empty())
-            piece.centroid = computeCentroid(piece.mesh);
-        pieces.push_back(std::move(piece));
-    }
+    return decomposeManifold(difference, baseRunId, base);
+}
 
-    std::sort(pieces.begin(), pieces.end(),
-              [](const BooleanPiece& a, const BooleanPiece& b) {
-                  return a.volume > b.volume;
-              });
-    return pieces;
+std::vector<BooleanPiece> booleanDecomposeIncremental(uint64_t sessionId,
+                                                      const BooleanMesh& base)
+{
+    // Decompose the cached running solid directly instead of rebuilding it by
+    // replaying the whole cut history. This is the fix for the fracture path
+    // that cost hundreds of ms per tick on a crate full of holes.
+    if (sessionId != 0)
+    {
+        std::lock_guard<std::mutex> lock(gSessionMutex);
+        auto it = gSessions.find(sessionId);
+        if (it != gSessions.end() && !it->second.running.IsEmpty())
+            return decomposeManifold(it->second.running, it->second.baseRunId, base);
+    }
+    return booleanDecomposePieces(base, {});
 }
 
 } // namespace MimitaImpact

@@ -722,8 +722,13 @@ bool destructibleSelfTest(std::string* outSummary)
         DestructibleGeometrySystem::instance().addCut(crate->destructible, lobe);
         crate->localTriangles = crate->destructible.collisionTriangles;
 
-        const FractureDecision decision = evaluateFracture(
-            crate->destructible, DestructibleGeometrySystem::instance().fractureTuning);
+        // The unbalanced-support heuristic is opt-in (config) because it fired
+        // on ordinary holey crates; enable it just for this check.
+        FractureTuning& tuning = DestructibleGeometrySystem::instance().fractureTuning;
+        const bool savedUnbalanced = tuning.unbalancedEnabled;
+        tuning.unbalancedEnabled = true;
+        const FractureDecision decision = evaluateFracture(crate->destructible, tuning);
+        tuning.unbalancedEnabled = savedUnbalanced;
         check(crate->destructible.componentCount == 1,
               "the unbalanced cut leaves one connected piece");
         check(decision.shouldFracture &&

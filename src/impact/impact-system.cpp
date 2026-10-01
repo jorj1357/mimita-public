@@ -531,15 +531,35 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
     // flush.
     std::vector<uint32_t> pendingIds;
     for (const PhysicalEntity& e : system.entities())
-        if (e.destructible.enabled && e.destructible.pendingCutCount != 0)
+        if (e.destructible.enabled &&
+            (e.destructible.pendingCutCount != 0 ||
+             e.destructible.lastFractureReason != FractureReason::None))
             pendingIds.push_back(e.id);
 
     for (uint32_t id : pendingIds)
     {
         PhysicalEntity* entity = system.find(id);
-        if (!entity || !entity->destructible.enabled ||
-            entity->destructible.pendingCutCount == 0)
+        if (!entity || !entity->destructible.enabled)
             continue;
+        if (entity->destructible.pendingCutCount == 0 &&
+            entity->destructible.lastFractureReason == FractureReason::None)
+            continue;
+
+        // Spend the per-tick budget before starting more work so remaining
+        // entities (and fractures) are deferred instead of blowing the frame.
+        if (budgetMs > 0.0f)
+        {
+            const float spent = std::chrono::duration<float, std::milli>(
+                std::chrono::steady_clock::now() - start).count();
+            if (spent >= budgetMs)
+            {
+                Debug::logThrottled(Debug::Category::General, "destruction-budget",
+                                    0.5f,
+                    "[DESTRUCTION BUDGET] flush paused before entity=%u after %.2fms\n",
+                    id, spent);
+                break;
+            }
+        }
 
         recordCrashBreadcrumb("flush", "entity=%u pending=%u",
             id, entity->destructible.pendingCutCount);
@@ -577,19 +597,35 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
         // Fracture can reallocate the entity vector; re-fetch after it.
         if (entity->destructible.lastFractureReason != FractureReason::None)
         {
-            ImpactResult fractureResult;
-            const std::vector<uint32_t> fragments =
-                applyFracture(*entity, fractureResult, false);
-            if (!fragments.empty())
+            const uint64_t tick = system.simulationTick();
+            const uint32_t cooldown =
+                config.fractureTuning().fractureCooldownTicks;
+            if (!entity->destructible.hasFractured || cooldown == 0 ||
+                tick - entity->destructible.lastFractureTick >= cooldown)
             {
-                Debug::log(Debug::Category::General,
-                    "[FRACTURE] entity=%u reason=%u pieces=%zu vol=%.4f\n",
-                    id, (unsigned)entity->destructible.lastFractureReason,
-                    fragments.size() + 1, entity->destructible.remainingVolume);
+                entity->destructible.lastFractureTick = tick;
+                entity->destructible.hasFractured = true;
+                ImpactResult fractureResult;
+                const std::vector<uint32_t> fragments =
+                    applyFracture(*entity, fractureResult, false);
+                if (fragments.empty())
+                {
+                    // Nothing detached (e.g. the piece was below the minimum):
+                    // clear the flag so it is not retried forever.
+                    entity->destructible.lastFractureReason = FractureReason::None;
+                }
+                else
+                {
+                    Debug::log(Debug::Category::General,
+                        "[FRACTURE] entity=%u reason=%u pieces=%zu vol=%.4f\n",
+                        id, (unsigned)entity->destructible.lastFractureReason,
+                        fragments.size() + 1, entity->destructible.remainingVolume);
+                }
+                entity = system.find(id);
+                if (!entity)
+                    continue;
             }
-            entity = system.find(id);
-            if (!entity)
-                continue;
+            // else: within cooldown; keep the flag and retry on a later tick.
         }
 
         if ((mCutLogCounter++ % 4u) == 0u)

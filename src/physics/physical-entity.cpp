@@ -1659,12 +1659,62 @@ bool physicalEntityPerfSelfTest(std::string* outSummary)
         std::chrono::steady_clock::now() - moveStart).count();
     const double movePerTickMs = moveTotalMs / (double)kTicks;
 
-    char info[288];
+    // Full-auto drain: queue a large burst on ONE already-hole crate and drain
+    // it at the configured per-tick cap, measuring the per-flush cost. This is
+    // the "shoot an existing crater / full auto" case that used to stall.
+    double fullAutoAvgMs = 0.0;
+    double fullAutoMaxMs = 0.0;
+    int fullAutoCalls = 0;
+    {
+        system.clear();
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(2.0f));
+        const uint32_t id = system.add(box, glm::mat4(1.0f),
+                                       PhysicalEntityMotion::Dynamic, wood);
+        PhysicalEntity* e = system.find(id);
+        MimitaImpact::ImpactSystem::instance().initializeEntity(*e, wood,
+                                                                glm::vec3(2.0f));
+        auto punch = [&](int count, float advance) {
+            for (int h = 0; h < count; ++h)
+            {
+                MimitaImpact::DestructionCut cut;
+                cut.cutter.type = MimitaImpact::BooleanCutterType::Sphere;
+                cut.cutter.localCenter =
+                    glm::vec3(0.0f, 0.0f, 2.0f + (float)h * advance);
+                cut.cutter.radius = 0.35f;
+                MimitaImpact::DestructibleGeometrySystem::instance().enqueueCut(
+                    e->destructible, cut);
+            }
+        };
+        punch(24, 0.0f); // make the crate holey
+        MimitaImpact::DestructibleGeometrySystem::instance().flushQueuedCuts(
+            e->destructible, 4);
+        e->localTriangles = e->destructible.collisionTriangles;
+        punch(200, 0.02f); // full-auto, each shot reaches new material
+
+        const uint32_t cap =
+            MimitaImpact::DestructibleWorldConfig::instance().maxCutsPerEntityPerTick();
+        while (e->destructible.pendingCutCount > 0 && fullAutoCalls < 5000)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            MimitaImpact::DestructibleGeometrySystem::instance().flushQueuedCuts(
+                e->destructible, cap);
+            const double ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t0).count();
+            fullAutoAvgMs += ms;
+            fullAutoMaxMs = std::max(fullAutoMaxMs, ms);
+            ++fullAutoCalls;
+        }
+        if (fullAutoCalls > 0)
+            fullAutoAvgMs /= (double)fullAutoCalls;
+    }
+
+    char info[360];
     std::snprintf(info, sizeof(info),
-        "  INFO: crates=%d holes/crate=%d tris=%zu build=%.1fms ticks=%d "
-        "settled=%.3fms/tick moving=%.3fms/tick\n",
-        kCrates, kHolesPerCrate, totalTriangles, buildMs, kTicks, perTickMs,
-        movePerTickMs);
+        "  INFO: crates=%d holes/crate=%d tris=%zu build=%.1fms "
+        "settled=%.3f moving=%.3f fullauto avg=%.2f max=%.2f over %d flushes\n",
+        kCrates, kHolesPerCrate, totalTriangles, buildMs, perTickMs,
+        movePerTickMs, fullAutoAvgMs, fullAutoMaxMs, fullAutoCalls);
     report += info;
 
     check(totalTriangles > 0, "holey crates have generated collision triangles");

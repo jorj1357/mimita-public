@@ -1,9 +1,9 @@
 # Physical Objects Collision and Settling
 
 Time created: 2026-10-01T17:37:13Z
-Time last updated: 2026-10-01T21:03:19Z
+Time last updated: 2026-10-01T21:28:37Z
 
-Status: ATTEMPTED FIX (9)
+Status: ATTEMPTED FIX (10)
 
 Related specification:
 `docs/specs/destructible-world/destructible-world.md`,
@@ -547,3 +547,75 @@ could add hundreds of triangles and a burst produced a 300-380 ms rebuild. The
 - `--destructible-selftest`, `--moving-crate-selftest`,
   `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
 - `--physical-perf-selftest` PASS; moving 2.9 ms/tick (TARGET MET).
+
+---
+
+## Regression Occurrence 6 (Attempt 10, 2026-10-01 17:28 EDT)
+
+### Observed (user playtest + log `20261001_170721`)
+
+- Holes now look better (less triangular). Good.
+- Shooting holes / full-auto still drops FPS badly; sustained 2 fps for ~30 s
+  after shooting, **even when nothing is moving or being shot**, then recovers.
+- Windows ~612-644: `fps 2`, `max_entity_physics ≈ max_destruction ≈ 480-550 ms`
+  every window; `physics <= 5 ms`, `rendering <= 1 ms`, `networking <= 1 ms`.
+- Fragments fling/disappear on touch; irregular hole triangles phase into the
+  floor; crate bounces up on the cylinder only when the hole side contacts it.
+- User directives: fracture should only fire on real disconnection; config must
+  be commented and control cut batching; fragments get **no special logic** —
+  instead make collisions stronger.
+
+### Confirmed cause
+
+`booleanDecomposePieces` (boolean-mesh.cpp) **replayed the whole cut history from
+the base and then `Decompose()`d it** every time a fracture ran, and
+`decomposePieces` passed all cuts. The unbalanced-support heuristic
+(`comOffsetFraction 0.08`) fired on ordinary holey crates, so `applyFracture`
+ran nearly every tick while the queue drained -> ~500 ms/tick sustained.
+
+### Attempt 10 changes
+
+- **Incremental decompose.** Added `booleanDecomposeIncremental(sessionId,
+  base)` which `Decompose()`s the cached running solid instead of replaying the
+  cut history; `DestructibleGeometrySystem::decomposePieces` now uses it
+  (fallback to the full replay only when the session is unknown).
+- **Fracture is disconnected-only by default.** `FractureTuning::unbalancedEnabled`
+  defaults `false`; the unbalanced-support branch only runs when enabled
+  (config `fracture.unbalancedEnabled`). Ordinary holey crates no longer fracture.
+- **Fracture cooldown + budget.** `fractureCooldownTicks` (30) per entity
+  (`hasFractured`/`lastFractureTick`); the flush now checks the ms budget
+  *before* each entity, and processes entities that have a pending fracture flag
+  so a deferred fracture retries on a later tick.
+- **Cut batching + commented config.** `maxCutsPerEntityPerTick` = 4 (batched
+  into one rebuild per flush) and every field in
+  `config/destructible-world.json` now has an explanatory comment.
+- **Cheaper component count.** `countSurfaceComponents` uses an
+  `unordered_map` + FNV hash (was `std::map`).
+- Perf selftest: added a **full-auto drain** measurement on an already-hole
+  crate.
+
+### Measured effect
+
+- Full-auto (200 cuts on an already-hole crate, cap 4/flush): **avg 0.26 ms,
+  max 0.86 ms per flush** (was ~500 ms/tick sustained).
+- Moving holey crates: **~2.6 ms/tick** (TARGET MET). Settled ~0.025 ms/tick.
+- Boolean build 480 cuts: ~210 ms.
+
+### Still open / next
+
+1. Biggest remaining user item: **shooting holes still shows some dip** in real
+   play (the probe is headless). Next: profile a live burst and, if a single
+   subtract on a grown solid still spikes, move CSG to a worker/incremental job.
+2. **Deep depenetration** (stuck-in-geometry, fragment-through-floor, player
+   phasing) and **stronger fragment collisions** (user wants no special fragment
+   logic, just better contacts).
+3. **Irregular-geometry contact normals** (crate bounces up when the hole side
+   hits the cylinder).
+4. Config-triangle weapon hitboxes; overlay word wrap.
+
+### Proof (Attempt 10)
+
+- `--destructible-selftest`, `--moving-crate-selftest`,
+  `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
+- `--physical-perf-selftest` PASS: moving 2.6 ms/tick (MET); full-auto avg
+  0.26 ms / max 0.86 ms per flush.

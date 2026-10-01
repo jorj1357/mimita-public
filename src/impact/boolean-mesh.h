@@ -174,4 +174,10 @@ struct BooleanPiece
 std::vector<BooleanPiece> booleanDecomposePieces(const BooleanMesh& base,
                                                  const std::vector<BooleanCutter>& cutters);
 
+// Decomposes the solid cached by an incremental session (`booleanSubtractIncremental`)
+// without replaying the cut history from the base. Falls back to the full
+// replay when the session is unknown. Use this for fracture.
+std::vector<BooleanPiece> booleanDecomposeIncremental(uint64_t sessionId,
+                                                      const BooleanMesh& base);
+
 } // namespace MimitaImpact

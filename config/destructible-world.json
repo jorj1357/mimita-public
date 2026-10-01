@@ -1,36 +1,74 @@
-// 2026-10-01 jorj - destructible world settings
-// Bounded destruction work per fixed 60 Hz tick and fracture tuning.
-// Hot-reloadable: edit and save, the next tick picks it up. Malformed JSON
-// keeps the previous valid values.
+// 2026-10-01 jorj - destructible world + physical-object settings.
+// Hot-reloadable: edit and save; the next tick picks it up. Comments are
+// allowed. Malformed JSON keeps the previous valid values.
 {
   "destruction": {
-    "maxCutsPerEntityPerTick": 1,
+    // How many queued cuts are applied to ONE object per fixed tick. Higher =
+    // a burst of shots drains faster but each tick does more boolean work.
+    // Batched into one rebuild per flush regardless of this number.
+    "maxCutsPerEntityPerTick": 4,
+    // Wall-clock cap (ms) for the whole destruction flush per fixed tick.
+    // Remaining cuts wait for later ticks so a burst cannot blow a frame.
     "cutBudgetMsPerTick": 2.0,
+    // Hard cap on generated collision/render triangles per object. A cut that
+    // would exceed this is rejected (the object keeps its previous surface and
+    // the boolean session stays valid, so the next cut is still incremental).
     "maxTrianglesPerEntity": 4096,
+    // > 0 merges near-coplanar triangles after each subtraction (fewer
+    // triangles per hole). Higher = coarser/faster, lower = more detail.
     "meshSimplifyTolerance": 0.02
   },
   "fracture": {
+    // Master switch for splitting an object into independent bodies.
     "enabled": true,
+    // Split only when a cut disconnects the solid into >= 2 pieces. This is the
+    // safe, expected case (shoot a neck, it separates).
+    // false = do NOT split just because the remaining piece is off-balance.
+    // (Leaving the unbalanced heuristic off: it fired on ordinary holey crates
+    // and forced an expensive fracture on nearly every cut.)
+    "unbalancedEnabled": false,
+    // Minimum fixed ticks between fracture events on one object.
+    "fractureCooldownTicks": 30,
+    // Ignore detached pieces smaller than this fraction of the original volume
+    // (tiny slivers stay welded instead of becoming debris).
     "minPieceVolumeFraction": 0.02,
+    // Unbalanced-heuristic thresholds (only used when unbalancedEnabled=true):
+    // fire when remainingVolume < maxRemainingFraction*baseVolume AND the
+    // horizontal center-of-mass offset > comOffsetFraction * half extent.
     "maxRemainingFraction": 0.98,
     "comOffsetFraction": 0.08,
+    // Cap on detached bodies produced by one fracture event.
     "maxFragmentsPerEvent": 12
   },
   "physics": {
+    // Gravity for physical objects (players keep their own PHYS.gravity).
     "objectGravity": -70.0,
+    // Linear/angular velocity damping per second (0 = keep moving, higher =
+    // slows down faster). Lower feels more like a real crate.
     "objectLinearDamping": 0.08,
     "objectAngularDamping": 1.5,
-    "supportedFrictionRetain": 0.8,
+    // Below objectMinBounceSpeed (m/s) a contact does not bounce; it projects
+    // and settles. Stops endless jitter on curved/edge contacts. Higher = less
+    // bouncy.
+    "objectMinBounceSpeed": 1.0,
+    // Hard cap on an object's linear speed (m/s) so a collision glitch cannot
+    // fling it across the map.
+    "objectMaxSpeed": 60.0,
+    // Restitution/friction for new dynamic objects (0 = no bounce, 1 = full).
     "objectRestitution": 0.1,
     "objectFriction": 0.6,
-    "objectMinBounceSpeed": 1.0,
-    "objectMaxSpeed": 60.0,
+    // Settling: if an object stays within sleepMoveThresholdMeters of its
+    // anchor for sleepRequiredTicks fixed ticks it freezes (sleeps) there until
+    // something touches it. Larger threshold / fewer ticks = sleeps sooner.
     "sleepMoveThresholdMeters": 0.1,
     "sleepRequiredTicks": 20
   },
   "fragments": {
+    // Detached pieces smaller than this volume (m^3) are removed; ~0.1 m cube.
     "minFragmentVolume": 0.001,
+    // Detached pieces older than this (seconds) are removed.
     "fragmentLifetimeSeconds": 12.0,
+    // Cap on the number of detached pieces alive at once.
     "maxTotalFragments": 64
   }
 }

@@ -55,9 +55,16 @@ struct FractureTuning
     // has drifted off-center. Fires when:
     //   material was removed (remaining < maxRemainingFraction), and
     //   horizontal center-of-mass offset > comOffsetFraction * half extent.
-    // Tuned aggressively on purpose; the first human pass should retune these.
+    // OFF by default: it fired on ordinary holey crates and forced a (very
+    // expensive) fracture on almost every cut. Enable only when a real
+    // support/contact analysis is added.
+    bool unbalancedEnabled = false;
     float maxRemainingFraction = 0.98f;
     float comOffsetFraction = 0.08f;
+
+    // Minimum fixed ticks between fracture events for one entity. A burst of
+    // cuts must not fracture the same object every tick.
+    uint32_t fractureCooldownTicks = 30;
 
     // Cap on detached bodies produced by one fracture event (spec budget).
     uint32_t maxFragmentsPerEvent = 12;
@@ -150,6 +157,10 @@ struct DestructibleGeometry
     // Diagnostics from the most recent rebuild's fracture check.
     FractureReason lastFractureReason = FractureReason::None;
     float lastImbalance = 0.0f;
+    // Simulation tick of the last applied fracture, for the per-entity cooldown.
+    // `hasFractured` distinguishes "never" from "fractured at tick 0".
+    uint64_t lastFractureTick = 0;
+    bool hasFractured = false;
 };
 
 // ── Signed-distance helpers (solid < 0, empty > 0). Test/diagnostic only. ──

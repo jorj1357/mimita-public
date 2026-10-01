@@ -13,8 +13,8 @@
 #include <array>
 #include <cmath>
 #include <exception>
-#include <map>
 #include <string>
+#include <unordered_map>
 
 #include "debug/crash-handler.h"
 #include "debug/debug-log.h"
@@ -118,7 +118,10 @@ FractureDecision evaluateFracture(const DestructibleGeometry& geometry,
     // original material and its remaining center of mass has drifted off-center,
     // so it is effectively supported only on one side (destructible-world.md 21,
     // 24). MiMITA is Z-up; balance is judged in the horizontal XY plane.
-    if (geometry.componentCount == 1 && geometry.baseVolume > 1e-6f)
+    // Opt-in: it fired on ordinary holey crates and forced an expensive
+    // fracture on nearly every cut.
+    if (tuning.unbalancedEnabled && geometry.componentCount == 1 &&
+        geometry.baseVolume > 1e-6f)
     {
         const float remainingFraction =
             geometry.remainingVolume / geometry.baseVolume;
@@ -177,7 +180,21 @@ int countSurfaceComponents(const std::vector<CollisionTriangle>& triangles)
         if (a != b)
             parent[(size_t)a] = b;
     };
-    std::map<std::array<int64_t, 3>, int> firstTriangleAt;
+    struct ArrayHash
+    {
+        size_t operator()(const std::array<int64_t, 3>& a) const
+        {
+            uint64_t h = 1469598103934665603ull;
+            for (int i = 0; i < 3; ++i)
+            {
+                h ^= (uint64_t)a[(size_t)i];
+                h *= 1099511628211ull;
+            }
+            return (size_t)h;
+        }
+    };
+    std::unordered_map<std::array<int64_t, 3>, int, ArrayHash> firstTriangleAt;
+    firstTriangleAt.reserve((size_t)n * 2u);
     constexpr float kQuant = 10000.0f;
     for (int t = 0; t < n; ++t)
     {
@@ -522,14 +539,14 @@ int DestructibleGeometrySystem::flushQueuedCuts(DestructibleGeometry& geometry,
 std::vector<BooleanPiece> DestructibleGeometrySystem::decomposePieces(
     const DestructibleGeometry& geometry) const
 {
-    std::vector<BooleanCutter> cutters;
-    cutters.reserve(geometry.cuts.size());
-    for (const DestructionCut& cut : geometry.cuts)
-        cutters.push_back(cut.cutter);
-    recordCrashBreadcrumb("fracture", "decompose cuts=%zu", cutters.size());
+    // Use the session's cached running solid so a fracture does NOT replay the
+    // whole cut history (which cost hundreds of ms per tick on a holey crate).
+    recordCrashBreadcrumb("fracture", "decompose session=%llu cuts=%zu",
+        (unsigned long long)geometry.booleanSessionId, geometry.cuts.size());
     try
     {
-        return booleanDecomposePieces(geometry.baseMesh, cutters);
+        return booleanDecomposeIncremental(geometry.booleanSessionId,
+                                           geometry.baseMesh);
     }
     catch (const std::exception& e)
     {
