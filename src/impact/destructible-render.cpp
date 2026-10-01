@@ -9,6 +9,7 @@
 #include "impact/destructible-render.h"
 
 #include <cstddef>
+#include <unordered_map>
 
 #include <glad/glad.h>
 
@@ -30,13 +31,46 @@ extern Renderer* gRenderer;
 
 namespace {
 
-GLuint gDestructibleVao = 0;
-GLuint gDestructibleVbo = 0;
-uint32_t gUploadedEntityId = 0;
-uint64_t gUploadedRevision = 0;
-size_t gUploadedVertexCount = 0;
+// One GPU buffer set per entity. A single shared VBO re-uploaded on every
+// entity switch (the old behavior) re-uploaded every fragment/holey crate every
+// frame; keying by entity id + geometry revision uploads once per revision.
+struct GpuEntityMesh
+{
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    uint64_t revision = 0;
+    size_t vertexCount = 0;
+};
+
+std::unordered_map<uint32_t, GpuEntityMesh> gEntityMeshes;
+
+constexpr size_t kMaxGpuEntityMeshes = 512;
+
+GpuEntityMesh& gpuMeshFor(uint32_t entityId)
+{
+    if (gEntityMeshes.size() > kMaxGpuEntityMeshes)
+    {
+        for (auto& pair : gEntityMeshes)
+        {
+            if (pair.second.vbo) glDeleteBuffers(1, &pair.second.vbo);
+            if (pair.second.vao) glDeleteVertexArrays(1, &pair.second.vao);
+        }
+        gEntityMeshes.clear();
+    }
+    return gEntityMeshes[entityId];
+}
 
 } // anonymous namespace
+
+void releaseGeneratedEntityMesh(unsigned int entityId)
+{
+    auto it = gEntityMeshes.find(entityId);
+    if (it == gEntityMeshes.end())
+        return;
+    if (it->second.vbo) glDeleteBuffers(1, &it->second.vbo);
+    if (it->second.vao) glDeleteVertexArrays(1, &it->second.vao);
+    gEntityMeshes.erase(it);
+}
 
 bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
 {
@@ -45,12 +79,6 @@ bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
         return false;
     if (!gRenderer || !gRenderer->shaderProgram)
         return false;
-
-    if (!gDestructibleVao)
-    {
-        glGenVertexArrays(1, &gDestructibleVao);
-        glGenBuffers(1, &gDestructibleVbo);
-    }
 
     glUseProgram(gRenderer->shaderProgram);
 
@@ -89,22 +117,25 @@ bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
 
-    glBindVertexArray(gDestructibleVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gDestructibleVbo);
+    GpuEntityMesh& gpu = gpuMeshFor(entity.id);
+    if (!gpu.vao)
+    {
+        glGenVertexArrays(1, &gpu.vao);
+        glGenBuffers(1, &gpu.vbo);
+    }
+    glBindVertexArray(gpu.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, gpu.vbo);
     const size_t vertexCount = geometry.renderVertices.size();
-    const bool needsUpload = entity.id != gUploadedEntityId ||
-                             geometry.geometryRevision != gUploadedRevision ||
-                             vertexCount != gUploadedVertexCount;
-    if (needsUpload)
+    if (gpu.revision != geometry.geometryRevision ||
+        gpu.vertexCount != vertexCount)
     {
         recordCrashBreadcrumb("render-upload", "id=%u rev=%llu verts=%zu",
             entity.id, (unsigned long long)geometry.geometryRevision, vertexCount);
         glBufferData(GL_ARRAY_BUFFER,
                      (GLsizeiptr)(vertexCount * sizeof(Vertex)),
                      geometry.renderVertices.data(), GL_DYNAMIC_DRAW);
-        gUploadedEntityId = entity.id;
-        gUploadedRevision = geometry.geometryRevision;
-        gUploadedVertexCount = vertexCount;
+        gpu.revision = geometry.geometryRevision;
+        gpu.vertexCount = vertexCount;
     }
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));

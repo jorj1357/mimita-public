@@ -14,3 +14,7 @@ class Camera;
 // Draws the entity's generated destructible triangle soup. Returns true when it
 // drew (destructible enabled and vertices present); false to use the box fallback.
 bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera);
+
+// Frees the per-entity GPU buffers for `entityId`. Call when an entity is
+// removed so fragment churn does not leak GPU buffers.
+void releaseGeneratedEntityMesh(unsigned int entityId);

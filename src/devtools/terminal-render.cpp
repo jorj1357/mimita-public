@@ -88,6 +88,11 @@ void Terminal::render() {
     float fbW = uiScreenW();
     float fbH = uiScreenH();
 
+    // Refresh the stored-line wrap width from the live draw width so new log
+    // lines word-wrap instead of overflowing off the right edge.
+    const float wrapCharW = std::max(2.0f, uiMeasureText("M", 0.38f));
+    mWrapColumns = std::max(40, (int)((fbW - 32.0f) / wrapCharW));
+
     uiDrawRect({0, 0, fbW, fbH}, {0.0f, 0.0f, 0.0f, 0.92f}, "terminal-bg");
     uiDrawRect({0, 0, fbW, 3}, {0.85f, 0.05f, 0.05f, 0.9f}, "terminal-accent");
 

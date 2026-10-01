@@ -484,6 +484,26 @@ Known costs and guidance (2026-09-30 status):
   (`src/impact/destructible-world-config.{h,cpp}`), hot-reloadable, owning
   `maxCutsPerEntityPerTick`, `cutBudgetMsPerTick`, `maxTrianglesPerEntity`, and
   the `FractureTuning`.
+- Object physics are config-driven (2026-10-01) in the same JSON `physics`
+  section: `objectGravity` (per-object, players keep `PHYS.gravity`),
+  `objectLinearDamping`, `objectAngularDamping`, `supportedFrictionRetain`.
+  `advanceKinematics` uses these, so crate feel is tweakable in game.
+- Generic face settling (2026-10-01): `DestructibleGeometry::restAxes`
+  (`computeRestAxes`) stores the object's distinct face orientations;
+  `bestRestAxisAlignment` / `isRestingOnFace` / `applyRestingRightingTorque`
+  use them, so any box or imported/cut mesh rests on a real flat face. Righting
+  is an angular-velocity impulse, independent of density.
+- Fragment lifecycle (2026-10-01): `config/destructible-world.json` `fragments`
+  (`minFragmentVolume`, `fragmentLifetimeSeconds`, `maxTotalFragments`); the
+  fixed tick removes tiny/old/over-cap fragments, and `applyFracture` wakes the
+  primary piece.
+- Entity-vs-entity contacts use the rounded feature shell (2026-10-01) so a
+  moving crate cannot phase through a corner or curved surface. Actor-vs-entity
+  remains exact pending a carry-preserving migration.
+- Performance (2026-10-01): the entity world sweep uses thread-local scratch and
+  `collectActorMeshContactsInto` (no per-entity allocation); generated meshes
+  use a per-entity GPU buffer cache keyed by
+  `(id, geometryRevision, vertexCount)`.
 - The generated-mesh render path uploads only when `(entity id, geometryRevision,
   vertex count)` changes. The box fallback re-uploads every frame.
 - Do not allocate large temporary arrays inside fixed-tick collision loops. Keep

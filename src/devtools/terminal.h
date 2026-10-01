@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <functional>
@@ -108,7 +109,9 @@ private:
     friend void registerConfigCommands();
 
     void executeCurrent();
+    void executeInternal(const std::string& input, int aliasDepth);
     void addHistory(const std::string& input);
+    void pollCommandAliases();
 
     // Text editing delegated to UITextInputState
     UITextInputState* textState();
@@ -126,6 +129,9 @@ private:
     int mHistoryIndex = -1;
 
     std::unordered_map<std::string, ConsoleCommand> mCommands;
+    std::unordered_map<std::string, std::string> mCommandAliases;
+    std::filesystem::file_time_type mCommandAliasesLastWrite{};
+    bool mCommandAliasesLoaded = false;
     std::vector<std::string> mRegistrationOrder;
 
     std::string mPendingPrompt;
@@ -133,6 +139,9 @@ private:
 
     float mCursorBlink = 0.0f;
     int mScrollOffset = 0;
+    // Wrap width in characters, refreshed from the draw width each frame so
+    // long log lines are stored pre-wrapped and scrolling stays line-based.
+    int mWrapColumns = 180;
 
     static constexpr int MAX_SCROLLBACK = 256;
     static constexpr int MAX_HISTORY = 64;

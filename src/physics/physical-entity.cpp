@@ -154,40 +154,49 @@ void rebuildTransformFromPose(PhysicalEntity& e)
                   glm::mat4_cast(glm::normalize(e.orientation));
 }
 
-bool isBoxRestingUpright(const PhysicalEntity& e)
+// Best-aligned rest axis of the body against world up. Uses the geometry's real
+// face orientations (any closed mesh) and falls back to the local box axes.
+float bestRestAxisAlignment(const PhysicalEntity& e, glm::vec3& outWorldAxis)
 {
     const glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
-    const glm::vec3 localAxes[] = {
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        glm::vec3(0.0f, 0.0f, 1.0f)
-    };
-    float best = 0.0f;
-    for (const glm::vec3& localAxis : localAxes)
-        best = std::max(best, std::fabs(glm::dot(e.orientation * localAxis, worldUp)));
-    return best >= e.restingUprightDot;
-}
-
-void applyRestingRightingTorque(PhysicalEntity& e, float dt)
-{
-    const glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
-    const glm::vec3 localAxes[] = {
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        glm::vec3(0.0f, 0.0f, 1.0f)
-    };
-    glm::vec3 selectedWorldAxis(0.0f);
     float best = -1.0f;
-    for (const glm::vec3& localAxis : localAxes)
-    {
-        glm::vec3 axis = e.orientation * localAxis;
+    auto consider = [&](const glm::vec3& localAxis) {
+        const glm::vec3 axis = e.orientation * localAxis;
         const float alignment = std::fabs(glm::dot(axis, worldUp));
         if (alignment > best)
         {
             best = alignment;
-            selectedWorldAxis = glm::dot(axis, worldUp) >= 0.0f ? axis : -axis;
+            outWorldAxis = glm::dot(axis, worldUp) >= 0.0f ? axis : -axis;
         }
+    };
+    if (!e.destructible.restAxes.empty())
+    {
+        for (const glm::vec3& axis : e.destructible.restAxes)
+            consider(axis);
     }
+    else
+    {
+        consider(glm::vec3(1.0f, 0.0f, 0.0f));
+        consider(glm::vec3(0.0f, 1.0f, 0.0f));
+        consider(glm::vec3(0.0f, 0.0f, 1.0f));
+    }
+    return best;
+}
+
+bool isRestingOnFace(const PhysicalEntity& e)
+{
+    glm::vec3 axis(0.0f);
+    return bestRestAxisAlignment(e, axis) >= e.restingUprightDot;
+}
+
+// Righting is applied as an angular velocity (not a torque through the inertia
+// tensor), so settling a real face does not depend on density.
+void applyRestingRightingTorque(PhysicalEntity& e, float dt)
+{
+    const glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
+    glm::vec3 selectedWorldAxis(0.0f);
+    if (bestRestAxisAlignment(e, selectedWorldAxis) < 0.0f)
+        return;
     const float axisLength = glm::length(selectedWorldAxis);
     if (axisLength <= 1e-5f)
         return;
@@ -333,6 +342,7 @@ bool PhysicalEntitySystem::remove(uint32_t id)
         {
             recordCrashBreadcrumb("entity-remove", "id=%u", id);
             MimitaImpact::DestructibleGeometrySystem::instance().release(it->destructible);
+            releaseGeneratedEntityMesh(id);
             mEntities.erase(it);
             return true;
         }
@@ -344,6 +354,8 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
 {
     if (dt <= 0.0f)
         return;
+    const MimitaImpact::DestructibleWorldConfig& objectPhysics =
+        MimitaImpact::DestructibleWorldConfig::instance();
     mFixedAccumulator = std::min(mFixedAccumulator + (double)dt, 0.25);
     constexpr double kFixedDt = 1.0 / 60.0;
     constexpr int kMaxSteps = 5;
@@ -361,11 +373,17 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             refreshMassProperties(e);
             if (e.motion == PhysicalEntityMotion::Dynamic)
             {
+                // Object gravity/damping are config-driven
+                // (config/destructible-world.json -> physics) so crate feel is
+                // tweakable in game without a rebuild. Players keep PHYS.gravity.
                 e.velocity.z = std::max(
-                    e.velocity.z + PHYS.gravity * e.gravityScale * (float)kFixedDt,
+                    e.velocity.z + objectPhysics.objectGravity() * e.gravityScale *
+                                       (float)kFixedDt,
                     -MAX_FALL_SPEED);
-                e.velocity *= std::max(0.0f, 1.0f - e.linearDamping * (float)kFixedDt);
-                e.angularVelocity *= std::max(0.0f, 1.0f - e.angularDamping * (float)kFixedDt);
+                e.velocity *= std::max(
+                    0.0f, 1.0f - objectPhysics.objectLinearDamping() * (float)kFixedDt);
+                e.angularVelocity *= std::max(
+                    0.0f, 1.0f - objectPhysics.objectAngularDamping() * (float)kFixedDt);
                 const float angularSpeed = glm::length(e.angularVelocity);
                 if (angularSpeed > 1e-5f)
                 {
@@ -390,39 +408,43 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             // local triangles against the static world and slide instead of
             // passing through it. Player/object contacts remain owned by the
             // actor manifold below.
-            ActorCollisionMesh objectMesh;
-            objectMesh.label = "physicalEntity";
-            objectMesh.localTriangles = &e.localTriangles;
-            std::vector<ActorCollisionMesh> meshes{objectMesh};
-            std::vector<int> candidates;
-            std::vector<RecoveryContact> contacts;
+            // Reused scratch: the object sweep must not allocate per entity per
+            // collision pass inside the fixed tick (collision.md hard rule).
+            static thread_local std::vector<ActorCollisionMesh> s_objectMeshes;
+            static thread_local std::vector<int> s_objectCandidates;
+            static thread_local std::vector<RecoveryContact> s_objectContacts;
+            s_objectMeshes.resize(1);
+            s_objectMeshes[0].label = "physicalEntity";
+            s_objectMeshes[0].localTriangles = &e.localTriangles;
+            s_objectContacts.clear();
             for (int collisionPass = 0; collisionPass < 3; ++collisionPass)
             {
-                meshes[0].previousTransform = e.previousTransform;
-                meshes[0].desiredTransform = e.transform;
-                meshes[0].localTriangles = &e.localTriangles;
+                s_objectMeshes[0].previousTransform = e.previousTransform;
+                s_objectMeshes[0].desiredTransform = e.transform;
+                s_objectMeshes[0].localTriangles = &e.localTriangles;
                 const AABB sweepBox = makeSweptActorMeshAABB(
-                    meshes, glm::vec3(0.0f));
-                candidates.clear();
-                appendChunkTrianglesForAABB(world, sweepBox, 0.1f, candidates,
+                    s_objectMeshes, glm::vec3(0.0f));
+                s_objectCandidates.clear();
+                appendChunkTrianglesForAABB(world, sweepBox, 0.1f,
+                                            s_objectCandidates,
                                             "physicalEntitySweep");
-                if (candidates.empty())
+                if (s_objectCandidates.empty())
                     break;
 
                 // The destructible mesh is intentionally low-poly (a box plus a
                 // bounded number of hole triangles), so the body sweeps its full
                 // local mesh directly; no per-entity broadphase is needed.
-                std::vector<RecoveryContact> passContacts = collectActorMeshContacts(
-                    world, meshes, candidates, glm::vec3(e.transform[3]),
-                    true, -1.0f);
-                if (passContacts.empty())
+                collectActorMeshContactsInto(
+                    world, s_objectMeshes, s_objectCandidates,
+                    glm::vec3(e.transform[3]), s_objectContacts, true, -1.0f,
+                    nullptr);
+                if (s_objectContacts.empty())
                     break;
-                contacts = std::move(passContacts);
                 const glm::vec3 correction = solveBatchedCorrection(
-                    contacts, 0.01f, nullptr, nullptr,
+                    s_objectContacts, 0.01f, nullptr, nullptr,
                     e.velocity * (float)kFixedDt, glm::vec3(e.transform[3]));
                 e.transform[3] += glm::vec4(correction, 0.0f);
-                for (const RecoveryContact& contact : contacts)
+                for (const RecoveryContact& contact : s_objectContacts)
                 {
                     if (e.motion == PhysicalEntityMotion::Dynamic)
                     {
@@ -448,7 +470,7 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                 if (glm::dot(correction, correction) < 1e-8f)
                     break;
             }
-            if (contacts.empty())
+            if (s_objectContacts.empty())
             {
                 // Preserve a short support window across a one-tick rounded
                 // feature gap. Gravity still runs, so a body that genuinely
@@ -457,8 +479,8 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                     e.supportGraceTicks > 0 && glm::length(e.velocity) < 0.5f)
                 {
                     --e.supportGraceTicks;
-                    e.velocity.x *= 0.65f;
-                    e.velocity.y *= 0.65f;
+                    e.velocity.x *= objectPhysics.supportedFrictionRetain();
+                    e.velocity.y *= objectPhysics.supportedFrictionRetain();
                     e.angularVelocity *= 0.15f;
                     if (glm::length(e.velocity) < std::max(0.5f, e.sleepLinearThreshold) &&
                         glm::length(e.angularVelocity) < std::max(0.5f, e.sleepAngularThreshold))
@@ -476,7 +498,7 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             if (e.motion == PhysicalEntityMotion::Dynamic)
             {
                 bool supported = false;
-                for (const RecoveryContact& contact : contacts)
+                for (const RecoveryContact& contact : s_objectContacts)
                 {
                     if (contact.normal.z > MAX_WALKABLE_SLOPE_DOT)
                     {
@@ -492,12 +514,12 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                     // the body is no longer meaningfully translating. This is
                     // the rigid-body equivalent of the player's grounded
                     // velocity projection, not a free rotation override.
-                    e.velocity.x *= 0.65f;
-                    e.velocity.y *= 0.65f;
+                    e.velocity.x *= objectPhysics.supportedFrictionRetain();
+                    e.velocity.y *= objectPhysics.supportedFrictionRetain();
                     applyRestingRightingTorque(e, (float)kFixedDt);
                     e.angularVelocity *= 0.55f;
                 }
-                const bool upright = isBoxRestingUpright(e);
+                const bool upright = isRestingOnFace(e);
                 const bool stableCandidate = supported && upright &&
                     glm::length(e.velocity) < std::max(0.5f, e.sleepLinearThreshold) &&
                     glm::length(e.angularVelocity) < std::max(0.5f, e.sleepAngularThreshold);
@@ -512,10 +534,10 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                     e.angularVelocity = glm::vec3(0.0f);
                     e.sleeping = true;
                 }
-                if (!supported && contacts.size() >= 2 && glm::length(e.velocity) < 0.25f)
+                if (!supported && s_objectContacts.size() >= 2 && glm::length(e.velocity) < 0.25f)
                 {
                     glm::vec3 escape(0.0f);
-                    for (const RecoveryContact& contact : contacts)
+                    for (const RecoveryContact& contact : s_objectContacts)
                         escape += contact.responseNormal;
                     if (glm::dot(escape, escape) > 1e-6f)
                     {
@@ -530,6 +552,44 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
     }
     if (steps >= kMaxSteps && mFixedAccumulator >= kFixedDt)
         mFixedAccumulator = 0.0;
+
+    // Fragment lifecycle: age detached pieces, then remove ones that are too
+    // small, too old, or beyond the total cap. All thresholds are config-driven
+    // (config/destructible-world.json -> fragments).
+    {
+        const float elapsed = (float)steps * (float)kFixedDt;
+        uint32_t fragmentCount = 0;
+        std::vector<uint32_t> toRemove;
+        for (PhysicalEntity& e : mEntities)
+        {
+            if (!e.isFragment)
+                continue;
+            e.fragmentAge += elapsed;
+            ++fragmentCount;
+            if (e.destructible.remainingVolume < objectPhysics.minFragmentVolume() ||
+                (objectPhysics.fragmentLifetimeSeconds() > 0.0f &&
+                 e.fragmentAge >= objectPhysics.fragmentLifetimeSeconds()))
+                toRemove.push_back(e.id);
+        }
+        if (fragmentCount > objectPhysics.maxTotalFragments())
+        {
+            std::vector<const PhysicalEntity*> oldest;
+            for (const PhysicalEntity& e : mEntities)
+                if (e.isFragment)
+                    oldest.push_back(&e);
+            std::sort(oldest.begin(), oldest.end(),
+                [](const PhysicalEntity* x, const PhysicalEntity* y) {
+                    return x->fragmentAge > y->fragmentAge;
+                });
+            const uint32_t over = fragmentCount - objectPhysics.maxTotalFragments();
+            for (uint32_t i = 0; i < over && i < oldest.size(); ++i)
+                toRemove.push_back(oldest[i]->id);
+        }
+        std::sort(toRemove.begin(), toRemove.end());
+        toRemove.erase(std::unique(toRemove.begin(), toRemove.end()), toRemove.end());
+        for (uint32_t id : toRemove)
+            remove(id);
+    }
 
     // Drain queued destruction cuts once per fixed tick, batched and budgeted so
     // a burst of shots cannot blow a frame. This is the 60 Hz destruction owner;
@@ -554,7 +614,10 @@ void PhysicalEntitySystem::applyPlayerPush(const Player& player, float dt)
     const glm::vec3 playerMin = player.pos + glm::vec3(-PLAYER_RADIUS, -PLAYER_RADIUS, 0.0f);
     const glm::vec3 playerMax = player.pos + glm::vec3(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_HEIGHT);
     const AABB playerBox{playerMin, playerMax};
-    glm::vec3 horizontalVelocity(player.vel.x, player.vel.y, 0.0f);
+    // Include the external impulse so a dash into an object pushes it with the
+    // speed/force at the moment of contact, not just the base walk velocity.
+    glm::vec3 horizontalVelocity(player.vel.x + player.externalImpulse.x,
+                                  player.vel.y + player.externalImpulse.y, 0.0f);
     if (glm::dot(horizontalVelocity, horizontalVelocity) <= 1e-6f &&
         glm::dot(player.inputWishMove, player.inputWishMove) > 1e-4f)
         horizontalVelocity = glm::vec3(player.inputWishMove.x,
@@ -735,9 +798,12 @@ void collectPairDirection(
     for (size_t k = 0; k < candidates.size(); ++k)
         candidates[k] = (int)k;
 
+    // contactSkin < 0 enables the rounded feature shell (point->sphere,
+    // line->capsule, face->triangle), so edges/vertices are thickened and a
+    // moving body cannot slip through a corner or a curved surface.
     collectActorMeshContactsInto(scratchWorld, meshes, candidates,
                                  glm::vec3(actor.transform[3]), out,
-                                 false, 0.0f, otherTree);
+                                 false, -1.0f, otherTree);
 
     std::swap(scratchWorld.collisionMesh, *view.meshCache);
 }
@@ -1017,7 +1083,11 @@ std::vector<EntityActorContact> collectActorEntityContacts(
         // The entity candidate list is complete for this entity; keep the exact
         // entity query intact instead of applying the static-world part filter.
         // The per-entity tree prunes which crate triangles the actor narrowphase
-        // actually tests.
+        // actually tests. NOTE: the actor-vs-entity adapter keeps the exact
+        // triangle contract (skin 0) because the rounded shell changed the
+        // player-carry support behavior; the rounded shell is used for
+        // entity-vs-entity and entity-vs-world, which is where crate phasing
+        // happens. Migrating the actor path is tracked in the regression record.
         collectActorMeshContactsInto(s_entityWorld, meshes, s_entityCandidates,
                                      actorPos, contacts, false, 0.0f, view.tree);
         std::swap(s_entityWorld.collisionMesh, *view.meshCache);

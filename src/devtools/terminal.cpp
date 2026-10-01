@@ -8,9 +8,12 @@
 #include <cstdio>
 #include <sstream>
 #include <filesystem>
+#include <fstream>
 #include <chrono>
 #include <ctime>
+#include <stdexcept>
 #include <windows.h>
+#include <nlohmann/json.hpp>
 
 #include "config.h"
 #include "devtools/dev-config.h"
@@ -28,6 +31,18 @@
 #include "hot-reload/hot-reload-system.h"
 
 namespace {
+
+constexpr const char* COMMAND_ALIASES_PATH = "config/command-aliases.json";
+constexpr int MAX_COMMAND_ALIAS_DEPTH = 16;
+
+std::string trimCommandText(std::string text)
+{
+    const size_t first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+        return {};
+    const size_t last = text.find_last_not_of(" \t\r\n");
+    return text.substr(first, last - first + 1);
+}
 
 uint32_t gNextBookmarkNumber = 1;
 
@@ -504,23 +519,63 @@ void Terminal::toggle() {
     }
 }
 
+// Greedy word wrap to `columns` characters, breaking at spaces when possible and
+// hard-splitting a word that is longer than a whole line. Keeps the scrollback
+// one visual line per entry so scroll offsets stay line-based.
+static void wrapTerminalLine(const std::string& text, int columns,
+                             std::vector<std::string>& out)
+{
+    if (columns < 8) columns = 8;
+    const size_t n = text.size();
+    size_t start = 0;
+    while (start < n)
+    {
+        const size_t remaining = n - start;
+        if ((int)remaining <= columns)
+        {
+            out.push_back(text.substr(start));
+            break;
+        }
+        const size_t limit = start + (size_t)columns;
+        size_t breakAt = std::string::npos;
+        for (size_t k = limit; k > start; --k)
+            if (text[k] == ' ') { breakAt = k; break; }
+        if (breakAt == std::string::npos || breakAt == start)
+        {
+            out.push_back(text.substr(start, (size_t)columns));
+            start += (size_t)columns;
+        }
+        else
+        {
+            out.push_back(text.substr(start, breakAt - start));
+            start = breakAt + 1;
+        }
+        while (start < n && text[start] == ' ')
+            ++start;
+    }
+}
+
 void Terminal::addLog(const std::string& text) {
-    // Split multi-line strings into separate entries so each entry is exactly one visual line.
-    // Otherwise uiDrawText's internal newline spacing (fontLineHeight*scale) differs from the
-    // terminal's per-entry y advancement (lineHeight=22), causing overlapping text.
+    // Split multi-line strings into separate entries so each entry is exactly one
+    // visual line, then word-wrap each line to the current terminal width.
+    std::vector<std::string> wrapped;
     size_t pos = 0, next;
     while ((next = text.find('\n', pos)) != std::string::npos) {
         std::string line = text.substr(pos, next - pos);
         if (!line.empty())
-            mScrollback.push_back(line);
+            wrapTerminalLine(line, mWrapColumns, wrapped);
         pos = next + 1;
     }
     if (pos < text.size())
-        mScrollback.push_back(text.substr(pos));
+        wrapTerminalLine(text.substr(pos), mWrapColumns, wrapped);
+
+    const int added = (int)wrapped.size();
+    for (std::string& line : wrapped)
+        mScrollback.push_back(std::move(line));
     if ((int)mScrollback.size() > MAX_SCROLLBACK)
         mScrollback.erase(mScrollback.begin(), mScrollback.begin() + ((int)mScrollback.size() - MAX_SCROLLBACK));
     if (mScrollOffset > 0)
-        mScrollOffset = std::min(mScrollOffset + 1, std::max(0, (int)mScrollback.size() - 1));
+        mScrollOffset = std::min(mScrollOffset + added, std::max(0, (int)mScrollback.size() - 1));
 }
 
 void Terminal::addHistory(const std::string& input) {
@@ -616,20 +671,7 @@ void Terminal::executeCurrent() {
         // do not discard it through the normal empty-command path.
         execute(input);
     } else {
-        // Multi-command: split on ';'
-        size_t start = 0;
-        while (start < input.size()) {
-            while (start < input.size() && input[start] == ' ') start++;
-            size_t end = input.find(';', start);
-            if (end == std::string::npos) end = input.size();
-            std::string cmd = input.substr(start, end - start);
-            // Trim trailing spaces
-            while (!cmd.empty() && cmd.back() == ' ') cmd.pop_back();
-            if (!cmd.empty()) {
-                execute(cmd);
-            }
-            start = end + 1;
-        }
+        execute(input);
     }
 
     if (mTextState) {
@@ -649,7 +691,72 @@ void Terminal::requestInput(const std::string& prompt,
     mPendingCallback = std::move(callback);
 }
 
-void Terminal::execute(const std::string& input) {
+void Terminal::pollCommandAliases()
+{
+    std::error_code ec;
+    const auto writeTime = std::filesystem::last_write_time(COMMAND_ALIASES_PATH, ec);
+    if (ec)
+    {
+        if (!mCommandAliasesLoaded)
+        {
+            mCommandAliasesLoaded = true;
+            mCommandAliases.clear();
+            addLog("[ALIASES] no config found: " + std::string(COMMAND_ALIASES_PATH));
+        }
+        return;
+    }
+    if (mCommandAliasesLoaded && writeTime == mCommandAliasesLastWrite)
+        return;
+
+    std::unordered_map<std::string, std::string> nextAliases;
+    try
+    {
+        std::ifstream file(COMMAND_ALIASES_PATH);
+        nlohmann::json root = nlohmann::json::parse(file, nullptr, true, true);
+        if (!root.is_object() || !root.contains("aliases") || !root["aliases"].is_object())
+            throw std::runtime_error("expected an object named 'aliases'");
+
+        for (const auto& [name, value] : root["aliases"].items())
+        {
+            if (name.empty() || name.find_first_of(" \t\r\n;") != std::string::npos)
+                throw std::runtime_error("alias names must be one command token: '" + name + "'");
+            if (!value.is_string())
+                throw std::runtime_error("alias '" + name + "' must map to a string");
+            const std::string target = trimCommandText(value.get<std::string>());
+            if (target.empty())
+                throw std::runtime_error("alias '" + name + "' cannot be empty");
+            if (mCommands.find(name) != mCommands.end())
+            {
+                addLog("[ALIASES] ignored '" + name + "': a real command already owns that name");
+                continue;
+            }
+            nextAliases[name] = target;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        addLog("[ALIASES] keeping previous config; " + std::string(COMMAND_ALIASES_PATH) +
+               ": " + e.what());
+        mCommandAliasesLoaded = true;
+        mCommandAliasesLastWrite = writeTime;
+        return;
+    }
+
+    mCommandAliases = std::move(nextAliases);
+    mCommandAliasesLoaded = true;
+    mCommandAliasesLastWrite = writeTime;
+    mCacheDirty = true;
+    addLog("[ALIASES] loaded " + std::to_string(mCommandAliases.size()) +
+           " alias(es) from " + COMMAND_ALIASES_PATH);
+}
+
+void Terminal::execute(const std::string& input)
+{
+    pollCommandAliases();
+    executeInternal(input, 0);
+}
+
+void Terminal::executeInternal(const std::string& input, int aliasDepth) {
     // Pending interactive prompt: route the raw line to the callback instead
     // of running it as a command.
     if (mPendingCallback)
@@ -670,30 +777,58 @@ void Terminal::execute(const std::string& input) {
         return;
     }
 
-    std::istringstream iss(input);
-    std::string cmdName;
-    iss >> cmdName;
-    if (cmdName.empty())
-        return;
+    size_t chainStart = 0;
+    while (true)
+    {
+        const size_t chainEnd = input.find(';', chainStart);
+        const std::string part = trimCommandText(input.substr(
+            chainStart, chainEnd == std::string::npos ? std::string::npos : chainEnd - chainStart));
+        if (!part.empty())
+        {
+            std::istringstream aliasStream(part);
+            std::string aliasName;
+            aliasStream >> aliasName;
+            const auto aliasIt = mCommandAliases.find(aliasName);
+            if (aliasIt != mCommandAliases.end())
+            {
+                if (aliasDepth >= MAX_COMMAND_ALIAS_DEPTH)
+                {
+                    addLog("[ALIASES] expansion limit reached; possible alias cycle at '" + aliasName + "'");
+                    return;
+                }
+                std::string typedArgs;
+                std::getline(aliasStream, typedArgs);
+                executeInternal(trimCommandText(aliasIt->second + typedArgs), aliasDepth + 1);
+            }
+            else
+            {
+                std::istringstream iss(part);
+                std::string cmdName;
+                iss >> cmdName;
+                std::vector<std::string> args;
+                std::string arg;
+                while (iss >> arg)
+                    args.push_back(arg);
 
-    std::vector<std::string> args;
-    std::string arg;
-    while (iss >> arg)
-        args.push_back(arg);
+                auto it = mCommands.find(cmdName);
+                if (it == mCommands.end()) {
+                    addLog("[ERROR] unknown command: " + cmdName);
+                    addLog("type 'help' for a list of commands");
+                    return;
+                }
 
-    auto it = mCommands.find(cmdName);
-    if (it == mCommands.end()) {
-        addLog("[ERROR] unknown command: " + cmdName);
-        addLog("type 'help' for a list of commands");
-        return;
-    }
-
-    try {
-        it->second.fn(args);
-    } catch (const std::exception& e) {
-        char buf[256];
-        snprintf(buf, sizeof(buf), "[ERROR] %s: %s", cmdName.c_str(), e.what());
-        addLog(buf);
+                try {
+                    it->second.fn(args);
+                } catch (const std::exception& e) {
+                    char buf[256];
+                    snprintf(buf, sizeof(buf), "[ERROR] %s: %s", cmdName.c_str(), e.what());
+                    addLog(buf);
+                }
+            }
+        }
+        if (chainEnd == std::string::npos)
+            break;
+        chainStart = chainEnd + 1;
     }
 }
 

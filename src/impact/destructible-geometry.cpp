@@ -64,6 +64,37 @@ float destructibleCrateDistance(const DestructibleGeometry& geometry,
     return result;
 }
 
+// ── Rest axes ───────────────────────────────────────────────────────────
+void computeRestAxes(DestructibleGeometry& geometry)
+{
+    geometry.restAxes.clear();
+    auto add = [&](const glm::vec3& raw) {
+        const float len = glm::length(raw);
+        if (len < 1e-6f)
+            return;
+        const glm::vec3 n = raw / len;
+        for (const glm::vec3& a : geometry.restAxes)
+            if (std::fabs(glm::dot(a, n)) > 0.995f)
+                return; // same axis (sign-agnostic)
+        geometry.restAxes.push_back(n);
+    };
+    if (!geometry.massFromMesh || geometry.collisionTriangles.empty())
+    {
+        add(glm::vec3(1.0f, 0.0f, 0.0f));
+        add(glm::vec3(0.0f, 1.0f, 0.0f));
+        add(glm::vec3(0.0f, 0.0f, 1.0f));
+        return;
+    }
+    for (const CollisionTriangle& t : geometry.collisionTriangles)
+    {
+        add(t.normal);
+        if (geometry.restAxes.size() >= 24)
+            break;
+    }
+    if (geometry.restAxes.empty())
+        add(glm::vec3(0.0f, 0.0f, 1.0f));
+}
+
 // ── Fracture evaluation ─────────────────────────────────────────────────
 FractureDecision evaluateFracture(const DestructibleGeometry& geometry,
                                   const FractureTuning& tuning)
@@ -207,6 +238,7 @@ void DestructibleGeometrySystem::initialize(DestructibleGeometry& geometry,
     geometry.renderVertices.clear();
     geometry.collisionTriangles.clear();
     geometry.massFromMesh = false;
+    computeRestAxes(geometry);
 
     // Pre-cut mass properties of the authored box at unit density.
     const glm::vec3 dim = glm::max(halfExtents * 2.0f, glm::vec3(0.001f));
@@ -250,6 +282,7 @@ void DestructibleGeometrySystem::initializeFromMesh(DestructibleGeometry& geomet
     geometry.massFromMesh = true;
     geometry.remainingVolume = mass.valid ? mass.volume : 0.0f;
     geometry.baseVolume = geometry.remainingVolume;
+    computeRestAxes(geometry);
 }
 
 void DestructibleGeometrySystem::release(DestructibleGeometry& geometry)
@@ -372,6 +405,8 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
     // only reads cached values. Cavity walls are wound inward, so the signed
     // integrals subtract them.
     applyMassFromTriangles(geometry, geometry.collisionTriangles);
+
+    computeRestAxes(geometry);
 
     // Record why (if at all) this surface should split. The trigger is
     // read-only; the caller (ImpactSystem) owns spawning the detached bodies.

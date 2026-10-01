@@ -137,6 +137,11 @@ struct DestructibleGeometry
     glm::vec3 unitInertiaDiagonal{1.0f};
     bool massFromMesh = false;
 
+    // Distinct local-space face orientations the object can rest on. Used by
+    // the rigid-body settle/righting logic so ANY closed mesh (box or imported
+    // GLB) comes to rest on a real flat face instead of only local box axes.
+    std::vector<glm::vec3> restAxes;
+
     // Cached surface consumed by collision + rendering. Empty until the first
     // cut; the caller keeps its authored box mesh until then.
     std::vector<Vertex> renderVertices;
@@ -150,6 +155,10 @@ struct DestructibleGeometry
 // ── Signed-distance helpers (solid < 0, empty > 0). Test/diagnostic only. ──
 float boxDistance(glm::vec3 p, glm::vec3 halfSize);
 float sphereDistance(glm::vec3 p, glm::vec3 center, float radius);
+
+// Recomputes the distinct local-space rest axes from the current surface (or
+// the box axes when the surface is not a mesh yet). Sign-agnostic and deduped.
+void computeRestAxes(DestructibleGeometry& geometry);
 
 // Original base box minus every stored cut (sphere or capsule).
 float destructibleCrateDistance(const DestructibleGeometry& geometry,

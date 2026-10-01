@@ -14,5 +14,16 @@
     "maxRemainingFraction": 0.98,
     "comOffsetFraction": 0.12,
     "maxFragmentsPerEvent": 12
+  },
+  "physics": {
+    "objectGravity": -70.0,
+    "objectLinearDamping": 0.08,
+    "objectAngularDamping": 1.5,
+    "supportedFrictionRetain": 0.8
+  },
+  "fragments": {
+    "minFragmentVolume": 0.001,
+    "fragmentLifetimeSeconds": 12.0,
+    "maxTotalFragments": 64
   }
 }

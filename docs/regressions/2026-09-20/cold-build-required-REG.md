@@ -2151,3 +2151,57 @@ Measure whole-frame time with `perf_top`/`perf_file_logging` while shooting a
 crate (Phase 5) and confirm the new entity pair narrowphase does not raise
 collision time; if it does, the per-pair two-direction sweep can be reduced to
 one direction or gated by relative speed.
+
+## Cold-build occurrence 39
+
+UTC time:
+`2026-10-01T17:50:34Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_173713-physical-objects-collision-fix.md`
+
+### Why the cold build was required
+
+The terminal UI, the entity collision/settling adapter, the destructible config
+owner, the fragment lifecycle, and the per-entity render buffer cache are all
+cold executable owners. Verifying them required compiling and linking the
+executable; none is exposed as a live-reloadable module.
+
+### Exact cold source / boundary
+
+- `src/devtools/terminal-input.cpp`, `terminal-render.cpp`, `terminal.{h,cpp}`
+- `src/physics/physical-entity.{h,cpp}`
+- `src/impact/destructible-geometry.{h,cpp}`, `destructible-render.{h,cpp}`,
+  `destructible-world-config.{h,cpp}`, `impact-system.cpp`
+
+### Build result
+
+`python build.py build-only` completed successfully and relinked
+`C:\mimita-v9\mimita.exe`. `--moving-crate-selftest`,
+`--destructible-selftest`, `--destruction-replication-selftest`, and
+`--destruction-stress-selftest` all PASS.
+
+### What the cold build was needed to prove
+
+That rounded entity-vs-entity contacts, generic face settling, config-driven
+object gravity/damping, fragment lifecycle cleanup, terminal wrapping/reverse
+autocomplete, and the per-entity render cache compile, link, and do not regress
+the existing destruction/moving-crate self-tests.
+
+### Why live activation was impossible
+
+These owners are statically linked and not part of the live-code-development
+hot-reload set.
+
+### Smallest change that would make this hot
+
+Move the entity collision/settling and destruction-config owners behind the
+live-module boundary so crate feel can be tuned and reloaded without a relink;
+for now `config/destructible-world.json` is hot-reloaded without a rebuild for
+the numeric tuning only.
+
+### Next migration/falsification step
+
+Profile with `perf_top`/`perf_file_logging` near and while shooting holey
+crates; if the entity-vs-world cached-gather/local-space refactor does not
+reduce physics time, falsify it and pursue the entity broadphase first.

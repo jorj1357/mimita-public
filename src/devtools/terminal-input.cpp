@@ -233,11 +233,14 @@ void Terminal::handleKey(int key, int mods) {
         return;
     }
 
-    // ── Tab: autocomplete ─────────────────────────────────────
+    // ── Tab: autocomplete (Shift+Tab cycles backwards) ────────
     if (key == GLFW_KEY_TAB) {
         if (!mSearchResults.empty() && !mTextState->value.empty()) {
-            if (mTabCycleIndex < 0) mTabCycleIndex = 0;
-            else mTabCycleIndex = (mTabCycleIndex + 1) % (int)mSearchResults.size();
+            const int count = (int)mSearchResults.size();
+            if (mTabCycleIndex < 0)
+                mTabCycleIndex = shift ? count - 1 : 0;
+            else
+                mTabCycleIndex = (mTabCycleIndex + (shift ? -1 : 1) + count) % count;
             mSelectedResult = mTabCycleIndex;
             mTextState->value = mSearchResults[mTabCycleIndex].cmd->name;
             mTextState->cursorPos = (int)mTextState->value.size();

@@ -43,6 +43,23 @@ void registerTerminalBuiltins() {
     });
 
     term.registerCommand({
+        "aliases",
+        "List aliases loaded from config/command-aliases.json",
+        "aliases",
+        [](const std::vector<std::string>&) {
+            auto& t = Terminal::instance();
+            t.pollCommandAliases();
+            if (t.mCommandAliases.empty()) {
+                t.addLog("[ALIASES] none configured");
+                return;
+            }
+            t.addLog("[ALIASES] loaded:");
+            for (const auto& [name, target] : t.mCommandAliases)
+                t.addLog("  " + name + " -> " + target);
+        }
+    });
+
+    term.registerCommand({
         "clear",
         "Clear the terminal scrollback",
         "clear",

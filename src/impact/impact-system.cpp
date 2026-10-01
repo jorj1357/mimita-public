@@ -142,6 +142,8 @@ std::vector<uint32_t> ImpactSystem::applyFracture(PhysicalEntity& entity,
 
         child->networkId = fragmentNetworkId(parentNetworkId, (uint32_t)i);
         child->serverDriven = serverDriven;
+        child->isFragment = true;
+        child->fragmentAge = 0.0f;
         child->shape = parentShape;
         child->materialId = materialId;
         child->density = parentDensity;
@@ -182,6 +184,13 @@ std::vector<uint32_t> ImpactSystem::applyFracture(PhysicalEntity& entity,
             ImpactSystem::instance().initializeEntityFromMesh(
                 *primary, pieces[0].mesh, primary->halfExtents, materialId);
             primary->localTriangles = primary->destructible.collisionTriangles;
+            // The primary piece must fall with the rest of the debris; a piece
+            // that was asleep before it fractured would otherwise stay frozen
+            // in the air ("floating chunk").
+            primary->sleeping = false;
+            primary->sleepTicks = 0;
+            primary->supportGraceTicks = 0;
+            primary->isFragment = false;
         }
     }
     return spawned;

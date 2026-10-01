@@ -58,6 +58,36 @@ bool DestructibleWorldConfig::load(const std::string& path)
         const json& fracture =
             root.contains("fracture") && root["fracture"].is_object()
                 ? root["fracture"] : json::object();
+        const json& physics =
+            root.contains("physics") && root["physics"].is_object()
+                ? root["physics"] : json::object();
+        const json& fragments =
+            root.contains("fragments") && root["fragments"].is_object()
+                ? root["fragments"] : json::object();
+
+        if (fragments.contains("minFragmentVolume") &&
+            fragments["minFragmentVolume"].is_number())
+            mMinFragmentVolume = fragments["minFragmentVolume"].get<float>();
+        if (fragments.contains("fragmentLifetimeSeconds") &&
+            fragments["fragmentLifetimeSeconds"].is_number())
+            mFragmentLifetimeSeconds =
+                fragments["fragmentLifetimeSeconds"].get<float>();
+        if (fragments.contains("maxTotalFragments") &&
+            fragments["maxTotalFragments"].is_number_unsigned())
+            mMaxTotalFragments = fragments["maxTotalFragments"].get<uint32_t>();
+
+        if (physics.contains("objectGravity") && physics["objectGravity"].is_number())
+            mObjectGravity = physics["objectGravity"].get<float>();
+        if (physics.contains("objectLinearDamping") &&
+            physics["objectLinearDamping"].is_number())
+            mObjectLinearDamping = physics["objectLinearDamping"].get<float>();
+        if (physics.contains("objectAngularDamping") &&
+            physics["objectAngularDamping"].is_number())
+            mObjectAngularDamping = physics["objectAngularDamping"].get<float>();
+        if (physics.contains("supportedFrictionRetain") &&
+            physics["supportedFrictionRetain"].is_number())
+            mSupportedFrictionRetain =
+                physics["supportedFrictionRetain"].get<float>();
 
         if (destruction.contains("maxCutsPerEntityPerTick") &&
             destruction["maxCutsPerEntityPerTick"].is_number_unsigned())

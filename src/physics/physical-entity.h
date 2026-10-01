@@ -85,6 +85,10 @@ struct PhysicalEntity {
     // localTriangles. See impact/destructible-geometry.h.
     MimitaImpact::DestructibleGeometry destructible;
     bool sleeping = false;
+    // Fragment lifecycle: set on pieces spawned by a fracture so the owner can
+    // age them out / remove tiny or old debris (config-driven).
+    bool isFragment = false;
+    float fragmentAge = 0.0f;
     uint64_t lastPlayerPushTick = 0;
     std::vector<CollisionTriangle> localTriangles;   // entity-local
     uint32_t materialId = 0;
