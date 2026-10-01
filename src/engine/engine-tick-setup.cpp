@@ -16,6 +16,7 @@
 #include "config/collision-lod-config.h"
 #include "config/collision-config.h"
 #include "config/material-config.h"
+#include "impact/destructible-world-config.h"
 #include "map/map-loader-collision.h"
 #include "gui/hud/healthbar-config.h"
 #include "gui/hud/reward-popup.h"
@@ -157,6 +158,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
             redecimateCollision(THE_WORLD);
         CollisionConfig::instance().pollHotReload();
         MimitaImpact::MaterialConfig::instance().pollReload();
+        MimitaImpact::DestructibleWorldConfig::instance().pollReload();
         RewardPopupConfig::instance().pollReload();
         if (KillfeedConfig::instance().pollReload())
             KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);

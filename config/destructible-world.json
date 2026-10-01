@@ -1,12 +1,18 @@
-// 9 8 2206 1110 est jorj - todo
-// define all settings for world destruction
-// like
-
-// also in weapons json,
-//  C:\mimita-priv-v8\config\weapons.json here
-// define things like
-// projectile mass, speed, etc, 
-// so  we can have emergent behaviors
-// e.g. a rocket has a explosion, so that explosion 
-// shoudl be a bigger explosion adn bigger destruiton
-// than, for example, a revovler or weaker wepaon
+// 2026-10-01 jorj - destructible world settings
+// Bounded destruction work per fixed 60 Hz tick and fracture tuning.
+// Hot-reloadable: edit and save, the next tick picks it up. Malformed JSON
+// keeps the previous valid values.
+{
+  "destruction": {
+    "maxCutsPerEntityPerTick": 8,
+    "cutBudgetMsPerTick": 2.0,
+    "maxTrianglesPerEntity": 120000
+  },
+  "fracture": {
+    "enabled": true,
+    "minPieceVolumeFraction": 0.02,
+    "maxRemainingFraction": 0.98,
+    "comOffsetFraction": 0.12,
+    "maxFragmentsPerEvent": 12
+  }
+}

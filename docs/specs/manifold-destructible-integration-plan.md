@@ -467,6 +467,23 @@ Known costs and guidance (2026-09-30 status):
   rifle-scale rim (r ~1.29) no longer hits the 48 cap; generated triangles after
   five self-test shots fell from 2116 to 814. Raise the cap only if human review
   reports faceted holes.
+- Shared entity-vs-entity collision (2026-10-01): `resolveEntityContacts` no
+  longer uses a coarse AABB/min-axis response. It runs the shared actor-vs-mesh
+  narrowphase (`collectActorMeshContactsInto`) in both directions per movable
+  pair, reusing each entity's `cachedEntitySurface` triangles + `AabbTree`
+  (swapped into a scratch `World`, no copy, no per-query allocation), and
+  applies a mass-weighted correction + normal/friction impulse at the contact
+  point (`resolveEntityPairContact`). Crate-vs-crate, fragment-vs-fragment,
+  fragment-vs-world, and player/NPC-vs-crate all use this path.
+- Projectile momentum (2026-10-01): `ImpactSystem::submit` transfers the
+  projectile's momentum to a Dynamic entity at the hit point
+  (`applyPhysicalEntityImpulse`), reduced by impact angle and
+  `material.holeEnergyScale`, producing translation + torque without teleporting.
+- Destruction budgets are config-driven (2026-10-01):
+  `config/destructible-world.json` -> `DestructibleWorldConfig`
+  (`src/impact/destructible-world-config.{h,cpp}`), hot-reloadable, owning
+  `maxCutsPerEntityPerTick`, `cutBudgetMsPerTick`, `maxTrianglesPerEntity`, and
+  the `FractureTuning`.
 - The generated-mesh render path uploads only when `(entity id, geometryRevision,
   vertex count)` changes. The box fallback re-uploads every frame.
 - Do not allocate large temporary arrays inside fixed-tick collision loops. Keep

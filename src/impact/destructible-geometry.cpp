@@ -11,7 +11,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
+#include <string>
 
+#include "debug/crash-handler.h"
+#include "debug/debug-log.h"
 #include "physics/mesh-mass-properties.h"
 
 namespace MimitaImpact {
@@ -105,6 +109,29 @@ namespace {
 
 uint64_t gNextSessionId = 1;
 
+bool allFinite(const glm::vec3& v)
+{
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+// Rejects a boolean output that could corrupt downstream physics/render state:
+// non-empty, triangle-aligned indices all in range, and finite vertices.
+bool meshIsSane(const BooleanMesh& mesh, const char** outReason)
+{
+    if (mesh.vertices.empty() || mesh.indices.size() < 3)
+    { if (outReason) *outReason = "empty mesh"; return false; }
+    if (mesh.indices.size() % 3u != 0u)
+    { if (outReason) *outReason = "index count not a multiple of 3"; return false; }
+    const size_t vertexCount = mesh.vertices.size();
+    for (uint32_t index : mesh.indices)
+        if (index >= vertexCount)
+        { if (outReason) *outReason = "triangle index out of range"; return false; }
+    for (const BooleanMeshVertex& v : mesh.vertices)
+        if (!allFinite(v.position))
+        { if (outReason) *outReason = "non-finite vertex"; return false; }
+    return true;
+}
+
 // Fills the render/collision cache from one boolean surface.
 void fillSurface(DestructibleGeometry& geometry, const BooleanMesh& mesh)
 {
@@ -113,8 +140,14 @@ void fillSurface(DestructibleGeometry& geometry, const BooleanMesh& mesh)
     geometry.renderVertices.reserve(mesh.vertices.size());
     geometry.collisionTriangles.reserve(mesh.triangleCount());
 
+    const size_t vertexCount = mesh.vertices.size();
     for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
     {
+        // Last-resort guard: meshIsSane already rejected malformed input.
+        if (mesh.indices[i] >= vertexCount ||
+            mesh.indices[i + 1] >= vertexCount ||
+            mesh.indices[i + 2] >= vertexCount)
+            continue;
         const BooleanMeshVertex& v0 = mesh.vertices[mesh.indices[i]];
         const BooleanMeshVertex& v1 = mesh.vertices[mesh.indices[i + 1]];
         const BooleanMeshVertex& v2 = mesh.vertices[mesh.indices[i + 2]];
@@ -189,6 +222,15 @@ void DestructibleGeometrySystem::initializeFromMesh(DestructibleGeometry& geomet
                                                     BooleanMesh baseMesh,
                                                     glm::vec3 halfExtents)
 {
+    const char* reason = nullptr;
+    if (!meshIsSane(baseMesh, &reason))
+    {
+        // Never let an invalid authored/imported mesh into gameplay.
+        Debug::error(Debug::Category::General,
+            "[BOOLEAN] reject authored mesh: %s\n", reason ? reason : "invalid");
+        recordCrashBreadcrumb("mesh-init", "rejected: %s", reason ? reason : "invalid");
+        return;
+    }
     booleanSessionRelease(geometry.booleanSessionId);
     geometry.booleanSessionId = gNextSessionId++;
     geometry.enabled = true;
@@ -223,7 +265,10 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
     // Apply at most maxNewCuts of the not-yet-applied cutters (0 = all), so a
     // burst can be drained across several frames. The session already knows how
     // many it has applied, so only the new cutters are subtracted.
-    const uint32_t appliedSoFar = geometry.cuts.size() - geometry.pendingCutCount;
+    if (geometry.pendingCutCount > geometry.cuts.size())
+        geometry.pendingCutCount = (uint32_t)geometry.cuts.size();
+    const uint32_t appliedSoFar =
+        (uint32_t)geometry.cuts.size() - geometry.pendingCutCount;
     const uint32_t newCuts = (maxNewCuts == 0)
         ? geometry.pendingCutCount
         : std::min(maxNewCuts, geometry.pendingCutCount);
@@ -234,8 +279,9 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
     for (size_t i = 0; i < lastCut; ++i)
         cutters.push_back(geometry.cuts[i].cutter);
 
-    const BooleanCutResult result = booleanSubtractIncremental(
-        geometry.booleanSessionId, geometry.baseMesh, cutters);
+    recordCrashBreadcrumb("boolean", "session=%llu applied=%u new=%u total=%zu",
+        (unsigned long long)geometry.booleanSessionId,
+        (unsigned)appliedSoFar, (unsigned)newCuts, geometry.cuts.size());
 
     // A failed or oversized cut must not stall the queue. Discard the pending
     // cuts that were attempted so the record stays consistent and future shots
@@ -250,6 +296,29 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
         geometry.booleanSessionId = gNextSessionId++;
     };
 
+    BooleanCutResult result;
+    try
+    {
+        result = booleanSubtractIncremental(geometry.booleanSessionId,
+                                            geometry.baseMesh, cutters);
+    }
+    catch (const std::exception& e)
+    {
+        Debug::error(Debug::Category::General,
+            "[BOOLEAN] exception during subtract: %s\n", e.what());
+        recordCrashBreadcrumb("boolean", "exception: %s", e.what());
+        discardPending(BooleanError::Internal);
+        return false;
+    }
+    catch (...)
+    {
+        Debug::error(Debug::Category::General,
+            "[BOOLEAN] unknown exception during subtract\n");
+        recordCrashBreadcrumb("boolean", "unknown exception");
+        discardPending(BooleanError::Internal);
+        return false;
+    }
+
     if (!result.success)
     {
         discardPending(result.error);
@@ -258,6 +327,28 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
     if (result.triangleCount > maxTrianglesPerEntity)
     {
         discardPending(BooleanError::ResultTooLarge);
+        return false;
+    }
+
+    // Validate the boolean output before it replaces the cached collision and
+    // render surface. A malformed result is discarded and the previous valid
+    // mesh is kept (the cut history rolls back to the last applied cut).
+    const char* meshReason = nullptr;
+    if (result.changed && !meshIsSane(result.mesh, &meshReason))
+    {
+        Debug::error(Debug::Category::General,
+            "[BOOLEAN] rejected result: %s\n", meshReason ? meshReason : "invalid");
+        recordCrashBreadcrumb("boolean", "rejected result: %s",
+            meshReason ? meshReason : "invalid");
+        discardPending(BooleanError::Internal);
+        return false;
+    }
+    if (!std::isfinite(result.remainingVolume) || result.remainingVolume < 0.0f)
+    {
+        Debug::error(Debug::Category::General,
+            "[BOOLEAN] rejected result: non-finite volume\n");
+        recordCrashBreadcrumb("boolean", "rejected result: non-finite volume");
+        discardPending(BooleanError::Internal);
         return false;
     }
 
@@ -289,6 +380,9 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
     geometry.lastImbalance = fracture.imbalance;
 
     ++geometry.geometryRevision;
+    recordCrashBreadcrumb("boolean", "ok rev=%llu tris=%zu vol=%.3f",
+        (unsigned long long)geometry.geometryRevision,
+        geometry.collisionTriangles.size(), geometry.remainingVolume);
     return true;
 }
 
@@ -325,7 +419,24 @@ std::vector<BooleanPiece> DestructibleGeometrySystem::decomposePieces(
     cutters.reserve(geometry.cuts.size());
     for (const DestructionCut& cut : geometry.cuts)
         cutters.push_back(cut.cutter);
-    return booleanDecomposePieces(geometry.baseMesh, cutters);
+    recordCrashBreadcrumb("fracture", "decompose cuts=%zu", cutters.size());
+    try
+    {
+        return booleanDecomposePieces(geometry.baseMesh, cutters);
+    }
+    catch (const std::exception& e)
+    {
+        Debug::error(Debug::Category::General,
+            "[FRACTURE] exception during decompose: %s\n", e.what());
+        recordCrashBreadcrumb("fracture", "decompose exception: %s", e.what());
+    }
+    catch (...)
+    {
+        Debug::error(Debug::Category::General,
+            "[FRACTURE] unknown exception during decompose\n");
+        recordCrashBreadcrumb("fracture", "decompose unknown exception");
+    }
+    return {};
 }
 
 int DestructibleGeometrySystem::addCut(DestructibleGeometry& geometry,
@@ -334,18 +445,16 @@ int DestructibleGeometrySystem::addCut(DestructibleGeometry& geometry,
     if (!geometry.enabled)
         return 0;
 
-    const uint64_t id = enqueueCut(geometry, cut);
+    enqueueCut(geometry, cut);
     // Apply every queued cut immediately (immediate API). A no-op cut still
     // counts as accepted history and reports 1 for compatibility.
     const int flushed = flushQueuedCuts(geometry, 0);
     if (flushed < 0)
     {
-        // Roll back so an invalid cut never corrupts the authoritative history.
-        geometry.cuts.pop_back();
-        if (geometry.pendingCutCount > 0)
-            --geometry.pendingCutCount;
-        if (id != 0)
-            geometry.nextCutId = id;
+        // rebuild() already rolled the failed pending cut(s) back through
+        // discardPending(), so the history is consistent. Do NOT pop again:
+        // the previous version popped a previously-applied valid cut and
+        // desynced the server/client cut history.
         return 0;
     }
     return 1;

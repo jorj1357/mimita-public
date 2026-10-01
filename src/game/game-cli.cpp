@@ -43,6 +43,9 @@
 #include "impact/impact-system.h"
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/actor-triangle-solver.h"
+#include "debug/crash-handler.h"
+#include <exception>
+#include <stdexcept>
 #include "debug/debug-log.h"
 #include "network/ice/ice-agent.h"
 #include "network/ice/ice-config.h"
@@ -317,6 +320,27 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = MimitaImpact::destructibleSelfTest(&summary);
         printf("%s", summary.c_str());
         printf("[DESTRUCTIBLE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--crash-exception-selftest") {
+        // Validates the crash diagnostics: throws an uncaught C++ exception so
+        // the text report must contain the exception type, what(), breadcrumbs,
+        // and stack. The dialog is suppressed; the process still aborts. CLI
+        // modes run before the engine installs the handler, so install it here.
+        installCrashHandler();
+        setCrashHandlerTestMode(true);
+        recordCrashBreadcrumb("crash-test",
+            "throwing uncaught exception to validate crash diagnostics");
+        throw std::runtime_error(
+            "intentional crash-handler test: uncaught std::runtime_error");
+    }
+
+    if (std::string(argv[1]) == "--destruction-stress-selftest") {
+        std::string summary;
+        const bool ok = MimitaImpact::destructionStressSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[DESTRUCTION STRESS SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         return true;
     }
 

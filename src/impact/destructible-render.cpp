@@ -18,6 +18,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "camera.h"
+#include "debug/crash-handler.h"
 #include "impact/destructible-geometry.h"
 #include "map/map_common.h"
 #include "physics/physical-entity.h"
@@ -96,6 +97,8 @@ bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
                              vertexCount != gUploadedVertexCount;
     if (needsUpload)
     {
+        recordCrashBreadcrumb("render-upload", "id=%u rev=%llu verts=%zu",
+            entity.id, (unsigned long long)geometry.geometryRevision, vertexCount);
         glBufferData(GL_ARRAY_BUFFER,
                      (GLsizeiptr)(vertexCount * sizeof(Vertex)),
                      geometry.renderVertices.data(), GL_DYNAMIC_DRAW);

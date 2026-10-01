@@ -19,8 +19,10 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "config/material-config.h"
+#include "debug/crash-handler.h"
 #include "debug/debug-log.h"
 #include "impact/destructible-geometry.h"
+#include "impact/destructible-world-config.h"
 #include "physics/physical-entity.h"
 
 namespace MimitaImpact {
@@ -38,6 +40,24 @@ uint32_t effectiveMaterialId(const PhysicalEntity& entity)
     return entity.destructible.materialId != 0
         ? entity.destructible.materialId
         : entity.materialId;
+}
+
+bool allFinite(const glm::vec3& v)
+{
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+// Rejects an impact whose geometry/mass inputs are non-finite so NaN never
+// reaches boolean cut sizing, cutter construction, or the mass integrator.
+bool finiteImpactEvent(const ImpactEvent& e)
+{
+    return allFinite(e.worldPoint) &&
+           allFinite(e.worldNormal) &&
+           allFinite(e.worldDirection) &&
+           std::isfinite(e.mass) && std::isfinite(e.speed) &&
+           std::isfinite(e.radius) && std::isfinite(e.energy) &&
+           std::isfinite(e.sizeScale) && std::isfinite(e.boreLength) &&
+           std::isfinite(e.cutScale) && std::isfinite(e.penetration);
 }
 
 // Deterministic network id for fracture fragment `pieceIndex` (1-based) of a
@@ -68,6 +88,7 @@ std::vector<uint32_t> ImpactSystem::applyFracture(PhysicalEntity& entity,
     std::vector<uint32_t> spawned;
     DestructibleGeometrySystem& geometrySystem = DestructibleGeometrySystem::instance();
     std::vector<BooleanPiece> pieces = geometrySystem.decomposePieces(entity.destructible);
+    recordCrashBreadcrumb("fracture", "entity=%u pieces=%zu", entity.id, pieces.size());
     if (pieces.size() < 2)
         return spawned;
 
@@ -284,6 +305,19 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
         return result;
     }
 
+    if (!finiteImpactEvent(event))
+    {
+        Debug::error(Debug::Category::General,
+            "[IMPACT] rejected non-finite event target=%u source=%u\n",
+            event.targetEntityId, (unsigned)event.source);
+        recordCrashBreadcrumb("impact", "rejected non-finite target=%u",
+            event.targetEntityId);
+        return result;
+    }
+
+    recordCrashBreadcrumb("impact", "entity=%u src=%u speed=%.1f r=%.3f",
+        event.targetEntityId, (unsigned)event.source, event.speed, event.radius);
+
     const MaterialDefinition& material =
         MaterialConfig::instance().find(effectiveMaterialId(*entity));
 
@@ -403,6 +437,23 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
     const uint64_t cutId = DestructibleGeometrySystem::instance().enqueueCut(
         entity->destructible, cut);
 
+    // Authoritative rigid-body response: transfer the projectile's momentum to
+    // the entity at the real hit point, so it translates and torques instead of
+    // only losing geometry. Reduced by the impact angle and the material's
+    // response. Deterministic from the event, so the server and the local
+    // predictive client compute the same impulse; mirrors receive the resulting
+    // transform through the state packet and never simulate it.
+    if (entity->motion == PhysicalEntityMotion::Dynamic &&
+        resolved.mass > 0.0f && resolved.speed > 0.0f)
+    {
+        const glm::vec3 direction = glm::normalize(resolved.worldDirection);
+        const float retention =
+            glm::clamp(angle * material.holeEnergyScale, 0.0f, 1.0f);
+        const glm::vec3 impulse =
+            direction * (resolved.mass * resolved.speed * retention);
+        applyPhysicalEntityImpulse(*entity, impulse, resolved.worldPoint);
+    }
+
     entity->destructible.health =
         std::max(0.0f, entity->destructible.health - damage);
 
@@ -422,6 +473,13 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
     DestructibleGeometrySystem& geometrySystem = DestructibleGeometrySystem::instance();
 
+    // Hot-reloadable budgets/tuning (config/destructible-world.json). The
+    // geometry owner reads these on the rebuild below; the per-tick cut/budget
+    // caps are passed by the caller (PhysicalEntitySystem::advanceKinematics).
+    const DestructibleWorldConfig& config = DestructibleWorldConfig::instance();
+    geometrySystem.maxTrianglesPerEntity = config.maxTrianglesPerEntity();
+    geometrySystem.fractureTuning = config.fractureTuning();
+
     // Snapshot ids first: applying a fracture spawns entities and reallocates
     // the system's storage, so a live pointer/iterator is unsafe across a
     // flush.
@@ -436,6 +494,9 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
         if (!entity || !entity->destructible.enabled ||
             entity->destructible.pendingCutCount == 0)
             continue;
+
+        recordCrashBreadcrumb("flush", "entity=%u pending=%u",
+            id, entity->destructible.pendingCutCount);
 
         const auto booleanStart = std::chrono::steady_clock::now();
         const int flushed = geometrySystem.flushQueuedCuts(entity->destructible,

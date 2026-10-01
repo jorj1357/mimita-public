@@ -10,24 +10,57 @@
 
 #include "network/multiplayer-context.h"
 
+#include <cmath>
 #include <cstdio>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "config/material-config.h"
+#include "debug/crash-handler.h"
+#include "debug/debug-log.h"
 #include "impact/destructible-mesh-loader.h"
 #include "impact/impact-system.h"
 #include "network/packets.h"
 #include "physics/physical-entity.h"
 
 namespace MimitaNet {
+namespace {
+
+bool allFinite(const glm::vec3& v)
+{
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+} // namespace
 
 void mpProcessPhysicalEntitySpawnEventPacket(
     MultiplayerContext&, const PhysicalEntitySpawnEventPacket* event)
 {
     const glm::vec3 halfExtents(event->halfExtents[0], event->halfExtents[1],
                                 event->halfExtents[2]);
+
+    if (!allFinite(halfExtents) ||
+        halfExtents.x <= 0.0f || halfExtents.y <= 0.0f || halfExtents.z <= 0.0f ||
+        !std::isfinite(event->position[0]) || !std::isfinite(event->position[1]) ||
+        !std::isfinite(event->position[2]) ||
+        !std::isfinite(event->orientation[0]) ||
+        !std::isfinite(event->orientation[1]) ||
+        !std::isfinite(event->orientation[2]) ||
+        !std::isfinite(event->orientation[3]) ||
+        !std::isfinite(event->velocity[0]) || !std::isfinite(event->velocity[1]) ||
+        !std::isfinite(event->velocity[2]) ||
+        !std::isfinite(event->angularVelocity[0]) ||
+        !std::isfinite(event->angularVelocity[1]) ||
+        !std::isfinite(event->angularVelocity[2]) ||
+        !std::isfinite(event->density) || event->density < 0.0f)
+    {
+        Debug::error(Debug::Category::Networking,
+            "[PHYS CLIENT] rejected malformed spawn networkId=%u\n",
+            event->networkId);
+        recordCrashBreadcrumb("spawn", "rejected networkId=%u", event->networkId);
+        return;
+    }
 
     std::vector<CollisionTriangle> base;
     MimitaImpact::BooleanMesh baseMesh;
@@ -152,6 +185,27 @@ void mpProcessEntityCutEventPacket(MultiplayerContext&,
     if (!e->destructible.enabled)
         return;
 
+    // Reject a malformed or unsafe replicated cut before it enters the
+    // authoritative history.
+    const glm::vec3 localCenter(event->localCenter[0], event->localCenter[1],
+                                event->localCenter[2]);
+    const glm::vec3 localDirection(event->localDirection[0],
+                                   event->localDirection[1],
+                                   event->localDirection[2]);
+    if (event->cutterType > 1u ||
+        !allFinite(localCenter) ||
+        !allFinite(localDirection) ||
+        !std::isfinite(event->radius) || event->radius <= 0.0f ||
+        !std::isfinite(event->length) || event->length < 0.0f)
+    {
+        Debug::error(Debug::Category::Networking,
+            "[PHYS CLIENT] rejected malformed cut networkId=%u cutId=%u\n",
+            event->networkId, event->cutId);
+        recordCrashBreadcrumb("cut-apply", "rejected networkId=%u",
+                              event->networkId);
+        return;
+    }
+
     // Explicit ordered identity: the server sends cuts in order and never
     // re-sends one. Ignore anything already present so a retransmit cannot
     // corrupt the authoritative history.
@@ -159,14 +213,14 @@ void mpProcessEntityCutEventPacket(MultiplayerContext&,
         if (existing.cutId == event->cutId)
             return;
 
+    recordCrashBreadcrumb("cut-apply", "networkId=%u cutId=%u",
+                          event->networkId, event->cutId);
+
     MimitaImpact::DestructionCut cut;
     cut.cutId = event->cutId;
     cut.cutter.type = (MimitaImpact::BooleanCutterType)event->cutterType;
-    cut.cutter.localCenter = glm::vec3(event->localCenter[0], event->localCenter[1],
-                                       event->localCenter[2]);
-    cut.cutter.localDirection = glm::vec3(event->localDirection[0],
-                                          event->localDirection[1],
-                                          event->localDirection[2]);
+    cut.cutter.localCenter = localCenter;
+    cut.cutter.localDirection = localDirection;
     cut.cutter.radius = event->radius;
     cut.cutter.length = event->length;
     cut.damage = event->damage;

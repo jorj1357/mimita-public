@@ -28,8 +28,10 @@
 #include "physics/movement/collision-aabb-tree.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "config/material-config.h"
+#include "debug/crash-handler.h"
 #include "impact/destructible-geometry.h"
 #include "impact/destructible-render.h"
+#include "impact/destructible-world-config.h"
 #include "impact/impact-system.h"
 #include "world/world.h"
 #include "entities/player.h"
@@ -207,6 +209,12 @@ void refreshEntityMassProperties(PhysicalEntity& e)
     refreshMassProperties(e);
 }
 
+void applyPhysicalEntityImpulse(PhysicalEntity& e, const glm::vec3& impulse,
+                                const glm::vec3& worldPoint)
+{
+    applyImpulseAtPoint(e, impulse, worldPoint, true);
+}
+
 PhysicalEntitySystem& PhysicalEntitySystem::instance()
 {
     static PhysicalEntitySystem system;
@@ -241,6 +249,8 @@ uint32_t PhysicalEntitySystem::add(
     e.persistenceId = "runtime-physical-" + std::to_string(e.id);
     e.networkId = e.id;
     refreshMassProperties(e);
+    recordCrashBreadcrumb("entity-add", "id=%u tris=%zu",
+                          e.id, e.localTriangles.size());
     mEntities.push_back(std::move(e));
     return mEntities.back().id;
 }
@@ -321,6 +331,7 @@ bool PhysicalEntitySystem::remove(uint32_t id)
     {
         if (it->id == id)
         {
+            recordCrashBreadcrumb("entity-remove", "id=%u", id);
             MimitaImpact::DestructibleGeometrySystem::instance().release(it->destructible);
             mEntities.erase(it);
             return true;
@@ -522,10 +533,12 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
 
     // Drain queued destruction cuts once per fixed tick, batched and budgeted so
     // a burst of shots cannot blow a frame. This is the 60 Hz destruction owner;
-    // ImpactSystem still decides the cut and owns fracture.
+    // ImpactSystem still decides the cut and owns fracture. Budgets come from
+    // config/destructible-world.json (hot-reloadable).
+    const MimitaImpact::DestructibleWorldConfig& destruction =
+        MimitaImpact::DestructibleWorldConfig::instance();
     MimitaImpact::ImpactSystem::instance().flushPendingCuts(
-        MimitaImpact::ImpactSystem::kMaxCutsPerEntityPerTick,
-        MimitaImpact::ImpactSystem::kCutBudgetMsPerTick);
+        destruction.maxCutsPerEntityPerTick(), destruction.cutBudgetMsPerTick());
 }
 
 float PhysicalEntitySystem::renderAlpha() const
@@ -689,81 +702,223 @@ bool aabbOverlapsPadded(const AABB& a, const AABB& b, float pad)
            a.min.z - pad <= b.max.z && a.max.z + pad >= b.min.z;
 }
 
-void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
+bool entityCanMove(const PhysicalEntity& e)
+{
+    // A client mirror follows server transforms and must never be pushed by
+    // local entity-vs-entity resolution.
+    return !e.serverDriven && e.collidesWithActors &&
+           e.motion != PhysicalEntityMotion::Static &&
+           !e.localTriangles.empty();
+}
+
+// Collects contacts for `actor` vs `other` using the shared actor-vs-mesh
+// narrowphase (the same routine the actor/world path uses). `other`'s cached
+// world surface is swapped into a scratch World so no triangle soup is copied.
+void collectPairDirection(
+    const PhysicalEntity& actor, const PhysicalEntity& other,
+    World& scratchWorld, std::vector<int>& candidates,
+    std::vector<ActorCollisionMesh>& meshes, std::vector<RecoveryContact>& out)
+{
+    // Fetch the tree inside this call: cachedEntitySurface may rebuild the map
+    // entry and a pointer captured earlier could dangle.
+    const EntitySurfaceCacheView view = cachedEntitySurface(other);
+    const AabbTree* otherTree = view.tree;
+    std::swap(scratchWorld.collisionMesh, *view.meshCache);
+
+    meshes.resize(1);
+    meshes[0].label = "physicalEntity";
+    meshes[0].localTriangles = &actor.localTriangles;
+    meshes[0].previousTransform = actor.previousTransform;
+    meshes[0].desiredTransform = actor.transform;
+
+    candidates.resize(scratchWorld.collisionMesh.triangles.size());
+    for (size_t k = 0; k < candidates.size(); ++k)
+        candidates[k] = (int)k;
+
+    collectActorMeshContactsInto(scratchWorld, meshes, candidates,
+                                 glm::vec3(actor.transform[3]), out,
+                                 false, 0.0f, otherTree);
+
+    std::swap(scratchWorld.collisionMesh, *view.meshCache);
+}
+
+// Applies one two-body contact. `normal` points from `b` toward `a`. Splits the
+// positional correction by inverse mass and applies a normal + Coulomb friction
+// impulse at the real contact point so both bodies gain torque and translation.
+void resolveEntityPairContact(PhysicalEntity& a, PhysicalEntity& b,
+                              const RecoveryContact& contact)
 {
     constexpr float kSlop = 0.005f;
+
+    glm::vec3 normal = contact.responseNormal;
+    if (glm::dot(normal, normal) <= 1e-8f)
+        normal = contact.normal;
+    const float normalLength = glm::length(normal);
+    if (normalLength <= 1e-6f)
+        return;
+    normal /= normalLength;
+
+    const float invMassA = (a.motion == PhysicalEntityMotion::Dynamic && a.mass > 0.0f)
+        ? 1.0f / a.mass : 0.0f;
+    const float invMassB = (b.motion == PhysicalEntityMotion::Dynamic && b.mass > 0.0f)
+        ? 1.0f / b.mass : 0.0f;
+    const float invMassTotal = invMassA + invMassB;
+    if (invMassTotal <= 1e-8f)
+        return;
+
+    const float correction = std::max(0.0f, contact.penetration - kSlop);
+    if (correction > 0.0f)
+    {
+        a.transform[3] += glm::vec4(normal * (correction * invMassA / invMassTotal), 0.0f);
+        b.transform[3] -= glm::vec4(normal * (correction * invMassB / invMassTotal), 0.0f);
+    }
+    a.sleeping = false;
+    b.sleeping = false;
+    a.sleepTicks = b.sleepTicks = 0;
+    a.supportGraceTicks = b.supportGraceTicks = 0;
+
+    const glm::vec3 comA = glm::vec3(a.transform[3]) + a.orientation * a.centerOfMass;
+    const glm::vec3 comB = glm::vec3(b.transform[3]) + b.orientation * b.centerOfMass;
+    // Contact point on the contact plane nearest the line between the two
+    // centers of mass. A flat, face-on pair then exchanges momentum without a
+    // spurious angular-resistance term (which under-exchanged momentum when the
+    // manifold triangles were asymmetric), while an off-center landing still
+    // gains torque from the offset of this point from each center of mass.
+    const glm::vec3 midpoint = 0.5f * (comA + comB);
+    const glm::vec3 point = midpoint -
+        normal * glm::dot(midpoint - contact.point, normal);
+    const glm::vec3 rA = point - comA;
+    const glm::vec3 rB = point - comB;
+    const glm::vec3 velA = a.velocity + glm::cross(a.angularVelocity, rA);
+    const glm::vec3 velB = b.velocity + glm::cross(b.angularVelocity, rB);
+    const float normalSpeed = glm::dot(velA - velB, normal);
+    if (normalSpeed >= 0.0f)
+        return;
+
+    auto effectiveMass = [&](const PhysicalEntity& e, const glm::vec3& r,
+                             const glm::vec3& n) {
+        const glm::vec3 rXn = glm::cross(r, n);
+        return glm::dot(glm::cross(inverseInertiaWorld(e, rXn), r), n);
+    };
+    const float normalMass = invMassA + invMassB +
+        effectiveMass(a, rA, normal) + effectiveMass(b, rB, normal);
+    if (normalMass <= 1e-8f)
+        return;
+
+    const float restitution = std::max(a.restitution, b.restitution);
+    const float normalImpulse = -(1.0f + restitution) * normalSpeed / normalMass;
+    applyImpulseAtPoint(a, normal * normalImpulse, point, false);
+    applyImpulseAtPoint(b, -normal * normalImpulse, point, false);
+
+    const glm::vec3 postA = a.velocity + glm::cross(a.angularVelocity, rA);
+    const glm::vec3 postB = b.velocity + glm::cross(b.angularVelocity, rB);
+    glm::vec3 tangent = (postA - postB) -
+                        normal * glm::dot(postA - postB, normal);
+    const float tangentLength = glm::length(tangent);
+    if (tangentLength <= 1e-5f)
+        return;
+    tangent /= tangentLength;
+
+    const float tangentMass = invMassA + invMassB +
+        effectiveMass(a, rA, tangent) + effectiveMass(b, rB, tangent);
+    if (tangentMass <= 1e-8f)
+        return;
+    const float desired = -glm::dot(postA - postB, tangent) / tangentMass;
+    const float limit = std::max(a.friction, b.friction) * normalImpulse;
+    const float tangentImpulse = glm::clamp(desired, -limit, limit);
+    applyImpulseAtPoint(a, tangent * tangentImpulse, point, false);
+    applyImpulseAtPoint(b, -tangent * tangentImpulse, point, false);
+}
+
+void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
+{
+    static thread_local World s_pairWorld;
+    static thread_local std::vector<int> s_candidates;
+    static thread_local std::vector<ActorCollisionMesh> s_meshes;
+    static thread_local std::vector<RecoveryContact> s_forward;
+    static thread_local std::vector<RecoveryContact> s_reverse;
+    static thread_local std::vector<RecoveryContact> s_contacts;
+
     for (size_t i = 0; i < entities.size(); ++i)
     {
         PhysicalEntity& a = entities[i];
-        // A client mirror follows server transforms and must never be pushed by
-        // local entity-vs-entity resolution.
-        if (a.serverDriven || a.motion == PhysicalEntityMotion::Static ||
-            !a.collidesWithActors)
+        if (!entityCanMove(a))
             continue;
+        const AABB boxA = entityWorldAABB(a);
         for (size_t j = i + 1; j < entities.size(); ++j)
         {
             PhysicalEntity& b = entities[j];
-            if (b.serverDriven || b.motion == PhysicalEntityMotion::Static ||
-                !b.collidesWithActors)
+            if (!entityCanMove(b))
                 continue;
-            if (a.localTriangles.empty() || b.localTriangles.empty())
-                continue;
-
-            const AABB boxA = entityWorldAABB(a);
             const AABB boxB = entityWorldAABB(b);
-            const glm::vec3 overlap(
-                std::min(boxA.max.x, boxB.max.x) - std::max(boxA.min.x, boxB.min.x),
-                std::min(boxA.max.y, boxB.max.y) - std::max(boxA.min.y, boxB.min.y),
-                std::min(boxA.max.z, boxB.max.z) - std::max(boxA.min.z, boxB.min.z));
-            if (overlap.x <= 0.0f || overlap.y <= 0.0f || overlap.z <= 0.0f)
+            if (!aabbOverlapsPadded(boxA, boxB, 0.02f))
                 continue;
 
-            const glm::vec3 centerA = (boxA.min + boxA.max) * 0.5f;
-            const glm::vec3 centerB = (boxB.min + boxB.max) * 0.5f;
-            const glm::vec3 delta = centerB - centerA;
-            int axis = 0;
-            if (overlap.y < overlap.x && overlap.y <= overlap.z) axis = 1;
-            else if (overlap.z < overlap.x && overlap.z < overlap.y) axis = 2;
-            glm::vec3 normal(0.0f);
-            normal[axis] = delta[axis] >= 0.0f ? 1.0f : -1.0f;
+            // Both directions use the shared triangle narrowphase so either
+            // body's linear + angular motion is swept. Normals are oriented
+            // toward `a`; duplicate reverse contacts at the same spot are
+            // dropped so an impulse is never applied twice.
+            s_contacts.clear();
+            collectPairDirection(a, b, s_pairWorld, s_candidates,
+                                 s_meshes, s_forward);
+            for (const RecoveryContact& c : s_forward)
+                s_contacts.push_back(c);
 
-            const float invMassA = a.motion == PhysicalEntityMotion::Dynamic && a.mass > 0.0f
-                ? 1.0f / a.mass : 0.0f;
-            const float invMassB = b.motion == PhysicalEntityMotion::Dynamic && b.mass > 0.0f
-                ? 1.0f / b.mass : 0.0f;
-            const float invMassTotal = invMassA + invMassB;
-            if (invMassTotal <= 1e-8f)
+            collectPairDirection(b, a, s_pairWorld, s_candidates,
+                                 s_meshes, s_reverse);
+            for (RecoveryContact c : s_reverse)
+            {
+                c.normal = -c.normal;
+                c.responseNormal = -c.responseNormal;
+                c.surfaceNormal = -c.surfaceNormal;
+                bool duplicate = false;
+                for (const RecoveryContact& existing : s_contacts)
+                {
+                    const glm::vec3 d = existing.point - c.point;
+                    if (glm::dot(d, d) < 0.0004f) { duplicate = true; break; }
+                }
+                if (!duplicate)
+                    s_contacts.push_back(c);
+            }
+            if (s_contacts.empty())
                 continue;
 
-            const float correction = std::max(0.0f, overlap[axis] - kSlop);
-            a.transform[3] -= glm::vec4(normal * correction * invMassA / invMassTotal, 0.0f);
-            b.transform[3] += glm::vec4(normal * correction * invMassB / invMassTotal, 0.0f);
-            a.sleeping = false;
-            b.sleeping = false;
-            a.sleepTicks = b.sleepTicks = 0;
-            a.supportGraceTicks = b.supportGraceTicks = 0;
+            // Deterministic order and a hard per-pair cap.
+            std::sort(s_contacts.begin(), s_contacts.end(),
+                [](const RecoveryContact& x, const RecoveryContact& y) {
+                    if (x.triangleIndex != y.triangleIndex)
+                        return x.triangleIndex < y.triangleIndex;
+                    return glm::dot(x.point, x.point) < glm::dot(y.point, y.point);
+                });
+            const size_t count = std::min<size_t>(s_contacts.size(), 32);
 
-            const glm::vec3 point = (glm::max(boxA.min, boxB.min) +
-                                     glm::min(boxA.max, boxB.max)) * 0.5f;
-            const glm::vec3 centerOfMassA = glm::vec3(a.transform[3]) +
-                                            a.orientation * a.centerOfMass;
-            const glm::vec3 centerOfMassB = glm::vec3(b.transform[3]) +
-                                            b.orientation * b.centerOfMass;
-            const glm::vec3 relativeVelocity =
-                (b.velocity + glm::cross(b.angularVelocity, point - centerOfMassB)) -
-                (a.velocity + glm::cross(a.angularVelocity, point - centerOfMassA));
-            const float normalSpeed = glm::dot(relativeVelocity, normal);
-            if (normalSpeed >= 0.0f)
+            // Aggregate the manifold into one representative contact. A box
+            // face pair touches through several triangles; applying a separate
+            // impulse per triangle under-exchanges momentum (the previous
+            // AABB path used a single axis impulse). One normal/point/penetration
+            // keeps the exchange correct while still using the real triangle
+            // geometry rather than a box axis.
+            glm::vec3 normalSum(0.0f);
+            glm::vec3 pointSum(0.0f);
+            float maxPenetration = 0.0f;
+            for (size_t c = 0; c < count; ++c)
+            {
+                glm::vec3 n = s_contacts[c].responseNormal;
+                if (glm::dot(n, n) <= 1e-8f)
+                    n = s_contacts[c].normal;
+                normalSum += n;
+                pointSum += s_contacts[c].point;
+                maxPenetration = std::max(maxPenetration, s_contacts[c].penetration);
+            }
+            if (glm::dot(normalSum, normalSum) <= 1e-8f)
                 continue;
 
-            const float restitution = std::max(a.restitution, b.restitution);
-            const float impulseMagnitude = -(1.0f + restitution) * normalSpeed /
-                                           invMassTotal;
-            const glm::vec3 impulse = normal * impulseMagnitude;
-            if (invMassA > 0.0f)
-                applyImpulseAtPoint(a, -impulse, point);
-            if (invMassB > 0.0f)
-                applyImpulseAtPoint(b, impulse, point);
+            RecoveryContact aggregate = s_contacts[0];
+            aggregate.normal = normalSum;
+            aggregate.responseNormal = normalSum;
+            aggregate.point = pointSum / (float)count;
+            aggregate.penetration = maxPenetration;
+            resolveEntityPairContact(a, b, aggregate);
         }
     }
 }
@@ -1299,6 +1454,50 @@ bool physicalEntitySelfTest(std::string* outSummary)
         check(destructible->transform[3].z > 0.45f &&
                   destructible->transform[3].z < 0.65f,
               "destructible dynamic crate falls onto the floor");
+    }
+
+    // 7. A projectile impact transfers momentum to the crate at the hit point:
+    //    the crate gains translation and torque instead of only losing geometry,
+    //    and it is never teleported.
+    {
+        system.clear();
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(1.0f));
+        const uint32_t id = system.add(
+            box, glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 5.0f)),
+            PhysicalEntityMotion::Dynamic);
+        PhysicalEntity* crate = system.find(id);
+        crate->gravityScale = 0.0f;
+        crate->density = 1.0f;
+        crate->mass = 8.0f;
+        crate->halfExtents = glm::vec3(1.0f);
+        if (MimitaImpact::MaterialConfig::instance().revision() == 0)
+            MimitaImpact::MaterialConfig::instance().load();
+        MimitaImpact::ImpactSystem::instance().initializeEntity(
+            *crate, MimitaImpact::materialIdForName("wood"), glm::vec3(1.0f));
+
+        const glm::vec3 before = glm::vec3(crate->transform[3]);
+        MimitaImpact::ImpactEvent ev;
+        ev.source = MimitaImpact::ImpactSource::Projectile;
+        ev.target = MimitaImpact::ImpactTarget::PhysicalEntity;
+        ev.targetEntityId = id;
+        ev.worldPoint = glm::vec3(-1.0f, 0.0f, 5.6f); // off-center => torque
+        ev.worldNormal = glm::vec3(-1.0f, 0.0f, 0.0f);
+        ev.worldDirection = glm::vec3(1.0f, 0.0f, 0.0f);
+        ev.mass = 0.05f;
+        ev.speed = 400.0f;
+        ev.radius = 0.1f;
+        ev.sizeScale = 1.0f;
+        ev.cutScale = 1.0f;
+        ev.energy = MimitaImpact::ImpactSystem::kineticEnergy(ev.mass, ev.speed);
+        MimitaImpact::ImpactSystem::instance().submit(ev);
+
+        check(crate->velocity.x > 0.0f,
+              "projectile impact pushes the crate along the shot");
+        check(glm::length(crate->angularVelocity) > 0.001f,
+              "off-center projectile impact spins the crate");
+        check(glm::length(glm::vec3(crate->transform[3]) - before) < 1e-4f,
+              "projectile impact does not teleport the crate");
     }
 
     system.clear();

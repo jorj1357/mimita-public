@@ -10,7 +10,9 @@
 
 #include "terminal/object-commands.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -42,7 +44,43 @@ bool parseFloat(const std::string& text, float& out)
     }
 }
 
+// Whole-string positive integer, or 0 when the text is not a bare number.
+int parsePositiveIndex(const std::string& text)
+{
+    try
+    {
+        size_t used = 0;
+        const int value = std::stoi(text, &used);
+        return (used == text.size() && value > 0) ? value : 0;
+    }
+    catch (...)
+    {
+        return 0;
+    }
+}
+
 } // namespace
+
+// Every .glb in the physics-objects folder, alphabetically. Numbered spawning
+// (object_spawn <n>) and object_spawn_list both use this one list; exposed for
+// a self-test that verifies numbered spawning without a live terminal.
+std::vector<std::string> listPhysicsObjectGlbs()
+{
+    std::vector<std::string> paths;
+    std::error_code ec;
+    for (const auto& entry :
+         std::filesystem::directory_iterator(
+             "assets/objects/things/physics-objects", ec))
+    {
+        if (!entry.is_regular_file())
+            continue;
+        const std::string extension = entry.path().extension().string();
+        if (extension == ".glb" || extension == ".GLB")
+            paths.push_back(entry.path().generic_string());
+    }
+    std::sort(paths.begin(), paths.end());
+    return paths;
+}
 
 void registerObjectCommands()
 {
@@ -54,11 +92,29 @@ void registerObjectCommands()
             if (args.empty())
             {
                 Terminal::instance().addLog(
-                    "[OBJECT] usage: object_spawn <glb-path> [distance] [texture-path]");
+                    "[OBJECT] usage: object_spawn <glb-path|n> [distance] [texture-path]");
                 return;
             }
 
-            const std::string glbPath = args[0];
+            // A bare number selects the nth entry from object_spawn_list; any
+            // other text is a path (path-based spawning keeps working).
+            std::string glbPath = args[0];
+            const int index = parsePositiveIndex(args[0]);
+            if (index > 0)
+            {
+                const std::vector<std::string> list = listPhysicsObjectGlbs();
+                if (index > (int)list.size())
+                {
+                    char msg[160];
+                    std::snprintf(msg, sizeof(msg),
+                        "[OBJECT] index %d out of range (1..%zu); run object_spawn_list",
+                        index, list.size());
+                    Terminal::instance().addLog(msg);
+                    return;
+                }
+                glbPath = list[(size_t)index - 1];
+            }
+
             float distance = 6.0f;
             if (args.size() >= 2 && !parseFloat(args[1], distance))
                 distance = 6.0f;
@@ -130,6 +186,29 @@ void registerObjectCommands()
                 load.halfExtents.z,
                 system.find(id) ? system.find(id)->mass : 0.0f);
             Terminal::instance().addLog(buf);
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "object_spawn_list",
+        "List spawnable physics-object GLBs with numbers",
+        "object_spawn_list",
+        [](const std::vector<std::string>&) {
+            const std::vector<std::string> list = listPhysicsObjectGlbs();
+            Terminal::instance().addLog("[OBJECT] physics objects:");
+            if (list.empty())
+            {
+                Terminal::instance().addLog(
+                    "[OBJECT] none found in assets/objects/things/physics-objects");
+                return;
+            }
+            for (size_t i = 0; i < list.size(); ++i)
+            {
+                char line[320];
+                std::snprintf(line, sizeof(line), "  %zu. %s", i + 1, list[i].c_str());
+                Terminal::instance().addLog(line);
+            }
+            Terminal::instance().addLog("[OBJECT] spawn with: object_spawn <n>");
         }
     });
 }

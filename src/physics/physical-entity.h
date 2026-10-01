@@ -176,6 +176,13 @@ private:
 // change is visible immediately instead of one fixed tick later.
 void refreshEntityMassProperties(PhysicalEntity& entity);
 
+// Applies one authoritative impulse to a Dynamic entity at a world-space point.
+// The offset from the center of mass produces torque, so a projectile hit spins
+// and pushes the object instead of teleporting it. No-op for non-Dynamic or
+// zero-mass entities. Shared by the server impact path and client prediction.
+void applyPhysicalEntityImpulse(PhysicalEntity& entity, const glm::vec3& impulse,
+                                const glm::vec3& worldPoint);
+
 // Appends the 12 triangles of an axis-aligned box centered at `center` with half
 // extents `half`, in entity-local space, with outward normals.
 void buildBoxCollisionTriangles(std::vector<CollisionTriangle>& out,

@@ -16,6 +16,8 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include "debug/crash-handler.h"
+
 // ── Closest point on triangle ────────────────────────────────────────
 static glm::vec3 closestPointOnTriangle(
     const glm::vec3& p,
@@ -557,6 +559,8 @@ ProjectileStepResult simulateProjectileTick(
                     result.hitNormal = earliestNormal;
                     result.impactSpeed = earliestImpactSpeed;
                     result.hitEntityId = earliestEntityId;
+                    recordCrashBreadcrumb("projectile", "entity-hit id=%u",
+                                          earliestEntityId);
                     return result;
                 }
                 else

@@ -2086,3 +2086,68 @@ without a full relink. Until then, a cold build is required for these owners.
 Measure whether the shared entity surface cache and AABB tree survive a runtime
 stress pass (many moving entities + repeated cuts) without cache thrash; if they
 do not help, the tree query can be falsified and removed.
+
+## Cold-build occurrence 38
+
+UTC time:
+`2026-10-01T17:07:33Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_170733-crash-safe-shared-collision.md`
+
+### Why the cold build was required
+
+The crash diagnostics (`src/debug/crash-handler.cpp`), the shared entity-vs-entity
+triangle collision path (`src/physics/physical-entity.cpp`), the destructible
+budget config owner (`src/impact/destructible-world-config.{h,cpp}`), and the
+new self-tests are cold executable owners. Proving the fixes required a relink;
+there is no live-reload path for them in this build.
+
+### Exact cold source / boundary
+
+- `src/debug/crash-handler.{h,cpp}`
+- `src/physics/physical-entity.{h,cpp}`
+- `src/impact/impact-system.{h,cpp}`
+- `src/impact/destructible-geometry.cpp`
+- `src/impact/destructible-world-config.{h,cpp}`
+- `src/network/multiplayer-physical-entities.cpp`
+- `src/terminal/object-commands.{h,cpp}`
+- `src/game/game-cli.cpp`
+
+### Build result
+
+`python build.py build-only` completed successfully and relinked
+`C:\mimita-v9\mimita.exe` several times. Final automated results:
+
+- `mimita.exe --destructible-selftest` PASS
+- `mimita.exe --moving-crate-selftest` PASS
+- `mimita.exe --destruction-replication-selftest` PASS
+- `mimita.exe --destruction-stress-selftest` PASS (5/5 consecutive runs)
+- `mimita.exe --crash-exception-selftest` writes a labeled report with
+  breadcrumbs and a resolvable stack.
+
+### What the cold build was needed to prove
+
+That the destruction path validates and rejects bad output without crashing,
+that entity-vs-entity collision uses the shared triangle narrowphase and
+exchanges momentum without tunneling or overlap, that projectile impacts impart
+momentum + torque at the hit point, and that the destruction budgets/fracture
+tuning are config-driven.
+
+### Why live activation was impossible
+
+These owners are statically linked into the executable and are not exposed as
+replaceable game modules under the live-code-development contract.
+
+### Smallest change that would make this hot
+
+Split the crash handler, the entity collision adapter, and the destruction
+config owner behind the live-module boundary so a diagnostics or collision
+change can be hot-loaded. Until then a relink is required.
+
+### Next migration/falsification step
+
+Measure whole-frame time with `perf_top`/`perf_file_logging` while shooting a
+crate (Phase 5) and confirm the new entity pair narrowphase does not raise
+collision time; if it does, the per-pair two-direction sweep can be reduced to
+one direction or gated by relative speed.

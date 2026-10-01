@@ -111,4 +111,10 @@ private:
 // every check passes and (optionally) writes a per-check report.
 bool destructibleSelfTest(std::string* outSummary);
 
+// Repeatable crash/stability stress for the destruction path: a projectile
+// burst on one crater, repeated same-hole shots, fracture, forced motion, and a
+// client mirror reproducing the server cut mesh. Returns true when every check
+// passes and (optionally) writes a per-check report.
+bool destructionStressSelfTest(std::string* outSummary);
+
 } // namespace MimitaImpact

@@ -21,8 +21,10 @@
 #include "impact/destructible-geometry.h"
 #include "impact/destructible-mesh-loader.h"
 #include "combat/projectile-simulation.h"
+#include "terminal/object-commands.h"
 #include "physics/mesh-mass-properties.h"
 #include "physics/physical-entity.h"
+#include "world/world.h"
 
 namespace MimitaImpact {
 namespace {
@@ -642,6 +644,24 @@ bool destructibleSelfTest(std::string* outSummary)
               "a non-watertight GLB is rejected with a reason");
     }
 
+    // 15b. The numbered physics-object spawn list: .glb only, alphabetical, so
+    //      object_spawn <n> is stable.
+    {
+        const std::vector<std::string> glbs = listPhysicsObjectGlbs();
+        bool allGlb = !glbs.empty();
+        bool sorted = true;
+        for (size_t i = 0; i < glbs.size(); ++i)
+        {
+            if (glbs[i].size() < 4 ||
+                glbs[i].compare(glbs[i].size() - 4, 4, ".glb") != 0)
+                allGlb = false;
+            if (i > 0 && glbs[i] < glbs[i - 1])
+                sorted = false;
+        }
+        check(allGlb, "physics-object spawn list is non-empty and only .glb");
+        check(sorted, "physics-object spawn list is sorted alphabetically");
+    }
+
     // 16. The fracture trigger is silent on a healthy shape and fires when a cut
     // disconnects the material. A dumbbell base cut through its thin neck must
     // separate into two pieces.
@@ -983,6 +1003,205 @@ bool destructibleSelfTest(std::string* outSummary)
         check(tunnelled,
               "repeated shots on one crater eventually penetrate the crate");
     }
+
+    if (outSummary)
+        *outSummary = report;
+    return ok;
+}
+
+// ── Crash/stability stress ───────────────────────────────────────────────
+// Exercises the real deferred destruction path (ImpactSystem::submit enqueues;
+// PhysicalEntitySystem::advanceKinematics flushes under budget) with a large
+// projectile burst on one crater, repeated same-hole shots, fracture, forced
+// motion, and a client mirror reproducing the server cut mesh. The point is to
+// run the exact subsystems that can throw or index out of range, many times,
+// and assert the state stays finite and bounded. It is not a proof of any
+// particular crash cause; a failure here is a lead, and the crash diagnostics
+// (breadcrumbs + symbolize) name the subsystem.
+bool destructionStressSelfTest(std::string* outSummary)
+{
+    std::string report;
+    bool ok = true;
+    auto check = [&](bool cond, const char* name) {
+        report += cond ? "  PASS: " : "  FAIL: ";
+        report += name;
+        report += "\n";
+        if (!cond) ok = false;
+    };
+
+    if (MaterialConfig::instance().revision() == 0)
+        MaterialConfig::instance().load();
+
+    auto finite3 = [](const glm::vec3& v) {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    };
+    auto entityStateFinite = [&](const PhysicalEntity& e) {
+        if (!finite3(glm::vec3(e.transform[3])) ||
+            !finite3(glm::vec3(e.transform[0])) ||
+            !finite3(glm::vec3(e.transform[1])) ||
+            !finite3(glm::vec3(e.transform[2])))
+            return false;
+        if (!finite3(e.velocity) || !finite3(e.angularVelocity)) return false;
+        if (!std::isfinite(e.mass) || e.mass < 0.0f) return false;
+        if (!finite3(e.centerOfMass) || !finite3(e.inertia)) return false;
+        for (const CollisionTriangle& t : e.localTriangles)
+            if (!finite3(t.a) || !finite3(t.b) || !finite3(t.c) ||
+                !finite3(t.normal))
+                return false;
+        return true;
+    };
+
+    PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
+    World world; // empty: this stress targets the destruction/entity path
+    const float dt = 1.0f / 60.0f;
+    const uint32_t wood = materialIdForName("wood");
+
+    auto makeCrate = [&](glm::vec3 position, float half) {
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(half));
+        const uint32_t id = system.add(
+            box, glm::translate(glm::mat4(1.0f), position),
+            PhysicalEntityMotion::Static, wood);
+        if (PhysicalEntity* e = system.find(id))
+            ImpactSystem::instance().initializeEntity(*e, wood, glm::vec3(half));
+        return id;
+    };
+
+    auto rifleEvent = [&](uint32_t targetId, const glm::vec3& point) {
+        ImpactEvent ev;
+        ev.source = ImpactSource::Projectile;
+        ev.target = ImpactTarget::PhysicalEntity;
+        ev.targetEntityId = targetId;
+        ev.worldPoint = point;
+        ev.worldNormal = glm::vec3(0.0f, 0.0f, 1.0f);
+        ev.worldDirection = glm::vec3(0.0f, 0.0f, 1.0f);
+        ev.mass = 0.02f;
+        ev.speed = 100.0f;
+        ev.radius = 0.6f;
+        ev.sizeScale = 1.0f;
+        ev.cutScale = 1.0f;
+        ev.boreLength = 1.2f;
+        ev.energy = ImpactSystem::kineticEnergy(ev.mass, ev.speed);
+        return ev;
+    };
+
+    constexpr int kRounds = 4;
+    constexpr int kShotsPerRound = 120;
+    bool allFinite = true;
+    bool historyMonotonic = true;
+    size_t maxEntities = 0;
+    bool tunnelled = false;
+    bool survived = true;
+
+    // 1-2. Projectile burst on one crater + repeated same-hole shots.
+    system.clear();
+    const uint32_t crateId = makeCrate(glm::vec3(0.0f), 2.5f);
+    size_t previousCuts = 0;
+    for (int round = 0; round < kRounds && survived; ++round)
+    {
+        for (int i = 0; i < kShotsPerRound; ++i)
+        {
+            const float ox = (float)((i % 5) - 2) * 0.05f;
+            ImpactSystem::instance().submit(
+                rifleEvent(crateId, glm::vec3(ox, ox, -2.5f)));
+            system.advanceKinematics(dt, world); // deferred flush under budget
+
+            PhysicalEntity* crate = system.find(crateId);
+            if (!crate) { survived = false; break; }
+            if (!entityStateFinite(*crate)) allFinite = false;
+            // The authoritative history must never shrink (the addCut
+            // double-rollback regression dropped a valid cut).
+            if (crate->destructible.cuts.size() < previousCuts)
+                historyMonotonic = false;
+            previousCuts = crate->destructible.cuts.size();
+            maxEntities = std::max(maxEntities, system.entities().size());
+            if (!rayHitsMesh(crate->localTriangles, glm::vec3(0.0f, 0.0f, -4.0f),
+                             glm::vec3(0.0f, 0.0f, 1.0f), 8.0f))
+                tunnelled = true;
+        }
+        if (PhysicalEntity* crate = system.find(crateId))
+        {
+            // 3. Forced motion on the damaged body.
+            crate->motion = PhysicalEntityMotion::Dynamic;
+            crate->velocity += glm::vec3(3.0f, 0.0f, 0.0f);
+            crate->angularVelocity += glm::vec3(0.0f, 0.0f, 2.0f);
+            for (int t = 0; t < 20; ++t)
+            {
+                system.advanceKinematics(dt, world);
+                PhysicalEntity* c = system.find(crateId);
+                if (!c || !entityStateFinite(*c)) { allFinite = false; break; }
+            }
+        }
+    }
+
+    check(survived, "the crate survived the projectile burst");
+    check(allFinite, "all entity state stayed finite through the burst");
+    check(historyMonotonic, "cut history never shrank (no rollback desync)");
+    check(tunnelled, "repeated shots eventually tunnel through under stress");
+
+    // 4. Fracture stress: cut a dumbbell neck and force the flush to spawn
+    //    fragments, repeatedly.
+    system.clear();
+    for (int f = 0; f < 6; ++f)
+    {
+        const BooleanMesh dumbbell = makeDumbbell(1.3f, 0.8f, 0.25f, 1.4f);
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(2.0f));
+        const uint32_t id = system.add(
+            box, glm::mat4(1.0f), PhysicalEntityMotion::Dynamic, wood);
+        PhysicalEntity* e = system.find(id);
+        ImpactSystem::instance().initializeEntityFromMesh(
+            *e, dumbbell, glm::vec3(2.0f), wood);
+
+        DestructionCut neck;
+        neck.cutter.type = BooleanCutterType::Sphere;
+        neck.cutter.localCenter = glm::vec3(0.0f);
+        neck.cutter.radius = 0.5f;
+        DestructibleGeometrySystem::instance().addCut(e->destructible, neck);
+        e->localTriangles = e->destructible.collisionTriangles;
+
+        ImpactSystem::instance().submit(
+            rifleEvent(id, glm::vec3(0.0f, 0.0f, 0.9f)));
+        system.advanceKinematics(dt, world); // flush -> applyFracture
+
+        maxEntities = std::max(maxEntities, system.entities().size());
+        for (const PhysicalEntity& child : system.entities())
+            if (!entityStateFinite(child)) allFinite = false;
+    }
+    check(allFinite, "fractured fragments stayed finite");
+    check(maxEntities < 128, "fracture kept the entity count bounded");
+
+    // 5. Two-client: a mirror reproduces the server cut mesh from the ordered
+    //    history (the real client path uses addCut per replicated cut).
+    system.clear();
+    const uint32_t serverId = makeCrate(glm::vec3(0.0f), 2.5f);
+    for (int i = 0; i < 6; ++i)
+    {
+        const float ox = (float)((i % 3) - 1) * 0.1f;
+        ImpactSystem::instance().submit(
+            rifleEvent(serverId, glm::vec3(ox, 0.0f, -2.5f)));
+        system.advanceKinematics(dt, world);
+    }
+    PhysicalEntity* server = system.find(serverId);
+    const uint64_t serverHash = server ? checksumMesh(*server) : 0;
+
+    std::vector<CollisionTriangle> mirrorBox;
+    buildBoxCollisionTriangles(mirrorBox, glm::vec3(0.0f), glm::vec3(2.5f));
+    const uint32_t mirrorId = system.addReplicated(
+        9001u, mirrorBox, glm::mat4(1.0f), PhysicalEntityMotion::Static, wood);
+    PhysicalEntity* mirror = system.find(mirrorId);
+    if (mirror)
+    {
+        mirror->motion = PhysicalEntityMotion::Static;
+        ImpactSystem::instance().initializeEntity(*mirror, wood, glm::vec3(2.5f));
+        for (const DestructionCut& cut : server->destructible.cuts)
+            DestructibleGeometrySystem::instance().addCut(mirror->destructible, cut);
+        mirror->localTriangles = mirror->destructible.collisionTriangles;
+    }
+    check(server != nullptr && mirror != nullptr,
+          "server and client mirror both exist");
+    check(mirror && checksumMesh(*mirror) == serverHash,
+          "client mirror reproduces the server cut mesh");
 
     if (outSummary)
         *outSummary = report;
