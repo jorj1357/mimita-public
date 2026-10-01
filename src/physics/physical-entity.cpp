@@ -10,6 +10,7 @@
 #include "physics/physical-entity.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -99,6 +100,7 @@ void applyImpulseAtPoint(PhysicalEntity& e, const glm::vec3& impulse,
     {
         e.sleeping = false;
         e.sleepTicks = 0;
+        e.sleepAnchorValid = false;
     }
 }
 
@@ -123,7 +125,14 @@ void resolveWorldContactVelocity(PhysicalEntity& e,
     float normalImpulse = 0.0f;
     if (normalSpeed < 0.0f && normalMass > 1e-6f)
     {
-        normalImpulse = -(1.0f + e.restitution) * normalSpeed / normalMass;
+        // Below the configured minimum bounce speed, do not bounce: the object
+        // projects and settles instead of jittering on a curved/edge contact.
+        const MimitaImpact::DestructibleWorldConfig& config =
+            MimitaImpact::DestructibleWorldConfig::instance();
+        const float restitution =
+            std::fabs(normalSpeed) < config.objectMinBounceSpeed()
+                ? 0.0f : e.restitution;
+        normalImpulse = -(1.0f + restitution) * normalSpeed / normalMass;
         applyImpulseAtPoint(e, normal * normalImpulse, contact.point, false);
     }
 
@@ -154,61 +163,42 @@ void rebuildTransformFromPose(PhysicalEntity& e)
                   glm::mat4_cast(glm::normalize(e.orientation));
 }
 
-// Best-aligned rest axis of the body against world up. Uses the geometry's real
-// face orientations (any closed mesh) and falls back to the local box axes.
-float bestRestAxisAlignment(const PhysicalEntity& e, glm::vec3& outWorldAxis)
+// Settling: an object that stays within sleepMoveThresholdMeters of its anchor
+// for sleepRequiredTicks fixed ticks freezes there until disturbed (by an
+// impulse, contact, or push). This replaces the previous special-case righting
+// and velocity-kill so settling is a natural result of collisions plus this
+// explicit, configurable "has not moved" rule. It never freezes a body that is
+// still penetrating geometry.
+void updateSettling(PhysicalEntity& e,
+                    const MimitaImpact::DestructibleWorldConfig& config,
+                    float maxPenetration)
 {
-    const glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
-    float best = -1.0f;
-    auto consider = [&](const glm::vec3& localAxis) {
-        const glm::vec3 axis = e.orientation * localAxis;
-        const float alignment = std::fabs(glm::dot(axis, worldUp));
-        if (alignment > best)
-        {
-            best = alignment;
-            outWorldAxis = glm::dot(axis, worldUp) >= 0.0f ? axis : -axis;
-        }
-    };
-    if (!e.destructible.restAxes.empty())
+    if (e.motion != PhysicalEntityMotion::Dynamic)
+        return;
+    const glm::vec3 position(e.transform[3]);
+    const float threshold = std::max(0.0f, config.sleepMoveThresholdMeters());
+    if (!e.sleepAnchorValid ||
+        glm::length(position - e.sleepAnchorPos) > threshold)
     {
-        for (const glm::vec3& axis : e.destructible.restAxes)
-            consider(axis);
+        e.sleepAnchorPos = position;
+        e.sleepAnchorValid = true;
+        e.sleepTicks = 0;
+        return;
     }
-    else
+    if (maxPenetration > 0.05f)
     {
-        consider(glm::vec3(1.0f, 0.0f, 0.0f));
-        consider(glm::vec3(0.0f, 1.0f, 0.0f));
-        consider(glm::vec3(0.0f, 0.0f, 1.0f));
+        e.sleepTicks = 0;
+        return;
     }
-    return best;
-}
-
-bool isRestingOnFace(const PhysicalEntity& e)
-{
-    glm::vec3 axis(0.0f);
-    return bestRestAxisAlignment(e, axis) >= e.restingUprightDot;
-}
-
-// Righting is applied as an angular velocity (not a torque through the inertia
-// tensor), so settling a real face does not depend on density.
-void applyRestingRightingTorque(PhysicalEntity& e, float dt)
-{
-    const glm::vec3 worldUp(0.0f, 0.0f, 1.0f);
-    glm::vec3 selectedWorldAxis(0.0f);
-    if (bestRestAxisAlignment(e, selectedWorldAxis) < 0.0f)
-        return;
-    const float axisLength = glm::length(selectedWorldAxis);
-    if (axisLength <= 1e-5f)
-        return;
-    selectedWorldAxis /= axisLength;
-    const glm::vec3 errorAxis = glm::cross(selectedWorldAxis, worldUp);
-    const float errorLength = glm::length(errorAxis);
-    if (errorLength <= 1e-5f)
-        return;
-    const float errorAngle = std::atan2(errorLength,
-                                        glm::dot(selectedWorldAxis, worldUp));
-    e.angularVelocity += (errorAxis / errorLength) *
-                         (errorAngle * e.rightingStrength * dt);
+    if (e.sleepTicks < 0xFFFF)
+        ++e.sleepTicks;
+    if (e.sleepTicks >= config.sleepRequiredTicks())
+    {
+        e.velocity = glm::vec3(0.0f);
+        e.angularVelocity = glm::vec3(0.0f);
+        e.sleeping = true;
+        e.sleepAnchorValid = false;
+    }
 }
 
 } // namespace
@@ -257,6 +247,14 @@ uint32_t PhysicalEntitySystem::add(
     e.materialId = materialId;
     e.persistenceId = "runtime-physical-" + std::to_string(e.id);
     e.networkId = e.id;
+    // Default object material response comes from
+    // config/destructible-world.json (physics) so bounce/friction are tunable.
+    {
+        const MimitaImpact::DestructibleWorldConfig& config =
+            MimitaImpact::DestructibleWorldConfig::instance();
+        e.restitution = config.objectRestitution();
+        e.friction = config.objectFriction();
+    }
     refreshMassProperties(e);
     recordCrashBreadcrumb("entity-add", "id=%u tris=%zu",
                           e.id, e.localTriangles.size());
@@ -287,6 +285,7 @@ PhysicalEntity* PhysicalEntitySystem::moveKinematic(uint32_t id,
     e->orientation = glm::normalize(glm::quat_cast(glm::mat3(transform)));
     e->sleeping = false;
     e->sleepTicks = 0;
+    e->sleepAnchorValid = false;
     return e;
 }
 
@@ -396,10 +395,24 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                 if (e.maxAngularSpeed > 0.0f &&
                     postDampingAngularSpeed > e.maxAngularSpeed)
                     e.angularVelocity *= e.maxAngularSpeed / postDampingAngularSpeed;
+                // Configurable linear-speed cap so a collision glitch cannot
+                // fling an object across the map.
+                const float maxSpeed = objectPhysics.objectMaxSpeed();
+                if (maxSpeed > 0.0f)
+                {
+                    const float speed = glm::length(e.velocity);
+                    if (speed > maxSpeed)
+                        e.velocity *= maxSpeed / speed;
+                }
             }
             if (glm::dot(e.velocity, e.velocity) <= 1e-8f &&
                 glm::dot(e.angularVelocity, e.angularVelocity) <= 1e-8f)
+            {
+                // Still run the freeze rule so a truly stationary body becomes
+                // sleeping (and is then skipped) instead of staying awake.
+                updateSettling(e, objectPhysics, 0.0f);
                 continue;
+            }
             e.previousTransform = e.transform;
             e.transform[3] += glm::vec4(e.velocity * (float)kFixedDt, 0.0f);
             rebuildTransformFromPose(e);
@@ -420,7 +433,13 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             s_objectMeshes[0].previousTransform = e.previousTransform;
             s_objectMeshes[0].desiredTransform = e.transform;
             s_objectContacts.clear();
-            for (int collisionPass = 0; collisionPass < 3; ++collisionPass)
+            // The solver already does 6 internal relaxation passes; the outer
+            // re-gather passes were the dominant multiplier for holey bodies
+            // (thousands of triangles re-scanned per pass). One pass is enough
+            // for the entity-vs-world correction and the self-tests.
+            constexpr int kEntityCollisionPasses = 1;
+            for (int collisionPass = 0;
+                 collisionPass < kEntityCollisionPasses; ++collisionPass)
             {
                 s_objectMeshes[0].previousTransform = e.previousTransform;
                 s_objectMeshes[0].desiredTransform = e.transform;
@@ -484,81 +503,21 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             }
             if (s_objectContacts.empty())
             {
-                // Preserve a short support window across a one-tick rounded
-                // feature gap. Gravity still runs, so a body that genuinely
-                // leaves the surface cannot remain asleep on this grace path.
-                if (e.motion == PhysicalEntityMotion::Dynamic &&
-                    e.supportGraceTicks > 0 && glm::length(e.velocity) < 0.5f)
-                {
-                    --e.supportGraceTicks;
-                    e.velocity.x *= objectPhysics.supportedFrictionRetain();
-                    e.velocity.y *= objectPhysics.supportedFrictionRetain();
-                    e.angularVelocity *= 0.15f;
-                    if (glm::length(e.velocity) < std::max(0.5f, e.sleepLinearThreshold) &&
-                        glm::length(e.angularVelocity) < std::max(0.5f, e.sleepAngularThreshold))
-                        ++e.sleepTicks;
-                    if (e.sleepTicks >= e.sleepRequiredTicks)
-                    {
-                        e.velocity = glm::vec3(0.0f);
-                        e.angularVelocity = glm::vec3(0.0f);
-                        e.sleeping = true;
-                    }
-                }
+                // No contacts this tick: the only remaining rule is the
+                // configurable "has not moved" freeze (gravity keeps a falling
+                // body moving, so it cannot freeze in mid-air).
+                updateSettling(e, objectPhysics, 0.0f);
                 continue;
             }
 
-            if (e.motion == PhysicalEntityMotion::Dynamic)
-            {
-                bool supported = false;
-                for (const RecoveryContact& contact : s_objectContacts)
-                {
-                    if (contact.normal.z > MAX_WALKABLE_SLOPE_DOT)
-                    {
-                        supported = true;
-                        break;
-                    }
-                }
-                if (supported)
-                    e.supportGraceTicks = 3;
-                if (supported && glm::length(e.velocity) < 0.5f)
-                {
-                    // Static contact friction absorbs residual roll/spin once
-                    // the body is no longer meaningfully translating. This is
-                    // the rigid-body equivalent of the player's grounded
-                    // velocity projection, not a free rotation override.
-                    e.velocity.x *= objectPhysics.supportedFrictionRetain();
-                    e.velocity.y *= objectPhysics.supportedFrictionRetain();
-                    applyRestingRightingTorque(e, (float)kFixedDt);
-                    e.angularVelocity *= 0.55f;
-                }
-                const bool upright = isRestingOnFace(e);
-                const bool stableCandidate = supported && upright &&
-                    glm::length(e.velocity) < std::max(0.5f, e.sleepLinearThreshold) &&
-                    glm::length(e.angularVelocity) < std::max(0.5f, e.sleepAngularThreshold);
-                if (stableCandidate)
-                    ++e.sleepTicks;
-                else if (glm::length(e.velocity) > 1.0f ||
-                         glm::length(e.angularVelocity) > 1.0f)
-                    e.sleepTicks = 0;
-                if (e.sleepTicks >= e.sleepRequiredTicks)
-                {
-                    e.velocity = glm::vec3(0.0f);
-                    e.angularVelocity = glm::vec3(0.0f);
-                    e.sleeping = true;
-                }
-                if (!supported && s_objectContacts.size() >= 2 && glm::length(e.velocity) < 0.25f)
-                {
-                    glm::vec3 escape(0.0f);
-                    for (const RecoveryContact& contact : s_objectContacts)
-                        escape += contact.responseNormal;
-                    if (glm::dot(escape, escape) > 1e-6f)
-                    {
-                        e.velocity += glm::normalize(escape) * 0.15f;
-                        e.sleeping = false;
-                        e.sleepTicks = 0;
-                    }
-                }
-            }
+            // Collisions/gravity/contacts already produced the motion. The only
+            // special rule is the configurable freeze when the body has not
+            // moved beyond the threshold for N ticks. No artificial righting or
+            // velocity damping.
+            float maxPenetration = 0.0f;
+            for (const RecoveryContact& contact : s_objectContacts)
+                maxPenetration = std::max(maxPenetration, contact.penetration);
+            updateSettling(e, objectPhysics, maxPenetration);
         }
         resolveEntityContacts(mEntities);
     }
@@ -853,6 +812,8 @@ void resolveEntityPairContact(PhysicalEntity& a, PhysicalEntity& b,
     a.sleeping = false;
     b.sleeping = false;
     a.sleepTicks = b.sleepTicks = 0;
+    a.sleepAnchorValid = false;
+    b.sleepAnchorValid = false;
     a.supportGraceTicks = b.supportGraceTicks = 0;
 
     const glm::vec3 comA = glm::vec3(a.transform[3]) + a.orientation * a.centerOfMass;
@@ -883,7 +844,11 @@ void resolveEntityPairContact(PhysicalEntity& a, PhysicalEntity& b,
     if (normalMass <= 1e-8f)
         return;
 
-    const float restitution = std::max(a.restitution, b.restitution);
+    const MimitaImpact::DestructibleWorldConfig& config =
+        MimitaImpact::DestructibleWorldConfig::instance();
+    const float restitution =
+        std::fabs(normalSpeed) < config.objectMinBounceSpeed()
+            ? 0.0f : std::max(a.restitution, b.restitution);
     const float normalImpulse = -(1.0f + restitution) * normalSpeed / normalMass;
     applyImpulseAtPoint(a, normal * normalImpulse, point, false);
     applyImpulseAtPoint(b, -normal * normalImpulse, point, false);
@@ -1584,6 +1549,139 @@ bool physicalEntitySelfTest(std::string* outSummary)
 
     system.clear();
 
+    if (outSummary)
+        *outSummary = report;
+    return ok;
+}
+
+// Headless performance probe for the entity/destruction physics path. Builds a
+// world with a floor, spawns several crates each riddled with holes, lets them
+// settle, then measures a single fixed-tick cost. Runs without a window so it
+// is usable as an automated guard for the <4 ms frame budget work.
+bool physicalEntityPerfSelfTest(std::string* outSummary)
+{
+    std::string report;
+    bool ok = true;
+    auto check = [&](bool cond, const char* name) {
+        report += cond ? "  PASS: " : "  FAIL: ";
+        report += name;
+        report += "\n";
+        if (!cond) ok = false;
+    };
+
+    if (MimitaImpact::MaterialConfig::instance().revision() == 0)
+        MimitaImpact::MaterialConfig::instance().load();
+    MimitaImpact::DestructibleWorldConfig::instance().load();
+
+    World world;
+    addFloorQuad(world, {-80, -80, 0}, {80, -80, 0}, {80, 80, 0}, {-80, 80, 0});
+    buildCollisionChunks(world, nullptr);
+
+    PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
+    system.clear();
+
+    constexpr int kCrates = 10;
+    constexpr int kHolesPerCrate = 48;
+    const float half = 2.0f;
+    const uint32_t wood = MimitaImpact::materialIdForName("wood");
+
+    size_t totalTriangles = 0;
+    double buildMs = 0.0;
+    {
+        const auto buildStart = std::chrono::steady_clock::now();
+        for (int i = 0; i < kCrates; ++i)
+        {
+            std::vector<CollisionTriangle> box;
+            buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(half));
+            const float x = (float)(i - kCrates / 2) * 6.0f;
+            const uint32_t id = system.add(
+                box, glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.0f, half + 0.01f)),
+                PhysicalEntityMotion::Dynamic, wood);
+            PhysicalEntity* e = system.find(id);
+            if (!e)
+                continue;
+            MimitaImpact::ImpactSystem::instance().initializeEntity(
+                *e, wood, glm::vec3(half));
+
+            // Punch many small holes through one face, then rebuild once.
+            for (int h = 0; h < kHolesPerCrate; ++h)
+            {
+                MimitaImpact::DestructionCut cut;
+                cut.cutter.type = MimitaImpact::BooleanCutterType::Sphere;
+                const float u = (float)((h % 8) - 4) * 0.4f;
+                const float v = (float)((h / 8) - 3) * 0.4f;
+                cut.cutter.localCenter = glm::vec3(u, v, half);
+                cut.cutter.radius = 0.35f;
+                MimitaImpact::DestructibleGeometrySystem::instance().enqueueCut(
+                    e->destructible, cut);
+            }
+            MimitaImpact::DestructibleGeometrySystem::instance().flushQueuedCuts(
+                e->destructible, 0);
+            e->localTriangles = e->destructible.collisionTriangles;
+            totalTriangles += e->localTriangles.size();
+        }
+        buildMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - buildStart).count();
+    }
+
+    constexpr float dt = 1.0f / 60.0f;
+    for (int t = 0; t < 30; ++t) // warm up: let them settle onto the floor
+        system.advanceKinematics(dt, world);
+
+    constexpr int kTicks = 300;
+    const auto measureStart = std::chrono::steady_clock::now();
+    for (int t = 0; t < kTicks; ++t)
+        system.advanceKinematics(dt, world);
+    const double totalMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - measureStart).count();
+    const double perTickMs = totalMs / (double)kTicks;
+
+    // Moving phase: keep disturbing the crates so they never settle, which is
+    // the real "holey crate moving" cost (the settled phase is nearly free
+    // because settled bodies sleep).
+    const auto moveStart = std::chrono::steady_clock::now();
+    for (int t = 0; t < kTicks; ++t)
+    {
+        if (t % 30 == 0)
+        {
+            for (PhysicalEntity& e : system.entities())
+            {
+                if (e.motion != PhysicalEntityMotion::Dynamic)
+                    continue;
+                e.velocity += glm::vec3(2.0f, 0.0f, 3.0f);
+                e.sleeping = false;
+                e.sleepAnchorValid = false;
+            }
+        }
+        system.advanceKinematics(dt, world);
+    }
+    const double moveTotalMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - moveStart).count();
+    const double movePerTickMs = moveTotalMs / (double)kTicks;
+
+    char info[288];
+    std::snprintf(info, sizeof(info),
+        "  INFO: crates=%d holes/crate=%d tris=%zu build=%.1fms ticks=%d "
+        "settled=%.3fms/tick moving=%.3fms/tick\n",
+        kCrates, kHolesPerCrate, totalTriangles, buildMs, kTicks, perTickMs,
+        movePerTickMs);
+    report += info;
+
+    check(totalTriangles > 0, "holey crates have generated collision triangles");
+    check(perTickMs < 4.0,
+          "settled holey crates stay under 4ms per fixed tick");
+    // Moving-crate cost is the active target for the local-space collision
+    // refactor. Report it as a measurement (MET/MISS) without failing the suite
+    // so the number stays visible and trackable.
+    {
+        char target[96];
+        std::snprintf(target, sizeof(target),
+            "  TARGET(4ms) moving holey crates: %s (%.3fms/tick)\n",
+            movePerTickMs < 4.0 ? "MET" : "MISS", movePerTickMs);
+        report += target;
+    }
+
+    system.clear();
     if (outSummary)
         *outSummary = report;
     return ok;

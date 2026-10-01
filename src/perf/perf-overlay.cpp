@@ -41,8 +41,26 @@ void Perf::renderOverlay()
         snprintf(buf, sizeof(buf), "FRAME: %.2fms  BUDGET: %.2fms", ms, budget);
         text(buf, {0.3f, 1.0f, 0.5f, 1.0f});
 
+        // Worst frame and per-subsystem worsts since the report was opened, so a
+        // single stall is visible instead of averaged away.
+        snprintf(buf, sizeof(buf),
+                 "MAX: %.2fms  PHYS %.2f  ENT %.2f  REND %.2f",
+                 s.maxFrameTimeMs, s.maxPhysicsMs, s.maxEntityPhysicsMs,
+                 s.maxRenderingMs);
+        text(buf, {1.0f, 0.7f, 0.4f, 1.0f});
+
         snprintf(buf, sizeof(buf), "CPU: %.2fms", s.current.total);
         text(buf, {0.8f, 0.9f, 1.0f, 1.0f});
+        {
+            // A frame is spent somewhere; show how much is not covered by the
+            // named timers (perf-scope stages, swap/sleep, logging, GPU wait).
+            // Clamped at 0: named timers can overlap, which would otherwise
+            // read as a confusing negative value.
+            const double unaccounted =
+                std::max(0.0, (double)ms - s.current.total);
+            snprintf(buf, sizeof(buf), "UNACCOUNTED: %.2fms", unaccounted);
+            text(buf, {1.0f, 0.5f, 0.5f, 1.0f});
+        }
 
         double gpuMs = 0.0;
         if (gFramePacer.subsystemCount() > 0)

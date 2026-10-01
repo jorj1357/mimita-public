@@ -315,6 +315,14 @@ bool handleGameCLI(int argc, char** argv)
         return true;
     }
 
+    if (std::string(argv[1]) == "--physical-perf-selftest") {
+        std::string summary;
+        const bool ok = physicalEntityPerfSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[PHYSICAL PERF SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
     if (std::string(argv[1]) == "--destructible-selftest") {
         std::string summary;
         const bool ok = MimitaImpact::destructibleSelfTest(&summary);

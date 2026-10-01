@@ -85,6 +85,10 @@ struct PhysicalEntity {
     // localTriangles. See impact/destructible-geometry.h.
     MimitaImpact::DestructibleGeometry destructible;
     bool sleeping = false;
+    // Settling anchor: if the body stays within sleepMoveThresholdMeters of this
+    // point for sleepRequiredTicks fixed ticks it freezes there until disturbed.
+    glm::vec3 sleepAnchorPos{0.0f};
+    bool sleepAnchorValid = false;
     // Fragment lifecycle: set on pieces spawned by a fracture so the owner can
     // age them out / remove tiny or old debris (config-driven).
     bool isFragment = false;
@@ -235,3 +239,7 @@ void drawPhysicalEntities(const Camera& camera);
 // adds to the supported motion, jumping preserves the inherited velocity, and
 // leaving the crate removes support without zeroing the inherited velocity.
 bool physicalEntitySelfTest(std::string* outSummary = nullptr);
+
+// Headless performance probe for the entity/destruction physics path: several
+// holey crates on a floor, measuring the fixed-tick cost (no window needed).
+bool physicalEntityPerfSelfTest(std::string* outSummary = nullptr);

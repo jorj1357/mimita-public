@@ -1,10 +1,12 @@
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <windows.h>
 #include <shellapi.h>
 #include "devtools/terminal.h"
 #include "debug/log-manager.h"
+#include "debug/structured-log.h"
 
 void registerDevLogCommands()
 {
@@ -22,12 +24,31 @@ void registerDevLogCommands()
     });
 
     Terminal::instance().registerCommand({
-        "log_open", "Open current log in default editor", "log_open",
+        "log_open", "Select the active events.jsonl in Windows Explorer", "log_open",
         [](const std::vector<std::string>&) {
-            std::string p = LogManager::instance().path();
-            if (!p.empty()) {
-                ShellExecuteA(NULL, "open", p.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            auto& terminal = Terminal::instance();
+            const std::string configuredPath = StructuredLogger::instance().eventsPath();
+            if (configuredPath.empty()) {
+                terminal.addLog("[LOG] active events.jsonl path is not initialized");
+                return;
             }
+
+            std::error_code ec;
+            const std::filesystem::path path =
+                std::filesystem::absolute(std::filesystem::path(configuredPath), ec);
+            if (ec || !std::filesystem::is_regular_file(path, ec)) {
+                terminal.addLog("[LOG] active events.jsonl was not found: " + configuredPath);
+                return;
+            }
+
+            const std::string selectArgs = "/select,\"" + path.string() + "\"";
+            const HINSTANCE result = ShellExecuteA(
+                nullptr, "open", "explorer.exe", selectArgs.c_str(), nullptr, SW_SHOWNORMAL);
+            if (reinterpret_cast<INT_PTR>(result) <= 32) {
+                terminal.addLog("[LOG] could not open Explorer for: " + path.string());
+                return;
+            }
+            terminal.addLog("[LOG] selected active events.jsonl: " + path.string());
         }
     });
 

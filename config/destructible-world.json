@@ -4,22 +4,29 @@
 // keeps the previous valid values.
 {
   "destruction": {
-    "maxCutsPerEntityPerTick": 8,
+    "maxCutsPerEntityPerTick": 1,
     "cutBudgetMsPerTick": 2.0,
-    "maxTrianglesPerEntity": 120000
+    "maxTrianglesPerEntity": 4096,
+    "meshSimplifyTolerance": 0.02
   },
   "fracture": {
     "enabled": true,
     "minPieceVolumeFraction": 0.02,
     "maxRemainingFraction": 0.98,
-    "comOffsetFraction": 0.12,
+    "comOffsetFraction": 0.08,
     "maxFragmentsPerEvent": 12
   },
   "physics": {
     "objectGravity": -70.0,
     "objectLinearDamping": 0.08,
     "objectAngularDamping": 1.5,
-    "supportedFrictionRetain": 0.8
+    "supportedFrictionRetain": 0.8,
+    "objectRestitution": 0.1,
+    "objectFriction": 0.6,
+    "objectMinBounceSpeed": 1.0,
+    "objectMaxSpeed": 60.0,
+    "sleepMoveThresholdMeters": 0.1,
+    "sleepRequiredTicks": 20
   },
   "fragments": {
     "minFragmentVolume": 0.001,

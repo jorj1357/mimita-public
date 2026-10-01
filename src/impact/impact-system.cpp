@@ -21,6 +21,7 @@
 #include "config/material-config.h"
 #include "debug/crash-handler.h"
 #include "debug/debug-log.h"
+#include "perf/perf.h"
 #include "impact/destructible-geometry.h"
 #include "impact/destructible-world-config.h"
 #include "physics/physical-entity.h"
@@ -460,7 +461,38 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
             glm::clamp(angle * material.holeEnergyScale, 0.0f, 1.0f);
         const glm::vec3 impulse =
             direction * (resolved.mass * resolved.speed * retention);
+        const glm::vec3 velocityBefore = entity->velocity;
+        const glm::vec3 angularBefore = entity->angularVelocity;
         applyPhysicalEntityImpulse(*entity, impulse, resolved.worldPoint);
+
+        // Diagnostic: log the impulse and before/after velocity so the momentum
+        // path is provable. Throttled to at most ~4 per second.
+        static uint64_t sLastImpactLogUs = 0;
+        const uint64_t nowUs = (uint64_t)std::chrono::duration_cast<
+            std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (nowUs - sLastImpactLogUs >= 250000ull)
+        {
+            sLastImpactLogUs = nowUs;
+            const auto v3 = [](const glm::vec3& v) {
+                return nlohmann::json::array({v.x, v.y, v.z});
+            };
+            nlohmann::json fields;
+            fields["entity_id"] = entity->id;
+            fields["projectile_mass"] = resolved.mass;
+            fields["projectile_speed"] = resolved.speed;
+            fields["impact_energy"] = resolved.energy;
+            fields["impulse"] = v3(impulse);
+            fields["velocity_before"] = v3(velocityBefore);
+            fields["velocity_after"] = v3(entity->velocity);
+            fields["angular_before"] = v3(angularBefore);
+            fields["angular_after"] = v3(entity->angularVelocity);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "PROJECTILE_IMPACT", "", "projectile momentum applied to entity",
+                entity->destructible.nextCutId, fields, __FILE__, __LINE__,
+                "ImpactSystem::submit");
+        }
     }
 
     entity->destructible.health =
@@ -478,6 +510,10 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
 
 void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
 {
+    // Feed the whole destruction pass (boolean rebuild + mass + fracture) into
+    // PerfTimes.destruction so the perf report and the 1s events.jsonl record
+    // show what shooting holes actually costs.
+    Perf::ScopedTimer destructionTimer("Destruction");
     const auto start = std::chrono::steady_clock::now();
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
     DestructibleGeometrySystem& geometrySystem = DestructibleGeometrySystem::instance();
@@ -487,6 +523,7 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
     // caps are passed by the caller (PhysicalEntitySystem::advanceKinematics).
     const DestructibleWorldConfig& config = DestructibleWorldConfig::instance();
     geometrySystem.maxTrianglesPerEntity = config.maxTrianglesPerEntity();
+    geometrySystem.meshSimplifyTolerance = config.meshSimplifyTolerance();
     geometrySystem.fractureTuning = config.fractureTuning();
 
     // Snapshot ids first: applying a fracture spawns entities and reallocates

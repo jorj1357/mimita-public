@@ -418,30 +418,40 @@ bool solveActorTriangleCollision(
         if (walkable && nearFeet && responseNormal.z > 0.995f)
             responseNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
-        const nlohmann::json contactFields = {
-            {"actor_position", vec3Json(player.pos)},
-            {"actor_velocity_before", vec3Json(player.vel)},
-            {"intended_movement", vec3Json(desiredMovement)},
-            {"remaining_movement_before", vec3Json(result.remainingMovement)},
-            {"contact_index", static_cast<int>(result.contacts.size() - 1)},
-            {"triangle_index", c.triangleIndex},
-            {"actor_part", c.label ? c.label : ""},
-            {"entity_id", c.entityId},
-            {"contact_point", vec3Json(c.point)},
-            {"depenetration_normal", vec3Json(c.normal)},
-            {"response_normal", vec3Json(responseNormal)},
-            {"surface_normal", vec3Json(c.surfaceNormal)},
-            {"penetration", c.penetration},
-            {"time_of_impact", c.timeOfImpact},
-            {"walkable", walkable},
-            {"near_feet", nearFeet}
-        };
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Collision, StructuredLevel::Trace,
-            "collision.contact.before_response", "slope-edge-investigation",
-            "fixed-tick actor-triangle contact before velocity response",
-            static_cast<uint32_t>(player.movementSimulationTick), contactFields,
-            __FILE__, __LINE__, __FUNCTION__);
+        // Build and write the per-contact diagnostic JSON ONLY when the
+        // collision trace category is actually enabled. Constructing this
+        // nlohmann::json unconditionally per contact per fixed tick was a large
+        // hidden cost (and flooded events.jsonl with millions of records).
+        const bool traceContact = StructuredLogger::instance().shouldLog(
+            StructuredCategory::Collision, StructuredLevel::Trace);
+        nlohmann::json contactFields;
+        if (traceContact)
+        {
+            contactFields = {
+                {"actor_position", vec3Json(player.pos)},
+                {"actor_velocity_before", vec3Json(player.vel)},
+                {"intended_movement", vec3Json(desiredMovement)},
+                {"remaining_movement_before", vec3Json(result.remainingMovement)},
+                {"contact_index", static_cast<int>(result.contacts.size() - 1)},
+                {"triangle_index", c.triangleIndex},
+                {"actor_part", c.label ? c.label : ""},
+                {"entity_id", c.entityId},
+                {"contact_point", vec3Json(c.point)},
+                {"depenetration_normal", vec3Json(c.normal)},
+                {"response_normal", vec3Json(responseNormal)},
+                {"surface_normal", vec3Json(c.surfaceNormal)},
+                {"penetration", c.penetration},
+                {"time_of_impact", c.timeOfImpact},
+                {"walkable", walkable},
+                {"near_feet", nearFeet}
+            };
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Trace,
+                "collision.contact.before_response", "slope-edge-investigation",
+                "fixed-tick actor-triangle contact before velocity response",
+                static_cast<uint32_t>(player.movementSimulationTick), contactFields,
+                __FILE__, __LINE__, __FUNCTION__);
+        }
 
         player.ground.realWorldContactThisFrame = true;
         player.ground.hasWorldContact = true;
@@ -499,40 +509,49 @@ bool solveActorTriangleCollision(
         if (vn < 0.0f)
             result.remainingMovement -= responseNormal * vn;
 
-        nlohmann::json afterFields = contactFields;
-        afterFields["actor_position_after"] = vec3Json(player.pos);
-        afterFields["actor_velocity_after"] = vec3Json(player.vel);
-        afterFields["remaining_movement_after"] = vec3Json(result.remainingMovement);
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Collision, StructuredLevel::Trace,
-            "collision.contact.after_response", "slope-edge-investigation",
-            "fixed-tick actor-triangle contact after velocity response",
-            static_cast<uint32_t>(player.movementSimulationTick), afterFields,
-            __FILE__, __LINE__, __FUNCTION__);
+        if (traceContact)
+        {
+            nlohmann::json afterFields = contactFields;
+            afterFields["actor_position_after"] = vec3Json(player.pos);
+            afterFields["actor_velocity_after"] = vec3Json(player.vel);
+            afterFields["remaining_movement_after"] = vec3Json(result.remainingMovement);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Trace,
+                "collision.contact.after_response", "slope-edge-investigation",
+                "fixed-tick actor-triangle contact after velocity response",
+                static_cast<uint32_t>(player.movementSimulationTick), afterFields,
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     result.correctedPos = player.pos;
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::Collision, StructuredLevel::Verbose,
-        "collision.solve.summary", "slope-edge-investigation",
-        "actor-triangle solve completed", static_cast<uint32_t>(player.movementSimulationTick),
-        {{"position_before", vec3Json(result.startPos)},
-         {"position_after", vec3Json(player.pos)},
-         {"velocity_before", vec3Json(velocityBeforeSolve)},
-         {"velocity_after", vec3Json(player.vel)},
-         {"desired_movement", vec3Json(desiredMovement)},
-         {"remaining_movement", vec3Json(result.remainingMovement)},
-         {"contact_count", result.contacts.size()},
-         {"iterations", result.iterations},
-         {"max_penetration", result.maxPenetration},
-         {"grounded", result.grounded},
-         {"candidates", result.candidates},
-         {"candidate_pairs", gActorNarrowphase.candidatePairs},
-         {"triangle_tests", gActorNarrowphase.triangleTests},
-         {"rounded_feature_calls", gActorNarrowphase.roundedFeatureCalls},
-         {"solve_ms", std::chrono::duration<double, std::milli>(
-              std::chrono::steady_clock::now() - solveStart).count()}},
-        __FILE__, __LINE__, __FUNCTION__);
+    // The solve summary is a debug record; only build the JSON when enabled.
+    if (StructuredLogger::instance().shouldLog(StructuredCategory::Collision,
+                                               StructuredLevel::Verbose))
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Verbose,
+            "collision.solve.summary", "slope-edge-investigation",
+            "actor-triangle solve completed",
+            static_cast<uint32_t>(player.movementSimulationTick),
+            {{"position_before", vec3Json(result.startPos)},
+             {"position_after", vec3Json(player.pos)},
+             {"velocity_before", vec3Json(velocityBeforeSolve)},
+             {"velocity_after", vec3Json(player.vel)},
+             {"desired_movement", vec3Json(desiredMovement)},
+             {"remaining_movement", vec3Json(result.remainingMovement)},
+             {"contact_count", result.contacts.size()},
+             {"iterations", result.iterations},
+             {"max_penetration", result.maxPenetration},
+             {"grounded", result.grounded},
+             {"candidates", result.candidates},
+             {"candidate_pairs", gActorNarrowphase.candidatePairs},
+             {"triangle_tests", gActorNarrowphase.triangleTests},
+             {"rounded_feature_calls", gActorNarrowphase.roundedFeatureCalls},
+             {"solve_ms", std::chrono::duration<double, std::milli>(
+                  std::chrono::steady_clock::now() - solveStart).count()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     commitActorCollisionMeshes(player);
     return true;
 }

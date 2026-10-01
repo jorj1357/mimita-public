@@ -1,9 +1,9 @@
 # Physical Objects Collision and Settling
 
 Time created: 2026-10-01T17:37:13Z
-Time last updated: 2026-10-01T19:18:40Z
+Time last updated: 2026-10-01T21:03:19Z
 
-Status: ATTEMPTED FIX (6)
+Status: ATTEMPTED FIX (9)
 
 Related specification:
 `docs/specs/destructible-world/destructible-world.md`,
@@ -311,3 +311,239 @@ settling, fragment, and performance issues are human-confirmed fixed.
   `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
 - Perf logging: numeric `PERFORMANCE_FRAME` records now emitted to
   `events.jsonl` when the performance category is `important`.
+
+---
+
+## Regression Occurrence 3 (Attempt 7, 2026-10-01 15:28 EDT)
+
+### Observed (from the user's own logs, no playtest needed)
+
+The user pointed at `logs/10-01-2026/20261001_152118/events.jsonl`. Analysis:
+
+- `events.jsonl` for a ~1.5 minute run was **74 MB**; the previous runs were
+  **2.2 GB** and **4.1 GB**. In `20261001_152118`, **99,715 of ~112k** records
+  were `COLLISION` events.
+- The spill came from `src/physics/movement/actor-triangle-solver.cpp`
+  (`collision.contact.before_response`, `collision.contact.after_response`,
+  `collision.solve.summary`, all with `correlation_id:
+  "slope-edge-investigation"`), emitted **per contact per solve iteration**, and
+  `config/debuglogger.json` had `collision.level: "trace"`.
+- The numeric `PERFORMANCE_FRAME` records now work: e.g. a bad frame was
+  `frame_ms=42.4`, `simulation_ms=13.5`, `rendering_ms=1.2`,
+  `networking_ms=0.56`, `entity_physics_ms≈0`. The named subsystems did **not**
+  sum to the frame, confirming the earlier finding that the breakdown is
+  incomplete (unaccounted = `MIMITA_PERF_SCOPE` stages, swap/sleep, and the
+  collision logging + JSON construction itself).
+
+### Confirmed cause (new, high impact)
+
+Per-contact JSON construction + file write inside the fixed tick. The
+`nlohmann::json contactFields` object was built **unconditionally** for every
+contact (the logger's early-out happened only after construction), and with the
+collision category at `trace` every record was also serialized to disk. This is
+a large per-tick CPU + disk cost and is a plausible dominant contributor to the
+felt FPS drops and spikes.
+
+### Attempt 7 changes
+
+- `src/physics/movement/actor-triangle-solver.cpp`: the per-contact
+  `before_response`/`after_response` JSON and the `solve.summary` JSON are now
+  built **only when the collision category is enabled**
+  (`shouldLog(Collision, Trace/Verbose)`); the fixed tick no longer pays for
+  disabled diagnostics.
+- `config/debuglogger.json`: `collision.level` `trace` -> `off` (the
+  slope-edge investigation is complete; re-enable to debug collisions).
+- `src/physics/physical-entity.cpp` + `physical-entity.h` + `game-cli.cpp`:
+  new headless **`--physical-perf-selftest`** — builds a floor world, spawns 10
+  crates each riddled with 48 holes (43,340 collision triangles), settles them,
+  and measures a fixed tick. This is a perf guard runnable without a window.
+  Measured: **~1.2-1.4 ms per entity fixed tick** for 10 holey crates
+  (stable across 3 runs), PASS under the 4 ms budget.
+
+### What got better / worse
+
+- Better: the fixed tick no longer constructs/writes collision debug JSON;
+  `events.jsonl` volume should drop by ~90% in normal play.
+- Better: a repeatable headless measurement of the entity/destruction physics
+  cost exists now.
+- New evidence: entity physics for 10 holey crates is ~1.3 ms/tick, so the
+  user's large frame spikes were likely the logging + actor/boolean/unaccounted
+  work, not the entity sweep alone. This lowers the urgency of the full
+  local-space refactor relative to fixing the logging.
+
+### Still open / next
+
+- Confirm in a real run that `events.jsonl` volume and the FPS drops are gone
+  (the performance category should now be the only heavy logger; `network` is
+  still `verbose` and can be lowered if needed).
+- Full local-space entity surface refactor, entity broadphase, deep
+  depenetration, and config-triangle weapon hitboxes remain (Attempt 6 list).
+
+### Proof (Attempt 7)
+
+- `--physical-perf-selftest` PASS, ~1.3 ms/tick, 3/3 runs.
+- `--destructible-selftest`, `--moving-crate-selftest`,
+  `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
+
+---
+
+## Regression Occurrence 4 (Attempt 8, 2026-10-01 16:02 EDT)
+
+### Observed (user's plan doc + log `20261001_153220`)
+
+- Crates still get stuck in geometry; big FPS drops when a holey crate moves or
+  settles; shooting holes still drops FPS.
+- `perf_report` says physics 10-13 ms but fps is 6 and frame 150-200 ms — the
+  report is not accurate.
+- Settling looks special-coded and stops nearly all velocity; density >1 never
+  settles flush; a crate with no holes "does not settle, keeps moving around".
+- Crate loses too much speed when it bounces.
+- Requested: freeze an object that has not moved > ~0.1 m in N ticks, distances
+  configurable in `config/destructible-world.json`; remove the special settling;
+  expose restitution/friction.
+
+### Confirmed causes
+
+1. **The profiler was logging every frame.** `PERFORMANCE_FRAME` is gated on
+   `deepProfiling` (`perf.cpp`), and `perf_report` turns `deepProfiling` on. The
+   153220 log had **280,871 PERFORMANCE_FRAME** rows (plus 794 spikes) in
+   **259 MB**. The profiler cost more than it measured and inflated the reported
+   cpu/frame ms — this is why the numbers disagreed with the felt FPS.
+2. **Special settling**: `advanceKinematics` multiplied velocity by
+   `supportedFrictionRetain`, applied an artificial righting torque, and scaled
+   angular velocity by 0.55 while supported; sleep also required
+   `isRestingOnFace` (upright within 0.985). Density >1 therefore never settled
+   flush and the motion stopped unnaturally.
+3. **Moving-hole-crate collision cost** was not previously measurable: the new
+   perf probe now shows **settled = 0.026 ms/tick but moving = ~21.6 ms/tick**
+   for 10 crates x 48 holes (43,340 triangles). The single-pass body-vs-world
+   narrowphase transforms and tests every body triangle per tick.
+
+### Attempt 8 changes
+
+- **Profiler cadence (P0).** `PERFORMANCE_FRAME` is now aggregated over ~1 s and
+  emitted **once per second** (avg + max for frame/physics/entity/simulation/
+  rendering/networking/destruction, plus max npcs/effects/draw calls), never per
+  frame and no longer triggered by `deepProfiling`. The spike report is
+  rate-limited to once per second. `network` category lowered to `important`.
+  The overlay now shows `MAX` frame + per-subsystem worsts and an
+  `UNACCOUNTED` line (frame minus named timers) so an incomplete breakdown is
+  visible, reset when `perf_report` opens.
+- **Settling redesign (P1).** Removed the artificial righting/friction/angular
+  kill and the `isRestingOnFace` sleep gate. Added `updateSettling`: if the body
+  stays within `sleepMoveThresholdMeters` of an anchor for `sleepRequiredTicks`
+  fixed ticks it freezes (zero velocity, `sleeping=true`) until disturbed; it
+  never freezes while penetrating (>0.05 m). Waking (impulse/contact/push) resets
+  the anchor. Config in `config/destructible-world.json` `physics`:
+  `sleepMoveThresholdMeters` 0.1, `sleepRequiredTicks` 20. This made settled
+  crates effectively free (0.026 ms/tick) in the probe.
+- **Config expansion (P1).** Added `objectRestitution` (0.1) and `objectFriction`
+  (0.6) to the JSON; new dynamic entities take restitution/friction from it.
+- **Destruction timing + impact log (P3/P5).** `Perf::ScopedTimer("Destruction")`
+  wraps `flushPendingCuts`, and `ImpactSystem::submit` emits a throttled
+  `PROJECTILE_IMPACT` event (entity, mass, speed, energy, impulse, velocity and
+  angular before/after) to `events.jsonl`; `physics` category is now
+  `important`.
+- **Perf probe (P2 target).** `--physical-perf-selftest` now measures both a
+  settled and a moving phase and reports `TARGET(4ms) moving: MET/MISS`.
+
+### What got better / worse
+
+- Better: the profiler no longer costs frames; the report now shows max and
+  unaccounted; settled objects are free; settling is natural + configurable;
+  the moving-crate collision cost is now quantified (21.6 ms/tick for 10). 
+- Worse/unchanged: moving holey crates are still ~21.6 ms/tick; stuck-in-geometry
+  and fragment-through-floor remain (deep depenetration not done); the local-space
+  entity surface refactor and entity broadphase are still not done.
+
+### Still open / next (priority)
+
+1. **Local-space entity surfaces + entity broadphase** to cut the moving
+   ~21.6 ms/tick (the measured target). Body triangles must be pruned by a local
+   tree against the world candidates, not transformed/scanned wholesale.
+2. **Deep-depenetration pass** to stop stuck-in-geometry and fragment-through-
+   floor.
+3. Config-triangle weapon hitboxes; two-client verification.
+
+### Proof (Attempt 8)
+
+- `--physical-perf-selftest` PASS (settled 0.026 ms/tick; moving 21.6 ms/tick
+  reported as TARGET MISS).
+- `--destructible-selftest`, `--moving-crate-selftest`,
+  `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
+
+---
+
+## Regression Occurrence 5 (Attempt 9, 2026-10-01 17:03 EDT)
+
+### Observed (user playtest + log `20261001_163224`)
+
+- Logging fix confirmed: that run's `events.jsonl` is **1.2 MB** (vs 259 MB /
+  2.2 GB before); `COLLISION=0`, `PERFORMANCE=2061`, `NETWORK=1`, `PHYSICS=17`.
+- The 1-second aggregated `PERFORMANCE_FRAME` windows showed `max_entity_physics`
+  ≈ `max_destruction` up to **300-380 ms** in a single tick, while actor
+  `physics` ≤ 12.5 ms and `rendering` ≤ 2.8 ms. **The FPS dips when shooting are
+  the boolean destruction rebuild**, not render or the moving sweep.
+- Still: shooting crates drops FPS; touching a holey crate drops to ~5 fps;
+  crate on a cylinder rotates/bounces and never settles; 75%-cut crate collides
+  as if it still has a corner; player phases into a crate in a weird corner;
+  `perf_report` text is clipped and `UNACCOUNTED` goes negative; jitter settling
+  fixed (good); no-special-settle fixed (good).
+
+### Confirmed cause
+
+`boolean-mesh.cpp fillResult` called `difference.Decompose()` on **every**
+rebuild (splits shells, `Volume()` each), `circularSegmentsForRadius` emitted up
+to ~20+ segment cutters (~N^2 triangles per hole), there was no `Simplify`, the
+triangle cap was 120000, and `maxCutsPerEntityPerTick` was 8 — so a single cut
+could add hundreds of triangles and a burst produced a 300-380 ms rebuild. The
+2 ms budget is checked after an entity, so one rebuild blows it.
+
+### Attempt 9 changes (the biggest FPS win so far)
+
+- **No `Decompose()` per rebuild.** `fillResult` now reports shell/component = 1;
+  `DestructibleGeometrySystem::rebuild` computes a cheap connected-component
+  count (`countSurfaceComponents`, vertex-weld + union-find over the output
+  triangles) for the fracture trigger. The real shell meshes are produced only
+  when a fracture actually happens (`booleanDecomposePieces`).
+- **Aggressive simplification.** `circularSegmentsForRadius` now targets a large
+  edge length and clamps to `[4, 8]` (a low-poly, icosahedron-like rim). Added
+  `booleanSubtractIncremental(..., maxTriangles, simplifyTolerance)` which calls
+  `Manifold::Simplify(tolerance)` after the subtraction (config
+  `meshSimplifyTolerance`, 0.02).
+- **Triangle cap 4096, 1 cut per flush.** `config/destructible-world.json`
+  `maxTrianglesPerEntity` 120000 -> **4096**, `maxCutsPerEntityPerTick` 8 -> **1**.
+- **Over-budget is no longer destructive.** The wrapper rejects an over-cap cut
+  by restoring its pre-cut running solid and NOT committing; `discardPending`
+  keeps the session on `ResultTooLarge` so the next cut stays incremental instead
+  of replaying the whole history (which was a frame spike).
+- **Object response config.** Added `objectMinBounceSpeed` (1.0; below it objects
+  project and settle instead of bouncing) and `objectMaxSpeed` (60; speed cap).
+  Applied in world and pair contact response and the integration step.
+- **perf_report polish.** `UNACCOUNTED` clamped at 0 (named timers overlap).
+- Sensitivity: unbalanced-support `comOffsetFraction` 0.12 -> 0.08 (the coarse
+  cutter removes slightly less mass; the trigger is still gated on component==1).
+
+### Measured effect (`--physical-perf-selftest`, 10 crates x 48 holes)
+
+- Boolean build: **1400 ms -> ~230-290 ms** for 480 cuts (~0.6 ms/cut).
+- Triangles: 43,340 -> **6,560** (656/crate for 48 holes).
+- Moving holey crates: **21.6 -> 2.6-3.1 ms/tick** — TARGET(4ms) **MET**.
+- Settled crates: 0.024 ms/tick.
+
+### Still open / next
+
+1. Player phasing into a crate in odd corners (deep depenetration / rounded
+   actor-vs-entity).
+2. Heavily-cut crate COM/support: confirm the removed corner is gone from
+   `localTriangles` and that the freeze rule does not freeze an unstable pose.
+3. Cylinder contact response after the new min-bounce/speed settings — retest.
+4. Local-space entity surfaces + entity broadphase (moving is now under budget,
+   but fewer triangles per body still helps).
+5. Config-triangle weapon hitboxes; overlay word wrap; two-client verification.
+
+### Proof (Attempt 9)
+
+- `--destructible-selftest`, `--moving-crate-selftest`,
+  `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
+- `--physical-perf-selftest` PASS; moving 2.9 ms/tick (TARGET MET).

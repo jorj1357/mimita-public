@@ -57,7 +57,7 @@ struct FractureTuning
     //   horizontal center-of-mass offset > comOffsetFraction * half extent.
     // Tuned aggressively on purpose; the first human pass should retune these.
     float maxRemainingFraction = 0.98f;
-    float comOffsetFraction = 0.12f;
+    float comOffsetFraction = 0.08f;
 
     // Cap on detached bodies produced by one fracture event (spec budget).
     uint32_t maxFragmentsPerEvent = 12;
@@ -214,8 +214,13 @@ public:
     int rebuildAll(DestructibleGeometry& geometry);
 
     // Safety cap for the generated surface. Cuts that would exceed it are
-    // rejected and logged rather than allowed to stall the game.
-    size_t maxTrianglesPerEntity = 120000;
+    // rejected (keeping the session at the last valid state) rather than allowed
+    // to stall the game or force a full replay.
+    size_t maxTrianglesPerEntity = 4096;
+
+    // > 0 combines near-coplanar triangles after each subtraction so a hole
+    // costs a bounded number of triangles. Set from config.
+    float meshSimplifyTolerance = 0.0f;
 
     // Fracture trigger tuning (hot-tunable in code for now).
     FractureTuning fractureTuning;

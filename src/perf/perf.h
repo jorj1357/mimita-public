@@ -302,6 +302,12 @@ struct PerfState {
     double avgFrameTimeMs = 0.0;
     double avgFrameCount = 0.0;
     double lastFrameTimeMs = 0.0;
+    // Worst frame since the perf report was enabled/reset, so a single stall is
+    // visible instead of being averaged away.
+    double maxFrameTimeMs = 0.0;
+    double maxPhysicsMs = 0.0;
+    double maxEntityPhysicsMs = 0.0;
+    double maxRenderingMs = 0.0;
 
     SpikeInfo lastSpike;
     FrameSpikeReport lastSpikeReport;

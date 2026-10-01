@@ -10,8 +10,10 @@
 #include "impact/destructible-geometry.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <exception>
+#include <map>
 #include <string>
 
 #include "debug/crash-handler.h"
@@ -143,6 +145,63 @@ uint64_t gNextSessionId = 1;
 bool allFinite(const glm::vec3& v)
 {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+// Connected surface components, computed cheaply (weld vertices by a 1e-4
+// spatial hash + union-find over triangle adjacency). This replaces
+// Manifold::Decompose() for the fracture trigger, which used to run on every
+// rebuild and was a large per-cut cost.
+int countSurfaceComponents(const std::vector<CollisionTriangle>& triangles)
+{
+    const int n = (int)triangles.size();
+    if (n == 0)
+        return 0;
+    std::vector<int> parent((size_t)n);
+    for (int i = 0; i < n; ++i)
+        parent[(size_t)i] = i;
+    auto find = [&parent](int a) {
+        int root = a;
+        while (parent[(size_t)root] != root)
+            root = parent[(size_t)root];
+        while (parent[(size_t)a] != root)
+        {
+            int next = parent[(size_t)a];
+            parent[(size_t)a] = root;
+            a = next;
+        }
+        return root;
+    };
+    auto unite = [&find, &parent](int a, int b) {
+        a = find(a);
+        b = find(b);
+        if (a != b)
+            parent[(size_t)a] = b;
+    };
+    std::map<std::array<int64_t, 3>, int> firstTriangleAt;
+    constexpr float kQuant = 10000.0f;
+    for (int t = 0; t < n; ++t)
+    {
+        const glm::vec3 verts[3] = {triangles[(size_t)t].a,
+                                    triangles[(size_t)t].b,
+                                    triangles[(size_t)t].c};
+        for (const glm::vec3& v : verts)
+        {
+            const std::array<int64_t, 3> key = {
+                (int64_t)std::llround(v.x * kQuant),
+                (int64_t)std::llround(v.y * kQuant),
+                (int64_t)std::llround(v.z * kQuant)};
+            auto it = firstTriangleAt.find(key);
+            if (it == firstTriangleAt.end())
+                firstTriangleAt.emplace(key, t);
+            else
+                unite(t, it->second);
+        }
+    }
+    int components = 0;
+    for (int i = 0; i < n; ++i)
+        if (find(i) == i)
+            ++components;
+    return components;
 }
 
 // Rejects a boolean output that could corrupt downstream physics/render state:
@@ -323,17 +382,25 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
         geometry.lastError = error;
         geometry.cuts.resize(appliedSoFar);
         geometry.pendingCutCount = 0;
-        // The wrapper's running session may hold a partial state; rebuild from
-        // the base next time by releasing the session.
-        booleanSessionRelease(geometry.booleanSessionId);
-        geometry.booleanSessionId = gNextSessionId++;
+        // A triangle-budget rejection is not a failed subtraction: the wrapper
+        // did NOT commit the cut, so the cached running solid is still valid at
+        // the previous state. Keep the session so the next cut stays
+        // incremental instead of replaying the whole history (the frame spike
+        // this change exists to avoid). Other failures may leave partial state,
+        // so release and rebuild from the base next time.
+        if (error != BooleanError::ResultTooLarge)
+        {
+            booleanSessionRelease(geometry.booleanSessionId);
+            geometry.booleanSessionId = gNextSessionId++;
+        }
     };
 
     BooleanCutResult result;
     try
     {
-        result = booleanSubtractIncremental(geometry.booleanSessionId,
-                                            geometry.baseMesh, cutters);
+        result = booleanSubtractIncremental(
+            geometry.booleanSessionId, geometry.baseMesh, cutters,
+            (uint32_t)maxTrianglesPerEntity, (double)meshSimplifyTolerance);
     }
     catch (const std::exception& e)
     {
@@ -397,8 +464,13 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
     fillSurface(geometry, result.mesh);
 
     geometry.remainingVolume = result.remainingVolume;
-    geometry.shellCount = result.shellCount;
-    geometry.componentCount = result.componentCount;
+    // Cheap connected-component count from the output triangles (replaces the
+    // per-rebuild Manifold::Decompose()). Drives the disconnected-component
+    // fracture trigger; the real shell meshes are only produced on fracture.
+    const int components =
+        std::max(1, countSurfaceComponents(geometry.collisionTriangles));
+    geometry.shellCount = (uint32_t)components;
+    geometry.componentCount = (uint32_t)components;
 
     // Mass properties follow the material that remains. Integrated from the
     // generated surface here, once per rebuild, so the per-tick physics refresh

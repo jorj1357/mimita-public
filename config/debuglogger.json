@@ -22,14 +22,14 @@
       "level": "off",
       "file_output": false
     },
-    "physics": { "level": "off", "file_output": false },
+    "physics": { "level": "important", "file_output": false },
     "performance": {
       "level": "important",
       "file_output": false
     },
     "collision": {
-      "level": "trace",
-      "file_output": true
+      "level": "off",
+      "file_output": false
     },
     "npc_combat": { "level": "off", "file_output": false },
     "npc_movement": { "level": "off", "file_output": false },
@@ -44,7 +44,7 @@
       "file_output": false
     },
     "network": {
-      "level": "verbose",
+      "level": "important",
       "file_output": true,
       "throttle": 0.0
     },

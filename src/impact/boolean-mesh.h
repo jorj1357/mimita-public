@@ -135,9 +135,18 @@ BooleanCutResult booleanSubtractAll(const BooleanMesh& base,
 // rolled back) or the session is unknown, it transparently rebuilds from the
 // base. When two callers share a process (a listen server), calls are
 // serialized by the wrapper. Pass 0 to opt out and use booleanSubtractAll.
+//
+// `simplifyTolerance` > 0 combines near-coplanar triangles after the
+// subtraction (bounded triangle growth per hole). `maxTriangles` > 0 rejects a
+// cut that would grow the mesh past the cap WITHOUT committing the running
+// result (the caller keeps the previous surface and the cached session stays at
+// the last valid state, so the next cut is still incremental). Both default to
+// off for compatibility.
 BooleanCutResult booleanSubtractIncremental(uint64_t sessionId,
                                             const BooleanMesh& base,
-                                            const std::vector<BooleanCutter>& cutters);
+                                            const std::vector<BooleanCutter>& cutters,
+                                            uint32_t maxTriangles = 0,
+                                            double simplifyTolerance = 0.0);
 
 // Drops the cached running result for `sessionId`. Call when a geometry record
 // is re-initialized or its entity is removed so the wrapper does not retain it.

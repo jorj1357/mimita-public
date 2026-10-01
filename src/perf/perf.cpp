@@ -805,6 +805,10 @@ void Perf::endFrame(float currentFrameMs)
     s.lastFrameTimeMs = currentMs;
     s.avgFrameCount += 1.0;
     s.avgFrameTimeMs += (currentMs - s.avgFrameTimeMs) / std::min(s.avgFrameCount, 100.0);
+    s.maxFrameTimeMs = std::max(s.maxFrameTimeMs, (double)currentMs);
+    s.maxPhysicsMs = std::max(s.maxPhysicsMs, s.current.physics);
+    s.maxEntityPhysicsMs = std::max(s.maxEntityPhysicsMs, s.current.entityPhysics);
+    s.maxRenderingMs = std::max(s.maxRenderingMs, s.current.rendering);
 
     if (s.showSpikes && currentMs > s.avgFrameTimeMs * 2.0 && s.avgFrameCount > 10.0)
         detectSpike(currentMs);
@@ -813,10 +817,16 @@ void Perf::endFrame(float currentFrameMs)
     for (int i = 0; i < s.frameHistoryCount && i < 300; ++i)
         s.frameHistory[i] = gFramePacer.historyMs(i);
 
-    // Build spike report for frames > 10ms
-    if ((s.showSpikes || s.perfFileLogging || s.deepProfiling) &&
+    // Build spike report for frames > 10ms, at most once per second. Building
+    // and writing the multi-KB report every frame during a stall amplified the
+    // stall and inflated the reported cpu/frame ms.
+    static uint64_t sLastSpikeLogUs = 0;
+    const uint64_t spikeNowUs = nowUs();
+    const bool spikeLogDue = (spikeNowUs - sLastSpikeLogUs) >= 1000000ull;
+    if (spikeLogDue && (s.showSpikes || s.perfFileLogging || s.deepProfiling) &&
         (currentMs > 10.0f || s.deepProfiling))
     {
+        sLastSpikeLogUs = spikeNowUs;
         FrameSpikeReport& r = s.lastSpikeReport;
         r.frameNumber = s.frameNumber;
         r.totalFrameMs = currentMs;
@@ -977,66 +987,85 @@ void Perf::endFrame(float currentFrameMs)
     PerfGpu::endFrame();
     Perf::logDetailedSubsystemStats();
 
-    // Periodic frame summary via StructuredLogger (every 60 frames)
-    static int sBreakdownCount = 0;
-    sBreakdownCount++;
-    if ((s.perfFileLogging || s.deepProfiling || DebugConfig::DEBUG_DEATH_PERF || sBreakdownCount % 60 == 0) &&
-        gFrameHistoryCount > 0 &&
-        StructuredLogger::instance().shouldLog(StructuredCategory::Performance, StructuredLevel::Important))
+    // ── One aggregated numeric frame record per second ──────────────────
+    // Previously PERFORMANCE_FRAME was emitted EVERY frame whenever
+    // perf_report (deepProfiling) or per-file logging was on, which built a
+    // multi-KB JSON + wrote to events.jsonl hundreds of times a second. The
+    // profiler cost more than it measured and the reported numbers were the
+    // profiling overhead itself. Aggregate over ~1s and emit one record.
     {
-        MIMITA_PERF_SCOPE("LoggerOverhead");
-        int lastIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
-        if (gFrameHistory[lastIdx].frameNumber == s.frameNumber) {
-            const PerfFrame& frame = gFrameHistory[lastIdx];
+        struct Window
+        {
+            uint64_t startUs = 0;
+            uint32_t frames = 0;
+            double sumFrame = 0.0, maxFrame = 0.0;
+            double sumPhysics = 0.0, maxPhysics = 0.0;
+            double sumEntity = 0.0, maxEntity = 0.0;
+            double sumSim = 0.0, maxSim = 0.0;
+            double sumRender = 0.0, maxRender = 0.0;
+            double sumNet = 0.0, maxNet = 0.0;
+            double sumDestroy = 0.0, maxDestroy = 0.0;
+            int maxNpcs = 0, maxEffects = 0, maxDrawCalls = 0;
+        };
+        static Window w;
+        const uint64_t nowValueUs = nowUs();
+        if (w.startUs == 0)
+            w.startUs = nowValueUs;
 
-            // Build a compact breakdown message
-            char msg[4096];
-            int pos = 0;
-            pos += std::snprintf(msg + pos, sizeof(msg) - pos,
-                "FRAME_%06d  total=%.2fms  budget=%.2fms  npcs=%d  effects=%d  audio=%d  allocs=%llu\n",
-                frame.frameNumber, frame.totalMs, frame.budgetMs,
-                frame.npcCount, frame.effectCount, frame.audioCount,
-                (unsigned long long)frame.allocCount);
+        w.frames++;
+        w.sumFrame += currentMs;
+        w.maxFrame = std::max(w.maxFrame, (double)currentMs);
+        w.sumPhysics += s.current.physics;
+        w.maxPhysics = std::max(w.maxPhysics, s.current.physics);
+        w.sumEntity += s.current.entityPhysics;
+        w.maxEntity = std::max(w.maxEntity, s.current.entityPhysics);
+        w.sumSim += s.current.simulation;
+        w.maxSim = std::max(w.maxSim, s.current.simulation);
+        w.sumRender += s.current.rendering;
+        w.maxRender = std::max(w.maxRender, s.current.rendering);
+        w.sumNet += s.current.networking;
+        w.maxNet = std::max(w.maxNet, s.current.networking);
+        w.sumDestroy += s.current.destruction;
+        w.maxDestroy = std::max(w.maxDestroy, s.current.destruction);
+        w.maxNpcs = std::max(w.maxNpcs, s.current.npcCount);
+        w.maxEffects = std::max(w.maxEffects, s.current.effectsAlive);
+        w.maxDrawCalls = std::max(w.maxDrawCalls, s.current.totalDrawCalls);
 
-            // Top 5 scopes by self time
-            struct SortInfo { int idx; double selfMs; };
-            SortInfo sorted[128];
-            int sc = 0;
-            for (int i = 0; i < frame.entryCount && sc < 128; ++i)
-                sorted[sc++] = {i, frame.entries[i].selfMs};
-            std::sort(sorted, sorted + sc,
-                [](const SortInfo& a, const SortInfo& b) { return a.selfMs > b.selfMs; });
-
-            for (int i = 0; i < std::min(5, sc); ++i) {
-                const auto& e = frame.entries[sorted[i].idx];
-                pos += std::snprintf(msg + pos, sizeof(msg) - pos,
-                    "  %s: %.2fms (%u calls)\n", e.label, e.selfMs, e.callCount);
-            }
-
-            // Searchable numeric frame record so fps and per-subsystem ms land
-            // in events.jsonl (previously only a text message).
+        if (nowValueUs - w.startUs >= 1000000ull &&
+            StructuredLogger::instance().shouldLog(StructuredCategory::Performance,
+                                                    StructuredLevel::Important))
+        {
+            const double secs = (double)(nowValueUs - w.startUs) / 1e6;
+            const double frames = (double)std::max(1u, w.frames);
             nlohmann::json fields;
-            fields["fps"] = frame.totalMs > 0.0 ? (1000.0 / frame.totalMs) : 0.0;
-            fields["frame_ms"] = frame.totalMs;
-            fields["budget_ms"] = frame.budgetMs;
-            fields["physics_ms"] = s.current.physics;
-            fields["entity_physics_ms"] = s.current.entityPhysics;
-            fields["destruction_ms"] = s.current.destruction;
-            fields["simulation_ms"] = s.current.simulation;
-            fields["rendering_ms"] = s.current.rendering;
-            fields["networking_ms"] = s.current.networking;
-            fields["combat_ms"] = s.current.combat;
-            fields["npc_ms"] = s.current.npcUpdate;
-            fields["npcs"] = frame.npcCount;
-            fields["effects"] = frame.effectCount;
-            fields["audio"] = frame.audioCount;
-            fields["projectiles"] = frame.projectileCount;
-            fields["allocs"] = (unsigned long long)frame.allocCount;
+            fields["window_s"] = secs;
+            fields["frames"] = w.frames;
+            fields["avg_fps"] = frames / secs;
+            fields["avg_frame_ms"] = w.sumFrame / frames;
+            fields["max_frame_ms"] = w.maxFrame;
+            fields["avg_physics_ms"] = w.sumPhysics / frames;
+            fields["max_physics_ms"] = w.maxPhysics;
+            fields["avg_entity_physics_ms"] = w.sumEntity / frames;
+            fields["max_entity_physics_ms"] = w.maxEntity;
+            fields["avg_simulation_ms"] = w.sumSim / frames;
+            fields["max_simulation_ms"] = w.maxSim;
+            fields["avg_rendering_ms"] = w.sumRender / frames;
+            fields["max_rendering_ms"] = w.maxRender;
+            fields["avg_networking_ms"] = w.sumNet / frames;
+            fields["max_networking_ms"] = w.maxNet;
+            fields["avg_destruction_ms"] = w.sumDestroy / frames;
+            fields["max_destruction_ms"] = w.maxDestroy;
+            fields["max_npcs"] = w.maxNpcs;
+            fields["max_effects"] = w.maxEffects;
+            fields["max_draw_calls"] = w.maxDrawCalls;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Performance, StructuredLevel::Important,
-                "PERFORMANCE_FRAME", "", msg,
+                "PERFORMANCE_FRAME", "", "1s aggregated frame stats",
                 (uint32_t)s.frameNumber, fields, __FILE__, __LINE__,
                 "Perf::endFrame");
+
+            w = Window{};
+            w.startUs = nowValueUs;
         }
     }
 }
@@ -1271,6 +1300,14 @@ void Perf::togglePerfReport()
 {
     gState.showPerfReport = !gState.showPerfReport;
     setDeepProfiling(gState.showPerfReport);
+    if (gState.showPerfReport)
+    {
+        // Fresh worst-case window each time the report is opened.
+        gState.maxFrameTimeMs = 0.0;
+        gState.maxPhysicsMs = 0.0;
+        gState.maxEntityPhysicsMs = 0.0;
+        gState.maxRenderingMs = 0.0;
+    }
     Debug::log(Debug::Category::General, "[PERF] perf_report=%s",
                gState.showPerfReport ? "ON" : "OFF");
 }

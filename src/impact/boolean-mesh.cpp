@@ -30,13 +30,14 @@ constexpr uint32_t kPropsPerVertex = 5; // x, y, z, u, v
 // segment count with radius so a hole keeps a roughly constant edge length.
 int circularSegmentsForRadius(float radius)
 {
-    // Target a coarse-but-round edge length and cap the count. A rifle-scale
-    // hole (r ~1.3 m) previously hit the 48 cap and dominated the generated
-    // triangle count; 24 keeps the rim round while roughly halving the surface
-    // a cut adds. Raise the cap only if a human review says the holes look
-    // faceted (see manifold-destructible-integration-plan.md section 11).
-    const int estimate = (int)std::ceil((2.0f * 3.14159265f * radius) / 0.1f);
-    return std::clamp(estimate, 8, 24);
+    // Aggressively coarse tessellation: a sphere/cylinder cutter with N
+    // segments adds ~N^2 triangles around the hole, so a 20-segment cutter cost
+    // hundreds of triangles per hole and blew the per-entity triangle budget.
+    // Target a large edge length and clamp hard (4..8) so a hole costs on the
+    // order of tens of triangles (a low-poly, icosahedron-like rim). Raise only
+    // if human review says the holes look too faceted.
+    const int estimate = (int)std::ceil((2.0f * 3.14159265f * radius) / 0.6f);
+    return std::clamp(estimate, 4, 8);
 }
 
 manifold::vec3 toVec3(const glm::vec3& v)
@@ -296,11 +297,13 @@ void fillResult(const manifold::Manifold& difference, uint32_t baseRunId,
     result.remainingVolume = (float)difference.Volume();
     result.triangleCount = (uint32_t)difference.NumTri();
 
-    const std::vector<manifold::Manifold> shells = difference.Decompose();
-    result.shellCount = (uint32_t)shells.size();
-    for (const manifold::Manifold& shell : shells)
-        if (shell.Volume() > 1e-6)
-            ++result.componentCount;
+    // Decompose() splits the solid into connected shells and is expensive; it
+    // used to run on EVERY rebuild. The connected-component/triangle budget is
+    // computed cheaply from the output triangles by the caller
+    // (DestructibleGeometrySystem), and the real shell meshes are produced only
+    // when a fracture actually happens (booleanDecomposePieces).
+    result.shellCount = 1;
+    result.componentCount = 1;
 
     const manifold::MeshGL out = difference.GetMeshGL();
     result.mesh = fromMeshGL(out, baseRunId, base.vertices[0].materialId,
@@ -477,7 +480,9 @@ BooleanCutResult booleanSubtractAll(const BooleanMesh& base,
 
 BooleanCutResult booleanSubtractIncremental(uint64_t sessionId,
                                             const BooleanMesh& base,
-                                            const std::vector<BooleanCutter>& cutters)
+                                            const std::vector<BooleanCutter>& cutters,
+                                            uint32_t maxTriangles,
+                                            double simplifyTolerance)
 {
     BooleanCutResult result;
     if (sessionId == 0)
@@ -525,6 +530,11 @@ BooleanCutResult booleanSubtractIncremental(uint64_t sessionId,
         session.running = std::move(imported);
     }
 
+    // Snapshot the running state so an over-budget result can be rejected
+    // without dropping the cached session (dropping it would force a full
+    // replay on the next cut, which is exactly the frame spike we are avoiding).
+    manifold::Manifold previous = session.running;
+    const size_t previousAppliedCuts = session.appliedCuts;
     const double volumeBefore = session.running.Volume();
 
     for (size_t i = session.appliedCuts; i < cutters.size(); ++i)
@@ -585,6 +595,29 @@ BooleanCutResult booleanSubtractIncremental(uint64_t sessionId,
             result.triangleCount = (uint32_t)session.running.NumTri();
             return result;
         }
+    }
+
+    // Combine near-coplanar triangles so a hole costs a bounded number of
+    // triangles instead of growing without limit.
+    if (simplifyTolerance > 0.0)
+    {
+        manifold::Manifold simplified = session.running.Simplify(simplifyTolerance);
+        if (simplified.Status() == manifold::Manifold::Error::NoError &&
+            !simplified.IsEmpty())
+            session.running = std::move(simplified);
+    }
+
+    // Reject a cut that would exceed the triangle cap without committing it.
+    // The session stays at the last valid state so the next cut is incremental.
+    if (maxTriangles > 0 && session.running.NumTri() > maxTriangles)
+    {
+        session.running = std::move(previous);
+        session.appliedCuts = previousAppliedCuts;
+        result.success = false;
+        result.error = BooleanError::ResultTooLarge;
+        result.triangleCount = (uint32_t)session.running.NumTri();
+        result.message = "triangle cap reached; cut deferred";
+        return result;
     }
 
     fillResult(session.running, session.baseRunId, base, result);

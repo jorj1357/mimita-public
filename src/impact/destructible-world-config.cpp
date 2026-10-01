@@ -88,6 +88,25 @@ bool DestructibleWorldConfig::load(const std::string& path)
             physics["supportedFrictionRetain"].is_number())
             mSupportedFrictionRetain =
                 physics["supportedFrictionRetain"].get<float>();
+        if (physics.contains("sleepMoveThresholdMeters") &&
+            physics["sleepMoveThresholdMeters"].is_number())
+            mSleepMoveThresholdMeters =
+                physics["sleepMoveThresholdMeters"].get<float>();
+        if (physics.contains("sleepRequiredTicks") &&
+            physics["sleepRequiredTicks"].is_number_unsigned())
+            mSleepRequiredTicks = physics["sleepRequiredTicks"].get<uint32_t>();
+        if (physics.contains("objectRestitution") &&
+            physics["objectRestitution"].is_number())
+            mObjectRestitution = physics["objectRestitution"].get<float>();
+        if (physics.contains("objectFriction") &&
+            physics["objectFriction"].is_number())
+            mObjectFriction = physics["objectFriction"].get<float>();
+        if (physics.contains("objectMinBounceSpeed") &&
+            physics["objectMinBounceSpeed"].is_number())
+            mObjectMinBounceSpeed = physics["objectMinBounceSpeed"].get<float>();
+        if (physics.contains("objectMaxSpeed") &&
+            physics["objectMaxSpeed"].is_number())
+            mObjectMaxSpeed = physics["objectMaxSpeed"].get<float>();
 
         if (destruction.contains("maxCutsPerEntityPerTick") &&
             destruction["maxCutsPerEntityPerTick"].is_number_unsigned())
@@ -101,6 +120,10 @@ bool DestructibleWorldConfig::load(const std::string& path)
             destruction["maxTrianglesPerEntity"].is_number_unsigned())
             mMaxTrianglesPerEntity =
                 destruction["maxTrianglesPerEntity"].get<size_t>();
+        if (destruction.contains("meshSimplifyTolerance") &&
+            destruction["meshSimplifyTolerance"].is_number())
+            mMeshSimplifyTolerance =
+                destruction["meshSimplifyTolerance"].get<float>();
 
         if (fracture.contains("enabled") && fracture["enabled"].is_boolean())
             mFractureTuning.enabled = fracture["enabled"].get<bool>();

@@ -2257,3 +2257,158 @@ Read the emitted `event=PERFORMANCE_FRAME` records during a holey-crate stress
 run. If `entity_physics_ms` is not the dominant term, falsify the local-space
 refactor and pursue the boolean/geometry path (rebuild, mass integration, GPU
 upload) instead.
+
+## Cold-build occurrence 41
+
+UTC time:
+`2026-10-01T19:28:50Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_192850-collision-log-spam-perf-test.md`
+
+### Why the cold build was required
+
+The collision logger guard (`src/physics/movement/actor-triangle-solver.cpp`)
+and the new headless perf self-test (`src/physics/physical-entity.{h,cpp}`,
+`src/game/game-cli.cpp`) are cold executable owners. Verifying them required
+compiling and linking.
+
+### Exact cold source / boundary
+
+- `src/physics/movement/actor-triangle-solver.cpp`
+- `src/physics/physical-entity.{h,cpp}`
+- `src/game/game-cli.cpp`
+- `config/debuglogger.json` (hot)
+
+### Build result
+
+`python build.py build-only` completed successfully and relinked `mimita.exe`.
+`--physical-perf-selftest` PASS (~1.3 ms/tick, 10 holey crates).
+`--destructible-selftest`, `--moving-crate-selftest`,
+`--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
+
+### What the cold build was needed to prove
+
+That the fixed tick no longer constructs/serializes per-contact collision JSON
+when the category is off, and that the entity/destruction physics cost is
+measurable headlessly and stays under the 4 ms budget for 10 holey crates.
+
+### Why live activation was impossible
+
+The solver and the self-test are statically linked; only
+`config/debuglogger.json` is hot.
+
+### Smallest change that would make this hot
+
+Move the actor-triangle solver behind the live-module boundary so collision
+diagnostics can be toggled without affecting the shipped tick cost.
+
+### Next migration/falsification step
+
+Run a real holey-crate session and read `PERFORMANCE_FRAME`: if the FPS drops
+persist after the logging fix and `entity_physics_ms` is still small, the
+dominant term is the actor/boolean/render/unaccounted work, not the entity
+sweep — pursue that first.
+
+## Cold-build occurrence 42
+
+UTC time:
+`2026-10-01T20:02:12Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_200212-perf-cadence-settling-freeze.md`
+
+### Why the cold build was required
+
+The perf cadence (`src/perf/*`), the settling logic
+(`src/physics/physical-entity.{h,cpp}`), the destruction timing
+(`src/impact/impact-system.cpp`), and the config
+(`src/impact/destructible-world-config.{h,cpp}`) are cold executable owners.
+
+### Exact cold source / boundary
+
+- `src/perf/perf.h`, `perf.cpp`, `perf-overlay.cpp`
+- `src/physics/physical-entity.{h,cpp}`
+- `src/impact/impact-system.cpp`, `destructible-world-config.{h,cpp}`
+- `config/destructible-world.json`, `config/debuglogger.json` (hot)
+
+### Build result
+
+`python build.py build-only` completed successfully. All five self-tests PASS
+(including `--physical-perf-selftest`); moving holey crates measured at
+21.6 ms/tick (target 4 ms) and reported as `TARGET MISS`.
+
+### What the cold build was needed to prove
+
+That the profiler emits one aggregated record per second instead of per frame,
+the settling freeze works and settles crates at any density, destruction time
+appears in `PerfTimes`, and `PROJECTILE_IMPACT` records serialize.
+
+### Why live activation was impossible
+
+These owners are statically linked; only the JSON configs are hot.
+
+### Smallest change that would make this hot
+
+Move the entity collision/settling and perf owners behind the live-module
+boundary; then crate feel and collision tuning could reload without a relink.
+
+### Next migration/falsification step
+
+Implement the local-space entity surface + entity broadphase and re-measure the
+moving phase of `--physical-perf-selftest`; if it does not drop well under 4 ms,
+the cost is elsewhere (boolean/render) and the local-space approach should be
+reassessed.
+
+## Cold-build occurrence 43
+
+UTC time:
+`2026-10-01T21:03:19Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_210319-boolean-budget-simplify.md`
+
+### Why the cold build was required
+
+The boolean wrapper, the destructible-geometry rebuild, the object-response
+config, and the overlay are cold executable owners. Verifying the removal of the
+per-rebuild `Decompose()`, the `Simplify` path, the triangle cap, and the
+response config required compiling and linking.
+
+### Exact cold source / boundary
+
+- `src/impact/boolean-mesh.cpp`
+- `src/impact/destructible-geometry.{h,cpp}`, `impact-system.cpp`
+- `src/impact/destructible-world-config.{h,cpp}`
+- `src/physics/physical-entity.cpp`
+- `src/perf/perf-overlay.cpp`
+- `config/destructible-world.json` (hot)
+
+### Build result
+
+`python build.py build-only` completed successfully. All five self-tests PASS.
+`--physical-perf-selftest`: boolean build 1400 -> ~230-290 ms for 480 cuts;
+moving holey crates 21.6 -> ~2.9 ms/tick (TARGET 4 ms MET).
+
+### What the cold build was needed to prove
+
+That a cut no longer pays `Decompose()`, that `Simplify` + a 4..8 segment cutter
++ a 4096 triangle cap keep a hole cheap, that an over-cap cut no longer releases
+the cached session, and that the min-bounce/speed config works.
+
+### Why live activation was impossible
+
+The wrapper and geometry owner are statically linked; only the JSON config is
+hot.
+
+### Smallest change that would make this hot
+
+Move the boolean wrapper + geometry rebuild behind the live-module boundary so
+cut tuning and tessellation can reload without a relink.
+
+### Next migration/falsification step
+
+Run a real hole-cutting session and read `PERFORMANCE_FRAME`
+`max_destruction_ms`; if a single cut still spikes, the remaining cost is inside
+Manifold's subtraction on the grown running solid and should be moved to a
+worker/incremental job (spec section 45).
