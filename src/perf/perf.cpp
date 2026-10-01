@@ -202,8 +202,10 @@ void Perf::addTime(const char* name, double ms)
     else if (std::strcmp(name, "FontRender") == 0)              t.fontRender += ms;
     else if (std::strcmp(name, "TextLayout") == 0)              t.textLayout += ms;
     else if (std::strcmp(name, "Json") == 0)                    t.jsonTime += ms;
-    else if (std::strcmp(name, "Physics") == 0 ||
-             std::strcmp(name, "Simulation") == 0)              t.physics += ms;
+    else if (std::strcmp(name, "Physics") == 0)                 t.physics += ms;
+    else if (std::strcmp(name, "Simulation") == 0)              t.simulation += ms;
+    else if (std::strcmp(name, "PhysicsEntities") == 0)         t.entityPhysics += ms;
+    else if (std::strcmp(name, "Destruction") == 0)             t.destruction += ms;
     else if (std::strcmp(name, "Collision") == 0)               t.collision += ms;
     else if (std::strcmp(name, "Movement") == 0)                t.movement += ms;
     else if (std::strcmp(name, "SweepSlide") == 0)              t.sweepSlide += ms;
@@ -980,7 +982,7 @@ void Perf::endFrame(float currentFrameMs)
     sBreakdownCount++;
     if ((s.perfFileLogging || s.deepProfiling || DebugConfig::DEBUG_DEATH_PERF || sBreakdownCount % 60 == 0) &&
         gFrameHistoryCount > 0 &&
-        StructuredLogger::instance().shouldLog(StructuredCategory::Performance, StructuredLevel::Verbose))
+        StructuredLogger::instance().shouldLog(StructuredCategory::Performance, StructuredLevel::Important))
     {
         MIMITA_PERF_SCOPE("LoggerOverhead");
         int lastIdx = (gFrameHistoryIndex - 1 + FRAME_HISTORY_CAPACITY) % FRAME_HISTORY_CAPACITY;
@@ -1011,17 +1013,30 @@ void Perf::endFrame(float currentFrameMs)
                     "  %s: %.2fms (%u calls)\n", e.label, e.selfMs, e.callCount);
             }
 
-            StructuredLogger::Entry se;
-            se.category = StructuredCategory::Performance;
-            se.level = StructuredLevel::Verbose;
-            se.eventId = "PERFORMANCE_FRAME";
-            se.reason = "Frame breakdown";
-            se.sourceFile = __FILE__;
-            se.sourceLine = __LINE__;
-            se.functionName = "Perf::endFrame";
-            se.frame = (uint32_t)s.frameNumber;
-            se.message = msg;
-            StructuredLogger::instance().write(se);
+            // Searchable numeric frame record so fps and per-subsystem ms land
+            // in events.jsonl (previously only a text message).
+            nlohmann::json fields;
+            fields["fps"] = frame.totalMs > 0.0 ? (1000.0 / frame.totalMs) : 0.0;
+            fields["frame_ms"] = frame.totalMs;
+            fields["budget_ms"] = frame.budgetMs;
+            fields["physics_ms"] = s.current.physics;
+            fields["entity_physics_ms"] = s.current.entityPhysics;
+            fields["destruction_ms"] = s.current.destruction;
+            fields["simulation_ms"] = s.current.simulation;
+            fields["rendering_ms"] = s.current.rendering;
+            fields["networking_ms"] = s.current.networking;
+            fields["combat_ms"] = s.current.combat;
+            fields["npc_ms"] = s.current.npcUpdate;
+            fields["npcs"] = frame.npcCount;
+            fields["effects"] = frame.effectCount;
+            fields["audio"] = frame.audioCount;
+            fields["projectiles"] = frame.projectileCount;
+            fields["allocs"] = (unsigned long long)frame.allocCount;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Performance, StructuredLevel::Important,
+                "PERFORMANCE_FRAME", "", msg,
+                (uint32_t)s.frameNumber, fields, __FILE__, __LINE__,
+                "Perf::endFrame");
         }
     }
 }

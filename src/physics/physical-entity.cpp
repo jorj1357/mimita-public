@@ -413,9 +413,12 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             static thread_local std::vector<ActorCollisionMesh> s_objectMeshes;
             static thread_local std::vector<int> s_objectCandidates;
             static thread_local std::vector<RecoveryContact> s_objectContacts;
+            static thread_local AabbTree s_objectWorldTree;
             s_objectMeshes.resize(1);
             s_objectMeshes[0].label = "physicalEntity";
             s_objectMeshes[0].localTriangles = &e.localTriangles;
+            s_objectMeshes[0].previousTransform = e.previousTransform;
+            s_objectMeshes[0].desiredTransform = e.transform;
             s_objectContacts.clear();
             for (int collisionPass = 0; collisionPass < 3; ++collisionPass)
             {
@@ -431,13 +434,22 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                 if (s_objectCandidates.empty())
                     break;
 
-                // The destructible mesh is intentionally low-poly (a box plus a
-                // bounded number of hole triangles), so the body sweeps its full
-                // local mesh directly; no per-entity broadphase is needed.
+                // Index this pass's candidates once so each body triangle only
+                // tests the world triangles whose bounds it can touch, instead
+                // of scanning the whole candidate list (the holey-crate cost).
+                const AabbTree* worldTree = nullptr;
+                if (world.collisionMesh.triangleAABBs.size() ==
+                    world.collisionMesh.triangles.size())
+                {
+                    s_objectWorldTree.build(s_objectCandidates,
+                                            world.collisionMesh.triangleAABBs);
+                    worldTree = &s_objectWorldTree;
+                }
+
                 collectActorMeshContactsInto(
                     world, s_objectMeshes, s_objectCandidates,
                     glm::vec3(e.transform[3]), s_objectContacts, true, -1.0f,
-                    nullptr);
+                    worldTree);
                 if (s_objectContacts.empty())
                     break;
                 const glm::vec3 correction = solveBatchedCorrection(

@@ -2205,3 +2205,55 @@ the numeric tuning only.
 Profile with `perf_top`/`perf_file_logging` near and while shooting holey
 crates; if the entity-vs-world cached-gather/local-space refactor does not
 reduce physics time, falsify it and pursue the entity broadphase first.
+
+## Cold-build occurrence 40
+
+UTC time:
+`2026-10-01T19:18:40Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_191840-perf-truth-entity-tree.md`
+
+### Why the cold build was required
+
+The perf counters (`src/perf/*`), the engine tick timers
+(`engine-tick*.cpp`), and the entity collision sweep (`physical-entity.cpp`) are
+cold executable owners. Verifying the real physics/render ms and the pruned
+narrowphase required compiling and linking.
+
+### Exact cold source / boundary
+
+- `src/perf/perf.h`, `src/perf/perf.cpp`
+- `src/engine/engine-tick.cpp`, `src/engine/engine-tick-combat.cpp`
+- `src/physics/physical-entity.cpp`
+- `config/debuglogger.json`
+
+### Build result
+
+`python build.py build-only` completed successfully and relinked `mimita.exe`.
+`--destructible-selftest`, `--moving-crate-selftest`,
+`--destruction-replication-selftest`, and `--destruction-stress-selftest` PASS.
+
+### What the cold build was needed to prove
+
+That the new `PerfTimes` fields compile and populate, the render/entity physics
+timers no longer read zero, the numeric `PERFORMANCE_FRAME` event serialises to
+`events.jsonl`, and the tree-pruned entity sweep does not regress the
+destruction/moving-crate self-tests.
+
+### Why live activation was impossible
+
+These owners are statically linked and are not part of the live-reload set;
+`config/debuglogger.json` is hot-reloaded but the counters themselves are not.
+
+### Smallest change that would make this hot
+
+Move the perf counters and the entity collision adapter behind the live-module
+boundary; until then only the logger config is hot.
+
+### Next migration/falsification step
+
+Read the emitted `event=PERFORMANCE_FRAME` records during a holey-crate stress
+run. If `entity_physics_ms` is not the dominant term, falsify the local-space
+refactor and pursue the boolean/geometry path (rebuild, mass integration, GPU
+upload) instead.

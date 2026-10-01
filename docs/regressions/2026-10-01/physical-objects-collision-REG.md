@@ -1,9 +1,9 @@
 # Physical Objects Collision and Settling
 
 Time created: 2026-10-01T17:37:13Z
-Time last updated: 2026-10-01T17:50:34Z
+Time last updated: 2026-10-01T19:18:40Z
 
-Status: ATTEMPTED FIX (5)
+Status: ATTEMPTED FIX (6)
 
 Related specification:
 `docs/specs/destructible-world/destructible-world.md`,
@@ -211,5 +211,103 @@ extended as fixes land. Evidence recorded in the linked changelog.
 
 ### Solution
 
-Not yet. Status remains `ATTEMPTED FIX (5)` until the correctness,
+Not yet. Status remains `ATTEMPTED FIX (6)` until the correctness,
 settling, fragment, and performance issues are human-confirmed fixed.
+
+---
+
+## Regression Occurrence 2 (Attempt 6, 2026-10-01 14:37 EDT)
+
+### Observed (new human playtest)
+
+- Hole cutting still improved from the previous pass (the chain of fixes
+  below). Crates move better; kicking a holey crate is less costly to render
+  than before.
+- Still large FPS drops when shooting holes, and especially when a crate with
+  holes is **moving or settling** (10 fps, physics 20-80 ms). Standing ~10 m
+  from a settled holey crate at 70 fps average with physics spikes 5-10 ms.
+- `perf_report` showed only ~70 fps while the game felt like 1 fps; the
+  per-subsystem numbers did not add up.
+- Fragments work but a fragment "disappears and falls through the floor".
+- The crate goes into a wall (sphere + wall + floor) and can get stuck; crate
+  on a cylinder bounces/jitters and will not settle.
+- Running into a crate with the projectile-rifle weapon flung it away; weapon
+  hitboxes are not on the same collision path as the player body.
+
+### Confirmed causes (evidence)
+
+1. **Perf numbers were not real.** On-screen FPS = `FramePacer` previous-frame
+   wall time averaged over 120 frames (`frame-pacer.cpp:37,167`), and the graph
+   clamps every sample at 20 ms; `PerfTimes.physics` double-counted
+   (`"Simulation"`+`"Physics"`), `PerfTimes.rendering` was never written, and
+   `advanceKinematics` was not summed into `PerfTimes` at all.
+2. **Nothing performance-related reached `events.jsonl`**: `performance.level`
+   was `off` and the events carried only text, no numeric fields.
+3. **Holey-crate physics cost**: `advanceKinematics` runs up to 5 substeps x 3
+   passes per frame, each gathering world triangles uncached and scanning every
+   candidate for every body triangle with `worldTree=nullptr`.
+4. **`cachedEntitySurface` rebuild storm**: exact `transform ==` key, so every
+   moving/jittering body rebuilds all world triangles + the full AabbTree per
+   query (actor solver per iteration, pair pass, projectile queries).
+5. **`resolveEntityContacts`** is O(n^2) with 2x narrowphase per overlapping
+   pair every substep (fragment piles).
+6. **Fragments fall through the floor**: no deep-depenetration; detection is
+   only triangle crossing/containment or the 0.1 m rounded shell, and a body
+   with near-zero velocity is skipped before any contact collection.
+7. **Weapon collisions** use the legacy sphere/capsule group injected into the
+   actor manifold; the weapon triangle mesh is excluded for configured weapons.
+
+### Attempt 6 changes (this pass)
+
+- **Perf truth + event logging (P0).**
+  - `Perf::ScopedTimer("Rendering")` around the render stage and
+    `Perf::ScopedTimer("PhysicsEntities")` around `advanceKinematics`, so the
+    overlay reports real render/entity-physics ms.
+  - New `PerfTimes` fields `entityPhysics`, `destruction`, `simulation`;
+    `"Simulation"` no longer double-counts `"Physics"`.
+  - `PERFORMANCE_FRAME` now carries numeric `fields` (`fps`, `frame_ms`,
+    `physics_ms`, `entity_physics_ms`, `simulation_ms`, `rendering_ms`,
+    `networking_ms`, `combat_ms`, `npcs`, `effects`, `projectiles`, `allocs`)
+    and is emitted at `Important`; `config/debuglogger.json` `performance` is
+    now `important`, so these land in `events.jsonl`.
+- **World-triangle pruning (P1, partial).** The entity-vs-world sweep now
+  indexes each collision pass's gathered candidates into an `AabbTree` and
+  passes it to `collectActorMeshContactsInto`, so each body triangle only tests
+  the world triangles it can touch instead of scanning the whole candidate list.
+  This is the documented accelerated path with identical semantics; all four
+  self-tests still pass.
+
+### What got better / worse this pass
+
+- Better: the perf report now shows the real physics/render cost, and
+  `events.jsonl` records fps and per-subsystem ms (searchable).
+- Better: holey-crate body-vs-world narrowphase is pruned by a tree.
+- Not yet changed: the full local-space entity surface refactor, the entity
+  broadphase, deep-depenetration, and the config-triangle weapon hitboxes. The
+  observed phasing/sticking, fragment-through-floor, and settling-on-cylinder
+  issues remain open.
+
+### Still open / next (priority order)
+
+1. **Local-space entity surfaces** (local triangles + local tree, transform the
+   query) to stop `cachedEntitySurface` rebuilding world triangles + tree on
+   every move; still gated on the user's "full refactor" decision.
+2. **Entity broadphase** for `resolveEntityContacts` (replace the O(n^2) pair
+   loop) and skip sleeping/static pairs.
+3. **Deep-depenetration pass** with a non-zero recovery margin to stop
+   tunneling/phasing/sticking and the fragment-through-floor.
+4. **Weapon hitboxes as config triangles** (`weaponcollisions.json` boxes/
+   capsules/spheres tessellated; append the weapon `ActorCollisionMesh`; gate
+   off the sphere injection; align the config and model transforms).
+5. **Settle-on-cylinder** and edge jitter (same solver margin/depenetration
+   work).
+6. Confirm no frame over 4 ms with ~10 holey crates using the new numeric
+   `events.jsonl` records.
+
+### Proof (Attempt 6)
+
+- Build: `python build.py build-only` -> success.
+- `--destructible-selftest`, `--moving-crate-selftest`,
+  `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
+- Perf logging: numeric `PERFORMANCE_FRAME` records now emitted to
+  `events.jsonl` when the performance category is `important`.

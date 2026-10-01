@@ -20,6 +20,9 @@ struct PerfTimes {
     double ui = 0.0;
 
     double physics = 0.0;
+    double entityPhysics = 0.0; // PhysicalEntitySystem::advanceKinematics
+    double destruction = 0.0;   // boolean rebuild / cut flush
+    double simulation = 0.0;    // whole fixed-tick loop (contains physics)
     double collision = 0.0;
     double movement = 0.0;
     double sweepSlide = 0.0;

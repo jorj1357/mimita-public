@@ -149,7 +149,12 @@ void engineTick(Engine& engine)
         if (GAME_STATE == GAME_PLAYING) {
             { MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
             { MIMITA_PERF_SCOPE("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
-            { MIMITA_PERF_SCOPE("Rendering"); engineTickRender(engine, dt, worldPassRan); } HEARTBEAT("after render");
+            {
+                // Rendering was only a spike-scope; feed it into PerfTimes so the
+                // overlay "Rendering" line and the numeric frame event are real.
+                Perf::ScopedTimer rendering("Rendering");
+                engineTickRender(engine, dt, worldPassRan);
+            } HEARTBEAT("after render");
             { MIMITA_PERF_SCOPE("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
         }
         { MIMITA_PERF_SCOPE("DevOverlay");

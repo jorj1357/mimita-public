@@ -119,7 +119,13 @@ void engineTickCombat(Engine& engine, float dt)
             clientProceduralTeleportShieldTick();
         MIMITA_PERF_SCOPE("Combat::PhysicsEntities");
         PersistentPhysicsSystem::instance().update(dt, world, player, npcSystem, &camera);
-        PhysicalEntitySystem::instance().advanceKinematics(dt, world);
+        {
+            // Feed the entity/destruction physics cost into PerfTimes so the
+            // overlay/report shows the real physics number (it was only a
+            // spike-scope before and never appeared in the breakdown).
+            Perf::ScopedTimer entityPhysics("PhysicsEntities");
+            PhysicalEntitySystem::instance().advanceKinematics(dt, world);
+        }
     }
     if (!replayPlaybackActive) {
         // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
