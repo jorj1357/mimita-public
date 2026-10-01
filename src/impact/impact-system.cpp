@@ -303,9 +303,25 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
         glm::vec3(inverse * glm::vec4(resolved.worldPoint, 1.0f));
 
     DestructionCut cut;
-    cut.cutter.type = BooleanCutterType::Sphere;
-    cut.cutter.localCenter = localPoint;
     cut.cutter.radius = radius;
+    if (resolved.boreLength > 1e-4f)
+    {
+        // Bore a tunnel segment along the flight direction instead of a single
+        // surface sphere. World direction -> local direction, and center the
+        // capsule so it starts at the surface and extends into the material.
+        const glm::vec3 localDir = glm::normalize(
+            glm::vec3(inverse * glm::vec4(resolved.worldDirection, 0.0f)));
+        const float half = 0.5f * resolved.boreLength;
+        cut.cutter.type = BooleanCutterType::Capsule;
+        cut.cutter.localDirection = localDir;
+        cut.cutter.length = resolved.boreLength;
+        cut.cutter.localCenter = localPoint + localDir * half;
+    }
+    else
+    {
+        cut.cutter.type = BooleanCutterType::Sphere;
+        cut.cutter.localCenter = localPoint;
+    }
     cut.damage = damage;
     cut.energy = effectiveEnergy;
     cut.materialId = material.id.empty() ? 0u : materialIdForName(material.id);
@@ -400,11 +416,18 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
             continue;
         }
         if (flushed == 0)
-            continue;
-
-        // Surface changed: publish geometry and mass.
-        entity->localTriangles = entity->destructible.collisionTriangles;
-        refreshEntityMassProperties(*entity);
+        {
+            // The queued cut removed no material, but an earlier cut may have
+            // set a pending fracture decision that is still unapplied.
+            if (entity->destructible.lastFractureReason == FractureReason::None)
+                continue;
+        }
+        else
+        {
+            // Surface changed: publish geometry and mass.
+            entity->localTriangles = entity->destructible.collisionTriangles;
+            refreshEntityMassProperties(*entity);
+        }
 
         // Fracture can reallocate the entity vector; re-fetch after it.
         if (entity->destructible.lastFractureReason != FractureReason::None)
@@ -441,8 +464,25 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
             const float spent = std::chrono::duration<float, std::milli>(
                 std::chrono::steady_clock::now() - start).count();
             if (spent >= budgetMs)
+            {
+                Debug::logThrottled(Debug::Category::General, "destruction-budget",
+                                    0.5f,
+                    "[DESTRUCTION BUDGET] flush paused after %.2fms\n", spent);
                 break;
+            }
         }
+    }
+
+    // Report geometry still catching up after a burst so it is visible that the
+    // queue is draining across frames rather than stalling.
+    if ((mCutLogCounter % 8u) == 0u)
+    {
+        uint32_t leftover = 0;
+        for (const PhysicalEntity& e : system.entities())
+            leftover += e.destructible.pendingCutCount;
+        if (leftover > 0)
+            Debug::logThrottled(Debug::Category::General, "destruction-queue", 0.5f,
+                "[DESTRUCTION QUEUE] %u cut(s) still pending after flush\n", leftover);
     }
 }
 

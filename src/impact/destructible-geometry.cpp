@@ -236,14 +236,32 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
 
     const BooleanCutResult result = booleanSubtractIncremental(
         geometry.booleanSessionId, geometry.baseMesh, cutters);
-    geometry.lastError = result.error;
+
+    // A failed or oversized cut must not stall the queue. Discard the pending
+    // cuts that were attempted so the record stays consistent and future shots
+    // keep working, instead of retrying the same failing cutter forever.
+    const auto discardPending = [&](BooleanError error) {
+        geometry.lastError = error;
+        geometry.cuts.resize(appliedSoFar);
+        geometry.pendingCutCount = 0;
+        // The wrapper's running session may hold a partial state; rebuild from
+        // the base next time by releasing the session.
+        booleanSessionRelease(geometry.booleanSessionId);
+        geometry.booleanSessionId = gNextSessionId++;
+    };
+
     if (!result.success)
-        return false;
-    if (result.triangleCount > maxTrianglesPerEntity)
     {
-        geometry.lastError = BooleanError::ResultTooLarge;
+        discardPending(result.error);
         return false;
     }
+    if (result.triangleCount > maxTrianglesPerEntity)
+    {
+        discardPending(BooleanError::ResultTooLarge);
+        return false;
+    }
+
+    geometry.lastError = BooleanError::None;
 
     // The cutters applied but removed nothing (they sat in empty space). The
     // history still advances; the surface is unchanged, so skip the O(triangle)
@@ -275,16 +293,17 @@ bool DestructibleGeometrySystem::rebuild(DestructibleGeometry& geometry,
 }
 
 uint64_t DestructibleGeometrySystem::enqueueCut(DestructibleGeometry& geometry,
-                                                DestructionCut cut)
+                                                const DestructionCut& cut)
 {
     if (!geometry.enabled)
         return 0;
 
-    if (cut.cutId == 0)
-        cut.cutId = geometry.nextCutId++;
-    geometry.cuts.push_back(cut);
+    DestructionCut stored = cut;
+    if (stored.cutId == 0)
+        stored.cutId = geometry.nextCutId++;
+    geometry.cuts.push_back(stored);
     ++geometry.pendingCutCount;
-    return cut.cutId;
+    return stored.cutId;
 }
 
 int DestructibleGeometrySystem::flushQueuedCuts(DestructibleGeometry& geometry,

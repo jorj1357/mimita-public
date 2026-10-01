@@ -7,6 +7,7 @@
   // In hybrid body mode: "default" makes only the arms use the normal
   // aimbody pose; "hybrid" keeps the arms physically blended too.
   "arms_mode": "hybrid",
+  // "arms_mode": "default",
   // "mode": "physical",
   "smoothingFactor": 1.0,
   // does this do antthing 2026 09 29 1132 jorj 

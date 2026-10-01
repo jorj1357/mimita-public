@@ -115,6 +115,10 @@ struct WeaponDefinition {
     // scaled by an explicit size term, so a small fast projectile can still cut
     // a big hole while a big slow one cuts a small hole. 0 = force only.
     float cutRadiusScale = 1.0f;
+    // How many separate surfaces a projectile can cut through before it stops.
+    // 1 = current single-surface behavior; higher lets a rifle bolt bore a
+    // tunnel through several walls in one shot (destructible-world 17/19).
+    int penetrationCount = 1;
     float penetrationScale = 1.0f;       // reserved: scales penetration depth
 
     // ── Impulse / knockback (Source/TF2-style, hot reloadable) ───────────

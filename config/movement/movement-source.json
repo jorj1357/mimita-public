@@ -283,8 +283,8 @@
     // The numeric values remain defined so this can be enabled live without
     // requiring another schema/config change.
 
-    "speed_limit_enabled": false,
-    // "speed_limit_enabled": true,
+    // "speed_limit_enabled": false,
+    "speed_limit_enabled": true,
 
     // Only used if speed_limit_enabled is true.
     "speed_limit": 50.0,

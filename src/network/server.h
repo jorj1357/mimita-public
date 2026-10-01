@@ -709,6 +709,9 @@ struct ServerProjectile
     float stateAccumulator = 0.0f;
     int bounceCount = 0;
     int maxBounceCount = 0;
+    // Remaining surfaces this projectile may cut through before it stops. 1 is
+    // the single-surface default; higher bores a tunnel.
+    int penetrationsRemaining = 1;
     bool exploded = false;
     bool worldTouched = false;
     bool explodeOnPlayerImpact = true;

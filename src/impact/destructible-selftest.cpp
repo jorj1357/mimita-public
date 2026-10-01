@@ -64,6 +64,27 @@ bool rayHitsMesh(const std::vector<CollisionTriangle>& triangles,
     return false;
 }
 
+// First surface point along a ray, mimicking what a projectile sweep finds.
+bool firstHitAlongRay(const std::vector<CollisionTriangle>& triangles,
+                      const glm::vec3& origin, const glm::vec3& dir, float maxT,
+                      glm::vec3& outPoint)
+{
+    float best = maxT;
+    bool found = false;
+    for (const CollisionTriangle& tri : triangles)
+    {
+        float t;
+        if (rayTriangle(origin, dir, tri, t) && t <= best)
+        {
+            best = t;
+            found = true;
+        }
+    }
+    if (found)
+        outPoint = origin + dir * best;
+    return found;
+}
+
 // Closed octahedron with vertices at +/-r on each axis, outward CCW.
 BooleanMesh makeOctahedron(float r, uint32_t materialId)
 {
@@ -152,7 +173,7 @@ uint32_t makeCrate(PhysicalEntitySystem& system, glm::vec3 position, float half)
 ImpactResult submitRifle(uint32_t targetId, const glm::vec3& point,
                          const glm::vec3& normal, const glm::vec3& direction,
                          float mass, float speed, float radius,
-                         float sizeScale = 0.0f)
+                         float sizeScale = 0.0f, float boreLength = 0.0f)
 {
     ImpactEvent ev;
     ev.source = ImpactSource::Projectile;
@@ -165,17 +186,36 @@ ImpactResult submitRifle(uint32_t targetId, const glm::vec3& point,
     ev.speed = speed;
     ev.radius = radius;
     ev.sizeScale = sizeScale;
+    ev.boreLength = boreLength;
     ev.cutScale = 1.0f;
     ev.energy = ImpactSystem::kineticEnergy(mass, speed);
+    PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
+    const size_t entitiesBefore = system.entities().size();
     ImpactResult result = ImpactSystem::instance().submit(ev);
     // Production defers the surface rebuild to the fixed tick; tests inspect
     // geometry immediately, so flush here (unbudgeted).
     ImpactSystem::instance().flushPendingCuts();
-    if (PhysicalEntity* e = PhysicalEntitySystem::instance().find(targetId))
+
+    if (PhysicalEntity* e = system.find(targetId))
     {
         result.triangleCount = (uint32_t)e->localTriangles.size();
         result.componentCount = e->destructible.componentCount;
         result.remainingVolume = e->destructible.remainingVolume;
+
+        // The deferred flush owns fracture; report it for the test.
+        // Fracture fragments carry a reserved high-bit network id derived from
+        // the parent: 0x40000000 | (parent << 4) | pieceIndex.
+        for (const PhysicalEntity& child : system.entities())
+        {
+            if ((child.networkId & 0x40000000u) == 0)
+                continue;
+            if (result.fragmentCount < 16)
+                result.fragmentEntityIds[result.fragmentCount] = child.id;
+            ++result.fragmentCount;
+        }
+        result.fractured = result.fragmentCount > 0 &&
+                           system.entities().size() > entitiesBefore;
+        result.chunksRebuilt = result.triangleCount > 12 ? 1 : 0;
     }
     return result;
 }
@@ -815,6 +855,159 @@ bool destructibleSelfTest(std::string* outSummary)
                                             glm::vec3(0.0f, 0.0f, -4.0f),
                                             rayDir, 8.0f);
         check(tunnelled, "repeated same-axis shots tunnel through the object");
+    }
+
+    // 22. Shooting the SAME ray over and over (the projectile sweep finding the
+    // current first surface each time) keeps removing material and deepens the
+    // hole; volume strictly drops toward a tunnel. This is the exact human
+    // complaint: "shooting the same hole won't cut a hole again."
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        PhysicalEntity* crate = system.find(id);
+        // Make it static so it cannot move between shots.
+        crate->motion = PhysicalEntityMotion::Static;
+        const glm::vec3 rayOrigin(0.0f, 0.0f, -6.0f);
+        const glm::vec3 rayDir(0.0f, 0.0f, 1.0f);
+
+        float previousVolume = crate->destructible.baseVolume;
+        int distinctHits = 0;
+        bool volumeEverDropped = false;
+        for (int i = 0; i < 20; ++i)
+        {
+            glm::vec3 hitPoint;
+            if (!firstHitAlongRay(crate->localTriangles, rayOrigin, rayDir, 12.0f,
+                                  hitPoint))
+                break; // tunnelled already
+
+            // Advance a little past the current surface so the cut center sits
+            // in the material just behind the opening, as a penetrating bolt.
+            const glm::vec3 cutPoint = hitPoint + rayDir * 0.15f;
+            const ImpactResult r = submitRifle(id, cutPoint, -rayDir, rayDir,
+                                               0.02f, 100.0f, 0.6f, 1.0f);
+            if (r.cutCreated || r.pending)
+                ++distinctHits;
+            if (crate->destructible.remainingVolume < previousVolume - 1e-4f)
+            {
+                volumeEverDropped = true;
+                previousVolume = crate->destructible.remainingVolume;
+            }
+        }
+
+        const float afterVolume = crate->destructible.remainingVolume;
+        check(distinctHits >= 3,
+              "shooting the same ray repeatedly keeps registering cuts");
+        check(volumeEverDropped,
+              "repeated shots on one ray keep removing material");
+        check(afterVolume < crate->destructible.baseVolume,
+              "the same hole deepens instead of staying fixed");
+    }
+
+    // 23. Full-chain repro of the human report: drive the REAL projectile
+    // kernel against the crate's current surface from a fixed origin, over and
+    // over. Each shot is allowed to remove one surface and continue, exactly as
+    // a bolt entering a crater would. The bolt must eventually pass clean
+    // through the crate (a real tunnel), and no shot may stall the cut history
+    // (the "after waiting, shooting makes no new holes" regression).
+    {
+        system.clear();
+        const uint32_t id = makeCrate(system, glm::vec3(0.0f), 2.5f);
+        PhysicalEntity* crate = system.find(id);
+        crate->motion = PhysicalEntityMotion::Static;
+
+        EntityOnlyWorld world;
+        const glm::vec3 start(0.0f, 0.0f, -8.0f);
+        const glm::vec3 dir(0.0f, 0.0f, 1.0f);
+        const float maxRay = 16.0f;
+
+        int surfacesCut = 0;
+        bool tunnelled = false;
+        bool stalled = false;
+        size_t lastCutCount = 0;
+
+        for (int shot = 0; shot < 30 && !tunnelled; ++shot)
+        {
+            // Walk the real kernel until it reports an entity impact.
+            ProjectilePhysicsState state;
+            state.position = start;
+            state.velocity = dir * 100.0f;
+            ProjectilePhysicsConfig config;
+            config.radius = 0.6f;
+            config.lifetime = 10.0f;
+            config.bounceEnabled = false;
+
+            bool hit = false;
+            ProjectileStepResult step;
+            for (int i = 0; i < 200 && !hit; ++i)
+            {
+                step = simulateProjectileTick(state, config, world, 1.0f / 60.0f);
+                if (step.type == ProjectileCollisionType::EntityImpact)
+                    hit = true;
+                if (std::abs(state.position.z - start.z) > maxRay)
+                    break;
+            }
+
+            if (!hit)
+            {
+                // The kernel found no surface along the ray: the tunnel is open.
+                report += "  INFO: shot ";
+                report += std::to_string(shot);
+                report += " no surface -> tunnel\n";
+                tunnelled = true;
+                break;
+            }
+            {
+                int nearEntry = 0;
+                for (const CollisionTriangle& t : crate->localTriangles)
+                    for (const glm::vec3& v : {t.a, t.b, t.c})
+                        if (glm::length(v - glm::vec3(0, 0, -2.5)) < 0.25f)
+                            ++nearEntry;
+                char info[260];
+                const DestructionCut& lc = crate->destructible.cuts.empty()
+                    ? DestructionCut{} : crate->destructible.cuts.back();
+                std::snprintf(info, sizeof(info),
+                    "  INFO: shot %d hit=(%.2f %.2f %.2f) n=(%.2f %.2f %.2f) cutType=%u c=(%.2f %.2f %.2f) dir=(%.2f %.2f %.2f) r=%.2f len=%.2f tris=%zu vol=%.3f\n",
+                    shot, step.hitPosition.x, step.hitPosition.y, step.hitPosition.z,
+                    step.hitNormal.x, step.hitNormal.y, step.hitNormal.z,
+                    (unsigned)lc.cutter.type,
+                    lc.cutter.localCenter.x, lc.cutter.localCenter.y, lc.cutter.localCenter.z,
+                    lc.cutter.localDirection.x, lc.cutter.localDirection.y, lc.cutter.localDirection.z,
+                    lc.cutter.radius, lc.cutter.length,
+                    crate->localTriangles.size(), crate->destructible.remainingVolume);
+                report += info;
+                char ne[64];
+                std::snprintf(ne, sizeof(ne), "      nearEntry=%d\n", nearEntry);
+                report += ne;
+            }
+
+            // Cut at the surface the bolt reached, then advance a little past it
+            // (a one-surface penetration for this shot).
+            // Match the production rifle: a bore segment of ~2x the radius.
+            const glm::vec3 cutPoint = step.hitPosition;
+            const ImpactResult r = submitRifle(id, cutPoint, -dir, dir,
+                                               0.02f, 100.0f, 0.6f, 1.0f, 1.2f);
+            crate = system.find(id);
+            if (!crate)
+                break;
+
+            if (crate->destructible.cuts.size() > lastCutCount)
+            {
+                lastCutCount = crate->destructible.cuts.size();
+                ++surfacesCut;
+            }
+            else if (r.cutCreated || r.pending)
+            {
+                // Accepted but no history growth means a stall risk.
+                stalled = true;
+            }
+        }
+
+        check(!stalled,
+              "no shot stalls the cut history (queue does not wedge)");
+        check(surfacesCut >= 3,
+              "the bolt cuts deeper surface after surface");
+        check(tunnelled,
+              "repeated shots on one crater eventually penetrate the crate");
     }
 
     if (outSummary)

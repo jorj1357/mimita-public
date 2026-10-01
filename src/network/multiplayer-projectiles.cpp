@@ -151,6 +151,7 @@ void configureNetworkProjectile(NetworkProjectile& projectile,
     projectile.explodeOnPlayerImpact = cp(def, "explodeOnPlayerImpact", 1.0f) > 0.0f;
     projectile.explodeOnWorldImpact = cp(def, "explodeOnWorldImpact", 0.0f) > 0.0f;
     projectile.explodeOnLifetime = cp(def, "explodeOnLifetime", 1.0f) > 0.0f;
+    projectile.penetrationsRemaining = std::max(1, def->penetrationCount);
 }
 
 ProjectilePhysicsState makePhysicsState(const NetworkProjectile& projectile)
@@ -1830,6 +1831,10 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                     ? std::max(def->projectileRadius, def->projectileBaseRadius)
                     : 0.01f;
                 impact.sizeScale = def ? def->cutRadiusScale : 0.0f;
+                impact.boreLength = def
+                    ? std::max(0.0f, def->penetrationScale) *
+                          std::max(impact.radius, 0.05f) * 2.0f
+                    : 0.0f;
                 impact.shapeId = def ? def->projectileShapeId : 0;
                 impact.cutScale = def ? def->cutEnergyScale : 1.0f;
                 MimitaImpact::ImpactSystem::instance().submit(impact);
@@ -1837,6 +1842,21 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
             if (state.sleeping || step.type == ProjectileCollisionType::WorldBounce ||
                 step.type == ProjectileCollisionType::WorldImpact)
                 projectile.worldTouched = true;
+
+            // Penetration: a bolt with penetrations left cuts the surface and
+            // advances past it instead of stopping, matching the server.
+            if (step.type == ProjectileCollisionType::EntityImpact &&
+                projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
+                projectile.penetrationsRemaining > 1 &&
+                glm::length(projectile.velocity) > 0.001f)
+            {
+                --projectile.penetrationsRemaining;
+                const glm::vec3 dir = glm::normalize(projectile.velocity);
+                projectile.position = step.hitPosition +
+                    dir * (projectile.radius * 2.0f + 0.05f);
+                projectile.previousPosition = projectile.position;
+                applyPhysicsState(projectile, state);
+            }
 
             // ── Client-side explosion prediction (instant feedback) ──
             // Mirrors the server's explode policy (server-projectiles.cpp) using the

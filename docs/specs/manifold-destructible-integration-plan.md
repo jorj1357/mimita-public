@@ -415,6 +415,10 @@ radius       = clamp(sourceRadius + forceRadius + sizeRadius,
 - Both the server and the local prediction build the same event, so the hole is
   identical on all clients.
 
+Penetration: `penetration_count` (default 1) lets a bolt cut through that many
+surfaces in one shot before stopping, boring a tunnel. Default 1 preserves the
+single-surface behavior; raising it is the "shoot through" mode.
+
 ---
 
 ## 11. Diagnostics and performance
@@ -423,6 +427,21 @@ Implemented diagnostics: per cut — entity id, source, radius, cut count, input
 and output triangle counts, remaining volume, component/shell counts, boolean
 duration; failures recorded separately (invalid target, invalid cutter, boolean
 error, empty result, excessive triangle count).
+
+Destruction queue + budget (2026-09-30, second pass):
+
+- `ImpactSystem::submit` no longer rebuilds synchronously; it appends the cut to
+  the entity's authoritative history (`enqueueCut`) and returns immediately.
+- `ImpactSystem::flushPendingCuts` runs once per fixed tick from
+  `PhysicalEntitySystem::advanceKinematics` and applies **one batched rebuild
+  per entity** regardless of how many cuts are queued. It enforces
+  `kMaxCutsPerEntityPerTick` and a wall-clock `kCutBudgetMsPerTick`, so a burst
+  can never blow a frame; leftover cuts drain on later ticks.
+- A cut that removes no material (`BooleanCutResult::changed == false`) skips the
+  O(triangle) mesh export, surface conversion, mass integration, and revision
+  bump entirely.
+- Diagnostics: `[DESTRUCTION BUDGET]` when a flush pauses at the budget,
+  `[DESTRUCTION QUEUE]` when cuts are still pending after a flush.
 
 Known costs and guidance (2026-09-30 status):
 
@@ -438,9 +457,9 @@ Known costs and guidance (2026-09-30 status):
   allocate an intermediate world-triangle vector; each triangle is transformed
   and AABB-rejected inline.
 - Still linear/costly: the swept projectile query still transforms all entity
-  triangles of an overlapping entity (no per-entity tree for projectiles yet),
-  and there is no per-frame destruction/entity budget. These are the next perf
-  steps if the smaller fixes are not enough.
+  triangles of an overlapping entity (no per-entity tree for projectiles yet).
+  A per-entity projectile AabbTree and triangle simplification are the next perf
+  steps if the batched flush is not enough.
 - The generated-mesh render path uploads only when `(entity id, geometryRevision,
   vertex count)` changes. The box fallback re-uploads every frame.
 - Do not allocate large temporary arrays inside fixed-tick collision loops. Keep

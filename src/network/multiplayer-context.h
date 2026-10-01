@@ -197,6 +197,9 @@ struct NetworkProjectile
     std::deque<TrailSample> trailHistory;
     int bounceCount = 0;
     int maxBounceCount = 0;
+    // Remaining surfaces this projectile may cut through before it stops. 1 is
+    // the single-surface default; higher bores a tunnel.
+    int penetrationsRemaining = 1;
     bool predicted = false;
     bool exploded = false;
     bool worldTouched = false;

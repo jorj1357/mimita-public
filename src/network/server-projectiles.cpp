@@ -1250,6 +1250,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.explodeOnPlayerImpact = cp("explodeOnPlayerImpact", 1.0f) > 0.0f;
     projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
     projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
+    projectile.penetrationsRemaining = std::max(1, definition.penetrationCount);
     projectile.splashLineOfSight = cfg.splashLineOfSight;
     const uint32_t fireViewTick = estimateServerRewindTick(
         shooter, clientSimulationTick, tick);
@@ -1762,6 +1763,10 @@ void submitEntityImpact(const ServerProjectile& projectile,
         // weapon's cutRadiusScale decides how strongly size feeds the hole.
         impact.radius = std::max(def->projectileRadius, def->projectileBaseRadius);
         impact.sizeScale = def->cutRadiusScale;
+        // Bore a tunnel segment per shot; penetration_scale is the length in
+        // metres the cutter advances past the surface.
+        impact.boreLength = std::max(0.0f, def->penetrationScale) *
+                            std::max(impact.radius, 0.05f) * 2.0f;
         impact.shapeId = def->projectileShapeId;
         impact.cutScale = def->cutEnergyScale;
         impact.damage = def->damage;
@@ -1896,9 +1901,28 @@ void tickServerProjectiles(SOCKET sock,
                 {
                     if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE)
                         submitEntityImpact(projectile, step, stepTick);
-                    explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
-                                      step.hitNormal,
-                                      "entity", 0, tick, stepTick, totalPacketsOut);
+
+                    // Penetration: a bolt with penetrations left cuts this
+                    // surface and continues past it instead of stopping, so one
+                    // shot can bore through several walls (spec 17/19). Default
+                    // penetrationsRemaining == 1 still stops here.
+                    bool continues = false;
+                    if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
+                        projectile.penetrationsRemaining > 1 &&
+                        glm::length(projectile.velocity) > 0.001f)
+                    {
+                        --projectile.penetrationsRemaining;
+                        const glm::vec3 dir = glm::normalize(projectile.velocity);
+                        projectile.position = step.hitPosition +
+                            dir * (projectile.radius * 2.0f + 0.05f);
+                        projectile.previousPosition = projectile.position;
+                        continues = true;
+                    }
+
+                    if (!continues)
+                        explodeProjectile(sock, world, players, npcs, projectile,
+                                          step.hitPosition, step.hitNormal,
+                                          "entity", 0, tick, stepTick, totalPacketsOut);
                 }
 
                 if (!projectile.exploded &&

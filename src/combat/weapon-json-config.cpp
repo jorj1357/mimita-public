@@ -229,6 +229,9 @@ void applyWeaponProjectileImpactJson(WeaponDefinition& def, const json& root)
     readFloatKey("cut_energy_scale", def.cutEnergyScale);
     readFloatKey("cut_radius_scale", def.cutRadiusScale);
     readFloatKey("penetration_scale", def.penetrationScale);
+    float penetration = (float)def.penetrationCount;
+    readFloatKey("penetration_count", penetration);
+    def.penetrationCount = std::max(1, (int)std::lround(penetration));
     float shape = (float)def.projectileShapeId;
     readFloatKey("projectile_shape", shape);
     def.projectileShapeId = (uint32_t)std::max(0.0f, shape);

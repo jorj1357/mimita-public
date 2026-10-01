@@ -72,6 +72,12 @@ struct ImpactEvent
     // with huge force cuts a big hole. 0 = size does not influence the hole.
     float sizeScale = 1.0f;
 
+    // How far the cutter bores along `worldDirection` past the hit point. 0
+    // means a single sphere at the surface; > 0 makes the cut a swept capsule,
+    // so a shot carves a tunnel segment and repeated shots on one gap deepen
+    // until they pass through (destructible-world 17/19).
+    float boreLength = 0.0f;
+
     uint32_t materialId = 0;     // target material (resolved by the target)
     uint32_t shapeId = 0;        // ImpactShape
 
