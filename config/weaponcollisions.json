@@ -8,11 +8,19 @@
   // show the configured collider.
   // A single box approximating each weapon is used below; add more boxes[] for
   // compound hitboxes. True .glb triangle loading is deferred for now.
+  //
+  // "player_bounce" scales config/collision.json bounce.strength for THIS
+  // weapon's contacts with the static world. 0.0 (default) means a weapon
+  // brushing a wall blocks movement but does NOT launch the player (the
+  // documented weapon-contact rule: no bounce from the weapon's own sweep).
+  // Raise it toward 1.0 to let a weapon contact rebound the player.
+  // "collision_skin" is the per-weapon query/recovery margin.
 
   "revolver": {
     "enabled": true,
     "visible": false,
     "collision_skin": 0.05,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "body", "center": [0.15, 0.0, 0.0],
@@ -24,6 +32,7 @@
     "enabled": true,
     "visible": false,
     "collision_skin": 0.05,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.0, 0.2, 0.0],
@@ -35,6 +44,7 @@
     "enabled": true,
     "visible": true,
     "collision_skin": 0.05,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "tube", "center": [0.1, 0.0, 0.0],
@@ -46,6 +56,7 @@
     "enabled": true,
     "visible": true,
     "collision_skin": 0.05,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.15, 0.0, 0.0],
@@ -57,6 +68,7 @@
     "enabled": true,
     "visible": true,
     "collision_skin": 0.05,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "blade", "center": [0.55, 0.0, 0.0],
@@ -66,8 +78,9 @@
 
   "spyknife": {
     "enabled": true,
-    "visible": true,
+    "visible": false,
     "collision_skin": 0.3,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "blade", "center": [0.25, 0.0, 0.0],
@@ -81,6 +94,7 @@
     "enabled": true,
     "visible": false,
     "collision_skin": 0.02,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.75, 0.0, 0.0],
@@ -90,12 +104,13 @@
 
   "hitscan_rifle": {
     "enabled": true,
-    "visible": false,
+    "visible": true,
     "collision_skin": 0.02,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.75, 0.0, 0.0],
-        "half_size": [1.62, 0.22, 0.22], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+        "half_size": [0.95, 0.22, 0.22], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
     ]
   }
 }

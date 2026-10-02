@@ -67,7 +67,10 @@ void appendChunkTrianglesForAABB(
         return;
     }
 
-    constexpr float MAX_EXTENT = 10000.0f;
+    // Clamp only absurd/garbage coordinates before integer chunk-index math.
+    // The bound must not be small enough to shift a legitimate large-map query
+    // to a different region (bhop1 plays around x = -21855).
+    constexpr float MAX_EXTENT = kMaxWorldExtent;
     AABB clamped = queryBounds;
     clamped.min = glm::clamp(clamped.min, glm::vec3(-MAX_EXTENT), glm::vec3(MAX_EXTENT));
     clamped.max = glm::clamp(clamped.max, glm::vec3(-MAX_EXTENT), glm::vec3(MAX_EXTENT));

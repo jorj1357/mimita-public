@@ -344,8 +344,7 @@ void fireMultiPellet(
         PelletPatternConfig pattern;
         pattern.pelletCount = shotProf.totalPellets;
         pattern.spreadDegrees = spreadDeg;
-        auto square = def.customParams.find("squareSpread");
-        pattern.squareSpread = square != def.customParams.end() && square->second > 0.5f;
+        pattern.squareSpread = def.squareSpread;
         shotProf.totalPellets = generatePelletDirections(
             baseDir, pattern, pelletDirs, MAX_PELLETS_PER_BLAST);
     }

@@ -134,6 +134,7 @@ void readWeaponOverride(const json& j, ActorPresetWeaponOverride& out)
         out.hasHitscan = readOptional(h, "enabled", "enabled", out.hitscan);
         out.hasBeamThickness = readOptional(h, "beam_thickness", "beamThickness", out.beamThickness);
         out.hasWorldThickness = readOptional(h, "world_thickness", "worldThickness", out.worldThickness);
+        out.hasSquareSpread = readOptional(h, "square_spread", "squareSpread", out.squareSpread);
         out.hasRange = readOptional(h, "range", "range", out.range);
     }
 

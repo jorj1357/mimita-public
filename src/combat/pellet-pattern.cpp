@@ -61,17 +61,21 @@ int generatePelletDirections(
     // authority use identical horizontal/vertical limits.
     if (config.squareSpread)
     {
-        const int cols = std::max(1, (int)std::ceil(std::sqrt((float)count)));
-        const int rows = std::max(1, (int)std::ceil((float)count / (float)cols));
+        // One square grid owns the pattern. The side is the smallest square
+        // that can hold every pellet, and pellets are spread across all rows so
+        // the overall shape is always a square regardless of pellet count.
+        const int side = std::max(1, (int)std::ceil(std::sqrt((float)count)));
         for (int idx = 0; idx < count; ++idx)
         {
-            const int col = idx % cols;
-            const int row = idx / cols;
-            const float x = cols > 1
-                ? (col / ((float)cols - 1.0f)) * 2.0f - 1.0f
+            const int col = side > 1 ? idx % side : 0;
+            const int row = side > 1
+                ? (int)((long long)idx * side / count)
+                : 0;
+            const float x = side > 1
+                ? (col / ((float)side - 1.0f)) * 2.0f - 1.0f
                 : 0.0f;
-            const float y = rows > 1
-                ? (row / ((float)rows - 1.0f)) * 2.0f - 1.0f
+            const float y = side > 1
+                ? (row / ((float)side - 1.0f)) * 2.0f - 1.0f
                 : 0.0f;
             const glm::quat rot = glm::angleAxis(x * halfAngleRad, localUp) *
                                   glm::angleAxis(y * halfAngleRad, right);

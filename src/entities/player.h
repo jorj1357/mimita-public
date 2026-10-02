@@ -75,6 +75,11 @@ struct WeaponCollisionRuntimeDebug {
     bool capsuleMode = false;    // true = smooth capsule collision (default), false = JSON spheres
     bool usesJsonMesh = false;   // true = weaponColliderMesh is generated from weaponcollisions.json
     float collisionSkin = 0.04f; // per-weapon skin from config, defaults to 0.04
+    // Weapon-contact bounce scale from weaponcollisions.json "player_bounce".
+    // Multiplies config/collision.json bounce.strength for weapon contacts only;
+    // 0 means a weapon brushing the world blocks movement but never launches the
+    // player (the documented weapon-contact rule).
+    float playerBounce = 0.0f;
 };
 
 // ---------------- Player ----------------

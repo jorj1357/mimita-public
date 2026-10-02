@@ -1,5 +1,6 @@
 #include "weapon-collision-config.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 
@@ -79,6 +80,10 @@ static bool parseOneWeapon(const std::string& weaponId, const json& root, Weapon
     out.visible = root.value("visible", false);
     out.collidesWithWorld = root.value("collides_with_world", true);
     out.collisionSkin = root.value("collision_skin", 0.05f);
+    // Weapon contacts project velocity by default (no launch). A value > 0
+    // restores a share of the shared bounce for this weapon only.
+    out.playerBounce = std::clamp(
+        root.value("player_bounce", root.value("bounce", 0.0f)), 0.0f, 4.0f);
     // "capsule" (default): single smooth bounding capsule derived from the model
     // (or the capsule config override). "json": legacy multi-sphere config.
     out.source = root.value("source", "capsule");
@@ -232,6 +237,7 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
     const bool wasJsonMesh = player.weaponCollisionDebug.usesJsonMesh &&
         player.weaponColliderMeshPath == "__weaponcollisions_json_boxes__";
     player.weaponCollisionDebug.usesJsonMesh = false;
+    player.weaponCollisionDebug.playerBounce = 0.0f;
 
     const WeaponCollisionEntry* entry = get(weaponId);
     WeaponCollisionRuntimeDebug& dbg = player.weaponCollisionDebug;
@@ -251,6 +257,7 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
 
     dbg.weaponId = weaponId;
     dbg.collisionSkin = entry->collisionSkin;
+    dbg.playerBounce = entry->playerBounce;
     dbg.visibleFromConfig = entry->visible;
 
     // Build local-to-world rotation matrix from euler degrees

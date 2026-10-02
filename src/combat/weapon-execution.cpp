@@ -159,8 +159,7 @@ int buildPelletDirections(const WeaponDefinition& def,
     auto grid = def.customParams.find("gridSpreadDegrees");
     if (grid != def.customParams.end() && grid->second > 0.0f)
         config.spreadDegrees = grid->second;
-    auto square = def.customParams.find("squareSpread");
-    config.squareSpread = square != def.customParams.end() && square->second > 0.5f;
+    config.squareSpread = def.squareSpread;
     config.spreadSeed = seed;
     return generatePelletDirections(
         safeNormalize(aimDirection, glm::vec3(1.0f, 0.0f, 0.0f)),

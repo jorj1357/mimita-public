@@ -8,6 +8,18 @@
   // aimbody pose; "hybrid" keeps the arms physically blended too.
   "arms_mode": "hybrid",
   // "arms_mode": "default",
+  // Hold RMB to physically move the right arm's center toward this player-
+  // local point, then aim the weapon along camera forward. X=forward,
+  // Y=lateral, Z=up. Change Y for left/right and Z for height.
+  "right_arm_pointing": {
+    "mode": "rmb",
+    "center_offset": [1.0, 0.0, 2.5],
+    // Arm-local goal correction in degrees: [pitch, yaw, roll].
+    // Use this to correct an avatar whose centered arm points down/up.
+    "rotation_degrees": [90.0, -90.0, 0.0],
+    // Higher is a faster but still smooth enter/return transition.
+    "blend_rate": 25.0
+  },
   // "mode": "physical",
   "smoothingFactor": 1.0,
   // does this do antthing 2026 09 29 1132 jorj 

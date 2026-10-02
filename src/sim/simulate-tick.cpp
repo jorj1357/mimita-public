@@ -93,7 +93,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // simulates, instead of letting the old body fall and tether across.
     const uint64_t lifeId = MimitaNet::mpLocalLifecycleId(mpContext);
     static uint64_t s_aimLifecycleId = 0;
-    if (ragdoll.aimActive() && lifeId != 0 && lifeId != s_aimLifecycleId)
+    if (ragdoll.aimActive() &&
+        ((lifeId != 0 && lifeId != s_aimLifecycleId) ||
+         ragdoll.aimBindingNeedsRebind(*sim.player)))
         ragdoll.rebindAimToAuthoritativePlayer(*sim.player);
     s_aimLifecycleId = lifeId;
 
@@ -137,7 +139,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 if (!ragdoll.aimActive())
                     ragdoll.activateAim(*sim.player);
                 ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
-                                  normalInput.camForward);
+                                  normalInput.camForward,
+                                  THE_CAMERA.pos,
+                                  frame.extendRightMouse);
             } else if (ragdoll.aimActive()) {
                 ragdoll.deactivateAim(*sim.player);
             }

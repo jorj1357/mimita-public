@@ -19,6 +19,13 @@
 #include <string>
 #include <vector>
 
+// Absolute sanity limit for one world-space coordinate. The chunk broadphase
+// works for any finite position; this only rejects absurd/garbage values before
+// they reach integer chunk-coordinate casts, and must stay large enough not to
+// clip legitimate large maps (bhop1's spawn is near x = -21855).
+inline constexpr float kMaxWorldExtent = 1.0e7f;
+inline constexpr float kMaxWorldAABBSize = kMaxWorldExtent * 2.0f;
+
 struct Capsule
 {
     glm::vec3 a;

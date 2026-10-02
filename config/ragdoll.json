@@ -107,6 +107,12 @@
         // "torso_tether_stiffness": 20.0,
         // "torso_tether_stiffness": 1.0,
         "torso_tether_stiffness": 0.01,
+        // RMB center-aim physical response. Lower force/damping preserves
+        // more movement momentum; max_stretch permits the shoulder link to
+        // move from the ordinary side position toward center.
+        "right_arm_pointing_position_force": 28.0,
+        "right_arm_pointing_position_damping": 2.0,
+        "right_arm_pointing_max_stretch": 0.9,
         // "damping_mode": "physical",
         "damping_mode": "look",
         "limits": {
@@ -154,7 +160,7 @@
             // aimbody/animation pose relative to the torso.
             // "arms_follow_force": 1.0
             // "arms_follow_force": 5.0
-            // "arms_follow_force": 10.0
+            // "arms_follow_force": 10.0,
             // "arms_follow_force": 25.0
             // "arms_follow_force": 50.0
             "arms_follow_force": 0.0,
@@ -164,6 +170,7 @@
             "arms_camera_follow": 1.0
             // "arms_camera_follow": 10.0
             // "arms_camera_follow": 2.0
+            // "arms_camera_follow": 5.0
         }
     },
     "exit": {

@@ -48,6 +48,8 @@ struct ActorPresetWeaponOverride
     float beamThickness = 0.0f;
     bool hasWorldThickness = false;
     float worldThickness = 0.0f;
+    bool hasSquareSpread = false;
+    bool squareSpread = false;
     bool hasRange = false;
     float range = 0.0f;
     bool hasTracerEnabled = false;

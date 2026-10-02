@@ -502,8 +502,17 @@ bool solveActorTriangleCollision(
         }
         else
         {
+            // Weapon contacts block movement but do not launch the player from
+            // the weapon's sweep velocity. The weapon's JSON "player_bounce"
+            // (default 0) scales the shared bounce for this contact only.
+            const bool weaponContact =
+                c.label && std::strcmp(c.label, "weapon") == 0;
+            const float bounceScale = weaponContact
+                ? player.weaponCollisionDebug.playerBounce
+                : 1.0f;
             respondVelocityAgainstNormal(player, responseNormal, c.sweepDelta, true,
-                                         c.penetration, c.label, c.triangleIndex);
+                                         c.penetration, c.label, c.triangleIndex,
+                                         bounceScale);
         }
 
         // Sliding: strip the blocked component from the intended move.
@@ -972,6 +981,10 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
         for (const ActorWorldContact& c : r.contacts)
             if (c.actorPart && std::strcmp(c.actorPart, "weapon") == 0) weaponHit = true;
         check(weaponHit, "weapon render-mesh triangles produce a contact");
+        // Weapon contacts block but must not launch the player (player_bounce 0):
+        // the weapon's own sweep velocity is not player velocity.
+        check(std::fabs(p.vel.x) < 0.05f,
+              "weapon contact does not launch the player");
     }
 
     // 10. 200 m/s impact: tangential momentum is preserved, but the normal

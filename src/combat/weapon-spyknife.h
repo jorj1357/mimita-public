@@ -25,14 +25,11 @@ struct World;
 
 enum class SpyKnifeAnimState : uint8_t {
     Idle = 0,
-    Ready = 1,
-    Swinging = 2,
-    Returning = 3
+    Swinging = 1
 };
 
 struct SpyKnifeHitResult {
     uint32_t targetId = 0;
-    bool isBackstab = false;
     glm::vec3 hitPosition{0.0f};
     glm::vec3 victimPosition{0.0f};
     glm::vec3 direction{0.0f, 0.0f, 1.0f};
@@ -74,7 +71,6 @@ struct SpyKnifeState {
     bool hasReadyTarget = false;
 
     std::unordered_map<uint32_t, float> hitCooldowns;
-    std::unordered_map<uint32_t, bool> backstabSoundPlayed;
     std::vector<SpyKnifeHitResult> pendingRemoteHits;
     float networkBatchTimer = 0.0f;
     uint32_t contactSerial = 0;
@@ -94,8 +90,5 @@ void update(SpyKnifeState& state, const WeaponDefinition& def,
             const World& world, float dt);
 
 std::vector<SpyKnifeHitResult> collectRemoteHits(SpyKnifeState& state);
-
-bool isBackstabGeometry(const Player& attacker, const Player& victim,
-                        const WeaponDefinition& def);
 
 } // namespace WeaponSpyKnife

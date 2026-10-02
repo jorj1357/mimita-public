@@ -1600,9 +1600,9 @@ void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPa
     WeaponRuntime& rt = attacker.weaponRuntimes["swordsword"];
     rt.shootEffectTimer = 0.18f;
     if (event->attackType == 1)
-        rt.customFloats["swordPoseState"] = 1.0f;
+        rt.customFloats["weaponPoseState"] = 1.0f;
     else if (event->attackType == 2)
-        rt.customFloats["swordPoseState"] = 2.0f;
+        rt.customFloats["weaponPoseState"] = 2.0f;
 
     // Create/replace sword state for lifecycle tracking
     SwordswordState& ss = ctx.remoteSwordStates[event->attackerPlayerId];
@@ -1664,7 +1664,7 @@ void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
                 if (attacker) {
                     auto rtIt = attacker->weaponRuntimes.find("swordsword");
                     if (rtIt != attacker->weaponRuntimes.end())
-                        rtIt->second.customFloats["swordPoseState"] = 0.0f;
+                        rtIt->second.customFloats["weaponPoseState"] = 0.0f;
                 }
                 it = ctx.remoteSwordStates.erase(it);
                 continue;
@@ -1691,14 +1691,14 @@ void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
                 if (attacker) {
                     auto rtIt = attacker->weaponRuntimes.find("swordsword");
                     if (rtIt != attacker->weaponRuntimes.end())
-                        rtIt->second.customFloats["swordPoseState"] = 0.0f;
+                        rtIt->second.customFloats["weaponPoseState"] = 0.0f;
                 }
                 it = ctx.remoteSwordStates.erase(it);
                 continue;
             }
         }
 
-        // Update swordPoseState on remote player's runtime
+        // Update weaponPoseState on remote player's runtime
         if (attacker)
         {
             auto rtIt = attacker->weaponRuntimes.find("swordsword");
@@ -1707,14 +1707,14 @@ void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
                 rtIt->second.shootEffectTimer = 0.18f;
                 if (ss.state == SwordswordState::AttackState::SlashWindup ||
                     ss.state == SwordswordState::AttackState::LungeWindup)
-                    rtIt->second.customFloats["swordPoseState"] = 0.0f;
+                    rtIt->second.customFloats["weaponPoseState"] = 0.0f;
                 else if (ss.state == SwordswordState::AttackState::SlashActive)
-                    rtIt->second.customFloats["swordPoseState"] = 1.0f;
+                    rtIt->second.customFloats["weaponPoseState"] = 1.0f;
                 else if (ss.state == SwordswordState::AttackState::LungeActive)
-                    rtIt->second.customFloats["swordPoseState"] = 2.0f;
+                    rtIt->second.customFloats["weaponPoseState"] = 2.0f;
                 else if (ss.state == SwordswordState::AttackState::SlashRecover ||
                          ss.state == SwordswordState::AttackState::LungeRecover)
-                    rtIt->second.customFloats["swordPoseState"] = 0.0f;
+                    rtIt->second.customFloats["weaponPoseState"] = 0.0f;
             }
         }
 

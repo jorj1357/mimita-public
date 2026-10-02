@@ -11,6 +11,8 @@
 #include <string>
 #include <unordered_map>
 
+#include <glm/glm.hpp>
+
 struct LimbAim {
     float pitch = 0.0f;  // rotation about the character's left-right axis (tilt up/down)
     float yaw = 0.0f;    // rotation about the character's up axis (turn left/right)
@@ -40,6 +42,19 @@ public:
     // target or are driven toward their normal default aimbody pose.
     bool armsDefaultMode() const { return mArmsMode == "default"; }
     const std::string& armsMode() const { return mArmsMode; }
+    // Normal-play right-arm pointing policy. "rmb" uses held RMB to aim the
+    // physical right arm along camera forward; "off" preserves the existing
+    // weapon/animation pose.
+    bool rightArmPointingRmb() const { return mRightArmPointingMode == "rmb"; }
+    // Player-local target for the physical right-arm center while RMB is held:
+    // X = forward, Y = lateral, Z = up.
+    const glm::vec3& rightArmPointingCenterOffset() const {
+        return mRightArmPointingCenterOffset;
+    }
+    const glm::vec3& rightArmPointingRotationDegrees() const {
+        return mRightArmPointingRotationDegrees;
+    }
+    float rightArmPointingBlendRate() const { return mRightArmPointingBlendRate; }
     bool bodyPhysicsMode() const { return physicalMode() || hybridMode(); }
     const std::string& mode() const { return mMode; }
     float smoothingFactor() const { return mSmoothingFactor; }
@@ -70,6 +85,10 @@ private:
     bool mEnabled = true;
     std::string mMode = "default";
     std::string mArmsMode = "hybrid";
+    std::string mRightArmPointingMode = "off";
+    glm::vec3 mRightArmPointingCenterOffset{0.2f, 0.0f, 0.4f};
+    glm::vec3 mRightArmPointingRotationDegrees{0.0f};
+    float mRightArmPointingBlendRate = 10.0f;
     float mSmoothingFactor = 1.0f;
     std::unordered_map<std::string, LimbAim> mLimbs;
     std::string mPath = "config/aimbody.json";

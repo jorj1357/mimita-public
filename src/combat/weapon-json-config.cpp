@@ -198,6 +198,7 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonInt(root, "reserve_ammo", def.reserveSize);
     weaponJsonInt(root, "pellet_count", def.pelletCount);
     weaponJsonFloat(root, "spread", def.spread);
+    weaponJsonBool(root, "square_spread", def.squareSpread);
     weaponJsonFloat(root, "recoil", def.recoil);
     weaponJsonFloat(root, "projectile_speed", def.projectileSpeed);
     weaponJsonFloat(root, "projectile_radius", def.projectileRadius);

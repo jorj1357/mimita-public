@@ -48,6 +48,10 @@ struct WeaponCollisionEntry {
     bool visible = false;        // show capsule wireframes in-game (from JSON "visible" field)
     bool collidesWithWorld = true;
     float collisionSkin = 0.05f;
+    // Multiplier on config/collision.json bounce.strength for this weapon's
+    // contacts with the world. 0 = weapon contacts project velocity only and
+    // never launch the player.
+    float playerBounce = 0.0f;
     std::string source = "capsule";  // "capsule" (default, single smooth capsule) or "json" (legacy spheres)
 
     // Backward compat: singular capsule

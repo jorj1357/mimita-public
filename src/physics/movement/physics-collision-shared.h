@@ -89,7 +89,8 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
                                          bool bodyContact = false,
                                          float penetration = 0.0f,
                                          const char* actorPart = nullptr,
-                                         int worldTriangle = -1)
+                                         int worldTriangle = -1,
+                                         float bounceScale = 1.0f)
 {
     const CollisionConfig& cfg = CollisionConfig::instance();
     glm::vec3* velocities[] =
@@ -98,7 +99,11 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
         &p.externalImpulse
     };
 
-    if (!cfg.bounceEnabled() || cfg.bounceStrength() <= 0.0f)
+    // Per-contact bounce scale. Weapon contacts pass their configured
+    // "player_bounce" (0 by default), so a weapon brushing the world blocks
+    // movement but does not launch the player from the weapon's sweep velocity.
+    const float strength = cfg.bounceStrength() * std::max(0.0f, bounceScale);
+    if (!cfg.bounceEnabled() || strength <= 0.0f)
     {
         projectVelocityAgainstNormal(p, normal);
         return;
@@ -161,7 +166,7 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
         if (into <= 0.0f)
             continue;
         glm::vec3 tangent = *v - normal * glm::dot(*v, normal);
-        *v = tangent * retention + normal * (std::min(into, maxInto) * cfg.bounceStrength());
+        *v = tangent * retention + normal * (std::min(into, maxInto) * strength);
     }
 
     // Part-driven push: the moving limb/weapon is the dominant impact, so give
@@ -170,7 +175,7 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
     {
         const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);
         p.vel = tangent * retention +
-                normal * (std::min(partInto, maxInto) * cfg.bounceStrength());
+                normal * (std::min(partInto, maxInto) * strength);
     }
 
     p.collision.bounceCooldown = cfg.bounceCooldown();

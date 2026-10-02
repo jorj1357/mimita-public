@@ -206,8 +206,16 @@ static int runBodyWeaponPass(
         // Pass each contact's own swept part velocity and penetration so a
         // moving (or statically embedded) arm/leg/weapon pushes the whole body
         // even when the root is not moving into the wall.
-        for (const auto& pc : bodyPushContacts)
-            respondVelocityAgainstNormal(p, pc.normal, pc.sweepDelta, true, pc.penetration);
+        for (const auto& pc : bodyPushContacts) {
+            const bool weaponContact =
+                pc.label && std::strcmp(pc.label, "weapon") == 0;
+            const float bounceScale = weaponContact
+                ? p.weaponCollisionDebug.playerBounce
+                : 1.0f;
+            respondVelocityAgainstNormal(p, pc.normal, pc.sweepDelta, true,
+                                         pc.penetration, pc.label,
+                                         pc.triangleIndex, bounceScale);
+        }
     }
 
     auto t1 = std::chrono::steady_clock::now();

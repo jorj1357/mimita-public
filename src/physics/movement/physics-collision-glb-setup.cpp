@@ -195,9 +195,9 @@ static bool isValidAABB(const AABB& aabb)
     return isFinite(aabb.min.x) && isFinite(aabb.min.y) && isFinite(aabb.min.z) &&
            isFinite(aabb.max.x) && isFinite(aabb.max.y) && isFinite(aabb.max.z) &&
            aabb.max.x >= aabb.min.x && aabb.max.y >= aabb.min.y && aabb.max.z >= aabb.min.z &&
-           aabb.max.x - aabb.min.x < 10000.0f &&
-           aabb.max.y - aabb.min.y < 10000.0f &&
-           aabb.max.z - aabb.min.z < 10000.0f;
+           aabb.max.x - aabb.min.x < kMaxWorldAABBSize &&
+           aabb.max.y - aabb.min.y < kMaxWorldAABBSize &&
+           aabb.max.z - aabb.min.z < kMaxWorldAABBSize;
 }
 
 static AABB clampAABB(const AABB& aabb)
@@ -205,8 +205,8 @@ static AABB clampAABB(const AABB& aabb)
     AABB result = aabb;
     auto clampVal = [](float v) -> float {
         if (!isFinite(v)) return 0.0f;
-        if (v > 5000.0f) return 5000.0f;
-        if (v < -5000.0f) return -5000.0f;
+        if (v > kMaxWorldExtent) return kMaxWorldExtent;
+        if (v < -kMaxWorldExtent) return -kMaxWorldExtent;
         return v;
     };
     result.min.x = clampVal(result.min.x);

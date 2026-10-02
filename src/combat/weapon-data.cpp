@@ -794,12 +794,9 @@ WeaponDefinition createSpyKnifeDefinition() {
     def.customParams["speedKnockbackFactor"] = 4.0f;
     def.customParams["angleKnockbackFactor"] = 2.0f;
     def.customParams["maxKnockback"] = 200.0f;
-    def.customParams["backstabDistance"] = 0.5f;
-    def.customParams["backstabConeDegrees"] = 150.0f;
-    def.customParams["backstabDamagePerTick"] = 999.0f;
-    def.customParams["backstabKnockback"] = 20.0f;
-    def.customParams["swingDurationTicks"] = 120.0f;
-    def.customParams["swingForwardTicks"] = 60.0f;
+    def.customParams["swingDurationTicks"] = 126.0f;
+    def.customParams["altPoseState"] = 4.0f;
+    def.customParams["altPoseDurationTicks"] = 126.0f;
     def.customParams["damageTickInterval"] = 0.166f;
     return def;
 }
@@ -902,6 +899,7 @@ WeaponDefinition createBigShotgunDefinition() {
     def.headshotMultiplier = 4.0f;
     def.fireDelay = 1.0f;
     def.pelletCount = 100;
+    def.squareSpread = true;
     def.beamThickness = 0.5f;
     def.shooterKnockback = 0.03f;
     def.victimKnockback = 0.03f;

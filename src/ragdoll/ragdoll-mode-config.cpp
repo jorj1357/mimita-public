@@ -266,6 +266,15 @@ bool RagdollModeConfig::load(const std::string& path)
             pc.torsoTetherStiffness = std::clamp(
                 pa.value("torso_tether_stiffness", pc.torsoTetherStiffness),
                 0.0f, 240.0f);
+            pc.rightArmPointingPositionForce = std::clamp(
+                pa.value("right_arm_pointing_position_force",
+                         pc.rightArmPointingPositionForce), 0.0f, 240.0f);
+            pc.rightArmPointingPositionDamping = std::clamp(
+                pa.value("right_arm_pointing_position_damping",
+                         pc.rightArmPointingPositionDamping), 0.0f, 100.0f);
+            pc.rightArmPointingMaxStretch = std::clamp(
+                pa.value("right_arm_pointing_max_stretch",
+                         pc.rightArmPointingMaxStretch), 0.0f, 3.0f);
             const std::string dampingMode =
                 pa.value("damping_mode", std::string("physical"));
             pc.damping = (dampingMode == "look")

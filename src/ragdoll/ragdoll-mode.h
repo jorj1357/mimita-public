@@ -85,6 +85,9 @@ struct RagdollBody {
     RagdollGrabState rightGrab;
     bool leftArmExtending = false;
     bool rightArmExtending = false;
+    // Normal-play only: held RMB gives the right arm a camera-forward motor.
+    bool rightArmPointing = false;
+    float rightArmPointingBlend = 0.0f;
     float activationTime = 0.0f;
 };
 
@@ -114,8 +117,13 @@ public:
     // body can never keep simulating from a stale pre-teleport position.
     void rebindAimToAuthoritativePlayer(Player& player);
     void updateAim(float dt, const World& world, Player& player,
-                   const glm::vec3& camForward);
+                   const glm::vec3& camForward, const glm::vec3& camPosition,
+                   bool rightMouseHeld);
     bool aimActive() const { return mAimActive; }
+    // Avatar model reloads replace the skeleton and physical body without
+    // changing the network lifecycle id. Rebuild the normal-play aim body
+    // before hybrid physics uses bind transforms from the previous avatar.
+    bool aimBindingNeedsRebind(const Player& player) const;
 
     // ── Limb replication ────────────────────────────────────────────
     // Latest local pose to send (by the client send loop). active is false when
@@ -188,6 +196,9 @@ private:
     void syncToPlayer(Player& player, RagdollBody& b);
     void syncAimToPlayer(Player& player, RagdollBody& b);
     void applyAimMotor(RagdollBody& b, const glm::vec3& camForward, float dt);
+    void applyRightArmPointMotor(RagdollBody& b, const Player& player,
+                                 const glm::vec3& camForward,
+                                 const glm::vec3& camPosition, float dt);
     void tetherAimRoot(const Player& player, RagdollBody& b, float dt);
     void captureAimTargets(const Player& player, RagdollBody& b);
     void applyHybridSprings(RagdollBody& b, float dt);
@@ -204,6 +215,7 @@ private:
     RagdollBody mAlive;
     RagdollBody mAim;
     bool mAimActive = false;
+    std::string mAimAvatarName;
     RagdollReplicationPose mReplicated;
     std::unordered_map<uint32_t, RagdollBody> mReplicatedBodies;
     std::vector<RagdollCorpse> mCorpses;

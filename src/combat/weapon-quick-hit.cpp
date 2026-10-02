@@ -164,7 +164,7 @@ void WeaponQuickHit::startAttack(QuickHitState& state, const WeaponDefinition& d
         rt = &it->second;
         rt->shootEffectTimer = std::max(0.1f,
             (float)state.activeTicksRemaining / 60.0f);
-        rt->customFloats["swordPoseState"] = 3.0f;
+        rt->customFloats["weaponPoseState"] = 3.0f;
     }
 
     Debug::log(Debug::Category::Weapons,
@@ -228,7 +228,7 @@ void WeaponQuickHit::update(QuickHitState& state, const WeaponDefinition& def,
     // Keep shoot effect timer alive while active
     runtime.shootEffectTimer = std::max(runtime.shootEffectTimer,
         (float)state.activeTicksRemaining / 60.0f);
-    runtime.customFloats["swordPoseState"] = 3.0f;
+    runtime.customFloats["weaponPoseState"] = 3.0f;
 
     // Sweep capsule against NPCs every tick within this frame
     if (state.startupTicksRemaining > 0 || state.activeTicksRemaining > 0) {
@@ -357,7 +357,7 @@ void WeaponQuickHit::update(QuickHitState& state, const WeaponDefinition& def,
         state.active = false;
         state.hasPreviousCapsule = false;
         runtime.shootEffectTimer = 0.0f;
-        runtime.customFloats["swordPoseState"] = 0.0f;
+        runtime.customFloats["weaponPoseState"] = 0.0f;
         Debug::log(Debug::Category::Weapons, "[QUICK HIT] attack ended\n");
     }
 }

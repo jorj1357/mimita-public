@@ -7,7 +7,15 @@
 * this file DOES NOT permit killing, closing, or relinking a running game
 */
 
+## Current policy (2026-10-01)
+
+The no-cold-build rule is disabled as of 2026-10-01. Cold builds are fine for
+now. The invariant and cold/live restrictions below are retained as historical
+context and do not block the current workflow.
+
 # Live development invariant
+
+> Historical policy below; disabled as of 2026-10-01.
 
 ## The invariant
 
@@ -114,6 +122,7 @@ The detailed observability and AI-evidence direction is recorded in
 
 - `devscripts/live-build.py`: the documented live entry (never writes the exe).
 - `build_game_dll.py`: the compiler the runtime worker also uses.
-- `build_agent.py` / `build.py`: cold builds only.
+- `build_agent.py` / `build.py`: cold builds are currently allowed; the old
+  cold-only restriction was disabled as of 2026-10-01.
 - `devscripts/test-live-build-invariant.py`: asserts a live build leaves
   `mimita.exe` unchanged and the cold guard refuses while it runs.

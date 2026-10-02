@@ -382,12 +382,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 tryWeaponPoseState("reload");
         } else {
             if (currentWeaponRuntime->shootEffectTimer > 0.0f) {
-                auto poseIt = currentWeaponRuntime->customFloats.find("swordPoseState");
+                auto poseIt = currentWeaponRuntime->customFloats.find("weaponPoseState");
                 if (poseIt != currentWeaponRuntime->customFloats.end()) {
                     if (poseIt->second == 1.0f)
                         tryWeaponPoseState("slash");
                     else if (poseIt->second == 2.0f)
                         tryWeaponPoseState("lunge");
+                    else if (poseIt->second == 4.0f)
+                        tryWeaponPoseState("defensive");
                     else
                         tryWeaponPoseState("shooting");
                 } else if (!tryWeaponPoseState("shooting")) {

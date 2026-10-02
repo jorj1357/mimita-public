@@ -38,6 +38,7 @@ void applyOverride(WeaponDefinition& weapon,
     if (o.hasHitscan) weapon.hitscan = o.hitscan;
     if (o.hasBeamThickness) weapon.beamThickness = std::max(0.0f, o.beamThickness);
     if (o.hasWorldThickness) weapon.beamWorldThickness = std::max(0.0f, o.worldThickness);
+    if (o.hasSquareSpread) weapon.squareSpread = o.squareSpread;
     if (o.hasRange) weapon.customParams["range"] = std::max(0.0f, o.range);
     if (o.hasTracerEnabled) weapon.tracerEnabled = o.tracerEnabled;
     if (o.hasTracerThickness) weapon.tracerThickness = std::max(0.0f, o.tracerThickness);

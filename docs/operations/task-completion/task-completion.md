@@ -60,12 +60,10 @@ Confirmed behavior breaks belong in `docs/regressions/`. Human playtesting may
 discover one. The AI may recommend one. Each behavior regression gets its own
 file and repeated occurrences append to that same file.
 
-Every intentional cold build is also recorded as a new occurrence in the
-dedicated cold-build debt file described in `docs/regressions/README.md`.
-That occurrence records the reason, exact cold owner/boundary, required result,
-why live activation was impossible, and the code/architecture change needed to
-make the work hot. This record is cold-build migration history, not automatic
-proof of a user-visible regression.
+The no-cold-build rule and its mandatory cold-build debt bookkeeping are
+disabled as of 2026-10-01. Cold builds are fine for now. Existing cold-build
+records remain historical migration history, not a requirement to append a new
+occurrence for every current build.
 
 Each record must link its changelog and include the evidence appropriate to its
 kind. A behavior regression includes expected behavior, actual behavior,

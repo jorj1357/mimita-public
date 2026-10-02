@@ -1,9 +1,9 @@
 # Physical Objects Collision and Settling
 
 Time created: 2026-10-01T17:37:13Z
-Time last updated: 2026-10-01T23:21:21Z
+Time last updated: 2026-10-02T05:43:38Z
 
-Status: ATTEMPTED FIX (12)
+Status: ATTEMPTED FIX (13)
 
 Performance/queue baseline: human-confirmed GOOD at 2026-10-01T22:16:15Z
 (Attempt 10: sustained 2 fps gone; no noticeable dip from normal shooting).
@@ -746,3 +746,154 @@ ran nearly every tick while the queue drained -> ~500 ms/tick sustained.
   `--actor-collision-mesh-selftest`, `--actor-triangle-solve-selftest`,
   `--physical-perf-selftest` PASS.
 - Full-auto probe avg ~0.33 ms / max 1.4 ms per flush; moving ~3.2 ms/tick.
+
+---
+
+## Regression Occurrence 9 (Attempt 13, 2026-10-02 01:43 EDT)
+
+### Observed (human report + focused handoff)
+
+- With a weapon equipped the player "bounces too much" and reportedly "falls
+  through the world / bounces off the world strangely" when the weapon hitbox
+  touches world geometry. This is specifically the weapon hitbox, not the body.
+- `docs/specs/20261001-weapon-collision-handoff.md` isolated this to the
+  Attempt-12 change that made every weapon a `source:"boxes"` triangle hitbox
+  feeding the actor manifold.
+
+### Expected Behavior
+
+Per `docs/specs/20260927plan.md`: "static world contacts: depenetration +
+velocity projection; arm/leg/head contacts: no bounce; **weapon contacts: no
+bounce**" and "Do not use arm/weapon sweep velocity as player bounce." A weapon
+is an authoritative position setter (it blocks the body) but it must not launch
+the body. Per `docs/specs/movement/movement.md:882`, the weapon still prevents
+walking into a wall. Hitboxes remain data-driven and editable in
+`config/weaponcollisions.json`.
+
+### Actual Behavior
+
+Every weapon contact with the static world called
+`respondVelocityAgainstNormal(player, c.normal, c.sweepDelta, true, ...)`. The
+weapon's `sweepDelta` (the arm/viewmodel motion) was used as `partInto` and, on
+`impact >= bounce.minSpeed`, produced `partInto * bounce.strength` (0.35) as
+root player velocity. A weapon brushing a wall therefore launched the whole
+player regardless of the body's own velocity, which reads as "bouncing too
+much" and can throw the player into/through nearby geometry.
+
+### Why This Is Bad
+
+The weapon's animation motion becomes player motion, so simply holding a long
+weapon near world geometry ejects the player. It violates the documented
+movement response and makes weapon collision feel uncontrollable.
+
+### Specification
+
+`docs/specs/20260927plan.md` (weapon contacts: no bounce),
+`docs/specs/movement/movement.md:869-887` (body and weapon collision are
+gameplay and the weapon blocks walls).
+
+### Wrong Code
+
+File:
+
+`src/physics/movement/actor-triangle-solver.cpp`
+
+```cpp
+respondVelocityAgainstNormal(player, responseNormal, c.sweepDelta, true,
+                             c.penetration, c.label, c.triangleIndex);
+```
+
+File:
+
+`src/physics/movement/physics-collision-shared.h`
+
+```cpp
+*v = tangent * retention + normal * (std::min(into, maxInto) * cfg.bounceStrength());
+...
+p.vel = tangent * retention + normal * (std::min(partInto, maxInto) * cfg.bounceStrength());
+```
+
+### Confirmed Cause
+
+The response helper had no per-contact bounce scale, so weapon contacts were
+indistinguishable from body contacts and reused the full shared bounce strength,
+including the part-driven push from the weapon sweep. Evidence: code inspection
+of the call site and hedge; selftest #9 (weapon box crossing a wall with a
+stationary body) produced a nonzero launch velocity before the fix.
+
+### Attempted Fix 1
+
+Time: `2026-10-02T05:43:38Z`
+
+Change: added a `bounceScale` parameter to
+`respondVelocityAgainstNormal` that multiplies `bounce.strength`; when it is `0`
+the helper projects velocity only. Added per-weapon `"player_bounce"` to
+`config/weaponcollisions.json` (default `0.0`), parsed into
+`WeaponCollisionRuntimeDebug::playerBounce`, and passed for contacts labeled
+`"weapon"` in both the actor triangle solver and the legacy body/weapon pass.
+Extended actor-triangle selftest #9 with
+`weapon contact does not launch the player`.
+
+Result: `--actor-triangle-solve-selftest` PASS including the new assertion,
+while the root-body bounce test still PASSES. All other listed selftests PASS.
+Human playtest not yet performed.
+
+### Corrected Code
+
+File:
+
+`src/physics/movement/actor-triangle-solver.cpp`
+
+```cpp
+const bool weaponContact =
+    c.label && std::strcmp(c.label, "weapon") == 0;
+const float bounceScale = weaponContact
+    ? player.weaponCollisionDebug.playerBounce
+    : 1.0f;
+respondVelocityAgainstNormal(player, responseNormal, c.sweepDelta, true,
+                             c.penetration, c.label, c.triangleIndex,
+                             bounceScale);
+```
+
+File:
+
+`src/physics/movement/physics-collision-shared.h`
+
+```cpp
+const float strength = cfg.bounceStrength() * std::max(0.0f, bounceScale);
+if (!cfg.bounceEnabled() || strength <= 0.0f)
+{
+    projectVelocityAgainstNormal(p, normal);
+    return;
+}
+```
+
+### Fix
+
+Weapon contacts now use velocity projection (block movement) instead of a
+rebound, by default, and the rebound share is a per-weapon JSON value.
+
+### Proof
+
+Human review: pending. Confirm in game that a weapon no longer launches the
+player and that the reported fall-through is gone.
+
+Automated proof:
+
+- `--actor-triangle-solve-selftest` PASS (new
+  `weapon contact does not launch the player`).
+- `--actor-collision-mesh-selftest` PASS.
+- `--moving-crate-selftest`, `--destructible-selftest`,
+  `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
+- `--physical-perf-selftest` PASS (moving ~2.27 ms/tick; full-auto avg 0.19 ms /
+  max 0.42 ms per flush).
+- Build: `python build_agent.py` SUCCESS, linked `mimita.exe`.
+
+Related changelog:
+`docs/changelog/2026-10-02/20261002_054338-weapon-contact-no-bounce.md`
+
+### Solution
+
+Not yet. Status remains `ATTEMPTED FIX (13)` until human playtesting confirms
+the weapon no longer bounces/launches the player and the fall-through is gone.
+

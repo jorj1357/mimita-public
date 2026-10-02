@@ -134,6 +134,11 @@ the reproduction context is damaged
 
 Therefore:
 
+- Current policy (2026-10-01): the no-cold-build rule is disabled. Cold builds
+  are fine for now. The live-development invariant and installation-window
+  guidance in this historical reference remain here as historical evidence,
+  not as a current blocker.
+
 - `cold_restart_pending` is a high-severity development event;
 - it must identify the exact cold file and owner;
 - it must explain why the boundary exists;

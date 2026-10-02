@@ -4,7 +4,14 @@
 
 This is a C++17 OpenGL game engine.
 
-## Live-development invariant
+## Current policy (2026-10-01)
+
+The no-cold-build rule is disabled as of 2026-10-01. Cold builds are fine for
+now, including while the game is running, when the user or active workflow
+explicitly needs a newly linked executable. This temporary policy supersedes
+the historical live-development invariant below.
+
+## Historical live-development invariant (disabled 2026-10-01)
 
 If `MiMITA.exe` is already running, it must remain running. Do not close,
 restart, relink, replace, or unlock a running executable. Live iteration edits

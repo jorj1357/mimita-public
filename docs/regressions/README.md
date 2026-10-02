@@ -329,9 +329,17 @@ The previous solution was known to work until:
 
 ## Core Rule
 
+## Current cold-build policy (2026-10-01)
+
+The no-cold-build rule is disabled as of 2026-10-01. Cold builds are fine for
+now. The cold-build debt record below is historical migration history while
+this policy is disabled; no new occurrence is required solely because a cold
+build was run under the current policy.
+
 ## Cold-build debt record
 
-Every intentional cold build required during an AI work session must append an occurrence to:
+Historically, every intentional cold build required during an AI work session
+was appended as an occurrence to:
 
 `docs/regressions/2026-09-20/cold-build-required-REG.md`
 

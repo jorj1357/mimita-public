@@ -220,6 +220,7 @@ void RagdollModeSystem::buildAimBody(Player& player)
     mAim.rootWorldPosition = player.pos;
     initParts(player, mAim);
     mAimActive = !mAim.parts.empty();
+    mAimAvatarName = player.avatarName();
 
     // Seed limb momentum from the current movement velocity so physical mode
     // does not appear to freeze on entry (RAG-003 analog). On a lifecycle
@@ -260,7 +261,13 @@ void RagdollModeSystem::deactivateAim(Player& player)
     }
     mAimActive = false;
     mAim = RagdollBody{};
+    mAimAvatarName.clear();
     Debug::log(Debug::Category::Ragdoll, "[AIMBODY] deactivated\n");
+}
+
+bool RagdollModeSystem::aimBindingNeedsRebind(const Player& player) const
+{
+    return mAimActive && mAimAvatarName != player.avatarName();
 }
 
 // Pull the dynamic torso toward the authoritative movement root. The player
@@ -320,6 +327,108 @@ void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForwar
     motor(b.torsoIndex, cfg.physicalAim.torsoWeight);
 }
 
+void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
+                                                const Player& player,
+                                                const glm::vec3& camForward,
+                                                const glm::vec3& camPosition,
+                                                float dt)
+{
+    if (b.rightArmPointingBlend <= 1e-4f || b.rightArmIndex < 0 ||
+        b.rightArmIndex >= (int)b.parts.size())
+        return;
+
+    const auto& cfg = RagdollModeConfig::instance().data();
+    const auto& aimConfig = AimBodyConfig::instance();
+    const float pointingBlend = glm::clamp(b.rightArmPointingBlend, 0.0f, 1.0f);
+    RagdollModePart& part = b.parts[b.rightArmIndex];
+    RigidBody& body = part.body;
+    if (glm::length(camForward) < 1e-5f) return;
+
+    // Move the arm's physical center toward the configured player-local
+    // centerline. This is a spring/force response, not a position assignment,
+    // so movement momentum and collisions remain part of the result.
+    const glm::quat rootRotation = glm::angleAxis(
+        glm::radians(player.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
+    const glm::vec3 targetArmPosition = player.pos + rootRotation *
+        aimConfig.rightArmPointingCenterOffset();
+    const glm::vec3 positionError = targetArmPosition - body.position;
+    const glm::vec3 relativeVelocity = body.linearVelocity - player.vel;
+    const glm::vec3 acceleration =
+        positionError * cfg.physicalAim.rightArmPointingPositionForce * pointingBlend -
+        relativeVelocity * cfg.physicalAim.rightArmPointingPositionDamping;
+    body.linearVelocity += acceleration * dt;
+
+    glm::vec3 targetForward = glm::normalize(camForward);
+    glm::vec3 targetUp(0.0f, 0.0f, 1.0f);
+
+    // The weapon's actual barrel is the authoritative aim axis. Convert its
+    // grip-to-muzzle direction into the arm frame, then aim the muzzle at a
+    // distant point on the camera ray. This makes a right-offset hand/gun
+    // converge on the camera center instead of merely running parallel to it.
+    const glm::vec3 weaponBarrelLocal =
+        player.weaponMuzzleLocal - player.weaponGripLocal;
+    const glm::mat3 weaponToArm = glm::mat3(player.weaponLocalToArm);
+    glm::vec3 armBarrelLocal = weaponToArm * weaponBarrelLocal;
+    glm::vec3 armUpLocal = weaponToArm * glm::vec3(0.0f, 0.0f, 1.0f);
+    bool hasWeaponAimAxis = glm::length(weaponBarrelLocal) > 1e-4f &&
+                            glm::length(armBarrelLocal) > 1e-4f &&
+                            glm::length(armUpLocal) > 1e-4f;
+    if (hasWeaponAimAxis) {
+        armBarrelLocal = glm::normalize(armBarrelLocal);
+        armUpLocal = glm::normalize(armUpLocal);
+        if (std::fabs(glm::dot(armBarrelLocal, armUpLocal)) > 0.98f)
+            hasWeaponAimAxis = false;
+    }
+
+    if (hasWeaponAimAxis) {
+        glm::vec3 muzzleWorld = player.weaponModelTransform[3];
+        const glm::vec3 localMuzzle = player.weaponMuzzleLocal;
+        if (glm::length(localMuzzle) > 1e-4f)
+            muzzleWorld = glm::vec3(player.weaponModelTransform *
+                                    glm::vec4(localMuzzle, 1.0f));
+        const glm::vec3 cameraRayPoint = camPosition + targetForward * 100.0f;
+        const glm::vec3 toTarget = cameraRayPoint - muzzleWorld;
+        if (glm::length(toTarget) > 1e-4f)
+            targetForward = glm::normalize(toTarget);
+    }
+
+    if (glm::length(glm::cross(targetForward, targetUp)) < 0.05f)
+        targetUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    glm::quat target;
+    if (hasWeaponAimAxis) {
+        const glm::quat desiredWorld = aimLookRotation(targetForward, targetUp);
+        const glm::quat localWeaponInArm =
+            aimLookRotation(armBarrelLocal, armUpLocal);
+        target = glm::normalize(desiredWorld * glm::inverse(localWeaponInArm));
+    } else {
+        target = aimLookRotation(targetForward, targetUp) * part.aimOffset;
+    }
+    // This is an arm-local goal rotation, intentionally separate from the
+    // weapon attachment transform. It is the hot tuning hook for correcting
+    // pitch/roll/yaw if an avatar's bind orientation makes the arm point down.
+    target = glm::normalize(target * glm::quat(glm::radians(
+        aimConfig.rightArmPointingRotationDegrees())));
+
+    // Reuse the same physical aim controller as ragdoll/head aiming. Rotation
+    // and position are both physical; no transform is snapped.
+    if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
+        body.angularVelocity += computeAimTorque(
+            body.orientation, target, body.angularVelocity,
+            cfg.physicalAim, pointingBlend) * dt;
+    } else {
+        const glm::vec3 desired = aimDesiredAngularVelocity(
+            body.orientation, target, cfg.physicalAim, pointingBlend);
+        const float blend = glm::clamp(dt * cfg.physicalAim.lookDamping, 0.0f, 1.0f);
+        body.angularVelocity += (desired - body.angularVelocity) * blend;
+    }
+
+    const float cap = std::min(body.maxAngularSpeed, cfg.physicalAim.maxAngularSpeed);
+    const float speed = glm::length(body.angularVelocity);
+    if (cap > 0.0f && speed > cap)
+        body.angularVelocity *= cap / speed;
+}
+
 // Capture the procedural animation pose (world transform per part) before
 // physics overwrites the skeleton. Hybrid springs pull the body toward it.
 void RagdollModeSystem::captureAimTargets(const Player& player, RagdollBody& b)
@@ -347,23 +456,27 @@ void RagdollModeSystem::applyHybridSprings(RagdollBody& b, float dt)
     if (baseRate <= 1e-4f) return;
 
     for (auto& part : b.parts) {
+        const float pointingBlend = (part.name == "rightArm")
+            ? glm::clamp(b.rightArmPointingBlend, 0.0f, 1.0f) : 0.0f;
         // Arm sway correction runs after physics below. Keeping this pre-physics
         // rate shared prevents the old arm multiplier from saturating here.
         float rate = baseRate;
         if (rate <= 1e-4f) continue;
 
         const float alpha = glm::clamp(1.0f - std::exp(-rate * dt), 0.0f, 1.0f);
-        const float retain = 1.0f - alpha;
+        const float normalPoseAlpha = alpha * (1.0f - pointingBlend);
+        if (normalPoseAlpha <= 1e-4f) continue;
+        const float retain = 1.0f - normalPoseAlpha;
         RigidBody& body = part.body;
 
         body.orientation = glm::normalize(
-            glm::slerp(body.orientation, part.aimTargetOrientation, alpha));
+            glm::slerp(body.orientation, part.aimTargetOrientation, normalPoseAlpha));
         body.angularVelocity *= retain;
 
         // The torso position is owned by the movement tether, not the animation.
         if (part.parentIndex >= 0) {
             const glm::vec3 delta = part.aimTargetPosition - body.position;
-            body.position += delta * (alpha * pc.hybridPositionFollow);
+            body.position += delta * (normalPoseAlpha * pc.hybridPositionFollow);
             body.linearVelocity *= retain;
         }
     }
@@ -388,6 +501,8 @@ void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b, float dt)
 
     for (auto& part : b.parts) {
         if (part.name != "leftArm" && part.name != "rightArm") continue;
+        const float pointingBlend = (part.name == "rightArm")
+            ? glm::clamp(b.rightArmPointingBlend, 0.0f, 1.0f) : 0.0f;
 
         const glm::quat armRelativeToTargetTorso = glm::normalize(
             glm::inverse(targetTorso) * part.aimTargetOrientation);
@@ -417,6 +532,7 @@ void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b, float dt)
                 1.0f - std::exp(-force * dt), 0.0f, 1.0f);
         }
 
+        alpha *= (1.0f - pointingBlend);
         if (alpha <= 1e-4f) continue;
 
         part.body.orientation = glm::normalize(
@@ -454,6 +570,7 @@ void RagdollModeSystem::clampAimRanges(const Player& player, RagdollBody& b, flo
 
     for (int pi = 0; pi < (int)b.parts.size(); ++pi) {
         RagdollModePart& part = b.parts[pi];
+        if (pi == b.rightArmIndex && b.rightArmPointingBlend > 1e-3f) continue;
         if (part.parentIndex < 0 || part.parentIndex >= (int)b.parts.size()) continue;
 
         float maxDeg = pc.headMaxSwingDeg;
@@ -525,7 +642,9 @@ void RagdollModeSystem::syncAimToPlayer(Player& player, RagdollBody& b)
 }
 
 void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
-                                  const glm::vec3& camForward)
+                                  const glm::vec3& camForward,
+                                  const glm::vec3& camPosition,
+                                  bool rightMouseHeld)
 {
     if (!mAimActive) return;
     const auto& cfg = RagdollModeConfig::instance().data();
@@ -540,7 +659,17 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
 
     // Hybrid follows the procedural animation pose; capture it before physics
     // overwrites the skeleton this tick.
-    const bool hybrid = AimBodyConfig::instance().hybridMode();
+    const AimBodyConfig& aimConfig = AimBodyConfig::instance();
+    const bool hybrid = aimConfig.hybridMode();
+    const bool pointingWanted = aimConfig.rightArmPointingRmb()
+                             && rightMouseHeld && b.rightArmIndex >= 0;
+    const float blendTarget = pointingWanted ? 1.0f : 0.0f;
+    const float blendAlpha = glm::clamp(
+        1.0f - std::exp(-aimConfig.rightArmPointingBlendRate() * dt),
+        0.0f, 1.0f);
+    b.rightArmPointingBlend +=
+        (blendTarget - b.rightArmPointingBlend) * blendAlpha;
+    b.rightArmPointing = pointingWanted || b.rightArmPointingBlend > 1e-3f;
     if (hybrid)
         captureAimTargets(player, b);
 
@@ -548,6 +677,7 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
     applyAimMotor(b, camForward, dt);
     if (hybrid)
         applyHybridSprings(b, dt);
+    applyRightArmPointMotor(b, player, camForward, camPosition, dt);
 
     glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
     for (auto& part : b.parts)
@@ -1196,9 +1326,16 @@ void RagdollModeSystem::solveJoints(int iterations, bool positionPass, RagdollBo
                 const bool isLeft = (pi == b.leftArmIndex);
                 const bool isRight = (pi == b.rightArmIndex);
                 const bool grabbing = (isLeft && b.leftGrab.active) || (isRight && b.rightGrab.active);
-                const bool extending = (isLeft && b.leftArmExtending) || (isRight && b.rightArmExtending);
+                const bool extending = (isLeft && b.leftArmExtending) ||
+                    (isRight && (b.rightArmExtending ||
+                                 b.rightArmPointingBlend > 1e-3f));
                 if (extending && !grabbing)
-                    stretch = part.maxStretch;
+                    stretch = (isRight && b.rightArmPointingBlend > 1e-3f)
+                        ? glm::mix(part.maxStretch,
+                                   std::max(part.maxStretch,
+                                            cfg.physicalAim.rightArmPointingMaxStretch),
+                                   glm::clamp(b.rightArmPointingBlend, 0.0f, 1.0f))
+                        : part.maxStretch;
             }
 
             if (stretch > 0.0f) {
@@ -1233,7 +1370,8 @@ void RagdollModeSystem::solveRotationLimits(float betaOverride, RagdollBody& b)
 
         // An actively extending arm must be free to point along camera-forward.
         if ((pi == b.leftArmIndex && b.leftArmExtending) ||
-            (pi == b.rightArmIndex && b.rightArmExtending))
+            (pi == b.rightArmIndex && (b.rightArmExtending ||
+                                       b.rightArmPointingBlend > 1e-3f)))
             continue;
 
         RigidBody& child = part.body;

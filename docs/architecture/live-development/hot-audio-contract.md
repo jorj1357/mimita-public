@@ -9,6 +9,10 @@
 * this file DOES NOT permit relinking a running executable
 */
 
+Current policy (2026-10-01): the no-cold-build rule is disabled. Cold builds
+are fine for now. The running-executable restriction stated in this historical
+contract is retained for reference and is not a current blocker.
+
 start date: 2026-09-23
 last updated: 2026-09-23
 

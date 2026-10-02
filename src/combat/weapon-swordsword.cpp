@@ -480,7 +480,7 @@ void update(SwordswordState& state, const WeaponDefinition& def,
     dt = std::min(dt, 0.05f);
 
     // Reset pose state each frame; active states override below
-    runtime.customFloats["swordPoseState"] = 0.0f;
+    runtime.customFloats["weaponPoseState"] = 0.0f;
 
     if (state.worldHitCooldown > 0.0f)
         state.worldHitCooldown -= dt;
@@ -560,7 +560,7 @@ void update(SwordswordState& state, const WeaponDefinition& def,
         state.swordSpeed = glm::length(state.swordVelocity);
 
         // Slash pose
-            runtime.customFloats["swordPoseState"] = 1.0f;
+            runtime.customFloats["weaponPoseState"] = 1.0f;
         runtime.shootEffectTimer = std::max(runtime.shootEffectTimer, 0.05f);
 
         recomputeWeaponCapsule(owner);
@@ -599,7 +599,7 @@ void update(SwordswordState& state, const WeaponDefinition& def,
         state.swordSpeed = glm::length(state.swordVelocity);
 
         // Lunge pose
-        runtime.customFloats["swordPoseState"] = 2.0f;
+        runtime.customFloats["weaponPoseState"] = 2.0f;
         runtime.shootEffectTimer = std::max(runtime.shootEffectTimer, 0.05f);
 
         // Force spike at peak of lunge: multiply sword speed for damage calc

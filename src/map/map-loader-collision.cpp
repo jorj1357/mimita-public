@@ -1,6 +1,7 @@
 #include "map-loader-collision.h"
 #include "world/world.h"
 #include "world/world-gltf-loader.h"
+#include "physics/physics-types.h"
 #include "config/collision-lod-config.h"
 #include <cstdio>
 #include <cmath>
@@ -72,7 +73,7 @@ void buildCollisionMeshFromRenderMesh(World& world)
     int skippedNonFinite = 0;
     int skippedExtreme = 0;
     int skippedCollapsed = 0;
-    constexpr float MAX_WORLD_EXTENT = 5000.0f;
+    constexpr float MAX_WORLD_EXTENT = kMaxWorldExtent;
     constexpr float MIN_TRI_AREA = 0.000001f;
 
     for (size_t i = 0; i + 2 < world.mesh.verts.size(); i += 3)

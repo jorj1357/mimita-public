@@ -96,6 +96,10 @@ struct WeaponDefinition {
     int pelletCount = 1;
 
     float spread = 0.0f;
+    // Square pellet pattern: spread is the full angular side length and the
+    // pellet grid always spans a square around the aim direction. Always on
+    // for weapons whose definition enables it (e.g. big_shotgun).
+    bool squareSpread = false;
     float recoil = 0.0f;
     float projectileSpeed = 0.0f;
     float projectileRadius = 0.0f;

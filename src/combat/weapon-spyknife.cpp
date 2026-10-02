@@ -185,34 +185,6 @@ static bool sweptOBBOverlap(const BladeOBB& prevBox, const BladeOBB& currBox,
     return false;
 }
 
-// ── Backstab geometry ─────────────────────────────────────────
-
-bool WeaponSpyKnife::isBackstabGeometry(const Player& attacker, const Player& victim,
-                                          const WeaponDefinition& def)
-{
-    const float backstabDist = skCp(def, "backstabDistance", 0.5f);
-    const float backstabConeDeg = skCp(def, "backstabConeDegrees", 150.0f);
-
-    float dist = glm::length(attacker.pos - victim.pos);
-    if (dist > backstabDist)
-        return false;
-
-    glm::vec2 victimFwd2(victim.aimDirection.x, victim.aimDirection.y);
-    float fwdLen = glm::length(victimFwd2);
-    if (fwdLen < 0.001f) return false;
-    victimFwd2 /= fwdLen;
-
-    glm::vec2 attackerDir2(attacker.pos.x - victim.pos.x, attacker.pos.y - victim.pos.y);
-    float dirLen = glm::length(attackerDir2);
-    if (dirLen < 0.001f) return false;
-    attackerDir2 /= dirLen;
-
-    float cosAngle = glm::dot(victimFwd2, attackerDir2);
-    float halfConeCos = std::cos(backstabConeDeg * 0.5f * 3.14159265f / 180.0f);
-
-    return cosAngle <= halfConeCos;
-}
-
 std::vector<SpyKnifeHitResult> WeaponSpyKnife::collectRemoteHits(SpyKnifeState& state)
 {
     std::vector<SpyKnifeHitResult> result;
@@ -232,7 +204,6 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
     state.animState = SpyKnifeAnimState::Swinging;
     state.active = true;
     state.hitCooldowns.clear();
-    state.backstabSoundPlayed.clear();
     state.pendingRemoteHits.clear();
 
     state.previousBladeCapsule = owner.weaponCollisionCapsule;
@@ -261,8 +232,8 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
     if (it != owner.weaponRuntimes.end()) {
         rt = &it->second;
         rt->shootEffectTimer = std::max(0.1f,
-            (float)skCp(def, "swingDurationTicks", 120.0f) / 60.0f);
-        rt->customFloats["swordPoseState"] = 1.0f;
+            (float)skCp(def, "swingDurationTicks", 126.0f) / 60.0f);
+        rt->customFloats["weaponPoseState"] = 1.0f;
     }
 
     spyknifeLog("SWING_START seq=%u pos=(%.2f,%.2f,%.2f) center=(%.2f,%.2f,%.2f) half=(%.2f,%.2f,%.2f)",
@@ -276,7 +247,7 @@ void WeaponSpyKnife::startSwing(SpyKnifeState& state, const WeaponDefinition& de
 
 static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& def,
                                      Player& owner, uint32_t targetId, Player& target,
-                                     bool isBackstab, const glm::vec3& hitPoint,
+                                     const glm::vec3& hitPoint,
                                      const SpyKnifeDamage::ImpactMetrics& impact)
 {
     glm::vec3 bladeDir = impact.speed > 0.001f
@@ -285,24 +256,11 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
     glm::vec3 toTarget = target.pos - hitPoint;
     float toLen = glm::length(toTarget);
     const SpyKnifeDamage::Result damageResult =
-        SpyKnifeDamage::evaluate(def, impact, isBackstab);
+        SpyKnifeDamage::evaluate(def, impact, false);
     const float damage = damageResult.damage;
     const float kbForce = damageResult.knockback;
 
     int roundedDamage = std::max(1, (int)std::round(damage));
-
-    if (isBackstab && !state.backstabSoundPlayed[targetId]) {
-        state.backstabSoundPlayed[targetId] = true;
-        AudioEvent bsSound;
-        bsSound.name = "spyknifebackstab";
-        bsSound.category = AudioCategory::Impacts;
-        bsSound.world = true;
-        bsSound.position = target.pos;
-        bsSound.volume = 1.0f;
-        bsSound.pitch = 1.0f;
-        bsSound.maxDistance = 50.0f;
-        AudioManager::instance().play(bsSound);
-    }
 
     glm::vec3 kbDir = toLen > 0.001f ? toTarget / toLen : glm::vec3(0.0f, 0.0f, 1.0f);
     kbDir.z = std::max(kbDir.z, 0.15f);
@@ -341,13 +299,12 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
         WeaponAudio::playGodballImpact(target.pos, severity);
     }
 
-    spyknifeLog("HIT id=%u name=%s damage=%d backstab=%d speed=%.1f directness=%.2f hpBefore=%d hpAfter=%d",
-                targetId, target.username.c_str(), roundedDamage, (int)isBackstab,
+    spyknifeLog("HIT id=%u name=%s damage=%d speed=%.1f directness=%.2f hpBefore=%d hpAfter=%d",
+                targetId, target.username.c_str(), roundedDamage,
                 impact.speed, impact.directness, hpBefore, target.currentHp);
 
     SpyKnifeHitResult hitResult;
     hitResult.targetId = targetId;
-    hitResult.isBackstab = isBackstab;
     hitResult.hitPosition = hitPoint;
     hitResult.victimPosition = target.pos;
     hitResult.direction = bladeDir;
@@ -410,7 +367,9 @@ static void flushSpyKnifeContactBatch(SpyKnifeState& state, size_t configuredMax
             out.contactTick = hit.contactTick;
             out.contactId = hit.contactId;
             out.targetIsNpc = hit.targetIsNpc ? 1 : 0;
-            out.isBackstab = hit.isBackstab ? 1 : 0;
+            // The wire field remains reserved for packet compatibility. The
+            // current knife is a normal physical melee weapon.
+            out.isBackstab = 0;
             out.impactSpeed = hit.impactSpeed;
             out.impactForce = hit.impactForce;
             out.impactDirectness = hit.impactDirectness;
@@ -460,26 +419,11 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
     const float tickDt = 1.0f / 60.0f;
     const uint32_t ticksThisFrame = std::max(1u, (uint32_t)std::round(dt / tickDt));
 
-    const uint32_t swingDurationTicks = (uint32_t)skCp(def, "swingDurationTicks", 120.0f);
-    const uint32_t swingForwardTicks = (uint32_t)skCp(def, "swingForwardTicks", 60.0f);
+    const uint32_t swingDurationTicks = (uint32_t)skCp(def, "swingDurationTicks", 126.0f);
 
     const bool logVerbose = DebugConfig::DEBUG_SPYKNIFE;
 
     BladeOBB currBox = computeBladeBox(owner, def);
-    // Spy Knife is continuously live while equipped. The attack input still
-    // starts the animation/sound, but the collision volume is re-armed here
-    // so the weapon does not wait for another click after its swing timer.
-    if (!state.active) {
-        state.active = true;
-        state.swingTick = 0;
-        state.animState = SpyKnifeAnimState::Swinging;
-        state.hitCooldowns.clear();
-        state.backstabSoundPlayed.clear();
-        state.prevBladeOBB = currBox;
-        state.hasPrevBladeOBB = true;
-        runtime.shootEffectTimer = (float)swingDurationTicks / 60.0f;
-        runtime.customFloats["swordPoseState"] = 1.0f;
-    }
     BladeOBB prevBox = state.hasPrevBladeOBB ? state.prevBladeOBB : currBox;
 
     // ── Swing tick advancement ──
@@ -495,12 +439,9 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
             state.hasPreviousBladeCapsule = false;
             state.hasPrevBladeOBB = false;
             runtime.shootEffectTimer = 0.0f;
-            runtime.customFloats["swordPoseState"] = 0.0f;
+            runtime.customFloats["weaponPoseState"] = 0.0f;
             spyknifeLog("SWING_END seq=%u totalTicks=%u", state.attackSequenceId, state.swingTick);
             state.animState = SpyKnifeAnimState::Idle;
-        } else if (state.swingTick >= swingForwardTicks) {
-            state.animState = SpyKnifeAnimState::Returning;
-            runtime.customFloats["swordPoseState"] = 0.0f;
         }
     }
 
@@ -595,10 +536,6 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                     continue;
                 }
 
-                bool isBs = isBackstabGeometry(owner, remote, def);
-                spyknifeLog("BACKSTAB_CHECK id=%u name=%s backstab=%d",
-                            npcId, remote.username.c_str(), (int)isBs);
-
                 const glm::vec3 bladeVelocity = (currBox.center - prevBox.center) / tickDt;
                 const glm::vec3 relativeVelocity = bladeVelocity - remote.vel;
                 const float impactSpeed = glm::length(relativeVelocity);
@@ -612,7 +549,7 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                 const SpyKnifeDamage::ImpactMetrics impact{
                     impactSpeed, impactForce, impactDirectness};
                 int hitDamage = applySpyKnifeRemoteHit(
-                    state, def, owner, npcId, remote, isBs, hitPt, impact);
+                    state, def, owner, npcId, remote, hitPt, impact);
                 (void)hitDamage;
                 if (!state.pendingRemoteHits.empty())
                     state.pendingRemoteHits.back().targetIsNpc = targetIsNpc;
@@ -635,22 +572,6 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
     state.hasPrevBladeOBB = true;
     state.previousBladeCapsule = owner.weaponCollisionCapsule;
     state.hasPreviousBladeCapsule = true;
-
-    // ── Ready pose detection ──
-    if (!state.active && targetMap) {
-        bool foundReady = false;
-        for (auto& entry : *targetMap) {
-            if (entry.second.dead || entry.second.currentHp <= 0) continue;
-            if (isBackstabGeometry(owner, entry.second, def)) {
-                foundReady = true;
-                break;
-            }
-        }
-        SpyKnifeAnimState newState = foundReady ? SpyKnifeAnimState::Ready : SpyKnifeAnimState::Idle;
-        if (newState != state.animState) {
-            state.animState = newState;
-        }
-    }
 
     // ── Debug OBB rendering ──
     if (skCp(def, "hitboxVisible", 0.0f) > 0.5f) {
@@ -715,14 +636,14 @@ void WeaponSpyKnife::update(SpyKnifeState& state, const WeaponDefinition& def,
                 }
             }
             float swordPose = 0.0f;
-            auto spIt = runtime.customFloats.find("swordPoseState");
+            auto spIt = runtime.customFloats.find("weaponPoseState");
             if (spIt != runtime.customFloats.end()) swordPose = spIt->second;
             spyknifeLog("SUMMARY active=%d swingTick=%u animState=%d remoteNpcCount=%zu",
                         (int)state.active, state.swingTick, (int)state.animState, remoteTargetCount);
             spyknifeLog("  center=(%.2f,%.2f,%.2f) half=(%.2f,%.2f,%.2f)",
                         currBox.center.x, currBox.center.y, currBox.center.z,
                         currBox.halfExtents.x, currBox.halfExtents.y, currBox.halfExtents.z);
-            spyknifeLog("  closestNpcDist=%.3f swordPoseState=%.1f", closestDist, swordPose);
+            spyknifeLog("  closestNpcDist=%.3f weaponPoseState=%.1f", closestDist, swordPose);
         }
     }
 }

@@ -1166,6 +1166,16 @@ RevolverShotResult WeaponSystem::fireAlt(
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!rt) return {};
 
+    const auto altPoseState = def->customParams.find("altPoseState");
+    if (altPoseState != def->customParams.end()) {
+        const float durationTicks = weaponParamOr(*def, "altPoseDurationTicks", 126.0f);
+        rt->customFloats["weaponPoseState"] = altPoseState->second;
+        rt->shootEffectTimer = std::max(1.0f / 60.0f, durationTicks / 60.0f);
+        RevolverShotResult res;
+        res.fired = true;
+        return res;
+    }
+
     if (def->behaviorType == WeaponBehaviorType::Hafs) {
         WeaponHafs::startLunge(mHafsState, *def, player);
         RevolverShotResult res;

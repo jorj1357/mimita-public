@@ -71,6 +71,12 @@ struct PhysicalAimConfig {
     // 0 = orientation-only following, 1 = limbs also follow their animated
     // position. Multiplies the position blend fraction.
     float hybridPositionFollow = 1.0f;
+
+    // RMB center-aim position response. The target offset is owned by
+    // aimbody.json; these physical response controls are ragdoll-owned.
+    float rightArmPointingPositionForce = 28.0f;
+    float rightArmPointingPositionDamping = 2.0f;
+    float rightArmPointingMaxStretch = 0.9f;
 };
 
 // Local +Y = forward, +Z = up, +X = right.
