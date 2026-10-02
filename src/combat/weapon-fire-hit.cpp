@@ -19,6 +19,7 @@
 
 #include "audio/audio.h"
 #include "camera.h"
+#include "combat/pellet-pattern.h"
 #include "combat/weapon-audio.h"
 #include "combat/shot-profiler.h"
 #include "config/networking-config.h"
@@ -302,7 +303,8 @@ void fireMultiPellet(
     shotProf.reset(def.id, gGlobalTick);
     gShotProfiler = &shotProf;
 
-    shotProf.totalPellets = std::max(1, def.pelletCount);
+    shotProf.totalPellets = std::min(
+        MAX_PELLETS_PER_BLAST, std::max(1, def.pelletCount));
 
     {
         auto ts = ShotProfiler::Scope(&shotProf.audioMs);
@@ -336,27 +338,18 @@ void fireMultiPellet(
     glm::vec3 right = glm::normalize(glm::cross(baseDir, up));
     glm::vec3 localUp = glm::normalize(glm::cross(right, baseDir));
 
-    glm::vec3 pelletDirs[16];
+    glm::vec3 pelletDirs[MAX_PELLETS_PER_BLAST];
     {
         auto ts = ShotProfiler::Scope(&shotProf.pelletGenMs);
-        float halfAngleRad = glm::radians(spreadDeg * 0.5f);
-        int pelletCount = shotProf.totalPellets;
-        int cols = std::max(1, (int)std::ceil(std::sqrt((float)pelletCount)));
-        int rows = std::max(1, (int)std::ceil((float)pelletCount / (float)cols));
-        int idx = 0;
-        for (int r = 0; r < rows && idx < pelletCount; ++r)
-            for (int c = 0; c < cols && idx < pelletCount; ++c, ++idx) {
-                float fx = cols > 1 ? (c / ((float)cols - 1.0f)) * 2.0f - 1.0f : 0.0f;
-                float fy = rows > 1 ? (r / ((float)rows - 1.0f)) * 2.0f - 1.0f : 0.0f;
-                float ha = halfAngleRad * fx;
-                float va = halfAngleRad * fy;
-                glm::quat rot = glm::angleAxis(ha, localUp) * glm::angleAxis(va, right);
-                pelletDirs[idx] = glm::normalize(rot * baseDir);
-            }
+        PelletPatternConfig pattern;
+        pattern.pelletCount = shotProf.totalPellets;
+        pattern.spreadDegrees = spreadDeg;
+        auto square = def.customParams.find("squareSpread");
+        pattern.squareSpread = square != def.customParams.end() && square->second > 0.5f;
+        shotProf.totalPellets = generatePelletDirections(
+            baseDir, pattern, pelletDirs, MAX_PELLETS_PER_BLAST);
     }
 
-    int cols = std::max(1, (int)std::ceil(std::sqrt((float)shotProf.totalPellets)));
-    int rows = std::max(1, (int)std::ceil((float)shotProf.totalPellets / (float)cols));
     int totalPellets = 0;
     float accumulatedDamage = 0.0f;
     constexpr float MAX_SHOT_DISTANCE = 100.0f;

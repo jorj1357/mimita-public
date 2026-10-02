@@ -26,8 +26,11 @@ public:
     bool pollReload();
     void reloadNow();
 
-    // Bounded destruction work per fixed tick (impact-system flush).
-    uint32_t maxCutsPerEntityPerTick() const { return mMaxCutsPerEntityPerTick; }
+    // Destruction work is aggregated: cuts are collected and applied in one
+    // batch, and an entity is only reworked when this many fixed ticks have
+    // passed since its last batch (or its queue reaches cutBatchMax first).
+    uint32_t cutBatchIntervalTicks() const { return mCutBatchIntervalTicks; }
+    uint32_t cutBatchMax() const { return mCutBatchMax; }
     float cutBudgetMsPerTick() const { return mCutBudgetMsPerTick; }
 
     // Safety cap on generated triangles per entity.
@@ -58,6 +61,10 @@ public:
     // linear speed so a physics glitch cannot fling an object across the map.
     float objectMinBounceSpeed() const { return mObjectMinBounceSpeed; }
     float objectMaxSpeed() const { return mObjectMaxSpeed; }
+    // Rounded-shell radius for the deep-depenetration recovery pass: a falling
+    // body with no contacts uses this to find and push out of geometry it has
+    // already sunk into (larger = catches deeper penetration).
+    float recoveryFeatureRadius() const { return mRecoveryFeatureRadius; }
 
     // Fragment lifecycle. A detached piece smaller than minFragmentVolume is
     // removed, and any fragment older than fragmentLifetimeSeconds is removed;
@@ -65,16 +72,30 @@ public:
     float minFragmentVolume() const { return mMinFragmentVolume; }
     float fragmentLifetimeSeconds() const { return mFragmentLifetimeSeconds; }
     uint32_t maxTotalFragments() const { return mMaxTotalFragments; }
+    // A fragment whose largest AABB dimension is below these is deleted:
+    // instantly below `instant`, or below `delete` once it has not been
+    // interacted with (impulse) for `idleSeconds`. A long thin shard has a large
+    // max dimension and is kept; a small compact chunk is removed.
+    float fragmentInstantDeleteMaxDimMeters() const
+    {
+        return mFragmentInstantDeleteMaxDimMeters;
+    }
+    float fragmentDeleteMaxDimMeters() const { return mFragmentDeleteMaxDimMeters; }
+    float fragmentIdleDeleteSeconds() const { return mFragmentIdleDeleteSeconds; }
 
     uint32_t revision() const { return mRevision; }
 
 private:
     DestructibleWorldConfig() = default;
 
-    uint32_t mMaxCutsPerEntityPerTick = 8;
+    uint32_t mCutBatchIntervalTicks = 8;
+    uint32_t mCutBatchMax = 64;
     float mCutBudgetMsPerTick = 2.0f;
     size_t mMaxTrianglesPerEntity = 4096;
-    float mMeshSimplifyTolerance = 0.02f;
+    // Off by default: Simplify applied per-batch makes the final mesh depend on
+    // how cuts were batched, so the server and a client that applies cuts one
+    // at a time would diverge. The coarse cutter already bounds growth.
+    float mMeshSimplifyTolerance = 0.0f;
     FractureTuning mFractureTuning;
     // Built-in defaults preserve the long-standing crate feel so the automated
     // self-tests are stable; gameplay loads the tuned values from
@@ -89,9 +110,13 @@ private:
     float mObjectFriction = 0.6f;
     float mObjectMinBounceSpeed = 1.0f;
     float mObjectMaxSpeed = 60.0f;
+    float mRecoveryFeatureRadius = 0.5f;
     float mMinFragmentVolume = 0.001f;
     float mFragmentLifetimeSeconds = 12.0f;
     uint32_t mMaxTotalFragments = 64;
+    float mFragmentInstantDeleteMaxDimMeters = 0.15f;
+    float mFragmentDeleteMaxDimMeters = 0.3f;
+    float mFragmentIdleDeleteSeconds = 8.0f;
     std::string mPath = "config/destructible-world.json";
     std::filesystem::file_time_type mLastWrite{};
     bool mHasWriteTime = false;

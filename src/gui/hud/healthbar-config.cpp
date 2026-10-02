@@ -65,6 +65,8 @@ bool HealthbarConfig::load(const std::string& path)
         d.showNameInAimMode = j.value("show_name_in_aim_mode", d.showNameInAimMode);
         d.showHpTextInAimMode = j.value("show_hp_text_in_aim_mode", d.showHpTextInAimMode);
         d.showBarInAimMode = j.value("show_bar_in_aim_mode", d.showBarInAimMode);
+        d.showOwnHealthbar = j.value("show_own_healthbar", d.showOwnHealthbar);
+        d.ownHealthbarAlpha = read01(j, "own_healthbar_alpha", d.ownHealthbarAlpha);
         d.maxDistance = std::max(0.0f, j.value("max_distance", d.maxDistance));
         d.startFadeDistance = std::max(0.0f, j.value("start_fade_distance", d.startFadeDistance));
         d.endFadeDistance = std::max(0.0f, j.value("end_fade_distance", d.endFadeDistance));
@@ -99,6 +101,8 @@ bool HealthbarConfig::save()
         {"show_name_in_aim_mode", d.showNameInAimMode},
         {"show_hp_text_in_aim_mode", d.showHpTextInAimMode},
         {"show_bar_in_aim_mode", d.showBarInAimMode},
+        {"show_own_healthbar", d.showOwnHealthbar},
+        {"own_healthbar_alpha", d.ownHealthbarAlpha},
         {"max_distance", d.maxDistance},
         {"start_fade_distance", d.startFadeDistance},
         {"end_fade_distance", d.endFadeDistance},

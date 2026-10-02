@@ -1309,5 +1309,63 @@
       "spreadBlend": 0.0,
       "fixedPatternCycle": 12.0
     }
+  },
+  "big_shotgun": {
+    "id": "big_shotgun",
+    "display_name": "Big Shotgun",
+    "slot": 16,
+    "model": {
+      "path": "assets/objects/weapons/mimita-shotgun-v1.glb"
+    },
+    "viewmodel": {
+      "enabled": true,
+      "scale": [2.0, 2.0, 2.0],
+      "position": [0.0, 0.0, 0.5],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "attachment": {
+        "position": [0.0, 0.05, -1.5],
+        "rotation_degrees": [0.0, -5.0, -90.0]
+      }
+    },
+    "damage": 25.0,
+    "headshot_multiplier": 4.0,
+    "fire_delay": 1.0,
+    "reload_time": 1.0,
+    "magazine_size": 666,
+    "pellet_count": 100,
+    "spread": 50.0,
+    "recoil": 10.0,
+    "shooter_knockback": 0.03,
+    "victim_knockback": 0.03,
+    "victim_knockback_per_damage": 0.03,
+    "victim_knockback_vertical_fraction": 0.01,
+    "enemy_impulse_multiplier": 3.0,
+    "behavior_type": "hitscan",
+    "fire_mode": "semi_auto",
+    "hitscan": true,
+    "beam_thickness": 0.5,
+    "beam_world_thickness": 0.0,
+    "uses_physics_projectile": false,
+    "pose_id": "shotgun",
+    "sound": {
+      "shoot": "shotgunshoot",
+      "reload": "shotgunreload",
+      "hit": "player_hurt",
+      "dry_fire": "ui/click",
+      "equip": "weapon/shotgun/shotgunequip",
+      "volume": 2.0,
+      "pitch": 0.6,
+      "retrigger": true
+    },
+    "custom_params": {
+      "distanceFalloffStart": 30.0,
+      "minDamageFraction": 0.02,
+      "falloffExponent": 2.0,
+      "limbDamageMultiplier": 0.75,
+      "minAngleFactor": 0.15,
+      "squareSpread": 1.0,
+      "shootPoseTime": 0.14,
+      "equipPoseTime": 0.22
+    }
   }
 }

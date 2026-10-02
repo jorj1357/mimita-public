@@ -4,9 +4,9 @@
   "dot": false,
   "dynamic": false,
   "enabled": true,
-  "gap": 3.9473659992218018,
+  "gap": 4,
   "green": 255,
-  "laserSight": false,
+  "laserSight": true,
   "outline": true,
   "outlineThickness": 1.0,
   "red": 255,
@@ -14,6 +14,6 @@
   "showLeft": true,
   "showRight": true,
   "showTop": true,
-  "size": 5.684207916259766,
-  "thickness": 1.8437492847442627
+  "size": 4,
+  "thickness": 1.5
 }

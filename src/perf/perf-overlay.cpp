@@ -25,9 +25,44 @@ void Perf::renderOverlay()
         float lineH = 17.0f;
         float small = 0.28f;
 
+        // Word-wrap the overlay text to the right edge so long lines (MAX /
+        // UNACCOUNTED) do not run off-screen.
         auto text = [&](const char* str, glm::vec4 col = {0.3f, 1.0f, 0.5f, 1.0f}) {
-            uiDrawText(str, x, y, small, col);
-            y += lineH;
+            const std::string s(str);
+            const float maxW = sw - x - 8.0f;
+            std::string line;
+            std::string word;
+            auto flushWord = [&]() {
+                if (word.empty())
+                    return;
+                const std::string candidate =
+                    line.empty() ? word : line + " " + word;
+                if (!line.empty() &&
+                    uiMeasureText(candidate.c_str(), small) > maxW)
+                {
+                    uiDrawText(line.c_str(), x, y, small, col);
+                    y += lineH;
+                    line = word;
+                }
+                else
+                {
+                    line = candidate;
+                }
+                word.clear();
+            };
+            for (char ch : s)
+            {
+                if (ch == ' ')
+                    flushWord();
+                else
+                    word += ch;
+            }
+            flushWord();
+            if (!line.empty())
+            {
+                uiDrawText(line.c_str(), x, y, small, col);
+                y += lineH;
+            }
         };
 
         char buf[128];

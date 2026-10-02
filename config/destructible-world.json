@@ -3,20 +3,28 @@
 // allowed. Malformed JSON keeps the previous valid values.
 {
   "destruction": {
-    // How many queued cuts are applied to ONE object per fixed tick. Higher =
-    // a burst of shots drains faster but each tick does more boolean work.
-    // Batched into one rebuild per flush regardless of this number.
-    "maxCutsPerEntityPerTick": 4,
+    // Aggregate-then-batch: cut intents are COLLECTED as they arrive; an object
+    // is only reworked once this many fixed ticks have passed since its last
+    // batch, then ALL of its queued cuts are applied in one boolean op. Larger
+    // = fewer rebuilds (better perf) but holes appear in slightly bigger
+    // bursts. Smaller = more instant holes but more rebuilds.
+    "cutBatchIntervalTicks": 1,
+    // If an object's queue reaches this many pending cuts it is flushed
+    // immediately instead of waiting for the interval (so a full-auto burst
+    // still drains quickly without unbounded memory).
+    "cutBatchMax": 4,
     // Wall-clock cap (ms) for the whole destruction flush per fixed tick.
-    // Remaining cuts wait for later ticks so a burst cannot blow a frame.
+    // Remaining work waits for later ticks so a burst cannot blow a frame.
     "cutBudgetMsPerTick": 2.0,
     // Hard cap on generated collision/render triangles per object. A cut that
     // would exceed this is rejected (the object keeps its previous surface and
     // the boolean session stays valid, so the next cut is still incremental).
     "maxTrianglesPerEntity": 4096,
     // > 0 merges near-coplanar triangles after each subtraction (fewer
-    // triangles per hole). Higher = coarser/faster, lower = more detail.
-    "meshSimplifyTolerance": 0.02
+    // triangles per hole). Keep 0 for multiplayer determinism: a per-batch
+    // Simplify makes the final mesh depend on how cuts were batched, so the
+    // server and a client applying cuts one at a time would diverge.
+    "meshSimplifyTolerance": 0.0
   },
   "fracture": {
     // Master switch for splitting an object into independent bodies.
@@ -54,6 +62,11 @@
     // Hard cap on an object's linear speed (m/s) so a collision glitch cannot
     // fling it across the map.
     "objectMaxSpeed": 60.0,
+    // Deep-depenetration recovery: a FALLING body with no contacts uses this
+    // rounded-shell radius to detect geometry it has already sunk into and is
+    // pushed back out (so nothing falls through the floor / sticks inside).
+    // Larger catches deeper penetration but is more likely to false-trigger.
+    "recoveryFeatureRadius": 0.5,
     // Restitution/friction for new dynamic objects (0 = no bounce, 1 = full).
     "objectRestitution": 0.1,
     "objectFriction": 0.6,
@@ -69,6 +82,16 @@
     // Detached pieces older than this (seconds) are removed.
     "fragmentLifetimeSeconds": 12.0,
     // Cap on the number of detached pieces alive at once.
-    "maxTotalFragments": 64
+    "maxTotalFragments": 64,
+    // Delete a fragment whose largest bounding-box dimension is below this
+    // immediately (too small to matter).
+    "fragmentInstantDeleteMaxDimMeters": 0.15,
+    // Delete a fragment whose largest bounding-box dimension is below this once
+    // it has not been hit/moved for fragmentIdleDeleteSeconds. A long thin
+    // shard has a large max dimension and is kept; a small compact chunk is
+    // removed. Must be >= fragmentInstantDeleteMaxDimMeters.
+    "fragmentDeleteMaxDimMeters": 0.3,
+    // How long (seconds) a small fragment must be undisturbed before deletion.
+    "fragmentIdleDeleteSeconds": 8.0
   }
 }

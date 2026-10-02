@@ -892,6 +892,26 @@ WeaponDefinition createHitscanRifleDefinition() {
     return def;
 }
 
+WeaponDefinition createBigShotgunDefinition() {
+    WeaponDefinition def = createShotgunDefinition();
+    def.id = "big_shotgun";
+    def.displayName = "Big Shotgun";
+    def.slot = 16;
+    def.weaponScale = 2.0f;
+    def.damage = 60.0f;
+    def.headshotMultiplier = 4.0f;
+    def.fireDelay = 1.0f;
+    def.pelletCount = 100;
+    def.beamThickness = 0.5f;
+    def.shooterKnockback = 0.03f;
+    def.victimKnockback = 0.03f;
+    def.victimKnockbackPerDamage = 0.03f;
+    def.soundVolume = 2.0f;
+    def.soundPitch = 0.6f;
+    def.soundRetrigger = true;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createRevolverDefinition());
@@ -909,7 +929,8 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createSpyKnifeDefinition());
     registerWeaponFromJson(createProjectileRifleDefinition());
     registerWeaponFromJson(createHitscanRifleDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife, projectile_rifle, hitscan_rifle");
+    registerWeaponFromJson(createBigShotgunDefinition());
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife, projectile_rifle, hitscan_rifle, big_shotgun");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

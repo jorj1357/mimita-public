@@ -48,6 +48,37 @@ bool allFinite(const glm::vec3& v)
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 }
 
+// Local-axis AABB half extents of a closed mesh. Fragment bodies must carry
+// their OWN bounds (they used to keep the default 0.5), otherwise the broadphase
+// AABB is wrong for large shards and the size-based cleanup is meaningless.
+glm::vec3 meshHalfExtents(const BooleanMesh& mesh)
+{
+    if (mesh.vertices.empty())
+        return glm::vec3(0.5f);
+    glm::vec3 mn = mesh.vertices[0].position;
+    glm::vec3 mx = mn;
+    for (const BooleanMeshVertex& v : mesh.vertices)
+    {
+        mn = glm::min(mn, v.position);
+        mx = glm::max(mx, v.position);
+    }
+    return glm::max((mx - mn) * 0.5f, glm::vec3(1e-3f));
+}
+
+glm::vec3 meshCenter(const BooleanMesh& mesh)
+{
+    if (mesh.vertices.empty())
+        return glm::vec3(0.0f);
+    glm::vec3 mn = mesh.vertices[0].position;
+    glm::vec3 mx = mn;
+    for (const BooleanMeshVertex& v : mesh.vertices)
+    {
+        mn = glm::min(mn, v.position);
+        mx = glm::max(mx, v.position);
+    }
+    return (mn + mx) * 0.5f;
+}
+
 // Rejects an impact whose geometry/mass inputs are non-finite so NaN never
 // reaches boolean cut sizing, cutter construction, or the mass integrator.
 bool finiteImpactEvent(const ImpactEvent& e)
@@ -131,11 +162,20 @@ std::vector<uint32_t> ImpactSystem::applyFracture(PhysicalEntity& entity,
         if (piece.volume < minVolume || piece.mesh.empty())
             continue;
 
-        // World pose of the piece: the parent transform already carries the
-        // parent's translation; the piece geometry is in parent-local space, so
-        // the child starts coincident and simply needs its own transform.
+        // Recenter the piece on its own origin so its local AABB (halfExtents)
+        // is correct for the broadphase and the size-based cleanup, then place
+        // it by the offset. Previously pieces stayed in parent-local space with
+        // the default half extents, so a large shard had a 1 m broadphase box.
+        BooleanMesh childMesh = piece.mesh;
+        const glm::vec3 childCenter = piece.centroid;
+        for (BooleanMeshVertex& v : childMesh.vertices)
+            v.position -= childCenter;
+        const glm::vec3 childHalf = meshHalfExtents(childMesh);
+        const glm::mat4 childTransform =
+            parentTransform * glm::translate(glm::mat4(1.0f), childCenter);
+
         const uint32_t childId = system.add(
-            std::vector<CollisionTriangle>{}, parentTransform,
+            std::vector<CollisionTriangle>{}, childTransform,
             PhysicalEntityMotion::Dynamic, materialId);
         PhysicalEntity* child = system.find(childId);
         if (!child)
@@ -156,9 +196,10 @@ std::vector<uint32_t> ImpactSystem::applyFracture(PhysicalEntity& entity,
         child->collidesWithActors = parentCollidesWithActors;
         child->texturePath = parentTexturePath;
         child->modelPath = parentModelPath;
+        child->halfExtents = childHalf;
 
         ImpactSystem::instance().initializeEntityFromMesh(
-            *child, piece.mesh, parentHalfExtents, materialId);
+            *child, std::move(childMesh), childHalf, materialId);
 
         // Velocity at the piece centroid from the parent's rigid-body motion:
         // v = v_cm + omega x (r - com). Off-center pieces fly outward, which is
@@ -182,8 +223,18 @@ std::vector<uint32_t> ImpactSystem::applyFracture(PhysicalEntity& entity,
         PhysicalEntity* primary = system.find(parentId);
         if (primary)
         {
+            // Recenter the primary piece on its own origin too, so its bounds
+            // and broadphase match the remaining material.
+            BooleanMesh primaryMesh = pieces[0].mesh;
+            const glm::vec3 primaryCenter = pieces[0].centroid;
+            for (BooleanMeshVertex& v : primaryMesh.vertices)
+                v.position -= primaryCenter;
+            const glm::vec3 primaryHalf = meshHalfExtents(primaryMesh);
+            primary->transform =
+                parentTransform * glm::translate(glm::mat4(1.0f), primaryCenter);
+            primary->halfExtents = primaryHalf;
             ImpactSystem::instance().initializeEntityFromMesh(
-                *primary, pieces[0].mesh, primary->halfExtents, materialId);
+                *primary, std::move(primaryMesh), primaryHalf, materialId);
             primary->localTriangles = primary->destructible.collisionTriangles;
             // The primary piece must fall with the rest of the debris; a piece
             // that was asleep before it fractured would otherwise stay frozen
@@ -545,6 +596,22 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
             entity->destructible.lastFractureReason == FractureReason::None)
             continue;
 
+        // Aggregate-then-batch: collect cut intents and only do the expensive
+        // rebuild once this many ticks have passed (or the queue is full). This
+        // keeps the per-tick cost low while still applying a whole burst in one
+        // boolean op. Tests call flush directly with tick 0, so the cadence is
+        // skipped when the simulation tick has not advanced.
+        const uint64_t entityTick = system.simulationTick();
+        const uint32_t batchInterval = config.cutBatchIntervalTicks();
+        const uint32_t batchMax =
+            maxCutsPerEntity > 0 ? maxCutsPerEntity : config.cutBatchMax();
+        const bool queueFull =
+            entity->destructible.pendingCutCount >= batchMax;
+        if (entityTick > 0 && !queueFull && batchInterval > 0 &&
+            entityTick - entity->destructible.lastCutFlushTick < batchInterval &&
+            entity->destructible.pendingCutCount > 0)
+            continue;
+
         // Spend the per-tick budget before starting more work so remaining
         // entities (and fractures) are deferred instead of blowing the frame.
         if (budgetMs > 0.0f)
@@ -564,9 +631,10 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
         recordCrashBreadcrumb("flush", "entity=%u pending=%u",
             id, entity->destructible.pendingCutCount);
 
+        entity->destructible.lastCutFlushTick = entityTick;
         const auto booleanStart = std::chrono::steady_clock::now();
         const int flushed = geometrySystem.flushQueuedCuts(entity->destructible,
-                                                           maxCutsPerEntity);
+                                                           batchMax);
         const float booleanMs = std::chrono::duration<float, std::milli>(
             std::chrono::steady_clock::now() - booleanStart).count();
 

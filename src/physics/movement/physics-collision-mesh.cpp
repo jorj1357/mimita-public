@@ -417,7 +417,8 @@ void collectActorMeshContactsInto(
     bool filterCandidatesByMeshAabb,
     float contactSkin,
     const AabbTree* worldTree,
-    bool comparison)
+    bool comparison,
+    float featureRadius)
 {
     // Comparison mode: produce the authoritative linear result, also produce the
     // accelerated result, log the diff, and keep the linear result so behavior is
@@ -426,11 +427,11 @@ void collectActorMeshContactsInto(
     {
         collectActorMeshContactsInto(world, meshes, candidates, actorPos, contacts,
                                      filterCandidatesByMeshAabb, contactSkin,
-                                     nullptr, false);
+                                     nullptr, false, featureRadius);
         static thread_local std::vector<RecoveryContact> s_compare;
         collectActorMeshContactsInto(world, meshes, candidates, actorPos, s_compare,
                                      filterCandidatesByMeshAabb, contactSkin,
-                                     worldTree, false);
+                                     worldTree, false, featureRadius);
         logActorNarrowphaseComparison(contacts, s_compare);
         return;
     }
@@ -449,7 +450,7 @@ void collectActorMeshContactsInto(
     // are migrated to the rounded feature manifold as well.
     const bool roundedFeatures = contactSkin < 0.0f;
     const float queryMargin = roundedFeatures
-        ? std::max(kSkin, MOVEMENT_FEATURE_SMOOTHNESS)
+        ? std::max(kSkin, featureRadius)
         : kSkin;
     int triangleTests = 0;
 
@@ -504,8 +505,8 @@ void collectActorMeshContactsInto(
                                                glm::max(pa, glm::max(pb, pc)));
             if (roundedFeatures)
             {
-                actorTriangleBounds.min -= glm::vec3(MOVEMENT_FEATURE_SMOOTHNESS);
-                actorTriangleBounds.max += glm::vec3(MOVEMENT_FEATURE_SMOOTHNESS);
+                actorTriangleBounds.min -= glm::vec3(featureRadius);
+                actorTriangleBounds.max += glm::vec3(featureRadius);
             }
 
             // AABB-tree pair traversal: only candidates whose bounds overlap the
@@ -592,7 +593,7 @@ void collectActorMeshContactsInto(
                     ++gActorNarrowphase.roundedFeatureCalls;
                     roundedFeature = closestRoundedTriangleFeatures(
                         a, b, c, wt.a, wt.b, wt.c);
-                    if (roundedFeature.distance > MOVEMENT_FEATURE_SMOOTHNESS)
+                    if (roundedFeature.distance > featureRadius)
                         continue;
                     hit = true;
                     roundedFeatureHit = true;
@@ -615,7 +616,7 @@ void collectActorMeshContactsInto(
                     else if (glm::dot(sweep, n) > 0.0f)
                         roundedNormal = -n;
                     n = roundedNormal;
-                    penetration = MOVEMENT_FEATURE_SMOOTHNESS - roundedFeature.distance;
+                    penetration = featureRadius - roundedFeature.distance;
                 }
                 if (currentOverlap) {
                     // Only flip when the actor is clearly on the other side.

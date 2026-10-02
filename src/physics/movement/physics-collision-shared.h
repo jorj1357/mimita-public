@@ -458,7 +458,12 @@ void collectActorMeshContactsInto(
     bool filterCandidatesByMeshAabb = true,
     float contactSkin = -1.0f,
     const AabbTree* worldTree = nullptr,
-    bool comparison = false);
+    bool comparison = false,
+    // Rounded-feature radius when contactSkin < 0. The normal movement shell is
+    // MOVEMENT_FEATURE_SMOOTHNESS; a deep-depenetration recovery pass passes a
+    // larger radius so a body that is already embedded (e.g. fell through the
+    // floor) is still detected and pushed out.
+    float featureRadius = MOVEMENT_FEATURE_SMOOTHNESS);
 
 // Union swept AABB (previous + desired + move) of every supplied mesh, in local
 // triangle space transformed to world. Used to gather broadphase candidates.

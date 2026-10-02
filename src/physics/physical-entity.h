@@ -93,6 +93,9 @@ struct PhysicalEntity {
     // age them out / remove tiny or old debris (config-driven).
     bool isFragment = false;
     float fragmentAge = 0.0f;
+    // Simulation tick of the last impulse (hit/push/contact) applied to this
+    // entity, used to delete small fragments that have been undisturbed.
+    uint64_t lastInteractionTick = 0;
     uint64_t lastPlayerPushTick = 0;
     std::vector<CollisionTriangle> localTriangles;   // entity-local
     uint32_t materialId = 0;

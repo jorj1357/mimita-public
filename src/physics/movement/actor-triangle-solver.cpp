@@ -240,12 +240,14 @@ bool solveActorTriangleCollision(
     if (baseMeshes.empty())
         return false;
 
-    // Weapon collision is intentionally approximate on the active path: the
-    // JSON-defined spheres/capsules are stable, tunable hitboxes and avoid
-    // render-triangle corner normals. Keep this separate from body triangles
-    // so the actor solver still owns one authoritative response manifold.
+    // Weapon collision: a configured triangle hitbox (weaponcollisions.json
+    // source "boxes"/triangle mode) is already part of `baseMeshes`, so the
+    // legacy JSON sphere/capsule injection must be skipped to keep ONE owner.
+    // The sphere path remains only for weapons without a triangle config.
+    const bool weaponTriangleMode = player.weaponCollisionDebug.usesJsonMesh;
     const std::vector<BodyWeaponSphere> weaponSpheres =
-        collectBodyWeaponSpheres(player, false);
+        weaponTriangleMode ? std::vector<BodyWeaponSphere>{}
+                           : collectBodyWeaponSpheres(player, false);
 
     std::vector<int> candidates;
     AABB box = makeSweptActorMeshAABB(baseMeshes, desiredMovement);

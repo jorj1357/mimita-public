@@ -3,8 +3,8 @@
     {
       "id": 1,
       "name": "Stable weapons",
-      "description": "Revolver (1), Shotgun (2), Rocket Launcher (3), Spyknife (4), Force Punch (5), Projectile Rifle (6), Hitscan Rifle (7).",
-      "weapons": ["revolver", "shotgun", "rocket_launcher", "spyknife", "force_punch", "projectile_rifle", "hitscan_rifle"]
+      "description": "Revolver (1), Shotgun (2), Rocket Launcher (3), Spyknife (4), Force Punch (5), Projectile Rifle (6), Hitscan Rifle (7), Big Shotgun (8).",
+      "weapons": ["revolver", "shotgun", "rocket_launcher", "spyknife", "force_punch", "projectile_rifle", "hitscan_rifle", "big_shotgun"]
     },
     {
       "id": 2,

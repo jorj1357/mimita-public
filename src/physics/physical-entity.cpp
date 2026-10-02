@@ -51,6 +51,8 @@ namespace {
 AABB entityWorldAABB(const PhysicalEntity& e);
 bool aabbOverlapsPadded(const AABB& a, const AABB& b, float pad);
 void resolveEntityContacts(std::vector<PhysicalEntity>& entities);
+float recoverDeepPenetration(PhysicalEntity& e, const World& world,
+                             const std::vector<int>& candidates, float maxDepth);
 
 void refreshMassProperties(PhysicalEntity& e)
 {
@@ -101,6 +103,7 @@ void applyImpulseAtPoint(PhysicalEntity& e, const glm::vec3& impulse,
         e.sleeping = false;
         e.sleepTicks = 0;
         e.sleepAnchorValid = false;
+        e.lastInteractionTick = PhysicalEntitySystem::instance().simulationTick();
     }
 }
 
@@ -109,9 +112,14 @@ void resolveWorldContactVelocity(PhysicalEntity& e,
 {
     if (e.motion != PhysicalEntityMotion::Dynamic || e.mass <= 0.0f)
         return;
-    glm::vec3 normal = contact.responseNormal;
+    // Rigid bodies respond to the exact world-surface normal. The rounded
+    // feature normal exists to stop actor limbs snagging on seams; for an
+    // irregular (holey) object it can point up along a hole rim and inject an
+    // upward velocity against gravity. Prefer the exact triangle normal, and
+    // fall back to the rounded normal only when it is missing.
+    glm::vec3 normal = contact.normal;
     if (glm::dot(normal, normal) <= 1e-8f)
-        normal = contact.normal;
+        normal = contact.responseNormal;
     normal = glm::normalize(normal);
 
     const glm::vec3 center = glm::vec3(e.transform[3]) +
@@ -503,10 +511,31 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             }
             if (s_objectContacts.empty())
             {
-                // No contacts this tick: the only remaining rule is the
-                // configurable "has not moved" freeze (gravity keeps a falling
-                // body moving, so it cannot freeze in mid-air).
-                updateSettling(e, objectPhysics, 0.0f);
+                // Deep-depenetration recovery for a body that has SUNK INTO
+                // geometry (no contacts, because the whole body is below the
+                // surface). Only body vertices genuinely inside a nearby world
+                // triangle are pushed out, so a crate merely falling toward a
+                // floor (vertices still above the plane) is never lifted.
+                float recoveryPenetration = 0.0f;
+                if (e.motion == PhysicalEntityMotion::Dynamic)
+                {
+                    const float rec = objectPhysics.recoveryFeatureRadius();
+                    if (rec > 0.1f)
+                    {
+                        AABB recBox = makeSweptActorMeshAABB(s_objectMeshes,
+                                                             glm::vec3(0.0f));
+                        recBox.min -= glm::vec3(rec);
+                        recBox.max += glm::vec3(rec);
+                        s_objectCandidates.clear();
+                        appendChunkTrianglesForAABB(world, recBox, rec,
+                                                    s_objectCandidates,
+                                                    "entityRecovery");
+                        recoveryPenetration = recoverDeepPenetration(
+                            e, world, s_objectCandidates, rec);
+                    }
+                }
+                // Do not freeze while recovering from penetration.
+                updateSettling(e, objectPhysics, recoveryPenetration);
                 continue;
             }
 
@@ -529,6 +558,9 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
     // (config/destructible-world.json -> fragments).
     {
         const float elapsed = (float)steps * (float)kFixedDt;
+        const float idleSeconds = objectPhysics.fragmentIdleDeleteSeconds();
+        const uint64_t idleTicks = idleSeconds > 0.0f
+            ? (uint64_t)(idleSeconds * 60.0f) : 0ull;
         uint32_t fragmentCount = 0;
         std::vector<uint32_t> toRemove;
         for (PhysicalEntity& e : mEntities)
@@ -537,7 +569,22 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                 continue;
             e.fragmentAge += elapsed;
             ++fragmentCount;
-            if (e.destructible.remainingVolume < objectPhysics.minFragmentVolume() ||
+
+            // Largest AABB dimension: a long thin shard is kept, a small compact
+            // chunk is deleted (instantly if very small, else once undisturbed).
+            const glm::vec3 he = glm::max(e.halfExtents, glm::vec3(0.0f));
+            const float maxDim = 2.0f * std::max(he.x, std::max(he.y, he.z));
+            const bool tooSmallInstant =
+                maxDim > 0.0f &&
+                maxDim < objectPhysics.fragmentInstantDeleteMaxDimMeters();
+            const bool smallAndIdle =
+                maxDim > 0.0f &&
+                maxDim < objectPhysics.fragmentDeleteMaxDimMeters() &&
+                (idleTicks == 0 ||
+                 mSimulationTick - e.lastInteractionTick >= idleTicks);
+
+            if (tooSmallInstant || smallAndIdle ||
+                e.destructible.remainingVolume < objectPhysics.minFragmentVolume() ||
                 (objectPhysics.fragmentLifetimeSeconds() > 0.0f &&
                  e.fragmentAge >= objectPhysics.fragmentLifetimeSeconds()))
                 toRemove.push_back(e.id);
@@ -569,7 +616,7 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
     const MimitaImpact::DestructibleWorldConfig& destruction =
         MimitaImpact::DestructibleWorldConfig::instance();
     MimitaImpact::ImpactSystem::instance().flushPendingCuts(
-        destruction.maxCutsPerEntityPerTick(), destruction.cutBudgetMsPerTick());
+        destruction.cutBatchMax(), destruction.cutBudgetMsPerTick());
 }
 
 float PhysicalEntitySystem::renderAlpha() const
@@ -871,6 +918,73 @@ void resolveEntityPairContact(PhysicalEntity& a, PhysicalEntity& b,
     const float tangentImpulse = glm::clamp(desired, -limit, limit);
     applyImpulseAtPoint(a, tangent * tangentImpulse, point, false);
     applyImpulseAtPoint(b, -tangent * tangentImpulse, point, false);
+}
+
+// True when world point `p` is behind world triangle `t` (inside the solid) by
+// at least `minDepth`, with its projection inside the triangle. Used by the
+// deep-depenetration recovery: a body merely NEAR geometry is not inside and is
+// not pushed, so a crate falling onto a floor is not falsely lifted.
+bool pointInsideWorldTriangle(const glm::vec3& p, const CollisionTriangle& t,
+                              float minDepth, float& outDepth)
+{
+    const glm::vec3 n = t.normal;
+    const float d = glm::dot(p - t.a, n);
+    if (d > -minDepth)
+        return false;
+    const glm::vec3 proj = p - n * d;
+    const glm::vec3 v0 = t.b - t.a, v1 = t.c - t.a, v2 = proj - t.a;
+    const float d00 = glm::dot(v0, v0), d01 = glm::dot(v0, v1);
+    const float d11 = glm::dot(v1, v1), d20 = glm::dot(v2, v0);
+    const float d21 = glm::dot(v2, v1);
+    const float den = d00 * d11 - d01 * d01;
+    if (std::fabs(den) < 1e-12f)
+        return false;
+    const float u = (d11 * d20 - d01 * d21) / den;
+    const float v = (d00 * d21 - d01 * d20) / den;
+    if (u < -0.05f || v < -0.05f || u + v > 1.05f)
+        return false;
+    outDepth = -d;
+    return true;
+}
+
+// Pushes a Dynamic body out of world geometry it has already sunk into. Only
+// considers body vertices that are genuinely inside a nearby world triangle, and
+// moves the body by the deepest such penetration along that triangle's normal.
+// Returns the recovered penetration (0 when nothing was inside).
+float recoverDeepPenetration(PhysicalEntity& e, const World& world,
+                             const std::vector<int>& candidates, float maxDepth)
+{
+    if (candidates.empty() || e.localTriangles.empty())
+        return 0.0f;
+    float bestDepth = 0.0f;
+    glm::vec3 bestNormal(0.0f);
+    for (const CollisionTriangle& local : e.localTriangles)
+    {
+        const glm::vec3 verts[3] = {local.a, local.b, local.c};
+        for (const glm::vec3& lv : verts)
+        {
+            const glm::vec3 v = glm::vec3(e.transform * glm::vec4(lv, 1.0f));
+            for (int wi : candidates)
+            {
+                if (wi < 0 || wi >= (int)world.collisionMesh.triangles.size())
+                    continue;
+                const CollisionTriangle& t = world.collisionMesh.triangles[wi];
+                float depth = 0.0f;
+                if (!pointInsideWorldTriangle(v, t, 0.01f, depth))
+                    continue;
+                if (depth > maxDepth)
+                    continue; // too deep to trust; skip rather than teleport far
+                if (depth > bestDepth)
+                {
+                    bestDepth = depth;
+                    bestNormal = t.normal;
+                }
+            }
+        }
+    }
+    if (bestDepth > 0.0f)
+        e.transform[3] += glm::vec4(bestNormal * (bestDepth + 0.001f), 0.0f);
+    return bestDepth;
 }
 
 void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
@@ -1547,6 +1661,24 @@ bool physicalEntitySelfTest(std::string* outSummary)
               "projectile impact does not teleport the crate");
     }
 
+    // 8. Deep-depenetration recovery: a dynamic body that is already below the
+    //    floor (fully embedded) is pushed back out instead of falling through.
+    {
+        system.clear();
+        std::vector<CollisionTriangle> box;
+        buildBoxCollisionTriangles(box, glm::vec3(0.0f), glm::vec3(0.5f));
+        const uint32_t id = system.add(
+            box, glm::translate(glm::mat4(1.0f), glm::vec3(-5.0f, 0.0f, -0.6f)),
+            PhysicalEntityMotion::Dynamic, MimitaImpact::materialIdForName("wood"));
+        PhysicalEntity* e = system.find(id);
+        e->velocity = glm::vec3(0.0f, 0.0f, -3.0f); // falling
+        for (int i = 0; i < 30; ++i)
+            system.advanceKinematics(1.0f / 60.0f, world);
+        e = system.find(id);
+        check(e && e->transform[3].z > -0.2f,
+              "an embedded body is pushed back out of the floor (deep depenetration)");
+    }
+
     system.clear();
 
     if (outSummary)
@@ -1693,7 +1825,7 @@ bool physicalEntityPerfSelfTest(std::string* outSummary)
         punch(200, 0.02f); // full-auto, each shot reaches new material
 
         const uint32_t cap =
-            MimitaImpact::DestructibleWorldConfig::instance().maxCutsPerEntityPerTick();
+            MimitaImpact::DestructibleWorldConfig::instance().cutBatchMax();
         while (e->destructible.pendingCutCount > 0 && fullAutoCalls < 5000)
         {
             const auto t0 = std::chrono::steady_clock::now();

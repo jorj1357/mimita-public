@@ -1,9 +1,13 @@
 # Physical Objects Collision and Settling
 
 Time created: 2026-10-01T17:37:13Z
-Time last updated: 2026-10-01T21:28:37Z
+Time last updated: 2026-10-01T23:21:21Z
 
-Status: ATTEMPTED FIX (10)
+Status: ATTEMPTED FIX (12)
+
+Performance/queue baseline: human-confirmed GOOD at 2026-10-01T22:16:15Z
+(Attempt 10: sustained 2 fps gone; no noticeable dip from normal shooting).
+Attempt 11 regressed full-auto (interval-8 batch-of-24); reverted in Attempt 12.
 
 Related specification:
 `docs/specs/destructible-world/destructible-world.md`,
@@ -619,3 +623,126 @@ ran nearly every tick while the queue drained -> ~500 ms/tick sustained.
   `--destruction-replication-selftest`, `--destruction-stress-selftest` PASS.
 - `--physical-perf-selftest` PASS: moving 2.6 ms/tick (MET); full-auto avg
   0.26 ms / max 0.86 ms per flush.
+
+---
+
+## Regression Occurrence 7 (Attempt 11, 2026-10-01 18:16 EDT)
+
+### Observed (user playtest)
+
+- Attempt 10 confirmed good: the sustained 2 fps is gone; shooting does not dip
+  normally. Marked as the performance baseline.
+- Remaining: full-auto still dips somewhat and holes appear over several ticks
+  (queue); tiny compact fragments linger; fragments/crates fall into the world
+  or stick in walls (hole-side contacts bounce up on the cylinder); near the big
+  funworld3 cylinder FPS is poor.
+
+### Attempt 11 changes
+
+- **G1 aggregate-then-batch cuts.** Replaced the fixed per-tick cap with
+  `cutBatchIntervalTicks` (8) + `cutBatchMax` (24): cuts are collected and, once
+  the interval passes (or the queue hits the cap), ALL queued cuts for an object
+  are applied in one boolean op. `DestructibleGeometry::lastCutFlushTick` tracks
+  the cadence. Tests call flush directly at tick 0, so the cadence is skipped
+  there. Result: full-auto 200 cuts avg 1.4-2.0 ms, max < 4 ms per flush.
+- **Multiplayer determinism fix.** Removed `Simplify` from the per-cut rebuild
+  (`meshSimplifyTolerance` 0): per-batch Simplify made the final mesh depend on
+  how cuts were batched, so a client applying cuts one at a time diverged from
+  the server. The coarse cutter (`[4,8]` segments) already bounds growth; the
+  stress two-client check passes again.
+- **G2 fragment cleanup by size.** Added `fragmentInstantDeleteMaxDimMeters`
+  (0.25), `fragmentDeleteMaxDimMeters` (0.5), `fragmentIdleDeleteSeconds` (5):
+  a fragment whose largest AABB dimension is below the instant threshold is
+  deleted immediately; below the delete threshold it is deleted once undisturbed
+  (`lastInteractionTick`, set on any impulse) for the idle time. Long thin shards
+  (large max dimension) are kept; small compact chunks are removed.
+- **G3 deep-depenetration recovery.** Added `pointInsideWorldTriangle` +
+  `recoverDeepPenetration`: a Dynamic body with no contacts, whose vertices are
+  genuinely inside a nearby world triangle, is pushed out along that triangle's
+  normal (bounded by `recoveryFeatureRadius`, 0.5). Gated on an actual
+  inside-the-solid test, so a crate merely falling toward a floor is not lifted.
+  New selftest: a body spawned fully below the floor is pushed back out.
+- Config comments updated for every new field.
+
+### Measured effect
+
+- Full-auto 200 cuts on an already-hole crate: avg ~1.4-2.0 ms, max < 4 ms/flush.
+- Moving holey crates ~2.9 ms/tick (MET). Settled ~0.025 ms/tick.
+- Multiplayer two-client geometry reproduces again.
+
+### Still open / next
+
+1. **G4 irregular-geometry contact normals** (crate bounces up when the hole side
+   hits the cylinder; likely also why it never sleeps near the cylinder and the
+   near-cylinder FPS is poor).
+2. **Near-cylinder / large-mesh broadphase** investigation.
+3. **G6 config-triangle weapon hitboxes; overlay word wrap.**
+4. Frame floor: 240 fps (4 ms) enforced; keep pushing.
+
+### Proof (Attempt 11)
+
+- All five self-tests PASS, including the new deep-depenetration check.
+- `--physical-perf-selftest`: moving ~2.9 ms/tick (MET); full-auto max < 4 ms.
+
+---
+
+## Regression Occurrence 8 (Attempt 12, 2026-10-01 19:21 EDT)
+
+### Observed (user playtest)
+
+- Full-auto regressed to ~40-60 fps (worse than Attempt 10). Cause: the
+  interval-8 / batch-of-24 cadence produced one large ~2-4 ms rebuild per burst.
+- Fragment size cleanup deleted a good large fragment (the AABB size used the
+  default `halfExtents = 0.5`, not the real piece size).
+- Fragments now push themselves out of the floor (good) but a lone corner stuck
+  in the ground should detach and fall.
+- Overlay word wrap for `perf_report` was still not applied.
+
+### Confirmed causes
+
+- Batch cadence regression (above).
+- `applyFracture` passed `parentHalfExtents` to `initializeEntityFromMesh`,
+  which never sets `entity.halfExtents`, so every fragment kept the default
+  `0.5`: the broadphase AABB was wrong for large shards (missed collisions) and
+  the size-based cleanup was meaningless.
+
+### Attempt 12 changes
+
+- **Full-auto reverted to the pass-10 cadence:** `destruction.cutBatchIntervalTicks`
+  8 -> 1 and `cutBatchMax` 24 -> 4. The full-auto probe is back to avg ~0.33 ms /
+  max 1.4 ms per flush (was avg ~2 ms / max < 4 ms at interval 8). Both numbers
+  stay in `config/destructible-world.json` and are commented.
+- **Fragment bounds fixed.** `applyFracture` now recenters each piece on its own
+  origin and sets `halfExtents` from the piece mesh (children via translate; the
+  primary via transform) so broadphase and cleanup use the real size.
+- **Conservative fragment cleanup defaults:** `fragmentInstantDeleteMaxDimMeters`
+  0.25 -> 0.15, `fragmentDeleteMaxDimMeters` 0.5 -> 0.3, `fragmentIdleDeleteSeconds`
+  5 -> 8.
+- **Weapon hitboxes through the shared triangle path (all weapons).**
+  `config/weaponcollisions.json` converted every weapon to `source:"boxes"`
+  (each box = 2 triangles/face, colliding exactly like an actor's body
+  triangles). `solveActorTriangleCollision` now skips the legacy JSON
+  sphere/capsule injection when the weapon is in triangle mode, so there is one
+  owner. True GLB weapon triangles remain deferred.
+- **Overlay word wrap** implemented in `perf-overlay.cpp` (wraps to the right
+  edge).
+- **Arbitrary GLB objects selftest:** `--destructible-selftest` now imports every
+  watertight GLB in `assets/objects/things/physics-objects`, spawns it
+  destructible, and cuts it through the same path as a crate.
+- **Irregular-geometry normal (G4):** rigid-body contact response now uses the
+  exact world-surface normal (`contact.normal`) instead of the rounded-rim
+  `responseNormal`, so a hole rim cannot inject upward velocity against gravity.
+
+### Still open / next
+
+1. H2 detach-stuck-piece (split a partly-embedded body's disconnected pieces).
+2. Near-cylinder broadphase/perf (retest after G4).
+3. Verify weapon triangle hitboxes feel right in play.
+
+### Proof (Attempt 12)
+
+- `--destructible-selftest` (incl. GLB-object import/cut), `--moving-crate-selftest`,
+  `--destruction-replication-selftest`, `--destruction-stress-selftest`,
+  `--actor-collision-mesh-selftest`, `--actor-triangle-solve-selftest`,
+  `--physical-perf-selftest` PASS.
+- Full-auto probe avg ~0.33 ms / max 1.4 ms per flush; moving ~3.2 ms/tick.

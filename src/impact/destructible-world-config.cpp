@@ -75,6 +75,18 @@ bool DestructibleWorldConfig::load(const std::string& path)
         if (fragments.contains("maxTotalFragments") &&
             fragments["maxTotalFragments"].is_number_unsigned())
             mMaxTotalFragments = fragments["maxTotalFragments"].get<uint32_t>();
+        if (fragments.contains("fragmentInstantDeleteMaxDimMeters") &&
+            fragments["fragmentInstantDeleteMaxDimMeters"].is_number())
+            mFragmentInstantDeleteMaxDimMeters =
+                fragments["fragmentInstantDeleteMaxDimMeters"].get<float>();
+        if (fragments.contains("fragmentDeleteMaxDimMeters") &&
+            fragments["fragmentDeleteMaxDimMeters"].is_number())
+            mFragmentDeleteMaxDimMeters =
+                fragments["fragmentDeleteMaxDimMeters"].get<float>();
+        if (fragments.contains("fragmentIdleDeleteSeconds") &&
+            fragments["fragmentIdleDeleteSeconds"].is_number())
+            mFragmentIdleDeleteSeconds =
+                fragments["fragmentIdleDeleteSeconds"].get<float>();
 
         if (physics.contains("objectGravity") && physics["objectGravity"].is_number())
             mObjectGravity = physics["objectGravity"].get<float>();
@@ -107,11 +119,17 @@ bool DestructibleWorldConfig::load(const std::string& path)
         if (physics.contains("objectMaxSpeed") &&
             physics["objectMaxSpeed"].is_number())
             mObjectMaxSpeed = physics["objectMaxSpeed"].get<float>();
+        if (physics.contains("recoveryFeatureRadius") &&
+            physics["recoveryFeatureRadius"].is_number())
+            mRecoveryFeatureRadius = physics["recoveryFeatureRadius"].get<float>();
 
-        if (destruction.contains("maxCutsPerEntityPerTick") &&
-            destruction["maxCutsPerEntityPerTick"].is_number_unsigned())
-            mMaxCutsPerEntityPerTick =
-                destruction["maxCutsPerEntityPerTick"].get<uint32_t>();
+        if (destruction.contains("cutBatchIntervalTicks") &&
+            destruction["cutBatchIntervalTicks"].is_number_unsigned())
+            mCutBatchIntervalTicks =
+                destruction["cutBatchIntervalTicks"].get<uint32_t>();
+        if (destruction.contains("cutBatchMax") &&
+            destruction["cutBatchMax"].is_number_unsigned())
+            mCutBatchMax = destruction["cutBatchMax"].get<uint32_t>();
         if (destruction.contains("cutBudgetMsPerTick") &&
             destruction["cutBudgetMsPerTick"].is_number())
             mCutBudgetMsPerTick =
@@ -158,7 +176,7 @@ bool DestructibleWorldConfig::load(const std::string& path)
         Debug::log(Debug::Category::General,
             "[DESTRUCTIBLE CONFIG] Loaded %s (cuts=%u budget=%.2fms tris=%zu "
             "fragments=%u) revision=%u\n",
-            mPath.c_str(), mMaxCutsPerEntityPerTick, mCutBudgetMsPerTick,
+            mPath.c_str(), mCutBatchMax, mCutBudgetMsPerTick,
             mMaxTrianglesPerEntity, mFractureTuning.maxFragmentsPerEvent,
             mRevision);
         return true;

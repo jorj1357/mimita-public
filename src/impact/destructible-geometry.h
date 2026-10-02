@@ -157,6 +157,10 @@ struct DestructibleGeometry
     // Diagnostics from the most recent rebuild's fracture check.
     FractureReason lastFractureReason = FractureReason::None;
     float lastImbalance = 0.0f;
+    // Simulation tick of the last cut batch applied to this entity, for the
+    // aggregate-then-batch cadence (cuts are collected, then applied in one op
+    // every `cutBatchIntervalTicks`).
+    uint64_t lastCutFlushTick = 0;
     // Simulation tick of the last applied fracture, for the per-entity cooldown.
     // `hasFractured` distinguishes "never" from "fractured at tick 0".
     uint64_t lastFractureTick = 0;

@@ -15,6 +15,8 @@ struct HealthbarConfigData {
     bool showNameInAimMode = false;
     bool showHpTextInAimMode = false;
     bool showBarInAimMode = false;
+    bool showOwnHealthbar = true;
+    float ownHealthbarAlpha = 1.0f;
     float maxDistance = 2000.0f;
     float startFadeDistance = 1000.0f;
     float endFadeDistance = 2000.0f;

@@ -2462,3 +2462,100 @@ and fracture tuning reload without a relink.
 If a live burst still spikes, measure `max_destruction_ms` for a single subtract
 on the grown running solid; if that single op is the cost, move the CSG to a
 worker/incremental job (spec section 45).
+
+## Cold-build occurrence 45
+
+UTC time:
+`2026-10-01T22:16:15Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_221615-cut-batching-fragment-cleanup-depenetration.md`
+
+### Why the cold build was required
+
+The cut-batch cadence, the deterministic rebuild change, the fragment lifecycle,
+and the deep-depenetration recovery are cold executable owners; verifying them
+required compiling and linking.
+
+### Exact cold source / boundary
+
+- `src/impact/impact-system.cpp`, `destructible-geometry.{h,cpp}`,
+  `destructible-world-config.{h,cpp}`
+- `src/physics/physical-entity.{h,cpp}`
+- `src/physics/movement/physics-collision-shared.h`, `physics-collision-mesh.cpp`
+- `config/destructible-world.json` (hot)
+
+### Build result
+
+`python build.py build-only` completed successfully. All five self-tests PASS,
+including the new "embedded body is pushed back out of the floor" check.
+Full-auto max < 4 ms/flush; moving holey crates ~2.9 ms/tick.
+
+### What the cold build was needed to prove
+
+That aggregate-then-batch cuts drain a burst under the frame budget, that the
+removed per-batch Simplify restores server/client geometry, that fragment
+size/idle deletion works, and that the deep-depenetration recovery pushes an
+embedded body out without lifting a normally falling one.
+
+### Why live activation was impossible
+
+These owners are statically linked; only the JSON config is hot.
+
+### Smallest change that would make this hot
+
+Move the impact/geometry and entity physics owners behind the live-module
+boundary so cut cadence and collision tuning reload without a relink.
+
+### Next migration/falsification step
+
+If full-auto still dips in a live run, read `max_destruction_ms`; if a single
+batch exceeds 4 ms, lower `cutBatchMax` or move the CSG to a worker/incremental
+job (spec section 45).
+
+## Cold-build occurrence 46
+
+UTC time:
+`2026-10-01T23:21:21Z`
+
+Related changelog:
+`docs/changelog/2026-10-01/20261001_232121-batch-revert-fragment-bounds-weapon-triangles.md`
+
+### Why the cold build was required
+
+The cut cadence, the fracture/bounds code, the weapon triangle collision path,
+the overlay, and the GLB import selftest are cold executable owners.
+
+### Exact cold source / boundary
+
+- `src/impact/impact-system.cpp`, `destructible-world-config.h`,
+  `destructible-selftest.cpp`
+- `src/physics/movement/actor-triangle-solver.cpp`
+- `src/perf/perf-overlay.cpp`
+- `src/physics/physical-entity.cpp`
+- `config/destructible-world.json`, `config/weaponcollisions.json` (hot)
+
+### Build result
+
+`python build.py build-only` completed successfully. Seven self-tests PASS.
+Full-auto probe avg ~0.33 ms / max 1.4 ms per flush; moving ~3.2 ms/tick.
+
+### What the cold build was needed to prove
+
+That the reverted cadence restores full-auto performance, that fragment bounds
+are correct, that weapon boxes collide through the shared triangle path, that
+the overlay wraps, and that arbitrary physics-object GLBs import and cut.
+
+### Why live activation was impossible
+
+These owners are statically linked; only the JSON configs are hot.
+
+### Smallest change that would make this hot
+
+Move the impact/geometry and weapon-collision owners behind the live-module
+boundary so hitboxes and cut cadence reload without a relink.
+
+### Next migration/falsification step
+
+In a live run, confirm full-auto holds the 240 fps floor; if a single batch still
+spikes, lower `cutBatchMax` further or move the CSG to a worker (spec section 45).

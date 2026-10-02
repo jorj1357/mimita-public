@@ -662,6 +662,50 @@ bool destructibleSelfTest(std::string* outSummary)
         check(sorted, "physics-object spawn list is sorted alphabetically");
     }
 
+    // 15c. Every watertight GLB in the physics-objects folder imports as a
+    // destructible object and takes a cut through the same path as a crate
+    // (arbitrary GLB objects, Stage 7).
+    {
+        const std::vector<std::string> glbs = listPhysicsObjectGlbs();
+        int accepted = 0;
+        bool allValid = true;
+        for (const std::string& path : glbs)
+        {
+            const DestructibleMeshLoad load = loadDestructibleMeshFromGLB(path);
+            if (!load.success)
+                continue; // non-watertight files are rejected with a reason
+            ++accepted;
+            system.clear();
+            std::vector<CollisionTriangle> box;
+            buildBoxCollisionTriangles(box, glm::vec3(0.0f), load.halfExtents);
+            const uint32_t id = system.add(
+                box, glm::mat4(1.0f), PhysicalEntityMotion::Dynamic,
+                materialIdForName("wood"));
+            PhysicalEntity* e = system.find(id);
+            if (!e)
+            {
+                allValid = false;
+                continue;
+            }
+            ImpactSystem::instance().initializeEntityFromMesh(
+                *e, load.mesh, load.halfExtents, materialIdForName("wood"));
+            if (e->localTriangles.empty() ||
+                !(e->destructible.remainingVolume > 0.0f) ||
+                !(e->mass > 0.0f))
+                allValid = false;
+            const ImpactResult r = submitRifle(
+                id, glm::vec3(0.0f, 0.0f, load.halfExtents.z),
+                glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, -1.0f),
+                0.02f, 900.0f, 0.1f);
+            if (!r.applied)
+                allValid = false;
+        }
+        check(accepted >= 1,
+              "a watertight physics-object GLB imports and cuts");
+        check(allValid,
+              "every imported physics-object spawns destructible and cuts");
+    }
+
     // 16. The fracture trigger is silent on a healthy shape and fires when a cut
     // disconnects the material. A dumbbell base cut through its thin neck must
     // separate into two pieces.
@@ -1185,6 +1229,15 @@ bool destructionStressSelfTest(std::string* outSummary)
         const float ox = (float)((i % 3) - 1) * 0.1f;
         ImpactSystem::instance().submit(
             rifleEvent(serverId, glm::vec3(ox, 0.0f, -2.5f)));
+        system.advanceKinematics(dt, world);
+    }
+    // Cuts are aggregated and applied in batches, so advance a few ticks to
+    // drain the queue before comparing the server surface with the mirror.
+    for (int i = 0; i < 40; ++i)
+    {
+        PhysicalEntity* s = system.find(serverId);
+        if (!s || s->destructible.pendingCutCount == 0)
+            break;
         system.advanceKinematics(dt, world);
     }
     PhysicalEntity* server = system.find(serverId);

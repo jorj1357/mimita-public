@@ -153,6 +153,7 @@ struct WeaponDefinition {
 
     float soundPitchVariation = 0.05f;   // ±5% pitch randomization per shot
     float soundVolumeVariation = 0.05f;  // ±5% volume randomization per shot
+    float soundVolume = 1.0f;            // base playback volume multiplier
     float soundPitch = 1.0f;
     float soundStartSeconds = 0.0f;
     float soundEndSeconds = 0.0f;

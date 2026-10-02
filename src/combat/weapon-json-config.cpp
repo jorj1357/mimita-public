@@ -268,6 +268,7 @@ void applyWeaponSoundJson(WeaponDefinition& def, const json& root)
         weaponJsonString(sound, "equip", def.soundEquip);
         def.soundPitchVariation = sound.value("pitch_variation", def.soundPitchVariation);
         def.soundVolumeVariation = sound.value("volume_variation", def.soundVolumeVariation);
+        def.soundVolume = sound.value("volume", def.soundVolume);
         def.soundPitch = sound.value("pitch", def.soundPitch);
         def.soundStartSeconds = sound.value("start_seconds", def.soundStartSeconds);
         def.soundEndSeconds = sound.value("end_seconds", def.soundEndSeconds);

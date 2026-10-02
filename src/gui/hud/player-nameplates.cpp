@@ -166,6 +166,14 @@ HealthbarRenderResult drawPlayerHealthbar(
     }
 
     const auto& cfg = HealthbarConfig::instance().data();
+    if (isLocalPlayer && !cfg.showOwnHealthbar)
+    {
+        result.cullReason = HealthbarCullReason::Disabled;
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] SKIPPED entity=%s reason=OwnHealthbarDisabled\n",
+            player.username.c_str());
+        return result;
+    }
     if (isLiveWorld && !HealthbarConfig::instance().worldHealthbarsVisible())
     {
         result.cullReason = HealthbarCullReason::Disabled;
@@ -222,6 +230,11 @@ HealthbarRenderResult drawPlayerHealthbar(
     bool inAimMode = aimState.transitionAlpha > 0.01f;
     float barAlpha = 1.0f - aimState.transitionAlpha;
     float triAlpha = aimState.transitionAlpha * cfg.triangleAlpha;
+    if (isLocalPlayer)
+    {
+        barAlpha *= cfg.ownHealthbarAlpha;
+        triAlpha *= cfg.ownHealthbarAlpha;
+    }
 
     Debug::log(Debug::Category::Gui,
         "[HEALTHBAR] entity=%s isLocal=%d inAimCone=%d transAlpha=%.3f barAlpha=%.3f triAlpha=%.3f screen=(%.1f %.1f)\n",

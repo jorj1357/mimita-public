@@ -28,6 +28,8 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_GODBALL;
     if (definition.id == "shotgun")
         return NETWORK_WEAPON_SHOTGUN;
+    if (definition.id == "big_shotgun")
+        return NETWORK_WEAPON_SHOTGUN;
     if (definition.id == "aa12")
         return NETWORK_WEAPON_AA12;
     if (definition.id == "swordsword")
@@ -57,6 +59,7 @@ uint8_t networkWeaponTypeForSlot(int slot)
     case 2:
         return NETWORK_WEAPON_GODBALL;
     case 3:
+    case 16:
         return NETWORK_WEAPON_SHOTGUN;
     case 6:
         return NETWORK_WEAPON_AA12;

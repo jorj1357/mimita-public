@@ -55,6 +55,31 @@ int generatePelletDirections(
     glm::vec3 localUp = glm::normalize(glm::cross(right, aim));
 
     float halfAngleRad = glm::radians(config.spreadDegrees * 0.5f);
+
+    // A square pattern uses spreadDegrees as the full angular side length.
+    // Keeping this in the shared generator makes local prediction and server
+    // authority use identical horizontal/vertical limits.
+    if (config.squareSpread)
+    {
+        const int cols = std::max(1, (int)std::ceil(std::sqrt((float)count)));
+        const int rows = std::max(1, (int)std::ceil((float)count / (float)cols));
+        for (int idx = 0; idx < count; ++idx)
+        {
+            const int col = idx % cols;
+            const int row = idx / cols;
+            const float x = cols > 1
+                ? (col / ((float)cols - 1.0f)) * 2.0f - 1.0f
+                : 0.0f;
+            const float y = rows > 1
+                ? (row / ((float)rows - 1.0f)) * 2.0f - 1.0f
+                : 0.0f;
+            const glm::quat rot = glm::angleAxis(x * halfAngleRad, localUp) *
+                                  glm::angleAxis(y * halfAngleRad, right);
+            outDirections[idx] = glm::normalize(rot * aim);
+        }
+        return count;
+    }
+
     uint32_t state = config.spreadSeed ? config.spreadSeed : 0x9e3779b9u;
     for (int idx = 0; idx < count; ++idx)
     {

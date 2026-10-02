@@ -22,7 +22,7 @@ void playShootSound(const WeaponDefinition& def, const glm::vec3& position, floa
     Debug::log(Debug::Category::Audio, "[WEAPON AUDIO] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
                def.id.c_str(), def.soundShoot.c_str(), rndPitch * sPitch, rndVolume * sVol);
     AudioEvent event{def.soundShoot, AudioCategory::Weapons, true, position,
-                     rndVolume * sVol, rndPitch * sPitch, 80.0f,
+                     def.soundVolume * rndVolume * sVol, rndPitch * sPitch, 80.0f,
                      def.soundRetrigger ? static_cast<unsigned int>(0x50524600u ^ std::hash<std::string>{}(def.id)) : 0u,
                      def.soundStartSeconds, def.soundEndSeconds, def.soundRetrigger};
     AudioManager::instance().play(event);
