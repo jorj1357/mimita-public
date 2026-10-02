@@ -55,6 +55,9 @@ public:
         return mRightArmPointingRotationDegrees;
     }
     float rightArmPointingBlendRate() const { return mRightArmPointingBlendRate; }
+    // Multiplier for the physical RMB target response. 1 = current loose
+    // behavior; higher values hold the aim target more strongly.
+    float rightArmPointingAimStrength() const { return mRightArmPointingAimStrength; }
     bool bodyPhysicsMode() const { return physicalMode() || hybridMode(); }
     const std::string& mode() const { return mMode; }
     float smoothingFactor() const { return mSmoothingFactor; }
@@ -89,6 +92,7 @@ private:
     glm::vec3 mRightArmPointingCenterOffset{0.2f, 0.0f, 0.4f};
     glm::vec3 mRightArmPointingRotationDegrees{0.0f};
     float mRightArmPointingBlendRate = 10.0f;
+    float mRightArmPointingAimStrength = 10.0f;
     float mSmoothingFactor = 1.0f;
     std::unordered_map<std::string, LimbAim> mLimbs;
     std::string mPath = "config/aimbody.json";

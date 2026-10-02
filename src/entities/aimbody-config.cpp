@@ -71,6 +71,7 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingCenterOffset = glm::vec3(0.2f, 0.0f, 0.4f);
         mRightArmPointingRotationDegrees = glm::vec3(0.0f);
         mRightArmPointingBlendRate = 10.0f;
+        mRightArmPointingAimStrength = 10.0f;
         mSmoothingFactor = 1.0f;
         mLimbs.clear();
         Debug::warn(Debug::Category::Animation,
@@ -106,6 +107,7 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingCenterOffset = glm::vec3(0.2f, 0.0f, 0.4f);
         mRightArmPointingRotationDegrees = glm::vec3(0.0f);
         mRightArmPointingBlendRate = 10.0f;
+        mRightArmPointingAimStrength = 10.0f;
         if (j.contains("right_arm_pointing")) {
             const auto& pointing = j["right_arm_pointing"];
             if (pointing.is_object()) {
@@ -131,6 +133,9 @@ bool AimBodyConfig::load(const std::string& path)
                 mRightArmPointingBlendRate = std::clamp(
                     pointing.value("blend_rate", mRightArmPointingBlendRate),
                     0.1f, 60.0f);
+                mRightArmPointingAimStrength = std::clamp(
+                    pointing.value("aim_strength", mRightArmPointingAimStrength),
+                    0.1f, 100.0f);
             } else {
                 const std::string pointingMode = pointing.get<std::string>();
                 mRightArmPointingMode = pointingMode == "rmb" ? "rmb" : "off";
@@ -178,7 +183,8 @@ bool AimBodyConfig::save()
         {"rotation_degrees", {mRightArmPointingRotationDegrees.x,
                                mRightArmPointingRotationDegrees.y,
                                mRightArmPointingRotationDegrees.z}},
-        {"blend_rate", mRightArmPointingBlendRate}
+        {"blend_rate", mRightArmPointingBlendRate},
+        {"aim_strength", mRightArmPointingAimStrength}
     };
     j["smoothingFactor"] = mSmoothingFactor;
     json limbs = json::object();

@@ -13,12 +13,15 @@
   // Y=lateral, Z=up. Change Y for left/right and Z for height.
   "right_arm_pointing": {
     "mode": "rmb",
-    "center_offset": [1.0, 0.0, 2.5],
+    "center_offset": [2.0, 0.0, 2.0],
     // Arm-local goal correction in degrees: [pitch, yaw, roll].
     // Use this to correct an avatar whose centered arm points down/up.
     "rotation_degrees": [90.0, -90.0, 0.0],
     // Higher is a faster but still smooth enter/return transition.
-    "blend_rate": 25.0
+    "blend_rate": 25.0,
+    // 1.0 = loose/current behavior. 10.0 = ten times stronger target
+    // correction and settling against movement/external disturbances.
+    "aim_strength": 5.0
   },
   // "mode": "physical",
   "smoothingFactor": 1.0,
