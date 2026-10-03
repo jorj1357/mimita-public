@@ -168,6 +168,8 @@ bool DeathSystem::kill(
 
     // Step 3 (continued from above): duel tracking and respawn timer
     // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
+    // TODO-DELETE (single-player): remove DuelManager offline duel tracking;
+    // only the server-authoritative DuelQueue path should remain.
     const DuelPhase duelPhaseBeforeDeath = gDuelManager.enabled()
         ? gDuelManager.phase() : DuelPhase::Off;
     if (gDuelManager.enabled())
@@ -355,6 +357,7 @@ void DeathSystem::update(
             std::max(0.0f, player.respawnTimer - dt);
 
         // Local/offline duel only. Network duels use server-controlled respawn.
+        // TODO-DELETE (single-player): drop the offline DuelManager respawn gate.
         bool duelModeActive =
             gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
         bool networkDuelActive = DuelQueue::instance().inDuel();
@@ -385,6 +388,7 @@ void DeathSystem::update(
             npc.body.respawnTimer - dt);
 
         // Local/offline duel only. Network duels use server-controlled respawn.
+        // TODO-DELETE (single-player): drop the offline DuelManager respawn gate.
         bool duelModeActive =
             gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
         bool networkDuelActive = DuelQueue::instance().inDuel();

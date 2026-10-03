@@ -1,7 +1,9 @@
 // 07 21 2026, 18 32
 /* purpose
-* Parses MiMITA networking launch flags for local clients, servers, and harnesses.
-* Preserves the no-argument single-player path while adding bounded diagnostics.
+ * Parses MiMITA networking launch flags for local clients, servers, and harnesses.
+ * Preserves the no-argument single-player path while adding bounded diagnostics.
+ * TODO-DELETE (single-player): the no-argument single-player launch path must be
+ * removed; every session must be a client connected to an authoritative server.
 * Keeps process mode selection data-only so main.cpp remains the orchestrator.
 * Does NOT create sockets, run gameplay loops, or contact the coordinator.
 * Does NOT own packet schemas, movement validation, or ICE agent setup.
@@ -115,6 +117,7 @@ void printLaunchUsage()
     printf("  --procedural-mode <id> Start a procedural mode after the first client joins\n");
     printf("  --procedural-seed <n> Seed for an automatic procedural mode start\n");
     printf("  --ice             ICE NAT traversal is always enabled\n");
+    // TODO-DELETE (single-player): remove the no-arg single-player/menu flow.
     printf("No args keeps the normal single-player/menu flow.\n");
 }
 

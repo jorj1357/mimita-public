@@ -1,8 +1,10 @@
 // 07 21 2026, 23 35
 /* purpose
 * Owns local weapon runtime, viewmodel updates, firing entrypoints, reload, equip, and rendering.
-* Routes local and multiplayer weapon presentation through shared weapon definitions.
-* Keeps single-player projectile behavior while letting multiplayer projectiles use network prediction.
+ * Routes local and multiplayer weapon presentation through shared weapon definitions.
+ * Keeps single-player projectile behavior while letting multiplayer projectiles use network prediction.
+ * TODO-DELETE (single-player): remove the single-player projectile behavior so
+ * weapons only use the server-authoritative network prediction path.
 * Does NOT validate server damage, packet authority, auth state, or remote player ownership.
 * Does NOT own packet serialization, server projectile simulation, or multiplayer transport.
 * Does NOT define weapon JSON parsing, collision mesh loading, or world tick scheduling.

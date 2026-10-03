@@ -216,7 +216,7 @@
     "spread": 10.0,
     "recoil": 10.0,
     "square_spread": true,
-    "shooter_knockback": 8.0,
+    "shooter_knockback": 3.0,
     "victim_knockback": 1.0,
     "victim_knockback_per_damage": 1.0,
     "victim_knockback_vertical_fraction": 0.01,

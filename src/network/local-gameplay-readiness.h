@@ -18,6 +18,9 @@ namespace MimitaNet {
 struct LocalGameplayReadiness
 {
     // False for single-player/replay; those paths are never gated.
+    // TODO-DELETE (single-player): the single-player non-networked gameplay
+    // bypass must be removed; only replay may keep a non-networked gate. Every
+    // live session must be gated by the authoritative server lifecycle.
     bool networked = true;
     bool connected = false;
     bool mapReadyForPlayer = false;

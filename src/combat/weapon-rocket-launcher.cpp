@@ -1,7 +1,10 @@
 // 07 20 2026, 19 45
 /* purpose
-* Implements rocket launcher firing, local projectile update, and visual effects.
-* Owns local rocket gameplay behavior for single-player and client prediction.
+ * Implements rocket launcher firing, local projectile update, and visual effects.
+ * Owns local rocket gameplay behavior for single-player and client prediction.
+ * TODO-DELETE (single-player): the sole-authority target is client-server; the
+ * single-player rocket branch must be removed and all rockets routed through the
+ * server projectile path. Keep client prediction, delete the offline path.
 * Keeps heavy render, audio, replay, hit effect, and NPC interactions out of the header.
 * Does NOT own server projectile authority or packet routing.
 * Does NOT define generic weapon request validation.

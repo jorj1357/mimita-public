@@ -20,7 +20,7 @@
     "enabled": true,
     "visible": false,
     "collision_skin": 0.05,
-    "player_bounce": 0.0,
+    "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "body", "center": [0.15, 0.0, 0.0],
@@ -32,7 +32,7 @@
     "enabled": true,
     "visible": false,
     "collision_skin": 0.05,
-    "player_bounce": 0.0,
+    "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.0, 0.2, 0.0],
@@ -44,7 +44,7 @@
     "enabled": true,
     "visible": true,
     "collision_skin": 0.05,
-    "player_bounce": 0.0,
+    "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "tube", "center": [0.1, 0.0, 0.0],
@@ -56,7 +56,7 @@
     "enabled": true,
     "visible": true,
     "collision_skin": 0.05,
-    "player_bounce": 0.0,
+    "player_bounce": 0.35,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.15, 0.0, 0.0],
@@ -68,7 +68,7 @@
     "enabled": true,
     "visible": true,
     "collision_skin": 0.05,
-    "player_bounce": 0.0,
+    "player_bounce": 0.35,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "blade", "center": [0.55, 0.0, 0.0],
@@ -80,7 +80,7 @@
     "enabled": true,
     "visible": false,
     "collision_skin": 0.3,
-    "player_bounce": 0.0,
+    "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "blade", "center": [0.25, 0.0, 0.0],
@@ -94,7 +94,7 @@
     "enabled": true,
     "visible": false,
     "collision_skin": 0.02,
-    "player_bounce": 0.0,
+    "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.75, 0.0, 0.0],
@@ -106,7 +106,7 @@
     "enabled": true,
     "visible": true,
     "collision_skin": 0.02,
-    "player_bounce": 0.0,
+    "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.75, 0.0, 0.0],

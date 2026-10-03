@@ -181,6 +181,9 @@ void engineTickState(Engine& engine, float dt)
                 }
             }
 
+            // TODO-DELETE (single-player): the local default-world fallback runs
+            // gameplay with no authoritative server. Every session must connect
+            // to a server instead of loading a local world.
             if (gameState == GAME_PLAYING && !worldLoaded && !mpContext.active)
             {
                 printf("[MAIN] PLAY requested without sandbox selection; loading default world\n");
@@ -207,6 +210,7 @@ void engineTickState(Engine& engine, float dt)
                     cfg.npcDifficulty = dcr.npcDifficulty;
                     cfg.enabled = true;
                     // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
+                    // TODO-DELETE (single-player): remove the offline DuelManager start.
                     gDuelManager.start(cfg, player, npcSystem, world);
                     activeMapPath = cfg.mapPath;
                     worldLoaded = !world.mesh.verts.empty();
