@@ -241,6 +241,104 @@ UtilityActionKind actionForGoal(UtilityGoalKind goal, const UtilityContext& ctx)
     return UtilityActionKind::None;
 }
 
+void FightMemory::recordDodgeLeft()  { if (total < MAX) { ++dodgedLeft;  ++total; } }
+void FightMemory::recordDodgeRight() { if (total < MAX) { ++dodgedRight; ++total; } }
+void FightMemory::recordJump()       { if (total < MAX) { ++jumped;      ++total; } }
+void FightMemory::recordHeld()       { if (total < MAX) { ++heldPosition;++total; } }
+void FightMemory::decay()
+{
+    // Halve all counts so the memory forgets older fights.
+    dodgedLeft /= 2; dodgedRight /= 2; jumped /= 2; heldPosition /= 2;
+    total = dodgedLeft + dodgedRight + jumped + heldPosition;
+}
+
+float scoreGrenadeThrow(const GrenadeThrowContext& ctx)
+{
+    // Hard rejections first.
+    if (!ctx.haveGrenade) return -1.0f;
+    if (ctx.trajectoryBlocked) return -1.0f;   // direct wall collision
+    if (ctx.selfInBlast) return -1.0f;         // self-damage risk
+    if (ctx.friendlyNearImpact > 0) return -1.0f;  // friendly fire risk
+    if (ctx.duplicateThrow) return -1.0f;      // duplicate throw, no added value
+
+    float score = 0.0f;
+    if (ctx.hasTarget) score += 0.3f;
+    if (ctx.targetBehindCover) score += 0.4f;  // utility breaks cover
+    score += std::min(0.3f, ctx.enemyGroupDensity * 0.1f);
+    if (ctx.siteDefense) score += 0.15f;       // doorway denial
+    if (ctx.siteRetake) score += 0.2f;
+
+    // No tactical benefit: no target, no cover, no group, no site context.
+    if (!ctx.hasTarget && !ctx.targetBehindCover &&
+        ctx.enemyGroupDensity <= 1 && !ctx.siteDefense && !ctx.siteRetake)
+        return -1.0f;
+
+    return std::clamp(score, -1.0f, 1.0f);
+}
+
+bool grenadeThrowAllowed(const GrenadeThrowContext& ctx, float threshold)
+{
+    return scoreGrenadeThrow(ctx) > threshold;
+}
+
+bool npcGrenadeReasoningSelfTest(std::string& report)
+{
+    bool ok = true;
+    auto fail = [&](const std::string& why) { ok = false; report += "FAIL: " + why + "\n"; };
+
+    // Valid throw: enemy behind cover.
+    {
+        GrenadeThrowContext ctx;
+        ctx.hasTarget = true;
+        ctx.targetBehindCover = true;
+        if (!grenadeThrowAllowed(ctx)) fail("enemy behind cover should allow a throw");
+    }
+    // Reject: wall in the throw path.
+    {
+        GrenadeThrowContext ctx;
+        ctx.hasTarget = true; ctx.trajectoryBlocked = true;
+        if (grenadeThrowAllowed(ctx)) fail("blocked trajectory must be rejected");
+    }
+    // Reject: self in blast.
+    {
+        GrenadeThrowContext ctx;
+        ctx.hasTarget = true; ctx.selfInBlast = true;
+        if (grenadeThrowAllowed(ctx)) fail("self-damage must be rejected");
+    }
+    // Reject: friendly fire.
+    {
+        GrenadeThrowContext ctx;
+        ctx.hasTarget = true; ctx.friendlyNearImpact = 2;
+        if (grenadeThrowAllowed(ctx)) fail("friendly fire must be rejected");
+    }
+    // Reject: duplicate.
+    {
+        GrenadeThrowContext ctx;
+        ctx.hasTarget = true; ctx.duplicateThrow = true;
+        if (grenadeThrowAllowed(ctx)) fail("duplicate throw must be rejected");
+    }
+    // Reject: no tactical benefit.
+    {
+        GrenadeThrowContext ctx;
+        if (grenadeThrowAllowed(ctx)) fail("no benefit should be rejected");
+    }
+    report += "grenade_reasoning=ok\n";
+
+    // Fight memory is bounded and decays.
+    {
+        FightMemory mem;
+        for (int i = 0; i < 20; ++i) mem.recordDodgeLeft();
+        if (mem.total > FightMemory::MAX) fail("fight memory must be bounded");
+        mem.recordDodgeRight();
+        mem.decay();
+        if (mem.dodgedLeft >= 8) fail("memory should decay");
+        report += "fight_memory=ok\n";
+    }
+
+    report += ok ? "PASS\n" : "FAIL\n";
+    return ok;
+}
+
 bool npcUtilitySelfTest(std::string& report)
 {
     bool ok = true;

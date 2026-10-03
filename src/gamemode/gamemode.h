@@ -42,6 +42,10 @@ struct GamemodeTeam {
     int capacity = 0;
     std::string role;
     std::string spawnGroup;
+    // Optional team AI assignment policy (JSON-controlled; 0 = brain default).
+    int attackersPerSite = 0;
+    int defendersPerSite = 0;
+    int oneRotator = -1;  // -1 = unset, 0 = no rotator, 1 = one rotator
 };
 
 // A named set of spawn positions for one team. Positions are optional; when

@@ -22,6 +22,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-data.h"
 #include "combat/actor-preset-weapons.h"
+#include "combat/grenade-registry.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "network/community-server-config.h"
@@ -35,6 +36,14 @@
 #include "network/actor-lifecycle.h"
 
 namespace MimitaNet {
+
+// Area-effect tick (defined after the anonymous namespace).
+void serverAreaEffectTick(ServerGamemodeState& d,
+                          SOCKET sock,
+                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                          std::unordered_map<uint32_t, ServerNpc>& npcs,
+                          uint32_t tick,
+                          uint64_t& totalPacketsOut);
 
 // Resolve a team id string (e.g. "t") to its fixed team index; -1 = any.
 // Static so both the match-start path (defined above the anonymous namespace)
@@ -199,6 +208,12 @@ bool serverActivateActorPreset(const std::string& presetId)
     Debug::log(Debug::Category::Duel,
         "[ACTOR PRESET] host activated id=%s actors=%zu\n",
         preset->id.c_str(), d.matchActors.size());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "actor.preset-applied", std::to_string(d.duelId), "mode-start",
+        d.currentServerTick,
+        nlohmann::json{{"preset", preset->id}, {"fov", preset->cameraFov},
+                       {"first_person", preset->forceFirstPerson}});
     return true;
 }
 
@@ -1398,6 +1413,23 @@ void endObjectiveRound(ServerGamemodeState& d, int winnerTeam, int reason,
         "[ROUND] end round=%u winnerTeam=%d reason=%d wins=%d-%d matchOver=%d tick=%u\n",
         d.roundNumber, winnerTeam, reason, d.roundWins[0], d.roundWins[1],
         (int)d.matchOver, tick);
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    const std::string winnerName = winnerTeam >= 0 ? roundTeamName(gm, winnerTeam) : "";
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "round.result", std::to_string(d.duelId), "round-end", tick,
+        nlohmann::json{{"round", d.roundNumber}, {"winner_team", winnerTeam},
+                       {"winner_name", winnerName}, {"reason", reason},
+                       {"wins_ct", d.roundWins[0]}, {"wins_t", d.roundWins[1]},
+                       {"match_over", d.matchOver}});
+    if (d.matchOver) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "match.result", std::to_string(d.duelId), "match-end", tick,
+            nlohmann::json{{"mode", d.matchMode}, {"winner_team", d.winnerTeam},
+                           {"winner_name", roundTeamName(gm, d.winnerTeam)},
+                           {"wins_ct", d.roundWins[0]}, {"wins_t", d.roundWins[1]}});
+    }
 }
 
 // Evaluate the active round: elimination of a team, or timeout.
@@ -1735,6 +1767,7 @@ void assignObjectiveCarrier(ServerGamemodeState& d,
         d.objective.id.c_str(), (int)d.objective.state,
         d.objective.carrierActorId, d.objective.allowedCarrierTeam);
 }
+
 
 // ── FFA/TDM match helpers ───────────────────────────────────────────────
 
@@ -2414,6 +2447,224 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
 
 } // namespace
 
+// ── Generic area effects (fire/smoke/dark-bang) ────────────────────────
+uint32_t serverSpawnAreaEffect(AreaEffectKind kind, uint32_t ownerActorId,
+                               int ownerTeam, const glm::vec3& position,
+                               float radius, float height, float durationSeconds,
+                               int damagePerTick, int damageIntervalTicks,
+                               bool damagesEnemiesOnly)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    AreaEffect effect;
+    effect.id = d.nextAreaEffectId++;
+    effect.kind = kind;
+    effect.ownerActorId = ownerActorId;
+    effect.ownerTeam = ownerTeam;
+    effect.position = position;
+    effect.radius = radius;
+    effect.height = height;
+    effect.durationSeconds = durationSeconds;
+    effect.damagePerTick = damagePerTick;
+    effect.damageIntervalTicks = damageIntervalTicks;
+    effect.damagesEnemiesOnly = damagesEnemiesOnly;
+    effect.alive = true;
+    d.areaEffects.push_back(effect);
+    ++d.areaEffectSpawnCounter;
+    ++d.stateVersion;
+    d.stateBroadcastPending = true;
+    Debug::warn(Debug::Category::Weapons,
+        "[AREA EFFECT] spawn id=%u kind=%d owner=%u team=%d pos=(%.1f %.1f %.1f) r=%.1f dur=%.1f dmg=%d/%d tick=?\n",
+        effect.id, (int)kind, ownerActorId, ownerTeam,
+        position.x, position.y, position.z, radius, durationSeconds,
+        damagePerTick, damageIntervalTicks);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons, StructuredLevel::Important,
+        "area_effect.spawn", std::to_string(effect.id), "grenade",
+        d.currentServerTick,
+        nlohmann::json{{"effect", effect.id}, {"kind", (int)kind},
+                       {"owner", ownerActorId}, {"team", ownerTeam}});
+    return effect.id;
+}
+
+uint32_t serverSpawnGrenadeAreaEffect(const std::string& grenadeId,
+                                      uint32_t ownerActorId, int ownerTeam,
+                                      const glm::vec3& position)
+{
+    const GrenadeDefinition* def = GrenadeRegistry::instance().get(grenadeId);
+    if (!def || !def->spawnsAreaEffect || def->areaKind == AreaEffectKind::None)
+        return 0;
+    return serverSpawnAreaEffect(def->areaKind, ownerActorId, ownerTeam, position,
+                                 def->radius, def->height, def->durationSeconds,
+                                 def->damagePerTick, def->damageIntervalTicks,
+                                 def->damagesEnemiesOnly);
+}
+
+// Advance all area effects by one fixed tick and apply fire damage through the
+// shared damage path (NPC health mirror + player applyServerDamage).
+void serverAreaEffectTick(ServerGamemodeState& d,
+                          SOCKET sock,
+                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                          std::unordered_map<uint32_t, ServerNpc>& npcs,
+                          uint32_t tick,
+                          uint64_t& totalPacketsOut)
+{
+    if (d.areaEffects.empty()) return;
+
+    std::vector<std::pair<uint32_t, glm::vec3>> positions;
+    std::vector<int> teams;
+    positions.reserve(players.size() + npcs.size());
+    teams.reserve(players.size() + npcs.size());
+    auto teamOf = [&d](uint32_t actorId) {
+        auto it = d.matchTeams.find(actorId);
+        return it != d.matchTeams.end() ? it->second : -1;
+    };
+    for (const auto& kv : players) {
+        positions.push_back({kv.first, kv.second.pos});
+        teams.push_back(teamOf(kv.first));
+    }
+    for (const auto& kv : npcs) {
+        positions.push_back({kv.first, kv.second.pos});
+        teams.push_back(teamOf(kv.first));
+    }
+
+    std::vector<AreaEffectDamage> damage;
+    tickAreaEffects(d.areaEffects, SERVER_DT, positions, teams, damage);
+
+    for (const AreaEffectDamage& hit : damage) {
+        auto pIt = players.find(hit.actorId);
+        if (pIt != players.end()) {
+            ServerDamageSource source = ServerDamageSource::GrenadeExplosion;
+            applyServerDamage(players, pIt->second, 0, hit.damage,
+                              glm::vec3(0.0f), source);
+            continue;
+        }
+        auto nIt = npcs.find(hit.actorId);
+        if (nIt != npcs.end() && nIt->second.health > 0) {
+            nIt->second.health -= hit.damage;
+            if (nIt->second.health <= 0) {
+                nIt->second.health = 0;
+                serverGamemodeRecordKill(sock, players, &npcs,
+                    hit.effectId, ENTITY_NONE, nIt->second.entityId, ENTITY_NPC,
+                    "fire", "Fire", 0, nIt->second.pos, nIt->second.pos,
+                    tick, totalPacketsOut);
+            }
+        }
+    }
+}
+
+// ── TeamBrain tick ─────────────────────────────────────────────────────
+// Advances the two team brains from the authoritative objective/site state and
+// pushes objective context onto each NPC so its utility brain can choose
+// objective goals. Never moves actors; the ActorBrain executes.
+void serverTeamBrainTick(ServerGamemodeState& d,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         NpcSystem& npcSystem,
+                         uint32_t tick)
+{
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
+
+    auto applyPolicy = [&](TeamBrain& brain, int team) {
+        TeamAssignmentPolicy policy;
+        if (team >= 0 && team < (int)gm.teams.size()) {
+            const GamemodeTeam& t = gm.teams[(size_t)team];
+            if (t.attackersPerSite > 0) policy.attackersPerSite = t.attackersPerSite;
+            if (t.defendersPerSite > 0) policy.defendersPerSite = t.defendersPerSite;
+            if (t.oneRotator >= 0) policy.oneRotator = t.oneRotator == 1;
+        }
+        brain.state().policy = policy;
+
+        // Sites from the map config.
+        brain.state().sites.clear();
+        for (const BombSite& site : mapCfg.bombSites) {
+            TeamSiteInfo info;
+            info.id = site.id;
+            info.position = site.position;
+            info.radius = site.radius;
+            info.hasPosition = site.hasPosition;
+            brain.state().sites.push_back(info);
+        }
+
+        // Objective context.
+        TeamObjectiveContext ctx;
+        ctx.active = d.objective.valid();
+        ctx.planted = d.objective.state == ObjectiveState::Planted;
+        ctx.carriedByTeam = d.objective.state == ObjectiveState::Carried &&
+            objectiveActorTeam(d, d.objective.carrierActorId) == team;
+        ctx.carrierActorId = d.objective.carrierActorId;
+        ctx.plantedSiteId = d.objective.plantedSiteId;
+        ctx.bombPosition = d.objective.position;
+        brain.state().objective = ctx;
+        if (ctx.planted) {
+            for (auto& site : brain.state().sites)
+                if (site.id == ctx.plantedSiteId) site.hasBomb = true;
+        }
+    };
+
+    applyPolicy(d.teamBrainA, 0);
+    applyPolicy(d.teamBrainB, 1);
+
+    // Shared enemy reports from living actors' current positions (exact sight).
+    auto teamOf = [&](uint32_t actorId) { return objectiveActorTeam(d, actorId); };
+    d.teamBrainA.tickReports(SERVER_DT, 3.0f);
+    d.teamBrainB.tickReports(SERVER_DT, 3.0f);
+    for (const auto& kv : players) {
+        if (kv.second.dead) continue;
+        const int team = teamOf(kv.first);
+        if (team == 1) d.teamBrainA.reportEnemySighting(kv.first, kv.second.pos, 1.0f, false);
+        else if (team == 0) d.teamBrainB.reportEnemySighting(kv.first, kv.second.pos, 1.0f, false);
+    }
+    for (const auto& kv : npcs) {
+        if (kv.second.health <= 0) continue;
+        const int team = teamOf(kv.first);
+        if (team == 1) d.teamBrainA.reportEnemySighting(kv.first, kv.second.pos, 1.0f, false);
+        else if (team == 0) d.teamBrainB.reportEnemySighting(kv.first, kv.second.pos, 1.0f, false);
+    }
+
+    // Living actors for assignment apportionment.
+    std::vector<std::pair<uint32_t, int>> living;
+    for (const auto& kv : players)
+        if (!kv.second.dead)
+            living.push_back({kv.first, teamOf(kv.first)});
+    for (const auto& kv : npcs)
+        if (kv.second.health > 0)
+            living.push_back({kv.first, teamOf(kv.first)});
+    d.teamBrainA.updateAssignments(living, d.objectiveRounds);
+    d.teamBrainB.updateAssignments(living, d.objectiveRounds);
+
+    if (!d.objectiveRounds) return;
+
+    // Push objective context onto each NPC's utility brain. objectivePos points
+    // at the bomb/site the NPC's team should care about.
+    for (Npc& npc : npcSystem.all()) {
+        const int team = npc.body.matchTeam;
+        TeamBrain& brain = (team == 0) ? d.teamBrainA : d.teamBrainB;
+        const TeamAssignment assignment = brain.assignmentFor(npc.id);
+        glm::vec3 objPos;
+        const bool hasObj = brain.objectiveTargetPosition(objPos);
+
+        UtilityContext& ctx = npc.utilityContext;
+        ctx.objectiveKnown = hasObj;
+        if (hasObj) ctx.objectivePos = objPos;
+        ctx.onDefense = (team == 0);
+        ctx.atObjective = hasObj &&
+            glm::length(npc.body.pos - objPos) <= 3.0f;
+        // A Terrorist carrying the bomb can plant inside a site.
+        ctx.canPlant = (team == 1) &&
+            d.objective.state == ObjectiveState::Carried &&
+            d.objective.carrierActorId == npc.id &&
+            MapConfigRegistry::instance().siteIndexAt(npc.body.pos) >= 0;
+        // A Counter-Terrorist at a planted bomb can defuse.
+        ctx.canDefuse = (team == 0) &&
+            d.objective.state == ObjectiveState::Planted &&
+            glm::length(npc.body.pos - d.objective.position) <= d.objective.interactionRange;
+        (void)assignment;
+        if (npc.utilityContext.teamAlive == 0)
+            npc.utilityContext.teamAlive = (int)living.size();
+    }
+}
+
 void serverGamemodeTick(SOCKET sock,
                     std::unordered_map<uint32_t, ServerPlayer>& players,
                     HeadlessWorld& world,
@@ -2448,6 +2699,10 @@ void serverGamemodeTick(SOCKET sock,
         }
     }
     updateActorStates(d, players, npcs);
+    // Generic area effects tick at fixed 60 Hz in every managed mode.
+    serverAreaEffectTick(d, sock, players, npcs, tick, totalPacketsOut);
+    // Team-level tactical brains: assignments + objective context for NPCs.
+    serverTeamBrainTick(d, players, npcs, npcSystem, tick);
     if (!d.mapOnly && d.appliedCommunityWeaponSetId != d.communityWeaponSetId)
     {
         resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
@@ -3508,6 +3763,11 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
     Debug::warn(Debug::Category::Duel,
         "[MATCH TEAM] player=%u team=%d mode=%s result=accepted\n",
         playerId, requestedTeam, id.c_str());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "actor.team-assigned", std::to_string(d.duelId), "team_pick", tick,
+        nlohmann::json{{"player", playerId}, {"team", requestedTeam},
+                       {"team_name", roundTeamName(gm, requestedTeam)}});
     return true;
 }
 

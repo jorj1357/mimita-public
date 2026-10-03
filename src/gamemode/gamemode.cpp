@@ -180,6 +180,10 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 team.capacity = std::max(0, optInt(t, "capacity", 0));
                 team.role = optString(t, "role", "");
                 team.spawnGroup = optString(t, "spawn_group", "");
+                team.attackersPerSite = std::max(0, optInt(t, "attackers_per_site", 0));
+                team.defendersPerSite = std::max(0, optInt(t, "defenders_per_site", 0));
+                if (t.contains("one_rotator") && t["one_rotator"].is_boolean())
+                    team.oneRotator = t["one_rotator"].get<bool>() ? 1 : 0;
                 if (team.id.empty() && team.displayName.empty()) continue;
                 if (team.displayName.empty()) team.displayName = team.id;
                 next.teams.push_back(std::move(team));

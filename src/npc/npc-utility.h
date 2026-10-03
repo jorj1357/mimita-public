@@ -114,3 +114,45 @@ UtilityActionKind actionForGoal(UtilityGoalKind goal, const UtilityContext& ctx)
 
 // World-independent selftest for scoring, hysteresis, and action mapping.
 bool npcUtilitySelfTest(std::string& report);
+
+// ── Stage 15: AI grenade reasoning ─────────────────────────────────────
+// Inputs for deciding whether to throw an area-effect grenade. All optional.
+struct GrenadeThrowContext {
+    bool hasTarget = false;
+    bool targetBehindCover = false;   // no line of sight
+    int enemyGroupDensity = 1;        // enemies near the target point
+    int friendlyNearImpact = 0;       // allies inside the blast (friendly fire)
+    bool selfInBlast = false;         // thrower inside the blast
+    bool trajectoryBlocked = false;   // a wall is directly in the throw path
+    bool duplicateThrow = false;      // a teammate already threw the same effect
+    bool haveGrenade = true;
+    bool siteDefense = false;         // holding a defensive angle
+    bool siteRetake = false;          // retaking a planted site
+};
+
+// Bounded per-fight memory of a target's recent evasive patterns.
+struct FightMemory {
+    int dodgedLeft = 0;
+    int dodgedRight = 0;
+    int jumped = 0;
+    int heldPosition = 0;
+    int total = 0;
+    static constexpr int MAX = 8;
+
+    void recordDodgeLeft();
+    void recordDodgeRight();
+    void recordJump();
+    void recordHeld();
+    void decay();
+};
+
+// Score a grenade throw in [-1, 1]; a negative score means reject (do not
+// throw). Rejects obviously invalid throws: wall collision, self-damage,
+// friendly fire, duplicate utility, or no tactical benefit. Pure.
+float scoreGrenadeThrow(const GrenadeThrowContext& ctx);
+
+// True when the throw is valid (score above the rejection threshold).
+bool grenadeThrowAllowed(const GrenadeThrowContext& ctx, float threshold = 0.05f);
+
+// World-independent selftest for grenade reasoning and fight memory.
+bool npcGrenadeReasoningSelfTest(std::string& report);

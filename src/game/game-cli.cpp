@@ -57,6 +57,8 @@
 #include "gamemode/map-config.h"
 #include "network/server-gamemode.h"
 #include "npc/npc-nav-request.h"
+#include "combat/grenade-registry.h"
+#include "combat/area-effect.h"
 
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
@@ -290,6 +292,38 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--grenade-reasoning-selftest") {
+        std::string report;
+        const bool ok = npcGrenadeReasoningSelfTest(report);
+        printf("[GRENADE REASONING SELFTEST]\n%s", report.c_str());
+        printf("[GRENADE REASONING SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--team-brain-selftest") {
+        std::string report;
+        const bool ok = teamBrainSelfTest(report);
+        printf("[TEAM BRAIN SELFTEST]\n%s", report.c_str());
+        printf("[TEAM BRAIN SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--grenade-selftest") {
+        std::string report;
+        const bool ok = grenadeRegistrySelfTest(report);
+        printf("[GRENADE SELFTEST]\n%s", report.c_str());
+        printf("[GRENADE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--area-effect-selftest") {
+        std::string report;
+        const bool ok = areaEffectSelfTest(report);
+        printf("[AREA EFFECT SELFTEST]\n%s", report.c_str());
+        printf("[AREA EFFECT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--map-config-selftest") {
         std::string report;
         const bool ok = mapConfigSelfTest(report);
@@ -328,6 +362,41 @@ bool handleGameCLI(int argc, char** argv)
         printf("[NPC PERCEPTION SELFTEST]\n%s", report.c_str());
         printf("[NPC PERCEPTION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--counterstrike-acceptance-selftest") {
+        // Consolidated pure-rule acceptance for every Counter-Strike subsystem.
+        // This proves the data/rules load and behave; it does NOT prove live
+        // gameplay or visuals. See docs/features/gamemodes/counterstrike.md.
+        struct Case { const char* name; bool (*fn)(std::string&); };
+        // Load the shared registries/weapons the rule checks depend on.
+        // serverCounterStrikeRoundSelfTest loads roles/presets and builtin
+        // weapons; the gamemode registry must be loaded here.
+        GamemodeRegistry::instance().loadDirectory("config/gamemodes");
+        std::string report;
+        const bool roundOk = MimitaNet::serverCounterStrikeRoundSelfTest(report);
+        printf("[ACCEPTANCE] round+weapons: %s\n", roundOk ? "PASS" : "FAIL");
+
+        const Case cases[] = {
+            {"objective",       objectiveSelfTest},
+            {"map-config",      mapConfigSelfTest},
+            {"grenade",         grenadeRegistrySelfTest},
+            {"area-effect",     areaEffectSelfTest},
+            {"team-brain",      teamBrainSelfTest},
+            {"npc-perception",  npcPerceptionSelfTest},
+            {"npc-utility",     npcUtilitySelfTest},
+            {"npc-grenade",     npcGrenadeReasoningSelfTest},
+            {"npc-nav-request", npcNavRequestSelfTest},
+        };
+        bool all = roundOk;
+        for (const Case& c : cases) {
+            std::string r;
+            const bool ok = c.fn(r);
+            printf("[ACCEPTANCE] %-16s: %s\n", c.name, ok ? "PASS" : "FAIL");
+            all = all && ok;
+        }
+        printf("[ACCEPTANCE] %s\n", all ? "PASS" : "FAIL");
+        std::exit(all ? 0 : 1);
     }
 
     if (std::string(argv[1]) == "--cs-round-selftest") {

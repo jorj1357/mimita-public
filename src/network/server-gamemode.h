@@ -22,6 +22,8 @@
 #include "network/server.h"
 #include "network/actor-match.h"
 #include "game/objective-state.h"
+#include "combat/area-effect.h"
+#include "npc/team-brain.h"
 #include "procedural/procedural-world.h"
 
 namespace MimitaNet {
@@ -199,6 +201,17 @@ struct ServerGamemodeState
     uint32_t objectiveNextCarrierScanTick = 0;
     uint32_t objectivePickupCounter = 0;
     uint32_t objectiveDropCounter = 0;
+    // ── Generic area effects (fire/smoke/dark-bang grenades) ────────
+    // Server-authoritative; ticked at fixed 60 Hz. Damage is applied through
+    // the shared damage path via the returned damage events.
+    std::vector<AreaEffect> areaEffects;
+    uint32_t nextAreaEffectId = 1;
+    uint32_t areaEffectSpawnCounter = 0;
+    // ── Team-level tactical brains (one per fixed team) ─────────────
+    // Own assignments, shared enemy reports, and objective targeting. They
+    // never teleport or override physics.
+    TeamBrain teamBrainA{0};
+    TeamBrain teamBrainB{1};
 
     bool npcWaves = false;
     uint32_t waveNumber = 0;
@@ -337,6 +350,20 @@ void serverGamemodeRecordKill(
     const glm::vec3& victimPos,
     uint32_t tick,
     uint64_t& totalPacketsOut);
+
+// Spawn a generic area effect (fire/smoke/dark-bang) at a world position.
+// Server-authoritative; the effect is ticked at fixed 60 Hz. Returns the id.
+uint32_t serverSpawnAreaEffect(AreaEffectKind kind, uint32_t ownerActorId,
+                               int ownerTeam, const glm::vec3& position,
+                               float radius, float height, float durationSeconds,
+                               int damagePerTick, int damageIntervalTicks,
+                               bool damagesEnemiesOnly);
+
+// Spawn the area effect a grenade leaves behind, if its definition has one.
+// Returns 0 for direct-explosion grenades (e.g. frag) or unknown ids.
+uint32_t serverSpawnGrenadeAreaEffect(const std::string& grenadeId,
+                                      uint32_t ownerActorId, int ownerTeam,
+                                      const glm::vec3& position);
 
 // A player pressed Space on the win/lose screen: skip the rematch timer and
 // start the next managed match immediately (next tick).

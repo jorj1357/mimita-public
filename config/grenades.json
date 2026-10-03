@@ -1,0 +1,49 @@
+// Counter-Strike grenade/tool definitions. These map a thrown grenade to the
+// weapon that throws it and the area effect it leaves behind. Base weapon
+// values remain in config/weapons.json; this file only owns the grenade policy.
+{
+  "grenades": [
+    {
+      "id": "frag",
+      "weapon_id": "grenade_launcher",
+      "area_kind": "none",
+      "radius": 8.0,
+      "duration_seconds": 0.0,
+      "damage_per_tick": 0,
+      "spawns_area_effect": false,
+      "comment": "Frag: direct projectile explosion via the existing splash damage path."
+    },
+    {
+      "id": "smoke",
+      "weapon_id": "grenade_launcher",
+      "area_kind": "smoke",
+      "radius": 5.0,
+      "height": 4.0,
+      "duration_seconds": 15.0,
+      "spawns_area_effect": true,
+      "comment": "Smoke: gray volume that blocks vision for 15s."
+    },
+    {
+      "id": "darkbang",
+      "weapon_id": "grenade_launcher",
+      "area_kind": "darkbang",
+      "radius": 6.0,
+      "duration_seconds": 2.5,
+      "spawns_area_effect": true,
+      "comment": "Dark-bang/flash: mode-controlled screen effect for its duration."
+    },
+    {
+      "id": "fire",
+      "weapon_id": "grenade_launcher",
+      "area_kind": "fire",
+      "radius": 4.0,
+      "height": 3.0,
+      "duration_seconds": 7.0,
+      "damage_per_tick": 10,
+      "damage_interval_ticks": 10,
+      "damages_enemies_only": true,
+      "spawns_area_effect": true,
+      "comment": "Fire: cylinder dealing 10 damage every 10 fixed ticks to enemies."
+    }
+  ]
+}

@@ -356,9 +356,9 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
     const glm::vec3 relativeVelocity = body.linearVelocity - player.vel;
     const glm::vec3 acceleration =
         positionError * cfg.physicalAim.rightArmPointingPositionForce *
-            pointingBlend * aimStrength -
+            pointingBlend -
         relativeVelocity * cfg.physicalAim.rightArmPointingPositionDamping *
-            aimStrength;
+            1.0f;
     body.linearVelocity += acceleration * dt;
 
     glm::vec3 targetForward = glm::normalize(camForward);
@@ -414,21 +414,26 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
         aimConfig.rightArmPointingRotationDegrees())));
 
     // Reuse the same physical aim controller as ragdoll/head aiming. Rotation
-    // and position are both physical; no transform is snapped.
-    // Aim strength changes convergence, not the target or its usable pitch.
-    // Keeping it out of the blend weight avoids turning the desired-velocity
-    // cap into an apparent vertical aiming limit at high strength.
+    // and position are both physical; no transform is snapped. Aim strength
+    // changes how quickly the arm follows the target, never the target itself,
+    // its pitch range, or the positional spring that keeps the hand centered.
     PhysicalAimConfig pointingAim = cfg.physicalAim;
-    pointingAim.torqueGain *= aimStrength;
-    pointingAim.angularDamping *= aimStrength;
     if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
+        // Keep the PD target/caps unchanged so a larger strength cannot create
+        // a different effective range of motion. It only increases the rate
+        // at which the physical controller corrects its existing error.
+        const float pdStrength = glm::clamp(aimStrength, 0.1f, 100.0f);
+        pointingAim.torqueGain *= pdStrength;
+        pointingAim.angularDamping *= pdStrength;
         body.angularVelocity += computeAimTorque(
             body.orientation, target, body.angularVelocity,
             pointingAim, pointingBlend) * dt;
     } else {
         const glm::vec3 desired = aimDesiredAngularVelocity(
             body.orientation, target, pointingAim, pointingBlend);
-        const float blend = glm::clamp(dt * cfg.physicalAim.lookDamping, 0.0f, 1.0f);
+        const float blend = glm::clamp(
+            dt * cfg.physicalAim.lookDamping * glm::max(0.1f, aimStrength),
+            0.0f, 1.0f);
         body.angularVelocity += (desired - body.angularVelocity) * blend;
     }
 

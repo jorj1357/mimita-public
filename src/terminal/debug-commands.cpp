@@ -28,8 +28,11 @@
 #include "network/community-server-config.h"
 #include "map/map-catalog.h"
 #include "gamemode/map-config.h"
+#include "gamemode/gamemode.h"
 #include "entities/player.h"
+#include "npc/npc.h"
 #include <glm/glm.hpp>
+#include <cstdlib>
 
 void registerDebugCommands()
 {
@@ -117,6 +120,149 @@ void registerDebugCommands()
         "", CommandCategory::Duel, {"teampick"}
     });
     Terminal::instance().registerCommand({
+        "npc_inspect", "Inspect one NPC's team/brain/perception/navigation state", "npc_inspect [id]",
+        [](const std::vector<std::string>& args) {
+            NpcSystem& npcSystem = THE_NPC_SYSTEM;
+            const uint32_t wantId = args.empty() ? 0 : (uint32_t)std::atoi(args[0].c_str());
+            int shown = 0;
+            for (const Npc& n : npcSystem.all()) {
+                if (wantId != 0 && n.id != wantId) continue;
+                char buf[512];
+                snprintf(buf, sizeof(buf),
+                    "[NPC INSPECT] id=%u epoch=%u team=%d hp=%d/%d preset=%s behavior=%s "
+                    "target=%u belief=%d vis=%d conf=%.2f dist=%.1f goal=%s action=%s",
+                    n.id, (unsigned)n.transformEpoch, n.body.matchTeam,
+                    n.body.currentHp, n.body.maxHp,
+                    n.movementProfileId.empty() ? "default" : n.movementProfileId.c_str(),
+                    n.behaviorProfileId.empty() ? "default" : n.behaviorProfileId.c_str(),
+                    n.serverTargetId, (int)n.belief.hasTarget, (int)n.belief.hasVisibleTarget,
+                    n.belief.confidence, n.belief.distance,
+                    utilityGoalName(n.utility.currentGoal),
+                    utilityActionName(n.utility.currentAction));
+                Terminal::instance().addLog(buf);
+                snprintf(buf, sizeof(buf),
+                    "[NPC INSPECT]   navDest=(%.1f %.1f %.1f) pathNodes=%d perceptionFov=%d los=%d "
+                    "react=%.2f objKnown=%d objPos=(%.1f %.1f %.1f)",
+                    n.navigator.goal.targetPos.x, n.navigator.goal.targetPos.y, n.navigator.goal.targetPos.z,
+                    (int)n.navigator.path.size(),
+                    (int)n.perception.withinFov, (int)n.perception.hasLineOfSight,
+                    n.reactionTimer, (int)n.utilityContext.objectiveKnown,
+                    n.utilityContext.objectivePos.x, n.utilityContext.objectivePos.y,
+                    n.utilityContext.objectivePos.z);
+                Terminal::instance().addLog(buf);
+                snprintf(buf, sizeof(buf),
+                    "[NPC INSPECT]   goalScore=%.2f actionCooldown=%.2f goalTimer=%.2f",
+                    n.utility.currentScore.total, n.utility.actionCooldown, n.utility.goalTimer);
+                Terminal::instance().addLog(buf);
+                ++shown;
+            }
+            if (shown == 0) Terminal::instance().addLog("[NPC INSPECT] no matching NPC (count=" +
+                std::to_string(npcSystem.all().size()) + ")");
+        },
+        "", CommandCategory::NPC
+    });
+    Terminal::instance().registerCommand({
+        "npc_brain", "Show one NPC's utility goal scores (all goals)", "npc_brain [id]",
+        [](const std::vector<std::string>& args) {
+            NpcSystem& npcSystem = THE_NPC_SYSTEM;
+            const uint32_t wantId = args.empty() ? 0 : (uint32_t)std::atoi(args[0].c_str());
+            int shown = 0;
+            for (const Npc& n : npcSystem.all()) {
+                if (wantId != 0 && n.id != wantId) continue;
+                const UtilityGoalKind goals[] = {
+                    UtilityGoalKind::KillTarget, UtilityGoalKind::Survive,
+                    UtilityGoalKind::HoldPosition, UtilityGoalKind::TakeCover,
+                    UtilityGoalKind::MoveToObjective, UtilityGoalKind::DefendSite,
+                    UtilityGoalKind::RotateToSite, UtilityGoalKind::PlantObjective,
+                    UtilityGoalKind::DefuseObjective, UtilityGoalKind::RetakeSite,
+                };
+                char header[128];
+                snprintf(header, sizeof(header), "[NPC BRAIN] id=%u current=%s", n.id,
+                         utilityGoalName(n.utility.currentGoal));
+                Terminal::instance().addLog(header);
+                for (UtilityGoalKind g : goals) {
+                    const UtilityGoalScore s = scoreUtilityGoal(g, n.utilityContext);
+                    char buf[160];
+                    snprintf(buf, sizeof(buf), "[NPC BRAIN]   %-16s total=%.2f rel=%.2f los=%.2f hp=%.2f",
+                             utilityGoalName(g), s.total, s.relevance, s.lineOfSight, s.health);
+                    Terminal::instance().addLog(buf);
+                }
+                ++shown;
+            }
+            if (shown == 0) Terminal::instance().addLog("[NPC BRAIN] no matching NPC");
+        },
+        "", CommandCategory::NPC
+    });
+    Terminal::instance().registerCommand({
+        "team_status", "Show teams, rosters, assignments, and round score", "team_status",
+        [](const std::vector<std::string>&) {
+            const MimitaNet::ServerGamemodeState& d = MimitaNet::serverGamemodeState();
+            const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+            char buf[320];
+            snprintf(buf, sizeof(buf), "[TEAM STATUS] mode=%s round=%u/%d wins=%d-%d locked=%d",
+                     d.matchMode.c_str(), d.roundNumber, d.roundsToWin,
+                     d.roundWins[0], d.roundWins[1], (int)d.rosterLocked);
+            Terminal::instance().addLog(buf);
+            for (size_t t = 0; t < gm.teams.size(); ++t) {
+                Terminal::instance().addLog("[TEAM STATUS] " + std::to_string(t + 1) + ". " +
+                    gm.teams[t].displayName + " (id=" + gm.teams[t].id + " cap=" +
+                    std::to_string(gm.teams[t].capacity) + ")");
+            }
+            int counts[2] = {0, 0};
+            for (const auto& kv : d.matchTeams)
+                if (kv.second >= 0 && kv.second < 2) counts[kv.second]++;
+            Terminal::instance().addLog("[TEAM STATUS] members: team0=" + std::to_string(counts[0]) +
+                " team1=" + std::to_string(counts[1]) + " participants=" +
+                std::to_string(d.participants.size()));
+        },
+        "", CommandCategory::Duel
+    });
+    Terminal::instance().registerCommand({
+        "objective_status", "Show the mode objective (bomb) state", "objective_status",
+        [](const std::vector<std::string>&) {
+            const MimitaNet::ServerGamemodeState& d = MimitaNet::serverGamemodeState();
+            const auto& o = d.objective;
+            static const char* states[] = {"Inactive","Carried","Dropped","Planted","Defused","Exploded"};
+            const int si = (int)o.state;
+            char buf[320];
+            snprintf(buf, sizeof(buf),
+                "[OBJECTIVE] id=%s active=%d state=%s carrier=%u team=%d pos=(%.1f %.1f %.1f) site=%s",
+                o.id.empty() ? "-" : o.id.c_str(), (int)o.valid(),
+                (si >= 0 && si < 6) ? states[si] : "?",
+                o.carrierActorId, o.allowedCarrierTeam,
+                o.position.x, o.position.y, o.position.z,
+                o.plantedSiteId.empty() ? "-" : o.plantedSiteId.c_str());
+            Terminal::instance().addLog(buf);
+            snprintf(buf, sizeof(buf),
+                "[OBJECTIVE] plant=%d/%d defuse=%d/%d explosionDeadline=%u pickups=%u drops=%u",
+                o.plantTicksElapsed, o.plantTicksRequired,
+                o.defuseTicksElapsed, o.defuseTicksRequired,
+                o.explosionDeadlineTick, d.objectivePickupCounter, d.objectiveDropCounter);
+            Terminal::instance().addLog(buf);
+        },
+        "", CommandCategory::Duel
+    });
+    Terminal::instance().registerCommand({
+        "grenade_spawn", "Spawn a grenade area effect at your position: <frag|smoke|darkbang|fire>",
+        "grenade_spawn <id>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[GRENADE] usage: grenade_spawn <frag|smoke|darkbang|fire>");
+                return;
+            }
+            const uint32_t id = MimitaNet::serverSpawnGrenadeAreaEffect(
+                args[0], /*ownerActorId=*/0, THE_PLAYER.matchTeam,
+                THE_PLAYER.pos);
+            if (id == 0)
+                Terminal::instance().addLog("[GRENADE] no area effect for " + args[0] +
+                    " (frag uses the direct explosion path)");
+            else
+                Terminal::instance().addLog("[GRENADE] spawned " + args[0] +
+                    " area effect id=" + std::to_string(id));
+        },
+        "", CommandCategory::Weapon
+    });
+    Terminal::instance().registerCommand({
         "site_debug", "Inspect/edit bomb sites: show|hide|select <id>|move [x y z]|print|save",
         "site_debug <show|hide|select <id>|move [x y z]|print|save>",
         [](const std::vector<std::string>& args) {
@@ -129,8 +275,8 @@ void registerDebugCommands()
                 return;
             }
             const std::string& cmd = args[0];
-            if (cmd == "show" || cmd == "hide") {
-                const bool visible = cmd == "show";
+            if (cmd == "show" || cmd == "hide" || cmd == "on" || cmd == "off") {
+                const bool visible = (cmd == "show" || cmd == "on");
                 for (const auto& site : cfg.bombSites)
                     reg.setSiteVisibility(site.id, visible);
                 Terminal::instance().addLog(std::string("[SITE] ") + cmd + " " +

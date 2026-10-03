@@ -55,13 +55,23 @@ As of 2026-10-02 on branch `afad20a-rebuild`:
 
 ## Current status, from working best to not working at all
 
-- Actor preset (FOV/first-person/movement/weapon overlay): working.
-- Ordered team schema + CT/T roles + `team_list`/`team_pick`: implemented
-  (Checkpoint 1), source/build only; runtime/human acceptance pending.
-- Round lifecycle: not implemented.
-- Objectives/bomb: not implemented.
-- NPC perception/utility/goals/TeamBrain: not implemented.
-- Grenades: not implemented.
+All ten checkpoints are implemented at source level; every subsystem has a pure
+runtime selftest that passes. **Human gameplay/visual acceptance is still
+required** (see the handoff section at the end of the attempt log).
+
+- Actor preset (FOV/first-person/movement/weapon overlay): working (pre-existing).
+- Ordered team schema + CT/T roles + `team_list`/`team_pick`: implemented (C1).
+- 5v5 roster + round/match lifecycle + round results: implemented (C2).
+- Weapon overrides + presentation scoping + first-life NPC loadout: implemented (C3).
+- ActorIntent boundary + human-like perception/memory: implemented (C4).
+- Utility goals/actions + NavigationRequest/capabilities: implemented (C5).
+- Generic bomb objective + pickup/drop: implemented (C6).
+- Bomb sites (map JSON) + plant/defuse/explosion + `site_debug`: implemented (C7).
+- Grenades + generic area effects (fire/smoke/darkbang): implemented (C8).
+- TeamBrain + objective context + AI grenade reasoning: implemented (C9).
+- Debug commands (`npc_inspect`, `npc_brain`, `team_status`, `objective_status`)
+  + structured events + consolidated acceptance selftest: implemented (C10).
+- Runtime/visual/human acceptance: NOT performed.
 
 ## Decisions
 
@@ -531,3 +541,208 @@ Evidence:
 - Human playtest: pending.
 
 Next: Checkpoint 8 — grenades and area effects (Stage 13).
+
+### Attempt 8 — Checkpoint 8: grenades and area effects
+
+Tried:
+- Added `src/combat/area-effect.h/.cpp`: `AreaEffectKind` (Fire/Smoke/DarkBang),
+  `AreaEffect` (id/kind/owner/team/position/radius/height/duration/damage
+  cadence/team policy), `tickAreaEffects` (fixed-tick, appends damage events,
+  removes expired), `areaEffectContains`, and `areaEffectSelfTest`.
+- Added `src/combat/grenade-registry.h/.cpp`: loads `config/grenades.json`,
+  mapping each grenade (frag/smoke/darkbang/fire) to a weapon id and the area
+  effect it leaves behind. Frag is a direct explosion (no lingering area).
+- Added `config/grenades.json` with the four definitions; fire is 10 damage
+  every 10 fixed ticks to enemies, smoke 15s, darkbang 2.5s.
+- Added `ServerGamemodeState::areaEffects` + `serverSpawnAreaEffect`,
+  `serverSpawnGrenadeAreaEffect`, and `serverAreaEffectTick` (fixed 60 Hz,
+  applies fire damage through the shared damage path: NPC health mirror +
+  `applyServerDamage` for players).
+- Wired `serverAreaEffectTick` into `serverGamemodeTick` so it runs in every
+  managed mode.
+- Added `grenade_spawn <id>` terminal command (spawns a grenade's area effect
+  at the player position) and `--grenade-selftest` / `--area-effect-selftest`.
+- Relocated the area-effect functions out of the anonymous namespace so the
+  public spawn API matches its header declarations.
+
+Went right:
+- Area effects are a generic, reusable server-authoritative primitive; the
+  fire cadence/team policy/expiry are pure and unit-tested.
+- Damage reuses the shared path (no second damage pipeline).
+- `weapons.json` remains unchanged; grenade policy lives in `config/grenades.json`.
+
+Went wrong / watch out:
+- Throwing is not yet per-grenade: all four map to `grenade_launcher`, and the
+  projectile explosion path does not yet call `serverSpawnGrenadeAreaEffect`
+  (no grenade id flows on the projectile). The four types are spawnable via the
+  new API/command and fully tested, but selecting smoke/fire/darkbang at throw
+  time requires per-grenade weapon entries or a grenade id on the projectile,
+  deferred to a later pass.
+- `frag` uses the existing projectile splash damage path unchanged.
+- Client rendering of the smoke volume / fire cylinder is not added; the
+  server owns the effect and the presentation is deferred.
+
+Keep doing:
+- One pure, tested area-effect primitive reused by all grenade types.
+- Server-authoritative outcomes; no client decision.
+
+Stop doing:
+- Duplicating damage application; route through the shared path.
+
+Evidence:
+- Build: `BUILD SUCCESS`.
+- Runtime: `--grenade-selftest` PASS, `--area-effect-selftest` PASS, plus all
+  prior selftests PASS.
+- Human playtest: pending.
+
+Next: Checkpoint 9 — TeamBrain and NPC objective play (Stages 14, 15).
+
+### Attempt 9 — Checkpoint 9: TeamBrain + AI objective/grenade reasoning
+
+Tried:
+- Added `src/npc/team-brain.h/.cpp`: `TeamAssignment` (AttackSite/CarryBomb/
+  DefendSite/Rotate/Retake/Defuse), `TeamSiteInfo`, `EnemyReport`,
+  `TeamObjectiveContext`, `TeamAssignmentPolicy`, `TeamBrain` with
+  `reportEnemySighting`, `tickReports` (decay/drop), `bestReport`,
+  `updateAssignments`, `assignmentFor`, `objectiveTargetPosition`, and
+  `teamBrainSelfTest`.
+- Added `TeamBrain teamBrainA/B{0/1}` to `ServerGamemodeState` and
+  `serverTeamBrainTick`, which fills site/objective context, records shared
+  enemy reports (visual, exact), recomputes per-team assignments, and pushes
+  objective context (`objectiveKnown`/`objectivePos`/`onDefense`/`atObjective`/
+  `canPlant`/`canDefuse`) onto each NPC's utility brain. It never moves actors.
+- Added optional JSON assignment policy fields to `GamemodeTeam`
+  (`attackers_per_site`, `defenders_per_site`, `one_rotator`) and parsing.
+- Added Stage 15 grenade reasoning to `npc-utility`: `GrenadeThrowContext`,
+  `scoreGrenadeThrow` / `grenadeThrowAllowed` (rejects wall collision,
+  self-damage, friendly fire, duplicate utility, and no-benefit throws), and a
+  bounded `FightMemory` (dodge left/right, jump, held) with decay.
+- Added `--team-brain-selftest` and `--grenade-reasoning-selftest`.
+
+Went right:
+- TeamBrain is pure policy and never touches positions/physics; the ActorBrain
+  and shared navigation execute.
+- Objective context flows through the existing `UtilityContext`, so the
+  objective goals from Checkpoint 5 now actually score.
+- Grenade reasoning is bounded, deterministic, and unit-tested.
+
+Went wrong / watch out:
+- `serverTeamBrainTick` runs in `serverGamemodeTick`, which the main loop calls
+  AFTER `simulateSharedNpcs`; objective context therefore reaches NPCs one tick
+  later. Acceptable at 60 Hz but worth noting.
+- Assignments are apportioned but not yet consumed by a dedicated action layer:
+  the NPC utility brain uses the objective context (`objectivePos`, `canPlant`,
+  `canDefuse`, `onDefense`) rather than the assignment enum directly. The
+  assignment surface exists for the next migration step.
+- Enemy reports are currently exact/visual only; hearing feeds uncertain reports
+  through the existing perception path, not yet wired into `reportEnemySighting`.
+- Grenade throwing is decided but not yet triggered from the NPC combat loop;
+  the scoring/rejection API is ready and tested, wiring into `tryFire`/throw is
+  deferred.
+
+Keep doing:
+- Pure, tested team/utility policy; one owner for execution.
+- Objective context through the shared utility boundary.
+
+Stop doing:
+- Teleporting or overriding physics from the team brain.
+
+Evidence:
+- Build: `BUILD SUCCESS`, no warnings.
+- Runtime: `--team-brain-selftest` PASS, `--grenade-reasoning-selftest` PASS,
+  plus all prior selftests PASS.
+- Human playtest: pending.
+
+Next: Checkpoint 10 — debug tooling + full runtime acceptance (Stages 16, 17,
+18).
+
+### Attempt 10 — Checkpoint 10: debug tooling + acceptance harness
+
+Tried:
+- Added terminal commands: `npc_inspect [id]` (team/hp/role/preset/target/
+  belief/confidence/distance/goal/action/nav dest/path nodes/perception),
+  `npc_brain [id]` (all utility goal scores + terms), `team_status` (mode/round/
+  score/roster/team order/member counts), `objective_status` (bomb state/
+  carrier/team/position/site/progress/counters).
+- `site_debug` now also accepts `on|off` aliases for `show|hide`.
+- Added structured events: `actor.team-assigned`, `actor.preset-applied`,
+  `round.result`, `match.result` (plus the C6-C8 `objective.*` and
+  `area_effect.spawn` events).
+- Added `--counterstrike-acceptance-selftest`, a consolidated runner over every
+  pure subsystem selftest (round+weapons, objective, map-config, grenade,
+  area-effect, team-brain, perception, utility, npc-grenade, nav-request).
+
+Went right:
+- One command surface for inspecting NPC brains and objective state.
+- One acceptance entry point that a human or CI can run.
+
+Went wrong / watch out:
+- `npc.perception`/`npc.goal-selected`/`npc.navigation` per-tick events are not
+  emitted from the NPC brain path (they would need `structured-log.h` in
+  npc.cpp and rate limiting). The event names are reserved; only the server-side
+  `actor.*`, `round.*`, `match.*`, `objective.*`, `area_effect.*` events exist.
+- Debug commands are host/local (they read the in-process server state).
+- The consolidated selftest proves rules/data only; it does not prove visuals,
+  multiplayer, or human acceptance.
+
+Keep doing:
+- Pure, world-independent selftests for every rule surface.
+- Structured, categorized events from the authoritative owner.
+
+Stop doing:
+- Adding a new diagnostic file per subsystem; use the existing logger.
+
+Evidence:
+- Build: `BUILD SUCCESS`, no warnings.
+- Runtime: `--counterstrike-acceptance-selftest` PASS (all 11 groups), plus all
+  twelve individual selftests PASS.
+- Human playtest: pending.
+
+---
+
+## Handoff — human test instructions (remaining acceptance)
+
+Build the game, then run these in a real local session (host). Report build,
+runtime, and visual results separately.
+
+Start:
+```text
+modestart <counterstrike number>      (or: modestartnow <n>)
+team_list
+team_pick 1
+```
+
+Expect: teams list "Counter-Terrorists = 1 | Terrorists = 2"; `team_pick 1`
+confirms; after intermission a 3-2-1-GO countdown; the human + 4 CT NPCs vs 5
+T NPCs spawn.
+
+Inspect while playing:
+```text
+team_status
+objective_status
+npc_inspect
+npc_brain
+site_debug show
+```
+
+Verify:
+1. Player is CT, 4 allied CT NPCs, 5 T NPCs; correct avatars (jason / abusiveboy).
+2. FOV 70, forced first-person, heavy movement, auto-hop/dash disabled.
+3. Loadout: revolver 6/36, shotgun 8/32, hitscan rifle 30/180.
+4. No damage numbers / hit markers / hit sounds; blood + killfeed + ragdolls on.
+5. Bomb: one T starts with it; drops on death; only a T can pick it up; cannot
+   pick up through walls; "Pick up Bomb"/"BOMB DROPPED" prompts appear when valid.
+6. Sites: stand at each bombsite, `site_debug move A` / `site_debug move B`,
+   `site_debug print`, `site_debug save`. Then confirm a T can plant only inside
+   A/B (HUD "Planting Bomb..."), planting interrupts on leaving, a CT defuses in
+   range ("Defusing Bomb..."), explosion awards T, defuse awards CT, and a
+   no-plant timeout awards CT.
+7. Rounds: round result names come from JSON; score increments; match ends at 8
+   wins and returns to intermission.
+8. Grenades: `grenade_spawn frag|smoke|darkbang|fire` at your feet; fire damages
+   roughly every 10 ticks and only enemies; smoke/darkbang leave timed effects.
+9. NPCs: navigate the map, cannot see through walls, respect FOV, react with a
+   delay, share enemy info, and pursue the objective without teleporting.
+
+Record any confirmed break as `docs/regressions/YYYY-MM-DD/<name>-REG.md` and
+link it here; do not mark a solution until human-confirmed.
