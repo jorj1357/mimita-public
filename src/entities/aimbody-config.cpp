@@ -72,6 +72,10 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingRotationDegrees = glm::vec3(0.0f);
         mRightArmPointingBlendRate = 10.0f;
         mRightArmPointingAimStrength = 10.0f;
+        mRightArmPointingFovEnabled = true;
+        mRightArmPointingFovMultiplier = 0.5f;
+        mRightArmPointingFovDuration = 0.5f;
+        mRightArmPointingFovEasing = "ease_in_out";
         mSmoothingFactor = 1.0f;
         mLimbs.clear();
         Debug::warn(Debug::Category::Animation,
@@ -108,6 +112,10 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingRotationDegrees = glm::vec3(0.0f);
         mRightArmPointingBlendRate = 10.0f;
         mRightArmPointingAimStrength = 10.0f;
+        mRightArmPointingFovEnabled = true;
+        mRightArmPointingFovMultiplier = 0.5f;
+        mRightArmPointingFovDuration = 0.5f;
+        mRightArmPointingFovEasing = "ease_in_out";
         if (j.contains("right_arm_pointing")) {
             const auto& pointing = j["right_arm_pointing"];
             if (pointing.is_object()) {
@@ -136,6 +144,18 @@ bool AimBodyConfig::load(const std::string& path)
                 mRightArmPointingAimStrength = std::clamp(
                     pointing.value("aim_strength", mRightArmPointingAimStrength),
                     0.1f, 100.0f);
+                if (pointing.contains("fov") && pointing["fov"].is_object()) {
+                    const auto& fov = pointing["fov"];
+                    mRightArmPointingFovEnabled = fov.value("enabled", mRightArmPointingFovEnabled);
+                    mRightArmPointingFovMultiplier = std::clamp(
+                        fov.value("multiplier", mRightArmPointingFovMultiplier), 0.05f, 1.0f);
+                    mRightArmPointingFovDuration = std::clamp(
+                        fov.value("duration", mRightArmPointingFovDuration), 0.01f, 10.0f);
+                    const std::string easing = fov.value("easing", mRightArmPointingFovEasing);
+                    if (easing == "linear" || easing == "ease_in" || easing == "ease_out" ||
+                        easing == "ease_in_out" || easing == "exponential" || easing == "bounce")
+                        mRightArmPointingFovEasing = easing;
+                }
             } else {
                 const std::string pointingMode = pointing.get<std::string>();
                 mRightArmPointingMode = pointingMode == "rmb" ? "rmb" : "off";
@@ -184,7 +204,13 @@ bool AimBodyConfig::save()
                                mRightArmPointingRotationDegrees.y,
                                mRightArmPointingRotationDegrees.z}},
         {"blend_rate", mRightArmPointingBlendRate},
-        {"aim_strength", mRightArmPointingAimStrength}
+        {"aim_strength", mRightArmPointingAimStrength},
+        {"fov", {
+            {"enabled", mRightArmPointingFovEnabled},
+            {"multiplier", mRightArmPointingFovMultiplier},
+            {"duration", mRightArmPointingFovDuration},
+            {"easing", mRightArmPointingFovEasing}
+        }}
     };
     j["smoothingFactor"] = mSmoothingFactor;
     json limbs = json::object();
@@ -218,6 +244,32 @@ float AimBodyConfig::smoothAngle(float current, float desired, float dt) const
     float delta = std::fmod(desired - current + 540.0f, 360.0f) - 180.0f;
     return current + delta * (1.0f - std::exp(
         -std::max(0.0f, dt) / std::max(0.0025f, 0.25f * mSmoothingFactor)));
+}
+
+float AimBodyConfig::updateRightArmPointingFovBlend(bool held, float dt)
+{
+    const float duration = std::max(0.01f, mRightArmPointingFovDuration);
+    const float step = std::clamp(std::max(0.0f, dt) / duration, 0.0f, 1.0f);
+    mRightArmPointingFovBlend += ((held && mRightArmPointingFovEnabled) ? step : -step);
+    mRightArmPointingFovBlend = std::clamp(mRightArmPointingFovBlend, 0.0f, 1.0f);
+
+    const float t = mRightArmPointingFovBlend;
+    if (mRightArmPointingFovEasing == "linear") return t;
+    if (mRightArmPointingFovEasing == "ease_in") return t * t;
+    if (mRightArmPointingFovEasing == "ease_out") return 1.0f - (1.0f - t) * (1.0f - t);
+    if (mRightArmPointingFovEasing == "exponential")
+        return t <= 0.0f ? 0.0f : std::pow(2.0f, 10.0f * (t - 1.0f));
+    if (mRightArmPointingFovEasing == "bounce") {
+        const auto bounceOut = [](float x) {
+            if (x < 1.0f / 2.75f) return 7.5625f * x * x;
+            if (x < 2.0f / 2.75f) { x -= 1.5f / 2.75f; return 7.5625f * x * x + 0.75f; }
+            if (x < 2.5f / 2.75f) { x -= 2.25f / 2.75f; return 7.5625f * x * x + 0.9375f; }
+            x -= 2.625f / 2.75f;
+            return 7.5625f * x * x + 0.984375f;
+        };
+        return bounceOut(t);
+    }
+    return t < 0.5f ? 2.0f * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) / 2.0f;
 }
 
 bool AimBodyConfig::reload()

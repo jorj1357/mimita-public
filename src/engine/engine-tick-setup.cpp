@@ -154,6 +154,19 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         NetworkingConfig::instance().pollReload();
         PlayerVisualsConfig::instance().pollReload();
         PostFX::instance().pollReload();
+        const auto& cameraConfig = CamConfig::instance().data();
+        int edgeMode = 4; // circle
+        if (cameraConfig.lensDistortionEdgeMode == "black") edgeMode = 0;
+        else if (cameraConfig.lensDistortionEdgeMode == "vignette") edgeMode = 1;
+        else if (cameraConfig.lensDistortionEdgeMode == "clamp") edgeMode = 2;
+        else if (cameraConfig.lensDistortionEdgeMode == "repeat") edgeMode = 3;
+        PostFX::instance().setCameraLensDistortion(
+            cameraConfig.lensDistortion, cameraConfig.lensDistortionCurve,
+            cameraConfig.lensDistortionZoom, edgeMode,
+            cameraConfig.lensDistortionEdgeRadius,
+            cameraConfig.lensDistortionEdgeSoftness,
+            cameraConfig.lensDistortionEdgeDarkness,
+            cameraConfig.lensDistortionPeripheralBlur);
         if (CollisionLodConfig::instance().pollHotReload())
             redecimateCollision(THE_WORLD);
         CollisionConfig::instance().pollHotReload();

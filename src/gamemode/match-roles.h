@@ -28,12 +28,24 @@ struct ActorPresetPresentation
     bool bloodEffects = true;
     bool hasMuzzleFlash = false;
     bool muzzleFlash = true;
+    bool hasHitMarkers = false;
+    bool hitMarkers = true;
+    bool hasHitSounds = false;
+    bool hitSounds = true;
 };
 
 struct ActorPresetWeaponOverride
 {
     bool hasDamage = false;
     float damage = 0.0f;
+    bool hasDamageScale = false;
+    float damageScale = 1.0f;
+    bool hasHeadshotMultiplier = false;
+    float headshotMultiplier = 1.0f;
+    bool hasSpread = false;
+    float spread = 0.0f;
+    bool hasRecoil = false;
+    float recoil = 0.0f;
     bool hasFireDelay = false;
     float fireDelay = 0.0f;
     bool hasReloadTime = false;
@@ -71,6 +83,15 @@ struct MatchRoleDefinition
     std::string weaponSet;
     std::string startingWeapon;
     std::string behaviorProfile;
+    // Hierarchy: a role may reference an actor preset which owns the actual
+    // actor configuration (movement/weapons/behavior/presentation).
+    std::string actorPresetId;
+    // Ordered-team id (e.g. "ct") and named spawn group this role uses.
+    std::string teamId;
+    std::string spawnGroup;
+    // Objective actions this role may perform (e.g. "plant", "defuse",
+    // "pickup"). Empty means the objective system's own default policy.
+    std::vector<std::string> objectivePermissions;
     std::string avatarName;
     bool avatarForced = false;
     std::vector<std::string> allowedAvatars;

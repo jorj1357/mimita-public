@@ -13,6 +13,7 @@
 #include "gui/ui-system.h"
 #include "audio/hitmarker-audio.h"
 #include "effects/hit-effects.h"
+#include "combat/actor-preset-weapons.h"
 
 float gHitmarkerTimer = 0.0f;
 
@@ -35,6 +36,8 @@ void hitmarker(int damage)
 void hitmarkerVisualOnly(int damage)
 {
     (void)damage;
+    if (!ActorPresetWeapons::hitMarkersEnabled())
+        return;
     if (!HitEffects::config().hitmarkerVisual.enabled)
         return;
     gHitmarkerTimer = hitmarkerDuration();

@@ -17,5 +17,7 @@ bool hitEffectsEnabled();
 bool worldImpactEffectsEnabled();
 bool bloodEffectsEnabled();
 bool muzzleFlashEnabled();
+bool hitMarkersEnabled();
+bool hitSoundsEnabled();
 
 } // namespace ActorPresetWeapons

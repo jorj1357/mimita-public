@@ -373,21 +373,22 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
     // Team commands are player actions, not host administration.  They must
     // be processed before the host gate so the server can validate and apply
     // them authoritatively for any connected player.
-    if (commandStr == "teamlist")
+    if (commandStr == "team_list" || commandStr == "teamlist")
     {
         ack(true, serverActiveTeamList().c_str());
         return;
     }
-    if (commandStr.rfind("teampick ", 0) == 0)
+    if (commandStr.rfind("team_pick ", 0) == 0 || commandStr.rfind("teampick ", 0) == 0)
     {
+        const size_t space = commandStr.find(' ');
         try {
-            const int team = std::stoi(commandStr.substr(9)) - 1;
+            const int team = std::stoi(commandStr.substr(space + 1)) - 1;
             std::string message;
             const bool accepted = serverRequestTeamChange(
                 it->second.id, team, sock, players, tick, totalPacketsOut, message);
             ack(accepted, message.c_str());
         } catch (...) {
-            ack(false, "rejected: usage teampick <number>");
+            ack(false, "rejected: usage team_pick <number>");
         }
         return;
     }

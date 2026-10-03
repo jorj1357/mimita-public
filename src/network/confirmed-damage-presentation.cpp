@@ -11,6 +11,7 @@
 #include "network/confirmed-damage-presentation.h"
 
 #include "audio/hitmarker-audio.h"
+#include "combat/actor-preset-weapons.h"
 #include "combat/death-system.h"
 #include "combat/weapon-registry.h"
 #include "config/weapon-hitfx-config.h"
@@ -120,14 +121,14 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
 
     // In server-authoritative mode, always show confirmed feedback.
     // In prediction-only mode, only show if the individual flags are set.
-    if (presentation.hitmarker)
+    if (presentation.hitmarker && ActorPresetWeapons::hitMarkersEnabled())
     {
         if (sink && sink->showHitmarker)
             sink->showHitmarker(event.damage, sink->user);
         else if (authMode)
             hitmarkerVisualOnly(event.damage);
     }
-    if (presentation.hitSound)
+    if (presentation.hitSound && ActorPresetWeapons::hitSoundsEnabled())
     {
         if (sink && sink->playHitSound)
             sink->playHitSound(event.damage, sink->user);

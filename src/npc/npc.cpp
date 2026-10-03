@@ -36,8 +36,7 @@
 #include "combat/weapon-registry.h"
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
-
-static constexpr float SEARCH_TIMEOUT = 8.0f;
+#include "actor/actor-intent.h"
 
 float targetCanSeeNpc(const Npc& npc, const World& world)
 {
@@ -175,7 +174,7 @@ static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
     return bestPos + bestVel * predictTime;
 }
 
-void senseWorld(Npc& npc, const Player& player, float dt)
+void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
 {
     NpcSensorContext sensors;
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
@@ -189,40 +188,110 @@ void senseWorld(Npc& npc, const Player& player, float dt)
             npc.posRingCount++;
     }
 
-    // DEBUG MODE: no reaction delay, immediate target tracking (temporary)
-    glm::vec3 rawPos = player.pos;
-    glm::vec3 rawVel = player.vel;
-    sensors.targetPos = rawPos;
-    sensors.targetVel = rawVel;
-    sensors.toTarget = sensors.targetPos - npc.body.pos;
-    sensors.targetDistance = glm::length(sensors.toTarget);
-    sensors.hasTarget = !player.dead && player.currentHp > 0;
-    sensors.predictedTarget = sensors.targetPos;
+    const auto& cfg = NpcDifficultyConfig::instance().settings();
+    PerceptionTuning tuning;
+    tuning.horizontalFovDegrees = cfg.perceptionFovDegrees;
+    tuning.sightRangeMeters = cfg.perceptionSightRange;
+    tuning.hearingRangeMeters = cfg.perceptionHearingRange;
+    tuning.reactionDelayTicks = cfg.perceptionReactionTicks;
+    tuning.memoryTicks = cfg.perceptionMemoryTicks;
+    tuning.predictionSeconds = cfg.perceptionPredictionSeconds;
+    tuning.predictionErrorMeters = cfg.perceptionPredictionErrorMeters;
+
+    // Candidate is a live hostile actor. FOV/range/LOS are applied by the
+    // perception module so acquisition can never skip those gates.
+    const bool candidateValid = !player.dead && player.currentHp > 0;
+
+    // Line of sight for perception uses the same shared ray trace as combat.
+    // Rate-limited to every 5 ticks (matching the prior cache cadence) so the
+    // chunk query does not run every tick for every NPC. Between checks the
+    // last result is retained, which is fine at 60 Hz for acquisition.
+    bool losBlocked = npc.cachedLoSBlocked;
+    if (candidateValid) {
+        static const int LOS_INTERVAL = 5;
+        if (++npc.losTickCounter >= LOS_INTERVAL)
+            npc.losTickCounter = 0;
+        if (npc.losTickCounter == 0) {
+            glm::vec3 fromPos = npc.body.pos + NpcCombat::npcMuzzleOffset();
+            glm::vec3 toPos = player.pos + NpcCombat::npcMuzzleOffset();
+            glm::vec3 losDir = toPos - fromPos;
+            const float losDist = glm::length(losDir);
+            losBlocked = false;
+            if (losDist > 0.5f) {
+                losDir /= losDist;
+                float hitDist = losDist;
+                if (rayTraverseGridCells(world, fromPos, losDir, losDist, hitDist, nullptr))
+                    losBlocked = hitDist > 0.1f && hitDist < losDist - 0.5f;
+            }
+            npc.cachedLoSBlocked = losBlocked;
+        }
+    }
+
+    const glm::vec3 facing = glm::length(npc.currentFacing) > 0.0001f
+        ? npc.currentFacing : glm::vec3(1.0f, 0.0f, 0.0f);
+    const PerceptionSnapshot snap = perceive(
+        npc, candidateValid, player.pos, player.vel, facing, losBlocked, tuning);
+    npc.perception = snap;
+    updateMemory(npc.targetMemory, snap, player.pos, player.vel, dt, tuning);
+
+    // Aim error grows with uncertainty: a remembered, unseen target is aimed
+    // at less precisely than a currently visible one.
+    const float errorMeters = tuning.predictionErrorMeters;
+    npc.belief = buildBelief(snap, npc.targetMemory, /*targetActorId=*/0,
+                             errorMeters, tuning);
 
     npc.previousPosition = npc.body.pos;
 
-    // During search phase, use last known position as pseudo-target
-    if (!sensors.hasTarget && npc.stateMachine.lastKnownAge < SEARCH_TIMEOUT && npc.stateMachine.lastKnownAge > 0.5f)
-    {
-        sensors.targetPos = npc.stateMachine.lastKnownTarget;
-        sensors.toTarget = sensors.targetPos - npc.body.pos;
-        sensors.targetDistance = glm::length(sensors.toTarget);
-        sensors.hasTarget = sensors.targetDistance <= npc.tuning.awarenessRange * 1.5f;
+    // Target acquisition now requires visibility (FOV + range + LOS + alive).
+    sensors.hasTarget = npc.belief.hasVisibleTarget;
+    if (sensors.hasTarget) {
+        sensors.targetPos = player.pos;
+        sensors.targetVel = player.vel;
+        sensors.predictedTarget = npc.belief.aimPosition;
+    } else if (npc.belief.hasTarget) {
+        // Search phase: aim at the uncertain last-known position.
+        sensors.targetPos = npc.belief.lastKnownPosition;
         sensors.targetVel = glm::vec3(0.0f);
-        sensors.predictedTarget = sensors.targetPos;
+        sensors.predictedTarget = npc.belief.aimPosition;
+    } else {
+        sensors.targetPos = player.pos;
+        sensors.targetVel = player.vel;
+        sensors.predictedTarget = player.pos;
+    }
+    sensors.toTarget = sensors.targetPos - npc.body.pos;
+    sensors.targetDistance = glm::length(sensors.toTarget);
+
+    // Keep the legacy lastKnown fields for the search state machine.
+    if (snap.visible) {
+        npc.stateMachine.lastKnownTarget = player.pos;
+        npc.stateMachine.lastKnownAge = 0.0f;
+    } else if (npc.belief.hasTarget) {
+        npc.stateMachine.lastKnownAge = npc.targetMemory.ageSeconds;
+    } else {
+        npc.stateMachine.lastKnownAge += dt;
     }
 
     npc.sensors = sensors;
 
-    if (sensors.hasTarget && npc.stateMachine.lastKnownAge < 0.1f)
+    // ── Utility context + goal selection ───────────────────────────
+    // Objective fields are filled by objective-aware callers (TeamBrain in a
+    // later checkpoint); until then they stay false and only the combat/
+    // survival goals are competitive.
+    UtilityContext uctx = npc.utilityContext;
+    uctx.hasVisibleTarget = npc.belief.hasVisibleTarget;
+    uctx.hasKnownTarget = npc.belief.hasTarget;
+    uctx.targetDistance = sensors.targetDistance;
+    uctx.targetConfidence = npc.belief.confidence;
+    uctx.loSBlocked = !npc.perception.hasLineOfSight && npc.perception.candidateValid;
+    uctx.healthFraction = npc.body.maxHp > 0
+        ? (float)npc.body.currentHp / (float)npc.body.maxHp : 1.0f;
     {
-        npc.stateMachine.lastKnownTarget = sensors.targetPos;
-        npc.stateMachine.lastKnownAge = 0.0f;
+        const auto& rt = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
+        uctx.weaponReady = rt == npc.body.weaponRuntimes.end()
+            || (!rt->second.isReloading && rt->second.currentAmmo > 0);
     }
-    else if (!sensors.hasTarget)
-    {
-        npc.stateMachine.lastKnownAge += dt;
-    }
+    npc.utilityContext = uctx;
+    selectUtilityGoal(npc.utilityContext, npc.utility, dt);
 
     if (sensors.hasTarget && npc.lastTargetLogDistance < 0.0f)
     {
@@ -257,9 +326,48 @@ void logStateChange(const Npc& npc, NpcState oldState, NpcState newState)
 
 // Translate the current brain state into an abstract navigation goal.
 // Combat decisions stay here; navigation only sees positions and distances.
+// The utility goal (when it covers the situation) takes precedence; otherwise
+// the legacy state mapping is used so the state machine remains the executor.
 NpcGoal makeNavGoal(const Npc& npc)
 {
     NpcGoal goal;
+    switch (npc.utility.currentGoal) {
+        case UtilityGoalKind::KillTarget:
+            if (npc.sensors.hasTarget) {
+                goal.kind = NpcGoalKind::FollowActor;
+                return goal;
+            }
+            break;
+        case UtilityGoalKind::Survive:
+        case UtilityGoalKind::TakeCover:
+            if (npc.sensors.hasTarget) {
+                goal.kind = NpcGoalKind::FleeActor;
+                goal.desiredDistance = 8.0f;
+                return goal;
+            }
+            break;
+        case UtilityGoalKind::MoveToObjective:
+        case UtilityGoalKind::RetakeSite:
+        case UtilityGoalKind::RotateToSite:
+            if (glm::length(npc.utilityContext.objectivePos) > 0.001f) {
+                goal.kind = NpcGoalKind::ReachPosition;
+                goal.targetPos = npc.utilityContext.objectivePos;
+                return goal;
+            }
+            break;
+        case UtilityGoalKind::PlantObjective:
+        case UtilityGoalKind::DefuseObjective:
+            if (glm::length(npc.utilityContext.objectivePos) > 0.001f) {
+                goal.kind = NpcGoalKind::ReachPosition;
+                goal.targetPos = npc.utilityContext.objectivePos;
+                goal.tolerance = 1.0f;
+                return goal;
+            }
+            break;
+        default:
+            break;
+    }
+
     if (!npc.sensors.hasTarget) {
         if (npc.stateMachine.currentState == NpcState::Chase) {
             goal.kind = NpcGoalKind::ReachPosition;
@@ -301,15 +409,21 @@ NpcGoal makeNavGoal(const Npc& npc)
 
 InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bool attack, bool downDash, float dt)
 {
-    InputState input;
-    input.wishMoveXY = {moveDir.x, moveDir.y};
-    input.movementPressed = glm::length(moveDir) > 0.001f;
-    input.jumpHeld = jump;
-    input.jumpPressed = jump;
-    input.dashPressed = dash;
-    input.groundReturnPressed = false;
+    // Route the brain's tactical output through the shared ActorIntent
+    // boundary so NPC, human, script, and replay all share one execution
+    // translation. Facing smoothing below stays the NPC brain's responsibility.
+    ActorIntent intent;
+    intent.move = glm::vec2(moveDir.x, moveDir.y);
+    intent.jump = jump;
+    intent.dash = dash;
+    intent.attack = attack;
+    intent.reload = false;
+    intent.interact = false;
+    intent.lookDirection = npc.currentFacing;
+
+    InputState input = ActorIntentAdapter::toInputState(
+        intent, glm::length(moveDir) > 0.001f, npc.currentFacing);
     input.downDashPressed = downDash;
-    input.freezeHeld = false;
 
     glm::vec3 desiredFwd;
 
@@ -615,7 +729,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
-    senseWorld(npc, player, safeDt);
+    senseWorld(npc, world, player, safeDt);
 
     // Hearing: if no target, react to nearby combat sounds
     if (!npc.sensors.hasTarget && npc.stateMachine.lastKnownAge > 2.0f)
@@ -935,37 +1049,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             jump = true;
     }
 
-    // Compute LOS once, cached for dash decision and combat line-of-sight.
-    // Rate-limited: only check every 5 ticks to reduce chunk query cost.
-    // Uses ray-based chunk-cell traversal instead of full AABB query.
-    {
-        static const int LOS_INTERVAL = 5;
-        if (++npc.losTickCounter >= LOS_INTERVAL)
-            npc.losTickCounter = 0;
-
-        glm::vec3 fromPos = npc.body.pos + NpcCombat::npcMuzzleOffset();
-        glm::vec3 toPos = npc.sensors.targetPos + NpcCombat::npcMuzzleOffset();
-        glm::vec3 losDir = toPos - fromPos;
-        float losDist = glm::length(losDir);
-
-        if (losDist > 0.5f && npc.sensors.hasTarget && npc.losTickCounter == 0)
-        {
-            losDir /= losDist;
-
-            // Reuse the shared ray vs grid-cells trace (the same one weapon
-            // fire uses). It walks chunk cells AND the coarse large-triangle
-            // grid, so big floors/walls (chainofjudgement's arena floor and
-            // 150m walls) block NPC LOS exactly like they block players.
-            // Preserves the old inlined DDA's blocking window (0.1, losDist-0.5).
-            npc.cachedLoSBlocked = false;
-            float hitDist = losDist;
-            if (rayTraverseGridCells(world, fromPos, losDir, losDist, hitDist, nullptr))
-                npc.cachedLoSBlocked = hitDist > 0.1f && hitDist < losDist - 0.5f;
-        }
-        // If LOS was not checked this tick, cachedLoSBlocked retains its previous value.
-        // This means stale LOS results persist for up to LOS_INTERVAL ticks, which is fine
-        // for dash decisions and AI targeting.
-    }
+    // LOS is owned by perception (senseWorld), which uses the same shared ray
+    // trace; cachedLoSBlocked is kept in sync there. Dash and combat decisions
+    // reuse it instead of tracing a second time.
 
     // Situaltional dash (skip LOS gather when dash is on cooldown)
     if (!dash && npc.sensors.hasTarget && npc.dashCooldown <= 0.0f)
@@ -1196,10 +1282,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     }
 
     // Reaction delay: after acquiring a target, wait before the first shot.
-    // Profile-driven; defaults to 0 (immediate) when no profile applies.
+    // Uses the behavior profile when it sets one; otherwise falls back to the
+    // perception reaction delay (default 8 ticks) so every NPC reacts like a
+    // human rather than firing the instant a target becomes visible.
     if (npc.sensors.hasTarget && !npc.prevHadTarget)
     {
-        npc.reactionTimer = std::max(0.0f, npc.behavior.reactionDelay);
+        const float perceptionDelay = (float)NpcDifficultyConfig::instance()
+            .settings().perceptionReactionTicks / 60.0f;
+        npc.reactionTimer = npc.behavior.reactionDelay > 0.0f
+            ? npc.behavior.reactionDelay : perceptionDelay;
         if (npc.reactionTimer > 0.0f)
         {
             npcLog("npc-react npc=%u profile=%s delay=%.2f",

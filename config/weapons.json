@@ -58,7 +58,7 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 2.0,
+    "beam_thickness": 0.01,
     "beam_world_thickness": 0.0,
     "uses_physics_projectile": false,
     "sound": {
@@ -69,9 +69,9 @@
       "equip": "weapon/revolver/revolverequip"
     },
     "custom_params": {
-      "distanceFalloffStart": 60.0,
-      "minDamageFraction": 0.02,
-      "falloffExponent": 2.0,
+      "distanceFalloffStart": 240.0,
+      "minDamageFraction": 0.5,
+      "falloffExponent": 1.1,
       "limbDamageMultiplier": 0.75,
       "minAngleFactor": 0.45,
       "shootPoseTime": 0.12,

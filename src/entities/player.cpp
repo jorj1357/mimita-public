@@ -20,11 +20,16 @@
 
 #include "audio/audio.h"
 #include "avatar/character-registry.h"
+#include "camera.h"
+#include "config/camera-config.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "physics/config.h"
+
+extern Player* gpPlayer;
+extern Camera* gpCamera;
 
 // =====================================================
 // Player
@@ -329,7 +334,8 @@ void Player::updateAudio(float dt)
     jump.didGroundJump = jump.didAirJump = dash.didDash = dash.didDownDash = ground.didLand = freeze.didFreeze = false;
 }
 
-void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockbackForce)
+void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockbackForce,
+                        const glm::vec3& damageOrigin)
 {
     printf("[APPLY DAMAGE] target=%s hpBefore=%d damage=%d\n",
            username.c_str(), currentHp, damage);
@@ -349,6 +355,29 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
     }
 
     printf("[APPLY DAMAGE] hpAfter=%d actualDamage=%d\n", currentHp, actualDamage);
+
+    if (this == gpPlayer && gpCamera) {
+        const auto& flinch = CamConfig::instance().data();
+        if (flinch.hitFlinchEnabled) {
+            const float damageT = std::clamp(
+                static_cast<float>(actualDamage) / flinch.hitFlinchDamageAtHigh,
+                0.0f, 1.0f);
+            const float distance = glm::length(damageOrigin - gpCamera->pos);
+            const float distanceT = std::clamp(
+                1.0f - distance / flinch.hitFlinchDistance, 0.0f, 1.0f);
+            const float distanceScale = std::pow(distanceT, flinch.hitFlinchDistanceExponent);
+            const float strength = flinch.hitFlinchLow +
+                (flinch.hitFlinchHigh - flinch.hitFlinchLow) * damageT;
+
+            // Deterministic variation: no global RNG or frame-dependent noise.
+            const float seed = static_cast<float>(currentHp + actualDamage) * 0.173f +
+                damageOrigin.x * 0.071f + damageOrigin.y * 0.113f + damageOrigin.z * 0.197f;
+            const float variation = std::sin(seed) * flinch.hitFlinchRandomness;
+            gpCamera->addPunch(
+                (flinch.hitFlinchPitch * strength + variation) * distanceScale,
+                (flinch.hitFlinchYaw * strength + variation * 0.5f) * distanceScale);
+        }
+    }
     
     // Play hurt sound with volume/pitch based on damage
     float severity = std::clamp((float)actualDamage / 100.0f, 0.0f, 1.0f);

@@ -625,7 +625,9 @@ public:
     WeaponCollisionRuntimeDebug weaponCollisionDebug;
 
     // -------- Combat --------
-    void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0), float knockbackForce = 0.0f);
+    void takeDamage(int damage, const glm::vec3& knockbackDir = glm::vec3(0),
+                    float knockbackForce = 0.0f,
+                    const glm::vec3& damageOrigin = glm::vec3(0.0f));
 
     // -------- Chat Bubble State --------
     ActorChatState chatState;

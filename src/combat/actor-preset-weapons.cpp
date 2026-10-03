@@ -16,6 +16,8 @@ bool gHitEffectsEnabled = true;
 bool gWorldImpactEffectsEnabled = true;
 bool gBloodEffectsEnabled = true;
 bool gMuzzleFlashEnabled = true;
+bool gHitMarkersEnabled = true;
+bool gHitSoundsEnabled = true;
 
 void applyPresentation(WeaponDefinition& weapon,
                        const ActorPresetPresentation& p)
@@ -31,6 +33,10 @@ void applyOverride(WeaponDefinition& weapon,
                    const ActorPresetWeaponOverride& o)
 {
     if (o.hasDamage) weapon.damage = o.damage;
+    if (o.hasDamageScale) weapon.damageScale = std::max(0.0f, o.damageScale);
+    if (o.hasHeadshotMultiplier) weapon.headshotMultiplier = std::max(0.0f, o.headshotMultiplier);
+    if (o.hasSpread) weapon.spread = std::max(0.0f, o.spread);
+    if (o.hasRecoil) weapon.recoil = std::max(0.0f, o.recoil);
     if (o.hasFireDelay) weapon.fireDelay = std::max(0.0f, o.fireDelay);
     if (o.hasReloadTime) weapon.reloadTime = std::max(0.0f, o.reloadTime);
     if (o.hasMagazineSize) weapon.magazineSize = std::max(0, o.magazineSize);
@@ -65,6 +71,8 @@ bool apply(const MatchRoleDefinition& preset)
     gWorldImpactEffectsEnabled = !preset.presentation.hasWorldImpactEffects || preset.presentation.worldImpactEffects;
     gBloodEffectsEnabled = !preset.presentation.hasBloodEffects || preset.presentation.bloodEffects;
     gMuzzleFlashEnabled = !preset.presentation.hasMuzzleFlash || preset.presentation.muzzleFlash;
+    gHitMarkersEnabled = !preset.presentation.hasHitMarkers || preset.presentation.hitMarkers;
+    gHitSoundsEnabled = !preset.presentation.hasHitSounds || preset.presentation.hitSounds;
 
     for (const auto& entry : preset.weaponOverrides) {
         auto it = effective.find(entry.first);
@@ -95,6 +103,8 @@ void clear()
     gWorldImpactEffectsEnabled = true;
     gBloodEffectsEnabled = true;
     gMuzzleFlashEnabled = true;
+    gHitMarkersEnabled = true;
+    gHitSoundsEnabled = true;
 }
 
 const std::string& activePresetId()
@@ -107,5 +117,7 @@ bool hitEffectsEnabled() { return gHitEffectsEnabled; }
 bool worldImpactEffectsEnabled() { return gWorldImpactEffectsEnabled; }
 bool bloodEffectsEnabled() { return gBloodEffectsEnabled; }
 bool muzzleFlashEnabled() { return gMuzzleFlashEnabled; }
+bool hitMarkersEnabled() { return gHitMarkersEnabled; }
+bool hitSoundsEnabled() { return gHitSoundsEnabled; }
 
 } // namespace ActorPresetWeapons

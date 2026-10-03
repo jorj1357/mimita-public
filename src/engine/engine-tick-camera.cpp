@@ -7,6 +7,7 @@
 #include "camera.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "entities/aimbody-config.h"
 #include "npc/npc.h"
 #include "physics/physics-debug-movement.h"
 #include "audio/audio.h"
@@ -940,6 +941,18 @@ void engineTickCamera(Engine& engine, float dt)
         camera.fov = camCfg.fov;
         camera.follow(player.pos, camCfg.offset, camCfg.positionStiffness);
         camera.smoothCollision(player.pos, world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
+    }
+
+    // RMB FOV zoom is presentation-only and follows the same aimbody hold
+    // state. Apply it after camera mode selection so every camera mode uses
+    // the camconfig base FOV as its source.
+    if (!replayPlaybackActive && !gReplayEditor.isLoaded()) {
+        const bool rightMouseHeld = AimBodyConfig::instance().rightArmPointingRmb() &&
+            glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+        const float blend = AimBodyConfig::instance().updateRightArmPointingFovBlend(
+            rightMouseHeld, dt);
+        camera.fov = CamConfig::instance().data().fov * glm::mix(
+            1.0f, AimBodyConfig::instance().rightArmPointingFovMultiplier(), blend);
     }
 
     // Debug: final camera state after all evaluation

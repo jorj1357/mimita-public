@@ -146,7 +146,7 @@ static void doExplosion(
                 float kbLen = glm::length(kbDir);
                 if (kbLen < 0.0001f) kbDir = glm::vec3(0.0f, 1.0f, 0.0f);
                 else kbDir /= kbLen;
-                owner.takeDamage(finalDmg, kbDir, kb);
+                owner.takeDamage(finalDmg, kbDir, kb, position);
                 owner.lastDamagedBy = owner.username;
                 owner.killedByWeapon = def.displayName.empty() ? def.id : def.displayName;
             }
@@ -176,7 +176,7 @@ static void doExplosion(
             float kbLen = glm::length(kbDir);
             if (kbLen < 0.0001f) kbDir = glm::vec3(0.0f, 1.0f, 0.0f);
             else kbDir /= kbLen;
-            victimPlayer->takeDamage(finalDmg, kbDir, kb);
+            victimPlayer->takeDamage(finalDmg, kbDir, kb, position);
             victimPlayer->lastDamagedBy = owner.username.empty()
                 ? "NPC" : owner.username;
             victimPlayer->killedByWeapon = def.displayName.empty() ? def.id : def.displayName;

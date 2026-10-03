@@ -414,7 +414,7 @@ void PersistentPhysicsSystem::doExplosion(
             float t = dist / radius;
             float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
             glm::vec3 knockback = dir * knockbackStrength * knockScale * obj.cfg.explosionSelfKnockbackMul;
-            player.takeDamage(finalDmg, knockback, 8.0f);
+            player.takeDamage(finalDmg, knockback, 8.0f, pos);
             Debug::log(Debug::Category::Weapons, "[POBJ] player damage=%d dist=%.1f knockback=(%.2f %.2f %.2f)\n",
                        finalDmg, dist, knockback.x, knockback.y, knockback.z);
         }

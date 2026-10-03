@@ -38,22 +38,22 @@
     //
     // FAST SOURCE PRESET VALUE:
     // 20 MiMITA units/sec.
-    "max_speed": 25.0,
+    "max_speed": 30.0,
 
     // Keep server-side ground movement validation at the same speed.
-    "ground_speed": 25.0,
+    "ground_speed": 30.0,
 
     // Extremely high ground acceleration from the fast Source preset.
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 5.0,
+    "ground_acceleration": 2.0,
 
     // Ground friction from the fast Source preset.
     //
     // Higher values remove ground velocity more aggressively when movement
     // input is released.
-    "friction": 5.25,
+    "friction": 1.25,
 
     // Very small stop-speed threshold from the fast preset.
     //
@@ -94,7 +94,7 @@
     // Air acceleration strength.
     //
     // Matches the fast Source preset.
-    "air_acceleration": 6.0,
+    "air_acceleration": 4.0,
 
     // Projection cap for Source-style air acceleration.
     //
@@ -104,7 +104,7 @@
     // building total speed.
     //
     // Matches the fast Source preset.
-    "air_max_wishspeed": 3.0,
+    "air_max_wishspeed": 6.0,
 
     // Historical Valve-style AirAccelerate behavior.
     //
@@ -151,8 +151,8 @@
     // Remember jump input for this long before landing.
     //
     // Matches the fast Source preset.
-    "jump_buffer_time": 0.1,
-    // "jump_buffer_time": 0.2,
+    // "jump_buffer_time": 0.1,
+    "jump_buffer_time": 0.2,
 
     // No coyote-time forgiveness.
     //

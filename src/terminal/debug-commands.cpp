@@ -27,6 +27,9 @@
 #include "network/server-gamemode.h"
 #include "network/community-server-config.h"
 #include "map/map-catalog.h"
+#include "gamemode/map-config.h"
+#include "entities/player.h"
+#include <glm/glm.hpp>
 
 void registerDebugCommands()
 {
@@ -90,26 +93,82 @@ void registerDebugCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "teamlist", "List teams configured by the active gamemode", "teamlist",
+        "team_list", "List the active gamemode's teams in JSON order", "team_list",
         [](const std::vector<std::string>&) {
             if (::gpMpContext && ::gpMpContext->active)
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "teamlist");
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "team_list");
             else if (MimitaNet::isServerHost())
-                Terminal::instance().addLog("[TEAMLIST] " + MimitaNet::serverActiveTeamList());
-            else Terminal::instance().addLog("[TEAMLIST] not connected");
-        }
+                Terminal::instance().addLog("[TEAM_LIST] " + MimitaNet::serverActiveTeamList());
+            else Terminal::instance().addLog("[TEAM_LIST] not connected");
+        },
+        "", CommandCategory::Duel, {"teamlist"}
     });
     Terminal::instance().registerCommand({
-        "teampick", "Request an authoritative team change", "teampick <number>",
+        "team_pick", "Request an authoritative team change", "team_pick <number>",
         [](const std::vector<std::string>& args) {
-            if (args.empty()) { Terminal::instance().addLog("[TEAMPICK] Usage: teampick <number>"); return; }
-            const std::string command = "teampick " + args[0];
+            if (args.empty()) { Terminal::instance().addLog("[TEAM_PICK] Usage: team_pick <number>"); return; }
+            const std::string command = "team_pick " + args[0];
             if (::gpMpContext && ::gpMpContext->active)
                 MimitaNet::mpSendServerCommand(*::gpMpContext, command);
             else if (MimitaNet::isServerHost())
-                Terminal::instance().addLog("[TEAMPICK] host must be connected to its server session");
-            else Terminal::instance().addLog("[TEAMPICK] not connected");
-        }
+                Terminal::instance().addLog("[TEAM_PICK] host must be connected to its server session");
+            else Terminal::instance().addLog("[TEAM_PICK] not connected");
+        },
+        "", CommandCategory::Duel, {"teampick"}
+    });
+    Terminal::instance().registerCommand({
+        "site_debug", "Inspect/edit bomb sites: show|hide|select <id>|move [x y z]|print|save",
+        "site_debug <show|hide|select <id>|move [x y z]|print|save>",
+        [](const std::vector<std::string>& args) {
+            auto& reg = MapConfigRegistry::instance();
+            if (reg.current().mapId.empty())
+                reg.load(MimitaNet::serverGamemodeState().mapId);
+            const auto& cfg = reg.current();
+            if (args.empty()) {
+                Terminal::instance().addLog("[SITE] usage: site_debug <show|hide|select <id>|move [x y z]|print|save>");
+                return;
+            }
+            const std::string& cmd = args[0];
+            if (cmd == "show" || cmd == "hide") {
+                const bool visible = cmd == "show";
+                for (const auto& site : cfg.bombSites)
+                    reg.setSiteVisibility(site.id, visible);
+                Terminal::instance().addLog(std::string("[SITE] ") + cmd + " " +
+                    std::to_string(cfg.bombSites.size()) + " site(s)");
+            } else if (cmd == "select") {
+                if (args.size() < 2) { Terminal::instance().addLog("[SITE] select <id>"); return; }
+                const BombSite* site = reg.findSite(args[1]);
+                if (!site) { Terminal::instance().addLog("[SITE] unknown site " + args[1]); return; }
+                Terminal::instance().addLog("[SITE] selected " + site->id);
+            } else if (cmd == "move") {
+                if (args.size() < 2) { Terminal::instance().addLog("[SITE] move <id> [x y z]"); return; }
+                const BombSite* site = reg.findSite(args[1]);
+                if (!site) { Terminal::instance().addLog("[SITE] unknown site " + args[1]); return; }
+                glm::vec3 pos;
+                if (args.size() >= 5) {
+                    pos = glm::vec3(std::stof(args[2]), std::stof(args[3]), std::stof(args[4]));
+                } else {
+                    pos = THE_PLAYER.pos;  // move to current player position
+                }
+                reg.setSitePosition(site->id, pos);
+                Terminal::instance().addLog("[SITE] moved " + site->id + " to (" +
+                    std::to_string(pos.x) + " " + std::to_string(pos.y) + " " +
+                    std::to_string(pos.z) + ")");
+            } else if (cmd == "print") {
+                if (cfg.bombSites.empty()) { Terminal::instance().addLog("[SITE] no sites"); return; }
+                for (const auto& site : cfg.bombSites) {
+                    Terminal::instance().addLog("[SITE] " + site.id + " pos=(" +
+                        std::to_string(site.position.x) + " " + std::to_string(site.position.y) +
+                        " " + std::to_string(site.position.z) + ") r=" +
+                        std::to_string(site.radius) + (site.hasPosition ? "" : " UNVERIFIED"));
+                }
+            } else if (cmd == "save") {
+                Terminal::instance().addLog(reg.save() ? "[SITE] saved" : "[SITE] save failed");
+            } else {
+                Terminal::instance().addLog("[SITE] unknown subcommand " + cmd);
+            }
+        },
+        "", CommandCategory::Duel
     });
     Terminal::instance().registerCommand({
         "respawn_all", "Respawn every server player and NPC", "respawn_all",

@@ -26,8 +26,8 @@
     "damage_numbers": false,
     "hit_effects": false,
     "world_impact_effects": false,
-    "blood_effects": false,
-    "muzzle_flash": false
+    "blood_effects": true,
+    "muzzle_flash": true
   },
   "weapon_overrides": {
     "revolver": {
@@ -36,6 +36,7 @@
       "reload_time": 2.2,
       "magazine_size": 6,
       "reserve_ammo": 36,
+      "recoil": 0.0,
       "hitscan": {
         "enabled": true,
         "beam_thickness": 0.0,
@@ -54,7 +55,23 @@
       "reserve_ammo": 32,
       "hitscan": {
         "enabled": true,
-        "beam_thickness": 2.0,
+        "beam_thickness": 0.0,
+        "world_thickness": 0.0
+      }
+    },
+    "hitscan_rifle": {
+      "damage": 30,
+      "damage_scale": 1.0,
+      "headshot_multiplier": 4.0,
+      "fire_delay": 0.1,
+      "reload_time": 2.4,
+      "magazine_size": 30,
+      "reserve_ammo": 180,
+      "spread": 0.0,
+      "recoil": 0.0,
+      "hitscan": {
+        "enabled": true,
+        "beam_thickness": 0.0,
         "world_thickness": 0.0
       }
     }

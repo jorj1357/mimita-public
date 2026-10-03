@@ -27,6 +27,7 @@
 #include "network/community-match-client.h"
 #include "network/multiplayer-context.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/map-config.h"
 #include "terminal/terminal-state.h"
 #include "npc/npc.h"
 
@@ -260,6 +261,17 @@ void GamemodeManager::renderWorldElements(Camera& camera, Player& player) {
 
     // ── Feature: pass effect ─────────────────────────────────────────
     renderPassEffect(camera);
+
+    // ── Bomb site debug zones (Counter-Strike and future site modes) ──
+    // Rendered only when a site's visible_debug flag is set via site_debug.
+    if (gm.victoryCondition == "rounds") {
+        const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
+        for (const BombSite& site : mapCfg.bombSites) {
+            if (!site.visibleDebug || !site.hasPosition) continue;
+            DebugVis::drawWireSphere(camera, site.position, site.radius,
+                                     glm::vec4(1.0f, 0.85f, 0.2f, 0.6f));
+        }
+    }
 }
 
 void GamemodeManager::renderBombHolderText() {

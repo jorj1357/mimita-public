@@ -16,6 +16,13 @@ struct PostFXData
     float filmGrain = 0.0f;
     float chromaticAberration = 0.0f;
     float lensDistortion = 0.0f;
+    float lensDistortionCurve = 1.0f;
+    float lensDistortionZoom = 1.0f;
+    int lensDistortionEdgeMode = 4;
+    float lensDistortionEdgeRadius = 0.72f;
+    float lensDistortionEdgeSoftness = 0.30f;
+    float lensDistortionEdgeDarkness = 1.0f;
+    float lensDistortionPeripheralBlur = 1.0f;
     float scanlines = 0.0f;
     float pixelation = 0.0f;
     float posterize = 0.0f;
@@ -50,6 +57,11 @@ public:
     // Load/save config
     void loadConfig(const std::string& path);
     void applyConfig(const PostFXData& data);
+    // Camera-owned lens distortion supports values well above 100.
+    void setCameraLensDistortion(float amount, float curve, float zoom,
+                                 int edgeMode, float edgeRadius,
+                                 float edgeSoftness, float edgeDarkness,
+                                 float peripheralBlur);
     void pollReload();
 
     // Pipeline

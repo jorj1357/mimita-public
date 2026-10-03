@@ -32,6 +32,68 @@ struct GamemodeFeatures {
     bool timerAboveEntity = false;  // Render timer above any entity
 };
 
+// One ordered team in a mode's roster. Team index (0-based) is the
+// authoritative team number used by matchTeams and the wire. `capacity` of 0
+// means unlimited. `role` names the role assigned to members; `spawnGroup`
+// names the spawn group this team uses. Purely data; the runtime owns state.
+struct GamemodeTeam {
+    std::string id;
+    std::string displayName;
+    int capacity = 0;
+    std::string role;
+    std::string spawnGroup;
+};
+
+// A named set of spawn positions for one team. Positions are optional; when
+// empty the runtime resolves spawns from the map (map anchors or the shared
+// anchor fallback). Kept in the gamemode JSON so modes own their rosters.
+struct GamemodeSpawnGroup {
+    std::string id;
+    std::string team;
+    struct Point { float x = 0.0f; float y = 0.0f; float z = 0.0f; };
+    std::vector<Point> points;
+};
+
+// A generic objective definition (bomb today; future payload/capture/escort).
+// Objective runtime state is owned by the objective system, never by this data
+// or by an actor preset.
+struct GamemodeObjectiveDefinition {
+    std::string id;
+    std::string kind;
+    std::string carrierTeam;
+    std::string siteGroup;
+    float plantSeconds = 0.0f;
+    float defuseSeconds = 0.0f;
+    float explosionSeconds = 0.0f;
+};
+
+// Round/match rules. Zero means "not configured"; the runtime keeps its
+// existing behavior when a value is absent.
+struct GamemodeRounds {
+    int maxRounds = 0;
+    int roundsToWin = 0;
+    float roundSeconds = 0.0f;
+    float freezeSeconds = 0.0f;
+    float countdownSeconds = 0.0f;
+    float intermissionSeconds = 0.0f;
+    float resultsSeconds = 0.0f;
+};
+
+// Mode-level presentation policy. Missing keys mean "no policy" so the
+// runtime preserves ordinary behavior. Actor-preset presentation refines
+// these where both exist.
+struct GamemodePresentation {
+    bool hasDamageNumbers = false;       bool damageNumbers = true;
+    bool hasHitEffects = false;          bool hitEffects = true;
+    bool hasWorldImpactEffects = false;  bool worldImpactEffects = true;
+    bool hasHitMarkers = false;          bool hitMarkers = true;
+    bool hasHitSounds = false;           bool hitSounds = true;
+    bool hasBlood = false;               bool blood = true;
+    bool hasKillfeed = false;            bool killfeed = true;
+    bool hasRagdolls = false;            bool ragdolls = true;
+    bool hasEnemyHealthbars = false;     bool enemyHealthbars = true;
+};
+
 struct Gamemode {
     std::string id = "duel";
     std::string name = "Duel";
@@ -53,6 +115,15 @@ struct Gamemode {
     int intermissionSeconds = 15;
     int resultsSeconds = 8;
     std::vector<std::string> maps;
+    // ── Ordered roster / objective / round data (optional) ───────────
+    // When `teams` is non-empty it defines the ordered roster and also
+    // populates `teamNames` above for backward compatibility.
+    std::vector<GamemodeTeam> teams;
+    std::vector<GamemodeSpawnGroup> spawnGroups;
+    std::vector<GamemodeObjectiveDefinition> objectives;
+    GamemodeRounds rounds;
+    GamemodePresentation presentation;
+    std::string victoryCondition;  // e.g. "rounds"; empty = legacy
     // ── Bomb Tag specific fields ─────────────────────────────────────
     int bombTimerTicks = 900;          // Ticks per bomb cycle (15s * 60 = 900)
     int inactiveTicks = 60;            // Ticks of inactive grace after pass

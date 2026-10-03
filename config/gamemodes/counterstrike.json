@@ -1,20 +1,59 @@
 {
   "id": "counterstrike",
   "name": "Counter Strike",
-  "description": "Counter-Strike preset: first person, fixed team actors, rifle loadouts, and no world healthbars.",
-  "team_names": ["RED", "BLUE"],
-  "goal_value": 10,
-  "time_limit_seconds": 120,
-  "respawn_seconds": 0,
-  "kill_heals": false,
-  "countdown_seconds": 5,
-  "go_seconds": 0.75,
-  "rematch_seconds": 5,
-  "spawn_offset_radius": 5.0,
-  "intermission_seconds": 15,
-  "results_seconds": 8,
+  "description": "5v5 round-based bomb defusal on dust2cyberiav3.",
+  "teams": [
+    {
+      "id": "ct",
+      "display_name": "Counter-Terrorists",
+      "capacity": 5,
+      "role": "counter_terrorist",
+      "spawn_group": "ct_spawn"
+    },
+    {
+      "id": "t",
+      "display_name": "Terrorists",
+      "capacity": 5,
+      "role": "terrorist",
+      "spawn_group": "t_spawn"
+    }
+  ],
+  "rounds": {
+    "max_rounds": 15,
+    "rounds_to_win": 8,
+    "round_seconds": 115,
+    "freeze_seconds": 0,
+    "countdown_seconds": 3,
+    "intermission_seconds": 30,
+    "results_seconds": 5
+  },
+  "spawn_groups": {
+    "ct_spawn": { "team": "ct", "points": [] },
+    "t_spawn": { "team": "t", "points": [] }
+  },
+  "objectives": [
+    {
+      "id": "bomb",
+      "kind": "bomb",
+      "carrier_team": "t",
+      "site_group": "bomb_sites",
+      "plant_seconds": 3,
+      "defuse_seconds": 5,
+      "explosion_seconds": 40
+    }
+  ],
+  "victory": { "type": "rounds" },
   "actor_preset": "counter_strike",
   "hide_healthbars": true,
-  "ragdoll_enabled": false,
-  "maps": ["atdm"]
+  "ragdoll_enabled": true,
+  "blood_enabled": true,
+  "presentation": {
+    "damage_numbers": false,
+    "hit_effects": false,
+    "world_impact_effects": false,
+    "hit_markers": false,
+    "hit_sounds": false,
+    "killfeed": true
+  },
+  "maps": ["dust2cyberiav3"]
 }

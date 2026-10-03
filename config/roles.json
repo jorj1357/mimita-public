@@ -26,6 +26,38 @@
       "weapon_set": "standard",
       "starting_weapon": "revolver",
       "behavior_profile": "nervous"
+    },
+    {
+      "id": "counter_terrorist",
+      "display_name": "Counter-Terrorist",
+      "team": 0,
+      "team_id": "ct",
+      "actor_preset": "counter_strike",
+      "health": 100,
+      "movement_preset": "heavy",
+      "weapon_set": "counterstrike",
+      "starting_weapon": "revolver",
+      "behavior_profile": "balanced",
+      "spawn_group": "ct_spawn",
+      "objective_permissions": ["defuse"],
+      "avatar": "jason",
+      "avatar_forced": true
+    },
+    {
+      "id": "terrorist",
+      "display_name": "Terrorist",
+      "team": 1,
+      "team_id": "t",
+      "actor_preset": "counter_strike",
+      "health": 100,
+      "movement_preset": "heavy",
+      "weapon_set": "counterstrike",
+      "starting_weapon": "revolver",
+      "behavior_profile": "balanced",
+      "spawn_group": "t_spawn",
+      "objective_permissions": ["plant", "pickup"],
+      "avatar": "abusiveboy",
+      "avatar_forced": true
     }
   ]
 }

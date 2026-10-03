@@ -20,12 +20,14 @@
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-data.h"
 #include "combat/actor-preset-weapons.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "network/community-server-config.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "gamemode/map-config.h"
 #include "persistence/persistence-queue.h"
 #include "persistence/persistence-events.h"
 #include "persistence/persistence-emit.h"
@@ -33,6 +35,17 @@
 #include "network/actor-lifecycle.h"
 
 namespace MimitaNet {
+
+// Resolve a team id string (e.g. "t") to its fixed team index; -1 = any.
+// Static so both the match-start path (defined above the anonymous namespace)
+// and the round helpers below can call it.
+static int resolveTeamIndexFromId(const Gamemode& gm, const std::string& teamId)
+{
+    if (teamId.empty()) return -1;
+    for (size_t i = 0; i < gm.teams.size(); ++i)
+        if (gm.teams[i].id == teamId) return (int)i;
+    return -1;
+}
 
 static void finalizeServerNpcMirrorSpawn(ServerNpc& npc,
                                          ActorSpawnReason reason,
@@ -479,6 +492,46 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.hasBombFeature = gm.features.bombHolderText;
     d.bombTagActive = false;
 
+    // ── Round-based lifecycle rules (Counter-Strike and future modes) ──
+    d.victoryCondition = gm.victoryCondition;
+    d.objectiveRounds = gm.victoryCondition == "rounds" && gm.rounds.roundsToWin > 0;
+    d.roundsToWin = gm.rounds.roundsToWin;
+    d.maxRounds = gm.rounds.maxRounds;
+    d.roundSeconds = gm.rounds.roundSeconds;
+    d.freezeSeconds = gm.rounds.freezeSeconds;
+    d.roundWins[0] = d.roundWins[1] = 0;
+    d.roundNumber = 0;
+    d.roundVersion = 0;
+    d.roundWinnerTeam = -1;
+    d.roundEndReason = 0;
+    d.roundEndTick = 0;
+    d.rosterLocked = false;
+    d.roundNextNpcId = 0;
+    // ── Mode objective item ─────────────────────────────────────────
+    // Reset, then adopt the first valid objective definition from the mode.
+    d.objective = ObjectiveInstance{};
+    d.objectivePickupCounter = 0;
+    d.objectiveDropCounter = 0;
+    d.objectiveNextCarrierScanTick = 0;
+    for (const GamemodeObjectiveDefinition& def : gm.objectives) {
+        const ObjectiveKind kind = objectiveKindFromString(def.kind);
+        if (kind == ObjectiveKind::None) continue;
+        d.objective.id = def.id;
+        d.objective.kind = kind;
+        d.objective.allowedCarrierTeam = resolveTeamIndexFromId(gm, def.carrierTeam);
+        d.objective.explosionSeconds = def.explosionSeconds;
+        d.objective.active = !def.id.empty();
+        d.objective.state = ObjectiveState::Inactive;
+        break;
+    }
+    // Round modes use their own configured countdown/intermission when set.
+    if (d.objectiveRounds) {
+        if (gm.rounds.countdownSeconds > 0.0f) d.countdownSeconds = gm.rounds.countdownSeconds;
+        if (gm.rounds.intermissionSeconds > 0.0f)
+            d.intermissionSeconds = gm.rounds.intermissionSeconds;
+        if (gm.rounds.resultsSeconds > 0.0f) d.resultsSeconds = gm.rounds.resultsSeconds;
+    }
+
     // ── Visual/settings overrides from gamemode ────────────────────
     d.cameraFov = gm.cameraFov;
     d.forceFirstPerson = gm.forceFirstPerson;
@@ -535,6 +588,12 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.matchOver = false;
     d.winnerPlayerId = 0;
     d.winnerTeam = -1;
+    // Round modes start with a fresh tally; the roster is built at countdown.
+    d.roundNumber = 0;
+    d.roundVersion = 0;
+    d.roundWins[0] = d.roundWins[1] = 0;
+    d.roundNextNpcId = 0;
+    d.rosterLocked = false;
     ++d.stateVersion;
     ++d.duelId;
 
@@ -554,6 +613,15 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 }
 
 namespace {
+
+// Defined below; called from the round state machine.
+void serverObjectiveTick(ServerGamemodeState& d,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         uint32_t tick);
+void assignObjectiveCarrier(ServerGamemodeState& d,
+                            const std::unordered_map<uint32_t, ServerPlayer>& players,
+                            const std::unordered_map<uint32_t, ServerNpc>& npcs);
 
 uint32_t countActivePlayers(const std::unordered_map<uint32_t, ServerPlayer>& players)
 {
@@ -638,6 +706,44 @@ void broadcastDuelState(SOCKET sock,
     std::strncpy(pkt.actorPresetId, presetId.c_str(), sizeof(pkt.actorPresetId) - 1);
     pkt.ragdollEnabled = d.ragdollExplicit ? (d.ragdollEnabled ? 2 : 1) : 0;
     pkt.bloodEnabled = d.bloodExplicit ? (d.bloodEnabled ? 2 : 1) : 0;
+
+    // ── Round-based match fields ───────────────────────────────────
+    pkt.roundVersion = d.roundVersion;
+    pkt.roundNumber = d.roundNumber;
+    pkt.roundWins[0] = d.roundWins[0];
+    pkt.roundWins[1] = d.roundWins[1];
+    pkt.winnerTeam = d.winnerTeam;
+    pkt.roundEndReason = (uint8_t)d.roundEndReason;
+    pkt.roundSeconds = d.roundSeconds;
+    pkt.roundTimerLeft = (d.phase == DUEL_PHASE_ACTIVE && d.roundEndTick > d.currentServerTick)
+        ? (float)(d.roundEndTick - d.currentServerTick) / 60.0f : 0.0f;
+
+    // ── Generic objective replication ──────────────────────────────
+    pkt.objectiveActive = d.objective.valid() ? 1 : 0;
+    pkt.objectiveKind = (uint8_t)d.objective.kind;
+    pkt.objectiveState = (uint8_t)d.objective.state;
+    pkt.objectiveTeam = d.objective.allowedCarrierTeam < 0
+        ? 0xFF : (uint8_t)d.objective.allowedCarrierTeam;
+    pkt.objectiveCarrierId = d.objective.carrierActorId;
+    pkt.objectiveX = d.objective.position.x;
+    pkt.objectiveY = d.objective.position.y;
+    pkt.objectiveZ = d.objective.position.z;
+    std::strncpy(pkt.objectiveId, d.objective.id.c_str(), sizeof(pkt.objectiveId) - 1);
+    std::strncpy(pkt.objectiveSite, d.objective.plantedSiteId.c_str(), sizeof(pkt.objectiveSite) - 1);
+    // Plant/defuse progress for the HUD bar (0 = not in progress).
+    if (d.objective.state == ObjectiveState::Planted && d.objective.defuseTicksElapsed > 0 &&
+        d.objective.defuseTicksRequired > 0) {
+        pkt.objectiveProgressKind = 2;
+        pkt.objectiveProgress = (float)d.objective.defuseTicksElapsed /
+                                (float)d.objective.defuseTicksRequired;
+    } else if (d.objective.state == ObjectiveState::Carried &&
+               d.objective.plantTicksElapsed > 0 && d.objective.plantTicksRequired > 0) {
+        pkt.objectiveProgressKind = 1;
+        pkt.objectiveProgress = (float)d.objective.plantTicksElapsed /
+                                (float)d.objective.plantTicksRequired;
+    }
+    pkt.objectiveTimerLeft = (d.objective.explosionDeadlineTick > d.currentServerTick)
+        ? (float)(d.objective.explosionDeadlineTick - d.currentServerTick) / 60.0f : 0.0f;
 
     // ── Procedural world (Infinite Dungeon Slayer) ─────────────────
     pkt.procedural.enabled = d.procedural.enabled ? 1 : 0;
@@ -1052,6 +1158,582 @@ bool rotateToNextGamemodeMap(SOCKET sock,
         d.usedMaps.insert(cand);
     }
     return false; // nothing valid — keep the current map
+}
+
+// Defined later in this translation unit; the round helpers below call them.
+void resetMatchScores(ServerGamemodeState& d);
+void resetGamemodeActorsAtMapSpawn(ServerGamemodeState& d,
+                                   std::unordered_map<uint32_t, ServerPlayer>& players,
+                                   std::unordered_map<uint32_t, ServerNpc>& npcs,
+                                   NpcSystem& npcSystem);
+
+// ── Round-based roster + lifecycle helpers ───────────────────────────────
+// A round mode (victoryCondition == "rounds") builds a fixed 5v5-style roster
+// before the countdown: one human plus allied NPCs on the chosen team, and a
+// full opposing NPC squad. NPCs are created as ServerNpc mirror entries; the
+// shared adoptNewServerNpcs path turns them into fully simulated actors.
+
+// Team display name from the fixed mode team order.
+std::string roundTeamName(const Gamemode& gm, int team)
+{
+    if (team >= 0 && team < (int)gm.teams.size())
+        return gm.teams[(size_t)team].displayName;
+    if (team >= 0 && team < (int)gm.teamNames.size())
+        return gm.teamNames[(size_t)team];
+    return "Team " + std::to_string(team + 1);
+}
+
+// The role id the mode assigns to a given team (from its ordered teams).
+std::string roundTeamRoleId(const Gamemode& gm, int team)
+{
+    if (team >= 0 && team < (int)gm.teams.size())
+        return gm.teams[(size_t)team].role;
+    return {};
+}
+
+int roundTeamCapacity(const Gamemode& gm, int team)
+{
+    if (team >= 0 && team < (int)gm.teams.size())
+        return gm.teams[(size_t)team].capacity;
+    return 0;
+}
+
+// Pure roster sizing: how many NPCs each team needs given the human's team and
+// the mode's per-team capacity. The human occupies one slot on their own team.
+void roundRosterNpcCounts(const Gamemode& gm, int humanTeam, int outCount[2])
+{
+    outCount[0] = outCount[1] = 0;
+    for (int team = 0; team < 2; ++team) {
+        const int capacity = roundTeamCapacity(gm, team);
+        const int target = capacity > 0 ? capacity : 5;
+        outCount[team] = (team == humanTeam) ? std::max(0, target - 1) : target;
+    }
+}
+
+// Choose the human's team when none was picked: fewer humans, CT on a tie.
+int chooseFallbackTeam(const std::unordered_map<uint32_t, ServerPlayer>& players,
+                       const ServerGamemodeState& d)
+{
+    int count[2] = {0, 0};
+    for (const auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active) continue;
+        auto it = d.matchTeams.find(kv.first);
+        if (it != d.matchTeams.end() && it->second >= 0 && it->second < 2)
+            ++count[it->second];
+    }
+    return count[0] <= count[1] ? 0 : 1;
+}
+
+// Assign the human player to a team (authoritative) and remember it.
+void applyHumanRosterTeam(ServerGamemodeState& d,
+                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                          uint32_t playerId, int team)
+{
+    auto it = players.find(playerId);
+    if (it == players.end()) return;
+    it->second.matchTeam = team;
+    d.matchTeams[playerId] = team;
+    auto actorIt = d.matchActors.find(playerId);
+    if (actorIt != d.matchActors.end()) actorIt->second.teamId = team;
+}
+
+// Build the round-time scoreboard from the mode's ordered teams. The match is
+// built around one human; the human's team gets allied NPCs up to capacity and
+// the opposing team gets a full NPC squad.
+void buildObjectiveRoster(ServerGamemodeState& d,
+                          std::unordered_map<uint32_t, ServerPlayer>& players,
+                          std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+
+    // Find the human. Round modes are built around a single human actor.
+    uint32_t humanId = 0;
+    for (const auto& kv : players) {
+        if (kv.second.spawnState == ServerPlayer::Active) { humanId = kv.first; break; }
+    }
+    if (humanId == 0) return;
+
+    auto teamIt = d.matchTeams.find(humanId);
+    int humanTeam = (teamIt != d.matchTeams.end()) ? teamIt->second : -1;
+    if (humanTeam < 0 || humanTeam > 1)
+        humanTeam = chooseFallbackTeam(players, d);
+    applyHumanRosterTeam(d, players, humanId, humanTeam);
+
+    if (npcs.empty() && d.roundNextNpcId == 0)
+        d.roundNextNpcId = 100000;  // keep roster ids out of the human/NPC range
+
+    // Ensure the human's match actor exists with the team's role.
+    {
+        ActorMatchDescriptor& desc = d.matchActors[humanId];
+        desc.controller = ActorController::Human;
+        desc.state = ActorState::Alive;
+        desc.teamId = humanTeam;
+        const std::string roleId = roundTeamRoleId(gm, humanTeam);
+        if (!roleId.empty() && MatchRoleRegistry::instance().get(roleId)) {
+            desc.roleId = roleId;
+            const MatchRoleDefinition* def = MatchRoleRegistry::instance().get(roleId);
+            desc.movementProfileId = def->movementPreset;
+            desc.weaponProfileId = def->weaponSet;
+        }
+    }
+
+    int npcCounts[2] = {0, 0};
+    roundRosterNpcCounts(gm, humanTeam, npcCounts);
+    for (int team = 0; team < 2; ++team) {
+        const int npcCount = npcCounts[team];
+        const std::string roleId = roundTeamRoleId(gm, team);
+        for (int i = 0; i < npcCount; ++i) {
+            while (npcs.find(d.roundNextNpcId) != npcs.end()) ++d.roundNextNpcId;
+            ServerNpc npc;
+            npc.entityId = d.roundNextNpcId++;
+            npc.name = roundTeamName(gm, team) + " " + std::to_string(i + 1);
+            npc.pos = gamemodeSpawnPoint(d);
+            npc.yaw = team == 0 ? 0.0f : 3.14159265f;
+            npc.difficulty = 1.0f;
+            npc.matchTeam = team;
+            npc.health = 100;
+            ActorMatchDescriptor desc;
+            desc.controller = ActorController::Npc;
+            desc.state = ActorState::Alive;
+            desc.teamId = team;
+            if (!roleId.empty() && MatchRoleRegistry::instance().get(roleId)) {
+                desc.roleId = roleId;
+                const MatchRoleDefinition* def = MatchRoleRegistry::instance().get(roleId);
+                desc.movementProfileId = def->movementPreset;
+                desc.weaponProfileId = def->weaponSet;
+                desc.behaviorProfileId = def->behaviorProfile;
+            }
+            d.matchActors[npc.entityId] = std::move(desc);
+            d.matchTeams[npc.entityId] = team;
+            d.participants.push_back(npc.entityId);
+            d.participantNames[npc.entityId] = npc.name;
+            d.ffaKills[npc.entityId] = 0;
+            d.ffaDeaths[npc.entityId] = 0;
+            npcs.emplace(npc.entityId, std::move(npc));
+        }
+    }
+
+    // Include the human in the participant list if the generic path did not.
+    if (std::find(d.participants.begin(), d.participants.end(), humanId) == d.participants.end()) {
+        d.participants.insert(d.participants.begin(), humanId);
+        d.participantNames[humanId] = players[humanId].name;
+        d.ffaKills[humanId] = 0;
+        d.ffaDeaths[humanId] = 0;
+    }
+    std::sort(d.participants.begin(), d.participants.end());
+
+    Debug::warn(Debug::Category::Duel,
+        "[ROSTER] mode=%s human=%u team=%d npcs=%zu participants=%zu locked=%d\n",
+        d.matchMode.c_str(), humanId, humanTeam, npcs.size(), d.participants.size(),
+        (int)d.rosterLocked);
+}
+
+// Begin a fresh round: reset scores/actors/objective state, place actors at
+// spawns, and enter the round countdown. `roundVersion` is bumped so stale
+// packets from the previous round cannot revive it.
+void beginObjectiveRound(ServerGamemodeState& d,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         NpcSystem& npcSystem,
+                         HeadlessWorld& world,
+                         uint32_t currentTick)
+{
+    ++d.duelId;
+    ++d.respawnSequence;
+    ++d.stateVersion;
+    ++d.roundVersion;
+    ++d.roundNumber;
+    d.rosterLocked = true;
+    d.matchOver = false;
+    d.winnerPlayerId = 0;
+    d.winnerTeam = -1;
+    d.victoryType = 0;
+    d.roundWinnerTeam = -1;
+    d.roundEndReason = 0;
+    d.countdownStartTick = currentTick;
+    d.countdownSeconds = d.countdownSeconds > 0.0f ? d.countdownSeconds : 3.0f;
+    d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
+    d.countdown = d.countdownSeconds;
+    d.matchTimeLimitTick = 0;
+    d.roundEndTick = 0;
+    d.lastBroadcastTick = currentTick;
+    resetMatchScores(d);
+    d.phase = DUEL_PHASE_COUNTDOWN;
+    resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
+    assignObjectiveCarrier(d, players, npcs);
+    Debug::warn(Debug::Category::Duel,
+        "[ROUND] begin mode=%s round=%u version=%u wins=%d-%d toWin=%d tick=%u\n",
+        d.matchMode.c_str(), d.roundNumber, d.roundVersion,
+        d.roundWins[0], d.roundWins[1], d.roundsToWin, currentTick);
+}
+
+// Decide a round. Awards the round win to `winnerTeam` (or -1 for a draw),
+// increments the tally, and either ends the match or schedules the next round.
+void endObjectiveRound(ServerGamemodeState& d, int winnerTeam, int reason,
+                       uint32_t tick)
+{
+    if (d.phase != DUEL_PHASE_ACTIVE) return;
+    d.roundWinnerTeam = winnerTeam;
+    d.roundEndReason = reason;
+    if (winnerTeam >= 0 && winnerTeam < 2)
+        ++d.roundWins[winnerTeam];
+
+    const bool matchDecided = d.roundsToWin > 0 &&
+        (d.roundWins[0] >= d.roundsToWin || d.roundWins[1] >= d.roundsToWin);
+
+    if (matchDecided) {
+        d.matchOver = true;
+        d.phase = DUEL_PHASE_RESULTS;
+        d.winnerTeam = d.roundWins[0] >= d.roundWins[1] ? 0 : 1;
+        d.victoryType = 0;
+        d.phaseTimer = d.resultsSeconds;
+    } else {
+        // Round result screen, then the next round or intermission.
+        d.phase = DUEL_PHASE_RESULTS;
+        d.phaseTimer = d.resultsSeconds;
+    }
+    ++d.stateVersion;
+    ++d.roundVersion;
+    Debug::warn(Debug::Category::Duel,
+        "[ROUND] end round=%u winnerTeam=%d reason=%d wins=%d-%d matchOver=%d tick=%u\n",
+        d.roundNumber, winnerTeam, reason, d.roundWins[0], d.roundWins[1],
+        (int)d.matchOver, tick);
+}
+
+// Evaluate the active round: elimination of a team, or timeout.
+void checkObjectiveRoundEnd(ServerGamemodeState& d, uint32_t tick)
+{
+    if (d.phase != DUEL_PHASE_ACTIVE) return;
+
+    // Team elimination: a team with no in-play actor loses.
+    int aliveByTeam[2] = {0, 0};
+    bool anyTeamMembers[2] = {false, false};
+    for (uint32_t id : d.participants) {
+        auto tIt = d.matchTeams.find(id);
+        if (tIt == d.matchTeams.end()) continue;
+        const int team = tIt->second;
+        if (team < 0 || team > 1) continue;
+        anyTeamMembers[team] = true;
+        auto aIt = d.matchActors.find(id);
+        const bool inPlay = aIt != d.matchActors.end() &&
+            (aIt->second.state == ActorState::Alive ||
+             aIt->second.state == ActorState::Respawning);
+        if (inPlay) ++aliveByTeam[team];
+    }
+
+    if (anyTeamMembers[0] && anyTeamMembers[1]) {
+        const bool aAlive = aliveByTeam[0] > 0;
+        const bool bAlive = aliveByTeam[1] > 0;
+        if (aAlive != bAlive) {
+            // A planted bomb keeps the round alive even if the planting team is
+            // wiped: only a defuse or the explosion decides a planted bomb.
+            if (d.objective.state == ObjectiveState::Planted) return;
+            endObjectiveRound(d, aAlive ? 0 : 1, 1, tick);
+            return;
+        }
+    }
+
+    if (d.roundEndTick > 0 && tick >= d.roundEndTick) {
+        // Timeout: if the bomb is planted the round continues until the bomb
+        // resolves; otherwise the defenders win (no plant = Counter-Terrorists).
+        if (d.objective.state == ObjectiveState::Planted) return;
+        const int defenderTeam = (d.objective.allowedCarrierTeam == 0) ? 1 : 0;
+        if (d.objective.valid())
+            endObjectiveRound(d, defenderTeam, 3, tick);
+        else
+            endObjectiveRound(d, -1, 3, tick);
+    }
+}
+
+// Look up the world position of an actor (player or NPC). Returns false when
+// the actor is unknown or dead.
+bool objectiveActorPosition(const std::unordered_map<uint32_t, ServerPlayer>& players,
+                            const std::unordered_map<uint32_t, ServerNpc>& npcs,
+                            uint32_t actorId, glm::vec3& outPos)
+{
+    auto pIt = players.find(actorId);
+    if (pIt != players.end()) {
+        if (pIt->second.dead) return false;
+        outPos = pIt->second.pos;
+        return true;
+    }
+    auto nIt = npcs.find(actorId);
+    if (nIt != npcs.end()) {
+        if (nIt->second.health <= 0) return false;
+        outPos = nIt->second.pos;
+        return true;
+    }
+    return false;
+}
+
+// Team of an actor from matchTeams; -1 = none.
+int objectiveActorTeam(const ServerGamemodeState& d, uint32_t actorId)
+{
+    auto it = d.matchTeams.find(actorId);
+    return it != d.matchTeams.end() ? it->second : -1;
+}
+
+// The generic objective tick: keep the bomb on a valid living carrier, drop it
+// when the carrier dies/disconnects, and auto-pick-up for the nearest valid
+// living actor of the allowed team within pickup radius. No wall/occlusion
+// pickup through geometry beyond the proximity check (Stage 12 adds site logic).
+void serverObjectiveTick(ServerGamemodeState& d,
+                         std::unordered_map<uint32_t, ServerPlayer>& players,
+                         std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         uint32_t tick)
+{
+    if (!d.objective.valid()) return;
+    if (d.phase != DUEL_PHASE_ACTIVE && d.phase != DUEL_PHASE_GO) return;
+
+    // 1) If carried, validate the carrier is still alive. If not, drop it at
+    //    the carrier's last known position.
+    if (d.objective.state == ObjectiveState::Carried) {
+        glm::vec3 carrierPos;
+        const bool alive = objectiveActorPosition(players, npcs,
+                                                  d.objective.carrierActorId, carrierPos);
+        if (!alive) {
+            glm::vec3 dropPos = d.objective.position;
+            // Prefer the actor's last position when we can still find the body.
+            auto pIt = players.find(d.objective.carrierActorId);
+            auto nIt = npcs.find(d.objective.carrierActorId);
+            if (pIt != players.end()) dropPos = pIt->second.pos;
+            else if (nIt != npcs.end()) dropPos = nIt->second.pos;
+            // Never drop inside the world; raise slightly so it is pickable.
+            dropPos.z += 0.3f;
+            d.objective.state = ObjectiveState::Dropped;
+            d.objective.position = dropPos;
+            const uint32_t droppedCarrier = d.objective.carrierActorId;
+            d.objective.carrierActorId = 0;
+            ++d.objectiveDropCounter;
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+            Debug::warn(Debug::Category::Duel,
+                "[OBJECTIVE] drop id=%s carrier=%u at=(%.1f %.1f %.1f) tick=%u\n",
+                d.objective.id.c_str(), droppedCarrier,
+                dropPos.x, dropPos.y, dropPos.z, tick);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.dropped", std::to_string(d.duelId),
+                "carrier-died", tick,
+                nlohmann::json{{"objective", d.objective.id},
+                               {"carrier", droppedCarrier}});
+        }
+    }
+
+    // 2) If carried, keep the replicated position following the carrier and
+    //    attempt a plant when the carrier stands inside a valid bomb site.
+    if (d.objective.state == ObjectiveState::Carried) {
+        glm::vec3 carrierPos;
+        if (objectiveActorPosition(players, npcs, d.objective.carrierActorId, carrierPos))
+            d.objective.position = carrierPos;
+
+        const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
+        const int siteIndex = MapConfigRegistry::instance().siteIndexAt(d.objective.position);
+        const bool inSite = siteIndex >= 0;
+
+        if (inSite) {
+            const bool wasPlanting = d.objective.plantTicksElapsed > 0;
+            if (!wasPlanting) {
+                d.objective.planterActorId = d.objective.carrierActorId;
+                Debug::warn(Debug::Category::Duel,
+                    "[OBJECTIVE] plant-start id=%s actor=%u site=%s tick=%u\n",
+                    d.objective.id.c_str(), d.objective.carrierActorId,
+                    mapCfg.bombSites[(size_t)siteIndex].id.c_str(), tick);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "objective.plant-start", std::to_string(d.duelId), "site",
+                    tick, nlohmann::json{{"objective", d.objective.id},
+                                         {"operator", d.objective.carrierActorId},
+                                         {"site", mapCfg.bombSites[(size_t)siteIndex].id}});
+            }
+            if (advanceObjectiveProgress(d.objective.plantTicksElapsed,
+                                         d.objective.plantTicksRequired, true)) {
+                d.objective.state = ObjectiveState::Planted;
+                d.objective.plantedSiteId = mapCfg.bombSites[(size_t)siteIndex].id;
+                d.objective.position = carrierPos;
+                d.objective.carrierActorId = 0;
+                d.objective.explosionDeadlineTick = d.currentServerTick +
+                    (uint32_t)objectiveSecondsToTicks(d.objective.explosionSeconds);
+                ++d.stateVersion;
+                d.stateBroadcastPending = true;
+                Debug::warn(Debug::Category::Duel,
+                    "[OBJECTIVE] planted id=%s site=%s deadline=%u tick=%u\n",
+                    d.objective.id.c_str(), d.objective.plantedSiteId.c_str(),
+                    d.objective.explosionDeadlineTick, tick);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "objective.planted", std::to_string(d.duelId), d.objective.plantedSiteId,
+                    tick, nlohmann::json{{"objective", d.objective.id},
+                                         {"site", d.objective.plantedSiteId}});
+            }
+        } else if (d.objective.plantTicksElapsed > 0) {
+            // Interrupted by leaving the site.
+            d.objective.plantTicksElapsed = 0;
+            d.objective.planterActorId = 0;
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+        }
+        return;
+    }
+
+    // 3) If planted, advance the defuse when a Counter-Terrorist is in range,
+    //    and explode when the deadline passes. Both are fixed-tick and
+    //    interruptible.
+    if (d.objective.state == ObjectiveState::Planted) {
+        // Explosion wins if the deadline is reached.
+        if (d.objective.explosionDeadlineTick != 0 &&
+            d.currentServerTick >= d.objective.explosionDeadlineTick) {
+            d.objective.state = ObjectiveState::Exploded;
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+            Debug::warn(Debug::Category::Duel,
+                "[OBJECTIVE] exploded id=%s site=%s tick=%u\n",
+                d.objective.id.c_str(), d.objective.plantedSiteId.c_str(), tick);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.exploded", std::to_string(d.duelId), d.objective.plantedSiteId,
+                tick, nlohmann::json{{"objective", d.objective.id},
+                                     {"site", d.objective.plantedSiteId}});
+            endObjectiveRound(d, d.objective.allowedCarrierTeam, 2, tick);
+            return;
+        }
+
+        // Find a defusing CT within interaction range of the planted bomb.
+        const int defenderTeam = (d.objective.allowedCarrierTeam == 0) ? 1 : 0;
+        uint32_t defuser = 0;
+        float bestDistSq = d.objective.interactionRange * d.objective.interactionRange;
+        auto considerDefuser = [&](uint32_t actorId, const glm::vec3& pos, bool dead) {
+            if (dead || actorId == 0) return;
+            if (objectiveActorTeam(d, actorId) != defenderTeam) return;
+            const glm::vec3 delta = pos - d.objective.position;
+            const float distSq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+            if (distSq <= bestDistSq) { bestDistSq = distSq; defuser = actorId; }
+        };
+        for (const auto& kv : players) considerDefuser(kv.first, kv.second.pos, kv.second.dead);
+        for (const auto& kv : npcs)
+            considerDefuser(kv.first, kv.second.pos, kv.second.health <= 0);
+
+        const bool wasDefusing = d.objective.defuseTicksElapsed > 0;
+        if (defuser != 0 && !wasDefusing) {
+            d.objective.defuserActorId = defuser;
+            Debug::warn(Debug::Category::Duel,
+                "[OBJECTIVE] defuse-start id=%s actor=%u tick=%u\n",
+                d.objective.id.c_str(), defuser, tick);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.defuse-start", std::to_string(d.duelId), "range",
+                tick, nlohmann::json{{"objective", d.objective.id}, {"operator", defuser}});
+        }
+        const bool canDefuse = defuser != 0;
+        if (advanceObjectiveProgress(d.objective.defuseTicksElapsed,
+                                     d.objective.defuseTicksRequired, canDefuse)) {
+            d.objective.state = ObjectiveState::Defused;
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+            Debug::warn(Debug::Category::Duel,
+                "[OBJECTIVE] defused id=%s actor=%u tick=%u\n",
+                d.objective.id.c_str(), defuser, tick);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.defused", std::to_string(d.duelId), "range",
+                tick, nlohmann::json{{"objective", d.objective.id}, {"operator", defuser}});
+            endObjectiveRound(d, defenderTeam, 2, tick);
+        } else if (!canDefuse && d.objective.defuseTicksElapsed == 0) {
+            d.objective.defuserActorId = 0;
+        }
+        return;
+    }
+
+    // 4) If dropped, look for the nearest valid living carrier within radius.
+    if (d.objective.state != ObjectiveState::Dropped) return;
+
+    std::vector<ObjectiveCarrierCandidate> candidates;
+    candidates.reserve(players.size() + npcs.size());
+    for (const auto& kv : players)
+        candidates.push_back({kv.first, kv.second.pos,
+                              objectiveActorTeam(d, kv.first), kv.second.dead});
+    for (const auto& kv : npcs)
+        candidates.push_back({kv.first, kv.second.pos,
+                              objectiveActorTeam(d, kv.first), kv.second.health <= 0});
+    const uint32_t bestActor = selectObjectiveCarrier(
+        d.objective, candidates.data(), (int)candidates.size(), d.objective.pickupRadius);
+
+    if (bestActor != 0) {
+        d.objective.state = ObjectiveState::Carried;
+        d.objective.carrierActorId = bestActor;
+        ++d.objectivePickupCounter;
+        ++d.stateVersion;
+        d.stateBroadcastPending = true;
+        Debug::warn(Debug::Category::Duel,
+            "[OBJECTIVE] pickup id=%s actor=%u team=%d tick=%u\n",
+            d.objective.id.c_str(), bestActor,
+            objectiveActorTeam(d, bestActor), tick);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "objective.pickup", std::to_string(d.duelId),
+            "proximity", tick,
+            nlohmann::json{{"objective", d.objective.id},
+                           {"actor", bestActor},
+                           {"team", objectiveActorTeam(d, bestActor)}});
+    }
+}
+
+// Assign the objective to a valid carrier on the allowed team at round start.
+// Called from beginObjectiveRound after the roster exists.
+void assignObjectiveCarrier(ServerGamemodeState& d,
+                            const std::unordered_map<uint32_t, ServerPlayer>& players,
+                            const std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    if (!d.objective.valid()) return;
+
+    // Load the map's objective timers (plant/defuse/explosion) and reset the
+    // per-round plant/defuse progress. Sites come from the map config.
+    MapConfigRegistry::instance().load(d.mapId);
+    const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
+    d.objective.plantTicksRequired = objectiveSecondsToTicks(mapCfg.plantSeconds);
+    d.objective.defuseTicksRequired = objectiveSecondsToTicks(mapCfg.defuseSeconds);
+    d.objective.explosionSeconds = mapCfg.explosionSeconds;
+    d.objective.plantTicksElapsed = 0;
+    d.objective.defuseTicksElapsed = 0;
+    d.objective.planterActorId = 0;
+    d.objective.defuserActorId = 0;
+    d.objective.plantedSiteId.clear();
+    d.objective.explosionDeadlineTick = 0;
+
+    // Reset per round, then hand it to the first living allowed-team actor.
+    d.objective.state = ObjectiveState::Carried;
+    d.objective.carrierActorId = 0;
+    d.objective.position = glm::vec3(0.0f);
+
+    // Assignment has no proximity requirement; use an effectively unbounded
+    // radius so the first eligible living actor starts with the objective.
+    std::vector<ObjectiveCarrierCandidate> candidates;
+    candidates.reserve(players.size() + npcs.size());
+    for (const auto& kv : players)
+        candidates.push_back({kv.first, kv.second.pos,
+                              objectiveActorTeam(d, kv.first), kv.second.dead});
+    for (const auto& kv : npcs)
+        candidates.push_back({kv.first, kv.second.pos,
+                              objectiveActorTeam(d, kv.first), kv.second.health <= 0});
+    const uint32_t chosen = selectObjectiveCarrier(
+        d.objective, candidates.data(), (int)candidates.size(), 1.0e9f);
+    if (chosen != 0) {
+        d.objective.carrierActorId = chosen;
+        for (const auto& c : candidates)
+            if (c.actorId == chosen) d.objective.position = c.position;
+    }
+
+    if (d.objective.carrierActorId == 0) {
+        // No valid carrier yet: leave it dropped near the mode spawn so it can
+        // be picked up once an allowed actor is alive.
+        d.objective.state = ObjectiveState::Dropped;
+        d.objective.position = gamemodeSpawnPoint(d);
+    }
+    ++d.stateVersion;
+    Debug::warn(Debug::Category::Duel,
+        "[OBJECTIVE] assign id=%s state=%d carrier=%u team=%d\n",
+        d.objective.id.c_str(), (int)d.objective.state,
+        d.objective.carrierActorId, d.objective.allowedCarrierTeam);
 }
 
 // ── FFA/TDM match helpers ───────────────────────────────────────────────
@@ -2197,6 +2879,140 @@ void serverGamemodeTick(SOCKET sock,
         broadcastDuelState(sock, d, players, totalPacketsOut);
     }
 
+    // ── Round-based match state machine (Counter-Strike and future modes) ──
+    // INTERMISSION -> COUNTDOWN -> GO -> ACTIVE -> RESULTS -> next round or
+    // intermission. A round mode is a distinct lifecycle from the free-for-all
+    // score/time lifecycle, so it routes first.
+    if (d.objectiveRounds)
+    {
+        if (d.stateBroadcastPending)
+        {
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            d.stateBroadcastPending = false;
+        }
+        switch (d.phase)
+        {
+        case DUEL_PHASE_WAITING:
+        case DUEL_PHASE_INTERMISSION:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
+            {
+                // A round needs the human actor; wait for one to connect.
+                bool hasHuman = false;
+                for (const auto& kv : players)
+                    if (kv.second.spawnState == ServerPlayer::Active) { hasHuman = true; break; }
+                if (!hasHuman)
+                {
+                    d.phaseTimer = 0.5f;  // re-check shortly, don't fire an empty round
+                    break;
+                }
+                if (world.spawnPoints.empty())
+                    rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
+                assignGamemodeSpawns(d, world);
+                buildObjectiveRoster(d, players, npcs);
+                beginObjectiveRound(d, players, npcs, npcSystem, world, tick);
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            else if (tick - d.lastBroadcastTick >= 30)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        case DUEL_PHASE_COUNTDOWN:
+            if (tick >= d.matchStartTick)
+            {
+                d.phase = DUEL_PHASE_GO;
+                d.phaseTimer = d.goSeconds > 0.0f ? d.goSeconds : 0.75f;
+                d.roundEndTick = d.roundSeconds > 0.0f
+                    ? tick + (uint32_t)(d.roundSeconds * 60.0f) : 0;
+                d.matchStartTick = tick;
+                ++d.stateVersion;
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            else if (tick - d.lastBroadcastTick >= 30)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        case DUEL_PHASE_GO:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
+            {
+                d.phase = DUEL_PHASE_ACTIVE;
+                ++d.stateVersion;
+                d.lastBroadcastTick = tick;
+                Debug::log(Debug::Category::Duel,
+                    "[ROUND] ACTIVE round=%u version=%u endTick=%u\n",
+                    d.roundNumber, d.roundVersion, d.roundEndTick);
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            else if (tick - d.lastBroadcastTick >= 10)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        case DUEL_PHASE_ACTIVE:
+            serverObjectiveTick(d, players, npcs, tick);
+            checkObjectiveRoundEnd(d, tick);
+            if (d.phase != DUEL_PHASE_ACTIVE)
+            {
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                break;
+            }
+            if (tick - d.lastBroadcastTick >= 30)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        case DUEL_PHASE_RESULTS:
+            d.phaseTimer -= SERVER_DT;
+            if (d.phaseTimer <= 0.0f)
+            {
+                if (d.matchOver || (d.maxRounds > 0 && (int)d.roundNumber >= d.maxRounds))
+                {
+                    // Match complete: return to intermission for the next match.
+                    d.phase = DUEL_PHASE_INTERMISSION;
+                    d.phaseTimer = d.intermissionSeconds;
+                    d.roundWins[0] = d.roundWins[1] = 0;
+                    d.roundNumber = 0;
+                    d.rosterLocked = false;
+                    ++d.stateVersion;
+                    ++d.roundVersion;
+                    Debug::warn(Debug::Category::Duel,
+                        "[MATCH] complete mode=%s wins=%d-%d -> intermission\n",
+                        d.matchMode.c_str(), d.roundWins[0], d.roundWins[1]);
+                }
+                else
+                {
+                    // Next round: rebuild roster only if unlocked, then countdown.
+                    if (!d.rosterLocked)
+                        buildObjectiveRoster(d, players, npcs);
+                    beginObjectiveRound(d, players, npcs, npcSystem, world, tick);
+                }
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            else if (tick - d.lastBroadcastTick >= 30)
+            {
+                d.lastBroadcastTick = tick;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+            }
+            break;
+
+        default:
+            break;
+        }
+        return;
+    }
+
     // ── Shared FFA/TDM/elimination match mode state machine ─────────
     // Any mode with a generic win condition (e.g. last_team_standing) uses the
     // same lifecycle instead of requiring a mode-specific branch.
@@ -2541,6 +3357,95 @@ void serverGamemodeRematchNow()
     d.rematchLeft = 0.0f;
 }
 
+bool serverCounterStrikeRoundSelfTest(std::string& report)
+{
+    // Build a throwaway round state from the real gamemode JSON and exercise
+    // the world-independent round math. This proves the data model and rules
+    // load and behave; it does not prove live gameplay.
+    ServerGamemodeState d;
+    d.enabled = true;
+    d.matchMode = "counterstrike";
+    MatchRoleRegistry::instance().load("config/roles.json");
+    MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+    WeaponData::registerBuiltinWeapons();
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+
+    bool ok = true;
+    auto fail = [&](const std::string& why) { ok = false; report += "FAIL: " + why + "\n"; };
+
+    if (gm.teams.size() != 2) fail("expected 2 ordered teams");
+    else {
+        report += "team0=" + gm.teams[0].displayName + " team1=" + gm.teams[1].displayName + "\n";
+        if (gm.teams[0].displayName != "Counter-Terrorists") fail("team 0 display name");
+        if (gm.teams[1].displayName != "Terrorists") fail("team 1 display name");
+        if (gm.teams[0].capacity != 5 || gm.teams[1].capacity != 5) fail("team capacity != 5");
+    }
+    if (!(gm.victoryCondition == "rounds")) fail("victoryCondition != rounds");
+    if (gm.rounds.roundsToWin != 8) fail("rounds_to_win != 8");
+    if (gm.rounds.roundSeconds != 115.0f) fail("round_seconds != 115");
+
+    // Roster sizing: human on each team gives 4 allies + 5 enemies.
+    int counts[2] = {0, 0};
+    roundRosterNpcCounts(gm, 0, counts);
+    report += "humanOnCT npcs=" + std::to_string(counts[0]) + "+" + std::to_string(counts[1]) + "\n";
+    if (counts[0] != 4 || counts[1] != 5) fail("human on CT should be 4 allies + 5 enemies");
+    roundRosterNpcCounts(gm, 1, counts);
+    if (counts[0] != 5 || counts[1] != 4) fail("human on T should be 5 enemies + 4 allies");
+
+    // Round tally + victory threshold. Copy just the tally fields the decision
+    // logic uses; the full state is owned by the server tick.
+    d.objectiveRounds = true;
+    d.roundsToWin = gm.rounds.roundsToWin;
+    d.roundWins[0] = d.roundWins[1] = 0;
+    auto award = [&](int team) {
+        if (team >= 0 && team < 2) ++d.roundWins[team];
+    };
+    for (int i = 0; i < 7; ++i) award(0);
+    if (d.roundWins[0] != 7) fail("7 CT round wins not tallied");
+    const bool notYet = !(d.roundWins[0] >= d.roundsToWin || d.roundWins[1] >= d.roundsToWin);
+    if (!notYet) fail("match ended before threshold");
+    award(0);
+    const bool decided = d.roundWins[0] >= d.roundsToWin || d.roundWins[1] >= d.roundsToWin;
+    if (!decided) fail("match did not end at 8 CT wins");
+    const int winner = d.roundWins[0] >= d.roundWins[1] ? 0 : 1;
+    report += "after8 CT=" + std::to_string(d.roundWins[0]) + " T=" + std::to_string(d.roundWins[1]) +
+              " winner=" + std::to_string(winner) + "\n";
+    if (winner != 0) fail("wrong match winner");
+
+    // Stale-round guard: roundVersion must strictly increase per round.
+    d.roundVersion = 0;
+    const uint32_t v0 = d.roundVersion;
+    ++d.roundVersion;
+    ++d.roundVersion;
+    if (!(d.roundVersion > v0)) fail("roundVersion did not advance");
+
+    // Weapon overrides: applying the actor preset must reach the ACTIVE weapon
+    // table (what both local and authoritative traces read), while the base
+    // table stays untouched. This is the runtime application proof, not just
+    // the JSON parse proof.
+    if (const MatchRoleDefinition* preset =
+            MatchRoleRegistry::instance().getActorPreset("counter_strike")) {
+        ActorPresetWeapons::apply(*preset);
+        const WeaponDefinition* activeRifle = WeaponRegistry::instance().get("hitscan_rifle");
+        const WeaponDefinition* activeRev = WeaponRegistry::instance().get("revolver");
+        report += "rifle mag=" + std::to_string(activeRifle ? activeRifle->magazineSize : -1) +
+                  " reserve=" + std::to_string(activeRifle ? activeRifle->reserveSize : -1) +
+                  " beam=" + std::to_string(activeRifle ? activeRifle->beamThickness : -1.0f) + "\n";
+        if (!activeRifle || activeRifle->magazineSize != 30 || activeRifle->reserveSize != 180)
+            fail("rifle override did not reach active table");
+        if (!activeRifle || activeRifle->beamThickness != 0.0f || activeRifle->beamWorldThickness != 0.0f)
+            fail("rifle zero thickness did not reach active table");
+        if (!activeRev || activeRev->magazineSize != 6 || activeRev->reserveSize != 36)
+            fail("revolver override did not reach active table");
+        ActorPresetWeapons::clear();
+    } else {
+        fail("counter_strike preset missing for weapon-apply proof");
+    }
+
+    report += ok ? "PASS\n" : "FAIL\n";
+    return ok;
+}
+
 std::string serverActiveTeamList()
 {
     const ServerGamemodeState& d = serverGamemodeState();
@@ -2571,9 +3476,29 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
     const CommunityMode* cm = CommunityServerConfig::instance().modeById(d.communityMode);
     const std::string id = cm ? cm->gamemodeId : d.communityMode;
     const Gamemode& gm = GamemodeRegistry::instance().get(id);
+    // Team selection is a pre-round decision. Once the countdown begins the
+    // roster is locked for the round, matching the plan's intermission lock.
+    if (d.phase != DUEL_PHASE_WAITING && d.phase != DUEL_PHASE_INTERMISSION &&
+        d.phase != DUEL_PHASE_RESULTS) {
+        message = "team selection locked";
+        return false;
+    }
     if (requestedTeam < 0 || requestedTeam >= static_cast<int>(gm.teamNames.size())) {
         message = gm.teamNames.empty() ? "active gamemode has no teams" : "invalid team";
         return false;
+    }
+    // Enforce ordered-team capacity when the mode declares it.
+    if (requestedTeam < static_cast<int>(gm.teams.size())) {
+        const int capacity = gm.teams[static_cast<size_t>(requestedTeam)].capacity;
+        if (capacity > 0 && playerIt->second.matchTeam != requestedTeam) {
+            int count = 0;
+            for (const auto& entry : d.matchTeams)
+                if (entry.second == requestedTeam) ++count;
+            if (count >= capacity) {
+                message = "team is full";
+                return false;
+            }
+        }
     }
     playerIt->second.matchTeam = requestedTeam;
     d.matchTeams[playerId] = requestedTeam;

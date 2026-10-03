@@ -1,6 +1,8 @@
 #include "post-fx.h"
 
 #include <cstdio>
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -332,6 +334,13 @@ void PostFX::setUniforms(GLuint shader, const PostFXData& data, const char* pref
     set1f("uFilmGrain", data.filmGrain);
     set1f("uChromaticAberration", data.chromaticAberration);
     set1f("uLensDistortion", data.lensDistortion);
+    set1f("uLensDistortionCurve", data.lensDistortionCurve);
+    set1f("uLensDistortionZoom", data.lensDistortionZoom);
+    set1i("uLensDistortionEdgeMode", data.lensDistortionEdgeMode);
+    set1f("uLensDistortionEdgeRadius", data.lensDistortionEdgeRadius);
+    set1f("uLensDistortionEdgeSoftness", data.lensDistortionEdgeSoftness);
+    set1f("uLensDistortionEdgeDarkness", data.lensDistortionEdgeDarkness);
+    set1f("uLensDistortionPeripheralBlur", data.lensDistortionPeripheralBlur);
     set1f("uScanlines", data.scanlines);
     set1f("uPixelation", data.pixelation);
     set1f("uPosterize", data.posterize);
@@ -616,4 +625,26 @@ void PostFX::updateRandomAnim(float dt)
 void PostFX::applyConfig(const PostFXData& data)
 {
     mData = data;
+}
+
+void PostFX::setCameraLensDistortion(float amount, float curve, float zoom,
+                                     int edgeMode, float edgeRadius,
+                                     float edgeSoftness, float edgeDarkness,
+                                     float peripheralBlur)
+{
+    if (!std::isfinite(amount)) amount = 0.0f;
+    if (!std::isfinite(curve)) curve = 1.0f;
+    if (!std::isfinite(zoom)) zoom = 1.0f;
+    if (!std::isfinite(edgeRadius)) edgeRadius = 0.72f;
+    if (!std::isfinite(edgeSoftness)) edgeSoftness = 0.30f;
+    if (!std::isfinite(edgeDarkness)) edgeDarkness = 1.0f;
+    if (!std::isfinite(peripheralBlur)) peripheralBlur = 1.0f;
+    mData.lensDistortion = std::clamp(amount, 0.0f, 10000.0f);
+    mData.lensDistortionCurve = std::clamp(curve, 0.05f, 8.0f);
+    mData.lensDistortionZoom = std::clamp(zoom, 0.1f, 5.0f);
+    mData.lensDistortionEdgeMode = std::clamp(edgeMode, 0, 4);
+    mData.lensDistortionEdgeRadius = std::clamp(edgeRadius, 0.05f, 1.2f);
+    mData.lensDistortionEdgeSoftness = std::clamp(edgeSoftness, 0.0f, 1.0f);
+    mData.lensDistortionEdgeDarkness = std::clamp(edgeDarkness, 0.0f, 1.0f);
+    mData.lensDistortionPeripheralBlur = std::clamp(peripheralBlur, 0.0f, 4.0f);
 }

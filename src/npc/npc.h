@@ -22,6 +22,8 @@
 #include "npc/npc-navigator.h"
 #include "npc/npc-traversal.h"
 #include "npc/npc-behavior.h"
+#include "npc/npc-perception.h"
+#include "npc/npc-utility.h"
 
 class Camera;
 struct World;
@@ -77,6 +79,16 @@ public:
     // Server-selected current target id (persisted for stickiness/scoring).
     uint32_t serverTargetId = 0;
     NpcSensorContext sensors;
+    // Human-like perception: the last observation, the belief, and the memory.
+    // sightRange/FOV/reaction/memory are resolved per life from the difficulty
+    // config; the belief feeds target acquisition and combat aim.
+    PerceptionSnapshot perception;
+    BeliefState belief;
+    MemoryRecord targetMemory;
+    // Utility goal/action selection driven by perception + objective context.
+    // The legacy state machine remains the executor until parity is proven.
+    UtilityState utility;
+    UtilityContext utilityContext;
     NpcStateMachine stateMachine;
     // Goal -> navigation -> movement pipeline (cached local route).
     NpcNavigator navigator;

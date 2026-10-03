@@ -58,6 +58,11 @@ public:
     // Multiplier for the physical RMB target response. 1 = current loose
     // behavior; higher values hold the aim target more strongly.
     float rightArmPointingAimStrength() const { return mRightArmPointingAimStrength; }
+    bool rightArmPointingFovEnabled() const { return mRightArmPointingFovEnabled; }
+    float rightArmPointingFovMultiplier() const { return mRightArmPointingFovMultiplier; }
+    float rightArmPointingFovDuration() const { return mRightArmPointingFovDuration; }
+    const std::string& rightArmPointingFovEasing() const { return mRightArmPointingFovEasing; }
+    float updateRightArmPointingFovBlend(bool held, float dt);
     bool bodyPhysicsMode() const { return physicalMode() || hybridMode(); }
     const std::string& mode() const { return mMode; }
     float smoothingFactor() const { return mSmoothingFactor; }
@@ -93,6 +98,11 @@ private:
     glm::vec3 mRightArmPointingRotationDegrees{0.0f};
     float mRightArmPointingBlendRate = 10.0f;
     float mRightArmPointingAimStrength = 10.0f;
+    bool mRightArmPointingFovEnabled = true;
+    float mRightArmPointingFovMultiplier = 0.5f;
+    float mRightArmPointingFovDuration = 0.5f;
+    std::string mRightArmPointingFovEasing = "ease_in_out";
+    float mRightArmPointingFovBlend = 0.0f;
     float mSmoothingFactor = 1.0f;
     std::unordered_map<std::string, LimbAim> mLimbs;
     std::string mPath = "config/aimbody.json";

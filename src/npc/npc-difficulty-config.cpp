@@ -130,6 +130,13 @@ bool NpcDifficultyConfig::load(const std::string& path)
             next.targetMode = "closest";
         }
         next.damageOtherNpcs = optBool(root, "damageOtherNpcs", next.damageOtherNpcs);
+        next.perceptionFovDegrees = std::clamp(optFloat(root, "perceptionFovDegrees", next.perceptionFovDegrees), 5.0f, 360.0f);
+        next.perceptionSightRange = std::max(1.0f, optFloat(root, "perceptionSightRange", next.perceptionSightRange));
+        next.perceptionHearingRange = std::max(0.0f, optFloat(root, "perceptionHearingRange", next.perceptionHearingRange));
+        next.perceptionReactionTicks = std::max(0, optInt(root, "perceptionReactionTicks", next.perceptionReactionTicks));
+        next.perceptionMemoryTicks = std::max(1, optInt(root, "perceptionMemoryTicks", next.perceptionMemoryTicks));
+        next.perceptionPredictionSeconds = std::max(0.0f, optFloat(root, "perceptionPredictionSeconds", next.perceptionPredictionSeconds));
+        next.perceptionPredictionErrorMeters = std::max(0.0f, optFloat(root, "perceptionPredictionErrorMeters", next.perceptionPredictionErrorMeters));
         next.turnSpeed = std::max(0.0f, optFloat(root, "turnSpeed", next.turnSpeed));
         next.aimAtTargetMin = std::max(0.0f, optFloat(root, "aimAtTargetMin", next.aimAtTargetMin));
         next.aimAtTargetMax = std::max(0.0f, optFloat(root, "aimAtTargetMax", next.aimAtTargetMax));

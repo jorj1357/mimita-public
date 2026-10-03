@@ -168,6 +168,102 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.resultsSeconds = std::max(0, optInt(root, "results_seconds", next.resultsSeconds));
         next.maps = optStringArray(root, "maps");
 
+        // ── Ordered roster (optional). Defines team order, display names,
+        // capacity, per-team role, and spawn group. When present it also
+        // supplies teamNames so existing HUD/team code keeps working. ──
+        if (root.contains("teams") && root["teams"].is_array()) {
+            for (const auto& t : root["teams"]) {
+                if (!t.is_object()) continue;
+                GamemodeTeam team;
+                team.id = optString(t, "id", "");
+                team.displayName = optString(t, "display_name", "");
+                team.capacity = std::max(0, optInt(t, "capacity", 0));
+                team.role = optString(t, "role", "");
+                team.spawnGroup = optString(t, "spawn_group", "");
+                if (team.id.empty() && team.displayName.empty()) continue;
+                if (team.displayName.empty()) team.displayName = team.id;
+                next.teams.push_back(std::move(team));
+            }
+            if (!next.teams.empty()) {
+                next.teamNames.clear();
+                for (const auto& team : next.teams)
+                    next.teamNames.push_back(team.displayName);
+            }
+        }
+
+        // ── Spawn groups (optional): named team spawn sets. ─────────
+        if (root.contains("spawn_groups") && root["spawn_groups"].is_object()) {
+            for (auto it = root["spawn_groups"].begin(); it != root["spawn_groups"].end(); ++it) {
+                if (!it.value().is_object()) continue;
+                GamemodeSpawnGroup group;
+                group.id = it.key();
+                group.team = optString(it.value(), "team", "");
+                if (it.value().contains("points") && it.value()["points"].is_array()) {
+                    for (const auto& p : it.value()["points"]) {
+                        if (!p.is_array() || p.size() < 3) continue;
+                        GamemodeSpawnGroup::Point point;
+                        if (p[0].is_number()) point.x = p[0].get<float>();
+                        if (p[1].is_number()) point.y = p[1].get<float>();
+                        if (p[2].is_number()) point.z = p[2].get<float>();
+                        group.points.push_back(point);
+                    }
+                }
+                next.spawnGroups.push_back(std::move(group));
+            }
+        }
+
+        // ── Objective definitions (optional). ───────────────────────
+        if (root.contains("objectives") && root["objectives"].is_array()) {
+            for (const auto& o : root["objectives"]) {
+                if (!o.is_object()) continue;
+                GamemodeObjectiveDefinition def;
+                def.id = optString(o, "id", "");
+                def.kind = optString(o, "kind", "");
+                def.carrierTeam = optString(o, "carrier_team", "");
+                def.siteGroup = optString(o, "site_group", "");
+                def.plantSeconds = std::max(0.0f, optFloat(o, "plant_seconds", 0.0f));
+                def.defuseSeconds = std::max(0.0f, optFloat(o, "defuse_seconds", 0.0f));
+                def.explosionSeconds = std::max(0.0f, optFloat(o, "explosion_seconds", 0.0f));
+                if (def.id.empty()) continue;
+                next.objectives.push_back(std::move(def));
+            }
+        }
+
+        // ── Round rules + victory (optional). ───────────────────────
+        if (root.contains("rounds") && root["rounds"].is_object()) {
+            const auto& r = root["rounds"];
+            next.rounds.maxRounds = std::max(0, optInt(r, "max_rounds", 0));
+            next.rounds.roundsToWin = std::max(0, optInt(r, "rounds_to_win", 0));
+            next.rounds.roundSeconds = std::max(0.0f, optFloat(r, "round_seconds", 0.0f));
+            next.rounds.freezeSeconds = std::max(0.0f, optFloat(r, "freeze_seconds", 0.0f));
+            next.rounds.countdownSeconds = std::max(0.0f, optFloat(r, "countdown_seconds", 0.0f));
+            next.rounds.intermissionSeconds = std::max(0.0f, optFloat(r, "intermission_seconds", 0.0f));
+            next.rounds.resultsSeconds = std::max(0.0f, optFloat(r, "results_seconds", 0.0f));
+        }
+        if (root.contains("victory") && root["victory"].is_object())
+            next.victoryCondition = optString(root["victory"], "type", next.victoryCondition);
+
+        // ── Presentation policy (optional). Missing keys keep ordinary
+        // behavior; the actor preset refines these where both exist. ──
+        if (root.contains("presentation") && root["presentation"].is_object()) {
+            const auto& p = root["presentation"];
+            auto readFlag = [&p](const char* key, bool& has, bool& value) {
+                if (p.contains(key) && p[key].is_boolean()) {
+                    has = true;
+                    value = p[key].get<bool>();
+                }
+            };
+            readFlag("damage_numbers", next.presentation.hasDamageNumbers, next.presentation.damageNumbers);
+            readFlag("hit_effects", next.presentation.hasHitEffects, next.presentation.hitEffects);
+            readFlag("world_impact_effects", next.presentation.hasWorldImpactEffects, next.presentation.worldImpactEffects);
+            readFlag("hit_markers", next.presentation.hasHitMarkers, next.presentation.hitMarkers);
+            readFlag("hit_sounds", next.presentation.hasHitSounds, next.presentation.hitSounds);
+            readFlag("blood", next.presentation.hasBlood, next.presentation.blood);
+            readFlag("killfeed", next.presentation.hasKillfeed, next.presentation.killfeed);
+            readFlag("ragdolls", next.presentation.hasRagdolls, next.presentation.ragdolls);
+            readFlag("enemy_healthbars", next.presentation.hasEnemyHealthbars, next.presentation.enemyHealthbars);
+        }
+
         // ── Bomb Tag specific fields ─────────────────────────────────
         next.bombTimerTicks = std::max(60, optInt(root, "bomb_timer_ticks", next.bombTimerTicks));
         next.inactiveTicks = std::max(0, optInt(root, "inactive_ticks", next.inactiveTicks));
@@ -223,12 +319,13 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
 
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,
-            "[GAMEMODE] Loaded %s: %s | goal=%d | time=%d | respawn=%.1fs | heal=%d | maps=%zu | fov=%.0f ragdoll=%d(%d) blood=%d(%d) win=%s\n",
+            "[GAMEMODE] Loaded %s: %s | goal=%d | time=%d | respawn=%.1fs | heal=%d | maps=%zu | fov=%.0f ragdoll=%d(%d) blood=%d(%d) win=%s | teams=%zu rounds_to_win=%d objectives=%zu\n",
             fileNameOf(path).c_str(), next.name.c_str(), next.goalValue,
             next.timeLimitSeconds, next.respawnSeconds, (int)next.killHeals, next.maps.size(),
             next.cameraFov, (int)next.ragdollEnabled, (int)next.ragdollExplicit,
             (int)next.bloodEnabled, (int)next.bloodExplicit,
-            next.winCondition.empty() ? "default" : next.winCondition.c_str());
+            next.winCondition.empty() ? "default" : next.winCondition.c_str(),
+            next.teams.size(), next.rounds.roundsToWin, next.objectives.size());
     } catch (const json::parse_error& e) {
         Debug::error(Debug::Category::Duel, "[GAMEMODE] Parse error in %s: %s. Keeping previous valid data.\n",
                      path.c_str(), e.what());

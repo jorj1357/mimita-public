@@ -1185,6 +1185,32 @@ struct DuelStatePacket
     uint8_t bloodEnabled = 0;       // 0=no override, 1=disabled, 2=enabled
     uint8_t forceFirstPerson = 0;
     char actorPresetId[64] = {};
+    // ── Round-based match fields (Counter-Strike and future modes) ──
+    // roundVersion rejects stale packets from a previous round; roundWins is
+    // the per-team round tally in the mode's fixed team order.
+    uint32_t roundVersion = 0;
+    uint32_t roundNumber = 0;
+    int32_t roundWins[2] = {0, 0};
+    int32_t winnerTeam = -1;        // -1 = none; else fixed team index
+    uint8_t roundEndReason = 0;     // 0=none, 1=elimination, 2=objective, 3=time
+    uint8_t roundsReserved[3] = {};
+    float roundSeconds = 0.0f;      // active round time limit
+    float roundTimerLeft = 0.0f;    // seconds left in the active round
+    // ── Generic objective item (bomb; future payload/capture) ───────
+    uint8_t objectiveActive = 0;    // 1 = a mode objective exists
+    uint8_t objectiveKind = 0;      // ObjectiveKind
+    uint8_t objectiveState = 0;     // ObjectiveState
+    uint8_t objectiveTeam = 0;      // allowed carrier team; 0xFF = any
+    uint32_t objectiveCarrierId = 0;// 0 = none
+    float objectiveX = 0.0f;
+    float objectiveY = 0.0f;
+    float objectiveZ = 0.0f;
+    float objectiveProgress = 0.0f; // 0..1 plant or defuse progress
+    float objectiveTimerLeft = 0.0f;// seconds until explosion when planted
+    uint8_t objectiveProgressKind = 0; // 0=none, 1=plant, 2=defuse
+    uint8_t objectiveReserved = 0;
+    char objectiveId[16] = {};
+    char objectiveSite[8] = {};
     // ── Procedural world (Infinite Dungeon Slayer) ──────────────────
     // Appended section: server-owned room state. All-zero means disabled.
     ProceduralWorldNetworkState procedural = {};

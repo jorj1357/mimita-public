@@ -94,7 +94,17 @@ void readRole(const json& j, const std::string& fallbackId, MatchRoleDefinition&
     out.weaponSet = j.value("weapon_set", out.weaponSet);
     out.startingWeapon = j.value("starting_weapon", out.startingWeapon);
     out.behaviorProfile = j.value("behavior_profile", out.behaviorProfile);
+    out.actorPresetId = j.value("actor_preset", out.actorPresetId);
+    out.teamId = j.value("team_id", out.teamId);
+    out.spawnGroup = j.value("spawn_group", out.spawnGroup);
     out.avatarName = j.value("avatar", out.avatarName);
+    if (j.contains("avatar_forced") && j["avatar_forced"].is_boolean())
+        out.avatarForced = j["avatar_forced"].get<bool>();
+    if (j.contains("objective_permissions") && j["objective_permissions"].is_array()) {
+        out.objectivePermissions.clear();
+        for (const auto& item : j["objective_permissions"])
+            if (item.is_string()) out.objectivePermissions.push_back(item.get<std::string>());
+    }
 }
 
 template <typename T>
@@ -118,12 +128,18 @@ void readPresentation(const json& j, ActorPresetPresentation& out)
     out.hasWorldImpactEffects = readOptional(j, "world_impact_effects", "worldImpactEffects", out.worldImpactEffects);
     out.hasBloodEffects = readOptional(j, "blood_effects", "bloodEffects", out.bloodEffects);
     out.hasMuzzleFlash = readOptional(j, "muzzle_flash", "muzzleFlash", out.muzzleFlash);
+    out.hasHitMarkers = readOptional(j, "hit_markers", "hitMarkers", out.hitMarkers);
+    out.hasHitSounds = readOptional(j, "hit_sounds", "hitSounds", out.hitSounds);
 }
 
 void readWeaponOverride(const json& j, ActorPresetWeaponOverride& out)
 {
     if (!j.is_object()) return;
     out.hasDamage = readOptional(j, "damage", "damage", out.damage);
+    out.hasDamageScale = readOptional(j, "damage_scale", "damageScale", out.damageScale);
+    out.hasHeadshotMultiplier = readOptional(j, "headshot_multiplier", "headshotMultiplier", out.headshotMultiplier);
+    out.hasSpread = readOptional(j, "spread", "spread", out.spread);
+    out.hasRecoil = readOptional(j, "recoil", "recoil", out.recoil);
     out.hasFireDelay = readOptional(j, "fire_delay", "fireDelay", out.fireDelay);
     out.hasReloadTime = readOptional(j, "reload_time", "reloadTime", out.reloadTime);
     out.hasMagazineSize = readOptional(j, "magazine_size", "magazineSize", out.magazineSize);
@@ -148,8 +164,10 @@ void readWeaponOverride(const json& j, ActorPresetWeaponOverride& out)
         }
     }
 
-    // Presentation is owned by the preset's top-level "presentation" block.
-    // Weapon overrides remain gameplay-only (damage/timing/ammo/hitscan).
+    // A weapon may also carry a presentation override that refines the
+    // preset-level policy for that weapon only. Missing keys inherit.
+    if (j.contains("presentation") && j["presentation"].is_object())
+        readPresentation(j["presentation"], out.presentation);
 }
 
 void readActorPreset(const json& j, const std::string& fallbackId,

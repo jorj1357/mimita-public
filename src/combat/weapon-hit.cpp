@@ -54,7 +54,7 @@ void weaponHit(Player& attacker, Player& target)
     glm::vec3 knockbackDir = toTarget;
     knockbackDir.z = 0.3f; // Slight upward
     
-    target.takeDamage((int)MELEE_DAMAGE, knockbackDir, MELEE_KNOCKBACK);
+    target.takeDamage((int)MELEE_DAMAGE, knockbackDir, MELEE_KNOCKBACK, attacker.pos);
     {
         HitEvent ev;
         ev.position = target.pos;

@@ -79,6 +79,61 @@ bool CamConfig::load(const std::string& path)
             next.lookAheadDistance = tp.value("lookAheadDistance", next.lookAheadDistance);
         }
 
+        next.lensDistortion = root.value("lensDistortion", next.lensDistortion);
+        if (!std::isfinite(next.lensDistortion))
+            next.lensDistortion = 0.0f;
+        next.lensDistortion = std::clamp(next.lensDistortion, 0.0f, 10000.0f);
+        next.lensDistortionCurve = root.value("lensDistortionCurve", next.lensDistortionCurve);
+        next.lensDistortionZoom = root.value("lensDistortionZoom", next.lensDistortionZoom);
+        next.lensDistortionEdgeMode = root.value("lensDistortionEdgeMode", next.lensDistortionEdgeMode);
+        next.lensDistortionEdgeRadius = root.value("lensDistortionEdgeRadius", next.lensDistortionEdgeRadius);
+        next.lensDistortionEdgeSoftness = root.value("lensDistortionEdgeSoftness", next.lensDistortionEdgeSoftness);
+        next.lensDistortionEdgeDarkness = root.value("lensDistortionEdgeDarkness", next.lensDistortionEdgeDarkness);
+        next.lensDistortionPeripheralBlur = root.value("lensDistortionPeripheralBlur", next.lensDistortionPeripheralBlur);
+        if (!std::isfinite(next.lensDistortionCurve)) next.lensDistortionCurve = 1.0f;
+        if (!std::isfinite(next.lensDistortionZoom)) next.lensDistortionZoom = 1.0f;
+        if (!std::isfinite(next.lensDistortionEdgeRadius)) next.lensDistortionEdgeRadius = 0.72f;
+        if (!std::isfinite(next.lensDistortionEdgeSoftness)) next.lensDistortionEdgeSoftness = 0.30f;
+        if (!std::isfinite(next.lensDistortionEdgeDarkness)) next.lensDistortionEdgeDarkness = 1.0f;
+        if (!std::isfinite(next.lensDistortionPeripheralBlur)) next.lensDistortionPeripheralBlur = 1.0f;
+        if (next.lensDistortionEdgeMode != "black" && next.lensDistortionEdgeMode != "vignette" &&
+            next.lensDistortionEdgeMode != "clamp" && next.lensDistortionEdgeMode != "repeat" &&
+            next.lensDistortionEdgeMode != "circle")
+            next.lensDistortionEdgeMode = "circle";
+        next.lensDistortionCurve = std::clamp(next.lensDistortionCurve, 0.05f, 8.0f);
+        next.lensDistortionZoom = std::clamp(next.lensDistortionZoom, 0.1f, 5.0f);
+        next.lensDistortionEdgeRadius = std::clamp(next.lensDistortionEdgeRadius, 0.05f, 1.2f);
+        next.lensDistortionEdgeSoftness = std::clamp(next.lensDistortionEdgeSoftness, 0.0f, 1.0f);
+        next.lensDistortionEdgeDarkness = std::clamp(next.lensDistortionEdgeDarkness, 0.0f, 1.0f);
+        next.lensDistortionPeripheralBlur = std::clamp(next.lensDistortionPeripheralBlur, 0.0f, 4.0f);
+
+        if (root.contains("hitFlinch") && root["hitFlinch"].is_object()) {
+            const auto& flinch = root["hitFlinch"];
+            next.hitFlinchEnabled = flinch.value("enabled", next.hitFlinchEnabled);
+            next.hitFlinchLow = flinch.value("low", next.hitFlinchLow);
+            next.hitFlinchHigh = flinch.value("high", next.hitFlinchHigh);
+            next.hitFlinchDamageAtHigh = flinch.value("damageAtHigh", next.hitFlinchDamageAtHigh);
+            next.hitFlinchPitch = flinch.value("pitch", next.hitFlinchPitch);
+            next.hitFlinchYaw = flinch.value("yaw", next.hitFlinchYaw);
+            next.hitFlinchRandomness = flinch.value("randomness", next.hitFlinchRandomness);
+            next.hitFlinchDistance = flinch.value("distance", next.hitFlinchDistance);
+            next.hitFlinchDistanceExponent = flinch.value("distanceExponent", next.hitFlinchDistanceExponent);
+        }
+        if (!std::isfinite(next.hitFlinchLow)) next.hitFlinchLow = 1.0f;
+        if (!std::isfinite(next.hitFlinchHigh)) next.hitFlinchHigh = 9.0f;
+        if (!std::isfinite(next.hitFlinchDamageAtHigh)) next.hitFlinchDamageAtHigh = 100.0f;
+        if (!std::isfinite(next.hitFlinchPitch)) next.hitFlinchPitch = -1.0f;
+        if (!std::isfinite(next.hitFlinchYaw)) next.hitFlinchYaw = 0.0f;
+        if (!std::isfinite(next.hitFlinchRandomness)) next.hitFlinchRandomness = 0.0f;
+        if (!std::isfinite(next.hitFlinchDistance)) next.hitFlinchDistance = 30.0f;
+        if (!std::isfinite(next.hitFlinchDistanceExponent)) next.hitFlinchDistanceExponent = 1.0f;
+        next.hitFlinchLow = std::max(0.0f, next.hitFlinchLow);
+        next.hitFlinchHigh = std::max(next.hitFlinchLow, next.hitFlinchHigh);
+        next.hitFlinchDamageAtHigh = std::max(0.001f, next.hitFlinchDamageAtHigh);
+        next.hitFlinchRandomness = std::max(0.0f, next.hitFlinchRandomness);
+        next.hitFlinchDistance = std::max(0.001f, next.hitFlinchDistance);
+        next.hitFlinchDistanceExponent = std::max(0.001f, next.hitFlinchDistanceExponent);
+
         if (root.contains("cameraSway") && root["cameraSway"].is_object()) {
             const auto& sway = root["cameraSway"];
             next.cameraSwayEnabled = sway.value("enabled", next.cameraSwayEnabled);
@@ -106,10 +161,12 @@ bool CamConfig::load(const std::string& path)
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::General,
             "[CAM CONFIG] Loaded successfully: %s  "
-            "offset=(%.1f %.1f %.1f) fov=%.0f stiffness=%.2f stiffEnabled=%d collision=%d pushEnabled=%d pushback=%.2f\n",
+            "offset=(%.1f %.1f %.1f) fov=%.0f lensDistortion=%.1f "
+            "stiffness=%.2f stiffEnabled=%d collision=%d pushEnabled=%d pushback=%.2f\n",
             fileName.c_str(),
             mData.offset.x, mData.offset.y, mData.offset.z,
-            mData.fov, mData.positionStiffness, (int)mData.stiffnessEnabled, (int)mData.collisionEnabled,
+            mData.fov, mData.lensDistortion, mData.positionStiffness,
+            (int)mData.stiffnessEnabled, (int)mData.collisionEnabled,
             (int)mData.collisionPushEnabled, mData.collisionPushback);
         Debug::log(Debug::Category::General,
             "[CAM CONFIG] camera sway settings updated; weapon recoil decay source unchanged\n");

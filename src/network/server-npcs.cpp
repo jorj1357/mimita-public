@@ -141,6 +141,10 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         npcIdsAlive.insert(kv.first);
         if (alreadySimulated) continue;
         npcSystem.spawnNpc(kv.first, kv.second.difficulty, kv.second.pos);
+        // Apply the role profile (health, movement, avatar, behavior, loadout)
+        // so a roster NPC gets its intended first life. Shared with the
+        // gamemode spawn-reset path; no CS-only branch.
+        const ActorSpawnProfile profile = serverResolveActorSpawnProfile(kv.first);
         // Apply the healthall override to the newly adopted real NPC body.
         for (Npc& n : npcSystem.all())
         {
@@ -151,6 +155,21 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                     n.body.maxHp = serverGameOverrides().maxHpOverride;
                     n.body.currentHp = n.body.maxHp;
                 }
+                else if (profile.health > 0)
+                {
+                    n.body.maxHp = profile.health;
+                    n.body.currentHp = n.body.maxHp;
+                }
+                if (!profile.movementPreset.empty())
+                    n.movementProfileId = profile.movementPreset;
+                if (!profile.avatarName.empty())
+                    n.avatarName = profile.avatarName;
+                n.behaviorProfileId = profile.behaviorProfileId;
+                n.behavior = resolveNpcBehavior(profile.behaviorProfileId);
+                if (n.behavior.active && n.behavior.aggression >= 0.0f)
+                    n.tuning.aggression = n.behavior.aggression;
+                if (!profile.weapons.empty())
+                    npcApplyLoadout(n, profile.weapons, profile.startingWeapon);
                 finalizeServerNpcSpawn(n, ActorSpawnReason::NpcCreate);
             }
         }

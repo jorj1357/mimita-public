@@ -21,6 +21,7 @@
 
 #include "network/server.h"
 #include "network/actor-match.h"
+#include "game/objective-state.h"
 #include "procedural/procedural-world.h"
 
 namespace MimitaNet {
@@ -172,6 +173,32 @@ struct ServerGamemodeState
     float respawnSeconds = -1.0f;
     bool killHeals = true;
     std::string winCondition;
+
+    // ── Round-based match lifecycle (Counter-Strike and future modes) ──
+    // Active only when victoryCondition == "rounds". Owns the ordered
+    // round chain, per-team round wins, and the round/version identity used
+    // to reject stale packets from a previous round.
+    bool objectiveRounds = false;
+    std::string victoryCondition;      // "rounds" enables the round chain
+    uint32_t roundNumber = 0;          // 1-based current round
+    uint32_t roundVersion = 0;         // bumped every round start/end; stale guard
+    int roundWins[2] = {0, 0};         // per-team round wins (indexed by team)
+    int roundsToWin = 0;               // first to this many rounds wins the match
+    int maxRounds = 0;                 // configured round ceiling (JSON-controlled)
+    float roundSeconds = 0.0f;         // active round time limit
+    uint32_t roundEndTick = 0;         // tick the active round times out
+    int roundWinnerTeam = -1;          // -1 = no round decided yet
+    int roundEndReason = 0;            // 0=none,1=elim,2=objective,3=time
+    float freezeSeconds = 0.0f;        // freeze time before each round
+    bool rosterLocked = false;         // true once team selection closes
+    uint32_t roundNextNpcId = 0;       // next id for roster NPC mirror entries
+    // ── Mode objective item (bomb; future payload/capture/escort) ──
+    // Server-owned. The gamemode JSON declares the kind/carrier team; the
+    // runtime owns carrier/drop/pickup state. Never stored in an actor preset.
+    ObjectiveInstance objective;
+    uint32_t objectiveNextCarrierScanTick = 0;
+    uint32_t objectivePickupCounter = 0;
+    uint32_t objectiveDropCounter = 0;
 
     bool npcWaves = false;
     uint32_t waveNumber = 0;
@@ -327,6 +354,12 @@ void serverRespawnAllActors(SOCKET sock,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             std::unordered_map<uint32_t, ServerNpc>& npcs,
                             uint32_t tick, uint64_t& totalPacketsOut);
+
+// Focused, world-independent selftest for the round-based match lifecycle.
+// Validates roster sizing, team ordering, round-win tallying, victory
+// threshold, and stale-round versioning without a World/NpcSystem. Returns
+// true on success and fills `report` with a human-readable summary.
+bool serverCounterStrikeRoundSelfTest(std::string& report);
 
 // Starts the shared community map runtime without enabling match scoring.
 void serverCommunityMapStart(const std::vector<std::string>& mapPool,

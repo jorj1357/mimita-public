@@ -37,6 +37,17 @@ struct NpcDifficultySettings {
     std::string targetMode = "closest";  // "closest" = current hostile behavior; "player" = nearest human player only
     bool damageOtherNpcs = true;           // whether NPCs may select and damage other NPCs
 
+    // Human-like perception. Target acquisition requires hostile + within
+    // range + inside FOV + line of sight + alive. Memory keeps a decaying
+    // last-known position so a wall-blocked target is not fully known.
+    float perceptionFovDegrees = 100.0f;   // horizontal sight cone
+    float perceptionSightRange = 100.0f;   // meters
+    float perceptionHearingRange = 40.0f;  // meters; uncertain reports, not vision
+    int perceptionReactionTicks = 8;       // fixed 60 Hz ticks before first response
+    int perceptionMemoryTicks = 180;       // 3s of decaying memory
+    float perceptionPredictionSeconds = 0.15f;
+    float perceptionPredictionErrorMeters = 0.4f;  // skill-scaled tracking error
+
     // Facing/turn tuning (hot-reloaded). The NPC switches between two facing
     // modes: "aim at target" (dominant, long stretches) and "face movement"
     // (brief). Turn speed no longer depends on being grounded or in the air.

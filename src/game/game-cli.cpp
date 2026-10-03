@@ -53,6 +53,10 @@
 #include "network/coordinator-client.h"
 #include "network/badconn/badconn.h"
 #include "gamemode/match-roles.h"
+#include "gamemode/gamemode.h"
+#include "gamemode/map-config.h"
+#include "network/server-gamemode.h"
+#include "npc/npc-nav-request.h"
 
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
@@ -248,6 +252,8 @@ bool handleGameCLI(int argc, char** argv)
             ? &counterStrike->weaponOverrides.at("revolver") : nullptr;
         const auto shotgun = counterStrike && counterStrike->weaponOverrides.find("shotgun") != counterStrike->weaponOverrides.end()
             ? &counterStrike->weaponOverrides.at("shotgun") : nullptr;
+        const auto rifle = counterStrike && counterStrike->weaponOverrides.find("hitscan_rifle") != counterStrike->weaponOverrides.end()
+            ? &counterStrike->weaponOverrides.at("hitscan_rifle") : nullptr;
         const bool ok = loaded && counterStrike != nullptr &&
             counterStrike->cameraFov == 70.0f &&
             counterStrike->forceFov && counterStrike->forceFirstPerson &&
@@ -258,12 +264,120 @@ bool handleGameCLI(int argc, char** argv)
             revolver->hasReloadTime && revolver->reloadTime == 2.2f &&
             revolver->hasMagazineSize && revolver->magazineSize == 6 &&
             revolver->hasReserveAmmo && revolver->reserveAmmo == 36 &&
+            revolver->hasBeamThickness && revolver->beamThickness == 0.0f &&
+            revolver->hasWorldThickness && revolver->worldThickness == 0.0f &&
             shotgun && shotgun->hasDamage && shotgun->hasFireDelay &&
+            shotgun->hasBeamThickness && shotgun->beamThickness == 0.0f &&
+            // New override fields present and correct.
+            rifle && rifle->hasMagazineSize && rifle->magazineSize == 30 &&
+            rifle->hasReserveAmmo && rifle->reserveAmmo == 180 &&
+            rifle->hasDamage && rifle->damage == 30.0f &&
+            rifle->hasHeadshotMultiplier && rifle->headshotMultiplier == 4.0f &&
+            rifle->hasBeamThickness && rifle->beamThickness == 0.0f &&
+            rifle->hasWorldThickness && rifle->worldThickness == 0.0f &&
             !counterStrike->presentation.damageNumbers &&
             !counterStrike->presentation.hitEffects &&
-            !counterStrike->presentation.worldImpactEffects;
-        printf("[ACTOR PRESET SELFTEST] counter_strike=%s\n", counterStrike ? "found" : "missing");
+            !counterStrike->presentation.worldImpactEffects &&
+            counterStrike->presentation.bloodEffects;
+        printf("[ACTOR PRESET SELFTEST] counter_strike=%s revolver=%.0f/6/%d shotgun=%.0f/%d/%d rifle=%.0f/%d/%d hs=%.0f thick=%.1f/%.1f\n",
+               counterStrike ? "found" : "missing",
+               revolver ? revolver->damage : -1.0f, revolver ? revolver->reserveAmmo : -1,
+               shotgun ? shotgun->damage : -1.0f, shotgun ? shotgun->magazineSize : -1, shotgun ? shotgun->reserveAmmo : -1,
+               rifle ? rifle->damage : -1.0f, rifle ? rifle->magazineSize : -1, rifle ? rifle->reserveAmmo : -1,
+               rifle ? rifle->headshotMultiplier : -1.0f,
+               rifle ? rifle->beamThickness : -1.0f, rifle ? rifle->worldThickness : -1.0f);
         printf("[ACTOR PRESET SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--map-config-selftest") {
+        std::string report;
+        const bool ok = mapConfigSelfTest(report);
+        printf("[MAP CONFIG SELFTEST]\n%s", report.c_str());
+        printf("[MAP CONFIG SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--objective-selftest") {
+        std::string report;
+        const bool ok = objectiveSelfTest(report);
+        printf("[OBJECTIVE SELFTEST]\n%s", report.c_str());
+        printf("[OBJECTIVE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-utility-selftest") {
+        std::string report;
+        const bool ok = npcUtilitySelfTest(report);
+        printf("[NPC UTILITY SELFTEST]\n%s", report.c_str());
+        printf("[NPC UTILITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-nav-request-selftest") {
+        std::string report;
+        const bool ok = npcNavRequestSelfTest(report);
+        printf("[NPC NAV REQUEST SELFTEST]\n%s", report.c_str());
+        printf("[NPC NAV REQUEST SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-perception-selftest") {
+        std::string report;
+        const bool ok = npcPerceptionSelfTest(report);
+        printf("[NPC PERCEPTION SELFTEST]\n%s", report.c_str());
+        printf("[NPC PERCEPTION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--cs-round-selftest") {
+        auto& registry = GamemodeRegistry::instance();
+        registry.loadDirectory("config/gamemodes");
+        std::string report;
+        const bool ok = MimitaNet::serverCounterStrikeRoundSelfTest(report);
+        printf("[CS ROUND SELFTEST]\n%s", report.c_str());
+        printf("[CS ROUND SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--gamemode-selftest") {
+        auto& registry = GamemodeRegistry::instance();
+        registry.loadDirectory(argc > 2 ? argv[2] : "config/gamemodes");
+        const Gamemode& cs = registry.get("counterstrike");
+        printf("[GAMEMODE SELFTEST] loaded=%zu\n", registry.ids().size());
+        printf("[GAMEMODE SELFTEST] id=%s teams=%zu\n", cs.id.c_str(), cs.teams.size());
+        for (size_t i = 0; i < cs.teams.size(); ++i)
+            printf("[GAMEMODE SELFTEST] team[%zu] id=%s display=%s capacity=%d role=%s spawn=%s\n",
+                   i, cs.teams[i].id.c_str(), cs.teams[i].displayName.c_str(),
+                   cs.teams[i].capacity, cs.teams[i].role.c_str(), cs.teams[i].spawnGroup.c_str());
+        printf("[GAMEMODE SELFTEST] rounds_to_win=%d round_seconds=%.0f countdown=%.0f\n",
+               cs.rounds.roundsToWin, cs.rounds.roundSeconds, cs.rounds.countdownSeconds);
+        printf("[GAMEMODE SELFTEST] victory=%s objectives=%zu spawn_groups=%zu\n",
+               cs.victoryCondition.c_str(), cs.objectives.size(), cs.spawnGroups.size());
+
+        auto& roles = MatchRoleRegistry::instance();
+        roles.load("config/roles.json");
+        roles.loadActorPresets("config/actor-presets");
+        const auto* ct = roles.get("counter_terrorist");
+        const auto* t = roles.get("terrorist");
+        const auto* preset = roles.getActorPreset("counter_strike");
+        printf("[GAMEMODE SELFTEST] role counter_terrorist=%s actor_preset=%s avatar=%s team_id=%s\n",
+               ct ? "found" : "missing", ct ? ct->actorPresetId.c_str() : "-",
+               ct ? ct->avatarName.c_str() : "-", ct ? ct->teamId.c_str() : "-");
+        printf("[GAMEMODE SELFTEST] role terrorist=%s actor_preset=%s avatar=%s team_id=%s\n",
+               t ? "found" : "missing", t ? t->actorPresetId.c_str() : "-",
+               t ? t->avatarName.c_str() : "-", t ? t->teamId.c_str() : "-");
+
+        const bool teamsOk = cs.teams.size() == 2 &&
+            cs.teams[0].id == "ct" && cs.teams[0].displayName == "Counter-Terrorists" &&
+            cs.teams[1].id == "t" && cs.teams[1].displayName == "Terrorists";
+        const bool rolesOk = ct && t && ct->actorPresetId == "counter_strike" &&
+            t->actorPresetId == "counter_strike" && preset != nullptr;
+        const bool roundsOk = cs.rounds.roundsToWin == 8 && cs.rounds.maxRounds == 15;
+        const bool objOk = cs.objectives.size() == 1 && cs.objectives[0].id == "bomb" &&
+            cs.objectives[0].carrierTeam == "t";
+        const bool ok = teamsOk && rolesOk && roundsOk && objOk;
+        printf("[GAMEMODE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

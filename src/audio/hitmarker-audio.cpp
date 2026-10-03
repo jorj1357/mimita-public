@@ -7,6 +7,7 @@
 
 #include "nlohmann/json.hpp"
 #include "audio/audio.h"
+#include "combat/actor-preset-weapons.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
 
@@ -109,6 +110,8 @@ void pollHitmarkerAudioConfig()
 
 void playHitmarkerSound(int damage)
 {
+    if (!ActorPresetWeapons::hitSoundsEnabled())
+        return;
     if (!gConfig.enabled)
         return;
 

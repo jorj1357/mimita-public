@@ -7,6 +7,26 @@
 struct CameraConfigData {
     glm::vec3 offset{2.0f, -3.5f, 1.0f};
     float fov = 100.0f;
+    // Full-screen barrel/fisheye distortion. 0 = neutral; values above 100
+    // remain meaningful for deliberately extreme experiments.
+    float lensDistortion = 0.0f;
+    float lensDistortionCurve = 1.0f;
+    float lensDistortionZoom = 1.0f;
+    std::string lensDistortionEdgeMode = "circle";
+    float lensDistortionEdgeRadius = 0.72f;
+    float lensDistortionEdgeSoftness = 0.30f;
+    float lensDistortionEdgeDarkness = 1.0f;
+    float lensDistortionPeripheralBlur = 1.0f;
+    // Damage-driven camera flinch layered onto the existing camera punch.
+    bool hitFlinchEnabled = true;
+    float hitFlinchLow = 1.0f;
+    float hitFlinchHigh = 9.0f;
+    float hitFlinchDamageAtHigh = 100.0f;
+    float hitFlinchPitch = -1.0f;
+    float hitFlinchYaw = 0.0f;
+    float hitFlinchRandomness = 0.0f;
+    float hitFlinchDistance = 30.0f;
+    float hitFlinchDistanceExponent = 1.0f;
     float positionStiffness = 1.0f;
     float rotationStiffness = 1.0f;
     bool stiffnessEnabled = true;

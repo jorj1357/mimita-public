@@ -49,6 +49,16 @@ CommunityMatchClient& CommunityMatchClient::instance()
     return state;
 }
 
+std::string CommunityMatchClient::teamName(int team) const
+{
+    const Gamemode& gm = GamemodeRegistry::instance().get(mMode);
+    if (team >= 0 && team < (int)gm.teams.size())
+        return gm.teams[(size_t)team].displayName;
+    if (team >= 0 && team < (int)gm.teamNames.size())
+        return gm.teamNames[(size_t)team];
+    return {};
+}
+
 void CommunityMatchClient::reset()
 {
     resetActorPreset();
@@ -80,6 +90,14 @@ void CommunityMatchClient::reset()
     mLocalScore = 0;
     mMatchId = 0;
     mStateVersion = 0;
+    mRoundVersion = 0;
+    mRoundNumber = 0;
+    mRoundWins[0] = mRoundWins[1] = 0;
+    mWinnerTeam = -1;
+    mRoundEndReason = 0;
+    mRoundSeconds = 0.0f;
+    mRoundTimerLeft = 0.0f;
+    mObjective = ReplicatedObjective{};
     mBombOwnerType = 0;
     mBombOwnerPlayerId = 0;
     mBombOwnerNpcIndex = 0;
@@ -263,6 +281,25 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mGoal = packet.goalValue;
     mRedScore = packet.redTeamKills;
     mBlueScore = packet.blueTeamKills;
+    mRoundVersion = packet.roundVersion;
+    mRoundNumber = packet.roundNumber;
+    mRoundWins[0] = packet.roundWins[0];
+    mRoundWins[1] = packet.roundWins[1];
+    mWinnerTeam = packet.winnerTeam;
+    mRoundEndReason = packet.roundEndReason;
+    mRoundSeconds = packet.roundSeconds;
+    mRoundTimerLeft = packet.roundTimerLeft;
+    mObjective.active = packet.objectiveActive != 0;
+    mObjective.kind = packet.objectiveKind;
+    mObjective.state = packet.objectiveState;
+    mObjective.team = packet.objectiveTeam;
+    mObjective.carrierId = packet.objectiveCarrierId;
+    mObjective.position = glm::vec3(packet.objectiveX, packet.objectiveY, packet.objectiveZ);
+    mObjective.id = packet.objectiveId;
+    mObjective.site = packet.objectiveSite;
+    mObjective.progress = packet.objectiveProgress;
+    mObjective.timerLeft = packet.objectiveTimerLeft;
+    mObjective.progressKind = packet.objectiveProgressKind;
 
     int newLocalScore = 0;
     std::vector<MatchLeaderboardEntry> leaders;

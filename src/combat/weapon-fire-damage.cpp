@@ -450,7 +450,8 @@ void processPlayerHit(
         (def.victimKnockback + (float)totalDamage * def.victimKnockbackPerDamage) * df;
     const glm::vec3 knockback = victimKnockbackImpulse(def, shotDirection, kn);
 
-    const_cast<Player*>(targetPlayer)->takeDamage(totalDamage, knockback, glm::length(knockback));
+    const_cast<Player*>(targetPlayer)->takeDamage(
+        totalDamage, knockback, glm::length(knockback), shooter.pos);
     const_cast<Player*>(targetPlayer)->killedByWeapon = def.displayName;
     const_cast<Player*>(targetPlayer)->lastDamagedBy = shooter.username;
 

@@ -19,6 +19,13 @@ uniform float uVignette;
 uniform float uFilmGrain;
 uniform float uChromaticAberration;
 uniform float uLensDistortion;
+uniform float uLensDistortionCurve;
+uniform float uLensDistortionZoom;
+uniform int uLensDistortionEdgeMode;
+uniform float uLensDistortionEdgeRadius;
+uniform float uLensDistortionEdgeSoftness;
+uniform float uLensDistortionEdgeDarkness;
+uniform float uLensDistortionPeripheralBlur;
 uniform float uScanlines;
 uniform float uPixelation;
 uniform float uPosterize;
@@ -64,10 +71,23 @@ float nls(float x, float power)
     return pow(clamp(x, 0.0, 1.0), power);
 }
 
-vec2 applyLensDistortion(vec2 uv, float strength)
+vec2 applyLensDistortion(vec2 uv, float strength, float curve, float zoom)
 {
-    float dist = dot(uv - 0.5, uv - 0.5);
-    return uv + (uv - 0.5) * dist * strength * 0.5;
+    // Deliberately do not clamp at 100. A value such as 359 creates a much
+    // stronger, genuinely different lens instead of flattening at a ceiling.
+    // Keep the math finite even if a live-edited JSON value is very large.
+    // The user-facing value remains uncapped; this is only a GPU safety bound.
+    float k = clamp(strength, -10000.0, 10000.0) / 100.0;
+    float aspect = max(uScreenW / max(uScreenH, 1.0), 1.0);
+    vec2 p = (uv - 0.5) * vec2(aspect, 1.0) / max(zoom, 0.01);
+    float radiusSquared = dot(p, p);
+    float normalizedRadius = clamp(sqrt(radiusSquared) / 1.02, 0.0, 1.0);
+    float shapedRadius = pow(normalizedRadius, max(curve, 0.05));
+    p *= 1.0 + k * shapedRadius * shapedRadius;
+
+    // The post-process texture is clamp-to-edge, so extreme settings fill the
+    // viewport with stretched edge pixels instead of introducing black bars.
+    return p / vec2(aspect, 1.0) + 0.5;
 }
 
 // ------ Main ------
@@ -123,8 +143,60 @@ void main()
     strength = uLensDistortion;
     if (abs(strength) > 0.001)
     {
-        vec2 duv = applyLensDistortion(uv, strength);
-        col = texture(uScene, duv).rgb;
+        vec2 duv = applyLensDistortion(uv, strength,
+                                       uLensDistortionCurve,
+                                       uLensDistortionZoom);
+
+        // A bad live value or driver edge case must never turn the complete
+        // post-process pass black.  GLSL has no portable finite() helper in
+        // this shader profile, so explicitly reject NaN and absurd values.
+        if (duv.x != duv.x || duv.y != duv.y ||
+            abs(duv.x) > 100000.0 || abs(duv.y) > 100000.0)
+            duv = uv;
+        float amount = clamp(abs(strength) / 100.0, 0.0, 4.0);
+        float aspect = max(uScreenW / max(uScreenH, 1.0), 1.0);
+        vec2 lensPoint = (uv - 0.5) * vec2(aspect, 1.0);
+        float radius = length(lensPoint);
+
+        // Body-camera lenses keep the center relatively sharp and smear the
+        // outer glass. A few radial samples create that soft peripheral focus
+        // without blurring the whole image.
+        float peripheral = smoothstep(0.42, 0.92, radius);
+        float blur = amount * uLensDistortionPeripheralBlur * peripheral * 0.012;
+        vec2 sampleUV = duv;
+        if (uLensDistortionEdgeMode == 3)
+            sampleUV = fract(sampleUV);
+        else
+            sampleUV = clamp(sampleUV, 0.0, 1.0);
+        vec3 lensCol = texture(uScene, sampleUV).rgb;
+        lensCol += texture(uScene, clamp(sampleUV + vec2(blur, 0.0), 0.0, 1.0)).rgb;
+        lensCol += texture(uScene, clamp(sampleUV - vec2(blur, 0.0), 0.0, 1.0)).rgb;
+        lensCol += texture(uScene, clamp(sampleUV + vec2(0.0, blur), 0.0, 1.0)).rgb;
+        lensCol += texture(uScene, clamp(sampleUV - vec2(0.0, blur), 0.0, 1.0)).rgb;
+        lensCol *= 0.2;
+
+        // Out-of-range texture coordinates can resolve to black on some
+        // drivers even though the texture is clamp-to-edge. Preserve the
+        // original rendered pixel in that case instead of blacking the frame.
+        float sourceLuma = dot(col, vec3(0.299, 0.587, 0.114));
+        float lensLuma = dot(lensCol, vec3(0.299, 0.587, 0.114));
+        if (sourceLuma > 0.001 && lensLuma < 0.0001)
+            lensCol = col;
+
+        // At higher values the lens becomes visibly circular, like the
+        // reference body-cam footage. This is a soft round mask, never a
+        // rectangular border; the center remains fully visible.
+        float edgeStart = uLensDistortionEdgeRadius;
+        float edgeEnd = edgeStart + max(uLensDistortionEdgeSoftness, 0.001);
+        float lensEdge = smoothstep(edgeStart, edgeEnd, radius);
+        float outside = step(0.001, abs(duv.x - clamp(duv.x, 0.0, 1.0)) +
+                                    abs(duv.y - clamp(duv.y, 0.0, 1.0)));
+        if (uLensDistortionEdgeMode == 0)
+            col = mix(lensCol, vec3(0.0), max(lensEdge, outside));
+        else if (uLensDistortionEdgeMode == 1 || uLensDistortionEdgeMode == 4)
+            col = mix(lensCol, vec3(0.0), lensEdge * uLensDistortionEdgeDarkness);
+        else
+            col = lensCol;
     }
 
     // --- Glitch (RGB split + displacement) ---

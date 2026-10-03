@@ -54,6 +54,33 @@ public:
     int blueScore() const { return mBlueScore; }
     float cameraFov() const { return mCameraFov; }
     bool forceFirstPerson() const { return mForceFirstPerson; }
+    // ── Round-based match fields ────────────────────────────────────
+    uint32_t roundVersion() const { return mRoundVersion; }
+    uint32_t roundNumber() const { return mRoundNumber; }
+    int roundWins(int team) const { return (team >= 0 && team < 2) ? mRoundWins[team] : 0; }
+    int winnerTeam() const { return mWinnerTeam; }
+    uint8_t roundEndReason() const { return mRoundEndReason; }
+    float roundSeconds() const { return mRoundSeconds; }
+    float roundTimerLeft() const { return mRoundTimerLeft; }
+    // Team display names in the mode's fixed order (from the gamemode JSON).
+    std::string teamName(int team) const;
+
+    // ── Generic objective item (bomb; future payload/capture) ───────
+    struct ReplicatedObjective
+    {
+        bool active = false;
+        uint8_t kind = 0;       // ObjectiveKind
+        uint8_t state = 0;      // ObjectiveState
+        uint8_t team = 0xFF;    // allowed carrier team
+        uint32_t carrierId = 0;
+        glm::vec3 position{0.0f};
+        std::string id;
+        std::string site;
+        float progress = 0.0f;      // 0..1 plant or defuse progress
+        float timerLeft = 0.0f;     // seconds to explosion when planted
+        uint8_t progressKind = 0;   // 0=none, 1=plant, 2=defuse
+    };
+    const ReplicatedObjective& objective() const { return mObjective; }
     bool applyActorPreset(const MatchRoleDefinition& preset);
     void refreshActorPreset();
     void resetActorPreset();
@@ -109,6 +136,14 @@ private:
     int mLocalScore = 0;
     uint32_t mMatchId = 0;
     uint32_t mStateVersion = 0;
+    uint32_t mRoundVersion = 0;
+    uint32_t mRoundNumber = 0;
+    int mRoundWins[2] = {0, 0};
+    int mWinnerTeam = -1;
+    uint8_t mRoundEndReason = 0;
+    float mRoundSeconds = 0.0f;
+    float mRoundTimerLeft = 0.0f;
+    ReplicatedObjective mObjective;
 
     // ── Bomb Tag replicated state ────────────────────────────────────
     uint8_t mBombOwnerType = 0;        // 0=none, 1=player, 2=npc

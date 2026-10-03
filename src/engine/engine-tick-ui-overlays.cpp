@@ -641,10 +641,17 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
 
                 // Score presentation is data-driven: a mode displays this
                 // element only when its JSON layout defines it.
+                // Team names come from the active gamemode JSON in fixed order;
+                // fall back to legacy RED/BLUE when the mode has no ordered teams.
+                const bool namedTeams = !match.teamName(0).empty();
+                const std::string leftName = namedTeams ? match.teamName(0) : "RED";
+                const std::string rightName = namedTeams ? match.teamName(1) : "BLUE";
+                const int leftScore = namedTeams ? match.roundWins(0) : match.redScore();
+                const int rightScore = namedTeams ? match.roundWins(1) : match.blueScore();
                 if (matchLayout.get("scoreText")) {
                     drawCentered("scoreText", textTemplate("scoreText", {
-                        {"{red_name}", "RED"}, {"{red_score}", std::to_string(match.redScore())},
-                        {"{blue_name}", "BLUE"}, {"{blue_score}", std::to_string(match.blueScore())},
+                        {"{red_name}", leftName}, {"{red_score}", std::to_string(leftScore)},
+                        {"{blue_name}", rightName}, {"{blue_score}", std::to_string(rightScore)},
                         {"{goal}", std::to_string(match.goal())}}));
                 }
 
@@ -697,6 +704,59 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                     drawCentered("matchTime", textTemplate("matchTime", {
                         {"{minutes}", std::to_string(left / 60)},
                         {"{seconds}", std::string(left % 60 < 10 ? "0" : "") + std::to_string(left % 60)}}));
+                }
+
+                // ── Round-based modes: active round timer + result strings ──
+                if (namedTeams) {
+                    if (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE &&
+                        match.roundSeconds() > 0.0f) {
+                        const int left = std::max(0, (int)std::ceil(match.roundTimerLeft()));
+                        drawCentered("matchTime", textTemplate("matchTime", {
+                            {"{minutes}", std::to_string(left / 60)},
+                            {"{seconds}", std::string(left % 60 < 10 ? "0" : "") + std::to_string(left % 60)}}));
+                    }
+                    if (matchLayout.get("roundText")) {
+                        drawCentered("roundText", textTemplate("roundText", {
+                            {"{round}", std::to_string(match.roundNumber())}}));
+                    }
+                    if (matchLayout.get("roundOverText") &&
+                        match.phase() == MimitaNet::DUEL_PHASE_RESULTS) {
+                        const std::string winner = match.winnerTeam() >= 0
+                            ? match.teamName(match.winnerTeam()) : "";
+                        const std::string roundText = match.matchOver()
+                            ? (winner + " win the match")
+                            : (winner + " win the round");
+                        drawCentered("roundOverText", roundText);
+                        drawCentered("scoreText", textTemplate("scoreText", {
+                            {"{red_name}", leftName}, {"{red_score}", std::to_string(match.roundWins(0))},
+                            {"{blue_name}", rightName}, {"{blue_score}", std::to_string(match.roundWins(1))},
+                            {"{goal}", std::to_string(match.goal())}}));
+                    }
+
+                    // ── Objective prompt (bomb) ─────────────────────
+                    // Only shown when a mode objective exists and is in play.
+                    const auto& obj = match.objective();
+                    if (obj.active &&
+                        (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE ||
+                         match.phase() == MimitaNet::DUEL_PHASE_GO)) {
+                        const glm::vec3 camPos = camera.pos;
+                        const float dist = glm::length(camPos - obj.position);
+                        // 0=Inactive 1=Carried 2=Dropped 3=Planted 4=Defused 5=Exploded
+                        if (obj.progressKind == 1 && matchLayout.get("objectivePrompt")) {
+                            drawCentered("objectivePrompt", std::string("Planting Bomb..."));
+                        } else if (obj.progressKind == 2 && matchLayout.get("objectivePrompt")) {
+                            drawCentered("objectivePrompt", std::string("Defusing Bomb..."));
+                        } else if (obj.state == 3 && matchLayout.get("objectiveStatus")) {
+                            // Planted: show time until explosion.
+                            const int left = std::max(0, (int)std::ceil(obj.timerLeft));
+                            drawCentered("objectiveStatus", std::string("BOMB PLANTED ") +
+                                std::to_string(left) + "s");
+                        } else if (obj.state == 2 && matchLayout.get("objectivePrompt") && dist <= 3.0f) {
+                            drawCentered("objectivePrompt", std::string("Pick up Bomb"));
+                        } else if (obj.state == 2 && matchLayout.get("objectiveStatus")) {
+                            drawCentered("objectiveStatus", std::string("BOMB DROPPED"));
+                        }
+                    }
                 }
             }
         }
