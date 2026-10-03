@@ -82,6 +82,10 @@ struct ServerGamemodeState
     // fresh random XY offset on every spawn/respawn. Floating on purpose.
     glm::vec3 spawnA{0.0f};
     glm::vec3 spawnB{0.0f};
+    // Per-team spawn clusters resolved from map spawn tags (spawnpoint.CT /
+    // spawnpoint.T). Empty means fall back to the shared anchor.
+    std::vector<glm::vec3> teamSpawnPoints[2];
+    bool teamSpawnsResolved = false;
     // Random XY offset radius around the anchor (meters).
     float spawnOffsetRadius = 5.0f;
     bool spawnsAssigned = false;
@@ -194,6 +198,12 @@ struct ServerGamemodeState
     float freezeSeconds = 0.0f;        // freeze time before each round
     bool rosterLocked = false;         // true once team selection closes
     uint32_t roundNextNpcId = 0;       // next id for roster NPC mirror entries
+    // Warmup: during a round mode's intermission the roster is spawned and
+    // actors move/fight freely with infinite lives. Warmup ends at countdown.
+    bool warmup = false;
+    // Countdown freeze: the human cannot move during COUNTDOWN; released at GO.
+    // NPCs are held by their own wakeupTimer for the same window.
+    bool roundCountdownFreeze = false;
     // ── Mode objective item (bomb; future payload/capture/escort) ──
     // Server-owned. The gamemode JSON declares the kind/carrier team; the
     // runtime owns carrier/drop/pickup state. Never stored in an actor preset.
@@ -307,6 +317,7 @@ struct ActorSpawnProfile
     std::vector<std::string> weapons;     // resolved role loadout (may be empty)
     std::string movementPreset;           // resolved/validated role movement preset
     std::string behaviorProfileId;        // resolved/validated role behavior profile
+    std::string actorPresetId;            // resolved actor preset owning the movement policy
 };
 ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId);
 bool serverActivateActorPreset(const std::string& presetId);
@@ -387,6 +398,9 @@ void serverRespawnAllActors(SOCKET sock,
 // threshold, and stale-round versioning without a World/NpcSystem. Returns
 // true on success and fills `report` with a human-readable summary.
 bool serverCounterStrikeRoundSelfTest(std::string& report);
+
+// Selftest for map spawn-tag classification (spawnpoint.CT / spawnpoint.T).
+bool serverSpawnTagSelfTest(std::string& report);
 
 // Starts the shared community map runtime without enabling match scoring.
 void serverCommunityMapStart(const std::vector<std::string>& mapPool,

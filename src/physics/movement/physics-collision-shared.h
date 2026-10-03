@@ -67,9 +67,17 @@ inline void clampVelocityAgainstNormal(Player& p, const glm::vec3& normal)
     projectVelocityAgainstNormal(p, normal);
 }
 
+// Actor-part sweeps are stored as a displacement over the simulation step.
+// The response formula consumes velocity, so convert at the fixed-tick
+// boundary instead of treating a one-tick displacement as a speed.
+inline glm::vec3 actorSweepVelocity(const glm::vec3& sweepDelta, float dt)
+{
+    return dt > 0.000001f ? sweepDelta / dt : glm::vec3(0.0f);
+}
+
 // Response against a surface.
-//   partVelocity - the swept motion of the body part / weapon that produced the
-//                  contact (RecoveryContact::sweepDelta); zero for root capsule.
+//   partVelocity - the swept velocity of the body part / weapon that produced
+//                  the contact; zero for root capsule.
 //   bodyContact  - true when this came from a body/weapon contact rather than the
 //                  root capsule.
 //   penetration  - the contact's penetration depth.

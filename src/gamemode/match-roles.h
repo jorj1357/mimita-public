@@ -8,6 +8,7 @@
 */
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -15,6 +16,7 @@
 #include <optional>
 
 #include "physics/movement/movement-types.h"
+#include "npc/npc-movement-policy.h"
 
 struct ActorPresetPresentation
 {
@@ -101,6 +103,9 @@ struct MatchRoleDefinition
     bool forceFirstPerson = false;
     ActorPresetPresentation presentation;
     std::unordered_map<std::string, ActorPresetWeaponOverride> weaponOverrides;
+    // Generic movement/decision policy parsed from the preset's "npc_behavior".
+    // Absent (configured=false) means the legacy NPC brain runs unchanged.
+    NpcMovementPolicy movementPolicy;
 };
 
 class MatchRoleRegistry
@@ -117,6 +122,8 @@ public:
     const std::vector<MatchRoleDefinition>& all() const { return mRoles; }
     std::vector<const MatchRoleDefinition*> actorPresets() const;
     const std::string& actorPresetDirectory() const { return mPresetDirectory; }
+    // Increments on every successful actor-preset scan; used by the policy log.
+    uint64_t actorPresetRevision() const { return mActorPresetRevision; }
 
     // Stable 1-based role index for the wire: 0 = none, 1..N = mRoles[i-1].
     int indexOf(const std::string& id) const;
@@ -133,6 +140,7 @@ private:
     std::string mPresetDirectory = "config/actor-presets";
     std::unordered_map<std::string, std::filesystem::file_time_type> mPresetWrites;
     std::string mSelectedActorPreset;
+    uint64_t mActorPresetRevision = 0;
 };
 
 // Cache of parsed role movement presets. A preset name is resolved once through

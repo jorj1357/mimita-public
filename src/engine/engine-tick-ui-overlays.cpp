@@ -211,17 +211,34 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         const GuiElement* rowElement = tabLayout.get("row");
         const GuiElement* localRowElement = tabLayout.get("localRow");
         const GuiElement* npcRowElement = tabLayout.get("npcRow");
+        const GuiElement* deadRowElement = tabLayout.get("deadRow");
+        const GuiElement* rowStartEl = tabLayout.get("rowStartOffset");
+        auto colOffset = [&](const char* id, float fallback) -> float {
+            const GuiElement* el = tabLayout.get(id);
+            return el ? uiScaleX(el->x) : fallback;
+        };
+        const float colId    = colOffset("idCol", 10.0f);
+        const float colTeam  = colOffset("teamCol", 60.0f);
+        const float colState = colOffset("stateCol", 120.0f);
+        const float colName  = colOffset("nameCol", 190.0f);
+        const float colPing  = colOffset("pingCol", 390.0f);
+
         static int gPlayerListFrame = 0;
         ++gPlayerListFrame;
         const float listPhase = (float)gPlayerListFrame / 8.0f;
-        float listX = panelElement ? uiScaleX(panelElement->x) : uiScreenW() * 0.5f - 160.0f;
+        float listW = (panelElement && panelElement->w > 0.0f)
+            ? uiScaleX(panelElement->w) : 420.0f;
+        float listX = panelElement ? uiScaleX(panelElement->x)
+                                   : uiScreenW() * 0.5f - listW * 0.5f;
         float listY = panelElement ? uiScaleY(panelElement->y) : uiScreenH() * 0.25f;
-        float listW = panelElement ? uiScaleX(panelElement->w) : 320.0f;
+        const float rowStart = rowStartEl ? uiScaleY(rowStartEl->y) : 8.0f;
         float lineH = rowElement ? uiScaleY(rowElement->h) : 24.0f;
         float headerH = headerElement ? uiScaleY(headerElement->h) + 6.0f : 30.0f;
 
         size_t totalActors = mpContext.playerRegistry.size() + mpContext.remoteNpcs.size();
-        float listH = headerH + (totalActors + 1) * lineH + 10.0f;
+        float autoH = headerH + (totalActors + 1) * lineH + 10.0f;
+        float listH = (panelElement && panelElement->h > 0.0f)
+            ? uiScaleY(panelElement->h) : autoH;
 
         uiDrawRect({listX, listY, listW, listH},
                    panelElement ? panelElement->getBackgroundColorVec() : glm::vec4(0.0f, 0.0f, 0.0f, 0.85f),
@@ -230,52 +247,96 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                            panelElement ? panelElement->getOutlineColorVec() : glm::vec4(0.5f, 0.6f, 0.8f, 1.0f),
                            "player-list-border");
 
-        float y = listY + 8.0f;
+        float y = listY + rowStart;
         uiDrawText(titleElement && !titleElement->text.empty() ? titleElement->text.c_str() : "PLAYERS",
-                   titleElement ? uiScaleX(titleElement->x) : listX + 10.0f,
+                   titleElement ? uiScaleX(titleElement->x) : listX + colId,
                    titleElement ? uiScaleY(titleElement->y) : y,
                    titleElement && titleElement->fontSize > 0.0f ? titleElement->fontSize : 0.36f,
                    titleElement ? titleElement->getTextColorVec() : glm::vec4(0.8f, 0.9f, 1.0f, 1.0f));
         y += headerH;
         uiDrawText(headerElement && !headerElement->text.empty()
                        ? headerElement->text.c_str()
-                       : "ID   NAME                         PING",
-                   headerElement ? uiScaleX(headerElement->x) : listX + 10.0f,
+                       : "ID   TEAM   STATE   NAME                       PING",
+                   headerElement ? uiScaleX(headerElement->x) : listX + colId,
                    headerElement ? uiScaleY(headerElement->y) : y,
                    headerElement && headerElement->fontSize > 0.0f ? headerElement->fontSize : 0.28f,
                    headerElement ? headerElement->getTextColorVec() : glm::vec4(0.65f, 0.75f, 0.9f, 1.0f));
         y += lineH;
 
+        // Team tag + state from the authoritative replicated roster.
+        const MimitaNet::CommunityMatchClient& tabMatch =
+            MimitaNet::CommunityMatchClient::instance();
+        const bool hasTeams = tabMatch.active() && !tabMatch.teamName(0).empty();
+        const std::string tagFormat =
+            tabLayout.get("teamTagFormat") && !tabLayout.get("teamTagFormat")->text.empty()
+                ? tabLayout.get("teamTagFormat")->text : "{short}";
+        auto localize = [](std::string s) {
+            for (auto& c : s) c = (char)std::toupper((unsigned char)c);
+            return s;
+        };
+        auto teamTag = [&](uint32_t actorId) -> std::string {
+            if (!hasTeams) return "";
+            const uint8_t t = tabMatch.teamForActor(actorId);
+            if (t == 0xFF) return "-";
+            std::string name = tabMatch.teamName((int)t);
+            std::string shortTag = name.substr(0, std::min<size_t>(4, name.size()));
+            shortTag = localize(shortTag);
+            std::string out = tagFormat;
+            size_t at = out.find("{short}");
+            if (at != std::string::npos) out.replace(at, 7, shortTag);
+            return out;
+        };
+        auto stateText = [&](uint32_t actorId) -> std::string {
+            if (!tabMatch.active()) return "";
+            const uint8_t st = tabMatch.actorState(actorId);
+            auto elementText = [&](const char* id, const char* fallback) {
+                const GuiElement* el = tabLayout.get(id);
+                return (el && !el->text.empty()) ? el->text : std::string(fallback);
+            };
+            switch (st) {
+                case (uint8_t)MimitaNet::ActorState::Alive:      return elementText("stateAliveText", "ALIVE");
+                case (uint8_t)MimitaNet::ActorState::Dead:       return elementText("stateDeadText", "DEAD");
+                case (uint8_t)MimitaNet::ActorState::Respawning: return elementText("stateDeadText", "DEAD");
+                case (uint8_t)MimitaNet::ActorState::Spectating: return elementText("stateSpectatorText", "SPECT");
+                default: return "";
+            }
+        };
+        auto isActorDead = [&](uint32_t actorId) -> bool {
+            if (!tabMatch.active()) return false;
+            const uint8_t st = tabMatch.actorState(actorId);
+            return st == (uint8_t)MimitaNet::ActorState::Dead ||
+                   st == (uint8_t)MimitaNet::ActorState::Respawning ||
+                   st == (uint8_t)MimitaNet::ActorState::Spectating;
+        };
+
+        // Draw one row at the shared column offsets.
+        auto drawColumns = [&](float rowY, const std::string& idText,
+                               const std::string& team, const std::string& state,
+                               const std::string& name, const std::string& ping,
+                               float scale, const glm::vec4& color) {
+            uiDrawText(idText.c_str(), listX + colId, rowY, scale, color);
+            uiDrawText(team.c_str(), listX + colTeam, rowY, scale, color);
+            uiDrawText(state.c_str(), listX + colState, rowY, scale, color);
+            uiDrawText(name.c_str(), listX + colName, rowY, scale, color);
+            uiDrawText(ping.c_str(), listX + colPing, rowY, scale, color);
+        };
+
         if (mpContext.localPlayerId)
         {
-            const char* localName = player.username.empty() ? "you" : player.username.c_str();
-            MimitaVip::VipAppearance localVip = MimitaVip::freeAppearance();
-            MimitaVip::VipStyleDetail localVipDetail;
-            auto localInfo = mpContext.playerRegistry.find(mpContext.localPlayerId);
-            if (localInfo != mpContext.playerRegistry.end())
-            {
-                localVip = localInfo->second.vipAppearance;
-                localVipDetail = localInfo->second.vipStyleDetail;
-            }
-            char localPrefix[32];
-            snprintf(localPrefix, sizeof(localPrefix), "%u   ", mpContext.localPlayerId);
-            float x = listX + 10.0f;
             const float localScale = localRowElement && localRowElement->fontSize > 0.0f
                 ? localRowElement->fontSize : 0.32f;
-            const glm::vec4 localColor = localRowElement
-                ? localRowElement->getTextColorVec() : glm::vec4(0.3f, 1.0f, 0.4f, 1.0f);
-            uiDrawText(localPrefix, x, y, localScale, localColor);
-            x += uiMeasureText(localPrefix, localScale);
-            VipNameDrawOptions nameOptions;
-            nameOptions.scale = localScale;
-            nameOptions.alpha = 1.0f;
-            nameOptions.phase = listPhase;
-            nameOptions.detail = &localVipDetail;
-            vipDrawStyledName(localName, localVip, x, y, nameOptions);
-            x += vipMeasureStyledName(localName, localVip, nameOptions);
-            char localPing[48];
-            snprintf(localPing, sizeof(localPing), "   %dms (you)", mpContext.localPingMs);
-            uiDrawText(localPing, x, y, localScale, localColor);
+            const bool dead = isActorDead(mpContext.localPlayerId);
+            const glm::vec4 localColor = (dead && deadRowElement)
+                ? deadRowElement->getTextColorVec()
+                : (localRowElement ? localRowElement->getTextColorVec()
+                                   : glm::vec4(0.3f, 1.0f, 0.4f, 1.0f));
+            char idBuf[32];
+            snprintf(idBuf, sizeof(idBuf), "%u", mpContext.localPlayerId);
+            char pingBuf[48];
+            snprintf(pingBuf, sizeof(pingBuf), "%dms you", mpContext.localPingMs);
+            const std::string localName = player.username.empty() ? "you" : player.username;
+            drawColumns(y, idBuf, teamTag(mpContext.localPlayerId), stateText(mpContext.localPlayerId),
+                        localName, pingBuf, localScale, localColor);
             y += lineH;
         }
 
@@ -283,46 +344,36 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         {
             if (kv.first == mpContext.localPlayerId)
                 continue;
-            const char* pname = kv.second.name.c_str();
-            char remotePrefix[32];
-            snprintf(remotePrefix, sizeof(remotePrefix), "%u  ", kv.first);
-            float x = listX + 10.0f;
             const float rowScale = rowElement && rowElement->fontSize > 0.0f
                 ? rowElement->fontSize : 0.32f;
-            const glm::vec4 rowColor = rowElement
-                ? rowElement->getTextColorVec() : glm::vec4(0.9f, 0.95f, 1.0f, 1.0f);
-            uiDrawText(remotePrefix, x, y, rowScale, rowColor);
-            x += uiMeasureText(remotePrefix, rowScale);
-            VipNameDrawOptions nameOptions;
-            nameOptions.scale = rowScale;
-            nameOptions.alpha = 1.0f;
-            nameOptions.phase = listPhase;
-            nameOptions.detail = &kv.second.vipStyleDetail;
-            vipDrawStyledName(pname, kv.second.vipAppearance, x, y, nameOptions);
-            x += vipMeasureStyledName(pname, kv.second.vipAppearance, nameOptions);
-            char remotePing[32];
-            snprintf(remotePing, sizeof(remotePing), "  %dms", kv.second.pingMs);
-            uiDrawText(remotePing, x, y, rowScale, rowColor);
+            const bool dead = isActorDead(kv.first);
+            const glm::vec4 rowColor = (dead && deadRowElement)
+                ? deadRowElement->getTextColorVec()
+                : (rowElement ? rowElement->getTextColorVec() : glm::vec4(0.9f, 0.95f, 1.0f, 1.0f));
+            char idBuf[32];
+            snprintf(idBuf, sizeof(idBuf), "%u", kv.first);
+            char pingBuf[32];
+            snprintf(pingBuf, sizeof(pingBuf), "%dms", kv.second.pingMs);
+            drawColumns(y, idBuf, teamTag(kv.first), stateText(kv.first),
+                        kv.second.name, pingBuf, rowScale, rowColor);
             y += lineH;
         }
 
         for (const auto& kv : mpContext.remoteNpcs)
         {
             const Player& npc = kv.second;
-            char npcPrefix[32];
-            snprintf(npcPrefix, sizeof(npcPrefix), "%u  ", kv.first);
             const float npcScale = npcRowElement && npcRowElement->fontSize > 0.0f
                 ? npcRowElement->fontSize : 0.32f;
-            const glm::vec4 npcColor = npcRowElement
-                ? npcRowElement->getTextColorVec() : glm::vec4(1.0f, 0.7f, 0.3f, 1.0f);
-            float x = listX + 10.0f;
-            uiDrawText(npcPrefix, x, y, npcScale, npcColor);
-            x += uiMeasureText(npcPrefix, npcScale);
+            const bool dead = isActorDead(kv.first);
+            const glm::vec4 npcColor = (dead && deadRowElement)
+                ? deadRowElement->getTextColorVec()
+                : (npcRowElement ? npcRowElement->getTextColorVec() : glm::vec4(1.0f, 0.7f, 0.3f, 1.0f));
+            char idBuf[32];
+            snprintf(idBuf, sizeof(idBuf), "%u", kv.first);
             const std::string npcName = npc.username.empty()
-                ? "NPC-" + std::to_string(kv.first) : npc.username;
-            uiDrawText(npcName.c_str(), x, y, npcScale, npcColor);
-            x += uiMeasureText(npcName.c_str(), npcScale);
-            uiDrawText("  NPC", x, y, npcScale, npcColor);
+                ? ("NPC-" + std::to_string(kv.first)) : npc.username;
+            drawColumns(y, idBuf, teamTag(kv.first), stateText(kv.first),
+                        npcName, "NPC", npcScale, npcColor);
             y += lineH;
         }
     }

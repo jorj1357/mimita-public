@@ -170,7 +170,7 @@ void doGLBTriangleCollisions(
     {
         Perf::ScopedTimer _bw("WeaponCollisions");
         auto t0 = std::chrono::steady_clock::now();
-        doBodyWeaponCollisionPhase(p, world, groundedThisFrame);
+        doBodyWeaponCollisionPhase(p, world, groundedThisFrame, dt);
         auto t1 = std::chrono::steady_clock::now();
         diag.bodyWeaponMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
         // Recompute totalMove after body/weapon may have adjusted position

@@ -8,6 +8,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "npc/npc-internal.h"
+#include "npc/npc-movement-policy.h"
 #include "combat/weapon-registry.h"
 
 // Search and cover constants
@@ -87,6 +88,11 @@ float scoreState(NpcState s, const Npc& npc, float d01)
         case NpcState::ZigZag:
             return hasTarget * (mid01 * 0.35f * agg + far01 * 0.2f)
                  * (0.7f + 0.3f * (1.0f - rangeMatch));
+
+        case NpcState::Patrol:
+            // Patrol is a no-target state; it is chosen directly in the
+            // no-target branch of pickNextState, not scored against combat.
+            return 0.0f;
     }
     return 0.0f;
 }
@@ -111,6 +117,7 @@ float stateMinTime(NpcState s, float d01)
         case NpcState::Peek:        return 0.3f;
         case NpcState::Aim:         return 0.15f;
         case NpcState::ZigZag:      return 0.4f;
+        case NpcState::Patrol:      return 0.5f;
     }
     return 0.2f;
 }
@@ -133,6 +140,7 @@ float stateMaxTime(NpcState s, float d01)
         case NpcState::Peek:        return 2.0f * base;
         case NpcState::Aim:         return 1.5f * base;
         case NpcState::ZigZag:      return 2.5f * base;
+        case NpcState::Patrol:      return 3.0f * base;
     }
     return 1.5f * base;
 }
@@ -154,6 +162,7 @@ std::string npcStateName(NpcState s)
         case NpcState::Peek:        return "PEEK";
         case NpcState::Aim:         return "AIM";
         case NpcState::ZigZag:      return "ZIGZAG";
+        case NpcState::Patrol:      return "PATROL";
     }
     return "UNKNOWN";
 }
@@ -164,15 +173,23 @@ NpcState pickNextState(Npc& npc)
     const auto& sensors = npc.sensors;
     float dist = sensors.targetDistance;
 
+    // Actor-preset policy (null = legacy brain). A "forward" policy decides the
+    // travel state deterministically so random special movement is never picked.
+    const NpcMovementPolicy* policy = activeMovementPolicy(npc);
+    const bool forwardPolicy = policy && policy->travelStyle == "forward";
+
     if (NpcNavigation::isStuck(npc))
     {
         npc.stateMachine.stuckTimer = std::min(npc.stateMachine.stuckTimer + 0.016f, 1.0f);
         if (npc.stateMachine.stuckTimer > 0.3f)
         {
-            if (random01(npc.rngState) < 0.5f)
+            if (forwardPolicy)
+                return NpcState::Advance;  // local turn/repath runs in npc.cpp
+            const bool randomWalkAllowed = !policy ||
+                npcPolicyAllowsMovement(*policy, NpcPolicyMovement::RandomWalk);
+            if (random01(npc.rngState) < 0.5f || !randomWalkAllowed)
                 return NpcState::Chase;
-            else
-                return NpcState::RandomWalk;
+            return NpcState::RandomWalk;
         }
     }
     else
@@ -185,19 +202,35 @@ NpcState pickNextState(Npc& npc)
 
     if (!sensors.hasTarget)
     {
-        // Search phase: move toward last known position before giving up
-        if (npc.stateMachine.lastKnownAge < SEARCH_TIMEOUT && npc.stateMachine.lastKnownAge > 0.5f)
+        // Search phase: move toward last known position before giving up. Only
+        // trust it once a real target has been seen (lastKnownAge was reset),
+        // so the stale (0,0,0) default can never drag an NPC to the origin.
+        if (npc.targetMemory.hasMemory &&
+            npc.stateMachine.lastKnownAge < SEARCH_TIMEOUT &&
+            npc.stateMachine.lastKnownAge > 0.5f)
         {
             float distToLastKnown = glm::length(npc.stateMachine.lastKnownTarget - npc.body.pos);
             if (distToLastKnown > 2.0f)
                 return NpcState::Chase; // Chase toward last known position (acts as "search")
-            // If close to last known, circle around looking
+            // If close to last known, circle around looking. A policy that does
+            // not allow circle keeps advancing forward instead.
+            if (policy && !npcPolicyAllowsMovement(*policy, NpcPolicyMovement::Circle))
+                return NpcState::Patrol;
             return NpcState::Circle;
         }
-        // Give up and wander
-        if (random01(npc.rngState) < 0.4f)
-            return NpcState::Idle;
-        return NpcState::RandomWalk;
+        // No target and nothing to search for: patrol forward. Never idle or
+        // random-walk in place — the squad must keep advancing until contact.
+        return NpcState::Patrol;
+    }
+
+    if (forwardPolicy)
+    {
+        // Retreat is emergent: the chance rises as health drops, dominating
+        // below ~60% of the configured threshold. Otherwise keep advancing.
+        if (npcRetreatChance(npc.body.currentHp, npc.body.maxHp, *policy) >
+            random01(npc.rngState))
+            return NpcState::Retreat;
+        return NpcState::Advance;
     }
 
     if (npc.stateMachine.currentState == NpcState::Retreat)
@@ -218,7 +251,28 @@ NpcState pickNextState(Npc& npc)
     Candidate candidates[10];
     int candidateCount = 0;
 
+    // A preset policy forbids the states it does not explicitly allow, even on
+    // the legacy scored path (used by non-"forward" travel styles).
+    auto allowedByPolicy = [&](NpcState s) {
+        if (!policy) return true;
+        switch (s) {
+            case NpcState::Circle:
+                return npcPolicyAllowsMovement(*policy, NpcPolicyMovement::Circle);
+            case NpcState::Strafe:
+                return npcPolicyAllowsMovement(*policy, NpcPolicyMovement::Strafe);
+            case NpcState::ZigZag:
+                return npcPolicyAllowsMovement(*policy, NpcPolicyMovement::ZigZag);
+            case NpcState::RandomWalk:
+                return npcPolicyAllowsMovement(*policy, NpcPolicyMovement::RandomWalk);
+            case NpcState::HoldPosition:
+                return npcPolicyAllowsMovement(*policy, NpcPolicyMovement::HoldPosition);
+            default:
+                return true;
+        }
+    };
+
     auto add = [&](NpcState s) {
+        if (!allowedByPolicy(s)) return;
         float score = scoreState(s, npc, d01);
         if (score > 0.01f && candidateCount < 10)
             candidates[candidateCount++] = {s, score};

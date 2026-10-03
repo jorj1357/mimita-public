@@ -64,10 +64,20 @@ struct WeaponColliderDebugCapsule {
     bool enabled = false;
 };
 
+struct WeaponColliderDebugBox {
+    std::string name;
+    glm::vec3 center{0.0f};
+    glm::vec3 halfSize{0.0f};
+    glm::vec3 scale{1.0f};
+    glm::vec3 rotationDegrees{0.0f};
+    bool enabled = false;
+};
+
 struct WeaponCollisionRuntimeDebug {
     std::vector<WeaponColliderDebugSphere> spheres;
     WeaponColliderDebugCapsule capsule;                  // primary capsule (backward compat)
     std::vector<WeaponColliderDebugCapsule> capsules;    // all capsules from JSON config
+    std::vector<WeaponColliderDebugBox> boxes;            // all boxes from JSON config
     std::string weaponId;
     bool valid = false;
     bool visibleFromConfig = false;  // from weaponcollisions.json "visible" field

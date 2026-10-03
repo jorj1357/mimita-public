@@ -1123,7 +1123,7 @@
       "hitboxRotY": 0.0,
       "hitboxRotZ": 0.0,
       "hitboxAlpha": 0.1,
-      "hitboxVisible": 1,
+      "hitboxVisible": 0,
       "serverContactRadius": 4.0,
       "serverTargetBodyRadius": 3.25,
       "baseDamage": 1.0,

@@ -28,6 +28,10 @@
 #include "debug/structured-log.h"
 #include "debug/debug-visuals.h"
 #include "game/duel.h"
+#include "network/community-match-client.h"
+#include "network/multiplayer-context.h"
+#include "network/actor-match.h"
+#include "network/packets.h"
 #include "devtools/terminal.h"
 #include "input/input-commands.h"
 #include "game/game-state.h"
@@ -272,6 +276,39 @@ void engineTickCamera(Engine& engine, float dt)
         (gReplayPlayer.cameraController().mode() ==
             ReplayCameraMode::Freecam ||
          gReplayCameraMgr.mode() == "freecam");
+
+    // ── Round-based death spectator ─────────────────────────────────
+    // In a round mode (Counter-Strike), a dead human is a spectator for the
+    // rest of the round: force the gameplay freecam so they can look around
+    // until the next round revives them. This is driven by the replicated
+    // authoritative actor state, never decided on the client.
+    {
+        const MimitaNet::CommunityMatchClient& match =
+            MimitaNet::CommunityMatchClient::instance();
+        static bool spectatorForced = false;
+        if (match.active() && match.teamName(0).size() > 0) {
+            const uint8_t st = match.localActorState(mpContext.localPlayerId);
+            // ActorState: 0=Alive,1=Dead,2=Respawning,3=Spectating
+            const bool deadState = (st == (uint8_t)MimitaNet::ActorState::Dead ||
+                                    st == (uint8_t)MimitaNet::ActorState::Respawning ||
+                                    st == (uint8_t)MimitaNet::ActorState::Spectating);
+            const bool roundInPlay =
+                match.phase() != MimitaNet::DUEL_PHASE_INTERMISSION &&
+                match.phase() != MimitaNet::DUEL_PHASE_WAITING;
+            if (deadState && roundInPlay) {
+                freecamEnabled = true;
+                spectatorForced = true;
+            } else if (spectatorForced) {
+                // Round ended / revived: drop the forced spectator camera.
+                freecamEnabled = false;
+                spectatorForced = false;
+            }
+        } else if (spectatorForced) {
+            freecamEnabled = false;
+            spectatorForced = false;
+        }
+    }
+
     const bool anyFreecam = (freecamEnabled || replayFreecam) &&
                             InputCommandSystem::instance().isKeyboardEnabled();
 

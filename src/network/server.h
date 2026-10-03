@@ -125,6 +125,9 @@ struct ServerSpawnPoint
 {
     glm::vec3 position{0.0f};
     float yaw = 0.0f;
+    // Node name from the map GLB (e.g. "spawnpoint.CT"). Used to separate
+    // team spawn groups; empty when the node name is unknown.
+    std::string tag;
 };
 
 // Hash for ivec3 keys used in HeadlessWorld spatial grid

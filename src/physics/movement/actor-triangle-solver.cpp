@@ -216,7 +216,8 @@ bool solveActorTriangleCollision(
     const World& world,
     const glm::vec3& desiredMovement,
     ActorTriangleCollisionResult& result,
-    const std::vector<PhysicalEntity>* entities)
+    const std::vector<PhysicalEntity>* entities,
+    float dt)
 {
     result = ActorTriangleCollisionResult{};
     result.startPos = player.pos;
@@ -510,7 +511,8 @@ bool solveActorTriangleCollision(
             const float bounceScale = weaponContact
                 ? player.weaponCollisionDebug.playerBounce
                 : 1.0f;
-            respondVelocityAgainstNormal(player, responseNormal, c.sweepDelta, true,
+            respondVelocityAgainstNormal(player, responseNormal,
+                                         actorSweepVelocity(c.sweepDelta, dt), true,
                                          c.penetration, c.label, c.triangleIndex,
                                          bounceScale);
         }
@@ -602,7 +604,7 @@ bool runActorTriangleCollisionStep(
     ActorTriangleCollisionResult result;
     const std::vector<PhysicalEntity>& entities =
         PhysicalEntitySystem::instance().entities();
-    solveActorTriangleCollision(player, world, totalMove, result, &entities);
+    solveActorTriangleCollision(player, world, totalMove, result, &entities, dt);
 
     if (result.grounded)
         groundedThisFrame = true;

@@ -106,6 +106,16 @@ bool DeathSystem::kill(
     glm::vec3 victimPos = victim.pos;
     glm::quat victimRotation = glm::angleAxis(glm::radians(victim.yaw), glm::vec3(0.0f, 0.0f, 1.0f));
 
+    // Step 1b: a life that ends in live ragdoll mode exits the ragdoll here. The
+    // corpse is the death presentation; a ragdoll body left active would re-sync
+    // player.pos back to the last simulated pose on the next tick and drag the
+    // respawn onto the death spot instead of the authoritative spawn. The
+    // transform is preserved so the captured momentum and the corpse stay put.
+    if (&victim == gpPlayer && RagdollModeSystem::instance().isActive()) {
+        RagdollModeSystem::instance().deactivate(victim, /*movePlayerToBody=*/false);
+        victim.ragdollModeActive = false;
+    }
+
     // Step 2: spawn a SEPARATE death visual (fall-over clone) so the real
     // player body is never pinned, frozen, or hidden by the death anim.
     // Only the first death presenter for a life spawns the ghost.

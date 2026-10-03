@@ -104,7 +104,7 @@ void registerDebugCommands()
                 Terminal::instance().addLog("[TEAM_LIST] " + MimitaNet::serverActiveTeamList());
             else Terminal::instance().addLog("[TEAM_LIST] not connected");
         },
-        "", CommandCategory::Duel, {"teamlist"}
+        "", CommandCategory::Duel
     });
     Terminal::instance().registerCommand({
         "team_pick", "Request an authoritative team change", "team_pick <number>",
@@ -117,7 +117,7 @@ void registerDebugCommands()
                 Terminal::instance().addLog("[TEAM_PICK] host must be connected to its server session");
             else Terminal::instance().addLog("[TEAM_PICK] not connected");
         },
-        "", CommandCategory::Duel, {"teampick"}
+        "", CommandCategory::Duel
     });
     Terminal::instance().registerCommand({
         "npc_inspect", "Inspect one NPC's team/brain/perception/navigation state", "npc_inspect [id]",

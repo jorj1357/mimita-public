@@ -127,6 +127,18 @@ bool PlayerVisualsConfig::pollReload() {
     if (wt == std::filesystem::file_time_type{} || wt == mLastWrite) return false;
     return load();
 }
+void PlayerVisualsConfig::setPlayerOutlinesEnabled(bool enabled) {
+    mPlayerOutlinesOverride = true;
+    mPlayerOutlinesEnabled = enabled;
+}
+void PlayerVisualsConfig::clearPlayerOutlinesOverride() {
+    mPlayerOutlinesOverride = false;
+    mPlayerOutlinesEnabled = true;
+}
+std::string PlayerVisualsConfig::effectiveMode(const std::string& configuredMode) const {
+    if (mPlayerOutlinesOverride && !mPlayerOutlinesEnabled) return "none";
+    return configuredMode;
+}
 std::string PlayerVisualsConfig::describe() const {
     std::ostringstream s; s << "player visuals enemy=" << (mData.enemy.enabled ? "on" : "off")
       << " teammate=" << (mData.teammate.enabled ? "on" : "off")

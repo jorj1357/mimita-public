@@ -14,6 +14,8 @@
 #include <vector>
 #include <filesystem>
 
+#include <glm/glm.hpp>
+
 struct DuelConfig;
 
 // ── Gamemode Feature Declarations ─────────────────────────────────────
@@ -58,6 +60,17 @@ struct GamemodeSpawnGroup {
     std::vector<Point> points;
 };
 
+// Optional world-space visual for an objective. Data only; the client render
+// owner reads it to draw the pulse sphere. Colors are linear RGBA.
+struct GamemodeObjectiveVisual {
+    bool enabled = false;
+    float radius = 0.35f;           // base world radius (meters)
+    float pulseAmplitude = 0.15f;   // additional radius at pulse peak
+    float periodSeconds = 1.5f;     // full pulse cycle length
+    glm::vec3 color{1.0f, 0.25f, 0.1f};  // RGBA (alpha in `colorA`)
+    float alpha = 0.8f;
+};
+
 // A generic objective definition (bomb today; future payload/capture/escort).
 // Objective runtime state is owned by the objective system, never by this data
 // or by an actor preset.
@@ -69,6 +82,7 @@ struct GamemodeObjectiveDefinition {
     float plantSeconds = 0.0f;
     float defuseSeconds = 0.0f;
     float explosionSeconds = 0.0f;
+    GamemodeObjectiveVisual visual;
 };
 
 // Round/match rules. Zero means "not configured"; the runtime keeps its
@@ -96,6 +110,7 @@ struct GamemodePresentation {
     bool hasKillfeed = false;            bool killfeed = true;
     bool hasRagdolls = false;            bool ragdolls = true;
     bool hasEnemyHealthbars = false;     bool enemyHealthbars = true;
+    bool hasPlayerOutlines = false;      bool playerOutlines = true;
 };
 
 struct Gamemode {

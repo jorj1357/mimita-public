@@ -228,6 +228,25 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 def.plantSeconds = std::max(0.0f, optFloat(o, "plant_seconds", 0.0f));
                 def.defuseSeconds = std::max(0.0f, optFloat(o, "defuse_seconds", 0.0f));
                 def.explosionSeconds = std::max(0.0f, optFloat(o, "explosion_seconds", 0.0f));
+                // Optional world-space pulse visual (client render reads this).
+                if (o.contains("visual") && o["visual"].is_object()) {
+                    const auto& v = o["visual"];
+                    def.visual.enabled = optBool(v, "pulse", def.visual.enabled);
+                    def.visual.radius = std::max(0.0f, optFloat(v, "radius", def.visual.radius));
+                    def.visual.pulseAmplitude =
+                        std::max(0.0f, optFloat(v, "pulse_amplitude", def.visual.pulseAmplitude));
+                    def.visual.periodSeconds =
+                        optFloat(v, "period_seconds", def.visual.periodSeconds) > 0.0f
+                            ? optFloat(v, "period_seconds", def.visual.periodSeconds)
+                            : def.visual.periodSeconds;
+                    if (v.contains("color") && v["color"].is_array() && v["color"].size() >= 3) {
+                        const auto& c = v["color"];
+                        if (c[0].is_number()) def.visual.color.x = c[0].get<float>();
+                        if (c[1].is_number()) def.visual.color.y = c[1].get<float>();
+                        if (c[2].is_number()) def.visual.color.z = c[2].get<float>();
+                        if (c.size() >= 4 && c[3].is_number()) def.visual.alpha = c[3].get<float>();
+                    }
+                }
                 if (def.id.empty()) continue;
                 next.objectives.push_back(std::move(def));
             }
@@ -266,6 +285,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("killfeed", next.presentation.hasKillfeed, next.presentation.killfeed);
             readFlag("ragdolls", next.presentation.hasRagdolls, next.presentation.ragdolls);
             readFlag("enemy_healthbars", next.presentation.hasEnemyHealthbars, next.presentation.enemyHealthbars);
+            readFlag("player_outlines", next.presentation.hasPlayerOutlines, next.presentation.playerOutlines);
         }
 
         // ── Bomb Tag specific fields ─────────────────────────────────

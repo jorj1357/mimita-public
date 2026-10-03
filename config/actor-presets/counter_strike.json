@@ -29,22 +29,53 @@
     "blood_effects": true,
     "muzzle_flash": true
   },
+  // Generic NPC movement/decision policy (hot-reloadable while the game runs).
+  // This owns how the actor moves and makes general movement decisions, never
+  // the game objective. Teams/rounds/bomb stay in config/gamemodes/counterstrike.json.
+  "npc_behavior": {
+    // "forward" = keep moving toward the current desired direction
+    // (wander/circle/strafe/hold_position are reserved for future presets)
+    "travel_style": "forward",
+    // "forward" = keep moving while attacking
+    "combat_style": "forward",
+
+    // Explicit permissions. false must prevent the style from being selected
+    // by random scoring or legacy state logic.
+    "allow_circle": false,
+    "allow_random_walk": false,
+    "allow_strafe": false,
+    "allow_zigzag": false,
+    "allow_hold_position": false,
+
+    // "never" | "low_health" (retreat is emergent: more likely as health drops)
+    "retreat_style": "low_health",
+    // Fraction of maximum health in [0,1]; uses current_health / maximum_health.
+    "retreat_health_fraction": 0.35,
+
+    // "never" | "obstacle_only" | "navigation_only" | "obstacle_or_navigation"
+    "jump_style": "obstacle_or_navigation",
+    // "never" | "attack" | "escape" | "navigation" | "attack_or_navigation"
+    "dash_style": "attack_or_navigation",
+    // "local_sensing" | "full_map"
+    "world_knowledge": "local_sensing",
+    // "turn" | "repath" | "turn_then_repath"
+    "blocked_behavior": "turn_then_repath",
+    // 0.0 = no random directional noise.
+    "movement_noise": 0.0
+  },
   "weapon_overrides": {
     "revolver": {
-      "damage": 100,
-      "fire_delay": 0.8,
-      "reload_time": 2.2,
+      "damage": 35,
+      "fire_delay": 0.3,
+      "reload_time": 1.5,
       "magazine_size": 6,
       "reserve_ammo": 36,
-      "recoil": 0.0,
+      "recoil": 30.0,
       "hitscan": {
         "enabled": true,
         "beam_thickness": 0.0,
         "world_thickness": 0.0,
         "range": 1000.0
-      },
-      "damage_policy": {
-        "allowed_body_parts": ["head"]
       }
     },
     "shotgun": {

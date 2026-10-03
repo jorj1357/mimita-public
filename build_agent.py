@@ -123,13 +123,6 @@ def save_build_history(timestamp):
 def timestamp_now():
     return datetime.datetime.now().strftime("%m%d%Y %H%M%S")
 
-# Auto-kill running mimita.exe so linker can overwrite it
-kill_result = subprocess.run(
-    ["taskkill", "/f", "/im", "mimita.exe"],
-    capture_output=True, text=True
-)
-time.sleep(0.5)
-
 if __name__ == "__main__":
     if not acquire_build_lock():
         sys.exit(2)

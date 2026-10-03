@@ -231,7 +231,7 @@ bool mapConfigSelfTest(std::string& report)
 
     // Load the real Counter-Strike map config if present.
     MapConfigRegistry& reg = MapConfigRegistry::instance();
-    const bool loaded = reg.load("dust2cyberiav3");
+    const bool loaded = reg.load("dust2cyberiav4");
     report += "loaded=" + std::string(loaded ? "yes" : "no") +
               " sites=" + std::to_string(reg.current().bombSites.size()) + "\n";
 

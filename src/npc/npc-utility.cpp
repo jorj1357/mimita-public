@@ -19,6 +19,7 @@ const char* utilityGoalName(UtilityGoalKind kind)
         case UtilityGoalKind::PlantObjective:  return "PlantObjective";
         case UtilityGoalKind::DefuseObjective: return "DefuseObjective";
         case UtilityGoalKind::RetakeSite:      return "RetakeSite";
+        case UtilityGoalKind::Patrol:          return "Patrol";
     }
     return "Unknown";
 }
@@ -133,6 +134,12 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             s.total = s.relevance * (0.5f + 0.5f * enemyFactor);
             break;
 
+        case UtilityGoalKind::Patrol:
+            // Only meaningful with no hostile and no objective context.
+            s.relevance = (!ctx.hasKnownTarget && !ctx.hasVisibleTarget) ? 1.0f : 0.0f;
+            s.total = s.relevance;
+            break;
+
         case UtilityGoalKind::None:
             s.total = 0.0f;
             break;
@@ -175,6 +182,16 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
             bestScore = score;
             best = kind;
         }
+    }
+
+    // No hostile and no objective context: the executor walks the map. The raw
+    // scorer leaves KillTarget as the target-less fallback, so reclassify that
+    // as Patrol for diagnostics. `makeNavGoal` falls through to the legacy state
+    // mapping for Patrol, so navigation behavior is unchanged.
+    if (best == UtilityGoalKind::KillTarget &&
+        !ctx.hasKnownTarget && !ctx.hasVisibleTarget && !ctx.objectiveKnown) {
+        best = UtilityGoalKind::Patrol;
+        bestScore = scoreUtilityGoal(UtilityGoalKind::Patrol, ctx);
     }
 
     // Hysteresis: keep the current goal unless the challenger beats it by the
@@ -235,6 +252,8 @@ UtilityActionKind actionForGoal(UtilityGoalKind goal, const UtilityContext& ctx)
                                    : UtilityActionKind::Approach;
         case UtilityGoalKind::RetakeSite:
             return UtilityActionKind::Flank;
+        case UtilityGoalKind::Patrol:
+            return UtilityActionKind::Reposition;
         case UtilityGoalKind::None:
             return UtilityActionKind::None;
     }

@@ -108,6 +108,16 @@ public:
     };
     const std::vector<ReplicatedActorIdentity>& actorIdentities() const { return mActors; }
 
+    // Local player's replicated actor state (ActorState), or 0xFF when the
+    // local actor is not present in the current match roster.
+    uint8_t localActorState(uint32_t localPlayerId) const;
+    // Local player's replicated team, or 0xFF when not present.
+    uint8_t localTeam(uint32_t localPlayerId) const;
+    // Replicated team for any actor id, or 0xFF when not present.
+    uint8_t teamForActor(uint32_t actorId) const;
+    // Replicated actor state (ActorState) for any actor id, or 0xFF.
+    uint8_t actorState(uint32_t actorId) const;
+
     // ── Procedural world (Infinite Dungeon Slayer) ───────────────────
     // Server-owned room lifecycle state plus seed and generated-room counts.
     // The client only applies this; it never decides room completion.

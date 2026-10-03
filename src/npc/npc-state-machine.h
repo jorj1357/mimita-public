@@ -20,7 +20,8 @@ enum class NpcState
     HoldPosition,
     Peek,
     Aim,
-    ZigZag
+    ZigZag,
+    Patrol  // no target: keep advancing forward, re-routing on walls/new ground
 };
 
 std::string npcStateName(NpcState s);
@@ -72,4 +73,16 @@ struct NpcStateMachine
 
     // Hold position
     float holdTimer = 0.0f;
+
+    // ── Patrol (searching) state ───────────────────────────────────
+    // A persistent forward heading plus a small ring of recent positions so
+    // patrol never doubles back over ground it just covered. No map knowledge
+    // is used: a new heading is chosen whenever a wall blocks the current one.
+    glm::vec3 patrolDir{0.0f};
+    float patrolRepathTimer = 0.0f;   // <=0 => choose a new forward heading now
+    static constexpr int PATROL_RECENT_MAX = 8;
+    glm::vec3 patrolRecent[PATROL_RECENT_MAX];
+    int patrolRecentCount = 0;
+    int patrolRecentHead = 0;
+    float patrolSnapshotTimer = 0.0f; // one snapshot per PATROL_SNAPSHOT_SECONDS
 };

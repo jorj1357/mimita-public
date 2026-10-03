@@ -520,6 +520,40 @@ void drawWeaponCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 col
     }
 }
 
+void drawWeaponWireBox(const Camera& camera, const glm::mat4& weaponTransform,
+                       glm::vec3 center, glm::vec3 halfSize, glm::vec3 scale,
+                       glm::vec3 rotationDegrees, glm::vec4 color)
+{
+    (void)camera;
+    glm::mat4 local(1.0f);
+    local = glm::translate(local, center);
+    local = glm::rotate(local, glm::radians(rotationDegrees.x), glm::vec3(1, 0, 0));
+    local = glm::rotate(local, glm::radians(rotationDegrees.y), glm::vec3(0, 1, 0));
+    local = glm::rotate(local, glm::radians(rotationDegrees.z), glm::vec3(0, 0, 1));
+    local = glm::scale(local, scale);
+
+    const glm::mat4 transform = weaponTransform * local;
+    const glm::vec3 corners[8] = {
+        {-halfSize.x, -halfSize.y, -halfSize.z},
+        { halfSize.x, -halfSize.y, -halfSize.z},
+        { halfSize.x,  halfSize.y, -halfSize.z},
+        {-halfSize.x,  halfSize.y, -halfSize.z},
+        {-halfSize.x, -halfSize.y,  halfSize.z},
+        { halfSize.x, -halfSize.y,  halfSize.z},
+        { halfSize.x,  halfSize.y,  halfSize.z},
+        {-halfSize.x,  halfSize.y,  halfSize.z}
+    };
+    static const int edges[12][2] = {
+        {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4},
+        {0,4},{1,5},{2,6},{3,7}
+    };
+    glm::vec3 worldCorners[8];
+    for (int i = 0; i < 8; ++i)
+        worldCorners[i] = glm::vec3(transform * glm::vec4(corners[i], 1.0f));
+    for (const auto& edge : edges)
+        addWeaponLine(worldCorners[edge[0]], worldCorners[edge[1]], color);
+}
+
 // Reuse the same line VAO/VBO for the weapon line buffer.
 static GLuint gWeaponLineVao = 0;
 static GLuint gWeaponLineVbo = 0;

@@ -138,16 +138,17 @@ void renderPlayerInternal(
     const PlayerOutlineSettings* outline = &visuals.self;
     const PlayerCapsuleSettings* capsule = &visuals.selfCapsule;
     const PlayerWireframeSettings* wireframe = &visuals.selfWireframe;
-    const std::string* mode = &visuals.selfMode;
+    std::string mode = PlayerVisualsConfig::instance().effectiveMode(visuals.selfMode);
     if (!isLocal)
     {
         const bool teammate = localTeam >= 0 && player.matchTeam >= 0 && localTeam == player.matchTeam;
         outline = teammate ? &visuals.teammate : &visuals.enemy;
         capsule = teammate ? &visuals.teammateCapsule : &visuals.enemyCapsule;
         wireframe = teammate ? &visuals.teammateWireframe : &visuals.enemyWireframe;
-        mode = teammate ? &visuals.teammateMode : &visuals.enemyMode;
+        mode = PlayerVisualsConfig::instance().effectiveMode(
+            teammate ? visuals.teammateMode : visuals.enemyMode);
     }
-    if (*mode == "outline" && outline->enabled && outline->thickness > 0.0f && outline->alpha != 0.0f &&
+    if (mode == "outline" && outline->enabled && outline->thickness > 0.0f && outline->alpha != 0.0f &&
         !(player.dead && outline->disappearOnDeath)) {
         const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
         const GLboolean blendWas = glIsEnabled(GL_BLEND);
@@ -174,7 +175,7 @@ void renderPlayerInternal(
             outline->visibleThroughWalls ? 1 : 0, outline->thickness);
     }
 
-    if (*mode == "capsule" && capsule->enabled && capsule->alpha != 0.0f &&
+    if (mode == "capsule" && capsule->enabled && capsule->alpha != 0.0f &&
         !(player.dead && outline->disappearOnDeath)) {
         const Capsule c = player.getCapsule();
         const glm::vec4 color(capsule->color.r / 255.0f, capsule->color.g / 255.0f,
@@ -202,7 +203,7 @@ void renderPlayerInternal(
         if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     }
 
-    if (*mode == "wireframe" && wireframe->enabled && wireframe->alpha != 0.0f &&
+    if (mode == "wireframe" && wireframe->enabled && wireframe->alpha != 0.0f &&
         !(player.dead && wireframe->disappearOnDeath)) {
         const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
         if (wireframe->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);

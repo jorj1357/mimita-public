@@ -40,7 +40,7 @@
       "behavior_profile": "balanced",
       "spawn_group": "ct_spawn",
       "objective_permissions": ["defuse"],
-      "avatar": "jason",
+      "avatar": "abusiveboy",
       "avatar_forced": true
     },
     {
@@ -56,7 +56,20 @@
       "behavior_profile": "balanced",
       "spawn_group": "t_spawn",
       "objective_permissions": ["plant", "pickup"],
-      "avatar": "abusiveboy",
+      "avatar": "jason",
+      "avatar_forced": true
+    },
+    {
+      "id": "spectator",
+      "display_name": "Spectator",
+      "team": 2,
+      "team_id": "spec",
+      "health": 100,
+      "movement_preset": "heavy",
+      "weapon_set": "counterstrike",
+      "behavior_profile": "balanced",
+      "objective_permissions": [],
+      "avatar": "jason",
       "avatar_forced": true
     }
   ]

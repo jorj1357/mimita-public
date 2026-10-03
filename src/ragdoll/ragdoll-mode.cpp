@@ -167,10 +167,10 @@ void RagdollModeSystem::activate(Player& player)
     }
 }
 
-void RagdollModeSystem::deactivate(Player& player)
+void RagdollModeSystem::deactivate(Player& player, bool movePlayerToBody)
 {
     RagdollBody& b = mAlive;
-    if (b.torsoIndex >= 0 && b.torsoIndex < (int)b.parts.size()) {
+    if (movePlayerToBody && b.torsoIndex >= 0 && b.torsoIndex < (int)b.parts.size()) {
         const RigidBody& torso = mAlive.parts[mAlive.torsoIndex].body;
         glm::mat4 torsoWorld = rigidWorld(torso);
         // Return the authoritative root to the same body-relative point it was

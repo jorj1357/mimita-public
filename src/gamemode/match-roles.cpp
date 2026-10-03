@@ -170,8 +170,8 @@ void readWeaponOverride(const json& j, ActorPresetWeaponOverride& out)
         readPresentation(j["presentation"], out.presentation);
 }
 
-void readActorPreset(const json& j, const std::string& fallbackId,
-                     MatchRoleDefinition& out)
+bool readActorPreset(const json& j, const std::string& fallbackId,
+                     MatchRoleDefinition& out, std::string& error)
 {
     json flat = j;
     if (flat.contains("health") && flat["health"].is_object()) flat.erase("health");
@@ -179,6 +179,14 @@ void readActorPreset(const json& j, const std::string& fallbackId,
     if (flat.contains("team") && flat["team"].is_object()) flat.erase("team");
     readRole(flat, fallbackId, out);
     out.actorPreset = true;
+
+    if (j.contains("npc_behavior")) {
+        std::string policyError;
+        if (!parseNpcMovementPolicy(j["npc_behavior"], out.movementPolicy, policyError)) {
+            error = "npc_behavior: " + policyError;
+            return false;
+        }
+    }
     if (j.contains("displayName")) out.displayName = j.value("displayName", out.displayName);
     if (j.contains("movementPreset")) out.movementPreset = j.value("movementPreset", out.movementPreset);
     if (j.contains("weaponSet")) out.weaponSet = j.value("weaponSet", out.weaponSet);
@@ -223,6 +231,20 @@ void readActorPreset(const json& j, const std::string& fallbackId,
         for (const auto& item : j["team"]["allowed"])
             if (item.is_number_integer()) out.allowedTeams.push_back(item.get<int>());
     }
+    return true;
+}
+
+// Log one line per configured policy so a reload is visible without spamming.
+void logMovementPolicy(const MatchRoleDefinition& def, uint64_t revision)
+{
+    if (!def.movementPolicy.configured) return;
+    const NpcMovementPolicy& p = def.movementPolicy;
+    Debug::warn(Debug::Category::Duel,
+        "[NPC POLICY] preset=%s revision=%llu travel=%s combat=%s circle=%d strafe=%d noise=%.2f retreat=%.2f jump=%s dash=%s\n",
+        def.id.c_str(), (unsigned long long)revision,
+        p.travelStyle.c_str(), p.combatStyle.c_str(),
+        (int)p.allowCircle, (int)p.allowStrafe, p.movementNoise,
+        p.retreatHealthFraction, p.jumpStyle.c_str(), p.dashStyle.c_str());
 }
 
 } // namespace
@@ -367,8 +389,25 @@ bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
     Debug::warn(Debug::Category::Duel,
         "[ACTOR PRESET] Scanning directory: %s\n", resolvedDirectory.string().c_str());
 
+    // Keep the last valid definition per preset id so a malformed file (bad
+    // JSON, unknown policy enum, wrong type) keeps the previous policy instead
+    // of erasing it or silently degrading to an unrelated behavior.
+    std::unordered_map<std::string, MatchRoleDefinition> previousById;
+    for (const auto& role : mRoles)
+        if (role.actorPreset) previousById[role.id] = role;
+
     std::vector<MatchRoleDefinition> loadedPresets;
     std::unordered_map<std::string, std::filesystem::file_time_type> loadedWrites;
+    auto keepPrevious = [&](const std::string& path, const std::string& id) {
+        auto it = previousById.find(id);
+        if (it != previousById.end()) {
+            loadedPresets.push_back(it->second);
+            // Record the write so pollReload does not retry the bad file until
+            // it is edited again; the previous valid policy stays live.
+            loadedWrites[path] = getLastWrite(path);
+        }
+    };
+
     std::error_code ec;
     for (const auto& entry : std::filesystem::directory_iterator(resolvedDirectory, ec)) {
         if (ec) {
@@ -381,18 +420,27 @@ bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
         if (!entry.is_regular_file(entryEc) || entryEc || !isJsonFile(entry.path())) continue;
 
         const std::string path = entry.path().string();
+        const std::string stem = entry.path().stem().string();
         Debug::log(Debug::Category::Duel,
             "[ACTOR PRESET] Found JSON: %s\n", path.c_str());
         std::ifstream file(entry.path());
         if (!file.is_open()) {
             Debug::error(Debug::Category::Duel,
-                "[ACTOR PRESET] Cannot open %s\n", path.c_str());
+                "[ACTOR PRESET] Cannot open %s. Keeping previous data.\n", path.c_str());
+            keepPrevious(path, stem);
             continue;
         }
         try {
             const json root = parseJsonConfig(file);
             MatchRoleDefinition def;
-            readActorPreset(root, entry.path().stem().string(), def);
+            std::string loadError;
+            if (!readActorPreset(root, stem, def, loadError)) {
+                Debug::error(Debug::Category::Duel,
+                    "[ACTOR PRESET] Invalid %s: %s. Keeping previous policy.\n",
+                    path.c_str(), loadError.c_str());
+                keepPrevious(path, def.id.empty() ? stem : def.id);
+                continue;
+            }
             if (def.id.empty()) {
                 Debug::error(Debug::Category::Duel,
                     "[ACTOR PRESET] Ignoring %s because it has no id\n", path.c_str());
@@ -406,6 +454,7 @@ bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
             Debug::error(Debug::Category::Duel,
                 "[ACTOR PRESET] Error loading %s: %s. Keeping previous data.\n",
                 path.c_str(), e.what());
+            keepPrevious(path, stem);
         }
     }
 
@@ -419,6 +468,9 @@ bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
     mPresetWrites = std::move(loadedWrites);
     mIndexById.clear();
     for (int i = 0; i < (int)mRoles.size(); ++i) mIndexById[mRoles[i].id] = i + 1;
+    ++mActorPresetRevision;
+    for (const auto* preset : actorPresets())
+        logMovementPolicy(*preset, mActorPresetRevision);
     Debug::warn(Debug::Category::Duel, "[ACTOR PRESET] Loaded %zu preset(s) from %s\n",
         actorPresets().size(), mPresetDirectory.c_str());
     return true;

@@ -205,6 +205,7 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
                     sp.position = pos;
                     glm::vec3 forward = glm::normalize(glm::vec3(worldXform[1]));
                     sp.yaw = std::atan2(forward.y, forward.x);
+                    sp.tag = node.name;
                     world.spawnPoints.push_back(sp);
                     printf("%s [SPAWNPOINT] node=\"%s\" position=(%.2f,%.2f,%.2f) yaw=%.1f\n",
                            serverTimestamp(), node.name.c_str(), pos.x, pos.y, pos.z,

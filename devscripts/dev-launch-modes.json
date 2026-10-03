@@ -35,6 +35,28 @@
         "help"
       ],
       "map": "funworld3"
+    },
+    "5": {
+      "name": "counter_strike",
+      "server_args": [
+        "--mode",
+        "counterstrike",
+        "--gamemode",
+        "counterstrike",
+        "--no-npcs"
+      ],
+      "client_args": [],
+      "map": "dust2cyberiav4"
+    },
+      "6": {
+      "name": "counter_strike just map",
+      "server_args": [
+        "--startup-command",
+        "help"
+      ],
+      "client_args": [],
+      "map": "dust2cyberiav4"
     }
+
   }
 }

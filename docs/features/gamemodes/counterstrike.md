@@ -139,6 +139,37 @@ required** (see the handoff section at the end of the attempt log).
 
 ---
 
+## Config map — what to edit to tweak the game
+
+Edit these files (hot-reloaded unless noted). Base `config/weapons.json` is a
+shared registry; do NOT edit it for Counter-Strike tuning.
+
+| What | File | Key fields |
+|---|---|---|
+| Mode rules: rounds, intermission, freeze, countdown, results, teams, victory, map, presentation | `config/gamemodes/counterstrike.json` | `rounds.intermission_seconds`, `rounds.freeze_seconds`, `rounds.round_seconds`, `rounds.rounds_to_win`, `rounds.countdown_seconds`, `respawn_seconds`, `teams`, `maps`, `presentation` |
+| Bomb sites + plant/defuse/explosion timers (per map) | `config/maps/dust2cyberiav4.json` | `bomb_sites` (id/position/radius/visible_debug), `bomb.plant_seconds/defuse_seconds/explosion_seconds` |
+| Actor preset: FOV, first-person, movement, avatar, weapon overrides, presentation | `config/actor-presets/counter_strike.json` | `camera.fov`, `movement_preset`, `avatar`, `weapon_overrides`, `presentation` |
+| Roles: team, spawn group, avatar, health, loadout, behavior | `config/roles.json` | `counter_terrorist`, `terrorist` |
+| Weapon base values (shared) | `config/weapons.json` | do not edit for CS; override in the preset |
+| Weapon sets / loadouts | `config/weaponsets.json` | `counterstrike` set id 9 |
+| Movement presets | `config/movement/movement-heavy.json` | ground/air speed, accel, jump, dash flags |
+| NPC difficulty + AI policy | `config/npc-difficulty.json` | `targetMode`, `damageOtherNpcs`, fire delay, aim error, perception fields |
+| NPC behavior profiles | `config/behavior-profiles.json` | aggression, preferred range, weapon weights |
+| Map pool / automatic rotation | `config/gamemode-good-maps.json` | `maps` |
+| Mode list shown by `modelist` / menu | `config/onlinemodes.json` | `counterstrike` entry |
+| HUD text/layout (intermission, score, round, timer) | `config/gui/gamemode-meta-gui.json` | `counterstrike` section |
+| Tab (TAB key) player list layout | `config/gui/tab-leaderboard.json` | `panel`, `title`, `header`, `row`, `localRow`, `npcRow` |
+| Grenades | `config/grenades.json` | frag/smoke/darkbang/fire |
+
+Intermission length = `rounds.intermission_seconds` in
+`config/gamemodes/counterstrike.json`; it is shown by the `intermissionText`
+element in the `counterstrike` section of `config/gui/gamemode-meta-gui.json`.
+
+Map selection: a gamemode's `maps[0]` is now the mode's authoritative default
+map (`dust2cyberiav4`). An explicit GUI map choice or `changemap` still wins.
+
+---
+
 ## Attempt log (append-only)
 
 ### Attempt 1 — Checkpoint 1: data model + roles + actor preset + team commands
@@ -746,3 +777,162 @@ Verify:
 
 Record any confirmed break as `docs/regressions/YYYY-MM-DD/<name>-REG.md` and
 link it here; do not mark a solution until human-confirmed.
+
+### Attempt 11 — post-checkpoint gameplay fixes + config handoff
+
+Triggered by human playtest feedback (branch `afad20a-rebuild`):
+- **Everyone spawned at one point.** Root cause: the shared anchor ignored map
+  spawn tags. Fix: `ServerSpawnPoint.tag` is now populated from the GLB node
+  name; `assignGamemodeSpawns` groups `spawnpoint.CT`/`spawnpoint.T` into
+  per-team clusters; `gamemodeSpawnPoint(d, team)` is used by roster build and
+  round reset; the human respawns at their team spawn. Falls back to the shared
+  anchor when untagged.
+- **All NPCs insta-killed the human regardless of team.** Root cause: `targetMode: "player"` ignored teams entirely, and team modes did not force NPC-vs-NPC
+  targeting. Fix: `chooseNearestPlayer` and the player-priority path now gate on
+  `actorsAreHostile`; team round modes allow NPC targets so both squads fight.
+  Friendly **splash** damage remains allowed; same-team targeting is forbidden.
+- **Instant respawn at the death spot.** Fix: `respawn_seconds: 0` explicit in
+  `counterstrike.json`; one-life path keeps the actor dead; the client forces
+  freecam while the local actor is Dead/Respawning/Spectating during a round.
+- **Intermission had no NPCs.** Fix: warmup spawns the roster at intermission
+  start with standing/moving NPCs and infinite lives; the round rebuilds a clean
+  roster at countdown.
+- **Tab list had no team info.** Fix: `CommunityMatchClient::teamForActor` +
+  team columns and short team tags in `config/gui/tab-leaderboard.json` render.
+- **Freeze time** added (`rounds.freeze_seconds: 5`): NPC wakeup is held after GO.
+- **Avatars swapped**: T=jason, CT=abusiveboy.
+- **Map = dust2cyberiav4**: gamemode `maps[0]` is now authoritative for the
+  mode's default map; `config/maps/dust2cyberiav4.json` added.
+- **Config map** documented above for future tuning.
+
+Went right:
+- Team-tagged spawns read from the real GLB node names (verified tags survive).
+- Same-team hostility is a single gate reused by every target path.
+- Warmup reuses the round roster builder with cleanup so it does not duplicate.
+
+Went wrong / watch out:
+- Per-team **human** avatar is still preset-driven (jason) on the client; NPC
+  avatars are per-team via the role. A client-side per-team human avatar is a
+  later refinement.
+- Freeze time holds NPCs but does not yet hold the human.
+- `npc-difficulty.json` still says `targetMode: "player"` / `damageOtherNpcs:
+  false`; the team gate and forced team-targeting make this safe for CS, but the
+  config intent should be cleaned up later.
+- Warmup uses the objective module's bomb assignment; the bomb may be carried
+  during warmup. Harmless for a warmup but worth confirming.
+
+Evidence:
+- Build: `BUILD SUCCESS`, no warnings.
+- Runtime: `--counterstrike-acceptance-selftest` PASS (incl. new `spawn-tags`
+  group); all 13 individual selftests PASS.
+- Human playtest: pending (see updated handoff checklist).
+
+### Attempt 12 — fix pass #2: spectator team, actorState, bomb pulse
+
+Tried:
+- Added `CommunityMatchClient::actorState(actorId)` (declared + defined);
+  `localActorState` now delegates to it. The TAB leaderboard render referenced it
+  but it did not exist in the prior pass, so the timing pass did not link.
+- Spectator is a real ordered team (index 2, capacity 0) in
+  `counterstrike.json`; every mode now has a built-in Spectator team. The stale
+  `team_list` alias was removed (`team_list` remains the single owner).
+- Countdown freeze holds the human (`roundCountdownFreeze`, exempt in warmup) and
+  releases at GO; TAB leaderboard is JSON-editable with columns
+  (`idCol`/`teamCol`/`stateCol`/`nameCol`/`pingCol`) and per-state text.
+- New config-driven objective pulse sphere: added `GamemodeObjectiveVisual` to the
+  objective definition, parsed from the JSON `visual` block, and rendered by
+  `renderObjectivePulse` in `engine-tick-render.cpp` via
+  `DebugVis::drawFilledSphere` for Carried/Dropped/Planted states.
+
+Went right:
+- The 3-team model required no gameplay change: the runtime already iterates only
+  teams 0/1 as playing teams, so Spectator never gets roster NPCs.
+- The pulse visual is data-driven (radius/amplitude/period/color in JSON), reuses
+  the existing production filled-triangle buffer, and is cosmetic only.
+
+Went wrong / watch out:
+- The prior pass left `--cs-round-selftest` and `--gamemode-selftest` asserting
+  exactly 2 teams, so adding Spectator silently broke them. Both are aligned now.
+- The pulse phase uses client wall-clock `MimitaNet::nowMs` (fine for cosmetics;
+  not a gameplay source).
+- Incremental builds skipped edits whose file mtime did not advance; affected
+  files were touched to force recompilation. This is an environment artifact, not
+  a code defect.
+
+Evidence:
+- Build: `BUILD SUCCESS` (`build.py build-only`); `mimita.exe` relinked.
+- Runtime: `--counterstrike-acceptance-selftest` PASS (all 11 groups); all 13
+  individual selftests PASS, incl.
+  `[GAMEMODE SELFTEST] objective_visual enabled=1 radius=0.35 amp=0.15 period=1.50`.
+- Human playtest: pending.
+
+Next: human visual acceptance of the pulse sphere and TAB leaderboard; optional
+HUD overlap check if a screenshot identifies the overlapping element.
+
+### Attempt 13 — fix pass #3: spawns, freeze, patrol, map, body parts, win text, cursor, outlines
+
+Triggered by 11 human playtest bugs on `afad20a-rebuild`. The previous session
+root-caused and partially implemented them and left
+`docs/specs/20261003-counterstrike-fixpass3-handoff.md`. This session finished the
+remaining items.
+
+Tried:
+- **Spawn collapse (2/9):** verified the kill/respawn/rotate calls use
+  `gamemodeSpawnPoint(d, team)` (prior session).
+- **NPCs pre-GO (3):** verified the `finalizeServerNpcSpawn` countdown wakeup and
+  the `simulateSharedNpcs` freeze gate (prior session).
+- **Patrol (5/10):** verified the prior-session `NpcState::Patrol`; added
+  `UtilityGoalKind::Patrol` so `npc_brain` diagnostics match the executor when no
+  hostile/objective context exists. The scorer only reclassifies the target-less
+  `KillTarget` fallback; `makeNavGoal` falls through to the same legacy state
+  mapping, so navigation behavior is unchanged.
+- **Body parts (6):** removed `damage_policy.allowed_body_parts` from
+  `config/actor-presets/counter_strike.json`; all body parts now take damage and
+  the rifle headshot multiplier still applies to head hits.
+- **Map (4):** replaced the remaining `dust2cyberiav3` fallbacks with
+  `dust2cyberiav4` (`main-systems.cpp`, `engine-tick-state.cpp`, and the
+  `map-config.cpp` selftest); fixed the `dust2cyberiav4.json` header comment;
+  room joins now prefer the requested `mci.mapName` even without a direct
+  address.
+- **Dev-loop map reuse:** `dev-loop.py` now reads the running server's `--map`
+  and restarts the external server when the launch-mode map differs.
+- **Win text (8):** `DuelStatePacket.winnerTeam` now sends `d.roundWinnerTeam`
+  for a normal round and `d.winnerTeam` at match over, so the results screen
+  shows the winning team name.
+- **Cursor (10b):** the forced-cursor condition now excludes
+  `PauseMenu::isOpen()` in `engine-tick-state.cpp`, so ESC shows a usable cursor.
+- **Outlines (11):** added `GamemodePresentation.player_outlines` parsed from the
+  JSON `presentation` block; `PlayerVisualsConfig` gained an in-memory override
+  and `effectiveMode()`; `render-player.cpp` resolves the effective mode;
+  `CommunityMatchClient` applies/clears the override per mode and on reset;
+  `counterstrike.json` sets `player_outlines: false`.
+
+Went right:
+- The outline override mirrors the existing healthbar/ragdoll/blood in-memory
+  override pattern and never writes `config/playervisuals.json`.
+- Patrol reclassification cannot change navigation because the executor path is
+  identical for `Patrol` and the previous target-less fallback.
+- `config/weapons.json` remains unchanged; the body-part policy is removed from
+  the actor preset only.
+
+Went wrong / watch out:
+- `--actor-preset-selftest` was stale against the working-tree revolver tuning
+  (`fire_delay` 0.3, `reload_time` 1.5) and still asserted the HEAD values
+  (0.8/2.2); the assertion was aligned to the current preset. This is a
+  pre-existing mismatch, not caused by the body-part removal.
+- `config/gamemode-good-maps.json` lists both `dust2cyberiav3` and
+  `dust2cyberiav4`, so auto-rotation could still choose v3. Left unchanged as out
+  of scope.
+- Patrol is compile/test-verified only; runtime wall-hugging or stuck loops are
+  unobserved.
+- `freeze_seconds` remains parsed but unused (the human wants NPCs to act at GO).
+- Intermission duration (issue 1) was explicitly skipped by the human.
+
+Evidence:
+- Build: `BUILD SUCCESS` (`python build.py build-only`); `mimita.exe` relinked.
+- Runtime: `--counterstrike-acceptance-selftest` PASS; all 13 individual
+  selftests PASS.
+- Human playtest: pending.
+
+Next: human acceptance of the 10 checklist items in
+`docs/specs/20261003-counterstrike-fixpass3-handoff.md`.

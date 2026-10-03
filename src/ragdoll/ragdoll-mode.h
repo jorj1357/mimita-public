@@ -96,7 +96,11 @@ public:
     static RagdollModeSystem& instance();
 
     void activate(Player& player);
-    void deactivate(Player& player);
+    // movePlayerToBody true (default): the authoritative root is returned to the
+    // body's last pose, the normal toggle-off behavior. false: the body is torn
+    // down without writing player.pos/vel, for lifecycle resets (death/respawn/
+    // teleport) that must keep the freshly applied authoritative transform.
+    void deactivate(Player& player, bool movePlayerToBody = true);
     bool isActive() const { return mActive; }
 
     void update(float dt, const World& world, Player& player,

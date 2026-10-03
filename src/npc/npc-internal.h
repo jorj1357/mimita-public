@@ -5,6 +5,7 @@
 
 struct World;
 struct WeaponDefinition;
+struct NpcMovementPolicy;
 
 float clamp01(float v);
 float difficulty01(float difficulty);
@@ -14,8 +15,10 @@ glm::vec3 randomPlanarDirection(unsigned int& state);
 // server ticks in JSON and converted to the shared cooldown's seconds here.
 float npcSpawnFireDelaySeconds(Npc& npc);
 
-// Situational jump: returns true if NPC should jump (obstacle, stuck)
-bool shouldJump(Npc& npc, float d01, const World& world);
+// The actor-preset movement policy for this NPC, resolved live from
+// MatchRoleRegistry by npc.actorPresetId. Returns nullptr when the NPC has no
+// preset policy (legacy brain) or the configured flag is unset.
+const NpcMovementPolicy* activeMovementPolicy(const Npc& npc);
 
 // Situational dash: returns true if NPC should dash (engage, escape, dodge)
 bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def, bool targetCanSeeMe);

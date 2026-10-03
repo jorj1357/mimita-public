@@ -18,7 +18,7 @@
 
   "revolver": {
     "enabled": true,
-    "visible": false,
+    "visible": true,
     "collision_skin": 0.05,
     "player_bounce": 0.99,
     "source": "boxes",
@@ -30,7 +30,7 @@
 
   "shotgun": {
     "enabled": true,
-    "visible": false,
+    "visible": true,
     "collision_skin": 0.05,
     "player_bounce": 0.99,
     "source": "boxes",
@@ -47,8 +47,8 @@
     "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
-      { "enabled": true, "name": "tube", "center": [0.1, 0.0, 0.0],
-        "half_size": [1.1, 0.2, 0.2], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+      { "enabled": true, "name": "tube", "center": [0.15, 0.0, 0.2],
+        "half_size": [0.2, 0.2, 1.6], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
     ]
   },
 
@@ -78,27 +78,27 @@
 
   "spyknife": {
     "enabled": true,
-    "visible": false,
+    "visible": true,
     "collision_skin": 0.3,
     "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
-      { "enabled": true, "name": "blade", "center": [0.25, 0.0, 0.0],
-        "half_size": [0.55, 0.20, 0.12], "scale": [1,1,1], "rotation_degrees": [0,0,0] },
-      { "enabled": true, "name": "handle", "center": [-0.42, 0.0, 0.0],
-        "half_size": [0.18, 0.14, 0.16], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+      { "enabled": true, "name": "blade", "center": [0.0, 0.0, 0.3],
+        "half_size": [0.2, 0.2, 1.5], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+      // { "enabled": true, "name": "handle", "center": [-0.42, 0.0, 0.0],
+      //   "half_size": [0.18, 0.14, 0.16], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
     ]
   },
 
   "projectile_rifle": {
     "enabled": true,
-    "visible": false,
+    "visible": true,
     "collision_skin": 0.02,
     "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
-      { "enabled": true, "name": "barrel", "center": [0.75, 0.0, 0.0],
-        "half_size": [1.62, 0.22, 0.22], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+      { "enabled": true, "name": "barrel", "center": [0.25, -0.1, 0.0],
+        "half_size": [1.0, 0.42, 0.22], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
     ]
   },
 
@@ -109,8 +109,8 @@
     "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
-      { "enabled": true, "name": "barrel", "center": [0.75, 0.0, 0.0],
-        "half_size": [0.95, 0.22, 0.22], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+      { "enabled": true, "name": "barrel", "center": [0.25, 0.0, 0.0],
+        "half_size": [0.85, 0.32, 0.22], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
     ]
   }
 }

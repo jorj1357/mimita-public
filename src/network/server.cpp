@@ -227,6 +227,24 @@ std::vector<std::string> communityMapPool()
     return GamemodeMapPool::instance().list();
 }
 
+// If the selected community mode maps to a gamemode that declares its own
+// `maps` list, that list's first entry is the mode's authoritative default
+// map. Explicit user map selection still wins when it differs from the
+// generic fallback. Returns empty when the mode has no declared map.
+std::string gamemodeDefaultMap(const std::string& communityModeId)
+{
+    if (communityModeId.empty() || communityModeId == "sandbox")
+        return {};
+    CommunityServerConfig& cfg = CommunityServerConfig::instance();
+    if (cfg.modes().empty()) cfg.load();
+    const CommunityMode* mode = cfg.modeById(communityModeId);
+    const std::string gamemodeId = mode ? mode->gamemodeId : communityModeId;
+    const Gamemode& gm = GamemodeRegistry::instance().get(gamemodeId);
+    if (!gm.maps.empty())
+        return gm.maps.front();
+    return {};
+}
+
 } // namespace
 
 std::string gServerHostPlayerName;
@@ -324,8 +342,12 @@ int runServer(const LaunchOptions& options)
            options.mapName.c_str(), options.npcCount,
            options.name.c_str(), "pending");
 
-    // Determine map path from options
+    // Determine map path from options. A mode that declares its own maps list
+    // uses that map unless the operator explicitly chose a different one.
     std::string mapName = options.mapName.empty() ? "funworld3" : options.mapName;
+    const std::string modeDefaultMap = gamemodeDefaultMap(options.gameMode);
+    if (options.mapName.empty() && !modeDefaultMap.empty())
+        mapName = modeDefaultMap;
     std::string mapPath = "assets/maps/" + mapName + ".glb";
     setServerMapId(mapName);
     printf("%s [SERVER MAP] mapId=%s path=%s\n", serverTimestamp(), mapName.c_str(), mapPath.c_str());
@@ -941,8 +963,15 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     else
         printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
 
-    // Determine map path from settings
+    // Determine map path from settings. A mode that declares its own maps list
+    // uses that map unless the operator explicitly chose a different one.
     std::string mapName = settings ? settings->mapName : "funworld3";
+    if (settings) {
+        const std::string modeDefaultMap = gamemodeDefaultMap(settings->gameMode);
+        const bool explicitMap = !settings->resolvedMapPath.empty();
+        if (!explicitMap && !modeDefaultMap.empty())
+            mapName = modeDefaultMap;
+    }
     std::string mapPath = settings ? settings->resolvedMapPath : "";
     if (mapPath.empty())
         mapPath = "assets/maps/" + mapName + ".glb";

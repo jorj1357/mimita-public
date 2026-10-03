@@ -721,9 +721,19 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         }
     }
 
-    // Config-driven weapon capsule visibility (from weaponcollisions.json "visible" field)
-    // Uses ungated DebugVis::drawWeapon* functions — no debug flags needed.
-    if (player.weaponCollisionDebug.visibleFromConfig && player.collision.hasWeaponCollisionCapsule) {
+    // Config-driven weapon collision visibility (from weaponcollisions.json
+    // "visible" field). Boxes use the same local geometry and transform as
+    // the collision owner; capsules retain their capsule renderer.
+    if (player.weaponCollisionDebug.visibleFromConfig &&
+        player.weaponCollisionDebug.usesJsonMesh) {
+        for (const auto& box : player.weaponCollisionDebug.boxes) {
+            if (!box.enabled) continue;
+            DebugVis::drawWeaponWireBox(camera, player.weaponModelTransform,
+                box.center, box.halfSize, box.scale, box.rotationDegrees,
+                {0.0f, 0.85f, 1.0f, 0.7f});
+        }
+    } else if (player.weaponCollisionDebug.visibleFromConfig &&
+               player.collision.hasWeaponCollisionCapsule) {
         const Capsule& cap = player.weaponCollisionCapsule;
         DebugVis::drawWeaponCapsuleWire(camera, cap, {0.0f, 0.85f, 1.0f, 0.5f});
         glm::vec3 center = (cap.a + cap.b) * 0.5f;

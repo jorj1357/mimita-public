@@ -13,6 +13,7 @@
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <cstdint>
+#include <cmath>
 #include <memory>
 #include <GLFW/glfw3.h>
 #include "camera.h"
@@ -45,6 +46,9 @@
 #include "debug/transform-debug.h"
 #include "network/badconn/badconn.h"
 #include "network/multiplayer-context.h"
+#include "network/community-match-client.h"
+#include "gamemode/gamemode.h"
+#include "game/objective-state.h"
 #include "config/networking-config.h"
 #include "engine/engine-tick-net.h"
 #include "perf/perf.h"
@@ -77,6 +81,49 @@ static KillImpactFrame gKillImpactFrame;
 static std::unordered_map<std::string, bool> gActorPrevDead;
 static std::unordered_map<std::string, std::string> gReplayActorAvatarNames;
 static std::unordered_map<std::string, bool> gReplayActorPrevDead;
+
+// Config-driven objective pulse sphere. Reads the replicated objective position
+// and state from CommunityMatchClient and the visual policy from the active
+// gamemode JSON. Draws a production VFX sphere (depth-tested) via the shared
+// DebugVis filled-triangle buffer, flushed by DebugVis::flushTris later in the
+// render pass. Cosmetic only; it never decides objective state.
+static void renderObjectivePulse(const Camera& camera)
+{
+    const MimitaNet::CommunityMatchClient& match =
+        MimitaNet::CommunityMatchClient::instance();
+    if (!match.active()) return;
+
+    const auto& obj = match.objective();
+    // Only render while the objective is actually in the world: carried,
+    // dropped, or planted (not inactive/defused/exploded).
+    const uint8_t state = obj.state;
+    const bool inWorld =
+        state == (uint8_t)ObjectiveState::Carried ||
+        state == (uint8_t)ObjectiveState::Dropped ||
+        state == (uint8_t)ObjectiveState::Planted;
+    if (!obj.active || obj.kind != (uint8_t)ObjectiveKind::Bomb || !inWorld)
+        return;
+
+    const Gamemode& gm = GamemodeRegistry::instance().get(match.mode());
+    const GamemodeObjectiveVisual* visual = nullptr;
+    for (const auto& def : gm.objectives) {
+        if (def.kind == "bomb" || def.id == obj.id) { visual = &def.visual; break; }
+    }
+    if (!visual || !visual->enabled) return;
+
+    const float period = visual->periodSeconds > 0.0f ? visual->periodSeconds : 1.5f;
+    const float phase = (float)((MimitaNet::nowMs() % (uint64_t)(period * 1000.0f))) /
+                        (period * 1000.0f);
+    const float pulse = 0.5f * (1.0f - std::cos(phase * 6.2831853f));
+    const float radius = visual->radius + visual->pulseAmplitude * pulse;
+
+    glm::vec4 color(visual->color, visual->alpha);
+    // Planted: shift toward a hot warning tint so the armed state reads clearly.
+    if (state == (uint8_t)ObjectiveState::Planted)
+        color = glm::vec4(1.0f, 0.15f, 0.05f, std::min(1.0f, visual->alpha + 0.2f));
+
+    DebugVis::drawFilledSphere(camera, obj.position, radius, color);
+}
 
 // Renders the replay scene's actors (and cinematic kill-impact overlay) into the
 // currently bound framebuffer. Shared by the visible window path and the
@@ -622,6 +669,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     { MIMITA_PERF_SCOPE("Rendering::Effects::HitBursts");
       Perf::state().renderPerf.hitBursts++;
       HitEffects::renderHitBursts(camera); }
+    { MIMITA_PERF_SCOPE("Rendering::Effects::ObjectivePulse");
+      renderObjectivePulse(camera); }
     { MIMITA_PERF_SCOPE("Rendering::Debug::Visuals");
     drawPhysicalEntities(camera);
     DebugVis::flushTris(camera);

@@ -56,6 +56,37 @@ static int resolveTeamIndexFromId(const Gamemode& gm, const std::string& teamId)
     return -1;
 }
 
+// Classify a map spawn node tag into a fixed team index (0=CT, 1=T), or -1
+// when the tag names no team. Matches "spawnpoint.CT", "spawnpoint.T",
+// "ct_spawn", "counterterrorist", "terrorist", etc.
+//
+// The generic "spawn"/"spawnpoint" prefix is stripped first so a nameless
+// `spawnpoint.011` does NOT match the "t" in "spawnpoint" and get misread as
+// Terrorist. CT is checked before T so "counterterror" is not read as "terror".
+static int spawnTagTeamIndex(const std::string& rawTag)
+{
+    std::string tag = rawTag;
+    std::transform(tag.begin(), tag.end(), tag.begin(),
+        [](unsigned char c) { return (char)std::tolower(c); });
+    // Remove a leading spawn-token so only the team suffix remains.
+    const size_t dot = tag.find_last_of("._-");
+    std::string suffix = (dot != std::string::npos) ? tag.substr(dot + 1) : tag;
+    if (suffix.empty()) suffix = tag;
+
+    // Whole-token CT/T markers first.
+    if (suffix == "ct" || suffix == "c") return 0;
+    if (suffix == "t") return 1;
+    // Then broader word markers.
+    if (suffix.find("ct") != std::string::npos ||
+        suffix.find("counter") != std::string::npos ||
+        suffix.find("defender") != std::string::npos)
+        return 0;
+    if (suffix.find("terror") != std::string::npos ||
+        suffix.find("attacker") != std::string::npos)
+        return 1;
+    return -1;
+}
+
 static void finalizeServerNpcMirrorSpawn(ServerNpc& npc,
                                          ActorSpawnReason reason,
                                          uint32_t serverTick)
@@ -85,12 +116,16 @@ bool serverMatchRespawnsEnabled()
 {
     const ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return true;      // legacy / sandbox keeps instant respawn
+    if (d.warmup) return true;        // intermission warmup: infinite lives
     return d.respawnSeconds != 0.0f;  // 0 == one-life
 }
 
 bool serverPlayerRespawnsEnabled(uint32_t playerId)
 {
     const ServerGamemodeState& d = serverGamemodeState();
+    // Intermission warmup: infinite lives so players can move and fight freely.
+    if (d.warmup)
+        return true;
     if (d.npcWaves)
         return d.waveLivesRemaining > 0;
     (void)playerId;
@@ -140,6 +175,19 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     out.startingWeapon = def->startingWeapon;
     out.avatarName = def->avatarName;
 
+    // A team role may carry its own forced avatar (e.g. CT/T). Prefer it over
+    // the shared actor preset so teams look distinct while still sharing the
+    // preset's movement/weapon/behavior configuration.
+    if (!it->second.roleId.empty() && it->second.roleId != def->id) {
+        if (const MatchRoleDefinition* teamRole =
+                MatchRoleRegistry::instance().get(it->second.roleId)) {
+            if (teamRole->avatarForced && !teamRole->avatarName.empty()) {
+                out.avatarName = teamRole->avatarName;
+                if (teamRole->health > 0) out.health = teamRole->health;
+            }
+        }
+    }
+
     if (!def->movementPreset.empty()) {
         // Validate once through the cache so an unknown preset is caught here
         // (and logged with role context) instead of every simulation tick.
@@ -182,6 +230,14 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                 def->id.c_str(), def->behaviorProfile.c_str());
         }
     }
+
+    // The movement policy is owned by the actor preset: a preset carries it
+    // directly, a role references the preset that owns it. The live NPC
+    // re-resolves the policy by id each tick so hot reload reaches it.
+    if (def->actorPreset)
+        out.actorPresetId = def->id;
+    else if (!def->actorPresetId.empty())
+        out.actorPresetId = def->actorPresetId;
     return out;
 }
 
@@ -727,7 +783,9 @@ void broadcastDuelState(SOCKET sock,
     pkt.roundNumber = d.roundNumber;
     pkt.roundWins[0] = d.roundWins[0];
     pkt.roundWins[1] = d.roundWins[1];
-    pkt.winnerTeam = d.winnerTeam;
+    // Result screens: a normal round sends the round winner; only the match-over
+    // screen uses the overall match winner. d.winnerTeam stays -1 until then.
+    pkt.winnerTeam = d.matchOver ? d.winnerTeam : d.roundWinnerTeam;
     pkt.roundEndReason = (uint8_t)d.roundEndReason;
     pkt.roundSeconds = d.roundSeconds;
     pkt.roundTimerLeft = (d.phase == DUEL_PHASE_ACTIVE && d.roundEndTick > d.currentServerTick)
@@ -826,12 +884,16 @@ void broadcastDuelState(SOCKET sock,
     }
 }
 
-// Pick ONE random map spawn point as the match anchor. Both teams always
-// spawn near this single point (with a fresh random XY offset each spawn), so
-// respawns land right back in the fight — max action, no map editing needed.
+// Pick ONE random map spawn point as the shared fallback anchor for maps
+// without team-tagged spawns. Also resolves per-team spawn clusters from
+// spawnpoint.CT / spawnpoint.T tags so each squad starts apart.
 void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
 {
     d.spawnsAssigned = true;
+    d.teamSpawnPoints[0].clear();
+    d.teamSpawnPoints[1].clear();
+    d.teamSpawnsResolved = false;
+
     if (!world.spawnPoints.empty())
     {
         std::mt19937 rng(std::random_device{}());
@@ -842,9 +904,22 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
         const glm::vec3 anchor = world.spawnPoints[anchorIndex].position;
         d.spawnA = anchor;
         d.spawnB = anchor;
+
+        // Group tagged spawns by team.
+        for (const ServerSpawnPoint& sp : world.spawnPoints) {
+            const int team = spawnTagTeamIndex(sp.tag);
+            if (team == 0 || team == 1)
+                d.teamSpawnPoints[team].push_back(sp.position);
+        }
+        d.teamSpawnsResolved = !d.teamSpawnPoints[0].empty() &&
+                               !d.teamSpawnPoints[1].empty();
+        if (!d.teamSpawnPoints[0].empty()) d.spawnA = d.teamSpawnPoints[0].front();
+        if (!d.teamSpawnPoints[1].empty()) d.spawnB = d.teamSpawnPoints[1].front();
         Debug::log(Debug::Category::Duel,
-            "[DuelAnchor] map=%s anchorIndex=%zu anchor=(%.3f,%.3f,%.3f)\n",
-            d.mapId.c_str(), anchorIndex, anchor.x, anchor.y, anchor.z);
+            "[DuelAnchor] map=%s anchorIndex=%zu anchor=(%.3f,%.3f,%.3f) teamTags ct=%zu t=%zu resolved=%d\n",
+            d.mapId.c_str(), anchorIndex, anchor.x, anchor.y, anchor.z,
+            d.teamSpawnPoints[0].size(), d.teamSpawnPoints[1].size(),
+            (int)d.teamSpawnsResolved);
     }
     else
     {
@@ -859,12 +934,33 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
         d.spawnA.x, d.spawnA.y, d.spawnA.z, world.spawnPoints.size());
 }
 
-// The anchor plus a random XY offset (so nobody can predict the exact spot).
-glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d)
+// Team-aware spawn point: uses the team's tagged spawn cluster when resolved,
+// otherwise falls back to the shared anchor. The random XY offset spreads
+// squadmates around their spawn so they are not stacked.
+glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
 {
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> dist(-d.spawnOffsetRadius, d.spawnOffsetRadius);
-    return d.spawnA + glm::vec3(dist(rng), dist(rng), 0.0f);
+    glm::vec3 base = d.spawnA;
+    if (team == 0 && !d.teamSpawnPoints[0].empty()) {
+        std::uniform_int_distribution<size_t> pick(0, d.teamSpawnPoints[0].size() - 1);
+        base = d.teamSpawnPoints[0][pick(rng)];
+    } else if (team == 1 && !d.teamSpawnPoints[1].empty()) {
+        std::uniform_int_distribution<size_t> pick(0, d.teamSpawnPoints[1].size() - 1);
+        base = d.teamSpawnPoints[1][pick(rng)];
+    } else if (team == 0) {
+        base = d.spawnA;
+    } else if (team == 1) {
+        base = d.spawnB;
+    }
+    return base + glm::vec3(dist(rng), dist(rng), 0.0f);
+}
+
+// Legacy single-argument spawn (shared anchor, no team). Kept for callers that
+// have no team context (waves, objective drop).
+glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d)
+{
+    return gamemodeSpawnPoint(d, -1);
 }
 
 void assignGamemodeParticipants(ServerGamemodeState& d,
@@ -1057,7 +1153,9 @@ bool reloadGamemodeMap(SOCKET sock,
     teleportGamemodeParticipantsToSpawns(d, players);
     for (Npc& npc : npcSystem.all())
     {
-        const glm::vec3 spawn = gamemodeSpawnPoint(d);
+        auto nTeamIt = d.matchTeams.find(npc.id);
+        const int nTeam = nTeamIt != d.matchTeams.end() ? nTeamIt->second : -1;
+        const glm::vec3 spawn = gamemodeSpawnPoint(d, nTeam);
         npc.body.pos = spawn;
         npc.body.respawnPosition = spawn;
         npc.body.vel = glm::vec3(0.0f);
@@ -1082,7 +1180,9 @@ bool reloadGamemodeMap(SOCKET sock,
     for (auto& kv : players) {
         ServerPlayer& p = kv.second;
         if (p.spawnState != ServerPlayer::Active) continue;
-        p.duelSpawnPos = gamemodeSpawnPoint(d);
+        auto pTeamIt = d.matchTeams.find(p.id);
+        const int pTeam = pTeamIt != d.matchTeams.end() ? pTeamIt->second : -1;
+        p.duelSpawnPos = gamemodeSpawnPoint(d, pTeam);
         p.hasDuelSpawnPos = true;
         beginAuthoritativeTransform(p, p.duelSpawnPos,
                                     SpawnVelocityConfig::instance().enabled()
@@ -1144,7 +1244,9 @@ bool rotateToNextGamemodeMap(SOCKET sock,
             teleportGamemodeParticipantsToSpawns(d, players);
             for (Npc& npc : npcSystem.all())
             {
-                const glm::vec3 spawn = gamemodeSpawnPoint(d);
+                auto nTeamIt = d.matchTeams.find(npc.id);
+                const int nTeam = nTeamIt != d.matchTeams.end() ? nTeamIt->second : -1;
+                const glm::vec3 spawn = gamemodeSpawnPoint(d, nTeam);
                 npc.body.pos = spawn;
                 npc.body.respawnPosition = spawn;
                 npc.body.vel = glm::vec3(0.0f);
@@ -1261,6 +1363,23 @@ void buildObjectiveRoster(ServerGamemodeState& d,
 {
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
 
+    // Clear any previous roster NPCs (ids >= 100000) so rebuilding for a new
+    // round/warmup does not duplicate the squad.
+    for (auto it = npcs.begin(); it != npcs.end(); ) {
+        if (it->first >= 100000) {
+            d.matchTeams.erase(it->first);
+            d.matchActors.erase(it->first);
+            d.participantNames.erase(it->first);
+            d.ffaKills.erase(it->first);
+            d.ffaDeaths.erase(it->first);
+            d.participants.erase(std::remove(d.participants.begin(), d.participants.end(),
+                                             it->first), d.participants.end());
+            it = npcs.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     // Find the human. Round modes are built around a single human actor.
     uint32_t humanId = 0;
     for (const auto& kv : players) {
@@ -1302,7 +1421,7 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             ServerNpc npc;
             npc.entityId = d.roundNextNpcId++;
             npc.name = roundTeamName(gm, team) + " " + std::to_string(i + 1);
-            npc.pos = gamemodeSpawnPoint(d);
+            npc.pos = gamemodeSpawnPoint(d, team);
             npc.yaw = team == 0 ? 0.0f : 3.14159265f;
             npc.difficulty = 1.0f;
             npc.matchTeam = team;
@@ -1374,6 +1493,12 @@ void beginObjectiveRound(ServerGamemodeState& d,
     d.lastBroadcastTick = currentTick;
     resetMatchScores(d);
     d.phase = DUEL_PHASE_COUNTDOWN;
+    // Freeze the whole countdown: human input lock + NPC hold, released exactly
+    // at GO. Newly adopted roster bodies get the same hold in
+    // finalizeServerNpcSpawn (they do not exist yet at this point).
+    d.roundCountdownFreeze = true;
+    for (Npc& npc : npcSystem.all())
+        npc.wakeupTimer = std::max(npc.wakeupTimer, d.countdownSeconds);
     resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
     assignObjectiveCarrier(d, players, npcs);
     Debug::warn(Debug::Category::Duel,
@@ -1388,6 +1513,7 @@ void endObjectiveRound(ServerGamemodeState& d, int winnerTeam, int reason,
                        uint32_t tick)
 {
     if (d.phase != DUEL_PHASE_ACTIVE) return;
+    d.roundCountdownFreeze = false;
     d.roundWinnerTeam = winnerTeam;
     d.roundEndReason = reason;
     if (winnerTeam >= 0 && winnerTeam < 2)
@@ -1981,6 +2107,20 @@ void updateActorStates(ServerGamemodeState& d,
 
         desc.state = nextActorState(before, dead, respawns);
 
+        // One-life round mode: a dead actor joins the Spectator team until the
+        // round ends. The original team is kept in the assignment map for the
+        // next round (matchTeams is rebuilt at round start).
+        if (desc.state == ActorState::Spectating && !respawns && d.objectiveRounds) {
+            const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+            for (size_t t = 0; t < gm.teams.size(); ++t) {
+                if (gm.teams[t].id == "spec" || gm.teams[t].role == "spectator") {
+                    d.matchTeams[kv.first] = (int)t;
+                    desc.teamId = (int)t;
+                    break;
+                }
+            }
+        }
+
         if (desc.state != before) {
             auto nameOf = [](ActorState s) {
                 switch (s) {
@@ -2006,7 +2146,9 @@ void resetGamemodeActorsAtMapSpawn(
     NpcSystem& npcSystem)
 {
     for (uint32_t pid : d.participants) {
-        const glm::vec3 spawn = gamemodeSpawnPoint(d);
+        auto teamIt = d.matchTeams.find(pid);
+        const int spawnTeam = teamIt != d.matchTeams.end() ? teamIt->second : -1;
+        const glm::vec3 spawn = gamemodeSpawnPoint(d, spawnTeam);
         auto playerIt = players.find(pid);
         if (playerIt != players.end()) {
             ServerPlayer& p = playerIt->second;
@@ -2035,6 +2177,9 @@ void resetGamemodeActorsAtMapSpawn(
             npc.body.respawnPosition = spawn;
             npc.body.vel = glm::vec3(0.0f);
             npc.body.externalImpulse = glm::vec3(0.0f);
+            // Keep the authoritative team on the real body so the local brain
+            // and the per-tick mirror rebuild never lose it.
+            npc.body.matchTeam = spawnTeam;
             // Role health override applies unless a host healthall override is set.
             const int npcOverrideHp = serverGameOverrides().maxHpOverride;
             const int npcMaxHp = npcOverrideHp > 0 ? npcOverrideHp
@@ -2044,6 +2189,7 @@ void resetGamemodeActorsAtMapSpawn(
             npc.body.dead = false;
             npc.body.respawnTimer = 0.0f;
             npc.movementProfileId = profile.movementPreset;
+            npc.actorPresetId = profile.actorPresetId;
             if (!profile.avatarName.empty())
                 npc.avatarName = profile.avatarName;
             npc.navigator.reset();
@@ -2997,18 +3143,23 @@ void serverGamemodeTick(SOCKET sock,
         // The victim's respawn delay/state was assigned by the lethal damage
         // path (server-damage / server-npcs). Here we only pin the respawn
         // anchor; do NOT zero the timer or the gamemode delay would be lost.
+        // The anchor MUST be the victim's own team spawn: pinning the shared
+        // (team -1) anchor would send the opposite team to the CT cluster.
+        auto victimTeamIt = d.matchTeams.find(victimId);
+        const int victimTeam = victimTeamIt != d.matchTeams.end()
+            ? victimTeamIt->second : -1;
         auto victimIt = players.find(victimId);
         if (!d.pendingVictimIsNpc && victimIt != players.end())
         {
-            victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d);
+            victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d, victimTeam);
         }
         else if (d.pendingVictimIsNpc)
         {
-            // Pin the dead NPC's respawn anchor to the current match spawn so a
+            // Pin the dead NPC's respawn anchor to its own team spawn so a
             // later map change cannot resurrect it into stale/void space.
             for (Npc& n : npcSystem.all()) {
                 if (n.id == victimId) {
-                    n.body.respawnPosition = gamemodeSpawnPoint(d);
+                    n.body.respawnPosition = gamemodeSpawnPoint(d, victimTeam);
                     break;
                 }
             }
@@ -3149,10 +3300,44 @@ void serverGamemodeTick(SOCKET sock,
         {
         case DUEL_PHASE_WAITING:
         case DUEL_PHASE_INTERMISSION:
+        {
+            // Warmup: as soon as a human is present during intermission, spawn
+            // the roster (allied + enemy NPCs) at their team spawns and let
+            // everyone move and fight freely with infinite lives. The real
+            // one-life round begins at countdown.
+            if (!d.warmup) {
+                bool hasHuman = false;
+                for (const auto& kv : players)
+                    if (kv.second.spawnState == ServerPlayer::Active) { hasHuman = true; break; }
+                if (hasHuman) {
+                    if (world.spawnPoints.empty())
+                        rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
+                    assignGamemodeSpawns(d, world);
+                    buildObjectiveRoster(d, players, npcs);
+                    // Spawn the human at their team spawn for warmup.
+                    for (auto& kv : players) {
+                        if (kv.second.spawnState != ServerPlayer::Active) continue;
+                        auto teamIt = d.matchTeams.find(kv.first);
+                        const int team = teamIt != d.matchTeams.end() ? teamIt->second : -1;
+                        const glm::vec3 spawn = gamemodeSpawnPoint(d, team);
+                        kv.second.duelSpawnPos = spawn;
+                        kv.second.hasDuelSpawnPos = true;
+                        beginAuthoritativeTransform(kv.second, spawn, glm::vec3(0.0f),
+                                                    kv.second.yaw, "warmup-spawn");
+                        kv.second.justRespawned = true;
+                    }
+                    assignObjectiveCarrier(d, players, npcs);
+                    d.warmup = true;
+                    ++d.stateVersion;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    Debug::warn(Debug::Category::Duel,
+                        "[WARMUP] intermission roster spawned mode=%s npcs=%zu\n",
+                        d.matchMode.c_str(), npcs.size());
+                }
+            }
             d.phaseTimer -= SERVER_DT;
             if (d.phaseTimer <= 0.0f)
             {
-                // A round needs the human actor; wait for one to connect.
                 bool hasHuman = false;
                 for (const auto& kv : players)
                     if (kv.second.spawnState == ServerPlayer::Active) { hasHuman = true; break; }
@@ -3161,9 +3346,8 @@ void serverGamemodeTick(SOCKET sock,
                     d.phaseTimer = 0.5f;  // re-check shortly, don't fire an empty round
                     break;
                 }
-                if (world.spawnPoints.empty())
-                    rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
-                assignGamemodeSpawns(d, world);
+                d.warmup = false;
+                // Rebuild a clean roster and spawn at team spawns for the round.
                 buildObjectiveRoster(d, players, npcs);
                 beginObjectiveRound(d, players, npcs, npcSystem, world, tick);
                 broadcastDuelState(sock, d, players, totalPacketsOut);
@@ -3174,6 +3358,7 @@ void serverGamemodeTick(SOCKET sock,
                 broadcastDuelState(sock, d, players, totalPacketsOut);
             }
             break;
+        }
 
         case DUEL_PHASE_COUNTDOWN:
             if (tick >= d.matchStartTick)
@@ -3199,6 +3384,8 @@ void serverGamemodeTick(SOCKET sock,
             if (d.phaseTimer <= 0.0f)
             {
                 d.phase = DUEL_PHASE_ACTIVE;
+                // GO! Everyone may move now. Release the countdown freeze.
+                d.roundCountdownFreeze = false;
                 ++d.stateVersion;
                 d.lastBroadcastTick = tick;
                 Debug::log(Debug::Category::Duel,
@@ -3612,6 +3799,21 @@ void serverGamemodeRematchNow()
     d.rematchLeft = 0.0f;
 }
 
+bool serverSpawnTagSelfTest(std::string& report)
+{
+    bool ok = true;
+    auto fail = [&](const std::string& why) { ok = false; report += "FAIL: " + why + "\n"; };
+    if (spawnTagTeamIndex("spawnpoint.CT") != 0) fail("spawnpoint.CT should map to team 0");
+    if (spawnTagTeamIndex("spawnpoint.T") != 1) fail("spawnpoint.T should map to team 1");
+    if (spawnTagTeamIndex("spawnpoint.counterterrorist") != 0) fail("counterterrorist should map to CT");
+    if (spawnTagTeamIndex("spawnpoint.terrorist") != 1) fail("terrorist should map to T");
+    if (spawnTagTeamIndex("spawnpoint.011") != -1) fail("numbered spawnpoint should be teamless (-1)");
+    if (spawnTagTeamIndex("randomspawn") != -1) fail("plain spawn should be teamless (-1)");
+    if (spawnTagTeamIndex("spawnpoint") != -1) fail("bare spawnpoint should be teamless (-1)");
+    report += ok ? "PASS\n" : "FAIL\n";
+    return ok;
+}
+
 bool serverCounterStrikeRoundSelfTest(std::string& report)
 {
     // Build a throwaway round state from the real gamemode JSON and exercise
@@ -3628,12 +3830,17 @@ bool serverCounterStrikeRoundSelfTest(std::string& report)
     bool ok = true;
     auto fail = [&](const std::string& why) { ok = false; report += "FAIL: " + why + "\n"; };
 
-    if (gm.teams.size() != 2) fail("expected 2 ordered teams");
+    // Three ordered teams: two playing teams plus the built-in Spectator team.
+    // The playing teams are always indices 0 and 1; Spectator has capacity 0.
+    if (gm.teams.size() != 3) fail("expected 3 ordered teams (CT, T, Spectator)");
     else {
-        report += "team0=" + gm.teams[0].displayName + " team1=" + gm.teams[1].displayName + "\n";
+        report += "team0=" + gm.teams[0].displayName + " team1=" + gm.teams[1].displayName +
+                  " team2=" + gm.teams[2].displayName + "\n";
         if (gm.teams[0].displayName != "Counter-Terrorists") fail("team 0 display name");
         if (gm.teams[1].displayName != "Terrorists") fail("team 1 display name");
-        if (gm.teams[0].capacity != 5 || gm.teams[1].capacity != 5) fail("team capacity != 5");
+        if (gm.teams[0].capacity != 5 || gm.teams[1].capacity != 5) fail("playing team capacity != 5");
+        if (gm.teams[2].displayName != "Spectator") fail("team 2 display name");
+        if (gm.teams[2].capacity != 0) fail("spectator capacity != 0");
     }
     if (!(gm.victoryCondition == "rounds")) fail("victoryCondition != rounds");
     if (gm.rounds.roundsToWin != 8) fail("rounds_to_win != 8");
@@ -3780,7 +3987,9 @@ void serverRespawnAllActors(SOCKET sock,
     for (auto& kv : players) {
         ServerPlayer& player = kv.second;
         if (player.spawnState != ServerPlayer::Active) continue;
-        player.duelSpawnPos = gamemodeSpawnPoint(d);
+        auto pTeamIt = d.matchTeams.find(player.id);
+        const int pTeam = pTeamIt != d.matchTeams.end() ? pTeamIt->second : -1;
+        player.duelSpawnPos = gamemodeSpawnPoint(d, pTeam);
         player.hasDuelSpawnPos = true;
         player.pos = player.duelSpawnPos;
         completeAuthoritativeSpawn(sock, player, false);

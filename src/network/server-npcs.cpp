@@ -150,6 +150,9 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         {
             if (n.id == kv.first)
             {
+                // Authoritative team lives on the real body too, so the
+                // per-tick mirror rebuild and the local brain both see it.
+                n.body.matchTeam = kv.second.matchTeam;
                 if (serverGameOverrides().maxHpOverride > 0)
                 {
                     n.body.maxHp = serverGameOverrides().maxHpOverride;
@@ -162,6 +165,7 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                 }
                 if (!profile.movementPreset.empty())
                     n.movementProfileId = profile.movementPreset;
+                n.actorPresetId = profile.actorPresetId;
                 if (!profile.avatarName.empty())
                     n.avatarName = profile.avatarName;
                 n.behaviorProfileId = profile.behaviorProfileId;
@@ -226,6 +230,18 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
 {
     npc.wakeupTimer = static_cast<float>(
         NpcDifficultyConfig::instance().settings().spawnActionDelayTicks) / 60.0f;
+
+    // Round-countdown hold: freshly adopted roster NPCs must stay frozen for the
+    // whole 3-2-1 (plus the post-GO freeze) instead of waking on the 1-tick
+    // spawn delay. This is the owner that catches NPCs whose real bodies are
+    // adopted AFTER beginObjectiveRound armed the already-existing bodies.
+    const ServerGamemodeState& d = serverGamemodeState();
+    if (d.enabled && d.objectiveRounds && d.roundCountdownFreeze && !d.warmup)
+    {
+        const float remaining = d.matchStartTick > d.currentServerTick
+            ? (float)(d.matchStartTick - d.currentServerTick) / 60.0f : 0.0f;
+        npc.wakeupTimer = std::max(npc.wakeupTimer, remaining);
+    }
     ActorSpawnEvent lifecycleEvent;
     lifecycleEvent.entityId = npc.id;
     lifecycleEvent.actorKind = ActorKind::Npc;
@@ -266,6 +282,7 @@ static void respawnServerNpc(Npc& npc)
     npc.body.maxHp = maxHp;
     npc.body.currentHp = maxHp;
     npc.movementProfileId = profile.movementPreset;
+    npc.actorPresetId = profile.actorPresetId;
     npc.navigator.reset();
     npc.traversal.reset();
     npc.prevHadTarget = false;
@@ -564,6 +581,11 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
             : glm::vec3(1.0f, 0.0f, 0.0f);
         sn.yaw = n.body.yaw;
         sn.health = n.body.currentHp;
+        // Preserve the authoritative team. This map is rebuilt from scratch
+        // every tick, so the team must be carried over from the previous
+        // record (or the real Npc body) or it resets to -1 and every NPC
+        // becomes hostile to everyone (including teammates).
+        sn.matchTeam = n.body.matchTeam;
         sn.onGround = n.body.ground.hasWorldContact;
         sn.difficulty = n.difficulty;
         sn.equippedSlot = n.body.equippedSlot;
@@ -590,6 +612,10 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
             // map, otherwise a dungeon NPC becomes room 0 on the next tick
             // and room-clear detection can never find it.
             sn.proceduralRoomNumber = oldIt->second.proceduralRoomNumber;
+            // Fall back to the previous team when the body has none (the body
+            // team is only authoritative once roster assignment has run).
+            if (sn.matchTeam < 0)
+                sn.matchTeam = oldIt->second.matchTeam;
         }
         next[sn.entityId] = std::move(sn);
         npcIdsAlive.insert(sn.entityId);
@@ -754,16 +780,26 @@ void simulateSharedNpcs(SOCKET sock,
     };
     const auto& npcDifficulty = NpcDifficultyConfig::instance().settings();
     const bool playersOnly = npcDifficulty.targetMode == "player";
-    const bool allowNpcTargets = npcDifficulty.damageOtherNpcs && !playersOnly;
+    // Team-based round modes (Counter-Strike) must let NPCs fight the enemy
+    // squad, not just the human. Treat an active two-team match as always
+    // allowing NPC targets so both teams actually engage each other.
+    const bool teamMatch = serverGamemodeState().objectiveRounds;
+    const bool allowNpcTargets = npcDifficulty.damageOtherNpcs || teamMatch;
     const bool freezeWaveBanner = serverGamemodeState().npcWaves
         && serverGamemodeState().waveBannerVisible
         && npcDifficulty.freezeDuringWaveBanner;
+    // Round countdown/freeze: no targeting during the 3-2-1 or the post-GO
+    // freeze, so no squad can shoot before the round is truly live. The NPC
+    // body is also held by wakeupTimer; this is the explicit targeting gate.
+    const bool freezeRoundCountdown = serverGamemodeState().objectiveRounds
+        && serverGamemodeState().roundCountdownFreeze
+        && !serverGamemodeState().warmup;
 
     for (Npc& n : npcSystem.all())
     {
         if (n.body.dead || n.body.currentHp <= 0)
             continue;
-        if (freezeWaveBanner)
+        if (freezeWaveBanner || freezeRoundCountdown)
             continue;
 
         const uint32_t prevTarget = n.serverTargetId;
@@ -777,6 +813,9 @@ void simulateSharedNpcs(SOCKET sock,
             {
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.connectionStale) continue;
+                // Team gate: never target a same-team human. Applies in every
+                // target mode, including "player" mode.
+                if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
                 const glm::vec3 d = p.pos - n.body.pos;
                 const float d2 = glm::dot(d, d);
                 if (d2 < bestD2)
@@ -790,9 +829,21 @@ void simulateSharedNpcs(SOCKET sock,
 
         if (playersOnly)
         {
-            // Explicit player mode intentionally ignores teams: every NPC
-            // attacks the nearest live human rather than another NPC.
+            // Player-priority mode: prefer the nearest live hostile human, but
+            // still respect teams and fall back to hostile NPCs when no enemy
+            // human is in play (so both squads actually fight each other).
             chooseNearestPlayer();
+            if (!nearestPlayer && allowNpcTargets) {
+                float bestD2 = std::numeric_limits<float>::max();
+                for (Npc& other : npcSystem.all()) {
+                    if (&other == &n) continue;
+                    if (other.body.dead || other.body.currentHp <= 0) continue;
+                    if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
+                    const glm::vec3 d = other.body.pos - n.body.pos;
+                    const float d2 = glm::dot(d, d);
+                    if (d2 < bestD2) { bestD2 = d2; nearestNpc = &other; nearestPlayer = nullptr; }
+                }
+            }
         }
         else if (n.behavior.active)
         {

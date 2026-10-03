@@ -1,7 +1,8 @@
 {
   "id": "counterstrike",
   "name": "Counter Strike",
-  "description": "5v5 round-based bomb defusal on dust2cyberiav3.",
+  "description": "5v5 round-based bomb defusal on dust2cyberiav4.",
+  "respawn_seconds": 0,
   "teams": [
     {
       "id": "ct",
@@ -16,13 +17,19 @@
       "capacity": 5,
       "role": "terrorist",
       "spawn_group": "t_spawn"
+    },
+    {
+      "id": "spec",
+      "display_name": "Spectator",
+      "capacity": 0,
+      "role": "spectator"
     }
   ],
   "rounds": {
     "max_rounds": 15,
     "rounds_to_win": 8,
     "round_seconds": 115,
-    "freeze_seconds": 0,
+    "freeze_seconds": 5,
     "countdown_seconds": 3,
     "intermission_seconds": 30,
     "results_seconds": 5
@@ -39,7 +46,14 @@
       "site_group": "bomb_sites",
       "plant_seconds": 3,
       "defuse_seconds": 5,
-      "explosion_seconds": 40
+      "explosion_seconds": 40,
+      "visual": {
+        "pulse": true,
+        "radius": 0.35,
+        "pulse_amplitude": 0.15,
+        "period_seconds": 1.5,
+        "color": [1.0, 0.25, 0.1, 0.8]
+      }
     }
   ],
   "victory": { "type": "rounds" },
@@ -53,7 +67,8 @@
     "world_impact_effects": false,
     "hit_markers": false,
     "hit_sounds": false,
-    "killfeed": true
+    "killfeed": true,
+    "player_outlines": false
   },
-  "maps": ["dust2cyberiav3"]
+  "maps": ["dust2cyberiav4"]
 }

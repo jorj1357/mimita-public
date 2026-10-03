@@ -16,6 +16,7 @@
 #include "config/settings-backup.h"
 #include "config/ragdoll-death-config.h"
 #include "config/impact-decals-config.h"
+#include "config/player-visuals-config.h"
 #include "config/camera-config.h"
 #include "camera.h"
 #include "gamemode/gamemode.h"
@@ -47,6 +48,32 @@ CommunityMatchClient& CommunityMatchClient::instance()
 {
     static CommunityMatchClient state;
     return state;
+}
+
+uint8_t CommunityMatchClient::localActorState(uint32_t localPlayerId) const
+{
+    return actorState(localPlayerId);
+}
+
+uint8_t CommunityMatchClient::actorState(uint32_t actorId) const
+{
+    if (actorId == 0) return 0xFF;
+    for (const auto& a : mActors)
+        if (a.actorId == actorId) return a.state;
+    return 0xFF;
+}
+
+uint8_t CommunityMatchClient::localTeam(uint32_t localPlayerId) const
+{
+    return teamForActor(localPlayerId);
+}
+
+uint8_t CommunityMatchClient::teamForActor(uint32_t actorId) const
+{
+    if (actorId == 0) return 0xFF;
+    for (const auto& a : mActors)
+        if (a.actorId == actorId) return a.team;
+    return 0xFF;
 }
 
 std::string CommunityMatchClient::teamName(int team) const
@@ -109,6 +136,7 @@ void CommunityMatchClient::reset()
     HealthbarConfig::instance().setModeVisibilityOverride(false);
     RagdollDeathConfig::instance().clearRuntimeOverride();
     ImpactDecalsConfig::instance().clearRuntimeBloodOverride();
+    PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
     if (mFirstPersonApplied) {
         THE_CAMERA.thirdPerson = mPreviousThirdPerson;
         mFirstPersonApplied = false;
@@ -227,6 +255,12 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mForceFirstPerson = modeConfig.forceFirstPerson || packet.forceFirstPerson != 0 ||
         (actorPreset && actorPreset->forceFirstPerson);
     HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
+    // Gamemode outline policy: a mode may force player outlines off. A missing
+    // key means "no policy" and leaves the user's config untouched.
+    if (modeConfig.presentation.hasPlayerOutlines)
+        PlayerVisualsConfig::instance().setPlayerOutlinesEnabled(modeConfig.presentation.playerOutlines);
+    else
+        PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
     if (mForceFirstPerson && !mFirstPersonApplied) {
         mPreviousThirdPerson = THE_CAMERA.thirdPerson;
         THE_CAMERA.thirdPerson = false;

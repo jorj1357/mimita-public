@@ -54,7 +54,7 @@ static MovementContactSource bodyWeaponContactSource(const char* label)
 static int runBodyWeaponPass(
     Player& p, const World& world, bool& groundedThisFrame,
     bool& groundedByWeapon, int pass, int maxPasses,
-    const std::vector<glm::mat4>& preservedPreviousTransforms)
+    const std::vector<glm::mat4>& preservedPreviousTransforms, float dt)
 {
     gBW = BWInvestigate{};
 
@@ -212,9 +212,9 @@ static int runBodyWeaponPass(
             const float bounceScale = weaponContact
                 ? p.weaponCollisionDebug.playerBounce
                 : 1.0f;
-            respondVelocityAgainstNormal(p, pc.normal, pc.sweepDelta, true,
-                                         pc.penetration, pc.label,
-                                         pc.triangleIndex, bounceScale);
+            respondVelocityAgainstNormal(
+                p, pc.normal, actorSweepVelocity(pc.sweepDelta, dt), true,
+                pc.penetration, pc.label, pc.triangleIndex, bounceScale);
         }
     }
 
@@ -232,7 +232,8 @@ static int runBodyWeaponPass(
 // TODO-DELETE: see the TODO-DELETE comment on runBodyWeaponPass above. This is
 // the same owner's public entry point (called by doGLBTriangleCollisions only
 // when config "actorTriangleSolver" is off).
-void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThisFrame)
+void doBodyWeaponCollisionPhase(
+    Player& p, const World& world, bool& groundedThisFrame, float dt)
 {
     auto t0 = std::chrono::steady_clock::now();
     constexpr int MAX_PASSES = 3;
@@ -248,7 +249,7 @@ void doBodyWeaponCollisionPhase(Player& p, const World& world, bool& groundedThi
     for (int pass = 0; pass < MAX_PASSES; ++pass) {
         glm::vec3 beforePos = p.pos;
         int result = runBodyWeaponPass(p, world, groundedThisFrame,
-            groundedByWeapon, pass, MAX_PASSES, preservedPreviousTransforms);
+            groundedByWeapon, pass, MAX_PASSES, preservedPreviousTransforms, dt);
         if (result < 0) { passesUsed = pass + 1; break; }
         passesUsed = pass + 1;
         totalCorrection += p.pos - beforePos;

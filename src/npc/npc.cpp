@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <glm/gtc/constants.hpp>
 
@@ -77,17 +78,15 @@ float targetCanSeeNpc(const Npc& npc, const World& world)
     return 1.0f;
 }
 
-bool shouldJump(Npc& npc, float d01, const World& world)
+const NpcMovementPolicy* activeMovementPolicy(const Npc& npc)
 {
-    if (glm::length(npc.lastMoveInput) > 0.1f)
-    {
-        glm::vec3 moveDir{npc.lastMoveInput.x, npc.lastMoveInput.y, 0.0f};
-        if (NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world))
-            return true;
-    }
-    if (NpcNavigation::isStuck(npc))
-        return true;
-    return random01(npc.rngState) < (0.02f + d01 * 0.05f);
+    if (npc.actorPresetId.empty())
+        return nullptr;
+    const MatchRoleDefinition* preset =
+        MatchRoleRegistry::instance().getActorPreset(npc.actorPresetId);
+    if (!preset || !preset->movementPolicy.configured)
+        return nullptr;
+    return &preset->movementPolicy;
 }
 
 bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def, bool targetCanSeeMe)
@@ -372,6 +371,16 @@ NpcGoal makeNavGoal(const Npc& npc)
         if (npc.stateMachine.currentState == NpcState::Chase) {
             goal.kind = NpcGoalKind::ReachPosition;
             goal.targetPos = npc.stateMachine.lastKnownTarget;
+        } else if (npc.stateMachine.currentState == NpcState::Patrol) {
+            // Project a forward waypoint along the chosen patrol heading so the
+            // navigator can route around walls instead of pressing into them.
+            const glm::vec3 dir = glm::length(glm::vec3(npc.stateMachine.patrolDir.x,
+                                                        npc.stateMachine.patrolDir.y, 0.0f)) > 0.001f
+                ? glm::normalize(glm::vec3(npc.stateMachine.patrolDir.x, npc.stateMachine.patrolDir.y, 0.0f))
+                : glm::vec3(1.0f, 0.0f, 0.0f);
+            goal.kind = NpcGoalKind::ReachPosition;
+            goal.targetPos = npc.body.pos + dir * 12.0f;
+            goal.tolerance = 1.5f;
         } else if (npc.stateMachine.currentState == NpcState::RandomWalk) {
             goal.kind = NpcGoalKind::ReachPosition;
             goal.targetPos = npc.stateMachine.wanderTarget;
@@ -655,6 +664,63 @@ void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& 
         updateOneNpc(nc, world, player, dt);
         break;
     }
+}
+
+// Choose the patrol heading for a no-target NPC. Pure-forward search with no
+// map knowledge: sample headings, reject wall-blocked ones with the shared ray,
+// and prefer directions that lead away from recently visited ground (recency
+// avoidance ring). The heading is held until it is blocked or refreshed.
+static void updatePatrolHeading(Npc& npc, const World& world,
+                                const std::vector<int>& nearCandidates, float dt)
+{
+    auto& sm = npc.stateMachine;
+    const auto& navCfg = NpcDifficultyConfig::instance().settings();
+    const float probe = std::max(2.5f, navCfg.wallCastDistance);
+
+    const bool haveHeading = glm::length(glm::vec3(sm.patrolDir.x, sm.patrolDir.y, 0.0f)) > 0.001f;
+    const bool headingBlocked = haveHeading && navCfg.wallAvoidanceEnabled &&
+        NpcNavigation::obstacleInDirection(npc, sm.patrolDir, probe, world, nearCandidates);
+
+    sm.patrolRepathTimer -= dt;
+    if (haveHeading && !headingBlocked && sm.patrolRepathTimer > 0.0f)
+        return;
+
+    // Sample headings and pick the best unblocked, least-recently-visited one.
+    constexpr int SAMPLES = 16;
+    glm::vec3 best = sm.patrolDir;
+    float bestScore = -std::numeric_limits<float>::max();
+    const float golden = 2.39996323f;  // low-discrepancy rotation offset
+    for (int i = 0; i < SAMPLES; ++i) {
+        const float ang = (float)i * (6.2831853f / (float)SAMPLES)
+                        + random01(npc.rngState) * 0.2f;
+        const glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        if (navCfg.wallAvoidanceEnabled &&
+            NpcNavigation::obstacleInDirection(npc, dir, probe, world, nearCandidates))
+            continue;
+        // Novelty: farther from every recently visited snapshot is better.
+        float minRecentDist = 1e9f;
+        for (int r = 0; r < sm.patrolRecentCount; ++r) {
+            const glm::vec3 toRecent = sm.patrolRecent[r] - npc.body.pos;
+            const float proj = glm::dot(glm::vec3(toRecent.x, toRecent.y, 0.0f), dir);
+            if (proj > 0.0f)
+                minRecentDist = std::min(minRecentDist, proj);
+        }
+        if (sm.patrolRecentCount == 0)
+            minRecentDist = 10.0f;
+        // Continuity: mild preference for the current heading to avoid jitter.
+        const float continuity = haveHeading ? glm::dot(dir, sm.patrolDir) : 0.0f;
+        const float jitter = golden * ((float)(i + 1) * 0.137f);  // deterministic tie-break
+        const float score = minRecentDist + continuity * 2.0f + jitter * 0.01f;
+        if (score > bestScore) {
+            bestScore = score;
+            best = dir;
+        }
+    }
+    if (glm::length(best) > 0.001f)
+        sm.patrolDir = glm::normalize(glm::vec3(best.x, best.y, 0.0f));
+    // Re-check the heading on a cadence even if it is not blocked, so the squad
+    // keeps finding new routes instead of marching a single line forever.
+    sm.patrolRepathTimer = 2.0f + random01(npc.rngState) * 2.0f;
 }
 
 void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float dt)
@@ -962,6 +1028,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     nearCandidates.clear();
         appendChunkTrianglesForAABB(world, localBounds, 0.0f, nearCandidates, "npcNearCandidates");
 
+    // No-target patrol heading planner (forward search with recency avoidance).
+    if (npc.stateMachine.currentState == NpcState::Patrol && !npc.sensors.hasTarget)
+        updatePatrolHeading(npc, world, nearCandidates, safeDt);
+
     glm::vec3 moveDir;
     bool jump, dash, attack;
     bool inMirrorPhase = false;
@@ -1012,6 +1082,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         RoleMovementCache::instance().get(npc.movementProfileId);
     if (!navMovement)
         navMovement = NpcDifficultyConfig::instance().npcMovementConfig();
+
+    // Actor-preset policy (null = legacy brain). It gates the special movement
+    // decisions below without adding any Counter-Strike-specific branch.
+    const NpcMovementPolicy* policy = activeMovementPolicy(npc);
+    NpcJumpReason jumpReason = NpcJumpReason::None;
+
     if (!inMirrorPhase)
     {
         const NpcGoal navGoal = makeNavGoal(npc);
@@ -1027,18 +1103,31 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             glm::length(trav.direction) > 0.01f)
             moveDir = trav.direction;
         if (trav.jump && npc.sensors.touchFloor)
+        {
             jump = true;
+            jumpReason = NpcJumpReason::Navigation;
+        }
         if (trav.dash && navMovement && navMovement->dashEnabled)
             dash = true;
         if (trav.downDash && navMovement && navMovement->downDashEnabled)
             wantDownDash = true;
     }
 
-    // Situaltional jump if obstacle ahead or stuck
+    // Situational jump: only a real obstacle ahead justifies it. A policy must
+    // never jump merely because it is stuck (that is what local turn + repath
+    // recovery is for).
     if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
     {
-        jump = NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world, nearCandidates)
-            || NpcNavigation::isStuck(npc);
+        if (NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world, nearCandidates))
+        {
+            jump = true;
+            jumpReason = NpcJumpReason::Obstacle;
+        }
+        else if (!policy && NpcNavigation::isStuck(npc))
+        {
+            jump = true;
+            jumpReason = NpcJumpReason::Obstacle;
+        }
     }
 
     // Wall climb
@@ -1046,18 +1135,37 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     {
         glm::vec3 wallNormal;
         if (NpcNavigation::isClimbableWall(npc, moveDir, world, wallNormal, nearCandidates))
+        {
             jump = true;
+            jumpReason = NpcJumpReason::Climbable;
+        }
     }
 
     // LOS is owned by perception (senseWorld), which uses the same shared ray
     // trace; cachedLoSBlocked is kept in sync there. Dash and combat decisions
     // reuse it instead of tracing a second time.
 
-    // Situaltional dash (skip LOS gather when dash is on cooldown)
+    // Situational dash (skip LOS gather when dash is on cooldown). A policy
+    // only permits a dash for an explicit reason: attacking or escaping (the
+    // navigator owns the navigation-gap dash via the traversal step above).
     if (!dash && npc.sensors.hasTarget && npc.dashCooldown <= 0.0f)
     {
-        bool targetCanSee = !npc.cachedLoSBlocked;
-        dash = shouldDash(npc, difficulty01(npc.difficulty), npc.sensors.targetDistance, cachedWeaponDef, targetCanSee);
+        bool dashAllowed = true;
+        if (policy)
+        {
+            const NpcState st = npc.stateMachine.currentState;
+            NpcDashReason reason = NpcDashReason::None;
+            if (st == NpcState::Advance || st == NpcState::Attack || st == NpcState::Chase)
+                reason = NpcDashReason::Attack;
+            else if (st == NpcState::Retreat)
+                reason = NpcDashReason::Escape;
+            dashAllowed = npcPolicyAllowsDash(*policy, reason);
+        }
+        if (dashAllowed)
+        {
+            bool targetCanSee = !npc.cachedLoSBlocked;
+            dash = shouldDash(npc, difficulty01(npc.difficulty), npc.sensors.targetDistance, cachedWeaponDef, targetCanSee);
+        }
     }
 
     // Cover seeking
@@ -1066,8 +1174,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         bool wantsCover = npc.stateMachine.currentState == NpcState::Recover;
         if (!wantsCover)
         {
-            float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
-            wantsCover = healthFraction < 0.4f;
+            const float coverThreshold = policy ? policy->retreatHealthFraction : 0.4f;
+            wantsCover = npcHealthFraction(npc.body.currentHp, npc.body.maxHp) < coverThreshold;
         }
         if (!wantsCover)
         {
@@ -1137,7 +1245,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
                 const bool stillBlocked = NpcNavigation::obstacleInDirection(
                     npc, moveDir, navCfg.wallCastDistance, world, nearCandidates);
-                if (stillBlocked && navCfg.wallBacktrackEnabled)
+                // A policy uses the smallest local correction (turn) then a
+                // repath; it does not reverse direction for seconds.
+                if (stillBlocked && navCfg.wallBacktrackEnabled && !policy)
                 {
                     npc.navigator.startBacktrack(
                         requestedDir,
@@ -1154,11 +1264,22 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             npc.stateMachine.stuckTimer += safeDt;
             if (npc.stateMachine.stuckTimer > 0.3f)
             {
-                moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world, nearCandidates);
-                jump = true;
-                dash = npc.dashCooldown <= 0.0f;
-                npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
+                if (policy)
                 {
+                    // Local turn (already applied by wallAvoidDirection) then a
+                    // repath. No random wandering, no reflexive jump or dash.
+                    npc.navigator.requestRepath();
+                    npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
+                    std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
+                    Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,
+                        "[NPC NAV] actor=%u stuck=1 recovery=local_turn_repath\n", npc.id);
+                }
+                else
+                {
+                    moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world, nearCandidates);
+                    jump = true;
+                    dash = npc.dashCooldown <= 0.0f;
+                    npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
                     std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
                     Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,
                         "[NPC NAV] actor=%u stuck=1 recovery=jump\n", npc.id);
@@ -1170,6 +1291,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             npc.stateMachine.stuckTimer = 0.0f;
         }
     }
+
+    // A policy jump always needs an explicit, allowed reason. This also catches
+    // any jump set outside the sources above (e.g. mirror/bomb-tag) so a policy
+    // actor cannot jump "just because".
+    if (jump && policy && !npcPolicyAllowsJump(*policy, jumpReason))
+        jump = false;
 
     // Freeze: occasionally freeze to dodge shots / break prediction
     // (skipped when mirror phase provides its own freeze input)
@@ -1313,7 +1440,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     }
     npc.prevHadTarget = npc.sensors.hasTarget;
 
-    if (attack && npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)
+    // Defensive team gate: never fire at a same-team target, even if target
+    // selection upstream ever misfires. Friendly splash damage is unaffected
+    // (this only gates direct fire). Teams < 0 mean "no team" (sandbox/FFA).
+    const bool sameTeamTarget =
+        npc.body.matchTeam >= 0 && player.matchTeam >= 0 &&
+        npc.body.matchTeam == player.matchTeam;
+
+    if (attack && !sameTeamTarget &&
+        npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)
     {
         Debug::log(Debug::Category::NpcCombat,
             "[NPC FIRE] npc=%u timeSinceLastShot=%.3f\n",

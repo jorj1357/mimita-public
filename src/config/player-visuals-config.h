@@ -68,6 +68,17 @@ public:
     const std::string& lastError() const { return mLastError; }
     std::string describe() const;
 
+    // Temporary in-memory gamemode policy. It never writes
+    // config/playervisuals.json. While disabled, every configured player layer
+    // (outline/capsule/wireframe) resolves to "none"; the configured modes are
+    // preserved so removing the policy restores them.
+    void setPlayerOutlinesEnabled(bool enabled);
+    void clearPlayerOutlinesOverride();
+    bool hasPlayerOutlinesOverride() const { return mPlayerOutlinesOverride; }
+    bool playerOutlinesEnabled() const { return mPlayerOutlinesEnabled; }
+    // Configured layer mode, or "none" while the gamemode disables outlines.
+    std::string effectiveMode(const std::string& configuredMode) const;
+
 private:
     PlayerVisualsConfig();
     bool parseAndValidate(const std::string& text, PlayerVisualsData& out);
@@ -75,4 +86,6 @@ private:
     std::filesystem::file_time_type mLastWrite{};
     PlayerVisualsData mData;
     std::string mLastError;
+    bool mPlayerOutlinesOverride = false;
+    bool mPlayerOutlinesEnabled = true;
 };

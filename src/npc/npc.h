@@ -71,6 +71,10 @@ public:
     std::string startingWeaponOverride;
     // Role movement preset for this life; empty = legacy/NpcDifficultyConfig.
     std::string movementProfileId;
+    // Actor preset owning this life's movement policy; empty = legacy brain.
+    // The policy is re-resolved from MatchRoleRegistry each tick so editing the
+    // preset hot-reloads living NPCs without a respawn.
+    std::string actorPresetId;
     // Resolved role behavior profile for this life (combat tuning).
     std::string behaviorProfileId;
     NpcBehaviorTuning behavior;

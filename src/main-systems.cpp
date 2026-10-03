@@ -345,7 +345,7 @@ void gameInitSubsystems(Engine& engine)
     // 9 5 2026 not good  needs to work without wifi
     // cuz i cant strart a server without wfii so just make it start a local one todo
     const std::string defaultMapPath =
-       "assets/maps/dust2cyberiav3.glb";
+       "assets/maps/dust2cyberiav4.glb";
         
     static std::string activeMapPath;
     static int selectedEditorObject = -1;

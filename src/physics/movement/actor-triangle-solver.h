@@ -61,7 +61,8 @@ bool solveActorTriangleCollision(
     const World& world,
     const glm::vec3& desiredMovement,
     ActorTriangleCollisionResult& result,
-    const std::vector<PhysicalEntity>* entities = nullptr);
+    const std::vector<PhysicalEntity>* entities = nullptr,
+    float dt = 1.0f / 60.0f);
 
 // Deterministic Phase 3 test: synthetic box actor vs floor, wall, corner, and a
 // leaving-old-contact case.

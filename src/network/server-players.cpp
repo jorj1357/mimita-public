@@ -612,6 +612,16 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         }
     }
 
+    // Countdown freeze: during the 3-2-1 of a round mode the human stands
+    // still (can still look) and is released exactly at GO. Warmup is exempt.
+    if (serverGamemodeState().roundCountdownFreeze && !serverGamemodeState().warmup)
+    {
+        p.input.wish = glm::vec2(0.0f);
+        p.input.jumpHeld = false;
+        p.input.dashPressed = false;
+        p.input.downDashPressed = false;
+    }
+
     if (p.dead)
     {
         p.vel = glm::vec3(0.0f);

@@ -14,6 +14,7 @@
 #include "network/destruction-replication-selftest.h"
 #include <cstdio>
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -55,6 +56,7 @@
 #include "gamemode/match-roles.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/map-config.h"
+#include "map/map-loader-collision.h"
 #include "network/server-gamemode.h"
 #include "npc/npc-nav-request.h"
 #include "combat/grenade-registry.h"
@@ -256,14 +258,27 @@ bool handleGameCLI(int argc, char** argv)
             ? &counterStrike->weaponOverrides.at("shotgun") : nullptr;
         const auto rifle = counterStrike && counterStrike->weaponOverrides.find("hitscan_rifle") != counterStrike->weaponOverrides.end()
             ? &counterStrike->weaponOverrides.at("hitscan_rifle") : nullptr;
+        // The generic movement policy parsed from "npc_behavior".
+        const NpcMovementPolicy* mp = counterStrike ? &counterStrike->movementPolicy : nullptr;
+        const bool policyOk = mp && mp->configured &&
+            mp->travelStyle == "forward" && mp->combatStyle == "forward" &&
+            !mp->allowCircle && !mp->allowRandomWalk && !mp->allowStrafe &&
+            !mp->allowZigZag && !mp->allowHoldPosition &&
+            mp->retreatStyle == "low_health" &&
+            std::abs(mp->retreatHealthFraction - 0.35f) < 1e-4f &&
+            mp->jumpStyle == "obstacle_or_navigation" &&
+            mp->dashStyle == "attack_or_navigation" &&
+            mp->worldKnowledge == "local_sensing" &&
+            mp->blockedBehavior == "turn_then_repath" &&
+            std::abs(mp->movementNoise) < 1e-4f;
         const bool ok = loaded && counterStrike != nullptr &&
             counterStrike->cameraFov == 70.0f &&
             counterStrike->forceFov && counterStrike->forceFirstPerson &&
             !counterStrike->movementPreset.empty() &&
             counterStrike->weaponSet == "counterstrike" &&
             revolver && revolver->hasDamage && revolver->damage == 100.0f &&
-            revolver->hasFireDelay && revolver->fireDelay == 0.8f &&
-            revolver->hasReloadTime && revolver->reloadTime == 2.2f &&
+            revolver->hasFireDelay && revolver->fireDelay == 0.3f &&
+            revolver->hasReloadTime && revolver->reloadTime == 1.5f &&
             revolver->hasMagazineSize && revolver->magazineSize == 6 &&
             revolver->hasReserveAmmo && revolver->reserveAmmo == 36 &&
             revolver->hasBeamThickness && revolver->beamThickness == 0.0f &&
@@ -280,7 +295,15 @@ bool handleGameCLI(int argc, char** argv)
             !counterStrike->presentation.damageNumbers &&
             !counterStrike->presentation.hitEffects &&
             !counterStrike->presentation.worldImpactEffects &&
-            counterStrike->presentation.bloodEffects;
+            counterStrike->presentation.bloodEffects &&
+            policyOk;
+        printf("[ACTOR PRESET SELFTEST] policy configured=%d travel=%s combat=%s circle=%d strafe=%d zigzag=%d randomwalk=%d jump=%s dash=%s noise=%.2f retreat=%.2f\n",
+               mp && mp->configured, mp ? mp->travelStyle.c_str() : "-",
+               mp ? mp->combatStyle.c_str() : "-",
+               mp ? (int)mp->allowCircle : -1, mp ? (int)mp->allowStrafe : -1,
+               mp ? (int)mp->allowZigZag : -1, mp ? (int)mp->allowRandomWalk : -1,
+               mp ? mp->jumpStyle.c_str() : "-", mp ? mp->dashStyle.c_str() : "-",
+               mp ? mp->movementNoise : -1.0f, mp ? mp->retreatHealthFraction : -1.0f);
         printf("[ACTOR PRESET SELFTEST] counter_strike=%s revolver=%.0f/6/%d shotgun=%.0f/%d/%d rifle=%.0f/%d/%d hs=%.0f thick=%.1f/%.1f\n",
                counterStrike ? "found" : "missing",
                revolver ? revolver->damage : -1.0f, revolver ? revolver->reserveAmmo : -1,
@@ -289,6 +312,145 @@ bool handleGameCLI(int argc, char** argv)
                rifle ? rifle->headshotMultiplier : -1.0f,
                rifle ? rifle->beamThickness : -1.0f, rifle ? rifle->worldThickness : -1.0f);
         printf("[ACTOR PRESET SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-movement-policy-selftest") {
+        // Builds a real NpcSystem on a minimal collision world and drives it
+        // through the actual update path, proving the actor-preset policy
+        // restricts state selection and recovers from a wall locally.
+        std::string report;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            return cond;
+        };
+        bool ok = true;
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        const MatchRoleDefinition* preset =
+            MatchRoleRegistry::instance().getActorPreset("counter_strike");
+        ok &= check(preset && preset->movementPolicy.configured,
+                    "counter_strike preset has a configured npc_behavior policy");
+        if (!preset || !preset->movementPolicy.configured) {
+            printf("%s", report.c_str());
+            printf("[NPC POLICY SELFTEST] FAIL\n");
+            std::exit(1);
+        }
+
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            w.collisionMesh.triangles.push_back(t);
+        };
+
+        World world;
+        // Floor: two triangles over [-25,25]^2 at z=0 (normal +z).
+        addTri(world, {25,25,0}, {-25,25,0}, {-25,-25,0});
+        addTri(world, {25,25,0}, {-25,-25,0}, {25,-25,0});
+        buildCollisionChunks(world, nullptr);
+
+        NpcSystem npcs;
+        const uint32_t npcId = 9001;
+        npcs.spawnNpc(npcId, 5.0f, glm::vec3(0.0f, 0.0f, 2.0f));
+        Npc* npc = nullptr;
+        for (Npc& n : npcs.all())
+            if (n.id == npcId) { npc = &n; break; }
+        if (!npc) {
+            printf("[NPC POLICY SELFTEST] FAIL: NPC was not spawned\n");
+            std::exit(1);
+        }
+        npc->actorPresetId = "counter_strike";
+        npc->body.maxHp = 100;
+        npc->body.currentHp = 100;
+        npc->wakeupTimer = 0.0f;
+        npc->body.pos = glm::vec3(0.0f, 0.0f, 2.0f);
+
+        Player target;
+        target.pos = glm::vec3(60.0f, 0.0f, 2.0f);
+        target.currentHp = 100;
+        target.maxHp = 100;
+        target.dead = false;
+
+        bool sawCircle = false, sawRandom = false, sawStrafe = false, sawZigZag = false;
+        bool sawAdvance = false;
+        float startX = npc->body.pos.x;
+
+        // Phase 1: open floor. Must advance forward, never pick a special state.
+        for (int tick = 0; tick < 150; ++tick) {
+            npcs.updateOneWithTarget(npcId, world, target, 1.0f / 60.0f);
+            const NpcState st = npc->stateMachine.currentState;
+            sawCircle |= st == NpcState::Circle;
+            sawRandom |= st == NpcState::RandomWalk;
+            sawStrafe |= st == NpcState::Strafe;
+            sawZigZag |= st == NpcState::ZigZag;
+            sawAdvance |= st == NpcState::Advance;
+        }
+        ok &= check(sawAdvance, "normal movement selects Advance");
+        ok &= check(!sawCircle, "Circle is never selected");
+        ok &= check(!sawRandom, "RandomWalk is never selected");
+        ok &= check(!sawStrafe, "Strafe is never selected");
+        ok &= check(!sawZigZag, "ZigZag is never selected");
+        ok &= check(npc->body.pos.x > startX + 3.0f, "NPC moved forward continuously");
+
+        // Phase 2: wall ahead. The NPC must make a local correction (lateral
+        // movement) and never fall back to random wandering.
+        addTri(world, {4,-3,0}, {4,3,0}, {4,3,4});
+        addTri(world, {4,-3,0}, {4,3,4}, {4,-3,4});
+        buildCollisionChunks(world, nullptr);
+        sawRandom = false;
+        sawCircle = false;
+        float maxLateral = 0.0f;
+        for (int tick = 0; tick < 420; ++tick) {
+            npcs.updateOneWithTarget(npcId, world, target, 1.0f / 60.0f);
+            const NpcState st = npc->stateMachine.currentState;
+            sawRandom |= st == NpcState::RandomWalk;
+            sawCircle |= st == NpcState::Circle;
+            maxLateral = std::max(maxLateral, std::fabs(npc->body.pos.y));
+        }
+        ok &= check(!sawRandom, "wall recovery never selects RandomWalk");
+        ok &= check(!sawCircle, "wall recovery never selects Circle");
+        ok &= check(maxLateral > 0.5f, "NPC made a local lateral correction at the wall");
+
+        // Percentage health: retreat is emergent and probability-based. Low
+        // health must clearly dominate; full health must never retreat.
+        const NpcMovementPolicy& policy = preset->movementPolicy;
+        ok &= check(npcRetreatChance(10, 100, policy) >= 0.75f,
+                    "20% health gives a much higher retreat chance");
+        ok &= check(npcRetreatChance(100, 100, policy) == 0.0f,
+                    "full health gives zero retreat chance");
+        ok &= check(std::fabs(npcRetreatChance(20, 1000, policy) -
+                              npcRetreatChance(20000, 1000000, policy)) < 1e-6f,
+                    "retreat uses current/max percentage at any scale");
+
+        npc->sensors.hasTarget = true;
+        npc->sensors.targetPos = target.pos;
+        npc->sensors.predictedTarget = target.pos;
+        npc->sensors.targetDistance = glm::length(target.pos - npc->body.pos);
+        npc->lastMoveInput = glm::vec2(0.0f);
+        int fullRetreats = 0, fullAdvances = 0;
+        npc->body.currentHp = 100;
+        for (int i = 0; i < 300; ++i) {
+            const NpcState s = pickNextState(*npc);
+            if (s == NpcState::Retreat) ++fullRetreats;
+            else if (s == NpcState::Advance) ++fullAdvances;
+        }
+        ok &= check(fullRetreats == 0 && fullAdvances > 0,
+                    "full health always advances");
+        int lowRetreats = 0, lowAdvances = 0;
+        npc->body.currentHp = 10;
+        for (int i = 0; i < 300; ++i) {
+            const NpcState s = pickNextState(*npc);
+            if (s == NpcState::Retreat) ++lowRetreats;
+            else if (s == NpcState::Advance) ++lowAdvances;
+        }
+        ok &= check(lowRetreats > 0, "low health can retreat (emergent)");
+        ok &= check(lowAdvances > 0, "low health still advances sometimes");
+
+        printf("[NPC POLICY SELFTEST]\n%s", report.c_str());
+        printf("[NPC POLICY SELFTEST] lowHealthRetreats=%d/%d fullHealthRetreats=%d lateral=%.2f %s\n",
+               lowRetreats, lowRetreats + lowAdvances, fullRetreats, maxLateral,
+               ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 
@@ -375,7 +537,11 @@ bool handleGameCLI(int argc, char** argv)
         GamemodeRegistry::instance().loadDirectory("config/gamemodes");
         std::string report;
         const bool roundOk = MimitaNet::serverCounterStrikeRoundSelfTest(report);
+        std::string spawnReport;
+        const bool spawnOk = MimitaNet::serverSpawnTagSelfTest(spawnReport);
         printf("[ACCEPTANCE] round+weapons: %s\n", roundOk ? "PASS" : "FAIL");
+        printf("[ACCEPTANCE] spawn-tags   : %s\n", spawnOk ? "PASS" : "FAIL");
+        bool all = roundOk && spawnOk;
 
         const Case cases[] = {
             {"objective",       objectiveSelfTest},
@@ -388,7 +554,6 @@ bool handleGameCLI(int argc, char** argv)
             {"npc-grenade",     npcGrenadeReasoningSelfTest},
             {"npc-nav-request", npcNavRequestSelfTest},
         };
-        bool all = roundOk;
         for (const Case& c : cases) {
             std::string r;
             const bool ok = c.fn(r);
@@ -397,6 +562,14 @@ bool handleGameCLI(int argc, char** argv)
         }
         printf("[ACCEPTANCE] %s\n", all ? "PASS" : "FAIL");
         std::exit(all ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--spawn-tag-selftest") {
+        std::string report;
+        const bool ok = MimitaNet::serverSpawnTagSelfTest(report);
+        printf("[SPAWN TAG SELFTEST]\n%s", report.c_str());
+        printf("[SPAWN TAG SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
     }
 
     if (std::string(argv[1]) == "--cs-round-selftest") {
@@ -437,15 +610,27 @@ bool handleGameCLI(int argc, char** argv)
                t ? "found" : "missing", t ? t->actorPresetId.c_str() : "-",
                t ? t->avatarName.c_str() : "-", t ? t->teamId.c_str() : "-");
 
-        const bool teamsOk = cs.teams.size() == 2 &&
+        // Three ordered teams: CT, T, and the built-in Spectator team.
+        const bool teamsOk = cs.teams.size() == 3 &&
             cs.teams[0].id == "ct" && cs.teams[0].displayName == "Counter-Terrorists" &&
-            cs.teams[1].id == "t" && cs.teams[1].displayName == "Terrorists";
+            cs.teams[1].id == "t" && cs.teams[1].displayName == "Terrorists" &&
+            cs.teams[2].id == "spec" && cs.teams[2].displayName == "Spectator" &&
+            cs.teams[2].capacity == 0;
         const bool rolesOk = ct && t && ct->actorPresetId == "counter_strike" &&
             t->actorPresetId == "counter_strike" && preset != nullptr;
         const bool roundsOk = cs.rounds.roundsToWin == 8 && cs.rounds.maxRounds == 15;
         const bool objOk = cs.objectives.size() == 1 && cs.objectives[0].id == "bomb" &&
             cs.objectives[0].carrierTeam == "t";
-        const bool ok = teamsOk && rolesOk && roundsOk && objOk;
+        // Objective pulse visual is parsed from the objective's `visual` block.
+        const bool visualOk = cs.objectives.size() == 1 &&
+            cs.objectives[0].visual.enabled &&
+            cs.objectives[0].visual.radius > 0.0f &&
+            cs.objectives[0].visual.pulseAmplitude > 0.0f &&
+            cs.objectives[0].visual.periodSeconds > 0.0f;
+        printf("[GAMEMODE SELFTEST] objective_visual enabled=%d radius=%.2f amp=%.2f period=%.2f\n",
+               (int)cs.objectives[0].visual.enabled, cs.objectives[0].visual.radius,
+               cs.objectives[0].visual.pulseAmplitude, cs.objectives[0].visual.periodSeconds);
+        const bool ok = teamsOk && rolesOk && roundsOk && objOk && visualOk;
         printf("[GAMEMODE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }

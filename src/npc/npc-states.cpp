@@ -6,6 +6,7 @@
 
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc-movement-policy.h"
 
 void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& outDash, bool& outAttack, float dt)
 {
@@ -27,12 +28,21 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
     float dist = sensors.targetDistance;
 
+    // An actor-preset movement policy owns its own directional noise. A value
+    // of 0.0 means the actor moves directly (no jitter at all).
+    const NpcMovementPolicy* policy = activeMovementPolicy(npc);
+    const float policyNoise = policy ? std::clamp(policy->movementNoise, 0.0f, 1.0f) : 1.0f;
+
     npc.moveNoiseTimer -= dt;
-    if (npc.moveNoiseTimer <= 0.0f)
+    if (policyNoise <= 0.0f)
+    {
+        npc.moveOffset = {0.0f, 0.0f};
+    }
+    else if (npc.moveNoiseTimer <= 0.0f)
     {
         const auto& cfg = NpcDifficultyConfig::instance().settings();
         npc.moveNoiseTimer = 0.1f + random01(npc.rngState) * 0.4f;
-        float noiseScale = 0.3f * (1.0f - d01 * 0.5f) * cfg.movementNoiseScale;
+        float noiseScale = 0.3f * (1.0f - d01 * 0.5f) * cfg.movementNoiseScale * policyNoise;
         npc.moveOffset.x = (random01(npc.rngState) * 2.0f - 1.0f) * noiseScale;
         npc.moveOffset.y = (random01(npc.rngState) * 2.0f - 1.0f) * noiseScale;
     }
@@ -174,6 +184,34 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
             if (npc.attackCooldown <= 0.0f)
                 outAttack = true;
+            return;
+        }
+
+        case NpcState::Patrol:
+        {
+            // No target: keep advancing forward. The heading is chosen by the
+            // patrol planner (recency-avoiding); here we only steer along it and
+            // walk. Walls are handled centrally by wall avoidance + navigator
+            // repath in updateOneNpc, which calls requestRepath when the chosen
+            // heading is blocked.
+            if (glm::length(sm.patrolDir) < 0.001f) {
+                // First tick of patrol: face the current facing as the heading.
+                sm.patrolDir = glm::length(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f)) > 0.001f
+                    ? glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f))
+                    : glm::vec3(1.0f, 0.0f, 0.0f);
+            }
+            sm.patrolRepathTimer -= dt;
+            sm.patrolSnapshotTimer -= dt;
+            if (sm.patrolSnapshotTimer <= 0.0f) {
+                // One position snapshot per second, keeping a bounded ring of
+                // recently visited ground so patrol does not retrace it.
+                sm.patrolSnapshotTimer = 1.0f;
+                sm.patrolRecent[sm.patrolRecentHead] = npc.body.pos;
+                sm.patrolRecentHead = (sm.patrolRecentHead + 1) % NpcStateMachine::PATROL_RECENT_MAX;
+                if (sm.patrolRecentCount < NpcStateMachine::PATROL_RECENT_MAX)
+                    ++sm.patrolRecentCount;
+            }
+            outMoveDir = glm::vec3(sm.patrolDir.x, sm.patrolDir.y, 0.0f);
             return;
         }
 

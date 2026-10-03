@@ -82,7 +82,7 @@ void engineTickState(Engine& engine, float dt)
     //     "assets/maps/mimita-aabb-only-interior-small-v4.glb";
     // 9 5 2026 setting bc no wifi makes it suck 
     static const std::string defaultMapPath =
-        "assets/maps/dust2cyberiav3.glb";
+        "assets/maps/dust2cyberiav4.glb";
 
     if (gameState != prevState)
     {
@@ -237,7 +237,10 @@ void engineTickState(Engine& engine, float dt)
                     if (!worldLoaded)
                     {
                         std::string connectMap = defaultMapPath;
-                        if (!mci.directAddress.empty() && !mci.mapName.empty())
+                        // Prefer the map the launch/join requested even without a
+                        // direct address (dev-loop room joins), instead of the
+                        // hardcoded fallback, until the server Welcome arrives.
+                        if (!mci.mapName.empty())
                             connectMap = "assets/maps/" + mci.mapName + ".glb";
                         if (loadWorldFromGLB(world, connectMap.c_str()))
                         {
@@ -342,7 +345,7 @@ void engineTickState(Engine& engine, float dt)
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||
                 DuelQueue::instance().matchOver();
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver && MouseLock::locked()
+                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !PauseMenu::isOpen() && !duelMatchOver && MouseLock::locked()
                     ? GLFW_CURSOR_DISABLED
                     : GLFW_CURSOR_NORMAL);
         }
@@ -373,7 +376,7 @@ void engineTickState(Engine& engine, float dt)
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||
                 DuelQueue::instance().matchOver();
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
-                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !duelMatchOver && MouseLock::locked()
+                gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !PauseMenu::isOpen() && !duelMatchOver && MouseLock::locked()
                     ? GLFW_CURSOR_DISABLED
                     : GLFW_CURSOR_NORMAL);
         }

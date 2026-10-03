@@ -1,0 +1,25 @@
+// Counter-Strike objective data for dust2cyberiav4.
+// The site positions are NOT yet authored (no "position" key). Planting is
+// disabled until a position is set. Verify against the loaded map with the
+// site_debug commands (site_debug show / site_debug select A / site_debug move
+// / site_debug print / site_debug save), which writes the verified position
+// back into this file.
+{
+  "bomb_sites": [
+    {
+      "id": "A",
+      "radius": 4.0,
+      "visible_debug": false
+    },
+    {
+      "id": "B",
+      "radius": 4.0,
+      "visible_debug": false
+    }
+  ],
+  "bomb": {
+    "plant_seconds": 3,
+    "defuse_seconds": 5,
+    "explosion_seconds": 40
+  }
+}

@@ -29,7 +29,8 @@ enum class UtilityGoalKind : uint8_t
     RotateToSite,      // travel to another site
     PlantObjective,    // plant at the objective
     DefuseObjective,   // defuse the objective
-    RetakeSite         // retake a lost site
+    RetakeSite,        // retake a lost site
+    Patrol             // no hostile/objective context; walk the map
 };
 
 enum class UtilityActionKind : uint8_t

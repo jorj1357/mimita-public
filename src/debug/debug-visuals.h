@@ -156,6 +156,9 @@ namespace DebugVis {
     void drawWeaponWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
     void drawWeaponLine(const Camera& camera, glm::vec3 a, glm::vec3 b, glm::vec4 color);
     void drawWeaponCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color);
+    void drawWeaponWireBox(const Camera& camera, const glm::mat4& weaponTransform,
+                           glm::vec3 center, glm::vec3 halfSize, glm::vec3 scale,
+                           glm::vec3 rotationDegrees, glm::vec4 color);
     void flushWeaponLines(const Camera& camera);
 
     // Flush production VFX triangles (beams, blood, impacts, debris)

@@ -307,6 +307,17 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
         dbg.usesJsonMesh = dbg.valid;
         dbg.spheres.clear();
         dbg.capsules.clear();
+        dbg.boxes.clear();
+        for (const auto& box : entry->boxes) {
+            WeaponColliderDebugBox debugBox;
+            debugBox.name = box.name;
+            debugBox.center = box.center;
+            debugBox.halfSize = box.halfSize;
+            debugBox.scale = box.scale;
+            debugBox.rotationDegrees = box.rotationDegrees;
+            debugBox.enabled = box.enabled;
+            dbg.boxes.push_back(std::move(debugBox));
+        }
         dbg.capsule.enabled = false;
         player.collision.hasWeaponCollisionCapsule = false;
         return;

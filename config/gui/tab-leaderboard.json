@@ -1,11 +1,12 @@
 {
   "format": "mimita-gui-layout",
-  "version": 2,
+  "version": 3,
+  "notes": "TAB player list. All positions are in the 1920x1080 UI space and hot-reload live. panel.w/panel.h = 0 means auto-size. Row y positions are stacked from panel.y + rowStartOffset using row.h as the line height. Column elements (idCol, teamCol, stateCol, nameCol, pingCol) set the x offset of each field.",
   "elements": [
     {
       "id": "panel",
       "type": "panel",
-      "x": 800, "y": 180, "w": 320, "h": 0,
+      "x": 800, "y": 180, "w": 420, "h": 0,
       "backgroundColor": [0.0, 0.0, 0.0, 0.85],
       "outlineColor": [0.5, 0.6, 0.8, 1.0]
     },
@@ -13,38 +14,100 @@
       "id": "title",
       "type": "text",
       "text": "PLAYERS",
-      "x": 810, "y": 188, "w": 300, "h": 24,
+      "x": 810, "y": 188, "w": 400, "h": 24,
       "fontSize": 0.36,
       "textColor": [0.8, 0.9, 1.0, 1.0]
     },
     {
       "id": "header",
       "type": "text",
-      "text": "ID   NAME                         PING",
-      "x": 810, "y": 218, "w": 300, "h": 24,
+      "text": "ID   TEAM   STATE   NAME                       PING",
+      "x": 810, "y": 218, "w": 400, "h": 24,
       "fontSize": 0.28,
       "textColor": [0.65, 0.75, 0.9, 1.0]
     },
     {
+      "id": "rowStartOffset",
+      "type": "text",
+      "x": 0, "y": 8, "w": 0, "h": 0,
+      "fontSize": 0.0
+    },
+    {
+      "id": "idCol",
+      "type": "text",
+      "x": 10, "y": 0, "w": 40, "h": 0, "fontSize": 0.0
+    },
+    {
+      "id": "teamCol",
+      "type": "text",
+      "x": 60, "y": 0, "w": 60, "h": 0, "fontSize": 0.0
+    },
+    {
+      "id": "stateCol",
+      "type": "text",
+      "x": 120, "y": 0, "w": 70, "h": 0, "fontSize": 0.0
+    },
+    {
+      "id": "nameCol",
+      "type": "text",
+      "x": 190, "y": 0, "w": 200, "h": 0, "fontSize": 0.0
+    },
+    {
+      "id": "pingCol",
+      "type": "text",
+      "x": 390, "y": 0, "w": 40, "h": 0, "fontSize": 0.0
+    },
+    {
       "id": "row",
       "type": "text",
-      "x": 810, "y": 242, "w": 300, "h": 24,
+      "x": 810, "y": 242, "w": 400, "h": 24,
       "fontSize": 0.32,
       "textColor": [0.9, 0.95, 1.0, 1.0]
     },
     {
       "id": "localRow",
       "type": "text",
-      "x": 810, "y": 242, "w": 300, "h": 24,
+      "x": 810, "y": 242, "w": 400, "h": 24,
       "fontSize": 0.32,
       "textColor": [0.3, 1.0, 0.4, 1.0]
     },
     {
       "id": "npcRow",
       "type": "text",
-      "x": 810, "y": 242, "w": 300, "h": 24,
+      "x": 810, "y": 242, "w": 400, "h": 24,
       "fontSize": 0.32,
       "textColor": [1.0, 0.7, 0.3, 1.0]
+    },
+    {
+      "id": "deadRow",
+      "type": "text",
+      "x": 810, "y": 242, "w": 400, "h": 24,
+      "fontSize": 0.32,
+      "textColor": [0.6, 0.6, 0.65, 1.0]
+    },
+    {
+      "id": "teamTagFormat",
+      "type": "text",
+      "text": "{short}",
+      "x": 0, "y": 0, "w": 0, "h": 0, "fontSize": 0.0
+    },
+    {
+      "id": "stateAliveText",
+      "type": "text",
+      "text": "ALIVE",
+      "x": 0, "y": 0, "w": 0, "h": 0, "fontSize": 0.0
+    },
+    {
+      "id": "stateDeadText",
+      "type": "text",
+      "text": "DEAD",
+      "x": 0, "y": 0, "w": 0, "h": 0, "fontSize": 0.0
+    },
+    {
+      "id": "stateSpectatorText",
+      "type": "text",
+      "text": "SPECT",
+      "x": 0, "y": 0, "w": 0, "h": 0, "fontSize": 0.0
     }
   ]
 }

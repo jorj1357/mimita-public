@@ -588,6 +588,34 @@ class DevLoop:
         process = self.server_process
         return process is not None and process.poll() is None
 
+    def server_map_name(self) -> str:
+        """The --map value the running external server was launched with."""
+        args = self.server_args or []
+        for index, value in enumerate(args):
+            if value == "--map" and index + 1 < len(args):
+                return str(args[index + 1])
+        return ""
+
+    def stop_server(self) -> None:
+        """Terminate only the external dev server, leaving clients untouched.
+
+        Used when the launch-mode map changed and the old server would otherwise
+        keep serving the previous map for the whole session.
+        """
+        process = self.server_process
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        self.server_process = None
+        self.server_pid = None
+        self.server_exe = None
+        self.server_args = []
+        self.server_unavailable = True
+        self.cleanup_room_file()
+
     def check_server_after_client(self) -> None:
         """Observe and repair durable-server state after a client exits.
 
@@ -634,6 +662,11 @@ class DevLoop:
             str(self.launch_mode.get("map", "")),
         )
         print(f"[DEV] selected allowed map: {map_name}")
+        running_map = self.server_map_name()
+        if self.server_health() and running_map and running_map != map_name:
+            print(f"[DEV SERVER] map changed {running_map} -> {map_name}; "
+                  f"restarting server pid={self.server_pid}")
+            self.stop_server()
         if self.server_health() and bool(self.room_code):
             room_code = self.room_code
             print(

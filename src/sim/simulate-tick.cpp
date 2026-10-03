@@ -93,9 +93,18 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // simulates, instead of letting the old body fall and tether across.
     const uint64_t lifeId = MimitaNet::mpLocalLifecycleId(mpContext);
     static uint64_t s_aimLifecycleId = 0;
+    const bool lifecycleChanged = lifeId != 0 && lifeId != s_aimLifecycleId;
+    // A live ragdoll must not survive an authoritative lifecycle discontinuity
+    // (respawn, teleport, map change, reconnect). Its body would otherwise
+    // re-assert the pre-discontinuity pose over the freshly applied transform
+    // on the next tick. Exit without moving the player so the new authoritative
+    // position stands.
+    if (lifecycleChanged && ragdoll.isActive()) {
+        ragdoll.deactivate(*sim.player, /*movePlayerToBody=*/false);
+        sim.player->ragdollModeActive = false;
+    }
     if (ragdoll.aimActive() &&
-        ((lifeId != 0 && lifeId != s_aimLifecycleId) ||
-         ragdoll.aimBindingNeedsRebind(*sim.player)))
+        (lifecycleChanged || ragdoll.aimBindingNeedsRebind(*sim.player)))
         ragdoll.rebindAimToAuthoritativePlayer(*sim.player);
     s_aimLifecycleId = lifeId;
 
