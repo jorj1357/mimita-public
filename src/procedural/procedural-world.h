@@ -112,6 +112,16 @@ struct ProceduralModeDefinition
     glm::vec3 origin{0.0f, 1000.0f, 0.0f};
     glm::vec3 axis{0.0f, 1.0f, 0.0f};
     glm::vec3 doorHalfExtents{10.0f, 4.0f, 1.0f};
+
+    // Infinite-world streaming policy. A chunk is a deterministic square
+    // area containing a bounded number of repeated authored blocks.
+    bool streamingEnabled = false;
+    float chunkSize = 1000.0f;
+    float blockSpacing = 100.0f;
+    uint32_t minBlocksPerChunk = 1;
+    uint32_t maxBlocksPerChunk = 4;
+    uint32_t streamRadiusChunks = 1;
+    uint32_t loadedRoomRadius = 2;
 };
 
 struct ProceduralWorldConfig
@@ -161,5 +171,12 @@ std::vector<glm::vec3> proceduralRoomEnemySpawns(
     const ProceduralModeDefinition& mode,
     const ProceduralRoomDefinition& room,
     uint32_t roomSlot);
+
+// Stable seed + integer-coordinate generation. These functions are pure and
+// are shared by the server and clients; no process-local RNG state is used.
+std::vector<glm::vec3> proceduralChunkBlockPositions(
+    const ProceduralModeDefinition& mode, uint32_t seed,
+    int32_t chunkX, int32_t chunkZ);
+uint64_t proceduralChunkHash(uint32_t seed, int32_t chunkX, int32_t chunkZ);
 
 } // namespace MimitaProcedural

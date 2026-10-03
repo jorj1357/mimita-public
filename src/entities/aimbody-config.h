@@ -58,6 +58,10 @@ public:
     // Multiplier for the physical RMB target response. 1 = current loose
     // behavior; higher values hold the aim target more strongly.
     float rightArmPointingAimStrength() const { return mRightArmPointingAimStrength; }
+    // Higher values make the physical arm catch up more calmly.
+    float rightArmPointingFollowDamping() const { return mRightArmPointingFollowDamping; }
+    // Angular-speed ceiling for the arm's correction, in radians per second.
+    float rightArmPointingMaxFollowSpeed() const { return mRightArmPointingMaxFollowSpeed; }
     bool rightArmPointingFovEnabled() const { return mRightArmPointingFovEnabled; }
     float rightArmPointingFovMultiplier() const { return mRightArmPointingFovMultiplier; }
     float rightArmPointingFovDuration() const { return mRightArmPointingFovDuration; }
@@ -98,6 +102,8 @@ private:
     glm::vec3 mRightArmPointingRotationDegrees{0.0f};
     float mRightArmPointingBlendRate = 10.0f;
     float mRightArmPointingAimStrength = 10.0f;
+    float mRightArmPointingFollowDamping = 1.0f;
+    float mRightArmPointingMaxFollowSpeed = 30.0f;
     bool mRightArmPointingFovEnabled = true;
     float mRightArmPointingFovMultiplier = 0.5f;
     float mRightArmPointingFovDuration = 0.5f;

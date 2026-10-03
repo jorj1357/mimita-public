@@ -53,6 +53,10 @@ bool CollisionConfig::load(const std::string& path)
         mCollisionSkin = std::clamp(j.value("collisionSkin", 0.05f), 0.0f, 0.25f);
         mEdgeTouchTolerance = std::clamp(
             j.value("edgeTouchTolerance", 0.002f), 0.0f, 0.05f);
+        mMaxSubStepDistance = std::clamp(
+            j.value("maxSubStepDistance", 0.35f), 0.0f, 5.0f);
+        mMaxSubSteps = std::clamp(
+            j.value("maxSubSteps", 128), 1, 512);
 
         if (j.contains("bounce"))
         {
@@ -80,6 +84,9 @@ bool CollisionConfig::load(const std::string& path)
             mCollisionSkin, mEdgeTouchTolerance, (int)mBounceEnabled,
             mBounceStrength, mBounceFriction,
             mBounceMinSpeed, mBounceMaxSpeed, mBounceCooldown, mBounceMinPush);
+        Debug::log(Debug::Category::Collision,
+            "[COLLISION CONFIG] maxSubStepDistance=%.3f maxSubSteps=%d\n",
+            mMaxSubStepDistance, mMaxSubSteps);
         return true;
     }
     catch (const std::exception& e)

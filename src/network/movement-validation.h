@@ -229,6 +229,15 @@ bool movementSnapshotLifecycleFresh(uint32_t incomingSpawnGeneration,
                                     uint32_t lastSpawnGeneration,
                                     uint32_t lastTransformEpoch);
 
+// Swept blocking-geometry test: true when the segment from->to passes through a
+// near-vertical world triangle (a wall). Shared by movement report validation
+// and by the authoritative server's client-owned-root (ragdoll) clamp so both
+// owners refuse a high-speed position that crosses world geometry.
+bool crossesBlockingGeometry(const HeadlessWorld* world,
+                             glm::vec3 from,
+                             glm::vec3 to,
+                             float tolerance);
+
 MovementValidationResult validateClientMovementReport(
     const ServerPlayer& player,
     const ClientMovementReport& report,

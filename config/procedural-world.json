@@ -9,7 +9,14 @@
       "spacing": 104.0,
       "origin": [0.0, 1000.0, 0.0],
       "axis": [1.0, 0.0, 0.0],
-      "door_half_extents": [1.5, 13.0, 30.0]
+      "door_half_extents": [1.5, 13.0, 30.0],
+      "streaming_enabled": true,
+      "chunk_size": 1000.0,
+      "block_spacing": 100.0,
+      "min_blocks_per_chunk": 1,
+      "max_blocks_per_chunk": 4,
+      "stream_radius_chunks": 1,
+      "loaded_room_radius": 2
     }
   },
   "rooms": {

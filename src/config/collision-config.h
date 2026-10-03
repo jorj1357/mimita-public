@@ -53,6 +53,15 @@ public:
     // contact, not as a penetrating blocking surface.
     float edgeTouchTolerance() const { return mEdgeTouchTolerance; }
 
+    // Anti-tunneling: the local player's fixed tick is split into enough
+    // collision sub-steps that each sub-step moves at most this many world
+    // units. Keeps the swept actor narrowphase bounded at extreme speeds.
+    // 0 disables the extra sub-stepping. Hot-reloadable from collision.json.
+    float maxSubStepDistance() const { return mMaxSubStepDistance; }
+    // Hard ceiling on the speed-derived collision sub-step count so a garbage
+    // velocity cannot explode the per-tick solve.
+    int maxSubSteps() const { return mMaxSubSteps; }
+
 private:
     CollisionConfig();
 
@@ -69,6 +78,8 @@ private:
     bool mActorCollisionComparison = false;
     float mCollisionSkin = 0.05f;
     float mEdgeTouchTolerance = 0.002f;
+    float mMaxSubStepDistance = 0.35f;
+    int mMaxSubSteps = 128;
 
     std::string mPath;
     std::filesystem::file_time_type mLastWrite{};

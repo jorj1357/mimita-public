@@ -9,6 +9,8 @@
 
 #include "procedural/procedural-world-client.h"
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 #include <cstdio>
 #include <cstring>
@@ -34,6 +36,7 @@ std::string gRoomTemplatePath;
 bool gRoomTemplateLoaded = false;
 bool gRoomInstancesApplied = false;
 uint32_t gAppliedGeneratedRooms = 0;
+uint32_t gAppliedStateVersion = 0;
 size_t gBaseVertexCount = 0;
 size_t gBaseBatchCount = 0;
 size_t gBaseCollisionCount = 0;
@@ -57,6 +60,7 @@ void removeRoomInstances(World& world)
                             gBaseCollisionCount);
     gRoomInstancesApplied = false;
     gAppliedGeneratedRooms = 0;
+    gAppliedStateVersion = 0;
 }
 
 bool ensureRoomTemplate(const std::string& path)
@@ -88,6 +92,36 @@ void clientProceduralWorldReset()
     gBaseBatchCount = 0;
     gBaseCollisionCount = 0;
     gTeleportShieldTicks = 0;
+}
+
+void appendStreamingBlocks(World& world,
+                           const MimitaProcedural::ProceduralModeDefinition& mode,
+                           uint32_t seed, uint32_t roomSlot)
+{
+    if (!mode.streamingEnabled || mode.chunkSize <= 0.0f)
+        return;
+    const glm::vec3 center = MimitaProcedural::proceduralTransformPoint(
+        MimitaProcedural::proceduralRoomTransform(mode, roomSlot),
+        glm::vec3(0.0f));
+    const int32_t centerX = static_cast<int32_t>(std::floor(
+        (center.x - mode.origin.x) / mode.chunkSize));
+    const int32_t centerZ = static_cast<int32_t>(std::floor(
+        (center.z - mode.origin.z) / mode.chunkSize));
+    const int32_t radius = static_cast<int32_t>(mode.streamRadiusChunks);
+    for (int32_t z = centerZ - radius; z <= centerZ + radius; ++z)
+    {
+        for (int32_t x = centerX - radius; x <= centerX + radius; ++x)
+        {
+            for (const glm::vec3& position :
+                 MimitaProcedural::proceduralChunkBlockPositions(
+                     mode, seed, x, z))
+            {
+                appendWorldInstance(
+                    world, gRoomTemplate,
+                    glm::translate(glm::mat4(1.0f), position));
+            }
+        }
+    }
 }
 
 void clientProceduralTeleportShieldStart()
@@ -159,24 +193,37 @@ void clientProceduralWorldTick(World& world)
     if (!ensureRoomTemplate(room->geometryPath))
         return;
 
-    if (!gRoomInstancesApplied)
+    // A state version marks a coarse streaming boundary. Rebuild the bounded
+    // window once, never from the render loop's per-frame geometry path.
+    if (gRoomInstancesApplied && gAppliedStateVersion != p.stateVersion)
+        removeRoomInstances(world);
+
+    const bool firstApplication = !gRoomInstancesApplied;
+    if (firstApplication)
     {
         gBaseVertexCount = world.mesh.verts.size();
         gBaseBatchCount = world.mesh.batches.size();
         gBaseCollisionCount = world.collisionMesh.triangles.size();
-        gRoomInstancesApplied = true;
     }
 
-    // Slot 0 is the lobby and combat room N is slot N on the server. Render
-    // the same inclusive range so client geometry matches the authoritative
-    // teleport coordinates.
-    while (gAppliedGeneratedRooms <= p.generatedRooms)
+    if (firstApplication)
     {
-        appendWorldInstance(
-            world, gRoomTemplate,
-            MimitaProcedural::proceduralRoomTransform(
-                *mode, gAppliedGeneratedRooms));
-        ++gAppliedGeneratedRooms;
+        appendWorldInstance(world, gRoomTemplate,
+                            MimitaProcedural::proceduralRoomTransform(*mode, 0));
+        const uint32_t radius = mode->loadedRoomRadius;
+        const uint32_t first = p.currentRoom > radius ? p.currentRoom - radius : 1;
+        const uint32_t last = std::min(p.generatedRooms,
+                                       p.currentRoom + radius);
+        for (uint32_t slot = first; slot <= last; ++slot)
+        {
+            appendWorldInstance(
+                world, gRoomTemplate,
+                MimitaProcedural::proceduralRoomTransform(*mode, slot));
+        }
+        appendStreamingBlocks(world, *mode, p.seed, p.currentRoom);
+        gRoomInstancesApplied = true;
+        gAppliedGeneratedRooms = p.generatedRooms;
+        gAppliedStateVersion = p.stateVersion;
     }
 
     const bool wantDoor = p.exitLocked != 0 && p.currentRoom >= 1;

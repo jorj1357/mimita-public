@@ -148,6 +148,17 @@ bool loadProceduralWorldConfig(const std::string& modeConfigPath)
                 def.axis = readVec3(m, "axis", def.axis);
                 def.doorHalfExtents =
                     readVec3(m, "door_half_extents", def.doorHalfExtents);
+                def.streamingEnabled = m.value("streaming_enabled", def.streamingEnabled);
+                def.chunkSize = m.value("chunk_size", def.chunkSize);
+                def.blockSpacing = m.value("block_spacing", def.blockSpacing);
+                def.minBlocksPerChunk = m.value("min_blocks_per_chunk",
+                                                 def.minBlocksPerChunk);
+                def.maxBlocksPerChunk = m.value("max_blocks_per_chunk",
+                                                 def.maxBlocksPerChunk);
+                def.streamRadiusChunks = m.value("stream_radius_chunks",
+                                                  def.streamRadiusChunks);
+                def.loadedRoomRadius = m.value("loaded_room_radius",
+                                                def.loadedRoomRadius);
                 if (!def.id.empty())
                     candidate.modes[def.id] = def;
             }
@@ -300,6 +311,71 @@ std::vector<glm::vec3> proceduralRoomEnemySpawns(
     return out;
 }
 
+uint64_t proceduralChunkHash(uint32_t seed, int32_t chunkX, int32_t chunkZ)
+{
+    // SplitMix64 gives the same result on server and client without mutable
+    // RNG state. Cast through uint32_t so negative chunk coordinates remain
+    // stable across platforms.
+    uint64_t value = static_cast<uint64_t>(seed);
+    value ^= static_cast<uint64_t>(static_cast<uint32_t>(chunkX)) *
+             0x9E3779B185EBCA87ull;
+    value ^= static_cast<uint64_t>(static_cast<uint32_t>(chunkZ)) *
+             0xC2B2AE3D27D4EB4Full;
+    value += 0x9E3779B97F4A7C15ull;
+    value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9ull;
+    value = (value ^ (value >> 27)) * 0x94D049BB133111EBull;
+    return value ^ (value >> 31);
+}
+
+std::vector<glm::vec3> proceduralChunkBlockPositions(
+    const ProceduralModeDefinition& mode, uint32_t seed,
+    int32_t chunkX, int32_t chunkZ)
+{
+    std::vector<glm::vec3> out;
+    if (!mode.streamingEnabled || mode.chunkSize <= 0.0f ||
+        mode.blockSpacing <= 0.0f)
+        return out;
+
+    const uint32_t minBlocks = std::min(mode.minBlocksPerChunk,
+                                        mode.maxBlocksPerChunk);
+    const uint32_t maxBlocks = std::max(mode.minBlocksPerChunk,
+                                        mode.maxBlocksPerChunk);
+    if (maxBlocks == 0)
+        return out;
+
+    const uint32_t cellsPerSide = std::max(
+        1u, static_cast<uint32_t>(std::floor(mode.chunkSize /
+                                              mode.blockSpacing)));
+    const uint64_t cellCount = static_cast<uint64_t>(cellsPerSide) *
+                               static_cast<uint64_t>(cellsPerSide);
+    const uint64_t hash = proceduralChunkHash(seed, chunkX, chunkZ);
+    const uint32_t count = minBlocks +
+        static_cast<uint32_t>(hash % (static_cast<uint64_t>(maxBlocks - minBlocks) + 1));
+    out.reserve(count);
+
+    std::vector<uint64_t> chosen;
+    chosen.reserve(count);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        uint64_t candidate = proceduralChunkHash(
+            seed + i * 0x9E3779B9u, chunkX + static_cast<int32_t>(i),
+            chunkZ - static_cast<int32_t>(i));
+        uint64_t cell = candidate % cellCount;
+        while (std::find(chosen.begin(), chosen.end(), cell) != chosen.end())
+            cell = (cell + 1) % cellCount;
+        chosen.push_back(cell);
+
+        const uint32_t cellX = static_cast<uint32_t>(cell % cellsPerSide);
+        const uint32_t cellZ = static_cast<uint32_t>(cell / cellsPerSide);
+        const float baseX = mode.origin.x + static_cast<float>(chunkX) * mode.chunkSize;
+        const float baseZ = mode.origin.z + static_cast<float>(chunkZ) * mode.chunkSize;
+        out.emplace_back(baseX + (static_cast<float>(cellX) + 0.5f) * mode.blockSpacing,
+                         mode.origin.y,
+                         baseZ + (static_cast<float>(cellZ) + 0.5f) * mode.blockSpacing);
+    }
+    return out;
+}
+
 } // namespace MimitaProcedural
 
 // ── Server-authoritative procedural runtime ─────────────────────────────
@@ -342,6 +418,57 @@ void appendRoomGeometry(HeadlessWorld& world, World& npcWorld,
     appendHeadlessWorldInstance(
         world, gServerRoomTemplate,
         MimitaProcedural::proceduralRoomTransform(mode, slot));
+    buildNpcWorldCollision(npcWorld, world);
+}
+
+void appendStreamingBlocks(HeadlessWorld& world, World& npcWorld,
+                           const ProceduralModeDefinition& mode,
+                           uint32_t seed, uint32_t roomSlot)
+{
+    if (!mode.streamingEnabled || mode.chunkSize <= 0.0f)
+        return;
+    const glm::vec3 center = MimitaProcedural::proceduralTransformPoint(
+        MimitaProcedural::proceduralRoomTransform(mode, roomSlot),
+        glm::vec3(0.0f));
+    const int32_t centerX = static_cast<int32_t>(std::floor(
+        (center.x - mode.origin.x) / mode.chunkSize));
+    const int32_t centerZ = static_cast<int32_t>(std::floor(
+        (center.z - mode.origin.z) / mode.chunkSize));
+    const int32_t radius = static_cast<int32_t>(mode.streamRadiusChunks);
+    for (int32_t z = centerZ - radius; z <= centerZ + radius; ++z)
+    {
+        for (int32_t x = centerX - radius; x <= centerX + radius; ++x)
+        {
+            for (const glm::vec3& position :
+                 MimitaProcedural::proceduralChunkBlockPositions(
+                     mode, seed, x, z))
+            {
+                if (!gServerRoomTemplateLoaded)
+                    continue;
+                appendHeadlessWorldInstance(
+                    world, gServerRoomTemplate,
+                    glm::translate(glm::mat4(1.0f), position));
+            }
+        }
+    }
+    buildNpcWorldCollision(npcWorld, world);
+}
+
+void rebuildStreamedGeometry(ProceduralWorldState& p,
+                             const ProceduralModeDefinition& mode,
+                             const ProceduralRoomDefinition& room,
+                             uint32_t seed, HeadlessWorld& world,
+                             World& npcWorld)
+{
+    truncateHeadlessWorld(world, p.baseTriangleCount);
+    appendRoomGeometry(world, npcWorld, mode, 0);
+    const uint32_t radius = mode.loadedRoomRadius;
+    const uint32_t first = p.currentRoom > radius ? p.currentRoom - radius : 1;
+    const uint32_t last = std::min(p.generatedRooms, p.currentRoom + radius);
+    for (uint32_t slot = first; slot <= last; ++slot)
+        appendRoomGeometry(world, npcWorld, mode, slot);
+    appendStreamingBlocks(world, npcWorld, mode, seed, p.currentRoom);
+    p.geometryAppended = true;
     buildNpcWorldCollision(npcWorld, world);
 }
 
@@ -513,15 +640,14 @@ bool serverProceduralWorldStart(const std::string& modeId, uint32_t seed,
     p.baseTriangleCount = world.triangles.size();
     p.geometryAppended = true;
 
-    // Lobby (slot 0) and the first combat room (slot 1). Combat room N uses
-    // slot N so entrance/exit/spawn transforms stay deterministic.
-    appendRoomGeometry(world, npcWorld, *mode, 0);
-    appendRoomGeometry(world, npcWorld, *mode, 1);
-
     p.generatedRooms = 1;
     p.currentRoom = 1;
     p.highestAccessibleRoom = 1;
     p.roomState = ProceduralRoomState::Active;
+    // Keep only a bounded room window plus the deterministic chunk window.
+    // Crossing a generated room is the coarse streaming boundary; no render
+    // frame or fixed-tick loop performs world generation.
+    rebuildStreamedGeometry(p, *mode, *room, seed, world, npcWorld);
     spawnEncounterRoom(p, *mode, *room, 1, 1, npcs);
     addBarrier(p, *mode, *room, 1, world);
     buildNpcWorldCollision(npcWorld, world);
@@ -558,8 +684,8 @@ bool serverProceduralWorldTick(SOCKET /*sock*/,
     if (configChanged && p.barrierActive)
     {
         removeBarrier(p, world);
+        rebuildStreamedGeometry(p, *mode, *room, p.seed, world, npcWorld);
         addBarrier(p, *mode, *room, p.currentRoom, world);
-        buildNpcWorldCollision(npcWorld, world);
         ++p.stateVersion;
     }
 
@@ -585,14 +711,12 @@ bool serverProceduralWorldTick(SOCKET /*sock*/,
 
     const uint32_t next = p.currentRoom + 1;
     if (next > p.generatedRooms)
-    {
-        appendRoomGeometry(world, npcWorld, *mode, next);
         p.generatedRooms = next;
-    }
     spawnEncounterRoom(p, *mode, *room, next, next, npcs);
     p.currentRoom = next;
     p.highestAccessibleRoom = next;
     p.roomState = ProceduralRoomState::Active;
+    rebuildStreamedGeometry(p, *mode, *room, p.seed, world, npcWorld);
     addBarrier(p, *mode, *room, next, world);
     buildNpcWorldCollision(npcWorld, world);
     ++p.stateVersion;

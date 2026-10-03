@@ -72,6 +72,8 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingRotationDegrees = glm::vec3(0.0f);
         mRightArmPointingBlendRate = 10.0f;
         mRightArmPointingAimStrength = 10.0f;
+        mRightArmPointingFollowDamping = 1.0f;
+        mRightArmPointingMaxFollowSpeed = 30.0f;
         mRightArmPointingFovEnabled = true;
         mRightArmPointingFovMultiplier = 0.5f;
         mRightArmPointingFovDuration = 0.5f;
@@ -112,6 +114,8 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingRotationDegrees = glm::vec3(0.0f);
         mRightArmPointingBlendRate = 10.0f;
         mRightArmPointingAimStrength = 10.0f;
+        mRightArmPointingFollowDamping = 1.0f;
+        mRightArmPointingMaxFollowSpeed = 30.0f;
         mRightArmPointingFovEnabled = true;
         mRightArmPointingFovMultiplier = 0.5f;
         mRightArmPointingFovDuration = 0.5f;
@@ -143,6 +147,12 @@ bool AimBodyConfig::load(const std::string& path)
                     0.1f, 60.0f);
                 mRightArmPointingAimStrength = std::clamp(
                     pointing.value("aim_strength", mRightArmPointingAimStrength),
+                    0.1f, 100.0f);
+                mRightArmPointingFollowDamping = std::clamp(
+                    pointing.value("follow_damping", mRightArmPointingFollowDamping),
+                    0.05f, 100.0f);
+                mRightArmPointingMaxFollowSpeed = std::clamp(
+                    pointing.value("max_follow_speed", mRightArmPointingMaxFollowSpeed),
                     0.1f, 100.0f);
                 if (pointing.contains("fov") && pointing["fov"].is_object()) {
                     const auto& fov = pointing["fov"];
@@ -205,6 +215,8 @@ bool AimBodyConfig::save()
                                mRightArmPointingRotationDegrees.z}},
         {"blend_rate", mRightArmPointingBlendRate},
         {"aim_strength", mRightArmPointingAimStrength},
+        {"follow_damping", mRightArmPointingFollowDamping},
+        {"max_follow_speed", mRightArmPointingMaxFollowSpeed},
         {"fov", {
             {"enabled", mRightArmPointingFovEnabled},
             {"multiplier", mRightArmPointingFovMultiplier},

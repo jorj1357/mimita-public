@@ -742,15 +742,20 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
     }
 
     // ── Ragdoll / physical body: the owning client is authoritative ─────
-    // While the client reports an active ragdoll pose, normal movement is not
-    // simulated. The client's root is accepted as the authoritative state (the
-    // body is physically simulated on the owning client), bounded per tick so a
-    // malformed or hostile packet cannot teleport. This stops the server/
-    // client position error from climbing as the ragdoll moves.
-    if (p.hasRagdollPose && !p.ragdollHistory.empty())
+    // Only an ACTUAL ragdoll (the G-toggle body) lets the client own its root
+    // without normal movement validation. The always-on physical/hybrid aim
+    // body reports a replicated pose too, but its root is driven by the normal
+    // movement controller, so it must go through the validated movement path.
+    // Treating hybrid/physical as a root-authoritative ragdoll previously let a
+    // high-speed client report a position straight through world geometry and
+    // the server accepted it, producing a permanent position disagreement.
+    const bool ragdollRootAuthoritative =
+        p.hasRagdollPose && !p.ragdollHistory.empty() &&
+        p.ragdollHistory.back().pose.mode == RAGDOLL_NET_RAGDOLL;
+    if (ragdollRootAuthoritative)
     {
         const RagdollReplicationPose& pose = p.ragdollHistory.back().pose;
-        const glm::vec3 target = pose.rootPosition;
+        glm::vec3 target = pose.rootPosition;
         const bool finite = std::isfinite(target.x) &&
                             std::isfinite(target.y) &&
                             std::isfinite(target.z);
@@ -758,12 +763,18 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         {
             static constexpr float kMaxRagdollStepMeters = 4.0f;
             const glm::vec3 before = p.pos;
-            const glm::vec3 delta = target - p.pos;
+            glm::vec3 delta = target - p.pos;
             const float dist = glm::length(delta);
             if (dist > kMaxRagdollStepMeters && dist > 1e-5f)
-                p.pos = p.pos + delta * (kMaxRagdollStepMeters / dist);
-            else
-                p.pos = target;
+                target = p.pos + delta * (kMaxRagdollStepMeters / dist);
+
+            // Swept geometry guard: even a real ragdoll root may not cross
+            // blocking world geometry (walls). Clamp to the previous accepted
+            // root when the reported move would pass through it.
+            if (MimitaNet::crossesBlockingGeometry(&world, before, target, 0.35f))
+                target = before;
+
+            p.pos = target;
 
             if (std::isfinite(pose.rootYaw))
                 p.yaw = pose.rootYaw;

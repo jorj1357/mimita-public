@@ -28,6 +28,7 @@
 #include "physics/movement/physics-ground-return.h"
 #include "physics/movement/physics-down-dash.h"
 #include "physics/movement/physics-collision.h"
+#include "config/collision-config.h"
 #include "physics/movement/physics-friction.h"
 #include "physics/movement/physics-freeze.h"
 #include "physics/movement/movement-conversion.h"
@@ -247,7 +248,25 @@ static void physicsMainUpdate_Internal(
         movementState, command, movementConfig, dt, preCollisionEvents);
     applyMovementStateToPlayer(movementState, p);
 
-    const int steps = std::max(1, subSteps);
+    // Anti-tunneling: at extreme speed a single fixed sub-step can move the
+    // actor far enough that the swept narrowphase's sampling/contact budget is
+    // exhausted. Derive extra collision sub-steps from the actual per-tick
+    // travel so each sub-step stays under maxSubStepDistance. Normal speeds
+    // keep the configured subSteps unchanged.
+    int steps = std::max(1, subSteps);
+    {
+        const CollisionConfig& collisionCfg = CollisionConfig::instance();
+        const float maxSubStep = collisionCfg.maxSubStepDistance();
+        const float moveSpeed = glm::length(
+            movementState.baseVelocity + movementState.externalImpulse);
+        const float totalTravel = moveSpeed * dt;
+        if (maxSubStep > 0.0f && totalTravel > maxSubStep)
+        {
+            const int needed = (int)std::ceil(totalTravel / maxSubStep);
+            steps = std::clamp(std::max(steps, needed), 1,
+                               collisionCfg.maxSubSteps());
+        }
+    }
     const float subdt = dt / (float)steps;
 
     bool groundedThisFrame = false;

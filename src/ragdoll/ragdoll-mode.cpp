@@ -341,6 +341,8 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
     const auto& aimConfig = AimBodyConfig::instance();
     const float pointingBlend = glm::clamp(b.rightArmPointingBlend, 0.0f, 1.0f);
     const float aimStrength = aimConfig.rightArmPointingAimStrength();
+    const float followDamping = std::max(
+        0.05f, aimConfig.rightArmPointingFollowDamping());
     RagdollModePart& part = b.parts[b.rightArmIndex];
     RigidBody& body = part.body;
     if (glm::length(camForward) < 1e-5f) return;
@@ -418,11 +420,15 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
     // changes how quickly the arm follows the target, never the target itself,
     // its pitch range, or the positional spring that keeps the hand centered.
     PhysicalAimConfig pointingAim = cfg.physicalAim;
+    pointingAim.maxAngularSpeed = std::min(
+        pointingAim.maxAngularSpeed,
+        aimConfig.rightArmPointingMaxFollowSpeed());
     if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
         // Keep the PD target/caps unchanged so a larger strength cannot create
         // a different effective range of motion. It only increases the rate
         // at which the physical controller corrects its existing error.
-        const float pdStrength = glm::clamp(aimStrength, 0.1f, 100.0f);
+        const float pdStrength = glm::clamp(
+            aimStrength / followDamping, 0.1f, 100.0f);
         pointingAim.torqueGain *= pdStrength;
         pointingAim.angularDamping *= pdStrength;
         body.angularVelocity += computeAimTorque(
@@ -432,12 +438,16 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
         const glm::vec3 desired = aimDesiredAngularVelocity(
             body.orientation, target, pointingAim, pointingBlend);
         const float blend = glm::clamp(
-            dt * cfg.physicalAim.lookDamping * glm::max(0.1f, aimStrength),
+            dt * cfg.physicalAim.lookDamping *
+                (glm::max(0.1f, aimStrength) / followDamping),
             0.0f, 1.0f);
         body.angularVelocity += (desired - body.angularVelocity) * blend;
     }
 
-    const float cap = std::min(body.maxAngularSpeed, cfg.physicalAim.maxAngularSpeed);
+    const float cap = std::min({
+        body.maxAngularSpeed,
+        cfg.physicalAim.maxAngularSpeed,
+        aimConfig.rightArmPointingMaxFollowSpeed()});
     const float speed = glm::length(body.angularVelocity);
     if (cap > 0.0f && speed > cap)
         body.angularVelocity *= cap / speed;

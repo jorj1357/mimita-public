@@ -119,6 +119,11 @@ bool insideBounds(glm::vec3 position, const MovementValidationConfig& config)
            position.x <= maxB.x && position.y <= maxB.y && position.z <= maxB.z;
 }
 
+} // namespace
+
+// Exposed (declared in movement-validation.h) so the authoritative server can
+// apply the same swept blocking-geometry rule to client-authoritative roots
+// (ragdoll) that it already applies to movement reports.
 bool rayTriangle(const glm::vec3& origin,
                  const glm::vec3& direction,
                  const CollisionTriangle& tri,
@@ -172,6 +177,8 @@ bool crossesBlockingGeometry(const HeadlessWorld* world,
 
     return false;
 }
+
+namespace {
 
 MovementValidationResult reject(MovementValidationReason reason)
 {

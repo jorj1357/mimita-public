@@ -38,8 +38,8 @@
       "y": -4.0,
       "z": 2.0
     },
-    // "fov": 100,
-    "fov": 70,
+    "fov": 100,
+    // "fov": 70,
     // "fov": 40,
     "positionStiffness": 9.0,
     "rotationStiffness": 9.0,

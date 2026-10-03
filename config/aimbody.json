@@ -24,11 +24,17 @@
     // "aim_strength": 5.0,
     // "aim_strength": 1.0,
     // "aim_strength": 20.0,
-    "aim_strength": 99.0,
-    // "aim_strength": 10.0,
+    // "aim_strength": 99.0,
+    // "aim_strength": 999.0,
+    "aim_strength": 10.0,
     // "aim_strength": 7.0,
+    // Higher values make the arm catch up more calmly instead of whipping.
+    "follow_damping": 1.0,
+    // Angular-speed ceiling for aiming correction (radians per second).
+    "max_follow_speed": 30.0,
     "fov": {
-      "enabled": true,
+      // "enabled": true,
+      "enabled": false,
       "multiplier": 0.5,
       "duration": 0.5,
       "easing": "ease_in_out"
