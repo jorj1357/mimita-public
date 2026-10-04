@@ -165,6 +165,9 @@ struct Gamemode {
     // match falls back to the legacy team assignment and no roles.
     std::vector<std::pair<std::string, int>> roleCounts;
     std::string actorPresetId;
+    // Optional NPC-only combat profile used when an NPC has no role-specific
+    // behavior profile. Humans are never affected by this setting.
+    std::string npcBehaviorProfile;
     // ── Elimination / win rules (optional) ──────────────────────────
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
     // when only one team (or, in FFA, one actor) still has an in-play actor.

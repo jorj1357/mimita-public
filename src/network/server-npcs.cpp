@@ -13,11 +13,13 @@
 #include "network/server.h"
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
+#include "gamemode/gamemode.h"
 
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-combat.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc-behavior.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-combat-log.h"
 #include "debug/structured-log.h"
@@ -764,6 +766,34 @@ void simulateSharedNpcs(SOCKET sock,
 {
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
+
+    // Mode-level NPC profiles are the fallback for unassigned NPCs (Sandbox
+    // today). Re-resolve them here so editing the active gamemode JSON changes
+    // living NPCs without a respawn. Role/actor-preset NPCs keep their own
+    // profile and are not overwritten by this mode fallback.
+    bool modeProfileChanged = false;
+    const Gamemode& activeGamemode =
+        GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
+    const std::string& modeProfileId = activeGamemode.npcBehaviorProfile;
+    if (!modeProfileId.empty() &&
+        BehaviorProfileRegistry::instance().get(modeProfileId))
+    {
+        for (Npc& n : npcSystem.all())
+        {
+            if (!n.actorPresetId.empty())
+                continue;
+            if (n.behaviorProfileId == modeProfileId)
+                continue;
+            n.behaviorProfileId = modeProfileId;
+            n.behavior = resolveNpcBehavior(modeProfileId);
+            modeProfileChanged = true;
+            npcLog("npc-mode-profile npc=%u mode=%s profile=%s",
+                   n.id, serverGamemodeState().matchMode.c_str(),
+                   modeProfileId.c_str());
+        }
+    }
+    if (modeProfileChanged)
+        npcSystem.refreshDifficultyTuning();
 
     // Each NPC targets its own nearest actor according to npc-difficulty.json:
     // targetMode=closest preserves nearest-hostile behavior, while player

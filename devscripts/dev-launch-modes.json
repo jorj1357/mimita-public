@@ -42,7 +42,7 @@
         "--mode",
         "counterstrike",
         "--gamemode",
-        "counterstrike",
+      "counterstrike",
         "--no-npcs"
       ],
       "client_args": [],
@@ -56,7 +56,24 @@
       ],
       "client_args": [],
       "map": "dust2cyberiav4"
+    },
+      "7": {
+      "name": "counter_strike v4 map with npc",
+      "server_args": [
+        "--startup-command",
+        "npc_spawn"
+      ],
+      "client_args": [],
+      "map": "dust2cyberiav4"
+    },
+      "8": {
+      "name": "zombie towerrrrr",
+      "server_args": [
+        "--startup-command",
+        "help"
+      ],
+      "client_args": [],
+      "map": "zombietower2"
     }
-
   }
 }

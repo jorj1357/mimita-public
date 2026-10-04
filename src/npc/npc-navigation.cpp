@@ -156,7 +156,12 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
         return desiredDir;
 
     const float checkDist = cfg.wallCastDistance;
-    const bool forwardBlocked = rayHitsAny(origin, desiredDir, checkDist, candidates, world);
+    // A walkable ramp is ground, not a wall. Only a face steeper than the
+    // physics walkable limit blocks forward movement.
+    glm::vec3 forwardNormal{0.0f};
+    const bool forwardHit = rayHitsAny(origin, desiredDir, checkDist, candidates, world,
+                                       nullptr, &forwardNormal);
+    const bool forwardBlocked = forwardHit && forwardNormal.z < kWalkableSlopeDot;
     const bool forwardUnsupported = cfg.wallGroundSupportRequired &&
         !hasGroundSupport(npc, desiredDir, world, checkDist,
                           cfg.wallGroundProbeDepth, candidates);
@@ -184,14 +189,16 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
         if (glm::length(altDir) < 0.001f)
             continue;
         float hitDistance = cfg.wallSearchDistance;
-        const bool blocked = rayHitsAny(origin, altDir, cfg.wallSearchDistance,
-                                        candidates, world, &hitDistance);
+        glm::vec3 altNormal{0.0f};
+        const bool altHit = rayHitsAny(origin, altDir, cfg.wallSearchDistance,
+                                       candidates, world, &hitDistance, &altNormal);
+        const bool blocked = altHit && altNormal.z < kWalkableSlopeDot;
         const bool unsupported = cfg.wallGroundSupportRequired &&
             !hasGroundSupport(npc, altDir, world, cfg.wallSearchDistance,
                               cfg.wallGroundProbeDepth, candidates);
         if (!blocked && !unsupported)
             return glm::normalize(altDir);
-        if (!unsupported && hitDistance > bestClearance)
+        if (blocked && !unsupported && hitDistance > bestClearance)
         {
             bestClearance = hitDistance;
             bestDir = glm::normalize(altDir);
@@ -377,7 +384,12 @@ bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float che
     origin.z += 0.5f;
     glm::vec3 checkDir = glm::normalize(glm::vec3(dir.x, dir.y, 0.0f));
 
-    return rayHitsAny(origin, checkDir, checkDist, candidates, world);
+    // Only a non-walkable (steep/vertical) face is an obstacle. A ramp that the
+    // body can walk up is terrain, so the actor keeps advancing onto it.
+    glm::vec3 hitNormal{0.0f};
+    if (!rayHitsAny(origin, checkDir, checkDist, candidates, world, nullptr, &hitNormal))
+        return false;
+    return hitNormal.z < kWalkableSlopeDot;
 }
 
 bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world)

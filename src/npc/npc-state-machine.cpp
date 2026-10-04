@@ -11,8 +11,8 @@
 #include "npc/npc-movement-policy.h"
 #include "combat/weapon-registry.h"
 
-// Search and cover constants
-static constexpr float SEARCH_TIMEOUT = 8.0f;
+// Search and cover constants. Target-memory expiry is owned by
+// NpcDifficultyConfig::perceptionMemoryTicks; do not duplicate that timer here.
 static constexpr float COVER_CHECK_DIST = 4.0f;
 
 namespace {
@@ -202,19 +202,27 @@ NpcState pickNextState(Npc& npc)
 
     if (!sensors.hasTarget)
     {
-        // Search phase: move toward last known position before giving up. Only
-        // trust it once a real target has been seen (lastKnownAge was reset),
-        // so the stale (0,0,0) default can never drag an NPC to the origin.
-        if (npc.targetMemory.hasMemory &&
-            npc.stateMachine.lastKnownAge < SEARCH_TIMEOUT &&
+        // Search phase: the perception memory record is the only timer. It is
+        // configured by npc-difficulty.json and expires there, so this state
+        // machine never invents a second hard-coded timeout.
+        const bool modeAllowsMemory = npc.behavior.pursuitMode != "forget_when_hidden";
+        const bool profileAllowsMemory = !npc.behavior.active ||
+            (npc.behavior.continueThroughCover &&
+             npc.behavior.pursueLastKnownPosition && modeAllowsMemory);
+        if (profileAllowsMemory && npc.targetMemory.hasMemory &&
             npc.stateMachine.lastKnownAge > 0.5f)
         {
-            float distToLastKnown = glm::length(npc.stateMachine.lastKnownTarget - npc.body.pos);
+            float distToLastKnown = glm::length(npc.targetMemory.lastKnownPosition - npc.body.pos);
             if (distToLastKnown > 2.0f)
                 return NpcState::Chase; // Chase toward last known position (acts as "search")
             // If close to last known, circle around looking. A policy that does
-            // not allow circle keeps advancing forward instead.
+            // not allow circle keeps patrolling forward instead. The profile
+            // can explicitly choose to stop instead of looking around.
+            if (npc.behavior.active && npc.behavior.afterReachingLastKnown == "stop")
+                return NpcState::Patrol;
             if (policy && !npcPolicyAllowsMovement(*policy, NpcPolicyMovement::Circle))
+                return NpcState::Patrol;
+            if (npc.behavior.active && npc.behavior.afterReachingLastKnown == "patrol")
                 return NpcState::Patrol;
             return NpcState::Circle;
         }

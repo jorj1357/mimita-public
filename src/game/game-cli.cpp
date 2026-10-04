@@ -59,6 +59,7 @@
 #include "map/map-loader-collision.h"
 #include "network/server-gamemode.h"
 #include "npc/npc-nav-request.h"
+#include "npc/npc-navigation.h"
 #include "combat/grenade-registry.h"
 #include "combat/area-effect.h"
 
@@ -451,6 +452,124 @@ bool handleGameCLI(int argc, char** argv)
         printf("[NPC POLICY SELFTEST] lowHealthRetreats=%d/%d fullHealthRetreats=%d lateral=%.2f %s\n",
                lowRetreats, lowRetreats + lowAdvances, fullRetreats, maxLateral,
                ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-search-behavior-selftest") {
+        // Real NpcSystem on a minimal collision world, driving the actual
+        // update path, to prove: walkable slopes are climbed instead of being
+        // treated as walls; a blocked NPC explores sideways rather than
+        // ramming the same wall; and it never stalls in one spot for long.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            w.collisionMesh.triangles.push_back(t);
+        };
+        auto addFloor = [&](World& w) {
+            addTri(w, {40,40,0}, {-40,40,0}, {-40,-40,0});
+            addTri(w, {40,40,0}, {-40,-40,0}, {40,-40,0});
+        };
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+
+        // ── Phase 1: walkable slope must be climbed ─────────────────
+        {
+            World world;
+            addFloor(world);
+            // Ramp from x=6 (z=0) to x=12 (z=2), then a flat top to x=22.
+            addTri(world, {6,-4,0}, {12,-4,2}, {12,4,2});
+            addTri(world, {6,-4,0}, {12,4,2}, {6,4,0});
+            addTri(world, {12,-4,2}, {22,-4,2}, {22,4,2});
+            addTri(world, {12,-4,2}, {22,4,2}, {12,4,2});
+            buildCollisionChunks(world, nullptr);
+
+            NpcSystem npcs;
+            const uint32_t id = 9201;
+            npcs.spawnNpc(id, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+            Npc* npc = nullptr;
+            for (Npc& n : npcs.all()) if (n.id == id) { npc = &n; break; }
+            if (!npc) { printf("[NPC SEARCH SELFTEST] FAIL: no NPC\n"); std::exit(1); }
+            npc->actorPresetId = "counter_strike";
+            npc->wakeupTimer = 0.0f;
+            npc->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+            npc->stateMachine.currentState = NpcState::Patrol;
+            npc->stateMachine.patrolDir = glm::vec3(1.0f, 0.0f, 0.0f);
+            npc->stateMachine.patrolRepathTimer = 100.0f;
+
+            Player target;
+            target.pos = glm::vec3(-300.0f, 0.0f, 2.0f);
+            target.currentHp = 100; target.maxHp = 100; target.dead = false;
+
+            for (int tick = 0; tick < 420; ++tick)
+                npcs.updateOneWithTarget(id, world, target, 1.0f / 60.0f);
+
+            check(npc->body.pos.x > 7.0f, "NPC advances onto the ramp");
+            check(npc->body.pos.z > 2.4f, "NPC climbs the walkable slope (z rises)");
+        }
+
+        // ── Phase 2: steep wall -> explore sideways, never stall ────
+        {
+            World world;
+            addFloor(world);
+            // Vertical wall at x=4 (steep), spanning y=[-12,12], z=[0,5].
+            addTri(world, {4,-12,0}, {4,12,0}, {4,12,5});
+            addTri(world, {4,-12,0}, {4,12,5}, {4,-12,5});
+            buildCollisionChunks(world, nullptr);
+
+            NpcSystem npcs;
+            const uint32_t id = 9202;
+            npcs.spawnNpc(id, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+            Npc* npc = nullptr;
+            for (Npc& n : npcs.all()) if (n.id == id) { npc = &n; break; }
+            if (!npc) { printf("[NPC SEARCH SELFTEST] FAIL: no NPC\n"); std::exit(1); }
+            npc->actorPresetId = "counter_strike";
+            npc->wakeupTimer = 0.0f;
+            npc->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+            npc->stateMachine.currentState = NpcState::Patrol;
+            npc->stateMachine.patrolDir = glm::vec3(1.0f, 0.0f, 0.0f);
+            npc->stateMachine.patrolRepathTimer = 100.0f;
+
+            Player target;
+            target.pos = glm::vec3(-300.0f, 0.0f, 2.0f);
+            target.currentHp = 100; target.maxHp = 100; target.dead = false;
+
+            bool forbid = false;
+            float maxAbsY = 0.0f, minX = 1e9f, maxX = -1e9f, minY = 1e9f, maxY = -1e9f;
+            glm::vec3 ref = npc->body.pos;
+            int stall = 0, maxStall = 0;
+            for (int tick = 0; tick < 720; ++tick) {
+                npcs.updateOneWithTarget(id, world, target, 1.0f / 60.0f);
+                const NpcState st = npc->stateMachine.currentState;
+                forbid |= st == NpcState::RandomWalk || st == NpcState::Circle ||
+                          st == NpcState::Strafe || st == NpcState::ZigZag;
+                const glm::vec3 p = npc->body.pos;
+                maxAbsY = std::max(maxAbsY, std::fabs(p.y));
+                minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
+                minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
+                if (glm::length(glm::vec2(p.x - ref.x, p.y - ref.y)) > 0.75f) {
+                    ref = p; stall = 0;
+                } else {
+                    ++stall;
+                    maxStall = std::max(maxStall, stall);
+                }
+            }
+            check(!forbid, "blocked search never uses random/circle/strafe/zigzag");
+            check(maxAbsY > 1.0f, "NPC turns and explores sideways along the wall");
+            check((maxX - minX) > 2.0f || (maxY - minY) > 2.0f,
+                  "NPC keeps covering ground instead of pacing one spot");
+            check(maxStall < 360, "NPC never stalls in one spot longer than ~6s");
+        }
+
+        printf("[NPC SEARCH SELFTEST]\n%s", report.c_str());
+        printf("[NPC SEARCH SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

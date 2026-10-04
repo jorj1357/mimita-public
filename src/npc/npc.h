@@ -78,6 +78,9 @@ public:
     // Resolved role behavior profile for this life (combat tuning).
     std::string behaviorProfileId;
     NpcBehaviorTuning behavior;
+    // Revision of behavior-profiles.json used to resolve `behavior`.
+    // Changed profile values apply to living NPCs on the next simulation tick.
+    uint64_t behaviorRevision = 0;
     // Target-acquisition edge tracking for the reaction-delay gate.
     bool prevHadTarget = false;
     // Server-selected current target id (persisted for stickiness/scoring).

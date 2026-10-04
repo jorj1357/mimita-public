@@ -161,6 +161,22 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     if (it == d.matchActors.end())
         return out;
 
+    // A gamemode may provide one NPC-only combat profile for unassigned NPCs
+    // such as Sandbox actors. Role-specific profiles below override it. This
+    // never affects human actors.
+    if (it->second.controller == ActorController::Npc) {
+        const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+        if (!gm.npcBehaviorProfile.empty()) {
+            if (BehaviorProfileRegistry::instance().get(gm.npcBehaviorProfile)) {
+                out.behaviorProfileId = gm.npcBehaviorProfile;
+            } else {
+                Debug::warn(Debug::Category::Duel,
+                    "[GAMEMODE] mode %s references unknown NPC behavior profile \"%s\"; using role/default behavior\n",
+                    d.matchMode.c_str(), gm.npcBehaviorProfile.c_str());
+            }
+        }
+    }
+
     const std::string roleId = !d.actorPresetOverrideId.empty()
         ? d.actorPresetOverrideId : it->second.roleId;
     if (roleId.empty()) return out;

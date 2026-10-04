@@ -333,6 +333,8 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         // ── Elimination / win rules (optional) ──────────────────────
         next.winCondition = optString(root, "win_condition", next.winCondition);
         next.actorPresetId = optString(root, "actor_preset", next.actorPresetId);
+        next.npcBehaviorProfile = optString(
+            root, "npc_behavior_profile", next.npcBehaviorProfile);
         next.waveStartCount = std::max(1, optInt(root, "wave_start_count", next.waveStartCount));
         next.waveIncrement = std::max(0, optInt(root, "wave_increment", next.waveIncrement));
         next.waveNpcsPerWave = std::max(0, optInt(root, "npcs_per_wave", next.waveNpcsPerWave));

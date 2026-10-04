@@ -10,6 +10,11 @@ class Npc;
 
 namespace NpcNavigation {
 
+// Minimum normal.z a surface needs to count as walkable ground rather than a
+// wall. Matches the shared physics walkable-slope limit (src/physics/config.h
+// MAX_WALKABLE_SLOPE_DOT) so the brain and the body agree on what a ramp is.
+constexpr float kWalkableSlopeDot = 0.80f;
+
 // Ray vs a single collision triangle (Moller-Trumbore). Returns true and sets
 // outT (> 0.01 and < maxT) when the ray hits. Shared by navigation planners.
 bool rayTriangle(const glm::vec3& origin, const glm::vec3& dir,

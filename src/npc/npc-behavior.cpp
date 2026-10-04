@@ -1,7 +1,7 @@
 // 09 11 2026
 /* purpose
 * Loads, hot-reloads, and indexes reusable NPC behavior profiles.
-* Profiles carry combat tuning values only; roles reference them by id.
+* Profiles carry combat and target-pursuit tuning; roles reference them by id.
 * Does NOT assign profiles or contain combat logic.
 * Does NOT fail hard on bad JSON - keeps the last valid data and logs an error.
 */
@@ -49,6 +49,10 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.weaponDamageBias = j.value("weapon_damage_bias", out.weaponDamageBias);
     out.weaponSafetyBias = j.value("weapon_safety_bias", out.weaponSafetyBias);
     out.weaponSwitchThreshold = j.value("weapon_switch_threshold", out.weaponSwitchThreshold);
+    out.pursuitMode = j.value("pursuit_mode", out.pursuitMode);
+    out.continueThroughCover = j.value("continue_through_cover", out.continueThroughCover);
+    out.pursueLastKnownPosition = j.value("pursue_last_known_position", out.pursueLastKnownPosition);
+    out.afterReachingLastKnown = j.value("after_reaching_last_known", out.afterReachingLastKnown);
 }
 
 } // anonymous namespace
@@ -105,6 +109,7 @@ bool BehaviorProfileRegistry::load(const std::string& path)
             mIndexById[mProfiles[i].id] = i;
 
         mLastWrite = writeTime;
+        ++mRevision;
         if (!mWatchLogged) {
             Debug::warn(Debug::Category::NpcCombat,
                 "[BEHAVIOR] Watching: %s\n", fileNameOf(mPath).c_str());
@@ -173,5 +178,9 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     if (def->weaponDamageBias >= 0.0f) out.weaponDamageBias = def->weaponDamageBias;
     if (def->weaponSafetyBias >= 0.0f) out.weaponSafetyBias = def->weaponSafetyBias;
     if (def->weaponSwitchThreshold >= 0.0f) out.weaponSwitchThreshold = def->weaponSwitchThreshold;
+    out.pursuitMode = def->pursuitMode;
+    out.continueThroughCover = def->continueThroughCover;
+    out.pursueLastKnownPosition = def->pursueLastKnownPosition;
+    out.afterReachingLastKnown = def->afterReachingLastKnown;
     return out;
 }

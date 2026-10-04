@@ -18,9 +18,15 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
     outDash = false;
     outAttack = false;
 
+    // Visible target: use the current predicted position. Hidden target with
+    // memory: use the position where the target was last seen. The old code
+    // used zero here, which normalized to +X and made Chase run in an
+    // unrelated direction after the player went behind cover.
+    const bool hasRememberedTarget = !sensors.hasTarget && npc.targetMemory.hasMemory;
+    const glm::vec3 rememberedTarget = npc.targetMemory.lastKnownPosition;
     glm::vec3 toTarget = sensors.hasTarget
         ? sensors.predictedTarget - npc.body.pos
-        : glm::vec3{0.0f};
+        : (hasRememberedTarget ? rememberedTarget - npc.body.pos : glm::vec3{0.0f});
     toTarget.z = 0.0f;
     float toTargetLen = glm::length(toTarget);
     glm::vec3 chaseDir = toTargetLen > 0.001f ? toTarget / toTargetLen : glm::vec3{1.0f, 0.0f, 0.0f};
@@ -200,17 +206,8 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
                     ? glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f))
                     : glm::vec3(1.0f, 0.0f, 0.0f);
             }
-            sm.patrolRepathTimer -= dt;
-            sm.patrolSnapshotTimer -= dt;
-            if (sm.patrolSnapshotTimer <= 0.0f) {
-                // One position snapshot per second, keeping a bounded ring of
-                // recently visited ground so patrol does not retrace it.
-                sm.patrolSnapshotTimer = 1.0f;
-                sm.patrolRecent[sm.patrolRecentHead] = npc.body.pos;
-                sm.patrolRecentHead = (sm.patrolRecentHead + 1) % NpcStateMachine::PATROL_RECENT_MAX;
-                if (sm.patrolRecentCount < NpcStateMachine::PATROL_RECENT_MAX)
-                    ++sm.patrolRecentCount;
-            }
+            // visited/blocked snapshots and the heading commit timer are owned
+            // centrally by updateOneNpc so they also run while chasing.
             outMoveDir = glm::vec3(sm.patrolDir.x, sm.patrolDir.y, 0.0f);
             return;
         }

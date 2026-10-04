@@ -1,8 +1,9 @@
 // 09 11 2026
 /* purpose
 * Define and load reusable NPC behavior profiles from config/behavior-profiles.json.
-* A profile is combat tuning (aim error, reaction delay, fire cadence, aggression,
-* preferred range) referenced by role definitions through behavior_profile.
+* A profile is combat and pursuit tuning (aim error, reaction delay, fire cadence,
+* aggression, preferred range, and remembered-target behavior) referenced by role
+* definitions through behavior_profile.
 * Humans have no NPC behavior profile; this is consumed by NPC combat/decisions.
 * Does NOT assign profiles, simulate actors, or own combat state.
 * Does NOT fail hard on bad JSON - keeps the last valid data and logs an error.
@@ -10,6 +11,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -35,6 +37,11 @@ struct BehaviorProfileDefinition
     float weaponDamageBias = -1.0f;      // preference for high damage
     float weaponSafetyBias = -1.0f;      // preference for safer/ranged weapons
     float weaponSwitchThreshold = -1.0f; // required score margin to switch
+    // Pursuit after line of sight is lost. String values are documented in JSON.
+    std::string pursuitMode = "last_known_position";
+    bool continueThroughCover = true;
+    bool pursueLastKnownPosition = true;
+    std::string afterReachingLastKnown = "look_around";
 };
 
 // Resolved combat tuning carried by an NPC for its current life. `active` is
@@ -58,6 +65,10 @@ struct NpcBehaviorTuning
     float weaponDamageBias = 0.0f;
     float weaponSafetyBias = 0.0f;
     float weaponSwitchThreshold = 0.0f;
+    std::string pursuitMode = "last_known_position";
+    bool continueThroughCover = true;
+    bool pursueLastKnownPosition = true;
+    std::string afterReachingLastKnown = "look_around";
 };
 
 class BehaviorProfileRegistry
@@ -67,6 +78,7 @@ public:
 
     bool load(const std::string& path = "config/behavior-profiles.json");
     bool pollReload();
+    uint64_t revision() const { return mRevision; }
 
     const BehaviorProfileDefinition* get(const std::string& id) const;
     const std::vector<BehaviorProfileDefinition>& all() const { return mProfiles; }
@@ -78,6 +90,7 @@ private:
     std::unordered_map<std::string, int> mIndexById;
     std::string mPath = "config/behavior-profiles.json";
     std::filesystem::file_time_type mLastWrite{};
+    uint64_t mRevision = 0;
     bool mWatchLogged = false;
 };
 

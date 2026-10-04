@@ -180,6 +180,22 @@ bool NpcDifficultyConfig::load(const std::string& path)
         next.wallGroundSupportRequired = optBool(root, "wallGroundSupportRequired", next.wallGroundSupportRequired);
         next.wallGroundProbeDepth = std::clamp(optFloat(root, "wallGroundProbeDepth", next.wallGroundProbeDepth), 0.5f, 20.0f);
 
+        // Search / exploration memory.
+        next.searchHeadingCommitSeconds = std::clamp(
+            optFloat(root, "searchHeadingCommitSeconds", next.searchHeadingCommitSeconds), 0.5f, 30.0f);
+        next.searchMemorySeconds = std::clamp(
+            optFloat(root, "searchMemorySeconds", next.searchMemorySeconds), 2.0f, 60.0f);
+        next.searchMemoryPoints = std::clamp(
+            optInt(root, "searchMemoryPoints", next.searchMemoryPoints), 4, 32);
+        next.searchSnapshotSeconds = std::clamp(
+            optFloat(root, "searchSnapshotSeconds", next.searchSnapshotSeconds), 0.1f, 2.0f);
+        next.searchLookahead = std::clamp(
+            optFloat(root, "searchLookahead", next.searchLookahead), 1.0f, 12.0f);
+        next.searchAvoidRadius = std::clamp(
+            optFloat(root, "searchAvoidRadius", next.searchAvoidRadius), 0.5f, 12.0f);
+        next.searchNoProgressSeconds = std::clamp(
+            optFloat(root, "searchNoProgressSeconds", next.searchNoProgressSeconds), 0.5f, 10.0f);
+
         // Force weapon mode
         next.forceWeapon = optString(root, "forceWeapon", next.forceWeapon);
 
@@ -326,6 +342,13 @@ bool NpcDifficultyConfig::save(const std::string& path)
     j["wallBacktrackDuration"] = mData.wallBacktrackDuration;
     j["wallGroundSupportRequired"] = mData.wallGroundSupportRequired;
     j["wallGroundProbeDepth"] = mData.wallGroundProbeDepth;
+    j["searchHeadingCommitSeconds"] = mData.searchHeadingCommitSeconds;
+    j["searchMemorySeconds"] = mData.searchMemorySeconds;
+    j["searchMemoryPoints"] = mData.searchMemoryPoints;
+    j["searchSnapshotSeconds"] = mData.searchSnapshotSeconds;
+    j["searchLookahead"] = mData.searchLookahead;
+    j["searchAvoidRadius"] = mData.searchAvoidRadius;
+    j["searchNoProgressSeconds"] = mData.searchNoProgressSeconds;
     j["forceWeapon"] = mData.forceWeapon;
 
     j["mirrorMovementEnabled"] = mData.mirrorMovementEnabled;

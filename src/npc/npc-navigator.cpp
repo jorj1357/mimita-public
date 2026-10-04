@@ -35,7 +35,9 @@ constexpr float kReachZ = 1.3f;        // waypoint arrival (vertical)
 constexpr float kRepathInterval = 0.9f;
 constexpr float kGoalMoveThreshold = 2.5f;
 constexpr int kMaxPlansPerSecond = 16;
-constexpr float kWalkableNormalZ = 0.7f;
+// Match the shared physics walkable-slope limit so the local A* never plans a
+// route onto ground the body cannot actually hold.
+constexpr float kWalkableNormalZ = NpcNavigation::kWalkableSlopeDot;
 constexpr float kNotFound = -1e6f;
 
 const int kGridN = (int)std::floor((2.0f * kPlanRadius) / kCell) + 1;

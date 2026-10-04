@@ -94,6 +94,17 @@ struct NpcDifficultySettings {
     bool wallGroundSupportRequired = true;
     float wallGroundProbeDepth = 4.0f;
 
+    // Search / exploration memory. A no-target actor keeps a persistent forward
+    // heading and remembers where it has been and where it was blocked so it
+    // commits to a direction and never doubles back or re-tests the same wall.
+    float searchHeadingCommitSeconds = 6.0f;  // how long a chosen heading is held
+    float searchMemorySeconds = 12.0f;        // how long visited/blocked points live
+    int searchMemoryPoints = 24;              // ring size (capped by the state machine)
+    float searchSnapshotSeconds = 0.4f;       // visited-point sampling interval
+    float searchLookahead = 4.0f;             // probe distance used for recency scoring
+    float searchAvoidRadius = 3.0f;           // penalty radius around visited/blocked points
+    float searchNoProgressSeconds = 1.5f;     // stuck-for-this-long triggers recovery
+
     // Force a specific weapon. When non-empty, NPCs always use this weapon
     // and ignore distance-based switching. Set to a weapon id to test it.
     std::string forceWeapon = "";
