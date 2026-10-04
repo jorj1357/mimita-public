@@ -18,6 +18,7 @@
 #include "game/duel.h"
 #include "debug/debug-log.h"
 #include "utils/json-comments.h"
+#include "npc/npc-targeting.h"
 
 using json = nlohmann::json;
 
@@ -335,6 +336,38 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.actorPresetId = optString(root, "actor_preset", next.actorPresetId);
         next.npcBehaviorProfile = optString(
             root, "npc_behavior_profile", next.npcBehaviorProfile);
+
+        // ── Mode-level NPC targeting (optional) ─────────────────────
+        if (root.contains("npc_targeting") && root["npc_targeting"].is_object()) {
+            const auto& t = root["npc_targeting"];
+            next.npcTargeting.configured = true;
+            next.npcTargeting.mode = optString(t, "mode", next.npcTargeting.mode);
+            next.npcTargeting.includePlayers =
+                optBool(t, "include_players", next.npcTargeting.includePlayers);
+            next.npcTargeting.includeNpcs =
+                optBool(t, "include_npcs", next.npcTargeting.includeNpcs);
+            bool modeOk = false;
+            npcTargetingModeFromString(next.npcTargeting.mode, modeOk);
+            if (!modeOk) {
+                Debug::warn(Debug::Category::Duel,
+                    "[GAMEMODE] %s npc_targeting.mode \"%s\" unknown; using closest\n",
+                    next.id.c_str(), next.npcTargeting.mode.c_str());
+                next.npcTargeting.mode = "closest";
+            }
+        }
+
+        // ── Mode-level RMB aim-FOV override (optional) ──────────────
+        if (root.contains("camera") && root["camera"].is_object() &&
+            root["camera"].contains("aim_fov") && root["camera"]["aim_fov"].is_object()) {
+            const auto& f = root["camera"]["aim_fov"];
+            next.aimFov.enabled = optBool(f, "enabled", next.aimFov.enabled);
+            next.aimFov.input = optString(f, "input", next.aimFov.input);
+            next.aimFov.multiplier = std::clamp(
+                optFloat(f, "multiplier", next.aimFov.multiplier), 0.05f, 1.0f);
+            next.aimFov.duration = std::clamp(
+                optFloat(f, "duration", next.aimFov.duration), 0.01f, 10.0f);
+            next.aimFov.easing = optString(f, "easing", next.aimFov.easing);
+        }
         next.waveStartCount = std::max(1, optInt(root, "wave_start_count", next.waveStartCount));
         next.waveIncrement = std::max(0, optInt(root, "wave_increment", next.waveIncrement));
         next.waveNpcsPerWave = std::max(0, optInt(root, "npcs_per_wave", next.waveNpcsPerWave));

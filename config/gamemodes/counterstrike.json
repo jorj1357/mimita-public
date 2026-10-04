@@ -58,6 +58,28 @@
   ],
   "victory": { "type": "rounds" },
   "actor_preset": "counter_strike",
+  // NPC-only combat profile for this mode. Overrides each role's behavior
+  // profile (explicit > gamemode > role > default). Humans are never affected.
+  "npc_behavior_profile": "rage2",
+  // Team-based enemy targeting. Does not depend on npc-difficulty.json.
+  // "opposite_team" = any live actor on a hostile team; same-team is never
+  // selected, and no hostile actor means patrol/forward movement.
+  "npc_targeting": {
+    "mode": "opposite_team",
+    "include_players": true,
+    "include_npcs": true
+  },
+  // Mode-level RMB aim-FOV override. Independent of the physical right-arm
+  // aim-body mode; the input condition is simply "right mouse held".
+  "camera": {
+    "aim_fov": {
+      "enabled": true,
+      "input": "right_mouse",
+      "multiplier": 0.5,
+      "duration": 0.5,
+      "easing": "ease_in_out"
+    }
+  },
   "hide_healthbars": true,
   "ragdoll_enabled": true,
   "blood_enabled": true,

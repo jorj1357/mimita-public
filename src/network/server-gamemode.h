@@ -82,6 +82,11 @@ struct ServerGamemodeState
     // fresh random XY offset on every spawn/respawn. Floating on purpose.
     glm::vec3 spawnA{0.0f};
     glm::vec3 spawnB{0.0f};
+    // The original random map anchor, kept separate from spawnA/spawnB (which
+    // are overwritten by the CT/T cluster fronts). Used as the neutral fallback
+    // for an actor whose team cannot be resolved, so an unknown team never
+    // silently spawns on the CT cluster.
+    glm::vec3 sharedAnchor{0.0f};
     // Per-team spawn clusters resolved from map spawn tags (spawnpoint.CT /
     // spawnpoint.T). Empty means fall back to the shared anchor.
     std::vector<glm::vec3> teamSpawnPoints[2];

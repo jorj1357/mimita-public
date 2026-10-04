@@ -21,6 +21,7 @@
 #include "npc/npc-difficulty-config.h"
 #include "npc/npc-behavior.h"
 #include "npc/npc-navigation.h"
+#include "npc/npc-targeting.h"
 #include "npc/npc-combat-log.h"
 #include "debug/structured-log.h"
 #include "npc/npc-avatar.h"
@@ -795,26 +796,40 @@ void simulateSharedNpcs(SOCKET sock,
     if (modeProfileChanged)
         npcSystem.refreshDifficultyTuning();
 
-    // Each NPC targets its own nearest actor according to npc-difficulty.json:
-    // targetMode=closest preserves nearest-hostile behavior, while player
-    // selects the nearest live human player and excludes NPC targets.
+    // Each NPC targets its own nearest actor. A mode may own its targeting
+    // policy (team modes, e.g. Counter-Strike opposite_team); otherwise the
+    // legacy npc-difficulty.json targetMode/damageOtherNpcs applies unchanged.
     // Damage stays server-authoritative: an NPC's damage to its mirror is routed
     // onto the real target, so NPCs behave exactly like players.
-    auto actorsAreHostile = [](int a, int b) {
-        if (a < 0 || b < 0) return true;  // no teams -> free for all
-        return a != b;
-    };
     auto npcTeamOf = [&](const Npc& npc) -> int {
         auto it = npcs.find(npc.id);
         return it != npcs.end() ? it->second.matchTeam : npc.body.matchTeam;
     };
     const auto& npcDifficulty = NpcDifficultyConfig::instance().settings();
-    const bool playersOnly = npcDifficulty.targetMode == "player";
-    // Team-based round modes (Counter-Strike) must let NPCs fight the enemy
-    // squad, not just the human. Treat an active two-team match as always
-    // allowing NPC targets so both teams actually engage each other.
     const bool teamMatch = serverGamemodeState().objectiveRounds;
-    const bool allowNpcTargets = npcDifficulty.damageOtherNpcs || teamMatch;
+
+    NpcTargetingPolicy targeting;
+    const Gamemode& activeGamemodeForTargeting =
+        GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
+    if (activeGamemodeForTargeting.npcTargeting.configured) {
+        targeting.configured = true;
+        bool modeOk = false;
+        targeting.mode = npcTargetingModeFromString(
+            activeGamemodeForTargeting.npcTargeting.mode, modeOk);
+        if (!modeOk) targeting.mode = NpcTargetingMode::Closest;
+        targeting.includePlayers = activeGamemodeForTargeting.npcTargeting.includePlayers;
+        targeting.includeNpcs = activeGamemodeForTargeting.npcTargeting.includeNpcs;
+    } else {
+        // Legacy fallback: identical to the previous npc-difficulty behavior.
+        targeting.configured = false;
+        targeting.mode = npcDifficulty.targetMode == "player"
+            ? NpcTargetingMode::Player : NpcTargetingMode::Closest;
+        targeting.includePlayers = true;
+        targeting.includeNpcs = npcDifficulty.damageOtherNpcs || teamMatch;
+    }
+    const bool playersOnly = targeting.mode == NpcTargetingMode::Player;
+    const bool considerPlayers = npcTargetingIncludesPlayers(targeting);
+    const bool allowNpcTargets = npcTargetingIncludesNpcs(targeting);
     const bool freezeWaveBanner = serverGamemodeState().npcWaves
         && serverGamemodeState().waveBannerVisible
         && npcDifficulty.freezeDuringWaveBanner;
@@ -839,13 +854,13 @@ void simulateSharedNpcs(SOCKET sock,
 
         auto chooseNearestPlayer = [&]() {
             float bestD2 = std::numeric_limits<float>::max();
-            for (auto& kv : players)
+            if (considerPlayers) for (auto& kv : players)
             {
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.connectionStale) continue;
                 // Team gate: never target a same-team human. Applies in every
                 // target mode, including "player" mode.
-                if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
+                if (!npcTargetingIsHostile(targeting, myTeam, p.matchTeam)) continue;
                 const glm::vec3 d = p.pos - n.body.pos;
                 const float d2 = glm::dot(d, d);
                 if (d2 < bestD2)
@@ -868,7 +883,7 @@ void simulateSharedNpcs(SOCKET sock,
                 for (Npc& other : npcSystem.all()) {
                     if (&other == &n) continue;
                     if (other.body.dead || other.body.currentHp <= 0) continue;
-                    if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
+                    if (!npcTargetingIsHostile(targeting, myTeam, npcTeamOf(other))) continue;
                     const glm::vec3 d = other.body.pos - n.body.pos;
                     const float d2 = glm::dot(d, d);
                     if (d2 < bestD2) { bestD2 = d2; nearestNpc = &other; nearestPlayer = nullptr; }
@@ -895,11 +910,11 @@ void simulateSharedNpcs(SOCKET sock,
 
             float bestScore = -1e30f;
             float currentScore = -1e30f;
-            for (auto& kv : players)
+            if (considerPlayers) for (auto& kv : players)
             {
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.connectionStale) continue;
-                if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
+                if (!npcTargetingIsHostile(targeting, myTeam, p.matchTeam)) continue;
                 float s = scoreCandidate(p.pos, p.health, std::max(1, p.maxHealth), 0.5f);
                 const bool isCurrent = (p.id == n.serverTargetId);
                 if (isCurrent) s += b.targetStickiness;
@@ -910,7 +925,7 @@ void simulateSharedNpcs(SOCKET sock,
             {
                 if (&other == &n) continue;
                 if (other.body.dead || other.body.currentHp <= 0) continue;
-                if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
+                if (!npcTargetingIsHostile(targeting, myTeam, npcTeamOf(other))) continue;
                 float threat01 = 0.0f;
                 if (const WeaponDefinition* wd =
                         WeaponRegistry::instance().get(other.body.equippedWeaponId))
@@ -950,11 +965,11 @@ void simulateSharedNpcs(SOCKET sock,
         {
             // Legacy nearest-hostile (unchanged when no behavior profile applies).
             float bestD2 = std::numeric_limits<float>::max();
-            for (auto& kv : players)
+            if (considerPlayers) for (auto& kv : players)
             {
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.connectionStale) continue;
-                if (!actorsAreHostile(myTeam, p.matchTeam)) continue;
+                if (!npcTargetingIsHostile(targeting, myTeam, p.matchTeam)) continue;
                 const glm::vec3 d = p.pos - n.body.pos;
                 const float d2 = glm::dot(d, d);
                 if (d2 < bestD2) { bestD2 = d2; nearestPlayer = &p; nearestNpc = nullptr; }
@@ -963,7 +978,7 @@ void simulateSharedNpcs(SOCKET sock,
             {
                 if (&other == &n) continue;
                 if (other.body.dead || other.body.currentHp <= 0) continue;
-                if (!actorsAreHostile(myTeam, npcTeamOf(other))) continue;
+                if (!npcTargetingIsHostile(targeting, myTeam, npcTeamOf(other))) continue;
                 const glm::vec3 d = other.body.pos - n.body.pos;
                 const float d2 = glm::dot(d, d);
                 if (d2 < bestD2) { bestD2 = d2; nearestNpc = &other; nearestPlayer = nullptr; }

@@ -189,9 +189,6 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         RagdollModeSystem::instance().updateCorpses(TICK_DT, *sim.world);
     }
 
-    if (sim.player->spawnFlashTimer > 0.0f)
-        sim.player->spawnFlashTimer = std::max(0.0f, sim.player->spawnFlashTimer - 1.0f);
-
     checkVoidDeath(*sim.player, sim.player->username, "player");
     for (Npc& npc : sim.npcSystem->all())
         checkVoidDeath(npc.body, "npc_" + std::to_string(npc.id), "npc");

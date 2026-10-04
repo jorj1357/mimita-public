@@ -62,6 +62,8 @@
 #include "npc/npc-navigation.h"
 #include "npc/npc-surface.h"
 #include "npc/npc-navigation-settings.h"
+#include "npc/npc-targeting.h"
+#include "entities/aim-fov.h"
 #include "combat/grenade-registry.h"
 #include "combat/area-effect.h"
 
@@ -768,6 +770,22 @@ bool handleGameCLI(int argc, char** argv)
 
         printf("[NPC NAVIGATION SELFTEST]\n%s", report.c_str());
         printf("[NPC NAVIGATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-targeting-selftest") {
+        std::string report;
+        const bool ok = npcTargetingSelfTest(report);
+        printf("[NPC TARGETING SELFTEST]\n%s", report.c_str());
+        printf("[NPC TARGETING SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--aim-fov-selftest") {
+        std::string report;
+        const bool ok = aimFovSelfTest(report);
+        printf("[AIM FOV SELFTEST]\n%s", report.c_str());
+        printf("[AIM FOV SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

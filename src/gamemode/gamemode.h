@@ -113,6 +113,26 @@ struct GamemodePresentation {
     bool hasPlayerOutlines = false;      bool playerOutlines = true;
 };
 
+// Optional mode-level NPC targeting policy. When absent (configured=false) the
+// runtime falls back to npc-difficulty.json targetMode/damageOtherNpcs so other
+// modes are unchanged.
+struct GamemodeNpcTargeting {
+    bool configured = false;
+    std::string mode = "closest";  // "player" | "closest" | "opposite_team"
+    bool includePlayers = true;
+    bool includeNpcs = true;
+};
+
+// Optional mode-level RMB aim-FOV override. When enabled, the camera uses this
+// instead of config/aimbody.json for the held-RMB zoom. Never edits aimbody.json.
+struct GamemodeAimFov {
+    bool enabled = false;
+    std::string input = "right_mouse";
+    float multiplier = 0.5f;
+    float duration = 0.5f;
+    std::string easing = "ease_in_out";
+};
+
 struct Gamemode {
     std::string id = "duel";
     std::string name = "Duel";
@@ -168,6 +188,9 @@ struct Gamemode {
     // Optional NPC-only combat profile used when an NPC has no role-specific
     // behavior profile. Humans are never affected by this setting.
     std::string npcBehaviorProfile;
+    // Optional mode-level NPC targeting (team modes) and RMB aim-FOV override.
+    GamemodeNpcTargeting npcTargeting;
+    GamemodeAimFov aimFov;
     // ── Elimination / win rules (optional) ──────────────────────────
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
     // when only one team (or, in FFA, one actor) still has an in-play actor.

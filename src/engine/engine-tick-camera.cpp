@@ -8,6 +8,8 @@
 #include "world/world.h"
 #include "entities/player.h"
 #include "entities/aimbody-config.h"
+#include "entities/aim-fov.h"
+#include "gamemode/gamemode.h"
 #include "npc/npc.h"
 #include "physics/physics-debug-movement.h"
 #include "audio/audio.h"
@@ -980,16 +982,52 @@ void engineTickCamera(Engine& engine, float dt)
         camera.smoothCollision(player.pos, world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
     }
 
-    // RMB FOV zoom is presentation-only and follows the same aimbody hold
-    // state. Apply it after camera mode selection so every camera mode uses
-    // the camconfig base FOV as its source.
+    // RMB FOV zoom is presentation-only. A gamemode may own a mode-level
+    // override (Counter-Strike) whose input condition is simply "right mouse
+    // held", independent of the physical aim-body mode; otherwise the
+    // config/aimbody.json right-arm FOV values apply. Apply it after camera
+    // mode selection so every camera mode uses the camconfig base FOV.
     if (!replayPlaybackActive && !gReplayEditor.isLoaded()) {
-        const bool rightMouseHeld = AimBodyConfig::instance().rightArmPointingRmb() &&
+        const MimitaNet::CommunityMatchClient& fovMatch =
+            MimitaNet::CommunityMatchClient::instance();
+        const Gamemode& fovMode = GamemodeRegistry::instance().get(fovMatch.mode());
+
+        // Reset the blend on a mode change, leaving the match, or a death/
+        // respawn (the local actor leaves Alive). The spectator camera block
+        // above is not touched.
+        static float aimFovBlend = 0.0f;
+        static std::string aimFovLastMode;
+        static bool aimFovLastActive = false;
+        const bool matchActive = fovMatch.active();
+        const uint8_t actorState = matchActive
+            ? fovMatch.localActorState(mpContext.localPlayerId)
+            : (uint8_t)MimitaNet::ActorState::Alive;
+        const bool actorAlive = actorState == (uint8_t)MimitaNet::ActorState::Alive;
+        if (fovMatch.mode() != aimFovLastMode || matchActive != aimFovLastActive || !actorAlive)
+            aimFovBlend = 0.0f;
+        aimFovLastMode = fovMatch.mode();
+        aimFovLastActive = matchActive;
+
+        const bool rmbHeld =
             glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-        const float blend = AimBodyConfig::instance().updateRightArmPointingFovBlend(
-            rightMouseHeld, dt);
-        camera.fov = CamConfig::instance().data().fov * glm::mix(
-            1.0f, AimBodyConfig::instance().rightArmPointingFovMultiplier(), blend);
+        bool held = false;
+        float multiplier = 1.0f;
+        float duration = 0.5f;
+        std::string easing = "ease_in_out";
+        if (fovMode.aimFov.enabled) {
+            held = rmbHeld;  // mode override: raw RMB, independent of aim-body mode
+            multiplier = fovMode.aimFov.multiplier;
+            duration = fovMode.aimFov.duration;
+            easing = fovMode.aimFov.easing;
+        } else {
+            held = AimBodyConfig::instance().rightArmPointingRmb() && rmbHeld;
+            multiplier = AimBodyConfig::instance().rightArmPointingFovMultiplier();
+            duration = AimBodyConfig::instance().rightArmPointingFovDuration();
+            easing = AimBodyConfig::instance().rightArmPointingFovEasing();
+        }
+        aimFovBlend = updateAimFovBlend(aimFovBlend, held, dt, duration);
+        camera.fov = applyAimFov(CamConfig::instance().data().fov, multiplier,
+                                 aimFovEase(easing, aimFovBlend));
     }
 
     // Debug: final camera state after all evaluation

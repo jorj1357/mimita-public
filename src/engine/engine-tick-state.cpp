@@ -2,6 +2,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "gui/menus/pause-menu.h"
+#include <algorithm>
 #include <cstdio>
 #include <random>
 #include <GLFW/glfw3.h>
@@ -73,6 +74,16 @@ void engineTickState(Engine& engine, float dt)
     auto& gReplayFactory = REPLAY_FACTORY;
     auto& gReplayBrowser = REPLAY_BROWSER;
     auto& gReplayTimeline = REPLAY_TIMELINE;
+
+    // Spawn-flash decay owner. This runs every render frame regardless of
+    // freecam, death, or whether fixed-tick simulation ran, so the fullscreen
+    // spawn-flash quad (and the on-body flash shader) can never stick. It used
+    // to decrement inside simulateTick, which is skipped while a spectator
+    // freecam is active; a dead spectator whose flash was still > 0 therefore
+    // stayed black except for actors and HUD. 60 units/sec preserves the old
+    // one-per-fixed-tick duration (10 units ~= 0.17s).
+    if (player.spawnFlashTimer > 0.0f)
+        player.spawnFlashTimer = std::max(0.0f, player.spawnFlashTimer - dt * 60.0f);
 
     static GameState prevState = GAME_MENU;
     static bool npcsSpawned = false;

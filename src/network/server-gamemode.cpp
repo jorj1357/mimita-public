@@ -161,14 +161,19 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     if (it == d.matchActors.end())
         return out;
 
-    // A gamemode may provide one NPC-only combat profile for unassigned NPCs
-    // such as Sandbox actors. Role-specific profiles below override it. This
-    // never affects human actors.
+    // Precedence for NPC combat profiles: an explicit per-actor override
+    // (already set on `out`) wins, then the gamemode NPC profile, then the
+    // role profile, then the default. This never affects human actors.
+    const std::string explicitProfile = out.behaviorProfileId;
+    std::string modeProfile;
+
+    // A gamemode may provide one NPC-only combat profile (e.g. Counter-Strike
+    // rage2). It overrides role-specific profiles below.
     if (it->second.controller == ActorController::Npc) {
         const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
         if (!gm.npcBehaviorProfile.empty()) {
             if (BehaviorProfileRegistry::instance().get(gm.npcBehaviorProfile)) {
-                out.behaviorProfileId = gm.npcBehaviorProfile;
+                modeProfile = gm.npcBehaviorProfile;
             } else {
                 Debug::warn(Debug::Category::Duel,
                     "[GAMEMODE] mode %s references unknown NPC behavior profile \"%s\"; using role/default behavior\n",
@@ -236,15 +241,24 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
         }
     }
 
+    std::string roleProfile;
     if (!def->behaviorProfile.empty()) {
         // Validate once here (warn with role context) instead of per tick.
         if (BehaviorProfileRegistry::instance().get(def->behaviorProfile)) {
-            out.behaviorProfileId = def->behaviorProfile;
+            roleProfile = def->behaviorProfile;
         } else {
             Debug::warn(Debug::Category::Duel,
                 "[ROLES] role %s references unknown behavior profile \"%s\"; using NPC defaults\n",
                 def->id.c_str(), def->behaviorProfile.c_str());
         }
+    }
+
+    // Commit the NPC profile using the agreed precedence. Humans keep an empty
+    // profile (they never use NPC behavior).
+    if (it->second.controller == ActorController::Npc) {
+        out.behaviorProfileId = !explicitProfile.empty() ? explicitProfile
+                              : !modeProfile.empty()     ? modeProfile
+                              :                            roleProfile;
     }
 
     // The movement policy is owned by the actor preset: a preset carries it
@@ -920,6 +934,7 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
         const glm::vec3 anchor = world.spawnPoints[anchorIndex].position;
         d.spawnA = anchor;
         d.spawnB = anchor;
+        d.sharedAnchor = anchor;
 
         // Group tagged spawns by team.
         for (const ServerSpawnPoint& sp : world.spawnPoints) {
@@ -936,11 +951,36 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
             d.mapId.c_str(), anchorIndex, anchor.x, anchor.y, anchor.z,
             d.teamSpawnPoints[0].size(), d.teamSpawnPoints[1].size(),
             (int)d.teamSpawnsResolved);
+
+        // A map may have generic spawn nodes instead of explicit CT/T names.
+        // In a two-team round mode, never collapse both teams onto the same
+        // fallback anchor: use deterministic endpoints of the authored spawn
+        // list until the map receives explicit spawnpoint.CT/spawnpoint.T tags.
+        const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+        if (gm.teams.size() >= 2 && !d.teamSpawnsResolved) {
+            if (world.spawnPoints.size() >= 2) {
+                d.teamSpawnPoints[0].clear();
+                d.teamSpawnPoints[1].clear();
+                d.teamSpawnPoints[0].push_back(world.spawnPoints.front().position);
+                d.teamSpawnPoints[1].push_back(world.spawnPoints.back().position);
+                d.spawnA = d.teamSpawnPoints[0].front();
+                d.spawnB = d.teamSpawnPoints[1].front();
+                d.teamSpawnsResolved = true;
+                Debug::warn(Debug::Category::Duel,
+                    "[CS SPAWN] mode=%s has no CT/T tags; generic fallback uses first=%zu for CT and last=%zu for T\n",
+                    d.matchMode.c_str(), (size_t)0, world.spawnPoints.size() - 1);
+            } else {
+                Debug::error(Debug::Category::Duel,
+                    "[CS SPAWN] mode=%s missing separate team spawn points; map has only %zu generic point(s). Add spawnpoint.CT and spawnpoint.T nodes.\n",
+                    d.matchMode.c_str(), world.spawnPoints.size());
+            }
+        }
     }
     else
     {
         d.spawnA = glm::vec3(1.0f, 5.0f, 30.0f);
         d.spawnB = d.spawnA;
+        d.sharedAnchor = d.spawnA;
         Debug::warn(Debug::Category::Duel,
             "[DuelFallback] map=%s reason=no_spawn_points final=(%.3f,%.3f,%.3f)\n",
             d.mapId.c_str(), d.spawnA.x, d.spawnA.y, d.spawnA.z);
@@ -957,7 +997,9 @@ glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
 {
     static std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> dist(-d.spawnOffsetRadius, d.spawnOffsetRadius);
-    glm::vec3 base = d.spawnA;
+    // A teamless request (team < 0) uses the neutral map anchor, never a team
+    // cluster, so an unknown team cannot silently land on the CT spawn.
+    glm::vec3 base = d.sharedAnchor;
     if (team == 0 && !d.teamSpawnPoints[0].empty()) {
         std::uniform_int_distribution<size_t> pick(0, d.teamSpawnPoints[0].size() - 1);
         base = d.teamSpawnPoints[0][pick(rng)];
@@ -977,6 +1019,76 @@ glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
 glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d)
 {
     return gamemodeSpawnPoint(d, -1);
+}
+
+// ── Team identity source of truth ───────────────────────────────────
+// Resolve an actor's authoritative playing team from the single chain:
+// matchTeams -> matchActors.teamId -> ServerPlayer/ServerNpc mirror. Returns -1
+// when the team is unknown (the caller must not silently assume a team).
+int actorTeamOf(const ServerGamemodeState& d, uint32_t actorId,
+                const std::unordered_map<uint32_t, ServerPlayer>& players,
+                const std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    auto it = d.matchTeams.find(actorId);
+    if (it != d.matchTeams.end() && it->second >= 0) return it->second;
+    auto aIt = d.matchActors.find(actorId);
+    if (aIt != d.matchActors.end() && aIt->second.teamId >= 0) return aIt->second.teamId;
+    auto pIt = players.find(actorId);
+    if (pIt != players.end() && pIt->second.matchTeam >= 0) return pIt->second.matchTeam;
+    auto nIt = npcs.find(actorId);
+    if (nIt != npcs.end() && nIt->second.matchTeam >= 0) return nIt->second.matchTeam;
+    return -1;
+}
+
+// A valid playing team for the active mode: in range and not the Spectator
+// team. Capacity is NOT used (0 means "unlimited" per the schema).
+bool isValidPlayingTeam(const ServerGamemodeState& d, int team)
+{
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    if (team < 0 || team >= (int)gm.teams.size()) return false;
+    const GamemodeTeam& t = gm.teams[(size_t)team];
+    if (t.id == "spec" || t.role == "spectator") return false;
+    return true;
+}
+
+std::string spawnGroupForTeam(const ServerGamemodeState& d, int team)
+{
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    if (team >= 0 && team < (int)gm.teams.size())
+        return gm.teams[(size_t)team].spawnGroup;
+    return {};
+}
+
+// Team-validated spawn for one actor. In a team mode an unknown team is logged
+// loudly and falls back to the neutral anchor (never a team cluster, so a bad
+// team can never silently spawn on the CT spawn).
+glm::vec3 gamemodeSpawnPointForActor(
+    const ServerGamemodeState& d, uint32_t actorId,
+    const std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::unordered_map<uint32_t, ServerNpc>& npcs,
+    const char* reason)
+{
+    const int team = actorTeamOf(d, actorId, players, npcs);
+    std::string roleId;
+    auto aIt = d.matchActors.find(actorId);
+    if (aIt != d.matchActors.end()) roleId = aIt->second.roleId;
+
+    if (d.objectiveRounds && !isValidPlayingTeam(d, team)) {
+        Debug::error(Debug::Category::Duel,
+            "[RESPAWN] actor=%u role=%s team=%d reason=%s mode=%s: unknown team; using neutral anchor (refusing team-spawn fallback)\n",
+            actorId, roleId.empty() ? "none" : roleId.c_str(), team, reason,
+            d.matchMode.c_str());
+        return gamemodeSpawnPoint(d);
+    }
+
+    if (d.objectiveRounds) {
+        const std::string group = spawnGroupForTeam(d, team);
+        Debug::log(Debug::Category::Duel,
+            "[RESPAWN] actor=%u role=%s team=%d spawn_group=%s reason=%s\n",
+            actorId, roleId.empty() ? "none" : roleId.c_str(), team,
+            group.empty() ? "none" : group.c_str(), reason);
+    }
+    return gamemodeSpawnPoint(d, team);
 }
 
 void assignGamemodeParticipants(ServerGamemodeState& d,
@@ -1169,9 +1281,8 @@ bool reloadGamemodeMap(SOCKET sock,
     teleportGamemodeParticipantsToSpawns(d, players);
     for (Npc& npc : npcSystem.all())
     {
-        auto nTeamIt = d.matchTeams.find(npc.id);
-        const int nTeam = nTeamIt != d.matchTeams.end() ? nTeamIt->second : -1;
-        const glm::vec3 spawn = gamemodeSpawnPoint(d, nTeam);
+        const glm::vec3 spawn =
+            gamemodeSpawnPointForActor(d, npc.id, players, npcs, "map-change");
         npc.body.pos = spawn;
         npc.body.respawnPosition = spawn;
         npc.body.vel = glm::vec3(0.0f);
@@ -1196,9 +1307,7 @@ bool reloadGamemodeMap(SOCKET sock,
     for (auto& kv : players) {
         ServerPlayer& p = kv.second;
         if (p.spawnState != ServerPlayer::Active) continue;
-        auto pTeamIt = d.matchTeams.find(p.id);
-        const int pTeam = pTeamIt != d.matchTeams.end() ? pTeamIt->second : -1;
-        p.duelSpawnPos = gamemodeSpawnPoint(d, pTeam);
+        p.duelSpawnPos = gamemodeSpawnPointForActor(d, p.id, players, npcs, "map-change");
         p.hasDuelSpawnPos = true;
         beginAuthoritativeTransform(p, p.duelSpawnPos,
                                     SpawnVelocityConfig::instance().enabled()
@@ -1260,9 +1369,8 @@ bool rotateToNextGamemodeMap(SOCKET sock,
             teleportGamemodeParticipantsToSpawns(d, players);
             for (Npc& npc : npcSystem.all())
             {
-                auto nTeamIt = d.matchTeams.find(npc.id);
-                const int nTeam = nTeamIt != d.matchTeams.end() ? nTeamIt->second : -1;
-                const glm::vec3 spawn = gamemodeSpawnPoint(d, nTeam);
+                const glm::vec3 spawn =
+                    gamemodeSpawnPointForActor(d, npc.id, players, npcs, "map-rotate");
                 npc.body.pos = spawn;
                 npc.body.respawnPosition = spawn;
                 npc.body.vel = glm::vec3(0.0f);
@@ -1322,6 +1430,49 @@ std::string roundTeamRoleId(const Gamemode& gm, int team)
     if (team >= 0 && team < (int)gm.teams.size())
         return gm.teams[(size_t)team].role;
     return {};
+}
+
+// NPC combat profile the mode assigns: the gamemode NPC profile wins over the
+// role profile (explicit per-actor overrides are applied later by
+// serverResolveActorSpawnProfile). NPC-only; humans keep an empty profile.
+std::string resolveNpcBehaviorProfileId(const Gamemode& gm, const std::string& roleProfile)
+{
+    if (!gm.npcBehaviorProfile.empty() &&
+        BehaviorProfileRegistry::instance().get(gm.npcBehaviorProfile))
+        return gm.npcBehaviorProfile;
+    return roleProfile;
+}
+
+// Pure validation of a role/team/spawn-group assignment for a team mode.
+// Rejects a role that declares a different team, an unknown/spectator team, and
+// a role spawn group that disagrees with the team's. Returns true when valid.
+bool validateTeamRoleConsistency(const Gamemode& gm,
+                                 const MatchRoleDefinition* role,
+                                 int team, std::string& error)
+{
+    error.clear();
+    if (team < 0 || team >= (int)gm.teams.size()) {
+        error = "team " + std::to_string(team) + " is not a valid team for mode " + gm.id;
+        return false;
+    }
+    const GamemodeTeam& gt = gm.teams[(size_t)team];
+    if (gt.id == "spec" || gt.role == "spectator") {
+        error = "team " + std::to_string(team) + " is the spectator team";
+        return false;
+    }
+    if (!role) return true;
+    if (role->team >= 0 && role->team != team) {
+        error = "role " + role->id + " declares team " + std::to_string(role->team) +
+                " but was assigned team " + std::to_string(team);
+        return false;
+    }
+    if (!role->spawnGroup.empty() && !gt.spawnGroup.empty() &&
+        role->spawnGroup != gt.spawnGroup) {
+        error = "role " + role->id + " spawn_group " + role->spawnGroup +
+                " does not match team " + gt.id + " spawn_group " + gt.spawnGroup;
+        return false;
+    }
+    return true;
 }
 
 int roundTeamCapacity(const Gamemode& gm, int team)
@@ -1419,11 +1570,17 @@ void buildObjectiveRoster(ServerGamemodeState& d,
         desc.state = ActorState::Alive;
         desc.teamId = humanTeam;
         const std::string roleId = roundTeamRoleId(gm, humanTeam);
-        if (!roleId.empty() && MatchRoleRegistry::instance().get(roleId)) {
+        const MatchRoleDefinition* humanDef =
+            roleId.empty() ? nullptr : MatchRoleRegistry::instance().get(roleId);
+        std::string teamError;
+        if (!validateTeamRoleConsistency(gm, humanDef, humanTeam, teamError)) {
+            Debug::error(Debug::Category::Duel,
+                "[CS TEAM] human team assignment invalid: %s\n", teamError.c_str());
+        }
+        if (humanDef) {
             desc.roleId = roleId;
-            const MatchRoleDefinition* def = MatchRoleRegistry::instance().get(roleId);
-            desc.movementProfileId = def->movementPreset;
-            desc.weaponProfileId = def->weaponSet;
+            desc.movementProfileId = humanDef->movementPreset;
+            desc.weaponProfileId = humanDef->weaponSet;
         }
     }
 
@@ -1432,6 +1589,15 @@ void buildObjectiveRoster(ServerGamemodeState& d,
     for (int team = 0; team < 2; ++team) {
         const int npcCount = npcCounts[team];
         const std::string roleId = roundTeamRoleId(gm, team);
+        {
+            const MatchRoleDefinition* teamDef =
+                roleId.empty() ? nullptr : MatchRoleRegistry::instance().get(roleId);
+            std::string teamError;
+            if (!validateTeamRoleConsistency(gm, teamDef, team, teamError)) {
+                Debug::error(Debug::Category::Duel,
+                    "[CS TEAM] team %d role assignment invalid: %s\n", team, teamError.c_str());
+            }
+        }
         for (int i = 0; i < npcCount; ++i) {
             while (npcs.find(d.roundNextNpcId) != npcs.end()) ++d.roundNextNpcId;
             ServerNpc npc;
@@ -1451,7 +1617,7 @@ void buildObjectiveRoster(ServerGamemodeState& d,
                 const MatchRoleDefinition* def = MatchRoleRegistry::instance().get(roleId);
                 desc.movementProfileId = def->movementPreset;
                 desc.weaponProfileId = def->weaponSet;
-                desc.behaviorProfileId = def->behaviorProfile;
+                desc.behaviorProfileId = resolveNpcBehaviorProfileId(gm, def->behaviorProfile);
             }
             d.matchActors[npc.entityId] = std::move(desc);
             d.matchTeams[npc.entityId] = team;
@@ -1994,7 +2160,7 @@ void assignMatchParticipants(ServerGamemodeState& d,
                 desc.movementProfileId = def->movementPreset;
                 desc.weaponProfileId = def->weaponSet;
                 if (desc.controller == ActorController::Npc)
-                    desc.behaviorProfileId = def->behaviorProfile;
+                    desc.behaviorProfileId = resolveNpcBehaviorProfileId(gm, def->behaviorProfile);
             }
         }
     } else for (size_t i = 0; i < d.participants.size() && totalSlots > 0; ++i) {
@@ -2022,7 +2188,7 @@ void assignMatchParticipants(ServerGamemodeState& d,
             desc.movementProfileId = def->movementPreset;
             desc.weaponProfileId = def->weaponSet;
             if (desc.controller == ActorController::Npc)
-                desc.behaviorProfileId = def->behaviorProfile;
+                desc.behaviorProfileId = resolveNpcBehaviorProfileId(gm, def->behaviorProfile);
             if (def->team >= 0)
                 desc.teamId = def->team;
         }
@@ -2123,19 +2289,10 @@ void updateActorStates(ServerGamemodeState& d,
 
         desc.state = nextActorState(before, dead, respawns);
 
-        // One-life round mode: a dead actor joins the Spectator team until the
-        // round ends. The original team is kept in the assignment map for the
-        // next round (matchTeams is rebuilt at round start).
-        if (desc.state == ActorState::Spectating && !respawns && d.objectiveRounds) {
-            const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
-            for (size_t t = 0; t < gm.teams.size(); ++t) {
-                if (gm.teams[t].id == "spec" || gm.teams[t].role == "spectator") {
-                    d.matchTeams[kv.first] = (int)t;
-                    desc.teamId = (int)t;
-                    break;
-                }
-            }
-        }
+        // In a one-life round, Spectating is an actor STATE, not a replacement
+        // TEAM. Keep matchTeams and desc.teamId on the original CT/T team so
+        // elimination, objective ownership, and the next-round spawn resolver
+        // can still identify the actor's real side.
 
         if (desc.state != before) {
             auto nameOf = [](ActorState s) {
@@ -2162,9 +2319,9 @@ void resetGamemodeActorsAtMapSpawn(
     NpcSystem& npcSystem)
 {
     for (uint32_t pid : d.participants) {
-        auto teamIt = d.matchTeams.find(pid);
-        const int spawnTeam = teamIt != d.matchTeams.end() ? teamIt->second : -1;
-        const glm::vec3 spawn = gamemodeSpawnPoint(d, spawnTeam);
+        const int spawnTeam = actorTeamOf(d, pid, players, npcs);
+        const glm::vec3 spawn =
+            gamemodeSpawnPointForActor(d, pid, players, npcs, "round-reset");
         auto playerIt = players.find(pid);
         if (playerIt != players.end()) {
             ServerPlayer& p = playerIt->second;
@@ -2219,8 +2376,8 @@ void resetGamemodeActorsAtMapSpawn(
             if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
                 npc.tuning.aggression = npc.behavior.aggression;
             Debug::log(Debug::Category::NpcCombat,
-                "[NPC BEHAVIOR] actor=%u role=%s profile=%s aim=%.1f react=%.2f cadence=%.2f aggr=%.2f range=%.1f\n",
-                npc.id, profile.roleId.c_str(),
+                "[NPC BEHAVIOR] mode=%s actor=%u role=%s profile=%s aim=%.1f react=%.2f cadence=%.2f aggr=%.2f range=%.1f\n",
+                d.matchMode.c_str(), npc.id, profile.roleId.c_str(),
                 profile.behaviorProfileId.empty() ? "default" : profile.behaviorProfileId.c_str(),
                 npc.behavior.aimErrorDeg, npc.behavior.reactionDelay,
                 npc.behavior.fireCadenceMultiplier, npc.behavior.aggression,
@@ -3159,15 +3316,14 @@ void serverGamemodeTick(SOCKET sock,
         // The victim's respawn delay/state was assigned by the lethal damage
         // path (server-damage / server-npcs). Here we only pin the respawn
         // anchor; do NOT zero the timer or the gamemode delay would be lost.
-        // The anchor MUST be the victim's own team spawn: pinning the shared
-        // (team -1) anchor would send the opposite team to the CT cluster.
-        auto victimTeamIt = d.matchTeams.find(victimId);
-        const int victimTeam = victimTeamIt != d.matchTeams.end()
-            ? victimTeamIt->second : -1;
+        // The anchor MUST be the victim's own team spawn, resolved through the
+        // single team source of truth (never the killer/local/nearest/default).
+        const glm::vec3 victimSpawn =
+            gamemodeSpawnPointForActor(d, victimId, players, npcs, "kill");
         auto victimIt = players.find(victimId);
         if (!d.pendingVictimIsNpc && victimIt != players.end())
         {
-            victimIt->second.duelSpawnPos = gamemodeSpawnPoint(d, victimTeam);
+            victimIt->second.duelSpawnPos = victimSpawn;
         }
         else if (d.pendingVictimIsNpc)
         {
@@ -3175,7 +3331,7 @@ void serverGamemodeTick(SOCKET sock,
             // later map change cannot resurrect it into stale/void space.
             for (Npc& n : npcSystem.all()) {
                 if (n.id == victimId) {
-                    n.body.respawnPosition = gamemodeSpawnPoint(d, victimTeam);
+                    n.body.respawnPosition = victimSpawn;
                     break;
                 }
             }
@@ -3333,9 +3489,8 @@ void serverGamemodeTick(SOCKET sock,
                     // Spawn the human at their team spawn for warmup.
                     for (auto& kv : players) {
                         if (kv.second.spawnState != ServerPlayer::Active) continue;
-                        auto teamIt = d.matchTeams.find(kv.first);
-                        const int team = teamIt != d.matchTeams.end() ? teamIt->second : -1;
-                        const glm::vec3 spawn = gamemodeSpawnPoint(d, team);
+                        const glm::vec3 spawn =
+                            gamemodeSpawnPointForActor(d, kv.first, players, npcs, "warmup");
                         kv.second.duelSpawnPos = spawn;
                         kv.second.hasDuelSpawnPos = true;
                         beginAuthoritativeTransform(kv.second, spawn, glm::vec3(0.0f),
@@ -3826,6 +3981,18 @@ bool serverSpawnTagSelfTest(std::string& report)
     if (spawnTagTeamIndex("spawnpoint.011") != -1) fail("numbered spawnpoint should be teamless (-1)");
     if (spawnTagTeamIndex("randomspawn") != -1) fail("plain spawn should be teamless (-1)");
     if (spawnTagTeamIndex("spawnpoint") != -1) fail("bare spawnpoint should be teamless (-1)");
+
+    // Team -> spawn group resolution for Counter-Strike. Ensure the gamemode
+    // registry is loaded (this selftest may run before the main startup load).
+    GamemodeRegistry::instance().loadDirectory("config/gamemodes");
+    ServerGamemodeState sd;
+    sd.matchMode = "counterstrike";
+    if (spawnGroupForTeam(sd, 0) != "ct_spawn") fail("team 0 spawn_group != ct_spawn");
+    if (spawnGroupForTeam(sd, 1) != "t_spawn") fail("team 1 spawn_group != t_spawn");
+    if (!isValidPlayingTeam(sd, 0) || !isValidPlayingTeam(sd, 1))
+        fail("CT/T should be valid playing teams");
+    if (isValidPlayingTeam(sd, 2)) fail("spectator should not be a playing team");
+
     report += ok ? "PASS\n" : "FAIL\n";
     return ok;
 }
@@ -3840,6 +4007,7 @@ bool serverCounterStrikeRoundSelfTest(std::string& report)
     d.matchMode = "counterstrike";
     MatchRoleRegistry::instance().load("config/roles.json");
     MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+    BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     WeaponData::registerBuiltinWeapons();
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
 
@@ -3857,6 +4025,48 @@ bool serverCounterStrikeRoundSelfTest(std::string& report)
         if (gm.teams[0].capacity != 5 || gm.teams[1].capacity != 5) fail("playing team capacity != 5");
         if (gm.teams[2].displayName != "Spectator") fail("team 2 display name");
         if (gm.teams[2].capacity != 0) fail("spectator capacity != 0");
+    }
+
+    // Goal 1: gamemode NPC behavior profile + precedence (mode beats role).
+    report += "npc_behavior_profile=" + gm.npcBehaviorProfile + "\n";
+    if (gm.npcBehaviorProfile != "rage2") fail("counterstrike npc_behavior_profile != rage2");
+    if (resolveNpcBehaviorProfileId(gm, "balanced") != "rage2")
+        fail("gamemode profile should override the role profile");
+    if (resolveNpcBehaviorProfileId(Gamemode{}, "balanced") != "balanced")
+        fail("no mode profile should keep the role profile");
+
+    // Goal 2: mode-level targeting.
+    report += "npc_targeting=" + gm.npcTargeting.mode + "\n";
+    if (!gm.npcTargeting.configured) fail("npc_targeting block not configured");
+    if (gm.npcTargeting.mode != "opposite_team") fail("npc_targeting.mode != opposite_team");
+    if (!gm.npcTargeting.includePlayers || !gm.npcTargeting.includeNpcs)
+        fail("npc_targeting should include players and npcs");
+
+    // Goal 4: mode-level aim FOV.
+    if (!gm.aimFov.enabled) fail("camera.aim_fov.enabled not set");
+    if (std::fabs(gm.aimFov.multiplier - 0.5f) > 1e-5f) fail("aim_fov multiplier != 0.5");
+    if (std::fabs(gm.aimFov.duration - 0.5f) > 1e-5f) fail("aim_fov duration != 0.5");
+    if (gm.aimFov.easing != "ease_in_out") fail("aim_fov easing != ease_in_out");
+
+    // Goal 3: team identity validation and neutral anchor.
+    if (!isValidPlayingTeam(d, 0) || !isValidPlayingTeam(d, 1))
+        fail("CT/T should be valid playing teams");
+    if (isValidPlayingTeam(d, 2)) fail("spectator must not be a valid playing team");
+    if (isValidPlayingTeam(d, -1)) fail("unknown team must not be valid");
+    {
+        const MatchRoleDefinition* ct = MatchRoleRegistry::instance().get("counter_terrorist");
+        const MatchRoleDefinition* t = MatchRoleRegistry::instance().get("terrorist");
+        std::string err;
+        if (!validateTeamRoleConsistency(gm, ct, 0, err))
+            fail("counter_terrorist/team0 should be consistent: " + err);
+        if (!validateTeamRoleConsistency(gm, t, 1, err))
+            fail("terrorist/team1 should be consistent: " + err);
+        if (validateTeamRoleConsistency(gm, t, 0, err))
+            fail("terrorist/team0 must be rejected");
+        if (validateTeamRoleConsistency(gm, ct, 1, err))
+            fail("counter_terrorist/team1 must be rejected");
+        if (validateTeamRoleConsistency(gm, ct, -1, err))
+            fail("team -1 must be rejected");
     }
     if (!(gm.victoryCondition == "rounds")) fail("victoryCondition != rounds");
     if (gm.rounds.roundsToWin != 8) fail("rounds_to_win != 8");
@@ -4003,9 +4213,8 @@ void serverRespawnAllActors(SOCKET sock,
     for (auto& kv : players) {
         ServerPlayer& player = kv.second;
         if (player.spawnState != ServerPlayer::Active) continue;
-        auto pTeamIt = d.matchTeams.find(player.id);
-        const int pTeam = pTeamIt != d.matchTeams.end() ? pTeamIt->second : -1;
-        player.duelSpawnPos = gamemodeSpawnPoint(d, pTeam);
+        player.duelSpawnPos =
+            gamemodeSpawnPointForActor(d, player.id, players, npcs, "respawn-all");
         player.hasDuelSpawnPos = true;
         player.pos = player.duelSpawnPos;
         completeAuthoritativeSpawn(sock, player, false);

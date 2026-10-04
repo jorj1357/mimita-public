@@ -29,6 +29,7 @@
 #include "world/world.h"
 #include "game/duel.h"
 #include "duel/duel-queue.h"
+#include "network/community-match-client.h"
 #include "game/spawn-utils.h"
 #include "game/spawn-override.h"
 #include "effects/effect-part.h"
@@ -370,7 +371,11 @@ void DeathSystem::update(
         // TODO-DELETE (single-player): drop the offline DuelManager respawn gate.
         bool duelModeActive =
             gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
-        bool networkDuelActive = DuelQueue::instance().inDuel();
+        // Directly connected community servers (including Counter-Strike)
+        // do not pass through DuelQueue. Their replicated mode is still
+        // authoritative, so local DeathSystem must never auto-respawn them.
+        bool networkDuelActive = DuelQueue::instance().inDuel() ||
+            MimitaNet::CommunityMatchClient::instance().active();
 
         bool shouldRespawn =
             !duelModeActive && !networkDuelActive;
@@ -401,7 +406,8 @@ void DeathSystem::update(
         // TODO-DELETE (single-player): drop the offline DuelManager respawn gate.
         bool duelModeActive =
             gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
-        bool networkDuelActive = DuelQueue::instance().inDuel();
+        bool networkDuelActive = DuelQueue::instance().inDuel() ||
+            MimitaNet::CommunityMatchClient::instance().active();
 
         bool shouldRespawn =
             !duelModeActive && !networkDuelActive;

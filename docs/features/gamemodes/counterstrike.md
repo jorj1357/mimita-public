@@ -982,3 +982,94 @@ Evidence:
 
 Next: human Counter-Strike map test of the ramp/wall scenario and general
 navigation regression.
+
+### Attempt 15 — NPC teams, Rage2 profile, team targeting, RMB aim zoom
+
+Tried:
+- `config/gamemodes/counterstrike.json`: added `npc_behavior_profile: "rage2"`,
+  an `npc_targeting` block (`opposite_team`, include players + NPCs), and a
+  `camera.aim_fov` block (`enabled`, `right_mouse`, multiplier 0.5, duration
+  0.5, ease_in_out).
+- New pure owners `src/npc/npc-targeting.*` (team hostility + nearest-hostile
+  selection) and `src/entities/aim-fov.*` (RMB FOV blend/easing/apply).
+- `GamemodeNpcTargeting` + `GamemodeAimFov` parsed in `gamemode.*`.
+- `serverResolveActorSpawnProfile` precedence is now explicit > gamemode > role
+  (role no longer overwrites the mode profile); `[NPC BEHAVIOR]` logs `mode=`.
+- `server-npcs.cpp` builds an effective targeting policy (mode block, else the
+  legacy `npc-difficulty.json` fallback), gates players/NPCs by inclusion, and
+  uses the shared hostility predicate.
+- Team source of truth `actorTeamOf`/`isValidPlayingTeam`/
+  `gamemodeSpawnPointForActor`; every kill/map-change/reset/warmup path resolves
+  the actor's own team. A neutral `sharedAnchor` removes the silent CT fallback;
+  `[CS SPAWN]` errors when a team mode lacks team spawn tags;
+  `validateTeamRoleConsistency` rejects swapped/invalid team roles.
+- Camera uses the mode FOV override when enabled (raw RMB, independent of the
+  aim-body mode), resets the blend on mode change/death/respawn/leave, and keeps
+  the aimbody fallback otherwise. Spectator camera untouched.
+
+Went right:
+- One pure targeting owner and one pure FOV owner keep the logic testable and
+  avoid hard-coding CT vs T.
+- CS no longer depends on the global npc-difficulty targeting values; other
+  modes keep their exact previous behavior.
+
+Went wrong / watch out:
+- `--spawn-tag-selftest` initially ran before the gamemode registry loaded; it
+  now loads `config/gamemodes` itself.
+- `--actor-preset-selftest` still fails on pre-existing weapon-value
+  assertions, unrelated to this change.
+- Target stickiness/scoring is unchanged; the pure `selectNpcTargetId` is used
+  for the hostility predicate and tests.
+
+Evidence:
+- Build: `BUILD SUCCESS` (server-gamemode.cpp recompiled + relink).
+- Pure: `npc-targeting-test` PASS (23), `aim-fov-test` PASS (13).
+- Runtime: targeting/aim-fov/cs-round/spawn-tag/gamemode/navigation/search/
+  radar/nav-request/acceptance all PASS.
+- Human playtest: pending (see changelog
+  `docs/changelog/2026-10-04/20261004_221801-counterstrike-npc-teams-targeting-aimzoom.md`).
+
+Next: live Counter-Strike match — verify CT/T targeting, per-team respawns,
+`profile=rage2` logs, and CS-only RMB zoom.
+
+### Attempt 15 — death spectator no longer blacks out the world
+
+Triggered by human report: dying in Counter-Strike and entering the death
+spectator/freecam made the world black while the HUD and other actors stayed
+visible, every death.
+
+Tried:
+- Root cause: the fullscreen black spawn-flash quad in
+  `src/engine/engine-tick-render.cpp:458` (drawn after the world, before actors)
+  is gated only by `player.spawnFlashTimer > 0.0f`. That timer's only decrement
+  owner was `simulateTick`, which the death spectator's forced gameplay freecam
+  skips. The local host's `DeathSystem::update` locally respawns a networked
+  one-life player (it checks only `DuelQueue`, not the gamemode rule), arming
+  the flash at death; the forced freecam then froze it. The world always
+  rendered; it was covered.
+- Moved the decay to `engineTickState` (runs every render frame regardless of
+  freecam/death), frame-rate independent (`dt * 60.0f`, same duration as the old
+  one-per-fixed-tick), and removed the `simulateTick` copy so one owner remains.
+- No change needed for the spectator team or camera: `counterstrike.json`
+  already has `respawn_seconds: 0` and a `spec` team; `updateActorStates`
+  already moves a dead non-respawning actor to Spectator during objective
+  rounds; the camera already forces spectator freecam from replicated state.
+
+Went right:
+- The fix is one guaranteed-owner decay and cannot wedge; it also fixes any
+  other path that skipped `simulateTick` with a live spawn flash.
+
+Went wrong / watch out:
+- The local host's `DeathSystem::update` still locally respawns a networked
+  one-life actor; that is a separate lifecycle defect and is why the flash is
+  armed at death. Not addressed here to keep the patch minimal and focused on
+  the reported black.
+
+Evidence:
+- Build: `BUILD SUCCESS`; `mimita.exe` relinked.
+- Runtime: not performed.
+- Human playtest: pending.
+
+Next: human test — die in Counter-Strike and confirm the world stays visible and
+other actors keep moving while spectating. Changelog:
+`docs/changelog/2026-10-04/20261004_220150-counterstrike-death-spectator-black-fix.md`.

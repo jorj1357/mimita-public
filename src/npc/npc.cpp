@@ -1505,13 +1505,19 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             {
                 if (policy)
                 {
-                    // Local turn (already applied by wallAvoidDirection) then a
-                    // repath. No random wandering, no reflexive jump or dash.
+                    // Keep the correction local, but do not let a policy NPC
+                    // sit forever against a crate, ramp lip, or corner. A
+                    // repeated jump is a bounded escape attempt; the movement
+                    // policy still decides whether jumping is allowed below.
+                    if (npc.sensors.touchFloor && glm::length(moveDir) > 0.1f) {
+                        jump = true;
+                        jumpReason = NpcJumpReason::Obstacle;
+                    }
                     npc.navigator.requestRepath();
                     npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
                     std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
                     Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,
-                        "[NPC NAV] actor=%u stuck=1 recovery=local_turn_repath\n", npc.id);
+                        "[NPC NAV] actor=%u stuck=1 recovery=jump_turn_repath\n", npc.id);
                 }
                 else
                 {
