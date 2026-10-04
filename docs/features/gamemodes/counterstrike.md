@@ -936,3 +936,49 @@ Evidence:
 
 Next: human acceptance of the 10 checklist items in
 `docs/specs/20261003-counterstrike-fixpass3-handoff.md`.
+
+### Attempt 14 — automatic NPC surface navigation
+
+Tried:
+- Added actor-preset `navigation` settings (`src/npc/npc-navigation-settings.*`)
+  and a pure surface classifier (`src/npc/npc-surface.*`); parsed the block in
+  `match-roles.*` and live-resolved it via `activeNavigationSettings` in
+  `npc.cpp`. `config/actor-presets/counter_strike.json` gains the `navigation`
+  block (shared slope rule, no 45-degree override).
+- Rebuilt `NpcNavigator::planLocalPath` as a multi-surface A*: each cell keeps
+  stacked walkable surfaces, every connection is edge-validated (clearance ray,
+  step/slope/drop rules), and jump links require
+  `allowNavigationJumps && npcPolicyAllowsJump(policy, Navigation)` plus a
+  clear landing (unless `allow_wall_jump`). Continuous ramps are walked even
+  when the per-cell rise exceeds the step height.
+- Removed the unconditional direct-steer fallback. A blocked route with no path
+  now turns (`blocked_behavior`) or holds and retries after a short delay, and
+  traversal cannot override it with a jump/dash into the wall.
+- Added `NavCapability` tags on path segments and `--npc-navigation-selftest`
+  plus `tests/npc-navigation-test.cpp`.
+
+Went right:
+- The rolling local planner stays the single navigation owner; no global graph.
+- Surface generation reuses the existing cached broadphase candidate gather.
+- Policy gating at the planner level (not just at execution) means a
+  `jump_style:"never"` actor cannot receive a jump route.
+
+Went wrong / watch out:
+- `max_walkable_slope_degrees: 45` from the spec was intentionally not set in
+  the CS preset; the shared physics rule (dot 0.80, ~36.9 deg) is used so the
+  planner and body agree.
+- Multi-surface columns and edge rays are heavier than the old single-probe
+  grid; bounded by the global 16 plans/s token. Profile if needed.
+- Future movement types (crawl/fly/roll/teleport) carry capability tags only.
+
+Evidence:
+- Build: background dev-loop relinked `mimita.exe` (17:05:43).
+- Pure: `build/npc-navigation-test.exe` PASS (34 checks).
+- Runtime: `--npc-navigation-selftest` PASS (13 checks); policy/search/radar/
+  nav-request/acceptance all PASS. `--actor-preset-selftest` still FAILs only on
+  the pre-existing revolver assertion.
+- Human playtest: pending (ramp + wall scenario in
+  `docs/changelog/2026-10-04/20261004_210905-automatic-npc-surface-navigation.md`).
+
+Next: human Counter-Strike map test of the ramp/wall scenario and general
+navigation regression.

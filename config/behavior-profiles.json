@@ -6,22 +6,39 @@
 * Does NOT contain role/team/health/loadout/movement data.
 */
 {
+  // Every profile uses the same fields. The comments in the balanced profile
+  // explain the meaning of each field; the other profiles use those same
+  // meanings with different numbers.
   "profiles": [
     {
+      // Aiming: smaller aim_error_deg = more accurate shooting.
       "id": "balanced",
       "aim_error_deg": 5.0,
+      // Seconds to wait before reacting to a newly seen target.
       "reaction_delay": 0.15,
+      // Shooting speed multiplier: 1.0 = normal, 2.0 = twice as fast.
       "fire_cadence_multiplier": 1.0,
+      // Attack willingness: 0.0 = passive, 1.0 = very aggressive.
       "aggression": 0.6,
+      // Preferred distance during visible combat. This is not movement speed.
       "preferred_range": 12.0,
+      // Target selection: bonus for keeping the current target.
       "target_stickiness": 0.3,
+      // How much better a new target must be before switching to it.
       "target_switch_threshold": 0.15,
+      // Prefer targets that are already hurt.
       "low_health_target_bias": 0.2,
+      // Prefer targets that are dangerous to the NPC.
       "threat_bias": 0.2,
+      // Prefer closer targets. 0.0 = ignore distance; larger = care more.
       "distance_target_bias": 1.0,
+      // Weapon selection: prefer weapons whose range fits the target distance.
       "weapon_range_bias": 1.0,
+      // Prefer weapons that deal more damage.
       "weapon_damage_bias": 0.4,
+      // Prefer safer/ranged weapons instead of risky close combat.
       "weapon_safety_bias": 0.4,
+      // How much better another weapon must be before switching.
       "weapon_switch_threshold": 0.1,
       // "forget_when_hidden" = stop using memory as soon as line of sight is lost.
       // "last_known_position" = go to the last seen position, then look around.
@@ -33,24 +50,61 @@
       // true = use the remembered lastKnownPosition as the Chase destination.
       "pursue_last_known_position": true,
       // "look_around" = Circle/search at the point; "patrol" = continue forward;
+      // "continue_pursuit" = keep Chase active after reaching the point and
+      // search locally for pursuit_search_ticks before returning to patrol;
       // "stop" = do not circle once the point is reached.
-      "after_reaching_last_known": "look_around"
+      // Number of fixed 60 Hz ticks to search after reaching lastKnownPosition.
+      "pursuit_search_ticks": 600,
+      "after_reaching_last_known": "look_around",
+      // Target information through walls. Possible values:
+      // "none" = no memory; "memory" = normal sight plus memory;
+      // "sound" = normal memory plus sound investigation;
+      // "radar" = delayed/imperfect position knowledge through walls;
+      // "perfect_radar" = exact current position knowledge through walls.
+      "information_mode": "memory",
+      // Radar delay in fixed 60 Hz ticks. 0 = current information.
+      "radar_delay_ticks": 0,
+      // Random positional error added to radar knowledge, in meters.
+      "radar_error_meters": 0.0,
+      // "normal" = use perceptionMemoryTicks; "long" = use radar_memory_ticks;
+      // "never" = keep memory until the target is invalid/dead.
+      "radar_memory_mode": "normal",
+      "radar_memory_ticks": 1800,
+      // Number of recent target positions used for delayed radar/path history.
+      "remembered_path_points": 12,
+      // true = continue moving along the target's last known velocity while hidden.
+      "continue_predicted_path": false
     },
-     {
+    {
+      // Rage2 is a custom profile. Its id is selected by Sandbox JSON.
       "id": "rage2",
+      // Nearly perfect aim. Increase this to make shots less accurate.
       "aim_error_deg": 0.01,
+      // Almost no reaction delay.
       "reaction_delay": 0.01,
+      // Normal shooting speed.
       "fire_cadence_multiplier": 1.0,
+      // Very aggressive combat decisions.
       "aggression": 0.99,
+      // Desired visible-combat distance, not a command to run faster.
       "preferred_range": 0.01,
+      // Strongly prefers to keep the same target.
       "target_stickiness": 0.99,
+      // A new target needs a much better score before it can replace you.
       "target_switch_threshold": 0.8,
+      // Slight preference for already-damaged targets.
       "low_health_target_bias": 0.25,
+      // Slight preference for dangerous targets.
       "threat_bias": 0.25,
+      // Very little preference for closer targets.
       "distance_target_bias": 0.01,
+      // Range matters very little when choosing a weapon.
       "weapon_range_bias": 0.01,
+      // Moderate preference for weapon damage.
       "weapon_damage_bias": 0.4,
+      // Moderate preference for weapon safety.
       "weapon_safety_bias": 0.4,
+      // Small weapon-switch requirement.
       "weapon_switch_threshold": 0.1,
       // "forget_when_hidden" = stop using memory as soon as line of sight is lost.
       // "last_known_position" = go to the last seen position, then look around.
@@ -63,9 +117,21 @@
       "pursue_last_known_position": true,
       // "look_around" = Circle/search at the point; "patrol" = continue forward;
       // "stop" = do not circle once the point is reached.
-      "after_reaching_last_known": "patrol"
+      // Search duration after reaching the last-known position, in 60 Hz ticks.
+      "pursuit_search_ticks": 600,
+      "after_reaching_last_known": "continue_pursuit",
+      // Rage2 has perfect target knowledge through walls, but still cannot
+      // shoot until the shared real line-of-sight check says the target is visible.
+      "information_mode": "perfect_radar",
+      "radar_delay_ticks": 0,
+      "radar_error_meters": 0.0,
+      "radar_memory_mode": "never",
+      "radar_memory_ticks": 1800,
+      "remembered_path_points": 32,
+      "continue_predicted_path": true
     },
     {
+      // Faster, more attacking profile that still prefers a reasonable combat range.
       "id": "aggressive",
       "aim_error_deg": 3.0,
       "reaction_delay": 0.08,
@@ -84,9 +150,11 @@
       "pursuit_mode": "persistent",
       "continue_through_cover": true,
       "pursue_last_known_position": true,
+      "pursuit_search_ticks": 600,
       "after_reaching_last_known": "look_around"
     },
     {
+      // Extremely accurate, persistent pursuit profile.
       "id": "rage",
       "aim_error_deg": 0.01,
       "reaction_delay": 0.01,
@@ -105,9 +173,11 @@
       "pursuit_mode": "persistent",
       "continue_through_cover": true,
       "pursue_last_known_position": true,
+      "pursuit_search_ticks": 600,
       "after_reaching_last_known": "look_around"
     },
     {
+      // Cautious profile: losing sight cancels pursuit and returns to patrol.
       "id": "nervous",
       "aim_error_deg": 8.0,
       "reaction_delay": 0.25,
@@ -126,6 +196,7 @@
       "pursuit_mode": "forget_when_hidden",
       "continue_through_cover": false,
       "pursue_last_known_position": false,
+      "pursuit_search_ticks": 600,
       "after_reaching_last_known": "patrol"
     }
   ]

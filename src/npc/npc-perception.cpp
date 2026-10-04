@@ -78,7 +78,7 @@ void updateMemory(MemoryRecord& memory,
                   float dt,
                   const PerceptionTuning& tuning)
 {
-    if (snapshot.visible) {
+    if (snapshot.visible || snapshot.radarKnown) {
         memory.hasMemory = true;
         memory.lastKnownPosition = candidatePos;
         memory.lastKnownVelocity = candidateVel;

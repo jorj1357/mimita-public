@@ -23,13 +23,26 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
     // used zero here, which normalized to +X and made Chase run in an
     // unrelated direction after the player went behind cover.
     const bool hasRememberedTarget = !sensors.hasTarget && npc.targetMemory.hasMemory;
-    const glm::vec3 rememberedTarget = npc.targetMemory.lastKnownPosition;
+    glm::vec3 rememberedTarget = npc.targetMemory.lastKnownPosition;
+    if (hasRememberedTarget && npc.behavior.active &&
+        npc.behavior.continuePredictedPath)
+    {
+        // When the target is hidden and radar is delayed or unavailable, keep
+        // moving along the target's last known travel direction instead of
+        // stopping at the first corner.
+        const float predictionSeconds = std::min(npc.targetMemory.ageSeconds, 1.5f);
+        rememberedTarget += npc.targetMemory.lastKnownVelocity * predictionSeconds;
+    }
     glm::vec3 toTarget = sensors.hasTarget
         ? sensors.predictedTarget - npc.body.pos
         : (hasRememberedTarget ? rememberedTarget - npc.body.pos : glm::vec3{0.0f});
     toTarget.z = 0.0f;
     float toTargetLen = glm::length(toTarget);
     glm::vec3 chaseDir = toTargetLen > 0.001f ? toTarget / toTargetLen : glm::vec3{1.0f, 0.0f, 0.0f};
+    if (npc.stateMachine.pursuitSearchActive &&
+        glm::length(npc.stateMachine.pursuitSearchDir) > 0.001f)
+        chaseDir = glm::normalize(glm::vec3(npc.stateMachine.pursuitSearchDir.x,
+                                            npc.stateMachine.pursuitSearchDir.y, 0.0f));
     glm::vec3 lateral{-chaseDir.y, chaseDir.x, 0.0f};
 
     float dist = sensors.targetDistance;

@@ -89,6 +89,17 @@ const NpcMovementPolicy* activeMovementPolicy(const Npc& npc)
     return &preset->movementPolicy;
 }
 
+const NpcNavigationSettings* activeNavigationSettings(const Npc& npc)
+{
+    if (npc.actorPresetId.empty())
+        return nullptr;
+    const MatchRoleDefinition* preset =
+        MatchRoleRegistry::instance().getActorPreset(npc.actorPresetId);
+    if (!preset || !preset->navigationSettings.configured)
+        return nullptr;
+    return &preset->navigationSettings;
+}
+
 bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def, bool targetCanSeeMe)
 {
     const auto& cfg = NpcDifficultyConfig::instance().settings();
@@ -141,16 +152,21 @@ static float reactionDelayForDifficulty(float difficulty) {
 }
 
 static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
-                                const glm::vec3& currentVel, float delaySeconds) {
-    if (delaySeconds <= 0.001f || npc.posRingCount == 0)
+                                const glm::vec3& currentVel, float delaySeconds,
+                                int rememberedPathPoints,
+                                glm::vec3* outVelocity = nullptr) {
+    if (delaySeconds <= 0.001f || npc.posRingCount == 0) {
+        if (outVelocity) *outVelocity = currentVel;
         return currentPos;
+    }
 
     int tail = (npc.posRingHead - 1 + Npc::MAX_HISTORY_SAMPLES) % Npc::MAX_HISTORY_SAMPLES;
     float targetTime = npc.posRing[tail].time - delaySeconds;
     glm::vec3 bestPos = currentPos;
     glm::vec3 bestVel = currentVel;
 
-    int count = std::min(npc.posRingCount, Npc::MAX_HISTORY_SAMPLES);
+    int count = std::clamp(rememberedPathPoints, 1, Npc::MAX_HISTORY_SAMPLES);
+    count = std::min(npc.posRingCount, count);
     for (int j = 0; j < count; ++j) {
         int i = (tail - j + Npc::MAX_HISTORY_SAMPLES) % Npc::MAX_HISTORY_SAMPLES;
         const auto& s = npc.posRing[i];
@@ -170,6 +186,7 @@ static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
     }
 
     float predictTime = delaySeconds * (1.0f - std::clamp((npc.difficulty / 10.0f), 0.0f, 1.0f));
+    if (outVelocity) *outVelocity = bestVel;
     return bestPos + bestVel * predictTime;
 }
 
@@ -178,6 +195,20 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
     NpcSensorContext sensors;
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
     sensors.touchFloor = npc.body.ground.hasWorldContact;
+
+    // The authoritative server mirrors either a human player or an NPC into
+    // `player`, so this one perception path supports both NPC-vs-player and
+    // NPC-vs-NPC radar. A target switch must never inherit the old target's
+    // trail or last-known position.
+    if (npc.perceptionTargetId != npc.serverTargetId) {
+        npc.perceptionTargetId = npc.serverTargetId;
+        npc.posRingHead = 0;
+        npc.posRingCount = 0;
+        npc.targetMemory = MemoryRecord{};
+        npc.belief = BeliefState{};
+        npc.stateMachine.lastKnownTarget = npc.body.pos;
+        npc.stateMachine.lastKnownAge = 0.0f;
+    }
 
     {
         int i = npc.posRingHead;
@@ -228,10 +259,49 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
 
     const glm::vec3 facing = glm::length(npc.currentFacing) > 0.0001f
         ? npc.currentFacing : glm::vec3(1.0f, 0.0f, 0.0f);
-    const PerceptionSnapshot snap = perceive(
+    PerceptionSnapshot snap = perceive(
         npc, candidateValid, player.pos, player.vel, facing, losBlocked, tuning);
     npc.perception = snap;
-    updateMemory(npc.targetMemory, snap, player.pos, player.vel, dt, tuning);
+
+    const NpcBehaviorTuning& behavior = npc.behavior;
+    const bool radarMode = behavior.active &&
+        (behavior.informationMode == "radar" ||
+         behavior.informationMode == "perfect_radar");
+    const bool perfectRadar = behavior.informationMode == "perfect_radar";
+    glm::vec3 knownPos = player.pos;
+    glm::vec3 knownVel = player.vel;
+    if (radarMode && candidateValid) {
+        const float delaySeconds = perfectRadar
+            ? 0.0f
+            : (float)behavior.radarDelayTicks / 60.0f;
+        knownPos = delayedTarget(npc, player.pos, player.vel, delaySeconds,
+                                 behavior.rememberedPathPoints, &knownVel);
+        if (behavior.radarErrorMeters > 0.0f)
+            knownPos = predictTargetPosition(knownPos, glm::vec3(0.0f), 0.0f,
+                                             behavior.radarErrorMeters, npc.id);
+        snap.radarKnown = !snap.visible;
+    }
+
+    // Radar is knowledge, not vision. It can update pursuit memory, but
+    // snap.visible remains false behind a wall so combat cannot shoot through
+    // cover. `never` is cleared when the authoritative target becomes invalid.
+    if (snap.visible) {
+        updateMemory(npc.targetMemory, snap, player.pos, player.vel, dt, tuning);
+    } else if (radarMode && candidateValid) {
+        PerceptionSnapshot radarSnapshot = snap;
+        radarSnapshot.radarKnown = true;
+        const int radarMemoryTicks = behavior.radarMemoryMode == "long"
+            ? behavior.radarMemoryTicks : tuning.memoryTicks;
+        PerceptionTuning radarTuning = tuning;
+        radarTuning.memoryTicks = radarMemoryTicks;
+        updateMemory(npc.targetMemory, radarSnapshot, knownPos, knownVel, dt, radarTuning);
+    } else if (radarMode && behavior.radarMemoryMode == "never") {
+        npc.targetMemory = MemoryRecord{};
+    } else if (behavior.active && behavior.informationMode == "none") {
+        npc.targetMemory = MemoryRecord{};
+    } else {
+        updateMemory(npc.targetMemory, snap, player.pos, player.vel, dt, tuning);
+    }
 
     // Aim error grows with uncertainty: a remembered, unseen target is aimed
     // at less precisely than a currently visible one.
@@ -261,13 +331,17 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
     sensors.targetDistance = glm::length(sensors.toTarget);
 
     // Keep the legacy lastKnown fields for the search state machine.
-    if (snap.visible) {
+    if (snap.visible || (radarMode && candidateValid)) {
         npc.stateMachine.lastKnownTarget = player.pos;
         npc.stateMachine.lastKnownAge = 0.0f;
+        npc.stateMachine.pursuitSearchActive = false;
+        npc.stateMachine.pursuitSearchTimer = 0.0f;
     } else if (npc.belief.hasTarget) {
         npc.stateMachine.lastKnownAge = npc.targetMemory.ageSeconds;
     } else {
         npc.stateMachine.lastKnownAge += dt;
+        npc.stateMachine.pursuitSearchActive = false;
+        npc.stateMachine.pursuitSearchTimer = 0.0f;
     }
 
     npc.sensors = sensors;
@@ -370,7 +444,11 @@ NpcGoal makeNavGoal(const Npc& npc)
     if (!npc.sensors.hasTarget) {
         if (npc.stateMachine.currentState == NpcState::Chase) {
             goal.kind = NpcGoalKind::ReachPosition;
-            goal.targetPos = npc.stateMachine.lastKnownTarget;
+            // Perception memory is the canonical visual last-known position.
+            // Do not let a later hearing report redirect a continuing pursuit.
+            goal.targetPos = npc.targetMemory.hasMemory
+                ? npc.targetMemory.lastKnownPosition
+                : npc.stateMachine.lastKnownTarget;
         } else if (npc.stateMachine.currentState == NpcState::Patrol) {
             // Project a forward waypoint along the chosen patrol heading so the
             // navigator can route around walls instead of pressing into them.
@@ -876,6 +954,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
+    if (npc.stateMachine.pursuitSearchActive) {
+        npc.stateMachine.pursuitSearchTimer = std::max(
+            0.0f, npc.stateMachine.pursuitSearchTimer - safeDt);
+        if (npc.stateMachine.pursuitSearchTimer <= 0.0f)
+            npc.stateMachine.nextDecisionTime = 0.0f;
+    }
+
     // Weapon switching: pick best weapon for current distance
     if (npc.sensors.hasTarget && npc.weaponSwitchCooldown <= 0.0f)
     {
@@ -1228,7 +1313,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     {
         const NpcGoal navGoal = makeNavGoal(npc);
         const NpcNavResult nav =
-            npc.navigator.update(npc, navGoal, world, navMovement, safeDt);
+            npc.navigator.update(npc, navGoal, world, navMovement, safeDt,
+                                 activeNavigationSettings(npc), policy);
         const NpcTraversalStep trav =
             npc.traversal.update(npc, nav, navMovement, safeDt);
         // Traversal steers when following a detour route or performing a
@@ -1238,15 +1324,24 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         if (trav.active && traversalSteers &&
             glm::length(trav.direction) > 0.01f)
             moveDir = trav.direction;
-        if (trav.jump && npc.sensors.touchFloor)
+        // A blocked route owns the steering: turn/hold from the navigator, and
+        // never let traversal launch a jump/dash into the confirmed obstacle.
+        if (nav.blocked)
         {
-            jump = true;
-            jumpReason = NpcJumpReason::Navigation;
+            moveDir = nav.dir;
         }
-        if (trav.dash && navMovement && navMovement->dashEnabled)
-            dash = true;
-        if (trav.downDash && navMovement && navMovement->downDashEnabled)
-            wantDownDash = true;
+        else
+        {
+            if (trav.jump && npc.sensors.touchFloor)
+            {
+                jump = true;
+                jumpReason = NpcJumpReason::Navigation;
+            }
+            if (trav.dash && navMovement && navMovement->dashEnabled)
+                dash = true;
+            if (trav.downDash && navMovement && navMovement->downDashEnabled)
+                wantDownDash = true;
+        }
     }
 
     // Situational jump: only a real obstacle ahead justifies it. A policy must

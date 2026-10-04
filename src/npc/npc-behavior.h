@@ -42,6 +42,15 @@ struct BehaviorProfileDefinition
     bool continueThroughCover = true;
     bool pursueLastKnownPosition = true;
     std::string afterReachingLastKnown = "look_around";
+    int pursuitSearchTicks = 600;      // fixed 60 Hz ticks after reaching memory
+    // Target information through cover. String values are documented in JSON.
+    std::string informationMode = "memory";
+    int radarDelayTicks = 0;
+    float radarErrorMeters = 0.0f;
+    std::string radarMemoryMode = "normal";
+    int radarMemoryTicks = 1800;
+    int rememberedPathPoints = 12;
+    bool continuePredictedPath = false;
 };
 
 // Resolved combat tuning carried by an NPC for its current life. `active` is
@@ -69,6 +78,14 @@ struct NpcBehaviorTuning
     bool continueThroughCover = true;
     bool pursueLastKnownPosition = true;
     std::string afterReachingLastKnown = "look_around";
+    int pursuitSearchTicks = 600;
+    std::string informationMode = "memory";
+    int radarDelayTicks = 0;
+    float radarErrorMeters = 0.0f;
+    std::string radarMemoryMode = "normal";
+    int radarMemoryTicks = 1800;
+    int rememberedPathPoints = 12;
+    bool continuePredictedPath = false;
 };
 
 class BehaviorProfileRegistry

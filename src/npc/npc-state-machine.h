@@ -104,4 +104,10 @@ struct NpcStateMachine
     glm::vec3 patrolLastProgressPos{0.0f};
     int patrolForcedDetourTicks = 0;
     glm::vec3 patrolForcedDetourDir{0.0f};
+
+    // Continue-pursuit search begins only after reaching the last-known point.
+    // The profile supplies the duration in fixed 60 Hz ticks.
+    bool pursuitSearchActive = false;
+    float pursuitSearchTimer = 0.0f;
+    glm::vec3 pursuitSearchDir{0.0f};
 };

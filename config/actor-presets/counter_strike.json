@@ -63,10 +63,36 @@
     // 0.0 = no random directional noise.
     "movement_noise": 0.0
   },
+  // Automatic surface navigation from loaded map collision triangles. The
+  // shared collision slope rule is used because max_walkable_slope_degrees is
+  // omitted, so the planner can never route onto ground the body slides off.
+  "navigation": {
+    // "automatic_surface_path" is the triangle-based route planner.
+    // "direct" is only for simple legacy steering.
+    "mode": "automatic_surface_path",
+
+    // Generate navigation from loaded map collision triangles.
+    "automatic_from_collision": true,
+
+    // Recalculate when the current route is blocked.
+    "repath_when_blocked": true,
+
+    // Maximum local search distance around the NPC.
+    "search_radius": 20.0,
+
+    // Allow the planner to create legal navigation jump links.
+    "allow_navigation_jumps": true,
+
+    // Never jump directly into a vertical wall.
+    "allow_wall_jump": false,
+
+    // "turn" | "repath" | "turn_then_repath"
+    "blocked_behavior": "turn_then_repath"
+  },
   "weapon_overrides": {
     "revolver": {
       "damage": 35,
-      "fire_delay": 0.3,
+      "fire_delay": 0.15,
       "reload_time": 1.5,
       "magazine_size": 6,
       "reserve_ammo": 36,
@@ -80,9 +106,9 @@
     },
     "shotgun": {
       "damage": 20,
-      "fire_delay": 0.8,
+      "fire_delay": 0.4,
       "reload_time": 2.0,
-      "magazine_size": 8,
+      "magazine_size": 6,
       "reserve_ammo": 32,
       "hitscan": {
         "enabled": true,

@@ -60,6 +60,8 @@
 #include "network/server-gamemode.h"
 #include "npc/npc-nav-request.h"
 #include "npc/npc-navigation.h"
+#include "npc/npc-surface.h"
+#include "npc/npc-navigation-settings.h"
 #include "combat/grenade-registry.h"
 #include "combat/area-effect.h"
 
@@ -573,6 +575,202 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--npc-navigation-selftest") {
+        // Drives the real NpcNavigator on minimal collision worlds to prove the
+        // automatic surface planner: classifies surfaces, routes around a wall,
+        // reaches a higher platform only through a legal jump/ramp, rejects an
+        // unreachable wall, handles stacked floors, and never steers directly
+        // into a confirmed blocking wall.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            const glm::vec3 n = glm::cross(b - a, c - a);
+            const float len = glm::length(n);
+            t.normal = len > 1e-6f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            w.collisionMesh.triangles.push_back(t);
+        };
+        auto addFloor = [&](World& w, float z) {
+            addTri(w, {40,40,z}, {-40,40,z}, {-40,-40,z});
+            addTri(w, {40,40,z}, {-40,-40,z}, {40,-40,z});
+        };
+
+        {
+            std::string r;
+            ok &= check(npcSurfaceSelfTest(r), "surface classification (floor/ramp/steep/wall/ceiling)");
+            r.clear();
+            ok &= check(npcNavigationSettingsSelfTest(r), "navigation settings parse/default/clamp");
+        }
+
+        MovementConfig cfg;
+        cfg.gravityZ = -58.0f;
+        cfg.jumpVerticalSpeed = 19.0f;   // ~3.1 m jump cap
+        cfg.dashEnabled = true;
+
+        NpcNavigationSettings ns;
+        ns.configured = true;
+        ns.searchRadius = 20.0f;
+        ns.maxWalkableSlopeDot = 0.0f;    // shared collision rule
+        ns.allowNavigationJumps = true;
+        ns.allowWallJump = false;
+
+        NpcMovementPolicy jumpPolicy;
+        jumpPolicy.configured = true;
+        jumpPolicy.jumpStyle = "obstacle_or_navigation";
+        NpcMovementPolicy neverJump;
+        neverJump.configured = true;
+        neverJump.jumpStyle = "never";
+
+        auto spawnNavNpc = [&](NpcSystem& npcs, uint32_t id, glm::vec3 pos) -> Npc* {
+            npcs.spawnNpc(id, 5.0f, pos);
+            for (Npc& n : npcs.all()) {
+                if (n.id != id) continue;
+                n.wakeupTimer = 0.0f;
+                n.body.pos = pos;
+                n.body.ground.onGround = true;
+                return &n;
+            }
+            return nullptr;
+        };
+        auto runNav = [&](Npc& npc, const World& world, glm::vec3 dest,
+                          const NpcNavigationSettings& s,
+                          const NpcMovementPolicy* pol) {
+            NpcGoal goal;
+            goal.kind = NpcGoalKind::ReachPosition;
+            goal.targetPos = dest;
+            goal.tolerance = 1.0f;
+            return npc.navigator.update(npc, goal, world, &cfg, 1.0f / 60.0f, &s, pol);
+        };
+        auto pathUsesCapability = [](const Npc& npc, NavCapability cap) {
+            for (uint8_t c : npc.navigator.pathCapability)
+                if (c == (uint8_t)cap) return true;
+            return false;
+        };
+
+        // ── Wall detour ─────────────────────────────────────────────
+        {
+            World world;
+            addFloor(world, 0.0f);
+            addTri(world, {4,-3,0}, {4,3,0}, {4,3,4});
+            addTri(world, {4,-3,0}, {4,3,4}, {4,-3,4});
+            buildCollisionChunks(world, nullptr);
+            NpcSystem npcs;
+            Npc* npc = spawnNavNpc(npcs, 9301, glm::vec3(0, 0, 1.0f));
+            if (!npc) check(false, "spawn nav npc (wall)");
+            else {
+                const NpcNavResult r = runNav(*npc, world, glm::vec3(8, 0, 1.0f), ns, &jumpPolicy);
+                check(r.hasPath, "routes around a wall");
+                float maxY = 0.0f;
+                for (const glm::vec3& p : npc->navigator.path)
+                    maxY = std::max(maxY, std::fabs(p.y));
+                check(maxY > 2.0f, "wall route detours sideways instead of through the wall");
+            }
+        }
+
+        // ── Sealed box: no route -> blocked, never push the wall ─────
+        {
+            World world;
+            addFloor(world, 0.0f);
+            addTri(world, {1.5f,-30,0}, {1.5f,30,0}, {1.5f,30,8});
+            addTri(world, {1.5f,-30,0}, {1.5f,30,8}, {1.5f,-30,8});
+            addTri(world, {-1.5f,-30,0}, {-1.5f,30,0}, {-1.5f,30,8});
+            addTri(world, {-1.5f,-30,0}, {-1.5f,30,8}, {-1.5f,-30,8});
+            addTri(world, {-30,1.5f,0}, {30,1.5f,0}, {30,1.5f,8});
+            addTri(world, {-30,1.5f,0}, {30,1.5f,8}, {-30,1.5f,8});
+            addTri(world, {-30,-1.5f,0}, {30,-1.5f,0}, {30,-1.5f,8});
+            addTri(world, {-30,-1.5f,0}, {30,-1.5f,8}, {-30,-1.5f,8});
+            buildCollisionChunks(world, nullptr);
+            NpcSystem npcs;
+            Npc* npc = spawnNavNpc(npcs, 9302, glm::vec3(0, 0, 1.0f));
+            if (!npc) check(false, "spawn nav npc (box)");
+            else {
+                const NpcNavResult r = runNav(*npc, world, glm::vec3(10, 0, 1.0f), ns, &jumpPolicy);
+                check(!r.hasPath, "no route across a sealed wall");
+                check(r.blocked, "blocked route is reported");
+                const float len = glm::length(glm::vec2(r.dir.x, r.dir.y));
+                const float toward = len > 0.001f ? glm::dot(r.dir / len, glm::vec3(1, 0, 0)) : 0.0f;
+                check(toward < 0.3f, "does not steer directly into the blocking wall");
+            }
+        }
+
+        // ── Legal jump onto a higher platform ───────────────────────
+        {
+            World world;
+            addFloor(world, 0.0f);
+            addTri(world, {6,-40,1.5f}, {40,-40,1.5f}, {40,40,1.5f});
+            addTri(world, {6,-40,1.5f}, {40,40,1.5f}, {6,40,1.5f});
+            addTri(world, {6,-40,0}, {6,40,0}, {6,40,1.5f});
+            addTri(world, {6,-40,0}, {6,40,1.5f}, {6,-40,1.5f});
+            buildCollisionChunks(world, nullptr);
+            NpcSystem npcs;
+            Npc* npc = spawnNavNpc(npcs, 9303, glm::vec3(0, 0, 1.0f));
+            if (!npc) check(false, "spawn nav npc (platform)");
+            else {
+                const NpcNavResult r = runNav(*npc, world, glm::vec3(10, 0, 1.5f), ns, &jumpPolicy);
+                check(r.hasPath, "reaches a higher platform");
+                check(pathUsesCapability(*npc, NavCapability::Jump),
+                      "the route uses a jump connection");
+            }
+            NpcSystem npcs2;
+            Npc* npc2 = spawnNavNpc(npcs2, 9304, glm::vec3(0, 0, 1.0f));
+            if (!npc2) check(false, "spawn nav npc (never-jump)");
+            else {
+                const NpcNavResult r2 = runNav(*npc2, world, glm::vec3(10, 0, 1.5f), ns, &neverJump);
+                check(!r2.hasPath, "jump_style never rejects the jump route");
+            }
+        }
+
+        // ── Wall too high: no jump route ────────────────────────────
+        {
+            World world;
+            addFloor(world, 0.0f);
+            addTri(world, {6,-40,5}, {40,-40,5}, {40,40,5});
+            addTri(world, {6,-40,5}, {40,40,5}, {6,40,5});
+            addTri(world, {6,-40,0}, {6,40,0}, {6,40,5});
+            addTri(world, {6,-40,0}, {6,40,5}, {6,-40,5});
+            buildCollisionChunks(world, nullptr);
+            NpcSystem npcs;
+            Npc* npc = spawnNavNpc(npcs, 9305, glm::vec3(0, 0, 1.0f));
+            if (!npc) check(false, "spawn nav npc (high wall)");
+            else {
+                const NpcNavResult r = runNav(*npc, world, glm::vec3(10, 0, 5.0f), ns, &jumpPolicy);
+                check(!r.hasPath, "a wall above the jump cap is not a jump route");
+            }
+        }
+
+        // ── Stacked floors reached by a ramp ────────────────────────
+        {
+            World world;
+            addFloor(world, 0.0f);
+            // Ramp x=[-2,10] rising z=0 -> z=4, then upper floor at z=4.
+            addTri(world, {-2,-40,0}, {10,-40,4}, {10,40,4});
+            addTri(world, {-2,-40,0}, {10,40,4}, {-2,40,0});
+            addTri(world, {10,-40,4}, {40,-40,4}, {40,40,4});
+            addTri(world, {10,-40,4}, {40,40,4}, {10,40,4});
+            buildCollisionChunks(world, nullptr);
+            NpcSystem npcs;
+            Npc* npc = spawnNavNpc(npcs, 9306, glm::vec3(-8, 0, 1.0f));
+            if (!npc) check(false, "spawn nav npc (ramp)");
+            else {
+                const NpcNavResult r = runNav(*npc, world, glm::vec3(20, 0, 4.0f), ns, &jumpPolicy);
+                check(r.hasPath, "stacked floor reached via a ramp");
+                const float topZ = npc->navigator.path.empty()
+                    ? 0.0f : npc->navigator.path.back().z;
+                check(topZ > 3.5f, "route ends on the upper floor surface");
+            }
+        }
+
+        printf("[NPC NAVIGATION SELFTEST]\n%s", report.c_str());
+        printf("[NPC NAVIGATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--grenade-reasoning-selftest") {
         std::string report;
         const bool ok = npcGrenadeReasoningSelfTest(report);
@@ -642,6 +840,42 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = npcPerceptionSelfTest(report);
         printf("[NPC PERCEPTION SELFTEST]\n%s", report.c_str());
         printf("[NPC PERCEPTION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-radar-selftest") {
+        bool ok = true;
+        auto check = [&](bool condition, const char* name) {
+            printf("  %s %s\n", condition ? "ok  " : "FAIL", name);
+            ok = ok && condition;
+        };
+
+        auto& registry = BehaviorProfileRegistry::instance();
+        check(registry.load("config/behavior-profiles.json"),
+              "behavior profiles load");
+        const NpcBehaviorTuning rage2 = resolveNpcBehavior("rage2");
+        check(rage2.active, "rage2 profile resolves");
+        check(rage2.informationMode == "perfect_radar",
+              "rage2 uses perfect radar");
+        check(rage2.radarDelayTicks == 0 && rage2.radarErrorMeters == 0.0f,
+              "rage2 radar has no delay or error");
+        check(rage2.radarMemoryMode == "never" && rage2.rememberedPathPoints == 32,
+              "rage2 radar memory is persistent with a target trail");
+        check(rage2.continuePredictedPath,
+              "rage2 continues along predicted target movement");
+
+        MemoryRecord memory;
+        PerceptionSnapshot radar;
+        radar.radarKnown = true;
+        radar.position = glm::vec3(20.0f, 4.0f, 0.0f);
+        updateMemory(memory, radar, radar.position, glm::vec3(2.0f, 0.0f, 0.0f),
+                     1.0f / 60.0f, PerceptionTuning{});
+        const BeliefState belief = buildBelief(
+            PerceptionSnapshot{}, memory, 0, 0.0f, PerceptionTuning{});
+        check(belief.hasTarget && !belief.hasVisibleTarget,
+              "radar knowledge creates pursuit memory, not wall vision");
+
+        printf("[NPC RADAR SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

@@ -6,6 +6,7 @@
 struct World;
 struct WeaponDefinition;
 struct NpcMovementPolicy;
+struct NpcNavigationSettings;
 
 float clamp01(float v);
 float difficulty01(float difficulty);
@@ -19,6 +20,11 @@ float npcSpawnFireDelaySeconds(Npc& npc);
 // MatchRoleRegistry by npc.actorPresetId. Returns nullptr when the NPC has no
 // preset policy (legacy brain) or the configured flag is unset.
 const NpcMovementPolicy* activeMovementPolicy(const Npc& npc);
+
+// The actor-preset navigation settings for this NPC, resolved live from
+// MatchRoleRegistry by npc.actorPresetId. Returns nullptr when the NPC has no
+// preset navigation block (shared navigator defaults).
+const NpcNavigationSettings* activeNavigationSettings(const Npc& npc);
 
 // Situational dash: returns true if NPC should dash (engage, escape, dodge)
 bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def, bool targetCanSeeMe);

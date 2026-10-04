@@ -18,10 +18,12 @@ from __future__ import annotations
 import argparse
 import builtins
 import colorsys
+import hashlib
 import json
 import os
 import random
 import shutil
+import struct
 import subprocess
 import sys
 import threading
@@ -319,15 +321,100 @@ def published_builds() -> list[Path]:
 
 
 def newest_valid_published_build() -> int | None:
-    """Return the newest numbered artifact that contains a usable EXE."""
+    """Return the newest numbered artifact that contains a runnable EXE."""
     for path in published_builds():
         exe = path / "mimita.exe"
         try:
-            if exe.is_file() and exe.stat().st_size > 0:
+            if exe.is_file() and _executable_snapshot_is_valid(exe)[0]:
                 return int(path.name)
         except OSError:
             continue
     return None
+
+
+def _executable_snapshot_is_valid(path: Path) -> tuple[bool, str, str]:
+    """Check that a published PE has real executable bytes, not just headers."""
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        return False, "read failed", str(error)
+
+    if len(data) < 0x1000 or data[:2] != b"MZ":
+        return False, "invalid DOS header or file too small", ""
+    pe_offset = struct.unpack_from("<I", data, 0x3C)[0]
+    if pe_offset + 24 > len(data) or data[pe_offset:pe_offset + 4] != b"PE\0\0":
+        return False, "invalid PE header", ""
+
+    section_count = struct.unpack_from("<H", data, pe_offset + 6)[0]
+    optional_offset = pe_offset + 24
+    magic = struct.unpack_from("<H", data, optional_offset)[0]
+    entry_rva = struct.unpack_from("<I", data, optional_offset + 16)[0]
+    optional_size = struct.unpack_from("<H", data, pe_offset + 20)[0]
+    section_offset = optional_offset + optional_size
+    if magic not in (0x10B, 0x20B) or section_offset + section_count * 40 > len(data):
+        return False, "invalid optional header or section table", ""
+
+    executable_sections = 0
+    entrypoint_checked = False
+    for index in range(section_count):
+        offset = section_offset + index * 40
+        virtual_size, virtual_address = struct.unpack_from("<II", data, offset + 8)
+        raw_size, raw_pointer = struct.unpack_from("<II", data, offset + 16)
+        characteristics = struct.unpack_from("<I", data, offset + 36)[0]
+        # IMAGE_SCN_MEM_EXECUTE = 0x20000000.
+        if characteristics & 0x20000000:
+            executable_sections += 1
+            if raw_size == 0 or raw_pointer + raw_size > len(data):
+                return False, "executable section is outside the file", ""
+            section_bytes = data[raw_pointer:raw_pointer + raw_size]
+            if any(section_bytes):
+                if virtual_address <= entry_rva < virtual_address + max(virtual_size, raw_size):
+                    entry_offset = raw_pointer + (entry_rva - virtual_address)
+                    entry_bytes = data[entry_offset:entry_offset + 64]
+                    if len(entry_bytes) < 16 or not any(entry_bytes):
+                        return False, "entrypoint bytes are zero-filled", ""
+                    entrypoint_checked = True
+                continue
+            return False, "executable section is entirely zero-filled", ""
+
+    if executable_sections == 0:
+        return False, "no executable sections", ""
+    if not entrypoint_checked:
+        return False, "entrypoint is not in an executable section", ""
+    return True, "ok", hashlib.sha256(data).hexdigest()
+
+
+def _copy_verified_executable(source: Path, destination: Path) -> None:
+    """Copy a linked EXE atomically and reject an unstable/zero-filled copy."""
+    last_reason = "unknown"
+    for attempt in range(10):
+        source_ok, source_reason, source_hash = _executable_snapshot_is_valid(source)
+        if source_ok:
+            # A second read catches a linker/antivirus still changing the file
+            # after the build process reports success.
+            _, _, source_hash_again = _executable_snapshot_is_valid(source)
+            if source_hash_again != source_hash:
+                last_reason = "source executable changed while being copied"
+            else:
+                temporary = destination.with_suffix(destination.suffix + ".tmp")
+                shutil.copyfile(source, temporary)
+                destination_ok, destination_reason, destination_hash = (
+                    _executable_snapshot_is_valid(temporary)
+                )
+                if destination_ok and destination_hash == source_hash:
+                    os.replace(temporary, destination)
+                    return
+                last_reason = (
+                    f"published copy invalid ({destination_reason}) or hash mismatch"
+                )
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
+        else:
+            last_reason = f"source executable invalid ({source_reason})"
+        time.sleep(0.2 * (attempt + 1))
+    raise RuntimeError(f"refusing to publish unstable executable: {last_reason}")
 
 
 def publish_build(number: int) -> Path:
@@ -337,7 +424,7 @@ def publish_build(number: int) -> Path:
 
     destination = BUILD_ROOT / f"{number:04d}"
     destination.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_exe, destination / "mimita.exe")
+    _copy_verified_executable(source_exe, destination / "mimita.exe")
 
     runtime_sources = {name: ROOT / name for name in RUNTIME_DLLS}
     try:

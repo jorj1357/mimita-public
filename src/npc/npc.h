@@ -92,6 +92,9 @@ public:
     PerceptionSnapshot perception;
     BeliefState belief;
     MemoryRecord targetMemory;
+    // Target identity used to discard a previous target's position history
+    // when server target selection switches actors.
+    uint32_t perceptionTargetId = 0;
     // Utility goal/action selection driven by perception + objective context.
     // The legacy state machine remains the executor until parity is proven.
     UtilityState utility;

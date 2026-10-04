@@ -209,12 +209,46 @@ NpcState pickNextState(Npc& npc)
         const bool profileAllowsMemory = !npc.behavior.active ||
             (npc.behavior.continueThroughCover &&
              npc.behavior.pursueLastKnownPosition && modeAllowsMemory);
-        if (profileAllowsMemory && npc.targetMemory.hasMemory &&
-            npc.stateMachine.lastKnownAge > 0.5f)
+        if (!npc.behavior.active ||
+            npc.behavior.afterReachingLastKnown != "continue_pursuit")
+            npc.stateMachine.pursuitSearchActive = false;
+        const bool memoryReady = npc.belief.hasTarget ||
+            npc.stateMachine.lastKnownAge > 0.5f;
+        if (profileAllowsMemory && npc.targetMemory.hasMemory && memoryReady)
         {
             float distToLastKnown = glm::length(npc.targetMemory.lastKnownPosition - npc.body.pos);
             if (distToLastKnown > 2.0f)
+            {
+                npc.stateMachine.pursuitSearchActive = false;
                 return NpcState::Chase; // Chase toward last known position (acts as "search")
+            }
+
+            // Continue-pursuit is deliberately different from Patrol: reaching
+            // the remembered point does not release the target. Keep the NPC
+            // in Chase while it searches locally, then let memory expiry or the
+            // JSON search duration return it to forward patrol.
+            if (npc.behavior.active &&
+                npc.behavior.afterReachingLastKnown == "continue_pursuit")
+            {
+                if (!npc.stateMachine.pursuitSearchActive)
+                {
+                    npc.stateMachine.pursuitSearchActive = true;
+                    npc.stateMachine.pursuitSearchTimer =
+                        std::max(0, npc.behavior.pursuitSearchTicks) / 60.0f;
+                    glm::vec3 searchDir = npc.targetMemory.lastKnownVelocity;
+                    searchDir.z = 0.0f;
+                    if (glm::length(searchDir) < 0.001f)
+                        searchDir = glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f);
+                    if (glm::length(searchDir) < 0.001f)
+                        searchDir = glm::vec3(1.0f, 0.0f, 0.0f);
+                    npc.stateMachine.pursuitSearchDir = glm::normalize(searchDir);
+                }
+                if (npc.stateMachine.pursuitSearchTimer > 0.0f)
+                    return NpcState::Chase;
+                npc.stateMachine.pursuitSearchActive = false;
+                return NpcState::Patrol;
+            }
+
             // If close to last known, circle around looking. A policy that does
             // not allow circle keeps patrolling forward instead. The profile
             // can explicitly choose to stop instead of looking around.

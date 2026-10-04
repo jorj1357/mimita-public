@@ -16,10 +16,13 @@
 #include <glm/glm.hpp>
 
 #include "npc/npc-goal.h"
+#include "npc/npc-surface.h"
 
 struct World;
 class Npc;
 struct MovementConfig;
+struct NpcMovementPolicy;
+struct NpcNavigationSettings;
 
 struct NpcNavResult
 {
@@ -31,8 +34,10 @@ struct NpcNavResult
     bool hasPath = false;       // following a cached multi-node route
     bool detour = false;        // route deviates from the direct line to dest
     bool hasGap = false;        // current segment crosses a gap (needs dash)
+    bool blocked = false;       // direct route is blocked with no cached route
     bool valid = false;         // a movement target exists
     int pathNodes = 0;          // waypoints remaining on the cached route
+    NavCapability capability = NavCapability::Walk;  // current segment kind
 };
 
 // Maximum vertical rise the actor can clear with a jump, from its movement
@@ -44,6 +49,7 @@ struct NpcNavigator
     NpcGoal goal;
     std::vector<glm::vec3> path;
     std::vector<uint8_t> pathGap;   // per-path-point: segment into it crosses a gap
+    std::vector<uint8_t> pathCapability; // per-path-point: NetCapability of segment
     int pathIndex = 0;
     float repathTimer = 0.0f;
     glm::vec3 lastGoal{0.0f};
@@ -59,9 +65,13 @@ struct NpcNavigator
     uint32_t planCount = 0;
     uint32_t repathCount = 0;
 
-    // Called from the NPC update after sensing and goal selection.
+    // Called from the NPC update after sensing and goal selection. `settings`
+    // and `policy` are the actor-preset navigation/movement configuration
+    // (nullptr = shared navigator defaults / legacy brain).
     NpcNavResult update(Npc& npc, const NpcGoal& goal, const World& world,
-                        const MovementConfig* movement, float dt);
+                        const MovementConfig* movement, float dt,
+                        const NpcNavigationSettings* settings = nullptr,
+                        const NpcMovementPolicy* policy = nullptr);
 
     void reset();
     // Force a replan on the next update (e.g. target teleported).

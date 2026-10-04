@@ -26,6 +26,7 @@ struct PerceptionSnapshot {
     bool withinRange = false;      // inside sight range
     bool hasLineOfSight = false;   // unobstructed ray to the candidate
     bool visible = false;          // all gates passed (valid && fov && range && los)
+    bool radarKnown = false;       // position supplied by profile information policy
 };
 
 // A bounded, decaying memory of where a target was last seen and how sure the
@@ -73,7 +74,7 @@ PerceptionSnapshot perceive(const Npc& npc,
                             bool losBlocked,
                             const PerceptionTuning& tuning);
 
-// Update a memory record from a snapshot and a time step.
+// Update a memory record from a visible or radar-known snapshot and a time step.
 void updateMemory(MemoryRecord& memory,
                   const PerceptionSnapshot& snapshot,
                   const glm::vec3& candidatePos,

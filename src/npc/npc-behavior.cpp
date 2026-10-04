@@ -53,6 +53,14 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.continueThroughCover = j.value("continue_through_cover", out.continueThroughCover);
     out.pursueLastKnownPosition = j.value("pursue_last_known_position", out.pursueLastKnownPosition);
     out.afterReachingLastKnown = j.value("after_reaching_last_known", out.afterReachingLastKnown);
+    out.pursuitSearchTicks = j.value("pursuit_search_ticks", out.pursuitSearchTicks);
+    out.informationMode = j.value("information_mode", out.informationMode);
+    out.radarDelayTicks = j.value("radar_delay_ticks", out.radarDelayTicks);
+    out.radarErrorMeters = j.value("radar_error_meters", out.radarErrorMeters);
+    out.radarMemoryMode = j.value("radar_memory_mode", out.radarMemoryMode);
+    out.radarMemoryTicks = j.value("radar_memory_ticks", out.radarMemoryTicks);
+    out.rememberedPathPoints = j.value("remembered_path_points", out.rememberedPathPoints);
+    out.continuePredictedPath = j.value("continue_predicted_path", out.continuePredictedPath);
 }
 
 } // anonymous namespace
@@ -182,5 +190,13 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     out.continueThroughCover = def->continueThroughCover;
     out.pursueLastKnownPosition = def->pursueLastKnownPosition;
     out.afterReachingLastKnown = def->afterReachingLastKnown;
+    out.pursuitSearchTicks = std::max(0, def->pursuitSearchTicks);
+    out.informationMode = def->informationMode;
+    out.radarDelayTicks = std::max(0, def->radarDelayTicks);
+    out.radarErrorMeters = std::max(0.0f, def->radarErrorMeters);
+    out.radarMemoryMode = def->radarMemoryMode;
+    out.radarMemoryTicks = std::max(1, def->radarMemoryTicks);
+    out.rememberedPathPoints = std::clamp(def->rememberedPathPoints, 1, 120);
+    out.continuePredictedPath = def->continuePredictedPath;
     return out;
 }

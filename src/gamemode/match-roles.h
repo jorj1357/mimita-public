@@ -17,6 +17,7 @@
 
 #include "physics/movement/movement-types.h"
 #include "npc/npc-movement-policy.h"
+#include "npc/npc-navigation-settings.h"
 
 struct ActorPresetPresentation
 {
@@ -106,6 +107,9 @@ struct MatchRoleDefinition
     // Generic movement/decision policy parsed from the preset's "npc_behavior".
     // Absent (configured=false) means the legacy NPC brain runs unchanged.
     NpcMovementPolicy movementPolicy;
+    // Automatic surface-navigation settings parsed from the preset's
+    // "navigation". Absent (configured=false) means shared navigator defaults.
+    NpcNavigationSettings navigationSettings;
 };
 
 class MatchRoleRegistry

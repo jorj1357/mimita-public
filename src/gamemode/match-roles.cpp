@@ -187,6 +187,13 @@ bool readActorPreset(const json& j, const std::string& fallbackId,
             return false;
         }
     }
+    if (j.contains("navigation")) {
+        std::string navError;
+        if (!parseNpcNavigationSettings(j["navigation"], out.navigationSettings, navError)) {
+            error = "navigation: " + navError;
+            return false;
+        }
+    }
     if (j.contains("displayName")) out.displayName = j.value("displayName", out.displayName);
     if (j.contains("movementPreset")) out.movementPreset = j.value("movementPreset", out.movementPreset);
     if (j.contains("weaponSet")) out.weaponSet = j.value("weaponSet", out.weaponSet);
@@ -232,6 +239,18 @@ bool readActorPreset(const json& j, const std::string& fallbackId,
             if (item.is_number_integer()) out.allowedTeams.push_back(item.get<int>());
     }
     return true;
+}
+
+// Log one line per configured navigation block so a reload is visible once.
+void logNavigationSettings(const MatchRoleDefinition& def, uint64_t revision)
+{
+    if (!def.navigationSettings.configured) return;
+    const NpcNavigationSettings& n = def.navigationSettings;
+    Debug::warn(Debug::Category::Duel,
+        "[NPC NAV CFG] preset=%s revision=%llu mode=%s radius=%.1f slopes=%s jumps=%d wall_jump=%d blocked=%s\n",
+        def.id.c_str(), (unsigned long long)revision, n.mode.c_str(), n.searchRadius,
+        n.maxWalkableSlopeDot > 0.0f ? "preset" : "shared",
+        (int)n.allowNavigationJumps, (int)n.allowWallJump, n.blockedBehavior.c_str());
 }
 
 // Log one line per configured policy so a reload is visible without spamming.
@@ -469,8 +488,10 @@ bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
     mIndexById.clear();
     for (int i = 0; i < (int)mRoles.size(); ++i) mIndexById[mRoles[i].id] = i + 1;
     ++mActorPresetRevision;
-    for (const auto* preset : actorPresets())
+    for (const auto* preset : actorPresets()) {
         logMovementPolicy(*preset, mActorPresetRevision);
+        logNavigationSettings(*preset, mActorPresetRevision);
+    }
     Debug::warn(Debug::Category::Duel, "[ACTOR PRESET] Loaded %zu preset(s) from %s\n",
         actorPresets().size(), mPresetDirectory.c_str());
     return true;
