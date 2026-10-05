@@ -688,7 +688,19 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                 for (char& c : modeName)
                     c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
                 drawCentered("modeTitle", textTemplate("modeTitle", {
-                    {"{mode_name}", modeName}}));
+                    {"{mode_name}", modeName},
+                    {"{disaster_name}", match.disasterName()},
+                    {"{disaster_description}", match.disasterDescription()}}));
+
+                // ── Disaster banner (generic; any mode with a declared
+                // disaster can define a "disasterText" layout element). It is
+                // driven entirely by replicated state, never a per-disaster
+                // renderer.
+                if (match.disasterConfigured() && matchLayout.get("disasterText")) {
+                    drawCentered("disasterText", textTemplate("disasterText", {
+                        {"{disaster_name}", match.disasterName()},
+                        {"{disaster_description}", match.disasterDescription()}}));
+                }
 
                 // Score presentation is data-driven: a mode displays this
                 // element only when its JSON layout defines it.

@@ -21,6 +21,7 @@
 
 #include "combat/weapon-hit.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "perf/perf.h"
 #include "physics/config.h"
 #include "physics/physics-mini.h"
@@ -98,6 +99,23 @@ const NpcNavigationSettings* activeNavigationSettings(const Npc& npc)
     if (!preset || !preset->navigationSettings.configured)
         return nullptr;
     return &preset->navigationSettings;
+}
+
+// The generic movement executor this actor's preset selected. Independent of
+// whether the npc_behavior policy is configured, so a preset can pick an
+// executor without opting into the full movement policy. Default: the shared
+// Sandbox executor (also used by every actor with no preset).
+NpcMovementExecutor activeMovementExecutor(const Npc& npc)
+{
+    if (npc.actorPresetId.empty())
+        return NpcMovementExecutor::SandboxShared;
+    const MatchRoleDefinition* preset =
+        MatchRoleRegistry::instance().getActorPreset(npc.actorPresetId);
+    if (!preset)
+        return NpcMovementExecutor::SandboxShared;
+    NpcMovementExecutor executor = NpcMovementExecutor::SandboxShared;
+    npcMovementExecutorFromString(preset->movementPolicy.movementExecutor, executor);
+    return executor;
 }
 
 bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def, bool targetCanSeeMe)
@@ -450,14 +468,17 @@ NpcGoal makeNavGoal(const Npc& npc)
                 ? npc.targetMemory.lastKnownPosition
                 : npc.stateMachine.lastKnownTarget;
         } else if (npc.stateMachine.currentState == NpcState::Patrol) {
-            // Project a forward waypoint along the chosen patrol heading so the
-            // navigator can route around walls instead of pressing into them.
+            // Project a small rolling forward waypoint. Once reached, the next
+            // update creates another waypoint from the new position, so the NPC
+            // advances forever without pretending there is a combat target.
             const glm::vec3 dir = glm::length(glm::vec3(npc.stateMachine.patrolDir.x,
                                                         npc.stateMachine.patrolDir.y, 0.0f)) > 0.001f
                 ? glm::normalize(glm::vec3(npc.stateMachine.patrolDir.x, npc.stateMachine.patrolDir.y, 0.0f))
                 : glm::vec3(1.0f, 0.0f, 0.0f);
+            const NpcMovementPolicy* policy = activeMovementPolicy(npc);
+            const float distance = policy ? policy->forwardPatrolDistance : 12.0f;
             goal.kind = NpcGoalKind::ReachPosition;
-            goal.targetPos = npc.body.pos + dir * 12.0f;
+            goal.targetPos = npc.body.pos + dir * distance;
             goal.tolerance = 1.5f;
         } else if (npc.stateMachine.currentState == NpcState::RandomWalk) {
             goal.kind = NpcGoalKind::ReachPosition;
@@ -721,8 +742,13 @@ void NpcSystem::update(const World& world, Player& player, float dt, const Input
         if (nc.attackCooldown > 0.0f && nc.sensors.hasTarget)
             notifyCombatSound(nc.body.pos, 0.5f);
 
+        // Offline/Sandbox path: the single local player is the target. The
+        // shared executor owns all movement; this only supplies the context.
+        NpcMovementContext context;
+        context.target = &player;
+        context.hasTarget = !player.dead && player.currentHp > 0;
         auto tNpcStart = std::chrono::steady_clock::now();
-        updateOneNpc(nc, world, player, dt);
+        updateOneNpc(nc, world, context, dt);
         auto tNpcEnd = std::chrono::steady_clock::now();
         double npcMs = std::chrono::duration<double, std::milli>(tNpcEnd - tNpcStart).count();
         Perf::collectNpcProfile(nc.id, "total", npcMs);
@@ -739,7 +765,13 @@ void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& 
         // Register NPC weapon fire for other NPCs' hearing (same as update()).
         if (nc.attackCooldown > 0.0f && nc.sensors.hasTarget)
             notifyCombatSound(nc.body.pos, 0.5f);
-        updateOneNpc(nc, world, player, dt);
+        // Server path: `player` is the mode-selected target mirror. The shared
+        // executor owns all movement; the mode only chose who the target is.
+        NpcMovementContext context;
+        context.target = &player;
+        context.hasTarget = !player.dead && player.currentHp > 0;
+        context.targetActorId = nc.serverTargetId;
+        updateOneNpc(nc, world, context, dt);
         break;
     }
 }
@@ -854,11 +886,28 @@ static void updatePatrolHeading(Npc& npc, const World& world,
     sm.patrolRepathTimer = navCfg.searchHeadingCommitSeconds;
 }
 
-void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float dt)
+void NpcSystem::updateOneNpc(Npc& npc, const World& world,
+                             const NpcMovementContext& context, float dt)
 {
-    if (npc.body.dead || npc.body.currentHp <= 0) {
+    if (npc.body.dead || npc.body.currentHp <= 0 || !context.valid()) {
         npc.body.updateModelWorldTransforms();
         return;
+    }
+    Player& player = *context.target;
+
+    // Mode-selected objective flows into the shared utility context. Sandbox
+    // and the current server path leave `hasObjective` false because TeamBrain
+    // already writes npc.utilityContext directly; future mode code may fill it.
+    if (context.hasObjective) {
+        npc.utilityContext.objectiveKnown = context.objective.objectiveKnown;
+        npc.utilityContext.objectivePos = context.objective.objectivePos;
+        npc.utilityContext.atObjective = context.objective.atObjective;
+        npc.utilityContext.canPlant = context.objective.canPlant;
+        npc.utilityContext.canDefuse = context.objective.canDefuse;
+        npc.utilityContext.onDefense = context.objective.onDefense;
+        npc.utilityContext.timeRemaining = context.objective.timeRemaining;
+        npc.utilityContext.enemyCount = context.objective.enemyCount;
+        npc.utilityContext.teamAlive = context.objective.teamAlive;
     }
 
     float safeDt = std::max(dt, 0.0001f);
@@ -1309,12 +1358,33 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
     const NpcMovementPolicy* policy = activeMovementPolicy(npc);
     NpcJumpReason jumpReason = NpcJumpReason::None;
 
+    // Generic executor selection. Every actor uses the same shared Sandbox
+    // movement executor by default. If the actor preset has a navigation block,
+    // the shared executor must honor it; this changes route-planning settings,
+    // not the movement implementation. The direct executor still disables
+    // surface planning explicitly.
+    const NpcMovementExecutor executor = activeMovementExecutor(npc);
+    npc.lastMovementExecutor = executor;
+    const NpcNavigationSettings* navSettings = nullptr;
+    NpcNavigationSettings directSettings;
+    if (executor == NpcMovementExecutor::SandboxShared ||
+        executor == NpcMovementExecutor::SurfaceNavigation) {
+        navSettings = activeNavigationSettings(npc);
+    } else if (executor == NpcMovementExecutor::Direct) {
+        directSettings.configured = true;
+        directSettings.mode = "direct";
+        navSettings = &directSettings;
+    }
+
     if (!inMirrorPhase)
     {
-        const NpcGoal navGoal = makeNavGoal(npc);
+        // The mode may own the goal (objective/plant/defuse); otherwise the
+        // shared goal mapping decides. Movement execution is identical either way.
+        const NpcGoal navGoal = context.hasGoalOverride ? context.goalOverride
+                                                        : makeNavGoal(npc);
         const NpcNavResult nav =
             npc.navigator.update(npc, navGoal, world, navMovement, safeDt,
-                                 activeNavigationSettings(npc), policy);
+                                 navSettings, policy);
         const NpcTraversalStep trav =
             npc.traversal.update(npc, nav, navMovement, safeDt);
         // Traversal steers when following a detour route or performing a
@@ -1344,9 +1414,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
         }
     }
 
-    // Situational jump: only a real obstacle ahead justifies it. A policy must
-    // never jump merely because it is stuck (that is what local turn + repath
-    // recovery is for).
+    // Situational jump: only a real obstacle ahead justifies it. A stuck actor
+    // may also hop to escape a local pocket. This recovery BYPASSES the actor
+    // policy on purpose: a policy actor (e.g. Counter-Strike) that spawns facing
+    // a wall must still be able to leave it. The policy is still enforced for
+    // the jump reason at the bottom of this function via
+    // npcPolicyAllowsJump(), so a preset that forbids obstacle jumps never
+    // receives one.
     if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
     {
         if (NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world, nearCandidates))
@@ -1354,7 +1428,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             jump = true;
             jumpReason = NpcJumpReason::Obstacle;
         }
-        else if (!policy && NpcNavigation::isStuck(npc))
+        else if (NpcNavigation::isStuck(npc))
         {
             jump = true;
             jumpReason = NpcJumpReason::Obstacle;
@@ -1484,16 +1558,43 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
 
                 const bool stillBlocked = NpcNavigation::obstacleInDirection(
                     npc, moveDir, navCfg.wallCastDistance, world, nearCandidates);
-                // A policy uses the smallest local correction (turn) then a
-                // repath; it does not reverse direction for seconds.
-                if (stillBlocked && navCfg.wallBacktrackEnabled && !policy)
+                // Even after the local turn the goal direction is still walled
+                // off. Back away and repath. This escape BYPASSES the actor
+                // policy on purpose: a policy actor (e.g. Counter-Strike) that
+                // spawns in a wall pocket must still be able to leave it. The
+                // policy's blocked_behavior still shapes the steering above
+                // (turn vs hold); only this physical escape is unconditional.
+                if (stillBlocked && navCfg.wallBacktrackEnabled)
                 {
+                    // Emit the diagnostic once per backtrack episode, not once
+                    // per tick: while the actor cannot make progress it re-asks
+                    // for the same escape every tick, and an unthrottled event
+                    // would flood events.jsonl. A new episode begins only after
+                    // the previous backtrack finished.
+                    const bool newBacktrackEpisode = !npc.navigator.backtrackActive;
                     npc.navigator.startBacktrack(
                         requestedDir,
                         navCfg.wallBacktrackDistance,
                         navCfg.wallBacktrackDuration);
                     moveDir = -glm::normalize(glm::vec3(
                         requestedDir.x, requestedDir.y, 0.0f));
+                    // Canonical append-only diagnostic: read
+                    // logs/<date>/<run>/events.jsonl while the exe runs.
+                    if (newBacktrackEpisode)
+                    {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::NpcMovement, StructuredLevel::Important,
+                            "npc.wall-escape", std::to_string(npc.id), "backtrack",
+                            (uint32_t)(npc.sensors.time * 60.0f),
+                            nlohmann::json{
+                                {"actor", npc.id},
+                                {"preset", npc.actorPresetId},
+                                {"team", npc.body.matchTeam},
+                                {"policy", policy ? policy->blockedBehavior : "none"},
+                                {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+                                {"blocked_dir", {requestedDir.x, requestedDir.y}}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
                 }
             }
         }
@@ -1503,31 +1604,42 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world, Player& player, float
             npc.stateMachine.stuckTimer += safeDt;
             if (npc.stateMachine.stuckTimer > 0.3f)
             {
-                if (policy)
-                {
-                    // Keep the correction local, but do not let a policy NPC
-                    // sit forever against a crate, ramp lip, or corner. A
-                    // repeated jump is a bounded escape attempt; the movement
-                    // policy still decides whether jumping is allowed below.
-                    if (npc.sensors.touchFloor && glm::length(moveDir) > 0.1f) {
-                        jump = true;
-                        jumpReason = NpcJumpReason::Obstacle;
-                    }
-                    npc.navigator.requestRepath();
-                    npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
-                    std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
-                    Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,
-                        "[NPC NAV] actor=%u stuck=1 recovery=jump_turn_repath\n", npc.id);
-                }
-                else
-                {
-                    moveDir = NpcNavigation::unstuckDirection(npc, npc.rngState, world, nearCandidates);
+                // One shared recovery for every actor (policy or legacy): choose
+                // the most open local direction first, then optionally jump
+                // (still gated by the policy below), then request a fresh route.
+                // The actor never keeps pushing the blocked direction.
+                const glm::vec3 openDir = NpcNavigation::unstuckDirection(
+                    npc, npc.rngState, world, nearCandidates);
+                if (glm::length(openDir) > 0.1f)
+                    moveDir = openDir;
+                if (npc.sensors.touchFloor && glm::length(moveDir) > 0.1f) {
                     jump = true;
+                    jumpReason = NpcJumpReason::Obstacle;
+                }
+                if (!policy)
                     dash = npc.dashCooldown <= 0.0f;
-                    npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
-                    std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
-                    Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,
-                        "[NPC NAV] actor=%u stuck=1 recovery=jump\n", npc.id);
+                npc.navigator.requestRepath();
+                npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
+                std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
+                Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,
+                    "[NPC NAV] actor=%u stuck=1 recovery=open_turn_repath\n", npc.id);
+                // Canonical append-only diagnostic, emitted once per stuck
+                // episode (the first tick the timer crosses the recovery
+                // threshold). Read logs/<date>/<run>/events.jsonl live.
+                if (npc.stateMachine.stuckTimer - safeDt <= 0.3f)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::NpcMovement, StructuredLevel::Important,
+                        "npc.wall-escape", std::to_string(npc.id), "open_turn_repath",
+                        (uint32_t)(npc.sensors.time * 60.0f),
+                        nlohmann::json{
+                            {"actor", npc.id},
+                            {"preset", npc.actorPresetId},
+                            {"team", npc.body.matchTeam},
+                            {"policy", policy ? policy->blockedBehavior : "none"},
+                            {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+                            {"stuck_seconds", npc.stateMachine.stuckTimer}},
+                        __FILE__, __LINE__, __FUNCTION__);
                 }
             }
         }

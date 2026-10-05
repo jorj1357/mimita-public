@@ -31,6 +31,7 @@ public:
     void reset();
     void onState(const DuelStatePacket& packet);
     void onBombTagState(const BombTagStatePacket& packet);
+    void onDisasterState(const DisasterStatePacket& packet);
     bool active() const { return !mMode.empty() && mMode != "duel" && mMode != "sandbox"; }
     bool isBombTag() const { return mMode == "bomb_tag"; }
     const std::string& mode() const { return mMode; }
@@ -118,6 +119,20 @@ public:
     // Replicated actor state (ActorState) for any actor id, or 0xFF.
     uint8_t actorState(uint32_t actorId) const;
 
+    // ── Disaster state (replicated mode-pack disaster) ───────────────
+    // Server-authoritative identity, seed, window, and resolved winner. The
+    // client only displays this; it never decides disaster outcomes.
+    bool disasterConfigured() const { return mDisasterConfigured; }
+    bool disasterActive() const { return mDisasterActive; }
+    const std::string& disasterId() const { return mDisasterId; }
+    const std::string& disasterName() const { return mDisasterName; }
+    const std::string& disasterDescription() const { return mDisasterDescription; }
+    uint32_t disasterSeed() const { return mDisasterSeed; }
+    uint32_t disasterStartTick() const { return mDisasterStartTick; }
+    uint32_t disasterDurationTicks() const { return mDisasterDurationTicks; }
+    uint32_t disasterWinner() const { return mDisasterWinner; }
+    uint8_t disasterResolveSource() const { return mDisasterResolveSource; }
+
     // ── Procedural world (Infinite Dungeon Slayer) ───────────────────
     // Server-owned room lifecycle state plus seed and generated-room counts.
     // The client only applies this; it never decides room completion.
@@ -162,6 +177,18 @@ private:
     uint32_t mBombTimerTicks = 0;
     uint32_t mBombInactiveTicks = 0;
     glm::vec3 mBombPos{0.0f};
+
+    // ── Disaster replicated state ────────────────────────────────────
+    bool mDisasterConfigured = false;
+    bool mDisasterActive = false;
+    std::string mDisasterId;
+    std::string mDisasterName;
+    std::string mDisasterDescription;
+    uint32_t mDisasterSeed = 0;
+    uint32_t mDisasterStartTick = 0;
+    uint32_t mDisasterDurationTicks = 0;
+    uint32_t mDisasterWinner = 0;
+    uint8_t mDisasterResolveSource = 0;
 
     // ── Gamemode visual overrides ──────────────────────────────────
     float mCameraFov = 0.0f;         // 0 = no override

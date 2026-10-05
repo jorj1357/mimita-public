@@ -71,6 +71,14 @@
       "description": "Survive increasingly large waves of NPCs.",
       "teams": 0,
       "score_limit": 0
+    },
+    {
+      "id": "survive_disasters",
+      "gamemode_id": "survive_disasters",
+      "name": "Survive the Disasters",
+      "description": "Random weapons, one life. Last actor standing wins.",
+      "teams": 0,
+      "score_limit": 0
     }
   ]
 }

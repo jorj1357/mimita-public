@@ -14,6 +14,7 @@
 #include "procedural/procedural-world.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "gamemode/mode-pack-registry.h"
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "duel/duel-weapon-pool.h"
@@ -297,6 +298,17 @@ int runServer(const LaunchOptions& options)
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     CommunityServerConfig::instance().load();
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
+    {
+        std::vector<std::string> packDiagnostics;
+        const bool packsOk = MimitaGamemode::ModePackRegistry::instance().loadDirectory(
+            "config/mode-packs", &packDiagnostics);
+        if (!packsOk) {
+            for (const std::string& line : packDiagnostics)
+                printf("%s [MODEPACK] %s\n", serverTimestamp(), line.c_str());
+        }
+        printf("%s [MODEPACK] loaded=%zu\n", serverTimestamp(),
+               MimitaGamemode::ModePackRegistry::instance().size());
+    }
     MatchRoleRegistry::instance().load("config/roles.json");
     MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
@@ -600,6 +612,9 @@ int runServer(const LaunchOptions& options)
             dedicatedNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
         }
         CommunityServerConfig::instance().pollReload();
+        // Hot-reload config/mode-packs/*.json (timestamp-gated). A failed
+        // reload keeps the last valid catalog; the active match is unaffected.
+        MimitaGamemode::ModePackRegistry::instance().pollReload();
         DuelWeaponPool::instance().pollReload();
         // The authoritative server owns respawn velocity. Reload it here so
         // changing spawnvelocity.json affects the next life without restart.

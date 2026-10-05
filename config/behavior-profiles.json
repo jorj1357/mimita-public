@@ -57,7 +57,8 @@
       "pursuit_search_ticks": 600,
       "after_reaching_last_known": "look_around",
       // Target information through walls. Possible values:
-      // "none" = no memory; "memory" = normal sight plus memory;
+      // "none" = no memory; 
+      // "memory" = normal sight plus memory;
       // "sound" = normal memory plus sound investigation;
       // "radar" = delayed/imperfect position knowledge through walls;
       // "perfect_radar" = exact current position knowledge through walls.
@@ -79,9 +80,9 @@
       // Rage2 is a custom profile. Its id is selected by Sandbox JSON.
       "id": "rage2",
       // Nearly perfect aim. Increase this to make shots less accurate.
-      "aim_error_deg": 0.01,
-      // Almost no reaction delay.
-      "reaction_delay": 0.01,
+      "aim_error_deg": 10.01,
+      // Almost no reaction delay  2026 10 015 1231 in seconds 
+      "reaction_delay": 0.5,
       // Normal shooting speed.
       "fire_cadence_multiplier": 1.0,
       // Very aggressive combat decisions.
@@ -122,7 +123,7 @@
       "after_reaching_last_known": "continue_pursuit",
       // Rage2 has perfect target knowledge through walls, but still cannot
       // shoot until the shared real line-of-sight check says the target is visible.
-      "information_mode": "perfect_radar",
+      "information_mode": "memory",
       "radar_delay_ticks": 0,
       "radar_error_meters": 0.0,
       "radar_memory_mode": "never",

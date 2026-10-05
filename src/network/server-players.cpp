@@ -383,6 +383,14 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
             player.weaponSetId = 0;
         player.ownedWeaponIds.clear();
         getInitialInventory(player.ownedWeaponIds, player.weaponSetId);
+        // A declared disaster owns the per-actor loadout for this life. The
+        // assignment is deterministic from the replicated round seed, so this
+        // is a data lookup, not a mode-name branch.
+        if (const std::string* disasterWeapon =
+                MimitaGamemode::disasterWeaponForActor(serverGamemodeState().disaster, player.id)) {
+            player.ownedWeaponIds.clear();
+            player.ownedWeaponIds.push_back(*disasterWeapon);
+        }
         player.weaponRuntimes.clear();
     }
 

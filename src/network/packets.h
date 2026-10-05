@@ -161,7 +161,12 @@ enum PacketType : uint8_t
     PACKET_PHYSICAL_ENTITY_SPAWN = 70,
     PACKET_PHYSICAL_ENTITY_DESPAWN = 71,
     PACKET_PHYSICAL_ENTITY_STATE = 72,
-    PACKET_ENTITY_CUT_EVENT = 73
+    PACKET_ENTITY_CUT_EVENT = 73,
+    // ── Disaster state (server → clients) ───────────────────────────
+    // Replicates the active mode-pack disaster: identity, seed, start tick,
+    // duration, and resolved winner. The client only displays this
+    // server-authoritative state; it never decides disaster outcomes.
+    PACKET_DISASTER_STATE = 74
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1767,6 +1772,32 @@ static_assert(sizeof(RespawnRequestPacket) <= 32, "RespawnRequestPacket is too l
 static_assert(sizeof(PlayerRespawnedPacket) <= 584, "PlayerRespawnedPacket is too large");
 static_assert(sizeof(BombTagStatePacket) <= 96, "BombTagStatePacket is too large");
 static_assert(sizeof(BombTagPassEventPacket) <= 96, "BombTagPassEventPacket is too large");
+
+// ── Disaster state replication (server → clients) ────────────────────
+// One authoritative descriptor for the active mode-pack disaster. `seed` and
+// `startTick` let clients reproduce the same deterministic per-actor weapon
+// assignment without shipping every assignment over the wire.
+struct DisasterStatePacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    uint32_t duelId = 0;
+    uint32_t stateVersion = 0;
+    uint32_t seed = 0;              // authoritative round seed
+    uint32_t startTick = 0;         // tick the disaster became active
+    uint32_t durationTicks = 0;     // bounded duration in 60 Hz ticks
+    uint32_t winnerActor = 0;       // resolved winner actor id (0 = none)
+    uint8_t phase = 0;              // DuelStatePhase
+    uint8_t active = 0;             // 1 while the disaster is running
+    uint8_t resolveSource = 0;      // 0=none, 1=last_alive, 2=timeout
+    uint8_t reserved = 0;
+    char disasterId[32] = {};
+    char name[48] = {};
+    char description[96] = {};
+};
+
+static_assert(sizeof(DisasterStatePacket) <= 256, "DisasterStatePacket is too large");
 
 // ── Destructible physical-entity replication ─────────────────────────
 // The base geometry is never sent as triangles. A client mirror rebuilds the

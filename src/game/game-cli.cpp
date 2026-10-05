@@ -47,7 +47,9 @@
 #include "debug/crash-handler.h"
 #include <exception>
 #include <stdexcept>
+#include <fstream>
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "network/ice/ice-agent.h"
 #include "network/ice/ice-config.h"
 #include "network/ice/ice-test.h"
@@ -56,10 +58,15 @@
 #include "gamemode/match-roles.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/map-config.h"
+#include "gamemode/mode-pack-registry.h"
+#include "gamemode/action-graph.h"
+#include "gamemode/capability-registry.h"
+#include "gamemode/disaster-runtime.h"
 #include "map/map-loader-collision.h"
 #include "network/server-gamemode.h"
 #include "npc/npc-nav-request.h"
 #include "npc/npc-navigation.h"
+#include "npc/npc-difficulty-config.h"
 #include "npc/npc-surface.h"
 #include "npc/npc-navigation-settings.h"
 #include "npc/npc-targeting.h"
@@ -300,6 +307,10 @@ bool handleGameCLI(int argc, char** argv)
             !counterStrike->presentation.damageNumbers &&
             !counterStrike->presentation.hitEffects &&
             !counterStrike->presentation.worldImpactEffects &&
+            counterStrike->presentation.hasHitMarkers &&
+            !counterStrike->presentation.hitMarkers &&
+            counterStrike->presentation.hasHitSounds &&
+            !counterStrike->presentation.hitSounds &&
             counterStrike->presentation.bloodEffects &&
             policyOk;
         printf("[ACTOR PRESET SELFTEST] policy configured=%d travel=%s combat=%s circle=%d strafe=%d zigzag=%d randomwalk=%d jump=%s dash=%s noise=%.2f retreat=%.2f\n",
@@ -309,13 +320,15 @@ bool handleGameCLI(int argc, char** argv)
                mp ? (int)mp->allowZigZag : -1, mp ? (int)mp->allowRandomWalk : -1,
                mp ? mp->jumpStyle.c_str() : "-", mp ? mp->dashStyle.c_str() : "-",
                mp ? mp->movementNoise : -1.0f, mp ? mp->retreatHealthFraction : -1.0f);
-        printf("[ACTOR PRESET SELFTEST] counter_strike=%s revolver=%.0f/6/%d shotgun=%.0f/%d/%d rifle=%.0f/%d/%d hs=%.0f thick=%.1f/%.1f\n",
+        printf("[ACTOR PRESET SELFTEST] counter_strike=%s revolver=%.0f/6/%d shotgun=%.0f/%d/%d rifle=%.0f/%d/%d hs=%.0f thick=%.1f/%.1f hit_markers=%d hit_sounds=%d\n",
                counterStrike ? "found" : "missing",
                revolver ? revolver->damage : -1.0f, revolver ? revolver->reserveAmmo : -1,
                shotgun ? shotgun->damage : -1.0f, shotgun ? shotgun->magazineSize : -1, shotgun ? shotgun->reserveAmmo : -1,
                rifle ? rifle->damage : -1.0f, rifle ? rifle->magazineSize : -1, rifle ? rifle->reserveAmmo : -1,
                rifle ? rifle->headshotMultiplier : -1.0f,
-               rifle ? rifle->beamThickness : -1.0f, rifle ? rifle->worldThickness : -1.0f);
+               rifle ? rifle->beamThickness : -1.0f, rifle ? rifle->worldThickness : -1.0f,
+               counterStrike ? (int)counterStrike->presentation.hitMarkers : -1,
+               counterStrike ? (int)counterStrike->presentation.hitSounds : -1);
         printf("[ACTOR PRESET SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
@@ -398,10 +411,14 @@ bool handleGameCLI(int argc, char** argv)
         ok &= check(!sawZigZag, "ZigZag is never selected");
         ok &= check(npc->body.pos.x > startX + 3.0f, "NPC moved forward continuously");
 
-        // Phase 2: wall ahead. The NPC must make a local correction (lateral
-        // movement) and never fall back to random wandering.
-        addTri(world, {4,-3,0}, {4,3,0}, {4,3,4});
-        addTri(world, {4,-3,0}, {4,3,4}, {4,-3,4});
+        // Phase 2: wall ahead. Place it relative to the NPC's current position
+        // so it is always directly in front regardless of how far Phase 1
+        // advanced; an absolute X becomes stale as movement tuning changes and
+        // would leave the wall behind the actor. The NPC must make a local
+        // correction (lateral movement) and never fall back to random wandering.
+        const float wallX = npc->body.pos.x + 3.0f;
+        addTri(world, {wallX,-3,0}, {wallX,3,0}, {wallX,3,4});
+        addTri(world, {wallX,-3,0}, {wallX,3,4}, {wallX,-3,4});
         buildCollisionChunks(world, nullptr);
         sawRandom = false;
         sawCircle = false;
@@ -789,6 +806,216 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--npc-movement-executor-selftest") {
+        // Proves Sandbox and Counter-Strike reach the same shared movement
+        // executor, that a mode objective changes only the goal, and that the
+        // executor is resolved from the actor preset.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        const MatchRoleDefinition* preset =
+            MatchRoleRegistry::instance().getActorPreset("counter_strike");
+        ok &= check(preset != nullptr, "counter_strike preset loads");
+        if (preset)
+            ok &= check(preset->movementPolicy.movementExecutor == "sandbox_shared",
+                        "counter_strike preset uses movement_executor=sandbox_shared");
+
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            const glm::vec3 n = glm::cross(b - a, c - a);
+            const float len = glm::length(n);
+            t.normal = len > 1e-6f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            w.collisionMesh.triangles.push_back(t);
+        };
+        World world;
+        addTri(world, {60,60,0}, {-60,60,0}, {-60,-60,0});
+        addTri(world, {60,60,0}, {-60,-60,0}, {60,-60,0});
+        buildCollisionChunks(world, nullptr);
+
+        NpcSystem npcs;
+        const uint32_t csId = 9401, sbId = 9402;
+        npcs.spawnNpc(csId, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+        npcs.spawnNpc(sbId, 5.0f, glm::vec3(6.0f, 0.0f, 1.9f));
+        Npc* cs = nullptr;
+        Npc* sb = nullptr;
+        for (Npc& n : npcs.all()) {
+            if (n.id == csId) cs = &n;
+            else if (n.id == sbId) sb = &n;
+        }
+        ok &= check(cs && sb, "both NPCs spawned");
+        if (cs && sb) {
+            cs->actorPresetId = "counter_strike";
+            cs->wakeupTimer = 0.0f;
+            sb->wakeupTimer = 0.0f;
+            cs->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+            sb->body.pos = glm::vec3(6.0f, 0.0f, 1.9f);
+
+            Player target;
+            target.pos = glm::vec3(40.0f, 0.0f, 2.0f);
+            target.currentHp = 100; target.maxHp = 100; target.dead = false;
+
+            const float csStart = cs->body.pos.x;
+            const float sbStart = sb->body.pos.x;
+            for (int t = 0; t < 150; ++t) {
+                npcs.updateOneWithTarget(csId, world, target, 1.0f / 60.0f);
+                npcs.updateOneWithTarget(sbId, world, target, 1.0f / 60.0f);
+            }
+            ok &= check(cs->lastMovementExecutor == NpcMovementExecutor::SandboxShared,
+                        "CS NPC runs the shared Sandbox executor");
+            ok &= check(sb->lastMovementExecutor == NpcMovementExecutor::SandboxShared,
+                        "Sandbox NPC runs the shared Sandbox executor");
+            ok &= check(cs->lastMovementExecutor == sb->lastMovementExecutor,
+                        "both modes reach the same movement executor");
+            ok &= check(cs->body.pos.x > csStart + 1.0f, "CS NPC moved");
+            ok &= check(sb->body.pos.x > sbStart + 1.0f, "Sandbox NPC moved");
+
+            // Objective context changes only the goal, never the executor.
+            NpcMovementContext ctx;
+            ctx.target = &target;
+            ctx.hasTarget = true;
+            ctx.hasObjective = true;
+            ctx.objective.objectiveKnown = true;
+            ctx.objective.objectivePos = glm::vec3(-10.0f, 0.0f, 2.0f);
+            npcs.updateOneNpc(*cs, world, ctx, 1.0f / 60.0f);
+            ok &= check(cs->utilityContext.objectiveKnown &&
+                        glm::length(cs->utilityContext.objectivePos - ctx.objective.objectivePos) < 0.01f,
+                        "objective context reaches the shared utility context");
+            ok &= check(cs->lastMovementExecutor == NpcMovementExecutor::SandboxShared,
+                        "objective context does not change the movement executor");
+        }
+
+        printf("[NPC MOVEMENT EXECUTOR SELFTEST]\n%s", report.c_str());
+        printf("[NPC MOVEMENT EXECUTOR SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-wall-escape-event-selftest") {
+        // Proves the `npc.wall-escape` diagnostic actually reaches the canonical
+        // logs/<date>/<run>/events.jsonl sink through the real, level-gated
+        // StructuredLogger. The actor is a real counter_strike-preset NPC driven
+        // through the live NpcSystem::updateOneNpc path inside a closed wall
+        // pocket, so it must backtrack / recover and emit the event. Reading the
+        // file back is the whole point: without the npc_movement category level
+        // gate in config/debuglogger.json the record is silently dropped.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+
+        StructuredLogger::instance().init();
+        const std::string eventsPath = StructuredLogger::instance().eventsPath();
+        check(!eventsPath.empty(), "canonical events path is available");
+        check(StructuredLogger::instance().shouldLog(
+                  StructuredCategory::NpcMovement, StructuredLevel::Important),
+              "npc_movement category allows Important (config/debuglogger.json)");
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            const glm::vec3 n = glm::cross(b - a, c - a);
+            const float len = glm::length(n);
+            t.normal = len > 1e-6f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            w.collisionMesh.triangles.push_back(t);
+        };
+
+        World world;
+        addTri(world, {25,25,0}, {-25,25,0}, {-25,-25,0});
+        addTri(world, {25,25,0}, {-25,-25,0}, {25,-25,0});
+        // Closed pocket: four vertical walls around the actor so every local
+        // escape direction is blocked and recovery must fire. The pocket is
+        // wider than the navigator's short-probe clearance so the actor first
+        // commits to a blocked direction instead of holding with no input.
+        const float h = 3.0f, top = 20.0f;
+        addTri(world, { h,-h,0}, { h, h,0}, { h, h,top});
+        addTri(world, { h,-h,0}, { h, h,top}, { h,-h,top});
+        addTri(world, {-h, h,0}, {-h,-h,0}, {-h,-h,top});
+        addTri(world, {-h, h,0}, {-h,-h,top}, {-h, h,top});
+        addTri(world, {-h, h,0}, { h, h,0}, { h, h,top});
+        addTri(world, {-h, h,0}, { h, h,top}, {-h, h,top});
+        addTri(world, { h,-h,0}, {-h,-h,0}, {-h,-h,top});
+        addTri(world, { h,-h,0}, {-h,-h,top}, { h,-h,top});
+        buildCollisionChunks(world, nullptr);
+
+        NpcSystem npcs;
+        const uint32_t npcId = 9501;
+        npcs.spawnNpc(npcId, 5.0f, glm::vec3(0.0f, 0.0f, 2.0f));
+        Npc* npc = nullptr;
+        for (Npc& n : npcs.all())
+            if (n.id == npcId) { npc = &n; break; }
+        ok &= check(npc != nullptr, "counter_strike test actor spawned");
+        if (npc) {
+            npc->actorPresetId = "counter_strike";
+            npc->body.maxHp = 100;
+            npc->body.currentHp = 100;
+            npc->body.matchTeam = 0;  // Counter-Terrorists
+            npc->wakeupTimer = 0.0f;
+            npc->body.pos = glm::vec3(0.0f, 0.0f, 2.0f);
+
+            Player target;
+            target.pos = glm::vec3(10.0f, 0.0f, 2.0f);
+            target.currentHp = 100;
+            target.maxHp = 100;
+            target.dead = false;
+
+            // Deterministic mode goal: push through the +x wall. This is the
+            // same NpcMovementContext boundary Counter-Strike uses; the mode
+            // owns the goal, the shared executor owns the escape.
+            NpcMovementContext ctx;
+            ctx.target = &target;
+            ctx.hasTarget = true;
+            ctx.hasGoalOverride = true;
+            ctx.goalOverride.kind = NpcGoalKind::ReachPosition;
+            ctx.goalOverride.targetPos = glm::vec3(10.0f, 0.0f, 2.0f);
+            ctx.goalOverride.tolerance = 0.5f;
+
+            if (npc) {
+                for (int tick = 0; tick < 180; ++tick)
+                    npcs.updateOneNpc(*npc, world, ctx, 1.0f / 60.0f);
+            }
+        }
+
+        StructuredLogger::instance().shutdown();
+
+        int escapeEvents = 0;
+        int counterStrikeEvents = 0;
+        std::ifstream in(eventsPath);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.find("\"event\":\"npc.wall-escape\"") != std::string::npos) {
+                ++escapeEvents;
+                if (line.find("\"preset\":\"counter_strike\"") != std::string::npos)
+                    ++counterStrikeEvents;
+            }
+        }
+        report += "  info  events path: " + eventsPath + "\n";
+        report += "  info  npc.wall-escape records=" + std::to_string(escapeEvents) +
+                  " counter_strike=" + std::to_string(counterStrikeEvents) + "\n";
+        ok &= check(escapeEvents >= 1,
+                    "at least one npc.wall-escape record landed in events.jsonl");
+        ok &= check(counterStrikeEvents >= 1,
+                    "the recorded escape came from the counter_strike actor");
+        ok &= check(escapeEvents < 180,
+                    "backtrack diagnostic is rate-limited (not once per tick)");
+
+        printf("[NPC WALL ESCAPE EVENT SELFTEST]\n%s", report.c_str());
+        printf("[NPC WALL ESCAPE EVENT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--grenade-reasoning-selftest") {
         std::string report;
         const bool ok = npcGrenadeReasoningSelfTest(report);
@@ -1003,6 +1230,61 @@ bool handleGameCLI(int argc, char** argv)
                cs.objectives[0].visual.pulseAmplitude, cs.objectives[0].visual.periodSeconds);
         const bool ok = teamsOk && rolesOk && roundsOk && objOk && visualOk;
         printf("[GAMEMODE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--mode-pack-selftest") {
+        using namespace MimitaGamemode;
+        std::vector<std::string> diagnostics;
+        const bool loaded = ModePackRegistry::instance().loadDirectory(
+            argc > 2 ? argv[2] : "config/mode-packs", &diagnostics);
+        printf("[MODE PACK SELFTEST] loaded=%zu ok=%d\n",
+               ModePackRegistry::instance().size(), (int)loaded);
+        for (const std::string& line : diagnostics)
+            printf("[MODE PACK SELFTEST] %s\n", line.c_str());
+        for (const std::string& id : ModePackRegistry::instance().ids())
+            printf("[MODE PACK SELFTEST] pack=%s\n", id.c_str());
+        std::string disasterReport;
+        const bool disasterOk = disasterRuntimeSelfTest(disasterReport);
+        printf("[DISASTER SELFTEST]\n%s", disasterReport.c_str());
+        printf("[DISASTER SELFTEST] %s\n", disasterOk ? "PASS" : "FAIL");
+        const bool ok = loaded && disasterOk;
+        printf("[MODE PACK SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--survive-disasters-selftest") {
+        using namespace MimitaGamemode;
+        std::vector<std::string> diagnostics;
+        const bool loaded =
+            ModePackRegistry::instance().loadDirectory("config/mode-packs", &diagnostics);
+        const ModePack* pack = ModePackRegistry::instance().get("survive_disasters");
+        printf("[SURVIVE DISASTERS] pack=%s schema=%d capabilities=%zu disasters=%zu\n",
+               pack ? pack->id.c_str() : "missing", pack ? pack->schemaVersion : -1,
+               pack ? pack->capabilities.size() : 0, pack ? pack->disasters.size() : 0);
+
+        bool ok = loaded && pack != nullptr;
+        if (pack) {
+            const ActionGraph graph = ActionGraph::build(*pack);
+            const bool hasWeapon = graph.hasCapability(Cap::kInventoryRandomPerActor);
+            const bool hasWin = graph.hasCapability(Cap::kWinLastActorAlive);
+            const auto activeActions = graph.dueAt((uint8_t)ActionPhase::Active, 1000, 1000);
+            ok &= hasWeapon && hasWin && !activeActions.empty();
+
+            DisasterState state;
+            disasterConfigure(state, *pack, 42);
+            disasterBegin(state, {7, 9, 11}, 1000);
+            const bool assigned = state.weaponByActor.size() == 3 &&
+                disasterWeaponForActor(state, 7) && disasterWeaponForActor(state, 9);
+            const bool durationOk = !disasterDurationElapsed(state, 1000) &&
+                disasterDurationElapsed(state, 1000 + state.durationTicks);
+            const bool timeoutOk = disasterPickTimeoutWinner(42, {7, 9, 11}) != 0;
+            printf("[SURVIVE DISASTERS] disaster=%s duration=%.0fs weapons=%zu actions=%zu\n",
+                   state.disasterId.c_str(), (float)state.durationTicks / 60.0f,
+                   state.weaponByActor.size(), graph.actions().size());
+            ok &= assigned && durationOk && timeoutOk;
+        }
+        printf("[SURVIVE DISASTERS] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

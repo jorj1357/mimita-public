@@ -144,6 +144,17 @@ void CommunityMatchClient::reset()
     mRagdollEnabled = 0;
     mBloodEnabled = 0;
 
+    mDisasterConfigured = false;
+    mDisasterActive = false;
+    mDisasterId.clear();
+    mDisasterName.clear();
+    mDisasterDescription.clear();
+    mDisasterSeed = 0;
+    mDisasterStartTick = 0;
+    mDisasterDurationTicks = 0;
+    mDisasterWinner = 0;
+    mDisasterResolveSource = 0;
+
     mActors.clear();
     mProcedural = ProceduralWorldNetworkState{};
     // Forget the client-side door handle so a map change cannot leave it
@@ -498,6 +509,27 @@ void CommunityMatchClient::onBombTagState(const BombTagStatePacket& packet)
         MatchLeaderboard& hud = MatchLeaderboard::instance();
         hud.setMode(mMode, 0);
     }
+}
+
+void CommunityMatchClient::onDisasterState(const DisasterStatePacket& packet)
+{
+    // Same stale-packet guard as the main state: the disaster packet shares the
+    // match stateVersion, so an equal version is current and accepted.
+    if (packet.duelId < mMatchId ||
+        (packet.duelId == mMatchId && packet.stateVersion < mStateVersion)) return;
+
+    mMatchId = packet.duelId;
+    mStateVersion = packet.stateVersion;
+    mDisasterConfigured = true;
+    mDisasterActive = packet.active != 0;
+    mDisasterId = packet.disasterId;
+    mDisasterName = packet.name;
+    mDisasterDescription = packet.description;
+    mDisasterSeed = packet.seed;
+    mDisasterStartTick = packet.startTick;
+    mDisasterDurationTicks = packet.durationTicks;
+    mDisasterWinner = packet.winnerActor;
+    mDisasterResolveSource = packet.resolveSource;
 }
 
 }

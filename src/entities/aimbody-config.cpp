@@ -71,6 +71,7 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingCenterOffset = glm::vec3(0.2f, 0.0f, 0.4f);
         mRightArmPointingRotationDegrees = glm::vec3(0.0f);
         mRightArmPointingBlendRate = 10.0f;
+        mRightArmPointingStabilityMultiplier = 0.0f;
         mRightArmPointingAimStrength = 10.0f;
         mRightArmPointingFollowDamping = 1.0f;
         mRightArmPointingMaxFollowSpeed = 30.0f;
@@ -113,6 +114,7 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingCenterOffset = glm::vec3(0.2f, 0.0f, 0.4f);
         mRightArmPointingRotationDegrees = glm::vec3(0.0f);
         mRightArmPointingBlendRate = 10.0f;
+        mRightArmPointingStabilityMultiplier = 0.0f;
         mRightArmPointingAimStrength = 10.0f;
         mRightArmPointingFollowDamping = 1.0f;
         mRightArmPointingMaxFollowSpeed = 30.0f;
@@ -145,6 +147,10 @@ bool AimBodyConfig::load(const std::string& path)
                 mRightArmPointingBlendRate = std::clamp(
                     pointing.value("blend_rate", mRightArmPointingBlendRate),
                     0.1f, 60.0f);
+                mRightArmPointingStabilityMultiplier = std::clamp(
+                    pointing.value("stability_multiplier",
+                                   mRightArmPointingStabilityMultiplier),
+                    0.0f, 100.0f);
                 mRightArmPointingAimStrength = std::clamp(
                     pointing.value("aim_strength", mRightArmPointingAimStrength),
                     0.1f, 100.0f);
@@ -214,6 +220,7 @@ bool AimBodyConfig::save()
                                mRightArmPointingRotationDegrees.y,
                                mRightArmPointingRotationDegrees.z}},
         {"blend_rate", mRightArmPointingBlendRate},
+        {"stability_multiplier", mRightArmPointingStabilityMultiplier},
         {"aim_strength", mRightArmPointingAimStrength},
         {"follow_damping", mRightArmPointingFollowDamping},
         {"max_follow_speed", mRightArmPointingMaxFollowSpeed},

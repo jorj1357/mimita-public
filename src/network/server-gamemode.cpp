@@ -29,6 +29,8 @@
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
 #include "gamemode/map-config.h"
+#include "gamemode/mode-pack-registry.h"
+#include "gamemode/deterministic-rng.h"
 #include "persistence/persistence-queue.h"
 #include "persistence/persistence-events.h"
 #include "persistence/persistence-emit.h"
@@ -593,6 +595,27 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.hasBombFeature = gm.features.bombHolderText;
     d.bombTagActive = false;
 
+    // ── Generic disaster runtime (data-driven, no mode-name branch) ──
+    // A mode pack declares capabilities and disasters; the server resolves
+    // them into an action graph. A missing pack means no disaster.
+    d.disasterGraph = MimitaGamemode::ActionGraph{};
+    d.disaster = MimitaGamemode::DisasterState{};
+    d.disasterPhaseStartTick = 0;
+    d.matchSeed = 0;
+    if (const MimitaGamemode::ModePack* pack =
+            MimitaGamemode::ModePackRegistry::instance().get(resolvedGamemodeId)) {
+        d.disasterGraph = MimitaGamemode::ActionGraph::build(*pack);
+        if (!pack->disasters.empty()) {
+            static uint32_t s_matchSeedCounter = 0;
+            d.matchSeed = MimitaGamemode::mixSeed((uint32_t)nowMs(), ++s_matchSeedCounter);
+            MimitaGamemode::disasterConfigure(d.disaster, *pack, d.matchSeed);
+            Debug::warn(Debug::Category::Duel,
+                "[DISASTER] configured pack=%s disaster=%s seed=%u duration=%.1fs capabilities=%zu\n",
+                pack->id.c_str(), d.disaster.disasterId.c_str(), d.matchSeed,
+                (float)d.disaster.durationTicks / 60.0f, pack->capabilities.size());
+        }
+    }
+
     // ── Round-based lifecycle rules (Counter-Strike and future modes) ──
     d.victoryCondition = gm.victoryCondition;
     d.objectiveRounds = gm.victoryCondition == "rounds" && gm.rounds.roundsToWin > 0;
@@ -911,6 +934,35 @@ void broadcastDuelState(SOCKET sock,
             "[ServerGamemode] sent state duelId=%u version=%u phase=%u mode=%s map=%s player=%u sent=%d score=%d-%d red=%d blue=%d\n",
             d.duelId, d.stateVersion, (unsigned)d.phase, d.matchMode.c_str(), d.mapId.c_str(),
             kv.second.id, (int)sent, d.scoreA, d.scoreB, d.redTeamKills, d.blueTeamKills);
+    }
+
+    // ── Disaster state (only when a mode pack declares one) ─────────
+    // Rides the existing state cadence so a declared disaster always reaches
+    // clients without a separate broadcast scheduler. Legacy modes skip it.
+    if (d.disaster.configured || d.disaster.active) {
+        DisasterStatePacket dp{};
+        dp.header.type = PACKET_DISASTER_STATE;
+        dp.duelId = d.duelId;
+        dp.stateVersion = d.stateVersion;
+        dp.seed = d.disaster.seed;
+        dp.startTick = d.disaster.startTick;
+        dp.durationTicks = d.disaster.durationTicks;
+        dp.winnerActor = d.disaster.winnerActor;
+        dp.phase = d.phase;
+        dp.active = d.disaster.active ? 1 : 0;
+        dp.resolveSource = d.disaster.resolveSource;
+        std::strncpy(dp.disasterId, d.disaster.disasterId.c_str(), sizeof(dp.disasterId) - 1);
+        std::strncpy(dp.name, d.disaster.name.c_str(), sizeof(dp.name) - 1);
+        std::strncpy(dp.description, d.disaster.description.c_str(), sizeof(dp.description) - 1);
+        for (const auto& kv : players) {
+            if (kv.second.spawnState != ServerPlayer::Active)
+                continue;
+            const uint32_t eventId = nextReliableGameplayEventId();
+            queueReliableGameplayEventToPlayer(
+                sock, const_cast<ServerPlayer&>(kv.second), &dp, sizeof(dp), eventId,
+                reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)),
+                totalPacketsOut);
+        }
     }
 }
 
@@ -2636,6 +2688,42 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
                              uint64_t& totalPacketsOut)
 {
+    // ── Generic last-actor-alive (teamless) elimination ─────────────
+    // The whole participant set is one pool: the match ends when at most one
+    // actor is still in play. Used by data-driven modes (win_condition), never
+    // by a mode name.
+    if (d.winCondition == "last_actor_alive") {
+        int aliveActors = 0;
+        uint32_t lastAlive = 0;
+        for (uint32_t id : d.participants) {
+            auto aIt = d.matchActors.find(id);
+            const bool inPlay = aIt != d.matchActors.end() &&
+                (aIt->second.state == ActorState::Alive ||
+                 aIt->second.state == ActorState::Respawning);
+            if (inPlay) { ++aliveActors; lastAlive = id; }
+        }
+        if (d.participants.size() >= 2 && aliveActors <= 1) {
+            d.matchOver = true;
+            d.phase = DUEL_PHASE_RESULTS;
+            d.victoryType = 0;
+            d.winnerTeam = -1;
+            d.winnerPlayerId = lastAlive;
+            if (d.disaster.configured) {
+                d.disaster.resolved = true;
+                d.disaster.resolveSource = 1;
+                d.disaster.winnerActor = lastAlive;
+            }
+            d.phaseTimer = d.resultsSeconds;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            emitGamemodeMatchPersistence(d, tick, players);
+            Debug::warn(Debug::Category::Duel,
+                "[ELIMINATION] last_actor_alive winner=%u aliveActors=%d mode=%s\n",
+                lastAlive, aliveActors, d.matchMode.c_str());
+            return;
+        }
+    }
+
     // ── Generic last-team-standing / last-man-standing elimination ──
     // A team is in play while it has at least one participant whose actor state
     // is Alive or Respawning. Works identically for humans and NPCs.
@@ -3630,7 +3718,8 @@ void serverGamemodeTick(SOCKET sock,
     // Any mode with a generic win condition (e.g. last_team_standing) uses the
     // same lifecycle instead of requiring a mode-specific branch.
     if (d.npcWaves || d.matchMode == "ffa" || d.matchMode == "tdm" ||
-        d.winCondition == "last_team_standing")
+        d.winCondition == "last_team_standing" ||
+        d.winCondition == "last_actor_alive")
     {
         if (d.stateBroadcastPending)
         {
@@ -3708,6 +3797,18 @@ void serverGamemodeTick(SOCKET sock,
                 }
                 if (d.timeLimitSeconds > 0)
                     d.matchTimeLimitTick = tick + (uint32_t)(d.timeLimitSeconds * 60.0f);
+                // A declared disaster assigns per-actor weapons before the
+                // actors are placed at their spawns, so the spawn reset applies
+                // the assignment. Pure capability lookup, no mode name.
+                if (d.disaster.configured) {
+                    MimitaGamemode::disasterBegin(d.disaster, d.participants, tick);
+                    d.disasterPhaseStartTick = tick;
+                    Debug::warn(Debug::Category::Duel,
+                        "[DISASTER] begin id=%s seed=%u actors=%zu duration=%.1fs\n",
+                        d.disaster.disasterId.c_str(), d.disaster.seed,
+                        d.disaster.weaponByActor.size(),
+                        (float)d.disaster.durationTicks / 60.0f);
+                }
                 resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
                 ++d.stateVersion;
                 d.lastBroadcastTick = tick;
@@ -3742,6 +3843,37 @@ void serverGamemodeTick(SOCKET sock,
             // Check win conditions on every tick
             checkMatchWinConditions(d, tick, sock, players, totalPacketsOut);
             if (d.phase != DUEL_PHASE_ACTIVE) break;  // win condition triggered
+            // A declared disaster that reaches its bounded duration with more
+            // than one survivor resolves a deterministic winner (pure rule).
+            if (d.disaster.active && !d.disaster.resolved &&
+                MimitaGamemode::disasterDurationElapsed(d.disaster, tick)) {
+                std::vector<uint32_t> survivors;
+                for (uint32_t id : d.participants) {
+                    auto aIt = d.matchActors.find(id);
+                    if (aIt != d.matchActors.end() &&
+                        (aIt->second.state == ActorState::Alive ||
+                         aIt->second.state == ActorState::Respawning))
+                        survivors.push_back(id);
+                }
+                d.disaster.resolved = true;
+                d.disaster.resolveSource = 2;
+                d.disaster.winnerActor =
+                    MimitaGamemode::disasterPickTimeoutWinner(d.matchSeed, survivors);
+                d.matchOver = true;
+                d.phase = DUEL_PHASE_RESULTS;
+                d.victoryType = 1;  // time limit
+                d.winnerPlayerId = d.disaster.winnerActor;
+                d.winnerTeam = -1;
+                d.phaseTimer = d.resultsSeconds;
+                ++d.stateVersion;
+                broadcastDuelState(sock, d, players, totalPacketsOut);
+                emitGamemodeMatchPersistence(d, tick, players);
+                Debug::warn(Debug::Category::Duel,
+                    "[DISASTER] timeout id=%s survivors=%zu winner=%u\n",
+                    d.disaster.disasterId.c_str(), survivors.size(),
+                    d.disaster.winnerActor);
+                break;
+            }
             // Periodic broadcast
             if (tick - d.lastBroadcastTick >= 60)
             {
@@ -3799,6 +3931,10 @@ void serverGamemodeTick(SOCKET sock,
                 }
                 d.phase = DUEL_PHASE_INTERMISSION;
                 d.phaseTimer = d.intermissionSeconds;
+                // A declared disaster ends with its match; the name stays
+                // configured so the next intermission/countdown can display it.
+                d.disaster.active = false;
+                d.disaster.resolved = false;
                 ++d.stateVersion;
                 broadcastDuelState(sock, d, players, totalPacketsOut);
                 Debug::log(Debug::Category::Duel,

@@ -1295,6 +1295,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 return;
             CommunityMatchClient::instance().onBombTagState(*bt);
         }
+        else if (header->type == PACKET_DISASTER_STATE &&
+                 bytes >= (int)sizeof(DisasterStatePacket))
+        {
+            const DisasterStatePacket* disaster =
+                reinterpret_cast<const DisasterStatePacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, disaster->eventId, disaster->eventSessionId))
+                return;
+            CommunityMatchClient::instance().onDisasterState(*disaster);
+        }
         else if (header->type == PACKET_DUEL_ENEMY_SPAWN &&
                  bytes >= (int)sizeof(DuelEnemySpawnPacket))
         {

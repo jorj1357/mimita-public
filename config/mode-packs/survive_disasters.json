@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "survive_disasters",
+  "name": "Survive the Disasters",
+  "description": "Random-weapon, one-life disaster rounds. Last actor standing wins.",
+  "gamemode_id": "survive_disasters",
+  "enabled": true,
+  "intermission_seconds": 15,
+  "countdown_seconds": 3,
+  "results_seconds": 8,
+  "hud_layout": "survive_disasters",
+  "banner_audio": "ui/click",
+  "maps": ["mimita-duels-map-v3", "atdm", "funworld"],
+  "weapons": ["revolver", "shotgun", "rocket_launcher", "spyknife", "force_punch"],
+  "actors": [],
+  "assets": [],
+  "capabilities": [
+    "lifecycle.intermission_countdown",
+    "participants.all_actors",
+    "inventory.random_per_actor",
+    "win.last_actor_alive",
+    "presentation.disaster_banner"
+  ],
+  "disasters": [
+    {
+      "id": "random_weapon_last_alive",
+      "name": "Random Weapon Last Alive",
+      "description": "Everyone gets a random weapon. No respawns. Last one standing wins.",
+      "duration_seconds": 90,
+      "win_policy": "last_actor_alive",
+      "weapon_pool": ["revolver", "shotgun", "rocket_launcher", "spyknife", "force_punch"]
+    }
+  ]
+}

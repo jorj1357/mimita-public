@@ -177,6 +177,12 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                     n.tuning.aggression = n.behavior.aggression;
                 if (!profile.weapons.empty())
                     npcApplyLoadout(n, profile.weapons, profile.startingWeapon);
+                // A declared disaster owns the NPC loadout for this life. Pure
+                // data lookup from replicated state; never a mode-name branch.
+                if (const std::string* disasterWeapon =
+                        MimitaGamemode::disasterWeaponForActor(
+                            serverGamemodeState().disaster, n.id))
+                    npcApplyLoadout(n, {*disasterWeapon}, *disasterWeapon);
                 finalizeServerNpcSpawn(n, ActorSpawnReason::NpcCreate);
             }
         }
@@ -298,6 +304,10 @@ static void respawnServerNpc(Npc& npc)
         npc.tuning.aggression = npc.behavior.aggression;
     if (!profile.weapons.empty())
         npcApplyLoadout(npc, profile.weapons, profile.startingWeapon);
+    // A declared disaster owns the NPC loadout for this life (data lookup).
+    if (const std::string* disasterWeapon =
+            MimitaGamemode::disasterWeaponForActor(serverGamemodeState().disaster, npc.id))
+        npcApplyLoadout(npc, {*disasterWeapon}, *disasterWeapon);
     npc.body.killedBy.clear();
     npc.body.spawnFlashTimer = 10.0f;
     npc.attackCooldown = npcSpawnFireDelaySeconds(npc);
@@ -805,6 +815,14 @@ void simulateSharedNpcs(SOCKET sock,
         auto it = npcs.find(npc.id);
         return it != npcs.end() ? it->second.matchTeam : npc.body.matchTeam;
     };
+    auto playerTeamOf = [&](const ServerPlayer& player) -> int {
+        // The roster map is authoritative. The player mirror can be one
+        // packet behind during round setup, which must not make every human
+        // look teamless and therefore non-hostile.
+        auto it = serverGamemodeState().matchTeams.find(player.id);
+        return it != serverGamemodeState().matchTeams.end()
+            ? it->second : player.matchTeam;
+    };
     const auto& npcDifficulty = NpcDifficultyConfig::instance().settings();
     const bool teamMatch = serverGamemodeState().objectiveRounds;
 
@@ -860,7 +878,7 @@ void simulateSharedNpcs(SOCKET sock,
                 if (p.dead || p.connectionStale) continue;
                 // Team gate: never target a same-team human. Applies in every
                 // target mode, including "player" mode.
-                if (!npcTargetingIsHostile(targeting, myTeam, p.matchTeam)) continue;
+                if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
                 const glm::vec3 d = p.pos - n.body.pos;
                 const float d2 = glm::dot(d, d);
                 if (d2 < bestD2)
@@ -890,7 +908,8 @@ void simulateSharedNpcs(SOCKET sock,
                 }
             }
         }
-        else if (n.behavior.active)
+        else if (n.behavior.active &&
+                 targeting.mode != NpcTargetingMode::OppositeTeam)
         {
             // Scored target selection. Weights come only from the behavior
             // profile; the legacy nearest-hostile path is used without one.
@@ -914,7 +933,7 @@ void simulateSharedNpcs(SOCKET sock,
             {
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.connectionStale) continue;
-                if (!npcTargetingIsHostile(targeting, myTeam, p.matchTeam)) continue;
+                if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
                 float s = scoreCandidate(p.pos, p.health, std::max(1, p.maxHealth), 0.5f);
                 const bool isCurrent = (p.id == n.serverTargetId);
                 if (isCurrent) s += b.targetStickiness;
@@ -969,7 +988,7 @@ void simulateSharedNpcs(SOCKET sock,
             {
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.connectionStale) continue;
-                if (!npcTargetingIsHostile(targeting, myTeam, p.matchTeam)) continue;
+                if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
                 const glm::vec3 d = p.pos - n.body.pos;
                 const float d2 = glm::dot(d, d);
                 if (d2 < bestD2) { bestD2 = d2; nearestPlayer = &p; nearestNpc = nullptr; }
@@ -1006,7 +1025,7 @@ void simulateSharedNpcs(SOCKET sock,
             mirrorPlayer.currentHp = nearestPlayer->health;
             mirrorPlayer.dead = nearestPlayer->dead;
             mirrorPlayer.username = nearestPlayer->name;
-            mirrorPlayer.matchTeam = nearestPlayer->matchTeam;
+            mirrorPlayer.matchTeam = playerTeamOf(*nearestPlayer);
         }
         else if (nearestNpc)
         {

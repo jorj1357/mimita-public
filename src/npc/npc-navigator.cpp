@@ -464,7 +464,9 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     }
 
     // Effective settings: a preset block overrides the shared defaults; without
-    // one, the navigator's legacy window is used.
+    // one, the navigator's legacy window is used. The caller decides whether
+    // the actor's optional preset block is supplied, but all executors still
+    // arrive here through this one navigator.
     NpcNavigationSettings eff;
     if (settings) {
         eff = *settings;

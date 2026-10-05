@@ -9,6 +9,11 @@
     "force_perspective": true
   },
   "movement_preset": "heavy",
+  // Generic shared movement executor. "sandbox_shared" makes Counter-Strike
+  // NPCs use exactly the same shared movement/wall-avoidance/stuck-recovery
+  // executor as Sandbox. Reusable by future modes (Arena Fighter, Zombie Guard).
+  // "surface_navigation" would instead honor the navigation block below.
+  "movement_executor": "sandbox_shared",
   "weapon_set": "counterstrike",
   "avatar": {
     "forced": true,
@@ -26,6 +31,8 @@
     "damage_numbers": false,
     "hit_effects": false,
     "world_impact_effects": false,
+    "hit_markers": false,
+    "hit_sounds": false,
     "blood_effects": true,
     "muzzle_flash": true
   },
@@ -60,6 +67,10 @@
     "world_knowledge": "local_sensing",
     // "turn" | "repath" | "turn_then_repath"
     "blocked_behavior": "turn_then_repath",
+    // Distance to the next forward waypoint when no enemy, memory, or
+    // objective has higher priority. After reaching it, another waypoint is
+    // created 12 units farther ahead. This is not a fake enemy position.
+    "forward_patrol_distance": 12.0,
     // 0.0 = no random directional noise.
     "movement_noise": 0.0
   },
@@ -78,7 +89,7 @@
     "repath_when_blocked": true,
 
     // Maximum local search distance around the NPC.
-    "search_radius": 20.0,
+    "search_radius": 200.0,
 
     // Allow the planner to create legal navigation jump links.
     "allow_navigation_jumps": true,
@@ -87,7 +98,7 @@
     "allow_wall_jump": false,
 
     // "turn" | "repath" | "turn_then_repath"
-    "blocked_behavior": "turn_then_repath"
+    "blocked_behavior": "turn"
   },
   "weapon_overrides": {
     "revolver": {

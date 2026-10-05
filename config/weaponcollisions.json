@@ -18,7 +18,8 @@
 
   "revolver": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "player_bounce": 0.99,
     "source": "boxes",
@@ -30,7 +31,8 @@
 
   "shotgun": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "player_bounce": 0.99,
     "source": "boxes",
@@ -42,7 +44,8 @@
 
   "rocket_launcher": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "player_bounce": 0.99,
     "source": "boxes",
@@ -54,7 +57,8 @@
 
   "grenade_launcher": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "player_bounce": 0.35,
     "source": "boxes",
@@ -66,7 +70,8 @@
 
   "swordsword": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "player_bounce": 0.35,
     "source": "boxes",
@@ -78,7 +83,8 @@
 
   "spyknife": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.3,
     "player_bounce": 0.99,
     "source": "boxes",
@@ -92,7 +98,8 @@
 
   "projectile_rifle": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.02,
     "player_bounce": 0.99,
     "source": "boxes",
@@ -104,7 +111,8 @@
 
   "hitscan_rifle": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.02,
     "player_bounce": 0.99,
     "source": "boxes",

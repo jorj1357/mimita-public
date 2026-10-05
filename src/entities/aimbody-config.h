@@ -55,6 +55,12 @@ public:
         return mRightArmPointingRotationDegrees;
     }
     float rightArmPointingBlendRate() const { return mRightArmPointingBlendRate; }
+    // RMB-only post-physics precision correction rate. 0 disables the extra
+    // correction; higher values make the physically aimed right arm settle
+    // more strongly toward the weapon/camera target.
+    float rightArmPointingStabilityMultiplier() const {
+        return mRightArmPointingStabilityMultiplier;
+    }
     // Multiplier for the physical RMB target response. 1 = current loose
     // behavior; higher values hold the aim target more strongly.
     float rightArmPointingAimStrength() const { return mRightArmPointingAimStrength; }
@@ -101,6 +107,7 @@ private:
     glm::vec3 mRightArmPointingCenterOffset{0.2f, 0.0f, 0.4f};
     glm::vec3 mRightArmPointingRotationDegrees{0.0f};
     float mRightArmPointingBlendRate = 10.0f;
+    float mRightArmPointingStabilityMultiplier = 0.0f;
     float mRightArmPointingAimStrength = 10.0f;
     float mRightArmPointingFollowDamping = 1.0f;
     float mRightArmPointingMaxFollowSpeed = 30.0f;

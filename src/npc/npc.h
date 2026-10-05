@@ -24,6 +24,7 @@
 #include "npc/npc-behavior.h"
 #include "npc/npc-perception.h"
 #include "npc/npc-utility.h"
+#include "npc/npc-movement-context.h"
 
 class Camera;
 struct World;
@@ -104,6 +105,9 @@ public:
     NpcNavigator navigator;
     // Capability-aware traversal chosen from the navigator's waypoint info.
     NpcTraversalExecutor traversal;
+    // The shared movement executor this actor ran last tick (resolved from the
+    // actor-preset movement_executor). Diagnostics/tests only.
+    NpcMovementExecutor lastMovementExecutor = NpcMovementExecutor::SandboxShared;
 
     float dashCooldown = 0.0f;
     float downDashCooldown = 0.0f;
@@ -227,6 +231,11 @@ public:
     // each online NPC can target its own nearest live player (instead of a
     // single shared mirror). Advances that NPC's AI, movement, and firing.
     void updateOneWithTarget(uint32_t npcId, const World& world, Player& player, float dt);
+
+    // The one shared NPC movement executor. Mode-specific code builds the
+    // context (selected target + objective + optional goal) and calls this;
+    // Sandbox and Counter-Strike both reach exactly this function.
+    void updateOneNpc(Npc& npc, const World& world, const NpcMovementContext& context, float dt);
     void render(const Camera& camera) const;
     void drawDebug(const Camera& camera) const;
     std::vector<DebugVis::NpcDebugInfo> debugInfo() const;
@@ -278,6 +287,4 @@ private:
     PlayerMovementEvent playerHistory[MAX_PLAYER_HISTORY]{};
     int playerHistoryHead = 0;
     int playerHistoryCount = 0;
-
-    void updateOneNpc(Npc& npc, const World& world, Player& player, float dt);
 };

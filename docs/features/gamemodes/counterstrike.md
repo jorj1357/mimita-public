@@ -1073,3 +1073,123 @@ Evidence:
 Next: human test — die in Counter-Strike and confirm the world stays visible and
 other actors keep moving while spectating. Changelog:
 `docs/changelog/2026-10-04/20261004_220150-counterstrike-death-spectator-black-fix.md`.
+## Attempt 16 — spawn separation confirmed; NPC targeting and wall recovery
+
+Human playtest evidence from 2026-10-04 confirms that the earlier team-spawn
+bug is no longer reproducing: actors are spawning on their correct side. The
+same playtest found two remaining behavior problems: Counter-Strike NPCs were
+not consistently selecting the human as a hostile target, and some NPCs kept
+pressing into the same wall or doorway.
+
+The current implementation now resolves human team identity from the
+authoritative `matchTeams` roster when the per-player mirror is stale. The
+Counter-Strike `opposite_team` policy uses nearest-hostile selection for both
+players and NPCs, matching Sandbox's direct chase behavior while retaining the
+Rage2 combat profile. Stuck policy NPCs choose a locally open direction, jump,
+and request a repath instead of repeatedly pushing the same wall.
+
+Build/self-tests pass. A live post-fix Counter-Strike match is still required
+to confirm CT/T NPC acquisition, NPC-vs-NPC firing, and Dust2 doorway/ramp
+recovery.
+
+### Attempt 17 — unified shared movement executor
+
+Tried:
+- Made the one shared movement owner explicit: `NpcSystem::updateOneNpc` now
+  takes a typed `NpcMovementContext` (mode-selected target + objective + optional
+  goal override) instead of a bare `Player&`. Both `NpcSystem::update`
+  (offline/Sandbox) and `NpcSystem::updateOneWithTarget` (server: Sandbox-online
+  + Counter-Strike) build a context and call it.
+- Added the generic, hot-reloadable actor-preset key `movement_executor`
+  (`sandbox_shared` default | `surface_navigation` | `direct`) stored on
+  `NpcMovementPolicy`; `counter_strike.json` sets `sandbox_shared`.
+- Consolidated the policy and legacy stuck-recovery branches into one shared
+  recovery (open direction → optional jump → repath), preserving Attempt 16.
+- Added `tests/npc-movement-executor-test.cpp` and
+  `--npc-movement-executor-selftest`.
+
+Went right:
+- Counter-Strike and Sandbox now resolve the same `sandbox_shared` executor and
+  run identical movement code and tuning; Rage2 stays combat-only.
+- Mode code (target selection, TeamBrain objective) supplies context and never
+  steers; no Counter-Strike branch was added to `npc.cpp`.
+- The change is generic, so Arena Fighter / Zombie Guard can reuse it.
+
+Went wrong / watch out:
+- Under `sandbox_shared`, Counter-Strike intentionally ignores its `navigation`
+  block (search radius etc.) to match Sandbox exactly; that block now applies
+  only to `surface_navigation`.
+- The uncommitted Attempt-16 targeting/wall-recovery changes were preserved.
+
+Evidence:
+- Build: `BUILD SUCCESS`; `mimita.exe` relinked.
+- Pure: `npc-movement-executor-test` PASS (15 checks).
+- Runtime: `--npc-movement-executor-selftest` PASS; targeting/navigation/search/
+  movement-policy/radar/nav-request/aim-fov/spawn-tag/cs-round/gamemode/
+  acceptance all PASS.
+- Human playtest: pending (see changelog
+  `docs/changelog/2026-10-04/20261004_233026-unified-npc-movement-executor.md`).
+
+Next: live Counter-Strike match — confirm both squads leave spawn, attack
+enemies (human + NPC) but never teammates, and recover at Dust2 doorways/ramps
+through the shared executor.
+
+### Attempt 18 — wall-escape diagnostic verified + rate-limited; stale policy-test fixture fixed
+
+Triggered by `docs/specs/20261005-counterstrike-wall-escape-handoff.md` (Option
+A only; Option B deferred). Finishes the deferred verification items.
+
+Tried:
+- **Fixed `--npc-movement-policy-selftest` FAIL (was `lateral=0.49`).** The
+  handoff blamed the Option-A un-gating, but instrumenting the test showed the
+  actor already sits at `x=15.17` after Phase 1, so the hard-coded Phase 2 wall
+  at `x=4` was *behind* it; the actor never met a wall. Placed the wall relative
+  to the actor (`npc->body.pos.x + 3.0f`). The assertion is unchanged and now
+  passes (`lateral=0.64`); it was the fixture that was stale, not the check.
+- **Verified the JSONL diagnostic end to end.** Added
+  `--npc-wall-escape-event-selftest`: it inits the real `StructuredLogger`,
+  drives a real `counter_strike`-preset NPC through `NpcSystem::updateOneNpc`
+  inside a closed wall pocket, then reads `events.jsonl` back and asserts a
+  `npc.wall-escape` record with `preset:"counter_strike"` and `team:0`.
+- **Rate-limited the backtrack event.** The selftest exposed the backtrack
+  event firing once per tick (90 records in 90 ticks) while pinned; added an
+  episode guard (`!npc.navigator.backtrackActive`) so it emits once per
+  backtrack episode. The `open_turn_repath` event already had a guard.
+
+Went right:
+- The event now provably lands in the canonical `logs/<date>/<run>/events.jsonl`
+  with the level gate satisfied (`npc_movement: important`).
+- The fixed fixture makes the policy selftest robust to future movement-tuning
+  changes instead of depending on an absolute coordinate.
+- The diagnostic is now bounded (1 record / 180 pinned ticks in the harness).
+
+Went wrong / watch out:
+- The background dev-loop compiles changed objects but does not always relink,
+  and `build_agent.py` links only when it compiled in the same run. Used
+  `MIMITA_FORCE_LINK=1` to reconcile. Environment artifact, not code.
+- This is an in-binary harness, not a live round. The CT-at-spawn event is
+  proven to write, but the human still needs to confirm the live escape.
+- Option B (real bomb-site positions) was not done; the placeholder sites in
+  `config/maps/dust2cyberiav4.json` remain guesses.
+
+Keep doing:
+- Exercise the real executor + real logger in the selftest and read the file
+  back, instead of asserting only that a call was made.
+- Anchor test geometry to the actor's live position when Phase 1 movement can
+  drift.
+
+Stop doing:
+- Trusting a handoff's suspected root cause without instrumenting the failing
+  test first (the "Option A broke it" theory was wrong).
+
+Evidence:
+- Build: `BUILD SUCCESS`; `mimita.exe` relinked.
+- Pure: executor 15, navigation 34, movement-policy 72 checks PASS.
+- Runtime: `--npc-movement-policy-selftest` PASS (`lateral=0.64`),
+  `--npc-wall-escape-event-selftest` PASS (1/1 record), plus navigation /
+  executor / acceptance PASS.
+- Human playtest: pending (live check that CT NPCs leave the spawn wall).
+
+Next: human live check that CT NPCs leave the Dust2 spawn wall and that
+`npc.wall-escape` records appear for CT actors during a real round. Changelog:
+`docs/changelog/2026-10-05/20261005_011500-wall-escape-event-verify.md`.

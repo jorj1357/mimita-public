@@ -89,6 +89,8 @@ bool parseNpcMovementPolicy(const nlohmann::json& j, NpcMovementPolicy& out,
                     {"local_sensing", "full_map"}, error)) return false;
     if (!readString(j, "blocked_behavior", next.blockedBehavior,
                     {"turn", "repath", "turn_then_repath"}, error)) return false;
+    if (!readString(j, "movement_executor", next.movementExecutor,
+                    {"sandbox_shared", "surface_navigation", "direct"}, error)) return false;
 
     if (!readBool(j, "allow_circle", next.allowCircle, error)) return false;
     if (!readBool(j, "allow_random_walk", next.allowRandomWalk, error)) return false;
@@ -98,6 +100,8 @@ bool parseNpcMovementPolicy(const nlohmann::json& j, NpcMovementPolicy& out,
 
     if (!readClampedFloat(j, "retreat_health_fraction", 0.0f, 1.0f,
                           next.retreatHealthFraction, error)) return false;
+    if (!readClampedFloat(j, "forward_patrol_distance", 1.0f, 999.0f,
+                          next.forwardPatrolDistance, error)) return false;
     if (!readClampedFloat(j, "movement_noise", 0.0f, 1.0f, next.movementNoise, error)) return false;
 
     out = next;

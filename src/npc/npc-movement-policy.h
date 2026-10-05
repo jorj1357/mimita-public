@@ -52,6 +52,19 @@ struct NpcMovementPolicy
     // "turn" | "repath" | "turn_then_repath"
     std::string blockedBehavior = "turn_then_repath";
 
+    // Which shared movement executor the actor runs. Generic and reusable by
+    // future modes. "sandbox_shared" (default) = the shared Sandbox-compatible
+    // executor and honors an optional preset navigation block;
+    // "surface_navigation" is retained as an explicit legacy name for the
+    // same shared route-planning path; "direct" disables surface planning.
+    std::string movementExecutor = "sandbox_shared";
+
+    // Distance to the next no-target forward waypoint. When the waypoint is
+    // reached, the shared goal mapper creates another one from the NPC's
+    // current position. This produces endless forward movement without a
+    // fake target or a permanently distant destination.
+    float forwardPatrolDistance = 12.0f;
+
     // 0.0 = no random directional noise.
     float movementNoise = 0.0f;
 };

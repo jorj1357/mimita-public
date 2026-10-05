@@ -25,6 +25,8 @@
 #include "combat/area-effect.h"
 #include "npc/team-brain.h"
 #include "procedural/procedural-world.h"
+#include "gamemode/action-graph.h"
+#include "gamemode/disaster-runtime.h"
 
 namespace MimitaNet {
 
@@ -276,6 +278,14 @@ struct ServerGamemodeState
     bool ragdollEnabled = false;    // value when ragdollExplicit is true
     bool bloodExplicit = false;     // true if gamemode defines blood_enabled
     bool bloodEnabled = false;      // value when bloodExplicit is true
+    // ── Generic disaster runtime (JSON mode packs) ──────────────────
+    // Data-driven: a mode pack declares capabilities/disasters and the server
+    // resolves them into an action graph before the match. No mode-name branch.
+    uint32_t matchSeed = 0;                       // replicated round seed
+    MimitaGamemode::ActionGraph disasterGraph;    // resolved capability schedule
+    MimitaGamemode::DisasterState disaster;       // active disaster state
+    uint32_t disasterPhaseStartTick = 0;          // tick the active phase began
+
     // ── Procedural world (Infinite Dungeon Slayer) ──────────────────
     // Server-owned room lifecycle state, replicated via DuelStatePacket.
     MimitaProcedural::ProceduralWorldState procedural;

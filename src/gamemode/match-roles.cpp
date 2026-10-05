@@ -194,6 +194,20 @@ bool readActorPreset(const json& j, const std::string& fallbackId,
             return false;
         }
     }
+    // Generic movement-executor selector. Top-level key overrides any value in
+    // npc_behavior so it is reusable by any mode, not Counter-Strike-specific.
+    if (j.contains("movement_executor")) {
+        if (!j["movement_executor"].is_string()) {
+            error = "movement_executor must be a string";
+            return false;
+        }
+        const std::string exec = j["movement_executor"].get<std::string>();
+        if (exec != "sandbox_shared" && exec != "surface_navigation" && exec != "direct") {
+            error = "movement_executor has unknown value \"" + exec + "\"";
+            return false;
+        }
+        out.movementPolicy.movementExecutor = exec;
+    }
     if (j.contains("displayName")) out.displayName = j.value("displayName", out.displayName);
     if (j.contains("movementPreset")) out.movementPreset = j.value("movementPreset", out.movementPreset);
     if (j.contains("weaponSet")) out.weaponSet = j.value("weaponSet", out.weaponSet);
