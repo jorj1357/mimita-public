@@ -72,6 +72,10 @@ struct BehaviorProfileDefinition
     float commitmentTargetProgressBias = 4.0f;
     float commitmentOpenDistanceBias = 6.0f;
     float commitmentReversePenalty = 8.0f;
+    // Persistent exploration target distance ahead of the actor (Explore goal),
+    // and the distance at which it counts as reached. Metres.
+    float travelTargetDistanceMeters = 60.0f;
+    float travelTargetReachedMeters = 4.0f;
 };
 
 // Resolved combat tuning carried by an NPC for its current life. `active` is
@@ -125,6 +129,8 @@ struct NpcBehaviorTuning
     float commitmentTargetProgressBias = 4.0f;
     float commitmentOpenDistanceBias = 6.0f;
     float commitmentReversePenalty = 8.0f;
+    float travelTargetDistanceMeters = 60.0f;
+    float travelTargetReachedMeters = 4.0f;
 };
 
 class BehaviorProfileRegistry

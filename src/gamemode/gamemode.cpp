@@ -356,6 +356,18 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             }
         }
 
+        // ── Mode-level NPC travel weighting (optional) ──────────────
+        if (root.contains("npc_travel") && root["npc_travel"].is_object()) {
+            const auto& tw = root["npc_travel"];
+            next.npcTravel.configured = true;
+            next.npcTravel.objectiveBias = std::clamp(
+                optFloat(tw, "objective_bias", next.npcTravel.objectiveBias), 0.0f, 5.0f);
+            next.npcTravel.huntBias = std::clamp(
+                optFloat(tw, "hunt_bias", next.npcTravel.huntBias), 0.0f, 5.0f);
+            next.npcTravel.exploreBias = std::clamp(
+                optFloat(tw, "explore_bias", next.npcTravel.exploreBias), 0.0f, 5.0f);
+        }
+
         // ── Mode-level RMB aim-FOV override (optional) ──────────────
         if (root.contains("camera") && root["camera"].is_object() &&
             root["camera"].contains("aim_fov") && root["camera"]["aim_fov"].is_object()) {

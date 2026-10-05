@@ -456,9 +456,25 @@ NpcGoal makeNavGoal(const Npc& npc)
         case UtilityGoalKind::MoveToObjective:
         case UtilityGoalKind::RetakeSite:
         case UtilityGoalKind::RotateToSite:
+        case UtilityGoalKind::DefendSite:
+            // DefendSite previously had no mapping and fell through to the
+            // state machine (Patrol), so defenders ignored their objective.
             if (glm::length(npc.utilityContext.objectivePos) > 0.001f) {
+                const float distToObjective = glm::length(glm::vec2(
+                    npc.utilityContext.objectivePos.x - npc.body.pos.x,
+                    npc.utilityContext.objectivePos.y - npc.body.pos.y));
+                // Hold at the objective instead of running through it: return a
+                // zero-length goal so the actor stops within its tolerance.
+                if (distToObjective <= 4.0f) {
+                    goal.kind = NpcGoalKind::ReachPosition;
+                    goal.targetPos = npc.body.pos;
+                    goal.tolerance = 1.5f;
+                    return goal;
+                }
                 goal.kind = NpcGoalKind::ReachPosition;
                 goal.targetPos = npc.utilityContext.objectivePos;
+                goal.tolerance = (npc.utility.currentGoal == UtilityGoalKind::DefendSite)
+                    ? 2.5f : 1.2f;
                 return goal;
             }
             break;
@@ -468,6 +484,15 @@ NpcGoal makeNavGoal(const Npc& npc)
                 goal.kind = NpcGoalKind::ReachPosition;
                 goal.targetPos = npc.utilityContext.objectivePos;
                 goal.tolerance = 1.0f;
+                return goal;
+            }
+            break;
+        case UtilityGoalKind::HuntArea:
+            if (npc.utilityContext.enemyAreaKnown &&
+                glm::length(npc.utilityContext.enemyAreaPos) > 0.001f) {
+                goal.kind = NpcGoalKind::ReachPosition;
+                goal.targetPos = npc.utilityContext.enemyAreaPos;
+                goal.tolerance = 4.0f;   // area, not an exact spot
                 return goal;
             }
             break;
@@ -484,10 +509,10 @@ NpcGoal makeNavGoal(const Npc& npc)
                 ? npc.targetMemory.lastKnownPosition
                 : npc.stateMachine.lastKnownTarget;
         } else if (npc.stateMachine.currentState == NpcState::Patrol) {
-            // Project a small rolling forward waypoint along the navigator's
-            // committed forward direction (the single direction owner). Once
-            // reached, the next update creates another waypoint from the new
-            // position, so the NPC advances forever without a fake target.
+            // Persist a far travel target along the committed forward direction.
+            // The navigator resolves and holds the actual point; here we only
+            // supply a heading hint (1 m ahead), so the goal no longer moves with
+            // the body every tick and the route stays valid.
             const glm::vec3 dir = npc.navigator.commitmentActive &&
                     glm::length(glm::vec3(npc.navigator.committedDirection.x,
                                           npc.navigator.committedDirection.y, 0.0f)) > 0.001f
@@ -496,10 +521,8 @@ NpcGoal makeNavGoal(const Npc& npc)
                 : (glm::length(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f)) > 0.001f
                     ? glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f))
                     : glm::vec3(1.0f, 0.0f, 0.0f));
-            const NpcMovementPolicy* policy = activeMovementPolicy(npc);
-            const float distance = policy ? policy->forwardPatrolDistance : 12.0f;
-            goal.kind = NpcGoalKind::ReachPosition;
-            goal.targetPos = npc.body.pos + dir * distance;
+            goal.kind = NpcGoalKind::Explore;
+            goal.targetPos = npc.body.pos + dir * 1.0f;
             goal.tolerance = 1.5f;
         } else if (npc.stateMachine.currentState == NpcState::RandomWalk) {
             goal.kind = NpcGoalKind::ReachPosition;
@@ -830,10 +853,27 @@ static void emitCommitmentEvents(const Npc& npc, const NpcCommitmentUpdate& cu,
 static void emitNavPlanEvents(const Npc& npc, const NpcNavResult& nav,
                               const NpcNavigationSettings* settings)
 {
-    if (!nav.planCreated && !nav.planFailed)
-        return;
     auto& log = StructuredLogger::instance();
     const uint32_t tick = (uint32_t)(npc.sensors.time * 60.0f);
+
+    // Persistent travel goal changed (Explore retarget). Change-edge only.
+    if (nav.travelTargetChanged) {
+        log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.travel-goal-changed", std::to_string(npc.id), "travel_target",
+            tick,
+            nlohmann::json{
+                {"actor", npc.id},
+                {"team", npc.body.matchTeam},
+                {"profile", npc.behaviorProfileId},
+                {"preset", npc.actorPresetId},
+                {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+                {"travel_target", {nav.travelTargetOut.x, nav.travelTargetOut.y,
+                                   nav.travelTargetOut.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    if (!nav.planCreated && !nav.planFailed)
+        return;
     nlohmann::json fields{
         {"actor", npc.id},
         {"team", npc.body.matchTeam},
@@ -905,9 +945,29 @@ static void emitMovementDecision(Npc& npc, const char* replanReason,
     npc.movementDecisionTimer = 1.0f;
 
     const glm::vec3 moved = npc.body.pos - npc.previousPosition;
+    const float horizontalMoved = glm::length(glm::vec2(moved.x, moved.y));
     const glm::vec2 finalDir = npc.lastMoveInput;
     const glm::vec3 committed = npc.navigator.commitmentActive
         ? npc.navigator.committedDirection : glm::vec3(0.0f);
+
+    // Net progress toward the active route destination since the previous
+    // snapshot. Positive = closing on the goal. This is the honest progress
+    // metric; distance_moved alone counts jumping in place.
+    float netProgress = 0.0f;
+    glm::vec3 goalPos{0.0f};
+    const bool haveGoal = npc.navigator.hasLastGoal;
+    if (haveGoal) {
+        goalPos = npc.navigator.lastGoal;
+        const glm::vec2 toGoal(goalPos.x - npc.body.pos.x, goalPos.y - npc.body.pos.y);
+        const float dist = glm::length(toGoal);
+        if (npc.hasDecisionGoalDistance)
+            netProgress = npc.lastDecisionGoalDistance - dist;
+        npc.lastDecisionGoalDistance = dist;
+        npc.hasDecisionGoalDistance = true;
+    } else {
+        npc.hasDecisionGoalDistance = false;
+    }
+
     StructuredLogger::instance().writeEvent(
         StructuredCategory::NpcMovement, StructuredLevel::Important,
         "npc.movement-decision", std::to_string(npc.id), "snapshot",
@@ -928,6 +988,9 @@ static void emitMovementDecision(Npc& npc, const char* replanReason,
             {"replan_reason", replanReason ? replanReason : ""},
             {"jump_reason", jumpReasonName(jumpReason)},
             {"distance_moved", glm::length(moved)},
+            {"horizontal_distance_moved", horizontalMoved},
+            {"net_progress_toward_goal", netProgress},
+            {"goal_position", {goalPos.x, goalPos.y, goalPos.z}},
             {"velocity", {npc.body.vel.x, npc.body.vel.y, npc.body.vel.z}},
             {"on_ground", npc.sensors.touchFloor}},
         __FILE__, __LINE__, __FUNCTION__);
@@ -981,6 +1044,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
 
     npc.dashCooldown = std::max(0.0f, npc.dashCooldown - safeDt);
     npc.downDashCooldown = std::max(0.0f, npc.downDashCooldown - safeDt);
+    npc.jumpCooldown = std::max(0.0f, npc.jumpCooldown - safeDt);
     npc.attackCooldown = std::max(0.0f, npc.attackCooldown - safeDt);
     npc.weaponSwitchCooldown = std::max(0.0f, npc.weaponSwitchCooldown - safeDt);
     npc.hitReactionTimer = std::max(0.0f, npc.hitReactionTimer - safeDt);
@@ -1313,6 +1377,19 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         commitmentSettings.targetProgressBias = b.commitmentTargetProgressBias;
         commitmentSettings.openDistanceBias = b.commitmentOpenDistanceBias;
         commitmentSettings.reversePenalty = b.commitmentReversePenalty;
+        commitmentSettings.travelTargetDistanceMeters = b.travelTargetDistanceMeters;
+        commitmentSettings.travelTargetReachedMeters = b.travelTargetReachedMeters;
+        // config/npc-difficulty.json is the live, global knob file; its
+        // movement/navigation values override the per-profile defaults so the
+        // whole squad can be retuned while the game runs.
+        const NpcDifficultySettings& diff = NpcDifficultyConfig::instance().settings();
+        commitmentSettings.travelTargetDistanceMeters = diff.exploreDistanceMeters;
+        commitmentSettings.travelTargetHoldSeconds = diff.exploreHoldSeconds;
+        commitmentSettings.travelTargetMinProgressMeters = diff.exploreMinProgressMeters;
+        commitmentSettings.useNavGraph = diff.useNavGraph;
+        commitmentSettings.areaEscapeRadiusMeters = diff.areaEscapeRadiusMeters;
+        commitmentSettings.areaEscapeSeconds = diff.areaEscapeSeconds;
+        commitmentSettings.areaEscapeHoldSeconds = diff.areaEscapeHoldSeconds;
     }
     {
         const glm::vec3 committedPlanar(npc.navigator.committedDirection.x,
@@ -1338,6 +1415,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             commitmentSettings, safeDt, npc.sensors.time, npcDifficulty.searchMemorySeconds);
         emitCommitmentEvents(npc, cu, commitmentSettings);
     }
+
+    // Local-area trap escape: if the actor has been pacing inside a small area
+    // for too long, commit to a single breakout direction. This maximizes net
+    // movement instead of the forward/back oscillation at a wall or mid-slope.
+    const glm::vec3 areaEscapeDir = npc.navigator.updateAreaEscape(
+        npc, world, nearCandidates, commitmentSettings, safeDt, npc.sensors.time,
+        npcDifficulty.searchMemorySeconds, npc.sensors.hasTarget);
 
     glm::vec3 moveDir;
     bool jump, dash, attack;
@@ -1473,6 +1557,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     }
 
     const char* replanReasonThisTick = nullptr;
+    bool navHasPathThisTick = false;
     if (!inMirrorPhase)
     {
         // The mode may own the goal (objective/plant/defuse); otherwise the
@@ -1485,6 +1570,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                                  navSettings, policy, &commitmentSettings);
         emitNavPlanEvents(npc, nav, navSettings);
         replanReasonThisTick = nav.replanReason;
+        // While a route is being followed toward a non-visible goal, recovery
+        // jumps are harmful: in the air the actor's control is too weak to turn,
+        // so it orbits the waypoint. Jumps stay available for legal navigation
+        // links (trav.jump) and for combat.
+        navHasPathThisTick = nav.hasPath && !npc.sensors.hasTarget;
         const NpcTraversalStep trav =
             npc.traversal.update(npc, nav, navMovement, safeDt);
         // Traversal steers when following a detour route or performing a
@@ -1494,6 +1584,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         if (trav.active && traversalSteers &&
             glm::length(trav.direction) > 0.01f)
             moveDir = trav.direction;
+        // No visible enemy: the navigator owns non-combat steering whenever it
+        // has a valid target, INCLUDING a zero direction (arrived, stop). This
+        // makes the route authoritative and stops the actor running past its
+        // objective; combat and local wall-avoid keep priority.
+        if (!npc.sensors.hasTarget && nav.valid)
+            moveDir = nav.dir;
         // A blocked route owns the steering: turn/hold from the navigator, and
         // never let traversal launch a jump/dash into the confirmed obstacle.
         if (nav.blocked)
@@ -1521,22 +1617,37 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     // the jump reason at the bottom of this function via
     // npcPolicyAllowsJump(), so a preset that forbids obstacle jumps never
     // receives one.
-    if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
+    // A hop is only justified when the actor is actually stuck (no progress).
+    // A moving actor that merely senses a wall ahead must turn or repath, not
+    // hop on every cooldown; that produced constant jumping at walls.
+    if (npc.sensors.touchFloor && !jump && npc.jumpCooldown <= 0.0f &&
+        !navHasPathThisTick && !npc.navigator.areaEscapeActive &&
+        glm::length(moveDir) > 0.1f && NpcNavigation::isStuck(npc))
     {
-        if (NpcNavigation::obstacleInDirection(npc, moveDir, 1.8f, world, nearCandidates))
-        {
-            jump = true;
-            jumpReason = NpcJumpReason::Obstacle;
-        }
-        else if (NpcNavigation::isStuck(npc))
+        jump = true;
+        jumpReason = NpcJumpReason::Obstacle;
+    }
+
+    // Low-obstacle hop: a leg-high blocker that the torso clears (a crate, a low
+    // ledge, a lip that catches the legs). This is a deliberate traversal, not
+    // an arbitrary recovery, so it applies even while following a route. A tall
+    // wall blocks both the leg and torso rays and is correctly rejected.
+    {
+        const NpcDifficultySettings& hopCfg = NpcDifficultyConfig::instance().settings();
+        if (!jump && hopCfg.lowObstacleJumpEnabled && npc.sensors.touchFloor &&
+            npc.jumpCooldown <= 0.0f && glm::length(moveDir) > 0.1f &&
+            NpcNavigation::lowObstacleAhead(npc, moveDir, world,
+                hopCfg.lowObstacleProbe, hopCfg.lowObstacleLowOffset,
+                hopCfg.lowObstacleHighOffset, nearCandidates))
         {
             jump = true;
             jumpReason = NpcJumpReason::Obstacle;
         }
     }
 
-    // Wall climb
-    if (npc.sensors.touchFloor && !jump && glm::length(moveDir) > 0.1f)
+    // Wall climb (disabled while following a route; airborne turns cause orbits)
+    if (npc.sensors.touchFloor && !jump && !navHasPathThisTick &&
+        !npc.navigator.areaEscapeActive && glm::length(moveDir) > 0.1f)
     {
         glm::vec3 wallNormal;
         if (NpcNavigation::isClimbableWall(npc, moveDir, world, wallNormal, nearCandidates))
@@ -1790,7 +1901,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     moveDir = openDir;
                     npc.navigator.startLocalCorrection(openDir, 1.0f);
                 }
-                if (npc.sensors.touchFloor && glm::length(moveDir) > 0.1f) {
+                if (npc.sensors.touchFloor && npc.jumpCooldown <= 0.0f &&
+                    !navHasPathThisTick && glm::length(moveDir) > 0.1f) {
                     jump = true;
                     jumpReason = NpcJumpReason::Obstacle;
                 }
@@ -1833,6 +1945,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     // actor cannot jump "just because".
     if (jump && policy && !npcPolicyAllowsJump(*policy, jumpReason))
         jump = false;
+
+    // Bound recovery hopping (live-tunable). Without this an actor pinned
+    // against geometry jumped nearly every tick.
+    if (jump)
+        npc.jumpCooldown = std::max(npc.jumpCooldown,
+            NpcDifficultyConfig::instance().settings().jumpCooldownSeconds);
 
     // Jump decision edge: log when the resolved (and permitted) jump reason
     // changes; jumpReason resets to None each tick, so a later identical jump
@@ -1895,6 +2013,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             wantDownDash = evt->downDashed;
         else
             wantDownDash = false;
+    }
+
+    // A committed area-escape breakout owns steering for its hold: it is the one
+    // thing that guarantees the actor leaves a trap instead of pacing in it.
+    // Combat (a visible target) is never overridden.
+    if (npc.navigator.areaEscapeActive && !npc.sensors.hasTarget &&
+        glm::length(areaEscapeDir) > 0.001f)
+    {
+        moveDir = areaEscapeDir;
     }
 
     InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash, safeDt);

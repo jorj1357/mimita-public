@@ -21,6 +21,7 @@
 #include "npc/npc-navigation-settings.h"
 #include "npc/npc-movement-policy.h"
 #include "npc/npc-nav-request.h"
+#include "npc/npc-nav-graph.h"
 #include "npc/npc-difficulty-config.h"
 #include "config/movement-config.h"
 #include "world/world.h"
@@ -35,8 +36,13 @@ constexpr float kCell = 2.5f;          // surface-grid cell size
 constexpr float kUpProbe = 4.0f;       // probe start above the actor
 constexpr float kProbeDepth = 12.0f;   // probe reach below the actor
 constexpr float kStepUp = 0.65f;       // walk-up without jumping
-constexpr float kReachXZ = 1.0f;       // waypoint arrival (planar)
-constexpr float kReachZ = 1.3f;        // waypoint arrival (vertical)
+constexpr float kReachXZ = 1.5f;       // waypoint arrival (planar)
+// Waypoint arrival treats a waypoint as reached unless it is meaningfully ABOVE
+// the actor (a stacked floor / jump target). Navigation nodes are floor surfaces
+// (feet height) while body.pos is the capsule center ~1.8 m above the floor, so
+// a symmetric Z tolerance made every walk waypoint unreachable and the actor
+// orbited it forever.
+constexpr float kReachAbove = 1.5f;    // max waypoint height above the actor
 constexpr float kRepathInterval = 0.9f;
 constexpr float kBlockedRetryInterval = 0.5f;  // no-route retry delay
 constexpr float kGoalMoveThreshold = 2.5f;
@@ -67,6 +73,7 @@ const char* goalKindName(NpcGoalKind kind)
         case NpcGoalKind::MaintainDistance:  return "maintain";
         case NpcGoalKind::FleeActor:         return "flee";
         case NpcGoalKind::ReachLineOfSight:  return "los";
+        case NpcGoalKind::Explore:           return "explore";
         case NpcGoalKind::None:              return "none";
     }
     return "none";
@@ -174,23 +181,53 @@ bool consumePlanToken()
     return true;
 }
 
-// Pick the lateral direction with the most room when the direct line is
-// blocked, so a policy actor turns instead of pushing into the wall.
+// Pick the nearby direction with the most usable room when the direct line is
+// blocked, so a policy actor turns instead of pushing into the wall. The scorer
+// measures openness at several distances and uses continuity with the requested
+// direction as a tiebreak, so it no longer deterministically picks "left".
 glm::vec3 bestTurnDirection(const Npc& npc, glm::vec3 dir, const World& world)
 {
-    const glm::vec3 left(-dir.y, dir.x, 0.0f);
-    const glm::vec3 right(dir.y, -dir.x, 0.0f);
-    auto clear = [&](const glm::vec3& d) {
-        return glm::length(d) > 0.001f &&
-               !NpcNavigation::obstacleInDirection(npc, d, 1.6f, world);
+    glm::vec3 d(dir.x, dir.y, 0.0f);
+    if (glm::length(d) < 0.001f) return glm::vec3(0.0f);
+    d = glm::normalize(d);
+    const glm::vec3 left(-d.y, d.x, 0.0f);
+    const glm::vec3 right = -left;
+    const glm::vec3 back = -d;
+    // The "turn" contract for a blocked direct route must not retain a forward
+    // component into the blocking face, so only lateral and backward candidates
+    // are considered (no forward diagonals).
+    const glm::vec3 candidates[] = {
+        left, right,
+        glm::normalize(left + back), glm::normalize(right + back), // back diagonals
+        back
     };
-    const bool lc = clear(left), rc = clear(right);
-    if (lc && !rc) return left;
-    if (rc && !lc) return right;
-    if (lc && rc) return left;
-    const glm::vec3 back(-dir.x, -dir.y, 0.0f);
-    if (clear(back)) return back;
-    return glm::vec3(0.0f);
+    auto openness = [&](const glm::vec3& probe) -> float {
+        if (glm::length(probe) < 0.001f) return -1.0f;
+        float best = 0.0f;
+        for (float dist : {1.5f, 3.0f, 5.0f, 8.0f}) {
+            if (NpcNavigation::obstacleInDirection(npc, probe, dist, world))
+                break;
+            best = dist;
+        }
+        return best;
+    };
+    glm::vec3 bestDir{0.0f};
+    float bestScore = -1e9f;
+    const float sidePref = (npc.id % 2u == 0u) ? 1.0f : -1.0f;
+    for (const glm::vec3& c : candidates) {
+        if (glm::length(c) < 0.001f) continue;
+        const float open = openness(c);
+        if (open <= 0.0f) continue;
+        const glm::vec3 cn = glm::normalize(c);
+        const float continuity = glm::dot(cn, d);
+        // Break the left/right symmetry per actor so squad members pick
+        // different sides of a corner.
+        const float sideBias = sidePref * glm::dot(cn, left) *
+            NpcDifficultyConfig::instance().settings().turnSideBias;
+        const float score = open * 2.0f + continuity + sideBias;
+        if (score > bestScore) { bestScore = score; bestDir = cn; }
+    }
+    return bestDir;
 }
 
 // Surface A* over the local window. Each cell may hold several stacked
@@ -431,6 +468,144 @@ void NpcNavigator::pushBlocked(const glm::vec3& pos, float now)
         ++recentBlockedCount;
 }
 
+glm::vec3 NpcNavigator::resolveExploreTarget(const Npc& npc, const glm::vec3& hintPoint,
+                                             const MovementCommitmentSettings& settings,
+                                             float dt)
+{
+    const glm::vec3 toHint(hintPoint.x - npc.body.pos.x, hintPoint.y - npc.body.pos.y, 0.0f);
+    const float hintLen = glm::length(toHint);
+    glm::vec3 wantDir = hintLen > 0.001f ? toHint / hintLen : glm::vec3(0.0f);
+    if (glm::length(wantDir) < 0.001f) {
+        wantDir = glm::length(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f)) > 0.001f
+            ? glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f))
+            : glm::vec3(1.0f, 0.0f, 0.0f);
+    }
+    const float travel = std::max(15.0f, settings.travelTargetDistanceMeters);
+    const float reached = std::max(2.0f, settings.travelTargetReachedMeters);
+    const float hold = std::max(2.0f, settings.travelTargetHoldSeconds);
+    const float minProgress = std::max(0.5f, settings.travelTargetMinProgressMeters);
+
+    bool valid = hasTravelTarget;
+    if (valid) {
+        const float remaining = horizontalDistance(npc.body.pos, travelTarget);
+        travelTargetTimer += dt;
+        const float progress = travelTargetStartDistance - remaining;
+        const bool reachedNow = remaining <= reached;
+        // Retarget only when reached or genuinely stalled. A heading reversal is
+        // deliberately ignored: reacting to it flipped the target 180 degrees and
+        // made the actor oscillate.
+        const bool stalled = travelTargetTimer >= hold && progress < minProgress;
+        if (reachedNow || stalled)
+            valid = false;
+    }
+    if (!valid) {
+        travelTarget = npc.body.pos + wantDir * travel;
+        hasTravelTarget = true;
+        travelTargetTimer = 0.0f;
+        travelTargetStartDistance = travel;
+        travelTargetChangedThisUpdate = true;
+    }
+    return travelTarget;
+}
+
+glm::vec3 NpcNavigator::updateAreaEscape(const Npc& npc, const World& world,
+                                         const std::vector<int>& candidates,
+                                         const MovementCommitmentSettings& settings,
+                                         float dt, float now, float memorySeconds,
+                                         bool targetVisible)
+{
+    areaEscapeStartedThisUpdate = false;
+
+    // A visible enemy owns movement; never fight combat steering.
+    if (targetVisible) {
+        areaEscapeActive = false;
+        areaEscapeTimeRemaining = 0.0f;
+        return glm::vec3(0.0f);
+    }
+
+    const float radius = std::max(1.0f, settings.areaEscapeRadiusMeters);
+    if (areaEscapeActive) {
+        areaEscapeTimeRemaining -= dt;
+        if (areaEscapeTimeRemaining > 0.0f)
+            return areaEscapeDirection;
+        areaEscapeActive = false;
+        areaAnchor = npc.body.pos;  // re-anchor so it does not retrigger at once
+        areaTimer = 0.0f;
+        return glm::vec3(0.0f);
+    }
+
+    // Accumulate time spent inside the anchor radius ONLY while the actor is
+    // actively trying to move. An actor that has deliberately stopped (arrived
+    // at its objective, holding, waiting) is not trapped and must not be pushed
+    // away. A passing actor leaves the radius and resets; an oscillating actor
+    // keeps trying to move and stays inside, so the timer grows.
+    const bool tryingToMove = glm::length(npc.lastMoveInput) > 0.1f;
+    if (!tryingToMove || horizontalDistance(npc.body.pos, areaAnchor) > radius) {
+        areaAnchor = npc.body.pos;
+        areaTimer = 0.0f;
+    } else {
+        areaTimer += dt;
+    }
+    if (areaTimer < std::max(1.0f, settings.areaEscapeSeconds))
+        return glm::vec3(0.0f);
+
+    // Breakout. Pick the open direction that maximizes distance from the trap
+    // (away from the anchor) and, secondarily, heads toward the goal, so net
+    // movement is maximized instead of pacing.
+    glm::vec3 away = npc.body.pos - areaAnchor;
+    away.z = 0.0f;
+    if (glm::length(away) < 0.5f) {
+        const glm::vec3 facing(npc.currentFacing.x, npc.currentFacing.y, 0.0f);
+        away = glm::length(facing) > 0.001f ? glm::normalize(facing)
+                                            : glm::vec3(1.0f, 0.0f, 0.0f);
+    } else {
+        away = glm::normalize(away);
+    }
+    glm::vec3 toGoal(0.0f);
+    if (hasLastGoal) {
+        toGoal = lastGoal - npc.body.pos;
+        toGoal.z = 0.0f;
+        if (glm::length(toGoal) > 0.001f) toGoal = glm::normalize(toGoal);
+    }
+
+    const float probeBlock = std::max(
+        2.0f, NpcDifficultyConfig::instance().settings().wallCastDistance);
+    const float maxDist = std::max(6.0f, settings.candidateDistanceMeters);
+    constexpr int SAMPLES = 16;
+    glm::vec3 best = away;
+    float bestScore = -1e9f;
+    for (int i = 0; i < SAMPLES; ++i) {
+        const float ang = (float)i * (6.2831853f / (float)SAMPLES);
+        const glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        if (NpcNavigation::obstacleInDirection(npc, dir, probeBlock, world, candidates))
+            continue;
+        float open = 0.0f;
+        for (float d = 2.0f; d <= maxDist; d += 2.0f) {
+            if (NpcNavigation::obstacleInDirection(npc, dir, d, world, candidates))
+                break;
+            open = d;
+        }
+        const float score = open
+                          + glm::dot(dir, away) * 6.0f
+                          + (glm::length(toGoal) > 0.001f ? glm::dot(dir, toGoal) * 3.0f : 0.0f);
+        if (score > bestScore) {
+            bestScore = score;
+            best = dir;
+        }
+    }
+
+    areaEscapeDirection = best;
+    areaEscapeActive = true;
+    areaEscapeTimeRemaining = std::max(0.5f, settings.areaEscapeHoldSeconds);
+    areaEscapeStartedThisUpdate = true;
+    // Cancel the short-term flip-flop so the breakout is not immediately undone.
+    clearLocalCorrection();
+    backtrackActive = false;
+    (void)now;
+    (void)memorySeconds;
+    return areaEscapeDirection;
+}
+
 float NpcNavigator::nearestRecentDistance(const glm::vec3& point, float now,
                                           float memorySeconds) const
 {
@@ -464,6 +639,12 @@ glm::vec3 NpcNavigator::chooseBestOpenDirection(
     const float maxDist = std::max(2.0f, settings.candidateDistanceMeters);
 
     constexpr int SAMPLES = 16;
+    // Per-actor tiebreak rotation instead of rotating the whole sample grid
+    // (rotating the grid biased the chosen direction toward a diagonal and
+    // degraded route following). This only decides between otherwise-equal
+    // candidates, so a squad does not share one preferred direction while the
+    // geometry-based score still dominates.
+    const int tiebreakPhase = (int)(npc.id % (uint32_t)SAMPLES);
     glm::vec3 best{0.0f};
     float bestScore = -std::numeric_limits<float>::max();
     for (int i = 0; i < SAMPLES; ++i) {
@@ -494,7 +675,8 @@ glm::vec3 NpcNavigator::chooseBestOpenDirection(
             if (memDist < settings.recentPathAvoidRadius)
                 score -= (settings.recentPathAvoidRadius - memDist) * 4.0f;
         }
-        score += (float)i * 1e-3f;  // stable tiebreak
+        // Per-actor tiebreak (rotated by actor id) instead of a fixed +x bias.
+        score += (float)((i + tiebreakPhase) % SAMPLES) * 1e-3f;
         if (score > bestScore) {
             bestScore = score;
             best = dir;
@@ -552,12 +734,15 @@ NpcCommitmentUpdate NpcNavigator::updateCommitment(
     const bool progressFailed = commitmentActive &&
         progressTimer >= settings.progressCheckSeconds && !progressed;
     commitmentProgressFailed = progressFailed;
-    out.blocked = blocked;
-    out.progressFailed = progressFailed;
     out.progressDistance = lastProgressDistance;
 
-    if (commitmentActive && !blocked && !progressFailed && commitmentTimeRemaining > 0.0f) {
-        out.direction = committedDirection;  // keep using it
+    // Keep the committed direction while the actor is still making progress and
+    // its hold has not expired, EVEN IF a wall is sensed ahead: the local wall
+    // avoidance/local-correction layer steers around it. Replacing the direction
+    // the instant a wall came within the probe distance made the actor change
+    // heading every tick and oscillate.
+    if (commitmentActive && !progressFailed && commitmentTimeRemaining > 0.0f) {
+        out.direction = committedDirection;
         return out;
     }
 
@@ -565,6 +750,10 @@ NpcCommitmentUpdate NpcNavigator::updateCommitment(
     out.previousDirection = committedDirection;
     const glm::vec3 best = chooseBestOpenDirection(
         npc, forwardDir, targetDir, world, candidates, settings, now, memorySeconds);
+    // Emit the block edge only when we actually replace/abandon a blocked
+    // direction, not on every tick it stays blocked.
+    out.blocked = blocked;
+    out.progressFailed = progressFailed;
     if (glm::length(best) > 0.001f) {
         committedDirection = best;
         commitmentActive = true;
@@ -595,6 +784,14 @@ void NpcNavigator::reset()
     backtrackRemaining = 0.0f;
     backtrackTimeRemaining = 0.0f;
     clearLocalCorrection();
+    travelTarget = glm::vec3(0.0f);
+    hasTravelTarget = false;
+    areaAnchor = glm::vec3(0.0f);
+    areaTimer = 0.0f;
+    areaEscapeActive = false;
+    areaEscapeTimeRemaining = 0.0f;
+    areaEscapeDirection = glm::vec3(0.0f);
+    areaEscapeStartedThisUpdate = false;
     commitmentActive = false;
     committedDirection = glm::vec3(0.0f);
     commitmentTimeRemaining = 0.0f;
@@ -636,7 +833,17 @@ void NpcNavigator::startLocalCorrection(const glm::vec3& direction,
     if (len < 0.001f || duration <= 0.0f)
         return;
 
-    localCorrectionDirection = planar / len;
+    const glm::vec3 newDir = planar / len;
+    // Hysteresis: while a correction is fresh, do not flip it to a very
+    // different direction. In a 90-degree corner the wall-avoid layer can
+    // recompute an opposite side every tick; holding the current correction for
+    // ~half its duration stops the rapid back-and-forth.
+    if (localCorrectionActive && localCorrectionTimeRemaining > duration * 0.5f &&
+        glm::dot(localCorrectionDirection, newDir) < 0.5f) {
+        return;
+    }
+
+    localCorrectionDirection = newDir;
     localCorrectionTimeRemaining = duration;
     localCorrectionActive = true;
     // The original commitment is deliberately not invalidated. The correction
@@ -685,7 +892,18 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     // ── Resolve the abstract goal to a destination point ────────────
     glm::vec3 dest{0.0f};
     bool haveDest = false;
-    if (goal.kind == NpcGoalKind::ReachPosition) {
+    if (goal.kind == NpcGoalKind::Explore) {
+        // A persistent far target, held until reached or the heading reverses.
+        // This replaces the old body-relative patrol waypoint that changed every
+        // tick and forced a target_moved replan storm.
+        const MovementCommitmentSettings s = commitment
+            ? *commitment : MovementCommitmentSettings{};
+        travelTargetChangedThisUpdate = false;
+        dest = resolveExploreTarget(npc, goal.targetPos, s, dt);
+        result.travelTargetChanged = travelTargetChangedThisUpdate;
+        result.travelTargetOut = travelTarget;
+        haveDest = true;
+    } else if (goal.kind == NpcGoalKind::ReachPosition) {
         dest = goal.targetPos;
         haveDest = true;
     } else if (npc.sensors.hasTarget) {
@@ -754,8 +972,9 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     const bool routeFinished = !path.empty() && pathIndex >= (int)path.size();
     const bool targetMoved = hasLastGoal &&
         glm::length(glm::vec3(dest - lastGoal)) > goalThreshold;
-    const bool blockedNow = NpcNavigation::isStuck(npc) ||
-        (commitment && commitment->enabled && commitmentBlocked);
+    // Replan on real lack of progress, not on the instantaneous "wall within
+    // probe" flag (which would rebuild the route almost every tick).
+    const bool blockedNow = NpcNavigation::isStuck(npc);
     const bool progressFailed = commitment && commitment->enabled && commitmentProgressFailed;
     const bool preservingLocalCorrection = localCorrectionActive;
     bool needPlan = false;
@@ -787,8 +1006,65 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         std::vector<glm::vec3> plan;
         std::vector<uint8_t> planGaps;
         std::vector<uint8_t> planCaps;
-        if (planLocalPath(npc, dest, world, cfg, eff, policy, plan, planGaps, planCaps) &&
-            !plan.empty()) {
+
+        const float toGoal = horizontalDistance(npc.body.pos, dest);
+        const float localReach = std::max(8.0f, eff.searchRadius);
+        bool planned = false;
+
+        // Long-range goals: route over the lazy global walkable graph first.
+        // The graph sees the whole map (no authored points) and returns a
+        // corridor; the local planner below is the fallback and fine-steering
+        // owner. Chunks are built lazily, so this costs nothing until used.
+        const bool graphAllowed = !commitment || commitment->useNavGraph;
+        if (graphAllowed && toGoal > localReach) {
+            // Rebuild the cached graph if the live tuning file changed, so
+            // editing chunk/cell size while the game runs takes effect.
+            static uint64_t sNavTuningRevision = ~0ull;
+            if (sNavTuningRevision != NpcDifficultyConfig::instance().revision()) {
+                sNavTuningRevision = NpcDifficultyConfig::instance().revision();
+                NpcNavGraph::instance().invalidate();
+            }
+            const NpcDifficultySettings& diff = NpcDifficultyConfig::instance().settings();
+            NpcNavGraphSettings gs;
+            gs.chunkSize = diff.navGraphChunkSize;
+            gs.cellSize = diff.navGraphCellSize;
+            gs.maxRoutes = diff.navGraphMaxRoutes;
+            gs.maxDropHeight = diff.navGraphMaxDropHeight;
+            gs.jumpHeight = npcMaxJumpHeight(cfg);
+            gs.actorRadius = std::max(0.1f, npc.body.getCapsule().r);
+            gs.actorHeight = std::max(1.0f, npc.body.getCapsule().b.z -
+                                             npc.body.getCapsule().a.z +
+                                             2.0f * npc.body.getCapsule().r);
+            gs.maxWalkableSlopeDot = eff.maxWalkableSlopeDot > 0.0f
+                ? eff.maxWalkableSlopeDot : NpcNavigation::kWalkableSlopeDot;
+            gs.maxStepHeight = eff.maxStepHeight;
+            gs.allowJumps = eff.allowNavigationJumps &&
+                (policy == nullptr ||
+                 npcPolicyAllowsJump(*policy, NpcJumpReason::Navigation));
+            const std::vector<NpcNavRoute> routes =
+                NpcNavGraph::instance().findRoutes(world, npc.body.pos, dest, gs, npc.id);
+            if (!routes.empty() && routes.front().valid()) {
+                const std::vector<glm::vec3>& pts = routes.front().points;
+                glm::vec3 last = npc.body.pos;
+                for (std::size_t i = 1; i < pts.size(); ++i) {
+                    const bool finalPoint = (i + 1 == pts.size());
+                    if (finalPoint || glm::length(pts[i] - last) >= 5.0f) {
+                        plan.push_back(pts[i]);
+                        planGaps.push_back(0);
+                        planCaps.push_back((uint8_t)NavCapability::Walk);
+                        last = pts[i];
+                    }
+                }
+                planned = !plan.empty();
+            }
+        }
+
+        if (!planned) {
+            planned = planLocalPath(npc, dest, world, cfg, eff, policy,
+                                    plan, planGaps, planCaps) && !plan.empty();
+        }
+
+        if (planned) {
             path = std::move(plan);
             pathGap = std::move(planGaps);
             pathCapability = std::move(planCaps);
@@ -828,8 +1104,13 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         const glm::vec3& wp = path[pathIndex];
         const float dx = wp.x - npc.body.pos.x;
         const float dy = wp.y - npc.body.pos.y;
-        if (std::sqrt(dx * dx + dy * dy) <= kReachXZ &&
-            std::fabs(wp.z - npc.body.pos.z) <= kReachZ) {
+        const bool horizReached = std::sqrt(dx * dx + dy * dy) <= kReachXZ;
+        // Refuse arrival only when the waypoint is meaningfully ABOVE the actor
+        // (a stacked floor / jump target). A walk waypoint at floor height is
+        // ~1.8 m below the capsule center and must still count as reached, or
+        // the actor orbits it forever and never makes net progress.
+        const bool notAbove = (wp.z - npc.body.pos.z) <= kReachAbove;
+        if (horizReached && notAbove) {
             ++pathIndex;
             continue;
         }

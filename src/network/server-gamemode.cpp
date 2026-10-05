@@ -19,6 +19,8 @@
 #include "network/server.h"
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
+#include "npc/npc-navigation.h"
+#include "world/world.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-data.h"
 #include "combat/actor-preset-weapons.h"
@@ -2967,6 +2969,7 @@ void serverTeamBrainTick(ServerGamemodeState& d,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
                          NpcSystem& npcSystem,
+                         const World& world,
                          uint32_t tick)
 {
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
@@ -2982,7 +2985,10 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         }
         brain.state().policy = policy;
 
-        // Sites from the map config.
+        // Sites from the map config. The authored anchor may only be an XY
+        // hint; snap the Z to the loaded collision floor so an objective placed
+        // slightly above/below the ground is still reachable. Authored data
+        // stays hot-reloadable; this correction is per-tick and never written.
         brain.state().sites.clear();
         for (const BombSite& site : mapCfg.bombSites) {
             TeamSiteInfo info;
@@ -2990,6 +2996,14 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             info.position = site.position;
             info.radius = site.radius;
             info.hasPosition = site.hasPosition;
+            if (site.hasPosition) {
+                const float groundZ = NpcNavigation::groundHeightAt(
+                    world, site.position, 400.0f, 12.0f);
+                if (groundZ > -1e5f)
+                    info.position.z = groundZ;
+                else
+                    info.hasPosition = false;  // no floor: not a usable anchor
+            }
             brain.state().sites.push_back(info);
         }
 
@@ -3055,6 +3069,16 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         ctx.objectiveKnown = hasObj;
         if (hasObj) ctx.objectivePos = objPos;
         ctx.onDefense = (team == 0);
+        // Team's best estimate of where enemies are, so an NPC with no visible
+        // target can travel toward the enemy area instead of wandering.
+        glm::vec3 enemyAreaPos;
+        float enemyConf = 0.0f;
+        ctx.enemyAreaKnown = brain.bestTeamReport(enemyAreaPos, enemyConf);
+        if (ctx.enemyAreaKnown) ctx.enemyAreaPos = enemyAreaPos;
+        if (gm.npcTravel.configured) {
+            ctx.travelObjectiveBias = gm.npcTravel.objectiveBias;
+            ctx.travelHuntBias = gm.npcTravel.huntBias;
+        }
         ctx.atObjective = hasObj &&
             glm::length(npc.body.pos - objPos) <= 3.0f;
         // A Terrorist carrying the bomb can plant inside a site.
@@ -3109,7 +3133,7 @@ void serverGamemodeTick(SOCKET sock,
     // Generic area effects tick at fixed 60 Hz in every managed mode.
     serverAreaEffectTick(d, sock, players, npcs, tick, totalPacketsOut);
     // Team-level tactical brains: assignments + objective context for NPCs.
-    serverTeamBrainTick(d, players, npcs, npcSystem, tick);
+    serverTeamBrainTick(d, players, npcs, npcSystem, npcWorld, tick);
     if (!d.mapOnly && d.appliedCommunityWeaponSetId != d.communityWeaponSetId)
     {
         resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);

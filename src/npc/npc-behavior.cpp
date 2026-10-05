@@ -124,6 +124,12 @@ void readProfile(const json& j, const std::string& fallbackId,
         out.commitmentReversePenalty = clampWarn(
             c, "reverse_penalty", 0.0f, 50.0f, out.commitmentReversePenalty, out.id);
     }
+    out.travelTargetDistanceMeters = clampWarn(
+        j, "travel_target_distance_meters", 15.0f, 300.0f,
+        out.travelTargetDistanceMeters, out.id);
+    out.travelTargetReachedMeters = clampWarn(
+        j, "travel_target_reached_meters", 2.0f, 30.0f,
+        out.travelTargetReachedMeters, out.id);
 }
 
 } // anonymous namespace
@@ -280,6 +286,8 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     out.commitmentTargetProgressBias = def->commitmentTargetProgressBias;
     out.commitmentOpenDistanceBias = def->commitmentOpenDistanceBias;
     out.commitmentReversePenalty = def->commitmentReversePenalty;
+    out.travelTargetDistanceMeters = def->travelTargetDistanceMeters;
+    out.travelTargetReachedMeters = def->travelTargetReachedMeters;
     return out;
 }
 

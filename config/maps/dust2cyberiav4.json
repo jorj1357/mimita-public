@@ -1,21 +1,26 @@
-// Counter-Strike objective data for dust2cyberiav4.
-// Site positions below are PLACEHOLDER anchors placed inside the loaded
-// collision bounds (min=(-971.14,-147.56,2295.31) max=(-571.14,257.20,2441.31))
-// so the bomb-site debug spheres are visible. Verify/reposition against the
-// loaded map with the site_debug commands (site_debug show / site_debug select A
-// / site_debug move / site_debug print / site_debug save), which writes the
-// verified position back into this file.
+// Counter-Strike objective data for dust2cyberiav4. Hot-reloadable: edit and
+// save, then `site_debug` / the next TeamBrain tick applies it live; nothing is
+// compiled in and no code owns these coordinates.
+//
+// Anchors are placed on the map's playable floor between the two team spawns.
+// X/Y are the usable bomb-site areas; Z is only a hint. At runtime the server
+// snaps each site's Z to the loaded collision floor
+// (`NpcNavigation::groundHeightAt`) so a slightly high/low anchor is still
+// reachable, and falls back to "site unavailable" if no floor exists under it.
+// `visible_debug: true` draws the site sphere so it can be seen and moved with
+// `site_debug show` / `site_debug move A` / `site_debug print` / `site_debug
+// save`, which writes the verified position back to this file.
 {
   "bomb_sites": [
     {
       "id": "A",
-      "position": [-700.0, 60.0, 2400.0],
+      "position": [-700.0, 60.0, 2345.0],
       "radius": 4.0,
       "visible_debug": true
     },
     {
       "id": "B",
-      "position": [-820.0, 90.0, 2300.0],
+      "position": [-820.0, 90.0, 2345.0],
       "radius": 4.0,
       "visible_debug": true
     }

@@ -95,6 +95,8 @@ public:
     glm::vec3 lastWallAvoidDir{0.0f};    // last adjusted wall-avoid direction
     bool wasStuck = false;               // previous isStuck result
     float movementDecisionTimer = 0.0f;  // once-per-second snapshot cadence
+    float lastDecisionGoalDistance = 0.0f;   // previous snapshot distance to goal
+    bool hasDecisionGoalDistance = false;    // net-progress baseline valid
     NpcSensorContext sensors;
     // Human-like perception: the last observation, the belief, and the memory.
     // sightRange/FOV/reaction/memory are resolved per life from the difficulty
@@ -120,6 +122,10 @@ public:
 
     float dashCooldown = 0.0f;
     float downDashCooldown = 0.0f;
+    // Bounds recovery hopping. Without this an actor pinned against geometry
+    // jumped almost every tick, which hid the real navigation failure and
+    // produced tens of thousands of jump events.
+    float jumpCooldown = 0.0f;
     bool dashCommandConsumed = false;
     float attackCooldown = 0.0f;
     float weaponSwitchCooldown = 0.0f;

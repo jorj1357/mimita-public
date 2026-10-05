@@ -46,6 +46,25 @@ struct MovementCommitmentSettings
     float targetProgressBias = 4.0f;
     float openDistanceBias = 6.0f;
     float reversePenalty = 8.0f;
+    // Persistent exploration travel target (Explore goal). The target is held
+    // until reached or until the actor has stalled for `travelTargetHoldSeconds`
+    // without making `travelTargetMinProgressMeters` of progress. It is NOT
+    // retargeted on a heading reversal (that flipped the goal and oscillated).
+    float travelTargetDistanceMeters = 60.0f;
+    float travelTargetReachedMeters = 4.0f;
+    float travelTargetHoldSeconds = 12.0f;
+    float travelTargetMinProgressMeters = 6.0f;
+    // Long-range routing toggle. When false the navigator uses only the local
+    // rolling planner (previous behavior).
+    bool useNavGraph = true;
+
+    // Local-area trap escape. If the actor stays within areaEscapeRadiusMeters
+    // of an anchor for areaEscapeSeconds, it commits to a single breakout
+    // direction for areaEscapeHoldSeconds, ignoring wall-avoid/backtrack
+    // flip-flop, so it maximizes net movement instead of pacing in one spot.
+    float areaEscapeRadiusMeters = 5.0f;
+    float areaEscapeSeconds = 4.0f;
+    float areaEscapeHoldSeconds = 2.0f;
 };
 
 // Result of one commitment evaluation. Flags are true only on a decision edge,
@@ -81,6 +100,8 @@ struct NpcNavResult
     bool replan = false;        // the rebuild was not the first route
     const char* replanReason = nullptr; // static literal: initial/finished/...
     int pathNodeCount = 0;      // nodes in the route after a successful plan
+    bool travelTargetChanged = false;   // a new persistent explore target was set
+    glm::vec3 travelTargetOut{0.0f};
 };
 
 // Maximum vertical rise the actor can clear with a jump, from its movement
@@ -97,6 +118,22 @@ struct NpcNavigator
     float repathTimer = 0.0f;
     glm::vec3 lastGoal{0.0f};
     bool hasLastGoal = false;
+
+    // Persistent far exploration target for NpcGoalKind::Explore. Held across
+    // ticks so a valid route is not invalidated by body-relative recomputation.
+    glm::vec3 travelTarget{0.0f};
+    bool hasTravelTarget = false;
+
+    // Local-area trap escape state (see MovementCommitmentSettings).
+    glm::vec3 areaAnchor{0.0f};
+    float areaTimer = 0.0f;
+    bool areaEscapeActive = false;
+    float areaEscapeTimeRemaining = 0.0f;
+    glm::vec3 areaEscapeDirection{0.0f};
+    bool areaEscapeStartedThisUpdate = false;
+    bool travelTargetChangedThisUpdate = false;
+    float travelTargetTimer = 0.0f;
+    float travelTargetStartDistance = 0.0f;
 
     // Short local recovery used when the current route points into a wall.
     bool backtrackActive = false;
@@ -179,6 +216,22 @@ struct NpcNavigator
                                 float memorySeconds) const;
     // Drop the current commitment so the next evaluation must pick a new one.
     void forceRecommit() { commitmentActive = false; commitmentTimeRemaining = 0.0f; }
+
+    // Resolve the persistent far travel target for an Explore goal. `hintPoint`
+    // only supplies the desired heading; the returned target is held until it
+    // is reached or the desired heading reverses.
+    glm::vec3 resolveExploreTarget(const Npc& npc, const glm::vec3& hintPoint,
+                                   const MovementCommitmentSettings& settings,
+                                   float dt);
+
+    // Detect a local-area trap and, past the time limit, return a committed
+    // breakout direction. Zero when not escaping. While active, callers should
+    // force steering to this direction (unless a visible enemy owns movement).
+    glm::vec3 updateAreaEscape(const Npc& npc, const World& world,
+                               const std::vector<int>& candidates,
+                               const MovementCommitmentSettings& settings,
+                               float dt, float now, float memorySeconds,
+                               bool targetVisible);
 
     void reset();
     // Force a replan on the next update (e.g. target teleported).

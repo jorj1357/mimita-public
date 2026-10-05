@@ -1320,3 +1320,256 @@ Next: human live session — verify `log_open` shows client+server in one file a
 that a Counter-Strike round's NPC records explain direction, jump, replan, stuck,
 and distance moved. Changelog:
 `docs/changelog/2026-10-05/20261005_182631-shared-npc-jsonl-logging.md`.
+
+### Attempt 21 — layered NPC navigation (lazy walkable graph + travel goals)
+
+Triggered by the evidence-based navigation report and the human's choices: full
+layered architecture, lazy/chunked graph, per-team/mode weights, multiple
+equal-cost routes, and permission to fix the bomb-site anchors.
+
+Tried:
+- **Lazy chunked walkable graph** `src/npc/npc-nav-graph.*`: collision triangles
+  voxelized into 32 m chunks on demand, walk/ramp/jump/drop edges, A* over
+  lazily activated chunks, cached and invalidated by a geometry signature.
+- **Persistent travel goal** `NpcGoalKind::Explore`: Patrol supplies a heading
+  hint; the navigator holds a ~60 m target until reached or reversed (kills the
+  `target_moved` replan storm).
+- **Enemy-area goal** `UtilityGoalKind::HuntArea` fed by
+  `TeamBrain::bestTeamReport()`; weighted per mode by the new gamemode
+  `npc_travel` block (`objective_bias`, `hunt_bias`, `explore_bias`).
+- **Local fixes**: wall avoidance now scores directions by continuity/clearance
+  instead of always turning left; `wallSearchDistance` `1.0 -> 4.0`;
+  `bestTurnDirection` rewritten without a forward component into the wall;
+  `DefendSite` mapped to the objective position.
+- **Stuck**: `Npc::jumpCooldown` (0.45 s) bounds recovery hopping.
+- **Multiple equal-cost routes**: re-search with the prior route penalized; the
+  graph selftest returns 3 distinct corridors; routes rotate by actor id.
+- **Bomb sites**: anchors lowered to the playable floor and the server snaps Z to
+  the loaded floor each tick; still hot-reloadable and `visible_debug`.
+- **Logging**: `npc.travel-goal-changed`; `npc.movement-decision` now reports
+  `horizontal_distance_moved`, `net_progress_toward_goal`, `goal_position`.
+
+Went right:
+- Headless server run: no crash; net/path ratio rose from ~1–2% (circling) to
+  60–97% (consistent travel); jumps dropped sharply (38 vs 205 stuck, was ~1:1).
+- The graph routes around a wall and returns multiple distinct routes.
+
+Went wrong / watch out:
+- The graph builds chunks on first use; a very long first corridor can cost a
+  measurable hitch, though chunks are cached and shared across NPCs.
+- Explore uses the 60 m default; multi-route rotation means squad lines differ
+  by actor id, not randomly per tick.
+- `--npc-radar-selftest` still fails on the pre-existing rage2
+  `information_mode` mismatch.
+
+Keep doing:
+- One lazy global graph for long range, local A* for fine steering.
+- Persistent destination; local corrections never replace it.
+
+Stop doing:
+- Recomputing the patrol waypoint from the moving body each tick.
+
+Evidence:
+- Build: `BUILD SUCCESS`; `mimita.exe` relinked.
+- Runtime: nav-graph / navigation / search / policy / executor / commitment /
+  decision / behavior-profile / utility / team-brain / gamemode / cs-round /
+  targeting / perception / acceptance all PASS; headless `dust2cyberiav4`
+  server run exited 0 with `npc.travel-goal-changed` and `nav-plan-created`.
+- Human playtest: pending.
+
+Next: live Dust2 round — confirm both teams leave spawn, travel to sites/enemy
+areas without circling, take varied routes, and show positive
+`net_progress_toward_goal` with low stuck/jump rates. Changelog:
+`docs/changelog/2026-10-05/20261005_210108-layered-npc-navigation.md`.
+
+### Attempt 22 — fix CT circling/jumping regression + live-tunable knobs
+
+Human report after Attempt 21: CT NPCs still ran into walls, jumped a lot, did
+not pursue one direction, and net movement was ~20 m over 90 s — worse than
+before. Root-caused with a new `--npc-travel-progress-selftest`.
+
+Tried:
+- **Waypoint arrival was impossible.** Nodes are floor-height; the actor is the
+  capsule center ~1.8 m up; the ±1.3 m reach tolerance meant no walk waypoint
+  was ever reached, so the actor orbited the first node. Fixed the vertical
+  tolerance (`kReachAbove`) and widened `kReachXZ` to 1.5.
+- **Recovery jumps while following a route** put the actor in the air where it
+  could not turn → airborne orbit. Gated obstacle/wall-climb/stuck hops with
+  `navHasPathThisTick`; legal navigation jumps and combat jumps remain.
+- **The navigator's stop was not applied**, so the actor ran past its objective
+  and off the map. The navigator now owns non-combat steering whenever valid,
+  including a zero direction.
+- **The explore target flipped on heading reversal**; it now holds until reached
+  or genuinely stalled.
+- **Commitment/replan churn:** keep the committed direction while progressing
+  even if a wall is sensed; replace only on progress failure/timeout; replan on
+  real `isStuck`, not the instantaneous blocked flag.
+- Added a 4 m hold radius at objective goals.
+- Exposed the important knobs live in `config/npc-difficulty.json`
+  (`wallAvoidMinProbe`, `jumpCooldownSeconds`, `exploreDistanceMeters`,
+  `exploreHoldSeconds`, `exploreMinProgressMeters`, `useNavGraph`,
+  `navGraphChunkSize`, `navGraphCellSize`, `navGraphMaxRoutes`,
+  `navGraphMaxDropHeight`); graph settings invalidate the cache on change.
+- `useNavGraph` defaults **off** for now (the local planner is more direct in
+  tests); it can be enabled live.
+
+Went right:
+- `--npc-travel-progress-selftest`: net ≈115 m, ends ≈3.5 m from the objective,
+  and stops (was 24–91 m, net/path 2–7 %, ran off the map).
+- Headless `dust2cyberiav4` server (6 NPCs, ~8 s): net/path **0.69–0.89**
+  (was ~0.01–0.02); jumps 18 vs 816 stuck (was ~1:1, 97 k jumps).
+
+Went wrong / watch out:
+- `npc.stuck` rising-edge events are still frequent (landing/short pauses); they
+  are diagnostic only now and do not drive hops.
+- The nav graph routes with more wandering than the local planner in tests;
+  hence default off pending tuning of `navGraphCellSize`/decimation.
+- The travel selftest floor is small, so it uses peak-tracked assertions.
+
+Keep doing:
+- One live global knob file (`config/npc-difficulty.json`) for the important
+  movement/navigation values; per-profile pursuit stays in behavior profiles.
+
+Stop doing:
+- Comparing waypoint height to capsule-center height to decide arrival.
+
+Evidence:
+- Build `BUILD SUCCESS`; travel/search/navigation/policy/commitment/decision/
+  nav-graph/utility/team-brain/gamemode/cs-round/targeting/perception/acceptance
+  all PASS; headless server run exited 0.
+- Human playtest: pending.
+
+Next: live Dust2 round — confirm both teams leave spawn, travel without circling,
+stop at objectives, jump rarely, and try `useNavGraph: true` live. Changelog:
+`docs/changelog/2026-10-05/20261005_220750-ct-movement-regression-fix.md`.
+
+### Attempt 23 — low-obstacle hop (legs caught, torso clears)
+
+Human request: NPCs should jump over a blocker that catches their legs but not
+their torso (crate, low ledge), instead of only hopping once fully stuck.
+
+Tried:
+- `NpcNavigation::lowObstacleAhead`: a leg ray and a torso ray; hoppable only
+  when the leg ray hits a non-walkable face and the torso ray is clear. A tall
+  wall blocks both and is rejected.
+- New `src/npc/npc.cpp` branch sets a jump (`Obstacle`) when that is true. This
+  traversal hop is allowed even while following a route (unlike the recovery
+  hop), still respecting the jump cooldown and the actor jump policy.
+- Live knobs in `config/npc-difficulty.json`: `lowObstacleJumpEnabled`,
+  `lowObstacleProbe`, `lowObstacleLowOffset`, `lowObstacleHighOffset`.
+
+Went right:
+- `--npc-low-obstacle-selftest` PASS: a low crate is hoppable and crossed; a tall
+  wall is not.
+- Headless `dust2cyberiav4` server: directed travel (net/path 0.38-0.90) and only
+  **6 jumps in 8 s** for 6 NPCs — no jump spam.
+
+Went wrong / watch out:
+- The leg/torso offsets are relative to the body center and default to
+  -1.5 / -0.3; if a specific map's crates are misjudged, tune them live.
+- Very low (`< step height`) obstacles are still walked over by the collision
+  step, so the hop only matters above the step limit.
+
+Keep doing:
+- Deliberate traversal jumps distinct from recovery hops; both bounded by the
+  jump cooldown.
+
+Evidence:
+- Build `BUILD SUCCESS`; low-obstacle, travel, search, navigation, policy,
+  commitment, decision, nav-graph, utility, team-brain, gamemode, cs-round,
+  targeting, perception, nav-request, acceptance all PASS; server run exited 0.
+- Human playtest: pending.
+
+Next: live round — confirm the squad hops low crates/ledges and continues
+traveling. Changelog:
+`docs/changelog/2026-10-05/20261005_231122-npc-low-obstacle-hop.md`.
+
+### Attempt 24 — thin-wall / corner oscillation (per-actor direction variety)
+
+Human report: all 4 CT NPCs stuck in one corner with a thin wall, flickering
+back and forth quickly, apparently biased one side.
+
+Tried:
+- Per-actor left/right side preference (by `npc.id % 2`) in
+  `wallAvoidDirection` and `bestTurnDirection`, plus a per-actor tiebreak
+  rotation in `chooseBestOpenDirection`, so a squad splits across sides instead
+  of all choosing left.
+- Correction hysteresis in `startLocalCorrection`: a still-fresh correction is
+  not flipped to a very different direction, stopping per-tick flip-flop.
+- Shortened `wallBacktrackDuration` `10.5 -> 0.8` so a blocked frame no longer
+  sends an NPC the wrong way for many seconds.
+- Deliberately avoided per-tick random rotation; the variation is deterministic
+  per actor.
+
+Went right:
+- `--npc-corner-escape-selftest` (4 CT actors vs a thin wall): every actor nets
+  ~83 m, reversals bounded at 4, and the squad splits both sides.
+- Headless server: directed travel (net/path 0.46-0.54), 42 jumps in 8 s for 6
+  NPCs.
+
+Went wrong / watch out:
+- A local-correction steering blend was tried and reverted: it deflected route
+  following and caused circling. The correction now only suppresses the
+  commitment + hysteresis; the route stays authoritative.
+- The side split is by actor id; if a map needs a stronger/weaker split, the
+  bias magnitude in `wallAvoidDirection`/`bestTurnDirection` is the knob.
+
+Keep doing:
+- Deterministic per-actor variation, not per-tick randomness.
+- One shared movement owner; team identity does not fork movement.
+
+Evidence:
+- Build `BUILD SUCCESS`; corner/low-obstacle/travel/search/navigation/policy/
+  commitment/decision/nav-graph/utility/team-brain/gamemode/cs-round/targeting/
+  perception/nav-request/behavior-profile/executor/acceptance all PASS; server
+  run exited 0.
+- Human playtest: pending.
+
+Next: live round — confirm no CT pile-up in the thin-wall corner and no rapid
+direction flicker. Changelog:
+`docs/changelog/2026-10-05/20261005_232354-npc-corner-oscillation-fix.md`.
+
+### Attempt 25 — local-area trap escape (maximize net movement)
+
+Human report: NPCs pace in one spot with no net movement (walk into the wall,
+step back, repeat) and on slopes go halfway up then turn back / get stuck /
+repeat. Request: detect time-in-one-area and, past a limit, break out hard.
+
+Tried:
+- `NpcNavigator` anchor + `areaTimer`: while the actor is actively trying to
+  move and stays within `areaEscapeRadiusMeters` for `areaEscapeSeconds`, it
+  commits to a single breakout direction for `areaEscapeHoldSeconds`.
+- Breakout direction maximizes open space and distance from the anchor, then
+  goal direction; it clears local correction/backtrack and is forced as steering
+  (unless a visible enemy owns movement); recovery jumps suppressed.
+- A deliberately stopped actor (arrived/holding, input ~0) never accumulates the
+  timer, so stopping at an objective is not misread as a trap.
+- Live knobs `areaEscapeRadiusMeters`/`areaEscapeSeconds`/`areaEscapeHoldSeconds`.
+- Pinned deterministic tuning inside the movement regression selftests so they
+  do not go flaky while the human live-edits `config/npc-difficulty.json`.
+
+Went right:
+- `--npc-area-escape-selftest` (closed corridor, goal beyond the far wall):
+  breakout triggered, actor left the trap, net ~394 m.
+- Headless server: net/path 0.50-0.83, jumps 4, no crash.
+
+Went wrong / watch out:
+- First cut triggered while the NPC legitimately held at its objective (pushed it
+  away); fixed by only accumulating the timer while input > 0.1.
+- The human is live-editing `config/npc-difficulty.json`, which changes behavior
+  between runs; the selftests now pin their own tuning.
+
+Keep doing:
+- Detect traps by time-in-area + trying-to-move, not by a single stuck frame.
+- One shared movement owner; the breakout is generic, not mode-specific.
+
+Evidence:
+- Build `BUILD SUCCESS`; area-escape/corner/low-obstacle/travel/search/
+  navigation/policy/commitment/decision/nav-graph/utility/team-brain/gamemode/
+  cs-round/targeting/perception/nav-request/behavior-profile/executor/acceptance
+  all PASS; server run exited 0.
+- Human playtest: pending.
+
+Next: live round — confirm no wall/slope pacing and continuous net movement.
+Changelog:
+`docs/changelog/2026-10-05/20261005_234827-npc-area-escape.md`.

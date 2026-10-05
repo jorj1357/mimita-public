@@ -19,6 +19,7 @@ const char* utilityGoalName(UtilityGoalKind kind)
         case UtilityGoalKind::PlantObjective:  return "PlantObjective";
         case UtilityGoalKind::DefuseObjective: return "DefuseObjective";
         case UtilityGoalKind::RetakeSite:      return "RetakeSite";
+        case UtilityGoalKind::HuntArea:        return "HuntArea";
         case UtilityGoalKind::Patrol:          return "Patrol";
     }
     return "Unknown";
@@ -134,6 +135,15 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             s.total = s.relevance * (0.5f + 0.5f * enemyFactor);
             break;
 
+        case UtilityGoalKind::HuntArea:
+            // Travel toward the team's best-known enemy area. Only meaningful
+            // with a report and no visible/known target close by.
+            s.relevance = ctx.enemyAreaKnown ? 1.0f : 0.0f;
+            s.objectiveState = ctx.enemyAreaKnown ? 0.5f : 0.0f;
+            s.total = s.relevance * std::max(0.0f, ctx.travelHuntBias) *
+                      (0.5f + 0.5f * teamFactor);
+            break;
+
         case UtilityGoalKind::Patrol:
             // Only meaningful with no hostile and no objective context.
             s.relevance = (!ctx.hasKnownTarget && !ctx.hasVisibleTarget) ? 1.0f : 0.0f;
@@ -142,6 +152,20 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
 
         case UtilityGoalKind::None:
             s.total = 0.0f;
+            break;
+    }
+
+    // Per-team/mode weighting of objective travel (gamemode npc_travel).
+    switch (kind) {
+        case UtilityGoalKind::MoveToObjective:
+        case UtilityGoalKind::DefendSite:
+        case UtilityGoalKind::RotateToSite:
+        case UtilityGoalKind::PlantObjective:
+        case UtilityGoalKind::DefuseObjective:
+        case UtilityGoalKind::RetakeSite:
+            s.total *= std::max(0.0f, ctx.travelObjectiveBias);
+            break;
+        default:
             break;
     }
     return s;
@@ -170,6 +194,7 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
         UtilityGoalKind::PlantObjective,
         UtilityGoalKind::DefuseObjective,
         UtilityGoalKind::RetakeSite,
+        UtilityGoalKind::HuntArea,
     };
 
     UtilityGoalKind best = UtilityGoalKind::None;
@@ -252,6 +277,8 @@ UtilityActionKind actionForGoal(UtilityGoalKind goal, const UtilityContext& ctx)
                                    : UtilityActionKind::Approach;
         case UtilityGoalKind::RetakeSite:
             return UtilityActionKind::Flank;
+        case UtilityGoalKind::HuntArea:
+            return UtilityActionKind::Approach;
         case UtilityGoalKind::Patrol:
             return UtilityActionKind::Reposition;
         case UtilityGoalKind::None:

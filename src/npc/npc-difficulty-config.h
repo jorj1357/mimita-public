@@ -105,6 +105,40 @@ struct NpcDifficultySettings {
     float searchAvoidRadius = 3.0f;           // penalty radius around visited/blocked points
     float searchNoProgressSeconds = 1.5f;     // stuck-for-this-long triggers recovery
 
+    // ── Live-tunable movement / navigation knobs (edit config/npc-difficulty.json
+    // while the game runs; polled at runtime) ─────────────────────────────
+    // Local wall-avoid search probe floor (m). A tiny value makes every
+    // direction look clear and the actor always turns the same way (circling).
+    float wallAvoidMinProbe = 3.0f;
+    // Strength of the per-actor left/right side preference used to break the
+    // symmetric left/right tie at a wall or corner. 0 = no preference (a squad
+    // may all pick the same side), larger = stronger spread between actors.
+    float turnSideBias = 0.75f;
+    // Recovery hop cooldown (s). Bounds jumping at geometry.
+    float jumpCooldownSeconds = 0.45f;
+    // Local-area trap escape: if an actor stays inside areaEscapeRadiusMeters
+    // for areaEscapeSeconds, it commits to one breakout direction for
+    // areaEscapeHoldSeconds (maximizes net movement instead of pacing).
+    float areaEscapeRadiusMeters = 5.0f;
+    float areaEscapeSeconds = 4.0f;
+    float areaEscapeHoldSeconds = 2.0f;
+    // Low-obstacle hop: jump a leg-high blocker the torso clears (crate/ledge).
+    bool lowObstacleJumpEnabled = true;
+    float lowObstacleProbe = 1.3f;        // forward probe distance (m)
+    float lowObstacleLowOffset = -1.5f;   // leg ray height relative to body center
+    float lowObstacleHighOffset = -0.3f;  // torso ray height relative to body center
+    // Persistent exploration target (Explore goal): distance ahead (m), hold
+    // before retarget (s), and minimum progress in that window (m).
+    float exploreDistanceMeters = 60.0f;
+    float exploreHoldSeconds = 12.0f;
+    float exploreMinProgressMeters = 6.0f;
+    // Long-range navigation graph (lazy, chunked, built from collision tris).
+    bool useNavGraph = false;
+    float navGraphChunkSize = 32.0f;
+    float navGraphCellSize = 2.0f;
+    int navGraphMaxRoutes = 3;
+    float navGraphMaxDropHeight = 14.0f;
+
     // Force a specific weapon. When non-empty, NPCs always use this weapon
     // and ignore distance-based switching. Set to a weapon id to test it.
     std::string forceWeapon = "";

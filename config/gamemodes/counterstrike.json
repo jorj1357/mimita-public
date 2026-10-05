@@ -69,6 +69,15 @@
     "include_players": true,
     "include_npcs": true
   },
+  // Per-team/mode NPC travel weighting. objective_bias scales moving to the
+  // bomb/site objective; hunt_bias scales travelling toward the team's
+  // best-known enemy area when no objective dominates. Values are multipliers
+  // (1.0 neutral, 0 disables). Hot-reloadable.
+  "npc_travel": {
+    "objective_bias": 1.0,
+    "hunt_bias": 0.6,
+    "explore_bias": 0.4
+  },
   // Mode-level RMB aim-FOV override. Independent of the physical right-arm
   // aim-body mode; the input condition is simply "right mouse held".
   "camera": {

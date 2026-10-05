@@ -30,6 +30,7 @@ enum class UtilityGoalKind : uint8_t
     PlantObjective,    // plant at the objective
     DefuseObjective,   // defuse the objective
     RetakeSite,        // retake a lost site
+    HuntArea,          // travel toward the team's best-known enemy area
     Patrol             // no hostile/objective context; walk the map
 };
 
@@ -71,6 +72,14 @@ struct UtilityContext {
     bool canPlant = false;              // carrier, in a valid site
     bool canDefuse = false;             // defender, at a planted objective
     bool onDefense = false;
+    // Team-level enemy-area knowledge (from TeamBrain reports). Travel toward
+    // this when no closer objective/target dominates.
+    bool enemyAreaKnown = false;
+    glm::vec3 enemyAreaPos{0.0f};
+    // Per-team/mode travel weights (gamemode npc_travel). Scale the objective
+    // and hunt-area goal totals; 1.0/0.0 reproduces the legacy behavior.
+    float travelObjectiveBias = 1.0f;
+    float travelHuntBias = 0.0f;
 };
 
 // Per-goal score breakdown, kept for inspection and tests.

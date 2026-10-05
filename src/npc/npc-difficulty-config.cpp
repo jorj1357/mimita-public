@@ -196,6 +196,43 @@ bool NpcDifficultyConfig::load(const std::string& path)
         next.searchNoProgressSeconds = std::clamp(
             optFloat(root, "searchNoProgressSeconds", next.searchNoProgressSeconds), 0.5f, 10.0f);
 
+        // Live-tunable movement / navigation knobs.
+        next.wallAvoidMinProbe = std::clamp(
+            optFloat(root, "wallAvoidMinProbe", next.wallAvoidMinProbe), 1.0f, 12.0f);
+        next.turnSideBias = std::clamp(
+            optFloat(root, "turnSideBias", next.turnSideBias), 0.0f, 4.0f);
+        next.jumpCooldownSeconds = std::clamp(
+            optFloat(root, "jumpCooldownSeconds", next.jumpCooldownSeconds), 0.0f, 3.0f);
+        next.areaEscapeRadiusMeters = std::clamp(
+            optFloat(root, "areaEscapeRadiusMeters", next.areaEscapeRadiusMeters), 1.0f, 30.0f);
+        next.areaEscapeSeconds = std::clamp(
+            optFloat(root, "areaEscapeSeconds", next.areaEscapeSeconds), 1.0f, 30.0f);
+        next.areaEscapeHoldSeconds = std::clamp(
+            optFloat(root, "areaEscapeHoldSeconds", next.areaEscapeHoldSeconds), 0.5f, 10.0f);
+        next.lowObstacleJumpEnabled = optBool(
+            root, "lowObstacleJumpEnabled", next.lowObstacleJumpEnabled);
+        next.lowObstacleProbe = std::clamp(
+            optFloat(root, "lowObstacleProbe", next.lowObstacleProbe), 0.3f, 4.0f);
+        next.lowObstacleLowOffset = std::clamp(
+            optFloat(root, "lowObstacleLowOffset", next.lowObstacleLowOffset), -2.5f, 1.0f);
+        next.lowObstacleHighOffset = std::clamp(
+            optFloat(root, "lowObstacleHighOffset", next.lowObstacleHighOffset), -1.0f, 2.5f);
+        next.exploreDistanceMeters = std::clamp(
+            optFloat(root, "exploreDistanceMeters", next.exploreDistanceMeters), 15.0f, 300.0f);
+        next.exploreHoldSeconds = std::clamp(
+            optFloat(root, "exploreHoldSeconds", next.exploreHoldSeconds), 2.0f, 60.0f);
+        next.exploreMinProgressMeters = std::clamp(
+            optFloat(root, "exploreMinProgressMeters", next.exploreMinProgressMeters), 0.5f, 40.0f);
+        next.useNavGraph = optBool(root, "useNavGraph", next.useNavGraph);
+        next.navGraphChunkSize = std::clamp(
+            optFloat(root, "navGraphChunkSize", next.navGraphChunkSize), 8.0f, 128.0f);
+        next.navGraphCellSize = std::clamp(
+            optFloat(root, "navGraphCellSize", next.navGraphCellSize), 0.5f, 6.0f);
+        next.navGraphMaxRoutes = std::clamp(
+            optInt(root, "navGraphMaxRoutes", next.navGraphMaxRoutes), 1, 8);
+        next.navGraphMaxDropHeight = std::clamp(
+            optFloat(root, "navGraphMaxDropHeight", next.navGraphMaxDropHeight), 1.0f, 60.0f);
+
         // Force weapon mode
         next.forceWeapon = optString(root, "forceWeapon", next.forceWeapon);
 

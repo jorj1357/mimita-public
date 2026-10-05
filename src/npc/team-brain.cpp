@@ -66,6 +66,18 @@ const EnemyReport* TeamBrain::bestReport(uint32_t actorId) const
     return best;
 }
 
+bool TeamBrain::bestTeamReport(glm::vec3& outPosition, float& outConfidence) const
+{
+    const EnemyReport* best = nullptr;
+    for (const auto& report : mState.enemyReports) {
+        if (!best || report.confidence > best->confidence) best = &report;
+    }
+    if (!best || best->confidence <= 0.0f) return false;
+    outPosition = best->lastKnownPosition;
+    outConfidence = best->confidence;
+    return true;
+}
+
 void TeamBrain::updateAssignments(
     const std::vector<std::pair<uint32_t, int>>& livingActors,
     bool objectiveRounds)

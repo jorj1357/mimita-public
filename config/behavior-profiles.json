@@ -125,7 +125,13 @@
         "target_progress_bias": 4.0,
         "open_distance_bias": 6.0,
         "reverse_penalty": 8.0
-      }
+      },
+      // Persistent exploration travel target (Explore goal). The target is held
+      // until reached instead of being recomputed from the moving body each tick.
+      // Units: metres. Range [15,300]. Hot-reloadable.
+      "travel_target_distance_meters": 60.0,
+      // Distance at which the exploration target counts as reached. Range [2,30].
+      "travel_target_reached_meters": 4.0
     },
     {
       // Rage2 is a custom profile. Its id is selected by Sandbox JSON.

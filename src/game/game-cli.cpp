@@ -67,6 +67,7 @@
 #include "npc/npc-nav-request.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc-nav-graph.h"
 #include "npc/npc-surface.h"
 #include "npc/npc-navigation-settings.h"
 #include "npc/npc-targeting.h"
@@ -167,6 +168,35 @@ void forceMainMenu()
 
     logPhase("GUI Load");
     Debug::log(Debug::Category::General, "[MAINMENU] success");
+}
+
+// Pin deterministic movement/navigation tuning for the movement regression
+// selftests so they guard the algorithm, not whatever the human is currently
+// live-editing in config/npc-difficulty.json.
+static void pinMovementSelftestTuning()
+{
+    auto& s = NpcDifficultyConfig::instance().settings();
+    s.wallAvoidanceEnabled = true;
+    s.wallCastDistance = 4.0f;
+    s.wallSearchDistance = 4.0f;
+    s.wallBacktrackEnabled = true;
+    s.wallBacktrackDistance = 1.0f;
+    s.wallBacktrackDuration = 0.8f;
+    s.wallGroundSupportRequired = true;
+    s.turnSideBias = 0.75f;
+    s.wallAvoidMinProbe = 3.0f;
+    s.jumpCooldownSeconds = 0.45f;
+    s.exploreDistanceMeters = 60.0f;
+    s.exploreHoldSeconds = 12.0f;
+    s.exploreMinProgressMeters = 6.0f;
+    s.useNavGraph = false;
+    s.areaEscapeRadiusMeters = 5.0f;
+    s.areaEscapeSeconds = 3.0f;
+    s.areaEscapeHoldSeconds = 3.0f;
+    s.lowObstacleJumpEnabled = true;
+    s.lowObstacleProbe = 1.3f;
+    s.lowObstacleLowOffset = -1.5f;
+    s.lowObstacleHighOffset = -0.3f;
 }
 
 bool handleGameCLI(int argc, char** argv)
@@ -530,11 +560,18 @@ bool handleGameCLI(int argc, char** argv)
             target.pos = glm::vec3(-300.0f, 0.0f, 2.0f);
             target.currentHp = 100; target.maxHp = 100; target.dead = false;
 
-            for (int tick = 0; tick < 420; ++tick)
+            float maxX = -1e9f, maxZ = -1e9f;
+            for (int tick = 0; tick < 420; ++tick) {
                 npcs.updateOneWithTarget(id, world, target, 1.0f / 60.0f);
+                // Track the peak so the check reflects "did it climb the ramp",
+                // not where it happened to be after running on (the test floor
+                // is small, so it can run off the edge later).
+                maxX = std::max(maxX, npc->body.pos.x);
+                maxZ = std::max(maxZ, npc->body.pos.z);
+            }
 
-            check(npc->body.pos.x > 7.0f, "NPC advances onto the ramp");
-            check(npc->body.pos.z > 2.4f, "NPC climbs the walkable slope (z rises)");
+            check(maxX > 7.0f, "NPC advances onto the ramp");
+            check(maxZ > 2.4f, "NPC climbs the walkable slope (z rises)");
         }
 
         // ── Phase 2: steep wall -> explore sideways, never stall ────
@@ -924,6 +961,7 @@ bool handleGameCLI(int argc, char** argv)
         MatchRoleRegistry::instance().load("config/roles.json");
         MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
         NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+        pinMovementSelftestTuning();
 
         auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
             CollisionTriangle t;
@@ -1052,6 +1090,7 @@ bool handleGameCLI(int argc, char** argv)
         MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
         BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
         NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+        pinMovementSelftestTuning();
 
         World world;
         addFloor(world);
@@ -1120,17 +1159,27 @@ bool handleGameCLI(int argc, char** argv)
             ok &= check(glm::length(npc->navigator.committedDirection - persisted) < 1e-4f,
                         "visible enemy preserves the committed direction");
 
-            // Blocked: add a wall in front; the commitment must be replaced.
+            // Blocked: add a wall in front. The committed direction is KEPT
+            // while the actor is still progressing (local wall avoidance steers),
+            // and replaced once the progress check fails. Drive ticks with no
+            // movement to force the progress failure, and confirm the new
+            // direction is not itself immediately blocked.
             addTri(world, {2.2f,-8,0}, {2.2f,8,0}, {2.2f,8,5});
             addTri(world, {2.2f,-8,0}, {2.2f,8,5}, {2.2f,-8,5});
             buildCollisionChunks(world, nullptr);
             tris.clear();
             for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
                 tris.push_back(i);
-            NpcCommitmentUpdate blocked = npc->navigator.updateCommitment(
-                *npc, glm::vec3(1,0,0), glm::vec3(1,0,0), false, world, tris, s, dt, 0.0f, 12.0f);
-            ok &= check(blocked.blocked || blocked.replaced,
-                        "a blocked committed direction is replaced");
+            bool sawBlockedEdge = false;
+            bool replacedWhileBlocked = false;
+            for (int i = 0; i < 150; ++i) {
+                NpcCommitmentUpdate cu = npc->navigator.updateCommitment(
+                    *npc, glm::vec3(1,0,0), glm::vec3(1,0,0), false, world, tris, s, dt, 0.0f, 12.0f);
+                sawBlockedEdge |= cu.blocked;
+                replacedWhileBlocked |= cu.replaced;
+            }
+            ok &= check(sawBlockedEdge && replacedWhileBlocked,
+                        "a blocked committed direction is replaced after progress fails");
             ok &= check(!NpcNavigation::obstacleInDirection(
                             *npc, npc->navigator.committedDirection, 2.0f, world, tris),
                         "the replacement direction is not immediately blocked");
@@ -1181,6 +1230,7 @@ bool handleGameCLI(int argc, char** argv)
         MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
         BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
         NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+        pinMovementSelftestTuning();
 
         World world;
         addTri(world, {300,300,0}, {-300,300,0}, {-300,-300,0});
@@ -1314,6 +1364,7 @@ bool handleGameCLI(int argc, char** argv)
         MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
         BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
         NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+        pinMovementSelftestTuning();
 
         World world;
         addTri(world, {300,300,0}, {-300,300,0}, {-300,-300,0});
@@ -1381,6 +1432,441 @@ bool handleGameCLI(int argc, char** argv)
 
         printf("[NPC MOVEMENT DECISION SELFTEST]\n%s", report.c_str());
         printf("[NPC MOVEMENT DECISION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-travel-progress-selftest") {
+        // Reproduces the Counter-Strike complaint: a CT-preset NPC with a far
+        // objective behind a wall. Measures net displacement over 60 s and the
+        // jump/stuck rate. This is the regression guard for "circular" motion.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            const glm::vec3 n = glm::cross(b - a, c - a);
+            const float len = glm::length(n);
+            t.normal = len > 1e-6f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            w.collisionMesh.triangles.push_back(t);
+        };
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
+        NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+        pinMovementSelftestTuning();
+
+        World world;
+        addTri(world, {150,150,0}, {-150,150,0}, {-150,-150,0});
+        addTri(world, {150,150,0}, {-150,-150,0}, {150,-150,0});
+        // Wall at x=20 spanning y[-25,25], tall enough to force a detour.
+        addTri(world, {20,-25,0}, {20,25,0}, {20,25,8});
+        addTri(world, {20,-25,0}, {20,25,8}, {20,-25,8});
+        buildCollisionChunks(world, nullptr);
+
+        NpcSystem npcs;
+        const uint32_t npcId = 9701;
+        npcs.spawnNpc(npcId, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+        Npc* npc = nullptr;
+        for (Npc& n : npcs.all()) if (n.id == npcId) { npc = &n; break; }
+        ok &= check(npc != nullptr, "travel-progress actor spawned");
+        if (npc) {
+            npc->actorPresetId = "counter_strike";
+            npc->behaviorProfileId = "rage2";
+            npc->behavior = resolveNpcBehavior("rage2");
+            npc->body.maxHp = 100;
+            npc->body.currentHp = 100;
+            npc->body.matchTeam = 0;   // CT
+            npc->wakeupTimer = 0.0f;
+            npc->body.pos = glm::vec3(-15.0f, 0.0f, 1.9f);
+            npc->stateMachine.currentState = NpcState::Patrol;
+            // A far objective behind the wall (CT defend/attack travel).
+            npc->utilityContext.objectiveKnown = true;
+            npc->utilityContext.objectivePos = glm::vec3(100.0f, 0.0f, 1.9f);
+            npc->utilityContext.onDefense = true;
+
+            Player target;
+            target.pos = glm::vec3(600.0f, 0.0f, 2.0f);  // out of sight: no combat
+            target.currentHp = 100; target.maxHp = 100; target.dead = false;
+
+            const glm::vec3 start = npc->body.pos;
+            {
+                NpcNavGraphSettings gs;
+                gs.jumpHeight = 2.1f;
+                const std::vector<NpcNavRoute> routes = NpcNavGraph::instance().findRoutes(
+                    world, start, glm::vec3(100.0f, 0.0f, 1.9f), gs, npcId);
+                report += "  info  graphRoutes=" + std::to_string(routes.size()) + "\n";
+                if (!routes.empty()) {
+                    float maxY = 0.0f;
+                    for (const glm::vec3& p : routes[0].points)
+                        maxY = std::max(maxY, std::fabs(p.y));
+                    report += "  info  routeLength=" + std::to_string(routes[0].length) +
+                              " routeMaxAbsY=" + std::to_string(maxY) +
+                              " routePoints=" + std::to_string(routes[0].points.size()) + "\n";
+                }
+            }
+            float path = 0.0f;
+            glm::vec3 prev = start;
+            const int ticks = 3600;  // 60 s
+            for (int tick = 0; tick < ticks; ++tick) {
+                npcs.updateOneWithTarget(npcId, world, target, 1.0f / 60.0f);
+                path += glm::length(glm::vec2(npc->body.pos.x - prev.x,
+                                              npc->body.pos.y - prev.y));
+                prev = npc->body.pos;
+                if (tick % 600 == 0) {
+                    const auto& nv = npc->navigator;
+                    glm::vec3 wp = (nv.pathIndex < (int)nv.path.size())
+                        ? nv.path[(size_t)nv.pathIndex] : glm::vec3(0.0f);
+                    report += "  info  t=" + std::to_string(tick / 60) +
+                              "s pos=(" + std::to_string((int)npc->body.pos.x) + "," +
+                              std::to_string((int)npc->body.pos.y) + ")" +
+                              " state=" + npcStateName(npc->stateMachine.currentState) +
+                              " util=" + utilityGoalName(npc->utility.currentGoal) +
+                              " z=" + std::to_string(npc->body.pos.z) +
+                              " path=" + std::to_string((int)nv.path.size()) +
+                              "/" + std::to_string(nv.pathIndex) +
+                              " wp=(" + std::to_string((int)wp.x) + "," + std::to_string((int)wp.y) + ")" +
+                              " dist=" + std::to_string((int)glm::length(glm::vec2(wp.x-npc->body.pos.x, wp.y-npc->body.pos.y))) +
+                              " move=(" + std::to_string(npc->lastMoveInput.x).substr(0,4) + "," +
+                              std::to_string(npc->lastMoveInput.y).substr(0,4) + ")" +
+                              " ground=" + std::to_string((int)npc->sensors.touchFloor) + "\n";
+                }
+            }
+            const float net = glm::length(glm::vec2(npc->body.pos.x - start.x,
+                                                    npc->body.pos.y - start.y));
+            report += "  info  net=" + std::to_string(net) +
+                      " path=" + std::to_string(path) +
+                      " finalX=" + std::to_string(npc->body.pos.x) +
+                      " finalY=" + std::to_string(npc->body.pos.y) + "\n";
+            // The actor must net-travel a long way, not loop in place.
+            const float endToGoal = glm::length(glm::vec2(
+                npc->body.pos.x - 100.0f, npc->body.pos.y - 0.0f));
+            ok &= check(net > 40.0f, "actor makes substantial net progress (>40 m)");
+            ok &= check(net / std::max(1.0f, path) > 0.25f,
+                        "movement is directed, not circular (net/path > 0.25)");
+            ok &= check(endToGoal < 15.0f,
+                        "actor ends at the objective, not circling near it");
+        }
+
+        printf("[NPC TRAVEL PROGRESS SELFTEST]\n%s", report.c_str());
+        printf("[NPC TRAVEL PROGRESS SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-low-obstacle-selftest") {
+        // Proves the leg-high hop: a low crate blocks the leg ray but clears the
+        // torso ray and is hopped; a tall wall blocks both and is not.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            const glm::vec3 n = glm::cross(b - a, c - a);
+            const float len = glm::length(n);
+            t.normal = len > 1e-6f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            w.collisionMesh.triangles.push_back(t);
+        };
+        auto addBox = [&](World& w, float x, float y0, float y1, float top) {
+            addTri(w, {x,y0,0}, {x,y1,0}, {x,y1,top});
+            addTri(w, {x,y0,0}, {x,y1,top}, {x,y0,top});
+            addTri(w, {x,y0,top}, {x,y1,top}, {x+4,y1,top});
+            addTri(w, {x,y0,top}, {x+4,y1,top}, {x+4,y0,top});
+        };
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
+        NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+        pinMovementSelftestTuning();
+
+        // Unit check on the probe: low crate vs tall wall.
+        {
+            World w;
+            addTri(w, {60,60,0}, {-60,60,0}, {-60,-60,0});
+            addTri(w, {60,60,0}, {-60,-60,0}, {60,-60,0});
+            addBox(w, 1.0f, -3.0f, 3.0f, 0.9f);
+            buildCollisionChunks(w, nullptr);
+            NpcSystem npcs;
+            npcs.spawnNpc(9101, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+            Npc* n = nullptr;
+            for (Npc& x : npcs.all()) if (x.id == 9101) { n = &x; break; }
+            if (n) {
+                std::vector<int> all;
+                for (int i = 0; i < (int)w.collisionMesh.triangles.size(); ++i) all.push_back(i);
+                check(NpcNavigation::lowObstacleAhead(*n, glm::vec3(1,0,0), w,
+                          1.3f, -1.5f, -0.3f, all),
+                      "a low crate is detected as hoppable");
+            }
+        }
+        {
+            World w;
+            addTri(w, {60,60,0}, {-60,60,0}, {-60,-60,0});
+            addTri(w, {60,60,0}, {-60,-60,0}, {60,-60,0});
+            addBox(w, 1.0f, -60.0f, 60.0f, 3.0f);   // tall wall spans the floor
+            buildCollisionChunks(w, nullptr);
+            NpcSystem npcs;
+            npcs.spawnNpc(9102, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+            Npc* n = nullptr;
+            for (Npc& x : npcs.all()) if (x.id == 9102) { n = &x; break; }
+            if (n) {
+                std::vector<int> all;
+                for (int i = 0; i < (int)w.collisionMesh.triangles.size(); ++i) all.push_back(i);
+                check(!NpcNavigation::lowObstacleAhead(*n, glm::vec3(1,0,0), w,
+                          1.3f, -1.5f, -0.3f, all),
+                      "a tall wall is not treated as a hoppable low obstacle");
+            }
+        }
+
+        // Behavioural check: the actor actually crosses the low crate.
+        {
+            World w;
+            addTri(w, {60,60,0}, {-60,60,0}, {-60,-60,0});
+            addTri(w, {60,60,0}, {-60,-60,0}, {60,-60,0});
+            addBox(w, 6.0f, -3.0f, 3.0f, 0.9f);
+            buildCollisionChunks(w, nullptr);
+            NpcSystem npcs;
+            const uint32_t id = 9103;
+            npcs.spawnNpc(id, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+            Npc* n = nullptr;
+            for (Npc& x : npcs.all()) if (x.id == id) { n = &x; break; }
+            if (n) {
+                n->actorPresetId = "counter_strike";
+                n->behaviorProfileId = "rage2";
+                n->behavior = resolveNpcBehavior("rage2");
+                n->body.maxHp = 100; n->body.currentHp = 100;
+                n->wakeupTimer = 0.0f;
+                n->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+                n->stateMachine.currentState = NpcState::Patrol;
+                n->navigator.commitmentActive = true;
+                n->navigator.committedDirection = glm::vec3(1.0f, 0.0f, 0.0f);
+                n->navigator.commitmentTimeRemaining = 100.0f;
+                Player target;
+                target.pos = glm::vec3(300.0f, 0.0f, 2.0f);
+                target.currentHp = 100; target.maxHp = 100; target.dead = false;
+                float maxX = -1e9f, maxZ = -1e9f;
+                for (int tick = 0; tick < 180; ++tick) {
+                    npcs.updateOneWithTarget(id, w, target, 1.0f / 60.0f);
+                    maxX = std::max(maxX, n->body.pos.x);
+                    maxZ = std::max(maxZ, n->body.pos.z);
+                }
+                report += "  info  maxX=" + std::to_string(maxX) +
+                          " maxZ=" + std::to_string(maxZ) + "\n";
+                check(maxX > 7.0f, "the actor crossed the low crate");
+                check(maxZ > 2.4f, "the actor hopped (rose) over the crate");
+            }
+        }
+
+        printf("[NPC LOW OBSTACLE SELFTEST]\n%s", report.c_str());
+        printf("[NPC LOW OBSTACLE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-corner-escape-selftest") {
+        // Thin tall wall directly ahead. The actor must pick ONE side, travel
+        // along the wall to its end, and go around - not sit flipping direction
+        // (the "back and forth super quick" report). Multiple actors must not
+        // all pick the same side.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            const glm::vec3 n = glm::cross(b - a, c - a);
+            const float len = glm::length(n);
+            t.normal = len > 1e-6f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            w.collisionMesh.triangles.push_back(t);
+        };
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
+        NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+        pinMovementSelftestTuning();
+
+        const int actorCount = 4;
+        int pickedPositiveY = 0, pickedNegativeY = 0;
+        float minNet = 1e9f;
+        int worstReversals = 0;
+
+        for (int a = 0; a < actorCount; ++a) {
+            World w;
+            addTri(w, {80,80,0}, {-80,80,0}, {-80,-80,0});
+            addTri(w, {80,80,0}, {-80,-80,0}, {80,-80,0});
+            // Thin tall wall at x=6, y[-50,50], height 6 (a thin wall you can
+            // walk along but not through).
+            addTri(w, {6,-50,0}, {6,50,0}, {6,50,6});
+            addTri(w, {6,-50,0}, {6,50,6}, {6,-50,6});
+            addTri(w, {6.2f,-50,0}, {6.2f,50,0}, {6.2f,50,6});
+            addTri(w, {6.2f,-50,0}, {6.2f,50,6}, {6.2f,-50,6});
+            buildCollisionChunks(w, nullptr);
+
+            NpcSystem npcs;
+            const uint32_t id = 9800u + (uint32_t)a;
+            npcs.spawnNpc(id, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+            Npc* n = nullptr;
+            for (Npc& x : npcs.all()) if (x.id == id) { n = &x; break; }
+            if (!n) { check(false, "corner actor spawned"); continue; }
+            n->actorPresetId = "counter_strike";
+            n->behaviorProfileId = "rage2";
+            n->behavior = resolveNpcBehavior("rage2");
+            n->body.maxHp = 100; n->body.currentHp = 100;
+            n->body.matchTeam = 0;
+            n->wakeupTimer = 0.0f;
+            n->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+            n->stateMachine.currentState = NpcState::Patrol;
+            n->navigator.commitmentActive = true;
+            n->navigator.committedDirection = glm::vec3(1.0f, 0.0f, 0.0f);
+            n->navigator.commitmentTimeRemaining = 100.0f;
+
+            Player target;
+            target.pos = glm::vec3(400.0f, 0.0f, 2.0f);
+            target.currentHp = 100; target.maxHp = 100; target.dead = false;
+
+            float prevSign = 0.0f;
+            int reversals = 0;
+            float maxAbsY = 0.0f;
+            const glm::vec3 start = n->body.pos;
+            for (int tick = 0; tick < 600; ++tick) {
+                npcs.updateOneWithTarget(id, w, target, 1.0f / 60.0f);
+                maxAbsY = std::max(maxAbsY, std::fabs(n->body.pos.y));
+                const float vy = n->lastMoveInput.y;
+                if (std::fabs(vy) > 0.2f) {
+                    const float sign = vy > 0.0f ? 1.0f : -1.0f;
+                    if (prevSign != 0.0f && sign != prevSign) ++reversals;
+                    prevSign = sign;
+                }
+            }
+            const float net = glm::length(glm::vec2(
+                n->body.pos.x - start.x, n->body.pos.y - start.y));
+            minNet = std::min(minNet, net);
+            worstReversals = std::max(worstReversals, reversals);
+            if (n->body.pos.y >= 0.0f) ++pickedPositiveY; else ++pickedNegativeY;
+            report += "  info  actor=" + std::to_string(id) +
+                      " net=" + std::to_string(net) +
+                      " maxAbsY=" + std::to_string(maxAbsY) +
+                      " reversals=" + std::to_string(reversals) + "\n";
+        }
+
+        check(minNet > 30.0f, "every actor leaves the wall/corner (net > 30 m)");
+        check(worstReversals <= 12,
+              "no rapid back-and-forth (direction reversals bounded)");
+        check(pickedPositiveY > 0 && pickedNegativeY > 0,
+              "the squad splits across both sides of the wall (no shared bias)");
+
+        printf("[NPC CORNER ESCAPE SELFTEST]\n%s", report.c_str());
+        printf("[NPC CORNER ESCAPE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-area-escape-selftest") {
+        // A closed corridor (open only behind) with the goal beyond the far
+        // wall. A naive actor paces into the wall forever. The area-escape
+        // breakout must make it leave the corridor with real net movement.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            const glm::vec3 n = glm::cross(b - a, c - a);
+            const float len = glm::length(n);
+            t.normal = len > 1e-6f ? n / len : glm::vec3(0.0f, 0.0f, 1.0f);
+            w.collisionMesh.triangles.push_back(t);
+        };
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
+        NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+        pinMovementSelftestTuning();
+
+        World world;
+        addTri(world, {80,80,0}, {-80,80,0}, {-80,-80,0});
+        addTri(world, {80,80,0}, {-80,-80,0}, {80,-80,0});
+        // Closed east end and side walls (corridor open to the west).
+        addTri(world, {4,-10,0}, {4,10,0}, {4,10,6});
+        addTri(world, {4,-10,0}, {4,10,6}, {4,-10,6});
+        addTri(world, {-14,10,0}, {4,10,0}, {4,10,6});
+        addTri(world, {-14,10,0}, {4,10,6}, {-14,10,6});
+        addTri(world, {4,-10,0}, {-14,-10,0}, {-14,-10,6});
+        addTri(world, {4,-10,0}, {-14,-10,6}, {4,-10,6});
+        buildCollisionChunks(world, nullptr);
+
+        NpcSystem npcs;
+        const uint32_t id = 9901;
+        npcs.spawnNpc(id, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+        Npc* n = nullptr;
+        for (Npc& x : npcs.all()) if (x.id == id) { n = &x; break; }
+        ok &= check(n != nullptr, "area-escape actor spawned");
+        if (n) {
+            n->actorPresetId = "counter_strike";
+            n->behaviorProfileId = "rage2";
+            n->behavior = resolveNpcBehavior("rage2");
+            n->body.maxHp = 100; n->body.currentHp = 100;
+            n->body.matchTeam = 0;
+            n->wakeupTimer = 0.0f;
+            n->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+            n->stateMachine.currentState = NpcState::Patrol;
+            n->navigator.commitmentActive = true;
+            n->navigator.committedDirection = glm::vec3(1.0f, 0.0f, 0.0f);
+            n->navigator.commitmentTimeRemaining = 100.0f;
+
+            Player target;
+            target.pos = glm::vec3(600.0f, 0.0f, 2.0f);
+            target.currentHp = 100; target.maxHp = 100; target.dead = false;
+
+            const glm::vec3 start = n->body.pos;
+            float maxEast = -1e9f, minWest = 1e9f, maxAbsY = 0.0f;
+            bool escaped = false;
+            for (int tick = 0; tick < 1800; ++tick) {  // 30 s
+                npcs.updateOneWithTarget(id, world, target, 1.0f / 60.0f);
+                maxEast = std::max(maxEast, n->body.pos.x);
+                minWest = std::min(minWest, n->body.pos.x);
+                maxAbsY = std::max(maxAbsY, std::fabs(n->body.pos.y));
+                if (n->navigator.areaEscapeActive) escaped = true;
+            }
+            const float net = glm::length(glm::vec2(
+                n->body.pos.x - start.x, n->body.pos.y - start.y));
+            report += "  info  net=" + std::to_string(net) +
+                      " maxEast=" + std::to_string(maxEast) +
+                      " minWest=" + std::to_string(minWest) +
+                      " maxAbsY=" + std::to_string(maxAbsY) +
+                      " escapeTriggered=" + (escaped ? "1" : "0") + "\n";
+            ok &= check(escaped, "the area-trap breakout triggered");
+            ok &= check(minWest < -14.0f || maxAbsY > 10.0f,
+                        "the actor left the corridor (got out of the trap)");
+            ok &= check(net > 15.0f, "the actor achieved real net movement");
+        }
+
+        printf("[NPC AREA ESCAPE SELFTEST]\n%s", report.c_str());
+        printf("[NPC AREA ESCAPE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-nav-graph-selftest") {
+        std::string report;
+        const bool ok = npcNavGraphSelfTest(report);
+        printf("[NPC NAV GRAPH SELFTEST]\n%s", report.c_str());
+        printf("[NPC NAV GRAPH SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

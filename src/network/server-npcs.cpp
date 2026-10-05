@@ -316,6 +316,9 @@ static void respawnServerNpc(Npc& npc)
     npc.lastWallAvoidDir = glm::vec3(0.0f);
     npc.wasStuck = false;
     npc.movementDecisionTimer = 0.0f;
+    npc.jumpCooldown = 0.0f;
+    npc.hasDecisionGoalDistance = false;
+    npc.lastDecisionGoalDistance = 0.0f;
     // Reapply the role behavior profile for the new life.
     npc.behaviorProfileId = profile.behaviorProfileId;
     npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);

@@ -101,6 +101,9 @@ public:
     void tickReports(float dt, float memorySeconds);
     // Best current report for an actor, or nullptr.
     const EnemyReport* bestReport(uint32_t actorId) const;
+    // Highest-confidence enemy report anywhere on the team (the team's best
+    // estimate of where enemies are). Returns false when there are none.
+    bool bestTeamReport(glm::vec3& outPosition, float& outConfidence) const;
 
     // Recompute assignments for the given living actors (ids + teams). Roles are
     // apportioned from the policy. Deterministic for a given state.

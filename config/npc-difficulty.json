@@ -84,25 +84,48 @@
   "wallAvoidanceEnabled": true,
   // "comment_wallAvoidanceEnabled": "When true, NPCs look for a nearby safe direction instead of continuing into a wall. The shared collision system still decides the actual movement result.",
   // "wallCastDistance": 10.0,
+  // "wallCastDistance": 0.01,
+  // "wallCastDistance": 1.0,
   // "wallCastDistance": 20.0,
+  // "wallCastDistance": 99.0,
+  // "wallCastDistance": 2.0,
   "wallCastDistance": 4.0,
+  // "wallCastDistance": 2.0,
   // "comment_wallCastDistance": "How far ahead the NPC checks for a wall.",
   // "wallSearchDistance": 100.0,
-  "wallSearchDistance": 1.0,
+  // How far the local wall-avoid search probes alternative directions. A value
+  // near 1.0 made almost every direction look clear, so the actor always turned
+  // the same way (circling). Keep this a few metres so the search is meaningful.
+  // "wallSearchDistance": 4.0,
+  "wallSearchDistance": 0.01,
+  // "wallSearchDistance": 8.0,
+  // "wallSearchDistance": 20.0,
+  // "wallSearchDistance": 200.0,
   // "comment_wallSearchDistance": "How far the NPC may search for a safe backup or side direction when blocked.",
   "wallBacktrackEnabled": true,
+  // "wallBacktrackEnabled": false,
   // "comment_wallBacktrackEnabled": "When true, NPCs back away from a blocked route before trying the navigator again.",
-  "wallBacktrackDistance": 1.0,
+  // "wallBacktrackDistance": 10.0,
+  "wallBacktrackDistance": 0.5,
   // "comment_wallBacktrackDistance": "How far the NPC may back away to reveal a doorway or another open route.",
-  "wallBacktrackDuration": 10.5,
+  // Keep the backward escape SHORT. A long backtrack made an NPC walk the wrong
+  // way for many seconds after one blocked frame instead of turning and going
+  // around, which read as "stuck / wandering".
+  // "wallBacktrackDuration": 0.8,
+  // "wallBacktrackDuration": 10.0,
+  "wallBacktrackDuration": 2.0,
+  // "wallBacktrackDuration": 0.25,
+  // "wallBacktrackDuration": 1.5,
+  // "wallBacktrackDuration": 0.01,
   // "comment_wallBacktrackDuration": "Maximum seconds spent backing up before the navigator tries a new route.",
   "wallGroundSupportRequired": true,
   // "comment_wallGroundSupportRequired": "When true, grounded NPCs avoid movement directions that have no floor below them.",
   "wallGroundProbeDepth": 4.0,
   // "comment_wallGroundProbeDepth": "How far below a possible movement position the NPC searches for supporting ground.",
   // "comment_searchMemory": "Search/exploration memory. A no-target or blocked NPC remembers where it has been and where it was blocked, commits to a direction for longer, and never doubles back or re-tests the same wall. All hot-reload live.",
-  // "searchHeadingCommitSeconds": 10.0,
-  "searchHeadingCommitSeconds": 30.0,
+  "searchHeadingCommitSeconds": 10.0,
+  // "searchHeadingCommitSeconds": 1.0,
+  // "searchHeadingCommitSeconds": 30.0,
   // "comment_searchHeadingCommitSeconds": "How long a chosen search heading is held before the NPC is allowed to reconsider it. Higher = walks a direction much longer instead of turning back into a wall.",
   "searchMemorySeconds": 30.0,
   // "comment_searchMemorySeconds": "How long (seconds) a visited or blocked world point stays in memory and keeps being avoided.",
@@ -110,13 +133,75 @@
   // "comment_searchMemoryPoints": "Number of visited/blocked points kept (4-32). Higher = remembers more of where it has been.",
   "searchSnapshotSeconds": 1.0,
   // "comment_searchSnapshotSeconds": "How often the NPC records its current position as visited. Lower = denser memory of the exact path.",
-  "searchLookahead": 20.0,
+  // "searchLookahead": 20.0,
+  "searchLookahead": 2.0,
+  // "searchLookahead": 1.0,
   // "comment_searchLookahead": "How far ahead (meters) the NPC samples when scoring a candidate direction for recent/blocked points.",
-  "searchAvoidRadius": 5.0,
+  // "searchAvoidRadius": 5.0,
+  // "searchAvoidRadius": 50.0,
+  // "searchAvoidRadius": 0.01,
+  "searchAvoidRadius": 1.0,
+  // "searchAvoidRadius": 10.01,
   // "comment_searchAvoidRadius": "A candidate direction that would pass within this many meters of a remembered point is strongly avoided.",
   // "searchNoProgressSeconds": 0.5,
   "searchNoProgressSeconds": 10.5,
+  // "searchNoProgressSeconds": 1.5,
   // "comment_searchNoProgressSeconds": "If the NPC cannot make progress for this long, it blacklists the spot and picks a new heading (or a short detour while chasing). Stops slope-bottom/corner lock-ups.",
+
+  // ── Live movement/navigation knobs (hot-reloaded; edit while the game runs) ──
+  // Floor for the local wall-avoid search probe (m). Too small = every
+  // direction looks clear and the actor always turns the same way (circling).
+  "wallAvoidMinProbe": 3.0,
+  // Strength of the per-actor left/right preference at a wall/corner. Higher
+  // spreads a squad across both sides so they do not all jam into one corner;
+  // 0 disables the preference (all may pick the same side).
+  "turnSideBias": 0.75,
+  // "turnSideBias": 10.0,
+  // Minimum seconds between recovery hops. Bounds jumping at geometry.
+  "jumpCooldownSeconds": 0.45,
+  // Low-obstacle hop: jump a blocker at leg height that the torso clears (a
+  // crate, a low ledge, a lip that catches the legs). Two forward rays are
+  // cast: one at the legs (lowObstacleLowOffset) and one at the torso
+  // (lowObstacleHighOffset), relative to the actor's center. A hop happens only
+  // when the leg ray is blocked and the torso ray is clear, so a tall wall is
+  // still never jumped. All hot-reloadable.
+  "lowObstacleJumpEnabled": true,
+  // Local-area trap escape. If an actor stays inside areaEscapeRadiusMeters of
+  // an anchor for areaEscapeSeconds, it commits to ONE breakout direction for
+  // areaEscapeHoldSeconds, ignoring wall-avoid/backtrack flip-flop. This is what
+  // stops "walk into wall, step back, walk into the same wall" loops and
+  // mid-slope back-and-forth, and maximizes net movement. Hot-reloadable.
+  "areaEscapeRadiusMeters": 5.0,
+  "areaEscapeSeconds": 4.0,
+  "areaEscapeHoldSeconds": 2.0,
+  "lowObstacleProbe": 2.0,
+  "lowObstacleLowOffset": -1.0,
+  "lowObstacleHighOffset": 1.0,
+  // Persistent exploration target (no-target Patrol): how far ahead the target
+  // is placed, how long it is held before retargeting, and the minimum progress
+  // required in that window before retargeting.
+  // "exploreDistanceMeters": 60.0,
+  // "exploreDistanceMeters": 1.0,
+  "exploreDistanceMeters": 100.0,
+  "exploreHoldSeconds": 12.0,
+  // "exploreHoldSeconds": 0.01,
+  // "exploreHoldSeconds": 30.0,
+  // "exploreMinProgressMeters": 6.0,
+  // "exploreMinProgressMeters": 0.1,
+  // "exploreMinProgressMeters": 20.0,
+  "exploreMinProgressMeters": 1.0,
+  // Long-range navigation graph (lazy chunked walkable graph built from the
+  // loaded collision triangles). false = local rolling planner only.
+  // This is the one switch that changes the whole movement architecture.
+  "useNavGraph": false,
+  // "useNavGraph": true,
+  // Graph geometry/tuning. chunkSize/cellSize are metres; maxRoutes controls how
+  // many distinct equal-cost routes are returned; maxDropHeight bounds drops.
+  "navGraphChunkSize": 32.0,
+  "navGraphCellSize": 2.0,
+  "navGraphMaxRoutes": 3,
+  "navGraphMaxDropHeight": 14.0,
+
   // "forceWeapon": "grenade_launcher",
   // "forceWeapon": "rocket_launcher",
   // "forceWeapon": "shotgun",

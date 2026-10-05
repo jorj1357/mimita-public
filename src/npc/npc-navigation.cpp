@@ -168,46 +168,82 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
     if (!forwardBlocked && !forwardUnsupported)
         return desiredDir;
 
-    // Search the closest useful escape direction first. This keeps the NPC
-    // moving naturally around a wall, but also allows it to back up when the
-    // forward, left, and right directions are all blocked.
+    // Evaluate several nearby directions and pick the best one instead of the
+    // first clear one. Returning the first clear candidate always chose "left"
+    // and produced systematic circling. The scorer prefers continuity with the
+    // requested direction, then usable clearance, and only reverses as a last
+    // resort. The probe distance is floored so a too-small configured value
+    // (e.g. 1.0 m) cannot make every direction look clear.
+    const float searchDist = std::max(
+        std::max(1.0f, cfg.wallAvoidMinProbe), cfg.wallSearchDistance);
     const glm::vec3 left{-desiredDir.y, desiredDir.x, 0.0f};
     const glm::vec3 right = -left;
+    const glm::vec3 back = -desiredDir;
     const glm::vec3 candidatesByPreference[] = {
         left, right,
-        glm::normalize(left - desiredDir),
-        glm::normalize(right - desiredDir),
-        -desiredDir,
-        glm::normalize(-desiredDir + left),
-        glm::normalize(-desiredDir + right)
+        glm::normalize(left - desiredDir),      // 45 deg forward-left
+        glm::normalize(right - desiredDir),     // 45 deg forward-right
+        glm::normalize(left + desiredDir),      // 45 deg back-left
+        glm::normalize(right + desiredDir),     // 45 deg back-right
+        back
     };
 
-    glm::vec3 bestDir = -desiredDir;
-    float bestClearance = -1.0f;
-    for (const glm::vec3& altDir : candidatesByPreference)
+    glm::vec3 bestDir = back;
+    float bestScore = -1e9f;
+    bool foundOpen = false;
+    for (const glm::vec3& altRaw : candidatesByPreference)
     {
-        if (glm::length(altDir) < 0.001f)
+        if (glm::length(altRaw) < 0.001f)
             continue;
-        float hitDistance = cfg.wallSearchDistance;
+        const glm::vec3 altDir = glm::normalize(altRaw);
+        float hitDistance = searchDist;
         glm::vec3 altNormal{0.0f};
-        const bool altHit = rayHitsAny(origin, altDir, cfg.wallSearchDistance,
+        const bool altHit = rayHitsAny(origin, altDir, searchDist,
                                        candidates, world, &hitDistance, &altNormal);
         const bool blocked = altHit && altNormal.z < kWalkableSlopeDot;
         const bool unsupported = cfg.wallGroundSupportRequired &&
-            !hasGroundSupport(npc, altDir, world, cfg.wallSearchDistance,
+            !hasGroundSupport(npc, altDir, world, searchDist,
                               cfg.wallGroundProbeDepth, candidates);
-        if (!blocked && !unsupported)
-            return glm::normalize(altDir);
-        if (blocked && !unsupported && hitDistance > bestClearance)
-        {
-            bestClearance = hitDistance;
-            bestDir = glm::normalize(altDir);
+        if (blocked || unsupported)
+            continue;
+
+        // Clear direction: reward continuity with the requested heading and
+        // reward fresh clearance so a barely-open slot is not over-preferred.
+        const float continuity = glm::dot(altDir, desiredDir);
+        const float clearance = altHit ? hitDistance : searchDist;
+        // Break the left/right symmetry per actor so a squad does not all pick
+        // the same side of a corner (and no single fixed side bias exists).
+        const glm::vec3 leftOfDesired(-desiredDir.y, desiredDir.x, 0.0f);
+        const float sidePref = (npc.id % 2u == 0u) ? 1.0f : -1.0f;
+        const float sideBias = sidePref * glm::dot(altDir, leftOfDesired) * cfg.turnSideBias;
+        const float score = continuity * 4.0f + clearance + sideBias;
+        if (score > bestScore) {
+            bestScore = score;
+            bestDir = altDir;
+            foundOpen = true;
         }
     }
+    if (foundOpen)
+        return bestDir;
 
-    // Every nearby direction is partly blocked. Move toward the direction
-    // with the most room so the shared collision solver can make progress;
-    // the normal stuck/repath logic will keep retrying on later ticks.
+    // Every nearby direction is blocked or unsupported. Move toward the one
+    // with the most room so the shared collision solver can still make some
+    // progress; the normal stuck/repath logic retries on later ticks.
+    float bestClearance = -1.0f;
+    for (const glm::vec3& altRaw : candidatesByPreference)
+    {
+        if (glm::length(altRaw) < 0.001f) continue;
+        const glm::vec3 altDir = glm::normalize(altRaw);
+        float hitDistance = searchDist;
+        glm::vec3 altNormal{0.0f};
+        const bool altHit = rayHitsAny(origin, altDir, searchDist,
+                                       candidates, world, &hitDistance, &altNormal);
+        const bool blocked = altHit && altNormal.z < kWalkableSlopeDot;
+        if (blocked && hitDistance > bestClearance) {
+            bestClearance = hitDistance;
+            bestDir = altDir;
+        }
+    }
     return bestDir;
 }
 
@@ -390,6 +426,36 @@ bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float che
     if (!rayHitsAny(origin, checkDir, checkDist, candidates, world, nullptr, &hitNormal))
         return false;
     return hitNormal.z < kWalkableSlopeDot;
+}
+
+bool NpcNavigation::lowObstacleAhead(const Npc& npc, glm::vec3 dir, const World& world,
+                                     float probeDist, float lowOffset, float highOffset,
+                                     const std::vector<int>& candidates)
+{
+    if (glm::length(dir) < 0.001f || probeDist <= 0.0f)
+        return false;
+
+    const glm::vec3 checkDir = glm::normalize(glm::vec3(dir.x, dir.y, 0.0f));
+    const float groundZ = npc.body.pos.z;  // body center; offsets are relative
+
+    // Legs/feet ray: must hit a blocking (non-walkable) face.
+    glm::vec3 lowOrigin = npc.body.pos;
+    lowOrigin.z = groundZ + lowOffset;
+    glm::vec3 lowNormal{0.0f};
+    const bool lowBlocked =
+        rayHitsAny(lowOrigin, checkDir, probeDist, candidates, world, nullptr, &lowNormal) &&
+        lowNormal.z < kWalkableSlopeDot;
+    if (!lowBlocked)
+        return false;
+
+    // Torso/head ray: must be clear, so the obstacle is low enough to clear.
+    glm::vec3 highOrigin = npc.body.pos;
+    highOrigin.z = groundZ + highOffset;
+    glm::vec3 highNormal{0.0f};
+    const bool highBlocked =
+        rayHitsAny(highOrigin, checkDir, probeDist, candidates, world, nullptr, &highNormal) &&
+        highNormal.z < kWalkableSlopeDot;
+    return !highBlocked;
 }
 
 bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world)

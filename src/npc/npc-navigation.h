@@ -41,6 +41,16 @@ bool obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const W
 
 bool obstacleInDirection(const Npc& npc, glm::vec3 dir, float checkDist, const World& world, const std::vector<int>& candidates);
 
+// True when a LOW obstacle blocks `dir` at leg height but the space above it is
+// clear enough for the actor's torso to pass over it (e.g. a leg-high crate or
+// ledge). Two horizontal rays are cast ~`probeDist` ahead: one at
+// `body.pos.z + lowOffset` (legs) and one at `body.pos.z + highOffset` (torso).
+// A hop is warranted when the low ray hits a non-walkable face and the high ray
+// does not. A tall wall blocks both, so it is correctly rejected.
+bool lowObstacleAhead(const Npc& npc, glm::vec3 dir, const World& world,
+                      float probeDist, float lowOffset, float highOffset,
+                      const std::vector<int>& candidates);
+
 // Returns a direction toward nearby cover (a position where LOS to threatPos is blocked).
 // Returns zero vector if no nearby cover found.
 glm::vec3 findCoverDirection(const Npc& npc, glm::vec3 threatPos, const World& world);

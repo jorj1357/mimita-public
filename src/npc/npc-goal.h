@@ -18,6 +18,7 @@ enum class NpcGoalKind : uint8_t
     MaintainDistance,    // hold desiredDistance from the current target actor
     FleeActor,           // move away from the current target actor
     ReachLineOfSight,    // move until the current target actor is visible
+    Explore,             // advance toward a persistent far travel target
 };
 
 struct NpcGoal

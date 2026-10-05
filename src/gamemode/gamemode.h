@@ -123,6 +123,16 @@ struct GamemodeNpcTargeting {
     bool includeNpcs = true;
 };
 
+// Optional per-team/mode weighting of NPC travel goals. Scales how strongly an
+// NPC prefers moving to an objective vs hunting the team's known enemy area vs
+// plain exploration. Values are multipliers (1.0 = neutral).
+struct GamemodeNpcTravel {
+    bool configured = false;
+    float objectiveBias = 1.0f;   // MoveToObjective/DefendSite/... weight
+    float huntBias = 0.0f;        // travel toward the team's best enemy report
+    float exploreBias = 1.0f;     // reserved: plain exploration weight
+};
+
 // Optional mode-level RMB aim-FOV override. When enabled, the camera uses this
 // instead of config/aimbody.json for the held-RMB zoom. Never edits aimbody.json.
 struct GamemodeAimFov {
@@ -190,6 +200,7 @@ struct Gamemode {
     std::string npcBehaviorProfile;
     // Optional mode-level NPC targeting (team modes) and RMB aim-FOV override.
     GamemodeNpcTargeting npcTargeting;
+    GamemodeNpcTravel npcTravel;
     GamemodeAimFov aimFov;
     // ── Elimination / win rules (optional) ──────────────────────────
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
