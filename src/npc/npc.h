@@ -90,6 +90,11 @@ public:
     // real transitions only (never per tick).
     int lastNavGoalKind = -1;
     uint32_t lastNavGoalActor = 0;
+    // Diagnostics edge state for movement events (change-edge, never per tick).
+    int lastJumpReason = 0;              // NpcJumpReason as int; 0 = None
+    glm::vec3 lastWallAvoidDir{0.0f};    // last adjusted wall-avoid direction
+    bool wasStuck = false;               // previous isStuck result
+    float movementDecisionTimer = 0.0f;  // once-per-second snapshot cadence
     NpcSensorContext sensors;
     // Human-like perception: the last observation, the belief, and the memory.
     // sightRange/FOV/reaction/memory are resolved per life from the difficulty

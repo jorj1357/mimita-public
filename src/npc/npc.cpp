@@ -10,7 +10,6 @@
 #include "npc.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
-#include "npc/npc-combat-log.h"
 #include "gamemode/match-roles.h"
 
 #include <algorithm>
@@ -415,6 +414,21 @@ void logStateChange(const Npc& npc, NpcState oldState, NpcState newState)
         (int)npc.sensors.hasTarget,
         npc.sensors.targetDistance
     );
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "npc.state-changed", std::to_string(npc.id), "state_changed",
+        (uint32_t)(npc.sensors.time * 60.0f),
+        nlohmann::json{
+            {"actor", npc.id},
+            {"team", npc.body.matchTeam},
+            {"profile", npc.behaviorProfileId},
+            {"preset", npc.actorPresetId},
+            {"state", npcStateName(newState)},
+            {"previous_state", npcStateName(oldState)},
+            {"target_id", npc.serverTargetId},
+            {"target_visible", npc.sensors.hasTarget},
+            {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 // Translate the current brain state into an abstract navigation goal.
@@ -867,6 +881,58 @@ static void emitGoalChangedEvent(Npc& npc, const NpcGoal& goal)
         __FILE__, __LINE__, __FUNCTION__);
 }
 
+static const char* jumpReasonName(NpcJumpReason reason)
+{
+    switch (reason) {
+        case NpcJumpReason::Obstacle:  return "obstacle";
+        case NpcJumpReason::Navigation: return "navigation";
+        case NpcJumpReason::Gap:       return "gap";
+        case NpcJumpReason::Climbable: return "climbable";
+        case NpcJumpReason::None:
+        default:                       return "none";
+    }
+}
+
+// Emit the once-per-second movement-decision snapshot after all overrides and
+// physics have run. This is the one complete record that explains what the
+// actor wanted, what it finally did, and how far it actually moved.
+static void emitMovementDecision(Npc& npc, const char* replanReason,
+                                 NpcJumpReason jumpReason, float dt)
+{
+    npc.movementDecisionTimer -= dt;
+    if (npc.movementDecisionTimer > 0.0f)
+        return;
+    npc.movementDecisionTimer = 1.0f;
+
+    const glm::vec3 moved = npc.body.pos - npc.previousPosition;
+    const glm::vec2 finalDir = npc.lastMoveInput;
+    const glm::vec3 committed = npc.navigator.commitmentActive
+        ? npc.navigator.committedDirection : glm::vec3(0.0f);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "npc.movement-decision", std::to_string(npc.id), "snapshot",
+        (uint32_t)(npc.sensors.time * 60.0f),
+        nlohmann::json{
+            {"actor", npc.id},
+            {"team", npc.body.matchTeam},
+            {"profile", npc.behaviorProfileId},
+            {"preset", npc.actorPresetId},
+            {"executor", npcMovementExecutorName(npc.lastMovementExecutor)},
+            {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+            {"state", npcStateName(npc.stateMachine.currentState)},
+            {"target_id", npc.serverTargetId},
+            {"target_visible", npc.sensors.hasTarget},
+            {"target_remembered", npc.belief.hasTarget && !npc.belief.hasVisibleTarget},
+            {"committed_direction", {committed.x, committed.y}},
+            {"final_direction", {finalDir.x, finalDir.y}},
+            {"replan_reason", replanReason ? replanReason : ""},
+            {"jump_reason", jumpReasonName(jumpReason)},
+            {"distance_moved", glm::length(moved)},
+            {"velocity", {npc.body.vel.x, npc.body.vel.y, npc.body.vel.z}},
+            {"on_ground", npc.sensors.touchFloor}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                              const NpcMovementContext& context, float dt)
 {
@@ -1097,13 +1163,23 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
 
         if (bestWeapon != npc.body.equippedWeaponId) {
+            const std::string previousWeapon = npc.body.equippedWeaponId;
             const std::string switched = bestWeapon;
             npcSwitchWeapon(npc, bestWeapon);
             npc.weaponSwitchCooldown = cfg.switchCooldown;
-            npcLog("npc-weapon npc=%u profile=%s weapon=%s dist=%.1f t=%.2f",
-                   npc.id,
-                   npc.behaviorProfileId.empty() ? "default" : npc.behaviorProfileId.c_str(),
-                   switched.c_str(), dist, npc.sensors.time);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcCombat, StructuredLevel::Important,
+                "npc.weapon-switched", std::to_string(npc.id), "weapon_switch",
+                (uint32_t)(npc.sensors.time * 60.0f),
+                nlohmann::json{
+                    {"actor", npc.id},
+                    {"team", npc.body.matchTeam},
+                    {"profile", npc.behaviorProfileId},
+                    {"weapon", switched},
+                    {"previous_weapon", previousWeapon},
+                    {"target_distance", dist},
+                    {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 
@@ -1399,6 +1475,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         navSettings = &directSettings;
     }
 
+    const char* replanReasonThisTick = nullptr;
     if (!inMirrorPhase)
     {
         // The mode may own the goal (objective/plant/defuse); otherwise the
@@ -1410,6 +1487,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             npc.navigator.update(npc, navGoal, world, navMovement, safeDt,
                                  navSettings, policy, &commitmentSettings);
         emitNavPlanEvents(npc, nav, navSettings);
+        replanReasonThisTick = nav.replanReason;
         const NpcTraversalStep trav =
             npc.traversal.update(npc, nav, navMovement, safeDt);
         // Traversal steers when following a detour route or performing a
@@ -1572,10 +1650,41 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             const bool requestedBlocked = navCfg.wallAvoidanceEnabled &&
                 NpcNavigation::obstacleInDirection(
                     npc, requestedDir, navCfg.wallCastDistance, world, nearCandidates);
+            const glm::vec3 steeringBefore = moveDir;
             moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world, nearCandidates);
 
             if (requestedBlocked)
             {
+                // Log wall avoidance only when it actually changed the requested
+                // direction and only when the adjusted direction is new, so a
+                // sustained wall does not produce a record every tick.
+                const glm::vec3 adjusted(moveDir.x, moveDir.y, 0.0f);
+                const bool changedByAvoid =
+                    glm::length(glm::vec3(moveDir.x - steeringBefore.x,
+                                          moveDir.y - steeringBefore.y, 0.0f)) > 0.05f;
+                if (changedByAvoid && glm::length(adjusted) > 0.001f) {
+                    const glm::vec3 adjustedN = glm::normalize(adjusted);
+                    const bool newAvoidDir = glm::length(npc.lastWallAvoidDir) < 0.001f ||
+                        glm::dot(adjustedN, npc.lastWallAvoidDir) < 0.99f;
+                    npc.lastWallAvoidDir = adjustedN;
+                    if (newAvoidDir) {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::NpcMovement, StructuredLevel::Important,
+                            "npc.wall-avoid", std::to_string(npc.id), "wall_ahead",
+                            (uint32_t)(npc.sensors.time * 60.0f),
+                            nlohmann::json{
+                                {"actor", npc.id},
+                                {"team", npc.body.matchTeam},
+                                {"profile", npc.behaviorProfileId},
+                                {"preset", npc.actorPresetId},
+                                {"state", npcStateName(npc.stateMachine.currentState)},
+                                {"requested_dir", {requestedDir.x, requestedDir.y}},
+                                {"adjusted_dir", {adjustedN.x, adjustedN.y}},
+                                {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
+                }
+
                 // The current goal direction is not a usable route. Make the
                 // navigator throw away its cached path so the next tick can
                 // plan around the wall instead of repeatedly aiming at it.
@@ -1622,10 +1731,33 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     }
                 }
             }
+            else
+            {
+                npc.lastWallAvoidDir = glm::vec3(0.0f);
+            }
         }
 
-        if (NpcNavigation::isStuck(npc))
+        const bool stuckNow = NpcNavigation::isStuck(npc);
+        if (stuckNow)
         {
+            if (!npc.wasStuck)
+            {
+                // Rising edge: the actor is grounded, trying to move, and not
+                // progressing. One record per stuck episode.
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    "npc.stuck", std::to_string(npc.id), "stuck_detected",
+                    (uint32_t)(npc.sensors.time * 60.0f),
+                    nlohmann::json{
+                        {"actor", npc.id},
+                        {"team", npc.body.matchTeam},
+                        {"profile", npc.behaviorProfileId},
+                        {"preset", npc.actorPresetId},
+                        {"state", npcStateName(npc.stateMachine.currentState)},
+                        {"move_input", {npc.lastMoveInput.x, npc.lastMoveInput.y}},
+                        {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
             npc.stateMachine.stuckTimer += safeDt;
             if (npc.stateMachine.stuckTimer > 0.3f)
             {
@@ -1655,13 +1787,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 {
                     StructuredLogger::instance().writeEvent(
                         StructuredCategory::NpcMovement, StructuredLevel::Important,
-                        "npc.wall-escape", std::to_string(npc.id), "open_turn_repath",
+                        "npc.stuck-recovery", std::to_string(npc.id), "open_turn_repath",
                         (uint32_t)(npc.sensors.time * 60.0f),
                         nlohmann::json{
                             {"actor", npc.id},
                             {"preset", npc.actorPresetId},
                             {"team", npc.body.matchTeam},
                             {"policy", policy ? policy->blockedBehavior : "none"},
+                            {"open_dir", {openDir.x, openDir.y}},
                             {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
                             {"stuck_seconds", npc.stateMachine.stuckTimer}},
                         __FILE__, __LINE__, __FUNCTION__);
@@ -1672,6 +1805,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         {
             npc.stateMachine.stuckTimer = 0.0f;
         }
+        npc.wasStuck = stuckNow;
     }
 
     // A policy jump always needs an explicit, allowed reason. This also catches
@@ -1679,6 +1813,31 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     // actor cannot jump "just because".
     if (jump && policy && !npcPolicyAllowsJump(*policy, jumpReason))
         jump = false;
+
+    // Jump decision edge: log when the resolved (and permitted) jump reason
+    // changes; jumpReason resets to None each tick, so a later identical jump
+    // re-emits. Never per tick while the same reason persists.
+    {
+        const int reasonNow = (int)jumpReason;
+        if (reasonNow != npc.lastJumpReason) {
+            if (jump && reasonNow != (int)NpcJumpReason::None) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    "npc.jump", std::to_string(npc.id), jumpReasonName(jumpReason),
+                    (uint32_t)(npc.sensors.time * 60.0f),
+                    nlohmann::json{
+                        {"actor", npc.id},
+                        {"team", npc.body.matchTeam},
+                        {"profile", npc.behaviorProfileId},
+                        {"jump_reason", jumpReasonName(jumpReason)},
+                        {"state", npcStateName(npc.stateMachine.currentState)},
+                        {"on_ground", npc.sensors.touchFloor},
+                        {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            npc.lastJumpReason = reasonNow;
+        }
+    }
 
     // Freeze: occasionally freeze to dodge shots / break prediction
     // (skipped when mirror phase provides its own freeze input)
@@ -1802,10 +1961,19 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             ? npc.behavior.reactionDelay : perceptionDelay;
         if (npc.reactionTimer > 0.0f)
         {
-            npcLog("npc-react npc=%u profile=%s delay=%.2f",
-                   npc.id,
-                   npc.behaviorProfileId.empty() ? "default" : npc.behaviorProfileId.c_str(),
-                   npc.reactionTimer);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcCombat, StructuredLevel::Important,
+                "npc.reaction", std::to_string(npc.id), "reaction_delay",
+                (uint32_t)(npc.sensors.time * 60.0f),
+                nlohmann::json{
+                    {"actor", npc.id},
+                    {"team", npc.body.matchTeam},
+                    {"profile", npc.behaviorProfileId},
+                    {"delay_seconds", npc.reactionTimer},
+                    {"target_id", npc.serverTargetId},
+                    {"target_distance", npc.sensors.targetDistance},
+                    {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
             std::string reactKey = "npc-react-" + std::to_string(npc.id);
             Debug::logThrottled(Debug::Category::NpcCombat, reactKey.c_str(),
                 DebugConfig::PRINT_INTERVAL,
@@ -1845,6 +2013,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             // current state for its minimum duration to prevent jitter.
         }
     }
+
+    // Final movement snapshot after all overrides, physics, and combat: one
+    // complete record per NPC per second (never per tick). This is the record
+    // that explains wanted vs final direction and actual distance moved.
+    emitMovementDecision(npc, replanReasonThisTick, jumpReason, safeDt);
 }
 
 void NpcSystem::render(const Camera& camera) const

@@ -1249,6 +1249,141 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--npc-shared-log-path-selftest") {
+        // Proves MIMITA_EVENTS_FILE is the shared-path contract: when set, the
+        // logger derives eventsPath()/runId() from it and does not generate its
+        // own timestamp (so a child server appends to the same run).
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+
+        const std::filesystem::path runDir =
+            std::filesystem::path("logs") / "shared-log-selftest";
+        const std::filesystem::path eventsPath = runDir / "events.jsonl";
+        std::error_code ec;
+        std::filesystem::create_directories(runDir, ec);
+        // std::getenv reads the CRT environment copy, so set it with _putenv_s
+        // (the Win32 SetEnvironmentVariableA is used at runtime for child
+        // inheritance only).
+        _putenv_s("MIMITA_EVENTS_FILE", eventsPath.string().c_str());
+
+        StructuredLogger::instance().init();
+        const std::string resolved = StructuredLogger::instance().eventsPath();
+        const std::string runId = StructuredLogger::instance().runId();
+        check(!resolved.empty(), "shared events path resolved");
+        check(resolved.find("shared-log-selftest") != std::string::npos,
+              "eventsPath came from MIMITA_EVENTS_FILE");
+        check(runId == "shared-log-selftest",
+              "run_id derived from the shared path directory");
+        StructuredLogger::instance().shutdown();
+
+        report += "  info  MIMITA_EVENTS_FILE=" + eventsPath.string() + "\n";
+        report += "  info  eventsPath=" + resolved + " run_id=" + runId + "\n";
+
+        printf("[NPC SHARED LOG PATH SELFTEST]\n%s", report.c_str());
+        printf("[NPC SHARED LOG PATH SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-movement-decision-selftest") {
+        // Drives a live NPC and proves the post-physics npc.movement-decision
+        // snapshot reaches events.jsonl with its required fields and is bounded
+        // to roughly one record per second (never one per 60-Hz tick).
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            w.collisionMesh.triangles.push_back(t);
+        };
+
+        StructuredLogger::instance().init();
+        const std::string eventsPath = StructuredLogger::instance().eventsPath();
+        check(!eventsPath.empty(), "canonical events path is available");
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
+        NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+
+        World world;
+        addTri(world, {300,300,0}, {-300,300,0}, {-300,-300,0});
+        addTri(world, {300,300,0}, {-300,-300,0}, {300,-300,0});
+        addTri(world, {8,-6,0}, {8,6,0}, {8,6,4});
+        addTri(world, {8,-6,0}, {8,6,4}, {8,-6,4});
+        buildCollisionChunks(world, nullptr);
+
+        NpcSystem npcs;
+        const uint32_t npcId = 9603;
+        npcs.spawnNpc(npcId, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+        for (Npc& n : npcs.all()) {
+            if (n.id != npcId) continue;
+            n.actorPresetId = "counter_strike";
+            n.behaviorProfileId = "balanced";
+            n.behavior = resolveNpcBehavior("balanced");
+            n.body.maxHp = 100;
+            n.body.currentHp = 100;
+            n.wakeupTimer = 0.0f;
+            n.body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+            n.stateMachine.currentState = NpcState::Patrol;
+            break;
+        }
+
+        Player target;
+        target.pos = glm::vec3(280.0f, 0.0f, 2.0f);
+        target.currentHp = 100;
+        target.maxHp = 100;
+        target.dead = false;
+
+        const int ticks = 180;  // 3 seconds at 60 Hz
+        for (int tick = 0; tick < ticks; ++tick)
+            npcs.updateOneWithTarget(npcId, world, target, 1.0f / 60.0f);
+
+        StructuredLogger::instance().shutdown();
+
+        int snapshots = 0;
+        bool fieldsComplete = false;
+        std::ifstream in(eventsPath);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.find("\"event\":\"npc.movement-decision\"") == std::string::npos)
+                continue;
+            ++snapshots;
+            nlohmann::json record = nlohmann::json::parse(line, nullptr, false);
+            if (record.is_discarded()) continue;
+            const nlohmann::json& f = record["fields"];
+            const bool has = f.contains("position") && f.contains("state") &&
+                f.contains("target_id") && f.contains("target_visible") &&
+                f.contains("target_remembered") && f.contains("committed_direction") &&
+                f.contains("final_direction") && f.contains("replan_reason") &&
+                f.contains("jump_reason") && f.contains("distance_moved") &&
+                f.contains("velocity") && f.contains("on_ground");
+            fieldsComplete = fieldsComplete || has;
+        }
+        report += "  info  events path: " + eventsPath + "\n";
+        report += "  info  npc.movement-decision records=" + std::to_string(snapshots) +
+                  " over " + std::to_string(ticks) + " ticks\n";
+        ok &= check(snapshots >= 1,
+                    "npc.movement-decision reached events.jsonl");
+        ok &= check(fieldsComplete,
+                    "the snapshot carries the full movement-decision field set");
+        ok &= check(snapshots <= 6,
+                    "the snapshot is rate-limited to ~once per second");
+
+        printf("[NPC MOVEMENT DECISION SELFTEST]\n%s", report.c_str());
+        printf("[NPC MOVEMENT DECISION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--grenade-reasoning-selftest") {
         std::string report;
         const bool ok = npcGrenadeReasoningSelfTest(report);

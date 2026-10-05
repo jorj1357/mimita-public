@@ -1261,3 +1261,62 @@ Next: live Dust2 Counter-Strike round — confirm CT and T leave spawn, no
 repeated reversing, routing around walls/ramps, hidden-target forward pursuit,
 visible-enemy combat movement, and no endless circling. Changelog:
 `docs/changelog/2026-10-05/20261005_171741-shared-npc-movement-commitment.md`.
+
+### Attempt 20 — shared client/server NPC JSONL logging
+
+Triggered by the human handoff "Shared Client/Server NPC JSONL Logging" so an
+NPC investigation can be read from one file instead of a client-only log.
+
+Tried:
+- **One shared path.** `StructuredLogger::createLogDir` now derives
+  `eventsPath`/`run_id` from `MIMITA_EVENTS_FILE` when set, otherwise generates
+  the path and exports it with `SetEnvironmentVariableA` so the server child
+  inherits it. `gui-main` logs the inherited path; `dev-loop.py` passes the same
+  `MIMITA_EVENTS_FILE` to both server and client. The named mutex is unchanged.
+- **One writer.** Converted `npcLog` text lines to `writeEvent`:
+  `npc.target-changed`, `npc.shot`, `npc.reaction`, `npc.weapon-switched`,
+  `npc.damage`, `npc.profile-applied`, plus new `npc.death` and `npc.respawn`.
+  Deleted `npc-combat-log.*`; no `NPC_log_*.txt` is produced.
+- **Movement instrumentation.** Added `npc.state-changed`, `npc.wall-avoid`,
+  `npc.stuck`, `npc.stuck-recovery` (split from `npc.wall-escape`), `npc.jump`,
+  and a post-physics `npc.movement-decision` snapshot once per NPC per second.
+- **Config.** `general` -> `important` (so `logger.started` is not dropped),
+  `performance` -> `off`; `npc_movement` important, `npc_combat` off.
+- **`log_open`.** Reports the absolute path, client/server presence,
+  `logger.started`, record/invalid counts, and NPC event counts.
+
+Went right:
+- The server honoured `MIMITA_EVENTS_FILE` and wrote `logger.started` with
+  `process=server` and the shared `run_id`; the client writes `process=client`.
+- The movement-decision file validated as 0 invalid JSON / 0 missing required
+  fields, with the snapshot rate-limited to ~once per second.
+
+Went wrong / watch out:
+- `std::getenv` reads the CRT environment copy; the shared-path selftest must
+  set the var with `_putenv_s` (the runtime export uses the Win32
+  `SetEnvironmentVariableA` for child inheritance).
+- `npc.stuck` / `npc.jump` re-emit per jump cycle because the reason resets to
+  None while airborne; still bounded by jump cadence, not per tick.
+- `--npc-radar-selftest` still fails on the pre-existing rage2
+  `information_mode` mismatch.
+
+Keep doing:
+- One JSONL writer (`StructuredLogger`) and one shared path per session.
+- Change-edge events plus a bounded heartbeat for the full movement decision.
+
+Stop doing:
+- Per-subsystem NPC text files (`NPC_log_*.txt`).
+
+Evidence:
+- Build: `BUILD SUCCESS`; `mimita.exe` relinked.
+- Pure: movement-policy 72, navigation 35, movement-executor 15 PASS.
+- Runtime: shared-log-path / movement-decision / wall-escape-event /
+  commitment-event / commitment / behavior-profile / policy / search /
+  navigation / executor / acceptance PASS; server `logger.started` shared-path
+  proof captured.
+- Human playtest: pending (live client+server session, `log_open`).
+
+Next: human live session — verify `log_open` shows client+server in one file and
+that a Counter-Strike round's NPC records explain direction, jump, replan, stuck,
+and distance moved. Changelog:
+`docs/changelog/2026-10-05/20261005_182631-shared-npc-jsonl-logging.md`.

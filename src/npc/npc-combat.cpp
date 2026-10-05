@@ -24,7 +24,6 @@
 #include "world/world.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
-#include "npc/npc-combat-log.h"
 
 // Shared NPC projectile state (rockets, grenades, etc.)
 static RocketLauncherState gNpcRocketState;
@@ -93,14 +92,23 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
     float facingAimDeg = 0.0f;
     if (glm::length(planarFacing) > 0.001f && glm::length(planarShot) > 0.001f)
         facingAimDeg = glm::degrees(std::acos(std::clamp(glm::dot(planarFacing, planarShot), -1.0f, 1.0f)));
-    npcLog("npc-shot npc=%u weapon=%s profile=%s dist=%.1f maxError=%.1fdeg err=%.1fdeg facingAim=%.1fdeg "
-           "target=(%.3f %.3f %.3f) aim=(%.3f %.3f %.3f) angleDiff=%.1fdeg",
-           npc.id, def.id.c_str(),
-           npc.behaviorProfileId.empty() ? "default" : npc.behaviorProfileId.c_str(),
-           npc.sensors.targetDistance,
-           maxErrorDeg, actualErrorDeg, facingAimDeg,
-           idealDir.x, idealDir.y, idealDir.z,
-           finalDir.x, finalDir.y, finalDir.z, angleDiff);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcCombat, StructuredLevel::Important,
+        "npc.shot", std::to_string(npc.id), "shot_fired",
+        (uint32_t)(npc.sensors.time * 60.0f),
+        nlohmann::json{
+            {"actor", npc.id},
+            {"team", npc.body.matchTeam},
+            {"profile", npc.behaviorProfileId},
+            {"weapon", def.id},
+            {"target_id", npc.serverTargetId},
+            {"target_distance", npc.sensors.targetDistance},
+            {"max_error_deg", maxErrorDeg},
+            {"actual_error_deg", actualErrorDeg},
+            {"facing_aim_deg", facingAimDeg},
+            {"angle_diff_deg", angleDiff},
+            {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 } // anonymous namespace

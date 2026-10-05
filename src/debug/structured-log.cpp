@@ -360,30 +360,48 @@ void StructuredLogger::createLogDir() {
     // themselves. The date folder matches the existing v9 logs layout.
     std::strftime(dateBuf, sizeof(dateBuf), "%m-%d-%Y", &local);
     std::strftime(runBuf, sizeof(runBuf), "%Y%m%d_%H%M%S", &local);
-    mRunId = runBuf;
-    std::string relPath = "logs/" + std::string(dateBuf) + "/" + mRunId;
 
     const char* sharedPath = std::getenv("MIMITA_EVENTS_FILE");
-    if (sharedPath && *sharedPath)
-        mEventsPath = sharedPath;
-    else
-        mEventsPath = relPath + "/events.jsonl";
-
-    // Resolve logs from the current v9 working directory, not the executable
-    // directory. This keeps .dev/builds/<id>/mimita.exe writing into the
-    // repository's C:\mimita-v9\logs folder.
-    mLogDir = relPath;
     std::error_code ec;
-    std::filesystem::create_directories(mLogDir, ec);
-    if (ec)
-        printf("[STRUCTURED LOG] WARNING: could not create log dir at %s (error=%d)\n",
-               mLogDir.c_str(), ec.value());
-    if (!(sharedPath && *sharedPath))
+
+    if (sharedPath && *sharedPath) {
+        // One launcher-created path shared by the client and every server it
+        // spawns. Derive the run id and log dir from the path itself so both
+        // processes report the same run_id instead of generating their own
+        // timestamps. The client created this path and exported it; the child
+        // server inherited it and must not create a second one.
+        const std::filesystem::path events(sharedPath);
+        mEventsPath = events.string();
+        mLogDir = events.parent_path().string();
+        mRunId = events.parent_path().filename().string();
+        if (mRunId.empty()) mRunId = runBuf;
+        std::filesystem::create_directories(mLogDir, ec);
+        if (ec)
+            printf("[STRUCTURED LOG] WARNING: could not create shared log dir at %s (error=%d)\n",
+                   mLogDir.c_str(), ec.value());
+    } else {
+        // Single-player / standalone: this process creates the run directory.
+        mRunId = runBuf;
+        mLogDir = "logs/" + std::string(dateBuf) + "/" + mRunId;
+        std::filesystem::create_directories(mLogDir, ec);
+        if (ec)
+            printf("[STRUCTURED LOG] WARNING: could not create log dir at %s (error=%d)\n",
+                   mLogDir.c_str(), ec.value());
         mEventsPath = mLogDir + "/events.jsonl";
-    else
-        std::filesystem::create_directories(
-            std::filesystem::path(mEventsPath).parent_path());
-    printf("[STRUCTURED LOG] events path: %s\n", mEventsPath.c_str());
+
+        // Export the exact path so any child process (the dedicated server the
+        // GUI launches, which inherits the parent environment) appends to this
+        // same file rather than generating its own timestamped path.
+        const std::filesystem::path absolute =
+            std::filesystem::absolute(mEventsPath, ec);
+        if (!ec) {
+            if (!SetEnvironmentVariableA("MIMITA_EVENTS_FILE", absolute.string().c_str()))
+                printf("[STRUCTURED LOG] WARNING: could not export MIMITA_EVENTS_FILE (%lu)\n",
+                       (unsigned long)GetLastError());
+        }
+    }
+    printf("[STRUCTURED LOG] events path: %s (run_id=%s pid=%lu)\n",
+           mEventsPath.c_str(), mRunId.c_str(), (unsigned long)GetCurrentProcessId());
 }
 
 // ── Category file ───────────────────────────────────────────

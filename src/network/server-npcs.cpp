@@ -22,7 +22,7 @@
 #include "npc/npc-behavior.h"
 #include "npc/npc-navigation.h"
 #include "npc/npc-targeting.h"
-#include "npc/npc-combat-log.h"
+
 #include "debug/structured-log.h"
 #include "npc/npc-avatar.h"
 #include "entities/player.h"
@@ -229,6 +229,19 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
                 n.body.dead = true;
                 n.body.respawnTimer = serverMatchRespawnsEnabled()
                     ? serverMatchRespawnSeconds() : -1.0f;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcCombat, StructuredLevel::Important,
+                    "npc.death", std::to_string(n.id), "health_depleted",
+                    (uint32_t)(n.sensors.time * 60.0f),
+                    nlohmann::json{
+                        {"actor", n.id},
+                        {"team", n.body.matchTeam},
+                        {"profile", n.behaviorProfileId},
+                        {"preset", n.actorPresetId},
+                        {"killed_by", n.body.killedBy},
+                        {"respawn_seconds", n.body.respawnTimer},
+                        {"position", {n.body.pos.x, n.body.pos.y, n.body.pos.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
             }
             break;
         }
@@ -299,6 +312,10 @@ static void respawnServerNpc(Npc& npc)
     npc.serverTargetId = 0;
     npc.lastNavGoalKind = -1;  // re-emit npc.goal-changed for the new life
     npc.lastNavGoalActor = 0;
+    npc.lastJumpReason = 0;
+    npc.lastWallAvoidDir = glm::vec3(0.0f);
+    npc.wasStuck = false;
+    npc.movementDecisionTimer = 0.0f;
     // Reapply the role behavior profile for the new life.
     npc.behaviorProfileId = profile.behaviorProfileId;
     npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);
@@ -315,6 +332,18 @@ static void respawnServerNpc(Npc& npc)
     npc.attackCooldown = npcSpawnFireDelaySeconds(npc);
     resetAllWeaponRuntimesForSpawn(npc.body, "server-npc-respawn");
     finalizeServerNpcSpawn(npc, ActorSpawnReason::Respawn);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcCombat, StructuredLevel::Important,
+        "npc.respawn", std::to_string(npc.id), "respawned",
+        (uint32_t)(npc.sensors.time * 60.0f),
+        nlohmann::json{
+            {"actor", npc.id},
+            {"team", npc.body.matchTeam},
+            {"profile", npc.behaviorProfileId},
+            {"preset", npc.actorPresetId},
+            {"transform_epoch", npc.transformEpoch},
+            {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
     printf("%s [SERVER NPC RESPAWN] id=%u pos=(%.2f,%.2f,%.2f)\n",
            serverTimestamp(), npc.id, spawnPos.x, spawnPos.y, spawnPos.z);
 }
@@ -800,9 +829,16 @@ void simulateSharedNpcs(SOCKET sock,
             n.behaviorProfileId = modeProfileId;
             n.behavior = resolveNpcBehavior(modeProfileId);
             modeProfileChanged = true;
-            npcLog("npc-mode-profile npc=%u mode=%s profile=%s",
-                   n.id, serverGamemodeState().matchMode.c_str(),
-                   modeProfileId.c_str());
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.profile-applied", std::to_string(n.id), "mode_profile",
+                (uint32_t)(n.sensors.time * 60.0f),
+                nlohmann::json{
+                    {"actor", n.id},
+                    {"team", n.body.matchTeam},
+                    {"mode", serverGamemodeState().matchMode},
+                    {"profile", modeProfileId}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
     if (modeProfileChanged)
@@ -1013,10 +1049,6 @@ void simulateSharedNpcs(SOCKET sock,
             float targetDist = 0.0f;
             if (nearestPlayer) targetDist = glm::length(nearestPlayer->pos - n.body.pos);
             else if (nearestNpc) targetDist = glm::length(nearestNpc->body.pos - n.body.pos);
-            npcLog("npc-target npc=%u profile=%s target=%u dist=%.1f tick=%u",
-                   n.id,
-                   n.behaviorProfileId.empty() ? "default" : n.behaviorProfileId.c_str(),
-                   n.serverTargetId, targetDist, tick);
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,
                 "npc.target-changed", std::to_string(n.id), "target_changed", tick,
@@ -1132,11 +1164,22 @@ void simulateSharedNpcs(SOCKET sock,
                     realHit, realNormal, knockback,
                     ServerDamageSource::Hitscan, hitWeapon, 0, 0, n.id,
                     n.body.equippedWeaponId);
-                npcLog("npc=%u weapon=%s damage=%d healthBefore=%d healthAfter=%d "
-                       "accepted=%d knockback=(%.2f %.2f %.2f)",
-                       n.id, n.body.equippedWeaponId.c_str(), damage, result.healthBefore,
-                       result.healthAfter, (int)result.applied,
-                       knockback.x, knockback.y, knockback.z);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcCombat, StructuredLevel::Important,
+                    "npc.damage", std::to_string(n.id), "npc_hits_player",
+                    tick,
+                    nlohmann::json{
+                        {"actor", n.id},
+                        {"team", n.body.matchTeam},
+                        {"profile", n.behaviorProfileId},
+                        {"victim_actor", nearestPlayer->id},
+                        {"weapon", n.body.equippedWeaponId},
+                        {"damage", damage},
+                        {"health_before", result.healthBefore},
+                        {"health_after", result.healthAfter},
+                        {"accepted", result.applied},
+                        {"knockback", {knockback.x, knockback.y, knockback.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
                 const ServerGamemodeState& gms = serverGamemodeState();
                 DBG(Network,
                     "SERVER_NPC_KILLS_PLAYER proc=server npcId=%u npcName=\"%s\" "

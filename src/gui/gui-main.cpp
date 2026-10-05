@@ -291,6 +291,17 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
     printf("[SERVER LAUNCH] launched server process pid=%lu\n",
            (unsigned long)gServerProcessInfo.dwProcessId);
 
+    // The client created the shared events path and exported it; the child
+    // inherits the parent environment (CreateProcess lpEnvironment=nullptr) and
+    // must append to this exact file rather than making its own.
+    {
+        char eventsEnv[MAX_PATH] = {};
+        const DWORD envLen = GetEnvironmentVariableA(
+            "MIMITA_EVENTS_FILE", eventsEnv, MAX_PATH);
+        printf("[SERVER LAUNCH] shared events file: %s\n",
+               envLen > 0 ? eventsEnv : "(unset; server will create its own)");
+    }
+
     printf("[SERVER LAUNCH ARGS] npcFlag=%s\n",
            settings.startupNpcsEnabled
                ? ("--npcs " + std::to_string(settings.startupNpcCount)).c_str()

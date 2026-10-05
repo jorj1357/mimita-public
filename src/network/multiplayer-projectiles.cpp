@@ -17,7 +17,6 @@
 
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
-#include "npc/npc-combat-log.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -1289,11 +1288,20 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
 
     const glm::vec3 knockback(event->knockX, event->knockY, event->knockZ);
     const bool isLocalVictim = (event->targetPlayerId == ctx.localPlayerId);
-    npcLog("npc-damage-confirmed attacker=%u target=%u damage=%d "
-           "healthBefore=%d healthAfter=%d killed=%d localVictim=%d knockback=(%.2f %.2f %.2f)",
-           event->attackerPlayerId, event->targetPlayerId,
-           event->damage, event->healthBefore, event->healthAfter, (int)event->killed,
-           (int)isLocalVictim, knockback.x, knockback.y, knockback.z);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcCombat, StructuredLevel::Important,
+        "npc.damage", std::to_string(event->attackerPlayerId), "damage_confirmed",
+        (uint32_t)event->header.tick,
+        nlohmann::json{
+            {"actor", event->attackerPlayerId},
+            {"victim_actor", event->targetPlayerId},
+            {"damage", event->damage},
+            {"health_before", event->healthBefore},
+            {"health_after", event->healthAfter},
+            {"killed", event->killed},
+            {"local_victim", isLocalVictim},
+            {"knockback", {knockback.x, knockback.y, knockback.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
 
     if (isLocalVictim)
     {

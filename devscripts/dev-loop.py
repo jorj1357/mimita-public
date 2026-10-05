@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import builtins
 import colorsys
+import datetime
 import hashlib
 import json
 import os
@@ -144,6 +145,14 @@ def allowed_dev_maps(profile: dict) -> list[str]:
     if not result:
         raise RuntimeError(f"allowed map pool is empty: {path}")
     return result
+
+
+def create_shared_events_path() -> str:
+    """One run directory + events.jsonl shared by the dev server and client."""
+    now = datetime.datetime.now()
+    run_dir = ROOT / "logs" / now.strftime("%m-%d-%Y") / now.strftime("%Y%m%d_%H%M%S")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return str(run_dir / "events.jsonl")
 
 
 def select_dev_map(profile: dict, requested_map: str = "") -> str:
@@ -495,6 +504,9 @@ class DevLoop:
         self.last_status_line = None
         self.room_file_path: Path | None = None
         self.room_code = None
+        # Shared canonical events.jsonl for the server and its client. Created
+        # once when the durable server starts and reused across client launches.
+        self.events_path: str | None = None
         self.status_visible = False
         self.status_line_count = 0
 
@@ -701,6 +713,7 @@ class DevLoop:
         self.server_exe = None
         self.server_args = []
         self.server_unavailable = True
+        self.events_path = None
         self.cleanup_room_file()
 
     def check_server_after_client(self) -> None:
@@ -777,10 +790,15 @@ class DevLoop:
             self.room_file_path = Path(room_file_name)
             self.room_file_path.write_text("", encoding="utf-8")
             server_args = self.build_server_args(exe, map_name, self.room_file_path)
+            # One shared canonical events.jsonl for this server and its client.
+            self.events_path = create_shared_events_path()
+            server_env = {**os.environ, "MIMITA_EVENTS_FILE": self.events_path}
             print(f"[DEV] launching build {self.latest_build} server")
+            print(f"[DEV] shared events file: {self.events_path}")
             server = subprocess.Popen(
                 server_args,
                 cwd=ROOT,
+                env=server_env,
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
             )
             self.server_process = server
@@ -840,10 +858,15 @@ class DevLoop:
             "--name", str(self.profile.get("client_name", "NPC Dev")),
         ]
         client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
+        if not self.events_path:
+            self.events_path = create_shared_events_path()
+        client_env = {**os.environ, "MIMITA_EVENTS_FILE": self.events_path}
         print(f"[DEV] launching build {self.latest_build} client")
+        print(f"[DEV] shared events file: {self.events_path}")
         client = subprocess.Popen(
             client_args,
             cwd=ROOT,
+            env=client_env,
             creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
         )
         self.processes.append(client)

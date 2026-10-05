@@ -8,7 +8,7 @@
   "default_level": "off",
 
   "categories": {
-    "general": { "level": "off", "file_output": false },
+    "general": { "level": "important", "file_output": false },
     "glb": { "level": "off", "file_output": false },
     "replay": {
       "level": "off",
@@ -24,7 +24,7 @@
     },
     "physics": { "level": "important", "file_output": false },
     "performance": {
-      "level": "important",
+      "level": "off",
       "file_output": false
     },
     "collision": {

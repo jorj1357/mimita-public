@@ -15,7 +15,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "config/networking-config.h"
-#include "npc/npc-combat-log.h"
+#include "debug/structured-log.h"
 #include "debug/debug-log.h"
 
 #include <algorithm>
@@ -372,9 +372,17 @@ void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
         // tied to the bullet visual via the same timeline gate).
         if (glm::length(it->knockback) > 0.001f)
             player.externalImpulse += it->knockback;
-        npcLog("npc-victim-hp-apply hp=%d healthAfter=%d killed=%d apply=1 knockback=(%.2f %.2f %.2f)",
-               player.currentHp, it->healthAfter, (int)it->killed,
-               it->knockback.x, it->knockback.y, it->knockback.z);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcCombat, StructuredLevel::Important,
+            "npc.damage", "local_player", "victim_hp_apply",
+            0u,
+            nlohmann::json{
+                {"victim", "local_player"},
+                {"victim_hp", player.currentHp},
+                {"health_after", it->healthAfter},
+                {"killed", it->killed},
+                {"knockback", {it->knockback.x, it->knockback.y, it->knockback.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
         Debug::log(Debug::Category::Networking,
             "[NET VICTIM HEALTH APPLY] hp=%d killed=%d timelineReady=%d\n",
             player.currentHp, (int)it->killed, (int)timelineReady);

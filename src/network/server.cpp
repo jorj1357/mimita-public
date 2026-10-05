@@ -29,7 +29,6 @@
 #include "combat/actor-preset-weapons.h"
 #include "npc/npc.h"
 #include "npc/npc-difficulty-config.h"
-#include "npc/npc-combat-log.h"
 #include "entities/player.h"
 #include "world/world.h"
 #include "map/map-catalog.h"
@@ -314,7 +313,6 @@ int runServer(const LaunchOptions& options)
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     DuelWeaponPool::instance().load("config/duel-weapons.json");
-    npcLogSetProc("server");
 
     // Validate grenade launcher config at startup
     {
