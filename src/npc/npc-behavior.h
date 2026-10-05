@@ -51,6 +51,27 @@ struct BehaviorProfileDefinition
     int radarMemoryTicks = 1800;
     int rememberedPathPoints = 12;
     bool continuePredictedPath = false;
+
+    // ── Movement replanning + commitment (owned here, consumed by the shared
+    // NpcNavigator). -1 on the two timers = "no override" so old profiles keep
+    // the compiled compatibility defaults (0.9 s / 2.5 m). The commitment
+    // fields carry concrete defaults, so a profile that omits the nested
+    // `movement_commitment` object still gets a valid committed pursuit.
+    float repathIntervalSeconds = -1.0f;      // <0 = no override
+    float goalMoveThresholdMeters = -1.0f;    // <0 = no override
+    bool commitmentEnabled = true;
+    float commitmentDirectionSeconds = 10.0f;
+    float commitmentProgressCheckSeconds = 1.0f;
+    float commitmentMinimumProgressMeters = 0.5f;
+    float commitmentCandidateDistanceMeters = 20.0f;
+    bool commitmentAllowReverse = false;
+    bool commitmentAvoidRecentPath = true;
+    float commitmentRecentPathAvoidRadius = 5.0f;
+    bool commitmentVisibleEnemyAllowsCombatMovement = true;
+    float commitmentForwardBias = 2.0f;
+    float commitmentTargetProgressBias = 4.0f;
+    float commitmentOpenDistanceBias = 6.0f;
+    float commitmentReversePenalty = 8.0f;
 };
 
 // Resolved combat tuning carried by an NPC for its current life. `active` is
@@ -86,6 +107,24 @@ struct NpcBehaviorTuning
     int radarMemoryTicks = 1800;
     int rememberedPathPoints = 12;
     bool continuePredictedPath = false;
+
+    // Movement replanning + commitment, resolved to concrete values. Older
+    // profiles resolve to the compatibility defaults (0.9 s / 2.5 m).
+    float repathIntervalSeconds = 0.9f;
+    float goalMoveThresholdMeters = 2.5f;
+    bool commitmentEnabled = true;
+    float commitmentDirectionSeconds = 10.0f;
+    float commitmentProgressCheckSeconds = 1.0f;
+    float commitmentMinimumProgressMeters = 0.5f;
+    float commitmentCandidateDistanceMeters = 20.0f;
+    bool commitmentAllowReverse = false;
+    bool commitmentAvoidRecentPath = true;
+    float commitmentRecentPathAvoidRadius = 5.0f;
+    bool commitmentVisibleEnemyAllowsCombatMovement = true;
+    float commitmentForwardBias = 2.0f;
+    float commitmentTargetProgressBias = 4.0f;
+    float commitmentOpenDistanceBias = 6.0f;
+    float commitmentReversePenalty = 8.0f;
 };
 
 class BehaviorProfileRegistry
@@ -113,3 +152,8 @@ private:
 
 // Resolve a profile id to a value struct. Unknown/empty id -> active=false.
 NpcBehaviorTuning resolveNpcBehavior(const std::string& id);
+
+// World-independent selftest for behavior-profile parsing: defaults when the
+// movement/commitment fields are omitted, clamping with a validation warning,
+// and the compatibility defaults (repath 0.9 s / goal threshold 2.5 m).
+bool behaviorProfileSelfTest(std::string& report);

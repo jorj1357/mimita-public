@@ -86,6 +86,10 @@ public:
     bool prevHadTarget = false;
     // Server-selected current target id (persisted for stickiness/scoring).
     uint32_t serverTargetId = 0;
+    // Diagnostics: last emitted navigation goal, so npc.goal-changed fires on
+    // real transitions only (never per tick).
+    int lastNavGoalKind = -1;
+    uint32_t lastNavGoalActor = 0;
     NpcSensorContext sensors;
     // Human-like perception: the last observation, the belief, and the memory.
     // sightRange/FOV/reaction/memory are resolved per life from the difficulty

@@ -208,20 +208,19 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
 
         case NpcState::Patrol:
         {
-            // No target: keep advancing forward. The heading is chosen by the
-            // patrol planner (recency-avoiding); here we only steer along it and
-            // walk. Walls are handled centrally by wall avoidance + navigator
-            // repath in updateOneNpc, which calls requestRepath when the chosen
-            // heading is blocked.
-            if (glm::length(sm.patrolDir) < 0.001f) {
-                // First tick of patrol: face the current facing as the heading.
-                sm.patrolDir = glm::length(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f)) > 0.001f
+            // No target: keep advancing forward along the navigator's committed
+            // direction (the single direction owner). Walls are handled
+            // centrally by wall avoidance + navigator replan/recommit.
+            if (npc.navigator.commitmentActive &&
+                glm::length(glm::vec3(npc.navigator.committedDirection.x,
+                                      npc.navigator.committedDirection.y, 0.0f)) > 0.001f) {
+                outMoveDir = glm::vec3(npc.navigator.committedDirection.x,
+                                       npc.navigator.committedDirection.y, 0.0f);
+            } else {
+                outMoveDir = glm::length(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f)) > 0.001f
                     ? glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f))
                     : glm::vec3(1.0f, 0.0f, 0.0f);
             }
-            // visited/blocked snapshots and the heading commit timer are owned
-            // centrally by updateOneNpc so they also run while chasing.
-            outMoveDir = glm::vec3(sm.patrolDir.x, sm.patrolDir.y, 0.0f);
             return;
         }
 

@@ -297,6 +297,8 @@ static void respawnServerNpc(Npc& npc)
     npc.prevHadTarget = false;
     npc.reactionTimer = 0.0f;
     npc.serverTargetId = 0;
+    npc.lastNavGoalKind = -1;  // re-emit npc.goal-changed for the new life
+    npc.lastNavGoalActor = 0;
     // Reapply the role behavior profile for the new life.
     npc.behaviorProfileId = profile.behaviorProfileId;
     npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);
@@ -1015,6 +1017,19 @@ void simulateSharedNpcs(SOCKET sock,
                    n.id,
                    n.behaviorProfileId.empty() ? "default" : n.behaviorProfileId.c_str(),
                    n.serverTargetId, targetDist, tick);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.target-changed", std::to_string(n.id), "target_changed", tick,
+                nlohmann::json{
+                    {"actor", n.id},
+                    {"team", n.body.matchTeam},
+                    {"profile", n.behaviorProfileId},
+                    {"preset", n.actorPresetId},
+                    {"previous_target", prevTarget},
+                    {"target_actor", n.serverTargetId},
+                    {"target_distance", targetDist},
+                    {"pos", {n.body.pos.x, n.body.pos.y, n.body.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
 
         if (nearestPlayer)

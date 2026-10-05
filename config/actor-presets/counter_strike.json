@@ -88,8 +88,10 @@
     // Recalculate when the current route is blocked.
     "repath_when_blocked": true,
 
-    // Maximum local search distance around the NPC.
-    "search_radius": 200.0,
+    // Maximum local search distance around the NPC. The navigator is a rolling
+    // local planner, so its window is capped at 20 m; larger values are clamped
+    // and reported. 20 is the effective maximum.
+    "search_radius": 20.0,
 
     // Allow the planner to create legal navigation jump links.
     "allow_navigation_jumps": true,

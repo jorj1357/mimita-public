@@ -193,6 +193,11 @@ bool readActorPreset(const json& j, const std::string& fallbackId,
             error = "navigation: " + navError;
             return false;
         }
+        if (!out.navigationSettings.warnings.empty()) {
+            Debug::warn(Debug::Category::NpcMovement,
+                "[ACTOR PRESET] %s navigation clamp: %s\n",
+                out.id.c_str(), out.navigationSettings.warnings.c_str());
+        }
     }
     // Generic movement-executor selector. Top-level key overrides any value in
     // npc_behavior so it is reusable by any mode, not Counter-Strike-specific.

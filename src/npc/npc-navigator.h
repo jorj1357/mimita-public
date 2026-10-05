@@ -24,6 +24,43 @@ struct MovementConfig;
 struct NpcMovementPolicy;
 struct NpcNavigationSettings;
 
+// Replanning + movement-commitment tuning resolved from the active behavior
+// profile (config/behavior-profiles.json). The navigator owns the algorithm;
+// the profile owns the values. When a caller has no profile it may pass a
+// default-constructed struct, which reproduces the compiled compatibility
+// defaults (repath 0.9 s, goal threshold 2.5 m).
+struct MovementCommitmentSettings
+{
+    float repathIntervalSeconds = 0.9f;      // minimum route-rebuild interval
+    float goalMoveThresholdMeters = 2.5f;    // rebuild when goal moved beyond
+    bool enabled = true;
+    float directionCommitSeconds = 10.0f;
+    float progressCheckSeconds = 1.0f;
+    float minimumProgressMeters = 0.5f;
+    float candidateDistanceMeters = 20.0f;
+    bool allowReverse = false;
+    bool avoidRecentPath = true;
+    float recentPathAvoidRadius = 5.0f;
+    bool visibleEnemyAllowsCombatMovement = true;
+    float forwardBias = 2.0f;
+    float targetProgressBias = 4.0f;
+    float openDistanceBias = 6.0f;
+    float reversePenalty = 8.0f;
+};
+
+// Result of one commitment evaluation. Flags are true only on a decision edge,
+// so callers can emit one bounded event per change instead of per tick.
+struct NpcCommitmentUpdate
+{
+    bool created = false;
+    bool replaced = false;
+    bool blocked = false;
+    bool progressFailed = false;
+    float progressDistance = 0.0f;
+    glm::vec3 previousDirection{0.0f};
+    glm::vec3 direction{0.0f};
+};
+
 struct NpcNavResult
 {
     glm::vec3 dir{0.0f};        // planar steering direction, zero if none
@@ -38,6 +75,12 @@ struct NpcNavResult
     bool valid = false;         // a movement target exists
     int pathNodes = 0;          // waypoints remaining on the cached route
     NavCapability capability = NavCapability::Walk;  // current segment kind
+    // Replanning diagnostics (change-edge only; not per tick).
+    bool planCreated = false;   // a fresh route was built this update
+    bool planFailed = false;    // a rebuild was attempted and found no route
+    bool replan = false;        // the rebuild was not the first route
+    const char* replanReason = nullptr; // static literal: initial/finished/...
+    int pathNodeCount = 0;      // nodes in the route after a successful plan
 };
 
 // Maximum vertical rise the actor can clear with a jump, from its movement
@@ -61,17 +104,73 @@ struct NpcNavigator
     float backtrackRemaining = 0.0f;
     float backtrackTimeRemaining = 0.0f;
 
+    // ── Movement commitment ──────────────────────────────────────────────
+    // The single forward/pursuit direction owner (replaces the old
+    // state-machine patrolDir). Held until it is blocked, progress fails, it
+    // times out, or a genuinely visible enemy takes steering via combat.
+    bool commitmentActive = false;
+    glm::vec3 committedDirection{0.0f};
+    float commitmentTimeRemaining = 0.0f;
+    float progressTimer = 0.0f;
+    float lastProgressDistance = 0.0f;
+    glm::vec3 commitmentStartPosition{0.0f};
+    bool commitmentProgressFailed = false;  // set by updateCommitment this tick
+    bool commitmentBlocked = false;         // committed direction is walled off
+
+    // Recent-path memory (visited + blocked world points) owned here so the
+    // commitment scorer and the no-progress watchdog share one source.
+    struct SearchPoint { glm::vec3 pos{0.0f}; float time = 0.0f; };
+    static constexpr int kRecentMax = 32;
+    SearchPoint recentVisited[kRecentMax];
+    int recentVisitedCount = 0;
+    int recentVisitedHead = 0;
+    SearchPoint recentBlocked[kRecentMax];
+    int recentBlockedCount = 0;
+    int recentBlockedHead = 0;
+
     // Diagnostics.
     uint32_t planCount = 0;
     uint32_t repathCount = 0;
 
     // Called from the NPC update after sensing and goal selection. `settings`
     // and `policy` are the actor-preset navigation/movement configuration
-    // (nullptr = shared navigator defaults / legacy brain).
+    // (nullptr = shared navigator defaults / legacy brain). `commitment`
+    // carries the behavior-profile replan/commitment tuning.
     NpcNavResult update(Npc& npc, const NpcGoal& goal, const World& world,
                         const MovementConfig* movement, float dt,
                         const NpcNavigationSettings* settings = nullptr,
-                        const NpcMovementPolicy* policy = nullptr);
+                        const NpcMovementPolicy* policy = nullptr,
+                        const MovementCommitmentSettings* commitment = nullptr);
+
+    // Evaluate the committed direction for this tick. `forwardDir` is the last
+    // committed direction (or current facing); `targetDir` points at the
+    // pursuit target (zero when none); `targetVisible` is genuine perception
+    // visibility (alive + FOV + range + LOS), never radar/memory. Returns the
+    // decision edge so the caller can emit bounded events.
+    NpcCommitmentUpdate updateCommitment(Npc& npc, const glm::vec3& forwardDir,
+                                         const glm::vec3& targetDir,
+                                         bool targetVisible,
+                                         const World& world,
+                                         const std::vector<int>& candidates,
+                                         const MovementCommitmentSettings& settings,
+                                         float dt, float now, float memorySeconds);
+
+    // Score and pick the open direction that best continues forward, closes on
+    // the target, and avoids reversing or retracing. Never returns an
+    // immediately blocked direction; zero when boxed in.
+    glm::vec3 chooseBestOpenDirection(const Npc& npc, const glm::vec3& forwardDir,
+                                      const glm::vec3& targetDir,
+                                      const World& world,
+                                      const std::vector<int>& candidates,
+                                      const MovementCommitmentSettings& settings,
+                                      float now, float memorySeconds) const;
+
+    void pushVisited(const glm::vec3& pos, float now);
+    void pushBlocked(const glm::vec3& pos, float now);
+    float nearestRecentDistance(const glm::vec3& point, float now,
+                                float memorySeconds) const;
+    // Drop the current commitment so the next evaluation must pick a new one.
+    void forceRecommit() { commitmentActive = false; commitmentTimeRemaining = 0.0f; }
 
     void reset();
     // Force a replan on the next update (e.g. target teleported).

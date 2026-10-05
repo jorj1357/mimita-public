@@ -112,7 +112,8 @@ void testSettingsRejectionAndClamp()
 
     check(parseNpcNavigationSettings(nlohmann::json::parse(R"({"search_radius":9999})"), s, error),
           "large search_radius parses");
-    check(s.searchRadius == 32.0f, "search_radius clamps to 32");
+    check(s.searchRadius == 20.0f, "search_radius clamps to 20");
+    check(!s.warnings.empty(), "clamped search_radius reports a warning");
     check(parseNpcNavigationSettings(nlohmann::json::parse(R"({"search_radius":0.1})"), s, error),
           "tiny search_radius parses");
     check(s.searchRadius == 4.0f, "search_radius clamps to 4");

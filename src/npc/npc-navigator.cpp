@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <string>
 
 #include "npc/npc.h"
@@ -414,6 +415,159 @@ float npcMaxJumpHeight(const MovementConfig& m)
     return (m.jumpVerticalSpeed * m.jumpVerticalSpeed) / (2.0f * g);
 }
 
+void NpcNavigator::pushVisited(const glm::vec3& pos, float now)
+{
+    recentVisited[recentVisitedHead] = {pos, now};
+    recentVisitedHead = (recentVisitedHead + 1) % kRecentMax;
+    if (recentVisitedCount < kRecentMax)
+        ++recentVisitedCount;
+}
+
+void NpcNavigator::pushBlocked(const glm::vec3& pos, float now)
+{
+    recentBlocked[recentBlockedHead] = {pos, now};
+    recentBlockedHead = (recentBlockedHead + 1) % kRecentMax;
+    if (recentBlockedCount < kRecentMax)
+        ++recentBlockedCount;
+}
+
+float NpcNavigator::nearestRecentDistance(const glm::vec3& point, float now,
+                                          float memorySeconds) const
+{
+    float best = 1e9f;
+    for (int i = 0; i < recentVisitedCount; ++i) {
+        const SearchPoint& s = recentVisited[i];
+        if (now - s.time > memorySeconds) continue;
+        best = std::min(best, horizontalDistance(point, s.pos));
+    }
+    for (int i = 0; i < recentBlockedCount; ++i) {
+        const SearchPoint& s = recentBlocked[i];
+        if (now - s.time > memorySeconds) continue;
+        best = std::min(best, horizontalDistance(point, s.pos));
+    }
+    return best;
+}
+
+glm::vec3 NpcNavigator::chooseBestOpenDirection(
+    const Npc& npc, const glm::vec3& forwardDir, const glm::vec3& targetDir,
+    const World& world, const std::vector<int>& candidates,
+    const MovementCommitmentSettings& settings, float now, float memorySeconds) const
+{
+    glm::vec3 fwd(forwardDir.x, forwardDir.y, 0.0f);
+    if (glm::length(fwd) > 0.001f) fwd = glm::normalize(fwd);
+    glm::vec3 tgt(targetDir.x, targetDir.y, 0.0f);
+    const bool haveTarget = glm::length(tgt) > 0.001f;
+    if (haveTarget) tgt = glm::normalize(tgt);
+
+    const float probeBlock = std::max(
+        2.0f, NpcDifficultyConfig::instance().settings().wallCastDistance);
+    const float maxDist = std::max(2.0f, settings.candidateDistanceMeters);
+
+    constexpr int SAMPLES = 16;
+    glm::vec3 best{0.0f};
+    float bestScore = -std::numeric_limits<float>::max();
+    for (int i = 0; i < SAMPLES; ++i) {
+        const float ang = (float)i * (6.2831853f / (float)SAMPLES);
+        const glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        // Never choose a direction that is immediately blocked.
+        if (NpcNavigation::obstacleInDirection(npc, dir, probeBlock, world, candidates))
+            continue;
+
+        // Usable open distance: step outward until the ray hits a wall.
+        float openDist = 0.0f;
+        for (float d = 2.0f; d <= maxDist; d += 2.0f) {
+            if (NpcNavigation::obstacleInDirection(npc, dir, d, world, candidates))
+                break;
+            openDist = d;
+        }
+
+        const float forwardDot = glm::dot(dir, fwd);
+        const float targetDot = haveTarget ? glm::dot(dir, tgt) : 0.0f;
+        float score = openDist * settings.openDistanceBias
+                    + forwardDot * settings.forwardBias
+                    + targetDot * settings.targetProgressBias;
+        if (!settings.allowReverse && forwardDot < -0.25f)
+            score -= settings.reversePenalty;
+        if (settings.avoidRecentPath) {
+            const glm::vec3 look = npc.body.pos + dir * std::min(maxDist, 5.0f);
+            const float memDist = nearestRecentDistance(look, now, memorySeconds);
+            if (memDist < settings.recentPathAvoidRadius)
+                score -= (settings.recentPathAvoidRadius - memDist) * 4.0f;
+        }
+        score += (float)i * 1e-3f;  // stable tiebreak
+        if (score > bestScore) {
+            bestScore = score;
+            best = dir;
+        }
+    }
+    return best;
+}
+
+NpcCommitmentUpdate NpcNavigator::updateCommitment(
+    Npc& npc, const glm::vec3& forwardDir, const glm::vec3& targetDir,
+    bool targetVisible, const World& world, const std::vector<int>& candidates,
+    const MovementCommitmentSettings& settings, float dt, float now,
+    float memorySeconds)
+{
+    NpcCommitmentUpdate out;
+    commitmentProgressFailed = false;
+    commitmentBlocked = false;
+    if (!settings.enabled) {
+        commitmentActive = false;
+        return out;
+    }
+
+    // A genuinely visible enemy (and a profile that allows it) owns steering
+    // with combat movement. The committed direction is preserved so pursuit
+    // can resume when the enemy is lost; it is never replaced while visible.
+    if (targetVisible && settings.visibleEnemyAllowsCombatMovement)
+        return out;
+
+    const float probe = std::max(
+        2.0f, NpcDifficultyConfig::instance().settings().wallCastDistance);
+    if (commitmentActive) {
+        commitmentTimeRemaining -= dt;
+        progressTimer += dt;
+    }
+
+    const bool blocked = commitmentActive &&
+        NpcNavigation::obstacleInDirection(npc, committedDirection, probe, world, candidates);
+    commitmentBlocked = blocked;
+    lastProgressDistance = commitmentActive
+        ? horizontalDistance(npc.body.pos, commitmentStartPosition) : 0.0f;
+    const bool progressed = lastProgressDistance >= settings.minimumProgressMeters;
+    const bool progressFailed = commitmentActive &&
+        progressTimer >= settings.progressCheckSeconds && !progressed;
+    commitmentProgressFailed = progressFailed;
+    out.blocked = blocked;
+    out.progressFailed = progressFailed;
+    out.progressDistance = lastProgressDistance;
+
+    if (commitmentActive && !blocked && !progressFailed && commitmentTimeRemaining > 0.0f) {
+        out.direction = committedDirection;  // keep using it
+        return out;
+    }
+
+    const bool wasActive = commitmentActive;
+    out.previousDirection = committedDirection;
+    const glm::vec3 best = chooseBestOpenDirection(
+        npc, forwardDir, targetDir, world, candidates, settings, now, memorySeconds);
+    if (glm::length(best) > 0.001f) {
+        committedDirection = best;
+        commitmentActive = true;
+        commitmentTimeRemaining = settings.directionCommitSeconds;
+        commitmentStartPosition = npc.body.pos;
+        progressTimer = 0.0f;
+        out.direction = best;
+        if (wasActive) out.replaced = true;
+        else out.created = true;
+    } else {
+        commitmentActive = false;
+        out.blocked = true;  // boxed in: no open direction at all
+    }
+    return out;
+}
+
 void NpcNavigator::reset()
 {
     path.clear();
@@ -427,6 +581,18 @@ void NpcNavigator::reset()
     backtrackDirection = glm::vec3(0.0f);
     backtrackRemaining = 0.0f;
     backtrackTimeRemaining = 0.0f;
+    commitmentActive = false;
+    committedDirection = glm::vec3(0.0f);
+    commitmentTimeRemaining = 0.0f;
+    progressTimer = 0.0f;
+    lastProgressDistance = 0.0f;
+    commitmentStartPosition = glm::vec3(0.0f);
+    commitmentProgressFailed = false;
+    commitmentBlocked = false;
+    recentVisitedCount = 0;
+    recentVisitedHead = 0;
+    recentBlockedCount = 0;
+    recentBlockedHead = 0;
 }
 
 void NpcNavigator::startBacktrack(const glm::vec3& blockedDirection,
@@ -451,7 +617,8 @@ void NpcNavigator::startBacktrack(const glm::vec3& blockedDirection,
 NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World& world,
                                   const MovementConfig* movement, float dt,
                                   const NpcNavigationSettings* settings,
-                                  const NpcMovementPolicy* policy)
+                                  const NpcMovementPolicy* policy,
+                                  const MovementCommitmentSettings* commitment)
 {
     NpcNavResult result;
     goal = newGoal;
@@ -536,24 +703,43 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     }
 
     // ── Decide whether to (re)plan ──────────────────────────────────
+    // The repath timer is a minimum interval, not a command to rebuild: a
+    // valid route is followed until it empties/finishes or a real reason
+    // appears (goal moved, physically blocked, or no progress). This stops the
+    // actor from throwing away a good route just because a little time passed.
     if (repathTimer > 0.0f) repathTimer -= dt;
-    bool needPlan = path.empty() || pathIndex >= (int)path.size();
+    const float goalThreshold = commitment ? commitment->goalMoveThresholdMeters
+                                           : kGoalMoveThreshold;
+    const float repathInterval = commitment ? commitment->repathIntervalSeconds
+                                            : kRepathInterval;
+    const bool justRetryDelay = repathTimer > 0.0f;
+    const bool routeFinished = !path.empty() && pathIndex >= (int)path.size();
+    const bool targetMoved = hasLastGoal &&
+        glm::length(glm::vec3(dest - lastGoal)) > goalThreshold;
+    const bool blockedNow = NpcNavigation::isStuck(npc) ||
+        (commitment && commitment->enabled && commitmentBlocked);
+    const bool progressFailed = commitment && commitment->enabled && commitmentProgressFailed;
+    bool needPlan = false;
     const char* reason = "initial";
-    if (needPlan) {
-        // A previous plan failure holds off retries for a short delay so a
-        // blocked actor does not hammer the planner every tick.
-        if (repathTimer > 0.0f) needPlan = false;
-    } else if (repathTimer <= 0.0f) {
+    if (path.empty()) {
+        // A failed attempt already set a short retry delay; honor it. The very
+        // first evaluation (no prior goal) plans immediately.
+        if (!hasLastGoal || !justRetryDelay) {
+            needPlan = true;
+            reason = hasLastGoal ? "empty" : "initial";
+        }
+    } else if (routeFinished) {
         needPlan = true;
-        reason = "timer";
-    } else if (hasLastGoal &&
-               glm::length(glm::vec3(dest - lastGoal)) > kGoalMoveThreshold) {
+        reason = "finished";
+    } else if (!justRetryDelay && targetMoved) {
         needPlan = true;
         reason = "target_moved";
-    }
-    if (!needPlan && NpcNavigation::isStuck(npc)) {
+    } else if (!justRetryDelay && blockedNow) {
         needPlan = true;
-        reason = "stuck";
+        reason = "blocked";
+    } else if (!justRetryDelay && progressFailed) {
+        needPlan = true;
+        reason = "progress";
     }
 
     if (needPlan && wantPlanning && consumePlanToken()) {
@@ -570,7 +756,11 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
             pathIndex = 0;
             lastGoal = dest;
             hasLastGoal = true;
-            repathTimer = kRepathInterval;
+            repathTimer = repathInterval;
+            result.planCreated = true;
+            result.replan = planCount > 0;
+            result.replanReason = reason;
+            result.pathNodeCount = (int)path.size();
             ++planCount;
             if (reason != std::string("initial")) ++repathCount;
             const float netDz = path.back().z - npc.body.pos.z;
@@ -589,6 +779,8 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
             lastGoal = dest;
             hasLastGoal = true;
             repathTimer = kBlockedRetryInterval;
+            result.planFailed = true;
+            result.replanReason = reason;
         }
     }
 
@@ -646,6 +838,19 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         return result;
     }
     glm::vec3 directDir = goalDist > 0.001f ? toDest / goalDist : glm::vec3(0.0f);
+
+    // No cached route: the committed direction owns forward steering while it
+    // is valid and still broadly toward the goal. This is what lets an actor
+    // that spawned facing a wall keep a real forward direction instead of
+    // re-deciding every tick.
+    if (commitment && commitment->enabled && commitmentActive &&
+        !commitmentBlocked && glm::length(committedDirection) > 0.001f &&
+        glm::dot(committedDirection, directDir) > -0.2f) {
+        result.valid = true;
+        result.dir = committedDirection;
+        return result;
+    }
+
     const bool directMode = eff.mode == "direct";
     const bool blocked = !directMode && glm::length(directDir) > 0.001f &&
         NpcNavigation::obstacleInDirection(npc, directDir, eff.wallProbeDistance, world);

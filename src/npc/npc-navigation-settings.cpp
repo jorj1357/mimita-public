@@ -50,14 +50,22 @@ bool readBool(const nlohmann::json& j, const char* key, bool& out, std::string& 
 }
 
 bool readClampedFloat(const nlohmann::json& j, const char* key, float lo, float hi,
-                      float& out, std::string& error)
+                      float& out, std::string& error, std::string& warnings)
 {
     if (!j.contains(key)) return true;
     if (!j[key].is_number()) {
         error = std::string(key) + " must be a number";
         return false;
     }
-    out = std::clamp(j[key].get<float>(), lo, hi);
+    const float requested = j[key].get<float>();
+    const float clamped = std::clamp(requested, lo, hi);
+    if (std::fabs(clamped - requested) > 1e-6f) {
+        if (!warnings.empty()) warnings += "; ";
+        warnings += std::string(key) + "=" + std::to_string(requested) +
+                    " out of range [" + std::to_string(lo) + "," +
+                    std::to_string(hi) + "] clamped to " + std::to_string(clamped);
+    }
+    out = clamped;
     return true;
 }
 
@@ -85,10 +93,16 @@ bool parseNpcNavigationSettings(const nlohmann::json& j, NpcNavigationSettings& 
     if (!readBool(j, "allow_navigation_jumps", next.allowNavigationJumps, error)) return false;
     if (!readBool(j, "allow_wall_jump", next.allowWallJump, error)) return false;
 
-    if (!readClampedFloat(j, "search_radius", 4.0f, 32.0f, next.searchRadius, error)) return false;
-    if (!readClampedFloat(j, "max_step_height", 0.0f, 2.0f, next.maxStepHeight, error)) return false;
+    // search_radius is the rolling local planner's half-extent. The navigator
+    // clamps its own window to [6,20] (see npc-navigator.cpp halfExtent), so 20
+    // is the largest value that has any effect; larger requests are clamped and
+    // reported through `warnings` rather than silently accepted.
+    if (!readClampedFloat(j, "search_radius", 4.0f, 20.0f,
+                          next.searchRadius, error, next.warnings)) return false;
+    if (!readClampedFloat(j, "max_step_height", 0.0f, 2.0f,
+                          next.maxStepHeight, error, next.warnings)) return false;
     if (!readClampedFloat(j, "wall_probe_distance", 0.5f, 6.0f,
-                          next.wallProbeDistance, error)) return false;
+                          next.wallProbeDistance, error, next.warnings)) return false;
 
     // Degrees -> walkable dot. The shared collision rule is used when omitted.
     if (j.contains("max_walkable_slope_degrees")) {
@@ -163,7 +177,8 @@ bool npcNavigationSettingsSelfTest(std::string& report)
         NpcNavigationSettings s;
         if (!parseNpcNavigationSettings(nlohmann::json::parse(R"({"search_radius":9999})"), s, error))
             fail("large search_radius parses");
-        if (s.searchRadius != 32.0f) fail("search_radius clamps to 32");
+        if (s.searchRadius != 20.0f) fail("search_radius clamps to 20");
+        if (s.warnings.empty()) fail("clamped search_radius reports a warning");
         if (!parseNpcNavigationSettings(
                 nlohmann::json::parse(R"({"max_walkable_slope_degrees":200})"), s, error))
             fail("large slope degrees parses");

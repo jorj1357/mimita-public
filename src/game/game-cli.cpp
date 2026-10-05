@@ -522,8 +522,9 @@ bool handleGameCLI(int argc, char** argv)
             npc->wakeupTimer = 0.0f;
             npc->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
             npc->stateMachine.currentState = NpcState::Patrol;
-            npc->stateMachine.patrolDir = glm::vec3(1.0f, 0.0f, 0.0f);
-            npc->stateMachine.patrolRepathTimer = 100.0f;
+            npc->navigator.commitmentActive = true;
+            npc->navigator.committedDirection = glm::vec3(1.0f, 0.0f, 0.0f);
+            npc->navigator.commitmentTimeRemaining = 100.0f;
 
             Player target;
             target.pos = glm::vec3(-300.0f, 0.0f, 2.0f);
@@ -555,8 +556,9 @@ bool handleGameCLI(int argc, char** argv)
             npc->wakeupTimer = 0.0f;
             npc->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
             npc->stateMachine.currentState = NpcState::Patrol;
-            npc->stateMachine.patrolDir = glm::vec3(1.0f, 0.0f, 0.0f);
-            npc->stateMachine.patrolRepathTimer = 100.0f;
+            npc->navigator.commitmentActive = true;
+            npc->navigator.committedDirection = glm::vec3(1.0f, 0.0f, 0.0f);
+            npc->navigator.commitmentTimeRemaining = 100.0f;
 
             Player target;
             target.pos = glm::vec3(-300.0f, 0.0f, 2.0f);
@@ -1013,6 +1015,237 @@ bool handleGameCLI(int argc, char** argv)
 
         printf("[NPC WALL ESCAPE EVENT SELFTEST]\n%s", report.c_str());
         printf("[NPC WALL ESCAPE EVENT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-behavior-profile-selftest") {
+        std::string report;
+        const bool ok = behaviorProfileSelfTest(report);
+        printf("[NPC BEHAVIOR PROFILE SELFTEST]\n%s", report.c_str());
+        printf("[NPC BEHAVIOR PROFILE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-movement-commitment-selftest") {
+        // Drives the real NpcNavigator commitment algorithm on minimal collision
+        // worlds: open-floor persistence, no reverse, visible-enemy bypass,
+        // replacement when blocked, replacement after failed progress, and
+        // hidden-target forward pursuit.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            w.collisionMesh.triangles.push_back(t);
+        };
+        auto addFloor = [&](World& w) {
+            addTri(w, {60,60,0}, {-60,60,0}, {-60,-60,0});
+            addTri(w, {60,60,0}, {-60,-60,0}, {60,-60,0});
+        };
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
+        NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+
+        World world;
+        addFloor(world);
+        buildCollisionChunks(world, nullptr);
+        std::vector<int> tris;
+        for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
+            tris.push_back(i);
+
+        NpcSystem npcs;
+        const uint32_t npcId = 9601;
+        npcs.spawnNpc(npcId, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+        Npc* npc = nullptr;
+        for (Npc& n : npcs.all()) if (n.id == npcId) { npc = &n; break; }
+        ok &= check(npc != nullptr, "commitment test actor spawned");
+        if (npc) {
+            npc->actorPresetId = "counter_strike";
+            npc->behaviorProfileId = "balanced";
+            npc->behavior = resolveNpcBehavior("balanced");
+            npc->body.maxHp = 100;
+            npc->body.currentHp = 100;
+            npc->body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+
+            const NpcBehaviorTuning& b = npc->behavior;
+            MovementCommitmentSettings s;
+            s.repathIntervalSeconds = b.repathIntervalSeconds;
+            s.goalMoveThresholdMeters = b.goalMoveThresholdMeters;
+            s.enabled = b.commitmentEnabled;
+            s.directionCommitSeconds = b.commitmentDirectionSeconds;
+            s.progressCheckSeconds = b.commitmentProgressCheckSeconds;
+            s.minimumProgressMeters = b.commitmentMinimumProgressMeters;
+            s.candidateDistanceMeters = b.commitmentCandidateDistanceMeters;
+            s.allowReverse = b.commitmentAllowReverse;
+            s.avoidRecentPath = b.commitmentAvoidRecentPath;
+            s.recentPathAvoidRadius = b.commitmentRecentPathAvoidRadius;
+            s.visibleEnemyAllowsCombatMovement = b.commitmentVisibleEnemyAllowsCombatMovement;
+            s.forwardBias = b.commitmentForwardBias;
+            s.targetProgressBias = b.commitmentTargetProgressBias;
+            s.openDistanceBias = b.commitmentOpenDistanceBias;
+            s.reversePenalty = b.commitmentReversePenalty;
+            const float dt = 1.0f / 60.0f;
+
+            // Open floor: forward wins and reverse is not chosen.
+            const glm::vec3 open = npc->navigator.chooseBestOpenDirection(
+                *npc, glm::vec3(1,0,0), glm::vec3(0,0,0), world, tris, s, 0.0f, 12.0f);
+            ok &= check(glm::length(open) > 0.001f, "open floor yields a direction");
+            ok &= check(glm::dot(glm::normalize(open), glm::vec3(1,0,0)) > 0.5f,
+                        "open floor keeps forward (reverse disabled)");
+
+            // Hidden-target goal direction pulls the commitment toward it.
+            const glm::vec3 towardTarget = npc->navigator.chooseBestOpenDirection(
+                *npc, glm::vec3(0,1,0), glm::vec3(1,0,0), world, tris, s, 0.0f, 12.0f);
+            ok &= check(glm::dot(glm::normalize(towardTarget), glm::vec3(1,0,0)) > 0.2f,
+                        "target-progress bias steers the committed direction toward the goal");
+
+            // Create a commitment, then prove a visible enemy preserves it.
+            npc->navigator.reset();
+            NpcCommitmentUpdate c1 = npc->navigator.updateCommitment(
+                *npc, glm::vec3(1,0,0), glm::vec3(1,0,0), false, world, tris, s, dt, 0.0f, 12.0f);
+            ok &= check(c1.created && npc->navigator.commitmentActive,
+                        "first commitment is created");
+            const glm::vec3 persisted = npc->navigator.committedDirection;
+            NpcCommitmentUpdate visible = npc->navigator.updateCommitment(
+                *npc, glm::vec3(1,0,0), glm::vec3(1,0,0), true, world, tris, s, dt, 0.0f, 12.0f);
+            ok &= check(!visible.created && !visible.replaced && !visible.blocked,
+                        "a visible enemy does not replace the commitment");
+            ok &= check(glm::length(npc->navigator.committedDirection - persisted) < 1e-4f,
+                        "visible enemy preserves the committed direction");
+
+            // Blocked: add a wall in front; the commitment must be replaced.
+            addTri(world, {2.2f,-8,0}, {2.2f,8,0}, {2.2f,8,5});
+            addTri(world, {2.2f,-8,0}, {2.2f,8,5}, {2.2f,-8,5});
+            buildCollisionChunks(world, nullptr);
+            tris.clear();
+            for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
+                tris.push_back(i);
+            NpcCommitmentUpdate blocked = npc->navigator.updateCommitment(
+                *npc, glm::vec3(1,0,0), glm::vec3(1,0,0), false, world, tris, s, dt, 0.0f, 12.0f);
+            ok &= check(blocked.blocked || blocked.replaced,
+                        "a blocked committed direction is replaced");
+            ok &= check(!NpcNavigation::obstacleInDirection(
+                            *npc, npc->navigator.committedDirection, 2.0f, world, tris),
+                        "the replacement direction is not immediately blocked");
+
+            // Failed progress: hold the actor still and let the timer expire.
+            npc->navigator.reset();
+            npc->navigator.updateCommitment(
+                *npc, glm::vec3(1,0,0), glm::vec3(1,0,0), false, world, tris, s, dt, 0.0f, 12.0f);
+            bool sawProgressFailed = false;
+            for (int i = 0; i < 90; ++i) {
+                NpcCommitmentUpdate cu = npc->navigator.updateCommitment(
+                    *npc, glm::vec3(1,0,0), glm::vec3(1,0,0), false, world, tris, s, dt, 0.0f, 12.0f);
+                sawProgressFailed |= cu.progressFailed;
+            }
+            ok &= check(sawProgressFailed, "failed progress is detected and reported");
+        }
+
+        printf("[NPC MOVEMENT COMMITMENT SELFTEST]\n%s", report.c_str());
+        printf("[NPC MOVEMENT COMMITMENT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--npc-movement-commitment-event-selftest") {
+        // Proves the new commitment / plan / goal diagnostics reach the
+        // canonical events.jsonl through the real logger and are rate-limited
+        // (never once per tick).
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+        auto addTri = [](World& w, glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            CollisionTriangle t;
+            t.a = a; t.b = b; t.c = c;
+            w.collisionMesh.triangles.push_back(t);
+        };
+
+        StructuredLogger::instance().init();
+        const std::string eventsPath = StructuredLogger::instance().eventsPath();
+        check(!eventsPath.empty(), "canonical events path is available");
+        check(StructuredLogger::instance().shouldLog(
+                  StructuredCategory::NpcMovement, StructuredLevel::Important),
+              "npc_movement category allows Important");
+
+        MatchRoleRegistry::instance().load("config/roles.json");
+        MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+        BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
+        NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
+
+        World world;
+        addTri(world, {300,300,0}, {-300,300,0}, {-300,-300,0});
+        addTri(world, {300,300,0}, {-300,-300,0}, {300,-300,0});
+        addTri(world, {8,-6,0}, {8,6,0}, {8,6,4});
+        addTri(world, {8,-6,0}, {8,6,4}, {8,-6,4});
+        buildCollisionChunks(world, nullptr);
+
+        NpcSystem npcs;
+        const uint32_t npcId = 9602;
+        npcs.spawnNpc(npcId, 5.0f, glm::vec3(0.0f, 0.0f, 1.9f));
+        for (Npc& n : npcs.all()) {
+            if (n.id != npcId) continue;
+            n.actorPresetId = "counter_strike";
+            n.behaviorProfileId = "balanced";
+            n.behavior = resolveNpcBehavior("balanced");
+            n.body.maxHp = 100;
+            n.body.currentHp = 100;
+            n.wakeupTimer = 0.0f;
+            n.body.pos = glm::vec3(0.0f, 0.0f, 1.9f);
+            n.stateMachine.currentState = NpcState::Patrol;
+            break;
+        }
+
+        // Target far outside sight so the actor patrols (no visible enemy).
+        Player target;
+        target.pos = glm::vec3(280.0f, 0.0f, 2.0f);
+        target.currentHp = 100;
+        target.maxHp = 100;
+        target.dead = false;
+
+        for (int tick = 0; tick < 300; ++tick)
+            npcs.updateOneWithTarget(npcId, world, target, 1.0f / 60.0f);
+
+        StructuredLogger::instance().shutdown();
+
+        int commitmentCreated = 0, commitmentReplaced = 0, planCreated = 0,
+            planFailed = 0, goalChanged = 0, targetChanged = 0;
+        std::ifstream in(eventsPath);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.find("\"event\":\"npc.movement-commitment-created\"") != std::string::npos) ++commitmentCreated;
+            if (line.find("\"event\":\"npc.movement-commitment-replaced\"") != std::string::npos) ++commitmentReplaced;
+            if (line.find("\"event\":\"npc.nav-plan-created\"") != std::string::npos) ++planCreated;
+            if (line.find("\"event\":\"npc.nav-plan-failed\"") != std::string::npos) ++planFailed;
+            if (line.find("\"event\":\"npc.goal-changed\"") != std::string::npos) ++goalChanged;
+            if (line.find("\"event\":\"npc.target-changed\"") != std::string::npos) ++targetChanged;
+        }
+        report += "  info  events path: " + eventsPath + "\n";
+        report += "  info  commitmentCreated=" + std::to_string(commitmentCreated) +
+                  " replaced=" + std::to_string(commitmentReplaced) +
+                  " planCreated=" + std::to_string(planCreated) +
+                  " planFailed=" + std::to_string(planFailed) +
+                  " goalChanged=" + std::to_string(goalChanged) + "\n";
+        ok &= check(commitmentCreated >= 1,
+                    "npc.movement-commitment-created reached events.jsonl");
+        ok &= check(goalChanged >= 1, "npc.goal-changed reached events.jsonl");
+        ok &= check(planCreated + planFailed >= 1,
+                    "npc.nav-plan-created/failed reached events.jsonl");
+        ok &= check(commitmentCreated < 60,
+                    "commitment events are rate-limited (not once per tick)");
+        ok &= check(goalChanged < 60, "goal events are rate-limited (not once per tick)");
+
+        printf("[NPC MOVEMENT COMMITMENT EVENT SELFTEST]\n%s", report.c_str());
+        printf("[NPC MOVEMENT COMMITMENT EVENT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

@@ -1193,3 +1193,71 @@ Evidence:
 Next: human live check that CT NPCs leave the Dust2 spawn wall and that
 `npc.wall-escape` records appear for CT actors during a real round. Changelog:
 `docs/changelog/2026-10-05/20261005_011500-wall-escape-event-verify.md`.
+
+### Attempt 19 — shared NPC movement commitment (single direction owner)
+
+Triggered by the human handoff "shared NPC movement-commitment system".
+
+Tried:
+- **One direction owner.** Added commitment state to the shared `NpcNavigator`
+  (`commitmentActive`, `committedDirection`, `commitmentTimeRemaining`,
+  `progressTimer`, `commitmentStartPosition`) and moved the recent-path rings
+  there. Removed `NpcStateMachine::patrolDir`/`patrolRepathTimer`; Patrol and
+  `makeNavGoal` now read the navigator commitment (full unification).
+- **Candidate scorer.** `NpcNavigator::chooseBestOpenDirection` scores open
+  distance + forward continuation + target progress, minus reverse and
+  recently-visited points, and never returns an immediately blocked direction.
+- **Reason-based replanning.** The repath timer is now a minimum interval; a
+  route is rebuilt only when empty/finished, the goal moved beyond the
+  threshold, it is physically blocked, or progress failed.
+- **Profile ownership.** `config/behavior-profiles.json` gains documented
+  `repath_interval_seconds`, `goal_move_threshold_meters`, and a
+  `movement_commitment` block (parsed + clamped with a validation warning).
+  Compatibility defaults kept (`0.9` / `2.5`).
+- **Visible-enemy rule.** Only `belief.hasVisibleTarget` (alive + FOV + range +
+  LOS) lets combat movement own steering; a visible enemy suspends rather than
+  destroys the commitment, so hidden pursuit resumes. Remembered targets follow
+  forward commitment and the profile's `after_reaching_last_known`.
+- **Events.** Added `npc.target-changed`, `npc.goal-changed`,
+  `npc.nav-plan-created/failed`, `npc.nav-replan`, and
+  `npc.movement-commitment-created/replaced/blocked`,
+  `npc.movement-progress-failed` (change-edge, level-gated).
+- **search_radius.** One owner/max: parser clamps to the planner's [4,20] and
+  reports the clamp; `counter_strike.json` `200.0` -> `20.0`.
+
+Went right:
+- Counter-Strike and Sandbox still run the one `sandbox_shared` executor; no
+  mode branch was added to movement.
+- The commitment is evaluated for all profiles; profile JSON tunes it.
+- The event selftest proved commitment/goal/plan events are not per-tick.
+
+Went wrong / watch out:
+- `--npc-radar-selftest` FAILs on `rage2 uses perfect radar`; that is a
+  pre-existing config/test mismatch (`information_mode: "memory"` vs the test's
+  `perfect_radar`) present at `HEAD`, not caused by this change.
+- `--actor-preset-selftest` still fails on pre-existing weapon-value
+  assertions, unrelated.
+- Candidate scoring performs bounded ray probes only when a direction is
+  (re)committed, not every tick; visible combat skips it entirely.
+- Live Dust2 behavior (spawn escape, no repeated reversing, hidden pursuit) is
+  still unobserved.
+
+Keep doing:
+- One movement owner and one direction owner; mode code supplies target/goal only.
+- Profile-owned, hot-reloadable tuning with explicit clamp diagnostics.
+
+Stop doing:
+- Re-deciding the forward direction every tick or rebuilding a valid route on a
+  bare timer.
+
+Evidence:
+- Build: `BUILD SUCCESS`; `mimita.exe` relinked (forced relink verified).
+- Pure: movement-policy 72, navigation 35, movement-executor 15 PASS.
+- Runtime: policy / search / navigation / executor / behavior-profile /
+  commitment / commitment-event / wall-escape-event / acceptance PASS.
+- Human playtest: pending.
+
+Next: live Dust2 Counter-Strike round — confirm CT and T leave spawn, no
+repeated reversing, routing around walls/ramps, hidden-target forward pursuit,
+visible-enemy combat movement, and no endless circling. Changelog:
+`docs/changelog/2026-10-05/20261005_171741-shared-npc-movement-commitment.md`.

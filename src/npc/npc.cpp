@@ -34,10 +34,12 @@
 #include "effects/effect-part.h"
 #include "devtools/dev-npc-selection.h"
 #include "npc/npc-navigation.h"
+#include "npc/npc-navigation-settings.h"
 #include "npc/npc-combat.h"
 #include "combat/weapon-registry.h"
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
+#include "npc/npc-movement-context.h"
 #include "actor/actor-intent.h"
 
 float targetCanSeeNpc(const Npc& npc, const World& world)
@@ -468,13 +470,18 @@ NpcGoal makeNavGoal(const Npc& npc)
                 ? npc.targetMemory.lastKnownPosition
                 : npc.stateMachine.lastKnownTarget;
         } else if (npc.stateMachine.currentState == NpcState::Patrol) {
-            // Project a small rolling forward waypoint. Once reached, the next
-            // update creates another waypoint from the new position, so the NPC
-            // advances forever without pretending there is a combat target.
-            const glm::vec3 dir = glm::length(glm::vec3(npc.stateMachine.patrolDir.x,
-                                                        npc.stateMachine.patrolDir.y, 0.0f)) > 0.001f
-                ? glm::normalize(glm::vec3(npc.stateMachine.patrolDir.x, npc.stateMachine.patrolDir.y, 0.0f))
-                : glm::vec3(1.0f, 0.0f, 0.0f);
+            // Project a small rolling forward waypoint along the navigator's
+            // committed forward direction (the single direction owner). Once
+            // reached, the next update creates another waypoint from the new
+            // position, so the NPC advances forever without a fake target.
+            const glm::vec3 dir = npc.navigator.commitmentActive &&
+                    glm::length(glm::vec3(npc.navigator.committedDirection.x,
+                                          npc.navigator.committedDirection.y, 0.0f)) > 0.001f
+                ? glm::normalize(glm::vec3(npc.navigator.committedDirection.x,
+                                           npc.navigator.committedDirection.y, 0.0f))
+                : (glm::length(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f)) > 0.001f
+                    ? glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f))
+                    : glm::vec3(1.0f, 0.0f, 0.0f));
             const NpcMovementPolicy* policy = activeMovementPolicy(npc);
             const float distance = policy ? policy->forwardPatrolDistance : 12.0f;
             goal.kind = NpcGoalKind::ReachPosition;
@@ -776,114 +783,88 @@ void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& 
     }
 }
 
-// Append a timestamped point to a bounded ring, overwriting the oldest entry.
-static void pushSearchPoint(NpcStateMachine::SearchPoint* ring, int& head, int& count,
-                            const glm::vec3& pos, float time)
+// ── Bounded structured diagnostics (change-edge only, never per tick) ─────
+static void emitCommitmentEvents(const Npc& npc, const NpcCommitmentUpdate& cu,
+                                 const MovementCommitmentSettings& s)
 {
-    ring[head] = {pos, time};
-    head = (head + 1) % NpcStateMachine::PATROL_RECENT_MAX;
-    if (count < NpcStateMachine::PATROL_RECENT_MAX)
-        ++count;
-}
-
-// Planar distance to the nearest remembered visited/blocked point that is still
-// inside the memory window. Large when everything remembered is far away.
-static float nearestMemoryDistance(const Npc& npc, const glm::vec3& point,
-                                   float now, float memorySeconds)
-{
-    const auto& sm = npc.stateMachine;
-    float best = 1e9f;
-    for (int i = 0; i < sm.patrolVisitedCount; ++i) {
-        const auto& s = sm.patrolVisited[i];
-        if (now - s.time > memorySeconds) continue;
-        best = std::min(best, glm::length(glm::vec2(point.x - s.pos.x, point.y - s.pos.y)));
-    }
-    for (int i = 0; i < sm.patrolBlockedCount; ++i) {
-        const auto& s = sm.patrolBlocked[i];
-        if (now - s.time > memorySeconds) continue;
-        best = std::min(best, glm::length(glm::vec2(point.x - s.pos.x, point.y - s.pos.y)));
-    }
-    return best;
-}
-
-// Score candidate headings for forward search: no wall-blocked direction, heavy
-// penalty for passing near anywhere already visited or blocked, a bonus for
-// continuity with the current heading (commitment) and for open directions that
-// give a longer line of sight. Pure, no map knowledge.
-static glm::vec3 pickSearchDirection(Npc& npc, const World& world,
-                                     const std::vector<int>& candidates,
-                                     const NpcDifficultySettings& cfg,
-                                     glm::vec3 continuityRef, float now)
-{
-    const float probe = std::max(2.5f, cfg.wallCastDistance);
-    constexpr int SAMPLES = 16;
-    glm::vec3 best = continuityRef;
-    float bestScore = -std::numeric_limits<float>::max();
-    for (int i = 0; i < SAMPLES; ++i) {
-        const float ang = (float)i * (6.2831853f / (float)SAMPLES)
-                        + random01(npc.rngState) * 0.25f;
-        const glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
-        if (cfg.wallAvoidanceEnabled &&
-            NpcNavigation::obstacleInDirection(npc, dir, probe, world, candidates))
-            continue;
-        const glm::vec3 look = npc.body.pos + dir * cfg.searchLookahead;
-        const float memDist = nearestMemoryDistance(npc, look, now, cfg.searchMemorySeconds);
-        const bool openFar = !NpcNavigation::obstacleInDirection(
-            npc, dir, cfg.searchLookahead * 2.0f, world, candidates);
-        const float continuity = glm::length(continuityRef) > 0.001f
-            ? glm::dot(dir, continuityRef) : 0.0f;
-        const float jitter = (float)(i + 1) * 0.137f;
-        float score = std::min(memDist, 20.0f)
-                    + continuity * 3.0f
-                    + (openFar ? 2.0f : 0.0f)
-                    + jitter * 0.01f;
-        if (memDist < cfg.searchAvoidRadius)
-            score -= 100.0f;  // strongly avoid doubling back / re-testing a wall
-        if (score > bestScore) {
-            bestScore = score;
-            best = dir;
-        }
-    }
-    if (glm::length(best) > 0.001f)
-        return glm::normalize(glm::vec3(best.x, best.y, 0.0f));
-    return glm::vec3(0.0f);
-}
-
-// Choose the patrol heading for a no-target NPC. The heading is committed for
-// searchHeadingCommitSeconds and only reconsidered when it is blocked. Recently
-// visited/blocked points are avoided so the actor never turns back into the
-// wall it just left or retraces ground it just covered.
-static void updatePatrolHeading(Npc& npc, const World& world,
-                                const std::vector<int>& nearCandidates, float dt)
-{
-    auto& sm = npc.stateMachine;
-    const auto& navCfg = NpcDifficultyConfig::instance().settings();
-    const float probe = std::max(2.5f, navCfg.wallCastDistance);
-    const float now = npc.sensors.time;
-
-    const bool haveHeading = glm::length(glm::vec3(sm.patrolDir.x, sm.patrolDir.y, 0.0f)) > 0.001f;
-    if (!haveHeading) {
-        sm.patrolDir = glm::length(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f)) > 0.001f
-            ? glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f))
-            : glm::vec3(1.0f, 0.0f, 0.0f);
-    }
-
-    const bool headingBlocked = navCfg.wallAvoidanceEnabled &&
-        NpcNavigation::obstacleInDirection(npc, sm.patrolDir, probe, world, nearCandidates);
-    if (headingBlocked)
-        pushSearchPoint(sm.patrolBlocked, sm.patrolBlockedHead, sm.patrolBlockedCount,
-                        npc.body.pos + sm.patrolDir * probe, now);
-
-    sm.patrolRepathTimer -= dt;
-    // Commit: hold the heading until it is blocked or its time is up.
-    if (!headingBlocked && sm.patrolRepathTimer > 0.0f)
+    if (!cu.created && !cu.replaced && !cu.blocked && !cu.progressFailed)
         return;
+    auto& log = StructuredLogger::instance();
+    const uint32_t tick = (uint32_t)(npc.sensors.time * 60.0f);
+    nlohmann::json fields{
+        {"actor", npc.id},
+        {"team", npc.body.matchTeam},
+        {"profile", npc.behaviorProfileId},
+        {"preset", npc.actorPresetId},
+        {"executor", npcMovementExecutorName(npc.lastMovementExecutor)},
+        {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+        {"committed_dir", {cu.direction.x, cu.direction.y}},
+        {"previous_dir", {cu.previousDirection.x, cu.previousDirection.y}},
+        {"progress_distance", cu.progressDistance},
+        {"commit_seconds", s.directionCommitSeconds}};
+    auto emit = [&](const char* name, const char* reason) {
+        log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Important,
+                       name, std::to_string(npc.id), reason, tick, fields,
+                       __FILE__, __LINE__, __FUNCTION__);
+    };
+    if (cu.created) emit("npc.movement-commitment-created", "created");
+    if (cu.replaced) emit("npc.movement-commitment-replaced", "replaced");
+    if (cu.blocked) emit("npc.movement-commitment-blocked", "blocked");
+    if (cu.progressFailed) emit("npc.movement-progress-failed", "no_progress");
+}
 
-    const glm::vec3 best = pickSearchDirection(npc, world, nearCandidates, navCfg,
-                                               sm.patrolDir, now);
-    if (glm::length(best) > 0.001f)
-        sm.patrolDir = best;
-    sm.patrolRepathTimer = navCfg.searchHeadingCommitSeconds;
+static void emitNavPlanEvents(const Npc& npc, const NpcNavResult& nav,
+                              const NpcNavigationSettings* settings)
+{
+    if (!nav.planCreated && !nav.planFailed)
+        return;
+    auto& log = StructuredLogger::instance();
+    const uint32_t tick = (uint32_t)(npc.sensors.time * 60.0f);
+    nlohmann::json fields{
+        {"actor", npc.id},
+        {"team", npc.body.matchTeam},
+        {"profile", npc.behaviorProfileId},
+        {"preset", npc.actorPresetId},
+        {"executor", npcMovementExecutorName(npc.lastMovementExecutor)},
+        {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+        {"destination", {nav.destination.x, nav.destination.y, nav.destination.z}},
+        {"goal_kind", npc.lastNavGoalKind},
+        {"path_nodes", nav.pathNodeCount},
+        {"replan_reason", nav.replanReason ? nav.replanReason : ""},
+        {"search_radius", settings ? settings->searchRadius : 0.0f}};
+    if (nav.planFailed) {
+        log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.nav-plan-failed", std::to_string(npc.id),
+            nav.replanReason ? nav.replanReason : "failed", tick, fields,
+            __FILE__, __LINE__, __FUNCTION__);
+    } else {
+        log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Important,
+            nav.replan ? "npc.nav-replan" : "npc.nav-plan-created",
+            std::to_string(npc.id), nav.replanReason ? nav.replanReason : "planned",
+            tick, fields, __FILE__, __LINE__, __FUNCTION__);
+    }
+}
+
+static void emitGoalChangedEvent(Npc& npc, const NpcGoal& goal)
+{
+    const int kind = (int)goal.kind;
+    if (kind == npc.lastNavGoalKind && goal.targetActorId == npc.lastNavGoalActor)
+        return;
+    npc.lastNavGoalKind = kind;
+    npc.lastNavGoalActor = goal.targetActorId;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "npc.goal-changed", std::to_string(npc.id), "goal_changed",
+        (uint32_t)(npc.sensors.time * 60.0f),
+        nlohmann::json{
+            {"actor", npc.id},
+            {"team", npc.body.matchTeam},
+            {"profile", npc.behaviorProfileId},
+            {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+            {"goal_kind", kind},
+            {"target_actor", goal.targetActorId},
+            {"state", (int)npc.stateMachine.currentState}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 void NpcSystem::updateOneNpc(Npc& npc, const World& world,
@@ -1233,9 +1214,54 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     nearCandidates.clear();
         appendChunkTrianglesForAABB(world, localBounds, 0.0f, nearCandidates, "npcNearCandidates");
 
-    // No-target patrol heading planner (forward search with recency avoidance).
-    if (npc.stateMachine.currentState == NpcState::Patrol && !npc.sensors.hasTarget)
-        updatePatrolHeading(npc, world, nearCandidates, safeDt);
+    // ── Movement commitment (single forward/pursuit direction owner) ────
+    // Resolve the behavior-profile tuning once, then evaluate the commitment
+    // before the state machine builds its direction, so Patrol and pursuit both
+    // steer along one committed direction instead of re-deciding every tick.
+    MovementCommitmentSettings commitmentSettings;
+    {
+        const NpcBehaviorTuning& b = npc.behavior;
+        commitmentSettings.repathIntervalSeconds = b.repathIntervalSeconds;
+        commitmentSettings.goalMoveThresholdMeters = b.goalMoveThresholdMeters;
+        commitmentSettings.enabled = b.commitmentEnabled;
+        commitmentSettings.directionCommitSeconds = b.commitmentDirectionSeconds;
+        commitmentSettings.progressCheckSeconds = b.commitmentProgressCheckSeconds;
+        commitmentSettings.minimumProgressMeters = b.commitmentMinimumProgressMeters;
+        commitmentSettings.candidateDistanceMeters = b.commitmentCandidateDistanceMeters;
+        commitmentSettings.allowReverse = b.commitmentAllowReverse;
+        commitmentSettings.avoidRecentPath = b.commitmentAvoidRecentPath;
+        commitmentSettings.recentPathAvoidRadius = b.commitmentRecentPathAvoidRadius;
+        commitmentSettings.visibleEnemyAllowsCombatMovement =
+            b.commitmentVisibleEnemyAllowsCombatMovement;
+        commitmentSettings.forwardBias = b.commitmentForwardBias;
+        commitmentSettings.targetProgressBias = b.commitmentTargetProgressBias;
+        commitmentSettings.openDistanceBias = b.commitmentOpenDistanceBias;
+        commitmentSettings.reversePenalty = b.commitmentReversePenalty;
+    }
+    {
+        const glm::vec3 committedPlanar(npc.navigator.committedDirection.x,
+                                        npc.navigator.committedDirection.y, 0.0f);
+        const glm::vec3 facingPlanar(npc.currentFacing.x, npc.currentFacing.y, 0.0f);
+        const glm::vec3 forwardDir = (npc.navigator.commitmentActive &&
+                                      glm::length(committedPlanar) > 0.001f)
+            ? glm::normalize(committedPlanar)
+            : (glm::length(facingPlanar) > 0.001f
+                ? glm::normalize(facingPlanar) : glm::vec3(1.0f, 0.0f, 0.0f));
+        glm::vec3 targetDir{0.0f};
+        if (!npc.sensors.hasTarget &&
+            (npc.stateMachine.currentState == NpcState::Chase ||
+             npc.stateMachine.pursuitSearchActive ||
+             npc.stateMachine.currentState == NpcState::Recover)) {
+            const glm::vec3 known = npc.targetMemory.hasMemory
+                ? npc.targetMemory.lastKnownPosition : npc.stateMachine.lastKnownTarget;
+            targetDir = glm::vec3(known.x - npc.body.pos.x,
+                                  known.y - npc.body.pos.y, 0.0f);
+        }
+        const NpcCommitmentUpdate cu = npc.navigator.updateCommitment(
+            npc, forwardDir, targetDir, npc.sensors.hasTarget, world, nearCandidates,
+            commitmentSettings, safeDt, npc.sensors.time, npcDifficulty.searchMemorySeconds);
+        emitCommitmentEvents(npc, cu, commitmentSettings);
+    }
 
     glm::vec3 moveDir;
     bool jump, dash, attack;
@@ -1272,9 +1298,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
     }
 
-    // Search memory sampling + generic no-progress watchdog. Both run in every
-    // state so a chasing NPC also breaks out of a local minimum (slope bottom,
-    // corner) instead of pressing into the same spot forever.
+    // Search-memory sampling + generic no-progress watchdog. The recent-path
+    // rings and the committed direction live in the navigator now; this only
+    // feeds them and forces a recommit when progress stops. Both run in every
+    // state so a chasing NPC also breaks out of a local minimum.
     {
         auto& sm = npc.stateMachine;
         const float now = npc.sensors.time;
@@ -1283,17 +1310,16 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         if (sm.patrolSnapshotTimer <= 0.0f)
         {
             sm.patrolSnapshotTimer = npcDifficulty.searchSnapshotSeconds;
-            constexpr int kMax = NpcStateMachine::PATROL_RECENT_MAX;
-            bool record = sm.patrolVisitedCount == 0;
+            bool record = npc.navigator.recentVisitedCount == 0;
             if (!record) {
-                const int last = (sm.patrolVisitedHead - 1 + kMax) % kMax;
+                const int last = (npc.navigator.recentVisitedHead - 1 + NpcNavigator::kRecentMax)
+                                 % NpcNavigator::kRecentMax;
                 record = glm::length(glm::vec2(
-                    npc.body.pos.x - sm.patrolVisited[last].pos.x,
-                    npc.body.pos.y - sm.patrolVisited[last].pos.y)) > 0.5f;
+                    npc.body.pos.x - npc.navigator.recentVisited[last].pos.x,
+                    npc.body.pos.y - npc.navigator.recentVisited[last].pos.y)) > 0.5f;
             }
             if (record)
-                pushSearchPoint(sm.patrolVisited, sm.patrolVisitedHead,
-                                sm.patrolVisitedCount, npc.body.pos, now);
+                npc.navigator.pushVisited(npc.body.pos, now);
         }
 
         const float progress = glm::length(glm::vec2(
@@ -1308,13 +1334,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
 
         if (sm.patrolNoProgressTimer > npcDifficulty.searchNoProgressSeconds)
         {
-            pushSearchPoint(sm.patrolBlocked, sm.patrolBlockedHead,
-                            sm.patrolBlockedCount, npc.body.pos, now);
-            if (sm.currentState == NpcState::Patrol && !npc.sensors.hasTarget)
-            {
-                sm.patrolRepathTimer = 0.0f;  // re-pick a fresh forward heading
-            }
-            else if (!inMirrorPhase)
+            npc.navigator.pushBlocked(npc.body.pos, now);
+            npc.navigator.forceRecommit();
+            if (sm.currentState != NpcState::Patrol && !inMirrorPhase)
             {
                 // Chase detour: break the ram with a short lateral move chosen
                 // away from where this NPC has already been.
@@ -1324,8 +1346,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                         ? glm::normalize(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f))
                         : glm::vec3(1.0f, 0.0f, 0.0f));
                 const glm::vec3 side{-base.y, base.x, 0.0f};
-                const glm::vec3 detour = pickSearchDirection(npc, world, nearCandidates,
-                                                             npcDifficulty, side, now);
+                const glm::vec3 detour = npc.navigator.chooseBestOpenDirection(
+                    npc, side, glm::vec3(0.0f), world, nearCandidates,
+                    commitmentSettings, now, npcDifficulty.searchMemorySeconds);
                 if (glm::length(detour) > 0.001f) {
                     sm.patrolForcedDetourDir = detour;
                     sm.patrolForcedDetourTicks = 30;
@@ -1382,9 +1405,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         // shared goal mapping decides. Movement execution is identical either way.
         const NpcGoal navGoal = context.hasGoalOverride ? context.goalOverride
                                                         : makeNavGoal(npc);
+        emitGoalChangedEvent(npc, navGoal);
         const NpcNavResult nav =
             npc.navigator.update(npc, navGoal, world, navMovement, safeDt,
-                                 navSettings, policy);
+                                 navSettings, policy, &commitmentSettings);
+        emitNavPlanEvents(npc, nav, navSettings);
         const NpcTraversalStep trav =
             npc.traversal.update(npc, nav, navMovement, safeDt);
         // Traversal steers when following a detour route or performing a

@@ -49,6 +49,11 @@ struct NpcNavigationSettings
 
     // How far ahead the navigator probes for a blocking wall (meters).
     float wallProbeDistance = 1.6f;
+
+    // Non-fatal validation notes (e.g. a requested value was clamped). Empty
+    // when every supplied value was in range. The owning loader logs these so
+    // an impossible request such as search_radius=200 is never silent.
+    std::string warnings;
 };
 
 // Parses and validates a "navigation" object. Unknown enum strings and
