@@ -104,6 +104,14 @@ struct NpcNavigator
     float backtrackRemaining = 0.0f;
     float backtrackTimeRemaining = 0.0f;
 
+    // A wall/stuck correction is temporary steering, not a replacement for
+    // the long-range commitment. While active, updateCommitment preserves the
+    // original goal direction and npc.cpp resumes it as soon as the correction
+    // is clear or its short hold expires.
+    bool localCorrectionActive = false;
+    glm::vec3 localCorrectionDirection{0.0f};
+    float localCorrectionTimeRemaining = 0.0f;
+
     // ── Movement commitment ──────────────────────────────────────────────
     // The single forward/pursuit direction owner (replaces the old
     // state-machine patrolDir). Held until it is blocked, progress fails, it
@@ -178,4 +186,7 @@ struct NpcNavigator
 
     void startBacktrack(const glm::vec3& blockedDirection,
                         float distance, float duration);
+    void startLocalCorrection(const glm::vec3& direction,
+                              float duration = 1.0f);
+    void clearLocalCorrection();
 };

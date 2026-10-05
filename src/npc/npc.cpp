@@ -1411,11 +1411,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         if (sm.patrolNoProgressTimer > npcDifficulty.searchNoProgressSeconds)
         {
             npc.navigator.pushBlocked(npc.body.pos, now);
-            npc.navigator.forceRecommit();
             if (sm.currentState != NpcState::Patrol && !inMirrorPhase)
             {
-                // Chase detour: break the ram with a short lateral move chosen
-                // away from where this NPC has already been.
+                // Break the local ram with a temporary lateral correction. The
+                // long-range commitment remains intact; this is not a new goal.
                 glm::vec3 base = glm::length(npc.lastMoveInput) > 0.1f
                     ? glm::normalize(glm::vec3(npc.lastMoveInput.x, npc.lastMoveInput.y, 0.0f))
                     : (glm::length(glm::vec3(npc.currentFacing.x, npc.currentFacing.y, 0.0f)) > 0.001f
@@ -1426,10 +1425,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     npc, side, glm::vec3(0.0f), world, nearCandidates,
                     commitmentSettings, now, npcDifficulty.searchMemorySeconds);
                 if (glm::length(detour) > 0.001f) {
-                    sm.patrolForcedDetourDir = detour;
-                    sm.patrolForcedDetourTicks = 30;
+                    npc.navigator.startLocalCorrection(detour, 1.0f);
                 }
-                npc.navigator.requestRepath();
             }
             sm.patrolNoProgressTimer = 0.0f;
             sm.patrolLastProgressPos = npc.body.pos;
@@ -1600,6 +1597,30 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 moveDir = glm::normalize(moveDir + coverDir * coverBlend);
             }
         }
+
+        // A local correction temporarily steers around an obstacle while the
+        // navigator keeps the same long-range commitment. Return to the main
+        // direction as soon as it is open again; never turn the correction into
+        // a new patrol goal.
+        if (npc.navigator.localCorrectionActive)
+        {
+            const glm::vec3 correction = npc.navigator.localCorrectionDirection;
+            const bool correctionBlocked = NpcNavigation::obstacleInDirection(
+                npc, correction, npcDifficulty.wallCastDistance, world, nearCandidates);
+            const bool commitmentOpen = npc.navigator.commitmentActive &&
+                glm::length(npc.navigator.committedDirection) > 0.001f &&
+                !NpcNavigation::obstacleInDirection(
+                    npc, npc.navigator.committedDirection,
+                    npcDifficulty.wallCastDistance, world, nearCandidates);
+            if (commitmentOpen || correctionBlocked)
+            {
+                npc.navigator.clearLocalCorrection();
+            }
+            else
+            {
+                moveDir = correction;
+            }
+        }
     }
 
     if (npc.bombTagActive)
@@ -1667,6 +1688,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     const bool newAvoidDir = glm::length(npc.lastWallAvoidDir) < 0.001f ||
                         glm::dot(adjustedN, npc.lastWallAvoidDir) < 0.99f;
                     npc.lastWallAvoidDir = adjustedN;
+                    npc.navigator.startLocalCorrection(adjustedN, 1.0f);
                     if (newAvoidDir) {
                         StructuredLogger::instance().writeEvent(
                             StructuredCategory::NpcMovement, StructuredLevel::Important,
@@ -1684,11 +1706,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                             __FILE__, __LINE__, __FUNCTION__);
                     }
                 }
-
-                // The current goal direction is not a usable route. Make the
-                // navigator throw away its cached path so the next tick can
-                // plan around the wall instead of repeatedly aiming at it.
-                npc.navigator.requestRepath();
 
                 const bool stillBlocked = NpcNavigation::obstacleInDirection(
                     npc, moveDir, navCfg.wallCastDistance, world, nearCandidates);
@@ -1759,7 +1776,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     __FILE__, __LINE__, __FUNCTION__);
             }
             npc.stateMachine.stuckTimer += safeDt;
-            if (npc.stateMachine.stuckTimer > 0.3f)
+            if (npc.stateMachine.stuckTimer > 0.3f &&
+                !npc.navigator.localCorrectionActive)
             {
                 // One shared recovery for every actor (policy or legacy): choose
                 // the most open local direction first, then optionally jump
@@ -1768,14 +1786,16 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 const glm::vec3 openDir = NpcNavigation::unstuckDirection(
                     npc, npc.rngState, world, nearCandidates);
                 if (glm::length(openDir) > 0.1f)
+                {
                     moveDir = openDir;
+                    npc.navigator.startLocalCorrection(openDir, 1.0f);
+                }
                 if (npc.sensors.touchFloor && glm::length(moveDir) > 0.1f) {
                     jump = true;
                     jumpReason = NpcJumpReason::Obstacle;
                 }
                 if (!policy)
                     dash = npc.dashCooldown <= 0.0f;
-                npc.navigator.requestRepath();
                 npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
                 std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
                 Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,

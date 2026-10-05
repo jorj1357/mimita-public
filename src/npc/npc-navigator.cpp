@@ -521,7 +521,20 @@ NpcCommitmentUpdate NpcNavigator::updateCommitment(
     // with combat movement. The committed direction is preserved so pursuit
     // can resume when the enemy is lost; it is never replaced while visible.
     if (targetVisible && settings.visibleEnemyAllowsCombatMovement)
+    {
+        clearLocalCorrection();
         return out;
+    }
+
+    // Local wall/stuck steering is an interrupt, not a new destination. Keep
+    // the existing commitment intact while the temporary correction runs.
+    if (localCorrectionActive)
+    {
+        localCorrectionTimeRemaining -= dt;
+        if (localCorrectionTimeRemaining > 0.0f)
+            return out;
+        clearLocalCorrection();
+    }
 
     const float probe = std::max(
         2.0f, NpcDifficultyConfig::instance().settings().wallCastDistance);
@@ -581,6 +594,7 @@ void NpcNavigator::reset()
     backtrackDirection = glm::vec3(0.0f);
     backtrackRemaining = 0.0f;
     backtrackTimeRemaining = 0.0f;
+    clearLocalCorrection();
     commitmentActive = false;
     committedDirection = glm::vec3(0.0f);
     commitmentTimeRemaining = 0.0f;
@@ -612,6 +626,30 @@ void NpcNavigator::startBacktrack(const glm::vec3& blockedDirection,
     pathCapability.clear();
     pathIndex = 0;
     requestRepath();
+}
+
+void NpcNavigator::startLocalCorrection(const glm::vec3& direction,
+                                         float duration)
+{
+    glm::vec3 planar(direction.x, direction.y, 0.0f);
+    const float len = glm::length(planar);
+    if (len < 0.001f || duration <= 0.0f)
+        return;
+
+    localCorrectionDirection = planar / len;
+    localCorrectionTimeRemaining = duration;
+    localCorrectionActive = true;
+    // The original commitment is deliberately not invalidated. The correction
+    // is only allowed to steer around the obstacle temporarily.
+    commitmentBlocked = false;
+    commitmentProgressFailed = false;
+}
+
+void NpcNavigator::clearLocalCorrection()
+{
+    localCorrectionActive = false;
+    localCorrectionDirection = glm::vec3(0.0f);
+    localCorrectionTimeRemaining = 0.0f;
 }
 
 NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World& world,
@@ -719,9 +757,10 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     const bool blockedNow = NpcNavigation::isStuck(npc) ||
         (commitment && commitment->enabled && commitmentBlocked);
     const bool progressFailed = commitment && commitment->enabled && commitmentProgressFailed;
+    const bool preservingLocalCorrection = localCorrectionActive;
     bool needPlan = false;
     const char* reason = "initial";
-    if (path.empty()) {
+    if (path.empty() && !preservingLocalCorrection) {
         // A failed attempt already set a short retry delay; honor it. The very
         // first evaluation (no prior goal) plans immediately.
         if (!hasLastGoal || !justRetryDelay) {
@@ -731,13 +770,13 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     } else if (routeFinished) {
         needPlan = true;
         reason = "finished";
-    } else if (!justRetryDelay && targetMoved) {
+    } else if (!justRetryDelay && targetMoved && !preservingLocalCorrection) {
         needPlan = true;
         reason = "target_moved";
-    } else if (!justRetryDelay && blockedNow) {
+    } else if (!justRetryDelay && blockedNow && !preservingLocalCorrection) {
         needPlan = true;
         reason = "blocked";
-    } else if (!justRetryDelay && progressFailed) {
+    } else if (!justRetryDelay && progressFailed && !preservingLocalCorrection) {
         needPlan = true;
         reason = "progress";
     }

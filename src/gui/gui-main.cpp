@@ -44,6 +44,7 @@
 #include "notifications/notifications.h"
 #include "camera.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "render/render-player.h"
 #include "render/lighting-config.h"
 #include "gui-layout.h"
@@ -63,6 +64,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <filesystem>
 #include <random>
 #include <glad/glad.h>
 #include <shellapi.h>
@@ -279,6 +281,31 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
     STARTUPINFOA si = { sizeof(si) };
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_SHOW;
+
+    // The client and its dedicated server are one diagnostic session. Create
+    // the canonical events path before spawning the child so the server cannot
+    // race ahead and create its own timestamped events.jsonl.
+    StructuredLogger::instance().init();
+    const std::string sharedEventsPath =
+        StructuredLogger::instance().eventsPath();
+    if (!sharedEventsPath.empty())
+    {
+        std::error_code pathError;
+        const std::string absoluteEventsPath =
+            std::filesystem::absolute(sharedEventsPath, pathError).string();
+        if (!pathError && !SetEnvironmentVariableA(
+                "MIMITA_EVENTS_FILE", absoluteEventsPath.c_str()))
+        {
+            printf("[SERVER LAUNCH] failed to export shared events file error=%lu\n",
+                   (unsigned long)GetLastError());
+        }
+        else
+        {
+            printf("[SERVER LAUNCH] shared events file: %s\n",
+                   pathError ? sharedEventsPath.c_str()
+                             : absoluteEventsPath.c_str());
+        }
+    }
 
     if (!CreateProcessA(nullptr, &args[0], nullptr, nullptr, FALSE,
                         CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &gServerProcessInfo))
