@@ -528,12 +528,19 @@ void EffectPartSystem::render(const Camera& camera) const {
     crackDecalVerts.clear();
 
     const std::string& bloodTexture = decalCfg.blood.texture;
+    const float bloodRenderFadeStart = std::max(0.0f, decalCfg.blood.renderFadeStartDistance);
+    const float bloodRenderDistance = std::max(0.0f, decalCfg.blood.renderDistance);
+    const float bloodRenderFadeEnd = std::max(
+        bloodRenderFadeStart,
+        std::min(bloodRenderDistance, decalCfg.blood.renderFadeEndDistance));
 
     for (const BloodParticle& particle : mBloodParticles) {
         const float dist = glm::length(particle.position - camera.pos);
-        if (dist > 40.0f)
+        if (dist > bloodRenderDistance)
             continue;
-        const float distFade = dist > 20.0f ? (40.0f - dist) / 20.0f : 1.0f;
+        const float fadeSpan = std::max(0.001f, bloodRenderFadeEnd - bloodRenderFadeStart);
+        const float distFade = dist > bloodRenderFadeStart
+            ? (bloodRenderFadeEnd - dist) / fadeSpan : 1.0f;
         const float alpha = std::max(0.0f, particle.alpha * distFade);
         if (alpha <= 0.001f)
             continue;
@@ -549,9 +556,21 @@ void EffectPartSystem::render(const Camera& camera) const {
 
     for (const SurfaceDecal& decal : mSurfaceDecals) {
         const float dist = glm::length(decal.position - camera.pos);
-        if (dist > 60.0f)
+        const auto& groupCfg = decal.kind == SurfaceDecalKind::Blood
+            ? decalCfg.blood
+            : (decal.kind == SurfaceDecalKind::BulletHole
+                ? decalCfg.bulletHoles
+                : decalCfg.worldCracks);
+        const float renderFadeStart = std::max(0.0f, groupCfg.renderFadeStartDistance);
+        const float renderDistance = std::max(0.0f, groupCfg.renderDistance);
+        const float renderFadeEnd = std::max(
+            renderFadeStart,
+            std::min(renderDistance, groupCfg.renderFadeEndDistance));
+        if (dist > renderDistance)
             continue;
-        const float distFade = dist > 40.0f ? (60.0f - dist) / 20.0f : 1.0f;
+        const float fadeSpan = std::max(0.001f, renderFadeEnd - renderFadeStart);
+        const float distFade = dist > renderFadeStart
+            ? (renderFadeEnd - dist) / fadeSpan : 1.0f;
         const float alpha = std::max(0.0f, decal.alpha * distFade);
         if (alpha <= 0.001f)
             continue;

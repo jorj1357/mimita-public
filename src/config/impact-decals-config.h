@@ -51,6 +51,9 @@ struct ImpactDecalGroupConfig {
     float alpha = 0.9f;
     float lifetime = 30.0f;
     float fadeTime = 5.0f;
+    float renderDistance = 60.0f;
+    float renderFadeStartDistance = 40.0f;
+    float renderFadeEndDistance = 60.0f;
     int maxCount = 256;
     // Flat textured decal rendering. The texture is sampled through an
     // alpha-blended surface-aligned quad (2 triangles) instead of a solid
