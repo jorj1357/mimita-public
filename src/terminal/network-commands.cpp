@@ -14,6 +14,7 @@
 #include "terminal/terminal-state.h"
 #include "network/net_mode.h"
 #include "network/server.h"
+#include "network/server-presets.h"
 #include "network/coordinator-client.h"
 #include "network/multiplayer-context.h"
 #include "network/disagreement-visuals.h"
@@ -354,6 +355,69 @@ void listNetworkConfigKnobs()
 
 void registerNetworkCommands()
 {
+    Terminal::instance().registerCommand({
+        "server_start_preset",
+        "Start a JSON-defined local server preset and join it",
+        "server_start_preset <preset>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[SERVER PRESET] Usage: server_start_preset <preset>");
+                return;
+            }
+
+            MimitaNet::ServerPreset preset;
+            std::string error;
+            if (!MimitaNet::loadServerPreset(args[0], preset, error)) {
+                Terminal::instance().addLog("[SERVER PRESET] failed: " + error);
+                return;
+            }
+
+            MimitaNet::ListenServerState* server = getListenServerState();
+            if (!server) {
+                Terminal::instance().addLog("[SERVER PRESET] failed: local server state unavailable");
+                return;
+            }
+            if (server->active || MP_CONTEXT.active) {
+                Terminal::instance().addLog("[SERVER PRESET] failed: a server or connection is already active");
+                return;
+            }
+
+            MimitaNet::ServerLaunchSettings settings;
+            settings.serverName = preset.serverName;
+            settings.mapName = preset.mapName;
+            settings.resolvedMapPath = "assets/maps/" + preset.mapName + ".glb";
+            settings.gameMode = preset.gameMode;
+            settings.maxPlayers = preset.maxPlayers;
+            settings.startupNpcsEnabled = preset.startupNpcsEnabled;
+            settings.startupNpcCount = preset.startupNpcCount;
+            settings.autoMapRotation = preset.autoMapRotation;
+            settings.mapRotationMinutes = preset.mapRotationMinutes;
+            settings.discordNotification = preset.discordNotification;
+            settings.startLocalServer = true;
+            settings.hostPlayerName = AuthSystem::instance().displayName();
+
+            if (!MimitaNet::startListenServer(*server, settings.port, "", "", &settings)) {
+                Terminal::instance().addLog("[SERVER PRESET] failed to start local server");
+                return;
+            }
+
+            if (preset.joinHost) {
+                MultiplayerConnectInfo connect;
+                connect.shouldConnect = true;
+                connect.directAddress = "127.0.0.1:" + std::to_string(settings.port);
+                connect.mapName = preset.mapName;
+                connect.serverName = preset.serverName;
+                setPendingMultiplayerConnect(connect);
+                GAME_STATE = GAME_PLAYING;
+            }
+
+            Terminal::instance().addLog(
+                "[SERVER PRESET] started " + preset.id + " map=" + preset.mapName +
+                " mode=" + preset.gameMode + " npcs=" +
+                (preset.startupNpcsEnabled ? "on" : "off"));
+        }
+    });
+
     Terminal::instance().registerCommand({
         "startserver", "Start the local game server",
         "startserver",

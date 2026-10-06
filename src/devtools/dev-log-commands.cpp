@@ -49,9 +49,11 @@ void registerDevLogCommands()
             std::ifstream in(path);
             std::string line;
             long long lines = 0, invalid = 0, npcEvents = 0;
+            long long deathEvents = 0, ragdollEvents = 0;
             bool sawClient = false, sawServer = false, sawStarted = false;
             std::map<std::string, int> eventCounts;
             std::map<std::string, int> categoryCounts;
+            std::map<std::string, std::map<std::string, int>> processCounts;
             if (in.is_open()) {
                 while (std::getline(in, line)) {
                     if (line.empty()) continue;
@@ -66,11 +68,16 @@ void registerDevLogCommands()
                     const std::string process = record.value("process", "");
                     if (process == "client") sawClient = true;
                     else if (process == "server") sawServer = true;
+                    if (!process.empty()) {
+                        ++processCounts[process][record.value("event", "")];
+                    }
                     const std::string event = record.value("event", "");
                     if (event == "logger.started") sawStarted = true;
                     if (!event.empty()) {
                         ++eventCounts[event];
                         if (event.rfind("npc.", 0) == 0) ++npcEvents;
+                        if (event.rfind("death.", 0) == 0) ++deathEvents;
+                        if (event.rfind("ragdoll.", 0) == 0) ++ragdollEvents;
                     }
                     const std::string category = record.value("category", "");
                     if (!category.empty()) ++categoryCounts[category];
@@ -86,7 +93,21 @@ void registerDevLogCommands()
                       "  (client and server should both appear above)\n\n";
             report += "records: " + std::to_string(lines) +
                       "  invalid_json=" + std::to_string(invalid) +
-                      "  npc_events=" + std::to_string(npcEvents) + "\n\n";
+                      "  npc_events=" + std::to_string(npcEvents) +
+                      "  death_events=" + std::to_string(deathEvents) +
+                      "  ragdoll_events=" + std::to_string(ragdollEvents) + "\n\n";
+
+            report += "records by process:\n";
+            for (const auto& process : processCounts) {
+                long long processRecords = 0;
+                for (const auto& event : process.second)
+                    processRecords += event.second;
+                report += "  " + process.first + ": " +
+                          std::to_string(processRecords) + " records\n";
+            }
+            if (deathEvents == 0 && ragdollEvents == 0)
+                report += "  WARNING: this journal currently contains no death or ragdoll events.\n";
+            report += "\n";
 
             report += "npc events:\n";
             bool anyNpc = false;

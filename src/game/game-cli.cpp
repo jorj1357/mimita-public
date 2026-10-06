@@ -89,12 +89,18 @@ static bool runVersionInfoCli()
 
     const std::string eventsPath = StructuredLogger::instance().eventsPath();
     const std::string runId = StructuredLogger::instance().runId();
+    const char* commandLine = GetCommandLineA();
+    const std::string processRole =
+        commandLine && (std::strstr(commandLine, "--server") ||
+                        std::strstr(commandLine, "-server"))
+        ? "server" : "client";
     const nlohmann::json info = {
         {"executable", exePath},
         {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
         {"working_directory", cwd},
         {"events_jsonl", eventsPath},
         {"run_id", runId},
+        {"process_role", processRole},
         {"build_date", __DATE__},
         {"build_time", __TIME__},
         {"arguments", "--versioninfo"}
@@ -117,6 +123,7 @@ static bool runVersionInfoCli()
     printf("VERSIONINFO_BEGIN\n");
     printf("EXECUTABLE_PATH=%s\n", exePath);
     printf("PID=%lu\n", static_cast<unsigned long>(GetCurrentProcessId()));
+    printf("PROCESS_ROLE=%s\n", processRole.c_str());
     printf("WORKING_DIRECTORY=%s\n", cwd);
     printf("EVENTS_JSONL_PATH=%s\n", eventsPath.c_str());
     printf("RUN_ID=%s\n", runId.c_str());

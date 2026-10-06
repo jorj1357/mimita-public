@@ -100,6 +100,10 @@
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
+
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include <windows.h>
 #include "game/duel.h"
 #include "gui/menus/duel-config-menu.h"
 #include "terminal/terminal-state.h"
@@ -165,6 +169,7 @@ extern std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorMo
 extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
 
 extern Renderer* gRenderer;
+extern bool gAiLaunchMode;
 
 void gameInit(int argc, char** argv, Engine& engine)
 {
@@ -245,5 +250,16 @@ void gameInit(int argc, char** argv, Engine& engine)
     NotificationSystem::instance().loadTipsConfig();
     Tips::load();
     NotificationSystem::instance().pushBuildNotice();
+
+    // Apply the AI/dev launch preference after all normal client startup work
+    // has finished. Earlier iconification can be undone by later window/UI
+    // initialization; doing it here leaves the window restorable and playable
+    // without taking over the desktop.
+    if (gAiLaunchMode) {
+        HWND hwnd = glfwGetWin32Window(engine.window());
+        if (hwnd)
+            ShowWindow(hwnd, SW_SHOWMINIMIZED);
+        glfwPollEvents();
+    }
 }
 

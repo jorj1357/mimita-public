@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "presets": {
+    "counterstrike_1": {
+      "server_name": "Counter-Strike 1",
+      "map": "dust2cyberiav4",
+      "mode": "counterstrike",
+      "startup_npcs": false,
+      "npc_count": 0,
+      "discord_notification": false,
+      "map_rotation": false,
+      "join_host": true
+    }
+  }
+}

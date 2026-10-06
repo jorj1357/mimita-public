@@ -13,6 +13,8 @@
 #include <cstdio>
 #include <fstream>
 #include <limits>
+
+extern bool gAiLaunchMode;
 #include <sstream>
 #include <string>
 
@@ -152,12 +154,21 @@ Renderer::Renderer(int w, int h, const char* title) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    if (gAiLaunchMode)
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     window = glfwCreateWindow(w, h, title, nullptr, nullptr);
     if (!window) {
         printf("Window creation failed\n");
         glfwTerminate();
         return;
+    }
+
+    // Keep AI/dev launches from taking over the user's desktop. The window is
+    // created hidden, then shown minimized so it remains restorable/playable.
+    if (gAiLaunchMode) {
+        glfwShowWindow(window);
+        glfwIconifyWindow(window);
     }
 
     glfwSetCursorPosCallback(window,

@@ -69,7 +69,7 @@
     "healthbar": { "level": "off", "file_output": false, "throttle": 0.0 },
     "skybox": { "level": "off", "file_output": false, "throttle": 0.0 },
     "chat_layout": { "level": "off", "file_output": false, "throttle": 0.0 },
-    "ragdoll": { "level": "off", "file_output": false, "throttle": 0.0 }
+    "ragdoll": { "level": "important", "file_output": false, "throttle": 0.0 }
   },
 
   "sampling": {

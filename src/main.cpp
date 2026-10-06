@@ -30,6 +30,7 @@
 #include <random>
 #include <filesystem>
 #include <shellapi.h>
+#include <windows.h>
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-loader.h"
@@ -112,6 +113,11 @@
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
+
+// Optional startup behavior for AI/dev launches. Normal launches leave both
+// flags false and retain the existing window/console behavior.
+bool gAiLaunchMode = false;
+bool gAiNoConsole = false;
 
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
@@ -209,6 +215,18 @@ bool gRoomCodeShow = true;
 
 int main(int argc, char** argv)
 {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--ai-launch") == 0)
+            gAiLaunchMode = true;
+        else if (strcmp(argv[i], "--ai-no-console") == 0)
+            gAiNoConsole = true;
+    }
+
+    if (gAiNoConsole) {
+        if (HWND console = GetConsoleWindow())
+            ShowWindow(console, SW_HIDE);
+    }
+
     // ── Parse --export-replay subprocess flags BEFORE other CLI handling ─
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--export-replay") == 0 && i + 1 < argc) {

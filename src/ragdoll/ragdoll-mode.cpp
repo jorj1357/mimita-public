@@ -2111,13 +2111,37 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
                                     uint32_t ownerId)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
-    if (!cfg.enabled) return;
-    if (!RagdollDeathConfig::instance().enabled()) return;
-    if (victim.physicalBody.parts.empty() || victim.physicalBody.partMeshes.empty())
-        return;
+    const uint32_t tick = static_cast<uint32_t>(victim.movementSimulationTick);
+    const std::string corpseId = actorId.empty() ? victim.username : actorId;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Ragdoll, StructuredLevel::Important,
+        "ragdoll.corpse.spawn.attempt", corpseId, "corpse spawn attempted", tick,
+        { {"actor_id", corpseId}, {"owner_id", ownerId},
+          {"position", {victim.pos.x, victim.pos.y, victim.pos.z}},
+          {"health", victim.currentHp}, {"ragdoll_enabled", cfg.enabled},
+          {"death_enabled", RagdollDeathConfig::instance().enabled()},
+          {"physical_part_count", victim.physicalBody.parts.size()},
+          {"physical_mesh_count", victim.physicalBody.partMeshes.size()} },
+        __FILE__, __LINE__, __FUNCTION__);
+
+    auto reject = [&](const char* reason) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Ragdoll, StructuredLevel::Important,
+            "ragdoll.corpse.spawn.rejected", corpseId, reason, tick,
+            { {"actor_id", corpseId}, {"reason", reason},
+              {"ragdoll_enabled", cfg.enabled},
+              {"death_enabled", RagdollDeathConfig::instance().enabled()},
+              {"physical_part_count", victim.physicalBody.parts.size()},
+              {"physical_mesh_count", victim.physicalBody.partMeshes.size()} },
+            __FILE__, __LINE__, __FUNCTION__);
+    };
+    if (!cfg.enabled) { reject("ragdoll_config_disabled"); return; }
+    if (!RagdollDeathConfig::instance().enabled()) { reject("death_config_disabled"); return; }
+    if (victim.physicalBody.parts.empty()) { reject("missing_physical_parts"); return; }
+    if (victim.physicalBody.partMeshes.empty()) { reject("missing_part_meshes"); return; }
 
     RagdollCorpse corpse;
-    corpse.actorId = actorId.empty() ? victim.username : actorId;
+    corpse.actorId = corpseId;
     corpse.ownerId = ownerId;
     corpse.actor = victim;
     corpse.actor.dead = true;
@@ -2168,6 +2192,16 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
         mCorpses.erase(mCorpses.begin());
 
     mCorpses.push_back(std::move(corpse));
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Ragdoll, StructuredLevel::Important,
+        "ragdoll.corpse.spawned", corpseId, "corpse inserted into active list", tick,
+        { {"actor_id", corpseId}, {"owner_id", ownerId},
+          {"parts", mCorpses.back().body.parts.size()},
+          {"active_corpses", mCorpses.size()},
+          {"lifetime_seconds", cfg.corpseLifetimeSeconds},
+          {"position", {victim.pos.x, victim.pos.y, victim.pos.z}} },
+        __FILE__, __LINE__, __FUNCTION__);
 
     Debug::log(Debug::Category::Ragdoll,
         "[RAGDOLL CORPSE] spawned actor=%s id=%u parts=%zu lifetime=%.1fs\n",
@@ -2255,8 +2289,26 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world)
         RagdollCorpse& corpse = *it;
         corpse.age += dt;
         if (corpse.age >= corpse.lifetime) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "ragdoll.corpse.removed", corpse.actorId,
+                "corpse lifetime expired", static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                { {"actor_id", corpse.actorId}, {"reason", "lifetime_expired"},
+                  {"age_seconds", corpse.age}, {"active_corpses_before", mCorpses.size()} },
+                __FILE__, __LINE__, __FUNCTION__);
             it = mCorpses.erase(it);
             continue;
+        }
+
+        if (!corpse.firstUpdateLogged) {
+            corpse.firstUpdateLogged = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "ragdoll.corpse.first_update", corpse.actorId,
+                "corpse entered simulation", static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                { {"actor_id", corpse.actorId}, {"age_seconds", corpse.age},
+                  {"position", {corpse.actor.pos.x, corpse.actor.pos.y, corpse.actor.pos.z}} },
+                __FILE__, __LINE__, __FUNCTION__);
         }
 
         const float fadeStart = std::max(0.0f, corpse.lifetime - cfg.corpseFadeSeconds);

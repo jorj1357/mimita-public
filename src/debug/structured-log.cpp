@@ -642,10 +642,15 @@ void StructuredLogger::init() {
     }
     mInitialized = true;
 
+    char exePath[MAX_PATH]{};
+    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    const char* role = processRole();
     writeEvent(StructuredCategory::General, StructuredLevel::Important,
                "logger.started", "", "canonical JSONL logger started", 0,
                {{"path", mEventsPath}, {"run_id", mRunId},
-                {"process", processRole()},
+                {"process", role},
+                {"process_role", role},
+                {"executable", exePath},
                 {"pid", static_cast<unsigned long long>(GetCurrentProcessId())}});
 
     Debug::log(Debug::Category::General,

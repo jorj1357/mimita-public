@@ -1,3 +1,17 @@
+2026 10 06 1323 jorj - todo explain  from here C:\mimita-v9\docs\features\gamemodes\counterstrike.md
+
+"2026 10 06 1323 jorj - todo explain the direction id like to go in where,
+ everything is hot reloadable, 
+ id love to ahve this stuff all be editable live.
+  especially like, 
+  you can edit one .cpp file live, 
+  compile live,
+   and it updates behavior live.
+    that would be awesome. 
+    just need to make a full spec for that as well "
+
+jorj: i believe this doc C:\mimita-v9\docs\specs\hotreload\hotreload.md here  is the one we should  edit to explain that 
+
 // 2026-09-08 10:13 EST
 /* purpose
 * document the current JSON hot-reload pipeline and its safe application boundary

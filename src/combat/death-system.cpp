@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <nlohmann/json.hpp>
 
 #include <glad/glad.h>
 #include "config.h"
@@ -92,7 +93,26 @@ bool DeathSystem::kill(
     auto tStart = clock::now();
     perfSetCorrelation(actorId.c_str());
 
+    const uint32_t eventTick = static_cast<uint32_t>(victim.movementSimulationTick);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Ragdoll, StructuredLevel::Important,
+        "death.kill.enter", actorId, "death kill path entered", eventTick,
+        { {"actor_id", actorId}, {"actor_type", actorType},
+          {"killer", killer}, {"health_before", victim.currentHp},
+          {"position", {victim.pos.x, victim.pos.y, victim.pos.z}},
+          {"lethal_force", lethalForce},
+          {"already_dead", victim.dead},
+          {"network_death_presented", victim.networkDeathPresented},
+          {"physical_part_count", victim.physicalBody.parts.size()},
+          {"physical_mesh_count", victim.physicalBody.partMeshes.size()} },
+        __FILE__, __LINE__, __FUNCTION__);
+
     if (victim.dead) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Ragdoll, StructuredLevel::Important,
+            "death.kill.suppressed", actorId, "victim already dead", eventTick,
+            { {"actor_id", actorId}, {"reason", "already_dead"} },
+            __FILE__, __LINE__, __FUNCTION__);
         perfClearCorrelation();
         return false;
     }
@@ -123,8 +143,23 @@ bool DeathSystem::kill(
     if (!victim.networkDeathPresented)
     {
         victim.networkDeathPresented = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Ragdoll, StructuredLevel::Important,
+            "death.ragdoll.requested", actorId,
+            "first death presentation for life", eventTick,
+            { {"actor_id", actorId}, {"position", {victim.pos.x, victim.pos.y, victim.pos.z}},
+              {"health_before", victim.currentHp}, {"spawn_generation", victim.spawnGeneration} },
+            __FILE__, __LINE__, __FUNCTION__);
         RagdollModeSystem::instance().spawnCorpse(
             victim, direction * lethalForce, actorId, 0);
+    }
+    else {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Ragdoll, StructuredLevel::Important,
+            "death.ragdoll.suppressed", actorId,
+            "death presentation already emitted for life", eventTick,
+            { {"actor_id", actorId}, {"reason", "network_death_presented"} },
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     // Step 3: mark the victim dead for gameplay only (respawn logic, hit

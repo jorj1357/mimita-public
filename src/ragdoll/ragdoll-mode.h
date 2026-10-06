@@ -185,6 +185,8 @@ private:
         float fade = 0.0f;
         float bloodTimer = 0.0f;
         bool bloodInit = false;
+        bool firstUpdateLogged = false;
+        bool firstRenderLogged = false;
         glm::vec3 lastBloodPos{0.0f};
     };
 
