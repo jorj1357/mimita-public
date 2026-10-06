@@ -48,6 +48,7 @@
 #include "terminal/terminal-state.h"
 #include "world/world.h"
 #include "physics/movement/physics-collision.h"
+#include "ragdoll/ragdoll-mode.h"
 
 namespace MimitaNet {
 namespace {
@@ -1276,9 +1277,49 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         {
             if (gpPlayer)
             {
+                const int healthBefore = gpPlayer->currentHp;
+                const bool presentedBefore = gpPlayer->networkDeathPresented;
                 gpPlayer->currentHp = std::max(0, event->healthAfter);
                 gpPlayer->maxHp = std::max(gpPlayer->maxHp, gpPlayer->currentHp);
                 gpPlayer->dead = event->killed != 0 || gpPlayer->currentHp <= 0;
+
+                if (event->killed != 0)
+                {
+                    const bool spawnEligible = !presentedBefore;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "client.local.death.applied", std::to_string(ctx.localPlayerId),
+                        "client applied authoritative local-player death", event->header.tick,
+                        { {"actor_id", ctx.localPlayerId},
+                          {"health_before", healthBefore},
+                          {"health_after", gpPlayer->currentHp},
+                          {"network_death_presented_before", presentedBefore},
+                          {"spawn_eligible", spawnEligible},
+                          {"position", {gpPlayer->pos.x, gpPlayer->pos.y, gpPlayer->pos.z}} },
+                        __FILE__, __LINE__, __FUNCTION__);
+                    if (spawnEligible)
+                    {
+                        gpPlayer->networkDeathPresented = true;
+                        RagdollModeSystem::instance().spawnCorpse(
+                            *gpPlayer,
+                            glm::vec3(event->knockX, event->knockY, event->knockZ),
+                            "net_player_" + std::to_string(ctx.localPlayerId),
+                            ctx.localPlayerId);
+                    }
+                    else
+                    {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Network, StructuredLevel::Important,
+                            "client.local.death.presentation_skipped",
+                            std::to_string(ctx.localPlayerId),
+                            "client skipped duplicate local-player death presentation",
+                            event->header.tick,
+                            { {"actor_id", ctx.localPlayerId},
+                              {"network_death_presented_before", presentedBefore},
+                              {"reason", "network_death_presented_already_true"} },
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
+                }
 
                 // The killfeed line for NPC→player kills is owned by the single
                 // authoritative KillEventPacket, so it is no longer built here.

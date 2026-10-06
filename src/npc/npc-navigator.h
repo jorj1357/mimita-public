@@ -12,6 +12,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -102,6 +103,16 @@ struct NpcNavResult
     int pathNodeCount = 0;      // nodes in the route after a successful plan
     bool travelTargetChanged = false;   // a new persistent explore target was set
     glm::vec3 travelTargetOut{0.0f};
+    // Compare-only Recast/Detour evidence. It never changes the authoritative
+    // custom route in the initial migration phase.
+    bool recastCompareAttempted = false;
+    bool recastCompareAvailable = false;
+    bool recastCompareSuccess = false;
+    std::uint64_t recastNavmeshVersion = 0;
+    int recastPolygonCount = 0;
+    float recastPathLength = 0.0f;
+    double recastQueryMilliseconds = 0.0;
+    std::string recastFailure;
 };
 
 // Maximum vertical rise the actor can clear with a jump, from its movement

@@ -117,6 +117,15 @@ Added four bounded canonical `events.jsonl` events at the owning code paths:
   - adds the same server damage/death events to the Counter-Strike NPC
     hitscan path, which directly mutates `ServerNpc.health` and therefore does
     not pass through the player damage function.
+- `src/combat/weapon-fire-damage.cpp`
+  - records predicted-death entry, already-dead/already-predicted skips,
+    presentation skips, and the resulting prediction state.
+- `src/network/multiplayer-shots.cpp`
+  - records reliable NPC death receipt, replica presence, flag values before
+    handling, and explicit presentation-skip reasons.
+- `src/network/multiplayer-interpolation.cpp`
+  - records the death-presentation reset before and after values, including the
+    actor ID, health, and snapshot tick.
 
 Follow-up build:
 
@@ -126,3 +135,41 @@ Follow-up build:
 - Runtime identity probe: `PROCESS_ROLE=client`,
   `EVENTS_JSONL_PATH=logs/10-06-2026/20261006_144254/events.jsonl`.
 - Tests: none added or run; this remains a live executable investigation.
+
+Evidence-only follow-up build:
+
+- Executable: `C:\mimita-v9\.dev\builds\1554\mimita.exe`
+- Build status: SUCCESS; 1 source file compiled and linked after the
+  diagnostic additions.
+- Runtime identity probe: `PROCESS_ROLE=client`,
+  `EVENTS_JSONL_PATH=logs/10-06-2026/20261006_145212/events.jsonl`.
+- No ragdoll behavior fix was applied in this pass.
+- Tests: none added or run; the next step is live gameplay evidence.
+
+## Ragdoll Attempt 1 behavior fix
+
+Inspection of `logs/10-06-2026/20261006_145207/events.jsonl` found three NPC
+death presentations skipped because `networkDeathPresented` was already true
+from an earlier life, with no intervening NPC reset event. The same journal
+had 14 corpse attempts, 14 successful spawns, zero rejections, and zero
+evictions, so this occurrence moved the primary failure boundary to per-life
+state and the missing local-player presentation path.
+
+Implemented:
+
+- `src/network/multiplayer-interpolation.cpp` clears
+  `networkDeathPresented` during the fallback dead-to-alive health reset and
+  logs `client.death.presentation.health_reset` plus its completion event.
+- `src/network/multiplayer-projectiles.cpp` now presents one corpse for a
+  lethal authoritative local-player damage confirmation and logs local apply
+  and duplicate-skip outcomes.
+- A detailed regression/spec record was added at
+  `docs/regressions/2026-10-06/ragdoll-per-death-presentation-ATTEMPT-1-REG.md`.
+
+Validation:
+
+- Executable: `C:\mimita-v9\.dev\builds\1561\mimita.exe`
+- Build status: SUCCESS.
+- Runtime identity probe: `PROCESS_ROLE=client`,
+  `EVENTS_JSONL_PATH=logs/10-06-2026/20261006_150036/events.jsonl`.
+- Tests: none added or run; live gameplay acceptance remains pending.

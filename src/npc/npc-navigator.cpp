@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <string>
 
@@ -23,6 +24,7 @@
 #include "npc/npc-nav-request.h"
 #include "npc/npc-nav-graph.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/recast-navigation.h"
 #include "config/movement-config.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
@@ -48,6 +50,12 @@ constexpr float kBlockedRetryInterval = 0.5f;  // no-route retry delay
 constexpr float kGoalMoveThreshold = 2.5f;
 constexpr int kMaxPlansPerSecond = 16;
 constexpr int kMaxSurfacesPerColumn = 4;  // stacked floors/bridges per X/Y
+
+bool recastCompareEnabled()
+{
+    const char* value = std::getenv("MIMITA_NPC_NAV_COMPARE");
+    return value && (std::string(value) == "1" || std::string(value) == "true");
+}
 constexpr float kWalkableNormalZ = NpcNavigation::kWalkableSlopeDot;
 
 // One standable surface node in the flattened A* graph. Multiple nodes may
@@ -1062,6 +1070,34 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         if (!planned) {
             planned = planLocalPath(npc, dest, world, cfg, eff, policy,
                                     plan, planGaps, planCaps) && !plan.empty();
+        }
+
+        // Phase-2 migration evidence: ask Recast/Detour the same request but
+        // keep the custom planner authoritative. The environment gate keeps
+        // the expensive first bake out of ordinary sessions until a reviewer
+        // deliberately enables compare mode for a real runtime trace.
+        if (recastCompareEnabled()) {
+            const Capsule& capsule = npc.body.getCapsule();
+            NavigationAgentProfile profile;
+            profile.radius = std::max(0.05f, capsule.r);
+            profile.height = std::max(0.2f, glm::length(capsule.b - capsule.a) +
+                                               2.0f * capsule.r);
+            profile.stepHeight = std::max(0.01f, eff.maxStepHeight);
+            const float slopeDot = eff.maxWalkableSlopeDot > 0.0f
+                ? eff.maxWalkableSlopeDot : NpcNavigation::kWalkableSlopeDot;
+            profile.maxSlopeDegrees = glm::degrees(std::acos(
+                std::clamp(slopeDot, -1.0f, 1.0f)));
+            const RecastNavigationResult recast =
+                RecastNavigationBackend::instance().query(world, npc.body.pos,
+                                                           dest, profile);
+            result.recastCompareAttempted = true;
+            result.recastCompareAvailable = recast.available;
+            result.recastCompareSuccess = recast.success;
+            result.recastNavmeshVersion = recast.navmeshVersion;
+            result.recastPolygonCount = recast.polygonCount;
+            result.recastPathLength = recast.pathLength;
+            result.recastQueryMilliseconds = recast.queryMilliseconds;
+            result.recastFailure = recast.failure;
         }
 
         if (planned) {

@@ -856,6 +856,33 @@ static void emitNavPlanEvents(const Npc& npc, const NpcNavResult& nav,
     auto& log = StructuredLogger::instance();
     const uint32_t tick = (uint32_t)(npc.sensors.time * 60.0f);
 
+    if (nav.recastCompareAttempted) {
+        log.writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.nav.compare", std::to_string(npc.id),
+            nav.recastCompareSuccess ? "recast_success" :
+                (nav.recastFailure.empty() ? "recast_failed" :
+                    nav.recastFailure.c_str()),
+            tick,
+            nlohmann::json{
+                {"actor", npc.id},
+                {"team", npc.body.matchTeam},
+                {"profile", npc.behaviorProfileId},
+                {"preset", npc.actorPresetId},
+                {"backend_authoritative", "custom"},
+                {"backend_compared", "recast_detour"},
+                {"available", nav.recastCompareAvailable},
+                {"success", nav.recastCompareSuccess},
+                {"navmesh_version", nav.recastNavmeshVersion},
+                {"polygon_count", nav.recastPolygonCount},
+                {"path_length", nav.recastPathLength},
+                {"query_ms", nav.recastQueryMilliseconds},
+                {"destination", {nav.destination.x, nav.destination.y,
+                                  nav.destination.z}},
+                {"failure", nav.recastFailure}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     // Persistent travel goal changed (Explore retarget). Change-edge only.
     if (nav.travelTargetChanged) {
         log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Important,

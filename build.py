@@ -184,6 +184,9 @@ INCLUDE_FLAGS = [
     f"-I{GLFW_INCLUDE}",
     f"-I{LIBJUICE_DIR}/include",
     f"-I{MANIFOLD_INCLUDE}",
+    f"-I{ROOT}/external/recastnavigation/Recast/Include",
+    f"-I{ROOT}/external/recastnavigation/Detour/Include",
+    f"-I{ROOT}/external/recastnavigation/DetourTileCache/Include",
 ]
 
 DEFINE_FLAGS = [
@@ -322,6 +325,32 @@ def find_cpp_files():
 
     return out
 
+
+RECAST_SOURCE_DIRS = [
+    os.path.join(ROOT, "external", "recastnavigation", "Recast", "Source"),
+    os.path.join(ROOT, "external", "recastnavigation", "Detour", "Source"),
+    os.path.join(ROOT, "external", "recastnavigation", "DetourTileCache", "Source"),
+]
+
+
+def find_recast_cpp_files():
+    out = []
+    for source_dir in RECAST_SOURCE_DIRS:
+        for name in sorted(os.listdir(source_dir)):
+            if name.endswith(".cpp"):
+                out.append(os.path.join(source_dir, name))
+    return out
+
+
+def recast_obj_path(src):
+    rel = os.path.relpath(src, ROOT).replace("\\", "_").replace("/", "_")
+    return os.path.join(OBJ_DIR, rel + ".o")
+
+
+def recast_source_changed(src):
+    obj = recast_obj_path(src)
+    return not os.path.exists(obj) or os.path.getmtime(src) >= os.path.getmtime(obj)
+
 # ============================================================
 # CLEAN
 # ============================================================
@@ -459,6 +488,32 @@ def compile_cpp_file(src):
 
     return ("compiled", src)
 
+
+def compile_recast_file(src):
+    obj = recast_obj_path(src)
+    os.makedirs(os.path.dirname(obj), exist_ok=True)
+    if not recast_source_changed(src):
+        return ("skip", src)
+
+    print("[CXX ]", os.path.relpath(src, ROOT))
+    cmd = ccache_cmd() + ["-c", src, "-o", obj]
+    cmd += CXX_FLAGS
+    cmd += [
+        "-DRC_DISABLE_ASSERTS",
+        f"-I{ROOT}/external/recastnavigation/Recast/Include",
+        f"-I{ROOT}/external/recastnavigation/Detour/Include",
+        f"-I{ROOT}/external/recastnavigation/DetourTileCache/Include",
+    ]
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        try:
+            if os.path.exists(obj):
+                os.remove(obj)
+        except PermissionError:
+            pass
+        return ("fail", src)
+    return ("compiled", src)
+
 # ============================================================
 # PARALLEL COMPILE CPP FILES
 # ============================================================
@@ -494,6 +549,31 @@ with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
             print(" BUILD FAILED")
             print("==================================================")
 
+            sys.exit(1)
+
+# ============================================================
+# COMPILE VENDORED RECAST / DETOUR SOURCES
+# ============================================================
+
+recast_cpp_files = find_recast_cpp_files()
+with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
+    futures = []
+    for src in recast_cpp_files:
+        object_files.append(recast_obj_path(src))
+        futures.append(executor.submit(compile_recast_file, src))
+
+    for future in as_completed(futures):
+        status, src = future.result()
+        if status == "skip":
+            print("[SKIP]", os.path.relpath(src, ROOT))
+            skipped_count += 1
+        elif status == "compiled":
+            compiled_count += 1
+        else:
+            print()
+            print("==================================================")
+            print(" RECAST/DETOUR BUILD FAILED")
+            print("==================================================")
             sys.exit(1)
 
 # ============================================================

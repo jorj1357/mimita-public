@@ -21,6 +21,7 @@
 #include "npc/npc-difficulty-config.h"
 #include "npc/npc-behavior.h"
 #include "npc/npc-navigation.h"
+#include "npc/recast-navigation.h"
 #include "npc/npc-targeting.h"
 
 #include "debug/structured-log.h"
@@ -40,7 +41,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
+#include <string>
 #include <utility>
 
 namespace MimitaNet {
@@ -124,6 +127,26 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
            npcWorld.collisionMesh.triangles.size(), npcWorld.collisionChunks.size(),
            npcWorld.collisionLargeTriangles.size(), npcWorld.collisionLargeChunks.size(),
            npcWorld.collisionTree.nodes.size());
+
+    const char* compare = std::getenv("MIMITA_NPC_NAV_COMPARE");
+    if (compare && (std::string(compare) == "1" || std::string(compare) == "true")) {
+        NavigationAgentProfile profile;
+        const RecastNavigationResult nav =
+            RecastNavigationBackend::instance().prepare(npcWorld, profile);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            nav.available ? "npc.navmesh.bake-success" : "npc.navmesh.bake-failed",
+            "server", nav.available ? "prepared" :
+                (nav.failure.empty() ? "failed" : nav.failure.c_str()), 0,
+            nlohmann::json{
+                {"backend", "recast_detour"},
+                {"available", nav.available},
+                {"navmesh_version", nav.navmeshVersion},
+                {"triangle_count", npcWorld.collisionMesh.triangles.size()},
+                {"query_ms", nav.queryMilliseconds},
+                {"failure", nav.available ? "" : nav.failure}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)

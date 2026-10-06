@@ -1468,14 +1468,37 @@ void updateRenderedReplica(
     if (interpolation.hasRendered &&
         interpolation.lastRender.health <= 0 && render.health > 0)
     {
+        const bool presentedBefore = player.networkDeathPresented;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "client.death.presentation.health_reset", std::to_string(entityId),
+            "client cleared death presentation state after health reset", render.serverTick,
+            { {"actor_id", entityId},
+              {"health_before", interpolation.lastRender.health},
+              {"health_after", render.health},
+              {"net_predicted_dead_before", player.netPredictedDead},
+              {"network_death_presented_before", presentedBefore},
+              {"position", {render.position.x, render.position.y, render.position.z}} },
+            __FILE__, __LINE__, __FUNCTION__);
         player.deathAnim = Player::DeathAnimState{};
         player.netPredictedDead = false;
+        player.networkDeathPresented = false;
         player.dead = false;
         player.currentHp = render.health;
         interpolation.pendingPredictedDamage = 0;
         interpolation.predictedHealthCap = -1;
         interpolation.authoritativeHealthTick = render.serverTick;
         interpolation.authoritativeHealth = render.health;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "client.death.presentation.health_reset.complete", std::to_string(entityId),
+            "client death presentation state cleared after health reset", render.serverTick,
+            { {"actor_id", entityId},
+              {"health_after", render.health},
+              {"net_predicted_dead_after", player.netPredictedDead},
+              {"network_death_presented_after", player.networkDeathPresented},
+              {"position", {render.position.x, render.position.y, render.position.z}} },
+            __FILE__, __LINE__, __FUNCTION__);
         Debug::warn(Debug::Category::Networking,
             "[NET REMOTE RESPAWN RECOVER] entityId=%u lastHp=%d renderHp=%d "
             "netPredictedDead=%d — full death state cleared\n",
