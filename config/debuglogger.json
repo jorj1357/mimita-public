@@ -48,7 +48,7 @@
       "file_output": true,
       "throttle": 0.0
     },
-    "world": { "level": "off", "file_output": false },
+    "world": { "level": "important", "file_output": false },
     "duel": { "level": "off", "file_output": false },
     "auth": { "level": "off", "file_output": false },
     "chat": { "level": "off", "file_output": false },

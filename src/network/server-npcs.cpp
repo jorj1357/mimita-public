@@ -129,10 +129,20 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
            npcWorld.collisionTree.nodes.size());
 
     const char* compare = std::getenv("MIMITA_NPC_NAV_COMPARE");
-    if (compare && (std::string(compare) == "1" || std::string(compare) == "true")) {
+    const char* backend = std::getenv("MIMITA_NPC_NAV_BACKEND");
+    const bool compareEnabled =
+        compare && (std::string(compare) == "1" || std::string(compare) == "true");
+    const bool recastBackendEnabled =
+        backend && (std::string(backend) == "recast" ||
+                     std::string(backend) == "compare");
+    if (compareEnabled || recastBackendEnabled) {
         NavigationAgentProfile profile;
         const RecastNavigationResult nav =
             RecastNavigationBackend::instance().prepare(npcWorld, profile);
+        // A successful bake only proves the navmesh was built. It deliberately
+        // does not claim a route exists; route success is reported per query by
+        // npc.nav.compare. Walkable/poly counts prove the converted geometry
+        // produced a usable surface (a Z-up/Y-up mismatch yields zero).
         StructuredLogger::instance().writeEvent(
             StructuredCategory::NpcMovement, StructuredLevel::Important,
             nav.available ? "npc.navmesh.bake-success" : "npc.navmesh.bake-failed",
@@ -140,10 +150,18 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
                 (nav.failure.empty() ? "failed" : nav.failure.c_str()), 0,
             nlohmann::json{
                 {"backend", "recast_detour"},
+                {"coordinate_system", nav.coordinateSystem},
                 {"available", nav.available},
                 {"navmesh_version", nav.navmeshVersion},
                 {"triangle_count", npcWorld.collisionMesh.triangles.size()},
-                {"query_ms", nav.queryMilliseconds},
+                {"walkable_triangles", nav.walkableTriangleCount},
+                {"navmesh_polys", nav.navMeshPolyCount},
+                {"navmesh_verts", nav.navMeshVertCount},
+                {"recast_bounds_min", {nav.recastBoundsMin.x, nav.recastBoundsMin.y,
+                                       nav.recastBoundsMin.z}},
+                {"recast_bounds_max", {nav.recastBoundsMax.x, nav.recastBoundsMax.y,
+                                       nav.recastBoundsMax.z}},
+                {"build_ms", nav.buildMilliseconds},
                 {"failure", nav.available ? "" : nav.failure}},
             __FILE__, __LINE__, __FUNCTION__);
     }

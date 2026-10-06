@@ -53,6 +53,41 @@ public facing readme
 sooooo
 pshhhh whatver 
 
+### whats in v2.1.0
+todo 2026 10 06 1633 jorj expand
+
+core
+1. ragdoll on death and navigable map in ragdoll mode with G
+
+core but not here yet
+1. counter strike mode that is up to standard and is difficult not just ez 
+2. zombie tower!!!!!! with anims, models, sounds, music, etc!!!
+boss creator, monster creator , etc 
+also go hard on visuals!!!! this is old roblox, bad textures, bad sound quality, old roblox sounds, choppy ish animations, difficult but fun and rewarding 
+
+3. infinite dungeon slayer!!!! reuse zomb tower things, infinite world generation
+4. vehicles!!!!!!! drivable vehicles, and expand to be skatebaord and bmx???
+5. payload!!!! combine all previous , espeically npc behavior, make it fun like tf2
+6. bomb tag!!!!! npc behavior should make it difficult with like a bunch of npcs
+7. juggernaut.... thats awesomeeeee do this do do this 
+8. DUELS: first to 20, instant respawn, restricted weapon set, competitive rules, this is like, the actual tryhard mode, 1v1
+9. fully made destructible world: todo, do this here? or later? when would we even use it? idk but i want it
+10. portal guns and gravity gun Heheh
+
+side
+1. new maps, sounds, little tweaks etc
+
+### whats after v2.1.0, e.g. v2.2.0?
+
+core
+1. stabilize editors and creation for others, so
+u can make ur own maps
+ur own lua scripts calling API things
+make ur own mods and share with others 
+much more things config editable 
+
+
+
 # stage 1: immediate future
 
 # stage 2: after stage 1

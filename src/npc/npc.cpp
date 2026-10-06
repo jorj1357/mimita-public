@@ -859,17 +859,20 @@ static void emitNavPlanEvents(const Npc& npc, const NpcNavResult& nav,
     if (nav.recastCompareAttempted) {
         log.writeEvent(
             StructuredCategory::NpcMovement, StructuredLevel::Important,
-            "npc.nav.compare", std::to_string(npc.id),
-            nav.recastCompareSuccess ? "recast_success" :
-                (nav.recastFailure.empty() ? "recast_failed" :
-                    nav.recastFailure.c_str()),
+            nav.recastAuthoritative ? "npc.nav.result" : "npc.nav.compare",
+            std::to_string(npc.id),
+            nav.recastAuthoritative ? "recast_route" :
+                (nav.recastCompareSuccess ? "recast_success" :
+                    (nav.recastFailure.empty() ? "recast_failed" :
+                        nav.recastFailure.c_str())),
             tick,
             nlohmann::json{
                 {"actor", npc.id},
                 {"team", npc.body.matchTeam},
                 {"profile", npc.behaviorProfileId},
                 {"preset", npc.actorPresetId},
-                {"backend_authoritative", "custom"},
+                {"backend_authoritative",
+                 nav.recastAuthoritative ? "recast_detour" : "custom"},
                 {"backend_compared", "recast_detour"},
                 {"available", nav.recastCompareAvailable},
                 {"success", nav.recastCompareSuccess},
@@ -877,6 +880,17 @@ static void emitNavPlanEvents(const Npc& npc, const NpcNavResult& nav,
                 {"polygon_count", nav.recastPolygonCount},
                 {"path_length", nav.recastPathLength},
                 {"query_ms", nav.recastQueryMilliseconds},
+                {"start_poly_found", nav.recastStartPolyFound},
+                {"dest_poly_found", nav.recastDestPolyFound},
+                {"start_poly_ref", nav.recastStartPolyRef},
+                {"dest_poly_ref", nav.recastDestPolyRef},
+                {"nearest_start", {nav.recastNearestStart.x, nav.recastNearestStart.y,
+                                   nav.recastNearestStart.z}},
+                {"nearest_dest", {nav.recastNearestDest.x, nav.recastNearestDest.y,
+                                  nav.recastNearestDest.z}},
+                {"start_projection_m", nav.recastStartProjectionDistance},
+                {"dest_projection_m", nav.recastDestProjectionDistance},
+                {"source", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
                 {"destination", {nav.destination.x, nav.destination.y,
                                   nav.destination.z}},
                 {"failure", nav.recastFailure}},

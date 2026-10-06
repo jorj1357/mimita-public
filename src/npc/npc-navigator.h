@@ -112,6 +112,18 @@ struct NpcNavResult
     int recastPolygonCount = 0;
     float recastPathLength = 0.0f;
     double recastQueryMilliseconds = 0.0;
+    bool recastStartPolyFound = false;
+    bool recastDestPolyFound = false;
+    std::uint64_t recastStartPolyRef = 0;
+    std::uint64_t recastDestPolyRef = 0;
+    glm::vec3 recastNearestStart{0.0f};
+    glm::vec3 recastNearestDest{0.0f};
+    float recastStartProjectionDistance = 0.0f;
+    float recastDestProjectionDistance = 0.0f;
+    // True when the Recast/Detour route supplied the authoritative path this
+    // update. False means the custom planner owned it (compare mode or a
+    // bounded Recast fallback).
+    bool recastAuthoritative = false;
     std::string recastFailure;
 };
 

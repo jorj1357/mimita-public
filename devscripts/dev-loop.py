@@ -598,10 +598,10 @@ class DevLoop:
                 self.build_pending = self.latest_stale
             print(f"[DEV] published build {number}: {destination}")
             self.save_state("success")
-            # A background build only launches when auto-start is ON. A [1]
-            # request is an explicit one-shot override and still launches
-            # even when auto-start is OFF.
-            should_launch = self.auto_restart or self.manual_launch_requested
+            # File-watcher builds are background compilation/publish only.
+            # Launching a new client is an explicit [1] action, so editing a
+            # C++ file never interrupts the currently running game.
+            should_launch = self.manual_launch_requested
             if not self.latest_stale and should_launch:
                 self.manual_launch_requested = False
                 self.restart_latest()

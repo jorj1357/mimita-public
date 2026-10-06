@@ -1,3 +1,5 @@
+2026 10 06 1602 jorj todo move this somehwer else bc i don think we need this 
+
 # Free-for-all mode
 
 ## Purpose

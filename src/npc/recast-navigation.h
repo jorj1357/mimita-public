@@ -29,6 +29,32 @@ struct RecastNavigationResult
     float pathLength = 0.0f;
     int polygonCount = 0;
     double queryMilliseconds = 0.0;
+    double buildMilliseconds = 0.0;
+
+    // Build diagnostics. MiMITA is Z-up while Recast expects Y-up; the adapter
+    // converts geometry into Recast space. These values prove the walkable
+    // surface actually exists after conversion instead of trusting the bake.
+    std::string coordinateSystem;
+    int sourceTriangleCount = 0;
+    int walkableTriangleCount = 0;
+    int navMeshPolyCount = 0;
+    int navMeshVertCount = 0;
+    glm::vec3 recastBoundsMin{0.0f};
+    glm::vec3 recastBoundsMax{0.0f};
+
+    // Query diagnostics. These distinguish the first failing stage instead of
+    // collapsing every failure into "path_not_found".
+    bool startPolyFound = false;
+    bool destPolyFound = false;
+    std::uint64_t startPolyRef = 0;
+    std::uint64_t destPolyRef = 0;
+    glm::vec3 nearestStart{0.0f};
+    glm::vec3 nearestDest{0.0f};
+    // How far the requested point was projected onto the navmesh. A large
+    // value means the goal was off the surface; the contract forbids hiding
+    // that, so it is always reported.
+    float startProjectionDistance = 0.0f;
+    float destProjectionDistance = 0.0f;
 };
 
 class RecastNavigationBackend
@@ -38,8 +64,7 @@ public:
 
     // Build/load the current world representation before gameplay begins.
     // This keeps the first expensive Recast bake out of a fixed simulation
-    // tick. The returned query fields are diagnostic; no route is authoritative
-    // during the compare phase.
+    // tick. During the compare phase no route is authoritative.
     RecastNavigationResult prepare(const World& world,
                                    const NavigationAgentProfile& profile);
 

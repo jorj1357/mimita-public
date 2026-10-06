@@ -56,6 +56,24 @@ bool recastCompareEnabled()
     const char* value = std::getenv("MIMITA_NPC_NAV_COMPARE");
     return value && (std::string(value) == "1" || std::string(value) == "true");
 }
+
+// Explicit navigation backend selection. Never inferred from gamemode. The
+// default is custom; compare keeps the custom route authoritative while
+// Recast is observed; recast promotes the Recast/Detour route, with the custom
+// planner retained as a bounded fallback.
+enum class RecastBackend { Custom, Compare, Recast };
+
+RecastBackend recastBackendMode()
+{
+    const char* value = std::getenv("MIMITA_NPC_NAV_BACKEND");
+    if (value) {
+        const std::string v(value);
+        if (v == "recast") return RecastBackend::Recast;
+        if (v == "compare") return RecastBackend::Compare;
+        if (v == "custom") return RecastBackend::Custom;
+    }
+    return recastCompareEnabled() ? RecastBackend::Compare : RecastBackend::Custom;
+}
 constexpr float kWalkableNormalZ = NpcNavigation::kWalkableSlopeDot;
 
 // One standable surface node in the flattened A* graph. Multiple nodes may
@@ -1072,11 +1090,13 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
                                     plan, planGaps, planCaps) && !plan.empty();
         }
 
-        // Phase-2 migration evidence: ask Recast/Detour the same request but
-        // keep the custom planner authoritative. The environment gate keeps
-        // the expensive first bake out of ordinary sessions until a reviewer
-        // deliberately enables compare mode for a real runtime trace.
-        if (recastCompareEnabled()) {
+        // Recast/Detour request. In compare mode the custom plan above stays
+        // authoritative and Recast is observational evidence. In recast mode a
+        // successful corridor replaces the custom path (same format), so the
+        // shared follow/traversal/movement execution is reused unchanged. If
+        // Recast cannot route, the custom plan remains the bounded fallback.
+        const RecastBackend navBackend = recastBackendMode();
+        if (navBackend != RecastBackend::Custom) {
             const Capsule& capsule = npc.body.getCapsule();
             NavigationAgentProfile profile;
             profile.radius = std::max(0.05f, capsule.r);
@@ -1097,7 +1117,36 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
             result.recastPolygonCount = recast.polygonCount;
             result.recastPathLength = recast.pathLength;
             result.recastQueryMilliseconds = recast.queryMilliseconds;
+            result.recastStartPolyFound = recast.startPolyFound;
+            result.recastDestPolyFound = recast.destPolyFound;
+            result.recastStartPolyRef = recast.startPolyRef;
+            result.recastDestPolyRef = recast.destPolyRef;
+            result.recastNearestStart = recast.nearestStart;
+            result.recastNearestDest = recast.nearestDest;
+            result.recastStartProjectionDistance = recast.startProjectionDistance;
+            result.recastDestProjectionDistance = recast.destProjectionDistance;
             result.recastFailure = recast.failure;
+
+            if (navBackend == RecastBackend::Recast && recast.success &&
+                !recast.points.empty()) {
+                std::vector<glm::vec3> recastPlan = recast.points;
+                // The straight path starts at the projected actor position;
+                // drop it when it is already within arrival range.
+                if (!recastPlan.empty()) {
+                    const glm::vec3 first = recastPlan.front();
+                    const float fdx = first.x - npc.body.pos.x;
+                    const float fdy = first.y - npc.body.pos.y;
+                    if (std::sqrt(fdx * fdx + fdy * fdy) <= kReachXZ)
+                        recastPlan.erase(recastPlan.begin());
+                }
+                if (!recastPlan.empty()) {
+                    plan = std::move(recastPlan);
+                    planGaps.assign(plan.size(), 0);
+                    planCaps.assign(plan.size(), (uint8_t)NavCapability::Walk);
+                    planned = true;
+                    result.recastAuthoritative = true;
+                }
+            }
         }
 
         if (planned) {

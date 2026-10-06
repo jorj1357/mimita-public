@@ -4,6 +4,7 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "map/map-loader-collision.h"
 #include "config/collision-lod-config.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cctype>
@@ -174,11 +175,41 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
     std::string err;
     std::string warn;
     std::string resolved = resolveAssetPath(path);
+    std::uint64_t sourceBytes = 0;
+    {
+        FILE* source = fopen(resolved.c_str(), "rb");
+        if (source) {
+            fseek(source, 0, SEEK_END);
+            sourceBytes = static_cast<std::uint64_t>(ftell(source));
+            fclose(source);
+        }
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.server-load-start", "server-map-load",
+        sourceBytes > 0 ? "source_found" : "source_missing", 0,
+        nlohmann::json{
+            {"requested_path", path ? path : ""},
+            {"resolved_path", resolved},
+            {"source_exists", sourceBytes > 0},
+            {"source_bytes", sourceBytes}},
+        __FILE__, __LINE__, __FUNCTION__);
     bool ok = loader.LoadBinaryFromFile(&model, &err, &warn, resolved);
     if (!warn.empty()) printf("%s [SERVER WORLD WARNING] %s\n", serverTimestamp(), warn.c_str());
     if (!err.empty()) printf("%s [SERVER WORLD ERROR] %s\n", serverTimestamp(), err.c_str());
-    if (!ok)
+    if (!ok) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map.server-load-failed", "server-map-load", "glb_parse_failed", 0,
+            nlohmann::json{
+                {"requested_path", path ? path : ""},
+                {"resolved_path", resolved},
+                {"source_exists", sourceBytes > 0},
+                {"source_bytes", sourceBytes},
+                {"error", err}},
+            __FILE__, __LINE__, __FUNCTION__);
         return false;
+    }
 
     int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
     if (sceneIndex >= 0 && sceneIndex < (int)model.scenes.size())
@@ -239,7 +270,22 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
            serverTimestamp(), world.triangles.size(), world.spawnPoints.size(),
            world.boundsMin.x, world.boundsMin.y, world.boundsMin.z,
            world.boundsMax.x, world.boundsMax.y, world.boundsMax.z);
-    return !world.triangles.empty();
+    const bool usable = !world.triangles.empty();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, usable ? StructuredLevel::Important : StructuredLevel::Errors,
+        usable ? "map.server-load-success" : "map.server-load-failed",
+        "server-map-load", usable ? "collision_geometry_ready" : "collision_geometry_empty", 0,
+        nlohmann::json{
+            {"requested_path", path ? path : ""},
+            {"resolved_path", resolved},
+            {"source_exists", sourceBytes > 0},
+            {"source_bytes", sourceBytes},
+            {"collision_triangles", world.triangles.size()},
+            {"spawn_points", world.spawnPoints.size()},
+            {"bounds_min", {world.boundsMin.x, world.boundsMin.y, world.boundsMin.z}},
+            {"bounds_max", {world.boundsMax.x, world.boundsMax.y, world.boundsMax.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return usable;
 }
 
 void buildHeadlessCollisionChunks(HeadlessWorld& world)

@@ -1,3 +1,8 @@
+2026 10 06 1559 jorj todo - C:\mimita-v9\docs\architecture\player-npc-systems\npc-nav-external-lib-20261006.md 
+theres this too so idk 
+
+that is the ai planbut this doc is like about refernces and exeternla whatevrs 
+
 # MiMITA NPC navigation library evaluation and migration plan
 
 Date: 2026-10-06

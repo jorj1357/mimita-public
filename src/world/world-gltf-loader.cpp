@@ -12,6 +12,7 @@
 #include "map/map-loader-collision.h"
 #include "combat/weapon-model-cache.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "utils/path_utils.h"
 #include "game/spawn-utils.h"
 
@@ -46,14 +47,26 @@ bool loadWorldFromGLB(World& world, const char* path)
     Debug::warn(Debug::Category::World, "[MAP LOAD PHASE] loading path=%s", path);
 
     std::string resolvedPath = resolveAssetPath(path);
+    bool sourceExists = false;
     {
         FILE* f = fopen(resolvedPath.c_str(), "rb");
         if (f) {
+            sourceExists = true;
             fseek(f, 0, SEEK_END);
             metrics.glbFileBytes = ftell(f);
             fclose(f);
         }
     }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.load-start", "map-load", sourceExists ? "source_found" : "source_missing", 0,
+        nlohmann::json{
+            {"requested_path", path ? path : ""},
+            {"resolved_path", resolvedPath},
+            {"source_exists", sourceExists},
+            {"source_bytes", metrics.glbFileBytes}},
+        __FILE__, __LINE__, __FUNCTION__);
 
     World candidate;
     candidate.renderRevision = world.renderRevision + 1;
@@ -70,6 +83,15 @@ bool loadWorldFromGLB(World& world, const char* path)
     {
         Debug::warn(Debug::Category::World, "[MAP LOAD PHASE] GLB produced no renderable vertices path=%s", path);
         releaseMeshGLResources(candidate.mesh);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map.load-failed", "map-load", "render_geometry_empty", 0,
+            nlohmann::json{
+                {"requested_path", path ? path : ""},
+                {"resolved_path", resolvedPath},
+                {"source_exists", sourceExists},
+                {"source_bytes", metrics.glbFileBytes}},
+            __FILE__, __LINE__, __FUNCTION__);
         return false;
     }
 
@@ -144,6 +166,27 @@ bool loadWorldFromGLB(World& world, const char* path)
         path,
         (int)world.collisionMesh.triangles.size(),
         (int)world.spawnPoints.size());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.load-success", "map-load", "render_and_collision_geometry_ready", 0,
+        nlohmann::json{
+            {"requested_path", path ? path : ""},
+            {"resolved_path", resolvedPath},
+            {"source_exists", sourceExists},
+            {"source_bytes", metrics.glbFileBytes},
+            {"render_vertices", metrics.finalExpandedVertexCount},
+            {"render_triangles", metrics.renderTriangleCount},
+            {"collision_triangles", metrics.collisionTriangleCount},
+            {"collision_chunks", metrics.collisionChunkCount},
+            {"spawn_points", world.spawnPoints.size()},
+            {"render_revision", world.renderRevision},
+            {"bounds_min", {world.collisionMesh.boundsMin.x,
+                             world.collisionMesh.boundsMin.y,
+                             world.collisionMesh.boundsMin.z}},
+            {"bounds_max", {world.collisionMesh.boundsMax.x,
+                             world.collisionMesh.boundsMax.y,
+                             world.collisionMesh.boundsMax.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
     return true;
 }
 

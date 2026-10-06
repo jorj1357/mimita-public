@@ -1,6 +1,14 @@
 // 2026-10-06
 // Initial Recast/Detour integration proof. This is deliberately query-only:
 // MiMITA still owns goals, movement intent, physics, collision, and traversal.
+//
+// Coordinate note: MiMITA is Z-up (gravity acts on .z, floors have normal
+// (0,0,1)). Recast assumes Y-up and marks a triangle walkable when norm[1]
+// exceeds cos(slope). Feeding raw Z-up geometry makes every floor look like a
+// vertical wall, leaving no walkable surface and producing path_not_found. The
+// adapter therefore converts Z-up -> Y-up on input with the handedness-
+// preserving rotation (x,y,z) -> (x, z, -y) and converts query results back
+// with (x,y,z) -> (x, -z, y). Recorded in RecastNavigationResult.
 #include "npc/recast-navigation.h"
 
 #include <algorithm>
@@ -19,6 +27,18 @@
 
 namespace {
 
+constexpr const char* kCoordinateSystem = "mimita_z_up_to_recast_y_up";
+
+glm::vec3 toRecast(const glm::vec3& v)
+{
+    return glm::vec3(v.x, v.z, -v.y);
+}
+
+glm::vec3 fromRecast(const glm::vec3& v)
+{
+    return glm::vec3(v.x, -v.z, v.y);
+}
+
 class SilentBuildContext final : public rcContext
 {
 public:
@@ -32,6 +52,7 @@ struct BuildData
     rcContourSet* contours = nullptr;
     rcPolyMesh* polyMesh = nullptr;
     rcPolyMeshDetail* detail = nullptr;
+    int walkableTriangleCount = 0;
 
     ~BuildData()
     {
@@ -50,8 +71,49 @@ float horizontalLength(const glm::vec3& a, const glm::vec3& b)
                      (a.z - b.z) * (a.z - b.z));
 }
 
+// findNearestPoly with a bounded ascending search box. Tactical destinations
+// are often a few units above the floor or slightly past the navmesh edge, and
+// the default agent-sized box is too tight for them. The escalation is finite
+// and the final projection distance is reported so a bad goal is visible
+// rather than silently accepted.
+dtPolyRef nearestPolyEscalated(dtNavMeshQuery* query, const dtQueryFilter* filter,
+                               const float* point,
+                               const NavigationAgentProfile& profile,
+                               float* nearestOut, float* projectionDistance)
+{
+    const float baseH = std::max(profile.radius * 4.0f, 1.5f);
+    const float baseV = std::max(profile.height, 1.5f);
+    const float attempts[3][3] = {
+        {baseH, baseV, baseH},
+        {baseH * 3.0f, baseV * 3.0f, baseH * 3.0f},
+        {40.0f, 40.0f, 40.0f},
+    };
+    for (const auto& extents : attempts) {
+        float nearest[3]{};
+        dtPolyRef ref = 0;
+        const dtStatus status =
+            query->findNearestPoly(point, extents, filter, &ref, nearest);
+        if (dtStatusSucceed(status) && ref != 0) {
+            if (nearestOut) {
+                nearestOut[0] = nearest[0];
+                nearestOut[1] = nearest[1];
+                nearestOut[2] = nearest[2];
+            }
+            if (projectionDistance) {
+                const float dx = nearest[0] - point[0];
+                const float dy = nearest[1] - point[1];
+                const float dz = nearest[2] - point[2];
+                *projectionDistance = std::sqrt(dx * dx + dy * dy + dz * dz);
+            }
+            return ref;
+        }
+    }
+    return 0;
+}
+
 bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
-                  dtNavMesh*& outMesh, std::string& error)
+                  dtNavMesh*& outMesh, RecastNavigationResult& diag,
+                  std::string& error)
 {
     if (world.collisionMesh.triangles.empty()) {
         error = "collision_mesh_empty";
@@ -64,16 +126,20 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
     const float agentRadius = std::max(0.05f, profile.radius);
     const float stepHeight = std::max(0.01f, profile.stepHeight);
 
-    glm::vec3 bmin = world.collisionMesh.boundsMin;
-    glm::vec3 bmax = world.collisionMesh.boundsMax;
-    if (bmin == bmax) {
-        bmin = glm::vec3(1.0e30f);
-        bmax = glm::vec3(-1.0e30f);
-        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-            bmin = glm::min(bmin, glm::min(tri.a, glm::min(tri.b, tri.c)));
-            bmax = glm::max(bmax, glm::max(tri.a, glm::max(tri.b, tri.c)));
+    glm::vec3 bmin = toRecast(world.collisionMesh.boundsMin);
+    glm::vec3 bmax = toRecast(world.collisionMesh.boundsMax);
+    // Recompute from converted vertices when the cached bounds are absent, so
+    // the conversion is always applied exactly once to authoritative data.
+    glm::vec3 vmin(1.0e30f), vmax(-1.0e30f);
+    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+        for (const glm::vec3& raw : {tri.a, tri.b, tri.c}) {
+            const glm::vec3 v = toRecast(raw);
+            vmin = glm::min(vmin, v);
+            vmax = glm::max(vmax, v);
         }
     }
+    if (!(bmin.x < bmax.x && bmin.y < bmax.y && bmin.z < bmax.z))
+        bmin = vmin, bmax = vmax;
     if (!(bmin.x < bmax.x && bmin.y < bmax.y && bmin.z < bmax.z)) {
         error = "collision_bounds_invalid";
         return false;
@@ -86,7 +152,8 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
     tris.reserve(source.size() * 3);
     for (const CollisionTriangle& tri : source) {
         const int base = static_cast<int>(verts.size() / 3);
-        for (const glm::vec3& v : {tri.a, tri.b, tri.c}) {
+        for (const glm::vec3& raw : {tri.a, tri.b, tri.c}) {
+            const glm::vec3 v = toRecast(raw);
             verts.push_back(v.x);
             verts.push_back(v.y);
             verts.push_back(v.z);
@@ -134,6 +201,8 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
                             verts.data(), static_cast<int>(verts.size() / 3),
                             tris.data(), static_cast<int>(source.size()),
                             areas.data());
+    for (unsigned char a : areas)
+        if (a != 0) ++data.walkableTriangleCount;
     if (!rcRasterizeTriangles(&context, verts.data(),
                               static_cast<int>(verts.size() / 3), tris.data(),
                               areas.data(), static_cast<int>(source.size()),
@@ -233,6 +302,13 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         return false;
     }
     outMesh = mesh;
+
+    diag.sourceTriangleCount = static_cast<int>(source.size());
+    diag.walkableTriangleCount = data.walkableTriangleCount;
+    diag.navMeshPolyCount = data.polyMesh->npolys;
+    diag.navMeshVertCount = data.polyMesh->nverts;
+    diag.recastBoundsMin = bmin;
+    diag.recastBoundsMax = bmax;
     return true;
 }
 
@@ -246,6 +322,12 @@ struct RecastNavigationBackend::State
     std::uint64_t geometryRevision = 0;
     std::size_t triangleCount = 0;
     std::uint64_t version = 0;
+    int sourceTriangleCount = 0;
+    int walkableTriangleCount = 0;
+    int navMeshPolyCount = 0;
+    int navMeshVertCount = 0;
+    glm::vec3 recastBoundsMin{0.0f};
+    glm::vec3 recastBoundsMax{0.0f};
 
     ~State()
     {
@@ -280,9 +362,58 @@ void RecastNavigationBackend::invalidate()
 RecastNavigationResult RecastNavigationBackend::prepare(
     const World& world, const NavigationAgentProfile& profile)
 {
-    glm::vec3 center = (world.collisionMesh.boundsMin +
-                        world.collisionMesh.boundsMax) * 0.5f;
-    return query(world, center, center, profile);
+    RecastNavigationResult result;
+    const auto begin = std::chrono::steady_clock::now();
+    if (!mState) mState = new State();
+
+    const bool needsBuild = !mState->mesh || mState->world != &world ||
+        mState->geometryRevision != world.renderRevision ||
+        mState->triangleCount != world.collisionMesh.triangles.size();
+    if (needsBuild) {
+        invalidate();
+        std::string error;
+        if (!buildNavMesh(world, profile, mState->mesh, result, error)) {
+            result.failure = error;
+            result.buildMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - begin).count();
+            result.queryMilliseconds = result.buildMilliseconds;
+            return result;
+        }
+        mState->world = &world;
+        mState->geometryRevision = world.renderRevision;
+        mState->triangleCount = world.collisionMesh.triangles.size();
+        mState->sourceTriangleCount = result.sourceTriangleCount;
+        mState->walkableTriangleCount = result.walkableTriangleCount;
+        mState->navMeshPolyCount = result.navMeshPolyCount;
+        mState->navMeshVertCount = result.navMeshVertCount;
+        mState->recastBoundsMin = result.recastBoundsMin;
+        mState->recastBoundsMax = result.recastBoundsMax;
+        ++mState->version;
+        mState->query = dtAllocNavMeshQuery();
+        if (!mState->query || dtStatusFailed(mState->query->init(mState->mesh, 4096))) {
+            result.failure = "detour_query_init_failed";
+            result.buildMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - begin).count();
+            result.queryMilliseconds = result.buildMilliseconds;
+            return result;
+        }
+    }
+
+    // Publish build diagnostics even on a cache hit. A successful bake is a
+    // build claim, not a route claim.
+    result.available = true;
+    result.coordinateSystem = kCoordinateSystem;
+    result.navmeshVersion = mState->version;
+    result.sourceTriangleCount = mState->sourceTriangleCount;
+    result.walkableTriangleCount = mState->walkableTriangleCount;
+    result.navMeshPolyCount = mState->navMeshPolyCount;
+    result.navMeshVertCount = mState->navMeshVertCount;
+    result.recastBoundsMin = mState->recastBoundsMin;
+    result.recastBoundsMax = mState->recastBoundsMax;
+    result.buildMilliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - begin).count();
+    result.queryMilliseconds = result.buildMilliseconds;
+    return result;
 }
 
 RecastNavigationResult RecastNavigationBackend::query(
@@ -290,23 +421,35 @@ RecastNavigationResult RecastNavigationBackend::query(
     const NavigationAgentProfile& profile)
 {
     RecastNavigationResult result;
-    const auto begin = std::chrono::steady_clock::now();
     if (!mState) mState = new State();
+
+    const auto begin = std::chrono::steady_clock::now();
     const bool needsBuild = !mState->mesh || mState->world != &world ||
         mState->geometryRevision != world.renderRevision ||
         mState->triangleCount != world.collisionMesh.triangles.size();
     if (needsBuild) {
         invalidate();
         std::string error;
-        if (!buildNavMesh(world, profile, mState->mesh, error)) {
+        const auto buildBegin = std::chrono::steady_clock::now();
+        if (!buildNavMesh(world, profile, mState->mesh, result, error)) {
             result.failure = error;
+            result.buildMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - buildBegin).count();
             result.queryMilliseconds = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - begin).count();
             return result;
         }
+        result.buildMilliseconds = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - buildBegin).count();
         mState->world = &world;
         mState->geometryRevision = world.renderRevision;
         mState->triangleCount = world.collisionMesh.triangles.size();
+        mState->sourceTriangleCount = result.sourceTriangleCount;
+        mState->walkableTriangleCount = result.walkableTriangleCount;
+        mState->navMeshPolyCount = result.navMeshPolyCount;
+        mState->navMeshVertCount = result.navMeshVertCount;
+        mState->recastBoundsMin = result.recastBoundsMin;
+        mState->recastBoundsMax = result.recastBoundsMax;
         ++mState->version;
         mState->query = dtAllocNavMeshQuery();
         if (!mState->query || dtStatusFailed(mState->query->init(mState->mesh, 4096))) {
@@ -318,50 +461,83 @@ RecastNavigationResult RecastNavigationBackend::query(
     }
 
     result.available = true;
+    result.coordinateSystem = kCoordinateSystem;
     result.navmeshVersion = mState->version;
+    result.sourceTriangleCount = mState->sourceTriangleCount;
+    result.walkableTriangleCount = mState->walkableTriangleCount;
+    result.navMeshPolyCount = mState->navMeshPolyCount;
+    result.navMeshVertCount = mState->navMeshVertCount;
+    result.recastBoundsMin = mState->recastBoundsMin;
+    result.recastBoundsMax = mState->recastBoundsMax;
     if (!mState->query) {
         result.failure = "detour_query_unavailable";
     } else {
         dtQueryFilter filter;
         filter.setIncludeFlags(1);
-        const float extents[3] = {profile.radius * 4.0f, profile.height, profile.radius * 4.0f};
-        const float s[3] = {start.x, start.y, start.z};
-        const float d[3] = {destination.x, destination.y, destination.z};
+        const glm::vec3 sRecast = toRecast(start);
+        const glm::vec3 dRecast = toRecast(destination);
+        const float s[3] = {sRecast.x, sRecast.y, sRecast.z};
+        const float d[3] = {dRecast.x, dRecast.y, dRecast.z};
         float nearestStart[3]{}, nearestDest[3]{};
-        dtPolyRef startRef = 0, destRef = 0;
-        if (dtStatusFailed(mState->query->findNearestPoly(s, extents, &filter,
-                                                          &startRef, nearestStart)) ||
-            dtStatusFailed(mState->query->findNearestPoly(d, extents, &filter,
-                                                           &destRef, nearestDest))) {
-            result.failure = "nearest_polygon_failed";
+        dtPolyRef startRef = nearestPolyEscalated(
+            mState->query, &filter, s, profile, nearestStart,
+            &result.startProjectionDistance);
+        dtPolyRef destRef = nearestPolyEscalated(
+            mState->query, &filter, d, profile, nearestDest,
+            &result.destProjectionDistance);
+
+        result.startPolyFound = startRef != 0;
+        result.destPolyFound = destRef != 0;
+        result.startPolyRef = startRef;
+        result.destPolyRef = destRef;
+        if (result.startPolyFound) {
+            result.nearestStart = fromRecast(
+                glm::vec3(nearestStart[0], nearestStart[1], nearestStart[2]));
+        }
+        if (result.destPolyFound) {
+            result.nearestDest = fromRecast(
+                glm::vec3(nearestDest[0], nearestDest[1], nearestDest[2]));
+        }
+
+        if (!result.startPolyFound && !result.destPolyFound) {
+            result.failure = "nearest_polygon_failed_both";
+        } else if (!result.startPolyFound) {
+            result.failure = "nearest_polygon_failed_start";
+        } else if (!result.destPolyFound) {
+            result.failure = "nearest_polygon_failed_dest";
         } else {
             dtPolyRef polys[256]{};
             int polyCount = 0;
-            if (dtStatusFailed(mState->query->findPath(startRef, destRef,
-                                                       nearestStart, nearestDest,
-                                                       &filter, polys, &polyCount,
-                                                       256)) || polyCount <= 0) {
+            const dtStatus pathStatus = mState->query->findPath(
+                startRef, destRef, nearestStart, nearestDest, &filter, polys,
+                &polyCount, 256);
+            if (dtStatusFailed(pathStatus)) {
+                result.failure = "find_path_query_failed";
+            } else if (polyCount <= 0) {
                 result.failure = "path_not_found";
             } else {
+                result.polygonCount = polyCount;
                 float straight[256 * 3]{};
                 unsigned char flags[256]{};
                 dtPolyRef refs[256]{};
                 int pointCount = 0;
-                const dtStatus status = mState->query->findStraightPath(
+                const dtStatus straightStatus = mState->query->findStraightPath(
                     nearestStart, nearestDest, polys, polyCount, straight,
                     flags, refs, &pointCount, 256);
-                if (dtStatusFailed(status) || pointCount <= 0) {
+                if (dtStatusFailed(straightStatus) || pointCount <= 0) {
                     result.failure = "straight_path_failed";
                 } else {
                     result.success = true;
-                    result.polygonCount = polyCount;
                     result.points.reserve(pointCount);
-                    for (int i = 0; i < pointCount; ++i)
-                        result.points.emplace_back(straight[i * 3], straight[i * 3 + 1],
-                                                   straight[i * 3 + 2]);
-                    for (std::size_t i = 1; i < result.points.size(); ++i)
+                    for (int i = 0; i < pointCount; ++i) {
+                        result.points.push_back(fromRecast(glm::vec3(
+                            straight[i * 3], straight[i * 3 + 1],
+                            straight[i * 3 + 2])));
+                    }
+                    for (std::size_t i = 1; i < result.points.size(); ++i) {
                         result.pathLength += horizontalLength(result.points[i - 1],
                                                               result.points[i]);
+                    }
                 }
             }
         }
