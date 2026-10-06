@@ -18,6 +18,7 @@
 #include "config/player-settings.h"
 #include "config/weapon-hitfx-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "entities/player.h"
@@ -65,8 +66,36 @@ static void predictRemoteKill(Player& victim,
                               const std::string& actorType,
                               uint32_t ownerId)
 {
-    if (victim.dead || victim.netPredictedDead)
+    const bool alreadyDead = victim.dead;
+    const bool alreadyPredictedDead = victim.netPredictedDead;
+    const bool alreadyPresented = victim.networkDeathPresented;
+    if (alreadyDead || alreadyPredictedDead)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "client.death.prediction.skipped", std::to_string(ownerId),
+            "predicted remote death was already active", 0,
+            { {"actor_id", ownerId}, {"actor_type", actorType},
+              {"dead_before", alreadyDead},
+              {"net_predicted_dead_before", alreadyPredictedDead},
+              {"network_death_presented_before", alreadyPresented},
+              {"health", victim.currentHp},
+              {"position", {victim.pos.x, victim.pos.y, victim.pos.z}} },
+            __FILE__, __LINE__, __FUNCTION__);
         return;
+    }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "client.death.prediction.begin", std::to_string(ownerId),
+        "predicted remote death presentation began", 0,
+        { {"actor_id", ownerId}, {"actor_type", actorType},
+          {"health_before", victim.currentHp},
+          {"net_predicted_dead_before", alreadyPredictedDead},
+          {"network_death_presented_before", alreadyPresented},
+          {"position", {victim.pos.x, victim.pos.y, victim.pos.z}} },
+        __FILE__, __LINE__, __FUNCTION__);
+
     victim.netPredictedDead = true;
 
     // Spawn the fall-over death visual as a SEPARATE clone; the remote body
@@ -77,6 +106,28 @@ static void predictRemoteKill(Player& victim,
         RagdollModeSystem::instance().spawnCorpse(
             victim, direction * 10.0f, actorType, ownerId);
     }
+    else
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "client.death.prediction.presentation_skipped", std::to_string(ownerId),
+            "prediction found death presentation already marked", 0,
+            { {"actor_id", ownerId}, {"actor_type", actorType},
+              {"network_death_presented_before", alreadyPresented},
+              {"health_before", victim.currentHp},
+              {"position", {victim.pos.x, victim.pos.y, victim.pos.z}} },
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "client.death.prediction.state", std::to_string(ownerId),
+        "predicted remote death state updated", 0,
+        { {"actor_id", ownerId}, {"actor_type", actorType},
+          {"health_after", 0}, {"net_predicted_dead_after", true},
+          {"network_death_presented_after", victim.networkDeathPresented},
+          {"position", {victim.pos.x, victim.pos.y, victim.pos.z}} },
+        __FILE__, __LINE__, __FUNCTION__);
 
     victim.vel = glm::vec3(0.0f);
     victim.externalImpulse = glm::vec3(0.0f);

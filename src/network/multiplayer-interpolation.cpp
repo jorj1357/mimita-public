@@ -866,8 +866,23 @@ void mpRollbackPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId)
     }
 }
 
-static void resetPresentationAfterRespawn(Player& player, const SnapshotTransform& target)
+static void resetPresentationAfterRespawn(Player& player,
+                                          const SnapshotTransform& target,
+                                          uint32_t entityId)
 {
+    const bool presentedBefore = player.networkDeathPresented;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "client.death.presentation.reset", std::to_string(entityId),
+        "client reset death presentation state for a new life", target.serverTick,
+        { {"actor_id", entityId},
+          {"health_before", player.currentHp},
+          {"target_health", target.health},
+          {"net_predicted_dead_before", player.netPredictedDead},
+          {"network_death_presented_before", presentedBefore},
+          {"position", {target.position.x, target.position.y, target.position.z}} },
+        __FILE__, __LINE__, __FUNCTION__);
+
     player.proceduralFrozen = false;
     player.dead = false;
     player.netPredictedDead = false;
@@ -875,6 +890,17 @@ static void resetPresentationAfterRespawn(Player& player, const SnapshotTransfor
     player.deathAnim = Player::DeathAnimState{};
     player.currentHp = target.health;
     player.maxHp = target.health;
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "client.death.presentation.reset.complete", std::to_string(entityId),
+        "client death presentation state reset complete", target.serverTick,
+        { {"actor_id", entityId},
+          {"target_health", target.health},
+          {"net_predicted_dead_after", player.netPredictedDead},
+          {"network_death_presented_after", player.networkDeathPresented},
+          {"position", {target.position.x, target.position.y, target.position.z}} },
+        __FILE__, __LINE__, __FUNCTION__);
 
     // Walking/idle animation state
     player.footstepTimer = 0.0f;
@@ -1028,7 +1054,7 @@ void updateRenderedReplica(
                 interpolation.lastSpawnGeneration != 0)
             {
                 // Hard-snap position: no lerp from corpse to spawn
-                resetPresentationAfterRespawn(player, interpolation.target);
+                resetPresentationAfterRespawn(player, interpolation.target, entityId);
                 respawned = true;
                 printf("[NET EPOCH RESPAWN] entityId=%u oldEpoch=%u newEpoch=%u "
                        "oldGen=%u newGen=%u wasDead=%d nowAlive=%d pos=(%.2f,%.2f,%.2f)\n",
@@ -1466,6 +1492,35 @@ void updateRenderedReplica(
     // was just cleared, so render still shows the old corpse while lastRender
     // already holds the new life) — that mismatch would otherwise fire a false
     // death at the new life's position.
+    const bool remoteDeathTransition =
+        interpolation.hasRendered && !respawned &&
+        interpolation.lastRender.health > 0 && render.health <= 0;
+
+    if (remoteDeathTransition)
+    {
+        const bool remoteEffectEnabled =
+            NetworkingConfig::instance().data().deathEffects.remotePlayerDeathEffect;
+        const bool spawnEligible = spawnDeathEffects && remoteEffectEnabled &&
+            !player.networkDeathPresented;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Ragdoll, StructuredLevel::Important,
+            "client.death.applied", "net_" + std::to_string(entityId),
+            "client remote snapshot transitioned alive to dead",
+            (uint32_t)render.serverTick,
+            { {"target_actor_id", entityId},
+              {"health_before", interpolation.lastRender.health},
+              {"health_after", render.health},
+              {"current_health", player.currentHp},
+              {"position", {player.pos.x, player.pos.y, player.pos.z}},
+              {"server_tick", render.serverTick},
+              {"spawn_death_effects", spawnDeathEffects},
+              {"remote_death_effect_enabled", remoteEffectEnabled},
+              {"network_death_presented", player.networkDeathPresented},
+              {"spawn_eligible", spawnEligible},
+              {"target_spawn_generation", player.spawnGeneration} },
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     if (spawnDeathEffects && interpolation.hasRendered && !respawned &&
         NetworkingConfig::instance().data().deathEffects.remotePlayerDeathEffect &&
         !player.networkDeathPresented)

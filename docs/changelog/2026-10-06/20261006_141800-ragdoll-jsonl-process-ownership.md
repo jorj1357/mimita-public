@@ -95,3 +95,34 @@ Follow-up build:
 - Runtime identity probe: `PROCESS_ROLE=client`,
   `EVENTS_JSONL_PATH=logs/10-06-2026/20261006_143024/events.jsonl`.
 - Tests: none added or run; this remains a live executable investigation.
+
+## Authoritative damage/death boundary diagnostics
+
+Added four bounded canonical `events.jsonl` events at the owning code paths:
+
+- `src/network/server-damage.cpp`
+  - `server.damage.applied` records attacker, target, team, requested/applied
+    damage, health before/after, position, spawn generation, and knockback.
+  - `server.death.transition` records the authoritative alive-to-dead change,
+    target identity/team, health, position, source, and respawn state.
+- `src/network/multiplayer-projectiles.cpp`
+  - `client.death.received` records accepted lethal damage packets, event IDs,
+    target spawn generations, replica presence in both player and NPC maps,
+    damage, health, and hit position.
+- `src/network/multiplayer-interpolation.cpp`
+  - `client.death.applied` records the remote snapshot `>0 -> <=0` transition,
+    the exact health/position/server tick, and whether the corpse spawn gate
+    was eligible.
+- `src/network/server-attack.cpp`
+  - adds the same server damage/death events to the Counter-Strike NPC
+    hitscan path, which directly mutates `ServerNpc.health` and therefore does
+    not pass through the player damage function.
+
+Follow-up build:
+
+- Executable: `C:\mimita-v9\.dev\builds\1553\mimita.exe`
+- Build status: SUCCESS; 1 additional source file compiled and linked after
+  the first four-event build.
+- Runtime identity probe: `PROCESS_ROLE=client`,
+  `EVENTS_JSONL_PATH=logs/10-06-2026/20261006_144254/events.jsonl`.
+- Tests: none added or run; this remains a live executable investigation.

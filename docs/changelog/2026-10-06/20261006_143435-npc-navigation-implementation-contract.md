@@ -10,16 +10,21 @@ PASS_WITH_HUMAN_REVIEW
 Added a detailed implementation contract for NPC navigation and decision
 making. The document is intended to be read by both humans and AI
 contributors before they modify the Counter-Strike NPC behavior or its
-navigation backends.
+navigation backends. It now includes Phase 0 integration readiness with the
+project owner's decisions about offline/runtime navmeshes, static/dynamic
+worlds, actor-derived geometry, bounded dynamic updates, server authority,
+per-actor traversal capabilities, staged fallback, build ownership, and the
+first `dust2cyberiav4` acceptance thresholds.
 
 ## Files changed
 
 - `docs/architecture/player-npc-systems/npc-navigation-implementation.md`:
-  added the implementation contract, including ownership boundaries, backend
-  selection, Recast/Detour/RVO2 responsibilities, navigation and traversal
-  schemas, strategic and tactical decisions, movement arbitration, progress
-  recovery, authority/determinism, diagnostics, collaboration rules,
-  implementation phases, runtime scenarios, deletion gates, and unresolved
+  added the implementation contract, including ownership boundaries, Phase 0
+  integration readiness, backend selection, Recast/Detour/RVO2
+  responsibilities, navigation and traversal schemas, strategic and tactical
+  decisions, movement arbitration, progress recovery, authority/determinism,
+  diagnostics, collaboration rules, implementation phases, runtime scenarios,
+  `dust2cyberiav4` acceptance thresholds, deletion gates, and unresolved
   human decisions.
 - `docs/changelog/2026-10-06/20261006_143435-npc-navigation-implementation-contract.md`:
   this session record.
@@ -41,8 +46,8 @@ claim that the proposed Recast/Detour migration is implemented.
 
 - Documentation route and focused documentation-review instructions were
   read before editing.
-- The new document exists at the requested architecture path, contains 1,443
-  lines and 90 headings, and has no trailing-whitespace lines.
+- The new document exists at the requested architecture path, contains 1,652
+  lines and has no trailing-whitespace lines.
 - No C++ source, configuration, build output, executable, or runtime state was
   changed for this documentation task.
 - No build or gameplay runtime validation was performed because no executable

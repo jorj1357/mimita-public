@@ -402,6 +402,28 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
 
     if (event->killed)
     {
+        const bool networkDeathPresentedBefore = npcPtr
+            ? npcPtr->networkDeathPresented : false;
+        const bool netPredictedDeadBefore = npcPtr
+            ? npcPtr->netPredictedDead : false;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "client.npc.death.received",
+            "net_npc_" + std::to_string(event->npcEntityId),
+            "client accepted reliable NPC death event", event->eventServerTick,
+            { {"npc_id", event->npcEntityId},
+              {"shooter_id", event->shooterPlayerId},
+              {"damage", event->damage},
+              {"server_health", event->npcHealth},
+              {"npc_replica_present", npcPtr != nullptr},
+              {"health_before", npcPtr ? npcPtr->currentHp : -1},
+              {"net_predicted_dead_before", netPredictedDeadBefore},
+              {"network_death_presented_before", networkDeathPresentedBefore},
+              {"target_transform_epoch", event->targetTransformEpoch},
+              {"position", npcPtr ? nlohmann::json{npcPtr->pos.x, npcPtr->pos.y, npcPtr->pos.z}
+                                   : nlohmann::json::array()} },
+            __FILE__, __LINE__, __FUNCTION__);
+
         // Server confirmed a kill: any pending predicted kill-heal for this
         // entity sticks (no rollback).
         mpConfirmPredictedKillHeal(ctx, event->npcEntityId);
@@ -438,6 +460,38 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
                     "[NET NPC DEATH FX] entityId=%u pos=(%.1f,%.1f,%.1f) source=reliable-event\n",
                     event->npcEntityId, npcPtr->pos.x, npcPtr->pos.y, npcPtr->pos.z);
             }
+            else
+            {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "client.npc.death.presentation_skipped",
+                    "net_npc_" + std::to_string(event->npcEntityId),
+                    "reliable NPC death found presentation already marked",
+                    event->eventServerTick,
+                    { {"npc_id", event->npcEntityId},
+                      {"shooter_id", event->shooterPlayerId},
+                      {"server_health", event->npcHealth},
+                      {"health_before", npcPtr->currentHp},
+                      {"net_predicted_dead_before", netPredictedDeadBefore},
+                      {"network_death_presented_before", networkDeathPresentedBefore},
+                      {"network_death_presented_after", npcPtr->networkDeathPresented},
+                      {"reason", "network_death_presented_already_true"} },
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+        else
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "client.npc.death.presentation_skipped",
+                "net_npc_" + std::to_string(event->npcEntityId),
+                "reliable NPC death had no client replica", event->eventServerTick,
+                { {"npc_id", event->npcEntityId},
+                  {"shooter_id", event->shooterPlayerId},
+                  {"server_health", event->npcHealth},
+                  {"npc_replica_present", false},
+                  {"reason", "npc_replica_missing"} },
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 }

@@ -136,6 +136,21 @@ static ServerDamageResult applyPlayerDamageLegacy(
     result.applied = true;
     result.healthAfter = target.health;
 
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "server.damage.applied", std::to_string(target.id),
+        "authoritative server damage changed health", 0,
+        { {"attacker_id", attackerPlayerId}, {"target_actor_id", target.id},
+          {"target_name", target.name}, {"target_team", target.matchTeam},
+          {"damage_requested", damage}, {"damage_applied", clampedDamage},
+          {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
+          {"dead_before", false}, {"dead_after", target.health <= 0},
+          {"killed", target.health <= 0}, {"source", damageSourceName(source)},
+          {"spawn_generation", target.spawnGeneration},
+          {"position", {target.pos.x, target.pos.y, target.pos.z}},
+          {"knockback", {knockback.x, knockback.y, knockback.z}} },
+        __FILE__, __LINE__, __FUNCTION__);
+
     if (target.health == 0)
     {
         target.dead = true;
@@ -158,6 +173,19 @@ static ServerDamageResult applyPlayerDamageLegacy(
         // Kill credit, heal, persistence, and the killfeed are owned by
         // serverGamemodeRecordKill so there is one authoritative kill owner.
         result.killed = true;
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "server.death.transition", std::to_string(target.id),
+            "authoritative server actor transitioned alive to dead", 0,
+            { {"attacker_id", attackerPlayerId}, {"target_actor_id", target.id},
+              {"target_name", target.name}, {"target_team", target.matchTeam},
+              {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
+              {"damage_applied", clampedDamage}, {"source", damageSourceName(source)},
+              {"spawn_generation", target.spawnGeneration},
+              {"position", {target.pos.x, target.pos.y, target.pos.z}},
+              {"respawn_seconds", target.respawnSeconds} },
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s damage=%d "

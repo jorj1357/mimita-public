@@ -130,3 +130,32 @@ This journal proves that the instrumented client created and submitted nine
 corpses to the renderer; it does not yet prove that the inner player renderer
 actually drew visible meshes. It also confirms the walking VFX can persist
 because the remote walking branch has no dead-state guard.
+
+## Regression Occurrence 4
+
+### Observed
+
+The user reported five later Counter-Strike kills with blood effects but no
+visible ragdolls in:
+
+`C:\\mimita-v9\\logs\\10-06-2026\\20261006_142942\\events.jsonl`
+
+### Evidence
+
+- The active client had previously emitted `ragdoll.corpse.spawn.attempt`
+  with `ragdoll_enabled=true` and `death_enabled=true`.
+- Earlier corpses entered the physical-body render path with loaded models,
+  six physical parts, six meshes, and render submissions.
+- After the last successful corpse around `18:32:09Z`, the later attack
+  records around `18:33:44Z`–`18:33:51Z` had `ATTACK_HITSCAN_ACCEPT`, but no
+  new `ragdoll.corpse.spawn.attempt`.
+- The attack records had empty fields, so they did not prove target identity,
+  damage application, health transition, or death-packet delivery.
+
+### Current conclusion
+
+The latest occurrence moved the first unproved boundary upstream of corpse
+creation. It does not currently support a global presentation-disable theory.
+The four new authoritative damage/death/client-transition events are required
+to distinguish server damage failure, missing death replication, stale actor
+identity, and client corpse-gate suppression.

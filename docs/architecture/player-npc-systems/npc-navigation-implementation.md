@@ -1127,19 +1127,177 @@ explicit ownership decision.
 
 ## Implementation phases and gates
 
-### Phase 0 — current-system trace
+### Phase 0 — integration readiness
 
-Deliver:
+Phase 0 is now the approved preparation contract for beginning the external
+navigation-library integration. It records the project decisions that are
+known, selects safe defaults for the decisions that were not yet explicit,
+and defines what must be proven before production NPC behavior changes.
 
-- current ownership map;
-- route-owner diagnostic;
-- movement-intent source diagnostic;
-- progress/stuck summary;
-- representative Counter-Strike runtime trace.
+#### Decisions recorded by the project owner
 
-Gate:
+The following decisions are authoritative for the first implementation slice:
 
-- the first divergence can be identified from source and `events.jsonl`.
+1. Navigation data must support both offline-generated and runtime-generated
+   navmeshes.
+2. The long-term target is every supported map, rather than a permanently
+   hand-authored whitelist. `dust2cyberiav4` is the first acceptance map.
+3. The system must support static and dynamic worlds.
+4. Agent radius, agent height, step height, slope limits, and related geometry
+   values must be derived from the actual MiMITA actor and collision contracts,
+   not copied from a generic Recast sample.
+5. Dynamic navigation updates should be bounded to relevant regions. When an
+   obstacle is created or changed near an NPC's active route, destination, or
+   imminent traversal, the affected tile region is marked dirty and rebuilt or
+   refreshed. A whole-world rebuild must not be the normal per-obstacle path.
+6. Traversal links are capability-aware and actor-specific. The shared world
+   may provide link definitions, but each actor decides which links it can use
+   based on its movement capabilities, current state, role, and policy.
+7. Navigation decisions run on the authoritative server for now. Clients may
+   receive debug or presentation data but must not authoritatively choose NPC
+   routes.
+8. Existing movement remains authoritative during the initial migration.
+   DetourCrowd and RVO2 are optional later tools, not immediate replacements
+   for MiMITA physics, movement, jumping, or collision authority.
+
+#### Recommended defaults for unresolved decisions
+
+These defaults are part of the plan unless a later human decision records a
+different policy:
+
+- Use Recast for navmesh generation, Detour for queries and corridor
+  following, and DetourTileCache for bounded dynamic-tile updates.
+- Keep navmesh generation behind a MiMITA-owned adapter. External library
+  types must not spread through gameplay, network, JSON, or actor code.
+- Prefer offline navmesh artifacts for stable map geometry, with runtime bake
+  as the fallback for missing, incompatible, edited, or procedurally changed
+  maps. The cache identity must include map identity, geometry revision,
+  generation parameters, library revision, and coordinate/unit convention.
+- Use a `custom` baseline, a `compare` mode, and an explicit `recast` mode.
+  `compare` must not alter the authoritative result. Promotion to `recast`
+  happens per server preset or test scenario before it becomes the global
+  default.
+- Use the server's fixed 60 Hz simulation as the authority. Navmesh baking and
+  tile rebuilding may run off the gameplay tick, but route-result publication
+  must occur at a deterministic safe boundary and never mutate collision
+  state from a render callback.
+- Treat a dynamic obstacle as navigation geometry only when it blocks or
+  changes a traversable surface. Nearby irrelevant changes should not dirty a
+  tile. A route query may request a local refresh when its corridor intersects
+  a dirty or stale region, subject to a bounded time and work budget.
+- Let the MiMITA build own the integration target and pin the external source
+  revision. Recast/Detour demo, sample, and standalone test targets must not
+  become part of the game executable. The adapter owns include and target
+  boundaries; gameplay links only to the adapter target.
+
+#### Geometry and actor-profile readiness
+
+Before the first real-map bake, record the measured values for the player/NPC
+collision profile from the authoritative actor and collision implementation:
+
+- capsule or equivalent footprint radius;
+- standing height;
+- crouching height, if crouching is supported by the first slice;
+- maximum walkable slope;
+- maximum step or ledge height;
+- minimum traversable clearance;
+- jump start/landing envelope, if jump links are enabled;
+- world-unit-to-Recast-unit conversion;
+- map-coordinate handedness and up axis.
+
+The profile must be generated from the same collision/avatar contract used by
+the actor at runtime. GLB model bounds may inform the visual envelope, but a
+render mesh must not silently become the gameplay collision authority. If
+different actor classes need different radii or heights, the navmesh/profile
+contract must state whether they share one conservative mesh or use separate
+agent-profile meshes.
+
+#### Static and dynamic data lifecycle
+
+The first implementation must support this lifecycle:
+
+1. Identify the map and geometry revision.
+2. Load a compatible offline navmesh when one exists.
+3. Otherwise collect authoritative collision geometry and bake a runtime
+   navmesh before NPC route requests are enabled.
+4. Publish a versioned navmesh snapshot to the server navigation owner.
+5. Mark only affected tiles dirty when dynamic geometry changes.
+6. Rebuild or refresh those tiles within a bounded work budget.
+7. Keep the previous valid snapshot available until the replacement is valid.
+8. Reject route results whose snapshot version is no longer current.
+9. Replan only affected actors, with rate limits and a safe fallback when a
+   replacement is temporarily unavailable.
+
+The system must define what happens when runtime baking is not finished:
+NPCs remain in a safe non-teleporting state, retain a valid previous route if
+one exists, or use a bounded direct/hold behavior. They must not invent a
+route through unknown geometry.
+
+#### Rollout and fallback contract
+
+The rollout order is:
+
+1. `custom`: existing navigator remains authoritative.
+2. `compare`: custom remains authoritative while Recast/Detour receives the
+   same request and reports route, failure, cost, version, and timing.
+3. `recast`: Recast/Detour supplies the route, but the existing MiMITA motor,
+   collision, and traversal executor remain authoritative.
+4. Optional local-avoidance experiment: evaluate DetourCrowd or RVO2 against
+   the existing actor-collision behavior in isolated scenarios.
+5. Later targeted migration: promote only the components that measurably
+   improve behavior and retain explicit fallback ownership.
+
+Fallback must be explicit in the request/result contract and diagnostics. A
+failed Recast query may fall back to the custom navigator only when the server
+policy permits it; the result must identify `recast`, `custom`, or `hold` as
+the actual source. A fallback is a recovery mechanism, not permission to keep
+two permanently competing production owners.
+
+#### Traversal-link ownership
+
+World geometry and map/objective systems may publish candidate traversal links
+with stable IDs and endpoint metadata. The actor navigation capability profile
+selects whether a link is usable. The actor owns the final selection and
+execution state, including:
+
+- whether the actor can jump, drop, crouch, dash, climb, or use a custom link;
+- whether the current weapon, role, health, or combat state permits it;
+- the movement input and action command used to execute it;
+- success, failure, interruption, and cooldown;
+- replanning after the actor reaches, misses, or is displaced from the link.
+
+This preserves shared map knowledge while allowing different actors to take
+different legal routes.
+
+#### Phase 0 deliverables
+
+- current ownership map for `NpcNavigator`, `NpcNavGraph`, `NpcNavigation`,
+  `NpcTraversal`, shared movement, and the future Recast adapter;
+- build integration decision and pinned external revisions;
+- measured actor geometry/profile table from authoritative collision code;
+- map geometry-source inventory for `dust2cyberiav4`;
+- offline-navmesh artifact format and runtime-bake fallback contract;
+- static/dynamic tile invalidation and bounded-refresh policy;
+- explicit backend selection and fallback configuration;
+- server-only authority and safe-boundary publication rules;
+- route-owner, movement-intent, navmesh-version, and fallback diagnostics;
+- representative Counter-Strike runtime trace using the current custom path;
+- first acceptance scenario list and threshold recording format.
+
+#### Phase 0 gate
+
+The gate passes only when a reviewer can answer, from source and
+`events.jsonl`:
+
+- which system authored the route;
+- which navmesh version and actor profile it used;
+- whether the route came from offline data, runtime bake, custom fallback, or
+  a hold state;
+- which movement/traversal owner executed the result;
+- the first divergence when the NPC fails to progress; and
+- whether the server remained authoritative.
+
+No production backend switch is allowed until this evidence exists.
 
 ### Phase 1 — isolated Recast build/query proof
 
@@ -1186,7 +1344,8 @@ Gate:
 
 Deliver:
 
-- dust2cyberiav4 or another explicitly supported map;
+- `dust2cyberiav4` as the first acceptance map, with the same pipeline designed
+  to generalize to every supported map;
 - spawn-to-site scenarios;
 - doorway, ramp, wall, and objective routes;
 - visible route diagnostics;
@@ -1196,6 +1355,43 @@ Gate:
 
 - real NPCs leave spawn, make positive progress, route around obstacles, and
   resume objectives after a combat interruption.
+
+#### First acceptance behavior and proposed thresholds
+
+The qualitative target is Counter-Strike-like team behavior: NPCs leave spawn,
+choose sensible routes toward the enemy or objective, hold useful angles,
+avoid repetitive wall collisions and turn loops, and enter fights in a way
+that resembles a coordinated human match. “Looks human” remains a human
+acceptance judgment; the following measurements make obvious failures
+observable and repeatable.
+
+For an initial `dust2cyberiav4` acceptance run, record at least ten fixed-seed
+rounds with the same server preset and actor profiles. The proposed starting
+thresholds are:
+
+- 100% of NPCs receive a valid route or an explicit hold/fallback reason;
+- 100% of route results identify the navmesh version, backend, and actor
+  profile;
+- 95% or more of planned travel segments make positive progress toward the
+  active goal within the configured observation window;
+- zero unrecovered wall-intersection or collision-loop failures;
+- no more than one unintended route reversal per NPC per 30 seconds, excluding
+  combat-driven replans and valid traversal failures;
+- no repeated left/right or forward/back oscillation lasting more than two
+  seconds without a logged blockage, target change, or traversal decision;
+- at least 90% of NPCs reach their assigned tactical destination or a valid
+  combat hold point before the round's first engagement window;
+- after an enemy appears, NPCs stop or reposition at a valid angle rather than
+  blindly continuing through the opponent;
+- after a combat interruption, at least 90% of surviving NPCs resume a valid
+  objective or tactical route;
+- no server-tick budget violation caused by navigation or tile updates in the
+  acceptance trace.
+
+These are initial engineering thresholds, not a substitute for the project
+owner's final visual review. Any threshold that fails must be classified as a
+route-generation, traversal, movement-execution, combat-decision, dynamic-
+update, or presentation problem before tuning begins.
 
 ### Phase 5 — migration and deletion
 
@@ -1406,19 +1602,32 @@ them behind another fallback.
 
 ## Open decisions requiring human approval
 
-These must not be silently guessed by an AI contributor:
+The Phase 0 decisions above resolve the initial direction for the following
+questions:
 
-1. Is Recast/Detour the approved production backend after the isolated proof?
-2. Is the first backend static-only, or must it include temporary blockers?
-3. Which map is the first acceptance map?
-4. What actor profile is the first supported navigation profile?
-5. Are jump links required in the first real-map slice?
-6. Is route diversity required for v1 or only after basic reliability?
-7. What are the maximum acceptable query and server-tick budgets?
-8. Is RVO2 allowed only as an experiment, or as a future production option?
-9. Which exact current custom systems may remain after migration?
-10. What visible behavior is required before declaring Counter-Strike NPC v1
-    acceptable?
+- Recast/Detour is the intended backend to prove and progressively adopt.
+- Static and dynamic geometry are both required.
+- `dust2cyberiav4` is the first acceptance map; the architecture must
+  generalize to every supported map.
+- The initial actor profile comes from authoritative MiMITA collision/avatar
+  data, with the measured values recorded before baking.
+- Existing movement remains authoritative during the first migration slice.
+- DetourCrowd and RVO2 are future experiments, not immediate replacements.
+
+The following decisions still require explicit human approval or measurement
+before the corresponding phase can pass:
+
+1. The exact measured geometry values for each initial actor profile.
+2. Whether jump links are required in the first `dust2cyberiav4` route slice,
+   or are enabled immediately after basic walk routing.
+3. The maximum navigation query, tile-update, memory, and server-tick budgets.
+4. The exact offline navmesh artifact location and versioning format.
+5. The exact dynamic-obstacle dirty-radius and rebuild scheduling policy after
+   profiling representative maps.
+6. Which current custom systems may remain after Recast/Detour becomes the
+   global navigation owner.
+7. Whether the proposed acceptance thresholds are approved as the first human
+   review baseline.
 
 If any decision changes the owner, scope, runtime behavior, or deletion plan,
 record the decision in the relevant changelog and update this contract before

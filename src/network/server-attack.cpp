@@ -824,12 +824,64 @@ void handleAttackRequest(
             if (npcIt != npcs.end())
             {
                 ServerNpc& npcTarget = npcIt->second;
+                const int healthBefore = npcTarget.health;
                 if (npcTarget.health > 0)
                 {
                     npcTarget.health -= aggregate.damage;
                     npcTarget.knockbackImpulse += aggregate.knockback;
                 }
                 const bool killed = npcTarget.health <= 0;
+                const bool newlyKilled = healthBefore > 0 && killed;
+                const int damageApplied = std::max(0, healthBefore - npcTarget.health);
+
+                if (damageApplied > 0)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "server.damage.applied",
+                        "npc_" + std::to_string(npcTarget.entityId),
+                        "authoritative server NPC damage changed health", tick,
+                        { {"attacker_id", shooter.id},
+                          {"target_actor_id", npcTarget.entityId},
+                          {"target_actor_type", "npc"},
+                          {"target_name", npcTarget.name},
+                          {"target_team", npcTarget.matchTeam},
+                          {"damage_requested", aggregate.damage},
+                          {"damage_applied", damageApplied},
+                          {"health_before", healthBefore},
+                          {"health_after", npcTarget.health},
+                          {"dead_before", healthBefore <= 0},
+                          {"dead_after", npcTarget.health <= 0},
+                          {"killed", newlyKilled},
+                          {"source", "hitscan"},
+                          {"transform_epoch", npcTarget.transformEpoch},
+                          {"position", {npcTarget.pos.x, npcTarget.pos.y, npcTarget.pos.z}},
+                          {"knockback", {aggregate.knockback.x, aggregate.knockback.y,
+                                          aggregate.knockback.z}} },
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+
+                if (newlyKilled)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "server.death.transition",
+                        "npc_" + std::to_string(npcTarget.entityId),
+                        "authoritative server NPC transitioned alive to dead", tick,
+                        { {"attacker_id", shooter.id},
+                          {"target_actor_id", npcTarget.entityId},
+                          {"target_actor_type", "npc"},
+                          {"target_name", npcTarget.name},
+                          {"target_team", npcTarget.matchTeam},
+                          {"health_before", healthBefore},
+                          {"health_after", npcTarget.health},
+                          {"damage_applied", damageApplied},
+                          {"source", "hitscan"},
+                          {"transform_epoch", npcTarget.transformEpoch},
+                          {"position", {npcTarget.pos.x, npcTarget.pos.y, npcTarget.pos.z}} },
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+
                 if (killed)
                 {
                     npcTarget.health = 0;

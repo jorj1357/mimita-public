@@ -1180,6 +1180,40 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         return;
     }
 
+    if (event->killed != 0 || event->healthAfter <= 0)
+    {
+        const auto victimIt = ctx.remotePlayers.find(event->targetPlayerId);
+        const auto npcIt = ctx.remoteNpcs.find(event->targetPlayerId);
+        const bool playerReplicaPresent = victimIt != ctx.remotePlayers.end();
+        const bool npcReplicaPresent = npcIt != ctx.remoteNpcs.end();
+        const bool victimPresent = playerReplicaPresent || npcReplicaPresent;
+        const uint32_t currentGeneration = playerReplicaPresent
+            ? victimIt->second.spawnGeneration
+            : (npcReplicaPresent ? npcIt->second.spawnGeneration : 0);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "client.death.received",
+            "net_" + std::to_string(event->targetPlayerId),
+            "client accepted authoritative lethal damage event",
+            (uint32_t)event->header.tick,
+            { {"event_id", event->eventId},
+              {"event_session_id", event->eventSessionId},
+              {"attacker_id", event->attackerPlayerId},
+              {"target_actor_id", event->targetPlayerId},
+              {"damage", event->damage},
+              {"health_before", event->healthBefore},
+              {"health_after", event->healthAfter},
+              {"killed", event->killed != 0},
+              {"target_spawn_generation", event->targetSpawnGeneration},
+              {"current_spawn_generation", currentGeneration},
+              {"target_replica_present", victimPresent},
+              {"target_player_replica_present", playerReplicaPresent},
+              {"target_npc_replica_present", npcReplicaPresent},
+              {"hit_position", {event->hitX, event->hitY, event->hitZ}},
+              {"source", event->source} },
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     // Hit-claim correlation: causeSerial is our attack requestId. If the server
     // confirmed damage on the claimed target, the hit agreed. If it confirmed
     // damage on a DIFFERENT target, the server's trace disagreed with ours.
