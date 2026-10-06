@@ -102,8 +102,8 @@
   // "wallSearchDistance": 20.0,
   // "wallSearchDistance": 200.0,
   // "comment_wallSearchDistance": "How far the NPC may search for a safe backup or side direction when blocked.",
-  "wallBacktrackEnabled": true,
-  // "wallBacktrackEnabled": false,
+  // "wallBacktrackEnabled": true,
+  "wallBacktrackEnabled": false,
   // "comment_wallBacktrackEnabled": "When true, NPCs back away from a blocked route before trying the navigator again.",
   // "wallBacktrackDistance": 10.0,
   "wallBacktrackDistance": 0.5,
@@ -113,10 +113,10 @@
   // around, which read as "stuck / wandering".
   // "wallBacktrackDuration": 0.8,
   // "wallBacktrackDuration": 10.0,
-  "wallBacktrackDuration": 2.0,
+  // "wallBacktrackDuration": 2.0,
   // "wallBacktrackDuration": 0.25,
   // "wallBacktrackDuration": 1.5,
-  // "wallBacktrackDuration": 0.01,
+  "wallBacktrackDuration": 0.01,
   // "comment_wallBacktrackDuration": "Maximum seconds spent backing up before the navigator tries a new route.",
   "wallGroundSupportRequired": true,
   // "comment_wallGroundSupportRequired": "When true, grounded NPCs avoid movement directions that have no floor below them.",
@@ -134,8 +134,9 @@
   "searchSnapshotSeconds": 1.0,
   // "comment_searchSnapshotSeconds": "How often the NPC records its current position as visited. Lower = denser memory of the exact path.",
   // "searchLookahead": 20.0,
-  "searchLookahead": 2.0,
+  // "searchLookahead": 2.0,
   // "searchLookahead": 1.0,
+  "searchLookahead": 0.01,
   // "comment_searchLookahead": "How far ahead (meters) the NPC samples when scoring a candidate direction for recent/blocked points.",
   // "searchAvoidRadius": 5.0,
   // "searchAvoidRadius": 50.0,
@@ -151,7 +152,8 @@
   // ── Live movement/navigation knobs (hot-reloaded; edit while the game runs) ──
   // Floor for the local wall-avoid search probe (m). Too small = every
   // direction looks clear and the actor always turns the same way (circling).
-  "wallAvoidMinProbe": 3.0,
+  // "wallAvoidMinProbe": 3.0,
+  "wallAvoidMinProbe": 10.0,
   // Strength of the per-actor left/right preference at a wall/corner. Higher
   // spreads a squad across both sides so they do not all jam into one corner;
   // 0 disables the preference (all may pick the same side).
@@ -173,7 +175,7 @@
   // mid-slope back-and-forth, and maximizes net movement. Hot-reloadable.
   "areaEscapeRadiusMeters": 5.0,
   "areaEscapeSeconds": 4.0,
-  "areaEscapeHoldSeconds": 2.0,
+  "areaEscapeHoldSeconds": 5.0,
   "lowObstacleProbe": 2.0,
   "lowObstacleLowOffset": -1.0,
   "lowObstacleHighOffset": 1.0,
