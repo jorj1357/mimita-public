@@ -30,6 +30,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <functional>
 #include <fstream>
 
 #include "config/player-settings.h"
@@ -186,7 +187,7 @@ static void startSound(const std::string& name, float volume, float pitch,
     { MIMITA_PERF_SCOPE("Audio::StartSound::ConfigureVoice");
       const PlayerSettings& settings = GetPlayerSettings();
       ma_sound_set_volume(&active->sound, std::max(0.0f, volume * settings.masterVolume * settings.sfxVolume));
-      ma_sound_set_pitch(&active->sound, std::clamp(pitch, 0.25f, 3.0f));
+      ma_sound_set_pitch(&active->sound, std::clamp(pitch, 0.05f, 4.0f));
       if (startSeconds > 0.0f) {
           const ma_uint64 frame = static_cast<ma_uint64>(startSeconds * active->decoder.outputSampleRate);
           ma_sound_seek_to_pcm_frame(&active->sound, frame);
@@ -378,6 +379,27 @@ void playSoundPitched(const std::string& name, float volume, float pitch)
 void playWorldSound(const std::string& name, glm::vec3 pos, float volume, float pitch, float maxDistance)
 {
     AudioEvent event{name, AudioCategory::Impacts, true, pos, volume, pitch, maxDistance};
+    AudioManager::instance().play(event);
+}
+
+unsigned int audioOwnerKey(unsigned int actorId, const std::string& channel)
+{
+    const size_t channelHash = std::hash<std::string>{}(channel);
+    uint32_t key = actorId * 0x9e3779b9u;
+    key ^= static_cast<uint32_t>(channelHash);
+    key ^= static_cast<uint32_t>(channelHash >> 32);
+    key ^= key >> 16;
+    key *= 0x85ebca6bu;
+    key ^= key >> 13;
+    return key == 0 ? 1u : key;
+}
+
+void playWorldSoundOwned(const std::string& name, glm::vec3 pos, float volume,
+                         float pitch, float maxDistance, unsigned int ownerId,
+                         bool retrigger)
+{
+    AudioEvent event{name, AudioCategory::Weapons, true, pos, volume, pitch,
+                     maxDistance, ownerId, 0.0f, 0.0f, retrigger};
     AudioManager::instance().play(event);
 }
 

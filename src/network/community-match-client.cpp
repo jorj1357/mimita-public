@@ -76,6 +76,42 @@ uint8_t CommunityMatchClient::teamForActor(uint32_t actorId) const
     return 0xFF;
 }
 
+const char* CommunityMatchClient::fighterWeaponId(int choice)
+{
+    static const char* ids[] = {"revolver", "shotgun", "spyknife", "rocket_launcher"};
+    return choice >= 0 && choice < 4 ? ids[choice] : "";
+}
+
+const char* CommunityMatchClient::fighterWeaponName(int choice)
+{
+    static const char* names[] = {"Revolver", "Shotgun", "Spy Knife", "Rocket Launcher"};
+    return choice >= 0 && choice < 4 ? names[choice] : "";
+}
+
+bool CommunityMatchClient::fighterWeaponChoiceVisible(uint32_t localPlayerId) const
+{
+    if (mMode != "juggernaut" || mFighterWeaponChoiceCommitted || localTeam(localPlayerId) != 0)
+        return false;
+    return mPhase == DUEL_PHASE_INTERMISSION || mPhase == DUEL_PHASE_COUNTDOWN ||
+           mPhase == DUEL_PHASE_GO;
+}
+
+bool CommunityMatchClient::fighterWeaponChoiceCommitted(uint32_t localPlayerId) const
+{
+    return mMode == "juggernaut" && localTeam(localPlayerId) == 0 &&
+           mFighterWeaponChoiceCommitted;
+}
+
+bool CommunityMatchClient::selectFighterWeapon(int choice)
+{
+    if (choice < 0 || choice >= 4 || mMode != "juggernaut" ||
+        mFighterWeaponChoiceCommitted)
+        return false;
+    mFighterWeaponChoice = choice;
+    mFighterWeaponChoiceCommitted = true;
+    return true;
+}
+
 std::string CommunityMatchClient::teamName(int team) const
 {
     const Gamemode& gm = GamemodeRegistry::instance().get(mMode);
@@ -118,6 +154,9 @@ void CommunityMatchClient::reset()
     mMatchId = 0;
     mStateVersion = 0;
     mRoundVersion = 0;
+    mFighterWeaponChoiceRoundVersion = 0;
+    mFighterWeaponChoice = -1;
+    mFighterWeaponChoiceCommitted = false;
     mRoundNumber = 0;
     mRoundWins[0] = mRoundWins[1] = 0;
     mWinnerTeam = -1;
@@ -137,6 +176,7 @@ void CommunityMatchClient::reset()
     RagdollDeathConfig::instance().clearRuntimeOverride();
     ImpactDecalsConfig::instance().clearRuntimeBloodOverride();
     PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
+    PlayerVisualsConfig::instance().clearTeamOutlineColorsOverride();
     if (mFirstPersonApplied) {
         THE_CAMERA.thirdPerson = mPreviousThirdPerson;
         mFirstPersonApplied = false;
@@ -250,6 +290,11 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mMatchId = packet.duelId;
     mStateVersion = packet.stateVersion;
     mMode = packet.matchMode;
+    if (mMode != "juggernaut" || packet.roundVersion != mFighterWeaponChoiceRoundVersion) {
+        mFighterWeaponChoiceRoundVersion = packet.roundVersion;
+        mFighterWeaponChoice = -1;
+        mFighterWeaponChoiceCommitted = false;
+    }
     // Server-owned procedural-world state. The client never derives room
     // completion; it stores and renders exactly what the server sent.
     mProcedural = packet.procedural;
@@ -272,6 +317,12 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         PlayerVisualsConfig::instance().setPlayerOutlinesEnabled(modeConfig.presentation.playerOutlines);
     else
         PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
+    if (modeConfig.presentation.hasTeamOutlineColors)
+        PlayerVisualsConfig::instance().setTeamOutlineColors(
+            modeConfig.presentation.friendlyOutlineColor,
+            modeConfig.presentation.enemyOutlineColor);
+    else
+        PlayerVisualsConfig::instance().clearTeamOutlineColorsOverride();
     if (mForceFirstPerson && !mFirstPersonApplied) {
         mPreviousThirdPerson = THE_CAMERA.thirdPerson;
         THE_CAMERA.thirdPerson = false;

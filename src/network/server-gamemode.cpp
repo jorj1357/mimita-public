@@ -91,6 +91,29 @@ static int spawnTagTeamIndex(const std::string& rawTag)
     return -1;
 }
 
+static bool containsInsensitive(const std::string& value, const std::string& needle)
+{
+    if (needle.empty()) return false;
+    std::string lowerValue = value;
+    std::string lowerNeedle = needle;
+    std::transform(lowerValue.begin(), lowerValue.end(), lowerValue.begin(),
+        [](unsigned char c) { return (char)std::tolower(c); });
+    std::transform(lowerNeedle.begin(), lowerNeedle.end(), lowerNeedle.begin(),
+        [](unsigned char c) { return (char)std::tolower(c); });
+    return lowerValue.find(lowerNeedle) != std::string::npos;
+}
+
+static bool spawnTagMatchesTeam(const std::string& tag, const GamemodeTeam& team)
+{
+    if (!team.spawnTagContains.empty() &&
+        !containsInsensitive(tag, team.spawnTagContains))
+        return false;
+    if (!team.spawnTagExcludes.empty() &&
+        containsInsensitive(tag, team.spawnTagExcludes))
+        return false;
+    return !team.spawnTagContains.empty() || !team.spawnTagExcludes.empty();
+}
+
 static void finalizeServerNpcMirrorSpawn(ServerNpc& npc,
                                          ActorSpawnReason reason,
                                          uint32_t serverTick)
@@ -132,6 +155,8 @@ bool serverPlayerRespawnsEnabled(uint32_t playerId)
         return true;
     if (d.npcWaves)
         return d.waveLivesRemaining > 0;
+    if (d.persistentNpcSpawns)
+        return true;
     (void)playerId;
     return serverMatchRespawnsEnabled();
 }
@@ -473,6 +498,7 @@ bool serverCommunityWeaponAllowed(const std::string& weaponId)
         || state.communityMode == "free_for_all"
         || state.communityMode == "team_deathmatch"
         || state.communityMode == "npc_waves"
+        || state.persistentNpcSpawns
         || state.hasBombFeature;
     if (!communityMode) return true;
     CommunityServerConfig& config = CommunityServerConfig::instance();
@@ -575,6 +601,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.killHeals = gm.killHeals;
     d.winCondition = gm.winCondition;
     d.npcWaves = gm.winCondition == "npc_waves";
+    d.persistentNpcSpawns = gm.npcSpawnPolicy == "persistent" && gm.npcSpawnMax > 0;
     d.waveStartCount = gm.waveStartCount;
     d.waveIncrement = gm.waveIncrement;
     d.waveNpcsPerWave = gm.waveNpcsPerWave;
@@ -584,6 +611,11 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.waveBannerSeconds = gm.waveBannerSeconds;
     d.waveStaggerEnabled = gm.waveStaggerEnabled;
     d.waveNpcsPerTick = gm.waveNpcsPerTick;
+    d.npcSpawnMax = d.persistentNpcSpawns ? gm.npcSpawnMax : 0;
+    d.npcSpawnIntervalTicks = std::max(1, gm.npcSpawnIntervalTicks);
+    d.npcSpawnPerInterval = std::max(1, gm.npcSpawnPerInterval);
+    d.npcSpawnNextTick = 0;
+    d.npcSpawnSequence = 0;
     d.waveNumber = d.npcWaves ? 1u : 0u;
     d.waveNpcTarget = 0;
     d.waveNpcSpawned = 0;
@@ -620,9 +652,11 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
     // ── Round-based lifecycle rules (Counter-Strike and future modes) ──
     d.victoryCondition = gm.victoryCondition;
-    d.objectiveRounds = gm.victoryCondition == "rounds" && gm.rounds.roundsToWin > 0;
+    d.objectiveRounds = gm.victoryCondition == "rounds" &&
+        (gm.rounds.endlessRounds || gm.rounds.roundsToWin > 0 || gm.rounds.maxRounds > 0);
     d.roundsToWin = gm.rounds.roundsToWin;
     d.maxRounds = gm.rounds.maxRounds;
+    d.endlessRounds = gm.rounds.endlessRounds;
     d.roundSeconds = gm.rounds.roundSeconds;
     d.freezeSeconds = gm.rounds.freezeSeconds;
     d.roundWins[0] = d.roundWins[1] = 0;
@@ -661,7 +695,11 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     // ── Visual/settings overrides from gamemode ────────────────────
     d.cameraFov = gm.cameraFov;
     d.forceFirstPerson = gm.forceFirstPerson;
-    if (!gm.actorPresetId.empty()) {
+    const bool hasExplicitTeamRoles = std::any_of(
+        gm.teams.begin(), gm.teams.end(),
+        [](const GamemodeTeam& team) { return !team.role.empty(); });
+    // Presentation actor presets must not replace explicit gameplay roles.
+    if (!gm.actorPresetId.empty() && !hasExplicitTeamRoles && gm.roleCounts.empty()) {
         if (const MatchRoleDefinition* preset =
                 MatchRoleRegistry::instance().getActorPreset(gm.actorPresetId)) {
             if (preset->forceFov) d.cameraFov = preset->cameraFov;
@@ -990,9 +1028,21 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
         d.spawnB = anchor;
         d.sharedAnchor = anchor;
 
-        // Group tagged spawns by team.
+        const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+
+        // Group tagged spawns by the active mode's declared filters first.
+        // This lets a mode define rules such as "contains NPC" and
+        // "excludes NPC" without adding a mode-name branch here.
         for (const ServerSpawnPoint& sp : world.spawnPoints) {
-            const int team = spawnTagTeamIndex(sp.tag);
+            int team = -1;
+            for (size_t i = 0; i < gm.teams.size() && i < 2; ++i) {
+                if (spawnTagMatchesTeam(sp.tag, gm.teams[i])) {
+                    team = (int)i;
+                    break;
+                }
+            }
+            if (team < 0)
+                team = spawnTagTeamIndex(sp.tag);
             if (team == 0 || team == 1)
                 d.teamSpawnPoints[team].push_back(sp.position);
         }
@@ -1010,7 +1060,6 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
         // In a two-team round mode, never collapse both teams onto the same
         // fallback anchor: use deterministic endpoints of the authored spawn
         // list until the map receives explicit spawnpoint.CT/spawnpoint.T tags.
-        const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
         if (gm.teams.size() >= 2 && !d.teamSpawnsResolved) {
             if (world.spawnPoints.size() >= 2) {
                 d.teamSpawnPoints[0].clear();
@@ -1127,7 +1176,7 @@ glm::vec3 gamemodeSpawnPointForActor(
     auto aIt = d.matchActors.find(actorId);
     if (aIt != d.matchActors.end()) roleId = aIt->second.roleId;
 
-    if (d.objectiveRounds && !isValidPlayingTeam(d, team)) {
+    if ((d.objectiveRounds || d.npcWaves || d.persistentNpcSpawns) && !isValidPlayingTeam(d, team)) {
         Debug::error(Debug::Category::Duel,
             "[RESPAWN] actor=%u role=%s team=%d reason=%s mode=%s: unknown team; using neutral anchor (refusing team-spawn fallback)\n",
             actorId, roleId.empty() ? "none" : roleId.c_str(), team, reason,
@@ -1135,7 +1184,7 @@ glm::vec3 gamemodeSpawnPointForActor(
         return gamemodeSpawnPoint(d);
     }
 
-    if (d.objectiveRounds) {
+    if (d.objectiveRounds || d.npcWaves || d.persistentNpcSpawns) {
         const std::string group = spawnGroupForTeam(d, team);
         Debug::log(Debug::Category::Duel,
             "[RESPAWN] actor=%u role=%s team=%d spawn_group=%s reason=%s\n",
@@ -1755,7 +1804,7 @@ void endObjectiveRound(ServerGamemodeState& d, int winnerTeam, int reason,
     if (winnerTeam >= 0 && winnerTeam < 2)
         ++d.roundWins[winnerTeam];
 
-    const bool matchDecided = d.roundsToWin > 0 &&
+    const bool matchDecided = !d.endlessRounds && d.roundsToWin > 0 &&
         (d.roundWins[0] >= d.roundsToWin || d.roundWins[1] >= d.roundsToWin);
 
     if (matchDecided) {
@@ -2564,7 +2613,7 @@ void spawnNpcWaveBatch(ServerGamemodeState& d,
         ServerNpc npc;
         npc.entityId = d.waveNextNpcId++;
         npc.name = "Wave NPC " + std::to_string(d.waveNpcSpawned + 1);
-        npc.pos = gamemodeSpawnPoint(d);
+        npc.pos = gamemodeSpawnPoint(d, 1);
         npc.yaw = 0.0f;
         npc.difficulty = 1.0f;
         addNpcWaveParticipant(d, npc);
@@ -2575,6 +2624,44 @@ void spawnNpcWaveBatch(ServerGamemodeState& d,
         "[WAVES] wave=%u spawned=%u/%u stagger=%d perTick=%d\n",
         d.waveNumber, d.waveNpcSpawned, d.waveNpcTarget,
         (int)d.waveStaggerEnabled, d.waveNpcsPerTick);
+}
+
+static size_t livingNpcCount(const std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    size_t count = 0;
+    for (const auto& kv : npcs)
+        if (kv.second.health > 0) ++count;
+    return count;
+}
+
+void spawnPersistentNpcBatchIfDue(ServerGamemodeState& d,
+                                  std::unordered_map<uint32_t, ServerNpc>& npcs,
+                                  uint32_t tick)
+{
+    if (!d.persistentNpcSpawns || d.npcSpawnMax <= 0 || tick < d.npcSpawnNextTick)
+        return;
+
+    const size_t living = livingNpcCount(npcs);
+    if (living >= (size_t)d.npcSpawnMax)
+        return;
+
+    const size_t room = (size_t)d.npcSpawnMax - living;
+    const size_t batch = std::min(room, (size_t)std::max(1, d.npcSpawnPerInterval));
+    for (size_t i = 0; i < batch; ++i) {
+        while (npcs.find(d.waveNextNpcId) != npcs.end()) ++d.waveNextNpcId;
+        ServerNpc npc;
+        npc.entityId = d.waveNextNpcId++;
+        npc.name = "Zombie Tower NPC " + std::to_string(++d.npcSpawnSequence);
+        npc.pos = gamemodeSpawnPoint(d, 1);
+        npc.yaw = 0.0f;
+        npc.difficulty = 1.0f;
+        addNpcWaveParticipant(d, npc);
+        npcs.emplace(npc.entityId, std::move(npc));
+    }
+    d.npcSpawnNextTick = tick + (uint32_t)std::max(1, d.npcSpawnIntervalTicks);
+    Debug::log(Debug::Category::Duel,
+        "[NPC SPAWN] policy=persistent spawned=%zu living=%zu/%d intervalTicks=%d tick=%u\n",
+        batch, livingNpcCount(npcs), d.npcSpawnMax, d.npcSpawnIntervalTicks, tick);
 }
 
 void beginNpcWave(ServerGamemodeState& d,
@@ -3118,13 +3205,17 @@ void serverGamemodeTick(SOCKET sock,
         GamemodeRegistry::instance().pollReload();
         lastGamemodePollMs = pollNow;
         const Gamemode& live = GamemodeRegistry::instance().get(d.matchMode);
-        if (d.npcWaves) {
+        if (d.npcWaves || d.persistentNpcSpawns) {
             d.waveStartCount = live.waveStartCount;
             d.waveIncrement = live.waveIncrement;
             d.waveNpcsPerWave = live.waveNpcsPerWave;
             d.waveBannerSeconds = live.waveBannerSeconds;
             d.waveStaggerEnabled = live.waveStaggerEnabled;
             d.waveNpcsPerTick = live.waveNpcsPerTick;
+            d.persistentNpcSpawns = live.npcSpawnPolicy == "persistent" && live.npcSpawnMax > 0;
+            d.npcSpawnMax = d.persistentNpcSpawns ? live.npcSpawnMax : 0;
+            d.npcSpawnIntervalTicks = std::max(1, live.npcSpawnIntervalTicks);
+            d.npcSpawnPerInterval = std::max(1, live.npcSpawnPerInterval);
             d.intermissionSeconds = (float)live.intermissionSeconds;
             d.resultsSeconds = (float)live.resultsSeconds;
         }
@@ -3220,6 +3311,35 @@ void serverGamemodeTick(SOCKET sock,
         // or community scoring mutate that geometry while it is active.
         if (d.procedural.enabled)
             return;
+    }
+
+    if (d.pendingJuggernautSkip)
+    {
+        d.pendingJuggernautSkip = false;
+        if (d.matchMode == "juggernaut" && d.objectiveRounds &&
+            d.phase != DUEL_PHASE_RESULTS) {
+            for (auto& kv : players) {
+                if (kv.second.spawnState != ServerPlayer::Active) continue;
+                kv.second.health = 0;
+                kv.second.dead = true;
+            }
+            for (auto& kv : npcs)
+                if (kv.second.matchTeam >= 0) kv.second.health = 0;
+
+            d.roundWinnerTeam = -1;
+            d.roundEndReason = 4; // host-forced draw/skip
+            d.roundCountdownFreeze = false;
+            d.matchOver = false;
+            d.winnerTeam = -1;
+            d.phase = DUEL_PHASE_RESULTS;
+            d.phaseTimer = d.resultsSeconds;
+            ++d.stateVersion;
+            ++d.roundVersion;
+            Debug::warn(Debug::Category::Duel,
+                "[JUGGERNAUT SKIP] forced draw round=%u tick=%u\n",
+                d.roundNumber, tick);
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+        }
     }
 
     if (d.mapOnly)
@@ -3702,7 +3822,8 @@ void serverGamemodeTick(SOCKET sock,
             d.phaseTimer -= SERVER_DT;
             if (d.phaseTimer <= 0.0f)
             {
-                if (d.matchOver || (d.maxRounds > 0 && (int)d.roundNumber >= d.maxRounds))
+                if (!d.endlessRounds &&
+                    (d.matchOver || (d.maxRounds > 0 && (int)d.roundNumber >= d.maxRounds)))
                 {
                     // Match complete: return to intermission for the next match.
                     d.phase = DUEL_PHASE_INTERMISSION;
@@ -3741,7 +3862,7 @@ void serverGamemodeTick(SOCKET sock,
     // ── Shared FFA/TDM/elimination match mode state machine ─────────
     // Any mode with a generic win condition (e.g. last_team_standing) uses the
     // same lifecycle instead of requiring a mode-specific branch.
-    if (d.npcWaves || d.matchMode == "ffa" || d.matchMode == "tdm" ||
+    if (d.npcWaves || d.persistentNpcSpawns || d.matchMode == "ffa" || d.matchMode == "tdm" ||
         d.winCondition == "last_team_standing" ||
         d.winCondition == "last_actor_alive")
     {
@@ -3756,7 +3877,7 @@ void serverGamemodeTick(SOCKET sock,
         switch (d.phase)
         {
         case DUEL_PHASE_WAITING:
-            if ((d.npcWaves && countActivePlayers(players) >= 1) ||
+            if (((d.npcWaves || d.persistentNpcSpawns) && countActivePlayers(players) >= 1) ||
                 (!d.npcWaves && (countActivePlayers(players) >= 2 ||
                 (countActivePlayers(players) >= 1 && !npcs.empty()))))
             {
@@ -3767,6 +3888,10 @@ void serverGamemodeTick(SOCKET sock,
                 if (d.npcWaves) {
                     d.waveNumber = 1;
                     beginNpcWave(d, players, npcs, npcSystem, npcIdsAlive, tick);
+                } else if (d.persistentNpcSpawns) {
+                    clearNpcWaveActors(d, npcs, npcSystem, npcIdsAlive);
+                    assignMatchParticipants(d, players, &npcs);
+                    beginMatchCountdown(d, players, npcs, npcSystem, tick);
                 } else {
                     assignMatchParticipants(d, players, &npcs);
                     beginMatchCountdown(d, players, npcs, npcSystem, tick);
@@ -3812,6 +3937,8 @@ void serverGamemodeTick(SOCKET sock,
                 d.phase = DUEL_PHASE_ACTIVE;
                 d.waveBannerVisible = false;
                 d.matchStartTick = tick;
+                if (d.persistentNpcSpawns)
+                    d.npcSpawnNextTick = tick + (uint32_t)std::max(1, d.npcSpawnIntervalTicks);
                 if (d.npcWaves) {
                     spawnNpcWaveBatch(d, npcs);
                     ++d.stateVersion;
@@ -3858,6 +3985,14 @@ void serverGamemodeTick(SOCKET sock,
                     broadcastDuelState(sock, d, players, totalPacketsOut);
                     break;
                 }
+                if (tick - d.lastBroadcastTick >= 15) {
+                    d.lastBroadcastTick = tick;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                }
+                break;
+            }
+            if (d.persistentNpcSpawns) {
+                spawnPersistentNpcBatchIfDue(d, npcs, tick);
                 if (tick - d.lastBroadcastTick >= 15) {
                     d.lastBroadcastTick = tick;
                     broadcastDuelState(sock, d, players, totalPacketsOut);
@@ -4153,6 +4288,27 @@ bool serverSpawnTagSelfTest(std::string& report)
         fail("CT/T should be valid playing teams");
     if (isValidPlayingTeam(sd, 2)) fail("spectator should not be a playing team");
 
+    const Gamemode& waves = GamemodeRegistry::instance().get("npc_waves");
+    if (waves.teams.size() < 2) {
+        fail("npc_waves should declare human and NPC teams");
+    } else {
+        if (!spawnTagMatchesTeam("spawn point", waves.teams[0]))
+            fail("generic spawn point should match the human team");
+        if (spawnTagMatchesTeam("NPC spawn point", waves.teams[0]))
+            fail("NPC spawn point should not match the human team");
+        if (!spawnTagMatchesTeam("NPC spawn point", waves.teams[1]))
+            fail("NPC spawn point should match the NPC team");
+        if (spawnTagMatchesTeam("spawn point", waves.teams[1]))
+            fail("generic spawn point should not match the NPC team");
+    }
+
+    const Gamemode& zombie = GamemodeRegistry::instance().get("zombie_tower");
+    if (zombie.id != "zombie_tower") fail("zombie_tower gamemode should load");
+    if (zombie.npcSpawnPolicy != "persistent") fail("zombie_tower spawn policy should be persistent");
+    if (zombie.npcSpawnMax != 50) fail("zombie_tower max_count should be 50");
+    if (zombie.npcSpawnIntervalTicks != 60) fail("zombie_tower interval_ticks should be 60");
+    if (zombie.npcSpawnPerInterval != 1) fail("zombie_tower per_interval should be 1");
+
     report += ok ? "PASS\n" : "FAIL\n";
     return ok;
 }
@@ -4403,6 +4559,12 @@ void serverGamemodeRequestMapChange(const std::string& mapId)
     if (!d.enabled || mapId.empty()) return;
     d.hasPendingManualMap = true;
     d.pendingManualMap = mapId;
+}
+
+void serverGamemodeRequestJuggernautSkip()
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    d.pendingJuggernautSkip = true;
 }
 
 void serverGamemodeRecordKill(

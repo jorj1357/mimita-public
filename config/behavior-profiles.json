@@ -133,6 +133,131 @@
       // Distance at which the exploration target counts as reached. Range [2,30].
       "travel_target_reached_meters": 4.0
     },
+     {
+      // Aiming: smaller aim_error_deg = more accurate shooting.
+      "id": "sandboxhard",
+      "aim_error_deg": 0.01,
+      // Seconds to wait before reacting to a newly seen target.
+      "reaction_delay": 0.01,
+      // Shooting speed multiplier: 1.0 = normal, 2.0 = twice as fast.
+      // "fire_cadence_multiplier": 2.0,
+      // "fire_cadence_multiplier": 0.5,
+      "fire_cadence_multiplier": 1.0,
+      // Attack willingness: 0.0 = passive, 1.0 = very aggressive.
+      "aggression": 0.99,
+      // Preferred distance during visible combat. This is not movement speed.
+      "preferred_range": 0.01,
+      // Target selection: bonus for keeping the current target.
+      "target_stickiness": 0.3,
+      // How much better a new target must be before switching to it.
+      "target_switch_threshold": 0.15,
+      // Prefer targets that are already hurt.
+      "low_health_target_bias": 0.2,
+      // Prefer targets that are dangerous to the NPC.
+      "threat_bias": 0.2,
+      // Prefer closer targets. 0.0 = ignore distance; larger = care more.
+      "distance_target_bias": 1.0,
+      // Weapon selection: prefer weapons whose range fits the target distance.
+      "weapon_range_bias": 1.0,
+      // Prefer weapons that deal more damage.
+      "weapon_damage_bias": 0.4,
+      // Prefer safer/ranged weapons instead of risky close combat.
+      "weapon_safety_bias": 0.01,
+      // How much better another weapon must be before switching.
+      "weapon_switch_threshold": 0.01,
+      // "forget_when_hidden" = stop using memory as soon as line of sight is lost.
+      // "last_known_position" = go to the last seen position, then look around.
+      // "persistent" = keep pursuing/searching until npc-difficulty.json
+      //                 perceptionMemoryTicks expires.
+      "pursuit_mode": "last_known_position",
+      // true = cover does not cancel pursuit; false = losing sight cancels it.
+      "continue_through_cover": true,
+      // true = use the remembered lastKnownPosition as the Chase destination.
+      "pursue_last_known_position": true,
+      // "look_around" = Circle/search at the point; "patrol" = continue forward;
+      // "continue_pursuit" = keep Chase active after reaching the point and
+      // search locally for pursuit_search_ticks before returning to patrol;
+      // "stop" = do not circle once the point is reached.
+      // Number of fixed 60 Hz ticks to search after reaching lastKnownPosition.
+      "pursuit_search_ticks": 600,
+      "after_reaching_last_known": "look_around",
+      // Target information through walls. Possible values:
+      // "none" = no memory; 
+      // "memory" = normal sight plus memory;
+      // "sound" = normal memory plus sound investigation;
+      // "radar" = delayed/imperfect position knowledge through walls;
+      // "perfect_radar" = exact current position knowledge through walls.
+      "information_mode": "perfect_radar",
+      // Radar delay in fixed 60 Hz ticks. 0 = current information.
+      "radar_delay_ticks": 0,
+      // Random positional error added to radar knowledge, in meters.
+      "radar_error_meters": 0.0,
+      // "normal" = use perceptionMemoryTicks; "long" = use radar_memory_ticks;
+      // "never" = keep memory until the target is invalid/dead.
+      "radar_memory_mode": "normal",
+      "radar_memory_ticks": 1800,
+      // Number of recent target positions used for delayed radar/path history.
+      "remembered_path_points": 12,
+      // true = continue moving along the target's last known velocity while hidden.
+      "continue_predicted_path": false,
+
+      // ── Movement replanning ─────────────────────────────────────────────
+      // Minimum seconds between route rebuilds. The timer is a floor, not a
+      // command: a valid route is kept until it empties, finishes, is
+      // physically blocked, the goal moves, or progress fails.
+      // Units: seconds. Range [0.1, 30.0]. Applies to visible, remembered,
+      // and patrol movement. Hot-reloadable.
+      "repath_interval_seconds": 0.9,
+      // Rebuild the route when the goal position moved more than this.
+      // Units: meters. Range [0.0, 50.0]. Hot-reloadable.
+      "goal_move_threshold_meters": 2.5,
+
+      // ── Movement commitment (shared by visible pursuit, remembered pursuit,
+      // and patrol) ──────────────────────────────────────────────────────
+      "movement_commitment": {
+        // Master switch. false = the navigator's legacy direct/detour steering.
+        // Hot-reloadable.
+        "enabled": true,
+        // How long a chosen direction is held before it may be reconsidered.
+        // Units: seconds. Range [0.5, 120.0]. Hot-reloadable.
+        "direction_commit_seconds": 10.0,
+        // Window over which movement progress is measured.
+        // Units: seconds. Range [0.1, 10.0]. Hot-reloadable.
+        "progress_check_seconds": 1.0,
+        // Required planar movement per progress window before the direction is
+        // judged failed. Units: meters. Range [0.0, 20.0]. Hot-reloadable.
+        "minimum_progress_meters": 0.5,
+        // Maximum distance the candidate direction scorer probes for open
+        // space. Units: meters. Range [2.0, 40.0]. Hot-reloadable.
+        "candidate_distance_meters": 20.0,
+        // true = permit a committed direction that points back the way we came.
+        // false penalizes reversal. Hot-reloadable.
+        "allow_reverse": false,
+        // true = penalize candidate directions near recently visited/blocked
+        // points so the actor does not retrace or re-test the same wall.
+        "avoid_recent_path": true,
+        // Radius of the recent-path penalty. Units: meters. Range [0.5, 30.0].
+        "recent_path_avoid_radius": 5.0,
+        // true = a genuinely visible enemy (alive + FOV + range + LOS) may take
+        // steering with combat movement (circle/strafe/juke). A remembered or
+        // radar-only enemy never enables combat movement.
+        "visible_enemy_allows_combat_movement": true,
+        // Score weights for the candidate direction. Larger = care more.
+        // forward_bias rewards continuing the current heading; target_progress
+        // rewards closing on the target; open_distance rewards usable room;
+        // reverse_penalty subtracts for turning back. Ranges [0.0, 50.0].
+        "forward_bias": 2.0,
+        "target_progress_bias": 4.0,
+        "open_distance_bias": 6.0,
+        "reverse_penalty": 8.0
+      },
+      // Persistent exploration travel target (Explore goal). The target is held
+      // until reached instead of being recomputed from the moving body each tick.
+      // Units: metres. Range [15,300]. Hot-reloadable.
+      "travel_target_distance_meters": 60.0,
+      // Distance at which the exploration target counts as reached. Range [2,30].
+      "travel_target_reached_meters": 4.0
+    },
     {
       // Rage2 is a custom profile. Its id is selected by Sandbox JSON.
       "id": "rage2",
@@ -246,6 +371,46 @@
       "pursue_last_known_position": true,
       "pursuit_search_ticks": 600,
       "after_reaching_last_known": "look_around"
+    },
+    {
+      // Juggernauts are dangerous when they see a target, but should not have
+      // persistent target information through cover in the first playable slice.
+      "id": "juggernaut_limited",
+      "aim_error_deg": 4.0,
+      "reaction_delay": 0.25,
+      "fire_cadence_multiplier": 1.0,
+      "aggression": 0.85,
+      "preferred_range": 16.0,
+      "weapon_range_bias": 1.0,
+      "weapon_damage_bias": 1.0,
+      "weapon_safety_bias": 0.2,
+      "information_mode": "none",
+      "pursuit_mode": "last_known_position",
+      "continue_through_cover": false,
+      "pursue_last_known_position": false,
+      "after_reaching_last_known": "stop",
+      "pursuit_search_ticks": 90,
+      "radar_memory_mode": "normal",
+      "radar_memory_ticks": 90,
+      "repath_interval_seconds": 1.5,
+      "goal_move_threshold_meters": 4.0,
+      "movement_commitment": {
+        "enabled": true,
+        "direction_commit_seconds": 12.0,
+        "progress_check_seconds": 1.5,
+        "minimum_progress_meters": 0.25,
+        "candidate_distance_meters": 12.0,
+        "allow_reverse": false,
+        "avoid_recent_path": true,
+        "recent_path_avoid_radius": 4.0,
+        "visible_enemy_allows_combat_movement": true,
+        "forward_bias": 2.0,
+        "target_progress_bias": 3.0,
+        "open_distance_bias": 4.0,
+        "reverse_penalty": 10.0
+      },
+      "travel_target_distance_meters": 35.0,
+      "travel_target_reached_meters": 5.0
     },
     {
       // Extremely accurate, persistent pursuit profile.

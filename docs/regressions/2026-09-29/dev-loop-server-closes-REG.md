@@ -87,3 +87,30 @@ now observable. Automated proof:
 Human acceptance is still required: leave the client and observe that the server
 console stays open, a later client reuses the room, and any unexpected server
 exit is reported with an exit code.
+
+## Attempted Fix 3
+
+Time: 2026-10-05
+
+The remaining ownership leak was in client-side duel/leave cleanup. The client
+can call `stopExternalServerProcess()` when leaving a queue or match. That
+helper is correct for a GUI-created server, but a dev-loop client must not use
+it against the dev-loop's durable server.
+
+`devscripts/dev-loop.py` now launches the client with the explicit environment
+marker `MIMITA_DEV_LOOP_SERVER=1`. `src/duel/duel-queue.cpp` routes every
+client-side external-server cleanup call through
+`stopExternalServerOwnedByThisClient()`: the marker preserves the dev-loop
+server, while an ordinary GUI client still calls `stopExternalServerProcess()`.
+
+Build/source proof:
+
+- `python -m py_compile devscripts/dev-loop.py`: passed.
+- `python build_agent.py`: `Status: SUCCESS`, return code 0.
+- `git diff --check -- devscripts/dev-loop.py src/duel/duel-queue.cpp`: passed.
+
+Human acceptance remains required: with a freshly restarted dev-loop using the
+new client, leave the match, confirm the client changes state without closing,
+confirm the dedicated server console remains open, and rejoin the retained
+room. If the server still exits, capture its console exit code and the client
+line containing `[DUEL QUEUE] preserving dev-loop-owned server`.

@@ -8,7 +8,8 @@ enum class AudioEventType;
 
 namespace WeaponAudio {
 
-void playShootSound(const WeaponDefinition& def, const glm::vec3& position, float sizeScale = 1.0f);
+void playShootSound(const WeaponDefinition& def, const glm::vec3& position,
+                    float sizeScale = 1.0f, unsigned int actorId = 0);
 void playReloadSound(const WeaponDefinition& def);
 void playDryFireSound(const WeaponDefinition& def);
 void playEquipSound(const WeaponDefinition& def);

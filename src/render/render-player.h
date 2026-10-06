@@ -22,4 +22,5 @@ void renderNetworkPlayer(
     const Camera& cam,
     uint32_t networkEntityId,
     bool isLocal,
-    int localTeam = -1);
+    int localTeam = -1,
+    int actorTeam = -1);

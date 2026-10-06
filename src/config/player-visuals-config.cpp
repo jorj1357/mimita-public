@@ -135,6 +135,18 @@ void PlayerVisualsConfig::clearPlayerOutlinesOverride() {
     mPlayerOutlinesOverride = false;
     mPlayerOutlinesEnabled = true;
 }
+void PlayerVisualsConfig::setTeamOutlineColors(const glm::vec3& friendly, const glm::vec3& enemy) {
+    mTeamOutlineColorsOverride = true;
+    mFriendlyOutlineColor = friendly;
+    mEnemyOutlineColor = enemy;
+}
+void PlayerVisualsConfig::clearTeamOutlineColorsOverride() {
+    mTeamOutlineColorsOverride = false;
+}
+glm::vec3 PlayerVisualsConfig::effectiveOutlineColor(bool teammate, const glm::vec3& configured) const {
+    if (!mTeamOutlineColorsOverride) return configured;
+    return teammate ? mFriendlyOutlineColor : mEnemyOutlineColor;
+}
 std::string PlayerVisualsConfig::effectiveMode(const std::string& configuredMode) const {
     if (mPlayerOutlinesOverride && !mPlayerOutlinesEnabled) return "none";
     return configuredMode;

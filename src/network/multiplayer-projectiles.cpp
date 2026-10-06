@@ -12,6 +12,7 @@
 #include "network/simulation-constants.h"
 #include "config/networking-config.h"
 #include "network/confirmed-damage-presentation.h"
+#include "audio/hitmarker-audio.h"
 #include "network/network-weapons.h"
 #include "killfeed/killfeed.h"
 
@@ -1281,6 +1282,13 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
     }
 
     presentConfirmedDamage(ctx, *event, sink);
+
+    if (event->killed)
+    {
+        const bool localKiller = event->attackerPlayerId == ctx.localPlayerId;
+        const glm::vec3 deathPos(event->hitX, event->hitY, event->hitZ);
+        playDeathSoundForDamage(event->damage, localKiller, deathPos);
+    }
 
     // The killfeed line for NPC→player kills is owned by the single
     // authoritative KillEventPacket, so no per-viewer reconstruction happens

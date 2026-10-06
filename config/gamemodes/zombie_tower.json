@@ -1,0 +1,38 @@
+{
+  "id": "zombie_tower",
+  "name": "Zombie Tower",
+  "description": "Open-ended shooting against a persistent stream of NPCs.",
+  "teams": [
+    {
+      "id": "humans",
+      "display_name": "Humans",
+      "capacity": 0,
+      "spawn_group": "human_spawn",
+      "spawn_tag_excludes": "npc"
+    },
+    {
+      "id": "npcs",
+      "display_name": "NPCs",
+      "capacity": 0,
+      "spawn_group": "npc_spawn",
+      "spawn_tag_contains": "npc"
+    }
+  ],
+  "goal_value": 0,
+  "time_limit_seconds": 0,
+  "respawn_seconds": 0,
+  "kill_heals": true,
+  "countdown_seconds": 3.0,
+  "go_seconds": 0.75,
+  "intermission_seconds": 5,
+  "results_seconds": 0,
+  "weapon_set_id": 1,
+  "win_condition": "persistent_npc_spawns",
+  "lives": 999,
+  "npc_spawn": {
+    "policy": "persistent",
+    "max_count": 50,
+    "interval_ticks": 60,
+    "per_interval": 1
+  }
+}

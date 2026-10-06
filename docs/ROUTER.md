@@ -21,6 +21,8 @@ This is the map for the project documentation.
 - `docs/architecture/time-and-formatting/time-and-formatting.md`: universal
   UTC, ISO 8601, folder, and generated filename rules.
 - `docs/workflows/`: methods for common kinds of work.
+- `docs/workflows/runtime-scenario-validation.md`: required real-executable,
+  live-`events.jsonl` workflow for behavior investigations and changes.
 - `docs/operations/`: build, deployment, assets, and completion procedures.
 - `docs/skills/`: focused review checklists used for the task.
 - `docs/regressions/`: confirmed failures and their permanent lessons.
@@ -77,6 +79,7 @@ systems first. Use this default order:
 | Logging or diagnostics | `docs/specs/debug-logging/debug-logging.md`, `docs/skills/logging-checker-v1.md` |
 | Performance | `docs/specs/performance/performance.md`, `docs/skills/efficiency-checker-v1.md` |
 | Terminal commands | `docs/architecture/terminal-commands/terminal-commands.md`, `docs/skills/terminal-command-checker-v1.md` |
+| Runtime behavior validation | `docs/workflows/runtime-scenario-validation.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/architecture/terminal-commands/terminal-commands.md` |
 | In-game chat | `docs/specs/ingame-chat/ingame-chat.md`, `docs/skills/chat-checker-v1.md` |
 | Moderation | `docs/specs/moderation/moderation.md`, `docs/skills/moderation-checker-v1.md` |
 | Assets or sound | `docs/operations/asset-management/asset-management.md`, `docs/skills/asset-checker-v1.md` |

@@ -30,6 +30,7 @@
 
 #include "physics/config.h"
 #include "physics/physics-types.h"
+#include "physics/movement/collision-aabb-tree.h"
 
 #include <string>
 #include <cstdint>
@@ -162,7 +163,12 @@ struct World {
     // broadphase query only tests the ones near it instead of re-scanning every
     // large triangle every query.
     std::unordered_map<glm::ivec3, std::vector<int>, IVec3Hash> collisionLargeChunks;
-    std::vector<int> collisionAlwaysLargeTriangles;
+
+    // Persistent static broadphase: one AABB tree over every collision triangle
+    // (including very large ones). Built by buildCollisionChunks and queried as
+    // the primary path of appendChunkTrianglesForAABB. The chunk/sub-grid
+    // structures remain a fallback for worlds whose tree is not ready.
+    AabbTree collisionTree;
 
     std::vector<SpawnPoint> spawnPoints;
     int selectedSpawnIndex = -1;

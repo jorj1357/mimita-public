@@ -19,6 +19,13 @@ struct HitmarkerAudioConfig {
     float pitchMax = 1.30f;
     float damageForMaxImpact = 150.0f;
     float curveExponent = 0.5f;
+    float deathPitchMin = 0.06f;
+    float deathPitchMax = 3.90f;
+    float deathDamageForMaxEffect = 1000.0f;
+    float deathVolumeMin = 0.35f;
+    float deathVolumeMax = 1.50f;
+    float deathKillerVolumeMultiplier = 2.0f;
+    float deathObserverVolumeMultiplier = 0.5f;
 };
 
 static HitmarkerAudioConfig gConfig;
@@ -61,6 +68,20 @@ static void reloadConfig()
             loaded.damageForMaxImpact = j["damageForMaxImpact"].get<float>();
         if (j.contains("curveExponent"))
             loaded.curveExponent = j["curveExponent"].get<float>();
+        if (j.contains("deathPitchMin"))
+            loaded.deathPitchMin = j["deathPitchMin"].get<float>();
+        if (j.contains("deathPitchMax"))
+            loaded.deathPitchMax = j["deathPitchMax"].get<float>();
+        if (j.contains("deathDamageForMaxEffect"))
+            loaded.deathDamageForMaxEffect = j["deathDamageForMaxEffect"].get<float>();
+        if (j.contains("deathVolumeMin"))
+            loaded.deathVolumeMin = j["deathVolumeMin"].get<float>();
+        if (j.contains("deathVolumeMax"))
+            loaded.deathVolumeMax = j["deathVolumeMax"].get<float>();
+        if (j.contains("deathKillerVolumeMultiplier"))
+            loaded.deathKillerVolumeMultiplier = j["deathKillerVolumeMultiplier"].get<float>();
+        if (j.contains("deathObserverVolumeMultiplier"))
+            loaded.deathObserverVolumeMultiplier = j["deathObserverVolumeMultiplier"].get<float>();
 
         gConfig = loaded;
         Debug::log(Debug::Category::Audio,
@@ -83,6 +104,13 @@ static void saveConfig()
     j["pitchMax"] = gConfig.pitchMax;
     j["damageForMaxImpact"] = gConfig.damageForMaxImpact;
     j["curveExponent"] = gConfig.curveExponent;
+    j["deathPitchMin"] = gConfig.deathPitchMin;
+    j["deathPitchMax"] = gConfig.deathPitchMax;
+    j["deathDamageForMaxEffect"] = gConfig.deathDamageForMaxEffect;
+    j["deathVolumeMin"] = gConfig.deathVolumeMin;
+    j["deathVolumeMax"] = gConfig.deathVolumeMax;
+    j["deathKillerVolumeMultiplier"] = gConfig.deathKillerVolumeMultiplier;
+    j["deathObserverVolumeMultiplier"] = gConfig.deathObserverVolumeMultiplier;
 
     std::ofstream file(CONFIG_PATH);
     if (file.is_open())
@@ -140,6 +168,31 @@ void playHitmarkerSound(int damage)
                "  pitch=%.2f\n"
                "  volume=%.2f\n",
                damage, pitch, volume);
+}
+
+void playDeathSoundForDamage(int damage, bool localKiller, const glm::vec3& position)
+{
+    if (damage <= 0)
+        return;
+
+    const float t = std::clamp(
+        static_cast<float>(damage) / std::max(1.0f, gConfig.deathDamageForMaxEffect),
+        0.0f, 1.0f);
+    const float exp = std::max(0.01f, gConfig.curveExponent);
+    const float curve = std::pow(t, exp);
+    const float pitch = gConfig.deathPitchMax -
+        (gConfig.deathPitchMax - gConfig.deathPitchMin) * curve;
+    const float baseVolume = gConfig.deathVolumeMin +
+        (gConfig.deathVolumeMax - gConfig.deathVolumeMin) * curve;
+    const float roleMultiplier = localKiller
+        ? gConfig.deathKillerVolumeMultiplier
+        : gConfig.deathObserverVolumeMultiplier;
+    const float volume = baseVolume * std::max(0.0f, roleMultiplier);
+
+    playWorldSound("npc_death", position, volume, pitch, 45.0f);
+    Debug::log(Debug::Category::Audio,
+               "[DEATH AUDIO] damage=%d localKiller=%d pitch=%.2f volume=%.2f\n",
+               damage, (int)localKiller, pitch, volume);
 }
 
 void registerHitmarkerAudioCommands()

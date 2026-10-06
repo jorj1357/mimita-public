@@ -181,6 +181,8 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 team.capacity = std::max(0, optInt(t, "capacity", 0));
                 team.role = optString(t, "role", "");
                 team.spawnGroup = optString(t, "spawn_group", "");
+                team.spawnTagContains = optString(t, "spawn_tag_contains", "");
+                team.spawnTagExcludes = optString(t, "spawn_tag_excludes", "");
                 team.attackersPerSite = std::max(0, optInt(t, "attackers_per_site", 0));
                 team.defendersPerSite = std::max(0, optInt(t, "defenders_per_site", 0));
                 if (t.contains("one_rotator") && t["one_rotator"].is_boolean())
@@ -258,6 +260,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             const auto& r = root["rounds"];
             next.rounds.maxRounds = std::max(0, optInt(r, "max_rounds", 0));
             next.rounds.roundsToWin = std::max(0, optInt(r, "rounds_to_win", 0));
+            next.rounds.endlessRounds = optBool(r, "endless_rounds", next.rounds.endlessRounds);
             next.rounds.roundSeconds = std::max(0.0f, optFloat(r, "round_seconds", 0.0f));
             next.rounds.freezeSeconds = std::max(0.0f, optFloat(r, "freeze_seconds", 0.0f));
             next.rounds.countdownSeconds = std::max(0.0f, optFloat(r, "countdown_seconds", 0.0f));
@@ -287,6 +290,20 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("ragdolls", next.presentation.hasRagdolls, next.presentation.ragdolls);
             readFlag("enemy_healthbars", next.presentation.hasEnemyHealthbars, next.presentation.enemyHealthbars);
             readFlag("player_outlines", next.presentation.hasPlayerOutlines, next.presentation.playerOutlines);
+            if (p.contains("friendly_outline_color") && p["friendly_outline_color"].is_array() && p["friendly_outline_color"].size() >= 3) {
+                next.presentation.friendlyOutlineColor = {
+                    p["friendly_outline_color"][0].get<float>(),
+                    p["friendly_outline_color"][1].get<float>(),
+                    p["friendly_outline_color"][2].get<float>()};
+                next.presentation.hasTeamOutlineColors = true;
+            }
+            if (p.contains("enemy_outline_color") && p["enemy_outline_color"].is_array() && p["enemy_outline_color"].size() >= 3) {
+                next.presentation.enemyOutlineColor = {
+                    p["enemy_outline_color"][0].get<float>(),
+                    p["enemy_outline_color"][1].get<float>(),
+                    p["enemy_outline_color"][2].get<float>()};
+                next.presentation.hasTeamOutlineColors = true;
+            }
         }
 
         // ── Bomb Tag specific fields ─────────────────────────────────
@@ -387,6 +404,15 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.waveBannerSeconds = std::max(0.0f, optFloat(root, "wave_banner_seconds", next.waveBannerSeconds));
         next.waveStaggerEnabled = optBool(root, "wave_stagger_enabled", next.waveStaggerEnabled);
         next.waveNpcsPerTick = std::max(1, optInt(root, "wave_npcs_per_tick", next.waveNpcsPerTick));
+        if (root.contains("npc_spawn") && root["npc_spawn"].is_object()) {
+            const auto& s = root["npc_spawn"];
+            next.npcSpawnPolicy = optString(s, "policy", next.npcSpawnPolicy);
+            next.npcSpawnMax = std::max(0, optInt(s, "max_count", next.npcSpawnMax));
+            next.npcSpawnIntervalTicks = std::max(
+                1, optInt(s, "interval_ticks", next.npcSpawnIntervalTicks));
+            next.npcSpawnPerInterval = std::max(
+                1, optInt(s, "per_interval", next.npcSpawnPerInterval));
+        }
 
         slot.mode = next;
         Debug::warn(Debug::Category::Duel,

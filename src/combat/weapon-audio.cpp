@@ -2,14 +2,17 @@
 #include "weapon-types.h"
 #include "audio/audio.h"
 #include "config/size-scaling-config.h"
+#include "network/multiplayer-context.h"
 #include <cstdlib>
 #include <cstdio>
-#include <functional>
 #include "debug/debug-log.h"
+
+extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace WeaponAudio {
 
-void playShootSound(const WeaponDefinition& def, const glm::vec3& position, float sizeScale) {
+void playShootSound(const WeaponDefinition& def, const glm::vec3& position,
+                    float sizeScale, unsigned int actorId) {
     if (def.soundShoot.empty()) return;
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(sizeScale, 0.001f);
@@ -21,9 +24,14 @@ void playShootSound(const WeaponDefinition& def, const glm::vec3& position, floa
     float rndVolume = 1.0f + ((rand() % 20001 - 10000) / 10000.0f) * volRange;
     Debug::log(Debug::Category::Audio, "[WEAPON AUDIO] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
                def.id.c_str(), def.soundShoot.c_str(), rndPitch * sPitch, rndVolume * sVol);
+    if (actorId == 0 && gpMpContext && gpMpContext->active)
+        actorId = gpMpContext->localPlayerId;
+    const unsigned int ownerId = def.soundRetrigger
+        ? audioOwnerKey(actorId, def.id)
+        : 0u;
     AudioEvent event{def.soundShoot, AudioCategory::Weapons, true, position,
                      def.soundVolume * rndVolume * sVol, rndPitch * sPitch, 80.0f,
-                     def.soundRetrigger ? static_cast<unsigned int>(0x50524600u ^ std::hash<std::string>{}(def.id)) : 0u,
+                     ownerId,
                      def.soundStartSeconds, def.soundEndSeconds, def.soundRetrigger};
     AudioManager::instance().play(event);
 }

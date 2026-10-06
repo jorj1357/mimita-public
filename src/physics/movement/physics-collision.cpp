@@ -54,7 +54,8 @@ void appendChunkTrianglesForAABB(
     const AABB& queryBounds,
     float expansion,
     std::vector<int>& out,
-    const char* caller
+    const char* caller,
+    bool preferWorldTree
 ) {
     auto t0 = std::chrono::steady_clock::now();
 
@@ -77,6 +78,33 @@ void appendChunkTrianglesForAABB(
     if (clamped.min.x > clamped.max.x) std::swap(clamped.min.x, clamped.max.x);
     if (clamped.min.y > clamped.max.y) std::swap(clamped.min.y, clamped.max.y);
     if (clamped.min.z > clamped.max.z) std::swap(clamped.min.z, clamped.max.z);
+
+    // Primary path: the persistent world tree holds every static collision
+    // triangle, including very large ones. Query it for the nearby triangle IDs
+    // whose own AABB overlaps the (expansion-grown) query box. This matches the
+    // chunk path's overlap filter but is O(log n + k) and never scans an
+    // always-large list.
+    if (preferWorldTree && !world.collisionTree.empty() &&
+        world.collisionTree.ids.size() == world.collisionMesh.triangles.size())
+    {
+        AABB treeQuery = clamped;
+        treeQuery.min -= glm::vec3(expansion);
+        treeQuery.max += glm::vec3(expansion);
+        world.collisionTree.query(treeQuery, out);
+
+        auto t1 = std::chrono::steady_clock::now();
+        float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        CHUNK_LOG("[CHUNK TREE] caller=%s aabb=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) "
+                  "size=(%.1f %.1f %.1f) candidates=%zu elapsedMs=%.3f\n",
+                  caller ? caller : "?",
+                  clamped.min.x, clamped.min.y, clamped.min.z,
+                  clamped.max.x, clamped.max.y, clamped.max.z,
+                  clamped.max.x - clamped.min.x,
+                  clamped.max.y - clamped.min.y,
+                  clamped.max.z - clamped.min.z,
+                  out.size(), ms);
+        return;
+    }
 
     if (world.collisionChunks.empty() || world.collisionChunkSize <= 0.001f)
     {
@@ -181,7 +209,7 @@ void appendChunkTrianglesForAABB(
 
     // Include large triangles that exceeded MAX_CHUNKS_PER_TRIANGLE. They are
     // location-filtered through a coarse grid so only nearby ones are tested.
-    if (!world.collisionLargeChunks.empty() || !world.collisionAlwaysLargeTriangles.empty())
+    if (!world.collisionLargeChunks.empty())
     {
         auto visitLarge = [&](int triIndex) {
             if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
@@ -225,8 +253,6 @@ void appendChunkTrianglesForAABB(
                     visitLarge(triIndex);
             }
         }
-        for (int triIndex : world.collisionAlwaysLargeTriangles)
-            visitLarge(triIndex);
     }
 
     auto t1 = std::chrono::steady_clock::now();
@@ -558,54 +584,61 @@ bool rayTraverseGridCells(
     }
 
     // ── Test large triangles that exceed MAX_CHUNKS_PER_TRIANGLE ──────
-    if (!world.collisionLargeChunks.empty() || !world.collisionAlwaysLargeTriangles.empty())
-    {
-        auto visitLarge = [&](int triIndex) {
-            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
-                return;
-            if (s_triGen[triIndex] == s_gen)
-                return;
-            s_triGen[triIndex] = s_gen;
+    auto visitLarge = [&](int triIndex) {
+        if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+            return;
+        if (s_triGen[triIndex] == s_gen)
+            return;
+        s_triGen[triIndex] = s_gen;
 
-            float d = 0.0f;
-            if (rayTriangle(rayOrigin, rayDir, world.collisionMesh.triangles[triIndex], d) &&
-                d >= 0.0f && d <= nearest && d < nearest)
-            {
-                nearest = d;
-                bestN = world.collisionMesh.triangles[triIndex].normal;
-                hit = true;
-            }
-        };
-
-        if (world.collisionLargeChunks.empty())
+        float d = 0.0f;
+        if (rayTriangle(rayOrigin, rayDir, world.collisionMesh.triangles[triIndex], d) &&
+            d >= 0.0f && d <= nearest && d < nearest)
         {
-            for (int triIndex : world.collisionLargeTriangles)
+            nearest = d;
+            bestN = world.collisionMesh.triangles[triIndex].normal;
+            hit = true;
+        }
+    };
+
+    if (!world.collisionLargeChunks.empty())
+    {
+        const float coarseSize = world.collisionChunkSize * 4.0f;
+        glm::ivec3 cc0((int)std::floor(rayAABB.min.x / coarseSize),
+                       (int)std::floor(rayAABB.min.y / coarseSize),
+                       (int)std::floor(rayAABB.min.z / coarseSize));
+        glm::ivec3 cc1((int)std::floor(rayAABB.max.x / coarseSize),
+                       (int)std::floor(rayAABB.max.y / coarseSize),
+                       (int)std::floor(rayAABB.max.z / coarseSize));
+        if (cc1.x - cc0.x > 100) cc1.x = cc0.x + 100;
+        if (cc1.y - cc0.y > 100) cc1.y = cc0.y + 100;
+        if (cc1.z - cc0.z > 100) cc1.z = cc0.z + 100;
+        for (int x = cc0.x; x <= cc1.x; ++x)
+        for (int y = cc0.y; y <= cc1.y; ++y)
+        for (int z = cc0.z; z <= cc1.z; ++z)
+        {
+            auto it = world.collisionLargeChunks.find(glm::ivec3(x, y, z));
+            if (it == world.collisionLargeChunks.end())
+                continue;
+            for (int triIndex : it->second)
                 visitLarge(triIndex);
         }
-        else
-        {
-            const float coarseSize = world.collisionChunkSize * 4.0f;
-            glm::ivec3 cc0((int)std::floor(rayAABB.min.x / coarseSize),
-                           (int)std::floor(rayAABB.min.y / coarseSize),
-                           (int)std::floor(rayAABB.min.z / coarseSize));
-            glm::ivec3 cc1((int)std::floor(rayAABB.max.x / coarseSize),
-                           (int)std::floor(rayAABB.max.y / coarseSize),
-                           (int)std::floor(rayAABB.max.z / coarseSize));
-            if (cc1.x - cc0.x > 100) cc1.x = cc0.x + 100;
-            if (cc1.y - cc0.y > 100) cc1.y = cc0.y + 100;
-            if (cc1.z - cc0.z > 100) cc1.z = cc0.z + 100;
-            for (int x = cc0.x; x <= cc1.x; ++x)
-            for (int y = cc0.y; y <= cc1.y; ++y)
-            for (int z = cc0.z; z <= cc1.z; ++z)
-            {
-                auto it = world.collisionLargeChunks.find(glm::ivec3(x, y, z));
-                if (it == world.collisionLargeChunks.end())
-                    continue;
-                for (int triIndex : it->second)
-                    visitLarge(triIndex);
-            }
-        }
-        for (int triIndex : world.collisionAlwaysLargeTriangles)
+    }
+    else if (world.collisionTree.empty() ||
+             world.collisionTree.ids.size() != world.collisionMesh.triangles.size())
+    {
+        for (int triIndex : world.collisionLargeTriangles)
+            visitLarge(triIndex);
+    }
+
+    // Triangles beyond the coarse grid (the old always-large set) are covered by
+    // the persistent world tree. s_triGen dedups anything already tested above.
+    if (!world.collisionTree.empty() &&
+        world.collisionTree.ids.size() == world.collisionMesh.triangles.size())
+    {
+        std::vector<int> treeCandidates;
+        world.collisionTree.query(rayAABB, treeCandidates);
+        for (int triIndex : treeCandidates)
             visitLarge(triIndex);
     }
 
@@ -821,58 +854,65 @@ bool sweptSphereTraverseGridCells(
     }
 
     // ── Test large triangles that exceed MAX_CHUNKS_PER_TRIANGLE ──────
-    if (!world.collisionLargeChunks.empty() || !world.collisionAlwaysLargeTriangles.empty())
-    {
-        auto visitLarge = [&](int triIndex) {
-            if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
-                return;
-            if (s_triGen[triIndex] == s_gen)
-                return;
-            s_triGen[triIndex] = s_gen;
+    auto visitLarge = [&](int triIndex) {
+        if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+            return;
+        if (s_triGen[triIndex] == s_gen)
+            return;
+        s_triGen[triIndex] = s_gen;
 
-            float d = maxDistance;
-            glm::vec3 n(0.0f);
-            glm::vec3 p(0.0f);
-            if (sweptSphereTriangle(origin, direction, radius,
-                                     world.collisionMesh.triangles[triIndex],
-                                     maxDistance, d, n, p) && d < nearest)
-            {
-                nearest = d;
-                bestN = n;
-                bestP = p;
-                hit = true;
-            }
-        };
-
-        if (world.collisionLargeChunks.empty())
+        float d = maxDistance;
+        glm::vec3 n(0.0f);
+        glm::vec3 p(0.0f);
+        if (sweptSphereTriangle(origin, direction, radius,
+                                 world.collisionMesh.triangles[triIndex],
+                                 maxDistance, d, n, p) && d < nearest)
         {
-            for (int triIndex : world.collisionLargeTriangles)
+            nearest = d;
+            bestN = n;
+            bestP = p;
+            hit = true;
+        }
+    };
+
+    if (!world.collisionLargeChunks.empty())
+    {
+        const float coarseSize = world.collisionChunkSize * 4.0f;
+        glm::ivec3 cc0((int)std::floor(sweptAABB.min.x / coarseSize),
+                       (int)std::floor(sweptAABB.min.y / coarseSize),
+                       (int)std::floor(sweptAABB.min.z / coarseSize));
+        glm::ivec3 cc1((int)std::floor(sweptAABB.max.x / coarseSize),
+                       (int)std::floor(sweptAABB.max.y / coarseSize),
+                       (int)std::floor(sweptAABB.max.z / coarseSize));
+        if (cc1.x - cc0.x > 100) cc1.x = cc0.x + 100;
+        if (cc1.y - cc0.y > 100) cc1.y = cc0.y + 100;
+        if (cc1.z - cc0.z > 100) cc1.z = cc0.z + 100;
+        for (int x = cc0.x; x <= cc1.x; ++x)
+        for (int y = cc0.y; y <= cc1.y; ++y)
+        for (int z = cc0.z; z <= cc1.z; ++z)
+        {
+            auto it = world.collisionLargeChunks.find(glm::ivec3(x, y, z));
+            if (it == world.collisionLargeChunks.end())
+                continue;
+            for (int triIndex : it->second)
                 visitLarge(triIndex);
         }
-        else
-        {
-            const float coarseSize = world.collisionChunkSize * 4.0f;
-            glm::ivec3 cc0((int)std::floor(sweptAABB.min.x / coarseSize),
-                           (int)std::floor(sweptAABB.min.y / coarseSize),
-                           (int)std::floor(sweptAABB.min.z / coarseSize));
-            glm::ivec3 cc1((int)std::floor(sweptAABB.max.x / coarseSize),
-                           (int)std::floor(sweptAABB.max.y / coarseSize),
-                           (int)std::floor(sweptAABB.max.z / coarseSize));
-            if (cc1.x - cc0.x > 100) cc1.x = cc0.x + 100;
-            if (cc1.y - cc0.y > 100) cc1.y = cc0.y + 100;
-            if (cc1.z - cc0.z > 100) cc1.z = cc0.z + 100;
-            for (int x = cc0.x; x <= cc1.x; ++x)
-            for (int y = cc0.y; y <= cc1.y; ++y)
-            for (int z = cc0.z; z <= cc1.z; ++z)
-            {
-                auto it = world.collisionLargeChunks.find(glm::ivec3(x, y, z));
-                if (it == world.collisionLargeChunks.end())
-                    continue;
-                for (int triIndex : it->second)
-                    visitLarge(triIndex);
-            }
-        }
-        for (int triIndex : world.collisionAlwaysLargeTriangles)
+    }
+    else if (world.collisionTree.empty() ||
+             world.collisionTree.ids.size() != world.collisionMesh.triangles.size())
+    {
+        for (int triIndex : world.collisionLargeTriangles)
+            visitLarge(triIndex);
+    }
+
+    // Triangles beyond the coarse grid (the old always-large set) are covered by
+    // the persistent world tree. s_triGen dedups anything already tested above.
+    if (!world.collisionTree.empty() &&
+        world.collisionTree.ids.size() == world.collisionMesh.triangles.size())
+    {
+        std::vector<int> treeCandidates;
+        world.collisionTree.query(sweptAABB, treeCandidates);
+        for (int triIndex : treeCandidates)
             visitLarge(triIndex);
     }
 

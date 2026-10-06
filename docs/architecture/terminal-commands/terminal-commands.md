@@ -86,3 +86,35 @@ entries. The command implementation can therefore change in the DLL and be
 activated without restarting the EXE. The generic `runtime.info` capability
 is the single cold-owned fact provider; future diagnostic commands should use
 that same bridge instead of adding one cold command per report.
+
+## AI runtime validation workflow
+
+An AI agent investigating or changing behavior must use the real runtime path
+before creating a new test. The required loop is:
+
+1. Read the routed specification, ownership documents, changelog, regression
+   records, and existing attempts.
+2. Trace the current input/configuration-to-behavior path and identify the
+   first missing or incorrect state.
+3. Add bounded, owner-level diagnostics through `StructuredLogger`; do not
+   create a gameplay-local log file or a new synthetic test merely to make a
+   claim observable.
+4. Build a newly named executable with the canonical build process.
+5. Run `mimita-<timestamp>.exe --versioninfo` first. Capture the prominently
+   printed `EVENTS_JSONL_PATH` value and use that exact file for the rest of
+   the run.
+6. Launch the real executable and exercise the behavior through the normal
+   game, terminal-command, or bounded runtime-scenario path. Use a deterministic
+   tick schedule when timing matters.
+7. Read the live `events.jsonl` while the run is active and after it ends.
+   Verify that the intended path was reached, then compare expected, actual,
+   difference, and first-divergence fields.
+8. Iterate on the owning implementation until the runtime numbers satisfy the
+   specification. Report build, runtime-log, and human visual/gameplay
+   evidence separately.
+
+Existing unit and component tests remain useful for narrow invariants, file
+formats, and failure handling. They must be labeled by what they actually
+exercise and must not be presented as proof of live gameplay. New behavior
+should receive a runtime scenario and structured JSONL evidence before a new
+synthetic self-test is considered.

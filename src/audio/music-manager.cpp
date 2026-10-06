@@ -4,11 +4,15 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <cstdlib>
+#include <cctype>
+#include <functional>
 
 #include <nlohmann/json.hpp>
 
 #include "miniaudio.h"
 #include "debug/debug-log.h"
+#include "replay/replay-export.h"
 
 using json = nlohmann::json;
 
@@ -26,7 +30,7 @@ static bool hasMusicExt(const std::string& name)
         for (char c : name.substr(dot + 1))
             ext.push_back((char)std::tolower((unsigned char)c));
     }
-    return ext == "mp3" || ext == "wav" || ext == "ogg";
+    return ext == "mp3" || ext == "wav" || ext == "ogg" || ext == "opus";
 }
 
 void MusicManager::scanFolder(const std::string& dir, std::vector<TrackEntry>& out)
@@ -101,21 +105,78 @@ void MusicManager::applyPlaybackSpeed()
     }
 }
 
-void MusicManager::startTrack(const std::string& path)
+std::string MusicManager::resolvePlaybackPath(const std::string& path)
+{
+    std::string ext = std::filesystem::path(path).extension().string();
+    for (char& c : ext)
+        c = (char)std::tolower((unsigned char)c);
+    if (ext != ".opus")
+        return path;
+
+    auto cached = mOpusCache.find(path);
+    if (cached != mOpusCache.end() && std::filesystem::exists(cached->second))
+        return cached->second;
+
+    const std::string ffmpeg = defaultFfmpegPath();
+    if (ffmpeg.empty()) {
+        Debug::log(Debug::Category::Audio,
+            "[MUSIC] cannot play Opus; FFmpeg was not found: %s\n", path.c_str());
+        return {};
+    }
+
+    std::error_code ec;
+    const auto cacheDir = std::filesystem::temp_directory_path(ec) / "mimita-music-opus";
+    if (ec) {
+        Debug::log(Debug::Category::Audio,
+            "[MUSIC] cannot resolve Opus cache directory: %s\n", path.c_str());
+        return {};
+    }
+    std::filesystem::create_directories(cacheDir, ec);
+    if (ec) {
+        Debug::log(Debug::Category::Audio,
+            "[MUSIC] cannot create Opus cache directory: %s\n", path.c_str());
+        return {};
+    }
+
+    const auto sourceTime = std::filesystem::last_write_time(path, ec);
+    const auto sourceSize = std::filesystem::file_size(path, ec);
+    const auto cacheKey = std::to_string(std::hash<std::string>{}(path)) + "_" +
+        std::to_string(sourceSize) + "_" + std::to_string(sourceTime.time_since_epoch().count());
+    const auto output = cacheDir / (cacheKey + ".wav");
+    if (!std::filesystem::exists(output)) {
+        const std::string command = "\"" + ffmpeg +
+            "\" -hide_banner -loglevel error -y -i \"" + path +
+            "\" -vn -ac 2 -ar 48000 -c:a pcm_s16le \"" + output.string() + "\"";
+        if (std::system(command.c_str()) != 0 || !std::filesystem::exists(output)) {
+            Debug::log(Debug::Category::Audio,
+                "[MUSIC] failed to decode Opus with FFmpeg: %s\n", path.c_str());
+            return {};
+        }
+    }
+
+    mOpusCache[path] = output.string();
+    Debug::log(Debug::Category::Audio, "[MUSIC] decoded Opus cache: %s\n", path.c_str());
+    return output.string();
+}
+
+bool MusicManager::startTrack(const std::string& path)
 {
     uninitSound();
 
-    if (!mEngine) return;
-    if (!std::filesystem::exists(path)) return;
+    if (!mEngine) return false;
+    if (!std::filesystem::exists(path)) return false;
+
+    const std::string playbackPath = resolvePlaybackPath(path);
+    if (playbackPath.empty()) return false;
 
     mCurrentSound = new ma_sound();
-    ma_result result = ma_sound_init_from_file(mEngine, path.c_str(),
+    ma_result result = ma_sound_init_from_file(mEngine, playbackPath.c_str(),
         MA_SOUND_FLAG_NO_SPATIALIZATION | MA_SOUND_FLAG_ASYNC, nullptr, nullptr, mCurrentSound);
     if (result != MA_SUCCESS) {
         Debug::log(Debug::Category::Audio, "[MUSIC] failed to load: %s\n", path.c_str());
         delete mCurrentSound;
         mCurrentSound = nullptr;
-        return;
+        return false;
     }
 
     mCurrentPath = path;
@@ -139,6 +200,7 @@ void MusicManager::startTrack(const std::string& path)
     mPopupSlide = 200.0f;
 
     Debug::log(Debug::Category::Audio, "[MUSIC] track=\"%s\"\n", currentTrackInfo().c_str());
+    return true;
 }
 
 void MusicManager::pickMenuTrack()
@@ -153,15 +215,21 @@ void MusicManager::playNextIngame()
 {
     if (mPlaylist.empty()) return;
 
-    mPlaylistIndex++;
-    if (mPlaylistIndex >= mPlaylist.size()) {
-        std::shuffle(mPlaylist.begin(), mPlaylist.end(), mRng);
-        mPlaylistIndex = 0;
-        Debug::log(Debug::Category::Audio, "[MUSIC] playlist reshuffled (%zu tracks)\n", mPlaylist.size());
+    for (size_t attempt = 0; attempt < mPlaylist.size(); ++attempt) {
+        mPlaylistIndex++;
+        if (mPlaylistIndex >= mPlaylist.size()) {
+            std::shuffle(mPlaylist.begin(), mPlaylist.end(), mRng);
+            mPlaylistIndex = 0;
+            Debug::log(Debug::Category::Audio, "[MUSIC] playlist reshuffled (%zu tracks)\n", mPlaylist.size());
+        }
+
+        if (startTrack(mPlaylist[mPlaylistIndex].path))
+            return;
+        Debug::log(Debug::Category::Audio, "[MUSIC] skipping unusable track: %s\n",
+            mPlaylist[mPlaylistIndex].path.c_str());
     }
 
-    const auto& t = mPlaylist[mPlaylistIndex];
-    startTrack(t.path);
+    Debug::log(Debug::Category::Audio, "[MUSIC] no playable tracks remain\n");
 }
 
 void MusicManager::init()
@@ -179,9 +247,9 @@ void MusicManager::init()
 
     mRng.seed(std::random_device{}());
 
-    scanFolder("assets/sound/music/mainmenu", mMenuTracks);
-    scanFolder("assets/sound/music/ingame", mIngameTracks);
-    loadCredits("assets/sound/music/credits.json");
+    scanFolder("assets/music/mainmenu", mMenuTracks);
+    scanFolder("assets/music/ingame", mIngameTracks);
+    loadCredits("assets/music/credits.json");
 
     Debug::log(Debug::Category::Audio, "[MUSIC] loaded tracks=%zu menu=%zu ingame=%zu\n",
         mMenuTracks.size() + mIngameTracks.size(), mMenuTracks.size(), mIngameTracks.size());
@@ -290,8 +358,8 @@ void MusicManager::enterGameMode()
     std::uniform_int_distribution<size_t> dist(0, mPlaylist.size() - 1);
     mPlaylistIndex = dist(mRng);
 
-    const auto& t = mPlaylist[mPlaylistIndex];
-    startTrack(t.path);
+    if (!startTrack(mPlaylist[mPlaylistIndex].path))
+        playNextIngame();
 
     Debug::log(Debug::Category::Audio, "[MUSIC] mode=ingame playlist=%zu\n", mPlaylist.size());
 }
@@ -339,9 +407,21 @@ void MusicManager::stop()
 
 void MusicManager::reload()
 {
-    scanFolder("assets/sound/music/mainmenu", mMenuTracks);
-    scanFolder("assets/sound/music/ingame", mIngameTracks);
-    loadCredits("assets/sound/music/credits.json");
+    scanFolder("assets/music/mainmenu", mMenuTracks);
+    scanFolder("assets/music/ingame", mIngameTracks);
+    loadCredits("assets/music/credits.json");
+
+    if (mMode == Mode::Ingame) {
+        mPlaylist = mIngameTracks;
+        if (mPlaylist.empty()) {
+            uninitSound();
+        } else {
+            std::shuffle(mPlaylist.begin(), mPlaylist.end(), mRng);
+            mPlaylistIndex = mPlaylist.size() - 1;
+            playNextIngame();
+        }
+    }
+
     Debug::log(Debug::Category::Audio, "[MUSIC] reloaded tracks=%zu menu=%zu ingame=%zu\n",
         mMenuTracks.size() + mIngameTracks.size(), mMenuTracks.size(), mIngameTracks.size());
 }

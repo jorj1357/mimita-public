@@ -13,6 +13,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "config.h"
+#include "avatar/avatar.h"
 #include "config/ragdoll-death-config.h"
 #include "camera.h"
 #include "effects/effect-part.h"
@@ -38,6 +39,8 @@ extern TextureStore gTextures;
 
 static constexpr float GRAVITY = 9.81f;
 
+static glm::vec3 quatToRotationVector(const glm::quat& q);
+
 static int findPartByName(const std::vector<RagdollModePart>& parts, const std::string& name)
 {
     for (int i = 0; i < (int)parts.size(); ++i)
@@ -49,6 +52,241 @@ static glm::mat4 rigidWorld(const RigidBody& body)
 {
     return glm::translate(glm::mat4(1.0f), body.position)
          * glm::mat4_cast(body.orientation);
+}
+
+static nlohmann::json transformMatrixJson(const glm::mat4& m)
+{
+    nlohmann::json values = nlohmann::json::array();
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r)
+            values.push_back(m[c][r]);
+    return values;
+}
+
+static nlohmann::json vec3Json(const glm::vec3& v)
+{
+    return {v.x, v.y, v.z};
+}
+
+static nlohmann::json quatJson(const glm::quat& q)
+{
+    return {q.w, q.x, q.y, q.z};
+}
+
+static std::string aimAvatarIdentity(const Player& player)
+{
+    if (!player.avatarName().empty())
+        return player.avatarName();
+    if (player.avatarInstance && !player.avatarInstance->name.empty())
+        return player.avatarInstance->name;
+    return "<avatar-name-unset>";
+}
+
+static float quatAngleDegrees(const glm::quat& q)
+{
+    const glm::quat n = glm::normalize(q);
+    const float w = glm::clamp(std::fabs(n.w), 0.0f, 1.0f);
+    return glm::degrees(2.0f * std::acos(w));
+}
+
+static void logAimTransformSnapshot(const Player& player,
+                                    const RagdollBody& body,
+                                    const char* stage)
+{
+    auto& logger = StructuredLogger::instance();
+    if (!logger.shouldLog(StructuredCategory::Avatar, StructuredLevel::Important))
+        return;
+
+    const std::string avatarIdentity = aimAvatarIdentity(player);
+    const auto& skeleton = player.perfectPoseSkeleton;
+    int rootIndex = -1;
+    for (int i = 0; i < (int)skeleton.nodes.size(); ++i) {
+        if (skeleton.nodes[i].name == "plrOrigin") {
+            rootIndex = i;
+            break;
+        }
+    }
+
+    nlohmann::json rootFields = {
+        {"stage", stage},
+        {"avatar_name", avatarIdentity},
+        {"root_node", rootIndex >= 0 ? skeleton.nodes[rootIndex].name : "<missing>"},
+        {"root_node_index", rootIndex},
+        {"root_world_matrix_column_major", rootIndex >= 0
+            ? transformMatrixJson(skeleton.nodes[rootIndex].worldTransform)
+            : nlohmann::json::array()},
+        {"part_count", body.parts.size()}
+    };
+    logger.writeEvent(StructuredCategory::Avatar, StructuredLevel::Important,
+        "AIMBODY_AVATAR_BIND_ROOT", "AIMBODY_" + avatarIdentity,
+        "Inspecting girl/default model-frame composition in hybrid aimbody",
+        (uint32_t)player.movementSimulationTick, rootFields,
+        __FILE__, __LINE__, __FUNCTION__);
+
+    for (const auto& part : body.parts) {
+        if (part.nodeIndex < 0 || part.nodeIndex >= (int)skeleton.nodes.size())
+            continue;
+        const auto& node = skeleton.nodes[part.nodeIndex];
+        const glm::mat4 bodyWorld = rigidWorld(part.body);
+        const glm::quat nodeWorldRotation =
+            glm::normalize(glm::quat_cast(glm::mat3(node.worldTransform)));
+        const glm::quat meshLocalRotation =
+            glm::normalize(glm::quat_cast(glm::mat3(part.meshLocal)));
+        const glm::mat3 meshBasis(part.meshLocal);
+        nlohmann::json fields = {
+            {"stage", stage},
+            {"avatar_name", avatarIdentity},
+            {"part", part.name},
+            {"node_index", part.nodeIndex},
+            {"node_parent_index", node.parent},
+            {"node_world_position", vec3Json(glm::vec3(node.worldTransform[3]))},
+            {"node_world_quaternion_wxyz", quatJson(nodeWorldRotation)},
+            {"node_world_matrix_column_major", transformMatrixJson(node.worldTransform)},
+            {"physics_position", vec3Json(part.body.position)},
+            {"physics_quaternion_wxyz", quatJson(part.body.orientation)},
+            {"physics_world_matrix_column_major", transformMatrixJson(bodyWorld)},
+            {"mesh_local_translation", vec3Json(glm::vec3(part.meshLocal[3]))},
+            {"mesh_local_quaternion_wxyz", quatJson(meshLocalRotation)},
+            {"mesh_local_matrix_column_major", transformMatrixJson(part.meshLocal)},
+            {"mesh_local_basis_determinant", glm::determinant(meshBasis)},
+            {"final_world_matrix_column_major", transformMatrixJson(node.worldTransform)}
+        };
+        logger.writeEvent(StructuredCategory::Avatar, StructuredLevel::Important,
+            "AIMBODY_AVATAR_BIND_PART", "AIMBODY_" + avatarIdentity,
+            "Comparing loaded skeleton, canonical physics body, meshLocal, and final pose",
+            (uint32_t)player.movementSimulationTick, fields,
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
+
+// Sample the complete live aim path after the physical body has been written
+// back to the player skeleton. This is intentionally bounded: the bind trace
+// explains setup, while this sample explains where a visible lean enters during
+// normal hybrid simulation without flooding events.jsonl every render tick.
+static void logAimLiveSnapshot(const Player& player, const RagdollBody& body,
+                               const glm::vec3& camForward,
+                               const glm::vec3& camPosition,
+                               bool rightMouseHeld, bool hybrid)
+{
+    auto& logger = StructuredLogger::instance();
+    if (!logger.shouldLog(StructuredCategory::Avatar, StructuredLevel::Important))
+        return;
+
+    const auto& aimConfig = AimBodyConfig::instance();
+    const std::string avatarIdentity = aimAvatarIdentity(player);
+    const float lookPitchDegrees = glm::degrees(glm::asin(glm::clamp(
+        camForward.z, -1.0f, 1.0f)));
+    const float lookYawDegrees = glm::degrees(glm::atan(camForward.y, camForward.x));
+    const int torsoIndex = body.torsoIndex;
+    const glm::quat rootYaw = glm::angleAxis(glm::radians(player.yaw),
+                                             glm::vec3(0.0f, 0.0f, 1.0f));
+
+    nlohmann::json parts = nlohmann::json::array();
+    for (const auto& part : body.parts) {
+        if (part.nodeIndex < 0 ||
+            part.nodeIndex >= (int)player.perfectPoseSkeleton.nodes.size())
+            continue;
+
+        const auto& node = player.perfectPoseSkeleton.nodes[part.nodeIndex];
+        const glm::mat4 finalBodyWorld = node.worldTransform *
+                                          glm::inverse(part.meshLocal);
+        const glm::quat finalBodyOrientation = glm::normalize(
+            glm::quat_cast(glm::mat3(finalBodyWorld)));
+        const glm::quat targetVsPhysics = glm::normalize(
+            glm::inverse(part.body.orientation) * part.aimTargetOrientation);
+        const glm::quat finalVsPhysics = glm::normalize(
+            glm::inverse(part.body.orientation) * finalBodyOrientation);
+        const glm::quat targetVsFinal = glm::normalize(
+            glm::inverse(finalBodyOrientation) * part.aimTargetOrientation);
+        const glm::quat physicsVsRoot = glm::normalize(
+            glm::inverse(rootYaw) * part.body.orientation);
+        const glm::quat targetVsRoot = glm::normalize(
+            glm::inverse(rootYaw) * part.aimTargetOrientation);
+        const glm::quat finalVsRoot = glm::normalize(
+            glm::inverse(rootYaw) * finalBodyOrientation);
+        const glm::vec3 physicsRootRotation =
+            quatToRotationVector(physicsVsRoot);
+        const glm::vec3 targetRootRotation =
+            quatToRotationVector(targetVsRoot);
+        const glm::vec3 finalRootRotation =
+            quatToRotationVector(finalVsRoot);
+
+        nlohmann::json limbConfig = nlohmann::json::object();
+        if (const LimbAim* limb = aimConfig.limb(part.name)) {
+            limbConfig = {
+                {"pitch_gain", limb->pitch},
+                {"yaw_gain", limb->yaw},
+                {"roll_gain", limb->roll}
+            };
+        }
+
+        nlohmann::json partFields = {
+            {"part", part.name},
+            {"node_index", part.nodeIndex},
+            {"parent_part_index", part.parentIndex},
+            {"parent_local_anchor", vec3Json(part.parentLocalAnchor)},
+            {"child_local_anchor", vec3Json(part.childLocalAnchor)},
+            {"rest_length", part.restLength},
+            {"physics_quaternion_wxyz", quatJson(part.body.orientation)},
+            {"physics_angular_velocity", vec3Json(part.body.angularVelocity)},
+            {"hybrid_target_position", vec3Json(part.aimTargetPosition)},
+            {"hybrid_target_quaternion_wxyz", quatJson(part.aimTargetOrientation)},
+            {"hybrid_target_vs_physics_rotation_vector_rad",
+                vec3Json(quatToRotationVector(targetVsPhysics))},
+            {"hybrid_target_vs_physics_angle_deg", quatAngleDegrees(targetVsPhysics)},
+            {"final_body_quaternion_wxyz", quatJson(finalBodyOrientation)},
+            {"final_vs_physics_rotation_vector_rad",
+                vec3Json(quatToRotationVector(finalVsPhysics))},
+            {"final_vs_physics_angle_deg", quatAngleDegrees(finalVsPhysics)},
+            {"hybrid_target_vs_final_rotation_vector_rad",
+                vec3Json(quatToRotationVector(targetVsFinal))},
+            {"hybrid_target_vs_final_angle_deg", quatAngleDegrees(targetVsFinal)},
+            {"physics_vs_player_yaw_rotation_vector_rad",
+                vec3Json(physicsRootRotation)},
+            {"physics_vs_player_yaw_rotation_deg", vec3Json(glm::degrees(physicsRootRotation))},
+            {"physics_roll_vs_player_yaw_deg", glm::degrees(physicsRootRotation.z)},
+            {"hybrid_target_vs_player_yaw_rotation_vector_rad",
+                vec3Json(targetRootRotation)},
+            {"hybrid_target_vs_player_yaw_rotation_deg", vec3Json(glm::degrees(targetRootRotation))},
+            {"hybrid_target_roll_vs_player_yaw_deg", glm::degrees(targetRootRotation.z)},
+            {"final_vs_player_yaw_rotation_vector_rad", vec3Json(finalRootRotation)},
+            {"final_vs_player_yaw_rotation_deg", vec3Json(glm::degrees(finalRootRotation))},
+            {"final_roll_vs_player_yaw_deg", glm::degrees(finalRootRotation.z)},
+            {"final_mesh_node_quaternion_wxyz",
+                quatJson(glm::normalize(glm::quat_cast(glm::mat3(node.worldTransform))))},
+            {"mesh_local_quaternion_wxyz",
+                quatJson(glm::normalize(glm::quat_cast(glm::mat3(part.meshLocal))))},
+            {"mesh_local_basis_determinant", glm::determinant(glm::mat3(part.meshLocal))},
+            {"limb_config", limbConfig},
+            {"right_arm_pointing_target_wxyz", quatJson(part.rightArmPointingTarget)},
+            {"has_right_arm_pointing_target", part.hasRightArmPointingTarget}
+        };
+        parts.push_back(std::move(partFields));
+    }
+
+    nlohmann::json fields = {
+        {"avatar_name", avatarIdentity},
+        {"mode", aimConfig.mode()},
+        {"arms_mode", aimConfig.armsMode()},
+        {"hybrid_enabled", hybrid},
+        {"right_mouse_held", rightMouseHeld},
+        {"camera_position", vec3Json(camPosition)},
+        {"camera_forward", vec3Json(camForward)},
+        {"camera_look_pitch_deg", lookPitchDegrees},
+        {"camera_look_yaw_deg", lookYawDegrees},
+        {"player_root_yaw_deg", player.yaw},
+        {"camera_vs_player_yaw_deg", lookYawDegrees - player.yaw},
+        {"procedural_aim_last_look_pitch_deg", aimConfig.lastLookPitch()},
+        {"procedural_aim_applied_last_frame", aimConfig.appliedLastFrame()},
+        {"root_yaw_quaternion_wxyz", quatJson(rootYaw)},
+        {"torso_index", torsoIndex},
+        {"parts", std::move(parts)}
+    };
+    logger.writeEvent(StructuredCategory::Avatar, StructuredLevel::Important,
+        "AIMBODY_LIVE_SAMPLE", "AIMBODY_" + avatarIdentity,
+        "Sampling camera, procedural target, physics, and final hybrid pose",
+        (uint32_t)player.movementSimulationTick, fields,
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 // The hand is the capsule endpoint farther from the shoulder joint anchor.
@@ -102,8 +340,6 @@ static glm::quat quatFromMatrixCanonical(const glm::mat4& m)
     return q;
 }
 
-static glm::vec3 quatToRotationVector(const glm::quat& q);
-
 RagdollModeSystem& RagdollModeSystem::instance()
 {
     static RagdollModeSystem sys;
@@ -135,7 +371,7 @@ void RagdollModeSystem::activate(Player& player)
     player.updateModelWorldTransforms();
     mAlive.torsoPosition = player.pos;
     mAlive.rootWorldPosition = player.pos;
-    initParts(player, mAlive);
+    initParts(player, mAlive, true);
     mAppliedConfigGeneration = cfg.generation;
 
     Debug::warn(Debug::Category::Ragdoll,
@@ -218,9 +454,13 @@ void RagdollModeSystem::buildAimBody(Player& player)
     mAim = RagdollBody{};
     mAim.torsoPosition = player.pos;
     mAim.rootWorldPosition = player.pos;
-    initParts(player, mAim);
+    initParts(player, mAim, true);
     mAimActive = !mAim.parts.empty();
     mAimAvatarName = player.avatarName();
+    mAimTransformTracePending = mAimActive;
+    mAimLiveTraceHasSample = false;
+    mAimLiveTraceLastTick = 0;
+    logAimTransformSnapshot(player, mAim, "bind");
 
     // Seed limb momentum from the current movement velocity so physical mode
     // does not appear to freeze on entry (RAG-003 analog). On a lifecycle
@@ -262,6 +502,9 @@ void RagdollModeSystem::deactivateAim(Player& player)
     mAimActive = false;
     mAim = RagdollBody{};
     mAimAvatarName.clear();
+    mAimTransformTracePending = false;
+    mAimLiveTraceHasSample = false;
+    mAimLiveTraceLastTick = 0;
     Debug::log(Debug::Category::Ragdoll, "[AIMBODY] deactivated\n");
 }
 
@@ -705,7 +948,13 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
     // toggling the mode off and on.
 
     // Hybrid follows the procedural animation pose; capture it before physics
-    // overwrites the skeleton this tick.
+    // overwrites the skeleton this tick. syncAimToPlayer intentionally clears
+    // non-body ancestors because physics owns the final body frame. Restore
+    // their authored bind transforms before rebuilding world matrices for the
+    // next target capture. This matters for avatars such as the girl model,
+    // whose 90-degree Z-up correction lives on plrOrigin instead of on each
+    // body-part node; leaving that ancestor at identity rotates the next
+    // procedural target into the wrong frame.
     const AimBodyConfig& aimConfig = AimBodyConfig::instance();
     const bool hybrid = aimConfig.hybridMode();
     const bool pointingWanted = aimConfig.rightArmPointingRmb()
@@ -717,8 +966,17 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
     b.rightArmPointingBlend +=
         (blendTarget - b.rightArmPointingBlend) * blendAlpha;
     b.rightArmPointing = pointingWanted || b.rightArmPointingBlend > 1e-3f;
-    if (hybrid)
+    if (hybrid) {
+        for (int anc : b.rootAncestorNodes) {
+            if (anc >= 0 && anc < (int)player.perfectPoseSkeleton.nodes.size()
+                && anc < (int)player.perfectPoseSkeleton.restLocalTransforms.size()) {
+                player.perfectPoseSkeleton.nodes[anc].localTransform =
+                    player.perfectPoseSkeleton.restLocalTransforms[anc];
+            }
+        }
+        player.updateModelWorldTransforms();
         captureAimTargets(player, b);
+    }
 
     tetherAimRoot(player, b, dt);
     applyAimMotor(b, camForward, dt);
@@ -765,6 +1023,21 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
 
     syncAimToPlayer(player, b);
     player.updateModelWorldTransforms();
+
+    if (mAimTransformTracePending) {
+        logAimTransformSnapshot(player, b, "post_sync");
+        mAimTransformTracePending = false;
+    }
+
+    constexpr uint64_t kLiveTraceIntervalTicks = 30;
+    const uint64_t tick = player.movementSimulationTick;
+    if (!mAimLiveTraceHasSample ||
+        tick - mAimLiveTraceLastTick >= kLiveTraceIntervalTicks) {
+        logAimLiveSnapshot(player, b, camForward, camPosition,
+                           rightMouseHeld, hybrid);
+        mAimLiveTraceLastTick = tick;
+        mAimLiveTraceHasSample = true;
+    }
 
     cacheReplicatedPose(player, b,
         AimBodyConfig::instance().hybridMode()
@@ -844,7 +1117,7 @@ void RagdollModeSystem::applyReplicatedPose(Player& player, uint32_t ownerId,
             player.perfectPoseSkeleton.nodes[i].localTransform =
                 player.perfectPoseSkeleton.restLocalTransforms[i];
         player.updateModelWorldTransforms();
-        initParts(player, b);
+        initParts(player, b, true);
         if (b.parts.empty()) {
             mReplicatedBodies.erase(it);
             return;
@@ -865,7 +1138,8 @@ void RagdollModeSystem::applyReplicatedPose(Player& player, uint32_t ownerId,
     player.updateModelWorldTransforms();
 }
 
-void RagdollModeSystem::initParts(const Player& player, RagdollBody& b)
+void RagdollModeSystem::initParts(const Player& player, RagdollBody& b,
+                                  bool deriveAttachmentAnchorsFromBind)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
     b.parts.clear();
@@ -1072,13 +1346,13 @@ void RagdollModeSystem::initParts(const Player& player, RagdollBody& b)
         glm::vec3 anchor = (glm::length(cap.a - parent.body.position)
                             < glm::length(cap.b - parent.body.position)) ? cap.a : cap.b;
 
-        if (attIt->second.hasChildOffset)
+        if (attIt->second.hasChildOffset && !deriveAttachmentAnchorsFromBind)
             child.childLocalAnchor = attIt->second.childOffset;
         else
             child.childLocalAnchor = glm::inverse(child.body.orientation)
                 * (anchor - child.body.position);
 
-        if (attIt->second.hasParentOffset)
+        if (attIt->second.hasParentOffset && !deriveAttachmentAnchorsFromBind)
             child.parentLocalAnchor = attIt->second.offset;
         else
             child.parentLocalAnchor = glm::inverse(parent.body.orientation)
@@ -1142,7 +1416,7 @@ void RagdollModeSystem::reinitPreservingState(Player& player, RagdollBody& b)
                 player.perfectPoseSkeleton.restLocalTransforms[i];
     }
     player.updateModelWorldTransforms();
-    initParts(player, b);
+    initParts(player, b, true);
 
     for (auto& part : b.parts) {
         for (const auto& s : saved) {
@@ -1860,7 +2134,7 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
     corpse.bloodInit = false;
 
     // Build the physical parts from the victim's current (frozen) pose.
-    initParts(victim, corpse.body);
+    initParts(victim, corpse.body, true);
 
     // Inherit the dying actor's momentum and add the killing-blow impulse.
     const glm::vec3 playerVel = victim.vel + victim.externalImpulse;

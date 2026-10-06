@@ -85,12 +85,6 @@ static void predictRemoteKill(Player& victim,
     victim.dead = true;
     victim.respawnTimer = 0.0f;
 
-    if (actorType == "npc")
-    {
-        AudioManager::instance().play(
-            {"npc_death", AudioCategory::NPC, true, victim.pos, 1.0f, 0.9f, 45.0f, 0});
-    }
-
     Debug::log(Debug::Category::Networking,
                "[NET PREDICTED KILL] victim=%s type=%s pos=(%.2f,%.2f,%.2f)",
                victim.username.c_str(), actorType.c_str(),

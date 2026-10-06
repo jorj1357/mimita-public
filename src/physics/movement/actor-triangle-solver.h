@@ -46,7 +46,14 @@ struct ActorTriangleCollisionResult {
     bool anyImpact = false;
     float maxPenetration = 0.0f;
     int candidates = 0;
+    // Candidate triangles whose AABB exceeds kMaxChunksPerTriangle chunks, i.e.
+    // the old "large triangle" class. Diagnostic only.
+    int largeTriangles = 0;
+    // World-space size of the swept broadphase query box (post margin).
+    glm::vec3 queryBoxSize{0.0f};
     int iterations = 0;
+    float solveMs = 0.0f;   // solveActorTriangleCollision body
+    float totalMs = 0.0f;   // runActorTriangleCollisionStep (query + solve + post)
 };
 
 // Solves the actor's movement for one tick. The caller must have already applied

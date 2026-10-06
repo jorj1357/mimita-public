@@ -129,14 +129,19 @@ bool resolveCapsuleVsCapsule(
     bool& groundedB
 );
 
-// Gather candidate world triangles within an AABB using chunk spatial hashing.
-// Used by root capsule collision and NPC line-of-sight / navigation.
+// Gather candidate world triangles within an AABB. The primary path queries the
+// persistent world collision tree (every static triangle, including very large
+// ones). `preferWorldTree = false` keeps a caller on the legacy chunk/sub-grid
+// fallback for compatibility paths (e.g. dynamic entity sweep) whose contact
+// semantics depend on the chunk path. Used by root capsule collision, actor
+// collision, dynamic entities, and NPC line-of-sight / navigation.
 void appendChunkTrianglesForAABB(
     const World& world,
     const AABB& queryBounds,
     float expansion,
     std::vector<int>& out,
-    const char* caller = nullptr
+    const char* caller = nullptr,
+    bool preferWorldTree = true
 );
 
 // Thin-ray DDA: traverse grid cells along the ray in near-to-far order.

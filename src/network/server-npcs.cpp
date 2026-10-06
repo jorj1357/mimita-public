@@ -120,10 +120,10 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     buildCollisionChunks(npcWorld, nullptr);
 
     printf("[SERVER NPC WORLD] built CPU collision: triangles=%zu chunks=%zu "
-           "largeTris=%zu largeChunks=%zu alwaysLarge=%zu\n",
+           "largeTris=%zu largeChunks=%zu treeNodes=%zu\n",
            npcWorld.collisionMesh.triangles.size(), npcWorld.collisionChunks.size(),
            npcWorld.collisionLargeTriangles.size(), npcWorld.collisionLargeChunks.size(),
-           npcWorld.collisionAlwaysLargeTriangles.size());
+           npcWorld.collisionTree.nodes.size());
 }
 
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)

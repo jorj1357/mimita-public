@@ -455,9 +455,13 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                 const AABB sweepBox = makeSweptActorMeshAABB(
                     s_objectMeshes, glm::vec3(0.0f));
                 s_objectCandidates.clear();
+                // Compatibility: dynamic entity-vs-world keeps the chunk/sub-grid
+                // broadphase so its established embedded-body recovery behavior
+                // is unchanged. The persistent world tree is the primary path for
+                // the player actor and other static-world queries.
                 appendChunkTrianglesForAABB(world, sweepBox, 0.1f,
                                             s_objectCandidates,
-                                            "physicalEntitySweep");
+                                            "physicalEntitySweep", false);
                 if (s_objectCandidates.empty())
                     break;
 
@@ -529,7 +533,7 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                         s_objectCandidates.clear();
                         appendChunkTrianglesForAABB(world, recBox, rec,
                                                     s_objectCandidates,
-                                                    "entityRecovery");
+                                                    "entityRecovery", false);
                         recoveryPenetration = recoverDeepPenetration(
                             e, world, s_objectCandidates, rec);
                     }
@@ -1677,6 +1681,53 @@ bool physicalEntitySelfTest(std::string* outSummary)
         e = system.find(id);
         check(e && e->transform[3].z > -0.2f,
               "an embedded body is pushed back out of the floor (deep depenetration)");
+    }
+
+    // 9. A very large moving entity stays filtered by its world AABB before any
+    //    triangle test, and overlapping it uses the exact triangle collision.
+    {
+        system.clear();
+        std::vector<CollisionTriangle> big;
+        buildBoxCollisionTriangles(big, glm::vec3(0.0f), glm::vec3(10.0f));
+        system.add(big, glm::translate(glm::mat4(1.0f), glm::vec3(100.0f, 0.0f, 10.0f)),
+                   PhysicalEntityMotion::Kinematic);
+
+        Player probe(false);
+        setupTestBoxActor(probe, glm::vec3(0.0f, 0.0f, 0.5f), 0.4f, 0.5f);
+        {
+            ActorTriangleCollisionResult r;
+            solveActorTriangleCollision(probe, world, glm::vec3(0.0f), r, &system.entities());
+            bool entityHit = false;
+            for (const ActorWorldContact& c : r.contacts)
+                if (c.entityId != 0) entityHit = true;
+            check(!entityHit, "far huge entity is filtered by its world AABB");
+        }
+        {
+            probe.pos = glm::vec3(90.5f, 0.0f, 10.5f);   // touching the entity x face
+            probe.updateModelWorldTransforms();
+            ActorTriangleCollisionResult r;
+            solveActorTriangleCollision(probe, world, glm::vec3(0.0f), r, &system.entities());
+            bool entityHit = false;
+            for (const ActorWorldContact& c : r.contacts)
+                if (c.entityId != 0) entityHit = true;
+            check(entityHit, "overlapping huge entity uses exact triangle contact");
+        }
+
+        // The same huge entity, moving under gravity, still settles exactly on
+        // the static floor through the exact triangle collision path.
+        system.clear();
+        std::vector<CollisionTriangle> hugeBox;
+        buildBoxCollisionTriangles(hugeBox, glm::vec3(0.0f), glm::vec3(10.0f));
+        const uint32_t hugeId = system.add(
+            hugeBox, glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 30.0f)),
+            PhysicalEntityMotion::Dynamic);
+        PhysicalEntity* huge = system.find(hugeId);
+        huge->mass = 2000.0f;
+        for (int i = 0; i < 300; ++i)
+            system.advanceKinematics(dt, world);
+        huge = system.find(hugeId);
+        check(huge && huge->transform[3].z > 9.5f && huge->transform[3].z < 10.5f,
+              "huge moving entity settles exactly on the floor");
     }
 
     system.clear();

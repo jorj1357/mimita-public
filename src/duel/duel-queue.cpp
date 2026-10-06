@@ -14,6 +14,8 @@
 #include "gamemode/gamemode-map-pool.h"
 
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <random>
 #include <thread>
 
@@ -39,6 +41,23 @@ constexpr uint64_t kQueueServerStartTimeoutMs = 15000;
 constexpr uint64_t kServerConnectTimeoutMs = 20000;
 constexpr uint64_t kMatchConnectTimeoutMs = 60000;
 constexpr uint64_t kOpponentJoinTimeoutMs = 30000;
+
+bool devLoopOwnsExternalServer()
+{
+    const char* marker = std::getenv("MIMITA_DEV_LOOP_SERVER");
+    return marker != nullptr && std::strcmp(marker, "1") == 0;
+}
+
+void stopExternalServerOwnedByThisClient()
+{
+    if (devLoopOwnsExternalServer())
+    {
+        Debug::log(Debug::Category::Duel,
+                   "[DUEL QUEUE] preserving dev-loop-owned server on client leave\n");
+        return;
+    }
+    stopExternalServerProcess();
+}
 
 // Unique per game instance: two exes on one PC get different session ids, so
 // the coordinator treats them as two players even with the same account/name.
@@ -162,7 +181,7 @@ void DuelQueue::startQueue(const std::string& profileId, const std::string& name
 
     // Tear down any leftover session/server before launching a fresh one.
     MimitaNet::mpShutdown(MP_CONTEXT);
-    stopExternalServerProcess();
+    stopExternalServerOwnedByThisClient();
     THE_NPC_SYSTEM.destroyAll();
 
     mState = DuelQueueState::Queuing;
@@ -212,7 +231,6 @@ void DuelQueue::stopQueue()
     endPolling();
 
     MimitaNet::mpShutdown(MP_CONTEXT);
-    stopExternalServerProcess();
     THE_NPC_SYSTEM.destroyAll();
 
     mState = DuelQueueState::Idle;
@@ -240,9 +258,10 @@ void DuelQueue::returnToQueue()
         coordinatorQueueLeave(ticketId);
     endPolling();
 
-    // Tear down the server session and the host's launched server process.
+    // Tear down only this client's server session. The external server has an
+    // independent lifetime and is stopped only by the explicit server
+    // controls in the online-server menu.
     MimitaNet::mpShutdown(MP_CONTEXT);
-    stopExternalServerProcess();
     THE_NPC_SYSTEM.destroyAll();
 
     // Capture the duel context BEFORE startQueue resets it.
@@ -334,7 +353,7 @@ void DuelQueue::handleClientMatch()
 
     // Leave our own queue server; join the host's room.
     MimitaNet::mpShutdown(MP_CONTEXT);
-    stopExternalServerProcess();
+    stopExternalServerOwnedByThisClient();
     THE_NPC_SYSTEM.destroyAll();
     mQueueServerConnected = false;
     mJoinedCoordinator = false;
@@ -404,7 +423,7 @@ void DuelQueue::updateQueuing(float dt)
             // ICE connect to own server stalled - retry the server launch.
             mStatusText = "Starting server... (retrying)";
             Debug::warn(Debug::Category::Duel, "[DUEL QUEUE] own server connect stalled; relaunching\n");
-            stopExternalServerProcess();
+            stopExternalServerOwnedByThisClient();
             mQueueRoomCode.clear();
             mServerConnectStartMs = 0;
             mServerConnectStarted = false;
@@ -416,7 +435,7 @@ void DuelQueue::updateQueuing(float dt)
         {
             mStatusText = "Starting server... (retrying)";
             mPhaseStartMs = nowMs();
-            stopExternalServerProcess();
+            stopExternalServerOwnedByThisClient();
             if (launchDuelHostServer(mChosenMap))
                 mStatusText = "Starting your duel server...";
         }

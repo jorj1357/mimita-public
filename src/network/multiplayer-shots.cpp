@@ -414,11 +414,9 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
                    event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
         }
-        // Death sound for every client. The killfeed line is owned by the
-        // single authoritative KillEventPacket, not this damage event, so the
-        // killer, victim, and every observer present it exactly once.
-        AudioManager::instance().play(
-            {"npc_death", AudioCategory::NPC, true, hitPos, 1.0f, 0.9f, 45.0f, 0});
+        // The reliable damage event is the one death-sound owner. Prediction
+        // and the generic DeathSystem must not play a second copy here.
+        playDeathSoundForDamage(event->damage, isLocalShooter, hitPos);
         if (npcPtr)
         {
             npcPtr->netPredictedDead = false;
@@ -619,7 +617,8 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
     // For non-shooter: play sound and muzzle flash once
     if (!isLocalShooter)
     {
-        playWorldSound("shotgunshoot", visualOrigin, 1.0f, 1.0f, 80.0f);
+        playWorldSoundOwned("shotgunshoot", visualOrigin, 1.0f, 0.8f, 80.0f,
+                            audioOwnerKey(event->shooterPlayerId, "shotgun"));
         EffectPartSystem::instance().spawnMuzzleFlash(visualOrigin, "", 1.0f, weaponName);
     }
 

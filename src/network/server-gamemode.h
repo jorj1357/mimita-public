@@ -89,8 +89,8 @@ struct ServerGamemodeState
     // for an actor whose team cannot be resolved, so an unknown team never
     // silently spawns on the CT cluster.
     glm::vec3 sharedAnchor{0.0f};
-    // Per-team spawn clusters resolved from map spawn tags (spawnpoint.CT /
-    // spawnpoint.T). Empty means fall back to the shared anchor.
+    // Per-team spawn clusters resolved from the active mode's map-node filters
+    // (with legacy CT/T tag support). Empty means shared-anchor fallback.
     std::vector<glm::vec3> teamSpawnPoints[2];
     bool teamSpawnsResolved = false;
     // Random XY offset radius around the anchor (meters).
@@ -198,6 +198,7 @@ struct ServerGamemodeState
     int roundWins[2] = {0, 0};         // per-team round wins (indexed by team)
     int roundsToWin = 0;               // first to this many rounds wins the match
     int maxRounds = 0;                 // configured round ceiling (JSON-controlled)
+    bool endlessRounds = false;        // results always advance to the next round
     float roundSeconds = 0.0f;         // active round time limit
     uint32_t roundEndTick = 0;         // tick the active round times out
     int roundWinnerTeam = -1;          // -1 = no round decided yet
@@ -231,6 +232,7 @@ struct ServerGamemodeState
     TeamBrain teamBrainB{1};
 
     bool npcWaves = false;
+    bool persistentNpcSpawns = false;
     uint32_t waveNumber = 0;
     int waveStartCount = 1;
     int waveIncrement = 1;
@@ -247,6 +249,11 @@ struct ServerGamemodeState
     uint32_t waveBannerUntilTick = 0;
     bool waveBannerVisible = false;
     bool waveRunOver = false;
+    int npcSpawnMax = 0;
+    int npcSpawnIntervalTicks = 60;
+    int npcSpawnPerInterval = 1;
+    uint32_t npcSpawnNextTick = 0;
+    uint32_t npcSpawnSequence = 0;
 
     // Match event counter for KillEvent IDs
     uint32_t killEventCounter = 0;
@@ -268,6 +275,7 @@ struct ServerGamemodeState
     bool pendingModeSwitch = false;
     bool pendingModeSwitchCountdown = false;
     std::string pendingGamemodeId;
+    bool pendingJuggernautSkip = false;
     uint32_t bombPassCounter = 0;       // Total passes this session (for logging)
     uint32_t bombExplosionCounter = 0;  // Total explosions this session
     // ── Gamemode visual overrides ───────────────────────────────────
@@ -430,6 +438,7 @@ int serverCommunityWeaponNativeSlot(int logicalSlot);
 int serverCommunityWeaponLogicalSlot(const std::string& weaponId);
 void serverCommunityStartMatch(bool skipIntermission = false,
                                const std::string& requestedMode = {});
+void serverGamemodeRequestJuggernautSkip();
 
 // ── Procedural world (Infinite Dungeon Slayer) server API ─────────────
 // Starts the mode: loads the room recipe once, appends lobby + room 1

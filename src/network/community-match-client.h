@@ -119,6 +119,12 @@ public:
     // Replicated actor state (ActorState) for any actor id, or 0xFF.
     uint8_t actorState(uint32_t actorId) const;
 
+    bool fighterWeaponChoiceVisible(uint32_t localPlayerId) const;
+    bool fighterWeaponChoiceCommitted(uint32_t localPlayerId) const;
+    bool selectFighterWeapon(int choice);
+    static const char* fighterWeaponId(int choice);
+    static const char* fighterWeaponName(int choice);
+
     // ── Disaster state (replicated mode-pack disaster) ───────────────
     // Server-authoritative identity, seed, window, and resolved winner. The
     // client only displays this; it never decides disaster outcomes.
@@ -162,6 +168,9 @@ private:
     uint32_t mMatchId = 0;
     uint32_t mStateVersion = 0;
     uint32_t mRoundVersion = 0;
+    uint32_t mFighterWeaponChoiceRoundVersion = 0;
+    int mFighterWeaponChoice = -1;
+    bool mFighterWeaponChoiceCommitted = false;
     uint32_t mRoundNumber = 0;
     int mRoundWins[2] = {0, 0};
     int mWinnerTeam = -1;

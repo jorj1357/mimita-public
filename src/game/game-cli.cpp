@@ -78,6 +78,55 @@
 extern DuelManager gDuelManager;
 extern bool gMainmenuDebug;
 
+static bool runVersionInfoCli()
+{
+    StructuredLogger::instance().init();
+
+    char exePath[MAX_PATH]{};
+    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    char cwd[MAX_PATH]{};
+    GetCurrentDirectoryA(MAX_PATH, cwd);
+
+    const std::string eventsPath = StructuredLogger::instance().eventsPath();
+    const std::string runId = StructuredLogger::instance().runId();
+    const nlohmann::json info = {
+        {"executable", exePath},
+        {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+        {"working_directory", cwd},
+        {"events_jsonl", eventsPath},
+        {"run_id", runId},
+        {"build_date", __DATE__},
+        {"build_time", __TIME__},
+        {"arguments", "--versioninfo"}
+    };
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General,
+        StructuredLevel::Important,
+        "versioninfo.executed",
+        "",
+        "bounded command-line identity probe completed",
+        0,
+        info,
+        __FILE__,
+        __LINE__,
+        __FUNCTION__);
+
+    // Deliberately obvious keys let an agent capture stdout and open the exact
+    // journal without guessing the newest log folder.
+    printf("VERSIONINFO_BEGIN\n");
+    printf("EXECUTABLE_PATH=%s\n", exePath);
+    printf("PID=%lu\n", static_cast<unsigned long>(GetCurrentProcessId()));
+    printf("WORKING_DIRECTORY=%s\n", cwd);
+    printf("EVENTS_JSONL_PATH=%s\n", eventsPath.c_str());
+    printf("RUN_ID=%s\n", runId.c_str());
+    printf("VERSIONINFO_JSON=%s\n", info.dump().c_str());
+    printf("VERSIONINFO_END\n");
+
+    StructuredLogger::instance().shutdown();
+    return true;
+}
+
 void forceMainMenu()
 {
     auto startTime = std::chrono::steady_clock::now();
@@ -204,6 +253,9 @@ bool handleGameCLI(int argc, char** argv)
     if (argc <= 1) return false;
 
     const std::string command = argv[1];
+    if (command == "--versioninfo")
+        return runVersionInfoCli();
+
     if (command == "--ice-host-only" ||
         command == "--ice-join-only" ||
         command == "--ice-game-host" ||

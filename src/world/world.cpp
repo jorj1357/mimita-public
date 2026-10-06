@@ -130,7 +130,7 @@ void World::clear()
     collisionLargeTriangles.clear();
     collisionSubGrids.clear();
     collisionLargeChunks.clear();
-    collisionAlwaysLargeTriangles.clear();
+    collisionTree.clear();
 }
 
 SpawnPoint* World::pickSpawnPoint(const std::string& tag, int arenaIndex)

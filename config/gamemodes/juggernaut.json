@@ -1,0 +1,75 @@
+{
+  "id": "juggernaut",
+  "name": "Juggernaut",
+  "description": "Sixteen fast, fragile Fighters versus two slow, powerful Juggernauts. One life per round.",
+  "actor_preset": "juggernaut_arcade",
+  "respawn_seconds": 0,
+  "kill_heals": false,
+  "countdown_seconds": 3,
+  "go_seconds": 0.75,
+  "intermission_seconds": 15,
+  "results_seconds": 6,
+  "spawn_offset_radius": 5.0,
+  "spawn_strategy": "team_shared",
+  "teams": [
+    {
+      "id": "fighters",
+      "display_name": "Fighters",
+      "capacity": 16,
+      "role": "juggernaut_fighter",
+      "spawn_group": "fighters_spawn"
+    },
+    {
+      "id": "juggernauts",
+      "display_name": "Juggernauts",
+      "capacity": 2,
+      "role": "juggernaut_mode_juggernaut",
+      "spawn_group": "juggernauts_spawn"
+    },
+    {
+      "id": "spec",
+      "display_name": "Spectator",
+      "capacity": 0,
+      "role": "spectator"
+    }
+  ],
+  "rounds": {
+    "max_rounds": 0,
+    "rounds_to_win": 0,
+    "endless_rounds": true,
+    "round_seconds": 0,
+    "freeze_seconds": 3,
+    "countdown_seconds": 3,
+    "intermission_seconds": 15,
+    "results_seconds": 6
+  },
+  "victory": { "type": "rounds" },
+  "npc_targeting": {
+    "mode": "opposite_team",
+    "include_players": true,
+    "include_npcs": true
+  },
+  "npc_travel": {
+    "objective_bias": 0.0,
+    "hunt_bias": 1.0,
+    "explore_bias": 0.0
+  },
+  "hide_healthbars": false,
+  "ragdoll_enabled": true,
+  "blood_enabled": true,
+  "presentation": {
+    "damage_numbers": true,
+    "hit_effects": true,
+    "world_impact_effects": true,
+    "hit_markers": true,
+    "hit_sounds": true,
+    "blood": true,
+    "killfeed": true,
+    "ragdolls": true,
+    "enemy_healthbars": true,
+    "player_outlines": true,
+    "friendly_outline_color": [0, 255, 0],
+    "enemy_outline_color": [255, 0, 0]
+  },
+  "maps": ["atdm", "mimita-duels-map-v3", "funworld"]
+}

@@ -154,8 +154,6 @@ void buildCollisionMeshFromRenderMesh(World& world)
     }
 }
 
-static constexpr int MAX_CHUNKS_PER_TRIANGLE = 256;
-
 void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
 {
     world.collisionChunks.clear();
@@ -189,7 +187,7 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
         double maxDim = std::max({(double)triSize.x, (double)triSize.y, (double)triSize.z});
         if (maxDim > maxBounds) maxBounds = maxDim;
 
-        if (chunksTouched > MAX_CHUNKS_PER_TRIANGLE)
+        if (chunksTouched > kMaxChunksPerTriangle)
         {
             world.collisionLargeTriangles.push_back(i);
             ++largeTriCount;
@@ -207,12 +205,14 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
 
     if (largeTriCount > 0)
         printf("[WORLD GLB COLLISION WARNING] %d large triangles moved to collisionLargeTriangles (each exceeds %d chunks)\n",
-               largeTriCount, MAX_CHUNKS_PER_TRIANGLE);
+               largeTriCount, kMaxChunksPerTriangle);
 
-    // Build a coarse grid for large triangles so broadphase queries only test the
-    // ones near them instead of re-scanning every large triangle every query.
+    // Build a coarse grid for large triangles so fallback broadphase queries only
+    // test the ones near them instead of re-scanning every large triangle every
+    // query. Triangles whose span exceeds the coarse cap are not indexed here;
+    // they are covered by the persistent collisionTree, which is the primary
+    // broadphase path.
     world.collisionLargeChunks.clear();
-    world.collisionAlwaysLargeTriangles.clear();
     if (!world.collisionLargeTriangles.empty())
     {
         const float coarseSize = world.collisionChunkSize * 4.0f;
@@ -231,23 +231,33 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
             int64_t coarseCells =
                 (int64_t)(c1.x - c0.x + 1) * (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
             if (coarseCells > MAX_COARSE_CHUNKS_PER_TRIANGLE)
-            {
-                world.collisionAlwaysLargeTriangles.push_back(triIndex);
                 continue;
-            }
             for (int x = c0.x; x <= c1.x; ++x)
             for (int y = c0.y; y <= c1.y; ++y)
             for (int z = c0.z; z <= c1.z; ++z)
                 world.collisionLargeChunks[glm::ivec3(x, y, z)].push_back(triIndex);
         }
-        printf("[WORLD GLB COLLISION] large-tri grid: coarseSize=%.1f cells=%zu always=%zu\n",
-               coarseSize, world.collisionLargeChunks.size(),
-               world.collisionAlwaysLargeTriangles.size());
+        printf("[WORLD GLB COLLISION] large-tri grid: coarseSize=%.1f cells=%zu\n",
+               coarseSize, world.collisionLargeChunks.size());
     }
 
-    printf("[WORLD GLB COLLISION] chunks=%zu chunkSize=%.2f totalRefs=%llu maxChunksPerTri=%llu maxBounds=%.1f largeTris=%d\n",
+    // Persistent static broadphase over EVERY collision triangle. This replaces
+    // the old always-large scan: very large triangles live in the tree and are
+    // only returned when their own AABB overlaps the query.
+    world.collisionTree.clear();
+    if (!world.collisionMesh.triangles.empty() &&
+        world.collisionMesh.triangleAABBs.size() == world.collisionMesh.triangles.size())
+    {
+        std::vector<int> allTriangleIds(world.collisionMesh.triangles.size());
+        for (size_t i = 0; i < allTriangleIds.size(); ++i)
+            allTriangleIds[i] = (int)i;
+        world.collisionTree.build(allTriangleIds, world.collisionMesh.triangleAABBs);
+    }
+
+    printf("[WORLD GLB COLLISION] chunks=%zu chunkSize=%.2f totalRefs=%llu maxChunksPerTri=%llu maxBounds=%.1f largeTris=%d treeNodes=%zu\n",
            world.collisionChunks.size(), world.collisionChunkSize,
-           (unsigned long long)totalRefs, (unsigned long long)maxChunks, maxBounds, largeTriCount);
+           (unsigned long long)totalRefs, (unsigned long long)maxChunks, maxBounds, largeTriCount,
+           world.collisionTree.nodes.size());
 
     buildCollisionSubGrids(world);
 

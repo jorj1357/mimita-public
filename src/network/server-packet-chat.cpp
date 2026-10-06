@@ -529,6 +529,16 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             ack(true, ("started at intermission: " + mode.id + " (" + mode.name + ")").c_str());
         }
     }
+    else if (commandStr == "juggernaut_skip")
+    {
+        ServerGamemodeState& match = serverGamemodeState();
+        if (match.matchMode != "juggernaut" || !match.objectiveRounds)
+            ack(false, "rejected: Juggernaut mode is not active");
+        else {
+            serverGamemodeRequestJuggernautSkip();
+            ack(true, "applied: Juggernaut round skipped as a draw");
+        }
+    }
     else if (commandStr == "maplist")
     {
         const auto catalog = scanMapCatalog();

@@ -74,6 +74,9 @@ public:
     // preserved so removing the policy restores them.
     void setPlayerOutlinesEnabled(bool enabled);
     void clearPlayerOutlinesOverride();
+    void setTeamOutlineColors(const glm::vec3& friendly, const glm::vec3& enemy);
+    void clearTeamOutlineColorsOverride();
+    glm::vec3 effectiveOutlineColor(bool teammate, const glm::vec3& configured) const;
     bool hasPlayerOutlinesOverride() const { return mPlayerOutlinesOverride; }
     bool playerOutlinesEnabled() const { return mPlayerOutlinesEnabled; }
     // Configured layer mode, or "none" while the gamemode disables outlines.
@@ -88,4 +91,7 @@ private:
     std::string mLastError;
     bool mPlayerOutlinesOverride = false;
     bool mPlayerOutlinesEnabled = true;
+    bool mTeamOutlineColorsOverride = false;
+    glm::vec3 mFriendlyOutlineColor{0.0f, 255.0f, 0.0f};
+    glm::vec3 mEnemyOutlineColor{255.0f, 0.0f, 0.0f};
 };

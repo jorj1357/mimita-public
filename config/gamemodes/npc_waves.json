@@ -2,6 +2,22 @@
   "id": "npc_waves",
   "name": "NPC Waves",
   "description": "Survive increasingly large waves of NPCs.",
+  "teams": [
+    {
+      "id": "humans",
+      "display_name": "Humans",
+      "capacity": 0,
+      "spawn_group": "human_spawn",
+      "spawn_tag_excludes": "npc"
+    },
+    {
+      "id": "npcs",
+      "display_name": "NPCs",
+      "capacity": 0,
+      "spawn_group": "npc_spawn",
+      "spawn_tag_contains": "npc"
+    }
+  ],
   "goal_value": 0,
   "time_limit_seconds": 0,
   "respawn_seconds": 0,

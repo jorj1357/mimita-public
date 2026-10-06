@@ -635,9 +635,16 @@ void engineTickNet(Engine& engine, float dt)
                         shootSound = "rocketlauncher/rocketshoot";
                     else if (event.weapon == MimitaNet::NETWORK_WEAPON_GRENADE_LAUNCHER)
                         shootSound = "grenadelauncher/grenadelaunchershoot";
-                    playWorldSound(
+                    const float shootPitch =
+                        event.weapon == MimitaNet::NETWORK_WEAPON_SHOTGUN
+                            ? 0.8f
+                            : event.weapon == MimitaNet::NETWORK_WEAPON_REVOLVER
+                                ? 0.9f
+                                : 1.0f;
+                    playWorldSoundOwned(
                         shootSound, event.origin + visualDelta,
-                        1.0f, 1.0f, 80.0f);
+                        1.0f, shootPitch, 80.0f,
+                        audioOwnerKey(event.shooterPlayerId, shootSound));
                 }
 
                 if (event.effectFlags &

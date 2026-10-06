@@ -494,14 +494,37 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
               weapons.render(camera, player); }
         if (mpContext.active) {
             Perf::ScopedTimer _networkEntities("Rendering::Actors::NetworkEntities");
+            int localOutlineTeam = player.matchTeam;
+            if (MimitaNet::CommunityMatchClient::instance().active()) {
+                const uint8_t replicatedTeam =
+                    MimitaNet::CommunityMatchClient::instance().localTeam(mpContext.localPlayerId);
+                if (replicatedTeam != 0xFF)
+                    localOutlineTeam = static_cast<int>(replicatedTeam);
+            }
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
-                renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
+                int remoteTeam = kv.second.matchTeam;
+                if (MimitaNet::CommunityMatchClient::instance().active()) {
+                    const uint8_t replicatedTeam =
+                        MimitaNet::CommunityMatchClient::instance().teamForActor(kv.first);
+                    if (replicatedTeam != 0xFF)
+                        remoteTeam = static_cast<int>(replicatedTeam);
+                }
+                renderNetworkPlayer(kv.second, camera, kv.first, false,
+                                    localOutlineTeam, remoteTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
-                renderNetworkPlayer(kv.second, camera, kv.first, false, player.matchTeam);
+                int remoteTeam = kv.second.matchTeam;
+                if (MimitaNet::CommunityMatchClient::instance().active()) {
+                    const uint8_t replicatedTeam =
+                        MimitaNet::CommunityMatchClient::instance().teamForActor(kv.first);
+                    if (replicatedTeam != 0xFF)
+                        remoteTeam = static_cast<int>(replicatedTeam);
+                }
+                renderNetworkPlayer(kv.second, camera, kv.first, false,
+                                    localOutlineTeam, remoteTeam);
                 weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
             }
             { Perf::ScopedTimer _networkProjectiles("Rendering::Actors::NetworkProjectiles");

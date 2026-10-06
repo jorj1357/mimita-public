@@ -261,6 +261,34 @@ bool solveActorTriangleCollision(
     appendChunkTrianglesForAABB(world, box, queryMargin,
                                 candidates, "actorTriangleSolve");
     result.candidates = (int)candidates.size();
+    result.queryBoxSize = box.max - box.min;
+
+    // Bounded diagnostic: how many returned candidates are the "large" class
+    // (their own AABB would exceed kMaxChunksPerTriangle chunks). Replaces the
+    // removed always-large list as the before/after comparison metric.
+    if (world.collisionMesh.triangleAABBs.size() ==
+            world.collisionMesh.triangles.size() &&
+        world.collisionChunkSize > 0.001f)
+    {
+        int large = 0;
+        for (int ci : candidates)
+        {
+            if (ci < 0 || ci >= (int)world.collisionMesh.triangleAABBs.size())
+                continue;
+            const AABB& b = world.collisionMesh.triangleAABBs[ci];
+            glm::ivec3 c0((int)std::floor(b.min.x / world.collisionChunkSize),
+                          (int)std::floor(b.min.y / world.collisionChunkSize),
+                          (int)std::floor(b.min.z / world.collisionChunkSize));
+            glm::ivec3 c1((int)std::floor(b.max.x / world.collisionChunkSize),
+                          (int)std::floor(b.max.y / world.collisionChunkSize),
+                          (int)std::floor(b.max.z / world.collisionChunkSize));
+            int64_t cells = (int64_t)(c1.x - c0.x + 1) *
+                            (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
+            if (cells > kMaxChunksPerTriangle)
+                ++large;
+        }
+        result.largeTriangles = large;
+    }
 
     // AABB tree over the gathered world candidates, built once per solve and
     // reused by every correction iteration. It only prunes pairs; the
@@ -538,6 +566,8 @@ bool solveActorTriangleCollision(
     }
 
     result.correctedPos = player.pos;
+    result.solveMs = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - solveStart).count();
     // The solve summary is a debug record; only build the JSON when enabled.
     if (StructuredLogger::instance().shouldLog(StructuredCategory::Collision,
                                                StructuredLevel::Verbose))
@@ -558,11 +588,12 @@ bool solveActorTriangleCollision(
              {"max_penetration", result.maxPenetration},
              {"grounded", result.grounded},
              {"candidates", result.candidates},
+             {"large_triangles", result.largeTriangles},
+             {"query_box", vec3Json(result.queryBoxSize)},
              {"candidate_pairs", gActorNarrowphase.candidatePairs},
              {"triangle_tests", gActorNarrowphase.triangleTests},
              {"rounded_feature_calls", gActorNarrowphase.roundedFeatureCalls},
-             {"solve_ms", std::chrono::duration<double, std::milli>(
-                  std::chrono::steady_clock::now() - solveStart).count()}},
+             {"solve_ms", result.solveMs}},
             __FILE__, __LINE__, __FUNCTION__);
     }
     commitActorCollisionMeshes(player);
@@ -582,6 +613,7 @@ bool runActorTriangleCollisionStep(
     if (player.physicalBody.parts.empty())
         return false;
 
+    const auto stepStart = std::chrono::steady_clock::now();
     glm::vec3 totalMove = (player.vel + player.externalImpulse) * dt;
     const float maxZStep = PLAYER_RADIUS;
     if (totalMove.z < -maxZStep)
@@ -674,6 +706,30 @@ bool runActorTriangleCollisionStep(
                 break;
             }
         }
+    }
+
+    // Total collision-frame time for the active actor path: broadphase query +
+    // narrowphase/solve + support carry + entity push + spark. Structured only,
+    // matching the solve summary, so it is a bounded diagnostic record.
+    result.totalMs = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - stepStart).count();
+    if (StructuredLogger::instance().shouldLog(StructuredCategory::Collision,
+                                               StructuredLevel::Verbose))
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Verbose,
+            "collision.solve.frame", "cylinder-static-broadphase",
+            "actor collision frame total (query + solve + post)",
+            static_cast<uint32_t>(player.movementSimulationTick),
+            {{"query_box", vec3Json(result.queryBoxSize)},
+             {"candidates", result.candidates},
+             {"large_triangles", result.largeTriangles},
+             {"triangle_tests", gActorNarrowphase.triangleTests},
+             {"solve_ms", result.solveMs},
+             {"total_ms", result.totalMs},
+             {"grounded", result.grounded},
+             {"iterations", result.iterations}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     return true;
@@ -907,6 +963,26 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
         ActorTriangleCollisionResult r;
         solveActorTriangleCollision(p, world, move, r);
         check(r.contacts.empty(), "giant wall 30m away produces no contact");
+    }
+
+    // 5b. Long wall hit near its middle: the persistent world tree returns the
+    // long triangle only because its own AABB overlaps the actor query, and the
+    // exact triangle contact is unchanged.
+    {
+        World world = makeGiantWallWorld(0.5f);
+        Player p(false);
+        setupBoxActor(p, glm::vec3(-0.5f, 0.0f, -0.5f), 0.4f, 0.5f);
+        const glm::vec3 move(0.8f, 0.0f, 0.0f);
+        p.pos += move;
+        p.updateModelWorldTransforms();
+
+        ActorTriangleCollisionResult r;
+        solveActorTriangleCollision(p, world, move, r);
+        bool wallHit = false;
+        for (const ActorWorldContact& c : r.contacts)
+            if (c.normal.x < -0.5f) wallHit = true;
+        check(wallHit, "long wall middle produces a blocking contact");
+        check(r.correctedPos.x <= 0.12f, "long wall middle stops the actor");
     }
 
     // 6. Deeply embedded actor is depenetrated and grounded.

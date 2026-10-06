@@ -19,6 +19,30 @@
       "behavior_profile": "aggressive"
     },
     {
+      "id": "juggernaut_fighter",
+      "display_name": "Juggernaut Fighter",
+      "team": 0,
+      "team_id": "fighters",
+      "health": 100,
+      "movement_preset": "retrograd_fast",
+      "weapon_set": "juggernaut_fighter",
+      "starting_weapon": "revolver",
+      "behavior_profile": "balanced",
+      "spawn_group": "fighters_spawn"
+    },
+    {
+      "id": "juggernaut_mode_juggernaut",
+      "display_name": "Juggernaut",
+      "team": 1,
+      "team_id": "juggernauts",
+      "health": 5000,
+      "movement_preset": "heavy",
+      "weapon_set": "juggernaut_mode",
+      "starting_weapon": "big_shotgun",
+      "behavior_profile": "juggernaut_limited",
+      "spawn_group": "juggernauts_spawn"
+    },
+    {
       "id": "skirmisher",
       "team": 0,
       "health": 100,

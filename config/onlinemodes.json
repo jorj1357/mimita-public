@@ -65,10 +65,26 @@
       "score_limit": 0
     },
     {
+      "id": "juggernaut",
+      "gamemode_id": "juggernaut",
+      "name": "Juggernaut",
+      "description": "Sixteen fast Fighters versus two slow, powerful Juggernauts. One life.",
+      "teams": 2,
+      "score_limit": 0
+    },
+    {
       "id": "npc_waves",
       "gamemode_id": "npc_waves",
       "name": "NPC Waves",
       "description": "Survive increasingly large waves of NPCs.",
+      "teams": 0,
+      "score_limit": 0
+    },
+    {
+      "id": "zombie_tower",
+      "gamemode_id": "zombie_tower",
+      "name": "Zombie Tower",
+      "description": "Open-ended shooting against a persistent stream of NPCs.",
       "teams": 0,
       "score_limit": 0
     },

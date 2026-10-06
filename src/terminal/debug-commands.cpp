@@ -87,6 +87,20 @@ void registerDebugCommands()
         }
     });
     Terminal::instance().registerCommand({
+        "juggernaut_skip", "Force the current Juggernaut round to draw; host only.", "juggernaut_skip",
+        [](const std::vector<std::string>&) {
+            if (MimitaNet::isServerHost()) {
+                MimitaNet::serverGamemodeRequestJuggernautSkip();
+                Terminal::instance().addLog("[JUGGERNAUT_SKIP] host requested a draw; actors will respawn for the next 3-2-1");
+            } else if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "juggernaut_skip");
+                Terminal::instance().addLog("[JUGGERNAUT_SKIP] sent as a skip vote request; voting is not enabled yet");
+            } else {
+                Terminal::instance().addLog("[JUGGERNAUT_SKIP] HOST ONLY");
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
         "maplist", "List maps from assets/maps", "maplist",
         [](const std::vector<std::string>&) {
             const auto catalog = scanMapCatalog();

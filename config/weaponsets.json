@@ -61,6 +61,22 @@
       "description": "Counter-Strike revolver and shotgun loadout.",
       "role_only": true,
       "weapons": ["revolver", "shotgun"]
+    },
+    {
+      "id": 10,
+      "key": "juggernaut_fighter",
+      "name": "Juggernaut Fighter (role)",
+      "description": "Fighter choices: select one weapon per life with keys 1-4.",
+      "role_only": true,
+      "weapons": ["revolver", "shotgun", "spyknife", "rocket_launcher"]
+    },
+    {
+      "id": 11,
+      "key": "juggernaut_mode",
+      "name": "Juggernaut (mode role)",
+      "description": "Heavy Juggernaut loadout: big shotgun and hitscan rifle.",
+      "role_only": true,
+      "weapons": ["big_shotgun", "hitscan_rifle"]
     }
   ]
 }

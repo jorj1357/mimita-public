@@ -44,6 +44,10 @@ struct GamemodeTeam {
     int capacity = 0;
     std::string role;
     std::string spawnGroup;
+    // Optional map-node name filters for this team's spawn group. Matching is
+    // case-insensitive; an excluded token wins over an included token.
+    std::string spawnTagContains;
+    std::string spawnTagExcludes;
     // Optional team AI assignment policy (JSON-controlled; 0 = brain default).
     int attackersPerSite = 0;
     int defendersPerSite = 0;
@@ -90,6 +94,7 @@ struct GamemodeObjectiveDefinition {
 struct GamemodeRounds {
     int maxRounds = 0;
     int roundsToWin = 0;
+    bool endlessRounds = false;
     float roundSeconds = 0.0f;
     float freezeSeconds = 0.0f;
     float countdownSeconds = 0.0f;
@@ -111,6 +116,9 @@ struct GamemodePresentation {
     bool hasRagdolls = false;            bool ragdolls = true;
     bool hasEnemyHealthbars = false;     bool enemyHealthbars = true;
     bool hasPlayerOutlines = false;      bool playerOutlines = true;
+    bool hasTeamOutlineColors = false;
+    glm::vec3 friendlyOutlineColor{0.0f, 255.0f, 0.0f};
+    glm::vec3 enemyOutlineColor{255.0f, 0.0f, 0.0f};
 };
 
 // Optional mode-level NPC targeting policy. When absent (configured=false) the
@@ -213,6 +221,10 @@ struct Gamemode {
     float waveBannerSeconds = 3.0f;
     bool waveStaggerEnabled = true;
     int waveNpcsPerTick = 10;
+    std::string npcSpawnPolicy;
+    int npcSpawnMax = 0;
+    int npcSpawnIntervalTicks = 60;
+    int npcSpawnPerInterval = 1;
 };
 
 class GamemodeRegistry {

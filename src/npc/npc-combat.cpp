@@ -390,7 +390,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
             glm::vec3 pelletDirs[MAX_PELLETS_PER_BLAST];
             int pelletCount = generatePelletDirections(aimDir, ppc, pelletDirs, MAX_PELLETS_PER_BLAST);
 
-            WeaponAudio::playShootSound(*def, npcPos);
+            WeaponAudio::playShootSound(*def, npcPos, 1.0f,
+                                        0x80000000u | (npc.id & 0x7fffffffu));
 
             float totalDamage = 0.0f;
             bool anyHit = false;
@@ -426,8 +427,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         } else {
             // Single-pellet weapon (revolver): tryFireHitscanDir applies
             // its own spread internally — do NOT pre-spread here.
+            WeaponAudio::playShootSound(*def, npcPos, 1.0f,
+                                        0x80000000u | (npc.id & 0x7fffffffu));
             RevolverShotResult shot = WeaponFire::tryFireHitscanDir(
-                *def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
+                *def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul,
+                beamOverride, false);
             fired = shot.fired;
             if (fired) { shotEnd = shot.end; shotNormal = shot.hitNormal; shotHitWorld = shot.hitWorld; }
             Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s hitscan hit=%d damage=%.0f\n",

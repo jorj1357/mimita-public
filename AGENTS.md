@@ -21,6 +21,14 @@ Read these gates before doing anything else:
    complete data path before assuming a stale executable. Network features and
    packet changes require the network-feature workflow selected by the router.
 
+4. RUNTIME EVIDENCE BEFORE NEW TESTS: For gameplay or user-visible behavior,
+   do not create a new synthetic self-test as the first response. Add bounded
+   owner-level StructuredLogger diagnostics, build a newly named executable,
+   run `mimita-<timestamp>.exe --versioninfo` to capture the exact
+   `EVENTS_JSONL_PATH`, exercise the real game or runtime scenario, and inspect
+   the live journal for expected/actual state and the first divergence. Keep
+   unit/component tests only for behavior they genuinely isolate.
+
 ## Authority and scope
 
 - The specification describes desired behavior. Code implements it.

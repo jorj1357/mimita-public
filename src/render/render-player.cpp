@@ -32,7 +32,8 @@ void renderPlayerInternal(
     const Camera& cam,
     uint32_t networkEntityId,
     bool isLocal,
-    int localTeam)
+    int localTeam,
+    int actorTeam)
 {
     Player& p = const_cast<Player&>(player);
     AvatarSystem& av = AvatarSystem::instance();
@@ -138,10 +139,13 @@ void renderPlayerInternal(
     const PlayerOutlineSettings* outline = &visuals.self;
     const PlayerCapsuleSettings* capsule = &visuals.selfCapsule;
     const PlayerWireframeSettings* wireframe = &visuals.selfWireframe;
+    int resolvedActorTeam = -1;
+    bool teammate = false;
     std::string mode = PlayerVisualsConfig::instance().effectiveMode(visuals.selfMode);
     if (!isLocal)
     {
-        const bool teammate = localTeam >= 0 && player.matchTeam >= 0 && localTeam == player.matchTeam;
+        resolvedActorTeam = actorTeam >= 0 ? actorTeam : player.matchTeam;
+        teammate = localTeam >= 0 && resolvedActorTeam >= 0 && localTeam == resolvedActorTeam;
         outline = teammate ? &visuals.teammate : &visuals.enemy;
         capsule = teammate ? &visuals.teammateCapsule : &visuals.enemyCapsule;
         wireframe = teammate ? &visuals.teammateWireframe : &visuals.enemyWireframe;
@@ -160,8 +164,9 @@ void renderPlayerInternal(
         glDepthMask(GL_FALSE);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glLineWidth(outline->thickness);
-        const glm::vec4 color(outline->color.r / 255.0f, outline->color.g / 255.0f,
-                              outline->color.b / 255.0f, outline->alpha);
+        const glm::vec3 outlineRgb = PlayerVisualsConfig::instance().effectiveOutlineColor(teammate, outline->color);
+        const glm::vec4 color(outlineRgb.r / 255.0f, outlineRgb.g / 255.0f,
+                              outlineRgb.b / 255.0f, outline->alpha);
         player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
                                  true, 0.0f, color);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -171,7 +176,7 @@ void renderPlayerInternal(
         if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
         Debug::logThrottled(Debug::Category::Render, "player_visuals_outline", 1.0f,
             "[PLAYER VISUALS] outline entity=%u category=%s throughWalls=%d thickness=%.2f",
-            networkEntityId, isLocal ? "self" : (localTeam >= 0 && player.matchTeam == localTeam ? "teammate" : "enemy"),
+            networkEntityId, isLocal ? "self" : (teammate ? "teammate" : "enemy"),
             outline->visibleThroughWalls ? 1 : 0, outline->thickness);
     }
 
@@ -236,7 +241,7 @@ void renderPlayerInternal(
 
 void renderPlayer(const Player& player, const Camera& cam)
 {
-    renderPlayerInternal(player, cam, 0, true, -1);
+    renderPlayerInternal(player, cam, 0, true, -1, -1);
 }
 
 void renderNetworkPlayer(
@@ -244,7 +249,8 @@ void renderNetworkPlayer(
     const Camera& cam,
     uint32_t networkEntityId,
     bool isLocal,
-    int localTeam)
+    int localTeam,
+    int actorTeam)
 {
-    renderPlayerInternal(player, cam, networkEntityId, isLocal, localTeam);
+    renderPlayerInternal(player, cam, networkEntityId, isLocal, localTeam, actorTeam);
 }

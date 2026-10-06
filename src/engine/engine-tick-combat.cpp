@@ -30,6 +30,7 @@
 #include "combat/death-system.h"
 #include "network/multiplayer-context.h"
 #include "network/community-server-config.h"
+#include "network/community-match-client.h"
 #include "network/network-weapons.h"
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
@@ -294,10 +295,28 @@ void engineTickCombat(Engine& engine, float dt)
     rightMousePrev = rightMouseDown;
 
     static bool slotPrev[10] = {};
+    const auto& matchClient = MimitaNet::CommunityMatchClient::instance();
+    const bool isJuggernautFighter =
+        mpContext.active && matchClient.mode() == "juggernaut" &&
+        matchClient.localTeam(mpContext.localPlayerId) == 0;
+    if (isJuggernautFighter && !replayPlaybackActive && gameplayInputAllowed &&
+        InputCommandSystem::instance().isKeyboardEnabled()) {
+        for (int choice = 0; choice < 4; ++choice) {
+            const bool down = glfwGetKey(engine.window(), GLFW_KEY_1 + choice) == GLFW_PRESS;
+            if (down && !slotPrev[choice + 1] &&
+                matchClient.fighterWeaponChoiceVisible(mpContext.localPlayerId)) {
+                Terminal::instance().execute("equipslot" + std::to_string(choice + 1));
+                MimitaNet::CommunityMatchClient::instance().selectFighterWeapon(choice);
+            }
+        }
+    }
     for (int keySlot = 0; keySlot <= 9; ++keySlot) {
         int key = keySlot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + keySlot;
         bool down = glfwGetKey(engine.window(), key) == GLFW_PRESS;
-        if (!replayPlaybackActive && !duelCountdown &&
+        const bool pickerLocked = isJuggernautFighter &&
+            matchClient.fighterWeaponChoiceCommitted(mpContext.localPlayerId) &&
+            keySlot >= 1 && keySlot <= 4;
+        if (!pickerLocked && !replayPlaybackActive && !duelCountdown &&
             gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && down && !slotPrev[keySlot]) {
             Terminal::instance().execute("equipslot" + std::to_string(keySlot));
         }

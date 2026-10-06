@@ -63,7 +63,8 @@ private:
     void scanFolder(const std::string& dir, std::vector<TrackEntry>& out);
     void loadCredits(const std::string& path);
     std::string displayName(const std::string& filename) const;
-    void startTrack(const std::string& path);
+    bool startTrack(const std::string& path);
+    std::string resolvePlaybackPath(const std::string& path);
     void playNextIngame();
     void pickMenuTrack();
     void applyVolume();
@@ -76,6 +77,7 @@ private:
     size_t mPlaylistIndex = 0;
 
     std::unordered_map<std::string, std::pair<std::string, std::string>> mCredits;
+    std::unordered_map<std::string, std::string> mOpusCache;
 
     ma_engine* mEngine = nullptr;
     ma_sound* mCurrentSound = nullptr;

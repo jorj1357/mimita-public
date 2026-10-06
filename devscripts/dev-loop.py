@@ -860,7 +860,14 @@ class DevLoop:
         client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
         if not self.events_path:
             self.events_path = create_shared_events_path()
-        client_env = {**os.environ, "MIMITA_EVENTS_FILE": self.events_path}
+        # The client may run generic leave/queue cleanup that is allowed to
+        # stop a server it launched through the GUI. This server belongs to
+        # the dev-loop instead, so the client must never claim ownership of it.
+        client_env = {
+            **os.environ,
+            "MIMITA_EVENTS_FILE": self.events_path,
+            "MIMITA_DEV_LOOP_SERVER": "1",
+        }
         print(f"[DEV] launching build {self.latest_build} client")
         print(f"[DEV] shared events file: {self.events_path}")
         client = subprocess.Popen(

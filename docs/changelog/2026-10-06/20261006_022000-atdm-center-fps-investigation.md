@@ -1,0 +1,6 @@
+# ATDM center FPS regression investigation
+
+- Scope: investigate the reported drop to approximately 10 FPS near the center of ATDM, with recent collision changes as the suspected cause.
+- Findings: the active ATDM client load has 50,859 collision triangles, 882 large triangles, 45,148 chunks, and 6,372,894 sub-grid references. The recent uncommitted collision changes make the persistent world AABB tree the default for AABB gathering, including the local actor-triangle solver, and also add tree queries to ray and swept-sphere paths. The actor solver then builds another temporary AABB tree from its returned candidates on every fixed-tick solve. This is the leading cause of a center-local collision workload spike; no gameplay code was changed.
+- Evidence: `logs/10-06-2026/Gameterminal_log_015317.txt` records the ATDM collision counts and load phases; the changed owners are `src/map/map-loader-collision.cpp`, `src/physics/movement/physics-collision.cpp`, `src/physics/movement/actor-triangle-solver.cpp`, and `src/physics/movement/physics-collision-glb-main.cpp`.
+- Runtime status: the checked-in event logs do not contain enabled `collision.solve.frame` diagnostics for the reported location, so exact center candidate counts and milliseconds remain unmeasured. Build, visual FPS, and human acceptance were not claimed.

@@ -724,6 +724,36 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                         {"{seconds}", std::to_string((int)std::ceil(std::max(0.0f, match.phaseTimer())))}}));
                 }
 
+                if (match.fighterWeaponChoiceVisible(mpContext.localPlayerId)) {
+                    const float panelW = 520.0f;
+                    const float panelH = 250.0f;
+                    const float panelX = uiScreenW() * 0.5f - panelW * 0.5f;
+                    const float panelY = uiScreenH() * 0.5f - panelH * 0.5f;
+                    uiDrawRect({panelX, panelY, panelW, panelH},
+                               {0.02f, 0.03f, 0.06f, 0.94f}, "juggernaut-choice-bg");
+                    uiDrawRectOutline({panelX, panelY, panelW, panelH},
+                                      {0.2f, 1.0f, 0.35f, 1.0f},
+                                      "juggernaut-choice-border");
+                    const char* title = "CHOOSE YOUR FIGHTER WEAPON";
+                    const float titleScale = 0.46f;
+                    uiDrawText(title, panelX + panelW * 0.5f - uiMeasureText(title, titleScale) * 0.5f,
+                               panelY + 22.0f, titleScale, {0.3f, 1.0f, 0.4f, 1.0f});
+                    const char* tip = "PRESS 1, 2, 3, OR 4";
+                    const float tipScale = 0.34f;
+                    uiDrawText(tip, panelX + panelW * 0.5f - uiMeasureText(tip, tipScale) * 0.5f,
+                               panelY + 62.0f, tipScale, {1.0f, 0.9f, 0.35f, 1.0f});
+                    for (int choice = 0; choice < 4; ++choice) {
+                        const std::string line = std::to_string(choice + 1) + "  " +
+                            MimitaNet::CommunityMatchClient::fighterWeaponName(choice);
+                        uiDrawText(line.c_str(), panelX + 70.0f, panelY + 102.0f + choice * 28.0f,
+                                   0.34f, {0.92f, 0.95f, 1.0f, 1.0f});
+                    }
+                    const char* footer = "ONE WEAPON FOR THIS LIFE";
+                    const float footerScale = 0.28f;
+                    uiDrawText(footer, panelX + panelW * 0.5f - uiMeasureText(footer, footerScale) * 0.5f,
+                               panelY + panelH - 28.0f, footerScale, {0.7f, 0.75f, 0.85f, 1.0f});
+                }
+
                 if (match.waveBannerVisible()) {
                     drawCentered("waveText", textTemplate("waveText", {
                         {"{number}", std::to_string(match.waveNumber())},
@@ -786,9 +816,16 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                         match.phase() == MimitaNet::DUEL_PHASE_RESULTS) {
                         const std::string winner = match.winnerTeam() >= 0
                             ? match.teamName(match.winnerTeam()) : "";
-                        const std::string roundText = match.matchOver()
-                            ? (winner + " win the match")
-                            : (winner + " win the round");
+                        const GuiElement* roundOverElement = matchLayout.get("roundOverText");
+                        const std::string configuredRoundText = roundOverElement ? roundOverElement->text : "";
+                        const std::string roundText = !configuredRoundText.empty()
+                            ? textTemplate("roundOverText", {
+                                {"{round}", std::to_string(match.roundNumber())},
+                                {"{winner}", winner},
+                                {"{result}", match.matchOver() ? "MATCH OVER" : "ROUND OVER"}})
+                            : (match.matchOver()
+                                ? (winner + " win the match")
+                                : (winner + " win the round"));
                         drawCentered("roundOverText", roundText);
                         drawCentered("scoreText", textTemplate("scoreText", {
                             {"{red_name}", leftName}, {"{red_score}", std::to_string(match.roundWins(0))},

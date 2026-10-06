@@ -49,6 +49,10 @@ void playEventSound(const std::string& name, float volume = 1.0f);
 void playSoundPitched(const std::string& name, float volume, float pitch);
 void playWorldSound(const std::string& name, glm::vec3 pos, float volume = 1.0f,
                     float pitch = 1.0f, float maxDistance = 30.0f);
+unsigned int audioOwnerKey(unsigned int actorId, const std::string& channel);
+void playWorldSoundOwned(const std::string& name, glm::vec3 pos, float volume,
+                         float pitch, float maxDistance, unsigned int ownerId,
+                         bool retrigger = true);
 void setAudioListener(glm::vec3 pos, glm::vec3 forward);
 void playAirJumpSound();
 void playSoundAt(const std::string& name, glm::vec3 pos, float volume = 1.0f);

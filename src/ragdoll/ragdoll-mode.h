@@ -189,7 +189,8 @@ private:
     };
 
     // Shared body construction / writeback, used by alive mode and corpses.
-    void initParts(const Player& player, RagdollBody& b);
+    void initParts(const Player& player, RagdollBody& b,
+                   bool deriveAttachmentAnchorsFromBind = false);
     // Build the aim body from the player's rest pose and current movement state.
     // Shared by first activation and lifecycle rebind.
     void buildAimBody(Player& player);
@@ -224,6 +225,9 @@ private:
     RagdollBody mAim;
     bool mAimActive = false;
     std::string mAimAvatarName;
+    bool mAimTransformTracePending = false;
+    uint64_t mAimLiveTraceLastTick = 0;
+    bool mAimLiveTraceHasSample = false;
     RagdollReplicationPose mReplicated;
     std::unordered_map<uint32_t, RagdollBody> mReplicatedBodies;
     std::vector<RagdollCorpse> mCorpses;

@@ -693,6 +693,92 @@ bool collisionSubGridSelfTest(std::string* outSummary)
         check(!small.empty() && ratio < 0.5f, name);
     }
 
+    // The persistent world tree replaces the removed always-large scan: a long
+    // triangle is returned only when its own AABB overlaps the query box, and a
+    // huge triangle that would have been "always-large" lives only in the tree
+    // (not the coarse fallback grid).
+    {
+        World longWorld;
+        longWorld.collisionChunkSize = 6.0f;
+
+        // Index 0: long and narrow (x spans 4000 units, y/z within 0.5).
+        CollisionTriangle longTri;
+        longTri.a = glm::vec3(-2000.0f, -0.5f, 0.0f);
+        longTri.b = glm::vec3( 2000.0f, -0.5f, 0.0f);
+        longTri.c = glm::vec3(    0.0f,  0.5f, 0.0f);
+        longTri.normal = glm::normalize(
+            glm::cross(longTri.b - longTri.a, longTri.c - longTri.a));
+        longWorld.collisionMesh.triangles.push_back(longTri);
+
+        // Index 1: huge flat triangle whose coarse span exceeds the fallback cap
+        // (it would have been an always-scanned entry before this change).
+        CollisionTriangle hugeTri;
+        hugeTri.a = glm::vec3(-2000.0f, -2000.0f, 0.0f);
+        hugeTri.b = glm::vec3( 2000.0f, -2000.0f, 0.0f);
+        hugeTri.c = glm::vec3(    0.0f,  2000.0f, 0.0f);
+        hugeTri.normal = glm::normalize(
+            glm::cross(hugeTri.b - hugeTri.a, hugeTri.c - hugeTri.a));
+        longWorld.collisionMesh.triangles.push_back(hugeTri);
+
+        buildCollisionChunks(longWorld, nullptr);
+
+        check(longWorld.collisionTree.ids.size() ==
+                  longWorld.collisionMesh.triangles.size(),
+              "world tree indexes every collision triangle");
+
+        // The huge triangle must not be in the coarse fallback grid.
+        bool hugeInCoarseGrid = false;
+        for (const auto& kv : longWorld.collisionLargeChunks)
+            for (int triIndex : kv.second)
+                if (triIndex == 1) hugeInCoarseGrid = true;
+        check(!hugeInCoarseGrid,
+              "huge triangle is not in the always-scanned coarse list");
+
+        const AABB mid{{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}};
+        const AABB farFromLong{{-1.0f, 50.0f, -1.0f}, {1.0f, 51.0f, 1.0f}};
+        const AABB farFromHuge{{-1.0f, -1.0f, 500.0f}, {1.0f, 1.0f, 501.0f}};
+
+        auto contains = [](const std::vector<int>& v, int idx) {
+            return std::find(v.begin(), v.end(), idx) != v.end();
+        };
+        auto bruteForceLong = [&](const AABB& q) {
+            std::vector<int> out;
+            for (int i = 0; i < (int)longWorld.collisionMesh.triangles.size(); ++i) {
+                const AABB& tb = longWorld.collisionMesh.triangleAABBs[i];
+                if (overlaps(q, tb))
+                    out.push_back(i);
+            }
+            return out;
+        };
+
+        std::vector<int> midHits;
+        std::vector<int> longFarHits;
+        std::vector<int> hugeFarHits;
+        appendChunkTrianglesForAABB(longWorld, mid, 0.0f, midHits, "longTriMid");
+        appendChunkTrianglesForAABB(longWorld, farFromLong, 0.0f, longFarHits,
+                                    "longTriFar");
+        appendChunkTrianglesForAABB(longWorld, farFromHuge, 0.0f, hugeFarHits,
+                                    "hugeTriFar");
+
+        check(contains(midHits, 0),
+              "query near the middle of a long triangle returns it");
+        check(!contains(longFarHits, 0),
+              "query far from a long triangle does not test it");
+        check(!contains(hugeFarHits, 1),
+              "query far from a huge triangle does not test it");
+        check(contains(midHits, 1),
+              "query near a huge triangle returns it through the tree");
+
+        for (const AABB& q : {mid, farFromLong, farFromHuge}) {
+            std::vector<int> expected = bruteForceLong(q);
+            std::vector<int> got;
+            appendChunkTrianglesForAABB(longWorld, q, 0.0f, got, "longTriParity");
+            std::sort(expected.begin(), expected.end());
+            std::sort(got.begin(), got.end());
+            check(expected == got, "long/huge triangle query set matches brute force");
+        }
+    }
+
     if (outSummary)
         *outSummary = summary;
     return ok;

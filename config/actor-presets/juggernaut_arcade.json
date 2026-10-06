@@ -1,0 +1,14 @@
+{
+  "schema": 2,
+  "id": "juggernaut_arcade",
+  "display_name": "Juggernaut Arcade Presentation",
+  "presentation": {
+    "damage_numbers": true,
+    "hit_effects": true,
+    "world_impact_effects": true,
+    "blood_effects": true,
+    "muzzle_flash": true,
+    "hit_markers": true,
+    "hit_sounds": true
+  }
+}

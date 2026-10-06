@@ -110,7 +110,12 @@ void leaveRoom(GLFWwindow* window)
          DuelQueue::instance().state() == DuelQueueState::MatchEnd);
 
     if (activeDuel) {
-        DuelQueue::instance().returnToQueue();
+        // Leaving a match disconnects this client and returns to the menu.
+        // It must not stop the separate server process; server lifetime is
+        // owned by the explicit server controls, not the client pause menu.
+        DuelQueue::instance().stopQueue();
+        GAME_STATE = GAME_MENU;
+        gGuiMenuState = GUI_MENU_MAIN;
         gOpen = false;
         gView = View::Main;
         InputCommandSystem::instance().setKeyboardEnabled(true);
