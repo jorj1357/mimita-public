@@ -31,7 +31,8 @@
     "round_seconds": 115,
     "freeze_seconds": 5,
     "countdown_seconds": 3,
-    "intermission_seconds": 30,
+    // "intermission_seconds": 30,
+    "intermission_seconds": 1,
     "results_seconds": 5
   },
   "spawn_groups": {

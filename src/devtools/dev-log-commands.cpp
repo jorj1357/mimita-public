@@ -54,6 +54,7 @@ void registerDevLogCommands()
             std::map<std::string, int> eventCounts;
             std::map<std::string, int> categoryCounts;
             std::map<std::string, std::map<std::string, int>> processCounts;
+            std::vector<std::string> startupIdentities;
             if (in.is_open()) {
                 while (std::getline(in, line)) {
                     if (line.empty()) continue;
@@ -73,6 +74,13 @@ void registerDevLogCommands()
                     }
                     const std::string event = record.value("event", "");
                     if (event == "logger.started") sawStarted = true;
+                    if (event == "logger.started") {
+                        const auto fields = record.value("fields", nlohmann::json::object());
+                        startupIdentities.push_back(
+                            "  " + record.value("process", "unknown") +
+                            " pid=" + std::to_string(record.value("pid", 0ULL)) +
+                            " exe=" + fields.value("executable", "(not recorded)"));
+                    }
                     if (!event.empty()) {
                         ++eventCounts[event];
                         if (event.rfind("npc.", 0) == 0) ++npcEvents;
@@ -104,6 +112,13 @@ void registerDevLogCommands()
                     processRecords += event.second;
                 report += "  " + process.first + ": " +
                           std::to_string(processRecords) + " records\n";
+            }
+            report += "startup identities:\n";
+            if (startupIdentities.empty()) {
+                report += "  (none)\n";
+            } else {
+                for (const auto& identity : startupIdentities)
+                    report += identity + "\n";
             }
             if (deathEvents == 0 && ragdollEvents == 0)
                 report += "  WARNING: this journal currently contains no death or ragdoll events.\n";

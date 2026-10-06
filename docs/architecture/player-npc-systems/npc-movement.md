@@ -996,15 +996,15 @@ MiMITA should eventually support proper actor-vs-actor physical collision.
 
 Actors may:
 
-body block;
+    body block;
 
-touch;
+    touch;
 
-push;
+    push;
 
-shove;
+    shove;
 
-according to physics rules.
+    according to physics rules.
 
 Local avoidance should help actors avoid unnecessary collisions.
 
@@ -1014,18 +1014,18 @@ It should not erase physical interaction.
 
 Possible architecture:
 
-Detour path corridor
-        ↓
-desired travel direction
-        ↓
-RVO2 / ORCA
-suggest local collision-avoiding velocity
-        ↓
-combat/traversal constraints
-        ↓
-ActorIntent
-        ↓
-MiMITA physics
+    Detour path corridor
+            ↓
+    desired travel direction
+            ↓
+    RVO2 / ORCA
+    suggest local collision-avoiding velocity
+            ↓
+    combat/traversal constraints
+            ↓
+    ActorIntent
+            ↓
+    MiMITA physics
 
 The final position always comes from MiMITA actor execution and physics.
 
@@ -1033,22 +1033,22 @@ The final position always comes from MiMITA actor execution and physics.
 
 Example:
 
-20 NPCs
-→ one narrow doorway
+    20 NPCs
+    → one narrow doorway
 
 Desired:
 
-actors approach;
+    actors approach;
 
-local spacing develops;
+    local spacing develops;
 
-some queue;
+    some queue;
 
-some may route elsewhere;
+    some may route elsewhere;
 
-physical movement remains stable;
+    physical movement remains stable;
 
-actors eventually pass through.
+    actors eventually pass through.
 
 Do not require all actors to follow the exact same centerline at the exact same time.
 
@@ -1058,29 +1058,29 @@ NPC movement should be driven by the highest-level objective first.
 
 Example Counter-Strike Terrorist:
 
-Goal:
-WIN ROUND
-    ↓
-Role:
-TERRORIST
-    ↓
-Current objective:
-I HAVE BOMB
-    ↓
-Strategic action:
-PLANT BOMB
-    ↓
-Travel goal:
-BOMBSITE
-    ↓
-Navigation:
-CORRIDOR TO SITE
-    ↓
-Local movement:
-FOLLOW CORRIDOR
-    ↓
-Combat interruption:
-ENEMY APPEARS
+    Goal:
+    WIN ROUND
+        ↓
+    Role:
+    TERRORIST
+        ↓
+    Current objective:
+    I HAVE BOMB
+        ↓
+    Strategic action:
+    PLANT BOMB
+        ↓
+    Travel goal:
+    BOMBSITE
+        ↓
+    Navigation:
+    CORRIDOR TO SITE
+        ↓
+    Local movement:
+    FOLLOW CORRIDOR
+        ↓
+    Combat interruption:
+    ENEMY APPEARS
 
 The actor should not simply maximize raw movement distance.
 
@@ -1090,29 +1090,29 @@ Movement should maximize progress toward the current meaningful objective.
 
 If carrying bomb:
 
-survive
-+
-reach viable bombsite
-+
-plant
+    survive
+    +
+    reach viable bombsite
+    +
+    plant
 
-is a major priority.
+    is a major priority.
 
 If another teammate has bomb:
 
-support carrier
-+
-control space
-+
-fight threats
+    support carrier
+    +
+    control space
+    +
+    fight threats
 
 If bomb is dropped:
 
-someone should recover bomb
+    someone should recover bomb
 
 If bomb route becomes impossible:
 
-reassess objective
+    reassess objective
 
 43. Combat can interrupt travel
 
@@ -1120,14 +1120,14 @@ A navigation route is not sacred.
 
 Example:
 
-path says north
-enemy appears west
+    path says north
+    enemy appears west
 
-Combat may temporarily become more important than exact corridor following.
+    Combat may temporarily become more important than exact corridor following.
 
 After combat:
 
-resume/recompute objective travel
+    resume/recompute objective travel
 
 Do not destroy the long-term goal merely because short-term movement changed.
 
@@ -1167,89 +1167,89 @@ movement failed
 
 When fighting an enemy, an NPC should have access to movement options including:
 
-strafe left;
+    strafe left;
 
-strafe right;
+    strafe right;
 
-retreat;
+    retreat;
 
-push;
+    push;
 
-circle;
+    circle;
 
-parallel strafe;
+    parallel strafe;
 
-sudden stop;
+    sudden stop;
 
-jump;
+    jump;
 
-crouch;
+    crouch;
 
-fake direction;
+    fake direction;
 
-reverse;
+    reverse;
 
-hold;
+    hold;
 
-peek;
+    peek;
 
-retreat to cover;
+    retreat to cover;
 
-chase;
+    chase;
 
-cut off escape route.
+    cut off escape route.
 
-These are reusable combat-movement primitives.
+    These are reusable combat-movement primitives.
 
 47. Combat movement depends on context
 
 NPC should consider:
 
-own health;
+    own health;
 
-enemy health;
+    enemy health;
 
-own weapon;
+    own weapon;
 
-enemy weapon;
+    enemy weapon;
 
-ammo;
+    ammo;
 
-reload state;
+    reload state;
 
-range;
+    range;
 
-nearby cover;
+    nearby cover;
 
-nearby teammates;
+    nearby teammates;
 
-enemy velocity;
+    enemy velocity;
 
-enemy movement tendencies;
+    enemy movement tendencies;
 
-objective urgency;
+    objective urgency;
 
-geometry.
+    geometry.
 
 Example:
 
 enemy:
-shotgun
-full health
+    shotgun
+    full health
 
 NPC:
-long-range weapon
+    long-range weapon
 
 → increase distance
 
 Another:
 
 enemy:
-knife
-low health
+    knife
+    low health
 
 NPC:
-revolver
+    revolver
 
 → maintain distance and fire
 
@@ -1259,49 +1259,49 @@ NPCs should be capable of matching an enemy's screen-relative movement.
 
 Example:
 
-enemy moves left across NPC view
-        ↓
-NPC moves left in parallel
-        ↓
-relative horizontal aim movement decreases
+    enemy moves left across NPC view
+            ↓
+    NPC moves left in parallel
+            ↓
+    relative horizontal aim movement decreases
 
-This can create extremely strong tracking behavior.
+    This can create extremely strong tracking behavior.
 
-The NPC may intentionally move to simplify its own aiming problem.
+    The NPC may intentionally move to simplify its own aiming problem.
 
 49. Predictive combat movement
 
 NPCs may predict where opponents are likely to move.
 
-Potential inputs:
+    Potential inputs:
 
-current velocity;
+    current velocity;
 
-acceleration;
+    acceleration;
 
-health;
+    health;
 
-ammo;
+    ammo;
 
-weapon;
+    weapon;
 
-nearby cover;
+    nearby cover;
 
-repeated behavior history;
+    repeated behavior history;
 
-map geometry.
+    map geometry.
 
 Example:
 
-enemy low health
-+
-enemy usually retreats right
-+
-right-side cover available
-        ↓
-predict right retreat
-        ↓
-pre-aim / intercept
+    enemy low health
+    +
+    enemy usually retreats right
+    +
+    right-side cover available
+            ↓
+    predict right retreat
+            ↓
+    pre-aim / intercept
 
 50. Opponent behavior modeling
 
@@ -1322,21 +1322,21 @@ NPC may exploit repeated player tendencies.
 
 Higher difficulty may improve:
 
-pattern recognition;
+    pattern recognition;
 
-consistency;
+    consistency;
 
-amount of usable opponent history;
+    amount of usable opponent history;
 
-reaction speed;
+    reaction speed;
 
-prediction accuracy;
+    prediction accuracy;
 
-tactical movement selection.
+    tactical movement selection.
 
 It must not simply become:
 
-read player's future inputs
+    read player's future inputs
 
 The NPC should infer likely behavior from known state.
 
@@ -1344,50 +1344,50 @@ The NPC should infer likely behavior from known state.
 
 The goal of juking is:
 
-reduce opponent's ability to predict and damage the NPC
+    reduce opponent's ability to predict and damage the NPC
 
 It is not:
 
-move randomly
+    move randomly
 
 A juke is successful if it:
 
-causes missed shots;
+    causes missed shots;
 
-creates positional advantage;
+    creates positional advantage;
 
-disrupts enemy tracking;
+    disrupts enemy tracking;
 
-buys reload time;
+    buys reload time;
 
-creates escape space;
+    creates escape space;
 
-improves attack opportunity.
+    improves attack opportunity.
 
 53. Juke complexity
 
 A juke may be:
 
-simple;
+    simple;
 
-subtle;
+    subtle;
 
-flashy;
+    flashy;
 
-technically complex.
+    technically complex.
 
 Example simple:
 
-move right
-→ sudden stop
+    move right
+    → sudden stop
 
 Example complex:
 
-left strafe
-→ jump cancel
-→ reverse
-→ down dash
-→ air strafe
+    left strafe
+    → jump cancel
+    → reverse
+    → down dash
+    → air strafe
 
 Both are valid if tactically useful.
 
@@ -1397,16 +1397,16 @@ MiMITA should support reusable movement primitives.
 
 Examples:
 
-left-right duel strafe
-corner peek
-doorway bait
-retreat strafe
-circle strafe
-jump peek
-dash retreat
-down-dash cancel
-wall-jump escape
-parallel tracking strafe
+    left-right duel strafe
+    corner peek
+    doorway bait
+    retreat strafe
+    circle strafe
+    jump peek
+    dash retreat
+    down-dash cancel
+    wall-jump escape
+    parallel tracking strafe
 
 A primitive should describe intent/motion pattern rather than hard-coded world coordinates.
 

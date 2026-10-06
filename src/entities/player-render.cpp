@@ -9,6 +9,7 @@
 #include "debug/debug-visuals.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/gl-debug.h"
 #include "replay/replay-scene.h"
 #include "world/texture-store.h"
@@ -112,6 +113,20 @@ void Player::renderCurrentPose(unsigned int shader,
                                float outlineThickness,
                                const glm::vec4& outlineColor) const
 {
+    auto logRagdollPath = [&](uint32_t stage, const char* event,
+                              const char* reason, const nlohmann::json& fields) {
+        if (!dead || !ragdollModeActive) return;
+        static std::unordered_map<const Player*, uint32_t> loggedStages;
+        uint32_t& seen = loggedStages[this];
+        if ((seen & stage) != 0) return;
+        seen |= stage;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Ragdoll, StructuredLevel::Important,
+            event, username, reason,
+            static_cast<uint32_t>(movementSimulationTick),
+            fields, __FILE__, __LINE__, __FUNCTION__);
+    };
+
     {
         static bool perfModelLogged = false;
         if (DebugConfig::DEBUG_PERF_MODEL && !perfModelLogged) {
@@ -135,6 +150,9 @@ void Player::renderCurrentPose(unsigned int shader,
 
     if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
     {
+        size_t drawableParts = 0;
+        size_t drawableBatches = 0;
+        size_t drawableVertices = 0;
         static GLint uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
         static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1, uTintLoc = -1;
         static GLint uOutlinePassLoc = -1, uOutlineThicknessLoc = -1;
@@ -252,6 +270,10 @@ void Player::renderCurrentPose(unsigned int shader,
             if (hideHead && part.name == "head")
                 continue;
 
+            ++drawableParts;
+            drawableBatches += mesh.batches.size();
+            drawableVertices += mesh.verts.size();
+
             uploadBodyPartMeshPart(mesh, (int)i);
 
             const glm::mat4& model = part.worldTransform;
@@ -350,11 +372,23 @@ void Player::renderCurrentPose(unsigned int shader,
         if (uCosmeticBrightnessLoc >= 0) glUniform1f(uCosmeticBrightnessLoc, 1.0f);
         if (uCosmeticOpacityLoc >= 0) glUniform1f(uCosmeticOpacityLoc, 1.0f);
 
+        logRagdollPath(
+            1u, "ragdoll.render.path", "physical body mesh path completed",
+            {{"actor_id", username}, {"path", "physical_body"},
+             {"drawable_parts", drawableParts}, {"drawable_batches", drawableBatches},
+             {"drawable_vertices", drawableVertices}, {"shader_program", shader},
+             {"position", {pos.x, pos.y, pos.z}}});
+
         return;
     }
 
     if (modelLoaded && !renderMesh.verts.empty())
     {
+        logRagdollPath(
+            2u, "ragdoll.render.path", "fallback render mesh path selected",
+            {{"actor_id", username}, {"path", "render_mesh"},
+             {"vertices", renderMesh.verts.size()}, {"batches", renderMesh.batches.size()},
+             {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
         uploadPlayerMeshIfNeeded(renderMesh);
 
         glm::mat4 model =
@@ -382,6 +416,11 @@ void Player::renderCurrentPose(unsigned int shader,
         }
         return;
     }
+
+    logRagdollPath(
+        4u, "ragdoll.render.path", "fallback capsule path selected",
+        {{"actor_id", username}, {"path", "capsule"},
+         {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
 
     initCapsuleMesh();
 

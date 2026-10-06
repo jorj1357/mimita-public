@@ -167,7 +167,7 @@ public:
     void spawnCorpse(const Player& victim, const glm::vec3& deathImpulse,
                      const std::string& actorId, uint32_t ownerId = 0);
     void updateCorpses(float dt, const World& world);
-    void renderCorpses(const Camera& camera) const;
+    void renderCorpses(const Camera& camera);
     void removeCorpsesForOwner(uint32_t ownerId);
     void clearCorpses();
     std::size_t corpseCount() const { return mCorpses.size(); }
@@ -187,6 +187,7 @@ private:
         bool bloodInit = false;
         bool firstUpdateLogged = false;
         bool firstRenderLogged = false;
+        uint32_t lifeTicks = 0;
         glm::vec3 lastBloodPos{0.0f};
     };
 

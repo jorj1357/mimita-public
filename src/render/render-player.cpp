@@ -18,6 +18,7 @@
 #include "config/player-visuals-config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
 #include <chrono>
 #include <cstdio>
 #include <unordered_map>
@@ -26,6 +27,22 @@
 extern Renderer* gRenderer;
 
 namespace {
+
+void logRagdollRenderStage(const Player& player, uint32_t stage,
+                           const char* event, const char* reason,
+                           const nlohmann::json& fields)
+{
+    if (!player.dead || !player.ragdollModeActive) return;
+    static std::unordered_map<const Player*, uint32_t> loggedStages;
+    uint32_t& seen = loggedStages[&player];
+    if ((seen & stage) != 0) return;
+    seen |= stage;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Ragdoll, StructuredLevel::Important,
+        event, player.username, reason,
+        static_cast<uint32_t>(player.movementSimulationTick),
+        fields, __FILE__, __LINE__, __FUNCTION__);
+}
 
 void renderPlayerInternal(
     const Player& player,
@@ -61,6 +78,9 @@ void renderPlayerInternal(
         networkEntityId != 0 && nowMs - lastLogMs[networkEntityId] >= 1000;
 
     if (!gRenderer) {
+        logRagdollRenderStage(
+            player, 1u, "ragdoll.render.no_renderer", "renderer unavailable",
+            {{"actor_id", player.username}, {"position", {player.pos.x, player.pos.y, player.pos.z}}});
         printf("[RENDER] renderer missing\n");
         if (logDraw)
             printf("[DRAW PLAYER] entityId=%u isLocal=%d submitted=0 reason=no-renderer\n",
@@ -73,6 +93,10 @@ void renderPlayerInternal(
     // (deathAnim.active false) is the body hidden instantly. The local player's
     // own body is never drawn, dead or alive.
     if (player.dead && isLocal) {
+        logRagdollRenderStage(
+            player, 2u, "ragdoll.render.skipped", "local dead-player render gate",
+            {{"actor_id", player.username}, {"gate", "local_dead"},
+             {"position", {player.pos.x, player.pos.y, player.pos.z}}});
         if (logDraw)
             printf("[DRAW PLAYER] entityId=%u isLocal=%d submitted=0 reason=local-dead worldPos=(%.2f,%.2f,%.2f)\n",
                    networkEntityId, (int)isLocal,
@@ -84,6 +108,10 @@ void renderPlayerInternal(
     // Dead bodies without a scripted fall-over are hidden, except ragdoll
     // corpses which render their physically simulated pose.
     if (player.dead && !player.deathAnim.active && !player.ragdollModeActive) {
+        logRagdollRenderStage(
+            player, 4u, "ragdoll.render.skipped", "dead-player render gate",
+            {{"actor_id", player.username}, {"gate", "dead_without_ragdoll"},
+             {"position", {player.pos.x, player.pos.y, player.pos.z}}});
         if (logDraw)
             printf("[DRAW PLAYER] entityId=%u isLocal=%d submitted=0 reason=dead worldPos=(%.2f,%.2f,%.2f)\n",
                    networkEntityId, (int)isLocal,
@@ -92,6 +120,17 @@ void renderPlayerInternal(
             lastLogMs[networkEntityId] = nowMs;
         return;
     }
+
+    logRagdollRenderStage(
+        player, 8u, "ragdoll.render.player_entry", "passed player render gates",
+        {{"actor_id", player.username}, {"shader_program", gRenderer->shaderProgram},
+         {"model_loaded", player.modelLoaded},
+         {"physical_part_count", player.physicalBody.parts.size()},
+         {"physical_mesh_count", player.physicalBody.partMeshes.size()},
+         {"render_mesh_vertex_count", player.renderMesh.verts.size()},
+         {"render_mesh_batch_count", player.renderMesh.batches.size()},
+         {"dead", player.dead}, {"ragdoll_mode_active", player.ragdollModeActive},
+         {"position", {player.pos.x, player.pos.y, player.pos.z}}});
 
     // printf("[RENDER] shaderProgram=%u\n", gRenderer->shaderProgram);
 

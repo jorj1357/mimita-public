@@ -2117,6 +2117,7 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
         StructuredCategory::Ragdoll, StructuredLevel::Important,
         "ragdoll.corpse.spawn.attempt", corpseId, "corpse spawn attempted", tick,
         { {"actor_id", corpseId}, {"owner_id", ownerId},
+          {"username", victim.username}, {"match_team", victim.matchTeam},
           {"position", {victim.pos.x, victim.pos.y, victim.pos.z}},
           {"health", victim.currentHp}, {"ragdoll_enabled", cfg.enabled},
           {"death_enabled", RagdollDeathConfig::instance().enabled()},
@@ -2129,6 +2130,7 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
             StructuredCategory::Ragdoll, StructuredLevel::Important,
             "ragdoll.corpse.spawn.rejected", corpseId, reason, tick,
             { {"actor_id", corpseId}, {"reason", reason},
+              {"username", victim.username}, {"match_team", victim.matchTeam},
               {"ragdoll_enabled", cfg.enabled},
               {"death_enabled", RagdollDeathConfig::instance().enabled()},
               {"physical_part_count", victim.physicalBody.parts.size()},
@@ -2188,8 +2190,21 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
 
     // Bounded corpse count keeps the solver cost predictable.
     constexpr size_t kMaxCorpses = 12;
-    while (mCorpses.size() >= kMaxCorpses)
+    while (mCorpses.size() >= kMaxCorpses) {
+        const RagdollCorpse& evicted = mCorpses.front();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Ragdoll, StructuredLevel::Important,
+            "ragdoll.corpse.evicted", evicted.actorId,
+            "oldest corpse evicted at active corpse limit", 
+            static_cast<uint32_t>(evicted.actor.movementSimulationTick),
+            { {"actor_id", evicted.actorId},
+              {"active_corpses_before", mCorpses.size()},
+              {"max_corpses", kMaxCorpses},
+              {"age_seconds", evicted.age},
+              {"position", {evicted.actor.pos.x, evicted.actor.pos.y, evicted.actor.pos.z}} },
+            __FILE__, __LINE__, __FUNCTION__);
         mCorpses.erase(mCorpses.begin());
+    }
 
     mCorpses.push_back(std::move(corpse));
 
@@ -2197,6 +2212,7 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
         StructuredCategory::Ragdoll, StructuredLevel::Important,
         "ragdoll.corpse.spawned", corpseId, "corpse inserted into active list", tick,
         { {"actor_id", corpseId}, {"owner_id", ownerId},
+          {"username", victim.username}, {"match_team", victim.matchTeam},
           {"parts", mCorpses.back().body.parts.size()},
           {"active_corpses", mCorpses.size()},
           {"lifetime_seconds", cfg.corpseLifetimeSeconds},
@@ -2288,6 +2304,7 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world)
     for (auto it = mCorpses.begin(); it != mCorpses.end();) {
         RagdollCorpse& corpse = *it;
         corpse.age += dt;
+        ++corpse.lifeTicks;
         if (corpse.age >= corpse.lifetime) {
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Ragdoll, StructuredLevel::Important,
@@ -2311,6 +2328,22 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world)
                 __FILE__, __LINE__, __FUNCTION__);
         }
 
+        if (corpse.lifeTicks % 60 == 0) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "ragdoll.corpse.position_sample", corpse.actorId,
+                "corpse position sampled during lifetime", 
+                static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                { {"actor_id", corpse.actorId},
+                  {"life_ticks", corpse.lifeTicks},
+                  {"age_seconds", corpse.age},
+                  {"position", {corpse.actor.pos.x, corpse.actor.pos.y, corpse.actor.pos.z}},
+                  {"velocity", {corpse.actor.vel.x, corpse.actor.vel.y, corpse.actor.vel.z}},
+                  {"fade", corpse.fade},
+                  {"active_corpses", mCorpses.size()} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+
         const float fadeStart = std::max(0.0f, corpse.lifetime - cfg.corpseFadeSeconds);
         if (corpse.age > fadeStart && cfg.corpseFadeSeconds > 0.0f) {
             corpse.fade = glm::clamp(
@@ -2327,10 +2360,27 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world)
     }
 }
 
-void RagdollModeSystem::renderCorpses(const Camera& camera) const
+void RagdollModeSystem::renderCorpses(const Camera& camera)
 {
-    for (const RagdollCorpse& corpse : mCorpses) {
+    for (RagdollCorpse& corpse : mCorpses) {
         if (corpse.fade >= 1.0f) continue;
+        if (!corpse.firstRenderLogged) {
+            corpse.firstRenderLogged = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "ragdoll.corpse.render_submitted", corpse.actorId,
+                "corpse submitted to network-player renderer", 
+                static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                { {"actor_id", corpse.actorId},
+                  {"username", corpse.actor.username},
+                  {"match_team", corpse.actor.matchTeam},
+                  {"age_seconds", corpse.age},
+                  {"life_ticks", corpse.lifeTicks},
+                  {"position", {corpse.actor.pos.x, corpse.actor.pos.y, corpse.actor.pos.z}},
+                  {"fade", corpse.fade},
+                  {"active_corpses", mCorpses.size()} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         renderNetworkPlayer(corpse.actor, camera, 0, false);
     }
 }

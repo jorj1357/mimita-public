@@ -4,6 +4,7 @@
     "CT1": "server_start_preset counterstrike_1",
     "cs": "crate_spawn",
     "cc": "crate_clear",
-    "tpv1": "teleport 0 0 500"
+    "tpv1": "teleport 0 0 500",
+    "ava": "avatar.load angel2"
   }
 }
