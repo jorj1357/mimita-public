@@ -29,6 +29,11 @@ struct GrenadeDefinition
     // Frag is a direct explosion (no lingering area); smoke/fire/darkbang leave
     // an area effect.
     bool spawnsAreaEffect = false;
+    float fuseSeconds = 2.0f;
+    float directEffectDistance = 5.0f;
+    float maxEffectDistance = 20.0f;
+    float notLookingMultiplier = 0.5f;
+    float noLineOfSightMultiplier = 0.05f;
 };
 
 class GrenadeRegistry

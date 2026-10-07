@@ -19,6 +19,7 @@
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
 #include "debug/debug-log.h"
+#include "debug/debug-visuals.h"
 #include "debug/structured-log.h"
 
 #include <algorithm>
@@ -33,6 +34,7 @@
 #include "camera.h"
 #include "combat/client-collision-world-view.h"
 #include "combat/explosion-fx.h"
+#include "combat/grenade-registry.h"
 #include "combat/projectile-render.h"
 #include "combat/projectile-simulation.h"
 #include "combat/weapon-system.h"
@@ -52,6 +54,14 @@
 
 namespace MimitaNet {
 namespace {
+
+struct ClientSmokeVolume {
+    glm::vec3 position{0.0f};
+    float radius = 7.5f;
+    float remainingSeconds = 0.0f;
+};
+
+static std::vector<ClientSmokeVolume> gSmokeVolumes;
 
 // ── Grenade diagnostic logging helper ────────────────────────────────
 // Writes to both StructuredLogger (category file + summary) and the

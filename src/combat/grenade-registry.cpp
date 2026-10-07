@@ -89,6 +89,12 @@ bool GrenadeRegistry::load(const std::string& path)
             def.damageIntervalTicks = std::max(1, item.value("damage_interval_ticks", def.damageIntervalTicks));
             def.damagesEnemiesOnly = item.value("damages_enemies_only", def.damagesEnemiesOnly);
             def.spawnsAreaEffect = item.value("spawns_area_effect", def.areaKind != AreaEffectKind::None);
+            def.fuseSeconds = std::max(0.0f, item.value("fuse_seconds", def.fuseSeconds));
+            def.directEffectDistance = std::max(0.0f, item.value("direct_effect_distance", def.directEffectDistance));
+            def.maxEffectDistance = std::max(def.directEffectDistance,
+                item.value("max_effect_distance", def.maxEffectDistance));
+            def.notLookingMultiplier = std::clamp(item.value("not_looking_multiplier", def.notLookingMultiplier), 0.0f, 1.0f);
+            def.noLineOfSightMultiplier = std::clamp(item.value("no_line_of_sight_multiplier", def.noLineOfSightMultiplier), 0.0f, 1.0f);
             defs[def.id] = std::move(def);
         }
         mDefs = std::move(defs);

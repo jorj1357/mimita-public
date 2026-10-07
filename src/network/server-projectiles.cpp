@@ -219,7 +219,6 @@ std::optional<ProjectileConfig> projectileConfigFromDefinition(
 {
     ProjectileConfig cfg;
     cfg.speed = def.projectileSpeed > 0.0f ? def.projectileSpeed : 40.0f;
-    cfg.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f;
     cfg.radius = def.projectileRadius > 0.0f ? def.projectileRadius : 0.3f;
     cfg.fireDelay = def.fireDelay > 0.0f ? def.fireDelay : 1.0f;
 
@@ -227,6 +226,8 @@ std::optional<ProjectileConfig> projectileConfigFromDefinition(
         auto it = def.customParams.find(key);
         return it != def.customParams.end() ? it->second : fallback;
     };
+
+    cfg.lifetime = cp("fuseTime", def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f);
 
     cfg.splashRadius = cp("splashRadius", 8.0f);
     cfg.splashDamage = cp("rocketDirectDamage", 150.0f);
@@ -739,6 +740,17 @@ void explodeProjectile(SOCKET sock,
         return;
     projectile.exploded = true;
     projectile.position = position;
+
+    // Named grenades leave their configured persistent area effect at the
+    // authoritative detonation point. Frag has no area effect and is a no-op.
+    if (const std::string* grenadeId = weaponIdForDefNetworkId(projectile.weaponDefNetworkId)) {
+        const auto& mode = serverGamemodeState();
+        const uint32_t ownerActorId = projectile.ownerPlayerId != 0
+            ? projectile.ownerPlayerId : projectile.ownerNpcId;
+        const auto teamIt = mode.matchTeams.find(ownerActorId);
+        const int ownerTeam = teamIt != mode.matchTeams.end() ? teamIt->second : -1;
+        serverSpawnGrenadeAreaEffect(*grenadeId, ownerActorId, ownerTeam, position);
+    }
 
     ProjectileExplodeEventPacket packet{};
     packet.header.type = PACKET_PROJECTILE_EXPLODE_EVENT;

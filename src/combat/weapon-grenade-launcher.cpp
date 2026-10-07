@@ -51,7 +51,7 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     cfg.friction = cp(def, "bounceFriction", 0.5f);
     cfg.minBounceSpeed = cp(def, "minBounceSpeed", 0.1f);
     cfg.maxBounceCount = (int)cp(def, "maxBounceCount", 10.0f);
-    cfg.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 3.0f;
+    cfg.lifetime = cp(def, "fuseTime", def.projectileLifetime > 0.0f ? def.projectileLifetime : 3.0f);
     cfg.explosionRadius = cp(def, "splashRadius", 8.0f) * sc.scale(1.0f, sc.explosionRadiusExponent, s);
     cfg.explosionDamage = cp(def, "rocketDirectDamage", 150.0f) * sc.scale(1.0f, sc.projectileDamageExponent, s);
     cfg.explosionKnockback = cp(def, "knockbackStrength", 160.0f) * sc.scale(1.0f, sc.knockbackExponent, s);
