@@ -494,7 +494,56 @@ void NpcNavigator::pushBlocked(const glm::vec3& pos, float now)
         ++recentBlockedCount;
 }
 
-glm::vec3 NpcNavigator::resolveExploreTarget(const Npc& npc, const glm::vec3& hintPoint,
+// Choose a reachable far travel target for an Explore goal. The candidate must
+// land on a real floor inside the map bounds with a clear ray from the actor.
+// The heading fans out in 30-degree steps and falls back to shorter distances.
+// This replaces the old unvalidated body.pos + dir*travel point that often lay
+// inside a wall or off the map, which made routes end short (dest_projection_m
+// ~10 m) and actors stall.
+static bool findReachableTravelPoint(const Npc& npc, const World& world,
+                                     const glm::vec3& wantDir, float travel,
+                                     glm::vec3& out)
+{
+    const glm::vec3 bmin = world.collisionMesh.boundsMin;
+    const glm::vec3 bmax = world.collisionMesh.boundsMax;
+    const bool haveBounds = bmin.x < bmax.x && bmin.y < bmax.y;
+    const float margin = 2.0f;
+    const float distances[3] = {travel, travel * 0.5f, travel * 0.25f};
+    for (float dist : distances) {
+        if (dist < 4.0f) continue;
+        for (int i = 0; i < 12; ++i) {
+            float angleDeg = 0.0f;
+            if (i > 0) {
+                const int mag = 30 * ((i + 1) / 2);
+                angleDeg = (i % 2 == 1 ? 1.0f : -1.0f) * static_cast<float>(mag);
+            }
+            const float rad = glm::radians(angleDeg);
+            const float c = std::cos(rad), s = std::sin(rad);
+            glm::vec3 dir(c * wantDir.x - s * wantDir.y,
+                          s * wantDir.x + c * wantDir.y, 0.0f);
+            if (glm::length(dir) < 0.001f) continue;
+            dir = glm::normalize(dir);
+            glm::vec3 p = npc.body.pos + dir * dist;
+            if (haveBounds) {
+                p.x = std::clamp(p.x, bmin.x + margin, bmax.x - margin);
+                p.y = std::clamp(p.y, bmin.y + margin, bmax.y - margin);
+            }
+            const float floorZ =
+                NpcNavigation::groundHeightAt(world, p, 12.0f, 1.5f);
+            if (floorZ < -1.0e5f) continue;
+            if (std::fabs(floorZ - npc.body.pos.z) > 30.0f) continue;
+            if (NpcNavigation::obstacleInDirection(npc, dir, dist, world))
+                continue;
+            p.z = floorZ;
+            out = p;
+            return true;
+        }
+    }
+    return false;
+}
+
+glm::vec3 NpcNavigator::resolveExploreTarget(const Npc& npc, const World& world,
+                                             const glm::vec3& hintPoint,
                                              const MovementCommitmentSettings& settings,
                                              float dt)
 {
@@ -525,10 +574,17 @@ glm::vec3 NpcNavigator::resolveExploreTarget(const Npc& npc, const glm::vec3& hi
             valid = false;
     }
     if (!valid) {
-        travelTarget = npc.body.pos + wantDir * travel;
+        glm::vec3 chosen(0.0f);
+        if (findReachableTravelPoint(npc, world, wantDir, travel, chosen)) {
+            travelTarget = chosen;
+        } else {
+            // No valid surface found; keep a short, same-height hop so the local
+            // planner can refuse cleanly instead of chasing a mid-air point.
+            travelTarget = npc.body.pos + wantDir * std::min(travel, 6.0f);
+        }
         hasTravelTarget = true;
         travelTargetTimer = 0.0f;
-        travelTargetStartDistance = travel;
+        travelTargetStartDistance = horizontalDistance(npc.body.pos, travelTarget);
         travelTargetChangedThisUpdate = true;
     }
     return travelTarget;
@@ -925,7 +981,7 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         const MovementCommitmentSettings s = commitment
             ? *commitment : MovementCommitmentSettings{};
         travelTargetChangedThisUpdate = false;
-        dest = resolveExploreTarget(npc, goal.targetPos, s, dt);
+        dest = resolveExploreTarget(npc, world, goal.targetPos, s, dt);
         result.travelTargetChanged = travelTargetChangedThisUpdate;
         result.travelTargetOut = travelTarget;
         haveDest = true;
@@ -1003,6 +1059,14 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     const bool blockedNow = NpcNavigation::isStuck(npc);
     const bool progressFailed = commitment && commitment->enabled && commitmentProgressFailed;
     const bool preservingLocalCorrection = localCorrectionActive;
+    // Recast corridor retention: a cached Recast route is only valid for the
+    // navmesh version it was planned against. A published new version (dynamic
+    // geometry, rebuild) invalidates it so the actor does not follow stale data.
+    const RecastBackend navBackend = recastBackendMode();
+    const bool recastNavmeshStale =
+        navBackend == RecastBackend::Recast && !path.empty() &&
+        recastRouteVersion != 0 &&
+        recastRouteVersion != RecastNavigationBackend::instance().navmeshVersion();
     bool needPlan = false;
     const char* reason = "initial";
     if (path.empty() && !preservingLocalCorrection) {
@@ -1024,6 +1088,9 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     } else if (!justRetryDelay && progressFailed && !preservingLocalCorrection) {
         needPlan = true;
         reason = "progress";
+    } else if (!justRetryDelay && recastNavmeshStale && !preservingLocalCorrection) {
+        needPlan = true;
+        reason = "navmesh_stale";
     }
 
     if (needPlan && wantPlanning && consumePlanToken()) {
@@ -1095,7 +1162,6 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         // successful corridor replaces the custom path (same format), so the
         // shared follow/traversal/movement execution is reused unchanged. If
         // Recast cannot route, the custom plan remains the bounded fallback.
-        const RecastBackend navBackend = recastBackendMode();
         if (navBackend != RecastBackend::Custom) {
             const Capsule& capsule = npc.body.getCapsule();
             NavigationAgentProfile profile;
@@ -1145,6 +1211,8 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
                     planCaps.assign(plan.size(), (uint8_t)NavCapability::Walk);
                     planned = true;
                     result.recastAuthoritative = true;
+                    recastRouteVersion =
+                        RecastNavigationBackend::instance().navmeshVersion();
                 }
             }
         }

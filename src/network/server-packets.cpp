@@ -23,6 +23,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "void-death/void-death.h"
 #include "website/api-client.h"
 #include "persistence/persistence-emit.h"
@@ -35,6 +36,7 @@
 #include <chrono>
 #include <random>
 #include <unordered_map>
+#include <nlohmann/json.hpp>
 
 namespace MimitaNet {
 namespace {
@@ -94,7 +96,7 @@ bool playerCanEquipSlot(const ServerPlayer& player, int slot)
 {
     if (slot == 0)
         return true;
-    const WeaponDefinition* def = weaponDefinitionForSlot(serverCommunityWeaponNativeSlot(slot));
+    const WeaponDefinition* def = weaponDefinitionForSlot(serverCommunityWeaponNativeSlot(player, slot));
     if (!def)
         return false;
     if (!serverCommunityWeaponAllowed(def->id))
@@ -132,13 +134,22 @@ bool applyEquipIntentFromInput(ServerPlayer& player,
             input.equippedSlot,
             input.equipSerial,
             source);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "weapon.equip.rejected", std::to_string(player.id), "not-owned-or-unknown",
+            0,
+            nlohmann::json{{"requested_slot", input.equippedSlot},
+                           {"resolved_native_slot", serverCommunityWeaponNativeSlot(player, input.equippedSlot)},
+                           {"weapon_set", player.weaponSetId},
+                           {"mode", serverGamemodeState().matchMode},
+                           {"equip_serial", input.equipSerial}});
         return false;
     }
 
     const int oldSlot = player.equippedSlot;
     if (input.equipSerial != 0)
         player.lastEquipSerial = input.equipSerial;
-    player.equippedSlot = serverCommunityWeaponNativeSlot(input.equippedSlot);
+    player.equippedSlot = serverCommunityWeaponNativeSlot(player, input.equippedSlot);
     player.weaponState = input.weaponState;
     Debug::log(
         Debug::Category::Weapons,
@@ -149,6 +160,15 @@ bool applyEquipIntentFromInput(ServerPlayer& player,
         player.equippedSlot,
         input.equipSerial,
         source);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons, StructuredLevel::Verbose,
+        "weapon.equip.accepted", std::to_string(player.id), "input",
+        0,
+        nlohmann::json{{"requested_slot", input.equippedSlot},
+                       {"resolved_native_slot", player.equippedSlot},
+                       {"weapon_set", player.weaponSetId},
+                       {"mode", serverGamemodeState().matchMode},
+                       {"equip_serial", input.equipSerial}});
     return true;
 }
 

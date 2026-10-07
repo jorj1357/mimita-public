@@ -1091,9 +1091,9 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         const WeaponDefinition* d = WeaponRegistry::instance().get(id);
         if (!d || d->behaviorType != WeaponBehaviorType::SpyKnife)
             continue;
-        const int logicalSlot = serverCommunityWeaponLogicalSlot(d->id);
+        const int logicalSlot = serverCommunityWeaponLogicalSlot(attacker, d->id);
         const int nativeSlot = logicalSlot > 0
-            ? serverCommunityWeaponNativeSlot(logicalSlot) : d->slot;
+            ? serverCommunityWeaponNativeSlot(attacker, logicalSlot) : d->slot;
         // Community weapon sets use logical slots (Stable Weapons puts the
         // knife in slot 4), while the weapon definition uses its native slot
         // (Spy Knife is native slot 12). Accept either representation because
@@ -1121,9 +1121,9 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         const WeaponDefinition* d = WeaponRegistry::instance().get(id);
         if (!d || d->behaviorType != WeaponBehaviorType::SpyKnife)
             continue;
-        const int logicalSlot = serverCommunityWeaponLogicalSlot(d->id);
+        const int logicalSlot = serverCommunityWeaponLogicalSlot(attacker, d->id);
         const int nativeSlot = logicalSlot > 0
-            ? serverCommunityWeaponNativeSlot(logicalSlot) : d->slot;
+            ? serverCommunityWeaponNativeSlot(attacker, logicalSlot) : d->slot;
         if (attacker.equippedSlot == d->slot ||
             attacker.equippedSlot == logicalSlot ||
             attacker.equippedSlot == nativeSlot) {

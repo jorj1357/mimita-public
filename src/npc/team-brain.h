@@ -71,6 +71,37 @@ struct TeamAssignmentPolicy
     bool oneRotator = true;
 };
 
+// ── General group/focus behavior (see npc-group-behavior.md) ─────────────
+// One living squad member for coordination.
+struct SquadMember
+{
+    uint32_t id = 0;
+    glm::vec3 pos{0.0f};
+};
+
+// Per-team group tuning resolved from the members' behavior profiles.
+struct SquadTuning
+{
+    bool enabled = false;
+    bool swarm = false;
+    float cohesion = 0.0f;
+    float spreadRadiusMeters = 6.0f;
+    int maxAttackersPerTarget = 6;
+    std::string approachStyle = "arc";
+};
+
+// Current shared squad state. Focus is a travel target, never an aim target.
+struct SquadState
+{
+    bool active = false;
+    glm::vec3 anchor{0.0f};
+    glm::vec3 focusPos{0.0f};
+    uint32_t focusActorId = 0;
+    int memberCount = 0;
+    // 0 none, 1 advance, 2 engage (near focus).
+    int mode = 0;
+};
+
 struct TeamBrainState
 {
     int team = -1;
@@ -81,6 +112,9 @@ struct TeamBrainState
     // actor id -> assignment for the current round.
     std::vector<std::pair<uint32_t, TeamAssignment>> assignments;
     glm::vec3 assignedObjectivePos{0.0f};
+    // General squad state and per-actor slots (group behavior).
+    SquadState squad;
+    std::vector<std::pair<uint32_t, glm::vec3>> squadSlots;
 };
 
 // The generic TeamBrain. One instance per team; used by both sides.
@@ -112,11 +146,28 @@ public:
     // Assignment for an actor, or None.
     TeamAssignment assignmentFor(uint32_t actorId) const;
 
-    // Objective position the team should care about right now (bomb if carried
-    // by us, planted site if planted, else the team's assigned site).
-    bool objectiveTargetPosition(glm::vec3& out) const;
+    // Recompute the shared squad anchor and per-actor slots. `living` is this
+    // team's living members; `focusActive`/`focusPos` come from the team's best
+    // enemy report. Deterministic for a given input. Produces suggestions only.
+    void updateSquad(const std::vector<SquadMember>& living,
+                     const glm::vec3& focusPos, bool focusActive,
+                     const SquadTuning& tuning);
+    // Slot + anchor for an actor. False when the actor has no squad slot.
+    bool squadSlotFor(uint32_t actorId, glm::vec3& outSlot,
+                      glm::vec3& outAnchor) const;
+    const SquadState& squad() const { return mState.squad; }
+
+    // Objective position this actor should move to right now. `actorId` and
+    // `actorPos` let a bomb-carrying Terrorist be sent to a site to plant
+    // instead of being pointed at its own position. Planted site wins, then the
+    // carried bomb (for supporters), then the nearest site.
+    bool objectiveTargetPosition(uint32_t actorId, const glm::vec3& actorPos,
+                                 glm::vec3& out) const;
 
 private:
+    // Nearest site with a position to `from`. False when no site is usable.
+    bool nearestSitePosition(const glm::vec3& from, glm::vec3& out) const;
+
     int mTeam = -1;
     TeamBrainState mState;
 };

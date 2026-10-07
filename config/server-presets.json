@@ -1,6 +1,16 @@
 {
   "version": 1,
   "presets": {
+    "juggernaut_1": {
+      "server_name": "Juggernaut 1",
+      "map": "dust2cyberiav4",
+      "mode": "juggernaut",
+      "startup_npcs": false,
+      "npc_count": 0,
+      "discord_notification": false,
+      "map_rotation": false,
+      "join_host": true
+    },
     "counterstrike_1": {
       "server_name": "Counter-Strike 1",
       "map": "dust2cyberiav4",

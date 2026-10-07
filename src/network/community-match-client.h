@@ -121,6 +121,7 @@ public:
 
     bool fighterWeaponChoiceVisible(uint32_t localPlayerId) const;
     bool fighterWeaponChoiceCommitted(uint32_t localPlayerId) const;
+    int fighterWeaponChoice() const { return mFighterWeaponChoice; }
     bool selectFighterWeapon(int choice);
     static const char* fighterWeaponId(int choice);
     static const char* fighterWeaponName(int choice);

@@ -147,6 +147,11 @@ struct NpcNavigator
     glm::vec3 travelTarget{0.0f};
     bool hasTravelTarget = false;
 
+    // Navmesh version the cached route was planned against. When the Recast
+    // backend publishes a new version, the cached corridor is stale and must be
+    // replanned rather than followed through changed geometry.
+    std::uint64_t recastRouteVersion = 0;
+
     // Local-area trap escape state (see MovementCommitmentSettings).
     glm::vec3 areaAnchor{0.0f};
     float areaTimer = 0.0f;
@@ -243,7 +248,8 @@ struct NpcNavigator
     // Resolve the persistent far travel target for an Explore goal. `hintPoint`
     // only supplies the desired heading; the returned target is held until it
     // is reached or the desired heading reverses.
-    glm::vec3 resolveExploreTarget(const Npc& npc, const glm::vec3& hintPoint,
+    glm::vec3 resolveExploreTarget(const Npc& npc, const World& world,
+                                   const glm::vec3& hintPoint,
                                    const MovementCommitmentSettings& settings,
                                    float dt);
 

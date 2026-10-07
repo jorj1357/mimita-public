@@ -74,9 +74,9 @@
       "id": 11,
       "key": "juggernaut_mode",
       "name": "Juggernaut (mode role)",
-      "description": "Heavy Juggernaut loadout: big shotgun and hitscan rifle.",
+      "description": "Heavy Juggernaut loadout: large machine gun and hitscan rifle.",
       "role_only": true,
-      "weapons": ["big_shotgun", "hitscan_rifle"]
+      "weapons": ["large_machine_gun", "hitscan_rifle"]
     }
   ]
 }

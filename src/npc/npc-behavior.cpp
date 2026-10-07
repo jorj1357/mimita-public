@@ -130,6 +130,24 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.travelTargetReachedMeters = clampWarn(
         j, "travel_target_reached_meters", 2.0f, 30.0f,
         out.travelTargetReachedMeters, out.id);
+
+    // General group/focus behavior (npc-group-behavior.md).
+    out.focusEnabled = boolOr(j, "focus_enabled", out.focusEnabled);
+    out.focusMode = j.value("focus_mode", out.focusMode);
+    out.swarm = boolOr(j, "swarm", out.swarm);
+    out.cohesion = clampWarn(j, "cohesion", 0.0f, 1.0f, out.cohesion, out.id);
+    out.spreadRadiusMeters = clampWarn(
+        j, "spread_radius_meters", 1.0f, 40.0f, out.spreadRadiusMeters, out.id);
+    out.approachStyle = j.value("approach_style", out.approachStyle);
+    out.maxAttackersPerTarget =
+        j.value("max_attackers_per_target", out.maxAttackersPerTarget);
+    out.rallyDistanceMeters = clampWarn(
+        j, "rally_distance_meters", 1.0f, 50.0f, out.rallyDistanceMeters, out.id);
+    out.focusReacquireSeconds = clampWarn(
+        j, "focus_reacquire_seconds", 0.0f, 60.0f, out.focusReacquireSeconds, out.id);
+    out.slotStickiness = clampWarn(
+        j, "slot_stickiness", 0.0f, 1.0f, out.slotStickiness, out.id);
+    out.navigationBackend = j.value("navigation_backend", out.navigationBackend);
 }
 
 } // anonymous namespace
@@ -288,6 +306,19 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     out.commitmentReversePenalty = def->commitmentReversePenalty;
     out.travelTargetDistanceMeters = def->travelTargetDistanceMeters;
     out.travelTargetReachedMeters = def->travelTargetReachedMeters;
+
+    // General group/focus behavior.
+    out.focusEnabled = def->focusEnabled;
+    out.focusMode = def->focusMode;
+    out.swarm = def->swarm;
+    out.cohesion = std::clamp(def->cohesion, 0.0f, 1.0f);
+    out.spreadRadiusMeters = std::max(1.0f, def->spreadRadiusMeters);
+    out.approachStyle = def->approachStyle;
+    out.maxAttackersPerTarget = std::max(1, def->maxAttackersPerTarget);
+    out.rallyDistanceMeters = std::max(1.0f, def->rallyDistanceMeters);
+    out.focusReacquireSeconds = std::max(0.0f, def->focusReacquireSeconds);
+    out.slotStickiness = std::clamp(def->slotStickiness, 0.0f, 1.0f);
+    out.navigationBackend = def->navigationBackend;
     return out;
 }
 

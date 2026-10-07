@@ -29,5 +29,16 @@
     "end_thickness": 0.0,
     "lifetime": 0.1,
     "color": [1.0, 0.6, 0.1]
+  },
+  "large_machine_gun": {
+    "enabled": true,
+    "thickness": 0.24,
+    "end_thickness": 0.04,
+    "lifetime": 0.14,
+    "scale": 0.28,
+    "end_scale": 0.04,
+    "start_alpha": 1.0,
+    "end_alpha": 0.15,
+    "color": [0.18, 0.55, 1.0]
   }
 }

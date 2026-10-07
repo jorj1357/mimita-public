@@ -21,7 +21,8 @@
     // "visible": true,
     "visible": false,
     "collision_skin": 0.05,
-    "player_bounce": 0.99,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.3,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "body", "center": [0.15, 0.0, 0.0],
@@ -34,7 +35,8 @@
     // "visible": true,
     "visible": false,
     "collision_skin": 0.05,
-    "player_bounce": 0.99,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.3,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.0, 0.2, 0.0],
@@ -47,7 +49,8 @@
     // "visible": true,
     "visible": false,
     "collision_skin": 0.05,
-    "player_bounce": 0.99,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.3,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "tube", "center": [0.15, 0.0, 0.2],
@@ -60,7 +63,8 @@
     // "visible": true,
     "visible": false,
     "collision_skin": 0.05,
-    "player_bounce": 0.35,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.3,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.15, 0.0, 0.0],
@@ -73,7 +77,8 @@
     // "visible": true,
     "visible": false,
     "collision_skin": 0.05,
-    "player_bounce": 0.35,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.3,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "blade", "center": [0.55, 0.0, 0.0],
@@ -86,7 +91,8 @@
     // "visible": true,
     "visible": false,
     "collision_skin": 0.3,
-    "player_bounce": 0.99,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.3,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "blade", "center": [0.0, 0.0, 0.3],
@@ -101,7 +107,8 @@
     // "visible": true,
     "visible": false,
     "collision_skin": 0.02,
-    "player_bounce": 0.99,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.3,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.25, -0.1, 0.0],
@@ -114,7 +121,8 @@
     // "visible": true,
     "visible": false,
     "collision_skin": 0.02,
-    "player_bounce": 0.99,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.3,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.25, 0.0, 0.0],

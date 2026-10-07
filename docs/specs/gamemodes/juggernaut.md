@@ -388,6 +388,56 @@ and weapon-set owners should be extended only where necessary.
 - Tune health, damage, fire rate, movement, FOV, and team-size balance through
   live JSON values.
 
+#### Fighter unit behavior (general, not Juggernaut-specific)
+
+The intended Fighter experience is a **coordinated swarm**: Fighters leave spawn
+together, move as one unit toward the nearest Juggernaut, spread out instead of
+stacking, and keep shooting while they close. This is composed entirely from the
+general owners defined in:
+
+- `docs/architecture/player-npc-systems/npc-group-behavior.md` (TeamFocus +
+  SquadCoordinator);
+- `docs/architecture/player-npc-systems/npc-local-avoidance.md` (spacing);
+- the Recast/Detour navigation backend (routing).
+
+The mode owns no Fighter AI. The Fighter role references a behavior profile whose
+group fields (see the group-behavior contract section 6) enable focus toward the
+hostile team and swarm slots. The Juggernaut role uses a profile without focus
+(`focus_enabled: false`) unless a future revision says otherwise.
+
+Required Fighter properties:
+
+- leave spawn toward the focus instead of patrolling or wall-grinding;
+- converge as a unit on the focus with bounded cohesion;
+- occupy distributed firing slots rather than one line or a stack;
+- cap how many members commit to a single focus actor (`max_attackers_per_target`);
+- re-rally and re-slot after deaths or when the focus moves;
+- never aim through walls; a focus actor is a travel target, not an aim target.
+
+#### First acceptance map
+
+The first acceptance map for this behavior is `dust2cyberiav4`. The mode's map
+list should include it so the round/scenario pipeline can exercise the swarm on
+the same geometry used by the navigation contract.
+
+#### Juggernaut behavior
+
+Juggernauts advance or hold with limited awareness. Their narrow FOV and range
+limits are respected by the perception owner; they must not receive focus-style
+shared omniscience that bypasses their intended weakness.
+
+#### Acceptance metrics (initial, dust2cyberiav4, fixed seed)
+
+- 100% of Fighter routes have a result or an explicit hold/fallback reason;
+- Fighters make positive net progress toward the focus until engagement;
+- zero unrecovered wall-intersection or collision-loop failures;
+- Fighters arrive distributed (measured slot spread) rather than single-file;
+- at least one coordinated push reaches interaction range with a Juggernaut
+  before the round's first engagement window ends;
+- no aim or damage event originates without a perception-valid visible target;
+- human review confirms the Fighters look like a unit rather than loose
+  individuals.
+
 ### Phase 7: optional heavy weapons
 
 - Add the heavy revolver.

@@ -343,6 +343,11 @@ RecastNavigationBackend& RecastNavigationBackend::instance()
     return backend;
 }
 
+std::uint64_t RecastNavigationBackend::navmeshVersion() const
+{
+    return mState ? mState->version : 0;
+}
+
 void RecastNavigationBackend::invalidate()
 {
     if (!mState) mState = new State();

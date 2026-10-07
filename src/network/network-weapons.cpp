@@ -24,6 +24,8 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         definition.id == "admin_revolver" ||
         definition.id == "hitscan_rifle")
         return NETWORK_WEAPON_REVOLVER;
+    if (definition.id == "large_machine_gun")
+        return NETWORK_WEAPON_LARGE_MACHINE_GUN;
     if (definition.id == "godball")
         return NETWORK_WEAPON_GODBALL;
     if (definition.id == "shotgun")
@@ -149,6 +151,7 @@ const char* networkWeaponTypeName(uint8_t type)
     case NETWORK_WEAPON_AA12: return "aa12";
     case NETWORK_WEAPON_FORCE_PUNCH: return "force_punch";
     case NETWORK_WEAPON_PROJECTILE_RIFLE: return "projectile_rifle";
+    case NETWORK_WEAPON_LARGE_MACHINE_GUN: return "large_machine_gun";
     default: return "unknown";
     }
 }
@@ -164,7 +167,8 @@ bool networkWeaponTypeIsHitscan(uint8_t type)
 {
     return type == NETWORK_WEAPON_REVOLVER ||
         type == NETWORK_WEAPON_SHOTGUN ||
-        type == NETWORK_WEAPON_AA12;
+        type == NETWORK_WEAPON_AA12 ||
+        type == NETWORK_WEAPON_LARGE_MACHINE_GUN;
 }
 
 bool networkWeaponTypeIsMelee(uint8_t type)

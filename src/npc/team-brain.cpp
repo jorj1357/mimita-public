@@ -157,7 +157,104 @@ TeamAssignment TeamBrain::assignmentFor(uint32_t actorId) const
     return TeamAssignment::None;
 }
 
-bool TeamBrain::objectiveTargetPosition(glm::vec3& out) const
+void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
+                            const glm::vec3& focusPos, bool focusActive,
+                            const SquadTuning& tuning)
+{
+    mState.squadSlots.clear();
+    SquadState& sq = mState.squad;
+    sq.memberCount = (int)living.size();
+    sq.focusPos = focusPos;
+    sq.focusActorId = 0;
+
+    if (living.empty()) {
+        sq.active = false;
+        sq.mode = 0;
+        sq.anchor = glm::vec3(0.0f);
+        return;
+    }
+
+    sq.anchor = glm::vec3(0.0f);
+    for (const auto& m : living) sq.anchor += m.pos;
+    sq.anchor /= static_cast<float>(living.size());
+
+    // Deterministic order by actor id.
+    std::vector<SquadMember> ordered = living;
+    std::sort(ordered.begin(), ordered.end(),
+              [](const SquadMember& a, const SquadMember& b) { return a.id < b.id; });
+
+    sq.active = tuning.enabled;
+    if (!tuning.enabled) {
+        sq.mode = 0;
+        for (const auto& m : ordered)
+            mState.squadSlots.push_back({m.id, sq.anchor});
+        return;
+    }
+
+    const bool hasFocus = focusActive;
+    const float anchorToFocus = hasFocus
+        ? glm::length(glm::vec2(focusPos.x - sq.anchor.x, focusPos.y - sq.anchor.y))
+        : 0.0f;
+    sq.mode = hasFocus
+        ? (anchorToFocus <= tuning.spreadRadiusMeters * 2.0f ? 2 : 1)
+        : 1;
+
+    const int count = (int)ordered.size();
+    const int attackers = hasFocus
+        ? std::min(count, std::max(1, tuning.maxAttackersPerTarget)) : 0;
+    for (int i = 0; i < count; ++i) {
+        glm::vec3 slot;
+        if (hasFocus && i < attackers) {
+            // Ring around the focus; approach from the squad's own side by
+            // default so members do not cross the target to the far side.
+            const float baseAngle = (tuning.approachStyle == "flank") ? 0.0f
+                                                                      : 3.14159265f;
+            const float step = 6.2831853f / static_cast<float>(std::max(1, attackers));
+            const float angle = baseAngle + step * static_cast<float>(i);
+            slot = focusPos + glm::vec3(std::cos(angle), std::sin(angle), 0.0f) *
+                                  tuning.spreadRadiusMeters;
+        } else {
+            const float step = 6.2831853f / static_cast<float>(std::max(1, count));
+            const float angle = step * static_cast<float>(i);
+            slot = sq.anchor + glm::vec3(std::cos(angle), std::sin(angle), 0.0f) *
+                                   (tuning.spreadRadiusMeters * 0.5f);
+        }
+        mState.squadSlots.push_back({ordered[i].id, slot});
+    }
+}
+
+bool TeamBrain::squadSlotFor(uint32_t actorId, glm::vec3& outSlot,
+                             glm::vec3& outAnchor) const
+{
+    for (const auto& entry : mState.squadSlots) {
+        if (entry.first == actorId) {
+            outSlot = entry.second;
+            outAnchor = mState.squad.anchor;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TeamBrain::nearestSitePosition(const glm::vec3& from, glm::vec3& out) const
+{
+    const TeamSiteInfo* best = nullptr;
+    float bestDist = 0.0f;
+    for (const auto& site : mState.sites) {
+        if (!site.hasPosition) continue;
+        const float d = glm::length(site.position - from);
+        if (!best || d < bestDist) {
+            best = &site;
+            bestDist = d;
+        }
+    }
+    if (!best) return false;
+    out = best->position;
+    return true;
+}
+
+bool TeamBrain::objectiveTargetPosition(uint32_t actorId, const glm::vec3& actorPos,
+                                        glm::vec3& out) const
 {
     if (!mState.objective.active) return false;
     if (mState.objective.planted) {
@@ -171,10 +268,17 @@ bool TeamBrain::objectiveTargetPosition(glm::vec3& out) const
         return true;
     }
     if (mState.objective.carriedByTeam) {
+        // The carrier must deliver the bomb: send it to the nearest site so it
+        // walks there and plants. Supporters head to the bomb (the carrier).
+        if (actorId != 0 && actorId == mState.objective.carrierActorId &&
+            nearestSitePosition(actorPos, out)) {
+            return true;
+        }
         out = mState.objective.bombPosition;
         return true;
     }
     // Default: nearest available site.
+    if (nearestSitePosition(actorPos, out)) return true;
     for (const auto& site : mState.sites) {
         if (site.hasPosition) {
             out = site.position;
@@ -265,12 +369,37 @@ bool teamBrainSelfTest(std::string& report)
         site.hasPosition = true;
         brain.state().sites.push_back(site);
         glm::vec3 out;
-        if (!brain.objectiveTargetPosition(out)) fail("should resolve a site target");
+        if (!brain.objectiveTargetPosition(0, glm::vec3(0.0f), out))
+            fail("should resolve a site target");
         brain.state().objective.planted = true;
         brain.state().objective.plantedSiteId = "A";
-        if (!brain.objectiveTargetPosition(out) || glm::length(out - glm::vec3(10, 0, 0)) > 0.001f)
+        if (!brain.objectiveTargetPosition(0, glm::vec3(0.0f), out) ||
+            glm::length(out - glm::vec3(10, 0, 0)) > 0.001f)
             fail("planted site should be the objective target");
         report += "objective_target=ok\n";
+    }
+
+    // A bomb-carrying Terrorist is sent to a site, not to its own position.
+    {
+        TeamBrain brain(1);
+        brain.state().objective.active = true;
+        brain.state().objective.carriedByTeam = true;
+        brain.state().objective.carrierActorId = 7;
+        brain.state().objective.bombPosition = glm::vec3(0, 0, 0);
+        TeamSiteInfo a;
+        a.id = "A";
+        a.position = glm::vec3(50, 0, 0);
+        a.hasPosition = true;
+        brain.state().sites.push_back(a);
+        glm::vec3 out;
+        if (!brain.objectiveTargetPosition(7, glm::vec3(1, 0, 0), out) ||
+            glm::length(out - glm::vec3(50, 0, 0)) > 0.001f)
+            fail("carrier should be sent to the nearest site");
+        // A supporter still follows the bomb/carrier.
+        if (!brain.objectiveTargetPosition(8, glm::vec3(1, 0, 0), out) ||
+            glm::length(out - glm::vec3(0, 0, 0)) > 0.001f)
+            fail("supporter should follow the carried bomb");
+        report += "carrier_target=ok\n";
     }
 
     report += ok ? "PASS\n" : "FAIL\n";

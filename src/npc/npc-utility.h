@@ -31,6 +31,7 @@ enum class UtilityGoalKind : uint8_t
     DefuseObjective,   // defuse the objective
     RetakeSite,        // retake a lost site
     HuntArea,          // travel toward the team's best-known enemy area
+    FocusTarget,       // group focus: travel to the squad slot around the focus
     Patrol             // no hostile/objective context; walk the map
 };
 

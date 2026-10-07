@@ -26,9 +26,11 @@
 #include "combat/actor-preset-weapons.h"
 #include "gui/hud/healthbar-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <chrono>
 #include <cmath>
+#include <nlohmann/json.hpp>
 
 namespace MimitaNet {
 
@@ -109,6 +111,12 @@ bool CommunityMatchClient::selectFighterWeapon(int choice)
         return false;
     mFighterWeaponChoice = choice;
     mFighterWeaponChoiceCommitted = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons, StructuredLevel::Important,
+        "weapon.selection.requested", "local-fighter", "juggernaut-popup",
+        mServerTick,
+        nlohmann::json{{"choice", choice}, {"weapon", fighterWeaponId(choice)},
+                       {"round", mRoundNumber}, {"round_version", mRoundVersion}});
     return true;
 }
 
@@ -290,7 +298,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mMatchId = packet.duelId;
     mStateVersion = packet.stateVersion;
     mMode = packet.matchMode;
-    if (mMode != "juggernaut" || packet.roundVersion != mFighterWeaponChoiceRoundVersion) {
+    if (mMode != "juggernaut" || packet.phase == DUEL_PHASE_RESULTS) {
         mFighterWeaponChoiceRoundVersion = packet.roundVersion;
         mFighterWeaponChoice = -1;
         mFighterWeaponChoiceCommitted = false;

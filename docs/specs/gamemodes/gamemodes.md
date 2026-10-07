@@ -69,6 +69,35 @@ identity, scores, results, Bomb Tag state, killfeed, and leaderboard state. A
 new server session has a new generation, so packets from a stopped server
 cannot revive its countdown or presentation state.
 
+## General NPC intent contract (objective / focus / patrol)
+
+A gamemode does not own NPC artificial intelligence. It selects roles, presets,
+and behavior profiles; the shared NPC brain turns those into intent. To keep the
+brain mode-agnostic, every mode NPC intent reduces to one of three general
+categories:
+
+- **Objective** — the team must reach or interact with a mode-declared
+  objective (for example a bomb site). The mode supplies objective positions via
+  the existing objective/TeamBrain path.
+- **Focus** — the team must converge on a hostile actor set or area as a unit
+  (for example Juggernaut Fighters converging on the Juggernauts). Focus is
+  configured through behavior profiles, not through mode code; see
+  `docs/architecture/player-npc-systems/npc-group-behavior.md`.
+- **Patrol** — no objective and no focus context exists; the NPC walks the map.
+
+Rules:
+
+- The mode JSON must not contain `if (mode == ...)`-style decisions; it declares
+  data (teams, roles, behavior profiles, optional objective/focus intent), and
+  the shared runtime consumes that data.
+- A behavior profile owns the per-actor group parameters (focus, cohesion,
+  swarm, slots). A mode/role owns which profile an actor uses. Neither duplicates
+  the other.
+- Focus is a travel target, never an aim permission. Aiming always requires the
+  shared perception owner to report a visible target.
+- Adding a new team mode that needs a swarm must require only configuration and
+  behavior-profile data, not a new NPC subsystem.
+
 9 2 2026
 
 - End goal  

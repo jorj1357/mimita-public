@@ -73,6 +73,7 @@
   "dashChance": 1.0,
   // "comment_dashChance": "Multiplier on NPC dash frequency. 1.0 = current default, 2.0 = twice as many dashes, 0 = no dashes.",
   "downDashChance": 0.01,
+  // "downDashChance": 0.0,
   // "comment_downDashChance": "Multiplier on NPC down-dash frequency (slamming down from above). 1.0 = default.",
   "freezeChance": 1.0,
   // "comment_freezeChance": "Multiplier on NPC freeze-dodge frequency (briefly stopping to break prediction). 1.0 = default.",

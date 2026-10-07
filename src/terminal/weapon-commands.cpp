@@ -348,23 +348,17 @@ void registerWeaponCommands()
                     Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
                     return;
                 }
-                if (player.equippedSlot == nativeSlot && player.hasValidWeapon) {
-                    unequipAndSync(player, weapons);
-                    GetPlayerSettings().equippedSlot = 0;
-                    SavePlayerSettings();
-                    Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(slot));
-                } else {
-                    equipSlotAndSync(player, weapons, nativeSlot);
-                    GetPlayerSettings().equippedSlot = nativeSlot;
-                    SavePlayerSettings();
-                    Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
-                }
+                equipSlotAndSync(player, weapons, nativeSlot);
+                GetPlayerSettings().equippedSlot = nativeSlot;
+                SavePlayerSettings();
+                Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
             }
     });
 
-    // Register equipslot with arbitrary slot number (toggle behavior)
+    // Register equipslot with arbitrary slot number. Re-selecting the current
+    // weapon is intentionally idempotent; slot 0 is the explicit unequip.
     Terminal::instance().registerCommand({
-        "equipslot", "Equip or toggle inventory slot by number", "equipslot <slot>",
+        "equipslot", "Equip inventory slot by number (slot 0 unequips)", "equipslot <slot>",
         [](const std::vector<std::string>& args) {
             if (args.size() < 2) {
                 Terminal::instance().addLog("[INVENTORY] usage: equipslot <slot>");
@@ -406,17 +400,10 @@ void registerWeaponCommands()
                 Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
                 return;
             }
-            if (player.equippedSlot == nativeSlot && player.hasValidWeapon) {
-                unequipAndSync(player, weapons);
-                GetPlayerSettings().equippedSlot = 0;
-                SavePlayerSettings();
-                Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(slot));
-            } else {
-                equipSlotAndSync(player, weapons, nativeSlot);
-                GetPlayerSettings().equippedSlot = nativeSlot;
-                SavePlayerSettings();
-                Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
-            }
+            equipSlotAndSync(player, weapons, nativeSlot);
+            GetPlayerSettings().equippedSlot = nativeSlot;
+            SavePlayerSettings();
+            Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(slot));
         }
     });
 
@@ -457,17 +444,10 @@ void registerWeaponCommands()
                     Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
                     return;
                 }
-                if (player.equippedSlot == nativeSlot && player.hasValidWeapon) {
-                    unequipAndSync(player, weapons);
-                    GetPlayerSettings().equippedSlot = 0;
-                    SavePlayerSettings();
-                    Terminal::instance().addLog("[INVENTORY] unequipped slot " + std::to_string(keySlot));
-                } else {
-                    equipSlotAndSync(player, weapons, nativeSlot);
-                    GetPlayerSettings().equippedSlot = nativeSlot;
-                    SavePlayerSettings();
-                    Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(keySlot));
-                }
+                equipSlotAndSync(player, weapons, nativeSlot);
+                GetPlayerSettings().equippedSlot = nativeSlot;
+                SavePlayerSettings();
+                Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(keySlot));
             }
         });
     }

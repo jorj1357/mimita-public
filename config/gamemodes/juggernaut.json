@@ -7,7 +7,7 @@
   "kill_heals": false,
   "countdown_seconds": 3,
   "go_seconds": 0.75,
-  "intermission_seconds": 15,
+  "intermission_seconds": 3,
   "results_seconds": 6,
   "spawn_offset_radius": 5.0,
   "spawn_strategy": "team_shared",
@@ -15,7 +15,7 @@
     {
       "id": "fighters",
       "display_name": "Fighters",
-      "capacity": 16,
+      "capacity": 32,
       "role": "juggernaut_fighter",
       "spawn_group": "fighters_spawn"
     },

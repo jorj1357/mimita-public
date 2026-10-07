@@ -385,6 +385,31 @@ general navigation configuration or development override.
 The first production migration must not silently run two competing routes.
 Compare mode is diagnostic and must record which backend controls movement.
 
+## General external-library adoption
+
+The end state is that **every mode** uses the Recast/Detour backend for route
+planning; no mode is allowed to keep a private navigator. The promotion order in
+the migration plan still applies, but the target is global, not
+Counter-Strike-only.
+
+Requirements for general adoption:
+
+1. The backend is chosen by general navigation configuration, not by gamemode
+   name. A mode provides geometry (its map), not a navigation implementation.
+2. Every supported map must be able to produce a versioned navmesh (offline
+   artifact or runtime bake) before NPCs route on it. The first acceptance map is
+   `dust2cyberiav4`.
+3. The custom global/local route owners are deleted only after the deletion gates
+   in this document pass on the representative maps.
+4. Group/team movement (see `npc-group-behavior.md`) consumes navigator output; it
+   must not compute its own route.
+5. Local avoidance (see `npc-local-avoidance.md`) is an optional
+   preferred-velocity provider layered on top of the navigator; it does not own
+   routes.
+
+This makes "NPCs use external libraries" a property of the shared navigation
+owner rather than a mode-specific switch.
+
 ## Navigation backend interface
 
 The exact C++ spelling may change after the Recast API is integrated, but the

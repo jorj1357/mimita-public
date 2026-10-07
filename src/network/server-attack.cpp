@@ -443,19 +443,31 @@ void handleAttackRequest(
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
 
     // ── Validate or reconcile equipped slot ───────────────────────────
-    const int logicalSlot = serverCommunityWeaponLogicalSlot(def->id);
+    const int logicalSlot = serverCommunityWeaponLogicalSlot(shooter, def->id);
     const int expectedSlot = logicalSlot > 0 ? logicalSlot : def->slot;
     if (req->equippedSlot != expectedSlot)
     {
         Debug::log(Debug::Category::Weapons,
                    "[ATTACK REJECT] playerId=%u requestId=%u request slot does not match weapon req=%d def=%d\n",
                    shooter.id, req->requestId, req->equippedSlot, expectedSlot);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "weapon.attack.slot_mismatch", std::to_string(shooter.id), "attack-validation",
+            tick,
+            nlohmann::json{{"request_id", req->requestId},
+                           {"weapon", def->id},
+                           {"requested_slot", req->equippedSlot},
+                           {"expected_logical_slot", expectedSlot},
+                           {"weapon_native_slot", def->slot},
+                           {"actor_weapon_set", shooter.weaponSetId},
+                           {"mode_weapon_set", serverGamemodeState().communityWeaponSetId},
+                           {"mode", serverGamemodeState().matchMode}});
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                             shooter, req->requestId, "SLOT MISMATCH");
         sendAttackResult(sock, shooter, req, tick, false, 4, 0, -1, -1, 0, 0);
         return;
     }
-    const int nativeSlot = serverCommunityWeaponNativeSlot(req->equippedSlot);
+    const int nativeSlot = serverCommunityWeaponNativeSlot(shooter, req->equippedSlot);
     if (nativeSlot != shooter.equippedSlot)
     {
         Debug::log(Debug::Category::Weapons,

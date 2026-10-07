@@ -1,6 +1,7 @@
 {
   "version": 1,
   "aliases": {
+    "rt1": "server_start_preset juggernaut_1",
     "CT1": "server_start_preset counterstrike_1",
     "cs": "crate_spawn",
     "cc": "crate_clear",

@@ -102,6 +102,60 @@ void broadcastNpcDamageEvent(
            (int)killed, (unsigned)weapon);
 }
 
+// Isolated navigation route proof. Runs a bounded set of named queries against
+// the real map collision via the same adapter the NPCs use, and reports each as
+// its own event. This is deliberately separate from NPC-movement evidence: it
+// proves the adapter can route on the real map without claiming gameplay.
+static void runRecastIsolatedSelfTest(const World& npcWorld,
+                                      const HeadlessWorld& hw)
+{
+    const char* env = std::getenv("MIMITA_NPC_NAV_SELFTEST");
+    if (!env || (std::string(env) != "1" && std::string(env) != "true"))
+        return;
+
+    RecastNavigationBackend& backend = RecastNavigationBackend::instance();
+    const NavigationAgentProfile profile;
+
+    auto emit = [](const char* scenario, const RecastNavigationResult& r) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.nav.selftest", "server",
+            r.success ? "route_ok" :
+                (r.failure.empty() ? "route_failed" : r.failure.c_str()),
+            0,
+            nlohmann::json{
+                {"scenario", scenario},
+                {"available", r.available},
+                {"success", r.success},
+                {"failure", r.failure},
+                {"polygon_count", r.polygonCount},
+                {"path_length", r.pathLength},
+                {"start_poly_found", r.startPolyFound},
+                {"dest_poly_found", r.destPolyFound},
+                {"start_projection_m", r.startProjectionDistance},
+                {"dest_projection_m", r.destProjectionDistance},
+                {"query_ms", r.queryMilliseconds}},
+            __FILE__, __LINE__, __FUNCTION__);
+    };
+
+    // The exact long route recorded as the P0 blocker in
+    // docs/changelog/2026-10-06/20261006_164809/events.jsonl.
+    emit("recorded_long_route",
+         backend.query(npcWorld, glm::vec3(-868.0f, 122.6f, 2343.4f),
+                       glm::vec3(-778.4f, 122.6f, 2349.3f), profile));
+
+    if (hw.spawnPoints.size() >= 2) {
+        emit("spawn_to_spawn",
+             backend.query(npcWorld, hw.spawnPoints[0].position,
+                           hw.spawnPoints[1].position, profile));
+    }
+
+    // Invalid input must fail explicitly, never silently project.
+    emit("outside_map",
+         backend.query(npcWorld, hw.boundsMin + glm::vec3(-5000.0f),
+                       hw.boundsMax + glm::vec3(5000.0f), profile));
+}
+
 void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
 {
     // The client NpcSystem only reads collision data from the World, so mirror
@@ -165,6 +219,8 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
                 {"failure", nav.available ? "" : nav.failure}},
             __FILE__, __LINE__, __FUNCTION__);
     }
+
+    runRecastIsolatedSelfTest(npcWorld, hw);
 }
 
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)

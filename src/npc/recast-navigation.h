@@ -75,6 +75,10 @@ public:
 
     void invalidate();
 
+    // Current published navmesh version (0 when nothing is built). Used by the
+    // navigator to invalidate cached corridors when the navigation data changes.
+    std::uint64_t navmeshVersion() const;
+
 private:
     RecastNavigationBackend() = default;
     RecastNavigationBackend(const RecastNavigationBackend&) = delete;

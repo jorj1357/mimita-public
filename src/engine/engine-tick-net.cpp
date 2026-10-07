@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <string>
 #include <unordered_set>
+#include <nlohmann/json.hpp>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "input/input-frame.h"
@@ -33,6 +34,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "network/multiplayer-context.h"
 #include "network/community-server-config.h"
+#include "network/community-match-client.h"
 #include "network/network-weapons.h"
 #include "network/weapon-runtime-reconciliation.h"
 #include "network/disagreement-visuals.h"
@@ -394,6 +396,36 @@ void engineTickNet(Engine& engine, float dt)
                     "spawn-packet");
             }
 
+            const auto& match = MimitaNet::CommunityMatchClient::instance();
+            if (match.mode() == "juggernaut" &&
+                match.fighterWeaponChoiceCommitted(mpContext.localPlayerId)) {
+                const int choice = match.fighterWeaponChoice();
+                const WeaponDefinition* selected =
+                    WeaponRegistry::instance().get(MimitaNet::CommunityMatchClient::fighterWeaponId(choice));
+                if (selected && player.weaponRuntimes.find(selected->id) != player.weaponRuntimes.end()) {
+                    weapons.equip(player, selected->slot);
+                    Debug::log(Debug::Category::Weapons,
+                        "[JUGGERNAUT CHOICE APPLY] player=%u choice=%d weapon=%s nativeSlot=%d spawnGen=%u\n",
+                        mpContext.localPlayerId, choice, selected->id.c_str(), selected->slot,
+                        spawn.spawnGeneration);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Weapons, StructuredLevel::Important,
+                        "weapon.selection.applied", std::to_string(mpContext.localPlayerId),
+                        "authoritative-spawn", mpContext.tick,
+                        nlohmann::json{{"choice", choice}, {"weapon", selected->id},
+                                       {"native_slot", selected->slot},
+                                       {"spawn_generation", spawn.spawnGeneration}});
+                } else {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Weapons, StructuredLevel::Errors,
+                        "weapon.selection.apply_failed", std::to_string(mpContext.localPlayerId),
+                        "missing-runtime-or-definition", mpContext.tick,
+                        nlohmann::json{{"choice", choice},
+                                       {"weapon", MimitaNet::CommunityMatchClient::fighterWeaponId(choice)},
+                                       {"spawn_generation", spawn.spawnGeneration}});
+                }
+            }
+
             // Send SpawnAck only after authoritative state is installed
             if (mpContext.active && mpContext.localPlayerId)
             {
@@ -635,9 +667,13 @@ void engineTickNet(Engine& engine, float dt)
                         shootSound = "rocketlauncher/rocketshoot";
                     else if (event.weapon == MimitaNet::NETWORK_WEAPON_GRENADE_LAUNCHER)
                         shootSound = "grenadelauncher/grenadelaunchershoot";
+                    else if (event.weapon == MimitaNet::NETWORK_WEAPON_LARGE_MACHINE_GUN)
+                        shootSound = "weapon/machinegun/machinegunshoot";
                     const float shootPitch =
                         event.weapon == MimitaNet::NETWORK_WEAPON_SHOTGUN
                             ? 0.8f
+                            : event.weapon == MimitaNet::NETWORK_WEAPON_LARGE_MACHINE_GUN
+                                ? 0.72f
                             : event.weapon == MimitaNet::NETWORK_WEAPON_REVOLVER
                                 ? 0.9f
                                 : 1.0f;

@@ -49,7 +49,7 @@
       "throttle": 0.0
     },
     "world": { "level": "important", "file_output": false },
-    "duel": { "level": "off", "file_output": false },
+    "duel": { "level": "important", "file_output": false },
     "auth": { "level": "off", "file_output": false },
     "chat": { "level": "off", "file_output": false },
     "vip": { "level": "off", "file_output": false },

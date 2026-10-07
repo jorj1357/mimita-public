@@ -436,6 +436,8 @@ void serverCommunitySetWeaponSet(int weaponSetId);
 bool serverCommunityWeaponAllowed(const std::string& weaponId);
 int serverCommunityWeaponNativeSlot(int logicalSlot);
 int serverCommunityWeaponLogicalSlot(const std::string& weaponId);
+int serverCommunityWeaponNativeSlot(const ServerPlayer& player, int logicalSlot);
+int serverCommunityWeaponLogicalSlot(const ServerPlayer& player, const std::string& weaponId);
 void serverCommunityStartMatch(bool skipIntermission = false,
                                const std::string& requestedMode = {});
 void serverGamemodeRequestJuggernautSkip();

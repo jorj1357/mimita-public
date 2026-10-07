@@ -524,6 +524,33 @@ int serverCommunityWeaponLogicalSlot(const std::string& weaponId)
     return slot > 0 ? slot : -1;
 }
 
+int serverCommunityWeaponNativeSlot(const ServerPlayer& player, int logicalSlot)
+{
+    const ServerGamemodeState& state = serverGamemodeState();
+    if (state.objectiveRounds && player.weaponSetId > 0) {
+        CommunityServerConfig& config = CommunityServerConfig::instance();
+        if (config.weaponSets().empty()) config.load();
+        const std::string* id = config.weaponForSlot(player.weaponSetId, logicalSlot);
+        if (!id) return -1;
+        const WeaponDefinition* def = WeaponRegistry::instance().get(*id);
+        return def ? def->slot : -1;
+    }
+    return serverCommunityWeaponNativeSlot(logicalSlot);
+}
+
+int serverCommunityWeaponLogicalSlot(const ServerPlayer& player,
+                                     const std::string& weaponId)
+{
+    const ServerGamemodeState& state = serverGamemodeState();
+    if (state.objectiveRounds && player.weaponSetId > 0) {
+        CommunityServerConfig& config = CommunityServerConfig::instance();
+        if (config.weaponSets().empty()) config.load();
+        const int slot = config.slotForWeapon(player.weaponSetId, weaponId);
+        return slot > 0 ? slot : -1;
+    }
+    return serverCommunityWeaponLogicalSlot(weaponId);
+}
+
 void serverCommunitySetMode(const std::string& modeId)
 {
     ServerGamemodeState& state = serverGamemodeState();
@@ -1624,9 +1651,27 @@ void applyHumanRosterTeam(ServerGamemodeState& d,
     if (actorIt != d.matchActors.end()) actorIt->second.teamId = team;
 }
 
+// Headless NPC-only match affordance for controlled runtime testing. When
+// MIMITA_CS_HEADLESS_MATCH is set, a round-mode match runs with NPCs only (no
+// connected human): the roster fills both teams and the normal round lifecycle
+// runs. Default (unset) behavior is byte-for-byte unchanged. This exists only
+// so the bomb/round behavior can be exercised and observed in the real
+// executable without a GUI client; it is never a production path.
+static bool headlessMatchAllowed()
+{
+    static const bool allowed = [] {
+        const char* v = std::getenv("MIMITA_CS_HEADLESS_MATCH");
+        if (!v) return false;
+        const std::string s(v);
+        return s == "1" || s == "true";
+    }();
+    return allowed;
+}
+
 // Build the round-time scoreboard from the mode's ordered teams. The match is
 // built around one human; the human's team gets allied NPCs up to capacity and
-// the opposing team gets a full NPC squad.
+// the opposing team gets a full NPC squad. In headless test mode there is no
+// human and both teams are filled with NPCs.
 void buildObjectiveRoster(ServerGamemodeState& d,
                           std::unordered_map<uint32_t, ServerPlayer>& players,
                           std::unordered_map<uint32_t, ServerNpc>& npcs)
@@ -1655,19 +1700,23 @@ void buildObjectiveRoster(ServerGamemodeState& d,
     for (const auto& kv : players) {
         if (kv.second.spawnState == ServerPlayer::Active) { humanId = kv.first; break; }
     }
-    if (humanId == 0) return;
+    const bool headlessMatch = (humanId == 0) && headlessMatchAllowed();
+    if (humanId == 0 && !headlessMatch) return;
 
-    auto teamIt = d.matchTeams.find(humanId);
-    int humanTeam = (teamIt != d.matchTeams.end()) ? teamIt->second : -1;
-    if (humanTeam < 0 || humanTeam > 1)
-        humanTeam = chooseFallbackTeam(players, d);
-    applyHumanRosterTeam(d, players, humanId, humanTeam);
+    int humanTeam = 0;
+    if (humanId != 0) {
+        auto teamIt = d.matchTeams.find(humanId);
+        humanTeam = (teamIt != d.matchTeams.end()) ? teamIt->second : -1;
+        if (humanTeam < 0 || humanTeam > 1)
+            humanTeam = chooseFallbackTeam(players, d);
+        applyHumanRosterTeam(d, players, humanId, humanTeam);
+    }
 
     if (npcs.empty() && d.roundNextNpcId == 0)
         d.roundNextNpcId = 100000;  // keep roster ids out of the human/NPC range
 
     // Ensure the human's match actor exists with the team's role.
-    {
+    if (humanId != 0) {
         ActorMatchDescriptor& desc = d.matchActors[humanId];
         desc.controller = ActorController::Human;
         desc.state = ActorState::Alive;
@@ -1688,7 +1737,15 @@ void buildObjectiveRoster(ServerGamemodeState& d,
     }
 
     int npcCounts[2] = {0, 0};
-    roundRosterNpcCounts(gm, humanTeam, npcCounts);
+    if (humanId != 0) {
+        roundRosterNpcCounts(gm, humanTeam, npcCounts);
+    } else {
+        // Headless: fill both teams to capacity.
+        for (int team = 0; team < 2; ++team) {
+            const int capacity = roundTeamCapacity(gm, team);
+            npcCounts[team] = capacity > 0 ? capacity : 5;
+        }
+    }
     for (int team = 0; team < 2; ++team) {
         const int npcCount = npcCounts[team];
         const std::string roleId = roundTeamRoleId(gm, team);
@@ -1733,7 +1790,8 @@ void buildObjectiveRoster(ServerGamemodeState& d,
     }
 
     // Include the human in the participant list if the generic path did not.
-    if (std::find(d.participants.begin(), d.participants.end(), humanId) == d.participants.end()) {
+    if (humanId != 0 &&
+        std::find(d.participants.begin(), d.participants.end(), humanId) == d.participants.end()) {
         d.participants.insert(d.participants.begin(), humanId);
         d.participantNames[humanId] = players[humanId].name;
         d.ffaKills[humanId] = 0;
@@ -1790,6 +1848,16 @@ void beginObjectiveRound(ServerGamemodeState& d,
         "[ROUND] begin mode=%s round=%u version=%u wins=%d-%d toWin=%d tick=%u\n",
         d.matchMode.c_str(), d.roundNumber, d.roundVersion,
         d.roundWins[0], d.roundWins[1], d.roundsToWin, currentTick);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "round.start", std::to_string(d.duelId), "countdown", currentTick,
+        nlohmann::json{
+            {"mode", d.matchMode},
+            {"round", d.roundNumber},
+            {"round_version", d.roundVersion},
+            {"wins", {d.roundWins[0], d.roundWins[1]}},
+            {"rounds_to_win", d.roundsToWin},
+            {"countdown_seconds", d.countdownSeconds}});
 }
 
 // Decide a round. Awards the round win to `winnerTeam` (or -1 for a draw),
@@ -2177,6 +2245,15 @@ void assignObjectiveCarrier(ServerGamemodeState& d,
         "[OBJECTIVE] assign id=%s state=%d carrier=%u team=%d\n",
         d.objective.id.c_str(), (int)d.objective.state,
         d.objective.carrierActorId, d.objective.allowedCarrierTeam);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "objective.carried", std::to_string(d.duelId),
+        d.objective.carrierActorId != 0 ? "carried" : "dropped", 0,
+        nlohmann::json{
+            {"objective", d.objective.id},
+            {"carrier", d.objective.carrierActorId},
+            {"carrier_team", objectiveActorTeam(d, d.objective.carrierActorId)},
+            {"allowed_team", d.objective.allowedCarrierTeam}});
 }
 
 
@@ -3150,7 +3227,7 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         TeamBrain& brain = (team == 0) ? d.teamBrainA : d.teamBrainB;
         const TeamAssignment assignment = brain.assignmentFor(npc.id);
         glm::vec3 objPos;
-        const bool hasObj = brain.objectiveTargetPosition(objPos);
+        const bool hasObj = brain.objectiveTargetPosition(npc.id, npc.body.pos, objPos);
 
         UtilityContext& ctx = npc.utilityContext;
         ctx.objectiveKnown = hasObj;
@@ -3713,7 +3790,7 @@ void serverGamemodeTick(SOCKET sock,
                 bool hasHuman = false;
                 for (const auto& kv : players)
                     if (kv.second.spawnState == ServerPlayer::Active) { hasHuman = true; break; }
-                if (hasHuman) {
+                if (hasHuman || headlessMatchAllowed()) {
                     if (world.spawnPoints.empty())
                         rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                     assignGamemodeSpawns(d, world);
@@ -3741,14 +3818,14 @@ void serverGamemodeTick(SOCKET sock,
             d.phaseTimer -= SERVER_DT;
             if (d.phaseTimer <= 0.0f)
             {
-                bool hasHuman = false;
-                for (const auto& kv : players)
-                    if (kv.second.spawnState == ServerPlayer::Active) { hasHuman = true; break; }
-                if (!hasHuman)
-                {
-                    d.phaseTimer = 0.5f;  // re-check shortly, don't fire an empty round
-                    break;
-                }
+                    bool hasHuman = false;
+                    for (const auto& kv : players)
+                        if (kv.second.spawnState == ServerPlayer::Active) { hasHuman = true; break; }
+                    if (!hasHuman && !headlessMatchAllowed())
+                    {
+                        d.phaseTimer = 0.5f;  // re-check shortly, don't fire an empty round
+                        break;
+                    }
                 d.warmup = false;
                 // Rebuild a clean roster and spawn at team spawns for the round.
                 buildObjectiveRoster(d, players, npcs);
@@ -3773,6 +3850,11 @@ void serverGamemodeTick(SOCKET sock,
                 d.matchStartTick = tick;
                 ++d.stateVersion;
                 d.lastBroadcastTick = tick;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "round.go", std::to_string(d.duelId), "go", tick,
+                    nlohmann::json{{"round", d.roundNumber},
+                                   {"tick", tick}});
                 broadcastDuelState(sock, d, players, totalPacketsOut);
             }
             else if (tick - d.lastBroadcastTick >= 30)
@@ -3794,6 +3876,11 @@ void serverGamemodeTick(SOCKET sock,
                 Debug::log(Debug::Category::Duel,
                     "[ROUND] ACTIVE round=%u version=%u endTick=%u\n",
                     d.roundNumber, d.roundVersion, d.roundEndTick);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "round.active", std::to_string(d.duelId), "active", tick,
+                    nlohmann::json{{"round", d.roundNumber},
+                                   {"round_end_tick", d.roundEndTick}});
                 broadcastDuelState(sock, d, players, totalPacketsOut);
             }
             else if (tick - d.lastBroadcastTick >= 10)

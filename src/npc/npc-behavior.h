@@ -76,6 +76,24 @@ struct BehaviorProfileDefinition
     // and the distance at which it counts as reached. Metres.
     float travelTargetDistanceMeters = 60.0f;
     float travelTargetReachedMeters = 4.0f;
+
+    // ── General group/focus behavior (see npc-group-behavior.md) ─────────
+    // A role references this profile; the shared TeamBrain consumes it. All
+    // default off so existing profiles keep per-actor behavior unchanged.
+    bool focusEnabled = false;               // participate in TeamFocus
+    std::string focusMode = "hostile_team";  // hostile_team | priority_then_hostile
+    bool swarm = false;                      // take firing slots around the focus
+    float cohesion = 0.0f;                   // pull toward squad anchor [0,1]
+    float spreadRadiusMeters = 6.0f;         // distance between slots
+    std::string approachStyle = "arc";       // direct | arc | flank
+    int maxAttackersPerTarget = 6;           // cap committed to one focus actor
+    float rallyDistanceMeters = 8.0f;        // regroup threshold
+    float focusReacquireSeconds = 5.0f;      // decay before focus is area-only
+    float slotStickiness = 0.8f;             // resistance to slot changes [0,1]
+
+    // Navigation backend for this actor: "custom" | "compare" | "recast".
+    // Empty/"custom" preserves the current authoritative custom planner.
+    std::string navigationBackend = "custom";
 };
 
 // Resolved combat tuning carried by an NPC for its current life. `active` is
@@ -131,6 +149,20 @@ struct NpcBehaviorTuning
     float commitmentReversePenalty = 8.0f;
     float travelTargetDistanceMeters = 60.0f;
     float travelTargetReachedMeters = 4.0f;
+
+    // General group/focus behavior (see npc-group-behavior.md). Default off.
+    bool focusEnabled = false;
+    std::string focusMode = "hostile_team";
+    bool swarm = false;
+    float cohesion = 0.0f;
+    float spreadRadiusMeters = 6.0f;
+    std::string approachStyle = "arc";
+    int maxAttackersPerTarget = 6;
+    float rallyDistanceMeters = 8.0f;
+    float focusReacquireSeconds = 5.0f;
+    float slotStickiness = 0.8f;
+    // Navigation backend for this actor: "custom" | "compare" | "recast".
+    std::string navigationBackend = "custom";
 };
 
 class BehaviorProfileRegistry
