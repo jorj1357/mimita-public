@@ -1,4 +1,24 @@
 {
+  "nothing": {
+    "id": "nothing",
+    "display_name": "Nothing",
+    "slot": 18,
+    "model": {"path": ""},
+    "viewmodel": {
+      "enabled": false,
+      "position": [0.0, 0.0, 0.0],
+      "rotation_degrees": [0.0, 0.0, 0.0]
+    },
+    "damage": 0.0,
+    "fire_delay": 0.0,
+    "reload_time": 0.0,
+    "magazine_size": 0,
+    "reserve_ammo": 0,
+    "behavior_type": "none",
+    "fire_mode": "semi",
+    "hitscan": false,
+    "sound": {"shoot": "", "reload": "", "equip": "", "dry_fire": ""}
+  },
   "comment 7 20 2026": "this is the .json file at C:/important/mimita-priv-v8/config/weapons.json defining behavior for all weapons in mimita",
   "revolver": {
     "id": "revolver",

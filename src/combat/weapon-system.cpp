@@ -771,6 +771,9 @@ RevolverShotResult WeaponSystem::fire(
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!rt) return {};
 
+    if (def->behaviorType == WeaponBehaviorType::None)
+        return {};
+
     if (def->behaviorType == WeaponBehaviorType::Godball) {
         fireGodball(camera, player, npcs, world);
         return {};

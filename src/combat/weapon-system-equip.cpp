@@ -165,8 +165,6 @@ std::string WeaponSystem::unequip(Player& player) {
     player.collision.hasWeaponCollisionCapsule = false;
     player.weaponCollisionName.clear();
     player.weaponModelTransform = glm::mat4(1.0f);
-    mCurrentSlot = 0;
-    mCurrentWeaponId.clear();
     for (PhysicalBodyPart& part : player.physicalBody.parts) {
         if (part.name == "leftArm" || part.name == "rightArm") {
             part.translationSpring = SpringState{};
