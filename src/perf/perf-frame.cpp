@@ -12,6 +12,129 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <windows.h>
+#include <psapi.h>
+#include <nlohmann/json.hpp>
+
+namespace {
+
+struct WindowScopeStats {
+    char name[64] = {};
+    uint64_t calls = 0;
+    double totalMs = 0.0;
+    double maxMs = 0.0;
+};
+
+struct ResourceWindow {
+    int frames = 0;
+    int firstFrame = 0;
+    int lastFrame = 0;
+    double totalFrameMs = 0.0;
+    double maxFrameMs = 0.0;
+    int maxFrame = 0;
+    uint64_t allocCount = 0;
+    uint64_t allocBytes = 0;
+    int maxNpcCount = 0;
+    int maxEffectCount = 0;
+    int maxProjectileCount = 0;
+    WindowScopeStats scopes[32];
+    int scopeCount = 0;
+};
+
+ResourceWindow gResourceWindow;
+
+void resetResourceWindow()
+{
+    gResourceWindow = ResourceWindow{};
+}
+
+WindowScopeStats* scopeStatsFor(const char* name)
+{
+    for (int i = 0; i < gResourceWindow.scopeCount; ++i)
+        if (std::strncmp(gResourceWindow.scopes[i].name, name, sizeof(gResourceWindow.scopes[i].name)) == 0)
+            return &gResourceWindow.scopes[i];
+    if (gResourceWindow.scopeCount >= 32) return nullptr;
+    WindowScopeStats& out = gResourceWindow.scopes[gResourceWindow.scopeCount++];
+    std::snprintf(out.name, sizeof(out.name), "%s", name ? name : "?");
+    return &out;
+}
+
+void accumulateResourceFrame(const PerfFrame& frame)
+{
+    if (gResourceWindow.frames == 0) gResourceWindow.firstFrame = frame.frameNumber;
+    gResourceWindow.lastFrame = frame.frameNumber;
+    ++gResourceWindow.frames;
+    gResourceWindow.totalFrameMs += frame.totalMs;
+    if (frame.totalMs > gResourceWindow.maxFrameMs) {
+        gResourceWindow.maxFrameMs = frame.totalMs;
+        gResourceWindow.maxFrame = frame.frameNumber;
+    }
+    gResourceWindow.allocCount += frame.allocCount;
+    gResourceWindow.allocBytes += frame.allocBytes;
+    gResourceWindow.maxNpcCount = std::max(gResourceWindow.maxNpcCount, frame.npcCount);
+    gResourceWindow.maxEffectCount = std::max(gResourceWindow.maxEffectCount, frame.effectCount);
+    gResourceWindow.maxProjectileCount = std::max(gResourceWindow.maxProjectileCount, frame.projectileCount);
+    for (int i = 0; i < frame.entryCount; ++i) {
+        const PerfBreakdownEntry& in = frame.entries[i];
+        WindowScopeStats* out = scopeStatsFor(in.label);
+        if (!out) continue;
+        out->calls += in.callCount;
+        out->totalMs += in.inclMs;
+        out->maxMs = std::max(out->maxMs, in.inclMs);
+    }
+}
+
+void emitResourceWindowSummary()
+{
+    if (gResourceWindow.frames == 0) return;
+
+    PROCESS_MEMORY_COUNTERS_EX memory{};
+    const bool memoryOk = GetProcessMemoryInfo(
+        GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory),
+        sizeof(memory)) != 0;
+    const StructuredLogger::IoStats io = StructuredLogger::instance().ioStats(true);
+
+    nlohmann::json scopes = nlohmann::json::array();
+    for (int i = 0; i < gResourceWindow.scopeCount; ++i) {
+        const WindowScopeStats& s = gResourceWindow.scopes[i];
+        scopes.push_back({
+            {"name", s.name}, {"calls", s.calls},
+            {"total_ms", s.totalMs}, {"max_ms", s.maxMs}});
+    }
+
+    nlohmann::json fields = {
+        {"window_frames", gResourceWindow.frames},
+        {"frame_start", gResourceWindow.firstFrame},
+        {"frame_end", gResourceWindow.lastFrame},
+        {"frame_total_ms", gResourceWindow.totalFrameMs},
+        {"frame_average_ms", gResourceWindow.totalFrameMs / std::max(1, gResourceWindow.frames)},
+        {"frame_max_ms", gResourceWindow.maxFrameMs},
+        {"frame_max_number", gResourceWindow.maxFrame},
+        {"alloc_count", gResourceWindow.allocCount},
+        {"alloc_bytes", gResourceWindow.allocBytes},
+        {"max_npc_count", gResourceWindow.maxNpcCount},
+        {"max_effect_count", gResourceWindow.maxEffectCount},
+        {"max_projectile_count", gResourceWindow.maxProjectileCount},
+        {"logger_events_written", io.eventsWritten},
+        {"logger_bytes_written", io.bytesWritten},
+        {"logger_flush_count", io.flushCount},
+        {"logger_flush_ms", static_cast<double>(io.flushMicroseconds) / 1000.0},
+        {"logger_mutex_wait_ms", static_cast<double>(io.mutexWaitMicroseconds) / 1000.0},
+        {"memory_available", memoryOk},
+        {"working_set_bytes", memoryOk ? memory.WorkingSetSize : 0},
+        {"private_bytes", memoryOk ? memory.PrivateUsage : 0},
+        {"pagefile_usage_bytes", memoryOk ? memory.PagefileUsage : 0},
+        {"scopes", scopes}
+    };
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Important,
+        "performance.resource-window", "performance", "60-frame-summary",
+        static_cast<uint32_t>(gResourceWindow.lastFrame), fields,
+        __FILE__, __LINE__, __FUNCTION__);
+    resetResourceWindow();
+}
+
+}
 
 // ── Global state ────────────────────────────────────────────
 
@@ -105,6 +228,10 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
             "[PERF][ALLOC][WARN] frame bytes increased without frame count increase; "
             "investigate allocation hook mismatch");
     }
+
+    accumulateResourceFrame(frame);
+    if (gResourceWindow.frames >= 60)
+        emitResourceWindowSummary();
 
     // 60-second heartbeat: log lifetime allocation totals
     {

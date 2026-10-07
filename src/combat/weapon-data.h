@@ -4,6 +4,7 @@
 
 namespace WeaponData {
 
+WeaponDefinition createNothingDefinition();
 WeaponDefinition createRevolverDefinition();
 WeaponDefinition createGodballDefinition();
 WeaponDefinition createShotgunDefinition();

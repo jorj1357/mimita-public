@@ -356,9 +356,9 @@ void registerWeaponCommands()
     });
 
     // Register equipslot with arbitrary slot number. Re-selecting the current
-    // weapon is intentionally idempotent; slot 0 is the explicit unequip.
+    // weapon is intentionally idempotent; slot 0 selects the Nothing item.
     Terminal::instance().registerCommand({
-        "equipslot", "Equip inventory slot by number (slot 0 unequips)", "equipslot <slot>",
+        "equipslot", "Equip inventory slot by number (slot 0 selects Nothing)", "equipslot <slot>",
         [](const std::vector<std::string>& args) {
             if (args.size() < 2) {
                 Terminal::instance().addLog("[INVENTORY] usage: equipslot <slot>");
@@ -383,14 +383,10 @@ void registerWeaponCommands()
             Player& player = THE_PLAYER;
             WeaponSystem& weapons = THE_WEAPONS;
             if (slot == 0) {
-                if (player.hasValidWeapon) {
-                    unequipAndSync(player, weapons);
-                    GetPlayerSettings().equippedSlot = 0;
-                    SavePlayerSettings();
-                    Terminal::instance().addLog("[INVENTORY] unequipped");
-                } else {
-                    Terminal::instance().addLog("[INVENTORY] nothing equipped");
-                }
+                unequipAndSync(player, weapons);
+                GetPlayerSettings().equippedSlot = player.equippedSlot;
+                SavePlayerSettings();
+                Terminal::instance().addLog("[INVENTORY] equipped Nothing");
                 return;
             }
             const int nativeSlot = gDuelManager.enabled()
@@ -416,12 +412,19 @@ void registerWeaponCommands()
                 return;
             }
             int slot = std::atoi(args[1].c_str());
-            if (slot <= 0) {
+            if (slot < 0) {
                 Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
                 return;
             }
             Player& player = THE_PLAYER;
             WeaponSystem& weapons = THE_WEAPONS;
+            if (slot == 0) {
+                unequipAndSync(player, weapons);
+                GetPlayerSettings().equippedSlot = player.equippedSlot;
+                SavePlayerSettings();
+                Terminal::instance().addLog("[INVENTORY] equipped Nothing");
+                return;
+            }
             equipSlotAndSync(player, weapons, slot);
             GetPlayerSettings().equippedSlot = slot;
             SavePlayerSettings();

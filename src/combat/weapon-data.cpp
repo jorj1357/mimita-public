@@ -910,8 +910,38 @@ WeaponDefinition createBigShotgunDefinition() {
     return def;
 }
 
+WeaponDefinition createNothingDefinition() {
+    WeaponDefinition def;
+    def.id = "nothing";
+    def.displayName = "Nothing";
+    def.slot = 18;
+    def.modelPath = "";
+    def.weaponScale = 1.0f;
+    def.damage = 0.0f;
+    def.headshotMultiplier = 1.0f;
+    def.fireDelay = 0.0f;
+    def.reloadTime = 0.0f;
+    def.magazineSize = 0;
+    def.reserveSize = 0;
+    def.pelletCount = 1;
+    def.fireMode = WeaponFireMode::SemiAuto;
+    def.behaviorType = WeaponBehaviorType::None;
+    def.executionType = WeaponExecutionType::PhysicalContact;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+    def.soundShoot = "";
+    def.soundReload = "";
+    def.soundHit = "";
+    def.soundDryFire = "";
+    def.soundEquip = "";
+    def.tracerEnabled = false;
+    def.weaponCollisionEnabled = false;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
+    registerWeaponFromJson(createNothingDefinition());
     registerWeaponFromJson(createRevolverDefinition());
     registerWeaponFromJson(createGodballDefinition());
     registerWeaponFromJson(createShotgunDefinition());
@@ -928,7 +958,7 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createProjectileRifleDefinition());
     registerWeaponFromJson(createHitscanRifleDefinition());
     registerWeaponFromJson(createBigShotgunDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife, projectile_rifle, hitscan_rifle, big_shotgun");
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: nothing, revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife, projectile_rifle, hitscan_rifle, big_shotgun, large_machine_gun");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

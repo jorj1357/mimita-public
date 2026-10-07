@@ -10,6 +10,7 @@
 #include <cstring>
 #include <ctime>
 #include <windows.h>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -402,6 +403,25 @@ void StructuredLogger::createLogDir() {
     }
     printf("[STRUCTURED LOG] events path: %s (run_id=%s pid=%lu)\n",
            mEventsPath.c_str(), mRunId.c_str(), (unsigned long)GetCurrentProcessId());
+}
+
+StructuredLogger::IoStats StructuredLogger::ioStats(bool reset)
+{
+    IoStats out;
+    if (reset) {
+        out.eventsWritten = mEventsWritten.exchange(0, std::memory_order_relaxed);
+        out.bytesWritten = mBytesWritten.exchange(0, std::memory_order_relaxed);
+        out.flushCount = mFlushCount.exchange(0, std::memory_order_relaxed);
+        out.flushMicroseconds = mFlushMicroseconds.exchange(0, std::memory_order_relaxed);
+        out.mutexWaitMicroseconds = mMutexWaitMicroseconds.exchange(0, std::memory_order_relaxed);
+    } else {
+        out.eventsWritten = mEventsWritten.load(std::memory_order_relaxed);
+        out.bytesWritten = mBytesWritten.load(std::memory_order_relaxed);
+        out.flushCount = mFlushCount.load(std::memory_order_relaxed);
+        out.flushMicroseconds = mFlushMicroseconds.load(std::memory_order_relaxed);
+        out.mutexWaitMicroseconds = mMutexWaitMicroseconds.load(std::memory_order_relaxed);
+    }
+    return out;
 }
 
 // ── Category file ───────────────────────────────────────────
@@ -891,9 +911,24 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
     static std::mutex writeMutex;
     std::lock_guard<std::mutex> lock(writeMutex);
     HANDLE named = eventsFileMutex();
+    const auto waitStart = std::chrono::steady_clock::now();
     if (named) WaitForSingleObject(named, INFINITE);
+    const auto waitEnd = std::chrono::steady_clock::now();
+    mMutexWaitMicroseconds.fetch_add(static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(waitEnd - waitStart).count()),
+        std::memory_order_relaxed);
     std::fwrite(line.data(), 1, line.size(), mEventsFile);
-    if (flush) std::fflush(mEventsFile);
+    mEventsWritten.fetch_add(1, std::memory_order_relaxed);
+    mBytesWritten.fetch_add(static_cast<uint64_t>(line.size()), std::memory_order_relaxed);
+    if (flush) {
+        const auto flushStart = std::chrono::steady_clock::now();
+        std::fflush(mEventsFile);
+        const auto flushEnd = std::chrono::steady_clock::now();
+        mFlushCount.fetch_add(1, std::memory_order_relaxed);
+        mFlushMicroseconds.fetch_add(static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(flushEnd - flushStart).count()),
+            std::memory_order_relaxed);
+    }
     if (named) ReleaseMutex(named);
 }
 

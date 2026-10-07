@@ -22,6 +22,7 @@ class NpcSystem;
 struct World;
 
 enum class WeaponBehaviorType {
+    None,
     Hitscan,
     Projectile,
     Godball,
@@ -49,6 +50,8 @@ inline WeaponExecutionType weaponExecutionTypeForBehavior(WeaponBehaviorType beh
 {
     switch (behavior)
     {
+    case WeaponBehaviorType::None:
+        return WeaponExecutionType::PhysicalContact;
     case WeaponBehaviorType::Hitscan:
         return WeaponExecutionType::Hitscan;
     case WeaponBehaviorType::RocketLauncher:

@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -211,6 +212,18 @@ public:
     const std::string& runId() const { return mRunId; }
     const std::string& eventsPath() const { return mEventsPath; }
 
+    struct IoStats {
+        uint64_t eventsWritten = 0;
+        uint64_t bytesWritten = 0;
+        uint64_t flushCount = 0;
+        uint64_t flushMicroseconds = 0;
+        uint64_t mutexWaitMicroseconds = 0;
+    };
+
+    // Returns and optionally clears write-path counters so performance windows
+    // can show whether logging itself consumed the frame budget.
+    IoStats ioStats(bool reset = false);
+
 private:
     StructuredLogger() = default;
     ~StructuredLogger();
@@ -254,6 +267,12 @@ private:
     };
     std::unordered_map<int, ThrottledBuffer> mThrottledBuffers;
     void flushThrottled(int catIdx);
+
+    std::atomic<uint64_t> mEventsWritten{0};
+    std::atomic<uint64_t> mBytesWritten{0};
+    std::atomic<uint64_t> mFlushCount{0};
+    std::atomic<uint64_t> mFlushMicroseconds{0};
+    std::atomic<uint64_t> mMutexWaitMicroseconds{0};
 };
 
 // ── Convenience: structured log with formatted message ─────────────

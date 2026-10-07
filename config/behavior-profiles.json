@@ -280,9 +280,11 @@
         "reverse_penalty": 8.0
       },
       // Nearly perfect aim. Increase this to make shots less accurate.
-      "aim_error_deg": 10.01,
+      // "aim_error_deg": 10.01,
+      "aim_error_deg": 1.0,
       // Almost no reaction delay  2026 10 015 1231 in seconds 
-      "reaction_delay": 0.5,
+      // "reaction_delay": 0.5,
+      "reaction_delay": 0.1,
       // Normal shooting speed.
       "fire_cadence_multiplier": 1.0,
       // Very aggressive combat decisions.
@@ -493,6 +495,63 @@
       "pursue_last_known_position": false,
       "pursuit_search_ticks": 600,
       "after_reaching_last_known": "patrol"
+    },
+    {
+      // Juggernaut Fighter: fast, aggressive, and focused on the hostile team.
+      // Composes the general group/focus layer (npc-group-behavior.md): the
+      // Fighter participates in TeamFocus and moves to a distributed squad slot
+      // instead of stacking. The general external navigation backend (Recast/
+      // Detour) routes it, so it must not wall-grind.
+      "id": "juggernaut_swarm",
+      "navigation_backend": "recast",
+      // ── General group/focus behavior ────────────────────────────────────
+      "focus_enabled": true,
+      "focus_mode": "hostile_team",
+      "swarm": true,
+      "cohesion": 0.35,
+      "spread_radius_meters": 6.0,
+      "approach_style": "arc",
+      "max_attackers_per_target": 8,
+      "rally_distance_meters": 8.0,
+      "focus_reacquire_seconds": 4.0,
+      "slot_stickiness": 0.8,
+      // ── Combat and movement tuning ──────────────────────────────────────
+      "repath_interval_seconds": 0.9,
+      "goal_move_threshold_meters": 2.5,
+      "movement_commitment": {
+        "enabled": true,
+        "direction_commit_seconds": 10.0,
+        "progress_check_seconds": 1.0,
+        "minimum_progress_meters": 0.5,
+        "candidate_distance_meters": 20.0,
+        "allow_reverse": false,
+        "avoid_recent_path": true,
+        "recent_path_avoid_radius": 5.0,
+        "visible_enemy_allows_combat_movement": true,
+        "forward_bias": 2.0,
+        "target_progress_bias": 4.0,
+        "open_distance_bias": 6.0,
+        "reverse_penalty": 8.0
+      },
+      "aim_error_deg": 4.0,
+      "reaction_delay": 0.12,
+      "fire_cadence_multiplier": 1.1,
+      "aggression": 0.9,
+      "preferred_range": 10.0,
+      "target_stickiness": 0.6,
+      "target_switch_threshold": 0.3,
+      "low_health_target_bias": 0.4,
+      "threat_bias": 0.5,
+      "distance_target_bias": 0.8,
+      "weapon_range_bias": 0.6,
+      "weapon_damage_bias": 1.0,
+      "weapon_safety_bias": 0.1,
+      "weapon_switch_threshold": 0.2,
+      "pursuit_mode": "persistent",
+      "continue_through_cover": true,
+      "pursue_last_known_position": true,
+      "pursuit_search_ticks": 600,
+      "after_reaching_last_known": "look_around"
     }
   ]
 }

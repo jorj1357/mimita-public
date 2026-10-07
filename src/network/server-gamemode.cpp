@@ -27,6 +27,7 @@
 #include "combat/grenade-registry.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "perf/perf.h"
 #include "network/community-server-config.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
@@ -508,6 +509,8 @@ bool serverCommunityWeaponAllowed(const std::string& weaponId)
 
 int serverCommunityWeaponNativeSlot(int logicalSlot)
 {
+    if (logicalSlot == 0)
+        logicalSlot = serverCommunityWeaponLogicalSlot("nothing");
     CommunityServerConfig& config = CommunityServerConfig::instance();
     if (config.weaponSets().empty()) config.load();
     const std::string* id = config.weaponForSlot(serverGamemodeState().communityWeaponSetId, logicalSlot);
@@ -526,6 +529,8 @@ int serverCommunityWeaponLogicalSlot(const std::string& weaponId)
 
 int serverCommunityWeaponNativeSlot(const ServerPlayer& player, int logicalSlot)
 {
+    if (logicalSlot == 0)
+        logicalSlot = serverCommunityWeaponLogicalSlot(player, "nothing");
     const ServerGamemodeState& state = serverGamemodeState();
     if (state.objectiveRounds && player.weaponSetId > 0) {
         CommunityServerConfig& config = CommunityServerConfig::instance();
@@ -3136,6 +3141,7 @@ void serverTeamBrainTick(ServerGamemodeState& d,
                          const World& world,
                          uint32_t tick)
 {
+    Perf::ScopedTimer teamBrainTimer("Server::TeamBrain");
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
     const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
 
@@ -3217,6 +3223,101 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             living.push_back({kv.first, teamOf(kv.first)});
     d.teamBrainA.updateAssignments(living, d.objectiveRounds);
     d.teamBrainB.updateAssignments(living, d.objectiveRounds);
+
+    // ── General group/focus behavior (all modes) ──────────────────────────
+    // Resolve per-team squad tuning from the members' behavior profiles, then
+    // let the TeamBrain own focus/anchor/slot. Suggestions only; final movement
+    // is still resolved by the arbiter and shared physics.
+    std::unordered_map<uint32_t, glm::vec3> livingPos;
+    for (const auto& kv : players)
+        if (!kv.second.dead) livingPos[kv.first] = kv.second.pos;
+    for (const auto& kv : npcs)
+        if (kv.second.health > 0) livingPos[kv.first] = kv.second.pos;
+
+    SquadTuning tuningA, tuningB;
+    bool tuningASet = false, tuningBSet = false;
+    for (const Npc& npc : npcSystem.all()) {
+        const int t = npc.body.matchTeam;
+        if ((t != 0 && t != 1) || !npc.behavior.active || !npc.behavior.focusEnabled)
+            continue;
+        SquadTuning& tun = (t == 0) ? tuningA : tuningB;
+        bool& set = (t == 0) ? tuningASet : tuningBSet;
+        if (set) continue;
+        tun.enabled = true;
+        tun.swarm = npc.behavior.swarm;
+        tun.cohesion = npc.behavior.cohesion;
+        tun.spreadRadiusMeters = npc.behavior.spreadRadiusMeters;
+        tun.maxAttackersPerTarget = npc.behavior.maxAttackersPerTarget;
+        tun.approachStyle = npc.behavior.approachStyle;
+        set = true;
+    }
+    auto gatherMembers = [&](int team, std::vector<SquadMember>& out) {
+        for (const auto& e : living) {
+            if (e.second != team) continue;
+            auto it = livingPos.find(e.first);
+            if (it != livingPos.end()) out.push_back({e.first, it->second});
+        }
+    };
+    std::vector<SquadMember> membersA, membersB;
+    gatherMembers(0, membersA);
+    gatherMembers(1, membersB);
+    glm::vec3 focusA{0.0f}, focusB{0.0f};
+    float focusConfA = 0.0f, focusConfB = 0.0f;
+    const bool hasFocusA = d.teamBrainA.bestTeamReport(focusA, focusConfA);
+    const bool hasFocusB = d.teamBrainB.bestTeamReport(focusB, focusConfB);
+    d.teamBrainA.updateSquad(membersA, focusA, hasFocusA, tuningA);
+    d.teamBrainB.updateSquad(membersB, focusB, hasFocusB, tuningB);
+
+    // Bounded, change-edge focus/squad diagnostics.
+    auto reportSquad = [&](TeamBrain& brain) {
+        const SquadState& sq = brain.squad();
+        if (!sq.active) return;
+        if (sq.mode != brain.state().reportedSquadMode) {
+            brain.state().reportedSquadMode = sq.mode;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.squad-mode-changed", std::to_string(brain.team()), "squad", tick,
+                nlohmann::json{{"team", brain.team()}, {"mode", sq.mode},
+                               {"members", sq.memberCount},
+                               {"anchor", {sq.anchor.x, sq.anchor.y, sq.anchor.z}},
+                               {"focus", {sq.focusPos.x, sq.focusPos.y, sq.focusPos.z}}});
+        }
+        const bool focusMoved = !brain.state().hasReportedFocus ||
+            glm::length(sq.focusPos - brain.state().reportedFocusPos) > 5.0f;
+        if (focusMoved) {
+            brain.state().hasReportedFocus = true;
+            brain.state().reportedFocusPos = sq.focusPos;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.focus-changed", std::to_string(brain.team()), "focus", tick,
+                nlohmann::json{{"team", brain.team()},
+                               {"focus", {sq.focusPos.x, sq.focusPos.y, sq.focusPos.z}},
+                               {"members", sq.memberCount}});
+        }
+    };
+    reportSquad(d.teamBrainA);
+    reportSquad(d.teamBrainB);
+
+    for (Npc& npc : npcSystem.all()) {
+        const int team = npc.body.matchTeam;
+        if (team != 0 && team != 1) continue;
+        if (!npc.behavior.active || !npc.behavior.focusEnabled) continue;
+        TeamBrain& brain = (team == 0) ? d.teamBrainA : d.teamBrainB;
+        const SquadState& sq = brain.squad();
+        UtilityContext& ctx = npc.utilityContext;
+        ctx.focusKnown = sq.active && glm::length(sq.focusPos) > 0.001f;
+        if (ctx.focusKnown) ctx.focusPos = sq.focusPos;
+        ctx.swarm = npc.behavior.swarm;
+        glm::vec3 slot{0.0f}, anchor{0.0f};
+        ctx.squadSlotKnown = brain.squadSlotFor(npc.id, slot, anchor);
+        if (ctx.squadSlotKnown) {
+            ctx.squadSlot = slot;
+            ctx.squadAnchor = anchor;
+            const float dx = slot.x - npc.body.pos.x;
+            const float dy = slot.y - npc.body.pos.y;
+            ctx.atSquadSlot = std::sqrt(dx * dx + dy * dy) <= 3.0f;
+        }
+    }
 
     if (!d.objectiveRounds) return;
 

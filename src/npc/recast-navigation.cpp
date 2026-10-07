@@ -24,6 +24,7 @@
 #include "DetourNavMeshQuery.h"
 #include "physics/physics-types.h"
 #include "world/world.h"
+#include "perf/perf.h"
 
 namespace {
 
@@ -367,6 +368,7 @@ void RecastNavigationBackend::invalidate()
 RecastNavigationResult RecastNavigationBackend::prepare(
     const World& world, const NavigationAgentProfile& profile)
 {
+    Perf::ScopedTimer recastPrepareTimer("Npc::RecastPrepare");
     RecastNavigationResult result;
     const auto begin = std::chrono::steady_clock::now();
     if (!mState) mState = new State();
@@ -425,6 +427,7 @@ RecastNavigationResult RecastNavigationBackend::query(
     const World& world, const glm::vec3& start, const glm::vec3& destination,
     const NavigationAgentProfile& profile)
 {
+    Perf::ScopedTimer recastQueryTimer("Npc::RecastQuery");
     RecastNavigationResult result;
     if (!mState) mState = new State();
 

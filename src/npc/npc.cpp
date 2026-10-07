@@ -496,6 +496,31 @@ NpcGoal makeNavGoal(const Npc& npc)
                 return goal;
             }
             break;
+        case UtilityGoalKind::FocusTarget: {
+            // Group focus: move to this actor's distributed slot around the
+            // shared focus so the squad swarms instead of stacking. The slot is
+            // a travel target, never an aim permission (combat still needs LOS).
+            const glm::vec3 sliceTarget =
+                (npc.utilityContext.squadSlotKnown &&
+                 glm::length(npc.utilityContext.squadSlot) > 0.001f)
+                    ? npc.utilityContext.squadSlot
+                    : npc.utilityContext.focusPos;
+            if (glm::length(sliceTarget) > 0.001f) {
+                const float dx = sliceTarget.x - npc.body.pos.x;
+                const float dy = sliceTarget.y - npc.body.pos.y;
+                if (std::sqrt(dx * dx + dy * dy) <= 2.0f) {
+                    goal.kind = NpcGoalKind::ReachPosition;
+                    goal.targetPos = npc.body.pos;
+                    goal.tolerance = 1.5f;
+                    return goal;
+                }
+                goal.kind = NpcGoalKind::ReachPosition;
+                goal.targetPos = sliceTarget;
+                goal.tolerance = 2.0f;
+                return goal;
+            }
+            break;
+        }
         default:
             break;
     }

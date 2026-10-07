@@ -137,7 +137,9 @@ void weaponJsonBehaviorType(const json& root, WeaponDefinition& def)
     if (!root.contains("behavior_type") || !root["behavior_type"].is_string())
         return;
     const std::string type = normalizedToken(root["behavior_type"].get<std::string>());
-    if (type == "projectile")
+    if (type == "none" || type == "nothing" || type == "empty")
+        def.behaviorType = WeaponBehaviorType::None;
+    else if (type == "projectile")
         def.behaviorType = WeaponBehaviorType::Projectile;
     else if (type == "godball")
         def.behaviorType = WeaponBehaviorType::Godball;

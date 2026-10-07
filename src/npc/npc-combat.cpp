@@ -378,6 +378,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     glm::vec3 shotEnd = npcPos + aimDir * 100.0f;
     glm::vec3 shotNormal = glm::vec3(0.0f, 0.0f, 1.0f);
     switch (def->behaviorType) {
+    case WeaponBehaviorType::None:
+        // Empty-hand inventory item: it is equipable but never an NPC attack.
+        break;
     case WeaponBehaviorType::Hitscan:
     {
         if (def->pelletCount > 1) {

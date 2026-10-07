@@ -20,6 +20,7 @@ const char* utilityGoalName(UtilityGoalKind kind)
         case UtilityGoalKind::DefuseObjective: return "DefuseObjective";
         case UtilityGoalKind::RetakeSite:      return "RetakeSite";
         case UtilityGoalKind::HuntArea:        return "HuntArea";
+        case UtilityGoalKind::FocusTarget:     return "FocusTarget";
         case UtilityGoalKind::Patrol:          return "Patrol";
     }
     return "Unknown";
@@ -144,6 +145,16 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
                       (0.5f + 0.5f * teamFactor);
             break;
 
+        case UtilityGoalKind::FocusTarget:
+            // Group focus: advance to the squad slot around the shared focus.
+            // Travels toward a focus actor/area but is NOT an aim permission.
+            s.relevance = ctx.focusKnown ? 1.2f : 0.0f;
+            s.teamInformation = ctx.focusKnown ? 1.0f : 0.0f;
+            s.distance = (ctx.squadSlotKnown && !ctx.atSquadSlot) ? 1.0f : 0.5f;
+            s.total = s.relevance * (ctx.atSquadSlot ? 0.2f : 1.0f) *
+                      (0.5f + 0.5f * teamFactor);
+            break;
+
         case UtilityGoalKind::Patrol:
             // Only meaningful with no hostile and no objective context.
             s.relevance = (!ctx.hasKnownTarget && !ctx.hasVisibleTarget) ? 1.0f : 0.0f;
@@ -195,6 +206,7 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
         UtilityGoalKind::DefuseObjective,
         UtilityGoalKind::RetakeSite,
         UtilityGoalKind::HuntArea,
+        UtilityGoalKind::FocusTarget,
     };
 
     UtilityGoalKind best = UtilityGoalKind::None;
@@ -279,6 +291,9 @@ UtilityActionKind actionForGoal(UtilityGoalKind goal, const UtilityContext& ctx)
             return UtilityActionKind::Flank;
         case UtilityGoalKind::HuntArea:
             return UtilityActionKind::Approach;
+        case UtilityGoalKind::FocusTarget:
+            return ctx.atSquadSlot ? UtilityActionKind::HoldAngle
+                                   : UtilityActionKind::Approach;
         case UtilityGoalKind::Patrol:
             return UtilityActionKind::Reposition;
         case UtilityGoalKind::None:

@@ -174,9 +174,11 @@ void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
         return;
     }
 
-    sq.anchor = glm::vec3(0.0f);
-    for (const auto& m : living) sq.anchor += m.pos;
-    sq.anchor /= static_cast<float>(living.size());
+    // Centroid of the living members is the starting anchor.
+    glm::vec3 centroid(0.0f);
+    for (const auto& m : living) centroid += m.pos;
+    centroid /= static_cast<float>(living.size());
+    sq.anchor = centroid;
 
     // Deterministic order by actor id.
     std::vector<SquadMember> ordered = living;
@@ -192,11 +194,23 @@ void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
     }
 
     const bool hasFocus = focusActive;
-    const float anchorToFocus = hasFocus
-        ? glm::length(glm::vec2(focusPos.x - sq.anchor.x, focusPos.y - sq.anchor.y))
-        : 0.0f;
+    // Advance the anchor toward the focus so the whole squad moves as a unit
+    // instead of only the committed attackers leaving spawn.
+    const float standoff = tuning.spreadRadiusMeters * 2.0f;
+    float anchorToFocus = 0.0f;
+    if (hasFocus) {
+        const glm::vec2 c(centroid.x, centroid.y);
+        const glm::vec2 f(focusPos.x, focusPos.y);
+        const glm::vec2 to = f - c;
+        anchorToFocus = glm::length(to);
+        if (anchorToFocus > standoff) {
+            const glm::vec2 dir = to / anchorToFocus;
+            const glm::vec2 a = f - dir * standoff;
+            sq.anchor = glm::vec3(a.x, a.y, focusPos.z);
+        }
+    }
     sq.mode = hasFocus
-        ? (anchorToFocus <= tuning.spreadRadiusMeters * 2.0f ? 2 : 1)
+        ? (anchorToFocus <= standoff * 1.25f ? 2 : 1)
         : 1;
 
     const int count = (int)ordered.size();

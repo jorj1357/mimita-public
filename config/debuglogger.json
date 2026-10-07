@@ -24,7 +24,7 @@
     },
     "physics": { "level": "important", "file_output": false },
     "performance": {
-      "level": "off",
+      "level": "important",
       "file_output": false
     },
     "collision": {

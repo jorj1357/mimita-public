@@ -25,6 +25,7 @@
 #include "npc/npc-targeting.h"
 
 #include "debug/structured-log.h"
+#include "perf/perf.h"
 #include "npc/npc-avatar.h"
 #include "entities/player.h"
 #include "world/world.h"
@@ -189,7 +190,17 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     const bool recastBackendEnabled =
         backend && (std::string(backend) == "recast" ||
                      std::string(backend) == "compare");
-    if (compareEnabled || recastBackendEnabled) {
+    // Also prewarm when any loaded behavior profile selects the external
+    // backend, so the first bake never lands inside a fixed gameplay tick.
+    bool profileWantsRecast = false;
+    for (const auto& profile : BehaviorProfileRegistry::instance().all()) {
+        if (profile.navigationBackend == "recast" ||
+            profile.navigationBackend == "compare") {
+            profileWantsRecast = true;
+            break;
+        }
+    }
+    if (compareEnabled || recastBackendEnabled || profileWantsRecast) {
         NavigationAgentProfile profile;
         const RecastNavigationResult nav =
             RecastNavigationBackend::instance().prepare(npcWorld, profile);
@@ -906,6 +917,7 @@ void simulateSharedNpcs(SOCKET sock,
                         uint32_t tick,
                         uint64_t& totalPacketsOut)
 {
+    Perf::ScopedTimer npcSimulationTimer("Server::NpcSimulation");
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
 

@@ -209,6 +209,7 @@ LINK_LIBS = [
     "-lwinhttp",
     "-lws2_32",
     "-ldbghelp",
+    "-lpsapi",
     "-lole32",
     "-luuid",
     "-loleaut32",

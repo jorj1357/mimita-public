@@ -115,6 +115,10 @@ struct TeamBrainState
     // General squad state and per-actor slots (group behavior).
     SquadState squad;
     std::vector<std::pair<uint32_t, glm::vec3>> squadSlots;
+    // Change-edge reporting memory (set by the caller; avoids per-tick spam).
+    int reportedSquadMode = -1;
+    bool hasReportedFocus = false;
+    glm::vec3 reportedFocusPos{0.0f};
 };
 
 // The generic TeamBrain. One instance per team; used by both sides.

@@ -30,6 +30,7 @@
 #include "physics/physics-types.h"
 #include "physics/movement/physics-collision.h"
 #include "debug/debug-log.h"
+#include "perf/perf.h"
 
 namespace {
 
@@ -63,7 +64,10 @@ bool recastCompareEnabled()
 // planner retained as a bounded fallback.
 enum class RecastBackend { Custom, Compare, Recast };
 
-RecastBackend recastBackendMode()
+// Backend resolution order: explicit dev override (env) > the actor's behavior
+// profile (`navigation_backend`) > the legacy compare env > custom. The profile
+// is the durable, general configuration; the env var is a development override.
+RecastBackend recastBackendMode(const std::string& profileBackend)
 {
     const char* value = std::getenv("MIMITA_NPC_NAV_BACKEND");
     if (value) {
@@ -72,6 +76,9 @@ RecastBackend recastBackendMode()
         if (v == "compare") return RecastBackend::Compare;
         if (v == "custom") return RecastBackend::Custom;
     }
+    if (profileBackend == "recast") return RecastBackend::Recast;
+    if (profileBackend == "compare") return RecastBackend::Compare;
+    if (profileBackend == "custom") return RecastBackend::Custom;
     return recastCompareEnabled() ? RecastBackend::Compare : RecastBackend::Custom;
 }
 constexpr float kWalkableNormalZ = NpcNavigation::kWalkableSlopeDot;
@@ -947,6 +954,7 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
                                   const NpcMovementPolicy* policy,
                                   const MovementCommitmentSettings* commitment)
 {
+    Perf::ScopedTimer navigationTimer("Npc::Navigation");
     NpcNavResult result;
     goal = newGoal;
     if (!goal.valid()) {
@@ -1062,7 +1070,9 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     // Recast corridor retention: a cached Recast route is only valid for the
     // navmesh version it was planned against. A published new version (dynamic
     // geometry, rebuild) invalidates it so the actor does not follow stale data.
-    const RecastBackend navBackend = recastBackendMode();
+    const RecastBackend navBackend =
+        recastBackendMode(npc.behavior.active ? npc.behavior.navigationBackend
+                                              : std::string());
     const bool recastNavmeshStale =
         navBackend == RecastBackend::Recast && !path.empty() &&
         recastRouteVersion != 0 &&

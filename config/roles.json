@@ -27,7 +27,7 @@
       "movement_preset": "source",
       "weapon_set": "juggernaut_fighter",
       "starting_weapon": "revolver",
-      "behavior_profile": "rage2",
+      "behavior_profile": "juggernaut_swarm",
       "spawn_group": "fighters_spawn"
     },
     {

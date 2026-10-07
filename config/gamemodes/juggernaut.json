@@ -71,5 +71,5 @@
     "friendly_outline_color": [0, 255, 0],
     "enemy_outline_color": [255, 0, 0]
   },
-  "maps": ["atdm", "mimita-duels-map-v3", "funworld"]
+  "maps": ["dust2cyberiav4", "atdm", "mimita-duels-map-v3", "funworld"]
 }

@@ -61,7 +61,8 @@ bool WeaponSystem::reload(Player& player) {
         }
     }
     if (def->behaviorType == WeaponBehaviorType::Godball ||
-        def->behaviorType == WeaponBehaviorType::Swordsword) return false;
+        def->behaviorType == WeaponBehaviorType::Swordsword ||
+        def->behaviorType == WeaponBehaviorType::None) return false;
 
     int needed = def->magazineSize - rt->currentAmmo;
     int loaded = std::min(needed, rt->reserveAmmo);
@@ -144,9 +145,23 @@ std::string WeaponSystem::unequip(Player& player) {
     std::string offhandReloaded;
     if (tryAutoReloadOffhand(player, oldWeaponId))
         offhandReloaded = oldWeaponId;
-    player.equippedSlot = 0;
-    player.hasValidWeapon = false;
-    player.equippedWeaponId.clear();
+
+    // "Nothing" is the canonical empty-hand item. Keep the existing cleanup
+    // semantics, but preserve a real owned/equippable inventory slot so the
+    // server and clients replicate the same state as every other weapon.
+    if (const WeaponDefinition* nothing = WeaponRegistry::instance().get("nothing")) {
+        player.equippedSlot = nothing->slot;
+        player.hasValidWeapon = true;
+        player.equippedWeaponId = nothing->id;
+        mCurrentSlot = nothing->slot;
+        mCurrentWeaponId = nothing->id;
+    } else {
+        player.equippedSlot = 0;
+        player.hasValidWeapon = false;
+        player.equippedWeaponId.clear();
+        mCurrentSlot = 0;
+        mCurrentWeaponId.clear();
+    }
     player.collision.hasWeaponCollisionCapsule = false;
     player.weaponCollisionName.clear();
     player.weaponModelTransform = glm::mat4(1.0f);

@@ -158,7 +158,14 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         int idx = slotIndex(def->slot);
         if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
             printf("[VMTRACE] WeaponSystem::update calling mViewModels[%d].update for %s\n", idx, def->id.c_str());
-        mViewModels[idx].update(camera, player, dt, def, true, &world);
+        if (def->behaviorType == WeaponBehaviorType::None) {
+            player.collision.hasWeaponCollisionCapsule = false;
+            player.weaponCollisionName.clear();
+            player.weaponModelTransform = glm::mat4(1.0f);
+            mPhysicalAimValid = false;
+        } else {
+            mViewModels[idx].update(camera, player, dt, def, true, &world);
+        }
         if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
             printf("[VMTRACE] WeaponSystem::update done for %s (slot=%d idx=%d)\n", def->id.c_str(), def->slot, idx);
 
@@ -569,7 +576,7 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
     if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
         printf("[VMTRACE] WeaponSystem::render: def=%p id=%s slot=%d\n",
                (void*)def, def ? def->id.c_str() : "(null)", def ? def->slot : -1);
-    if (!def) return;
+    if (!def || def->behaviorType == WeaponBehaviorType::None) return;
 
     int idx = slotIndex(def->slot);
     if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
@@ -1177,6 +1184,9 @@ RevolverShotResult WeaponSystem::fireAlt(
 
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!rt) return {};
+
+    if (def->behaviorType == WeaponBehaviorType::None)
+        return {};
 
     const auto altPoseState = def->customParams.find("altPoseState");
     if (altPoseState != def->customParams.end()) {

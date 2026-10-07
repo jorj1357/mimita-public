@@ -81,6 +81,16 @@ struct UtilityContext {
     // and hunt-area goal totals; 1.0/0.0 reproduces the legacy behavior.
     float travelObjectiveBias = 1.0f;
     float travelHuntBias = 0.0f;
+
+    // General group/focus context (see npc-group-behavior.md). Set by the
+    // TeamBrain/SquadCoordinator when the actor's profile enables focus.
+    bool focusKnown = false;        // the team has a shared focus area
+    glm::vec3 focusPos{0.0f};
+    bool squadSlotKnown = false;    // this actor has a distributed slot
+    glm::vec3 squadSlot{0.0f};
+    glm::vec3 squadAnchor{0.0f};
+    bool swarm = false;             // take firing slots around the focus
+    bool atSquadSlot = false;       // already within the slot tolerance
 };
 
 // Per-goal score breakdown, kept for inspection and tests.
