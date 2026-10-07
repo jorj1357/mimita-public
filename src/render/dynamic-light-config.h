@@ -32,6 +32,9 @@ struct DynamicLightConfigData {
     int maxPerFrame = 8;
     float minIntensityCull = 0.01f;
     float minRadiusCull = 0.1f;
+    float renderDistance = 1250.0f;
+    float renderFadeStartDistance = 1000.0f;
+    float renderFadeEndDistance = 1250.0f;
     std::string quality = "smooth";
 
     // weaponId -> effectName -> settings

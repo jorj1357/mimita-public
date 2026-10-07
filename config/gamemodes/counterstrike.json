@@ -99,6 +99,7 @@
     "world_impact_effects": false,
     "hit_markers": false,
     "hit_sounds": false,
+    "hit_flinch": true,
     "killfeed": true,
     "player_outlines": false
   },

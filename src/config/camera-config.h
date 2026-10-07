@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <glm/glm.hpp>
 
@@ -52,6 +53,13 @@ public:
     bool load(const std::string& path = "config/camconfig.json");
     bool pollReload();
 
+    void setHitFlinchOverride(bool enabled) { mHitFlinchOverride = enabled; }
+    void clearHitFlinchOverride() { mHitFlinchOverride.reset(); }
+    bool hitFlinchEnabled() const {
+        return mHitFlinchOverride.has_value()
+            ? *mHitFlinchOverride : mData.hitFlinchEnabled;
+    }
+
     const CameraConfigData& data() const { return mData; }
     CameraConfigData& data() { return mData; }
 
@@ -62,4 +70,5 @@ private:
     std::string mPath = "config/camconfig.json";
     std::filesystem::file_time_type mLastWrite{};
     bool mWatchLogged = false;
+    std::optional<bool> mHitFlinchOverride;
 };

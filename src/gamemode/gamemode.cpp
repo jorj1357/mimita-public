@@ -285,6 +285,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("world_impact_effects", next.presentation.hasWorldImpactEffects, next.presentation.worldImpactEffects);
             readFlag("hit_markers", next.presentation.hasHitMarkers, next.presentation.hitMarkers);
             readFlag("hit_sounds", next.presentation.hasHitSounds, next.presentation.hitSounds);
+            readFlag("hit_flinch", next.presentation.hasHitFlinch, next.presentation.hitFlinch);
             readFlag("blood", next.presentation.hasBlood, next.presentation.blood);
             readFlag("killfeed", next.presentation.hasKillfeed, next.presentation.killfeed);
             readFlag("ragdolls", next.presentation.hasRagdolls, next.presentation.ragdolls);

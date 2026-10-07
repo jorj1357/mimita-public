@@ -132,6 +132,7 @@ std::string CommunityMatchClient::teamName(int team) const
 
 void CommunityMatchClient::reset()
 {
+    CamConfig::instance().clearHitFlinchOverride();
     resetActorPreset();
     // Restore backups if overrides were applied
     if (mOverridesApplied) {
@@ -325,6 +326,10 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         PlayerVisualsConfig::instance().setPlayerOutlinesEnabled(modeConfig.presentation.playerOutlines);
     else
         PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
+    if (modeConfig.presentation.hasHitFlinch)
+        CamConfig::instance().setHitFlinchOverride(modeConfig.presentation.hitFlinch);
+    else
+        CamConfig::instance().clearHitFlinchOverride();
     if (modeConfig.presentation.hasTeamOutlineColors)
         PlayerVisualsConfig::instance().setTeamOutlineColors(
             modeConfig.presentation.friendlyOutlineColor,

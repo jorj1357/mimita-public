@@ -46,6 +46,9 @@
         "maxPerFrame": 8,
         "minIntensityCull": 0.01,
         "minRadiusCull": 0.1,
+        "renderDistance": 1250.0,
+        "renderFadeStartDistance": 1000.0,
+        "renderFadeEndDistance": 1250.0,
         "quality": "smooth"
     },
     "weaponLights": {

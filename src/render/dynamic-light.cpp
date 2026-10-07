@@ -13,6 +13,7 @@
 #include <cstdio>
 
 #include "debug/debug-log.h"
+#include "render/dynamic-light-config.h"
 
 DynamicLightManager& DynamicLightManager::instance()
 {
@@ -73,13 +74,19 @@ DynamicLightManager::SubmitResult DynamicLightManager::submitToShader(
     };
     Candidate candidates[MAX_LIGHTS];
     int candidateCount = 0;
+    const auto& cfg = DynamicLightConfig::instance().data();
+    const float renderDistance = std::max(0.0f, cfg.renderDistance);
+    const float fadeStart = std::max(0.0f, cfg.renderFadeStartDistance);
+    const float fadeEnd = std::max(fadeStart,
+        std::min(renderDistance, cfg.renderFadeEndDistance));
+    const float distanceFadeSpan = std::max(0.001f, fadeEnd - fadeStart);
 
     for (int i = 0; i < MAX_LIGHTS; ++i) {
         if (!mLights[i].active) continue;
         const DynamicLight& light = mLights[i];
 
         float dist = glm::length(light.position - cameraPos);
-        if (dist > light.radius + 20.0f) continue;
+        if (dist > renderDistance) continue;
 
         float t = (light.lifetime > 0.0f) ? (light.age / light.lifetime) : 1.0f;
         float fadeMultiplier = 1.0f;
@@ -90,6 +97,10 @@ DynamicLightManager::SubmitResult DynamicLightManager::submitToShader(
             fadeMultiplier = (light.lifetime - light.age) / light.fadeOut;
         }
         fadeMultiplier = std::max(0.0f, std::min(1.0f, fadeMultiplier));
+
+        if (dist > fadeStart)
+            fadeMultiplier *= std::max(0.0f,
+                (fadeEnd - dist) / distanceFadeSpan);
 
         float effectiveIntensity = light.intensity * fadeMultiplier;
         if (effectiveIntensity < 0.01f) continue;

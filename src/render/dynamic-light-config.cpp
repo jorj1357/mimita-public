@@ -85,6 +85,9 @@ bool DynamicLightConfig::load(const std::string& path)
             d.maxPerFrame = dl.value("maxPerFrame", d.maxPerFrame);
             d.minIntensityCull = dl.value("minIntensityCull", d.minIntensityCull);
             d.minRadiusCull = dl.value("minRadiusCull", d.minRadiusCull);
+            d.renderDistance = dl.value("renderDistance", d.renderDistance);
+            d.renderFadeStartDistance = dl.value("renderFadeStartDistance", d.renderFadeStartDistance);
+            d.renderFadeEndDistance = dl.value("renderFadeEndDistance", d.renderFadeEndDistance);
             d.quality = dl.value("quality", d.quality);
         }
 

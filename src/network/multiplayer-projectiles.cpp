@@ -1422,6 +1422,13 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                 __FILE__, __LINE__, __FUNCTION__);
         }
 
+        if (event->damage > 0 && gpPlayer)
+        {
+            const glm::vec3 incoming = glm::length(knockback) > 0.001f
+                ? glm::normalize(knockback) : -hitNormal;
+            gpPlayer->applyHitFlinch(event->damage, hitPosition, incoming);
+        }
+
         // Show local-victim hit feedback at the real hit point: damage number,
         // body blood/effects, and elongated sphere. Server NPC/player shots send
         // the true surface contact point + normal.

@@ -111,6 +111,7 @@ struct GamemodePresentation {
     bool hasWorldImpactEffects = false;  bool worldImpactEffects = true;
     bool hasHitMarkers = false;          bool hitMarkers = true;
     bool hasHitSounds = false;           bool hitSounds = true;
+    bool hasHitFlinch = false;            bool hitFlinch = true;
     bool hasBlood = false;               bool blood = true;
     bool hasKillfeed = false;            bool killfeed = true;
     bool hasRagdolls = false;            bool ragdolls = true;

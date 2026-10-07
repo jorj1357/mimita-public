@@ -356,28 +356,10 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
 
     printf("[APPLY DAMAGE] hpAfter=%d actualDamage=%d\n", currentHp, actualDamage);
 
-    if (this == gpPlayer && gpCamera) {
-        const auto& flinch = CamConfig::instance().data();
-        if (flinch.hitFlinchEnabled) {
-            const float damageT = std::clamp(
-                static_cast<float>(actualDamage) / flinch.hitFlinchDamageAtHigh,
-                0.0f, 1.0f);
-            const float distance = glm::length(damageOrigin - gpCamera->pos);
-            const float distanceT = std::clamp(
-                1.0f - distance / flinch.hitFlinchDistance, 0.0f, 1.0f);
-            const float distanceScale = std::pow(distanceT, flinch.hitFlinchDistanceExponent);
-            const float strength = flinch.hitFlinchLow +
-                (flinch.hitFlinchHigh - flinch.hitFlinchLow) * damageT;
+    applyHitFlinch(actualDamage, damageOrigin, glm::normalize(
+        glm::length(knockbackDir) > 0.001f ? knockbackDir : glm::vec3(0.0f, 0.0f, 1.0f)));
 
-            // Deterministic variation: no global RNG or frame-dependent noise.
-            const float seed = static_cast<float>(currentHp + actualDamage) * 0.173f +
-                damageOrigin.x * 0.071f + damageOrigin.y * 0.113f + damageOrigin.z * 0.197f;
-            const float variation = std::sin(seed) * flinch.hitFlinchRandomness;
-            gpCamera->addPunch(
-                (flinch.hitFlinchPitch * strength + variation) * distanceScale,
-                (flinch.hitFlinchYaw * strength + variation * 0.5f) * distanceScale);
-        }
-    }
+    // Direct and network-confirmed damage share the same camera presentation owner.
     
     // Play hurt sound with volume/pitch based on damage
     float severity = std::clamp((float)actualDamage / 100.0f, 0.0f, 1.0f);
@@ -410,5 +392,41 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
     if (DebugConfig::DEBUG_COMMANDS) {
         Debug::log(Debug::Category::General, "[PLAYER HURT] damage=%d hp=%d/%d severity=%.2f\n",
                    actualDamage, currentHp, maxHp, severity);
+    }
+}
+
+void Player::applyHitFlinch(int damage, const glm::vec3& damageOrigin,
+                            const glm::vec3& incomingDirection)
+{
+    (void)damageOrigin;
+    if (this != gpPlayer || !gpCamera || damage <= 0 ||
+        !CamConfig::instance().hitFlinchEnabled())
+        return;
+
+    const auto& flinch = CamConfig::instance().data();
+    const float damageT = std::clamp(
+        static_cast<float>(damage) / flinch.hitFlinchDamageAtHigh, 0.0f, 1.0f);
+    const float strength = flinch.hitFlinchLow +
+        (flinch.hitFlinchHigh - flinch.hitFlinchLow) * damageT;
+    const glm::vec3 incoming = glm::length(incomingDirection) > 0.001f
+        ? glm::normalize(incomingDirection) : -gpCamera->front;
+    const float lateral = glm::dot(incoming, gpCamera->right);
+    const float vertical = glm::dot(incoming, gpCamera->up);
+    const float pitchSign = std::abs(vertical) > 0.35f
+        ? vertical : 0.35f;
+    const float pitch = pitchSign * std::abs(flinch.hitFlinchPitch) * strength;
+    const float yaw = lateral * std::abs(flinch.hitFlinchYaw) * strength;
+    gpCamera->addPunch(pitch, yaw);
+    Debug::log(Debug::Category::General,
+        "[HIT FLINCH] damage=%d incoming=(%.2f %.2f %.2f) lateral=%.2f vertical=%.2f pitch=%.2f yaw=%.2f\n",
+        damage, incoming.x, incoming.y, incoming.z, lateral, vertical, pitch, yaw);
+    if (StructuredLogger::instance().shouldLog(
+            StructuredCategory::Camera, StructuredLevel::Important)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Camera, StructuredLevel::Important,
+            "presentation.hit_flinch", "local-player", "damage-applied", 0,
+            nlohmann::json{{"damage", damage}, {"incoming_x", incoming.x},
+                           {"incoming_y", incoming.y}, {"incoming_z", incoming.z},
+                           {"pitch", pitch}, {"yaw", yaw}});
     }
 }
