@@ -17,6 +17,7 @@
 #include "audio/audio.h"
 #include "camera.h"
 #include "combat/explosion-fx.h"
+#include "combat/weapon-registry.h"
 #include "config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
@@ -441,14 +442,16 @@ void PersistentPhysicsSystem::renderPrimitive(const PersistentPhysicsObject& obj
 {
     // Grenade launcher projectiles are rendered by WeaponGrenadeLauncher::update
     // with textured meshes from projectile-render.cpp. Skip the old flat cylinder.
-    if (obj.weaponId == "grenade_launcher")
-        return;
+    if (const WeaponDefinition* def = WeaponRegistry::instance().get(obj.weaponId))
+        if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher)
+            return;
 
     float r = obj.cfg.radius;
     float h = obj.cfg.height;
     glm::vec3 pos = obj.position;
     float alpha = obj.sleeping ? 0.3f : 0.7f;
-    glm::vec4 color(0.3f, 0.7f, 0.2f, alpha);
+    glm::vec4 color = obj.cfg.renderColor;
+    color.a = obj.sleeping ? std::min(color.a, 0.3f) : color.a;
 
     switch (obj.cfg.shape) {
     case PersistentShape::Cylinder:

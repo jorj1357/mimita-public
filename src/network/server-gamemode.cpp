@@ -3366,10 +3366,12 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         ctx.atObjective = hasObj &&
             glm::length(npc.body.pos - objPos) <= 3.0f;
         // A Terrorist carrying the bomb can plant inside a site.
+        const int actorSiteIndex = MapConfigRegistry::instance().siteIndexAt(npc.body.pos);
+        const float objectiveDistance = glm::length(npc.body.pos - d.objective.position);
         ctx.canPlant = (team == 1) &&
             d.objective.state == ObjectiveState::Carried &&
             d.objective.carrierActorId == npc.id &&
-            MapConfigRegistry::instance().siteIndexAt(npc.body.pos) >= 0;
+            actorSiteIndex >= 0;
         // A Counter-Terrorist at a planted bomb can defuse.
         ctx.canDefuse = (team == 0) &&
             d.objective.state == ObjectiveState::Planted &&
@@ -3390,6 +3392,19 @@ void serverTeamBrainTick(ServerGamemodeState& d,
                                {"at_objective", ctx.atObjective},
                                {"can_plant", ctx.canPlant},
                                {"can_defuse", ctx.canDefuse},
+                               {"carrier_actor_id", d.objective.carrierActorId},
+                               {"is_carrier", d.objective.carrierActorId == npc.id},
+                               {"actor_site_index", actorSiteIndex},
+                               {"distance_to_objective", objectiveDistance},
+                               {"interaction_range", d.objective.interactionRange},
+                               {"eligibility_reason",
+                                ctx.canPlant ? "plant_eligible" :
+                                ctx.canDefuse ? "defuse_eligible" :
+                                (team == 1 && d.objective.state == ObjectiveState::Carried
+                                    ? (d.objective.carrierActorId != npc.id ? "not_bomb_carrier"
+                                       : actorSiteIndex < 0 ? "outside_bomb_site" : "plant_not_eligible")
+                                    : team == 0 && d.objective.state == ObjectiveState::Planted
+                                        ? "outside_defuse_range" : "objective_state_not_actionable")},
                                {"objective_position", {objPos.x, objPos.y, objPos.z}}});
         }
         (void)assignment;

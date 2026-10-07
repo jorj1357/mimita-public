@@ -656,8 +656,12 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
     if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
         ProjectileVisualConfig cfg = buildProjCfg(*def, false);
         for (const PersistentPhysicsObject& obj : PersistentPhysicsSystem::instance().objects()) {
-            if (obj.exploded || obj.weaponId != "grenade_launcher") continue;
-            renderProjectile(camera, obj.position, obj.rotation, cfg);
+            if (obj.exploded) continue;
+            const WeaponDefinition* projectileDef = WeaponRegistry::instance().get(obj.weaponId);
+            if (!projectileDef || projectileDef->behaviorType != WeaponBehaviorType::GrenadeLauncher)
+                continue;
+            renderProjectile(camera, obj.position, obj.rotation,
+                             projectileVisualConfigForWeapon(obj.weaponId));
         }
     }
 

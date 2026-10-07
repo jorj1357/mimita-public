@@ -686,6 +686,10 @@ struct ServerProjectile
     uint32_t ownerNpcId = 0;       // NPC that fired this projectile (0 = player-fired)
     uint32_t fireSerial = 0;
     uint8_t weaponType = NETWORK_WEAPON_NONE;
+    // Dynamic weapon definition. The legacy weaponType remains the projectile
+    // family (grenade launcher) for compatibility; this preserves the actual
+    // throwable identity such as frag/smoke/fire/darkbang.
+    uint16_t weaponDefNetworkId = 0;
     glm::vec3 position{0.0f};
     glm::vec3 previousPosition{0.0f};
     glm::vec3 velocity{0.0f};

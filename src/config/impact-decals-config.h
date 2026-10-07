@@ -27,6 +27,49 @@ struct ImpactDecalSprayConfig {
     float alphaMin = 0.6f;
     float alphaMax = 0.95f;
     float gravity = 2.5f;
+    struct DebrisConfig {
+        bool enabled = true;
+        float countFraction = 0.33f;
+        glm::vec3 color{0.35f, 0.30f, 0.25f};
+        float alpha = 0.7f;
+        float sizeMin = 0.02f;
+        float sizeMax = 0.05f;
+        float sizeJitter = 0.0f;
+        float spawnOffset = 0.05f;
+        float speedMin = 2.0f;
+        float speedMax = 4.0f;
+        float verticalVelocityMin = 1.0f;
+        float verticalVelocityMax = 2.0f;
+        float coneDegreesMin = 8.0f;
+        float coneDegreesMax = 30.0f;
+        float lifetimeMin = 1.0f;
+        float lifetimeMax = 2.0f;
+        float gravity = 3.0f;
+        float drag = 0.0f;
+        bool affectedByGravity = true;
+        float rotationRandomDegrees = 360.0f;
+        float angularSpeedMin = 0.0f;
+        float angularSpeedMax = 6.28f;
+    } debris;
+};
+
+struct ImpactClientBloodFeedbackConfig {
+    bool enabled = true;
+    int minCount = 2;
+    int maxCount = 5;
+    float damageAtMax = 100.0f;
+    float forceAtMax = 20.0f;
+    float forwardOffsetMin = 0.45f;
+    float forwardOffsetMax = 0.85f;
+    float rightOffset = 0.55f;
+    float upOffset = 0.45f;
+    float sizeMin = 0.08f;
+    float sizeMax = 0.18f;
+    float lifetimeMin = 0.18f;
+    float lifetimeMax = 0.45f;
+    float alphaMin = 0.35f;
+    float alphaMax = 0.75f;
+    glm::vec3 color{0.8f, 0.01f, 0.02f};
 };
 
 struct ImpactForceConfig {
@@ -94,6 +137,7 @@ struct ImpactDecalGroupConfig {
     float crackCenterThickness = 0.035f;
     float crackOuterThickness = 0.006f;
     ImpactDecalSprayConfig spray;
+    ImpactClientBloodFeedbackConfig clientFeedback;
     ImpactForceConfig force;
 };
 

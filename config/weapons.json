@@ -1451,5 +1451,88 @@
       "shootPoseTime": 0.14,
       "equipPoseTime": 0.22
     }
+  },
+  "frag": {
+    "id": "frag", "display_name": "Frag Grenade", "slot": 19,
+    "model": {"path": ""}, "viewmodel": {"enabled": false},
+    "damage": 0.0, "fire_delay": 0.6, "reload_time": 0.01,
+    "magazine_size": 1, "reserve_ammo": 4, "projectile_speed": 18.0,
+    "projectile_radius": 0.38, "projectile_lifetime": 6.0,
+    "fire_mode": "semi_auto", "behavior_type": "grenade_launcher",
+    "hitscan": false, "uses_physics_projectile": true,
+    "custom_params": {
+      "upBias": 4.0, "angSpeed": 6.0, "splashRadius": 8.0,
+      "rocketDirectDamage": 150.0, "knockbackStrength": 30.0,
+      "gravity": 20.0, "drag": 0.15, "bounceRestitution": 0.35,
+      "bounceFriction": 0.5, "maxBounceCount": 10.0, "armingDistance": 2.0,
+      "projectileVisualSphere": 1.0, "projectileVisualRadius": 0.38,
+      "projectileVisualFillR": 0.72, "projectileVisualFillG": 0.88,
+      "projectileVisualFillB": 0.48, "projectileOutlineEnabled": 0.0,
+      "projectileGlowEnabled": 0.0
+    }
+  },
+  "smoke": {
+    "id": "smoke", "display_name": "Smoke Grenade", "slot": 20,
+    "model": {"path": ""}, "viewmodel": {"enabled": false},
+    "damage": 0.0, "fire_delay": 0.6, "reload_time": 0.01,
+    "magazine_size": 1, "reserve_ammo": 2, "projectile_speed": 18.0,
+    "projectile_radius": 0.38, "projectile_lifetime": 6.0,
+    "fire_mode": "semi_auto", "behavior_type": "grenade_launcher",
+    "hitscan": false, "uses_physics_projectile": true,
+    "custom_params": {
+      "upBias": 4.0, "angSpeed": 6.0, "splashRadius": 5.0,
+      "rocketDirectDamage": 0.0, "knockbackStrength": 0.0,
+      "gravity": 20.0, "drag": 0.15, "bounceRestitution": 0.35,
+      "bounceFriction": 0.5, "maxBounceCount": 10.0, "armingDistance": 2.0,
+      "projectileVisualSphere": 1.0, "projectileVisualRadius": 0.38,
+      "projectileVisualFillR": 0.48, "projectileVisualFillG": 0.48,
+      "projectileVisualFillB": 0.48, "projectileOutlineEnabled": 0.0,
+      "projectileGlowEnabled": 0.0
+    }
+  },
+  "fire": {
+    "id": "fire", "display_name": "Fire Grenade", "slot": 21,
+    "model": {"path": ""}, "viewmodel": {"enabled": false},
+    "damage": 0.0, "fire_delay": 0.6, "reload_time": 0.01,
+    "magazine_size": 1, "reserve_ammo": 2, "projectile_speed": 18.0,
+    "projectile_radius": 0.38, "projectile_lifetime": 6.0,
+    "fire_mode": "semi_auto", "behavior_type": "grenade_launcher",
+    "hitscan": false, "uses_physics_projectile": true,
+    "custom_params": {
+      "upBias": 4.0, "angSpeed": 6.0, "splashRadius": 4.0,
+      "rocketDirectDamage": 0.0, "knockbackStrength": 0.0,
+      "gravity": 20.0, "drag": 0.15, "bounceRestitution": 0.35,
+      "bounceFriction": 0.5, "maxBounceCount": 10.0, "armingDistance": 2.0,
+      "projectileVisualSphere": 1.0, "projectileVisualRadius": 0.38,
+      "projectileVisualFillR": 1.0, "projectileVisualFillG": 0.34,
+      "projectileVisualFillB": 0.02, "projectileOutlineEnabled": 0.0,
+      "projectileGlowEnabled": 0.0
+    }
+  },
+  "darkbang": {
+    "id": "darkbang", "display_name": "Darkbang", "slot": 22,
+    "model": {"path": ""}, "viewmodel": {"enabled": false},
+    "damage": 0.0, "fire_delay": 0.6, "reload_time": 0.01,
+    "magazine_size": 1, "reserve_ammo": 2, "projectile_speed": 18.0,
+    "projectile_radius": 0.38, "projectile_lifetime": 6.0,
+    "fire_mode": "semi_auto", "behavior_type": "grenade_launcher",
+    "hitscan": false, "uses_physics_projectile": true,
+    "custom_params": {
+      "upBias": 4.0, "angSpeed": 6.0, "splashRadius": 6.0,
+      "rocketDirectDamage": 0.0, "knockbackStrength": 0.0,
+      "gravity": 20.0, "drag": 0.15, "bounceRestitution": 0.35,
+      "bounceFriction": 0.5, "maxBounceCount": 10.0, "armingDistance": 2.0,
+      "projectileVisualSphere": 1.0, "projectileVisualRadius": 0.38,
+      "projectileVisualFillR": 0.0, "projectileVisualFillG": 0.0,
+      "projectileVisualFillB": 0.0, "projectileOutlineEnabled": 0.0,
+      "projectileGlowEnabled": 0.0
+    }
+  },
+  "bomb": {
+    "id": "bomb", "display_name": "Terrorist Bomb", "slot": 23,
+    "model": {"path": ""}, "viewmodel": {"enabled": false},
+    "damage": 0.0, "fire_delay": 0.0, "reload_time": 0.0,
+    "magazine_size": 0, "reserve_ammo": 0, "behavior_type": "none",
+    "hitscan": false
   }
 }

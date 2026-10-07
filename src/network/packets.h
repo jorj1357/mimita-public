@@ -724,6 +724,7 @@ struct ProjectileSpawnEventPacket
     uint32_t fireSerial = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t reserved[3] = {};
+    uint16_t weaponDefNetworkId = 0;
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
@@ -750,6 +751,7 @@ struct ProjectileStateEventPacket
     uint32_t fireSerial = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t reserved[3] = {};
+    uint16_t weaponDefNetworkId = 0;
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
@@ -777,6 +779,7 @@ struct ProjectileExplodeEventPacket
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t victimCount = 0;
     uint8_t reserved[2] = {};
+    uint16_t weaponDefNetworkId = 0;
     float posX = 0.0f;
     float posY = 0.0f;
     float posZ = 0.0f;
@@ -796,6 +799,7 @@ struct ProjectileDespawnEventPacket
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t reason = 0;
     uint8_t reserved[2] = {};
+    uint16_t weaponDefNetworkId = 0;
 };
 
 struct ReliableEventAckPacket

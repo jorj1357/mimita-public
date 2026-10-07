@@ -40,6 +40,9 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_ROCKET_LAUNCHER;
     if (definition.id == "grenade_launcher")
         return NETWORK_WEAPON_GRENADE_LAUNCHER;
+    if (definition.id == "frag" || definition.id == "smoke" ||
+        definition.id == "fire" || definition.id == "darkbang")
+        return NETWORK_WEAPON_GRENADE_LAUNCHER;
     if (definition.id == "hafs")
         return NETWORK_WEAPON_HAFS;
     if (definition.id == "force_punch")

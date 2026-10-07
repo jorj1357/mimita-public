@@ -29,8 +29,8 @@
   },
   "presentation": {
     "damage_numbers": false,
-    "hit_effects": false,
-    "world_impact_effects": false,
+    "hit_effects": true,
+    "world_impact_effects": true,
     "hit_markers": false,
     "hit_sounds": false,
     "blood_effects": true,

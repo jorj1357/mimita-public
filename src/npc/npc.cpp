@@ -384,6 +384,62 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
     }
     npc.utilityContext = uctx;
     selectUtilityGoal(npc.utilityContext, npc.utility, dt);
+    const UtilityActionKind utilityAction = actionForGoal(
+        npc.utility.currentGoal, npc.utilityContext);
+    const int utilityGoal = static_cast<int>(npc.utility.currentGoal);
+    const int utilityActionValue = static_cast<int>(utilityAction);
+    if (!npc.hasLoggedUtilityDecision ||
+        npc.lastLoggedUtilityGoal != utilityGoal ||
+        npc.lastLoggedUtilityAction != utilityActionValue) {
+        npc.hasLoggedUtilityDecision = true;
+        npc.lastLoggedUtilityGoal = utilityGoal;
+        npc.lastLoggedUtilityAction = utilityActionValue;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.utility-decision", std::to_string(npc.id), "decision_changed",
+            (uint32_t)(npc.sensors.time * 60.0f),
+            nlohmann::json{
+                {"actor", npc.id}, {"team", npc.body.matchTeam},
+                {"goal", utilityGoalName(npc.utility.currentGoal)},
+                {"action", utilityActionName(utilityAction)},
+                {"target_id", npc.serverTargetId},
+                {"target_visible", npc.belief.hasVisibleTarget},
+                {"target_remembered", npc.belief.hasTarget && !npc.belief.hasVisibleTarget},
+                {"objective_known", npc.utilityContext.objectiveKnown},
+                {"at_objective", npc.utilityContext.atObjective},
+                {"can_plant", npc.utilityContext.canPlant},
+                {"can_defuse", npc.utilityContext.canDefuse},
+                {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    const bool pursuitRemembered = npc.belief.hasTarget && !npc.belief.hasVisibleTarget;
+    if (!npc.hasLoggedPursuitState ||
+        npc.lastLoggedPursuitTarget != npc.serverTargetId ||
+        npc.lastLoggedPursuitVisible != npc.belief.hasVisibleTarget ||
+        npc.lastLoggedPursuitRemembered != pursuitRemembered) {
+        npc.hasLoggedPursuitState = true;
+        npc.lastLoggedPursuitTarget = npc.serverTargetId;
+        npc.lastLoggedPursuitVisible = npc.belief.hasVisibleTarget;
+        npc.lastLoggedPursuitRemembered = pursuitRemembered;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.pursuit-state", std::to_string(npc.id), "belief_changed",
+            (uint32_t)(npc.sensors.time * 60.0f),
+            nlohmann::json{
+                {"actor", npc.id}, {"team", npc.body.matchTeam},
+                {"target_id", npc.serverTargetId},
+                {"visible", npc.belief.hasVisibleTarget},
+                {"remembered", pursuitRemembered},
+                {"has_target", npc.belief.hasTarget},
+                {"confidence", npc.belief.confidence},
+                {"memory_age_seconds", npc.targetMemory.ageSeconds},
+                {"last_known_position", {npc.belief.lastKnownPosition.x,
+                                           npc.belief.lastKnownPosition.y,
+                                           npc.belief.lastKnownPosition.z}},
+                {"state", npcStateName(npc.stateMachine.currentState)}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     if (sensors.hasTarget && npc.lastTargetLogDistance < 0.0f)
     {
@@ -1145,6 +1201,34 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     // Cache weapon definition once per frame (avoids 3+ string-keyed map lookups)
     const WeaponDefinition* cachedWeaponDef = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
 
+    if (!npc.grenadeAvailabilityLogged) {
+        npc.grenadeAvailabilityLogged = true;
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
+        const std::vector<std::string>& loadout =
+            npc.loadoutOverride.empty() ? cfg.weaponLoadout : npc.loadoutOverride;
+        nlohmann::json entries = nlohmann::json::array();
+        for (const std::string& wid : loadout) {
+            const WeaponDefinition* def = WeaponRegistry::instance().get(wid);
+            auto it = npc.body.weaponRuntimes.find(wid);
+            const bool runtimeExists = it != npc.body.weaponRuntimes.end();
+            entries.push_back(nlohmann::json{
+                {"weapon", wid},
+                {"definition_found", def != nullptr},
+                {"behavior", def ? static_cast<int>(def->behaviorType) : -1},
+                {"runtime_exists", runtimeExists},
+                {"ammo", runtimeExists ? it->second.currentAmmo : -1},
+                {"reserve", runtimeExists ? it->second.reserveAmmo : -1}});
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+            "npc.grenade-availability", std::to_string(npc.id), "life_start",
+            (uint32_t)(npc.sensors.time * 60.0f),
+            nlohmann::json{{"actor", npc.id}, {"team", npc.body.matchTeam},
+                           {"equipped", npc.body.equippedWeaponId},
+                           {"loadout", entries}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     // Background reload for ALL loadout weapons (not just the equipped one).
     // This enables the revolver→shotgun→revolver combo: when the NPC switches
     // away from a weapon, it starts reloading in the background.
@@ -1317,6 +1401,18 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     {"target_distance", dist},
                     {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
                 __FILE__, __LINE__, __FUNCTION__);
+            const WeaponDefinition* switchedDef = WeaponRegistry::instance().get(switched);
+            if (switchedDef && switchedDef->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
+                npc.lastLoggedGrenadeWeapon = switched;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                    "npc.grenade-equipped", std::to_string(npc.id), "weapon_switch",
+                    (uint32_t)(npc.sensors.time * 60.0f),
+                    nlohmann::json{{"actor", npc.id}, {"team", npc.body.matchTeam},
+                                   {"weapon", switched}, {"previous_weapon", previousWeapon},
+                                   {"target_distance", dist}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
         }
     }
 

@@ -358,6 +358,8 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
 
     applyHitFlinch(actualDamage, damageOrigin, glm::normalize(
         glm::length(knockbackDir) > 0.001f ? knockbackDir : glm::vec3(0.0f, 0.0f, 1.0f)));
+    if (this == gpPlayer)
+        EffectPartSystem::instance().spawnClientBloodFeedback(actualDamage, knockbackForce);
 
     // Direct and network-confirmed damage share the same camera presentation owner.
     

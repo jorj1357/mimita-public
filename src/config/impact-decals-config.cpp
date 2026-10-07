@@ -77,6 +77,31 @@ static void readSpray(const json& j, ImpactDecalSprayConfig& cfg)
     cfg.gravity = readJsonFloat(s, "gravity", cfg.gravity);
     if (!std::isfinite(cfg.gravity) || cfg.gravity < 0.0f)
         cfg.gravity = 0.0f;
+    if (s.contains("debris")) {
+        const auto& d = s["debris"];
+        cfg.debris.enabled = readJsonBool(d, "enabled", cfg.debris.enabled);
+        cfg.debris.countFraction = readJsonFloat(d, "countFraction", cfg.debris.countFraction);
+        cfg.debris.color = readJsonVec3(d, "color", cfg.debris.color);
+        cfg.debris.alpha = readJsonFloat(d, "alpha", cfg.debris.alpha);
+        cfg.debris.sizeMin = readJsonFloat(d, "sizeMin", cfg.debris.sizeMin);
+        cfg.debris.sizeMax = readJsonFloat(d, "sizeMax", cfg.debris.sizeMax);
+        cfg.debris.sizeJitter = readJsonFloat(d, "sizeJitter", cfg.debris.sizeJitter);
+        cfg.debris.spawnOffset = readJsonFloat(d, "spawnOffset", cfg.debris.spawnOffset);
+        cfg.debris.speedMin = readJsonFloat(d, "speedMin", cfg.debris.speedMin);
+        cfg.debris.speedMax = readJsonFloat(d, "speedMax", cfg.debris.speedMax);
+        cfg.debris.verticalVelocityMin = readJsonFloat(d, "verticalVelocityMin", cfg.debris.verticalVelocityMin);
+        cfg.debris.verticalVelocityMax = readJsonFloat(d, "verticalVelocityMax", cfg.debris.verticalVelocityMax);
+        cfg.debris.coneDegreesMin = readJsonFloat(d, "coneDegreesMin", cfg.debris.coneDegreesMin);
+        cfg.debris.coneDegreesMax = readJsonFloat(d, "coneDegreesMax", cfg.debris.coneDegreesMax);
+        cfg.debris.lifetimeMin = readJsonFloat(d, "lifetimeMin", cfg.debris.lifetimeMin);
+        cfg.debris.lifetimeMax = readJsonFloat(d, "lifetimeMax", cfg.debris.lifetimeMax);
+        cfg.debris.gravity = readJsonFloat(d, "gravity", cfg.debris.gravity);
+        cfg.debris.drag = readJsonFloat(d, "drag", cfg.debris.drag);
+        cfg.debris.affectedByGravity = readJsonBool(d, "affectedByGravity", cfg.debris.affectedByGravity);
+        cfg.debris.rotationRandomDegrees = readJsonFloat(d, "rotationRandomDegrees", cfg.debris.rotationRandomDegrees);
+        cfg.debris.angularSpeedMin = readJsonFloat(d, "angularSpeedMin", cfg.debris.angularSpeedMin);
+        cfg.debris.angularSpeedMax = readJsonFloat(d, "angularSpeedMax", cfg.debris.angularSpeedMax);
+    }
 }
 
 static void readForce(const json& j, ImpactForceConfig& cfg)
@@ -148,6 +173,25 @@ static void readGroup(const json& j, ImpactDecalGroupConfig& cfg)
     cfg.crackCenterThickness = readJsonFloat(j, "center_thickness", cfg.crackCenterThickness);
     cfg.crackOuterThickness = readJsonFloat(j, "outer_thickness", cfg.crackOuterThickness);
     readSpray(j, cfg.spray);
+    if (j.contains("clientFeedback")) {
+        const auto& f = j["clientFeedback"];
+        cfg.clientFeedback.enabled = readJsonBool(f, "enabled", cfg.clientFeedback.enabled);
+        cfg.clientFeedback.minCount = readJsonInt(f, "minCount", cfg.clientFeedback.minCount);
+        cfg.clientFeedback.maxCount = readJsonInt(f, "maxCount", cfg.clientFeedback.maxCount);
+        cfg.clientFeedback.damageAtMax = readJsonFloat(f, "damageAtMax", cfg.clientFeedback.damageAtMax);
+        cfg.clientFeedback.forceAtMax = readJsonFloat(f, "forceAtMax", cfg.clientFeedback.forceAtMax);
+        cfg.clientFeedback.forwardOffsetMin = readJsonFloat(f, "forwardOffsetMin", cfg.clientFeedback.forwardOffsetMin);
+        cfg.clientFeedback.forwardOffsetMax = readJsonFloat(f, "forwardOffsetMax", cfg.clientFeedback.forwardOffsetMax);
+        cfg.clientFeedback.rightOffset = readJsonFloat(f, "rightOffset", cfg.clientFeedback.rightOffset);
+        cfg.clientFeedback.upOffset = readJsonFloat(f, "upOffset", cfg.clientFeedback.upOffset);
+        cfg.clientFeedback.sizeMin = readJsonFloat(f, "sizeMin", cfg.clientFeedback.sizeMin);
+        cfg.clientFeedback.sizeMax = readJsonFloat(f, "sizeMax", cfg.clientFeedback.sizeMax);
+        cfg.clientFeedback.lifetimeMin = readJsonFloat(f, "lifetimeMin", cfg.clientFeedback.lifetimeMin);
+        cfg.clientFeedback.lifetimeMax = readJsonFloat(f, "lifetimeMax", cfg.clientFeedback.lifetimeMax);
+        cfg.clientFeedback.alphaMin = readJsonFloat(f, "alphaMin", cfg.clientFeedback.alphaMin);
+        cfg.clientFeedback.alphaMax = readJsonFloat(f, "alphaMax", cfg.clientFeedback.alphaMax);
+        cfg.clientFeedback.color = readJsonVec3(f, "color", cfg.clientFeedback.color);
+    }
     readForce(j, cfg.force);
 }
 

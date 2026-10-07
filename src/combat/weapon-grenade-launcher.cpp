@@ -34,7 +34,11 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
 {
     (void)runtime;
     PersistentPhysicsConfig cfg;
-    cfg.shape = PersistentShape::Cylinder;
+    // The shared grenade-launcher physics is also the throwable physics. The
+    // launcher itself keeps its legacy shape; named throwables are bouncing
+    // spheres so their identity is carried by the weapon id, not a second
+    // projectile implementation.
+    cfg.shape = def.id == "grenade_launcher" ? PersistentShape::Cylinder : PersistentShape::Sphere;
     const auto& sc = SizeScalingConfig::instance().data();
     float s = std::max(owner.sizeScale, 0.001f);
     cfg.radius = (def.projectileRadius > 0.0f ? def.projectileRadius : 0.4f) * sc.scale(1.0f, sc.projectileSizeExponent, s);
@@ -58,6 +62,11 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     cfg.armingTime = cp(def, "armingTime", 0.0f);
     cfg.explosionSound = "grenadelauncher/grenadelauncherexplode";
     cfg.spawnSound = def.soundShoot;
+    cfg.renderColor = glm::vec4(
+        cp(def, "projectileVisualFillR", def.tint.r),
+        cp(def, "projectileVisualFillG", def.tint.g),
+        cp(def, "projectileVisualFillB", def.tint.b),
+        cp(def, "projectileFillAlpha", 1.0f));
 
     float forwardSpeed = def.projectileSpeed > 0.0f ? def.projectileSpeed : cp(def, "forwardSpeed", 18.0f);
     float upBias = cp(def, "upBias", 4.0f);

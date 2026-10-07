@@ -5,7 +5,7 @@
   "grenades": [
     {
       "id": "frag",
-      "weapon_id": "grenade_launcher",
+      "weapon_id": "frag",
       "area_kind": "none",
       "radius": 8.0,
       "duration_seconds": 0.0,
@@ -15,7 +15,7 @@
     },
     {
       "id": "smoke",
-      "weapon_id": "grenade_launcher",
+      "weapon_id": "smoke",
       "area_kind": "smoke",
       "radius": 5.0,
       "height": 4.0,
@@ -25,7 +25,7 @@
     },
     {
       "id": "darkbang",
-      "weapon_id": "grenade_launcher",
+      "weapon_id": "darkbang",
       "area_kind": "darkbang",
       "radius": 6.0,
       "duration_seconds": 2.5,
@@ -34,7 +34,7 @@
     },
     {
       "id": "fire",
-      "weapon_id": "grenade_launcher",
+      "weapon_id": "fire",
       "area_kind": "fire",
       "radius": 4.0,
       "height": 3.0,

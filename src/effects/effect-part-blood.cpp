@@ -281,8 +281,11 @@ void EffectPartSystem::spawnBloodEffect(
             mBloodParticles.begin() + (std::min)(removeCount, mBloodParticles.size()));
     }
 
-    const int bloodCount = (particleCount * 2) / 3;
-    const int debrisCount = particleCount - bloodCount;
+    const auto& debrisCfg = spray.debris;
+    const int debrisCount = debrisCfg.enabled
+        ? (int)std::round(particleCount * std::clamp(debrisCfg.countFraction, 0.0f, 1.0f))
+        : 0;
+    const int bloodCount = particleCount - debrisCount;
 
     const float colorJitter = bloodCfg.colorVariation;
 
@@ -333,33 +336,43 @@ void EffectPartSystem::spawnBloodEffect(
 
     for (int i = 0; i < debrisCount; ++i) {
         const float angle = (float)(rand() % 6284) / 1000.0f;
-        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * bloodConeRadius;
+        const float debrisConeDegrees = debrisCfg.coneDegreesMin +
+            (debrisCfg.coneDegreesMax - debrisCfg.coneDegreesMin) * force;
+        const float debrisConeRadius = std::tan(glm::radians(debrisConeDegrees));
+        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * debrisConeRadius;
         const glm::vec3 direction = glm::normalize(
             forward +
             tangent * std::cos(angle) * radial +
             bitangent * std::sin(angle) * radial);
 
-        const float speed = 2.0f + (float)(rand() % 2001) / 1000.0f;
+        const float speed = debrisCfg.speedMin +
+            (debrisCfg.speedMax - debrisCfg.speedMin) * force;
 
         EffectPart deb;
-        deb.position = hitPoint + direction * 0.05f;
+        deb.position = hitPoint + direction * debrisCfg.spawnOffset;
         deb.velocity = direction * speed;
-        deb.velocity.z += 1.0f + (float)(rand() % 1001) / 1000.0f;
-        deb.halfSize = glm::vec3(0.02f + (float)(rand() % 301) / 10000.0f);
-        deb.color = glm::vec3(0.35f, 0.3f, 0.25f);
-        deb.alpha = 0.7f;
-        deb.maxLifetime = 1.0f + (float)(rand() % 1001) / 1000.0f;
-        deb.rotation = glm::vec3(
-            (float)(rand() % 6284) / 1000.0f,
-            (float)(rand() % 6284) / 1000.0f,
-            (float)(rand() % 6284) / 1000.0f);
-        deb.angularVelocity = glm::vec3(
-            (float)(rand() % 628) / 100.0f,
-            (float)(rand() % 628) / 100.0f,
-            (float)(rand() % 628) / 100.0f);
+        deb.velocity.z += debrisCfg.verticalVelocityMin +
+            (debrisCfg.verticalVelocityMax - debrisCfg.verticalVelocityMin) *
+            ((float)(rand() % 1001) / 1000.0f);
+        const float debrisSize = debrisCfg.sizeMin +
+            (debrisCfg.sizeMax - debrisCfg.sizeMin) * force +
+            debrisCfg.sizeJitter * ((float)(rand() % 2001) / 1000.0f - 1.0f);
+        deb.halfSize = glm::vec3(std::max(0.001f, debrisSize));
+        deb.color = debrisCfg.color;
+        deb.alpha = debrisCfg.alpha;
+        deb.maxLifetime = debrisCfg.lifetimeMin +
+            (debrisCfg.lifetimeMax - debrisCfg.lifetimeMin) * force;
+        const float rotationRadians = glm::radians(debrisCfg.rotationRandomDegrees) *
+            ((float)(rand() % 1001) / 1000.0f);
+        deb.rotation = glm::vec3(rotationRadians, rotationRadians, rotationRadians);
+        const float angularSpeed = debrisCfg.angularSpeedMin +
+            (debrisCfg.angularSpeedMax - debrisCfg.angularSpeedMin) *
+            ((float)(rand() % 1001) / 1000.0f);
+        deb.angularVelocity = glm::vec3(angularSpeed);
         deb.box = true;
-        deb.gravity = 3.0f;
-        deb.affectedByGravity = true;
+        deb.gravity = debrisCfg.gravity;
+        deb.drag = debrisCfg.drag;
+        deb.affectedByGravity = debrisCfg.affectedByGravity;
         deb.billboardText = false;
         deb.replayType = "debris";
         spawn(deb);
@@ -382,6 +395,57 @@ void EffectPartSystem::spawnBloodEffect(
 
     spawnBloodSurfaceDecals(hitPoint, forward, tangent, bitangent, damageScale, force,
                             sourceActorId, targetActorId);
+}
+
+void EffectPartSystem::spawnClientBloodFeedback(int damage, float force)
+{
+    if (!mEffectsEnabled || damage <= 0) return;
+    const auto& cfg = ImpactDecalsConfig::instance().data();
+    const auto& feedback = cfg.blood.clientFeedback;
+    if (!cfg.enabled || !cfg.blood.enabled || !feedback.enabled) return;
+
+    const float damageT = std::clamp(
+        damage / std::max(0.001f, feedback.damageAtMax), 0.0f, 1.0f);
+    const float forceT = std::clamp(
+        force / std::max(0.001f, feedback.forceAtMax), 0.0f, 1.0f);
+    const float strength = std::max(damageT, forceT);
+    const int count = std::clamp((int)std::round(
+        feedback.minCount + (feedback.maxCount - feedback.minCount) * strength), 0, 32);
+
+    for (int i = 0; i < count; ++i) {
+        const float right = ((float)(rand() % 2001) / 1000.0f - 1.0f) * feedback.rightOffset;
+        const float up = ((float)(rand() % 2001) / 1000.0f - 1.0f) * feedback.upOffset;
+        const float forward = feedback.forwardOffsetMin +
+            (feedback.forwardOffsetMax - feedback.forwardOffsetMin) *
+            ((float)(rand() % 1001) / 1000.0f);
+        const float size = feedback.sizeMin +
+            (feedback.sizeMax - feedback.sizeMin) * strength;
+
+        EffectPart effect;
+        effect.position = glm::vec3(0.0f);
+        effect.cameraLocked = true;
+        effect.cameraOffset = glm::vec3(right, up, forward);
+        effect.replayType = "client_blood_feedback";
+        effect.color = feedback.color;
+        effect.scale = std::max(0.001f, size);
+        effect.alpha = feedback.alphaMin +
+            (feedback.alphaMax - feedback.alphaMin) * strength;
+        effect.maxLifetime = feedback.lifetimeMin +
+            (feedback.lifetimeMax - feedback.lifetimeMin) * strength;
+        effect.rotation.z = (float)(rand() % 6284) / 1000.0f;
+        effect.billboardText = false;
+        effect.sticky = true;
+        spawn(effect);
+    }
+
+    if (StructuredLogger::instance().shouldLog(
+            StructuredCategory::Rendering, StructuredLevel::Important)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "presentation.local_blood_feedback", "local-player", "damage-confirmed", 0,
+            nlohmann::json{{"damage", damage}, {"force", force},
+                           {"count", count}, {"camera_locked", true}});
+    }
 }
 
 void EffectPartSystem::spawnBloodSurfaceDecals(

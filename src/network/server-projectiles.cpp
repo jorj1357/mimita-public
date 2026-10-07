@@ -343,6 +343,7 @@ void fillProjectilePose(ProjectileSpawnEventPacket& packet, const ServerProjecti
     packet.ownerPlayerId = projectile.ownerPlayerId;
     packet.fireSerial = projectile.fireSerial;
     packet.weapon = projectile.weaponType;
+    packet.weaponDefNetworkId = projectile.weaponDefNetworkId;
     packet.posX = projectile.position.x;
     packet.posY = projectile.position.y;
     packet.posZ = projectile.position.z;
@@ -372,6 +373,7 @@ void broadcastProjectileState(SOCKET sock,
     packet.header.tick = tick;
     packet.projectileId = projectile.id;
     packet.weapon = projectile.weaponType;
+    packet.weaponDefNetworkId = projectile.weaponDefNetworkId;
     packet.posX = projectile.position.x;
     packet.posY = projectile.position.y;
     packet.posZ = projectile.position.z;
@@ -746,6 +748,7 @@ void explodeProjectile(SOCKET sock,
     packet.ownerPlayerId = projectile.ownerPlayerId;
     packet.fireSerial = projectile.fireSerial;
     packet.weapon = projectile.weaponType;
+    packet.weaponDefNetworkId = projectile.weaponDefNetworkId;
     packet.posX = position.x;
     packet.posY = position.y;
     packet.posZ = position.z;
@@ -1205,6 +1208,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.ownerPlayerId = shooter.id;
     projectile.fireSerial = requestId;
     projectile.weaponType = networkWeapon;
+    projectile.weaponDefNetworkId = weaponDefNetworkIdFor(definition.id);
     projectile.position = origin;
     projectile.previousPosition = origin;
     projectile.velocity = dir * cfg.speed + glm::vec3(0.0f, 0.0f, cfg.upBias);
@@ -2063,6 +2067,7 @@ void cancelDeadNpcProjectiles(
         event.eventSessionId = serverReliableEventSessionId();
         event.projectileId = projectile.id;
         event.weapon = projectile.weaponType;
+        event.weaponDefNetworkId = projectile.weaponDefNetworkId;
         event.reason = 2; // owner NPC died or was removed
         queueReliableGameplayEventToAll(
             sock, players, &event, sizeof(event), event.eventId,

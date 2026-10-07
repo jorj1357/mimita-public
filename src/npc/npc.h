@@ -109,6 +109,16 @@ public:
     int lastNavFailureGoalKind = -1;
     std::string lastNavFailureReason;
     int lastObjectiveContextKey = -1;
+    // Diagnostics: decision edges only; these are not gameplay state.
+    bool hasLoggedUtilityDecision = false;
+    int lastLoggedUtilityGoal = -1;
+    int lastLoggedUtilityAction = -1;
+    bool hasLoggedPursuitState = false;
+    uint32_t lastLoggedPursuitTarget = 0;
+    bool lastLoggedPursuitVisible = false;
+    bool lastLoggedPursuitRemembered = false;
+    bool grenadeAvailabilityLogged = false;
+    std::string lastLoggedGrenadeWeapon;
     NpcSensorContext sensors;
     // Human-like perception: the last observation, the belief, and the memory.
     // sightRange/FOV/reaction/memory are resolved per life from the difficulty

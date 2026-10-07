@@ -55,6 +55,8 @@ struct EffectPart
     bool alive = false;
     bool beam = false;
     bool box = false;
+    bool cameraLocked = false;
+    glm::vec3 cameraOffset{0.0f};
     // Config-driven debris chunk count for debris_batch effects (0 = use default).
     int debrisCount = 0;
 
@@ -127,6 +129,7 @@ public:
     void spawnBloodEffect(glm::vec3 hitPoint, glm::vec3 sprayDirection, float damage,
                           const std::string& sourceActorId, const std::string& targetActorId,
                           float directness = 1.0f, float hitDistance = -1.0f);
+    void spawnClientBloodFeedback(int damage, float force);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
                                   const std::string& sourceActorId, const std::string& targetActorId,
                                   float sizeScale = 1.0f);

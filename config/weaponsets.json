@@ -58,9 +58,9 @@
       "id": 9,
       "key": "counterstrike",
       "name": "Counter-Strike (role)",
-      "description": "Counter-Strike revolver and shotgun loadout.",
+      "description": "Counter-Strike revolver, shotgun, grenades, and terrorist bomb loadout.",
       "role_only": true,
-      "weapons": ["revolver", "shotgun", "nothing"]
+      "weapons": ["revolver", "shotgun", "frag", "smoke", "fire", "darkbang", "bomb", "nothing"]
     },
     {
       "id": 10,

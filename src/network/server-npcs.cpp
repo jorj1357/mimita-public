@@ -433,6 +433,15 @@ static void respawnServerNpc(Npc& npc)
     npc.lastNavFailureGoalKind = -1;
     npc.lastNavFailureReason.clear();
     npc.lastObjectiveContextKey = -1;
+    npc.hasLoggedUtilityDecision = false;
+    npc.lastLoggedUtilityGoal = -1;
+    npc.lastLoggedUtilityAction = -1;
+    npc.hasLoggedPursuitState = false;
+    npc.lastLoggedPursuitTarget = 0;
+    npc.lastLoggedPursuitVisible = false;
+    npc.lastLoggedPursuitRemembered = false;
+    npc.grenadeAvailabilityLogged = false;
+    npc.lastLoggedGrenadeWeapon.clear();
     npc.jumpCooldown = 0.0f;
     npc.hasDecisionGoalDistance = false;
     npc.lastDecisionGoalDistance = 0.0f;

@@ -63,7 +63,10 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
     const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
 
     // Explosion sound
-    const char* sound = weaponId == "grenade_launcher"
+    const WeaponDefinition* weaponDef = WeaponRegistry::instance().get(weaponId);
+    const bool grenade = weaponId == "grenade_launcher" ||
+        (weaponDef && weaponDef->behaviorType == WeaponBehaviorType::GrenadeLauncher);
+    const char* sound = grenade
         ? "grenadelauncher/grenadelauncherexplode"
         : "rocketlauncher/rocketlauncherexplode";
     if (playSound)

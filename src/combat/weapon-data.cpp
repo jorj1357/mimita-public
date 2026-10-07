@@ -939,6 +939,56 @@ WeaponDefinition createNothingDefinition() {
     return def;
 }
 
+// Named throwables share the grenade-launcher behavior and physics contract.
+// Their IDs stay separate so the generic weapon/network path can preserve the
+// selected grenade through spawn, rendering, and terminal effects.
+static WeaponDefinition createThrowableDefinition(
+    const char* id, const char* displayName, int slot)
+{
+    WeaponDefinition def;
+    def.id = id;
+    def.displayName = displayName;
+    def.slot = slot;
+    def.modelPath = "";
+    def.fireDelay = 0.6f;
+    def.reloadTime = 0.01f;
+    def.magazineSize = 1;
+    def.reserveSize = 2;
+    def.projectileSpeed = 18.0f;
+    def.projectileRadius = 0.38f;
+    def.projectileLifetime = 6.0f;
+    def.fireMode = WeaponFireMode::SemiAuto;
+    def.behaviorType = WeaponBehaviorType::GrenadeLauncher;
+    def.executionType = WeaponExecutionType::Projectile;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = true;
+    def.soundShoot = "grenadelauncher/grenadelaunchershoot";
+    def.soundDryFire = "ui/click";
+    def.customParams["upBias"] = 4.0f;
+    def.customParams["angSpeed"] = 6.0f;
+    def.customParams["gravity"] = 20.0f;
+    def.customParams["drag"] = 0.15f;
+    def.customParams["bounceRestitution"] = 0.35f;
+    def.customParams["bounceFriction"] = 0.5f;
+    def.customParams["maxBounceCount"] = 10.0f;
+    def.customParams["armingDistance"] = 2.0f;
+    return def;
+}
+
+static WeaponDefinition createBombDefinition()
+{
+    WeaponDefinition def;
+    def.id = "bomb";
+    def.displayName = "Terrorist Bomb";
+    def.slot = 23;
+    def.behaviorType = WeaponBehaviorType::None;
+    def.executionType = WeaponExecutionType::PhysicalContact;
+    def.hitscan = false;
+    def.tracerEnabled = false;
+    def.weaponCollisionEnabled = false;
+    return def;
+}
+
 void registerBuiltinWeapons() {
     loadWeaponJsonConfig();
     registerWeaponFromJson(createNothingDefinition());
@@ -950,6 +1000,11 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createAa12Definition());
     registerWeaponFromJson(createRocketLauncherDefinition());
     registerWeaponFromJson(createGrenadeLauncherDefinition());
+    registerWeaponFromJson(createThrowableDefinition("frag", "Frag Grenade", 19));
+    registerWeaponFromJson(createThrowableDefinition("smoke", "Smoke Grenade", 20));
+    registerWeaponFromJson(createThrowableDefinition("fire", "Fire Grenade", 21));
+    registerWeaponFromJson(createThrowableDefinition("darkbang", "Darkbang", 22));
+    registerWeaponFromJson(createBombDefinition());
     registerWeaponFromJson(createAdminRevolverDefinition());
     registerWeaponFromJson(createHafsDefinition());
     registerWeaponFromJson(createQuickHitDefinition());
@@ -958,7 +1013,7 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createProjectileRifleDefinition());
     registerWeaponFromJson(createHitscanRifleDefinition());
     registerWeaponFromJson(createBigShotgunDefinition());
-    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons: nothing, revolver, godball, shotgun, swordsword, op_revolver, aa12, rocket_launcher, grenade_launcher, admin_revolver, hafs, quick_hit, force_punch, spyknife, projectile_rifle, hitscan_rifle, big_shotgun, large_machine_gun");
+    Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons including frag, smoke, fire, darkbang, and bomb");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

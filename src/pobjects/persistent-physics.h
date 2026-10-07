@@ -54,6 +54,7 @@ struct PersistentPhysicsConfig {
     int maxBounceCount = 0;
     std::string explosionSound = "weapon/bomb/explosion2";
     std::string spawnSound;
+    glm::vec4 renderColor{0.3f, 0.7f, 0.2f, 0.7f};
 };
 
 struct PersistentPhysicsObject {

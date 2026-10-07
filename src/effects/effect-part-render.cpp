@@ -273,6 +273,19 @@ void EffectPartSystem::render(const Camera& camera) const {
         if (effect.lifetime < 0.0f) continue;
         if (effect.debugVisual && !DebugVis::masterEnabled()) continue;
 
+        if (effect.replayType == "client_blood_feedback") {
+            const float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
+            const float alpha = std::max(0.0f, effect.alpha * (1.0f - t));
+            const glm::vec3 position = camera.pos +
+                camera.right * effect.cameraOffset.x +
+                camera.up * effect.cameraOffset.y +
+                camera.front * effect.cameraOffset.z;
+            DebugVis::drawFilledBillboard(
+                camera, position, effect.scale, effect.rotation.z, 1.0f,
+                glm::vec4(effect.color.x, effect.color.y, effect.color.z, alpha));
+            continue;
+        }
+
         if (effect.replayType == "debris_batch") {
             float dist = glm::length(effect.position - camera.pos);
             if (dist > 40.0f) continue;

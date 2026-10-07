@@ -173,6 +173,7 @@ struct NetworkProjectile
     uint32_t ownerPlayerId = 0;
     uint32_t fireSerial = 0;
     uint8_t weaponType = NETWORK_WEAPON_NONE;
+    uint16_t weaponDefNetworkId = 0;
 
     // Authoritative/server state (directly from packets, NOT for rendering)
     glm::vec3 position{0.0f};

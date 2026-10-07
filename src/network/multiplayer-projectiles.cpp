@@ -109,6 +109,16 @@ const WeaponDefinition* projectileDefinition(uint8_t weapon)
     return WeaponRegistry::instance().get(id);
 }
 
+const WeaponDefinition* projectileDefinition(uint16_t weaponDefNetworkId, uint8_t fallbackWeapon)
+{
+    if (weaponDefNetworkId != 0) {
+        if (const std::string* id = weaponIdForDefNetworkId(weaponDefNetworkId))
+            if (const WeaponDefinition* def = WeaponRegistry::instance().get(*id))
+                return def;
+    }
+    return projectileDefinition(fallbackWeapon);
+}
+
 float cp(const WeaponDefinition* def, const char* key, float fallback)
 {
     if (!def)
@@ -120,6 +130,15 @@ float cp(const WeaponDefinition* def, const char* key, float fallback)
 ProjectileVisualConfig projectileVisualConfig(uint8_t weapon)
 {
     return projectileVisualConfigForWeapon(networkWeaponTypeName(weapon));
+}
+
+ProjectileVisualConfig projectileVisualConfig(const NetworkProjectile& projectile)
+{
+    if (projectile.weaponDefNetworkId != 0) {
+        if (const std::string* id = weaponIdForDefNetworkId(projectile.weaponDefNetworkId))
+            return projectileVisualConfigForWeapon(*id);
+    }
+    return projectileVisualConfig(projectile.weaponType);
 }
 
 uint32_t provisionalProjectileId(uint32_t requestId)
@@ -350,7 +369,7 @@ void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
     const bool rocket = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER;
     const bool grenade = projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER;
     const bool rifle = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
-    const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+    const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
     const bool rifleTrail = rifle && cp(def, "projectileTrailEnabled", 1.0f) > 0.0f;
     if (!rocket && !grenade && !rifleTrail)
         return;
@@ -421,7 +440,7 @@ void recordProjectileTrailSample(NetworkProjectile& projectile, float dt)
     if (!rifle)
         return;
 
-    const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+    const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
     const int sampleTicks = std::clamp(
         (int)std::round(cp(def, "projectileTrailHistoryTicks", 10.0f)), 0, 120);
     if (sampleTicks <= 0 || cp(def, "projectileTrailEnabled", 1.0f) <= 0.0f)
@@ -537,6 +556,7 @@ uint32_t mpPredictProjectileAttack(
     projectile.ownerPlayerId = ctx.localPlayerId;
     projectile.fireSerial = requestId;
     projectile.weaponType = networkWeapon;
+    projectile.weaponDefNetworkId = weaponDefNetworkId;
     projectile.position = origin;
     projectile.previousPosition = origin;
     projectile.velocity = dir * speed + glm::vec3(0.0f, 0.0f, upBias);
@@ -700,6 +720,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.ownerPlayerId = event->ownerPlayerId;
     projectile.fireSerial = event->fireSerial;
     projectile.weaponType = event->weapon;
+    projectile.weaponDefNetworkId = event->weaponDefNetworkId;
     const glm::vec3 serverPosition(event->posX, event->posY, event->posZ);
     const glm::vec3 serverVelocity(event->velX, event->velY, event->velZ);
     if (!preserveSim)
@@ -716,7 +737,7 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.radius = event->radius;
     projectile.predicted = localOwner && preserveSim;
     projectile.exploded = false;
-    configureNetworkProjectile(projectile, projectileDefinition(event->weapon));
+    configureNetworkProjectile(projectile, projectileDefinition(event->weaponDefNetworkId, event->weapon));
     if (projectile.predicted)
         ctx.predictedProjectileIds.insert(event->projectileId);
 
@@ -875,6 +896,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.projectileId = event->projectileId;
         projectile.ownerPlayerId = 0;
         projectile.weaponType = event->weapon;
+        projectile.weaponDefNetworkId = event->weaponDefNetworkId;
         projectile.position = {event->posX, event->posY, event->posZ};
         projectile.previousPosition = projectile.position;
         projectile.velocity = {event->velX, event->velY, event->velZ};
@@ -885,7 +907,7 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.radius = 0.0f;
         projectile.predicted = false;
         projectile.exploded = false;
-        configureNetworkProjectile(projectile, projectileDefinition(event->weapon));
+        configureNetworkProjectile(projectile, projectileDefinition(event->weaponDefNetworkId, event->weapon));
         // Initialize render state for recovery
         projectile.renderPosition = projectile.position;
         projectile.renderVelocity = projectile.velocity;
@@ -977,7 +999,9 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
 
     const glm::vec3 position(event->posX, event->posY, event->posZ);
     const glm::vec3 surfaceNormal(event->normalX, event->normalY, event->normalZ);
-    const char* weaponName = networkWeaponTypeName(event->weapon);
+    const std::string* dynamicWeaponId = weaponIdForDefNetworkId(event->weaponDefNetworkId);
+    const std::string weaponName = dynamicWeaponId
+        ? *dynamicWeaponId : networkWeaponTypeName(event->weapon);
     bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
     const bool wasPredicted = ctx.predictedProjectileIds.erase(event->projectileId) > 0;
     // Safety net for the shooter's own projectile when it was never adopted (e.g.
@@ -1069,7 +1093,7 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                        "impulse=(%.2f,%.2f,%.2f) source=%s accepted=predicted-supersede\n",
                        event->projectileId,
                        victim.knockX, victim.knockY, victim.knockZ,
-                       weaponName);
+                       weaponName.c_str());
             }
             else
             {
@@ -1080,7 +1104,7 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                        "impulse=(%.2f,%.2f,%.2f) source=%s\n",
                        event->projectileId,
                        victim.knockX, victim.knockY, victim.knockZ,
-                       weaponName);
+                       weaponName.c_str());
             }
         }
         else
@@ -1104,7 +1128,7 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
 
     printf("[PROJECTILE CLIENT EXPLODE] projectileId=%u weapon=%s "
            "position=(%.2f,%.2f,%.2f) serverTick=%u removedVisual=%d removedLegacy=%d predicted=%d\n",
-           event->projectileId, weaponName,
+           event->projectileId, weaponName.c_str(),
            position.x, position.y, position.z, event->header.tick,
            (int)removedVisual, (int)removedLegacy, (int)wasPredicted);
 }
@@ -1427,6 +1451,8 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
             const glm::vec3 incoming = glm::length(knockback) > 0.001f
                 ? glm::normalize(knockback) : -hitNormal;
             gpPlayer->applyHitFlinch(event->damage, hitPosition, incoming);
+            EffectPartSystem::instance().spawnClientBloodFeedback(
+                event->damage, glm::length(knockback));
         }
 
         // Show local-victim hit feedback at the real hit point: damage number,
@@ -1940,7 +1966,7 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
         !(PhysicalEntitySystem::instance().find(step.hitEntityId) &&
           PhysicalEntitySystem::instance().find(step.hitEntityId)->serverDriven))
             {
-                const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+                const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
                 MimitaImpact::ImpactEvent impact;
                 impact.simulationTick = 0;
                 impact.source = MimitaImpact::ImpactSource::Projectile;
@@ -2016,7 +2042,9 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                 if (shouldExplode)
                 {
                     projectile.exploded = true;
-                    const char* weaponId = networkWeaponTypeName(projectile.weaponType);
+                    const std::string* dynamicWeaponId = weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+                    const std::string weaponId = dynamicWeaponId
+                        ? *dynamicWeaponId : networkWeaponTypeName(projectile.weaponType);
                     std::string attacker = "player_" + std::to_string(ctx.localPlayerId);
                     auto pi = ctx.playerRegistry.find(ctx.localPlayerId);
                     if (pi != ctx.playerRegistry.end())
@@ -2032,7 +2060,7 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                     // splash line-of-sight check mirrors the server so predicted
                     // feedback aligns with the authoritative verdict (a target
                     // behind a wall is skipped, not rolled back later).
-                    const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+                    const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
                     if (def && projectile.weaponType != NETWORK_WEAPON_PROJECTILE_RIFLE)
                     {
                         const float radius = cp(def, "splashRadius", 8.0f);
@@ -2266,7 +2294,7 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
         const NetworkProjectile& projectile = entry.second;
         if (projectile.exploded)
             continue;
-        ProjectileVisualConfig cfg = projectileVisualConfig(projectile.weaponType);
+        ProjectileVisualConfig cfg = projectileVisualConfig(projectile);
 
         // Rifle projectiles are intentionally rendered as a bright sphere from
         // the weapon definition.  This remains visible even when the texture
@@ -2276,7 +2304,7 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
         if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
             !projectile.trailHistory.empty())
         {
-            const WeaponDefinition* def = projectileDefinition(projectile.weaponType);
+            const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
             const float sizeMultiplier = std::clamp(
                 cp(def, "projectileTrailHistorySizeMultiplier", 0.82f), 0.01f, 2.0f);
             const float darkenMultiplier = std::clamp(
