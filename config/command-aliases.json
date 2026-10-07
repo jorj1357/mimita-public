@@ -7,6 +7,8 @@
     "cc": "crate_clear",
     "tpv1": "teleport 0 0 500",
     "tpv2": "teleport 0 0 5000",
+    "he": "healthme 9999",
+    "ha": "healthall 9999",
     "ava": "avatar.load angel2"
   }
 }
