@@ -44,6 +44,7 @@
 #include "combat/weapon-types.h"
 #include "impact/impact-system.h"
 #include "physics/physical-entity.h"
+#include "physics/ray-utils.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "replay/replay.h"
@@ -62,6 +63,22 @@ struct ClientSmokeVolume {
 };
 
 static std::vector<ClientSmokeVolume> gSmokeVolumes;
+
+static bool grenadeLineOfSight(const glm::vec3& from, const glm::vec3& to)
+{
+    if (!gpWorld) return true;
+    const glm::vec3 delta = to - from;
+    const float length = glm::length(delta);
+    if (length <= 0.001f) return true;
+    const glm::vec3 direction = delta / length;
+    for (const CollisionTriangle& triangle : gpWorld->collisionMesh.triangles) {
+        float hitDistance = 0.0f;
+        if (rayTriangle(from, direction, triangle, hitDistance) &&
+            hitDistance < length - 0.15f)
+            return false;
+    }
+    return true;
+}
 
 // ── Grenade diagnostic logging helper ────────────────────────────────
 // Writes to both StructuredLogger (category file + summary) and the
@@ -572,7 +589,7 @@ uint32_t mpPredictProjectileAttack(
     projectile.velocity = dir * speed + glm::vec3(0.0f, 0.0f, upBias);
     projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     projectile.angularVelocity = glm::vec3(0.0f);
-    projectile.lifetime = def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f;
+    projectile.lifetime = cp(def, "fuseTime", def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f);
     projectile.radius = def->projectileRadius > 0.0f ? def->projectileRadius : 0.3f;
     projectile.predicted = true;
     projectile.exploded = false;
@@ -1012,6 +1029,31 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
     const std::string* dynamicWeaponId = weaponIdForDefNetworkId(event->weaponDefNetworkId);
     const std::string weaponName = dynamicWeaponId
         ? *dynamicWeaponId : networkWeaponTypeName(event->weapon);
+    if (const GrenadeDefinition* grenade = GrenadeRegistry::instance().get(weaponName)) {
+        if (grenade->areaKind == AreaEffectKind::Smoke) {
+            gSmokeVolumes.push_back({position, grenade->radius, grenade->durationSeconds});
+        } else if (grenade->areaKind == AreaEffectKind::DarkBang && gpPlayer && gpCamera) {
+            const float distance = glm::length(position - gpCamera->pos);
+            if (distance <= grenade->maxEffectDistance) {
+                const glm::vec3 toGrenade = distance > 0.001f
+                    ? glm::normalize(position - gpCamera->pos) : gpCamera->front;
+                const float looking = glm::dot(glm::normalize(gpCamera->front), toGrenade);
+                const float lookFactor = looking >= 0.8f ? 1.0f : grenade->notLookingMultiplier;
+                const float lineOfSightFactor = grenadeLineOfSight(gpCamera->pos, position)
+                    ? 1.0f : grenade->noLineOfSightMultiplier;
+                const float distanceFactor = distance <= grenade->directEffectDistance
+                    ? 1.0f
+                    : glm::mix(1.0f, 0.5f, std::clamp(
+                        (distance - grenade->directEffectDistance) /
+                        std::max(0.001f, grenade->maxEffectDistance - grenade->directEffectDistance),
+                        0.0f, 1.0f));
+                gpPlayer->darkbangIntensity = std::max(
+                    gpPlayer->darkbangIntensity, lookFactor * distanceFactor * lineOfSightFactor);
+                gpPlayer->darkbangTimer = std::max(
+                    gpPlayer->darkbangTimer, grenade->durationSeconds);
+            }
+        }
+    }
     bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
     const bool wasPredicted = ctx.predictedProjectileIds.erase(event->projectileId) > 0;
     // Safety net for the shooter's own projectile when it was never adopted (e.g.
@@ -1890,6 +1932,13 @@ void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
 
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& world)
 {
+    for (auto it = gSmokeVolumes.begin(); it != gSmokeVolumes.end();) {
+        it->remainingSeconds -= std::max(0.0f, dt);
+        if (it->remainingSeconds <= 0.0f)
+            it = gSmokeVolumes.erase(it);
+        else
+            ++it;
+    }
     constexpr float kProjectileFixedDt = 1.0f / 60.0f;
     (void)dt;
     const uint32_t predictedSteps = ctx.clientSimulationStepsThisUpdate;
@@ -2299,6 +2348,16 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
 
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera)
 {
+    for (const ClientSmokeVolume& smoke : gSmokeVolumes) {
+        const float distance = gpPlayer
+            ? glm::length(gpPlayer->pos - smoke.position) : smoke.radius + 1.0f;
+        const float insideFade = std::clamp((smoke.radius - distance) / 1.0f, 0.0f, 1.0f);
+        const float alpha = distance <= smoke.radius
+            ? std::max(0.01f, insideFade)
+            : 0.72f;
+        DebugVis::drawFilledSphere(camera, smoke.position, smoke.radius,
+            glm::vec4(0.5f, 0.5f, 0.5f, alpha));
+    }
     for (const auto& entry : ctx.networkProjectiles)
     {
         const NetworkProjectile& projectile = entry.second;

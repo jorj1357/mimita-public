@@ -47,58 +47,13 @@
       "lifetimeMax": 0.5,
       "alphaMin": 0.7,
       "alphaMax": 0.95,
-      "gravity": 2.5,
-      "debris": {
-        "enabled": true,
-        "countFraction": 0.33,
-        "color": [0.5, 0.01, 0.05],
-        "alpha": 0.7,
-        "sizeMin": 0.04,
-        "sizeMax": 0.08,
-        "sizeJitter": 0.0,
-        "spawnOffset": 0.05,
-        "speedMin": 2.0,
-        "speedMax": 4.0,
-        "verticalVelocityMin": 1.0,
-        "verticalVelocityMax": 2.0,
-        "coneDegreesMin": 8.0,
-        "coneDegreesMax": 30.0,
-        "lifetimeMin": 1.0,
-        "lifetimeMax": 2.0,
-        "gravity": 3.0,
-        "drag": 0.0,
-        "affectedByGravity": true,
-        "rotationRandomDegrees": 360.0,
-        "angularSpeedMin": 0.0,
-        "angularSpeedMax": 6.28
-      }
-    },
-    "clientFeedback": {
-      "enabled": true,
-      "minCount": 2,
-      "maxCount": 5,
-      "damageAtMax": 100.0,
-      "forceAtMax": 20.0,
-      "forwardOffsetMin": 0.45,
-      "forwardOffsetMax": 0.85,
-      "rightOffset": 0.55,
-      "upOffset": 0.45,
-      "sizeMin": 0.001,
-      "sizeMax": 0.03,
-      "lifetimeMin": 0.08,
-      "lifetimeMax": 0.25,
-      "alphaMin": 0.15,
-      "alphaMax": 0.55,
-      "color": [0.6, 0.01, 0.02]
+      "gravity": 2.5
     },
     "force": {
       "maxDistance": 2.0,
       "minDistance": 24.0,
       "minForce": 0.001
-    },
-    "renderDistance": 1250.0,
-    "renderFadeStartDistance": 1000.0,
-    "renderFadeEndDistance": 1250.0
+    }
   },
   "bulletHoles": {
     "enabled": true,

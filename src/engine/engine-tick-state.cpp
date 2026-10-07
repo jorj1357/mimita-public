@@ -84,6 +84,11 @@ void engineTickState(Engine& engine, float dt)
     // one-per-fixed-tick duration (10 units ~= 0.17s).
     if (player.spawnFlashTimer > 0.0f)
         player.spawnFlashTimer = std::max(0.0f, player.spawnFlashTimer - dt * 60.0f);
+    if (player.darkbangTimer > 0.0f) {
+        player.darkbangTimer = std::max(0.0f, player.darkbangTimer - dt);
+        if (player.darkbangTimer <= 0.0f)
+            player.darkbangIntensity = 0.0f;
+    }
 
     static GameState prevState = GAME_MENU;
     static bool npcsSpawned = false;

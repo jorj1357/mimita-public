@@ -458,6 +458,8 @@ public:
     glm::quat modelRootRotation{1.0f, 0.0f, 0.0f, 0.0f};
     float respawnTimer = 0.0f;
     float spawnFlashTimer = 0.0f;
+    float darkbangTimer = 0.0f;
+    float darkbangIntensity = 0.0f;
     glm::vec3 respawnPosition{1.0f, 5.0f, 60.0f};
     std::string killedBy;
     std::string killedByWeapon;

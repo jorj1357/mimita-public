@@ -7,7 +7,8 @@
       "id": "frag",
       "weapon_id": "frag",
       "area_kind": "none",
-      "radius": 8.0,
+      "radius": 20.0,
+      "fuse_seconds": 2.0,
       "duration_seconds": 0.0,
       "damage_per_tick": 0,
       "spawns_area_effect": false,
@@ -17,7 +18,8 @@
       "id": "smoke",
       "weapon_id": "smoke",
       "area_kind": "smoke",
-      "radius": 5.0,
+      "radius": 7.5,
+      "fuse_seconds": 2.0,
       "height": 4.0,
       "duration_seconds": 15.0,
       "spawns_area_effect": true,
@@ -28,6 +30,11 @@
       "weapon_id": "darkbang",
       "area_kind": "darkbang",
       "radius": 6.0,
+      "fuse_seconds": 2.0,
+      "direct_effect_distance": 5.0,
+      "max_effect_distance": 20.0,
+      "not_looking_multiplier": 0.5,
+      "no_line_of_sight_multiplier": 0.05,
       "duration_seconds": 2.5,
       "spawns_area_effect": true,
       "comment": "Dark-bang/flash: mode-controlled screen effect for its duration."
@@ -36,14 +43,15 @@
       "id": "fire",
       "weapon_id": "fire",
       "area_kind": "fire",
-      "radius": 4.0,
+      "radius": 7.0,
       "height": 3.0,
+      "fuse_seconds": 2.0,
       "duration_seconds": 7.0,
-      "damage_per_tick": 10,
-      "damage_interval_ticks": 10,
+      "damage_per_tick": 5,
+      "damage_interval_ticks": 5,
       "damages_enemies_only": true,
       "spawns_area_effect": true,
-      "comment": "Fire: cylinder dealing 10 damage every 10 fixed ticks to enemies."
+      "comment": "Fire: cylinder dealing 5 damage every 5 fixed ticks to enemies."
     }
   ]
 }

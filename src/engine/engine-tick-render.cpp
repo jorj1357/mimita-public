@@ -480,6 +480,35 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             glDrawArrays(GL_TRIANGLES, 0, 3);
             glEnable(GL_DEPTH_TEST);
         }
+        if (player.darkbangTimer > 0.0f && player.darkbangIntensity > 0.001f) {
+            static GLuint darkbangVao = 0, darkbangVbo = 0;
+            if (!darkbangVao) {
+                float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
+                glGenVertexArrays(1, &darkbangVao);
+                glGenBuffers(1, &darkbangVbo);
+                glBindVertexArray(darkbangVao);
+                glBindBuffer(GL_ARRAY_BUFFER, darkbangVbo);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+            }
+            GLuint shader = engine.renderer->shaderProgram;
+            glDisable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glUseProgram(shader);
+            glm::mat4 id(1.0f);
+            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
+            glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
+            glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
+            glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+            glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f,
+                        std::clamp(player.darkbangIntensity, 0.0f, 1.0f));
+            glBindVertexArray(darkbangVao);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glDisable(GL_BLEND);
+            glEnable(GL_DEPTH_TEST);
+        }
         { MIMITA_PERF_SCOPE("Rendering::Actors::LocalPlayer");
           Perf::state().renderPerf.actorLocal++;
           renderPlayer(player, camera); }

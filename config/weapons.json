@@ -1461,8 +1461,8 @@
     "fire_mode": "semi_auto", "behavior_type": "grenade_launcher",
     "hitscan": false, "uses_physics_projectile": true,
     "custom_params": {
-      "upBias": 4.0, "angSpeed": 6.0, "splashRadius": 8.0,
-      "rocketDirectDamage": 150.0, "knockbackStrength": 30.0,
+      "upBias": 4.0, "angSpeed": 6.0, "fuseTime": 2.0, "splashRadius": 20.0,
+      "rocketDirectDamage": 250.0, "splashExponent": 12.87, "knockbackStrength": 30.0,
       "gravity": 20.0, "drag": 0.15, "bounceRestitution": 0.35,
       "bounceFriction": 0.5, "maxBounceCount": 10.0, "armingDistance": 2.0,
       "projectileVisualSphere": 1.0, "projectileVisualRadius": 0.38,
@@ -1480,7 +1480,7 @@
     "fire_mode": "semi_auto", "behavior_type": "grenade_launcher",
     "hitscan": false, "uses_physics_projectile": true,
     "custom_params": {
-      "upBias": 4.0, "angSpeed": 6.0, "splashRadius": 5.0,
+      "upBias": 4.0, "angSpeed": 6.0, "fuseTime": 2.0, "splashRadius": 7.5,
       "rocketDirectDamage": 0.0, "knockbackStrength": 0.0,
       "gravity": 20.0, "drag": 0.15, "bounceRestitution": 0.35,
       "bounceFriction": 0.5, "maxBounceCount": 10.0, "armingDistance": 2.0,
@@ -1499,7 +1499,7 @@
     "fire_mode": "semi_auto", "behavior_type": "grenade_launcher",
     "hitscan": false, "uses_physics_projectile": true,
     "custom_params": {
-      "upBias": 4.0, "angSpeed": 6.0, "splashRadius": 4.0,
+      "upBias": 4.0, "angSpeed": 6.0, "fuseTime": 2.0, "splashRadius": 7.0,
       "rocketDirectDamage": 0.0, "knockbackStrength": 0.0,
       "gravity": 20.0, "drag": 0.15, "bounceRestitution": 0.35,
       "bounceFriction": 0.5, "maxBounceCount": 10.0, "armingDistance": 2.0,
@@ -1518,7 +1518,7 @@
     "fire_mode": "semi_auto", "behavior_type": "grenade_launcher",
     "hitscan": false, "uses_physics_projectile": true,
     "custom_params": {
-      "upBias": 4.0, "angSpeed": 6.0, "splashRadius": 6.0,
+      "upBias": 4.0, "angSpeed": 6.0, "fuseTime": 2.0, "splashRadius": 6.0,
       "rocketDirectDamage": 0.0, "knockbackStrength": 0.0,
       "gravity": 20.0, "drag": 0.15, "bounceRestitution": 0.35,
       "bounceFriction": 0.5, "maxBounceCount": 10.0, "armingDistance": 2.0,
