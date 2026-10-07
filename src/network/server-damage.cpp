@@ -113,7 +113,7 @@ static ServerDamageResult applyPlayerDamageLegacy(
 
     // Team-based friendly fire filtering: teammates cannot damage each other.
     // Self-damage (attacker == target) is always allowed for rocket jumping.
-    if (attackerPlayerId != target.id && target.matchTeam >= 0)
+    if (!serverFriendlyFireEnabled() && attackerPlayerId != target.id && target.matchTeam >= 0)
     {
         auto attackerIt = players.find(attackerPlayerId);
         if (attackerIt != players.end() && attackerIt->second.matchTeam >= 0)

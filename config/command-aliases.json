@@ -9,6 +9,9 @@
     "tpv2": "teleport 0 0 5000",
     "he": "healthme 9999",
     "ha": "healthall 9999",
-    "ava": "avatar.load angel2"
+    "ava": "avatar.load angel2",
+    "ah": "avatar.load abusivegirlheadless4",
+    "zw": "thirdp 0",
+    "zz": "thirdp 1"
   }
 }

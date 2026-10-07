@@ -158,6 +158,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.timeLimitSeconds = std::max(0, optInt(root, "time_limit_seconds", next.timeLimitSeconds));
         next.respawnSeconds = std::max(0.0f, optFloat(root, "respawn_seconds", next.respawnSeconds));
         next.killHeals = optBool(root, "kill_heals", next.killHeals);
+        next.friendlyFire = optBool(root, "friendly_fire", next.friendlyFire);
         next.countdownSeconds = std::max(0.0f, optFloat(root, "countdown_seconds", next.countdownSeconds));
         next.goSeconds = std::max(0.0f, optFloat(root, "go_seconds", next.goSeconds));
         next.rematchSeconds = std::max(0.0f, optFloat(root, "rematch_seconds", next.rematchSeconds));

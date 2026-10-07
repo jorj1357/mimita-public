@@ -162,6 +162,9 @@ struct Gamemode {
     int timeLimitSeconds = 0;
     float respawnSeconds = 0.0f;
     bool killHeals = true;
+    // Team members are protected from one another unless a mode explicitly
+    // opts into friendly fire. Missing JSON keeps the existing safe default.
+    bool friendlyFire = false;
     float countdownSeconds = 3.0f;
     float goSeconds = 1.0f;
     float rematchSeconds = 5.0f;

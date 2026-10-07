@@ -368,3 +368,69 @@ Hot-boundary change needed:
 
 Move the shared equip-toggle action behind the hot terminal/action bridge
 while retaining server-authoritative equip replication.
+
+---
+
+## Cold-build occurrence 9
+
+Time:
+`2026-10-07T14:00:00-04:00`
+
+Related changelog:
+`docs/changelog/2026-10-07/20261007_130200-nothing-inventory-item.md`
+
+Reason the cold build was required:
+
+Friendly-fire ownership changed in the cold-linked gamemode parser and
+authoritative server damage/projectile owners.
+
+Exact cold owners:
+
+```text
+src/gamemode/gamemode.cpp
+src/network/server-gamemode.cpp
+src/network/server-damage.cpp
+src/network/server-packet-handlers.cpp
+src/network/server-projectiles.cpp
+```
+
+Build result:
+
+`SUCCESS` — `mimita-20261007T-friendly-fire-policy.exe`
+
+Runtime result:
+
+`--versioninfo` passed and wrote
+`logs/10-07-2026/20261007_193923/events.jsonl`. Live mode acceptance remains
+unverified.
+
+---
+
+## Cold-build occurrence 10
+
+Time:
+`2026-10-07T15:01:00-04:00`
+
+Related changelog:
+`docs/changelog/2026-10-07/20261007_130200-nothing-inventory-item.md`
+
+Reason the cold build was required:
+
+Reset the friendly-fire policy when the authoritative server mode state starts,
+so a prior mode cannot leak its setting into the next match.
+
+Exact cold owner:
+
+```text
+src/network/server-gamemode.cpp
+```
+
+Build result:
+
+`SUCCESS` — `mimita-20261007T-friendly-fire-policy-v2.exe`
+
+Runtime result:
+
+`--versioninfo` passed and wrote
+`logs/10-07-2026/20261007_193958/events.jsonl`. Live mode acceptance remains
+unverified.

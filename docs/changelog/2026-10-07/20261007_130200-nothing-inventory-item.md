@@ -52,3 +52,30 @@ Time: 2026-10-07T13:12:59-04:00
 - Validation: `mimita-20261007T-repeat-key-unequip.exe` built successfully
   with `src/terminal/weapon-commands.cpp` compiled. Its versioninfo journal is
   `logs/10-07-2026/20261007_135123/events.jsonl`.
+
+## Juggernaut friendly-fire policy
+
+Time: 2026-10-07
+
+- Added the JSON gamemode option `friendly_fire` and set
+  `config/gamemodes/juggernaut.json` to `false`.
+- The active server state now loads that policy and uses it across the shared
+  player damage path, hitscan target filtering, projectile collision/splash,
+  and area-effect team filtering. Fighters can still damage Juggernauts and
+  Juggernauts can still damage Fighters; same-team damage is blocked when the
+  option is false.
+- Added the structured event `gamemode.friendly_fire.policy` at mode start so
+  the active value is visible in the authoritative journal.
+- Build and runtime `--versioninfo` evidence are recorded below after the
+  validation build.
+
+Validation:
+
+- JSON parse confirmed `JUGGERNAUT_FRIENDLY_FIRE=False`.
+- Cold build succeeded as `mimita-20261007T-friendly-fire-policy-v2.exe`; the
+  final reset-owner rebuild compiled one translation unit.
+- `--versioninfo` passed and wrote
+  `logs/10-07-2026/20261007_193958/events.jsonl`.
+- A live two-player friendly-fire acceptance run was not performed in this
+  turn; the mode-start policy event will provide the authoritative runtime
+  value when Juggernaut is launched.

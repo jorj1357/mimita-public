@@ -5,6 +5,7 @@
   "actor_preset": "juggernaut_arcade",
   "respawn_seconds": 0,
   "kill_heals": false,
+  "friendly_fire": false,
   "countdown_seconds": 3,
   "go_seconds": 0.75,
   "intermission_seconds": 3,

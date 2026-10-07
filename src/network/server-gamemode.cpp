@@ -162,6 +162,11 @@ bool serverPlayerRespawnsEnabled(uint32_t playerId)
     return serverMatchRespawnsEnabled();
 }
 
+bool serverFriendlyFireEnabled()
+{
+    return serverGamemodeState().friendlyFireEnabled;
+}
+
 void serverConsumeNpcWaveLife(uint32_t playerId)
 {
     ServerGamemodeState& d = serverGamemodeState();
@@ -422,6 +427,7 @@ void serverStartMode(const ServerGamemodeState& rules)
     d.timeLimitSeconds = rules.timeLimitSeconds;
     d.respawnSeconds = rules.respawnSeconds;
     d.killHeals = rules.killHeals;
+    d.friendlyFireEnabled = false;
     d.winCondition = rules.winCondition;
     d.ffaKills.clear();
     d.ffaDeaths.clear();
@@ -631,6 +637,14 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.timeLimitSeconds = gm.timeLimitSeconds;
     d.respawnSeconds = gm.respawnSeconds;
     d.killHeals = gm.killHeals;
+    d.friendlyFireEnabled = gm.friendlyFire;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "gamemode.friendly_fire.policy", resolvedGamemodeId,
+        d.friendlyFireEnabled ? "same-team damage enabled" : "same-team damage blocked",
+        d.currentServerTick,
+        nlohmann::json{{"mode", resolvedGamemodeId},
+                       {"friendly_fire", d.friendlyFireEnabled}});
     d.winCondition = gm.winCondition;
     d.npcWaves = gm.winCondition == "npc_waves";
     d.persistentNpcSpawns = gm.npcSpawnPolicy == "persistent" && gm.npcSpawnMax > 0;
@@ -3063,7 +3077,7 @@ uint32_t serverSpawnAreaEffect(AreaEffectKind kind, uint32_t ownerActorId,
     effect.durationSeconds = durationSeconds;
     effect.damagePerTick = damagePerTick;
     effect.damageIntervalTicks = damageIntervalTicks;
-    effect.damagesEnemiesOnly = damagesEnemiesOnly;
+    effect.damagesEnemiesOnly = damagesEnemiesOnly && !serverFriendlyFireEnabled();
     effect.alive = true;
     d.areaEffects.push_back(effect);
     ++d.areaEffectSpawnCounter;

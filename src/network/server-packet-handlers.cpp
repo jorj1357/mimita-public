@@ -631,7 +631,7 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
             const ServerPlayer& target = entry.second;
             if (target.id == shooter.id || target.dead) continue;
             // Team-based friendly fire filtering: skip friendly players
-            if (shooter.matchTeam >= 0 && target.matchTeam >= 0 &&
+            if (!serverFriendlyFireEnabled() && shooter.matchTeam >= 0 && target.matchTeam >= 0 &&
                 shooter.matchTeam == target.matchTeam)
                 continue;
 

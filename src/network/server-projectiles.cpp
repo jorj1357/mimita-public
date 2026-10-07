@@ -468,7 +468,7 @@ public:
             if (mSkipOwner && player.id == mOwnerPlayerId)
                 continue;
             // Team-based friendly fire filtering: skip friendly players
-            if (mOwnerTeam >= 0 && player.matchTeam >= 0 && mOwnerTeam == player.matchTeam)
+            if (!serverFriendlyFireEnabled() && mOwnerTeam >= 0 && player.matchTeam >= 0 && mOwnerTeam == player.matchTeam)
                 continue;
 
             SweptPlayerCapsule cap;
@@ -903,7 +903,7 @@ void explodeProjectile(SOCKET sock,
         // Team-based friendly fire filtering: skip friendly players in explosion splash
         {
             auto ownerIt = players.find(projectile.ownerPlayerId);
-            if (ownerIt != players.end() && ownerIt->second.matchTeam >= 0 &&
+            if (!serverFriendlyFireEnabled() && ownerIt != players.end() && ownerIt->second.matchTeam >= 0 &&
                 victim.matchTeam >= 0 && ownerIt->second.matchTeam == victim.matchTeam &&
                 victim.id != projectile.ownerPlayerId)
                 continue;

@@ -13,7 +13,7 @@
   "hitFlinch": {
     "enabled": true,
     "low": 1.0,
-    "high": 9.0,
+    "high": 99.0,
     "damageAtHigh": 100.0,
     "pitch": -1.0,
     "yaw": 0.0,

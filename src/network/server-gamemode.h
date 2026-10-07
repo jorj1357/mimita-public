@@ -185,6 +185,9 @@ struct ServerGamemodeState
     // respawn; dead actors become Spectating), >0 = respawn delay.
     float respawnSeconds = -1.0f;
     bool killHeals = true;
+    // Active gamemode policy: false means same-team actors cannot damage one
+    // another. Loaded from Gamemode::friendlyFire at mode start.
+    bool friendlyFireEnabled = false;
     std::string winCondition;
 
     // ── Round-based match lifecycle (Counter-Strike and future modes) ──
@@ -321,6 +324,7 @@ ServerGamemodeState& serverGamemodeState();
 // serverMatchRespawnsEnabled: false => one-life; dead actors become Spectating.
 bool serverMatchRespawnsEnabled();
 bool serverPlayerRespawnsEnabled(uint32_t playerId);
+bool serverFriendlyFireEnabled();
 void serverConsumeNpcWaveLife(uint32_t playerId);
 // Effective respawn delay in seconds (unset falls back to the legacy 0.01s).
 float serverMatchRespawnSeconds();
