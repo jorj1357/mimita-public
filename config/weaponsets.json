@@ -3,26 +3,26 @@
     {
       "id": 1,
       "name": "Stable weapons",
-      "description": "Revolver (1), Shotgun (2), Rocket Launcher (3), Spyknife (4), Force Punch (5), Projectile Rifle (6), Hitscan Rifle (7), Big Shotgun (8).",
-      "weapons": ["revolver", "shotgun", "rocket_launcher", "spyknife", "force_punch", "projectile_rifle", "hitscan_rifle", "big_shotgun"]
+      "description": "Revolver (1), Shotgun (2), Rocket Launcher (3), Spyknife (4), Force Punch (5), Projectile Rifle (6), Hitscan Rifle (7), Big Shotgun (8), Nothing (9).",
+      "weapons": ["revolver", "shotgun", "rocket_launcher", "spyknife", "force_punch", "projectile_rifle", "hitscan_rifle", "big_shotgun", "nothing"]
     },
     {
       "id": 2,
       "name": "Revolver + Shotgun",
       "description": "Revolver (1), Shotgun (2). Rocket Launcher and Spyknife disabled.",
-      "weapons": ["revolver", "shotgun"]
+      "weapons": ["revolver", "shotgun", "nothing"]
     },
     {
       "id": 3,
       "name": "Rocket Launcher",
       "description": "Rocket Launcher (1) only.",
-      "weapons": ["rocket_launcher"]
+      "weapons": ["rocket_launcher", "nothing"]
     },
     {
       "id": 4,
       "name": "Spyknife",
       "description": "Spyknife (1) only.",
-      "weapons": ["spyknife"]
+      "weapons": ["spyknife", "nothing"]
     },
     {
       "id": 5,
@@ -36,7 +36,7 @@
       "name": "Standard (role)",
       "description": "Role loadout: Revolver, Shotgun, Spyknife. Not host-selectable.",
       "role_only": true,
-      "weapons": ["revolver", "shotgun", "spyknife"]
+      "weapons": ["revolver", "shotgun", "spyknife", "nothing"]
     },
     {
       "id": 7,
@@ -44,7 +44,7 @@
       "name": "Juggernaut (role)",
       "description": "Role loadout: Rocket Launcher, Shotgun. Not host-selectable.",
       "role_only": true,
-      "weapons": ["rocket_launcher", "shotgun"]
+      "weapons": ["rocket_launcher", "shotgun", "nothing"]
     },
     {
       "id": 8,
@@ -52,7 +52,7 @@
       "name": "Counter-Strike Rifles (role)",
       "description": "Counter-Strike preset rifle loadout.",
       "role_only": true,
-      "weapons": ["projectile_rifle"]
+      "weapons": ["projectile_rifle", "nothing"]
     },
     {
       "id": 9,
@@ -60,7 +60,7 @@
       "name": "Counter-Strike (role)",
       "description": "Counter-Strike revolver and shotgun loadout.",
       "role_only": true,
-      "weapons": ["revolver", "shotgun"]
+      "weapons": ["revolver", "shotgun", "nothing"]
     },
     {
       "id": 10,
@@ -68,7 +68,7 @@
       "name": "Juggernaut Fighter (role)",
       "description": "Fighter choices: select one weapon per life with keys 1-4.",
       "role_only": true,
-      "weapons": ["revolver", "shotgun", "spyknife", "rocket_launcher"]
+      "weapons": ["revolver", "shotgun", "spyknife", "rocket_launcher", "nothing"]
     },
     {
       "id": 11,
@@ -76,7 +76,7 @@
       "name": "Juggernaut (mode role)",
       "description": "Heavy Juggernaut loadout: large machine gun and hitscan rifle.",
       "role_only": true,
-      "weapons": ["large_machine_gun", "hitscan_rifle"]
+      "weapons": ["large_machine_gun", "hitscan_rifle", "nothing"]
     }
   ]
 }

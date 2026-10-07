@@ -2,13 +2,13 @@
   "version": 1,
   "enabled": true,
   "hot_reload": true,
-  "console_output": true,
+  "console_output": false,
   "summary_file": false,
 
   "default_level": "off",
 
   "categories": {
-    "general": { "level": "important", "file_output": false },
+    "general": { "level": "off", "file_output": false },
     "glb": { "level": "off", "file_output": false },
     "replay": {
       "level": "off",
@@ -22,9 +22,9 @@
       "level": "off",
       "file_output": false
     },
-    "physics": { "level": "important", "file_output": false },
+    "physics": { "level": "off", "file_output": false },
     "performance": {
-      "level": "important",
+      "level": "off",
       "file_output": false
     },
     "collision": {
@@ -40,12 +40,12 @@
       "file_output": false
     },
     "avatar": {
-      "level": "important",
+      "level": "off",
       "file_output": false
     },
     "network": {
-      "level": "important",
-      "file_output": true,
+      "level": "off",
+      "file_output": false,
       "throttle": 0.0
     },
     "world": { "level": "important", "file_output": false },
@@ -54,7 +54,8 @@
     "chat": { "level": "off", "file_output": false },
     "vip": { "level": "off", "file_output": false },
     "rendering": {
-      "level": "off",
+      // "level": "off",
+      "level": "important",
       "file_output": false
     },
     "glb_models": {
@@ -65,11 +66,11 @@
       "level": "errors",
       "file_output": false
     },
-    "grenade_launcher": { "level": "off", "file_output": false, "throttle": 0.0 },
+    "grenade_launcher": { "level": "important", "file_output": false, "throttle": 0.0 },
     "healthbar": { "level": "off", "file_output": false, "throttle": 0.0 },
     "skybox": { "level": "off", "file_output": false, "throttle": 0.0 },
     "chat_layout": { "level": "off", "file_output": false, "throttle": 0.0 },
-    "ragdoll": { "level": "important", "file_output": false, "throttle": 0.0 }
+    "ragdoll": { "level": "off", "file_output": false, "throttle": 0.0 }
   },
 
   "sampling": {

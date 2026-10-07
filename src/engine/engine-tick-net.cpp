@@ -653,9 +653,34 @@ void engineTickNet(Engine& engine, float dt)
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_MUZZLE)
                     EffectPartSystem::instance().spawnMuzzleFlash(muzzle, shooterName, 1.0f, MimitaNet::networkWeaponTypeName(event.weapon));
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_TRACER)
-                    EffectPartSystem::instance().spawnTracer(
-                        muzzle, beamEnd, shooterName, 1.0f,
-                        MimitaNet::networkWeaponTypeName(event.weapon));
+                {
+                    const char* weaponId = MimitaNet::networkWeaponTypeName(event.weapon);
+                    EffectPart* tracer = EffectPartSystem::instance().spawnTracer(
+                        muzzle, beamEnd, shooterName, 1.0f, weaponId);
+                    auto& logger = StructuredLogger::instance();
+                    if (logger.shouldLog(StructuredCategory::Rendering,
+                                         StructuredLevel::Important))
+                    {
+                        logger.writeEvent(
+                            StructuredCategory::Rendering, StructuredLevel::Important,
+                            "presentation.tracer_spawn", std::to_string(event.shotSerial),
+                            tracer ? "spawned" : "rejected_by_spawn_policy",
+                            mpContext.tick,
+                            nlohmann::json{
+                                {"shooter", event.shooterPlayerId},
+                                {"target", event.targetPlayerId},
+                                {"local_target", localTarget},
+                                {"weapon", weaponId},
+                                {"spawned", tracer != nullptr},
+                                {"camera_distance_to_origin",
+                                 glm::length(muzzle - gpCamera->pos)},
+                                {"camera_distance_to_hit",
+                                 glm::length(event.hit - gpCamera->pos)},
+                                {"beam_length", glm::length(beamEnd - muzzle)},
+                                {"effect_flags", event.effectFlags}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
+                }
                 if (event.effectFlags &
                     MimitaNet::SHOT_EFFECT_SHOOT_SOUND)
                 {

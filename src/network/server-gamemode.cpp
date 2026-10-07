@@ -2084,6 +2084,14 @@ void serverObjectiveTick(ServerGamemodeState& d,
             }
         } else if (d.objective.plantTicksElapsed > 0) {
             // Interrupted by leaving the site.
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.plant-interrupted", std::to_string(d.duelId),
+                "left_site", tick,
+                nlohmann::json{{"objective", d.objective.id},
+                               {"operator", d.objective.planterActorId},
+                               {"progress_ticks", d.objective.plantTicksElapsed},
+                               {"required_ticks", d.objective.plantTicksRequired}});
             d.objective.plantTicksElapsed = 0;
             d.objective.planterActorId = 0;
             ++d.stateVersion;
@@ -2154,6 +2162,17 @@ void serverObjectiveTick(ServerGamemodeState& d,
                 "objective.defused", std::to_string(d.duelId), "range",
                 tick, nlohmann::json{{"objective", d.objective.id}, {"operator", defuser}});
             endObjectiveRound(d, defenderTeam, 2, tick);
+        } else if (!canDefuse && d.objective.defuseTicksElapsed > 0) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.defuse-interrupted", std::to_string(d.duelId),
+                "no_defuser_in_range", tick,
+                nlohmann::json{{"objective", d.objective.id},
+                               {"operator", d.objective.defuserActorId},
+                               {"progress_ticks", d.objective.defuseTicksElapsed},
+                               {"required_ticks", d.objective.defuseTicksRequired}});
+            d.objective.defuseTicksElapsed = 0;
+            d.objective.defuserActorId = 0;
         } else if (!canDefuse && d.objective.defuseTicksElapsed == 0) {
             d.objective.defuserActorId = 0;
         }
@@ -3355,6 +3374,24 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         ctx.canDefuse = (team == 0) &&
             d.objective.state == ObjectiveState::Planted &&
             glm::length(npc.body.pos - d.objective.position) <= d.objective.interactionRange;
+        const int objectiveContextKey = (hasObj ? 1 : 0) |
+            (ctx.atObjective ? 2 : 0) | (ctx.canPlant ? 4 : 0) |
+            (ctx.canDefuse ? 8 : 0);
+        if (objectiveContextKey != npc.lastObjectiveContextKey) {
+            npc.lastObjectiveContextKey = objectiveContextKey;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "npc.objective-context", std::to_string(npc.id),
+                "context_changed", tick,
+                nlohmann::json{{"actor", npc.id}, {"team", team},
+                               {"assignment", (int)assignment},
+                               {"objective_state", (int)d.objective.state},
+                               {"objective_known", hasObj},
+                               {"at_objective", ctx.atObjective},
+                               {"can_plant", ctx.canPlant},
+                               {"can_defuse", ctx.canDefuse},
+                               {"objective_position", {objPos.x, objPos.y, objPos.z}}});
+        }
         (void)assignment;
         if (npc.utilityContext.teamAlive == 0)
             npc.utilityContext.teamAlive = (int)living.size();

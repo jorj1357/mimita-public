@@ -224,7 +224,8 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
     // ── World-space aim crosshair (permanent) + physical laser sight ──
     const bool physicalAim =
         GameplayConfig::instance().aimMode() == GameplayAimMode::Physical;
-    if (def && rt && (DebugConfig::WORLD_XH_ENABLED || physicalAim)) {
+    if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None &&
+        rt && (DebugConfig::WORLD_XH_ENABLED || physicalAim)) {
         int idx = slotIndex(def->slot);
         const WeaponViewModel& vm = mViewModels[idx];
         glm::vec3 muzzlePos = vm.muzzle;

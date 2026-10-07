@@ -314,7 +314,7 @@ void engineTickCombat(Engine& engine, float dt)
         int key = keySlot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + keySlot;
         bool down = glfwGetKey(engine.window(), key) == GLFW_PRESS;
         const bool pickerLocked = isJuggernautFighter &&
-            matchClient.fighterWeaponChoiceCommitted(mpContext.localPlayerId) &&
+            matchClient.fighterWeaponChoiceVisible(mpContext.localPlayerId) &&
             keySlot >= 1 && keySlot <= 4;
         if (!pickerLocked && !replayPlaybackActive && !duelCountdown &&
             gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && down && !slotPrev[keySlot]) {

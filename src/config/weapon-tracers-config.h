@@ -26,6 +26,9 @@ struct WeaponTracerConfig {
     float startAlpha = 1.0f;
     float endAlpha = 0.0f;
     glm::vec3 color{1.0f, 0.82f, 0.05f};
+    float renderDistance = 1250.0f;
+    float renderFadeStartDistance = 1000.0f;
+    float renderFadeEndDistance = 1250.0f;
 };
 
 class WeaponTracersConfig {

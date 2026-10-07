@@ -288,6 +288,7 @@ EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end, const 
     e.sticky = true;
     e.beam = true;
     e.sourceActorId = sourceActorId;
+    e.assetId = weaponId;
     if (!tc.enabled)
         return nullptr;
     return spawn(e);

@@ -53,7 +53,10 @@
       "maxDistance": 2.0,
       "minDistance": 24.0,
       "minForce": 0.001
-    }
+    },
+    "renderDistance": 1250.0,
+    "renderFadeStartDistance": 1000.0,
+    "renderFadeEndDistance": 1250.0
   },
   "bulletHoles": {
     "enabled": true,

@@ -477,6 +477,16 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s grenadeLauncher dir=(%.2f %.2f %.2f)\n",
                    npc.id, def->id.c_str(), aimDir.x, aimDir.y, aimDir.z);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+            "npc.grenade-thrown", std::to_string(npc.id), def->id,
+            (uint32_t)(npc.sensors.time * 60.0f),
+            nlohmann::json{{"actor", npc.id}, {"team", npc.body.matchTeam},
+                           {"weapon", def->id},
+                           {"position", {npcPos.x, npcPos.y, npcPos.z}},
+                           {"direction", {aimDir.x, aimDir.y, aimDir.z}},
+                           {"target_id", npc.serverTargetId}},
+            __FILE__, __LINE__, __FUNCTION__);
         break;
     }
     }

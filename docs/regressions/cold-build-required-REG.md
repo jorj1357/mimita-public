@@ -215,3 +215,156 @@ Move deterministic phase driving and probe emission behind the generic hot
 collision/tool result envelope. Keep only a stable result envelope and logger
 bridge in cold code, then compare hot and cold records on the same fixed tick
 before removing the cold producer.
+
+---
+
+## Cold-build occurrence 5
+
+Time:
+`2026-10-07T13:02:13-04:00`
+
+Related changelog:
+`docs/changelog/2026-10-07/20261007_130200-nothing-inventory-item.md`
+
+Reason the cold build was required:
+
+The explicit weapon-set ownership change needed a newly linked executable to
+verify the current client/server weapon and terminal owners together. The
+shared `Nothing` definition and equip behavior are cold-linked gameplay code;
+the hot DLL was already up to date.
+
+Exact cold owners:
+
+```text
+config/weaponsets.json
+src/combat/weapon-system.cpp
+src/combat/weapon-system-equip.cpp
+src/network/server-packets.cpp
+```
+
+Build result:
+
+`SUCCESS` — `mimita-20261007T-nothing-item.exe`
+
+Runtime result:
+
+`--versioninfo` passed and wrote
+`logs/10-07-2026/20261007_130130/events.jsonl`. A connected gameplay run was
+not performed, so human empty-hand switching remains unverified.
+
+Hot-boundary change needed:
+
+Move weapon-set ownership resolution and the empty-hand equip envelope behind
+the hot weapon/action bridge while retaining server authority and the stable
+network snapshot contract.
+
+---
+
+## Cold-build occurrence 6
+
+Time:
+`2026-10-07T13:12:59-04:00`
+
+Related changelog:
+`docs/changelog/2026-10-07/20261007_130200-nothing-inventory-item.md`
+
+Reason the cold build was required:
+
+The number-key toggle and hotbar/crosshair presentation owners are cold-linked
+client translation units. A new executable was required to verify the HUD and
+input changes together.
+
+Exact cold owners:
+
+```text
+src/engine/engine-tick-combat.cpp
+src/engine/engine-tick-ui-game-hud.cpp
+src/combat/weapon-system.cpp
+```
+
+Build result:
+
+`SUCCESS` — `mimita-20261007T-hidden-nothing-toggle-v2.exe`
+
+Runtime result:
+
+`--versioninfo` passed and wrote
+`logs/10-07-2026/20261007_131257/events.jsonl`. Connected key-toggle and
+visual presentation acceptance remain unverified.
+
+Hot-boundary change needed:
+
+Move input toggle intent and the Nothing visibility policy behind the hot
+action/presentation bridge while keeping server equip authority unchanged.
+
+---
+
+## Cold-build occurrence 7
+
+Time:
+`2026-10-07T13:13:26-04:00`
+
+Related changelog:
+`docs/changelog/2026-10-07/20261007_130200-nothing-inventory-item.md`
+
+Reason the cold build was required:
+
+The final adjustment changed the cold-linked Juggernaut picker/input owner so
+repeat-key toggling also works after the fighter choice is committed.
+
+Exact cold owner:
+
+```text
+src/engine/engine-tick-combat.cpp
+```
+
+Build result:
+
+`SUCCESS` — `mimita-20261007T-hidden-nothing-toggle-v3.exe`
+
+Runtime result:
+
+`--versioninfo` passed and wrote
+`logs/10-07-2026/20261007_131326/events.jsonl`. Connected gameplay acceptance
+remains unverified.
+
+Hot-boundary change needed:
+
+Move the picker visibility/toggle decision behind the hot input-action bridge
+while retaining the same shared terminal action.
+
+---
+
+## Cold-build occurrence 8
+
+Time:
+`2026-10-07T13:51:27-04:00`
+
+Related changelog:
+`docs/changelog/2026-10-07/20261007_130200-nothing-inventory-item.md`
+
+Reason the cold build was required:
+
+The repeat-key decision was moved into the cold-linked terminal weapon-command
+owner so custom key bindings and number keys share one action path.
+
+Exact cold owner:
+
+```text
+src/terminal/weapon-commands.cpp
+```
+
+Build result:
+
+`SUCCESS` — `mimita-20261007T-repeat-key-unequip.exe`
+
+Runtime result:
+
+`--versioninfo` passed and wrote
+`logs/10-07-2026/20261007_135123/events.jsonl`. Live key-binding gameplay
+acceptance remains unverified.
+
+Hot-boundary change needed:
+
+Move the shared equip-toggle action behind the hot terminal/action bridge
+while retaining server-authoritative equip replication.

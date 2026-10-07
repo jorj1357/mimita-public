@@ -97,6 +97,18 @@ public:
     float movementDecisionTimer = 0.0f;  // once-per-second snapshot cadence
     float lastDecisionGoalDistance = 0.0f;   // previous snapshot distance to goal
     bool hasDecisionGoalDistance = false;    // net-progress baseline valid
+    // Bounded movement diagnosis: aggregate a stuck episode instead of
+    // writing every probe or recovery tick to events.jsonl.
+    bool movementStuckEpisodeActive = false;
+    float movementStuckClearTimer = 0.0f;
+    uint32_t movementStuckWallAvoidCount = 0;
+    uint32_t movementStuckRecoveryCount = 0;
+    uint32_t movementStuckJumpCount = 0;
+    glm::vec3 movementStuckEpisodeStartPos{0.0f};
+    uint32_t lastNavFailureTick = 0;
+    int lastNavFailureGoalKind = -1;
+    std::string lastNavFailureReason;
+    int lastObjectiveContextKey = -1;
     NpcSensorContext sensors;
     // Human-like perception: the last observation, the belief, and the memory.
     // sightRange/FOV/reaction/memory are resolved per life from the difficulty

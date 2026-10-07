@@ -13,11 +13,14 @@
 #include "gui/ui-system-internal.h"
 #include "effects/hit-effects.h"
 #include "config/impact-decals-config.h"
+#include "config/weapon-tracers-config.h"
 #include "debug/debug-log.h"
 #include "config.h"
+#include "debug/structured-log.h"
 #include "world/texture-store.h"
 #include "combat/projectile-render.h"
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -258,6 +261,9 @@ static void drawDebrisBatch(const Camera& camera, const EffectPart& effect, floa
 
 void EffectPartSystem::render(const Camera& camera) const {
     if (!mEffectsEnabled) return;
+    int tracerVisible = 0;
+    int tracerCulled = 0;
+    int genericEffectCulled = 0;
     static std::vector<TexturedParticleVertex> texturedHitParticles;
     texturedHitParticles.clear();
     texturedHitParticles.reserve(600);
@@ -295,7 +301,23 @@ void EffectPartSystem::render(const Camera& camera) const {
             effect.replayType.find("_explosion_smoke") != std::string::npos;
 
         float distFade;
-        if (isDisagreementEffect)
+        if (effect.replayType == "tracer")
+        {
+            const auto& tracerCfg = WeaponTracersConfig::instance().forWeapon(effect.assetId);
+            const float renderDistance = std::max(0.0f, tracerCfg.renderDistance);
+            const float fadeStart = std::max(0.0f, tracerCfg.renderFadeStartDistance);
+            const float fadeEnd = std::max(
+                fadeStart,
+                std::min(renderDistance, tracerCfg.renderFadeEndDistance));
+            if (dist > renderDistance) {
+                ++tracerCulled;
+                continue;
+            }
+            const float fadeSpan = std::max(0.001f, fadeEnd - fadeStart);
+            distFade = dist > fadeStart
+                ? (fadeEnd - dist) / fadeSpan : 1.0f;
+        }
+        else if (isDisagreementEffect)
         {
             if (dist > 200.0f) continue;
             distFade = (dist > 150.0f) ? (200.0f - dist) / 50.0f : 1.0f;
@@ -308,9 +330,18 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
         else
         {
-            if (dist > 40.0f) continue;
+            if (dist > 40.0f) {
+                if (effect.replayType == "tracer")
+                    ++tracerCulled;
+                else
+                    ++genericEffectCulled;
+                continue;
+            }
             distFade = (dist > 20.0f) ? (40.0f - dist) / 20.0f : 1.0f;
         }
+
+        if (effect.replayType == "tracer")
+            ++tracerVisible;
 
         float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
         const bool damageNumber = effect.replayType == "damage_number" ||
@@ -533,17 +564,26 @@ void EffectPartSystem::render(const Camera& camera) const {
     const float bloodRenderFadeEnd = std::max(
         bloodRenderFadeStart,
         std::min(bloodRenderDistance, decalCfg.blood.renderFadeEndDistance));
+    int bloodParticleVisible = 0;
+    int bloodParticleCulled = 0;
+    int bloodDecalVisible = 0;
+    int bloodDecalCulled = 0;
 
     for (const BloodParticle& particle : mBloodParticles) {
         const float dist = glm::length(particle.position - camera.pos);
-        if (dist > bloodRenderDistance)
+        if (dist > bloodRenderDistance) {
+            ++bloodParticleCulled;
             continue;
+        }
         const float fadeSpan = std::max(0.001f, bloodRenderFadeEnd - bloodRenderFadeStart);
         const float distFade = dist > bloodRenderFadeStart
             ? (bloodRenderFadeEnd - dist) / fadeSpan : 1.0f;
         const float alpha = std::max(0.0f, particle.alpha * distFade);
-        if (alpha <= 0.001f)
+        if (alpha <= 0.001f) {
+            ++bloodParticleCulled;
             continue;
+        }
+        ++bloodParticleVisible;
         const glm::vec4 color{particle.color.x, particle.color.y, particle.color.z, alpha};
         if (bloodTexture.empty()) {
             DebugVis::drawFilledBillboard(camera, particle.position, particle.size,
@@ -566,14 +606,22 @@ void EffectPartSystem::render(const Camera& camera) const {
         const float renderFadeEnd = std::max(
             renderFadeStart,
             std::min(renderDistance, groupCfg.renderFadeEndDistance));
-        if (dist > renderDistance)
+        if (dist > renderDistance) {
+            if (decal.kind == SurfaceDecalKind::Blood)
+                ++bloodDecalCulled;
             continue;
+        }
         const float fadeSpan = std::max(0.001f, renderFadeEnd - renderFadeStart);
         const float distFade = dist > renderFadeStart
             ? (renderFadeEnd - dist) / fadeSpan : 1.0f;
         const float alpha = std::max(0.0f, decal.alpha * distFade);
-        if (alpha <= 0.001f)
+        if (alpha <= 0.001f) {
+            if (decal.kind == SurfaceDecalKind::Blood)
+                ++bloodDecalCulled;
             continue;
+        }
+        if (decal.kind == SurfaceDecalKind::Blood)
+            ++bloodDecalVisible;
         const glm::vec4 color{decal.color.x, decal.color.y, decal.color.z, alpha};
         const glm::vec3 n = glm::length(decal.normal) > 0.001f
             ? glm::normalize(decal.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
@@ -624,6 +672,34 @@ void EffectPartSystem::render(const Camera& camera) const {
         drawTexturedHitParticles(camera, holeDecalVerts, decalCfg.bulletHoles.texture);
     if (!crackDecalVerts.empty())
         drawTexturedHitParticles(camera, crackDecalVerts, decalCfg.worldCracks.texture);
+
+    static auto lastPresentationReport = std::chrono::steady_clock::now() -
+        std::chrono::seconds(2);
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastPresentationReport >= std::chrono::seconds(1)) {
+        lastPresentationReport = now;
+        auto& logger = StructuredLogger::instance();
+        if (logger.shouldLog(StructuredCategory::Rendering,
+                             StructuredLevel::Important)) {
+            logger.writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "presentation.render_visibility", "effect-render", "distance_summary",
+                0,
+                nlohmann::json{
+                    {"tracer_visible", tracerVisible},
+                    {"tracer_culled_generic_40m", tracerCulled},
+                    {"generic_effect_culled", genericEffectCulled},
+                    {"blood_particle_visible", bloodParticleVisible},
+                    {"blood_particle_culled", bloodParticleCulled},
+                    {"blood_decal_visible", bloodDecalVisible},
+                    {"blood_decal_culled", bloodDecalCulled},
+                    {"blood_render_distance", bloodRenderDistance},
+                    {"blood_fade_start", bloodRenderFadeStart},
+                    {"blood_fade_end", bloodRenderFadeEnd},
+                    {"camera_position", {camera.pos.x, camera.pos.y, camera.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     // Particle debug logging
     if (DebugConfig::DEBUG_BLOOD_HITS || DebugConfig::DEBUG_BLOOD_RAYS) {

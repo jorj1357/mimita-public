@@ -1388,16 +1388,48 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
 
     if (isLocalVictim)
     {
+        const glm::vec3 hitPosition(event->hitX, event->hitY, event->hitZ);
+        const glm::vec3 hitNormal = glm::length(glm::vec3(event->normalX,
+                                                           event->normalY,
+                                                           event->normalZ)) > 0.001f
+            ? glm::normalize(glm::vec3(event->normalX, event->normalY, event->normalZ))
+            : glm::vec3(0.0f, 0.0f, 1.0f);
+        const bool victimHitEffectsEnabled = HitEffects::config().core.victimHitEffects;
+        auto& logger = StructuredLogger::instance();
+        if (logger.shouldLog(StructuredCategory::Rendering,
+                             StructuredLevel::Important))
+        {
+            logger.writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "presentation.local_victim_damage", std::to_string(event->eventId),
+                victimHitEffectsEnabled ? "victim_effects_enabled" : "victim_effects_disabled",
+                (uint32_t)event->header.tick,
+                nlohmann::json{
+                    {"attacker", event->attackerPlayerId},
+                    {"victim", event->targetPlayerId},
+                    {"damage", event->damage},
+                    {"weapon", networkWeaponTypeName(event->weapon)},
+                    {"victim_hit_effects_enabled", victimHitEffectsEnabled},
+                    {"hit_position", {hitPosition.x, hitPosition.y, hitPosition.z}},
+                    {"hit_normal", {hitNormal.x, hitNormal.y, hitNormal.z}},
+                    {"camera_distance", gpCamera
+                        ? glm::length(hitPosition - gpCamera->pos) : -1.0f},
+                    {"camera_position", gpCamera
+                        ? nlohmann::json{{"x", gpCamera->pos.x},
+                                         {"y", gpCamera->pos.y},
+                                         {"z", gpCamera->pos.z}}
+                        : nlohmann::json(nullptr)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+
         // Show local-victim hit feedback at the real hit point: damage number,
         // body blood/effects, and elongated sphere. Server NPC/player shots send
         // the true surface contact point + normal.
         if (event->damage > 0 && HitEffects::config().core.victimHitEffects)
         {
             HitEvent ev;
-            ev.position = {event->hitX, event->hitY, event->hitZ};
-            ev.normal = glm::length(glm::vec3(event->normalX, event->normalY, event->normalZ)) > 0.001f
-                ? glm::normalize(glm::vec3(event->normalX, event->normalY, event->normalZ))
-                : glm::vec3(0.0f, 0.0f, 1.0f);
+            ev.position = hitPosition;
+            ev.normal = hitNormal;
             ev.direction = glm::length(knockback) > 0.001f
                 ? glm::normalize(knockback)
                 : -ev.normal;

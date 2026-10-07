@@ -424,6 +424,15 @@ static void respawnServerNpc(Npc& npc)
     npc.lastWallAvoidDir = glm::vec3(0.0f);
     npc.wasStuck = false;
     npc.movementDecisionTimer = 0.0f;
+    npc.movementStuckEpisodeActive = false;
+    npc.movementStuckClearTimer = 0.0f;
+    npc.movementStuckWallAvoidCount = 0;
+    npc.movementStuckRecoveryCount = 0;
+    npc.movementStuckJumpCount = 0;
+    npc.lastNavFailureTick = 0;
+    npc.lastNavFailureGoalKind = -1;
+    npc.lastNavFailureReason.clear();
+    npc.lastObjectiveContextKey = -1;
     npc.jumpCooldown = 0.0f;
     npc.hasDecisionGoalDistance = false;
     npc.lastDecisionGoalDistance = 0.0f;
@@ -582,6 +591,21 @@ static void broadcastNpcFiring(SOCKET sock,
             spawn.radius = projectile.radius;
 
             projectiles[projectile.id] = projectile;
+
+            if (netWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                    "npc.grenade-projectile-created", std::to_string(n.id),
+                    "projectile_spawn", tick,
+                    nlohmann::json{{"actor", n.id}, {"projectile_id", projectile.id},
+                                   {"weapon", wdef->id},
+                                   {"position", {projectile.position.x, projectile.position.y,
+                                                  projectile.position.z}},
+                                   {"velocity", {projectile.velocity.x, projectile.velocity.y,
+                                                  projectile.velocity.z}},
+                                   {"lifetime", projectile.lifetime}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
 
             // Broadcast to ALL players (NPC has no "shooter client" to skip)
             for (const auto& pe : players)

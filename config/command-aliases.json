@@ -6,6 +6,7 @@
     "cs": "crate_spawn",
     "cc": "crate_clear",
     "tpv1": "teleport 0 0 500",
+    "tpv2": "teleport 0 0 5000",
     "ava": "avatar.load angel2"
   }
 }

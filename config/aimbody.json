@@ -13,7 +13,7 @@
   // Y=lateral, Z=up. Change Y for left/right and Z for height.
   "right_arm_pointing": {
     "mode": "rmb",
-    "center_offset": [2.0, 0.0, 1.7],
+    "center_offset": [2.0, 0.5, 2.5],
     // Arm-local goal correction in degrees: [pitch, yaw, roll].
     // Use this to correct an avatar whose centered arm points down/up.
     "rotation_degrees": [90.0, -90.0, 0.0],

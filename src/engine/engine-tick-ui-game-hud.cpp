@@ -11,6 +11,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
+#include <vector>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "entities/player.h"
@@ -164,7 +165,11 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         bool grounded = replayViewedActor ? replayViewedActor->grounded : player.ground.onGround;
         bool shooting = replayViewedActor ? replayViewedActor->shooting : weapons.isShooting();
         bool didDash = replayViewedActor ? false : player.dash.didDash;
-        if (replayViewedActor || weapons.getCurrentDef(player)) {
+        const WeaponDefinition* currentDef = weapons.getCurrentDef(player);
+        const bool currentWeaponHasCrosshair = replayViewedActor
+            ? replayViewedActor->weaponName != "nothing"
+            : (currentDef && currentDef->id != "nothing");
+        if (currentWeaponHasCrosshair) {
             updateCrosshairDynamic(dt, glm::length(glm::vec2(vel)), grounded, didDash, shooting);
             float cx = uiScreenW() * 0.5f, cy = uiScreenH() * 0.5f;
             if (GameplayConfig::instance().aimMode() == GameplayAimMode::Physical &&
@@ -328,13 +333,37 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         float slotSize = readVal("hotbarSlotSize", 44.0f);
         float gap = readVal("hotbarGap", 7.0f);
         float yOffset = readVal("hotbarY", 70.0f);
-        int slotCount = (int)readVal("hotbarSlotCount", 10.0f);
+        struct HotbarEntry {
+            int logicalSlot = 0;
+            const WeaponDefinition* definition = nullptr;
+        };
+        std::vector<HotbarEntry> entries;
+        int configuredSlotCount = (int)readVal("hotbarSlotCount", 10.0f);
         if (MP_CONTEXT.communityWeaponSetId > 0) {
             auto& cfg = MimitaNet::CommunityServerConfig::instance();
             if (cfg.weaponSets().empty()) cfg.load();
             const auto* set = cfg.weaponSetById(MP_CONTEXT.communityWeaponSetId);
-            if (set && !(set->weapons.size() == 1 && set->weapons.front() == "*"))
-                slotCount = static_cast<int>(set->weapons.size());
+            if (set && !(set->weapons.size() == 1 && set->weapons.front() == "*")) {
+                for (int logicalSlot = 1; logicalSlot <= static_cast<int>(set->weapons.size()); ++logicalSlot) {
+                    const auto* id = cfg.weaponForSlot(MP_CONTEXT.communityWeaponSetId, logicalSlot);
+                    const WeaponDefinition* def = id ? WeaponRegistry::instance().get(*id) : nullptr;
+                    if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None)
+                        entries.push_back({logicalSlot, def});
+                }
+            }
+        }
+        if (entries.empty()) {
+            for (int nativeSlot = 1; nativeSlot <= configuredSlotCount; ++nativeSlot) {
+                const WeaponDefinition* def = nullptr;
+                for (const auto& pair : WeaponRegistry::instance().all()) {
+                    if (pair.second.slot == nativeSlot) {
+                        def = &pair.second;
+                        break;
+                    }
+                }
+                if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None)
+                    entries.push_back({nativeSlot, def});
+            }
         }
         glm::vec4 bgEq = readCol("hotbarBgEquipped", {0.32f,0.32f,0.36f,0.95f});
         glm::vec4 bgNorm = readCol("hotbarBgNormal", {0.12f,0.12f,0.14f,0.92f});
@@ -343,36 +372,28 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         glm::vec4 wepCol = readTextCol("hotbarWeaponColor", {0.55f,0.55f,0.58f,1});
         glm::vec4 wepColEq = readTextCol("hotbarWeaponColorEquipped", {1.0f,0.85f,0.35f,1});
 
-        float totalWidth = slotSize * slotCount + gap * (slotCount - 1);
-        float x = uiScreenW() * 0.5f - totalWidth * 0.5f;
-        float y = uiScreenH() - yOffset;
-        for (int slot = 1; slot <= slotCount; ++slot) {
-            bool equipped = player.equippedSlot == slot;
-            float size = equipped ? slotSize * 1.2f : slotSize;
-            float offset = (size - slotSize) * 0.5f;
-            UIRect rect{x - offset, y - offset, size, size};
-            uiDrawRect(rect, equipped ? bgEq : bgNorm, "hotbar-slot");
-            uiDrawRectOutline(rect, equipped ? borderEq : borderNorm, "hotbar-border");
-            std::string label = slot == 10 ? "0" : std::to_string(slot);
-            uiDrawText(label.c_str(), rect.x + 5, rect.y + 16, 0.30f, {1,1,1,1});
-            const WeaponDefinition* slotDef = nullptr;
-            if (MP_CONTEXT.communityWeaponSetId > 0) {
-                auto& cfg = MimitaNet::CommunityServerConfig::instance();
-                const auto* id = cfg.weaponForSlot(MP_CONTEXT.communityWeaponSetId, slot);
-                if (id) slotDef = WeaponRegistry::instance().get(*id);
-                if (slotDef) equipped = player.equippedSlot == slotDef->slot;
-            } else for (const auto& pair : WeaponRegistry::instance().all()) {
-                if (pair.second.slot == slot) { slotDef = &pair.second; break; }
-            }
-            if (slotDef) {
+        const int slotCount = static_cast<int>(entries.size());
+        if (slotCount > 0) {
+            float totalWidth = slotSize * slotCount + gap * (slotCount - 1);
+            float x = uiScreenW() * 0.5f - totalWidth * 0.5f;
+            float y = uiScreenH() - yOffset;
+            for (const HotbarEntry& entry : entries) {
+                const int logicalSlot = entry.logicalSlot;
+                const WeaponDefinition* slotDef = entry.definition;
+                bool equipped = player.equippedSlot == slotDef->slot;
+                float size = equipped ? slotSize * 1.2f : slotSize;
+                float offset = (size - slotSize) * 0.5f;
+                UIRect rect{x - offset, y - offset, size, size};
+                uiDrawRect(rect, equipped ? bgEq : bgNorm, "hotbar-slot");
+                uiDrawRectOutline(rect, equipped ? borderEq : borderNorm, "hotbar-border");
+                std::string label = logicalSlot == 10 ? "0" : std::to_string(logicalSlot);
+                uiDrawText(label.c_str(), rect.x + 5, rect.y + 16, 0.30f, {1,1,1,1});
                 std::string shortName = slotDef->id.substr(0, 3);
                 std::transform(shortName.begin(), shortName.end(), shortName.begin(), ::toupper);
                 uiDrawText(shortName.c_str(), rect.x + 13, rect.y + 34, 0.20f,
                            equipped ? wepColEq : wepCol);
-            } else {
-                uiDrawText("-", rect.x + 13, rect.y + 34, 0.20f, wepCol);
+                x += slotSize + gap;
             }
-            x += slotSize + gap;
         }
     }
 

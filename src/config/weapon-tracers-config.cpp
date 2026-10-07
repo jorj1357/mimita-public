@@ -46,6 +46,12 @@ WeaponTracerConfig readTracerConfig(const nlohmann::json& j,
         c.color = glm::vec3(j["color"][0].get<float>(),
                             j["color"][1].get<float>(),
                             j["color"][2].get<float>());
+    if (j.contains("renderDistance") && j["renderDistance"].is_number())
+        c.renderDistance = j["renderDistance"].get<float>();
+    if (j.contains("renderFadeStartDistance") && j["renderFadeStartDistance"].is_number())
+        c.renderFadeStartDistance = j["renderFadeStartDistance"].get<float>();
+    if (j.contains("renderFadeEndDistance") && j["renderFadeEndDistance"].is_number())
+        c.renderFadeEndDistance = j["renderFadeEndDistance"].get<float>();
     return c;
 }
 } // namespace

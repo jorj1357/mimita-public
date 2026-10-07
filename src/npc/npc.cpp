@@ -875,7 +875,7 @@ static void emitCommitmentEvents(const Npc& npc, const NpcCommitmentUpdate& cu,
     if (cu.progressFailed) emit("npc.movement-progress-failed", "no_progress");
 }
 
-static void emitNavPlanEvents(const Npc& npc, const NpcNavResult& nav,
+static void emitNavPlanEvents(Npc& npc, const NpcNavResult& nav,
                               const NpcNavigationSettings* settings)
 {
     auto& log = StructuredLogger::instance();
@@ -883,7 +883,7 @@ static void emitNavPlanEvents(const Npc& npc, const NpcNavResult& nav,
 
     if (nav.recastCompareAttempted) {
         log.writeEvent(
-            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            StructuredCategory::NpcMovement, StructuredLevel::Verbose,
             nav.recastAuthoritative ? "npc.nav.result" : "npc.nav.compare",
             std::to_string(npc.id),
             nav.recastAuthoritative ? "recast_route" :
@@ -953,12 +953,19 @@ static void emitNavPlanEvents(const Npc& npc, const NpcNavResult& nav,
         {"replan_reason", nav.replanReason ? nav.replanReason : ""},
         {"search_radius", settings ? settings->searchRadius : 0.0f}};
     if (nav.planFailed) {
-        log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Important,
-            "npc.nav-plan-failed", std::to_string(npc.id),
-            nav.replanReason ? nav.replanReason : "failed", tick, fields,
-            __FILE__, __LINE__, __FUNCTION__);
+        const std::string reason = nav.replanReason ? nav.replanReason : "failed";
+        const bool changed = npc.lastNavFailureGoalKind != npc.lastNavGoalKind ||
+            npc.lastNavFailureReason != reason || tick - npc.lastNavFailureTick >= 60;
+        if (changed) {
+            log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.nav-plan-failed", std::to_string(npc.id), reason, tick, fields,
+                __FILE__, __LINE__, __FUNCTION__);
+            npc.lastNavFailureTick = tick;
+            npc.lastNavFailureGoalKind = npc.lastNavGoalKind;
+            npc.lastNavFailureReason = reason;
+        }
     } else {
-        log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Important,
+        log.writeEvent(StructuredCategory::NpcMovement, StructuredLevel::Verbose,
             nav.replan ? "npc.nav-replan" : "npc.nav-plan-created",
             std::to_string(npc.id), nav.replanReason ? nav.replanReason : "planned",
             tick, fields, __FILE__, __LINE__, __FUNCTION__);
@@ -1865,10 +1872,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     const bool newAvoidDir = glm::length(npc.lastWallAvoidDir) < 0.001f ||
                         glm::dot(adjustedN, npc.lastWallAvoidDir) < 0.99f;
                     npc.lastWallAvoidDir = adjustedN;
+                    if (npc.movementStuckEpisodeActive)
+                        ++npc.movementStuckWallAvoidCount;
                     npc.navigator.startLocalCorrection(adjustedN, 1.0f);
                     if (newAvoidDir) {
                         StructuredLogger::instance().writeEvent(
-                            StructuredCategory::NpcMovement, StructuredLevel::Important,
+                            StructuredCategory::NpcMovement, StructuredLevel::Verbose,
                             "npc.wall-avoid", std::to_string(npc.id), "wall_ahead",
                             (uint32_t)(npc.sensors.time * 60.0f),
                             nlohmann::json{
@@ -1938,8 +1947,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             {
                 // Rising edge: the actor is grounded, trying to move, and not
                 // progressing. One record per stuck episode.
+                npc.movementStuckEpisodeActive = true;
+                npc.movementStuckClearTimer = 0.0f;
+                npc.movementStuckWallAvoidCount = 0;
+                npc.movementStuckRecoveryCount = 0;
+                npc.movementStuckJumpCount = 0;
+                npc.movementStuckEpisodeStartPos = npc.body.pos;
                 StructuredLogger::instance().writeEvent(
-                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    StructuredCategory::NpcMovement, StructuredLevel::Verbose,
                     "npc.stuck", std::to_string(npc.id), "stuck_detected",
                     (uint32_t)(npc.sensors.time * 60.0f),
                     nlohmann::json{
@@ -1983,6 +1998,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 // threshold). Read logs/<date>/<run>/events.jsonl live.
                 if (npc.stateMachine.stuckTimer - safeDt <= 0.3f)
                 {
+                    ++npc.movementStuckRecoveryCount;
                     StructuredLogger::instance().writeEvent(
                         StructuredCategory::NpcMovement, StructuredLevel::Important,
                         "npc.stuck-recovery", std::to_string(npc.id), "open_turn_repath",
@@ -2002,6 +2018,31 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         else
         {
             npc.stateMachine.stuckTimer = 0.0f;
+            if (npc.movementStuckEpisodeActive) {
+                npc.movementStuckClearTimer += safeDt;
+                if (npc.movementStuckClearTimer >= 0.5f) {
+                    const glm::vec3 delta = npc.body.pos - npc.movementStuckEpisodeStartPos;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::NpcMovement, StructuredLevel::Important,
+                        "npc.stuck-episode", std::to_string(npc.id), "recovered",
+                        (uint32_t)(npc.sensors.time * 60.0f),
+                        nlohmann::json{
+                            {"actor", npc.id}, {"team", npc.body.matchTeam},
+                            {"profile", npc.behaviorProfileId},
+                            {"state", npcStateName(npc.stateMachine.currentState)},
+                            {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+                            {"episode_start", {npc.movementStuckEpisodeStartPos.x,
+                                                npc.movementStuckEpisodeStartPos.y,
+                                                npc.movementStuckEpisodeStartPos.z}},
+                            {"net_displacement", glm::length(delta)},
+                            {"wall_avoid_count", npc.movementStuckWallAvoidCount},
+                            {"recovery_count", npc.movementStuckRecoveryCount},
+                            {"jump_count", npc.movementStuckJumpCount}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                    npc.movementStuckEpisodeActive = false;
+                    npc.movementStuckClearTimer = 0.0f;
+                }
+            }
         }
         npc.wasStuck = stuckNow;
     }
@@ -2018,15 +2059,16 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npc.jumpCooldown = std::max(npc.jumpCooldown,
             NpcDifficultyConfig::instance().settings().jumpCooldownSeconds);
 
-    // Jump decision edge: log when the resolved (and permitted) jump reason
-    // changes; jumpReason resets to None each tick, so a later identical jump
-    // re-emits. Never per tick while the same reason persists.
+    // Jump decision edge: keep the last emitted reason across idle ticks so a
+    // repeated hop on the same obstacle does not flood events.jsonl.
     {
         const int reasonNow = (int)jumpReason;
-        if (reasonNow != npc.lastJumpReason) {
-            if (jump && reasonNow != (int)NpcJumpReason::None) {
+        if (jump && npc.movementStuckEpisodeActive)
+            ++npc.movementStuckJumpCount;
+        if (jump && reasonNow != (int)NpcJumpReason::None &&
+            reasonNow != npc.lastJumpReason) {
                 StructuredLogger::instance().writeEvent(
-                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    StructuredCategory::NpcMovement, StructuredLevel::Verbose,
                     "npc.jump", std::to_string(npc.id), jumpReasonName(jumpReason),
                     (uint32_t)(npc.sensors.time * 60.0f),
                     nlohmann::json{
@@ -2038,7 +2080,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                         {"on_ground", npc.sensors.touchFloor},
                         {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
                     __FILE__, __LINE__, __FUNCTION__);
-            }
             npc.lastJumpReason = reasonNow;
         }
     }
