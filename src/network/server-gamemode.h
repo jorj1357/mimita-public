@@ -419,6 +419,7 @@ std::string serverActiveTeamList();
 bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
                              SOCKET sock,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
+                             std::unordered_map<uint32_t, ServerNpc>& npcs,
                              uint32_t tick, uint64_t& totalPacketsOut,
                              std::string& message);
 void serverRespawnAllActors(SOCKET sock,

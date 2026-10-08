@@ -21,6 +21,7 @@
 #include "miniaudio.h"
 
 #include "audio.h"
+#include "utils/path_utils.h"
 #include <string>
 #include <cstdint>
 #include <cstdio>
@@ -78,11 +79,17 @@ static bool gSoundCacheComplete = false;
 
 static std::string soundPath(const std::string& name)
 {
+    const auto resolveExisting = [](const std::string& candidate) {
+        const std::string resolved = resolveAssetPath(candidate);
+        return std::filesystem::exists(resolved) ? resolved : candidate;
+    };
+
     std::string path = "assets/sound/" + name;
     if (std::filesystem::path(path).extension().empty())
         path += ".wav";
-    if (std::filesystem::exists(path))
-        return path;
+    const std::string resolvedPath = resolveAssetPath(path);
+    if (std::filesystem::exists(resolvedPath))
+        return resolvedPath;
 
     if (name == "revolvershoot") return "assets/sound/weapon/revolver/revolvershoot.wav";
     if (name == "revolverreload") return "assets/sound/weapon/revolver/revolverreload.wav";
@@ -108,7 +115,7 @@ static std::string soundPath(const std::string& name)
     if (name == "player_hurt") return "assets/sound/entity/player/hurtsmall.wav";
     if (name == "hitworld") return "assets/sound/hitworld.mp3";
     if (name == "npc_spawn") return "assets/sound/U mimita sound effects.wav - item get.mp3";
-    if (name == "npc_death") return "assets/sound/U mimita sound effects.wav - grunt kill madness combat.mp3";
+    if (name == "npc_death") return resolveExisting("assets/sound/U mimita sound effects.wav - grunt kill madness combat.mp3");
     if (name == "world_impact") return "assets/sound/U mimita sound effects.wav  - hit low 1.wav";
     if (name == "ui/hover") return "assets/sound/ui/click.wav";
     if (name == "serverdisagree") return "assets/sound/serverdisagree.wav";

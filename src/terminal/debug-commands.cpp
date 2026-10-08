@@ -134,6 +134,32 @@ void registerDebugCommands()
         "", CommandCategory::Duel
     });
     Terminal::instance().registerCommand({
+        "change_team", "Request an authoritative team change", "change_team <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("[TEAM_PICK] Usage: change_team <number>"); return; }
+            const std::string command = "team_pick " + args[0];
+            if (::gpMpContext && ::gpMpContext->active)
+                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            else if (MimitaNet::isServerHost())
+                Terminal::instance().addLog("[TEAM_PICK] host must be connected to its server session");
+            else Terminal::instance().addLog("[TEAM_PICK] not connected");
+        },
+        "", CommandCategory::Duel
+    });
+    Terminal::instance().registerCommand({
+        "team_change", "Request an authoritative team change", "team_change <number>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) { Terminal::instance().addLog("[TEAM_PICK] Usage: team_change <number>"); return; }
+            const std::string command = "team_pick " + args[0];
+            if (::gpMpContext && ::gpMpContext->active)
+                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            else if (MimitaNet::isServerHost())
+                Terminal::instance().addLog("[TEAM_PICK] host must be connected to its server session");
+            else Terminal::instance().addLog("[TEAM_PICK] not connected");
+        },
+        "", CommandCategory::Duel
+    });
+    Terminal::instance().registerCommand({
         "npc_inspect", "Inspect one NPC's team/brain/perception/navigation state", "npc_inspect [id]",
         [](const std::vector<std::string>& args) {
             NpcSystem& npcSystem = THE_NPC_SYSTEM;

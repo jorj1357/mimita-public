@@ -7,10 +7,10 @@
     "damageForMaxImpact": 150,
     "curveExponent": 0.5,
     "deathPitchMin": 0.06,
-    "deathPitchMax": 3.90,
+    "deathPitchMax": 1.0,
     "deathDamageForMaxEffect": 1000,
-    "deathVolumeMin": 0.35,
-    "deathVolumeMax": 1.50,
+    "deathVolumeMin": 1.0,
+    "deathVolumeMax": 3.0,
     "deathKillerVolumeMultiplier": 2.0,
     "deathObserverVolumeMultiplier": 0.5
 }

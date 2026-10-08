@@ -464,8 +464,26 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         mActors.push_back(identity);
     }
 
+    // The mode preset supplies shared arcade presentation. Role-specific
+    // camera and movement values are selected after replicated actor identity
+    // arrives, so Fighters and Juggernauts do not inherit one another's FOV.
+    if (mMode == "juggernaut") {
+        const uint8_t team = localTeam(MP_CONTEXT.localPlayerId);
+        const char* localPresetId = team == 1 ? "juggernaut_arcade" :
+                                     team == 0 ? "juggernaut_fighter" : nullptr;
+        if (localPresetId) {
+            const MatchRoleDefinition* localPreset =
+                MatchRoleRegistry::instance().getActorPreset(localPresetId);
+            if (localPreset && mActorPresetId != localPreset->id)
+                applyActorPreset(*localPreset);
+            if (localPreset) actorPreset = localPreset;
+        }
+    }
+
     // ── Apply gamemode visual overrides ────────────────────────────
-    const float newFov = packet.cameraFov;
+    float newFov = packet.cameraFov;
+    if (mMode == "juggernaut" && actorPreset && actorPreset->forceFov)
+        newFov = actorPreset->cameraFov;
     const uint8_t newRagdoll = packet.ragdollEnabled;
     const uint8_t newBlood = packet.bloodEnabled;
 

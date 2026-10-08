@@ -778,6 +778,25 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         sn.difficulty = n.difficulty;
         sn.equippedSlot = n.body.equippedSlot;
         sn.weaponState = 0;
+        auto oldIt = npcs.find(sn.entityId);
+        if (oldIt != npcs.end())
+        {
+            sn.dashSerial = oldIt->second.dashSerial;
+            sn.groundJumpSerial = oldIt->second.groundJumpSerial;
+            sn.airJumpSerial = oldIt->second.airJumpSerial;
+            sn.downDashSerial = oldIt->second.downDashSerial;
+            sn.freezeSerial = oldIt->second.freezeSerial;
+        }
+        if (n.body.dash.didDash)
+            ++sn.dashSerial;
+        if (n.body.jump.didGroundJump)
+            ++sn.groundJumpSerial;
+        if (n.body.jump.didAirJump)
+            ++sn.airJumpSerial;
+        if (n.body.dash.didDownDash)
+            ++sn.downDashSerial;
+        if (n.body.freeze.didFreeze)
+            ++sn.freezeSerial;
         {
             const auto& npcRt = n.body.weaponRuntimes.find(n.body.equippedWeaponId);
             if (npcRt != n.body.weaponRuntimes.end())
@@ -791,7 +810,6 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
                     sn.weaponState |= NET_WEAPON_STATE_EMPTY;
             }
         }
-        auto oldIt = npcs.find(sn.entityId);
         if (oldIt != npcs.end())
         {
             sn.posHistory = std::move(oldIt->second.posHistory);
@@ -1478,6 +1496,11 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     out.onGround = npc.onGround ? 1 : 0;
     out.equippedSlot = npc.equippedSlot;
     out.weaponState = npc.weaponState;
+    out.dashSerial = npc.dashSerial;
+    out.groundJumpSerial = npc.groundJumpSerial;
+    out.airJumpSerial = npc.airJumpSerial;
+    out.downDashSerial = npc.downDashSerial;
+    out.freezeSerial = npc.freezeSerial;
     out.sizeScale = 1.0f;
     out.stateFlags = 0;
     if (npc.onGround)

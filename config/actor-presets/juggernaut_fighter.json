@@ -1,12 +1,12 @@
 {
   "schema": 2,
-  "id": "juggernaut_arcade",
-  "display_name": "Juggernaut Arcade Presentation",
+  "id": "juggernaut_fighter",
+  "display_name": "Juggernaut Fighter",
   "camera": {
-    "fov": 50,
+    "fov": 100,
     "force_fov": true
   },
-  "movement_preset": "juggernaut",
+  "movement_preset": "source",
   "presentation": {
     "damage_numbers": true,
     "hit_effects": true,

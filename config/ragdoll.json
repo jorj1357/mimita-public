@@ -132,8 +132,8 @@
             //   1 = limbs also follow their animated position. 
             //   All values are stable at any magnitude.",
             // "follow_force": 10.0,
-            "follow_force": 20.0,
-            // "follow_force": 50.0,
+            // "follow_force": 20.0,
+            "follow_force": 50.0,
             // "follow_force": 25.0,
             // "follow_force": 35.0,
             // "follow_force": 15.0,

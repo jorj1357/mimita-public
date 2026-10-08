@@ -2291,7 +2291,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     {
         npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
         EffectPartSystem::instance().spawnDash(npc.body.pos);
-        playWorldSound("entity/player/dash", npc.body.pos, 1.0f, 1.0f, 36.0f);
     }
 
     if (wantDownDash && downDashAvailableBefore && !npc.body.dash.downDashAvailable)

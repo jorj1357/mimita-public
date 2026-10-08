@@ -4761,11 +4761,19 @@ std::string serverActiveTeamList()
     const CommunityMode* cm = config.modeById(d.communityMode);
     const std::string id = cm ? cm->gamemodeId : d.communityMode;
     const Gamemode& gm = GamemodeRegistry::instance().get(id);
-    if (gm.teamNames.empty()) return "no teams";
+    if (gm.teams.empty() && gm.teamNames.empty()) return "no teams";
     std::string out;
-    for (size_t i = 0; i < gm.teamNames.size(); ++i) {
+    const size_t teamCount = !gm.teams.empty() ? gm.teams.size() : gm.teamNames.size();
+    for (size_t i = 0; i < teamCount; ++i) {
         if (!out.empty()) out += " | ";
-        out += gm.teamNames[i] + " = " + std::to_string(i + 1);
+        if (i < gm.teams.size()) {
+            const auto& team = gm.teams[i];
+            const std::string display = team.displayName.empty() ? team.id : team.displayName;
+            out += std::to_string(i + 1) + " = " + display +
+                   " [id=" + team.id + ", capacity=" + std::to_string(team.capacity) + "]";
+        } else {
+            out += std::to_string(i + 1) + " = " + gm.teamNames[i];
+        }
     }
 
     return out;
@@ -4774,6 +4782,7 @@ std::string serverActiveTeamList()
 bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
                              SOCKET sock,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
+                             std::unordered_map<uint32_t, ServerNpc>& npcs,
                              uint32_t tick, uint64_t& totalPacketsOut,
                              std::string& message)
 {
@@ -4783,15 +4792,17 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
     const CommunityMode* cm = CommunityServerConfig::instance().modeById(d.communityMode);
     const std::string id = cm ? cm->gamemodeId : d.communityMode;
     const Gamemode& gm = GamemodeRegistry::instance().get(id);
-    // Team selection is a pre-round decision. Once the countdown begins the
-    // roster is locked for the round, matching the plan's intermission lock.
-    if (d.phase != DUEL_PHASE_WAITING && d.phase != DUEL_PHASE_INTERMISSION &&
-        d.phase != DUEL_PHASE_RESULTS) {
+    const bool hostOverride = playerIt->second.isHost;
+    // Team selection is a pre-round decision. The host may override this lock
+    // because the host is also responsible for resolving a full target team.
+    if (!hostOverride && d.phase != DUEL_PHASE_WAITING &&
+        d.phase != DUEL_PHASE_INTERMISSION && d.phase != DUEL_PHASE_RESULTS) {
         message = "team selection locked";
         return false;
     }
-    if (requestedTeam < 0 || requestedTeam >= static_cast<int>(gm.teamNames.size())) {
-        message = gm.teamNames.empty() ? "active gamemode has no teams" : "invalid team";
+    const size_t configuredTeamCount = !gm.teams.empty() ? gm.teams.size() : gm.teamNames.size();
+    if (requestedTeam < 0 || requestedTeam >= static_cast<int>(configuredTeamCount)) {
+        message = configuredTeamCount == 0 ? "active gamemode has no teams" : "invalid team";
         return false;
     }
     // Enforce ordered-team capacity when the mode declares it.
@@ -4802,14 +4813,72 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
             for (const auto& entry : d.matchTeams)
                 if (entry.second == requestedTeam) ++count;
             if (count >= capacity) {
-                message = "team is full";
-                return false;
+                if (!hostOverride) {
+                    message = "team is full";
+                    return false;
+                }
+
+                std::vector<uint32_t> npcVictims;
+                std::vector<uint32_t> humanVictims;
+                for (const auto& entry : d.matchTeams) {
+                    if (entry.first == playerId || entry.second != requestedTeam) continue;
+                    if (npcs.find(entry.first) != npcs.end()) npcVictims.push_back(entry.first);
+                    else if (players.find(entry.first) != players.end()) humanVictims.push_back(entry.first);
+                }
+                uint32_t victimId = 0;
+                if (!npcVictims.empty()) {
+                    std::mt19937 rng(static_cast<uint32_t>(d.duelId ^ tick ^ playerId));
+                    std::uniform_int_distribution<size_t> pick(0, npcVictims.size() - 1);
+                    victimId = npcVictims[pick(rng)];
+                    npcs.erase(victimId);
+                    d.participants.erase(std::remove(d.participants.begin(), d.participants.end(), victimId),
+                                         d.participants.end());
+                    d.participantNames.erase(victimId);
+                    d.matchTeams.erase(victimId);
+                    d.matchActors.erase(victimId);
+                    d.ffaKills.erase(victimId);
+                    d.ffaDeaths.erase(victimId);
+                } else if (!humanVictims.empty()) {
+                    std::mt19937 rng(static_cast<uint32_t>(d.duelId ^ tick ^ playerId));
+                    std::uniform_int_distribution<size_t> pick(0, humanVictims.size() - 1);
+                    victimId = humanVictims[pick(rng)];
+                    players[victimId].matchTeam = 2;
+                    d.matchTeams[victimId] = 2;
+                    ActorMatchDescriptor& victimActor = d.matchActors[victimId];
+                    victimActor.teamId = 2;
+                    victimActor.state = ActorState::Spectating;
+                }
+                Debug::warn(Debug::Category::Duel,
+                    "[MATCH TEAM] host=%u evicted=%u target_team=%d reason=host_override_full\n",
+                    playerId, victimId, requestedTeam);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "actor.team-slot-evicted", std::to_string(d.duelId), "team_pick", tick,
+                    nlohmann::json{{"host", playerId}, {"victim", victimId},
+                                   {"team", requestedTeam}, {"victim_was_npc", !npcVictims.empty()}});
             }
         }
     }
     playerIt->second.matchTeam = requestedTeam;
     d.matchTeams[playerId] = requestedTeam;
-    message = "switched to " + gm.teamNames[static_cast<size_t>(requestedTeam)];
+    ActorMatchDescriptor& actor = d.matchActors[playerId];
+    actor.controller = ActorController::Human;
+    actor.state = ActorState::Alive;
+    actor.teamId = requestedTeam;
+    const std::string roleId = roundTeamRoleId(gm, requestedTeam);
+    const MatchRoleDefinition* role = roleId.empty()
+        ? nullptr : MatchRoleRegistry::instance().get(roleId);
+    if (role) {
+        actor.roleId = role->id;
+        actor.movementProfileId = role->movementPreset;
+        actor.weaponProfileId = role->weaponSet;
+    }
+    // Team selection changes the human's role-owned loadout immediately. The
+    // next spawn/round still re-resolves the same role from the roster.
+    if (role && requestedTeam < 2)
+        completeAuthoritativeSpawn(sock, playerIt->second, false);
+    message = "switched to " + roundTeamName(gm, requestedTeam);
+    if (hostOverride) message += " (host override)";
     broadcastServerChatMessage(sock, players, tick, totalPacketsOut,
         (playerIt->second.name + " " + message).c_str());
     Debug::warn(Debug::Category::Duel,
@@ -4819,7 +4888,11 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
         StructuredCategory::Duel, StructuredLevel::Important,
         "actor.team-assigned", std::to_string(d.duelId), "team_pick", tick,
         nlohmann::json{{"player", playerId}, {"team", requestedTeam},
-                       {"team_name", roundTeamName(gm, requestedTeam)}});
+                       {"team_name", roundTeamName(gm, requestedTeam)},
+                       {"role", role ? role->id : ""},
+                       {"weapon_set", role ? role->weaponSet : ""},
+                       {"spawn_reapplied", role && requestedTeam < 2},
+                       {"host_override", hostOverride}});
     return true;
 }
 

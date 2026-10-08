@@ -607,6 +607,14 @@ struct ServerNpc
     // runtime state (firing / reloading / empty), mirroring player snapshots.
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
+    // Client-side presentation events. The dedicated server never plays
+    // audio; these serials tell clients which one-shot movement sounds to
+    // present at the NPC's replicated world position.
+    uint16_t dashSerial = 0;
+    uint16_t groundJumpSerial = 0;
+    uint16_t airJumpSerial = 0;
+    uint16_t downDashSerial = 0;
+    uint16_t freezeSerial = 0;
     // Per-tick broadcast position history for hit-rewind validation. The
     // client fires at the NPC pose it actually saw (the newest snapshot),
     // so the server validates the trace against the matching historical pose

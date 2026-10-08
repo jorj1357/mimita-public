@@ -33,6 +33,7 @@
 #include "physics/movement/physics-collision-shared.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <glm/glm.hpp>
@@ -1781,6 +1782,15 @@ void updateRenderedReplica(
                 footPos.z -= cap.r;
                 EffectPartSystem::instance().spawnFootstep(footPos, player.sizeScale);
                 HitEffects::spawnWalkBurst(player.pos, -walkDir, speed);
+                const char* footstep = nullptr;
+                switch (std::rand() % 4)
+                {
+                    case 0: footstep = "entity/player/walk1"; break;
+                    case 1: footstep = "entity/player/walk2"; break;
+                    case 2: footstep = "entity/player/walk3"; break;
+                    default: footstep = "entity/player/walk4"; break;
+                }
+                playWorldSound(footstep, footPos, 0.8f, 1.0f, 22.0f);
                 player.footstepTimer = 0.35f;
             }
         }

@@ -378,14 +378,18 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         ack(true, serverActiveTeamList().c_str());
         return;
     }
-    if (commandStr.rfind("team_pick ", 0) == 0 || commandStr.rfind("teampick ", 0) == 0)
+    if (commandStr.rfind("team_pick ", 0) == 0 ||
+        commandStr.rfind("teampick ", 0) == 0 ||
+        commandStr.rfind("team_change ", 0) == 0 ||
+        commandStr.rfind("teamchange ", 0) == 0 ||
+        commandStr.rfind("change_team ", 0) == 0)
     {
         const size_t space = commandStr.find(' ');
         try {
             const int team = std::stoi(commandStr.substr(space + 1)) - 1;
             std::string message;
             const bool accepted = serverRequestTeamChange(
-                it->second.id, team, sock, players, tick, totalPacketsOut, message);
+                it->second.id, team, sock, players, npcs, tick, totalPacketsOut, message);
             ack(accepted, message.c_str());
         } catch (...) {
             ack(false, "rejected: usage team_pick <number>");

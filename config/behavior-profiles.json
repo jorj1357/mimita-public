@@ -378,8 +378,8 @@
       // Juggernauts are dangerous when they see a target, but should not have
       // persistent target information through cover in the first playable slice.
       "id": "juggernaut_limited",
-      "aim_error_deg": 5.0,
-      "reaction_delay": 0.25,
+      "aim_error_deg": 10.0,
+      "reaction_delay": 0.55,
       "fire_cadence_multiplier": 3.125,
       "aggression": 0.85,
       "preferred_range": 16.0,
