@@ -531,14 +531,23 @@ bool solveActorTriangleCollision(
         }
         else
         {
-            // Weapon contacts block movement but do not launch the player from
-            // the weapon's sweep velocity. The weapon's JSON "player_bounce"
-            // (default 0) scales the shared bounce for this contact only.
             const bool weaponContact =
                 c.label && std::strcmp(c.label, "weapon") == 0;
-            const float bounceScale = weaponContact
-                ? player.weaponCollisionDebug.playerBounce
-                : 1.0f;
+            float bounceScale = 1.0f;
+            if (weaponContact) {
+                switch (player.weaponCollisionDebug.bounceMode) {
+                case WeaponBounceMode::Custom:
+                    bounceScale = player.weaponCollisionDebug.playerBounce;
+                    break;
+                case WeaponBounceMode::None:
+                    bounceScale = 0.0f;
+                    break;
+                case WeaponBounceMode::InheritActor:
+                default:
+                    bounceScale = 1.0f;
+                    break;
+                }
+            }
             respondVelocityAgainstNormal(player, responseNormal,
                                          actorSweepVelocity(c.sweepDelta, dt), true,
                                          c.penetration, c.label, c.triangleIndex,

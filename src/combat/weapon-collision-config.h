@@ -43,15 +43,20 @@ struct WeaponCollisionGeneratedSpheresConfig {
     float radius = 0.12f;
 };
 
+enum class WeaponBounceMode {
+    InheritActor,
+    Custom,
+    None
+};
+
 struct WeaponCollisionEntry {
     bool enabled = true;
     bool visible = false;        // show capsule wireframes in-game (from JSON "visible" field)
     bool collidesWithWorld = true;
     float collisionSkin = 0.05f;
-    // Multiplier on config/collision.json bounce.strength for this weapon's
-    // contacts with the world. 0 = weapon contacts project velocity only and
-    // never launch the player.
+    // Used only when bounceMode == WeaponBounceMode::Custom.
     float playerBounce = 0.0f;
+    WeaponBounceMode bounceMode = WeaponBounceMode::InheritActor;
     std::string source = "capsule";  // "capsule" (default, single smooth capsule) or "json" (legacy spheres)
 
     // Backward compat: singular capsule

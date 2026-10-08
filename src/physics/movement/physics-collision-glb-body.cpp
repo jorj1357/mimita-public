@@ -209,9 +209,21 @@ static int runBodyWeaponPass(
         for (const auto& pc : bodyPushContacts) {
             const bool weaponContact =
                 pc.label && std::strcmp(pc.label, "weapon") == 0;
-            const float bounceScale = weaponContact
-                ? p.weaponCollisionDebug.playerBounce
-                : 1.0f;
+            float bounceScale = 1.0f;
+            if (weaponContact) {
+                switch (p.weaponCollisionDebug.bounceMode) {
+                case WeaponBounceMode::Custom:
+                    bounceScale = p.weaponCollisionDebug.playerBounce;
+                    break;
+                case WeaponBounceMode::None:
+                    bounceScale = 0.0f;
+                    break;
+                case WeaponBounceMode::InheritActor:
+                default:
+                    bounceScale = 1.0f;
+                    break;
+                }
+            }
             respondVelocityAgainstNormal(
                 p, pc.normal, actorSweepVelocity(pc.sweepDelta, dt), true,
                 pc.penetration, pc.label, pc.triangleIndex, bounceScale);

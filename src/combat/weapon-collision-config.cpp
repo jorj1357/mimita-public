@@ -80,10 +80,21 @@ static bool parseOneWeapon(const std::string& weaponId, const json& root, Weapon
     out.visible = root.value("visible", false);
     out.collidesWithWorld = root.value("collides_with_world", true);
     out.collisionSkin = root.value("collision_skin", 0.05f);
-    // Weapon contacts project velocity by default (no launch). A value > 0
-    // restores a share of the shared bounce for this weapon only.
     out.playerBounce = std::clamp(
         root.value("player_bounce", root.value("bounce", 0.0f)), 0.0f, 4.0f);
+    const std::string bounceMode = root.value("bounce_mode", "inherit_actor");
+    if (bounceMode == "custom")
+        out.bounceMode = WeaponBounceMode::Custom;
+    else if (bounceMode == "none")
+        out.bounceMode = WeaponBounceMode::None;
+    else if (bounceMode == "inherit_actor")
+        out.bounceMode = WeaponBounceMode::InheritActor;
+    else {
+        Debug::warn(Debug::Category::Weapons,
+            "[WEAPON COLLISIONS JSON] WARNING %s.bounce_mode=%s invalid; using inherit_actor",
+            weaponId.c_str(), bounceMode.c_str());
+        out.bounceMode = WeaponBounceMode::InheritActor;
+    }
     // "capsule" (default): single smooth bounding capsule derived from the model
     // (or the capsule config override). "json": legacy multi-sphere config.
     out.source = root.value("source", "capsule");
@@ -237,6 +248,7 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
     const bool wasJsonMesh = player.weaponCollisionDebug.usesJsonMesh &&
         player.weaponColliderMeshPath == "__weaponcollisions_json_boxes__";
     player.weaponCollisionDebug.usesJsonMesh = false;
+    player.weaponCollisionDebug.bounceMode = WeaponBounceMode::InheritActor;
     player.weaponCollisionDebug.playerBounce = 0.0f;
 
     const WeaponCollisionEntry* entry = get(weaponId);
@@ -257,6 +269,7 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
 
     dbg.weaponId = weaponId;
     dbg.collisionSkin = entry->collisionSkin;
+    dbg.bounceMode = entry->bounceMode;
     dbg.playerBounce = entry->playerBounce;
     dbg.visibleFromConfig = entry->visible;
 
