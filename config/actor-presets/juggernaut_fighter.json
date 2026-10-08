@@ -4,7 +4,9 @@
   "display_name": "Juggernaut Fighter",
   "camera": {
     "fov": 100,
-    "force_fov": true
+    "force_fov": true,
+    "perspective": "third_person",
+    "force_perspective": false
   },
   "movement_preset": "source",
   "presentation": {

@@ -217,6 +217,8 @@ private:
     std::string mActorPresetPreviousMovementName;
     std::string mActorPresetId;
     std::vector<ReplicatedActorIdentity> mActors;
+    uint8_t mLastOutlineLocalTeam = 0xFF;
+    uint8_t mLastOutlineParticipantCount = 0;
     ProceduralWorldNetworkState mProcedural;
 };
 

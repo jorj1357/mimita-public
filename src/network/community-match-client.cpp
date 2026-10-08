@@ -179,6 +179,8 @@ void CommunityMatchClient::reset()
     mBombTimerTicks = 0;
     mBombInactiveTicks = 0;
     mBombPos = glm::vec3(0.0f);
+    mLastOutlineLocalTeam = 0xFF;
+    mLastOutlineParticipantCount = 0;
     mCameraFov = 0.0f;
     mForceFirstPerson = false;
     HealthbarConfig::instance().setModeVisibilityOverride(false);
@@ -462,6 +464,32 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         identity.roleIndex = packet.participantRoles[i];
         identity.state = packet.participantStates[i];
         mActors.push_back(identity);
+    }
+
+    if (mMode == "juggernaut") {
+        const uint8_t resolvedLocalTeam = localTeam(MP_CONTEXT.localPlayerId);
+        size_t teamZeroCount = 0;
+        size_t teamOneCount = 0;
+        for (const auto& actor : mActors) {
+            if (actor.team == 0) ++teamZeroCount;
+            else if (actor.team == 1) ++teamOneCount;
+        }
+        if (resolvedLocalTeam != mLastOutlineLocalTeam ||
+            packet.participantCount != mLastOutlineParticipantCount) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "client.juggernaut.outline-identity", std::to_string(MP_CONTEXT.localPlayerId),
+                "resolved local team for friendly/enemy outline colors", packet.serverTick,
+                nlohmann::json{
+                    {"local_player_id", MP_CONTEXT.localPlayerId},
+                    {"local_team", resolvedLocalTeam == 0xFF ? -1 : (int)resolvedLocalTeam},
+                    {"participant_count", packet.participantCount},
+                    {"team_zero_count", teamZeroCount},
+                    {"team_one_count", teamOneCount},
+                    {"local_present", resolvedLocalTeam != 0xFF}});
+            mLastOutlineLocalTeam = resolvedLocalTeam;
+            mLastOutlineParticipantCount = packet.participantCount;
+        }
     }
 
     // The mode preset supplies shared arcade presentation. Role-specific

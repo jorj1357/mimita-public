@@ -4,7 +4,9 @@
   "display_name": "Juggernaut Arcade Presentation",
   "camera": {
     "fov": 50,
-    "force_fov": true
+    "force_fov": true,
+    "perspective": "first_person",
+    "force_perspective": true
   },
   "movement_preset": "juggernaut",
   "presentation": {

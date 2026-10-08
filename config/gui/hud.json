@@ -9,19 +9,19 @@
     },
     "playerName": {
       "type": "text",
-      "x": 840, "y": 986, "width": 240, "height": 24,
+      "x": 840, "y": 1054, "width": 240, "height": 24,
       "fontSize": 0.42,
       "textColor": [0.95, 0.98, 1.0, 1.0]
     },
     "hpText": {
       "type": "text",
-      "x": 840, "y": 1014, "width": 200, "height": 24,
+      "x": 600, "y": 1054, "width": 200, "height": 24,
       "fontSize": 0.38,
       "textColor": [0.35, 1.0, 0.45, 1.0]
     },
     "speedText": {
       "type": "text",
-      "x": 840, "y": 1042, "width": 200, "height": 24,
+      "x": 1090, "y": 1054, "width": 200, "height": 24,
       "fontSize": 0.38,
       "textColor": [0.75, 0.9, 1.0, 1.0]
     },

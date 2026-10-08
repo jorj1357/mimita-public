@@ -19,7 +19,8 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // carry real damage/health; every bullet visual is guaranteed delivery.
 // 36: DuelStatePacket carries the server-authoritative procedural-world state
 // (Infinite Dungeon Slayer) so clients render rooms from server truth.
-constexpr uint16_t PROTOCOL_VERSION = 39;
+// 39: Replicated NPC avatars and match actor identities use expanded fields.
+constexpr uint16_t PROTOCOL_VERSION = 40;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -37,8 +38,12 @@ constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;
 constexpr int MAX_VIP_JOIN_TICKET_BYTES = 64;
 constexpr int MAX_PLAYERS = 32;
-constexpr int MAX_SNAPSHOT_ENTITIES = 96;
+constexpr int MAX_SNAPSHOT_ENTITIES = 90;
 constexpr int MAX_NAME_BYTES = 32;
+// Avatar folder names are user/content-defined and can exceed the old 15-byte
+// snapshot field (for example, "abusivegirlheadless"). Keep replication from
+// silently truncating a valid avatar into a nonexistent folder name.
+constexpr int MAX_AVATAR_NAME_BYTES = 24;
 
 // Safe datagram size: 1200 bytes ensures no IP fragmentation on internet paths.
 // Accounts for IP header (20), UDP header (8), ICE/STUN overhead (~32),
@@ -480,7 +485,7 @@ struct SnapshotEntity
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
     char displayName[MAX_NAME_BYTES];
-    char avatarName[16];
+    char avatarName[MAX_AVATAR_NAME_BYTES];
     uint8_t vipTier = 0;
     uint8_t vipStyleKind = 0;
     uint8_t vipColorR = 158;
@@ -549,7 +554,7 @@ struct CompactEntityData
     uint16_t freezeSerial = 0;
     uint32_t spawnGeneration = 0;
     char displayName[32]; // MAX_NAME_BYTES
-    char avatarName[16];
+    char avatarName[MAX_AVATAR_NAME_BYTES];
     uint8_t vipTier = 0;
     uint8_t vipStyleKind = 0;
     uint8_t vipColorR = 158;
@@ -569,7 +574,7 @@ struct CompactEntityData
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 156, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 164, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -579,12 +584,12 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[7]; // 7 * 156 + header(32) = 1124 < 1200
+    CompactEntityData entities[7]; // 7 * 164 + header(32) = 1180 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1124, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1180, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {
@@ -1183,12 +1188,12 @@ struct DuelStatePacket
     int32_t ffaLeaderScores[3] = {};
     char ffaLeaderNames[3][64] = {};
     // All participant IDs and teams (for the generic participant/results UI)
-    uint32_t participantIds[32] = {};
+    uint32_t participantIds[64] = {};
     uint8_t participantCount = 0;
-    uint8_t participantTeams[32] = {};  // 0=red, 1=blue, 0xFF=none
+    uint8_t participantTeams[64] = {};  // 0=red, 1=blue, 0xFF=none
     // Actor identity: 1-based MatchRoleRegistry index (0 = none), and ActorState.
-    uint8_t participantRoles[32] = {};
-    uint8_t participantStates[32] = {};
+    uint8_t participantRoles[64] = {};
+    uint8_t participantStates[64] = {};
     // ── Gamemode visual overrides ───────────────────────────────────
     float cameraFov = 0.0f;         // 0 = no override
     uint8_t ragdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled

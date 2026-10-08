@@ -399,14 +399,28 @@ static void processSnapshotEntities(
                 std::string npcAvatar = entity.avatarName[0] != '\0'
                     ? std::string(entity.avatarName)
                     : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
+                bool avatarApplied = false;
                 if (!npcAvatar.empty()) {
-                    if (!AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar)) {
+                    avatarApplied = AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar);
+                    if (!avatarApplied) {
                         p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
                     }
                 } else {
                     p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
                 }
                 p.setAvatarName(npcAvatar);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "client.npc.avatar.bind", std::to_string(entity.networkEntityId),
+                    "npc snapshot avatar binding", serverTick,
+                    nlohmann::json{
+                        {"actor_id", entity.networkEntityId},
+                        {"avatar", npcAvatar},
+                        {"avatar_bytes", npcAvatar.size()},
+                        {"apply_returned", avatarApplied},
+                        {"load_pending", npcAvatar.empty()
+                            ? false : AvatarSystem::instance().isAvatarLoadPending(npcAvatar)},
+                        {"fallback_model", !avatarApplied}});
                 Debug::warn(Debug::Category::Avatar,
                     "[NPC AVATAR CLIENT] entityId=%u avatar='%s' atlas=%u\n",
                     entity.networkEntityId, npcAvatar.c_str(),

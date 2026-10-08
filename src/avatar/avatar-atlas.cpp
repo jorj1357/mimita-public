@@ -23,6 +23,7 @@ extern nlohmann::json gAvatarBodypartOverrides;
 #include "world/texture-store.h"
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "map/map_common.h"
 #include "cosmetic-system.h"
 #include "stb_image.h"
@@ -677,6 +678,11 @@ void AvatarSystem::pollBackgroundAvatarLoads() {
         Debug::warn(Debug::Category::Avatar,
             "[AVATAR ASYNC] failed avatar='%s' reason=%s fallback=1\n",
             pending.name.c_str(), pending.error.c_str());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.load.failed", pending.name, "avatar metadata or atlas preparation failed", 0,
+            nlohmann::json{{"avatar", pending.name}, {"reason", pending.error},
+                           {"fallback", true}});
         return;
     }
     auto inst = std::make_unique<AvatarInstance>();
@@ -689,6 +695,11 @@ void AvatarSystem::pollBackgroundAvatarLoads() {
     Debug::log(Debug::Category::Avatar,
         "[AVATAR ASYNC] ready avatar='%s' atlas_pixels=%zu\n",
         pending.name.c_str(), mCache[pending.name]->preparedAtlasPixels.size());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "avatar.load.ready", pending.name, "avatar metadata and atlas prepared", 0,
+        nlohmann::json{{"avatar", pending.name},
+                       {"atlas_pixels", mCache[pending.name]->preparedAtlasPixels.size()}});
 }
 
 bool AvatarSystem::buildAtlasForInstance(AvatarInstance& inst, bool reloadTextures) {

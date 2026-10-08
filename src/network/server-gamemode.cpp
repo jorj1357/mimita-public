@@ -1008,7 +1008,7 @@ void broadcastDuelState(SOCKET sock,
     }
 
     // Participant IDs and teams
-    pkt.participantCount = (uint8_t)std::min((size_t)32, d.participants.size());
+    pkt.participantCount = (uint8_t)std::min((size_t)64, d.participants.size());
     for (uint8_t i = 0; i < pkt.participantCount; ++i) {
         const uint32_t actorId = d.participants[i];
         pkt.participantIds[i] = actorId;

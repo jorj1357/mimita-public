@@ -16,7 +16,7 @@
     {
       "id": "fighters",
       "display_name": "Fighters",
-      "capacity": 32,
+      "capacity": 64,
       "role": "juggernaut_fighter",
       "spawn_group": "fighters_spawn"
     },
