@@ -13,6 +13,7 @@
 #include "ragdoll/ragdoll-replication.h"
 
 struct World;
+struct Npc;
 class Camera;
 struct InputState;
 
@@ -127,6 +128,12 @@ public:
     void updateAim(float dt, const World& world, Player& player,
                    const glm::vec3& camForward, const glm::vec3& camPosition,
                    bool rightMouseHeld);
+    // NPCs use the same AimBody hybrid solver as players.  The caller supplies
+    // an authoritative aim direction/point; no camera or input state is used.
+    void updateNpcAim(float dt, const World& world, Npc& npc,
+                      const glm::vec3& aimForward,
+                      const glm::vec3& aimPoint);
+    void clearNpcAim(uint32_t npcId);
     bool aimActive() const { return mAimActive; }
     // Avatar model reloads replace the skeleton and physical body without
     // changing the network lifecycle id. Rebuild the normal-play aim body
@@ -166,7 +173,7 @@ public:
     // the alive ragdoll. Client-side now; the event is shaped for the server.
     void spawnCorpse(const Player& victim, const glm::vec3& deathImpulse,
                      const std::string& actorId, uint32_t ownerId = 0);
-    void updateCorpses(float dt, const World& world);
+    void updateCorpses(float dt, const World& world, bool spectatorMode = false);
     void renderCorpses(const Camera& camera);
     void removeCorpsesForOwner(uint32_t ownerId);
     void clearCorpses();
@@ -187,7 +194,13 @@ private:
         bool bloodInit = false;
         bool firstUpdateLogged = false;
         bool firstRenderLogged = false;
+        bool poseStepTraceLogged = false;
+        bool poseRenderTraceLogged = false;
+        bool worldCollisionEscapeLogged = false;
         uint32_t lifeTicks = 0;
+        uint32_t updateCount = 0;
+        uint32_t renderSubmissionCount = 0;
+        uint32_t bloodEffectCount = 0;
         glm::vec3 lastBloodPos{0.0f};
     };
 
@@ -197,6 +210,7 @@ private:
     // Build the aim body from the player's rest pose and current movement state.
     // Shared by first activation and lifecycle rebind.
     void buildAimBody(Player& player);
+    void buildAimBody(Player& player, RagdollBody& body);
     void reinitPreservingState(Player& player, RagdollBody& b);
     void applyControls(float dt, const InputState& input, const Camera& camera, RagdollBody& b);
     void solveJoints(int iterations, bool positionPass, RagdollBody& b);
@@ -215,6 +229,9 @@ private:
     void captureAimTargets(const Player& player, RagdollBody& b);
     void applyHybridSprings(RagdollBody& b, float dt);
     void stabilizeHybridArms(RagdollBody& b, float dt);
+    void stepAimBody(float dt, const World& world, Player& player,
+                     RagdollBody& body, const glm::vec3& aimForward,
+                     const glm::vec3& aimPosition, bool pointingWanted);
     void clampAimRanges(const Player& player, RagdollBody& b, float beta);
     void cacheReplicatedPose(const Player& player, const RagdollBody& b,
                              uint8_t mode, uint32_t sourceTick);
@@ -231,6 +248,9 @@ private:
     bool mAimTransformTracePending = false;
     uint64_t mAimLiveTraceLastTick = 0;
     bool mAimLiveTraceHasSample = false;
+    std::unordered_map<uint32_t, RagdollBody> mNpcAimBodies;
+    std::unordered_map<uint32_t, std::string> mNpcAimAvatarNames;
+    std::unordered_map<uint32_t, uint64_t> mNpcAimLogTicks;
     RagdollReplicationPose mReplicated;
     std::unordered_map<uint32_t, RagdollBody> mReplicatedBodies;
     std::vector<RagdollCorpse> mCorpses;

@@ -256,6 +256,23 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         // so a roster NPC gets its intended first life. Shared with the
         // gamemode spawn-reset path; no CS-only branch.
         const ActorSpawnProfile profile = serverResolveActorSpawnProfile(kv.first);
+        const ServerGamemodeState& modeState = serverGamemodeState();
+        const Gamemode& mode = GamemodeRegistry::instance().get(modeState.matchMode);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcCombat, StructuredLevel::Important,
+            "npc.roster-profile-resolved", std::to_string(kv.first),
+            "npc-adopt", modeState.currentServerTick,
+            nlohmann::json{
+                {"actor", kv.first},
+                {"team", kv.second.matchTeam},
+                {"role", profile.roleId},
+                {"profile", profile.behaviorProfileId},
+                {"movement_preset", profile.movementPreset},
+                {"actor_preset", profile.actorPresetId},
+                {"mode", modeState.matchMode},
+                {"mode_preset", mode.actorPresetId},
+                {"source", "serverResolveActorSpawnProfile"}},
+            __FILE__, __LINE__, __FUNCTION__);
         // Apply the healthall override to the newly adopted real NPC body.
         for (Npc& n : npcSystem.all())
         {
@@ -1507,6 +1524,52 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
         out.stateFlags |= NET_STATE_ON_GROUND;
     if (glm::length(npc.vel) > 0.5f)
         out.stateFlags |= NET_STATE_WALKING;
+
+    if (npc.health <= 0)
+    {
+        const uint16_t stateFlagsBeforeDeathSanitize = out.stateFlags;
+        const uint32_t dashSerialBeforeDeathSanitize = out.dashSerial;
+        const uint32_t groundJumpSerialBeforeDeathSanitize = out.groundJumpSerial;
+        const uint32_t airJumpSerialBeforeDeathSanitize = out.airJumpSerial;
+        const uint32_t downDashSerialBeforeDeathSanitize = out.downDashSerial;
+        const uint32_t freezeSerialBeforeDeathSanitize = out.freezeSerial;
+
+        // Dead NPCs remain replicated so the client can render their corpse,
+        // but they must not replicate live movement or action presentation.
+        out.stateFlags = 0;
+        out.weaponState = 0;
+        out.dashSerial = 0;
+        out.groundJumpSerial = 0;
+        out.airJumpSerial = 0;
+        out.downDashSerial = 0;
+        out.freezeSerial = 0;
+
+        static uint64_t lastDeadNpcSnapshotDiagnosticMs = 0;
+        const uint64_t nowDeadNpcSnapshot = nowMs();
+        if (nowDeadNpcSnapshot - lastDeadNpcSnapshotDiagnosticMs >= 1000)
+        {
+            lastDeadNpcSnapshotDiagnosticMs = nowDeadNpcSnapshot;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.dead.npc.snapshot.sanitized",
+                std::to_string(npc.entityId),
+                "dead NPC snapshot presentation state cleared", 0,
+                { {"actor_id", npc.entityId}, {"health", npc.health},
+                  {"state_flags_before", stateFlagsBeforeDeathSanitize},
+                  {"dash_serial_before", dashSerialBeforeDeathSanitize},
+                  {"ground_jump_serial_before", groundJumpSerialBeforeDeathSanitize},
+                  {"air_jump_serial_before", airJumpSerialBeforeDeathSanitize},
+                  {"down_dash_serial_before", downDashSerialBeforeDeathSanitize},
+                  {"freeze_serial_before", freezeSerialBeforeDeathSanitize},
+                  {"state_flags_after", out.stateFlags},
+                  {"dash_serial_after", out.dashSerial},
+                  {"ground_jump_serial_after", out.groundJumpSerial},
+                  {"air_jump_serial_after", out.airJumpSerial},
+                  {"down_dash_serial_after", out.downDashSerial},
+                  {"freeze_serial_after", out.freezeSerial} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     copyName(out.displayName, npc.name);
     std::memset(out.avatarName, 0, sizeof(out.avatarName));
     std::strncpy(out.avatarName, npc.avatarName.c_str(), sizeof(out.avatarName) - 1);

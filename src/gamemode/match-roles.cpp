@@ -431,8 +431,14 @@ bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
     // JSON, unknown policy enum, wrong type) keeps the previous policy instead
     // of erasing it or silently degrading to an unrelated behavior.
     std::unordered_map<std::string, MatchRoleDefinition> previousById;
+    std::unordered_map<std::string, MatchRoleDefinition> gameplayRoleById;
     for (const auto& role : mRoles)
-        if (role.actorPreset) previousById[role.id] = role;
+    {
+        if (role.actorPreset)
+            previousById[role.id] = role;
+        else
+            gameplayRoleById[role.id] = role;
+    }
 
     std::vector<MatchRoleDefinition> loadedPresets;
     std::unordered_map<std::string, std::filesystem::file_time_type> loadedWrites;
@@ -483,6 +489,26 @@ bool MatchRoleRegistry::loadActorPresets(const std::string& directory)
                 Debug::error(Debug::Category::Duel,
                     "[ACTOR PRESET] Ignoring %s because it has no id\n", path.c_str());
                 continue;
+            }
+            // A presentation preset may intentionally share the id of a
+            // gameplay role. Keep the role's gameplay metadata authoritative
+            // when the preset omits it; otherwise loading actor-presets would
+            // erase behavior_profile (and health/loadout/team ownership).
+            if (auto roleIt = gameplayRoleById.find(def.id);
+                roleIt != gameplayRoleById.end()) {
+                const MatchRoleDefinition& role = roleIt->second;
+                if (def.team < 0) def.team = role.team;
+                if (def.health <= 0) def.health = role.health;
+                if (def.movementPreset.empty()) def.movementPreset = role.movementPreset;
+                if (def.weaponSet.empty()) def.weaponSet = role.weaponSet;
+                if (def.startingWeapon.empty()) def.startingWeapon = role.startingWeapon;
+                if (def.behaviorProfile.empty()) def.behaviorProfile = role.behaviorProfile;
+                if (def.teamId.empty()) def.teamId = role.teamId;
+                if (def.spawnGroup.empty()) def.spawnGroup = role.spawnGroup;
+                if (def.avatarName.empty()) def.avatarName = role.avatarName;
+                def.avatarForced = def.avatarForced || role.avatarForced;
+                if (def.objectivePermissions.empty())
+                    def.objectivePermissions = role.objectivePermissions;
             }
             Debug::log(Debug::Category::Duel,
                 "[ACTOR PRESET] Loaded id=%s from %s\n", def.id.c_str(), path.c_str());

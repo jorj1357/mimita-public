@@ -20,6 +20,7 @@
 #include "effects/hit-effects.h"
 #include "entities/player.h"
 #include "entities/aimbody-config.h"
+#include "npc/npc.h"
 #include "render/render-player.h"
 #include "input/input-state.h"
 #include "physics/physics-types.h"
@@ -440,6 +441,17 @@ void RagdollModeSystem::deactivate(Player& player, bool movePlayerToBody)
 
 void RagdollModeSystem::buildAimBody(Player& player)
 {
+    buildAimBody(player, mAim);
+    mAimActive = !mAim.parts.empty();
+    mAimAvatarName = player.avatarName();
+    mAimTransformTracePending = mAimActive;
+    mAimLiveTraceHasSample = false;
+    mAimLiveTraceLastTick = 0;
+    logAimTransformSnapshot(player, mAim, "bind");
+}
+
+void RagdollModeSystem::buildAimBody(Player& player, RagdollBody& body)
+{
     // Bind from the model's rest pose so meshLocal captures the true body-to-
     // mesh offset, exactly like ragdoll activation.
     {
@@ -451,16 +463,10 @@ void RagdollModeSystem::buildAimBody(Player& player)
     }
     player.updateModelWorldTransforms();
 
-    mAim = RagdollBody{};
-    mAim.torsoPosition = player.pos;
-    mAim.rootWorldPosition = player.pos;
-    initParts(player, mAim, true);
-    mAimActive = !mAim.parts.empty();
-    mAimAvatarName = player.avatarName();
-    mAimTransformTracePending = mAimActive;
-    mAimLiveTraceHasSample = false;
-    mAimLiveTraceLastTick = 0;
-    logAimTransformSnapshot(player, mAim, "bind");
+    body = RagdollBody{};
+    body.torsoPosition = player.pos;
+    body.rootWorldPosition = player.pos;
+    initParts(player, body, true);
 
     // Seed limb momentum from the current movement velocity so physical mode
     // does not appear to freeze on entry (RAG-003 analog). On a lifecycle
@@ -469,7 +475,7 @@ void RagdollModeSystem::buildAimBody(Player& player)
     const float inherit =
         glm::clamp(RagdollModeConfig::instance().data().physicalAim.limbInheritance,
                    0.0f, 1.0f);
-    for (auto& part : mAim.parts)
+    for (auto& part : body.parts)
         part.body.linearVelocity = glm::mix(part.body.linearVelocity, player.vel, inherit);
 }
 
@@ -937,92 +943,11 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
                                   bool rightMouseHeld)
 {
     if (!mAimActive) return;
-    const auto& cfg = RagdollModeConfig::instance().data();
     RagdollBody& b = mAim;
-    b.activationTime += dt;
-
-    // The aim body is intentionally NOT rebuilt when ragdoll.json changes.
-    // Its tuning is read live each tick, and rebuilding mid-play reset the
-    // skeleton and could shove the player when the physical pose no longer
-    // matched the movement root. Capsule/attachment geometry changes require
-    // toggling the mode off and on.
-
-    // Hybrid follows the procedural animation pose; capture it before physics
-    // overwrites the skeleton this tick. syncAimToPlayer intentionally clears
-    // non-body ancestors because physics owns the final body frame. Restore
-    // their authored bind transforms before rebuilding world matrices for the
-    // next target capture. This matters for avatars such as the girl model,
-    // whose 90-degree Z-up correction lives on plrOrigin instead of on each
-    // body-part node; leaving that ancestor at identity rotates the next
-    // procedural target into the wrong frame.
     const AimBodyConfig& aimConfig = AimBodyConfig::instance();
-    const bool hybrid = aimConfig.hybridMode();
     const bool pointingWanted = aimConfig.rightArmPointingRmb()
                              && rightMouseHeld && b.rightArmIndex >= 0;
-    const float blendTarget = pointingWanted ? 1.0f : 0.0f;
-    const float blendAlpha = glm::clamp(
-        1.0f - std::exp(-aimConfig.rightArmPointingBlendRate() * dt),
-        0.0f, 1.0f);
-    b.rightArmPointingBlend +=
-        (blendTarget - b.rightArmPointingBlend) * blendAlpha;
-    b.rightArmPointing = pointingWanted || b.rightArmPointingBlend > 1e-3f;
-    if (hybrid) {
-        for (int anc : b.rootAncestorNodes) {
-            if (anc >= 0 && anc < (int)player.perfectPoseSkeleton.nodes.size()
-                && anc < (int)player.perfectPoseSkeleton.restLocalTransforms.size()) {
-                player.perfectPoseSkeleton.nodes[anc].localTransform =
-                    player.perfectPoseSkeleton.restLocalTransforms[anc];
-            }
-        }
-        player.updateModelWorldTransforms();
-        captureAimTargets(player, b);
-    }
-
-    tetherAimRoot(player, b, dt);
-    applyAimMotor(b, camForward, dt);
-    if (hybrid)
-        applyHybridSprings(b, dt);
-    applyRightArmPointMotor(b, player, camForward, camPosition, dt);
-
-    glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
-    for (auto& part : b.parts)
-        integrate(part.body, gravity, dt);
-
-    solveJoints(cfg.solverIterations, true, b);
-
-    if (cfg.worldCollision) {
-        for (auto& part : b.parts)
-            collideWithWorld(part.body, world, dt);
-    }
-
-    if (cfg.selfCollision)
-        selfCollision(b);
-
-    solveJoints(cfg.solverIterations / 2, true, b);
-
-    if (cfg.selfCollision) {
-        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
-    }
-
-    if (cfg.worldCollision) {
-        for (auto& part : b.parts)
-            depenetrateWorld(part.body, world, 2);
-    }
-
-    if (hybrid)
-        stabilizeHybridArms(b, dt);
-
-    // Range limits keep limbs near their attachments; then the attachment's own
-    // per-axis limits are enforced as a final pass.
-    clampAimRanges(player, b, 1.0f);
-    solveRotationLimits(1.0f, b);
-
-    // Re-assert the tether so gravity/collision cannot let the body drift from
-    // the player across the tick.
-    tetherAimRoot(player, b, dt);
-
-    syncAimToPlayer(player, b);
-    player.updateModelWorldTransforms();
+    stepAimBody(dt, world, player, b, camForward, camPosition, pointingWanted);
 
     if (mAimTransformTracePending) {
         logAimTransformSnapshot(player, b, "post_sync");
@@ -1034,7 +959,7 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
     if (!mAimLiveTraceHasSample ||
         tick - mAimLiveTraceLastTick >= kLiveTraceIntervalTicks) {
         logAimLiveSnapshot(player, b, camForward, camPosition,
-                           rightMouseHeld, hybrid);
+                           rightMouseHeld, AimBodyConfig::instance().hybridMode());
         mAimLiveTraceLastTick = tick;
         mAimLiveTraceHasSample = true;
     }
@@ -1043,6 +968,120 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
         AimBodyConfig::instance().hybridMode()
             ? RAGDOLL_NET_HYBRID : RAGDOLL_NET_PHYSICAL,
         (uint32_t)player.movementSimulationTick);
+}
+
+void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player,
+                                    RagdollBody& b, const glm::vec3& aimForward,
+                                    const glm::vec3& aimPosition,
+                                    bool pointingWanted)
+{
+    const auto& cfg = RagdollModeConfig::instance().data();
+    const AimBodyConfig& aimConfig = AimBodyConfig::instance();
+    const bool hybrid = aimConfig.hybridMode();
+    b.activationTime += dt;
+
+    // Restore authored ancestors before capturing this tick's procedural pose;
+    // the physical writeback owns the final body-part frame below.
+    const size_t nodeCount = std::min(player.perfectPoseSkeleton.nodes.size(),
+                                      player.perfectPoseSkeleton.restLocalTransforms.size());
+    if (hybrid) {
+        for (int anc : b.rootAncestorNodes) {
+            if (anc >= 0 && anc < (int)nodeCount)
+                player.perfectPoseSkeleton.nodes[anc].localTransform =
+                    player.perfectPoseSkeleton.restLocalTransforms[anc];
+        }
+        player.updateModelWorldTransforms();
+        captureAimTargets(player, b);
+    }
+
+    const float blendTarget = pointingWanted ? 1.0f : 0.0f;
+    const float blendAlpha = glm::clamp(
+        1.0f - std::exp(-aimConfig.rightArmPointingBlendRate() * dt), 0.0f, 1.0f);
+    b.rightArmPointingBlend += (blendTarget - b.rightArmPointingBlend) * blendAlpha;
+    b.rightArmPointing = pointingWanted || b.rightArmPointingBlend > 1e-3f;
+
+    tetherAimRoot(player, b, dt);
+    applyAimMotor(b, aimForward, dt);
+    if (hybrid) applyHybridSprings(b, dt);
+    applyRightArmPointMotor(b, player, aimForward, aimPosition, dt);
+
+    glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
+    for (auto& part : b.parts) integrate(part.body, gravity, dt);
+    solveJoints(cfg.solverIterations, true, b);
+    if (cfg.worldCollision)
+        for (auto& part : b.parts) collideWithWorld(part.body, world, dt);
+    if (cfg.selfCollision) selfCollision(b);
+    solveJoints(cfg.solverIterations / 2, true, b);
+    if (cfg.selfCollision)
+        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
+    if (cfg.worldCollision)
+        for (auto& part : b.parts) depenetrateWorld(part.body, world, 2);
+    if (hybrid) stabilizeHybridArms(b, dt);
+    clampAimRanges(player, b, 1.0f);
+    solveRotationLimits(1.0f, b);
+    tetherAimRoot(player, b, dt);
+    syncAimToPlayer(player, b);
+    player.updateModelWorldTransforms();
+}
+
+void RagdollModeSystem::updateNpcAim(float dt, const World& world, Npc& npc,
+                                     const glm::vec3& aimForward,
+                                     const glm::vec3& aimPoint)
+{
+    if (npc.body.dead || npc.body.currentHp <= 0) {
+        clearNpcAim(npc.id);
+        return;
+    }
+
+    auto& body = mNpcAimBodies[npc.id];
+    const std::string avatar = npc.body.avatarName();
+    if (body.parts.empty() || mNpcAimAvatarNames[npc.id] != avatar) {
+        buildAimBody(npc.body, body);
+        mNpcAimAvatarNames[npc.id] = avatar;
+        mNpcAimLogTicks[npc.id] = 0;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "actor-hybrid.pose-input", "npc-" + std::to_string(npc.id),
+            "npc hybrid body initialized", (uint32_t)npc.body.movementSimulationTick,
+            {{"actor_id", npc.id}, {"actor_kind", "npc"}, {"pose_source", "server_npc_aim"},
+             {"aimbody_mode", AimBodyConfig::instance().mode()},
+             {"hybrid", AimBodyConfig::instance().hybridMode()}, {"parts", body.parts.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    glm::vec3 forward = aimForward;
+    if (glm::length(forward) < 1e-5f) forward = npc.currentFacing;
+    if (glm::length(forward) < 1e-5f) forward = glm::vec3(0, 1, 0);
+    forward = glm::normalize(forward);
+    // The existing motor aims at camPosition + forward * 100.  Supplying this
+    // synthetic origin preserves the exact player weapon/arm motor while the
+    // NPC remains driven by target/facing state rather than camera input.
+    const glm::vec3 motorOrigin = aimPoint - forward * 100.0f;
+    stepAimBody(dt, world, npc.body, body, forward, motorOrigin,
+                AimBodyConfig::instance().rightArmPointingRmb());
+
+    const uint64_t tick = npc.body.movementSimulationTick;
+    uint64_t& last = mNpcAimLogTicks[npc.id];
+    if (last == 0 || tick - last >= 30) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+            "actor-hybrid.pose-final", "npc-" + std::to_string(npc.id),
+            "npc hybrid pose solved", (uint32_t)tick,
+            {{"actor_id", npc.id}, {"actor_kind", "npc"}, {"pose_source", "server_npc_aim"},
+             {"backend", "aimbody_hybrid"}, {"hybrid", AimBodyConfig::instance().hybridMode()},
+             {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+             {"velocity", {npc.body.vel.x, npc.body.vel.y, npc.body.vel.z}},
+             {"aim", {forward.x, forward.y, forward.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+        last = tick;
+    }
+}
+
+void RagdollModeSystem::clearNpcAim(uint32_t npcId)
+{
+    mNpcAimBodies.erase(npcId);
+    mNpcAimAvatarNames.erase(npcId);
+    mNpcAimLogTicks.erase(npcId);
 }
 
 void RagdollModeSystem::cacheReplicatedPose(const Player& player,
@@ -2188,8 +2227,10 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
             victim.sizeScale);
     }
 
-    // Bounded corpse count keeps the solver cost predictable.
-    constexpr size_t kMaxCorpses = 12;
+    // Juggernaut has up to 18 actors (16 fighters + 2 Juggernauts). Keep a
+    // larger bounded pool so one full round can remain visible without
+    // immediately evicting a fresh corpse while the owner is spectating.
+    constexpr size_t kMaxCorpses = 64;
     while (mCorpses.size() >= kMaxCorpses) {
         const RagdollCorpse& evicted = mCorpses.front();
         StructuredLogger::instance().writeEvent(
@@ -2294,9 +2335,11 @@ void RagdollModeSystem::sprayCorpseBlood(RagdollCorpse& corpse, float dt)
     const float damage = glm::clamp(bestSpeed * 6.0f, 5.0f, 80.0f);
     EffectPartSystem::instance().spawnBloodEffect(
         pos, dir, damage, corpse.actorId, corpse.actorId, 0.8f, -1.0f);
+    ++corpse.bloodEffectCount;
 }
 
-void RagdollModeSystem::updateCorpses(float dt, const World& world)
+void RagdollModeSystem::updateCorpses(float dt, const World& world,
+                                      bool spectatorMode)
 {
     if (mCorpses.empty()) return;
     const auto& cfg = RagdollModeConfig::instance().data();
@@ -2305,6 +2348,7 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world)
         RagdollCorpse& corpse = *it;
         corpse.age += dt;
         ++corpse.lifeTicks;
+        ++corpse.updateCount;
         if (corpse.age >= corpse.lifetime) {
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Ragdoll, StructuredLevel::Important,
@@ -2350,11 +2394,114 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world)
                 (corpse.age - fadeStart) / cfg.corpseFadeSeconds, 0.0f, 1.0f);
         }
 
+        std::vector<glm::vec3> poseBeforePositions;
+        std::vector<glm::quat> poseBeforeOrientations;
+        if (!corpse.poseStepTraceLogged) {
+            poseBeforePositions.reserve(corpse.body.parts.size());
+            poseBeforeOrientations.reserve(corpse.body.parts.size());
+            for (const RagdollModePart& part : corpse.body.parts) {
+                poseBeforePositions.push_back(part.body.position);
+                poseBeforeOrientations.push_back(part.body.orientation);
+            }
+        }
+
         stepBody(corpse.body, world, dt);
         syncToPlayer(corpse.actor, corpse.body);
 
+        if (!corpse.poseStepTraceLogged) {
+            corpse.poseStepTraceLogged = true;
+            nlohmann::json beforeParts = nlohmann::json::array();
+            nlohmann::json afterParts = nlohmann::json::array();
+            int movedPartCount = 0;
+            float maxTranslation = 0.0f;
+            float maxRotationDegrees = 0.0f;
+            for (std::size_t i = 0; i < corpse.body.parts.size(); ++i) {
+                const RagdollModePart& part = corpse.body.parts[i];
+                beforeParts.push_back({
+                    {"part", part.name},
+                    {"position", vec3Json(poseBeforePositions[i])},
+                    {"orientation", quatJson(poseBeforeOrientations[i])}});
+                afterParts.push_back({
+                    {"part", part.name},
+                    {"position", vec3Json(part.body.position)},
+                    {"orientation", quatJson(part.body.orientation)}});
+                const float translation = glm::length(part.body.position - poseBeforePositions[i]);
+                const float rotation = quatAngleDegrees(
+                    glm::normalize(part.body.orientation * glm::inverse(poseBeforeOrientations[i])));
+                if (translation > 0.0001f || rotation > 0.01f)
+                    ++movedPartCount;
+                maxTranslation = std::max(maxTranslation, translation);
+                maxRotationDegrees = std::max(maxRotationDegrees, rotation);
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "ragdoll.corpse.pose_step_trace", corpse.actorId,
+                "first corpse pose before and after physics step",
+                static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                { {"actor_id", corpse.actorId},
+                  {"age_seconds", corpse.age},
+                  {"life_ticks", corpse.lifeTicks},
+                  {"dt", dt},
+                  {"active_corpses", mCorpses.size()},
+                  {"physical_part_count", corpse.body.parts.size()},
+                  {"moved_part_count", movedPartCount},
+                  {"max_translation", maxTranslation},
+                  {"max_rotation_degrees", maxRotationDegrees},
+                  {"before_parts", beforeParts},
+                  {"after_parts", afterParts},
+                  {"actor_position", vec3Json(corpse.actor.pos)},
+                  {"actor_velocity", vec3Json(corpse.actor.vel)} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+
+        // Diagnostic only: existing position samples show that some corpses
+        // fall through the world while others settle. Record the first severe
+        // escape with the collision-mesh state, without changing simulation.
+        if (!corpse.worldCollisionEscapeLogged && corpse.actor.pos.z < -500.0f)
+        {
+            corpse.worldCollisionEscapeLogged = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "ragdoll.corpse.world_collision_escape", corpse.actorId,
+                "corpse crossed severe negative-Z threshold during simulation",
+                static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                { {"actor_id", corpse.actorId},
+                  {"position", {corpse.actor.pos.x, corpse.actor.pos.y,
+                                 corpse.actor.pos.z}},
+                  {"velocity", {corpse.actor.vel.x, corpse.actor.vel.y,
+                                 corpse.actor.vel.z}},
+                  {"world_collision_enabled", cfg.worldCollision},
+                  {"collision_triangle_count", world.collisionMesh.triangles.size()},
+                  {"age_seconds", corpse.age} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+
         if (cfg.corpseBloodEnabled)
             sprayCorpseBlood(corpse, dt);
+
+        if (corpse.lifeTicks % 60 == 0) {
+            float fastestSpeed = 0.0f;
+            for (const RagdollModePart& part : corpse.body.parts)
+                fastestSpeed = std::max(fastestSpeed,
+                    glm::length(part.body.linearVelocity));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "ragdoll.corpse.heartbeat", corpse.actorId,
+                "corpse fixed-tick update heartbeat",
+                static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                { {"actor_id", corpse.actorId},
+                  {"spectator_mode", spectatorMode},
+                  {"age_seconds", corpse.age},
+                  {"life_ticks", corpse.lifeTicks},
+                  {"update_count", corpse.updateCount},
+                  {"render_submission_count", corpse.renderSubmissionCount},
+                  {"blood_effect_count", corpse.bloodEffectCount},
+                  {"fastest_part_speed", fastestSpeed},
+                  {"position", vec3Json(corpse.actor.pos)},
+                  {"velocity", vec3Json(corpse.actor.vel)},
+                  {"active_corpses", mCorpses.size()} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
 
         ++it;
     }
@@ -2364,6 +2511,7 @@ void RagdollModeSystem::renderCorpses(const Camera& camera)
 {
     for (RagdollCorpse& corpse : mCorpses) {
         if (corpse.fade >= 1.0f) continue;
+        ++corpse.renderSubmissionCount;
         if (!corpse.firstRenderLogged) {
             corpse.firstRenderLogged = true;
             StructuredLogger::instance().writeEvent(
@@ -2379,6 +2527,30 @@ void RagdollModeSystem::renderCorpses(const Camera& camera)
                   {"position", {corpse.actor.pos.x, corpse.actor.pos.y, corpse.actor.pos.z}},
                   {"fade", corpse.fade},
                   {"active_corpses", mCorpses.size()} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        if (!corpse.poseRenderTraceLogged) {
+            corpse.poseRenderTraceLogged = true;
+            nlohmann::json renderParts = nlohmann::json::array();
+            for (const RagdollModePart& part : corpse.body.parts) {
+                renderParts.push_back({
+                    {"part", part.name},
+                    {"position", vec3Json(part.body.position)},
+                    {"orientation", quatJson(part.body.orientation)}});
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "ragdoll.corpse.pose_render_trace", corpse.actorId,
+                "first corpse pose submitted to renderer",
+                static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                { {"actor_id", corpse.actorId},
+                  {"age_seconds", corpse.age},
+                  {"life_ticks", corpse.lifeTicks},
+                  {"ragdoll_mode_active", corpse.actor.ragdollModeActive},
+                  {"dead", corpse.actor.dead},
+                  {"physical_part_count", corpse.body.parts.size()},
+                  {"actor_position", vec3Json(corpse.actor.pos)},
+                  {"render_parts", renderParts} },
                 __FILE__, __LINE__, __FUNCTION__);
         }
         renderNetworkPlayer(corpse.actor, camera, 0, false);

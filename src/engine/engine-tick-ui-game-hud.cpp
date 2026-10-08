@@ -9,6 +9,7 @@
 */
 #include "engine/engine-tick-ui.h"
 #include "engine/engine.h"
+#include <algorithm>
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <vector>
@@ -107,15 +108,17 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     for (const auto& id : hudLayout.elementIds())
     {
         const GuiElement* el = hudLayout.get(id);
-        if (el && el->type == "panel" && el->visible)
+        if (el && el->type == "panel" && el->visible && id != "deathOverlay")
             drawGuiElement(engine.window(), *el);
     }
 
-    auto hudText = [&](const std::string& id, const std::string& text) {
+    auto hudText = [&](const std::string& id, const std::string& text,
+                       float alpha = 1.0f) {
         const GuiElement* el = hudLayout.get(id);
         if (!el) return;
         float scale = el->fontSize > 0.0f ? el->fontSize : 0.32f;
         glm::vec4 color = el->getTextColorVec();
+        color.a *= std::clamp(alpha, 0.0f, 1.0f);
         uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), scale, color);
     };
 
@@ -220,27 +223,53 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     int hp = replayViewedActor ? replayViewedActor->health : player.currentHp;
     int maxHp = replayViewedActor ? replayViewedActor->maxHealth : player.maxHp;
     bool dead = replayViewedActor ? replayViewedActor->dead : player.dead;
+    constexpr uint64_t DEATH_POPUP_DURATION_TICKS = 600;
+    static bool deathPopupStarted = false;
+    static uint64_t deathPopupStartTick = 0;
+    bool drawDeathPopup = false;
+    float deathPopupAlpha = 0.0f;
+    if (dead) {
+        if (!deathPopupStarted) {
+            deathPopupStarted = true;
+            deathPopupStartTick = gChatUiTickClock.getTick();
+        }
+        const uint64_t elapsedTicks =
+            gChatUiTickClock.getElapsedTicks(deathPopupStartTick);
+        if (elapsedTicks < DEATH_POPUP_DURATION_TICKS) {
+            drawDeathPopup = true;
+            deathPopupAlpha = 1.0f -
+                static_cast<float>(elapsedTicks) /
+                static_cast<float>(DEATH_POPUP_DURATION_TICKS);
+        }
+    } else {
+        deathPopupStarted = false;
+    }
     char hpText[64];
     snprintf(hpText, sizeof(hpText), "HP: %d/%d", hp, maxHp);
     hudText("hpText", hpText);
-    if (dead && gDuelManager.phase() != DuelPhase::MatchEnd && !DuelQueue::instance().matchOver()) {
+    if (drawDeathPopup && gDuelManager.phase() != DuelPhase::MatchEnd && !DuelQueue::instance().matchOver()) {
         if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen())
         {
         // Draw death overlay from layout JSON
         const GuiElement* doEl = hudLayout.get("deathOverlay");
-        if (doEl && doEl->visible) drawGuiElement(engine.window(), *doEl);
+        if (doEl && doEl->visible) {
+            GuiElement fadedOverlay = *doEl;
+            fadedOverlay.opacity *= deathPopupAlpha;
+            drawGuiElement(engine.window(), fadedOverlay);
+        }
 
         std::string deathText = "you died to " +
             (player.killedBy.empty() ? std::string("unknown") : player.killedBy);
         char respawnBuf[128];
         snprintf(respawnBuf, sizeof(respawnBuf),
                  "respawning automatically in %.3f...", player.respawnTimer);
-        hudText("deathText", deathText);
-        hudText("respawnText", respawnBuf);
+        hudText("deathText", deathText, deathPopupAlpha);
+        hudText("respawnText", respawnBuf, deathPopupAlpha);
         // Show Space hint only when instant respawn would actually work.
         // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
         const bool duelBlocksRespawn = gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
-        hudText("respawnHint", duelBlocksRespawn ? "" : "press space to respawn instantly");
+        hudText("respawnHint", duelBlocksRespawn ? "" : "press space to respawn instantly",
+                deathPopupAlpha);
         }
     }
     if (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay())

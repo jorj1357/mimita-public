@@ -18,6 +18,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
 #include "config/player-settings.h"
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"
@@ -123,10 +124,10 @@ void doGLBTriangleCollisions(
     float dt
 ) {
     // ── Single actor-triangle owner (opt-in, hot-reloadable) ─────────────
-    // When enabled, the local player's GLB collision is handled by the one
-    // triangle solver and the legacy capsule/body/emergency pipeline is
-    // bypassed entirely. NPCs keep the legacy path for now.
-    if (CollisionConfig::instance().actorTriangleSolver() && !isCurrentEntityNpc())
+    // When enabled, every living actor that has a physical body uses the one
+    // triangle solver. NPCs intentionally share this owner; their navigation
+    // code only supplies movement intent and must not select a legacy solver.
+    if (CollisionConfig::instance().actorTriangleSolver())
     {
         if (runActorTriangleCollisionStep(p, world, groundedThisFrame, dt))
         {
@@ -134,6 +135,21 @@ void doGLBTriangleCollisions(
             gLastCollisionTrace.startPos = p.pos;
             gLastCollisionTrace.finalPos = p.pos;
             return;
+        }
+        // Keep fallback explicit and searchable. This is temporary migration
+        // evidence, not a second collision owner: missing world/body geometry
+        // must be visible in events.jsonl instead of silently looking like a
+        // successful triangle solve.
+        if (isCurrentEntityNpc()) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "actor-collision.fallback", p.username,
+                "triangle backend unavailable for NPC", (uint32_t)p.movementSimulationTick,
+                {{"actor_kind", "npc"}, {"backend_requested", "triangle"},
+                 {"fallback_backend", "legacy"}, {"reason", "missing_world_or_body_triangles"},
+                 {"body_part_count", p.physicalBody.parts.size()},
+                 {"world_triangle_count", world.collisionMesh.triangles.size()}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 

@@ -454,9 +454,15 @@ static void processSnapshotEntities(
                         {"avatar", npcAvatar},
                         {"avatar_bytes", npcAvatar.size()},
                         {"apply_returned", avatarApplied},
+                        {"avatar_instance_bound", p.avatarInstance != nullptr},
+                        {"model_loaded", p.modelLoaded},
                         {"load_pending", npcAvatar.empty()
                             ? false : AvatarSystem::instance().isAvatarLoadPending(npcAvatar)},
-                        {"fallback_model", !avatarApplied}});
+                        {"fallback_model", !avatarApplied},
+                        {"fallback_reason", avatarApplied ? "none" :
+                            (npcAvatar.empty() ? "empty_identity" :
+                             (AvatarSystem::instance().isAvatarLoadPending(npcAvatar)
+                                  ? "avatar_async_pending" : "avatar_apply_failed"))}});
                 Debug::warn(Debug::Category::Avatar,
                     "[NPC AVATAR CLIENT] entityId=%u avatar='%s' atlas=%u\n",
                     entity.networkEntityId, npcAvatar.c_str(),
@@ -485,6 +491,35 @@ static void processSnapshotEntities(
                     "[REMOTE AVATAR] entityId=%u changed avatar='%s' ready=%d\n",
                     entity.networkEntityId, networkAvatar.c_str(), (int)p.modelLoaded);
             }
+        }
+
+        // The first NPC bind may race the background avatar metadata/atlas
+        // load.  That bind intentionally falls back to the default model, but
+        // the replica must not stay there forever once the requested avatar is
+        // ready.  Retry only for an existing NPC with the same valid network
+        // identity and no avatar instance; pending and failed cache states are
+        // left alone until the cache reports Ready.
+        if (!isNew && entity.entityType == ENTITY_NPC &&
+            entity.avatarName[0] != '\0' &&
+            p.avatarName() == entity.avatarName &&
+            p.avatarInstance == nullptr &&
+            !AvatarSystem::instance().isAvatarLoadPending(entity.avatarName))
+        {
+            const std::string networkAvatar(entity.avatarName);
+            const bool rebound =
+                AvatarSystem::instance().applyAvatarToPlayer(p, networkAvatar);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "client.npc.avatar.rebind", std::to_string(entity.networkEntityId),
+                "ready asynchronous NPC avatar reapplied to existing replica",
+                serverTick,
+                {{"actor_id", entity.networkEntityId},
+                 {"avatar", networkAvatar},
+                 {"apply_returned", rebound},
+                 {"avatar_instance_bound", p.avatarInstance != nullptr},
+                 {"model_loaded", p.modelLoaded},
+                 {"fallback_model", p.avatarInstance == nullptr}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
 
         if (!pushInterpolationTarget(interpolation, entity, serverTick))
@@ -1242,8 +1277,17 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.connectionState = ConnectionState::Connected;
 
             SnapshotChunkPacket chunk{};
-            if (!parseSnapshotChunk(buffer, (size_t)bytes, chunk))
+            std::string chunkError;
+            if (!parseSnapshotChunk(buffer, (size_t)bytes, chunk, &chunkError))
+            {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "client.snapshot.chunk-rejected", "snapshot-chunk",
+                    "snapshot chunk rejected before reassembly", header->tick,
+                    {{"bytes", bytes}, {"reason", chunkError}},
+                    __FILE__, __LINE__, __FUNCTION__);
                 return;
+            }
 
             // Buffer the chunk
             // NOTE: ctx.latestServerTick is NOT advanced per chunk — a partial
@@ -1261,6 +1305,22 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             // Check if all chunks for this tick have arrived
             if (bufMap.chunks.size() != chunk.chunkCount)
             {
+                static uint64_t lastChunkProgressLogMs = 0;
+                const uint64_t nowProgress = nowMs();
+                if (nowProgress - lastChunkProgressLogMs >= 1000)
+                {
+                    lastChunkProgressLogMs = nowProgress;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "client.snapshot.chunk-progress", "snapshot-chunk",
+                        "snapshot is waiting for remaining chunks", chunk.header.tick,
+                        {{"snapshot_tick", chunk.header.tick},
+                         {"chunk_index", chunk.chunkIndex},
+                         {"received_chunks", bufMap.chunks.size()},
+                         {"expected_chunks", chunk.chunkCount},
+                         {"entity_count_in_chunk", chunk.entityCount}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
                 // Clean stale buffers
                 uint64_t nowClean = nowMs();
                 const uint64_t chunkTimeoutMs = (uint64_t)(
@@ -1268,7 +1328,19 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 for (auto it = ctx.snapshotChunkBuffers.begin(); it != ctx.snapshotChunkBuffers.end(); )
                 {
                     if (nowClean - it->second.lastReceiveMs > chunkTimeoutMs)
+                    {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Network, StructuredLevel::Important,
+                            "client.snapshot.chunk-timeout", "snapshot-chunk",
+                            "incomplete snapshot discarded after reassembly timeout",
+                            it->first,
+                            {{"snapshot_tick", it->first},
+                             {"received_chunks", it->second.chunks.size()},
+                             {"expected_chunks", chunk.chunkCount},
+                             {"timeout_ms", chunkTimeoutMs}},
+                            __FILE__, __LINE__, __FUNCTION__);
                         it = ctx.snapshotChunkBuffers.erase(it);
+                    }
                     else ++it;
                 }
                 return;
@@ -1330,6 +1402,27 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             processSnapshotEntities(ctx, snapshotEntities.data(),
                                     (uint32_t)snapshotEntities.size(),
                                     chunk.header.tick, dt, "chunk");
+
+            uint32_t npcCount = 0;
+            uint32_t npcEmptyAvatarCount = 0;
+            for (const SnapshotEntity& entity : snapshotEntities)
+            {
+                if (entity.entityType != ENTITY_NPC)
+                    continue;
+                ++npcCount;
+                if (entity.avatarName[0] == '\0')
+                    ++npcEmptyAvatarCount;
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "client.npc-avatar.snapshot-reassembled", "client-npc-avatar",
+                "complete snapshot reassembled before NPC avatar binding", chunk.header.tick,
+                {{"snapshot_tick", chunk.header.tick},
+                 {"chunk_count", chunk.chunkCount},
+                 {"entity_count", snapshotEntities.size()},
+                 {"npc_count", npcCount},
+                 {"npc_empty_avatar_count", npcEmptyAvatarCount}},
+                __FILE__, __LINE__, __FUNCTION__);
 
             logClientSnapshotDiagnostics(ctx, chunk.header.tick,
                                          priorSnapshotTick == 0 || chunk.header.tick <= priorSnapshotTick

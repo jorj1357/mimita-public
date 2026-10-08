@@ -627,7 +627,18 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
     }
     auto stateIt = mLoadStates.find(name);
     if (stateIt != mLoadStates.end())
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.cache.pending-or-failed", name,
+            "avatar requested while cache state is not ready",
+            0,
+            {{"avatar", name},
+             {"load_state", static_cast<int>(stateIt->second)},
+             {"cache_ready", false}},
+            __FILE__, __LINE__, __FUNCTION__);
         return nullptr;
+    }
     Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] miss: %s (queued)\n", name.c_str());
     mLoadStates[name] = AvatarLoadState::Loading;
     if (!mBackgroundWorker) {

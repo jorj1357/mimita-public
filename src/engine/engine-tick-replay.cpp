@@ -44,6 +44,7 @@
 #include "config.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
+#include "ragdoll/ragdoll-mode.h"
 
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
@@ -337,6 +338,11 @@ void engineTickReplay(Engine& engine, float dt)
         // Run simulation for this tick
         if (!freecamEnabled && !replayPlaybackActive)
             simulateTick(simContext, tickFrame);
+        else if (freecamEnabled && !replayPlaybackActive && worldLoaded)
+            // Spectator freecam skips normal gameplay simulation, but corpse
+            // ragdolls must keep their own fixed-tick physics and heartbeat.
+            RagdollModeSystem::instance().updateCorpses(
+                static_cast<float>(SIM_DT), world, true);
 
         // Capture death position for camera orbit
         if (player.dead && glm::length(deathPosition) < 0.1f)

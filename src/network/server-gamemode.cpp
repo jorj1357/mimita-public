@@ -196,10 +196,13 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     if (it == d.matchActors.end())
         return out;
 
-    // Precedence for NPC combat profiles: an explicit per-actor override
-    // (already set on `out`) wins, then the gamemode NPC profile, then the
-    // role profile, then the default. This never affects human actors.
-    const std::string explicitProfile = out.behaviorProfileId;
+    // Precedence for NPC combat profiles: an explicit per-actor descriptor
+    // override wins, then the gamemode NPC profile, then the role profile,
+    // then the default. This never affects human actors.
+    // The roster descriptor is the authoritative per-actor override. Reading
+    // the freshly-created result here always yields an empty string and drops
+    // explicit role profiles such as juggernaut_swarm.
+    const std::string explicitProfile = it->second.behaviorProfileId;
     std::string modeProfile;
 
     // A gamemode may provide one NPC-only combat profile (e.g. Counter-Strike
@@ -217,7 +220,16 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
         }
     }
 
-    const std::string roleId = !d.actorPresetOverrideId.empty()
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    const bool hasExplicitTeamRoles = std::any_of(
+        gm.teams.begin(), gm.teams.end(),
+        [](const GamemodeTeam& team) { return !team.role.empty(); });
+    // A mode-level actor preset is only a role source for legacy preset-only
+    // modes. Role-driven modes must keep the actor's explicit team role here;
+    // otherwise the shared resolver erases the role's movement/behavior
+    // profile after the roster has assigned it.
+    const std::string roleId = (!hasExplicitTeamRoles &&
+                                !d.actorPresetOverrideId.empty())
         ? d.actorPresetOverrideId : it->second.roleId;
     if (roleId.empty()) return out;
     const MatchRoleDefinition* def =
@@ -1820,6 +1832,22 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             d.participantNames[npc.entityId] = npc.name;
             d.ffaKills[npc.entityId] = 0;
             d.ffaDeaths[npc.entityId] = 0;
+            const ActorMatchDescriptor& rosterDesc = d.matchActors[npc.entityId];
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "npc.roster-profile-resolved", std::to_string(npc.entityId),
+                "round-roster", d.currentServerTick,
+                nlohmann::json{
+                    {"actor", npc.entityId},
+                    {"team", team},
+                    {"role", rosterDesc.roleId},
+                    {"profile", rosterDesc.behaviorProfileId},
+                    {"movement_preset", rosterDesc.movementProfileId},
+                    {"actor_preset", gm.actorPresetId},
+                    {"mode", d.matchMode},
+                    {"mode_preset", gm.actorPresetId},
+                    {"source", "buildObjectiveRoster"}},
+                __FILE__, __LINE__, __FUNCTION__);
             applyServerNpcRoleHealth(npc, "round-roster");
             npcs.emplace(npc.entityId, std::move(npc));
         }
@@ -2370,6 +2398,9 @@ void assignMatchParticipants(ServerGamemodeState& d,
     // style) so a mode with e.g. 8 hunters + 4 juggernauts still shows both
     // roles in a small match and stays deterministic for a given config + set.
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    const bool hasExplicitTeamRoles = std::any_of(
+        gm.teams.begin(), gm.teams.end(),
+        [](const GamemodeTeam& team) { return !team.role.empty(); });
     struct RoleSlot { std::string id; int cap; int assigned; };
     std::vector<RoleSlot> roles;
     int totalSlots = 0;
@@ -2385,7 +2416,11 @@ void assignMatchParticipants(ServerGamemodeState& d,
         totalSlots += rc.second;
     }
 
-    if (!gm.actorPresetId.empty()) {
+    // A mode-level actor preset is presentation/settings data when the mode
+    // already declares gameplay roles. Do not let it replace those roles and
+    // silently discard their movement/behavior profiles. Keep the old
+    // preset-only path for modes that truly have no role declarations.
+    if (!gm.actorPresetId.empty() && !hasExplicitTeamRoles && gm.roleCounts.empty()) {
         if (MatchRoleRegistry::instance().getActorPreset(gm.actorPresetId)) {
             for (uint32_t id : d.participants) {
                 ActorMatchDescriptor& desc = d.matchActors[id];
@@ -2453,6 +2488,43 @@ void assignMatchParticipants(ServerGamemodeState& d,
             auto npcIt = npcs->find(id);
             if (npcIt != npcs->end())
                 npcIt->second.matchTeam = team;
+        }
+    }
+
+    // Resolve explicit team roles after team assignment. This is the shared
+    // role/preset/profile boundary used by both humans and NPCs; the bounded
+    // event makes the effective source visible in events.jsonl before NPC
+    // navigation or squad behavior is evaluated.
+    if (hasExplicitTeamRoles) {
+        for (uint32_t id : d.participants) {
+            ActorMatchDescriptor& desc = d.matchActors[id];
+            if (desc.teamId < 0) continue;
+            const std::string roleId = roundTeamRoleId(gm, desc.teamId);
+            const MatchRoleDefinition* def = roleId.empty()
+                ? nullptr : MatchRoleRegistry::instance().get(roleId);
+            if (def) {
+                desc.roleId = def->id;
+                desc.movementProfileId = def->movementPreset;
+                desc.weaponProfileId = def->weaponSet;
+                if (desc.controller == ActorController::Npc)
+                    desc.behaviorProfileId = resolveNpcBehaviorProfileId(
+                        gm, def->behaviorProfile);
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.roster-profile-resolved", std::to_string(id),
+                def ? "role_profile" : "role_profile_missing",
+                d.currentServerTick,
+                nlohmann::json{
+                    {"actor", id},
+                    {"controller", desc.controller == ActorController::Npc ? "npc" : "human"},
+                    {"team", desc.teamId},
+                    {"role", desc.roleId},
+                    {"mode_preset", gm.actorPresetId},
+                    {"movement_preset", desc.movementProfileId},
+                    {"behavior_profile", desc.behaviorProfileId},
+                    {"source", def ? "explicit_team_role" : "missing_role"}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 

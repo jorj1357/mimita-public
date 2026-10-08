@@ -1455,6 +1455,39 @@ void updateRenderedReplica(
     if (displayHealth > player.maxHp)
         player.maxHp = displayHealth;
     player.dead = displayHealth <= 0 || player.netPredictedDead;
+    const bool remotePresentationAlive = !player.dead;
+
+    // Diagnostic only: a dead replica must not keep producing live movement
+    // presentation.  Do not suppress anything here yet; record the exact
+    // snapshot inputs so the next runtime trace identifies the first owner.
+    if (player.dead &&
+        (render.stateFlags != 0 || render.dashSerial != 0 ||
+         render.groundJumpSerial != 0 || render.airJumpSerial != 0 ||
+         render.downDashSerial != 0 || render.directionChangeSerial != 0 ||
+         render.freezeSerial != 0))
+    {
+        static uint64_t lastDeadPresentationDiagnosticMs = 0;
+        const uint64_t nowMsValue = nowMs();
+        if (nowMsValue - lastDeadPresentationDiagnosticMs >= 1000)
+        {
+            lastDeadPresentationDiagnosticMs = nowMsValue;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "client.dead.presentation.state", std::to_string(entityId),
+                "dead replica still carries live presentation state",
+                render.serverTick,
+                { {"actor_id", entityId}, {"health", displayHealth},
+                  {"state_flags", render.stateFlags},
+                  {"dash_serial", render.dashSerial},
+                  {"ground_jump_serial", render.groundJumpSerial},
+                  {"air_jump_serial", render.airJumpSerial},
+                  {"down_dash_serial", render.downDashSerial},
+                  {"direction_change_serial", render.directionChangeSerial},
+                  {"freeze_serial", render.freezeSerial},
+                  {"spawn_generation", player.spawnGeneration} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     // ── Remote death lifecycle (players + NPCs) ───────────────────────
     // Respawn (dead → alive): fully recover the body into its new life.
@@ -1647,8 +1680,8 @@ void updateRenderedReplica(
 
     player.networkShootEffectTimer =
         std::max(0.0f, player.networkShootEffectTimer - dt);
-    player.networkWeaponState = render.weaponState;
-    if (player.networkShootEffectTimer > 0.0f)
+    player.networkWeaponState = remotePresentationAlive ? render.weaponState : 0;
+    if (remotePresentationAlive && player.networkShootEffectTimer > 0.0f)
         player.networkWeaponState |= 1u;
     player.sizeScale = render.sizeScale;
     player.spawnGeneration = render.spawnGeneration;
@@ -1663,7 +1696,7 @@ void updateRenderedReplica(
     // field causes updateProceduralAnimation to return early and skip
     // the freeze pose code entirely. proceduralFrozen is reserved for
     // pause/replay/cinematic use.
-    player.freeze.freezeActive =
+    player.freeze.freezeActive = remotePresentationAlive &&
         (render.stateFlags & NET_STATE_FREEZING) != 0;
 
     // ── Event serial changes → one-shot VFX ─────────────────────────
@@ -1671,7 +1704,7 @@ void updateRenderedReplica(
 
     // Dash
     bool dashTriggered = false;
-    if (render.dashSerial != 0 &&
+    if (remotePresentationAlive && render.dashSerial != 0 &&
         render.dashSerial != player.networkLastDashSerial)
     {
         player.networkLastDashSerial = render.dashSerial;
@@ -1687,7 +1720,7 @@ void updateRenderedReplica(
     }
 
     // Ground jump
-    if (render.groundJumpSerial != 0 &&
+    if (remotePresentationAlive && render.groundJumpSerial != 0 &&
         render.groundJumpSerial != player.networkLastGroundJumpSerial)
     {
         player.networkLastGroundJumpSerial = render.groundJumpSerial;
@@ -1701,7 +1734,7 @@ void updateRenderedReplica(
     }
 
     // Air jump
-    if (render.airJumpSerial != 0 &&
+    if (remotePresentationAlive && render.airJumpSerial != 0 &&
         render.airJumpSerial != player.networkLastAirJumpSerial)
     {
         player.networkLastAirJumpSerial = render.airJumpSerial;
@@ -1715,7 +1748,7 @@ void updateRenderedReplica(
     }
 
     // Down dash
-    if (render.downDashSerial != 0 &&
+    if (remotePresentationAlive && render.downDashSerial != 0 &&
         render.downDashSerial != player.networkLastDownDashSerial)
     {
         player.networkLastDownDashSerial = render.downDashSerial;
@@ -1727,7 +1760,7 @@ void updateRenderedReplica(
     }
 
     // Freeze one-shot (didFreeze)
-    if (render.freezeSerial != 0 &&
+    if (remotePresentationAlive && render.freezeSerial != 0 &&
         render.freezeSerial != player.networkLastFreezeSerial)
     {
         player.networkLastFreezeSerial = render.freezeSerial;
@@ -1740,13 +1773,13 @@ void updateRenderedReplica(
     }
 
     // Freeze trail (sustained while freezeActive)
-    if (player.freeze.freezeActive)
+    if (remotePresentationAlive && player.freeze.freezeActive)
     {
         EffectPartSystem::instance().spawnFreezeTrail(player.pos);
     }
 
     // Direction change one-shot directional walk burst
-    if (render.directionChangeSerial != 0 &&
+    if (remotePresentationAlive && render.directionChangeSerial != 0 &&
         render.directionChangeSerial != player.networkLastDirectionChangeSerial)
     {
         player.networkLastDirectionChangeSerial = render.directionChangeSerial;
@@ -1762,7 +1795,7 @@ void updateRenderedReplica(
     // ── Walking VFX (sustained) ─────────────────────────────────────
     // Walking animation driven by client stateFlags, not server grounded state,
     // so it works immediately after respawn and during brief airtime.
-    const bool remoteWalking =
+    const bool remoteWalking = remotePresentationAlive &&
         (render.stateFlags & NET_STATE_WALKING) != 0;
     if (remoteWalking)
     {
@@ -1805,12 +1838,30 @@ void updateRenderedReplica(
     }
 
     // ── Procedural animation ───────────────────────────────────────
-    player.updateProceduralAnimation(
-        dt,
-        player.aimDirection,
-        player.pos,
-        remoteWalking
-    );
+    if (remotePresentationAlive)
+    {
+        player.updateProceduralAnimation(
+            dt,
+            player.aimDirection,
+            player.pos,
+            remoteWalking
+        );
+    }
+    else
+    {
+        // Advance serial cursors without presenting stale one-shot events if
+        // an old snapshot crosses the network after the actor died.
+        player.networkLastDashSerial = render.dashSerial;
+        player.networkLastGroundJumpSerial = render.groundJumpSerial;
+        player.networkLastAirJumpSerial = render.airJumpSerial;
+        player.networkLastDownDashSerial = render.downDashSerial;
+        player.networkLastDirectionChangeSerial = render.directionChangeSerial;
+        player.networkLastFreezeSerial = render.freezeSerial;
+        player.dash.didDash = false;
+        player.jump.didGroundJump = false;
+        player.jump.didAirJump = false;
+        player.footstepTimer = 0.0f;
+    }
 }
 
 glm::vec3 mpRemoteShooterRenderDelta(const MultiplayerContext& ctx, uint32_t shooterId)

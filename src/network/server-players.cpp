@@ -24,6 +24,7 @@
 #include "config/networking-config.h"
 #include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <cmath>
 #include <cstdio>
@@ -1471,6 +1472,57 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.directionChangeSerial = player.lastPresentationDirectionChangeSerial;
     out.equipSerial = player.lastEquipSerial;
     out.freezeSerial = player.lastPresentationFreezeSerial;
+
+    if (player.health <= 0)
+    {
+        const uint16_t stateFlagsBeforeDeathSanitize = out.stateFlags;
+        const uint32_t dashSerialBeforeDeathSanitize = out.dashSerial;
+        const uint32_t groundJumpSerialBeforeDeathSanitize = out.groundJumpSerial;
+        const uint32_t airJumpSerialBeforeDeathSanitize = out.airJumpSerial;
+        const uint32_t downDashSerialBeforeDeathSanitize = out.downDashSerial;
+        const uint32_t directionChangeSerialBeforeDeathSanitize = out.directionChangeSerial;
+        const uint32_t freezeSerialBeforeDeathSanitize = out.freezeSerial;
+
+        // Dead actors must never replicate live presentation state. The
+        // corpse presentation is a separate client-side object.
+        out.stateFlags = 0;
+        out.weaponState = 0;
+        out.dashSerial = 0;
+        out.groundJumpSerial = 0;
+        out.airJumpSerial = 0;
+        out.downDashSerial = 0;
+        out.directionChangeSerial = 0;
+        out.freezeSerial = 0;
+
+        static uint64_t lastDeadSnapshotDiagnosticMs = 0;
+        const uint64_t nowDeadSnapshot = nowMs();
+        if (nowDeadSnapshot - lastDeadSnapshotDiagnosticMs >= 1000)
+        {
+            lastDeadSnapshotDiagnosticMs = nowDeadSnapshot;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.dead.snapshot.sanitized", std::to_string(player.id),
+                "dead player snapshot presentation state cleared",
+                0,
+                { {"actor_id", player.id}, {"health", player.health},
+                  {"state_flags_before", stateFlagsBeforeDeathSanitize},
+                  {"dash_serial_before", dashSerialBeforeDeathSanitize},
+                  {"ground_jump_serial_before", groundJumpSerialBeforeDeathSanitize},
+                  {"air_jump_serial_before", airJumpSerialBeforeDeathSanitize},
+                  {"down_dash_serial_before", downDashSerialBeforeDeathSanitize},
+                  {"direction_change_serial_before", directionChangeSerialBeforeDeathSanitize},
+                  {"freeze_serial_before", freezeSerialBeforeDeathSanitize},
+                  {"state_flags_after", out.stateFlags},
+                  {"dash_serial_after", out.dashSerial},
+                  {"ground_jump_serial_after", out.groundJumpSerial},
+                  {"air_jump_serial_after", out.airJumpSerial},
+                  {"down_dash_serial_after", out.downDashSerial},
+                  {"direction_change_serial_after", out.directionChangeSerial},
+                  {"freeze_serial_after", out.freezeSerial},
+                  {"spawn_generation", player.spawnGeneration} },
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     copyName(out.displayName, player.name);
     std::memset(out.avatarName, 0, sizeof(out.avatarName));
     std::strncpy(out.avatarName, player.avatarName.c_str(), sizeof(out.avatarName) - 1);
@@ -1478,7 +1530,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
         player.vipAppearance, out.vipTier, out.vipStyleKind,
         out.vipColorR, out.vipColorG, out.vipColorB, out.vipFlags);
     out.vipStyleEpoch = (uint8_t)std::min<uint32_t>(player.vipStyleEpoch, 255);
-    if (player.godballActive) {
+    if (player.godballActive && player.health > 0) {
         out.stateFlags |= NET_STATE_GODBALL_ACTIVE;
     }
     out.godballX = player.godballX;

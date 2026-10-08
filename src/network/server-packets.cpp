@@ -2343,6 +2343,39 @@ void buildAndSendSnapshot(SOCKET sock,
         printf("%s [SERVER SNAPSHOT CHUNKS] tick=%u chunks=%zu maxChunkBytes=%zu\n",
                serverTimestamp(), tick, chunks.size(),
                chunks.empty() ? 0 : chunks[0].size());
+
+        uint32_t npcEntities = 0;
+        uint32_t npcEmptyAvatars = 0;
+        uint32_t npcLongAvatars = 0;
+        std::unordered_map<std::string, uint32_t> npcAvatarCounts;
+        for (uint32_t i = 0; i < entityCount; ++i)
+        {
+            if (entities[i].entityType != ENTITY_NPC)
+                continue;
+            ++npcEntities;
+            const size_t avatarBytes = strnlen_s(
+                entities[i].avatarName, sizeof(entities[i].avatarName));
+            if (avatarBytes == 0)
+                ++npcEmptyAvatars;
+            if (avatarBytes >= MAX_AVATAR_NAME_BYTES - 1)
+                ++npcLongAvatars;
+            ++npcAvatarCounts[std::string(entities[i].avatarName, avatarBytes)];
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "server.npc-avatar.snapshot-summary", "server-npc-avatar",
+            "authoritative NPC avatar identities entering snapshot chunks", tick,
+            { {"snapshot_tick", tick},
+              {"entity_count", entityCount},
+              {"npc_count", npcEntities},
+              {"npc_empty_avatar_count", npcEmptyAvatars},
+              {"npc_name_at_wire_limit_count", npcLongAvatars},
+              {"chunk_count", chunks.size()},
+              {"max_chunk_bytes", chunks.empty() ? 0 : chunks[0].size()},
+              {"snapshot_entity_capacity", MAX_SNAPSHOT_ENTITIES},
+              {"snapshot_chunk_entity_capacity", SNAPSHOT_CHUNK_MAX_ENTITIES},
+              {"avatar_field_capacity_bytes", MAX_AVATAR_NAME_BYTES} },
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     // ── Single-datagram snapshot redundancy ────────────────────────────
@@ -2402,6 +2435,18 @@ void buildAndSendSnapshot(SOCKET sock,
             printf("%s [SERVER SNAPSHOT SEND] toClientId=%u chunks=%zu%s\n",
                    serverTimestamp(), kv.first, chunks.size(),
                    redundantChunk ? " +redundant" : "");
+
+        if (tick % 120 == 0)
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.npc-avatar.snapshot-send", std::to_string(kv.first),
+                "all snapshot chunks queued for client", tick,
+                { {"client_id", kv.first},
+                  {"snapshot_tick", tick},
+                  {"chunk_count", chunks.size()},
+                  {"redundant_chunk_sent", redundantChunk != nullptr},
+                  {"entity_count", entityCount} },
+                __FILE__, __LINE__, __FUNCTION__);
     }
 
     // Best-effort reliability for VIP styles: re-broadcast every few seconds so

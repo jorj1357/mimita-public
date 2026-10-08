@@ -500,8 +500,15 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         if (localPresetId) {
             const MatchRoleDefinition* localPreset =
                 MatchRoleRegistry::instance().getActorPreset(localPresetId);
-            if (localPreset && mActorPresetId != localPreset->id)
+            if (localPreset && mActorPresetId != localPreset->id) {
+                // The mode packet is applied before replicated team identity,
+                // so it may have temporarily applied the shared Juggernaut
+                // first-person preset. Restore the user's camera choice at
+                // this role boundary before applying the local role preset.
+                if (mActorPresetApplied)
+                    resetActorPreset();
                 applyActorPreset(*localPreset);
+            }
             if (localPreset) actorPreset = localPreset;
         }
     }

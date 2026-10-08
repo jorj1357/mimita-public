@@ -27,6 +27,7 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-subgrid.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "render/render-player.h"
 #include "world/world.h"
 #include "audio/audio.h"
@@ -938,8 +939,10 @@ static void emitNavPlanEvents(Npc& npc, const NpcNavResult& nav,
     const uint32_t tick = (uint32_t)(npc.sensors.time * 60.0f);
 
     if (nav.recastCompareAttempted) {
+        const bool importantSample = (npc.id % 8u) == 0u;
         log.writeEvent(
-            StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+            StructuredCategory::NpcMovement,
+            importantSample ? StructuredLevel::Important : StructuredLevel::Verbose,
             nav.recastAuthoritative ? "npc.nav.result" : "npc.nav.compare",
             std::to_string(npc.id),
             nav.recastAuthoritative ? "recast_route" :
@@ -974,6 +977,7 @@ static void emitNavPlanEvents(Npc& npc, const NpcNavResult& nav,
                 {"source", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
                 {"destination", {nav.destination.x, nav.destination.y,
                                   nav.destination.z}},
+                {"important_sample", importantSample},
                 {"failure", nav.recastFailure}},
             __FILE__, __LINE__, __FUNCTION__);
     }
@@ -1100,8 +1104,14 @@ static void emitMovementDecision(Npc& npc, const char* replanReason,
     // This is a per-NPC, per-fixed-tick diagnostic. Keep it verbose so the
     // normal important journal cannot turn movement observation into a
     // blocking flush workload as NPC count grows.
+    // Keep the complete diagnostic bounded in normal journals: one sampled
+    // actor per eight IDs is important-level, while every actor remains
+    // available through the opt-in verbose stream. This proves the
+    // post-physics result without turning a large NPC roster into log spam.
+    const bool sampledImportant = (npc.id % 8u) == 0u;
     StructuredLogger::instance().writeEvent(
-        StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+        StructuredCategory::NpcMovement,
+        sampledImportant ? StructuredLevel::Important : StructuredLevel::Verbose,
         "npc.movement-decision", std::to_string(npc.id), "snapshot",
         (uint32_t)(npc.sensors.time * 60.0f),
         nlohmann::json{
@@ -1124,7 +1134,8 @@ static void emitMovementDecision(Npc& npc, const char* replanReason,
             {"net_progress_toward_goal", netProgress},
             {"goal_position", {goalPos.x, goalPos.y, goalPos.z}},
             {"velocity", {npc.body.vel.x, npc.body.vel.y, npc.body.vel.z}},
-            {"on_ground", npc.sensors.touchFloor}},
+            {"on_ground", npc.sensors.touchFloor},
+            {"important_sample", sampledImportant}},
         __FILE__, __LINE__, __FUNCTION__);
 }
 
@@ -1132,6 +1143,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                              const NpcMovementContext& context, float dt)
 {
     if (npc.body.dead || npc.body.currentHp <= 0 || !context.valid()) {
+        RagdollModeSystem::instance().clearNpcAim(npc.id);
         npc.body.updateModelWorldTransforms();
         return;
     }
@@ -2249,6 +2261,18 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         // navMovement (resolved above) carries the actor's role movement config
         // through the same shared kernel as the human actor.
         physicsMainUpdate(npc.body, world, input, safeDt, 2, navMovement);
+
+        // NPCs use the same AimBody hybrid body/animation solver as players.
+        // Navigation supplies movement intent only; target/facing supplies the
+        // equivalent aim input and the solver writes the final body transforms.
+        glm::vec3 aimPoint = npc.body.pos + npc.currentFacing * 100.0f;
+        glm::vec3 aimForward = npc.currentFacing;
+        if (npc.sensors.hasTarget) {
+            aimPoint = npc.sensors.predictedTarget;
+            aimForward = aimPoint - npc.body.pos;
+        }
+        RagdollModeSystem::instance().updateNpcAim(
+            safeDt, world, npc, aimForward, aimPoint);
 
         clearCollisionEntityContext();
 
