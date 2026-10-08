@@ -7,6 +7,9 @@
 * Does NOT fire weapons, render UI, or read the game state.
 */
 #include "input/mouse-lock.h"
+#include "debug/structured-log.h"
+
+#include <nlohmann/json.hpp>
 
 namespace MouseLock {
 
@@ -22,9 +25,27 @@ bool locked()
 void set(GLFWwindow* win, bool on)
 {
     gGameplayMouseLocked = on;
-    if (win)
-        glfwSetInputMode(win, GLFW_CURSOR,
-            on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    if (!win) return;
+
+    const int requestedMode = on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
+    const int modeBefore = glfwGetInputMode(win, GLFW_CURSOR);
+    glfwSetInputMode(win, GLFW_CURSOR, requestedMode);
+    const int modeAfter = glfwGetInputMode(win, GLFW_CURSOR);
+
+    auto& logger = StructuredLogger::instance();
+    if (logger.shouldLog(StructuredCategory::Gui, StructuredLevel::Important)) {
+        nlohmann::json fields = {
+            {"locked", gGameplayMouseLocked},
+            {"requested_mode", requestedMode},
+            {"mode_before", modeBefore},
+            {"mode_after", modeAfter},
+            {"mode_applied", modeAfter == requestedMode}
+        };
+        logger.writeEvent(StructuredCategory::Gui, StructuredLevel::Important,
+                          "cursor.mouse_lock_set", "CURSOR_MOUSE_LOCK",
+                          "MouseLock::set applied a gameplay cursor request", 0,
+                          fields, __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 void toggle(GLFWwindow* win)

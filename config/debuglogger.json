@@ -36,7 +36,7 @@
     "weapons": { "level": "off", "file_output": false },
     "animation": { "level": "off", "file_output": false },
     "gui": {
-      "level": "off",
+      "level": "important",
       "file_output": false
     },
     "avatar": {

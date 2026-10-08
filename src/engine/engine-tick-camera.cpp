@@ -23,6 +23,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-window.h"
+#include "gui/menus/pause-menu.h"
 #include "ui/hitmarker.h"
 #include "config/player-settings.h"
 #include "config/camera-config.h"
@@ -36,6 +37,7 @@
 #include "network/packets.h"
 #include "devtools/terminal.h"
 #include "input/input-commands.h"
+#include "input/mouse-lock.h"
 #include "game/game-state.h"
 #include "physics/config.h"
 #include "combat/projectile-render.h"
@@ -899,9 +901,35 @@ void engineTickCamera(Engine& engine, float dt)
 
     if (anyFreecam) {
         // Mouse look: rely on existing camera.updateMouse() callback
-        if (glfwGetInputMode(engine.window(), GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
+        const int cursorBefore = glfwGetInputMode(engine.window(), GLFW_CURSOR);
+        if (MouseLock::locked() && cursorBefore != GLFW_CURSOR_DISABLED) {
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             camera.firstMouse = true;
+            if (StructuredLogger::instance().shouldLog(
+                    StructuredCategory::Gui, StructuredLevel::Important)) {
+                const auto& match = MimitaNet::CommunityMatchClient::instance();
+                const uint8_t localTeam = match.localTeam(mpContext.localPlayerId);
+                nlohmann::json fields = {
+                    {"cursor_before", cursorBefore},
+                    {"cursor_after", glfwGetInputMode(engine.window(), GLFW_CURSOR)},
+                    {"mouse_lock_locked", MouseLock::locked()},
+                    {"pause_open", PauseMenu::isOpen()},
+                    {"keyboard_enabled", InputCommandSystem::instance().isKeyboardEnabled()},
+                    {"freecam_enabled", freecamEnabled},
+                    {"any_freecam", anyFreecam},
+                    {"match_active", match.active()},
+                    {"mode", match.mode()},
+                    {"local_team", localTeam},
+                    {"local_team_name", localTeam < 3 ? match.teamName(localTeam) : ""},
+                    {"spectator_team", localTeam == 2},
+                    {"local_actor_state", match.localActorState(mpContext.localPlayerId)}
+                };
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Gui, StructuredLevel::Important,
+                    "cursor.freecam_override", "CURSOR_FREECAM",
+                    "Freecam forced the cursor disabled after another owner requested visibility", 0,
+                    fields, __FILE__, __LINE__, __FUNCTION__);
+            }
         }
 
         // WASD + QE movement

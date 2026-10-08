@@ -20,6 +20,7 @@
 #include <shellapi.h>
 
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "duel/duel-history.h"
 #include "duel/duel-queue.h"
@@ -34,6 +35,7 @@
 #include "input/input-commands.h"
 #include "input/mouse-lock.h"
 #include "network/multiplayer-context.h"
+#include "network/community-match-client.h"
 #include "notifications/notifications.h"
 #include "terminal/terminal-state.h"
 
@@ -48,8 +50,31 @@ View gView = View::Main;
 
 void restoreGameplayCursor(GLFWwindow* window)
 {
-    glfwSetInputMode(window, GLFW_CURSOR,
-        MouseLock::locked() ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    const int requestedMode = MouseLock::locked() ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
+    glfwSetInputMode(window, GLFW_CURSOR, requestedMode);
+    if (StructuredLogger::instance().shouldLog(
+            StructuredCategory::Gui, StructuredLevel::Important)) {
+        const auto& match = MimitaNet::CommunityMatchClient::instance();
+        const uint8_t localTeam = match.localTeam(MP_CONTEXT.localPlayerId);
+        nlohmann::json fields = {
+            {"pause_open", gOpen},
+            {"keyboard_enabled", InputCommandSystem::instance().isKeyboardEnabled()},
+            {"mouse_lock_locked", MouseLock::locked()},
+            {"requested_mode", requestedMode},
+            {"actual_mode", glfwGetInputMode(window, GLFW_CURSOR)},
+            {"match_active", match.active()},
+            {"mode", match.mode()},
+            {"local_team", localTeam},
+            {"local_team_name", localTeam < 3 ? match.teamName(localTeam) : ""},
+            {"spectator_team", localTeam == 2},
+            {"local_actor_state", match.localActorState(MP_CONTEXT.localPlayerId)}
+        };
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "cursor.pause_restore", "CURSOR_PAUSE",
+            "Pause menu restored the gameplay cursor policy", 0, fields,
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 void drawText(const GuiElement* element, const std::string& text, float yOffset = 0.0f)
@@ -150,6 +175,29 @@ void toggle(GLFWwindow* window)
     gView = View::Main;
     InputCommandSystem::instance().setKeyboardEnabled(false);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    if (StructuredLogger::instance().shouldLog(
+            StructuredCategory::Gui, StructuredLevel::Important)) {
+        const auto& match = MimitaNet::CommunityMatchClient::instance();
+        const uint8_t localTeam = match.localTeam(MP_CONTEXT.localPlayerId);
+        nlohmann::json fields = {
+            {"pause_open", gOpen},
+            {"keyboard_enabled", InputCommandSystem::instance().isKeyboardEnabled()},
+            {"mouse_lock_locked", MouseLock::locked()},
+            {"requested_mode", GLFW_CURSOR_NORMAL},
+            {"actual_mode", glfwGetInputMode(window, GLFW_CURSOR)},
+            {"match_active", match.active()},
+            {"mode", match.mode()},
+            {"local_team", localTeam},
+            {"local_team_name", localTeam < 3 ? match.teamName(localTeam) : ""},
+            {"spectator_team", localTeam == 2},
+            {"local_actor_state", match.localActorState(MP_CONTEXT.localPlayerId)}
+        };
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "cursor.pause_open", "CURSOR_PAUSE",
+            "Escape pause menu opened and requested a visible cursor", 0, fields,
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 void close(GLFWwindow* window)

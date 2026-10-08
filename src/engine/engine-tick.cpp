@@ -42,6 +42,7 @@
 #include "game/game-state.h"
 #include "replay/replay.h"
 #include "network/multiplayer-context.h"
+#include "network/community-match-client.h"
 #include "network/server.h"
 #include "network/server-browser.h"
 #include "gui/gui-main.h"
@@ -246,11 +247,39 @@ void engineTick(Engine& engine)
     // L key toggles gameplay mouse lock so the cursor can click notifications.
     static bool mouseLockKeyPrev = false;
     bool mouseLockKeyDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;
-    if (GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() && InputCommandSystem::instance().isKeyboardEnabled() &&
-        !REPLAY_PLAYER.isPlaying() && mouseLockKeyDown && !mouseLockKeyPrev) {
-        MouseLock::toggle(engine.window());
-        Debug::log(Debug::Category::Gui, "[MOUSELOCK] toggled via L: %s\n",
-                   MouseLock::locked() ? "locked" : "unlocked");
+    if (mouseLockKeyDown && !mouseLockKeyPrev) {
+        const bool accepted = GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() &&
+            InputCommandSystem::instance().isKeyboardEnabled() && !REPLAY_PLAYER.isPlaying();
+        const auto& match = MimitaNet::CommunityMatchClient::instance();
+        const uint8_t localTeam = match.localTeam(MP_CONTEXT.localPlayerId);
+        if (StructuredLogger::instance().shouldLog(
+                StructuredCategory::Gui, StructuredLevel::Important)) {
+            nlohmann::json fields = {
+                {"accepted", accepted},
+                {"game_state_playing", GAME_STATE == GAME_PLAYING},
+                {"pause_open", PauseMenu::isOpen()},
+                {"keyboard_enabled", InputCommandSystem::instance().isKeyboardEnabled()},
+                {"replay_playing", REPLAY_PLAYER.isPlaying()},
+                {"mouse_lock_before", MouseLock::locked()},
+                {"cursor_mode_before", glfwGetInputMode(engine.window(), GLFW_CURSOR)},
+                {"match_active", match.active()},
+                {"mode", match.mode()},
+                {"local_team", localTeam},
+                {"local_team_name", localTeam < 3 ? match.teamName(localTeam) : ""},
+                {"spectator_team", localTeam == 2},
+                {"local_actor_state", match.localActorState(MP_CONTEXT.localPlayerId)}
+            };
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Gui, StructuredLevel::Important,
+                "cursor.l_pressed", "CURSOR_L",
+                "L key edge detected for gameplay cursor lock investigation", 0, fields,
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        if (accepted) {
+            MouseLock::toggle(engine.window());
+            Debug::log(Debug::Category::Gui, "[MOUSELOCK] toggled via L: %s\n",
+                       MouseLock::locked() ? "locked" : "unlocked");
+        }
     }
     mouseLockKeyPrev = mouseLockKeyDown;
 
