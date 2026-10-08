@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <windows.h>
@@ -43,6 +44,9 @@ std::string wallTimestampUtc() {
 }
 
 const char* processRole() {
+    const char* explicitRole = std::getenv("MIMITA_PROCESS_ROLE");
+    if (explicitRole && *explicitRole)
+        return explicitRole;
     const char* commandLine = GetCommandLineA();
     return commandLine && (std::strstr(commandLine, "--server") ||
                            std::strstr(commandLine, "-server"))
@@ -665,6 +669,30 @@ void StructuredLogger::init() {
     char exePath[MAX_PATH]{};
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
     const char* role = processRole();
+    nlohmann::json runFields = {
+        {"path", mEventsPath},
+        {"run_id", mRunId},
+        {"process", role},
+        {"process_role", role},
+        {"executable", exePath},
+        {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+        {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""},
+    };
+    const char* runMetadata = std::getenv("MIMITA_RUN_METADATA");
+    if (runMetadata && *runMetadata) {
+        try {
+            const auto parsed = nlohmann::json::parse(runMetadata);
+            if (parsed.is_object())
+                for (auto it = parsed.begin(); it != parsed.end(); ++it)
+                    runFields[it.key()] = it.value();
+        } catch (const std::exception& e) {
+            Debug::warn(Debug::Category::General,
+                "[STRUCTURED_LOG] invalid MIMITA_RUN_METADATA: %s\n", e.what());
+        }
+    }
+    writeEvent(StructuredCategory::General, StructuredLevel::Important,
+               "run.started", "", "dev-loop runtime identity established", 0,
+               runFields);
     writeEvent(StructuredCategory::General, StructuredLevel::Important,
                "logger.started", "", "canonical JSONL logger started", 0,
                {{"path", mEventsPath}, {"run_id", mRunId},

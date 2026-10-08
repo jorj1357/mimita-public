@@ -13,6 +13,7 @@
 #include "network/ice-transport.h"
 #include "network/ice/ice-config.h"
 #include "network/coordinator-client.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -173,7 +174,18 @@ void tickIceCoordinator(ListenServerState& state, size_t playerCount)
     state.lastIceCoordinatorPollMs = nowDbg;
 
     // Non-blocking: poll coordinator for pending client requests
+    const uint64_t coordinatorStartMs = nowMs();
     auto pending = coordinatorIceHostPoll(state.serverCode, state.iceSessionId, (int)playerCount);
+    const uint64_t coordinatorDurationMs = nowMs() - coordinatorStartMs;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.coordinator-ice-poll", "server", "coordinator ICE host poll completed",
+        0,
+        {{"duration_ms", coordinatorDurationMs},
+         {"has_request", pending.hasRequest},
+         {"players", playerCount},
+         {"room_code", state.serverCode}},
+        __FILE__, __LINE__, __FUNCTION__);
     if (pending.hasRequest)
     {
         // Validate SDP before creating agent

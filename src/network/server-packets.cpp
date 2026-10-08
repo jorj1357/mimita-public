@@ -32,6 +32,7 @@
 #include <atomic>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <chrono>
 #include <random>
@@ -947,6 +948,12 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     std::strncpy(welcome.reconnectToken, p.reconnectToken.c_str(), sizeof(welcome.reconnectToken) - 1);
     std::memset(welcome.mapId, 0, sizeof(welcome.mapId));
     std::strncpy(welcome.mapId, gServerMapId.c_str(), sizeof(welcome.mapId) - 1);
+    const char* runtimeRunId = std::getenv("MIMITA_RUN_ID");
+    const char* runtimeBuildId = std::getenv("MIMITA_BUILD_ID");
+    if (runtimeRunId)
+        std::strncpy(welcome.runtimeRunId, runtimeRunId, sizeof(welcome.runtimeRunId) - 1);
+    if (runtimeBuildId)
+        std::strncpy(welcome.runtimeBuildId, runtimeBuildId, sizeof(welcome.runtimeBuildId) - 1);
     if (sendToSourceOrPlayer(sock, from, &p, nullptr, &welcome, sizeof(welcome)))
         ++totalPacketsOut;
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
@@ -1612,6 +1619,12 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
     std::memset(accept.mapId, 0, sizeof(accept.mapId));
     std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
+    const char* joinRunId = std::getenv("MIMITA_RUN_ID");
+    const char* joinBuildId = std::getenv("MIMITA_BUILD_ID");
+    if (joinRunId)
+        std::strncpy(accept.runtimeRunId, joinRunId, sizeof(accept.runtimeRunId) - 1);
+    if (joinBuildId)
+        std::strncpy(accept.runtimeBuildId, joinBuildId, sizeof(accept.runtimeBuildId) - 1);
     if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
         ++totalPacketsOut;
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
@@ -1710,6 +1723,12 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     accept.restorePx = p.pos.x;
     accept.restorePy = p.pos.y;
     accept.restorePz = p.pos.z;
+    const char* reconnectRunId = std::getenv("MIMITA_RUN_ID");
+    const char* reconnectBuildId = std::getenv("MIMITA_BUILD_ID");
+    if (reconnectRunId)
+        std::strncpy(accept.runtimeRunId, reconnectRunId, sizeof(accept.runtimeRunId) - 1);
+    if (reconnectBuildId)
+        std::strncpy(accept.runtimeBuildId, reconnectBuildId, sizeof(accept.runtimeBuildId) - 1);
     const int acceptCopies = resendExistingAccept ? 1 : 4;
     for (int i = 0; i < acceptCopies; ++i)
     {

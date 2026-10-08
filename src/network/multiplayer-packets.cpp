@@ -399,6 +399,9 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.lastHelloMs = 0;
     ctx.connectionState = ConnectionState::Connecting;
     ctx.lastSnapshotReceivedMs = 0;
+    ctx.lastSnapshotDiagnosticsMs = 0;
+    ctx.lastSnapshotDiagnosticArrivalMs = 0;
+    ctx.serverIdentityMismatch = false;
     ctx.connectStartMs = nowMs();
     ctx.packetsSent = 0;
     ctx.packetsReceived = 0;
@@ -1124,6 +1127,9 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.tick = 0;
     ctx.lastHelloMs = 0;
     ctx.lastSnapshotReceivedMs = 0;
+    ctx.lastSnapshotDiagnosticsMs = 0;
+    ctx.lastSnapshotDiagnosticArrivalMs = 0;
+    ctx.serverIdentityMismatch = false;
     ctx.connectStartMs = nowMs();
     ctx.packetsSent = 0;
     ctx.packetsReceived = 0;

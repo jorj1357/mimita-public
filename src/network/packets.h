@@ -20,7 +20,9 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 36: DuelStatePacket carries the server-authoritative procedural-world state
 // (Infinite Dungeon Slayer) so clients render rooms from server truth.
 // 39: Replicated NPC avatars and match actor identities use expanded fields.
-constexpr uint16_t PROTOCOL_VERSION = 40;
+// 41: WelcomePacket carries the dev-loop run/build identity so a new client
+//      cannot silently attach to an older persistent server.
+constexpr uint16_t PROTOCOL_VERSION = 41;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -37,6 +39,8 @@ enum NetworkPlayerStateFlags : uint16_t
 constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;
 constexpr int MAX_VIP_JOIN_TICKET_BYTES = 64;
+constexpr int MAX_RUNTIME_RUN_ID_BYTES = 64;
+constexpr int MAX_RUNTIME_BUILD_ID_BYTES = 96;
 constexpr int MAX_PLAYERS = 32;
 constexpr int MAX_SNAPSHOT_ENTITIES = 90;
 constexpr int MAX_NAME_BYTES = 32;
@@ -372,9 +376,11 @@ struct WelcomePacket
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
     char mapId[MAX_NAME_BYTES];
+    char runtimeRunId[MAX_RUNTIME_RUN_ID_BYTES] = {};
+    char runtimeBuildId[MAX_RUNTIME_BUILD_ID_BYTES] = {};
 };
 
-static_assert(sizeof(WelcomePacket) == 160, "WelcomePacket wire size changed");
+static_assert(sizeof(WelcomePacket) == 320, "WelcomePacket wire size changed");
 
 struct InputCommandRedundancySlot
 {
@@ -1288,9 +1294,11 @@ struct JoinAcceptPacket
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
     char mapId[MAX_NAME_BYTES];
+    char runtimeRunId[MAX_RUNTIME_RUN_ID_BYTES] = {};
+    char runtimeBuildId[MAX_RUNTIME_BUILD_ID_BYTES] = {};
 };
 
-static_assert(sizeof(JoinAcceptPacket) == 160, "JoinAcceptPacket wire size changed");
+static_assert(sizeof(JoinAcceptPacket) == 320, "JoinAcceptPacket wire size changed");
 
 struct JoinRejectPacket
 {
@@ -1323,9 +1331,11 @@ struct ReconnectAcceptPacket
     float restorePx = 0.0f;
     float restorePy = 0.0f;
     float restorePz = 0.0f;
+    char runtimeRunId[MAX_RUNTIME_RUN_ID_BYTES] = {};
+    char runtimeBuildId[MAX_RUNTIME_BUILD_ID_BYTES] = {};
 };
 
-static_assert(sizeof(ReconnectAcceptPacket) == 156, "ReconnectAcceptPacket wire size changed");
+static_assert(sizeof(ReconnectAcceptPacket) == 316, "ReconnectAcceptPacket wire size changed");
 
 struct ClientMapReadyPacket
 {

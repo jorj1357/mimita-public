@@ -90,10 +90,12 @@ static bool runVersionInfoCli()
     const std::string eventsPath = StructuredLogger::instance().eventsPath();
     const std::string runId = StructuredLogger::instance().runId();
     const char* commandLine = GetCommandLineA();
+    const char* explicitRole = std::getenv("MIMITA_PROCESS_ROLE");
     const std::string processRole =
-        commandLine && (std::strstr(commandLine, "--server") ||
-                        std::strstr(commandLine, "-server"))
-        ? "server" : "client";
+        (explicitRole && *explicitRole) ? explicitRole :
+        (commandLine && (std::strstr(commandLine, "--server") ||
+                         std::strstr(commandLine, "-server"))
+            ? "server" : "client");
     const nlohmann::json info = {
         {"executable", exePath},
         {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},

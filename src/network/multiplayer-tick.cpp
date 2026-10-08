@@ -67,6 +67,42 @@ constexpr uint32_t POST_GAP_RESYNC_TICKS = 30;
 // How long the post-gap resync stays armed after the gap is detected.
 constexpr uint64_t POST_GAP_RESYNC_WINDOW_MS = 1000;
 
+void logClientSnapshotDiagnostics(MultiplayerContext& ctx,
+                                  uint32_t snapshotTick,
+                                  uint64_t tickGap,
+                                  size_t entityCount,
+                                  size_t packetBytes,
+                                  uint32_t chunkCount,
+                                  const char* transport)
+{
+    const uint64_t now = nowMs();
+    if (ctx.lastSnapshotDiagnosticsMs != 0 &&
+        now - ctx.lastSnapshotDiagnosticsMs < 1000)
+        return;
+    ctx.lastSnapshotDiagnosticsMs = now;
+    const uint64_t interarrivalMs = ctx.lastSnapshotDiagnosticArrivalMs == 0
+        ? 0 : (now >= ctx.lastSnapshotDiagnosticArrivalMs
+            ? now - ctx.lastSnapshotDiagnosticArrivalMs : 0);
+    ctx.lastSnapshotDiagnosticArrivalMs = now;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.client-snapshot-window", "", "complete authoritative snapshot applied",
+        snapshotTick,
+        {{"transport", transport},
+         {"snapshot_tick", snapshotTick},
+         {"tick_gap", tickGap},
+         {"packet_bytes", packetBytes},
+         {"chunk_count", chunkCount},
+         {"entity_count", entityCount},
+         {"remote_players", ctx.remotePlayers.size()},
+         {"remote_npcs", ctx.remoteNpcs.size()},
+         {"snapshots_received", ctx.snapshotsReceived},
+         {"snapshots_missed", ctx.snapshotsMissed},
+         {"snapshot_interarrival_ms", interarrivalMs},
+         {"server_tick", ctx.latestServerTick}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 MimitaVip::VipAppearance vipAppearanceFromEntity(const SnapshotEntity& entity)
 {
     return MimitaVip::appearanceFromBytes(
@@ -901,7 +937,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     if (ctx.connectionState == ConnectionState::Connecting ||
         ctx.connectionState == ConnectionState::WaitJoinAccept)
     {
-        if (!ctx.wrongPassword && currentMs - ctx.lastHelloMs > 500)
+        if (!ctx.wrongPassword && !ctx.serverIdentityMismatch &&
+            currentMs - ctx.lastHelloMs > 500)
         {
             if (!ctx.joinToken.empty())
             {
@@ -948,6 +985,35 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         if (header->type == PACKET_WELCOME && bytes >= (int)sizeof(WelcomePacket))
         {
             WelcomePacket* welcome = reinterpret_cast<WelcomePacket*>(buffer);
+            const char* expectedRunId = std::getenv("MIMITA_EXPECTED_RUN_ID");
+            const char* expectedBuildId = std::getenv("MIMITA_EXPECTED_BUILD_ID");
+            const bool runMismatch = expectedRunId && *expectedRunId &&
+                std::strncmp(expectedRunId, welcome->runtimeRunId,
+                             sizeof(welcome->runtimeRunId)) != 0;
+            const bool buildMismatch = expectedBuildId && *expectedBuildId &&
+                std::strncmp(expectedBuildId, welcome->runtimeBuildId,
+                             sizeof(welcome->runtimeBuildId)) != 0;
+            if (runMismatch || buildMismatch)
+            {
+                ctx.serverIdentityMismatch = true;
+                ctx.connected = false;
+                ctx.connectFailed = true;
+                ctx.connectionState = ConnectionState::Disconnected;
+                ctx.connectionStatus = "Server identity mismatch";
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Errors,
+                    "network.server-identity-mismatch", "", "server rejected by runtime identity", ctx.tick,
+                    {{"expected_run_id", expectedRunId ? expectedRunId : ""},
+                     {"actual_run_id", welcome->runtimeRunId},
+                     {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
+                     {"actual_build_id", welcome->runtimeBuildId},
+                     {"server_tick", welcome->header.tick}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                printf("[NET CONNECT] rejected server identity expectedRun=%s actualRun=%s expectedBuild=%s actualBuild=%s\n",
+                       expectedRunId ? expectedRunId : "", welcome->runtimeRunId,
+                       expectedBuildId ? expectedBuildId : "", welcome->runtimeBuildId);
+                return;
+            }
             ctx.localPlayerId = welcome->assignedPlayerId;
             ctx.connected = true;
             ctx.connectFailed = false;
@@ -990,6 +1056,28 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_JOIN_ACCEPT && bytes >= (int)sizeof(JoinAcceptPacket))
         {
             const JoinAcceptPacket* accept = reinterpret_cast<const JoinAcceptPacket*>(buffer);
+            const char* expectedRunId = std::getenv("MIMITA_EXPECTED_RUN_ID");
+            const char* expectedBuildId = std::getenv("MIMITA_EXPECTED_BUILD_ID");
+            const bool identityMismatch =
+                (expectedRunId && *expectedRunId && std::strncmp(expectedRunId, accept->runtimeRunId, sizeof(accept->runtimeRunId)) != 0) ||
+                (expectedBuildId && *expectedBuildId && std::strncmp(expectedBuildId, accept->runtimeBuildId, sizeof(accept->runtimeBuildId)) != 0);
+            if (identityMismatch)
+            {
+                ctx.serverIdentityMismatch = true;
+                ctx.connected = false;
+                ctx.connectFailed = true;
+                ctx.connectionState = ConnectionState::Disconnected;
+                ctx.connectionStatus = "Server identity mismatch";
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Errors,
+                    "network.server-identity-mismatch", "", "join accepted by unexpected runtime", ctx.tick,
+                    {{"expected_run_id", expectedRunId ? expectedRunId : ""},
+                     {"actual_run_id", accept->runtimeRunId},
+                     {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
+                     {"actual_build_id", accept->runtimeBuildId}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                return;
+            }
             ctx.localPlayerId = accept->assignedPlayerId;
             ctx.connected = true;
             ctx.connectFailed = false;
@@ -1050,6 +1138,28 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_RECONNECT_ACCEPT && bytes >= (int)sizeof(ReconnectAcceptPacket))
         {
             const ReconnectAcceptPacket* accept = reinterpret_cast<const ReconnectAcceptPacket*>(buffer);
+            const char* expectedRunId = std::getenv("MIMITA_EXPECTED_RUN_ID");
+            const char* expectedBuildId = std::getenv("MIMITA_EXPECTED_BUILD_ID");
+            const bool identityMismatch =
+                (expectedRunId && *expectedRunId && std::strncmp(expectedRunId, accept->runtimeRunId, sizeof(accept->runtimeRunId)) != 0) ||
+                (expectedBuildId && *expectedBuildId && std::strncmp(expectedBuildId, accept->runtimeBuildId, sizeof(accept->runtimeBuildId)) != 0);
+            if (identityMismatch)
+            {
+                ctx.serverIdentityMismatch = true;
+                ctx.connected = false;
+                ctx.connectFailed = true;
+                ctx.connectionState = ConnectionState::Disconnected;
+                ctx.connectionStatus = "Server identity mismatch";
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Errors,
+                    "network.server-identity-mismatch", "", "reconnected to unexpected runtime", ctx.tick,
+                    {{"expected_run_id", expectedRunId ? expectedRunId : ""},
+                     {"actual_run_id", accept->runtimeRunId},
+                     {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
+                     {"actual_build_id", accept->runtimeBuildId}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                return;
+            }
             ctx.localPlayerId = accept->assignedPlayerId;
             ctx.connected = true;
             ctx.connectFailed = false;
@@ -1085,6 +1195,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_SNAPSHOT && bytes >= (int)sizeof(SnapshotPacket))
         {
             SnapshotPacket* snapshot = reinterpret_cast<SnapshotPacket*>(buffer);
+            const uint64_t priorSnapshotTick = ctx.lastSnapshotTick;
             if (ctx.lastSnapshotTick != 0 &&
                 snapshot->header.tick > ctx.lastSnapshotTick + 1)
             {
@@ -1111,6 +1222,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
             processSnapshotEntities(ctx, snapshot->entities, count,
                                     snapshot->header.tick, dt, "legacy");
+            logClientSnapshotDiagnostics(ctx, snapshot->header.tick,
+                                         priorSnapshotTick == 0 || snapshot->header.tick <= priorSnapshotTick
+                                             ? 0 : snapshot->header.tick - priorSnapshotTick,
+                                         count, static_cast<size_t>(bytes), 1, "legacy");
         }
         else if (header->type == PACKET_SHOT_EVENT &&
                  bytes >= (int)sizeof(ShotEventPacket))
@@ -1160,6 +1275,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             }
 
             // All chunks received — sort and reassemble
+            const uint64_t priorSnapshotTick = ctx.lastSnapshotTick;
             std::vector<SnapshotChunkPacket> sorted;
             sorted.reserve(chunk.chunkCount);
             for (uint16_t ci = 0; ci < chunk.chunkCount; ++ci)
@@ -1214,6 +1330,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             processSnapshotEntities(ctx, snapshotEntities.data(),
                                     (uint32_t)snapshotEntities.size(),
                                     chunk.header.tick, dt, "chunk");
+
+            logClientSnapshotDiagnostics(ctx, chunk.header.tick,
+                                         priorSnapshotTick == 0 || chunk.header.tick <= priorSnapshotTick
+                                             ? 0 : chunk.header.tick - priorSnapshotTick,
+                                         snapshotEntities.size(), static_cast<size_t>(bytes),
+                                         chunk.chunkCount, "chunk");
 
             ctx.snapshotChunkBuffers.erase(chunk.header.tick);
         }

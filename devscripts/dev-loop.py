@@ -23,13 +23,17 @@ import hashlib
 import json
 import os
 import random
+import secrets
 import shutil
+import socket
 import struct
 import subprocess
 import sys
 import threading
 import time
 import tempfile
+import uuid
+from queue import Empty, Queue
 from pathlib import Path
 
 # Running this file as `python devscripts/dev-loop.py` puts `devscripts/`
@@ -43,6 +47,7 @@ from jsonc import load as load_jsonc
 DEV_ROOT = ROOT / ".dev"
 BUILD_ROOT = DEV_ROOT / "builds"
 STATE_PATH = DEV_ROOT / "state.json"
+CURRENT_RUN_PATH = DEV_ROOT / "current-run.json"
 LOCK_PATH = DEV_ROOT / "dev-loop.lock"
 PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
 LAUNCH_MODE_PATH = ROOT / "devscripts" / "dev-launch-modes.json"
@@ -149,10 +154,38 @@ def allowed_dev_maps(profile: dict) -> list[str]:
 
 def create_shared_events_path() -> str:
     """One run directory + events.jsonl shared by the dev server and client."""
-    now = datetime.datetime.now()
-    run_dir = ROOT / "logs" / now.strftime("%m-%d-%Y") / now.strftime("%Y%m%d_%H%M%S")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    run_dir = ROOT / "logs" / now.strftime("%Y-%m-%d") / now.strftime("%Y%m%d_%H%M%S")
+    suffix = 1
+    base = run_dir
+    while run_dir.exists():
+        run_dir = Path(f"{base}_{suffix:02d}")
+        suffix += 1
     run_dir.mkdir(parents=True, exist_ok=True)
     return str(run_dir / "events.jsonl")
+
+
+def utc_now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def executable_identity(path: Path) -> dict:
+    valid, reason, digest = _executable_snapshot_is_valid(path)
+    stat = path.stat() if path.exists() else None
+    return {
+        "path": str(path),
+        "exists": bool(stat),
+        "valid": valid,
+        "validation": reason,
+        "sha256": digest if valid else "",
+        "created_utc": datetime.datetime.fromtimestamp(
+            stat.st_ctime, datetime.timezone.utc
+        ).isoformat(timespec="milliseconds").replace("+00:00", "Z") if stat else "",
+        "modified_utc": datetime.datetime.fromtimestamp(
+            stat.st_mtime, datetime.timezone.utc
+        ).isoformat(timespec="milliseconds").replace("+00:00", "Z") if stat else "",
+        "size_bytes": stat.st_size if stat else 0,
+    }
 
 
 def select_dev_map(profile: dict, requested_map: str = "") -> str:
@@ -507,10 +540,34 @@ class DevLoop:
         # Shared canonical events.jsonl for the server and its client. Created
         # once when the durable server starts and reused across client launches.
         self.events_path: str | None = None
+        self.run_id: str | None = None
+        self.run_started_utc: str | None = None
+        self.run_metadata: dict = {}
+        self.control_token = secrets.token_urlsafe(24)
+        self.control_socket: socket.socket | None = None
+        self.control_thread: threading.Thread | None = None
+        self.control_requests: Queue[dict] = Queue()
+        self.control_event_lock = threading.Lock()
+        self.control_port: int | None = None
+        self.current_map = ""
+        self.client_args: list[str] = []
+        self.server_ready = False
+        self.client_ready = False
+        self.builds_match = False
         self.status_visible = False
         self.status_line_count = 0
 
     def state(self, status: str = "idle") -> dict:
+        client_executable = self.client_args[0] if self.client_args else None
+        latest_identity = self.latest_build_identity()
+        identities_match = bool(
+            self.server_exe and client_executable and
+            os.path.normcase(self.server_exe) == os.path.normcase(client_executable) and
+            self.run_metadata.get("build_id") == (
+                f"{latest_identity.get('build_number')}:{latest_identity.get('sha256')}"
+                if latest_identity else ""
+            )
+        )
         return {
             "profile": self.profile.get("name", "unnamed"),
             "launch_mode": self.launch_mode_id,
@@ -522,11 +579,189 @@ class DevLoop:
             "auto_restart": self.auto_restart,
             "build_status": status,
             "message": self.last_message,
-            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "updated_at": utc_now(),
+            "run_id": self.run_id,
+            "run_started_utc": self.run_started_utc,
+            "run_metadata": dict(self.run_metadata),
+            "events_path": self.events_path,
+            "control_port": self.control_port,
+            "control_token": self.control_token if self.control_port else None,
+            "server_pid": self.server_pid,
+            "server_executable": self.server_exe,
+            "server_args": list(self.server_args),
+            "server_alive": self.server_health(),
+            "server_ready": self.server_ready,
+            "client_pids": [p.pid for p in self.processes if p.poll() is None],
+            "client_executables": [client_executable] if self.processes and client_executable else [],
+            "client_args": list(self.client_args),
+            "client_ready": self.client_ready,
+            "builds_match": bool(self.builds_match and identities_match),
+            "map": self.current_map,
+            "build_identity": self.latest_build_identity(),
+            "launch_mode_name": self.launch_mode.get("name", "unnamed"),
+            "launch_mode_config": str(LAUNCH_MODE_PATH),
         }
 
     def save_state(self, status: str = "idle") -> None:
-        write_json(STATE_PATH, self.state(status))
+        snapshot = self.state(status)
+        write_json(STATE_PATH, snapshot)
+        write_json(CURRENT_RUN_PATH, snapshot)
+
+    def record_control_event(self, request: dict, status: str, message: str) -> None:
+        """Append control-plane evidence to the active canonical journal."""
+        if not self.events_path:
+            return
+        record = {
+            "category": "GENERAL",
+            "event": "dev-loop.control",
+            "event_id": f"DEV_CONTROL_{request.get('request_id', uuid.uuid4().hex)}",
+            "fields": {
+                "action": request.get("action", ""),
+                "launch_mode": request.get("launch_mode"),
+                "request_id": request.get("request_id", ""),
+                "requested_by": request.get("requested_by", "ai"),
+                "status": status,
+                "message": message,
+            },
+            "level": "IMPORTANT",
+            "pid": os.getpid(),
+            "process": "dev-loop",
+            "process_role": "dev-loop",
+            "reason": message,
+            "run_id": self.run_id or "",
+            "wall_time": utc_now(),
+        }
+        try:
+            with self.control_event_lock:
+                with open(self.events_path, "a", encoding="utf-8", newline="\n") as journal:
+                    journal.write(json.dumps(record, separators=(",", ":")) + "\n")
+        except OSError as error:
+            print(f"[DEV CONTROL] unable to record journal event: {error}")
+
+    def latest_executable(self) -> Path:
+        if self.latest_build is None:
+            return BUILD_ROOT / "(none)" / "mimita.exe"
+        return BUILD_ROOT / f"{self.latest_build:04d}" / "mimita.exe"
+
+    def latest_build_identity(self) -> dict | None:
+        if self.latest_build is None:
+            return None
+        exe = self.latest_executable()
+        info = executable_identity(exe)
+        info["build_number"] = self.latest_build
+        info["source_generation"] = self.latest_generation
+        info["source_current"] = not self.latest_stale
+        return info
+
+    def start_control_server(self) -> None:
+        if self.control_socket is not None:
+            return
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(8)
+        server.settimeout(0.5)
+        self.control_socket = server
+        self.control_port = int(server.getsockname()[1])
+        self.control_thread = threading.Thread(
+            target=self.control_loop, name="mimita-dev-control", daemon=True
+        )
+        self.control_thread.start()
+
+    def stop_control_server(self) -> None:
+        server = self.control_socket
+        self.control_socket = None
+        self.control_port = None
+        if server is not None:
+            try:
+                server.close()
+            except OSError:
+                pass
+
+    def control_loop(self) -> None:
+        while not self.stop_event.is_set():
+            server = self.control_socket
+            if server is None:
+                return
+            try:
+                connection, _ = server.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            try:
+                connection.settimeout(3.0)
+                raw = connection.recv(65536)
+                request = json.loads(raw.decode("utf-8"))
+                if request.get("token") != self.control_token:
+                    response = {"accepted": False, "error": "invalid control token"}
+                elif request.get("action") == "status":
+                    response = {"accepted": True, "state": self.state("status")}
+                else:
+                    request["requested_by"] = "ai"
+                    self.control_requests.put(request)
+                    response = {
+                        "accepted": True,
+                        "queued": True,
+                        "request_id": request.get("request_id", ""),
+                        "state": self.state("request_queued"),
+                    }
+                connection.sendall((json.dumps(response) + "\n").encode("utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError) as error:
+                try:
+                    connection.sendall((json.dumps({"accepted": False, "error": str(error)}) + "\n").encode("utf-8"))
+                except OSError:
+                    pass
+            finally:
+                try:
+                    connection.close()
+                except OSError:
+                    pass
+
+    def process_control_requests(self) -> None:
+        while True:
+            try:
+                request = self.control_requests.get_nowait()
+            except Empty:
+                return
+            action = str(request.get("action", "")).strip().lower()
+            request_id = str(request.get("request_id", ""))
+            print(f"[DEV CONTROL] request={request_id or '(none)'} action={action}")
+            if action == "launch":
+                requested_mode = request.get("launch_mode")
+                if requested_mode is not None:
+                    try:
+                        selected = load_launch_mode(str(requested_mode))
+                    except SystemExit as error:
+                        self.last_message = str(error)
+                        self.record_control_event(request, "rejected", self.last_message)
+                        self.save_state("request_rejected")
+                        continue
+                    self.launch_mode_id = str(requested_mode)
+                    self.launch_mode = selected
+                self.manual_launch_requested = True
+                self.build_pending = True
+                self.change_event.clear()
+                self.last_message = f"AI launch queued for mode {self.launch_mode_id}"
+                self.record_control_event(request, "accepted", self.last_message)
+                self.save_state("build_queued")
+            elif action == "stop-client":
+                self.stop_processes()
+                self.record_control_event(request, "completed", "client stopped")
+                self.save_state("client_stopped")
+            elif action == "stop-server":
+                self.stop_server()
+                self.record_control_event(request, "completed", "server stop requested")
+                self.save_state("server_stopped")
+            elif action == "stop":
+                self.stop_event.set()
+                self.last_message = "stop requested by AI"
+                self.record_control_event(request, "accepted", self.last_message)
+                self.save_state("stop_requested")
+            else:
+                self.last_message = f"unknown AI action: {action}"
+                self.record_control_event(request, "rejected", self.last_message)
+                self.save_state("request_rejected")
 
     def watch(self) -> None:
         while not self.stop_event.wait(POLL_SECONDS):
@@ -695,26 +930,72 @@ class DevLoop:
                 return str(args[index + 1])
         return ""
 
-    def stop_server(self) -> None:
+    def stop_server(self) -> bool:
         """Terminate only the external dev server, leaving clients untouched.
 
         Used when the launch-mode map changed and the old server would otherwise
         keep serving the previous map for the whole session.
         """
         process = self.server_process
+        stopped = True
         if process is not None and process.poll() is None:
             process.terminate()
             try:
                 process.wait(timeout=3.0)
             except subprocess.TimeoutExpired:
                 process.kill()
+                try:
+                    process.wait(timeout=3.0)
+                except subprocess.TimeoutExpired:
+                    stopped = False
+        if process is not None and process.poll() is None:
+            stopped = False
         self.server_process = None
         self.server_pid = None
         self.server_exe = None
         self.server_args = []
         self.server_unavailable = True
+        self.server_ready = False
+        self.builds_match = False
         self.events_path = None
+        self.run_metadata = {}
         self.cleanup_room_file()
+        if not stopped:
+            self.last_message = f"refused to replace server pid={process.pid if process else '(none)'}; process remains alive"
+            print(f"[DEV SERVER] {self.last_message}")
+        return stopped
+
+    def wait_for_logger_started(self, role: str, pid: int, timeout: float = 20.0) -> bool:
+        """Confirm the exact child wrote its own logger.started event."""
+        if not self.events_path:
+            return False
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                with open(self.events_path, "r", encoding="utf-8") as journal:
+                    for line in journal:
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if event.get("event") != "logger.started":
+                            continue
+                        fields = event.get("fields", {})
+                        if (fields.get("pid") == pid and
+                                fields.get("process_role", fields.get("process")) == role):
+                            return True
+            except OSError:
+                pass
+            time.sleep(0.1)
+        return False
+
+    def server_matches_executable(self, exe: Path) -> bool:
+        if not self.server_health() or not self.server_exe:
+            return False
+        try:
+            return Path(self.server_exe).resolve() == exe.resolve()
+        except OSError:
+            return os.path.normcase(self.server_exe) == os.path.normcase(str(exe))
 
     def check_server_after_client(self) -> None:
         """Observe and repair durable-server state after a client exits.
@@ -753,17 +1034,24 @@ class DevLoop:
             print(f"[DEV] missing published executable: {exe}")
             return
 
-        # Stop only the previous dev-loop client. A GUI-style server remains
-        # open until its own console is closed or an explicit server-stop
-        # action terminates it.
+        # Stop the previous dev-loop client. A server from an older published
+        # build must never remain available to receive the new client.
         self.stop_processes()
+        self.client_ready = False
+        self.builds_match = False
         map_name = select_dev_map(
             self.profile,
             str(self.launch_mode.get("map", "")),
         )
         print(f"[DEV] selected allowed map: {map_name}")
         running_map = self.server_map_name()
-        if self.server_health() and running_map and running_map != map_name:
+        if self.server_health() and not self.server_matches_executable(exe):
+            print(f"[DEV SERVER] executable changed; replacing old server "
+                  f"pid={self.server_pid} exe={self.server_exe}")
+            if not self.stop_server():
+                self.save_state("server_stop_failed")
+                return
+        elif self.server_health() and running_map and running_map != map_name:
             print(f"[DEV SERVER] map changed {running_map} -> {map_name}; "
                   f"restarting server pid={self.server_pid}")
             self.stop_server()
@@ -792,7 +1080,53 @@ class DevLoop:
             server_args = self.build_server_args(exe, map_name, self.room_file_path)
             # One shared canonical events.jsonl for this server and its client.
             self.events_path = create_shared_events_path()
-            server_env = {**os.environ, "MIMITA_EVENTS_FILE": self.events_path}
+            self.run_id = Path(self.events_path).parent.name
+            self.run_started_utc = utc_now()
+            self.current_map = map_name
+            self.server_ready = False
+            self.client_ready = False
+            self.builds_match = False
+            identity = self.latest_build_identity() or {}
+            build_id = f"{identity.get('build_number', self.latest_build)}:{identity.get('sha256', '')}"
+            metadata = {
+                "run_id": self.run_id,
+                "build_number": self.latest_build,
+                "build_id": build_id,
+                "source_generation": self.latest_generation,
+                "source_current": not self.latest_stale,
+                "launch_mode": self.launch_mode_id,
+                "launch_mode_name": self.launch_mode.get("name", "unnamed"),
+                "map": map_name,
+                "events_path": self.events_path,
+                "executable": str(exe),
+                "started_utc": self.run_started_utc,
+            }
+            self.run_metadata = metadata
+            common_env = {
+                **os.environ,
+                "MIMITA_EVENTS_FILE": self.events_path,
+                "MIMITA_RUN_ID": self.run_id,
+                "MIMITA_BUILD_ID": build_id,
+                "MIMITA_RUN_METADATA": json.dumps(metadata, separators=(",", ":")),
+            }
+            server_env = {**common_env, "MIMITA_PROCESS_ROLE": "server"}
+            self.save_state("launching_server")
+            version_env = {**common_env, "MIMITA_PROCESS_ROLE": "preflight"}
+            try:
+                version = subprocess.run(
+                    [str(exe), "--versioninfo"], cwd=ROOT, env=version_env,
+                    capture_output=True, text=True, timeout=20, check=False,
+                )
+                print(f"[DEV] versioninfo exit={version.returncode}")
+                if version.stdout:
+                    print(version.stdout, end="")
+                if version.stderr:
+                    print(version.stderr, end="", file=sys.stderr)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                self.last_message = f"versioninfo failed: {error}"
+                self.save_state("versioninfo_failed")
+                print(f"[DEV] {self.last_message}")
+                return
             print(f"[DEV] launching build {self.latest_build} server")
             print(f"[DEV] shared events file: {self.events_path}")
             server = subprocess.Popen(
@@ -807,6 +1141,13 @@ class DevLoop:
             self.server_args = list(server_args)
             self.server_launch_ms = time.time() * 1000.0
             self.server_unavailable = False
+            self.server_ready = self.wait_for_logger_started("server", server.pid)
+            if not self.server_ready:
+                self.last_message = f"server pid={server.pid} did not write logger.started"
+                self.save_state("server_logger_missing")
+                if not self.stop_server():
+                    print(f"[DEV SERVER] {self.last_message}; server could not be stopped")
+                return
             print(f"[DEV SERVER] launched pid={server.pid} args={' '.join(server_args[1:])}")
 
             # The dedicated server registers with the coordinator, then writes
@@ -849,6 +1190,7 @@ class DevLoop:
             # The server has consumed the room-file handshake. Remove the
             # temporary file like the GUI does, but retain room_code for reuse.
             self.cleanup_room_file(clear_code=False)
+            self.server_ready = True
             print(f"[DEV SERVER] room={room_code} alive=1")
             print(f"[DEV] ROOM CODE: {room_code}")
 
@@ -867,6 +1209,12 @@ class DevLoop:
             **os.environ,
             "MIMITA_EVENTS_FILE": self.events_path,
             "MIMITA_DEV_LOOP_SERVER": "1",
+            "MIMITA_RUN_ID": self.run_id or Path(self.events_path).parent.name,
+            "MIMITA_EXPECTED_RUN_ID": self.run_id or Path(self.events_path).parent.name,
+            "MIMITA_EXPECTED_BUILD_ID": f"{(self.latest_build_identity() or {}).get('build_number', self.latest_build)}:{(self.latest_build_identity() or {}).get('sha256', '')}",
+            "MIMITA_BUILD_ID": f"{(self.latest_build_identity() or {}).get('build_number', self.latest_build)}:{(self.latest_build_identity() or {}).get('sha256', '')}",
+            "MIMITA_RUN_METADATA": json.dumps(self.run_metadata, separators=(",", ":")),
+            "MIMITA_PROCESS_ROLE": "client",
         }
         print(f"[DEV] launching build {self.latest_build} client")
         print(f"[DEV] shared events file: {self.events_path}")
@@ -877,8 +1225,14 @@ class DevLoop:
             creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
         )
         self.processes.append(client)
+        self.client_args = list(client_args)
         self.running_build = self.latest_build
-        self.save_state("running")
+        self.client_ready = self.wait_for_logger_started("client", client.pid)
+        self.builds_match = bool(self.server_ready and self.client_ready and
+                                 self.server_exe == str(exe) and
+                                 self.latest_build_identity() and
+                                 self.latest_build_identity().get("valid"))
+        self.save_state("running" if self.client_ready else "client_logger_missing")
         self.print_status()
 
     def restart_latest(self) -> None:
@@ -1071,15 +1425,19 @@ class DevLoop:
         _status_clear_hook = self._invalidate_status
         watcher = threading.Thread(target=self.watch, daemon=True)
         watcher.start()
+        self.start_control_server()
         self.save_state("starting")
         print(f"[DEV] profile={self.profile.get('name', 'unnamed')}")
         print(f"[DEV] launch mode={self.launch_mode_id} ({self.launch_mode.get('name', 'unnamed')})")
         print(f"[DEV] root={ROOT}")
+        print(f"[DEV] control=127.0.0.1:{self.control_port}")
+        print(f"[DEV] status={CURRENT_RUN_PATH}")
         print("[DEV] one build at a time; edits during a build queue another build")
 
         try:
             while not self.stop_event.is_set():
                 self.key_commands()
+                self.process_control_requests()
                 self.maintain_process()
                 if self.build_pending:
                     self.change_event.clear()
@@ -1096,11 +1454,67 @@ class DevLoop:
             self.stop_processes()
             _status_clear_hook = None
             self.cleanup_room_file(clear_code=False)
+            self.stop_control_server()
             if self.server_health():
                 print(f"[DEV SERVER] shutdown requested; server left running "
                       f"pid={self.server_pid} room={self.room_code}")
             self.save_state("stopped")
             print("[DEV] stopped; client closed; persistent server left running")
+
+
+def read_current_run() -> dict | None:
+    try:
+        value = read_json(CURRENT_RUN_PATH)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def run_control_client(args: argparse.Namespace) -> int:
+    current = read_current_run()
+    if current is None:
+        print(f"[DEV CONTROL] no current run state: {CURRENT_RUN_PATH}", file=sys.stderr)
+        return 2
+
+    if args.status:
+        if args.json:
+            print(json.dumps(current, indent=2))
+        else:
+            print(f"[DEV STATUS] status={current.get('build_status')} run={current.get('run_id') or '(none)'}")
+            print(f"[DEV STATUS] build={current.get('latest_successful_build')} stale={current.get('latest_build_stale')}")
+            print(f"[DEV STATUS] events={current.get('events_path') or '(none)'}")
+            print(f"[DEV STATUS] server pid={current.get('server_pid')} alive={current.get('server_alive')}")
+            print(f"[DEV STATUS] client pids={current.get('client_pids', [])}")
+        if not args.request:
+            return 0
+
+    port = current.get("control_port")
+    token = current.get("control_token")
+    if not port or not token:
+        print("[DEV CONTROL] no running daemon control endpoint; start the dev loop once", file=sys.stderr)
+        return 2
+
+    request = {
+        "token": token,
+        "action": args.request,
+        "launch_mode": args.launch_mode,
+        "request_id": f"{utc_now()}-{uuid.uuid4().hex[:8]}",
+    }
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=5.0) as connection:
+            connection.sendall((json.dumps(request) + "\n").encode("utf-8"))
+            response = json.loads(connection.recv(65536).decode("utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"[DEV CONTROL] unable to contact daemon: {error}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(response, indent=2))
+    else:
+        print(f"[DEV CONTROL] accepted={response.get('accepted')} queued={response.get('queued', False)} ")
+        if response.get("error"):
+            print(f"[DEV CONTROL] error={response['error']}", file=sys.stderr)
+    return 0 if response.get("accepted") else 1
 
 
 def main() -> int:
@@ -1111,7 +1525,18 @@ def main() -> int:
         "--launch-mode",
         help="numeric dev launch mode from devscripts/dev-launch-modes.json",
     )
+    parser.add_argument("--status", action="store_true", help="read the current dev-loop status and exit")
+    parser.add_argument("--json", action="store_true", help="print control/status responses as JSON")
+    parser.add_argument(
+        "--request",
+        choices=("launch", "stop-client", "stop-server", "stop"),
+        help="send a command to the already-running dev-loop daemon and exit",
+    )
     args = parser.parse_args()
+
+    if args.status or args.request:
+        return run_control_client(args)
+
     owner_pid = acquire_dev_loop_lock()
     profile = load_profile(args.profile)
     try:
