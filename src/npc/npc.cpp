@@ -27,6 +27,7 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-subgrid.h"
+#include "physics/movement/actor-triangle-solver.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "render/render-player.h"
 #include "world/world.h"
@@ -879,7 +880,34 @@ void NpcSystem::update(const World& world, Player& player, float dt, const Input
         double npcMs = std::chrono::duration<double, std::milli>(tNpcEnd - tNpcStart).count();
         Perf::collectNpcProfile(nc.id, "total", npcMs);
     }
+    resolveActorCollisions(player, dt);
     Perf::flushNpcProfiles();
+}
+
+void NpcSystem::resolveActorCollisions(Player& player, float dt)
+{
+    std::vector<ActorCollisionParticipant> participants;
+    participants.reserve(npcs.size() + 1);
+    participants.push_back({&player, 1u, 0u, "player"});
+    for (Npc& npc : npcs)
+        participants.push_back({&npc.body, npc.id, npc.transformEpoch, "npc"});
+
+    const ActorPairCollisionSummary summary =
+        resolveActorTrianglePairs(participants, dt);
+    if (summary.broadphasePairs > 0 || summary.triangleContacts > 0) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Verbose,
+            "actor-collision.swarm-summary", "local-actor-pairs",
+            "local fixed-tick actor triangle pass", (uint32_t)player.movementSimulationTick,
+            {{"participants", participants.size()}, {"pair_count", summary.pairCount},
+             {"broadphase_pairs", summary.broadphasePairs},
+             {"triangle_candidates", summary.triangleCandidates},
+             {"triangle_contacts", summary.triangleContacts},
+             {"responses", summary.responses},
+             {"maximum_penetration", summary.maximumPenetration},
+             {"backend", "triangle_pair_manifold"}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& player, float dt)

@@ -659,6 +659,22 @@ bool Player::loadModelColliders(const char* path)
     return !physicalBody.parts.empty();
 }
 
+bool Player::loadCharacterColliders(const std::string& characterName)
+{
+    const CharacterManifest* manifest = CharacterRegistry::instance().get(characterName);
+    if (!manifest) {
+        manifest = CharacterRegistry::instance().get("DefaultGuy");
+        if (!manifest)
+            return loadModelColliders("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+    }
+
+    const std::string glbPath = "Characters/" + manifest->name + "/" + manifest->model;
+    const bool loaded = loadModelColliders(glbPath.c_str());
+    if (loaded)
+        mCharacterName = manifest->name;
+    return loaded;
+}
+
 bool Player::loadCharacter(const std::string& characterName)
 {
     const CharacterManifest* manifest = CharacterRegistry::instance().get(characterName);

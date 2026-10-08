@@ -14,6 +14,7 @@
 #include "physics/movement/actor-triangle-solver.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -49,6 +50,111 @@ bool finiteAabb(const AABB& a)
     return std::isfinite(a.min.x) && std::isfinite(a.min.y) && std::isfinite(a.min.z) &&
            std::isfinite(a.max.x) && std::isfinite(a.max.y) && std::isfinite(a.max.z) &&
            a.max.x >= a.min.x && a.max.y >= a.min.y && a.max.z >= a.min.z;
+}
+
+struct PairTriangle {
+    glm::vec3 v[3];
+    const char* part = "actor";
+};
+
+struct PairActorGeometry {
+    AABB bounds;
+    std::vector<PairTriangle> triangles;
+};
+
+glm::vec3 triangleCenter(const PairTriangle& t)
+{
+    return (t.v[0] + t.v[1] + t.v[2]) / 3.0f;
+}
+
+AABB triangleBounds(const PairTriangle& t)
+{
+    AABB b;
+    b.min = glm::min(t.v[0], glm::min(t.v[1], t.v[2]));
+    b.max = glm::max(t.v[0], glm::max(t.v[1], t.v[2]));
+    return b;
+}
+
+bool aabbOverlaps(const AABB& a, const AABB& b, float margin)
+{
+    return a.min.x <= b.max.x + margin && a.max.x + margin >= b.min.x &&
+           a.min.y <= b.max.y + margin && a.max.y + margin >= b.min.y &&
+           a.min.z <= b.max.z + margin && a.max.z + margin >= b.min.z;
+}
+
+void addAxis(std::array<glm::vec3, 11>& axes, int& axisCount,
+             const glm::vec3& axis)
+{
+    const float len2 = glm::dot(axis, axis);
+    if (len2 > 1e-8f && std::isfinite(len2) && axisCount < (int)axes.size())
+        axes[axisCount++] = axis / std::sqrt(len2);
+}
+
+bool triangleTriangleContact(const PairTriangle& a, const PairTriangle& b,
+                             glm::vec3& outNormal, float& outPenetration,
+                             glm::vec3& outPoint)
+{
+    const glm::vec3 ae[3] = {a.v[1] - a.v[0], a.v[2] - a.v[1], a.v[0] - a.v[2]};
+    const glm::vec3 be[3] = {b.v[1] - b.v[0], b.v[2] - b.v[1], b.v[0] - b.v[2]};
+    std::array<glm::vec3, 11> axes{};
+    int axisCount = 0;
+    addAxis(axes, axisCount, glm::cross(ae[0], ae[1]));
+    addAxis(axes, axisCount, glm::cross(be[0], be[1]));
+    for (const glm::vec3& x : ae)
+        for (const glm::vec3& y : be)
+            addAxis(axes, axisCount, glm::cross(x, y));
+    if (axisCount == 0) return false;
+
+    float minimumOverlap = std::numeric_limits<float>::max();
+    glm::vec3 bestAxis(0.0f, 0.0f, 1.0f);
+    for (int axisIndex = 0; axisIndex < axisCount; ++axisIndex) {
+        const glm::vec3& axis = axes[axisIndex];
+        float amin = glm::dot(axis, a.v[0]);
+        float amax = amin;
+        float bmin = glm::dot(axis, b.v[0]);
+        float bmax = bmin;
+        for (int i = 1; i < 3; ++i) {
+            const float av = glm::dot(axis, a.v[i]);
+            const float bv = glm::dot(axis, b.v[i]);
+            amin = std::min(amin, av); amax = std::max(amax, av);
+            bmin = std::min(bmin, bv); bmax = std::max(bmax, bv);
+        }
+        const float overlap = std::min(amax, bmax) - std::max(amin, bmin);
+        if (overlap < -0.002f) return false;
+        if (overlap < minimumOverlap) {
+            minimumOverlap = overlap;
+            bestAxis = axis;
+        }
+    }
+
+    const glm::vec3 direction = triangleCenter(a) - triangleCenter(b);
+    if (glm::dot(bestAxis, direction) < 0.0f) bestAxis = -bestAxis;
+    outNormal = bestAxis;
+    outPenetration = std::max(0.0f, minimumOverlap);
+    outPoint = (triangleCenter(a) + triangleCenter(b)) * 0.5f;
+    return true;
+}
+
+void collectPairGeometry(Player& actor, PairActorGeometry& out)
+{
+    out.triangles.clear();
+    out.bounds.min = glm::vec3(std::numeric_limits<float>::max());
+    out.bounds.max = glm::vec3(-std::numeric_limits<float>::max());
+    const std::vector<ActorCollisionMesh> meshes = collectActorCollisionMeshes(actor);
+    for (const ActorCollisionMesh& mesh : meshes) {
+        if (!mesh.localTriangles) continue;
+        for (const CollisionTriangle& local : *mesh.localTriangles) {
+            PairTriangle tri;
+            tri.part = mesh.label;
+            tri.v[0] = glm::vec3(mesh.desiredTransform * glm::vec4(local.a, 1.0f));
+            tri.v[1] = glm::vec3(mesh.desiredTransform * glm::vec4(local.b, 1.0f));
+            tri.v[2] = glm::vec3(mesh.desiredTransform * glm::vec4(local.c, 1.0f));
+            const AABB tb = triangleBounds(tri);
+            out.bounds.min = glm::min(out.bounds.min, tb.min);
+            out.bounds.max = glm::max(out.bounds.max, tb.max);
+            out.triangles.push_back(tri);
+        }
+    }
 }
 
 nlohmann::json vec3Json(const glm::vec3& v)
@@ -742,6 +848,158 @@ bool runActorTriangleCollisionStep(
     }
 
     return true;
+}
+
+ActorPairCollisionSummary resolveActorTrianglePairs(
+    std::vector<ActorCollisionParticipant>& participants, float dt)
+{
+    ActorPairCollisionSummary summary;
+    if (participants.size() < 2 || dt <= 0.0f)
+        return summary;
+
+    thread_local std::vector<int> order;
+    order.clear();
+    order.reserve(participants.size());
+    for (int i = 0; i < (int)participants.size(); ++i) {
+        if (participants[i].actor && !participants[i].actor->dead &&
+            participants[i].actor->currentHp > 0)
+            order.push_back(i);
+    }
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        if (participants[a].actorId != participants[b].actorId)
+            return participants[a].actorId < participants[b].actorId;
+        return participants[a].lifecycleId < participants[b].lifecycleId;
+    });
+    summary.pairCount = (uint32_t)(order.size() * (order.size() - 1) / 2);
+
+    thread_local std::vector<PairActorGeometry> geometry;
+    geometry.resize(participants.size());
+    const float skin = std::max(0.01f, CollisionConfig::instance().collisionSkin());
+    for (int index : order)
+        collectPairGeometry(*participants[index].actor, geometry[index]);
+
+    // Two bounded passes let a three-actor chain transfer separation without
+    // repeatedly injecting energy. Pair order is stable by actor ID.
+    for (int pass = 0; pass < 2; ++pass) {
+        if (pass > 0) {
+            for (int index : order)
+                collectPairGeometry(*participants[index].actor, geometry[index]);
+        }
+        for (size_t oi = 0; oi < order.size(); ++oi) {
+            for (size_t oj = oi + 1; oj < order.size(); ++oj) {
+                const int ia = order[oi];
+                const int ib = order[oj];
+                ActorCollisionParticipant& pa = participants[ia];
+                ActorCollisionParticipant& pb = participants[ib];
+                PairActorGeometry& ga = geometry[ia];
+                PairActorGeometry& gb = geometry[ib];
+                if (!finiteAabb(ga.bounds) || !finiteAabb(gb.bounds) ||
+                    !aabbOverlaps(ga.bounds, gb.bounds, skin))
+                    continue;
+                ++summary.broadphasePairs;
+
+                glm::vec3 normalSum(0.0f);
+                glm::vec3 pointSum(0.0f);
+                float deepest = 0.0f;
+                int contacts = 0;
+                const char* partA = "actor";
+                const char* partB = "actor";
+                for (const PairTriangle& ta : ga.triangles) {
+                    const AABB ba = triangleBounds(ta);
+                    for (const PairTriangle& tb : gb.triangles) {
+                        if (!aabbOverlaps(ba, triangleBounds(tb), skin))
+                            continue;
+                        ++summary.triangleCandidates;
+                        glm::vec3 normal;
+                        glm::vec3 point;
+                        float penetration = 0.0f;
+                        if (!triangleTriangleContact(ta, tb, normal, penetration, point))
+                            continue;
+                        ++summary.triangleContacts;
+                        normalSum += normal * std::max(penetration, 0.001f);
+                        pointSum += point;
+                        if (penetration > deepest) {
+                            deepest = penetration;
+                            partA = ta.part;
+                            partB = tb.part;
+                        }
+                        if (++contacts >= 16)
+                            break;
+                    }
+                    if (contacts >= 16)
+                        break;
+                }
+                if (contacts == 0)
+                    continue;
+
+                glm::vec3 normal = glm::length(normalSum) > 1e-5f
+                    ? glm::normalize(normalSum) : glm::vec3(0, 0, 1);
+                const float correction = glm::clamp(deepest + skin, 0.0f, 0.35f);
+                pa.actor->pos += normal * (correction * 0.5f);
+                pb.actor->pos -= normal * (correction * 0.5f);
+                pa.actor->updateModelWorldTransforms();
+                pb.actor->updateModelWorldTransforms();
+                ++summary.responses;
+                summary.maximumPenetration = std::max(summary.maximumPenetration, deepest);
+
+                const glm::vec3 relativeVelocity = pa.actor->vel - pb.actor->vel;
+                const float normalVelocity = glm::dot(relativeVelocity, normal);
+                float impulseMagnitude = 0.0f;
+                const float restitution = CollisionConfig::instance().bounceEnabled()
+                    ? glm::clamp(CollisionConfig::instance().bounceStrength(), 0.0f, 0.5f)
+                    : 0.0f;
+                if (normalVelocity < 0.0f) {
+                    impulseMagnitude = -(1.0f + restitution) * normalVelocity * 0.5f;
+                    const glm::vec3 impulse = normal * impulseMagnitude;
+                    pa.actor->vel += impulse;
+                    pb.actor->vel -= impulse;
+
+                    const glm::vec3 tangentVelocity = relativeVelocity - normal * normalVelocity;
+                    const float friction = glm::clamp(
+                        CollisionConfig::instance().bounceFriction(), 0.0f, 1.0f);
+                    const glm::vec3 tangentImpulse = tangentVelocity * (0.25f * friction);
+                    pa.actor->vel -= tangentImpulse * 0.5f;
+                    pb.actor->vel += tangentImpulse * 0.5f;
+                }
+
+                const uint32_t tick = (uint32_t)std::max(
+                    pa.actor->movementSimulationTick, pb.actor->movementSimulationTick);
+                auto& logger = StructuredLogger::instance();
+                if (logger.shouldLog(StructuredCategory::Collision,
+                                     StructuredLevel::Important)) {
+                    const std::string correlation =
+                        "actor-pair-" + std::to_string(pa.actorId) + "-" +
+                        std::to_string(pb.actorId);
+                    logger.writeEvent(
+                        StructuredCategory::Collision, StructuredLevel::Important,
+                        "actor-collision.contact", correlation,
+                        "triangle manifold contact", tick,
+                        {{"actor_a_id", pa.actorId}, {"actor_b_id", pb.actorId},
+                         {"actor_a_kind", pa.actorKind}, {"actor_b_kind", pb.actorKind},
+                         {"actor_a_lifecycle", pa.lifecycleId},
+                         {"actor_b_lifecycle", pb.lifecycleId},
+                         {"body_part_a", partA}, {"body_part_b", partB},
+                         {"triangle_contacts", contacts}, {"penetration", deepest},
+                         {"normal", vec3Json(normal)}, {"point", vec3Json(pointSum / (float)contacts)}} ,
+                        __FILE__, __LINE__, __FUNCTION__);
+                    logger.writeEvent(
+                        StructuredCategory::Collision, StructuredLevel::Important,
+                        "actor-collision.response", correlation,
+                        "bounded mass response", tick,
+                        {{"actor_a_id", pa.actorId}, {"actor_b_id", pb.actorId},
+                         {"backend", "triangle_pair_manifold"}, {"restitution", restitution},
+                         {"friction", CollisionConfig::instance().bounceFriction()},
+                         {"normal_velocity_before", normalVelocity},
+                         {"impulse_magnitude", impulseMagnitude},
+                         {"position_correction", correction},
+                         {"velocity_a", vec3Json(pa.actor->vel)},
+                         {"velocity_b", vec3Json(pb.actor->vel)}} ,
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
+        }
+    }
+    return summary;
 }
 
 // ── Deterministic self-test ────────────────────────────────────────

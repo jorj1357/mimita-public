@@ -28,8 +28,8 @@
       "file_output": false
     },
     "collision": {
-      "level": "off",
-      "file_output": false
+      "level": "important",
+      "file_output": true
     },
     "npc_combat": { "level": "off", "file_output": false },
     "npc_movement": { "level": "important", "file_output": false },

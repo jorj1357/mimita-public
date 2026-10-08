@@ -28,7 +28,6 @@ ReplaySaveWorker::~ReplaySaveWorker()
 
 bool ReplaySaveWorker::enqueue(std::function<void()> job)
 {
-    constexpr size_t kMaxQueuedJobs = 2;
     {
         std::lock_guard<std::mutex> lock(mMutex);
         if (mShutdown || mJobs.size() >= kMaxQueuedJobs)

@@ -273,6 +273,9 @@ public:
     // context (selected target + objective + optional goal) and calls this;
     // Sandbox and Counter-Strike both reach exactly this function.
     void updateOneNpc(Npc& npc, const World& world, const NpcMovementContext& context, float dt);
+    // Fixed-tick local actor-pair pass. The dedicated-server adapter will call
+    // the same owner once its server player bodies expose triangle geometry.
+    void resolveActorCollisions(Player& player, float dt);
     void render(const Camera& camera) const;
     void drawDebug(const Camera& camera) const;
     std::vector<DebugVis::NpcDebugInfo> debugInfo() const;

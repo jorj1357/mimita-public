@@ -13,6 +13,8 @@
 // Main thread enqueues jobs; worker executes them sequentially.
 class ReplaySaveWorker {
 public:
+    static constexpr size_t kMaxQueuedJobs = 2;
+
     ReplaySaveWorker();
     ~ReplaySaveWorker();
 

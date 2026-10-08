@@ -1,3 +1,5 @@
+2026 10 08 1706 jorj  i agree w this "Never make the unpaid version intentionally worse in order to create demand for the paid version."
+
 2026 10 08 1344 jorj todo explain better enshittification
 
 from wikipedia as of right now

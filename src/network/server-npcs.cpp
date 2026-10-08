@@ -33,6 +33,7 @@
 #include "config/collision-lod-config.h"
 #include "config/spawn-velocity-config.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/actor-triangle-solver.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "network/network-weapons.h"
@@ -58,6 +59,108 @@ namespace MimitaNet {
 // what if 8 10 2026 we set to be instant so we dont need anim to play before respawn 
 // 8 10 2026 keep this its so fun 
 constexpr float SERVER_NPC_RESPAWN_SECONDS = 0.01f;
+
+static bool ensureServerActorCollisionBody(Player& body, const char* actorKind,
+                                           uint32_t actorId, uint32_t lifecycleId,
+                                           uint32_t tick)
+{
+    if (!body.physicalBody.parts.empty())
+        return true;
+
+    const bool loaded = body.loadCharacterColliders("DefaultGuy");
+    size_t triangleCount = 0;
+    for (const PhysicalBodyPart& part : body.physicalBody.parts)
+        triangleCount += part.collider.triangles.size();
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Collision,
+        loaded ? StructuredLevel::Important : StructuredLevel::Errors,
+        "actor-collision.participant",
+        std::string(actorKind) + "-" + std::to_string(actorId),
+        loaded ? "server actor triangle body ready"
+               : "server actor triangle body unavailable",
+        tick,
+        nlohmann::json{
+            {"actor_id", actorId}, {"actor_kind", actorKind},
+            {"lifecycle_id", lifecycleId},
+            {"backend", "triangle_pair_manifold"},
+            {"character", "DefaultGuy"},
+            {"physical_part_count", body.physicalBody.parts.size()},
+            {"body_triangle_count", triangleCount},
+            {"eligible", loaded && !body.physicalBody.parts.empty()},
+            {"reason", loaded ? "headless_character_collider_loaded"
+                               : "headless_character_collider_load_failed"}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return loaded && !body.physicalBody.parts.empty();
+}
+
+static void resolveServerActorCollisions(
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    NpcSystem& npcSystem, uint32_t tick, float dt)
+{
+    std::vector<ActorCollisionParticipant> participants;
+    participants.reserve(players.size() + npcSystem.all().size());
+
+    for (auto& kv : players) {
+        ServerPlayer& serverPlayer = kv.second;
+        if (serverPlayer.connectionStale || serverPlayer.dead)
+            continue;
+        if (!serverPlayer.collisionBody)
+            serverPlayer.collisionBody = std::make_shared<Player>(false);
+        Player& body = *serverPlayer.collisionBody;
+        body.pos = serverPlayer.pos;
+        body.vel = serverPlayer.vel;
+        body.yaw = serverPlayer.yaw;
+        body.dead = false;
+        body.currentHp = std::max(1, serverPlayer.health);
+        body.updateModelWorldTransforms();
+        if (!ensureServerActorCollisionBody(body, "player", serverPlayer.id,
+                                            serverPlayer.transformEpoch, tick))
+            continue;
+        participants.push_back({&body, serverPlayer.id,
+                                serverPlayer.transformEpoch, "player"});
+    }
+
+    for (Npc& npc : npcSystem.all()) {
+        if (npc.body.dead || npc.body.currentHp <= 0)
+            continue;
+        if (!ensureServerActorCollisionBody(npc.body, "npc", npc.id,
+                                            npc.transformEpoch, tick))
+            continue;
+        participants.push_back({&npc.body, npc.id, npc.transformEpoch, "npc"});
+    }
+
+    const ActorPairCollisionSummary summary =
+        resolveActorTrianglePairs(participants, dt);
+
+    for (auto& kv : players) {
+        ServerPlayer& serverPlayer = kv.second;
+        if (!serverPlayer.collisionBody)
+            continue;
+        const Player& body = *serverPlayer.collisionBody;
+        serverPlayer.pos = body.pos;
+        serverPlayer.vel = body.vel;
+    }
+
+    static uint32_t lastSummaryTick = 0;
+    if (lastSummaryTick == 0 || tick - lastSummaryTick >= 30) {
+        lastSummaryTick = tick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Important,
+            "actor-collision.swarm-summary", "server-actor-pairs",
+            "server shared actor triangle pass", tick,
+            nlohmann::json{
+                {"backend", "triangle_pair_manifold"},
+                {"participant_count", participants.size()},
+                {"pair_count", summary.pairCount},
+                {"broadphase_pairs", summary.broadphasePairs},
+                {"triangle_candidates", summary.triangleCandidates},
+                {"triangle_contacts", summary.triangleContacts},
+                {"responses", summary.responses},
+                {"maximum_penetration", summary.maximumPenetration}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
 
 void broadcastNpcDamageEvent(
     SOCKET sock,
@@ -406,6 +509,9 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     npc.body.respawnTimer = 0.0f;
     npc.body.syncLegacyStateToLayers();
     npc.body.updateModelWorldTransforms();
+    ensureServerActorCollisionBody(npc.body, "npc", npc.id,
+                                   npc.transformEpoch,
+                                   serverGamemodeState().currentServerTick);
 }
 
 // Reset a killed server NPC body back to full health at its spawn point so the
@@ -1412,6 +1518,11 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
     }
+
+    // One authoritative fixed-tick pass for all live server actors. The local
+    // client pass is useful for prediction, but this is the owner that makes
+    // NPC/NPC, player/NPC, and player/player body contacts real on the server.
+    resolveServerActorCollisions(players, npcSystem, tick, SERVER_DT);
 
     // Respawn killed NPCs (updateOneNpc freezes dead bodies; this loop drives
     // their countdown and resets them so rebuildServerNpcMap re-admits them).

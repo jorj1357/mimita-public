@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 #include <filesystem>
 #include <atomic>
@@ -280,6 +281,7 @@ private:
     ReplaySaveWorker* mBackgroundWorker = nullptr;
     enum class AvatarLoadState { Queued, Loading, Ready, Failed };
     std::unordered_map<std::string, AvatarLoadState> mLoadStates;
+    std::unordered_set<std::string> mRetryableAvatarLoads;
     struct PendingAvatarLoad {
         std::string name;
         AvatarDefinition definition;
@@ -289,6 +291,8 @@ private:
     };
     mutable std::mutex mPendingAvatarMutex;
     std::deque<PendingAvatarLoad> mPendingAvatarLoads;
+
+    bool queueAvatarLoad(const std::string& name, bool retry);
 
     std::filesystem::file_time_type mLastWriteTime;
     std::chrono::steady_clock::time_point mLastCheckTime;

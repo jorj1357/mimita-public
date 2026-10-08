@@ -22,6 +22,24 @@ class Player;
 class World;
 struct PhysicalEntity;
 
+// Fixed-tick actor-pair input. The caller owns actor lifetime and supplies a
+// stable ID/kind so pair ordering and evidence remain deterministic.
+struct ActorCollisionParticipant {
+    Player* actor = nullptr;
+    uint32_t actorId = 0;
+    uint32_t lifecycleId = 0;
+    const char* actorKind = "actor";
+};
+
+struct ActorPairCollisionSummary {
+    uint32_t pairCount = 0;
+    uint32_t broadphasePairs = 0;
+    uint32_t triangleCandidates = 0;
+    uint32_t triangleContacts = 0;
+    uint32_t responses = 0;
+    float maximumPenetration = 0.0f;
+};
+
 // One triangle contact between an actor part and the world.
 struct ActorWorldContact {
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
@@ -85,3 +103,10 @@ bool runActorTriangleCollisionStep(
     const World& world,
     bool& groundedThisFrame,
     float dt);
+
+// Resolve nearby player/NPC actor pairs using their current body and weapon
+// triangles. Contacts are aggregated once per actor pair before response; this
+// is intentionally separate from the world solver until server/network
+// ownership is migrated to the same participant contract.
+ActorPairCollisionSummary resolveActorTrianglePairs(
+    std::vector<ActorCollisionParticipant>& participants, float dt);

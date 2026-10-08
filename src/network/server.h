@@ -269,6 +269,10 @@ struct ServerPlayer
     float flySpeedMultiplier = 1.0f;
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
+    // Headless six-part body used by the shared authoritative actor-triangle
+    // pass. Network state remains the packet-facing source of truth; this is
+    // the fixed-tick collision geometry/state adapter.
+    std::shared_ptr<Player> collisionBody;
     float yaw = 0.0f;
     int health = 100;
     // Role-resolved life maximum (includes any healthall override at spawn).

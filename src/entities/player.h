@@ -557,6 +557,10 @@ public:
     // triangles for the actor-triangle collision owner. Returns true when at
     // least one body part with triangles was loaded.
     bool loadModelColliders(const char* path);
+    // Headless character-registry load for authoritative server actors. This
+    // builds the same skeleton and physical body-part triangles as the render
+    // path without creating a GL render mesh.
+    bool loadCharacterColliders(const std::string& characterName);
     void applyReplayPose(
         const glm::vec3& rootPosition,
         float rootYaw,
