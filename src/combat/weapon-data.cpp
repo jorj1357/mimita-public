@@ -910,6 +910,17 @@ WeaponDefinition createBigShotgunDefinition() {
     return def;
 }
 
+WeaponDefinition createLargeMachineGunDefinition() {
+    // The JSON entry owns the LMG's tuning, sound, and automatic-fire policy;
+    // this base definition makes the weapon a real registry member so JSON
+    // weapon-set entries can resolve it by ID.
+    WeaponDefinition def = createHitscanRifleDefinition();
+    def.id = "large_machine_gun";
+    def.displayName = "Large Machine Gun";
+    def.slot = 17;
+    return def;
+}
+
 WeaponDefinition createNothingDefinition() {
     WeaponDefinition def;
     def.id = "nothing";
@@ -1013,6 +1024,7 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createProjectileRifleDefinition());
     registerWeaponFromJson(createHitscanRifleDefinition());
     registerWeaponFromJson(createBigShotgunDefinition());
+    registerWeaponFromJson(createLargeMachineGunDefinition());
     Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons including frag, smoke, fire, darkbang, and bomb");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are

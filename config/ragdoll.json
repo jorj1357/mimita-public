@@ -14,7 +14,7 @@
         "fade_seconds": 4.0,
         "death_impulse_multiplier": 1.5,
         "spawn_velocity_multiplier": 0.6,
-        "blood_interval_seconds": 0.18,
+        "blood_interval_seconds": 0.06,
         "blood_enabled": true
     },
     "debug_hitboxes_visible": false,

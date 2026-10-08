@@ -17,7 +17,6 @@
 #include "gamemode/mode-pack-registry.h"
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
-#include "duel/duel-weapon-pool.h"
 #include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
@@ -312,7 +311,6 @@ int runServer(const LaunchOptions& options)
     MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
-    DuelWeaponPool::instance().load("config/duel-weapons.json");
 
     // Validate grenade launcher config at startup
     {
@@ -613,7 +611,6 @@ int runServer(const LaunchOptions& options)
         // Hot-reload config/mode-packs/*.json (timestamp-gated). A failed
         // reload keeps the last valid catalog; the active match is unaffected.
         MimitaGamemode::ModePackRegistry::instance().pollReload();
-        DuelWeaponPool::instance().pollReload();
         // The authoritative server owns respawn velocity. Reload it here so
         // changing spawnvelocity.json affects the next life without restart.
         SpawnVelocityConfig::instance().pollReload();

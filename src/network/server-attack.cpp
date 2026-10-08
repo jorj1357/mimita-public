@@ -836,6 +836,15 @@ void handleAttackRequest(
             if (npcIt != npcs.end())
             {
                 ServerNpc& npcTarget = npcIt->second;
+                if (serverFriendlyFireBlocks(
+                        shooter.id, false, npcTarget.entityId, true,
+                        players, npcs, "generic-hitscan-player-to-npc", tick))
+                {
+                    Debug::log(Debug::Category::Weapons,
+                        "[ATTACK NPC DAMAGE BLOCKED] attacker=%u targetNpc=%u reason=friendly-fire\n",
+                        shooter.id, npcTarget.entityId);
+                    continue;
+                }
                 const int healthBefore = npcTarget.health;
                 if (npcTarget.health > 0)
                 {
@@ -854,10 +863,13 @@ void handleAttackRequest(
                         "npc_" + std::to_string(npcTarget.entityId),
                         "authoritative server NPC damage changed health", tick,
                         { {"attacker_id", shooter.id},
+                          {"attacker_team", shooter.matchTeam},
                           {"target_actor_id", npcTarget.entityId},
                           {"target_actor_type", "npc"},
                           {"target_name", npcTarget.name},
                           {"target_team", npcTarget.matchTeam},
+                          {"friendly_fire", serverFriendlyFireEnabled()},
+                          {"damage_path", "generic-hitscan-player-to-npc"},
                           {"damage_requested", aggregate.damage},
                           {"damage_applied", damageApplied},
                           {"health_before", healthBefore},

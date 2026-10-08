@@ -73,7 +73,19 @@
         "help"
       ],
       "client_args": [],
-      "map": "zombietower3"
+      "map": "zombietower5"
+    },
+       "9": {
+      "name": "juggernaut",
+      "server_args": [
+        "--mode",
+        "juggernaut",
+        "--gamemode",
+      "juggernaut",
+        "--no-npcs"
+      ],
+      "client_args": [],
+      "map": "dust2cyberiav4"
     }
   }
 }

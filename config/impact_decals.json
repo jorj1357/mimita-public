@@ -51,7 +51,7 @@
       "debris": {
         "enabled": true,
         "countFraction": 0.33,
-        "color": [0.35, 0.30, 0.25],
+        "color": [0.35, 0.03, 0.02],
         "alpha": 0.7,
         "sizeMin": 0.02,
         "sizeMax": 0.05,
@@ -75,11 +75,11 @@
     },
     "clientFeedback": {
       "enabled": true,
-      "minCount": 2,
-      "maxCount": 5,
+      "minCount": 5,
+      "maxCount": 20,
       "damageAtMax": 100.0,
       "forceAtMax": 20.0,
-      "forwardOffsetMin": 0.45,
+      "forwardOffsetMin": 0.05,
       "forwardOffsetMax": 0.85,
       "rightOffset": 0.55,
       "upOffset": 0.45,

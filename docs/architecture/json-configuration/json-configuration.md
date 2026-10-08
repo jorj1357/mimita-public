@@ -51,7 +51,7 @@ made hot-reloadable over time.
 | Collision and physics | `config/collision.json`, `config/collision-lod.json`, `config/weaponcollisions.json` | body dimensions, layers, tolerances, solver limits, weapon-world collision |
 | Networking | `config/networkingconfig.json`, `config/network/`, `config/networking/` | tick and snapshot policy, interpolation, retry timing, timeouts, packet limits, ICE behavior |
 | Gameplay | `config/gameplay.json`, `config/gameplay/`, `config/size_scaling.json` | damage, health, respawn, void bounds, scaling, knockback, interaction rules |
-| Weapons | `config/weapons.json`, `config/weaponsets.json`, `config/duel-weapons.json` | definitions, cooldowns, projectiles, ammo, slots, sets, duel restrictions |
+| Weapons | `config/weapons.json`, `config/weaponsets.json` | definitions, cooldowns, projectiles, ammo, slots, and network-owned weapon sets |
 | Weapon presentation | `config/weapon_hitfx.json`, `config/weapon-cool-shot-line.json`, `config/weapon-tracers.json` | tracers, shot lines, impact visuals, timing, colors, visibility |
 | Effects | `config/hitfx.json`, `config/impact_decals.json`, `config/effects/` | particles, decals, lifetimes, sizes, colors, sound references |
 | Game modes | `config/gamemodes/`, `config/gamemode-good-maps.json`, `config/onlinemodes.json` | goals, timers, countdowns, maps, queues, team and gamemode rules |

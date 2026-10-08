@@ -306,6 +306,23 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     return out;
 }
 
+// ServerNpc is the snapshot-side health owner. Every path that starts a new
+// NPC life must use the role profile here instead of a generic 100 HP default;
+// otherwise the next mirror sync can overwrite the real NPC body with the
+// wrong health. The host override remains the intentional exception.
+static void applyServerNpcRoleHealth(ServerNpc& npc, const char* reason)
+{
+    const ActorSpawnProfile profile = serverResolveActorSpawnProfile(npc.entityId);
+    const int overrideHp = serverGameOverrides().maxHpOverride;
+    const int maxHp = overrideHp > 0 ? overrideHp
+        : (profile.health > 0 ? profile.health : npc.health);
+    npc.health = maxHp;
+    Debug::log(Debug::Category::Duel,
+        "[ROLE HEALTH] actor=%u role=%s hp=%d source=%s\n",
+        npc.entityId, profile.roleId.empty() ? "default" : profile.roleId.c_str(),
+        npc.health, reason ? reason : "unknown");
+}
+
 bool serverActivateActorPreset(const std::string& presetId)
 {
     const MatchRoleDefinition* preset =
@@ -1786,7 +1803,6 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             npc.yaw = team == 0 ? 0.0f : 3.14159265f;
             npc.difficulty = 1.0f;
             npc.matchTeam = team;
-            npc.health = 100;
             ActorMatchDescriptor desc;
             desc.controller = ActorController::Npc;
             desc.state = ActorState::Alive;
@@ -1804,6 +1820,7 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             d.participantNames[npc.entityId] = npc.name;
             d.ffaKills[npc.entityId] = 0;
             d.ffaDeaths[npc.entityId] = 0;
+            applyServerNpcRoleHealth(npc, "round-roster");
             npcs.emplace(npc.entityId, std::move(npc));
         }
     }
@@ -3058,6 +3075,38 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
 
 } // namespace
 
+bool serverFriendlyFireBlocks(
+    uint32_t attackerId, bool attackerNpc,
+    uint32_t victimId, bool victimNpc,
+    const std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::unordered_map<uint32_t, ServerNpc>& npcs,
+    const char* path, uint32_t tick)
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    const int attackerTeam = actorTeamOf(d, attackerId, players, npcs);
+    const int victimTeam = actorTeamOf(d, victimId, players, npcs);
+    const bool sameTeam = attackerId != victimId &&
+        attackerTeam >= 0 && victimTeam >= 0 && attackerTeam == victimTeam;
+    const bool blocked = !d.friendlyFireEnabled && sameTeam;
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "server.damage.policy_check", std::to_string(victimId),
+        blocked ? "same-team damage blocked" : "damage path allowed", tick,
+        {{"path", path ? path : "unknown"},
+         {"attacker_id", attackerId},
+         {"attacker_type", attackerNpc ? "npc" : "player"},
+         {"victim_id", victimId},
+         {"victim_type", victimNpc ? "npc" : "player"},
+         {"attacker_team", attackerTeam},
+         {"victim_team", victimTeam},
+         {"same_team", sameTeam},
+         {"friendly_fire", d.friendlyFireEnabled},
+         {"blocked", blocked}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return blocked;
+}
+
 // ── Generic area effects (fire/smoke/dark-bang) ────────────────────────
 uint32_t serverSpawnAreaEffect(AreaEffectKind kind, uint32_t ownerActorId,
                                int ownerTeam, const glm::vec3& position,
@@ -3711,7 +3760,7 @@ void serverGamemodeTick(SOCKET sock,
                             npc.yaw = sp.yaw;
                             ++spawnIndex;
                         }
-                        npc.health = 100;
+                        applyServerNpcRoleHealth(npc, "automatic-map-change");
                         ++npc.transformEpoch;
                     }
                     npcIdsAlive.clear();
@@ -3746,7 +3795,7 @@ void serverGamemodeTick(SOCKET sock,
                         npc.yaw = sp.yaw;
                         ++spawnIndex;
                     }
-                    npc.health = 100;
+                    applyServerNpcRoleHealth(npc, "manual-map-change");
                     ++npc.transformEpoch;
                 }
                 npcIdsAlive.clear();
@@ -4791,7 +4840,7 @@ void serverRespawnAllActors(SOCKET sock,
     }
     for (auto& kv : npcs) {
         ServerNpc& npc = kv.second;
-        npc.health = 100;
+        applyServerNpcRoleHealth(npc, "respawn-all");
         ++npc.transformEpoch;
         finalizeServerNpcMirrorSpawn(npc, ActorSpawnReason::RespawnAll, tick);
     }

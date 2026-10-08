@@ -10,14 +10,38 @@
 #include <filesystem>
 #include <fstream>
 #include <cmath>
+#include <sstream>
 
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 using json = nlohmann::json;
 
 namespace {
+
+std::string fileFingerprint(const std::string& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input.is_open()) return "missing";
+
+    uint64_t hash = 1469598103934665603ull;
+    uint64_t bytes = 0;
+    char buffer[4096];
+    while (input.read(buffer, sizeof(buffer)) || input.gcount() > 0) {
+        const std::streamsize count = input.gcount();
+        bytes += static_cast<uint64_t>(count);
+        for (std::streamsize i = 0; i < count; ++i) {
+            hash ^= static_cast<unsigned char>(buffer[i]);
+            hash *= 1099511628211ull;
+        }
+    }
+
+    std::ostringstream result;
+    result << bytes << ":" << std::hex << hash;
+    return result.str();
+}
 
 std::filesystem::file_time_type getLastWrite(const std::string& path)
 {
@@ -226,6 +250,15 @@ bool ImpactDecalsConfig::load(const std::string& path)
 
     const std::string fileName = fileNameOf(mPath);
     const auto writeTime = getLastWrite(mPath);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "impact_decals.config_read", "impact-decals-config", "load_or_reload", 0,
+        nlohmann::json{
+            {"path", mPath}, {"file", fileName},
+            {"fingerprint", fileFingerprint(mPath)},
+            {"runtime_blood_override", mRuntimeBloodOverride},
+            {"runtime_blood_enabled", mRuntimeBloodEnabled}
+        }, __FILE__, __LINE__, __FUNCTION__);
     std::ifstream file(mPath);
     if (!file.is_open()) {
         mLastWrite = writeTime;
@@ -278,5 +311,14 @@ bool ImpactDecalsConfig::pollReload()
 
     Debug::warn(Debug::Category::Weapons,
         "[IMPACT DECALS] Detected change: %s\n", fileNameOf(mPath).c_str());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "impact_decals.config_change_detected", "impact-decals-config",
+        "file_timestamp_changed", 0,
+        nlohmann::json{
+            {"path", mPath}, {"fingerprint", fileFingerprint(mPath)},
+            {"runtime_blood_override", mRuntimeBloodOverride},
+            {"runtime_blood_enabled", mRuntimeBloodEnabled}
+        }, __FILE__, __LINE__, __FUNCTION__);
     return load(mPath);
 }

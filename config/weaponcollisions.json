@@ -146,5 +146,18 @@
       { "enabled": true, "name": "barrel", "center": [0.25, 0.0, 0.0],
         "half_size": [0.85, 0.32, 0.22], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
     ]
+  },
+
+  "large_machine_gun": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.02,
+    "bounce_mode": "inherit_actor",
+    "player_bounce": 0.99,
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "barrel", "center": [0.0, 0.4, 0.2],
+        "half_size": [0.55, 3.2, 0.8], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
   }
 }

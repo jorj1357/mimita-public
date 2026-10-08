@@ -966,6 +966,15 @@ void handleGodballHitClaim(SOCKET sock,
     auto npcIt = npcs.find(pkt->targetId);
     if (npcIt != npcs.end()) {
         ServerNpc& npc = npcIt->second;
+        if (serverFriendlyFireBlocks(
+                pkt->attackerId, false, npc.entityId, true,
+                players, npcs, "godball-player-to-npc", tick))
+        {
+            Debug::log(Debug::Category::Weapons,
+                "[GODBALL NPC DAMAGE BLOCKED] attacker=%u targetNpc=%u reason=friendly-fire\n",
+                pkt->attackerId, npc.entityId);
+            return;
+        }
         if (npc.health <= 0) {
             Debug::warn(Debug::Category::Weapons,
                 "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=npc-already-dead targetNpc=%u health=%d",
@@ -1220,6 +1229,15 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         auto npcIt = npcs.find(pkt.targetId);
         if (npcIt != npcs.end()) {
         ServerNpc& npc = npcIt->second;
+            if (serverFriendlyFireBlocks(
+                    batch->attackerId, false, npc.entityId, true,
+                    players, npcs, "spyknife-player-to-npc", tick))
+            {
+                Debug::log(Debug::Category::Weapons,
+                    "[SPYKNIFE NPC DAMAGE BLOCKED] attacker=%u targetNpc=%u reason=friendly-fire\n",
+                    batch->attackerId, npc.entityId);
+                continue;
+            }
             if (npc.health <= 0) {
                 Debug::warn(Debug::Category::Weapons,
                     "[SPYKNIFE_AUTH] CONTACT_REJECT reason=npc_dead attacker=%u target=%u health=%d contactId=%u",

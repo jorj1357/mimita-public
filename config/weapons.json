@@ -1337,16 +1337,16 @@
     "display_name": "Large Machine Gun",
     "slot": 17,
     "model": {
-      "path": "assets/objects/weapons/mimita-revolver-v1.glb"
+      "path": "assets/objects/weapons/mimita-lmg-v1.glb"
     },
     "viewmodel": {
       "enabled": true,
       "scale": 2.0,
-      "position": [1.0, 0.0, 0.0],
-      "rotation_degrees": [0.0, 0.0, 0.0]
+      "position": [-0.1, -1.8, 0.3],
+      "rotation_degrees": [0.0, 90.0, 0.0]
     },
     "render": {
-      "color": [0.04, 0.10, 0.35]
+      "color": [0.04, 0.10, 1.35]
     },
     "damage": 35.0,
     "damage_scale": 1.0,
@@ -1356,18 +1356,18 @@
     "magazine_size": 150,
     "reserve_ammo": 9999,
     "spread": 0.0,
-    "recoil": 650.0,
+    "recoil": 999.0,
     "behavior_type": "hitscan",
     "fire_mode": "automatic",
     "hitscan": true,
     "uses_physics_projectile": false,
-    "pose_id": "revolver",
-    "beam_thickness": 0.32,
+    "pose_id": "large_machine_gun",
+    "beam_thickness": 1.0,
     "beam_world_thickness": 0.0,
     "shooter_knockback": 0.1,
     "shooter_knockback_vertical": 0.01,
     "self_impulse_multiplier": 1.0,
-    "victim_knockback": 0.0,
+    "victim_knockback": 5.0,
     "victim_knockback_per_damage": 2.0,
     "victim_knockback_vertical_fraction": 0.04,
     "enemy_impulse_multiplier": 1.0,
@@ -1376,7 +1376,8 @@
       "reload": "weapon/machinegun/machinegunreload",
       "equip": "weapon/machinegun/machinegunequip",
       "dry_fire": "ui/click",
-      "pitch": 0.72,
+      "pitch": 0.7,
+      "volume": 2.0,
       "start_seconds": 0.0,
       "end_seconds": 3.0,
       "retrigger": true

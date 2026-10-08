@@ -6,8 +6,6 @@
 #include "weapon-godball.h"
 #include "weapon-swordsword.h"
 #include "weapon-rocket-launcher.h"
-#include "duel/duel-weapon-pool.h"
-#include "game/duel.h"
 #include "pobjects/persistent-physics.h"
 
 #include <cstdio>
@@ -92,11 +90,6 @@ std::string WeaponSystem::equip(Player& player, int slot) {
         if (oldDef) oldWeaponId = oldDef->id;
     }
     const WeaponDefinition* def = getDefForSlot(slot);
-    extern DuelManager gDuelManager;
-    if (gDuelManager.enabled() && def && !DuelWeaponPool::instance().isEquippable(def->id)) {
-        Debug::log(Debug::Category::Duel, "[DUEL WEAPONS] blocked '%s' (not equippable in duels)\n", def->id.c_str());
-        return "";
-    }
     if (def) {
         // Switching away from a weapon starts its background reload (every time).
         std::string offhandReloaded;

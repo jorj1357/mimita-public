@@ -39,8 +39,8 @@
   },
   "large_machine_gun": {
     "enabled": true,
-    "thickness": 0.24,
-    "end_thickness": 0.04,
+    "thickness": 0.54,
+    "end_thickness": 0.54,
     "lifetime": 0.14,
     "scale": 0.28,
     "end_scale": 0.04,

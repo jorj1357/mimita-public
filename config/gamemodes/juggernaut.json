@@ -23,7 +23,7 @@
     {
       "id": "juggernauts",
       "display_name": "Juggernauts",
-      "capacity": 2,
+      "capacity": 4,
       "role": "juggernaut_mode_juggernaut",
       "spawn_group": "juggernauts_spawn"
     },

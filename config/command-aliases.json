@@ -12,6 +12,8 @@
     "ava": "avatar.load angel2",
     "ah": "avatar.load abusivegirlheadless4",
     "zw": "thirdp 0",
-    "zz": "thirdp 1"
+    "zz": "thirdp 1",
+    "fc": "freecam 1",
+    "cfc": "freecam 0"
   }
 }

@@ -325,6 +325,12 @@ ServerGamemodeState& serverGamemodeState();
 bool serverMatchRespawnsEnabled();
 bool serverPlayerRespawnsEnabled(uint32_t playerId);
 bool serverFriendlyFireEnabled();
+bool serverFriendlyFireBlocks(
+    uint32_t attackerId, bool attackerNpc,
+    uint32_t victimId, bool victimNpc,
+    const std::unordered_map<uint32_t, ServerPlayer>& players,
+    const std::unordered_map<uint32_t, ServerNpc>& npcs,
+    const char* path, uint32_t tick);
 void serverConsumeNpcWaveLife(uint32_t playerId);
 // Effective respawn delay in seconds (unset falls back to the legacy 0.01s).
 float serverMatchRespawnSeconds();

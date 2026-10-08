@@ -33,9 +33,6 @@ using json = nlohmann::json;
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "entities/player-animation-config.h"
-#include "duel/duel-weapon-pool.h"
-#include "game/duel.h"
-extern DuelManager gDuelManager;
 
 namespace {
 
@@ -358,12 +355,9 @@ void registerWeaponCommands()
             [slot](const std::vector<std::string>&) {
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
-                // Local/offline duel only — network duels have no DuelWeaponPool.
-                const int nativeSlot = gDuelManager.enabled()
-                    ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot)
-                    : nativeSlotForCommunitySlot(slot);
+                const int nativeSlot = nativeSlotForCommunitySlot(slot);
                 if (nativeSlot <= 0) {
-                    Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
+                    Terminal::instance().addLog("[INVENTORY] weapon not available in the active weapon set");
                     return;
                 }
                 equipSlotToggleAndSync(player, weapons, nativeSlot);
@@ -404,11 +398,9 @@ void registerWeaponCommands()
                 Terminal::instance().addLog("[INVENTORY] equipped Nothing");
                 return;
             }
-            const int nativeSlot = gDuelManager.enabled()
-                ? DuelWeaponPool::instance().nativeSlotForDuelSlot(slot)
-                : nativeSlotForCommunitySlot(slot);
+            const int nativeSlot = nativeSlotForCommunitySlot(slot);
             if (nativeSlot <= 0) {
-                Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
+                Terminal::instance().addLog("[INVENTORY] weapon not available in the active weapon set");
                 return;
             }
                 equipSlotToggleAndSync(player, weapons, nativeSlot);
@@ -452,11 +444,9 @@ void registerWeaponCommands()
             [keySlot](const std::vector<std::string>&) {
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
-                // Local/offline duel only — network duels have no DuelWeaponPool.
-                const int nativeSlot = gDuelManager.enabled()
-                    ? DuelWeaponPool::instance().nativeSlotForDuelSlot(keySlot) : keySlot;
+                const int nativeSlot = nativeSlotForCommunitySlot(keySlot);
                 if (nativeSlot <= 0) {
-                    Terminal::instance().addLog("[INVENTORY] weapon not available in duels");
+                    Terminal::instance().addLog("[INVENTORY] weapon not available in the active weapon set");
                     return;
                 }
                 equipSlotToggleAndSync(player, weapons, nativeSlot);

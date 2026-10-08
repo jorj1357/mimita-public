@@ -17,6 +17,7 @@ WeaponDefinition createAdminRevolverDefinition();
 WeaponDefinition createHafsDefinition();
 WeaponDefinition createProjectileRifleDefinition();
 WeaponDefinition createBigShotgunDefinition();
+WeaponDefinition createLargeMachineGunDefinition();
 
 void registerBuiltinWeapons();
 bool reloadBuiltinWeaponsIfChanged();

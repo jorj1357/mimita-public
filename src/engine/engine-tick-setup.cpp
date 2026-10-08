@@ -39,7 +39,6 @@
 #include "combat/actor-preset-weapons.h"
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
-#include "duel/duel-weapon-pool.h"
 #include "hot-reload/hot-reload-system.h"
 #include "config/player-visuals-config.h"
 #include "notifications/notifications.h"
@@ -146,7 +145,6 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         BehaviorProfileRegistry::instance().pollReload();
         RoleMovementCache::instance().pollReload();
         GamemodeMapPool::instance().pollReload();
-        DuelWeaponPool::instance().pollReload();
         WeaponHitFxConfig::instance().pollReload();
         ImpactDecalsConfig::instance().pollReload();
         NotificationSystem::instance().pollReload();

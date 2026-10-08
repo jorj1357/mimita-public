@@ -796,6 +796,15 @@ void explodeProjectile(SOCKET sock,
         if (directNpcTarget && (projectile.ownerNpcId == 0 || npcFriendlyFire))
         {
             ServerNpc& npc = npcIt->second;
+            if (projectile.ownerNpcId == 0 && serverFriendlyFireBlocks(
+                    projectile.ownerPlayerId, false, npc.entityId, true,
+                    players, npcs, "projectile-direct-player-to-npc", tick))
+            {
+                Debug::log(Debug::Category::Weapons,
+                    "[PROJECTILE NPC DAMAGE BLOCKED] attacker=%u targetNpc=%u reason=friendly-fire\n",
+                    projectile.ownerPlayerId, npc.entityId);
+                return;
+            }
             npc.health -= damageValue;
             npc.knockbackImpulse += victimKnockback;
             const bool killed = npc.health <= 0;
@@ -1016,6 +1025,10 @@ void explodeProjectile(SOCKET sock,
         // The live NPC difficulty policy controls NPC-owned splash damage too.
         if (projectile.ownerNpcId != 0 &&
             !NpcDifficultyConfig::instance().settings().damageOtherNpcs)
+            continue;
+        if (projectile.ownerNpcId == 0 && serverFriendlyFireBlocks(
+                projectile.ownerPlayerId, false, npc.entityId, true,
+                players, npcs, "projectile-splash-player-to-npc", tick))
             continue;
 
         glm::vec3 historicalNpcPos = npc.pos;

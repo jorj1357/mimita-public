@@ -106,7 +106,6 @@
 #include "gamemode/match-roles.h"
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
-#include "duel/duel-weapon-pool.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
 #include "entities/aim-commands.h"
@@ -245,7 +244,6 @@ void gameInitSubsystems(Engine& engine)
     MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
-    DuelWeaponPool::instance().load("config/duel-weapons.json");
     MovementJsonConfig::instance().load("config/movement.json");
     CrosshairConfig::instance().load();
     AimBodyConfig::instance().load("config/aimbody.json");

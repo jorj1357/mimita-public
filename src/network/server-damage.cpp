@@ -112,20 +112,45 @@ static ServerDamageResult applyPlayerDamageLegacy(
     }
 
     // Team-based friendly fire filtering: teammates cannot damage each other.
-    // Self-damage (attacker == target) is always allowed for rocket jumping.
-    if (!serverFriendlyFireEnabled() && attackerPlayerId != target.id && target.matchTeam >= 0)
+    // Use the gamemode roster as the authoritative fallback because a player
+    // mirror can briefly have matchTeam == -1 while the roster already knows
+    // the assignment. Self-damage remains allowed for rocket jumping.
+    if (!serverFriendlyFireEnabled() && attackerPlayerId != target.id)
     {
+        const ServerGamemodeState& mode = serverGamemodeState();
         auto attackerIt = players.find(attackerPlayerId);
-        if (attackerIt != players.end() && attackerIt->second.matchTeam >= 0)
+        int attackerTeam = attackerIt != players.end()
+            ? attackerIt->second.matchTeam : -1;
+        if (attackerTeam < 0)
         {
-            if (attackerIt->second.matchTeam == target.matchTeam)
-            {
-                DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
-                    "reason=friendly-fire teams=%d damage=%d health=%d",
-                    target.id, attackerPlayerId, damageSourceName(source),
-                    target.matchTeam, damage, target.health);
-                return result;
-            }
+            auto rosterIt = mode.matchTeams.find(attackerPlayerId);
+            if (rosterIt != mode.matchTeams.end()) attackerTeam = rosterIt->second;
+        }
+        int targetTeam = target.matchTeam;
+        if (targetTeam < 0)
+        {
+            auto rosterIt = mode.matchTeams.find(target.id);
+            if (rosterIt != mode.matchTeams.end()) targetTeam = rosterIt->second;
+        }
+        if (attackerTeam >= 0 && targetTeam >= 0 && attackerTeam == targetTeam)
+        {
+            DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
+                "reason=friendly-fire teams=%d damage=%d health=%d",
+                target.id, attackerPlayerId, damageSourceName(source),
+                targetTeam, damage, target.health);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.damage.rejected", std::to_string(target.id),
+                "same-team damage blocked", 0,
+                {{"attacker_id", attackerPlayerId},
+                 {"target_actor_id", target.id},
+                 {"attacker_team", attackerTeam},
+                 {"target_team", targetTeam},
+                 {"source", damageSourceName(source)},
+                 {"damage_requested", damage},
+                 {"friendly_fire", false}} ,
+                __FILE__, __LINE__, __FUNCTION__);
+            return result;
         }
     }
 
