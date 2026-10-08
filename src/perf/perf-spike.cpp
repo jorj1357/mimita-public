@@ -2,6 +2,7 @@
 #include "perf/perf-frame.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "debug/crash-handler.h"
 #include "config.h"
 #include <algorithm>
 
@@ -182,6 +183,16 @@ void perfAggregateScopes(double totalFrameMs, double budgetMs, int frameNumber)
 
     std::sort(entries.begin(), entries.end(),
         [](const Entry& a, const Entry& b) { return a.selfMs > b.selfMs; });
+
+    if (totalFrameMs >= 100.0)
+    {
+        const char* topLabel = entries.empty() || !gPerfScopes[entries[0].index].label
+            ? "?" : gPerfScopes[entries[0].index].label;
+        recordCrashBreadcrumb("frame-spike",
+            "frame=%d totalMs=%.1f budgetMs=%.1f top=%s topMs=%.1f scopes=%d",
+            frameNumber, totalFrameMs, budgetMs, topLabel,
+            entries.empty() ? 0.0 : entries[0].selfMs, gPerfScopeCount);
+    }
 
     bool isSpike = totalFrameMs >= gPerfBudget.spikeThresholdMs;
 

@@ -16,11 +16,133 @@
 #include "debug/structured-log.h"
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstdio>
+#include <mutex>
+#include <utility>
 
 namespace MimitaNet {
 
 std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
+
+namespace {
+
+struct CoordinatorPollResult
+{
+    IceHostPendingRequest pending;
+    uint64_t startedAtMs = 0;
+    uint64_t completedAtMs = 0;
+    size_t playerCount = 0;
+};
+
+// The coordinator HTTP request is allowed to block, but the authoritative
+// server loop is not.  Only the request itself runs here.  The main server
+// thread consumes the result and remains the sole owner of ICE peer state.
+class CoordinatorPollWorker
+{
+public:
+    void submit(const std::string& roomCode, const std::string& sessionId,
+                size_t playerCount, uint64_t startedAtMs)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (thread_.joinable() && (requestPending_ || resultReady_))
+            return;
+        if (!thread_.joinable())
+        {
+            stop_ = false;
+            thread_ = std::thread(&CoordinatorPollWorker::run, this);
+        }
+        roomCode_ = roomCode;
+        sessionId_ = sessionId;
+        playerCount_ = playerCount;
+        startedAtMs_ = startedAtMs;
+        requestPending_ = true;
+        cv_.notify_one();
+    }
+
+    bool take(CoordinatorPollResult& result)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!resultReady_)
+            return false;
+        result = std::move(result_);
+        resultReady_ = false;
+        return true;
+    }
+
+    void shutdown()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!thread_.joinable())
+                return;
+            stop_ = true;
+            cv_.notify_one();
+        }
+        thread_.join();
+        std::lock_guard<std::mutex> lock(mutex_);
+        requestPending_ = false;
+        resultReady_ = false;
+        stop_ = false;
+    }
+
+private:
+    void run()
+    {
+        for (;;)
+        {
+            std::string roomCode;
+            std::string sessionId;
+            size_t playerCount = 0;
+            uint64_t startedAtMs = 0;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                cv_.wait(lock, [this] { return stop_ || requestPending_; });
+                if (stop_)
+                    return;
+                roomCode = roomCode_;
+                sessionId = sessionId_;
+                playerCount = playerCount_;
+                startedAtMs = startedAtMs_;
+                requestPending_ = false;
+            }
+
+            IceHostPendingRequest pending =
+                coordinatorIceHostPoll(roomCode, sessionId, (int)playerCount);
+            const uint64_t completedAtMs = nowMs();
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stop_)
+                return;
+            result_.pending = std::move(pending);
+            result_.startedAtMs = startedAtMs;
+            result_.completedAtMs = completedAtMs;
+            result_.playerCount = playerCount;
+            resultReady_ = true;
+        }
+    }
+
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::thread thread_;
+    bool stop_ = false;
+    bool requestPending_ = false;
+    bool resultReady_ = false;
+    std::string roomCode_;
+    std::string sessionId_;
+    size_t playerCount_ = 0;
+    uint64_t startedAtMs_ = 0;
+    CoordinatorPollResult result_;
+};
+
+CoordinatorPollWorker gCoordinatorPollWorker;
+
+} // namespace
+
+void shutdownIceCoordinatorPoller()
+{
+    gCoordinatorPollWorker.shutdown();
+}
 
 // ── Wait for agent state (blocking, for startup only) ────────────────
 
@@ -169,70 +291,85 @@ void tickIceCoordinator(ListenServerState& state, size_t playerCount)
         return;
     }
 
+    // First consume a completed HTTP request.  This is deliberately done on
+    // the server thread so no ICE peer/container state crosses threads.
+    CoordinatorPollResult completed;
+    if (gCoordinatorPollWorker.take(completed))
+    {
+        const uint64_t coordinatorDurationMs =
+            completed.completedAtMs - completed.startedAtMs;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.coordinator-ice-poll", "server",
+            "coordinator ICE host poll completed off authoritative loop", 0,
+            {{"duration_ms", coordinatorDurationMs},
+             {"has_request", completed.pending.hasRequest},
+             {"players", completed.playerCount},
+             {"room_code", state.serverCode},
+             {"background", true}},
+            __FILE__, __LINE__, __FUNCTION__);
+
+        auto pending = std::move(completed.pending);
+        if (pending.hasRequest)
+        {
+            // Validate SDP before creating agent
+            if (pending.clientIceDescription.find("a=ice-ufrag:") == std::string::npos ||
+                pending.clientIceDescription.find("a=ice-pwd:") == std::string::npos)
+            {
+                printf("[ICE HOST REQUEST] req=%s REJECTED: invalid SDP (missing ufrag/pwd)\n",
+                       pending.requestId.substr(0, 12).c_str());
+                return;
+            }
+
+            // Create per-client peer agent.  This remains on the server thread
+            // because IceAgent and gPendingIcePeers are main-thread-owned.
+            auto peer = std::make_unique<PendingIcePeer>();
+            peer->requestId = pending.requestId;
+            peer->clientSessionId = pending.clientSessionId;
+            peer->clientIceDescription = pending.clientIceDescription;
+            peer->startedAtMs = nowDbg;
+            peer->lastEventMs = nowDbg;
+
+            printf("[ICE HOST REQUEST] req=%s client=%s creating peer agent...\n",
+                   pending.requestId.substr(0, 12).c_str(),
+                   pending.clientSessionId.substr(0, 12).c_str());
+
+            // Get TURN credentials for peer agent.  This is a join-only path;
+            // the recurring host poll above is the normal-game stall source.
+            TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
+            IceConfiguration iceConfig;
+            if (turnCreds.ok)
+                iceConfig = loadIceConfigWithTurn(turnCreds.host, turnCreds.port,
+                                                   turnCreds.username, turnCreds.credential);
+            else
+                iceConfig = loadIceConfig();
+
+            auto clientAgent = std::make_unique<IceAgent>();
+            if (!clientAgent->initialize(iceConfig))
+            {
+                printf("[ICE HOST REQUEST] peer agent init failed\n");
+                return;
+            }
+            if (!clientAgent->gatherCandidates())
+            {
+                printf("[ICE HOST REQUEST] peer agent gather failed\n");
+                return;
+            }
+            peer->agent = std::move(clientAgent);
+            peer->state = PendingIcePeer::State::Gathering;
+            gPendingIcePeers.push_back(std::move(peer));
+        }
+    }
+
     if (nowDbg - state.lastIceCoordinatorPollMs < 500)
         return;
     state.lastIceCoordinatorPollMs = nowDbg;
 
-    // Non-blocking: poll coordinator for pending client requests
-    const uint64_t coordinatorStartMs = nowMs();
-    auto pending = coordinatorIceHostPoll(state.serverCode, state.iceSessionId, (int)playerCount);
-    const uint64_t coordinatorDurationMs = nowMs() - coordinatorStartMs;
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::Network, StructuredLevel::Important,
-        "network.coordinator-ice-poll", "server", "coordinator ICE host poll completed",
-        0,
-        {{"duration_ms", coordinatorDurationMs},
-         {"has_request", pending.hasRequest},
-         {"players", playerCount},
-         {"room_code", state.serverCode}},
-        __FILE__, __LINE__, __FUNCTION__);
-    if (pending.hasRequest)
-    {
-        // Validate SDP before creating agent
-        if (pending.clientIceDescription.find("a=ice-ufrag:") == std::string::npos ||
-            pending.clientIceDescription.find("a=ice-pwd:") == std::string::npos)
-        {
-            printf("[ICE HOST REQUEST] req=%s REJECTED: invalid SDP (missing ufrag/pwd)\n",
-                   pending.requestId.substr(0, 12).c_str());
-            return;
-        }
-
-        // Create per-client peer agent
-        auto peer = std::make_unique<PendingIcePeer>();
-        peer->requestId = pending.requestId;
-        peer->clientSessionId = pending.clientSessionId;
-        peer->clientIceDescription = pending.clientIceDescription;
-        peer->startedAtMs = nowDbg;
-        peer->lastEventMs = nowDbg;
-
-        printf("[ICE HOST REQUEST] req=%s client=%s creating peer agent...\n",
-               pending.requestId.substr(0, 12).c_str(),
-               pending.clientSessionId.substr(0, 12).c_str());
-
-        // Get TURN credentials for peer agent
-        TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
-        IceConfiguration iceConfig;
-        if (turnCreds.ok)
-            iceConfig = loadIceConfigWithTurn(turnCreds.host, turnCreds.port,
-                                               turnCreds.username, turnCreds.credential);
-        else
-            iceConfig = loadIceConfig();
-
-        auto clientAgent = std::make_unique<IceAgent>();
-        if (!clientAgent->initialize(iceConfig))
-        {
-            printf("[ICE HOST REQUEST] peer agent init failed\n");
-            return;
-        }
-        if (!clientAgent->gatherCandidates())
-        {
-            printf("[ICE HOST REQUEST] peer agent gather failed\n");
-            return;
-        }
-        peer->agent = std::move(clientAgent);
-        peer->state = PendingIcePeer::State::Gathering;
-        gPendingIcePeers.push_back(std::move(peer));
-    }
+    // Queue the potentially slow HTTP poll and return immediately.  The
+    // result is consumed at the top of a later server-loop iteration.
+    gCoordinatorPollWorker.submit(state.serverCode, state.iceSessionId,
+                                  playerCount, nowDbg);
+    return;
 }
 
 // ── Tick all pending ICE peers (non-blocking) ────────────────────────

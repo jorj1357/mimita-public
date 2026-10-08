@@ -36,6 +36,7 @@
 #include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "debug/crash-handler.h"
 #include "audio/audio.h"
 #include "persistence/persistence-queue.h"
 #include "auth/auth-system.h"
@@ -97,6 +98,10 @@ struct ServerTickTiming
     uint64_t maxSnapshotUs = 0;
     uint64_t gamemodeUs = 0;
     uint64_t maxGamemodeUs = 0;
+    uint64_t projectileUs = 0;
+    uint64_t maxProjectileUs = 0;
+    uint64_t contactWeaponUs = 0;
+    uint64_t maxContactWeaponUs = 0;
 };
 
 uint64_t elapsedMicroseconds(const std::chrono::steady_clock::time_point& start)
@@ -128,7 +133,11 @@ void reportServerTickTiming(ServerTickTiming& timing, uint32_t tick,
             {"snapshot_avg_ms", avgMs(timing.snapshotUs, timing.tickCount)},
             {"snapshot_max_ms", static_cast<double>(timing.maxSnapshotUs) / 1000.0},
             {"gamemode_avg_ms", avgMs(timing.gamemodeUs, timing.tickCount)},
-            {"gamemode_max_ms", static_cast<double>(timing.maxGamemodeUs) / 1000.0}},
+             {"gamemode_max_ms", static_cast<double>(timing.maxGamemodeUs) / 1000.0},
+             {"projectile_avg_ms", avgMs(timing.projectileUs, timing.tickCount)},
+             {"projectile_max_ms", static_cast<double>(timing.maxProjectileUs) / 1000.0},
+             {"contact_weapon_avg_ms", avgMs(timing.contactWeaponUs, timing.tickCount)},
+             {"contact_weapon_max_ms", static_cast<double>(timing.maxContactWeaponUs) / 1000.0}},
         __FILE__, __LINE__, __FUNCTION__);
     timing = ServerTickTiming{};
 }
@@ -236,6 +245,40 @@ void reportServerPerf(const char* label,
         : 0.0;
     const double p95LoopMs = serverLoopP95Ms(perf);
     const double projectileSimMs = (double)projectile.projectileSimUs / 1000.0;
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Important,
+        "performance.server-loop-window", "server", "outer-loop timing and projectile workload",
+        tick,
+        nlohmann::json{
+            {"tick_count", tick - previousTick},
+            {"elapsed_ms", elapsedMs},
+            {"actual_hz", hz},
+            {"loop_avg_ms", avgLoopMs},
+            {"loop_p95_ms", p95LoopMs},
+            {"loop_max_ms", perf.maxLoopMs},
+            {"overruns", perf.overrunCount},
+            {"capped_catchup", perf.cappedCatchupCount},
+            {"active_projectiles", projectile.activeProjectiles},
+            {"moving_projectiles", projectile.movingProjectiles},
+            {"sleeping_projectiles", projectile.sleepingProjectiles},
+            {"projectile_sim_ms", projectileSimMs},
+            {"triangle_queries", projectile.triangleQueryCount},
+            {"triangle_candidates", projectile.triangleCandidateTotal},
+            {"triangle_candidate_max", projectile.triangleCandidateMax},
+            {"player_capsule_candidates", projectile.playerCapsuleCandidateTotal},
+            {"player_capsule_candidate_max", projectile.playerCapsuleCandidateMax},
+            {"projectile_corrections", projectile.correctionPackets},
+            {"correction_bytes", projectile.correctionBytes}},
+        __FILE__, __LINE__, __FUNCTION__);
+
+    if (perf.maxLoopMs >= 50.0 || perf.cappedCatchupCount > 0)
+        recordCrashBreadcrumb("server-loop",
+            "tick=%u hz=%.1f loopAvg=%.1f loopP95=%.1f loopMax=%.1f overruns=%llu capped=%llu projectileMs=%.1f activeProjectiles=%u",
+            tick, hz, avgLoopMs, p95LoopMs, perf.maxLoopMs,
+            (unsigned long long)perf.overrunCount,
+            (unsigned long long)perf.cappedCatchupCount,
+            projectileSimMs, projectile.activeProjectiles);
 
     printf("%s [SERVER PERF] hz=%.1f loopAvg=%.3fms loopP95=%.3fms loopMax=%.3fms "
            "overruns=%llu cappedCatchup=%llu activeProjectiles=%u moving=%u sleeping=%u "
@@ -771,8 +814,12 @@ int runServer(const LaunchOptions& options)
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
             const uint64_t npcUs = elapsedMicroseconds(npcStart);
+            const auto projectileStart = std::chrono::steady_clock::now();
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
+            const uint64_t projectileUs = elapsedMicroseconds(projectileStart);
+            const auto contactWeaponStart = std::chrono::steady_clock::now();
             tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
+            const uint64_t contactWeaponUs = elapsedMicroseconds(contactWeaponStart);
 
             if (!options.proceduralMode.empty() &&
                 !automaticProceduralStartQueued &&
@@ -837,6 +884,10 @@ int runServer(const LaunchOptions& options)
             tickTiming.maxSnapshotUs = std::max(tickTiming.maxSnapshotUs, snapshotUs);
             tickTiming.gamemodeUs += gamemodeUs;
             tickTiming.maxGamemodeUs = std::max(tickTiming.maxGamemodeUs, gamemodeUs);
+            tickTiming.projectileUs += projectileUs;
+            tickTiming.maxProjectileUs = std::max(tickTiming.maxProjectileUs, projectileUs);
+            tickTiming.contactWeaponUs += contactWeaponUs;
+            tickTiming.maxContactWeaponUs = std::max(tickTiming.maxContactWeaponUs, contactWeaponUs);
 
             accumulator -= (double)SERVER_DT;
             ++tick;
@@ -977,6 +1028,7 @@ int runServer(const LaunchOptions& options)
     }
 
     PersistenceQueue::instance().flushBlocking();
+    shutdownIceCoordinatorPoller();
     ::StructuredLogger::instance().shutdown();
     if (!serverCode.empty())
     {
@@ -1206,6 +1258,8 @@ void stopListenServer(ListenServerState& state)
 
     if (state.serverThread.joinable())
         state.serverThread.join();
+
+    shutdownIceCoordinatorPoller();
 
     // Flush any remaining persistence events before shutdown
     {

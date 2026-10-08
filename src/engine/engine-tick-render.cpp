@@ -43,6 +43,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
+#include "debug/crash-handler.h"
 #include "debug/transform-debug.h"
 #include "network/badconn/badconn.h"
 #include "network/multiplayer-context.h"
@@ -511,7 +512,15 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         }
         { MIMITA_PERF_SCOPE("Rendering::Actors::LocalPlayer");
           Perf::state().renderPerf.actorLocal++;
-          renderPlayer(player, camera); }
+          try {
+              renderPlayer(player, camera);
+          } catch (const std::exception& ex) {
+              recordCrashBreadcrumb("render-local-player", "exception=%s", ex.what());
+              throw;
+          } catch (...) {
+              recordCrashBreadcrumb("render-local-player", "unknown exception");
+              throw;
+          } }
         clientProceduralTeleportShieldRender(player, camera);
         // Draw the local weapon now while the shared viewmodel still contains
         // the local transform calculated during WeaponSystem::update().
@@ -539,9 +548,19 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     if (replicatedTeam != 0xFF)
                         remoteTeam = static_cast<int>(replicatedTeam);
                 }
-                renderNetworkPlayer(kv.second, camera, kv.first, false,
-                                    localOutlineTeam, remoteTeam);
-                weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
+                try {
+                    renderNetworkPlayer(kv.second, camera, kv.first, false,
+                                        localOutlineTeam, remoteTeam);
+                    weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
+                } catch (const std::exception& ex) {
+                    recordCrashBreadcrumb("render-remote-player",
+                        "entity=%u exception=%s", kv.first, ex.what());
+                    throw;
+                } catch (...) {
+                    recordCrashBreadcrumb("render-remote-player",
+                        "entity=%u unknown exception", kv.first);
+                    throw;
+                }
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
@@ -552,9 +571,19 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     if (replicatedTeam != 0xFF)
                         remoteTeam = static_cast<int>(replicatedTeam);
                 }
-                renderNetworkPlayer(kv.second, camera, kv.first, false,
-                                    localOutlineTeam, remoteTeam);
-                weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
+                try {
+                    renderNetworkPlayer(kv.second, camera, kv.first, false,
+                                        localOutlineTeam, remoteTeam);
+                    weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
+                } catch (const std::exception& ex) {
+                    recordCrashBreadcrumb("render-remote-npc",
+                        "entity=%u exception=%s", kv.first, ex.what());
+                    throw;
+                } catch (...) {
+                    recordCrashBreadcrumb("render-remote-npc",
+                        "entity=%u unknown exception", kv.first);
+                    throw;
+                }
             }
             { Perf::ScopedTimer _networkProjectiles("Rendering::Actors::NetworkProjectiles");
               MimitaNet::mpRenderNetworkProjectiles(mpContext, camera); }

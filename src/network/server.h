@@ -1402,6 +1402,7 @@ struct PendingIcePeer {
 extern std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
 
 bool initServerIceListener(ListenServerState& state);
+void shutdownIceCoordinatorPoller();
 void tickIceCoordinator(ListenServerState& state, size_t playerCount);
 void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId,
                   std::vector<PendingServerTransport>& pendingIceTransports);

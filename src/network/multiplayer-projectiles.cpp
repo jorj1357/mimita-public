@@ -21,11 +21,13 @@
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "debug/structured-log.h"
+#include "debug/crash-handler.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdarg>
+#include <chrono>
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -1932,6 +1934,51 @@ void mpUpdateRemoteSwordStates(MultiplayerContext& ctx, float dt)
 
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& world)
 {
+    static uint64_t sProjectileWindowStartMs = 0;
+    static uint64_t sProjectileWindowTotalUs = 0;
+    static uint64_t sProjectileWindowMaxUs = 0;
+    static uint64_t sProjectileWindowSteps = 0;
+    static uint64_t sProjectileWindowInvalidStates = 0;
+    static uint64_t sProjectileWindowWorldBounces = 0;
+    static uint64_t sProjectileWindowExplosions = 0;
+    static uint64_t sProjectileLastBreadcrumbMs = 0;
+    const uint32_t predictedSteps = ctx.clientSimulationStepsThisUpdate;
+    const uint64_t projectileNowMs = nowMs();
+    if (sProjectileWindowStartMs == 0)
+        sProjectileWindowStartMs = projectileNowMs;
+    if (projectileNowMs - sProjectileWindowStartMs >= 1000)
+    {
+        const double elapsedMs = (double)(projectileNowMs - sProjectileWindowStartMs);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "performance.client-projectile-window", "client",
+            "client projectile simulation timing",
+            0,
+            {{"window_ms", elapsedMs},
+             {"active_projectiles", ctx.networkProjectiles.size()},
+             {"simulation_steps", sProjectileWindowSteps},
+             {"total_simulation_ms", (double)sProjectileWindowTotalUs / 1000.0},
+             {"max_step_ms", (double)sProjectileWindowMaxUs / 1000.0},
+             {"invalid_states", sProjectileWindowInvalidStates},
+             {"world_bounces", sProjectileWindowWorldBounces},
+             {"explosions", sProjectileWindowExplosions},
+             {"predicted_steps_this_update", predictedSteps}},
+            __FILE__, __LINE__, __FUNCTION__);
+        sProjectileWindowStartMs = projectileNowMs;
+        sProjectileWindowTotalUs = 0;
+        sProjectileWindowMaxUs = 0;
+        sProjectileWindowSteps = 0;
+        sProjectileWindowInvalidStates = 0;
+        sProjectileWindowWorldBounces = 0;
+        sProjectileWindowExplosions = 0;
+    }
+    if (projectileNowMs - sProjectileLastBreadcrumbMs >= 1000)
+    {
+        recordCrashBreadcrumb("client-projectiles", "active=%zu predictedSteps=%u",
+                              ctx.networkProjectiles.size(), ctx.clientSimulationStepsThisUpdate);
+        sProjectileLastBreadcrumbMs = projectileNowMs;
+    }
+
     for (auto it = gSmokeVolumes.begin(); it != gSmokeVolumes.end();) {
         it->remainingSeconds -= std::max(0.0f, dt);
         if (it->remainingSeconds <= 0.0f)
@@ -1941,7 +1988,6 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
     }
     constexpr float kProjectileFixedDt = 1.0f / 60.0f;
     (void)dt;
-    const uint32_t predictedSteps = ctx.clientSimulationStepsThisUpdate;
 
     if (predictedSteps > 0)
     {
@@ -2008,10 +2054,38 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                 replicas);
             ProjectilePhysicsState state = makePhysicsState(projectile);
             ProjectilePhysicsConfig config = makePhysicsConfig(projectile);
+            const auto projectileStepStart = std::chrono::steady_clock::now();
             ProjectileStepResult step =
                 simulateProjectileTick(state, config, physicsWorld, simulationDt);
+            const uint64_t projectileStepUs = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - projectileStepStart).count();
+            sProjectileWindowTotalUs += projectileStepUs;
+            sProjectileWindowMaxUs = std::max(sProjectileWindowMaxUs, projectileStepUs);
+            ++sProjectileWindowSteps;
+            if (projectileStepUs >= 25000)
+                recordCrashBreadcrumb("client-projectile-step",
+                    "id=%u fireSerial=%u stepMs=%.3f pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f)",
+                    projectile.projectileId, projectile.fireSerial,
+                    (double)projectileStepUs / 1000.0,
+                    projectile.position.x, projectile.position.y, projectile.position.z,
+                    projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
             applyPhysicsState(projectile, state);
             projectile.distanceTraveled += step.travelDistance;
+
+            if (!std::isfinite(projectile.position.x) ||
+                !std::isfinite(projectile.position.y) ||
+                !std::isfinite(projectile.position.z) ||
+                !std::isfinite(projectile.velocity.x) ||
+                !std::isfinite(projectile.velocity.y) ||
+                !std::isfinite(projectile.velocity.z))
+            {
+                ++sProjectileWindowInvalidStates;
+                recordCrashBreadcrumb("client-projectile-invalid",
+                    "id=%u fireSerial=%u stepMs=%.3f exploded=%d age=%.3f",
+                    projectile.projectileId, projectile.fireSerial,
+                    (double)projectileStepUs / 1000.0, (int)projectile.exploded,
+                    projectile.age);
+            }
 
             // Local projectile prediction also applies the same deterministic
             // boolean cut to a physical entity. The server remains authoritative
@@ -2057,6 +2131,8 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
             if (state.sleeping || step.type == ProjectileCollisionType::WorldBounce ||
                 step.type == ProjectileCollisionType::WorldImpact)
                 projectile.worldTouched = true;
+            if (step.type == ProjectileCollisionType::WorldBounce)
+                ++sProjectileWindowWorldBounces;
 
             // Penetration: a bolt with penetrations left cuts the surface and
             // advances past it instead of stopping, matching the server.
@@ -2101,6 +2177,7 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                 if (shouldExplode)
                 {
                     projectile.exploded = true;
+                    ++sProjectileWindowExplosions;
                     const std::string* dynamicWeaponId = weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
                     const std::string weaponId = dynamicWeaponId
                         ? *dynamicWeaponId : networkWeaponTypeName(projectile.weaponType);

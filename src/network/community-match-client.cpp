@@ -319,8 +319,6 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     } else if (!actorPreset && mActorPresetApplied && mActorPresetId == modeConfig.actorPresetId) {
         resetActorPreset();
     }
-    mForceFirstPerson = modeConfig.forceFirstPerson || packet.forceFirstPerson != 0 ||
-        (actorPreset && actorPreset->forceFirstPerson);
     HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
     // Gamemode outline policy: a mode may force player outlines off. A missing
     // key means "no policy" and leaves the user's config untouched.
@@ -506,6 +504,16 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
                 applyActorPreset(*localPreset);
             if (localPreset) actorPreset = localPreset;
         }
+    }
+
+    // The shared mode packet carries the arcade presentation preset for every
+    // client. In Juggernaut mode, the resolved local team preset owns the
+    // camera policy, so Fighters can undo the Juggernaut first-person policy.
+    if (mMode == "juggernaut" && actorPreset) {
+        mForceFirstPerson = actorPreset->forceFirstPerson;
+    } else {
+        mForceFirstPerson = modeConfig.forceFirstPerson || packet.forceFirstPerson != 0 ||
+            (actorPreset && actorPreset->forceFirstPerson);
     }
 
     // ── Apply gamemode visual overrides ────────────────────────────
