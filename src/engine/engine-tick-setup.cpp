@@ -1,4 +1,5 @@
 #include "engine/engine-tick-setup.h"
+#include <filesystem>
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "video/frame-pacer.h"
@@ -39,6 +40,7 @@
 #include "combat/actor-preset-weapons.h"
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
+#include "gamemode/map-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "config/player-visuals-config.h"
 #include "notifications/notifications.h"
@@ -145,6 +147,11 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         BehaviorProfileRegistry::instance().pollReload();
         RoleMovementCache::instance().pollReload();
         GamemodeMapPool::instance().pollReload();
+        if (gpActiveMapPath && !gpActiveMapPath->empty()) {
+            const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
+            if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)
+                MapConfigRegistry::instance().load(mapId);
+        }
         WeaponHitFxConfig::instance().pollReload();
         ImpactDecalsConfig::instance().pollReload();
         NotificationSystem::instance().pollReload();

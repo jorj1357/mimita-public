@@ -632,6 +632,8 @@ struct ServerNpc
     // procedural world's room with this number. Procedural encounters never
     // respawn and are removed together by procedural_world_stop.
     uint32_t proceduralRoomNumber = 0;
+    // Authored map-entity owner for monster-zone NPCs; empty for ordinary NPCs.
+    std::string spawnZoneId;
 };
 
 // Shared actor lifecycle adapter for the authoritative NPC body. The NPC

@@ -1097,8 +1097,11 @@ static void emitMovementDecision(Npc& npc, const char* replanReason,
         npc.hasDecisionGoalDistance = false;
     }
 
+    // This is a per-NPC, per-fixed-tick diagnostic. Keep it verbose so the
+    // normal important journal cannot turn movement observation into a
+    // blocking flush workload as NPC count grows.
     StructuredLogger::instance().writeEvent(
-        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        StructuredCategory::NpcMovement, StructuredLevel::Verbose,
         "npc.movement-decision", std::to_string(npc.id), "snapshot",
         (uint32_t)(npc.sensors.time * 60.0f),
         nlohmann::json{

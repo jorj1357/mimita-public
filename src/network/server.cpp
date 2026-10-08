@@ -40,6 +40,7 @@
 #include "persistence/persistence-queue.h"
 #include "auth/auth-system.h"
 #include "debug/structured-log.h"
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cstdio>
@@ -84,6 +85,53 @@ struct ServerTransportStats
     uint64_t reconnectPackets = 0;
     uint64_t inputPackets = 0;
 };
+
+struct ServerTickTiming
+{
+    uint64_t tickCount = 0;
+    uint64_t totalUs = 0;
+    uint64_t maxTotalUs = 0;
+    uint64_t npcUs = 0;
+    uint64_t maxNpcUs = 0;
+    uint64_t snapshotUs = 0;
+    uint64_t maxSnapshotUs = 0;
+    uint64_t gamemodeUs = 0;
+    uint64_t maxGamemodeUs = 0;
+};
+
+uint64_t elapsedMicroseconds(const std::chrono::steady_clock::time_point& start)
+{
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - start).count());
+}
+
+void reportServerTickTiming(ServerTickTiming& timing, uint32_t tick,
+                            size_t players, size_t npcs)
+{
+    if (timing.tickCount == 0)
+        return;
+    const auto avgMs = [](uint64_t us, uint64_t count) {
+        return count == 0 ? 0.0 : static_cast<double>(us) / count / 1000.0;
+    };
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Important,
+        "performance.server-tick-window", "server", "fixed-tick-stage-timing",
+        tick,
+        nlohmann::json{
+            {"tick_count", timing.tickCount},
+            {"players", players},
+            {"npcs", npcs},
+            {"total_avg_ms", avgMs(timing.totalUs, timing.tickCount)},
+            {"total_max_ms", static_cast<double>(timing.maxTotalUs) / 1000.0},
+            {"npc_avg_ms", avgMs(timing.npcUs, timing.tickCount)},
+            {"npc_max_ms", static_cast<double>(timing.maxNpcUs) / 1000.0},
+            {"snapshot_avg_ms", avgMs(timing.snapshotUs, timing.tickCount)},
+            {"snapshot_max_ms", static_cast<double>(timing.maxSnapshotUs) / 1000.0},
+            {"gamemode_avg_ms", avgMs(timing.gamemodeUs, timing.tickCount)},
+            {"gamemode_max_ms", static_cast<double>(timing.maxGamemodeUs) / 1000.0}},
+        __FILE__, __LINE__, __FUNCTION__);
+    timing = ServerTickTiming{};
+}
 
 std::string processPath()
 {
@@ -579,8 +627,10 @@ int runServer(const LaunchOptions& options)
     double accumulator = 0.0;
     constexpr int MAX_STEPS = 5;
     ServerLoopPerf loopPerf;
+    ServerTickTiming tickTiming;
     uint32_t lastPerfTick = 0;
     uint64_t lastPerfMs = nowMs();
+    uint64_t lastTickTimingReportMs = nowMs();
 
     PersistenceQueue::instance().beginSession(serverCode, AuthSystem::instance().user().sessionToken,
                                               AuthSystem::instance().user().id);
@@ -686,6 +736,7 @@ int runServer(const LaunchOptions& options)
         int steps = 0;
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
+            const auto tickStart = std::chrono::steady_clock::now();
             handleClientTimeout(players, sock, tick, totalPacketsOut);
             for (auto& kv : players)
             {
@@ -715,9 +766,11 @@ int runServer(const LaunchOptions& options)
             // Simulate all NPCs once per tick. simulateSharedNpcs already walks
             // the entire NpcSystem; looping over npcs here would advance every
             // NPC once per NPC and make them move N× faster.
+            const auto npcStart = std::chrono::steady_clock::now();
             simulateSharedNpcs(sock, players, npcs, npcSystem, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
+            const uint64_t npcUs = elapsedMicroseconds(npcStart);
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
 
@@ -761,14 +814,29 @@ int runServer(const LaunchOptions& options)
                                     tick, totalPacketsIn, totalPacketsOut,
                                     &transportStats, &disagreementRetransmit);
 
+            const auto snapshotStart = std::chrono::steady_clock::now();
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
+            const uint64_t snapshotUs = elapsedMicroseconds(snapshotStart);
             serverReplicatePhysicalEntities(sock, players, tick, totalPacketsOut,
                                             physicalEntityReplication);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
+            const auto gamemodeStart = std::chrono::steady_clock::now();
             serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
                            npcIdsAlive, tick, totalPacketsOut);
+            const uint64_t gamemodeUs = elapsedMicroseconds(gamemodeStart);
             tickServerProgression(sock, players, true, totalPacketsOut);
+
+            const uint64_t totalTickUs = elapsedMicroseconds(tickStart);
+            ++tickTiming.tickCount;
+            tickTiming.totalUs += totalTickUs;
+            tickTiming.maxTotalUs = std::max(tickTiming.maxTotalUs, totalTickUs);
+            tickTiming.npcUs += npcUs;
+            tickTiming.maxNpcUs = std::max(tickTiming.maxNpcUs, npcUs);
+            tickTiming.snapshotUs += snapshotUs;
+            tickTiming.maxSnapshotUs = std::max(tickTiming.maxSnapshotUs, snapshotUs);
+            tickTiming.gamemodeUs += gamemodeUs;
+            tickTiming.maxGamemodeUs = std::max(tickTiming.maxGamemodeUs, gamemodeUs);
 
             accumulator -= (double)SERVER_DT;
             ++tick;
@@ -891,6 +959,11 @@ int runServer(const LaunchOptions& options)
                              perfNowMs - lastPerfMs);
             lastPerfTick = tick;
             lastPerfMs = perfNowMs;
+        }
+        if (perfNowMs - lastTickTimingReportMs >= 1000)
+        {
+            reportServerTickTiming(tickTiming, tick, players.size(), npcs.size());
+            lastTickTimingReportMs = perfNowMs;
         }
 
         // Sleep only when no simulation debt remains. Use microseconds for precision.

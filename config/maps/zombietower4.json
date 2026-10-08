@@ -1,0 +1,39 @@
+{
+  "bomb": {
+    "defuse_seconds": 5.0,
+    "explosion_seconds": 40.0,
+    "plant_seconds": 3.0
+  },
+  "bomb_sites": [],
+  "entities": [
+    {
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "test1",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        -1250.9501953125,
+        -852.4348754882813,
+        380.7078857421875
+      ],
+      "radius": 1.0,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "spawnpoint",
+      "visible": true
+    }
+  ]
+}

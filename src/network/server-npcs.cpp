@@ -1471,10 +1471,12 @@ void simulateSharedNpcs(SOCKET sock,
     if (now - lastNpcPosLog >= 1000)
     {
         lastNpcPosLog = now;
+        size_t living = 0;
         for (const auto& kv : npcs)
-            printf("[SERVER NPC] id=%u pos=(%.2f,%.2f,%.2f) hp=%d yaw=%.0f\n",
-                   kv.first, kv.second.pos.x, kv.second.pos.y, kv.second.pos.z,
-                   kv.second.health, kv.second.yaw);
+            if (kv.second.health > 0)
+                ++living;
+        printf("[SERVER NPC SUMMARY] count=%zu living=%zu dead=%zu\n",
+               npcs.size(), living, npcs.size() - living);
     }
 }
 
@@ -1491,8 +1493,6 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     out.aimX = npc.aim.x; out.aimY = npc.aim.y; out.aimZ = npc.aim.z;
     out.yaw = npc.yaw;
     out.health = npc.health;
-    if (npc.health < 100)
-        printf("[SERVER SNAPSHOT NPC] entityId=%u health=%d\n", npc.entityId, npc.health);
     out.onGround = npc.onGround ? 1 : 0;
     out.equippedSlot = npc.equippedSlot;
     out.weaponState = npc.weaponState;

@@ -434,3 +434,55 @@ Runtime result:
 `--versioninfo` passed and wrote
 `logs/10-07-2026/20261007_193958/events.jsonl`. Live mode acceptance remains
 unverified.
+
+---
+
+## Cold-build occurrence 11
+
+Time:
+`2026-10-08T14:19:46-04:00`
+
+Related changelog:
+`docs/changelog/2026-10-08/20261008_142032-server-tick-npc-log-investigation.md`
+
+Reason the cold build was required:
+
+The bounded server fixed-tick diagnostics and NPC logging-pressure fix are in
+cold-linked executable translation units. A newly linked executable was needed
+to expose the timing event in the real dedicated-server path.
+
+Exact cold owners:
+
+```text
+src/network/server.cpp
+src/network/server-npcs.cpp
+src/npc/npc.cpp
+```
+
+Build result:
+
+`SUCCESS` — `mimita.exe` linked; changed units compiled.
+
+Runtime result:
+
+`--versioninfo` passed and wrote
+`logs/10-08-2026/20261008_141949/events.jsonl`. The active user-owned server
+was a separate `.dev\\builds\\1694\\mimita.exe` process and was not restarted;
+Zombie Tower runtime acceptance remains unverified.
+
+Hot-boundary change needed:
+
+Move server-loop diagnostics and logging policy behind the existing hot server
+bridge, or retain this cold owner as the authoritative process-lifetime
+boundary while only the policy remains hot.
+
+Migration/falsification step:
+
+Run a fresh Zombie Tower match with the changed executable, compare
+`performance.server-tick-window` stage timings and client snapshot arrival
+against the reported 3.8 Hz baseline, then decide whether NPC scheduling or
+snapshot batching is still required.
+
+Human review:
+
+Required: real Zombie Tower gameplay and multiplayer/client tick acceptance.

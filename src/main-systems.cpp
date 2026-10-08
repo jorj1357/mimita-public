@@ -108,6 +108,7 @@
 #include "gamemode/gamemode-map-pool.h"
 #include "avatar/avatar.h"
 #include "avatar/avatar-commands.h"
+#include "terminal/map-entity-commands.h"
 #include "entities/aim-commands.h"
 #include "entities/aimbody-config.h"
 void registerCompetitiveCommands();
@@ -417,6 +418,7 @@ void gameInitSubsystems(Engine& engine)
     registerDevOverlayCommands();
 
     registerNpcCommands();
+    registerMapEntityCommands();
     registerCrateCommands();
     registerObjectCommands();
     registerProceduralWorldCommands();

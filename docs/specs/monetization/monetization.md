@@ -1,3 +1,81 @@
+2026 10 08 1344 jorj todo explain better enshittification
+
+from wikipedia as of right now
+
+Enshittification, also known as platform decay, is a process in which two-sided online products and services decline in quality over time. Initially, vendors create high-quality offerings to attract users. Over time, they degrade those offerings to better serve business customers. Ultimately, they degrade their services to both users and business customers to maximise short-term profits for shareholders.
+
+Here is how platforms die: first, they are good to their users; then they abuse their users to make things better for their business customers; finally, they abuse those business customers to claw back all the value for themselves. Then, they die. I call this enshittification, and it is a seemingly inevitable consequence arising from the combination of the ease of changing how a platform allocates value, combined with the nature of a "two-sided market", where a platform sits between buyers and sellers, hold each hostage to the other, raking off an ever-larger share of the value that passes between them.
+
+also this 2026 10 08 1359 from same wikipedie  https://en.wikipedia.org/wiki/Enshittification
+
+The first is a respect of the end-to-end principle,[9] which holds that the role of a network is to reliably deliver data from willing senders to willing receivers. When applied to platforms, this entails users being given what they asked for, not what the platform prefers to present. For example, users would see all content from users they subscribed to, allowing content creators to reach their audience without going through an opaque algorithm; and in search engines, exact matches for search queries would be shown before sponsored results, rather than afterwards.[10]
+The second is the right of exit, which holds that users of a platform can easily go elsewhere if they are dissatisfied with it. For social media, this requires interoperability, countering the network effects that "lock in" users and prevent market competition between platforms. For digital media platforms, it means enabling users to switch platforms without losing the content they purchased that is locked by digital rights management.[10]
+
+so 
+to balance yes as long as money is required for 
+goods and services 
+then mimita should be able to handle and work with money ina  nice ethical way 
+BUT
+none of this 3 month quarterly shareholder pressuring 
+none of this  making things cost money when they didnt cost anttthing before 
+none of this centralization etiehr i think we should over time use a cryptocurrency that not only is 
+like
+u can trade like 5 mimita bux mimita coins
+for a real life  burger
+or a skateboard
+or get paid  in that currency 
+and u can use it on like amazon like u can purchase stuff whatevr things u  need using this currrency
+but 
+the currency code how it works
+is public open source
+its understandable
+its reverse engineerable?
+but still secure and trustable
+bc its either  closed source then get hacked then its open source
+or open source from the start 
+i beleive right nowat least Heheheheh
+
+### gambling/loot drops/crates  2026 10 08 1352 jorj 
+
+ok so idk how to 
+bc i want to avoid  gambling addiciton creation
+i also see how its like a natrual result of
+bc writing this right nwo C:\mimita-v9\docs\specs\gamemodes\zombie-tower.md
+monster random drops
+a chance lik e0.0001% chance to drop a ultra rare item or cosmetic 
+ANAD U HSOULD BE ABLE TO TRADE
+THAT NOT DISABLED
+THAT IS A THING U CAN DO ALL THE TIME ANY TIME  s
+but  
+idk 
+i just  dotn wna tot hav e 
+i spent 500 on crates and got nothign adn now i cant pay rent
+ofc  ucan just say Erm Not My Problem
+but it feels  like it almost is 
+or i had a aprt in that
+like should  
+not just lecture, dont give a big wall of text
+dont jsut say Gambling  Could Cause Problems Get Help At 138748924
+u have to 
+for real behaviorally practice the desired behavior
+so 
+the yshould be like
+mock scenario  100 bux down
+do u 
+roll again bc IM just one away!
+or  step away and be like ehh whtever i dont even care that much 
+etc
+practice that emotional control lik eover and over and over
+so then when ur feeling  upset or went too far then u rdone
+
+we also can do like a rate limite like
+u can open crates
+but like 1 per minute
+or like per 5 minutes
+or u can purhcase kesys with like  a 24 hour wait time before it actually goes thru like do u really want this 
+etc
+things like that 
+
 2026 10 06 1737 jorj todo 
 
 ohhhhhhhhhh what  an aseseome topic money
@@ -180,4 +258,4 @@ mannnnnnnnnnnnnnnnnnnnn
 
 ALSO THIS 
 MOENTIZATION
-CONNECTING ONLINE FRIEND GROUPS 
+CONNECTING ONLINE FRIEND GROUPS a fund for that 

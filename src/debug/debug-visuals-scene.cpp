@@ -16,6 +16,7 @@
 #include "debug/debug-log.h"
 #include "config.h"
 #include "config/movement-config.h"
+#include "gamemode/map-config.h"
 
 extern Renderer* gRenderer;
 
@@ -28,6 +29,8 @@ extern void drawBox(const Camera& camera, glm::vec3 center, glm::vec3 half, glm:
 extern void drawOrientedBounds(const Camera& camera, const glm::mat4& transform, glm::vec3 localMin, glm::vec3 localMax, glm::vec4 color);
 extern void drawWireSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color);
 extern void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color);
+extern void drawWorldLabelFaded(glm::vec3 worldPos, const char* text, glm::vec4 color,
+                                float nearAlpha, float farDistance);
 extern bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
 extern void drawCapsuleApprox(const Player& player, const Camera& camera);
 extern void drawPlayerArchitectureDebug(const Player& player, const Camera& camera);
@@ -112,7 +115,7 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 {
     drawBhopDebug(player, camera);
 
-    if (!DebugVis::enabled()) return;
+    if (!DebugVis::enabled() && !MapConfigRegistry::instance().entityVisibility()) return;
 
     if (DebugVis::physics()) {
         drawCapsuleApprox(player, camera);
@@ -340,6 +343,36 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
             DebugVis::drawWorldLabel(
                 spawn.position + glm::vec3(0.0f, 0.0f, 1.7f),
                 label, color);
+        }
+    }
+
+    if (MapConfigRegistry::instance().entityVisibility()) {
+        for (const MapEntity& entity : MapConfigRegistry::instance().current().entities) {
+            if (!entity.visible) continue;
+            glm::vec4 color(0.2f, 0.8f, 1.0f, 1.0f);
+            if (entity.type == "monster_zone") color = {1.0f, 0.25f, 0.15f, 1.0f};
+            else if (entity.type == "checkpoint") color = {0.2f, 1.0f, 0.35f, 1.0f};
+            else if (entity.type == "pickup") color = {1.0f, 0.85f, 0.1f, 1.0f};
+            else if (entity.type == "damage_volume") color = {0.8f, 0.15f, 1.0f, 1.0f};
+            else if (entity.type == "boss_trigger") color = {1.0f, 0.1f, 0.55f, 1.0f};
+            const glm::vec3 markerSize = glm::vec3(
+                (std::isfinite(entity.size.x) && entity.size.x > 0.001f) ? entity.size.x : 1.0f,
+                (std::isfinite(entity.size.y) && entity.size.y > 0.001f) ? entity.size.y : 1.0f,
+                (std::isfinite(entity.size.z) && entity.size.z > 0.001f) ? entity.size.z : 1.0f);
+            drawBox(camera, entity.position, markerSize * 0.5f, color);
+            if (entity.type == "spawnpoint") {
+                drawPointCross(camera, entity.position, 0.5f, color);
+            } else if (entity.type == "pickup") {
+                drawWireSphere(camera, entity.position, std::max(0.25f, entity.radius), color);
+                drawLine(camera, entity.position, entity.position + glm::vec3(0.0f, 0.0f, 1.0f), color);
+            } else {
+                if (entity.radius > 0.0f)
+                    drawWireSphere(camera, entity.position, entity.radius, {color.r, color.g, color.b, 0.35f});
+            }
+            char label[256];
+            std::snprintf(label, sizeof(label), "%s %s", entity.type.c_str(), entity.id.c_str());
+            drawWorldLabelFaded(entity.position + glm::vec3(0.0f, 0.0f, markerSize.z), label,
+                                {color.r, color.g, color.b, 1.0f}, 0.5f, 50.0f);
         }
     }
 

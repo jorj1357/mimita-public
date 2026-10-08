@@ -1,4 +1,16 @@
-﻿9 8 2026 0944 jojr todo - explain little quality of life things and discoverability and scaling of mimita engine like, design it like plague inc, like mimita.exe should safely and healthily intrinsically motivate to spread it. not beacuse people feel forced, or if u share a code u get 50 bux off, it should be so good and so fun that people feel compelled and driven to share this with others, not  just to get a reward. need to design from fundamentals and emergence, because, money is emergent from value. happiness is emergent from fulfillment and feeling like u are doing it right or have a purpose or you matter or youre in pursuit of a goal, at least for me happiness comes from that. so it can take many forms, mimita can , but i watn to enseure we do not focucs on the leaves e.g. money, attention, fame, quick buy now, get this get that, taht is too fast . focus on the roots , roots > trunk > branches > leaves, ensure that the foundation is so ridiculously strong and powerful and fundamental that anything on top of it  just is a cherry on top of it all 
+﻿2026 10 08 1311 jorj todo - like some kinda 
+milestone tracker? idk how?
+i have a goal of  being able to ahve 100,000+ human plauers in 1 single server
+all can talk to each other, voice caht, etc
+all at once
+and the performance for every single person is like 4ms frames or lower
+consistnetly
+across all devices all power levels all regions etc
+its fun 
+that is a super cool  engineering challenge and idk how to do that but i want to do that, and i want to track other things like tht, other engineering challenges 
+e.g. hot reloadable .cpp code, so u can edit code live while someone is playing with u 
+
+9 8 2026 0944 jojr todo - explain little quality of life things and discoverability and scaling of mimita engine like, design it like plague inc, like mimita.exe should safely and healthily intrinsically motivate to spread it. not beacuse people feel forced, or if u share a code u get 50 bux off, it should be so good and so fun that people feel compelled and driven to share this with others, not  just to get a reward. need to design from fundamentals and emergence, because, money is emergent from value. happiness is emergent from fulfillment and feeling like u are doing it right or have a purpose or you matter or youre in pursuit of a goal, at least for me happiness comes from that. so it can take many forms, mimita can , but i watn to enseure we do not focucs on the leaves e.g. money, attention, fame, quick buy now, get this get that, taht is too fast . focus on the roots , roots > trunk > branches > leaves, ensure that the foundation is so ridiculously strong and powerful and fundamental that anything on top of it  just is a cherry on top of it all 
 
 9 8 2026 1028 est jorj - todo explain all console commands either in here or a centralized document liek C:\mimita-priv-v8\docs\specs\terminal\terminal.md
 

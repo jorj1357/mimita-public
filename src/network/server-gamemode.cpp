@@ -2767,11 +2767,55 @@ static size_t livingNpcCount(const std::unordered_map<uint32_t, ServerNpc>& npcs
 }
 
 void spawnPersistentNpcBatchIfDue(ServerGamemodeState& d,
+                                  const std::unordered_map<uint32_t, ServerPlayer>& players,
                                   std::unordered_map<uint32_t, ServerNpc>& npcs,
                                   uint32_t tick)
 {
     if (!d.persistentNpcSpawns || d.npcSpawnMax <= 0 || tick < d.npcSpawnNextTick)
         return;
+
+    auto& mapConfig = MapConfigRegistry::instance();
+    bool activatedZone = false;
+    for (auto& zone : mapConfig.entitiesMutable()) {
+        if (zone.type != "monster_zone" || !zone.enabled || zone.runtimeActivated) continue;
+        bool inRange = false;
+        for (const auto& player : players) {
+            if (player.second.dead) continue;
+            const glm::vec3 delta = player.second.pos - zone.position;
+            if (glm::dot(delta, delta) <= zone.radius * zone.radius) { inRange = true; break; }
+        }
+        if (!inRange) continue;
+        size_t zoneLiving = 0;
+        for (const auto& npc : npcs)
+            if (npc.second.health > 0 && npc.second.spawnZoneId == zone.id) ++zoneLiving;
+        if (tick < zone.lastActivationTick + (uint32_t)std::max(1, zone.spawnCooldownTicks) ||
+            zoneLiving >= (size_t)std::max(1, zone.maxAlive)) continue;
+        const size_t room = (size_t)std::max(1, zone.maxAlive) - zoneLiving;
+        const size_t batch = std::min(room, (size_t)std::max(1, zone.spawnCount));
+        for (size_t i = 0; i < batch; ++i) {
+            while (npcs.find(d.waveNextNpcId) != npcs.end()) ++d.waveNextNpcId;
+            ServerNpc npc;
+            npc.entityId = d.waveNextNpcId++;
+            npc.name = zone.monsterPool + " " + std::to_string(++d.npcSpawnSequence);
+            npc.pos = zone.position;
+            npc.yaw = 0.0f;
+            npc.difficulty = 1.0f;
+            npc.spawnZoneId = zone.id;
+            addNpcWaveParticipant(d, npc);
+            npcs.emplace(npc.entityId, std::move(npc));
+        }
+        zone.lastActivationTick = tick;
+        zone.runtimeActivated = zone.oneShot;
+        activatedZone = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "monster-zone.activated", zone.id, "player entered activation radius", tick,
+            nlohmann::json{{"map", d.mapId}, {"entity_id", zone.id}, {"entity_type", zone.type},
+                           {"monster_pool", zone.monsterPool}, {"spawn_count", batch},
+                           {"position", {zone.position.x, zone.position.y, zone.position.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+    if (activatedZone) return;
 
     const size_t living = livingNpcCount(npcs);
     if (living >= (size_t)d.npcSpawnMax)
@@ -3489,6 +3533,17 @@ void serverGamemodeTick(SOCKET sock,
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
     d.currentServerTick = tick;
+    static std::string loadedMapConfigId;
+    static uint64_t lastMapConfigPollMs = 0;
+    const uint64_t mapPollNow = nowMs();
+    if (loadedMapConfigId != d.mapId) {
+        MapConfigRegistry::instance().load(d.mapId);
+        loadedMapConfigId = d.mapId;
+        lastMapConfigPollMs = mapPollNow;
+    } else if (mapPollNow - lastMapConfigPollMs >= 250) {
+        MapConfigRegistry::instance().pollReload();
+        lastMapConfigPollMs = mapPollNow;
+    }
     // The server normally polls gamemode JSON from its outer loop. Keep this
     // bounded fallback here too so a hosted server applies wave tuning without
     // a restart, while avoiding filesystem work on every 60 Hz tick.
@@ -4295,7 +4350,7 @@ void serverGamemodeTick(SOCKET sock,
                 break;
             }
             if (d.persistentNpcSpawns) {
-                spawnPersistentNpcBatchIfDue(d, npcs, tick);
+                spawnPersistentNpcBatchIfDue(d, players, npcs, tick);
                 if (tick - d.lastBroadcastTick >= 15) {
                     d.lastBroadcastTick = tick;
                     broadcastDuelState(sock, d, players, totalPacketsOut);

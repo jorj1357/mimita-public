@@ -1,6 +1,8 @@
 #include "debug/debug-visuals.h"
 
 #include <cstdio>
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -19,6 +21,8 @@ struct DebugTextLabel
     glm::vec3 worldPos{0.0f};
     std::string text;
     glm::vec4 color{1.0f};
+    float nearAlpha = 1.0f;
+    float farDistance = 0.0f;
 };
 
 extern std::vector<DebugTextLabel> gTextLabels;
@@ -57,6 +61,19 @@ void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color)
     gTextLabels.push_back({worldPos, text, color});
 }
 
+void drawWorldLabelFaded(glm::vec3 worldPos, const char* text, glm::vec4 color,
+                         float nearAlpha, float farDistance)
+{
+    if (!text || !*text)
+        return;
+    if (gTextLabels.size() >= 96)
+        return;
+    DebugTextLabel label{worldPos, text, color,
+                         std::clamp(nearAlpha, 0.0f, 1.0f),
+                         std::max(0.001f, farDistance)};
+    gTextLabels.push_back(std::move(label));
+}
+
 void drawDebugLabels(const Camera& camera)
 {
     if (gTextLabels.empty() || !gWindow)
@@ -67,8 +84,15 @@ void drawDebugLabels(const Camera& camera)
     {
         float x = 0.0f;
         float y = 0.0f;
-        if (projectToScreen(camera, label.worldPos, x, y))
-            uiDrawText(label.text.c_str(), x + 4.0f, y - 4.0f, 0.24f, label.color);
+        if (projectToScreen(camera, label.worldPos, x, y)) {
+            glm::vec4 color = label.color;
+            if (label.farDistance > 0.0f) {
+                const float distance = glm::distance(camera.pos, label.worldPos);
+                color.a *= std::clamp(label.nearAlpha * (1.0f - distance / label.farDistance), 0.0f, 1.0f);
+            }
+            if (color.a > 0.0f)
+                uiDrawText(label.text.c_str(), x + 4.0f, y - 4.0f, 0.24f, color);
+        }
     }
     uiEndFrame();
     gTextLabels.clear();
@@ -87,6 +111,12 @@ void drawDiagnosticWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 co
 void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color) {
     if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
     ::drawWorldLabel(worldPos, text, color);
+}
+
+void drawWorldLabelFaded(glm::vec3 worldPos, const char* text, glm::vec4 color,
+                         float nearAlpha, float farDistance) {
+    if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
+    ::drawWorldLabelFaded(worldPos, text, color, nearAlpha, farDistance);
 }
 
 bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y) {

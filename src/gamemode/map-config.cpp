@@ -4,10 +4,12 @@
 
 #include <algorithm>
 #include <fstream>
+#include <cctype>
 
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "utils/json-comments.h"
 #include "utils/path_utils.h"
 
@@ -67,31 +69,36 @@ std::string MapConfigRegistry::resolveConfigPath() const
 
 bool MapConfigRegistry::load(const std::string& mapId)
 {
-    mCurrent = MapObjectiveConfig{};
-    mCurrent.mapId = mapId;
-    mPath = resolveUnderConfig(pathForMap(mapId));
-    mLastWrite = getLastWrite(mPath);
+    const std::string nextPath = resolveUnderConfig(pathForMap(mapId));
 
-    std::ifstream file(mPath);
+    std::ifstream file(nextPath);
     if (!file.is_open()) {
         Debug::warn(Debug::Category::Duel,
-            "[MAP CONFIG] no objective file for map=%s (path=%s); planting disabled\n",
-            mapId.c_str(), mPath.c_str());
+            "[MAP CONFIG] no config file for map=%s (path=%s)\n",
+            mapId.c_str(), nextPath.c_str());
+        if (mCurrent.mapId != mapId) {
+            mCurrent = MapObjectiveConfig{};
+            mCurrent.mapId = mapId;
+            mPath = nextPath;
+            mLastWrite = {};
+        }
         return false;
     }
 
     try {
         const json root = parseJsonConfig(file);
-        mCurrent.loaded = true;
+        MapObjectiveConfig next;
+        next.mapId = mapId;
+        next.loaded = true;
 
         if (root.contains("bomb") && root["bomb"].is_object()) {
             const auto& bomb = root["bomb"];
             if (bomb.contains("plant_seconds") && bomb["plant_seconds"].is_number())
-                mCurrent.plantSeconds = std::max(0.0f, bomb["plant_seconds"].get<float>());
+                next.plantSeconds = std::max(0.0f, bomb["plant_seconds"].get<float>());
             if (bomb.contains("defuse_seconds") && bomb["defuse_seconds"].is_number())
-                mCurrent.defuseSeconds = std::max(0.0f, bomb["defuse_seconds"].get<float>());
+                next.defuseSeconds = std::max(0.0f, bomb["defuse_seconds"].get<float>());
             if (bomb.contains("explosion_seconds") && bomb["explosion_seconds"].is_number())
-                mCurrent.explosionSeconds = std::max(0.0f, bomb["explosion_seconds"].get<float>());
+                next.explosionSeconds = std::max(0.0f, bomb["explosion_seconds"].get<float>());
         }
 
         // Accept both the plan's nested {"objectives":{"bomb_sites":[...]}} and a
@@ -120,19 +127,67 @@ bool MapConfigRegistry::load(const std::string& mapId)
                         item["position"][2].get<float>());
                     site.hasPosition = true;
                 }
-                mCurrent.bombSites.push_back(std::move(site));
+                next.bombSites.push_back(std::move(site));
+            }
+        }
+
+        if (root.contains("entities") && root["entities"].is_array()) {
+            for (const auto& item : root["entities"]) {
+                if (!item.is_object()) continue;
+                MapEntity entity;
+                entity.id = item.value("id", std::string{});
+                entity.type = item.value("type", std::string{});
+                if (entity.id.empty() || entity.type.empty()) continue;
+                if (item.contains("position") && item["position"].is_array() && item["position"].size() >= 3)
+                    entity.position = glm::vec3(item["position"][0].get<float>(), item["position"][1].get<float>(), item["position"][2].get<float>());
+                if (item.contains("size") && item["size"].is_array() && item["size"].size() >= 3)
+                    entity.size = glm::vec3(item["size"][0].get<float>(), item["size"][1].get<float>(), item["size"][2].get<float>());
+                entity.radius = std::max(0.1f, item.value("radius", entity.radius));
+                entity.enabled = item.value("enabled", entity.enabled);
+                entity.visible = item.value("visible", entity.visible);
+                entity.oneShot = item.value("oneShot", item.value("one_shot", entity.oneShot));
+                entity.tag = item.value("tag", std::string{});
+                entity.monsterPool = item.value("monsterPool", item.value("monster_pool", entity.monsterPool));
+                entity.pickupId = item.value("pickupId", item.value("pickup_id", std::string{}));
+                entity.bossId = item.value("bossId", item.value("boss_id", std::string{}));
+                entity.damageType = item.value("damageType", item.value("damage_type", entity.damageType));
+                entity.spawnCount = std::max(1, item.value("spawnCount", item.value("spawn_count", entity.spawnCount)));
+                entity.maxAlive = std::max(1, item.value("maxAlive", item.value("max_alive", entity.maxAlive)));
+                entity.damage = std::max(0, item.value("damage", entity.damage));
+                entity.damageIntervalTicks = std::max(1, item.value("damageIntervalTicks", item.value("damage_interval_ticks", entity.damageIntervalTicks)));
+                entity.spawnCooldownTicks = std::max(1, item.value("spawnCooldownTicks", item.value("spawn_cooldown_ticks", entity.spawnCooldownTicks)));
+                entity.checkpointRequirement = std::max(0, item.value("checkpointRequirement", item.value("checkpoint_requirement", entity.checkpointRequirement)));
+                next.entities.push_back(std::move(entity));
             }
         }
 
         Debug::warn(Debug::Category::Duel,
-            "[MAP CONFIG] loaded map=%s sites=%zu plant=%.1f defuse=%.1f explode=%.1f\n",
-            mapId.c_str(), mCurrent.bombSites.size(),
-            mCurrent.plantSeconds, mCurrent.defuseSeconds, mCurrent.explosionSeconds);
+            "[MAP CONFIG] loaded map=%s sites=%zu entities=%zu plant=%.1f defuse=%.1f explode=%.1f\n",
+            mapId.c_str(), next.bombSites.size(), next.entities.size(),
+            next.plantSeconds, next.defuseSeconds, next.explosionSeconds);
+        mCurrent = std::move(next);
+        mPath = nextPath;
+        mLastWrite = getLastWrite(mPath);
+        mEntityVisibility = std::any_of(
+            mCurrent.entities.begin(), mCurrent.entities.end(),
+            [](const MapEntity& entity) { return entity.visible; });
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-entity.loaded", mapId, "valid map config applied", 0,
+            nlohmann::json{{"map", mapId}, {"entity_count", mCurrent.entities.size()}, {"config_path", mPath}, {"result", "success"}},
+            __FILE__, __LINE__, __FUNCTION__);
         return true;
     } catch (const std::exception& e) {
         Debug::error(Debug::Category::Duel,
-            "[MAP CONFIG] parse error in %s: %s; keeping defaults\n",
-            mPath.c_str(), e.what());
+            "[MAP CONFIG] parse error in %s: %s; keeping last valid state\n",
+            nextPath.c_str(), e.what());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map-entity.reload-failed", mapId, "invalid JSON; last valid state retained", 0,
+            nlohmann::json{{"map", mapId}, {"config_path", nextPath}, {"result", "retained"}, {"reason", e.what()}},
+            __FILE__, __LINE__, __FUNCTION__);
+        if (mCurrent.mapId == mapId)
+            mLastWrite = getLastWrite(nextPath);
         return false;
     }
 }
@@ -146,6 +201,72 @@ bool MapConfigRegistry::pollReload()
     Debug::warn(Debug::Category::Duel,
         "[MAP CONFIG] detected change: %s\n", mPath.c_str());
     return load(mCurrent.mapId);
+}
+
+const MapEntity* MapConfigRegistry::findEntity(const std::string& id) const
+{
+    for (const auto& entity : mCurrent.entities)
+        if (entity.id == id) return &entity;
+    return nullptr;
+}
+
+MapEntity* MapConfigRegistry::findEntityMutable(const std::string& id)
+{
+    for (auto& entity : mCurrent.entities)
+        if (entity.id == id) return &entity;
+    return nullptr;
+}
+
+std::string MapConfigRegistry::createEntity(const std::string& type, const glm::vec3& position,
+                                            const std::string& requestedId)
+{
+    std::string id = requestedId;
+    if (id.empty()) {
+        std::string stem = type;
+        for (char& c : stem) if (c == ' ') c = '_';
+        for (int i = 1;; ++i) {
+            id = stem + "_" + std::to_string(i);
+            if (!findEntity(id)) break;
+        }
+    }
+    if (findEntity(id)) return {};
+    MapEntity entity;
+    entity.id = id;
+    entity.type = type;
+    entity.position = position;
+    mCurrent.entities.push_back(std::move(entity));
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-entity.created", id, "terminal authoring", 0,
+        nlohmann::json{{"map", mCurrent.mapId}, {"entity_id", id}, {"entity_type", type},
+                       {"position", {position.x, position.y, position.z}}, {"source", "terminal"}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return id;
+}
+
+bool MapConfigRegistry::deleteEntity(const std::string& id)
+{
+    const auto it = std::remove_if(mCurrent.entities.begin(), mCurrent.entities.end(),
+        [&](const MapEntity& entity) { return entity.id == id; });
+    if (it == mCurrent.entities.end()) return false;
+    mCurrent.entities.erase(it, mCurrent.entities.end());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-entity.deleted", id, "terminal authoring", 0,
+        nlohmann::json{{"map", mCurrent.mapId}, {"entity_id", id}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return true;
+}
+
+void MapConfigRegistry::setEntityVisibility(bool visible)
+{
+    mEntityVisibility = visible;
+    for (auto& entity : mCurrent.entities) entity.visible = visible;
+}
+
+void MapConfigRegistry::setEntityVisibilityFor(const std::string& id, bool visible)
+{
+    if (auto* entity = findEntityMutable(id)) entity->visible = visible;
 }
 
 const BombSite* MapConfigRegistry::findSite(const std::string& id) const
@@ -206,6 +327,21 @@ bool MapConfigRegistry::save()
         {"defuse_seconds", mCurrent.defuseSeconds},
         {"explosion_seconds", mCurrent.explosionSeconds},
     };
+    root["entities"] = json::array();
+    for (const auto& entity : mCurrent.entities) {
+        root["entities"].push_back({
+            {"id", entity.id}, {"type", entity.type},
+            {"position", {entity.position.x, entity.position.y, entity.position.z}},
+            {"size", {entity.size.x, entity.size.y, entity.size.z}},
+            {"radius", entity.radius}, {"enabled", entity.enabled}, {"visible", entity.visible},
+            {"oneShot", entity.oneShot}, {"tag", entity.tag}, {"monsterPool", entity.monsterPool},
+            {"pickupId", entity.pickupId}, {"bossId", entity.bossId}, {"damageType", entity.damageType},
+            {"spawnCount", entity.spawnCount}, {"maxAlive", entity.maxAlive}, {"damage", entity.damage},
+            {"damageIntervalTicks", entity.damageIntervalTicks},
+            {"spawnCooldownTicks", entity.spawnCooldownTicks},
+            {"checkpointRequirement", entity.checkpointRequirement}
+        });
+    }
 
     // Preserve the directory if it already exists; create it otherwise.
     std::error_code ec;
@@ -220,7 +356,12 @@ bool MapConfigRegistry::save()
     }
     out << root.dump(2) << "\n";
     mLastWrite = getLastWrite(mPath);
-    Debug::warn(Debug::Category::Duel, "[MAP CONFIG] saved %s\n", mPath.c_str());
+    Debug::warn(Debug::Category::Duel, "[MAP CONFIG] saved %s entities=%zu\n", mPath.c_str(), mCurrent.entities.size());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-entity.saved", mCurrent.mapId, "terminal authoring", 0,
+        nlohmann::json{{"map", mCurrent.mapId}, {"entity_count", mCurrent.entities.size()}, {"config_path", mPath}, {"result", "success"}},
+        __FILE__, __LINE__, __FUNCTION__);
     return true;
 }
 

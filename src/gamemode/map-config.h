@@ -9,6 +9,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -23,10 +24,36 @@ struct BombSite
     bool hasPosition = false;    // false = not yet authored/verified
 };
 
+struct MapEntity
+{
+    std::string id;
+    std::string type;
+    glm::vec3 position{0.0f};
+    glm::vec3 size{1.0f};
+    float radius = 1.0f;
+    bool enabled = true;
+    bool visible = true;
+    bool oneShot = false;
+    std::string tag;
+    std::string monsterPool = "default";
+    std::string pickupId;
+    std::string bossId;
+    std::string damageType = "generic";
+    int spawnCount = 1;
+    int maxAlive = 1;
+    int damage = 0;
+    int damageIntervalTicks = 60;
+    int spawnCooldownTicks = 60;
+    int checkpointRequirement = 0;
+    bool runtimeActivated = false;
+    uint32_t lastActivationTick = 0;
+};
+
 struct MapObjectiveConfig
 {
     std::string mapId;
     std::vector<BombSite> bombSites;
+    std::vector<MapEntity> entities;
     float plantSeconds = 3.0f;
     float defuseSeconds = 5.0f;
     float explosionSeconds = 40.0f;
@@ -58,6 +85,17 @@ public:
     bool setSiteVisibility(const std::string& id, bool visible);
     bool save();
 
+    const MapEntity* findEntity(const std::string& id) const;
+    MapEntity* findEntityMutable(const std::string& id);
+    std::vector<MapEntity>& entitiesMutable() { return mCurrent.entities; }
+    std::string createEntity(const std::string& type, const glm::vec3& position,
+                             const std::string& requestedId = "");
+    bool deleteEntity(const std::string& id);
+    void setEntityVisibility(bool visible);
+    bool entityVisibility() const { return mEntityVisibility; }
+    void setEntityVisibilityFor(const std::string& id, bool visible);
+    const std::string& configPath() const { return mPath; }
+
     // Resolve the config path for a map id under config/maps/.
     static std::string pathForMap(const std::string& mapId);
 
@@ -66,6 +104,7 @@ private:
     std::string resolveConfigPath() const;
 
     MapObjectiveConfig mCurrent;
+    bool mEntityVisibility = false;
     std::filesystem::file_time_type mLastWrite{};
     std::string mPath;
 };
