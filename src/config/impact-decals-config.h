@@ -166,5 +166,5 @@ private:
     std::string mPath = "config/impact_decals.json";
     std::filesystem::file_time_type mLastWrite{};
     bool mRuntimeBloodOverride = false;
-    bool mPreviousBloodEnabled = true;
+    bool mRuntimeBloodEnabled = true;
 };

@@ -339,17 +339,17 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         };
         std::vector<HotbarEntry> entries;
         int configuredSlotCount = (int)readVal("hotbarSlotCount", 10.0f);
-        if (MP_CONTEXT.communityWeaponSetId > 0) {
-            auto& cfg = MimitaNet::CommunityServerConfig::instance();
-            if (cfg.weaponSets().empty()) cfg.load();
-            const auto* set = cfg.weaponSetById(MP_CONTEXT.communityWeaponSetId);
-            if (set && !(set->weapons.size() == 1 && set->weapons.front() == "*")) {
-                for (int logicalSlot = 1; logicalSlot <= static_cast<int>(set->weapons.size()); ++logicalSlot) {
-                    const auto* id = cfg.weaponForSlot(MP_CONTEXT.communityWeaponSetId, logicalSlot);
-                    const WeaponDefinition* def = id ? WeaponRegistry::instance().get(*id) : nullptr;
-                    if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None)
-                        entries.push_back({logicalSlot, def});
-                }
+        auto& cfg = MimitaNet::CommunityServerConfig::instance();
+        if (cfg.weaponSets().empty()) cfg.load();
+        const int weaponSetId = MP_CONTEXT.communityWeaponSetId > 0
+            ? MP_CONTEXT.communityWeaponSetId : 1;
+        const auto* set = cfg.weaponSetById(weaponSetId);
+        if (set && !(set->weapons.size() == 1 && set->weapons.front() == "*")) {
+            for (int logicalSlot = 1; logicalSlot <= static_cast<int>(set->weapons.size()); ++logicalSlot) {
+                const auto* id = cfg.weaponForSlot(weaponSetId, logicalSlot);
+                const WeaponDefinition* def = id ? WeaponRegistry::instance().get(*id) : nullptr;
+                if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None)
+                    entries.push_back({logicalSlot, def});
             }
         }
         if (entries.empty()) {

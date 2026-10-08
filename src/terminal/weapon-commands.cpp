@@ -86,21 +86,23 @@ static int communityRequestSlot(const MimitaNet::MultiplayerContext& ctx,
                                  const std::string& weaponId,
                                  int nativeSlot)
 {
-    if (ctx.communityWeaponSetId <= 0) return nativeSlot;
     auto& config = MimitaNet::CommunityServerConfig::instance();
     if (config.weaponSets().empty()) config.load();
-    const int logical = config.slotForWeapon(ctx.communityWeaponSetId, weaponId);
+    const int weaponSetId = ctx.communityWeaponSetId > 0
+        ? ctx.communityWeaponSetId : 1;
+    const int logical = config.slotForWeapon(weaponSetId, weaponId);
     return logical > 0 ? logical : nativeSlot;
 }
 
 static int nativeSlotForCommunitySlot(int slot)
 {
-    if (MP_CONTEXT.communityWeaponSetId <= 0) return slot;
     auto& cfg = MimitaNet::CommunityServerConfig::instance();
     if (cfg.weaponSets().empty()) cfg.load();
-    const auto* id = cfg.weaponForSlot(MP_CONTEXT.communityWeaponSetId, slot);
+    const int weaponSetId = MP_CONTEXT.communityWeaponSetId > 0
+        ? MP_CONTEXT.communityWeaponSetId : 1;
+    const auto* id = cfg.weaponForSlot(weaponSetId, slot);
     const auto* def = id ? WeaponRegistry::instance().get(*id) : nullptr;
-    return def ? def->slot : -1;
+    return def ? def->slot : (MP_CONTEXT.communityWeaponSetId > 0 ? -1 : slot);
 }
 
 void unequipAndSync(Player& player, WeaponSystem& weapons)

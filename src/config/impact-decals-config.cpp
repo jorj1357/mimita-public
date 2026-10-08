@@ -205,18 +205,18 @@ ImpactDecalsConfig& ImpactDecalsConfig::instance()
 
 void ImpactDecalsConfig::setRuntimeBloodEnabled(bool enabled)
 {
-    if (!mRuntimeBloodOverride) {
-        mPreviousBloodEnabled = mData.blood.enabled;
-        mRuntimeBloodOverride = true;
-    }
+    mRuntimeBloodOverride = true;
+    mRuntimeBloodEnabled = enabled;
     mData.blood.enabled = enabled;
 }
 
 void ImpactDecalsConfig::clearRuntimeBloodOverride()
 {
     if (!mRuntimeBloodOverride) return;
-    mData.blood.enabled = mPreviousBloodEnabled;
     mRuntimeBloodOverride = false;
+    // Re-read the persistent JSON value instead of restoring a stale value
+    // captured when the match began. Other impact settings remain untouched.
+    load(mPath);
 }
 
 bool ImpactDecalsConfig::load(const std::string& path)
@@ -248,6 +248,8 @@ bool ImpactDecalsConfig::load(const std::string& path)
             readGroup(root["worldCracks"], data.worldCracks);
 
         mData = data;
+        if (mRuntimeBloodOverride)
+            mData.blood.enabled = mRuntimeBloodEnabled;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::Weapons,
             "[IMPACT DECALS] Loaded: %s (blood=%d bulletHoles=%d worldCracks=%d)\n",

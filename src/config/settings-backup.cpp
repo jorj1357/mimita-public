@@ -9,8 +9,7 @@ namespace {
 
 const char* kBackupPaths[] = {
     "config/camconfig.json",
-    "config/ragdolldeath.json",
-    "config/impact_decals.json"
+    "config/ragdolldeath.json"
 };
 
 bool copyFile(const std::string& from, const std::string& to)
