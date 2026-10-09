@@ -152,8 +152,10 @@
     "enabled": true,
     "visible": false,
     "collision_skin": 0.02,
-    "bounce_mode": "inherit_actor",
-    "player_bounce": 0.99,
+    // "bounce_mode": "inherit_actor",
+    "bounce_mode": "none",
+    // "player_bounce": 0.99,
+    "player_bounce": 0.0,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "barrel", "center": [0.0, 0.4, 0.2],

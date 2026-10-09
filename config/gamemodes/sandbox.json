@@ -4,9 +4,10 @@
   "description": "Free building and testing. No scoring, no timer.",
   // NPC-only combat profile. Possible values are the ids in
   // config/behavior-profiles.json, such as "balanced", "aggressive", or
-  // "nervous". Humans are not affected. Hot-reloadable.
-  // "npc_behavior_profile": "balanced",
-  "npc_behavior_profile": "sandboxhard",
+  // "nervous". Humans are not affected. Hot-reloadable. 
+  // "npc_behavior_profile": "balanced", 
+  // "npc_behavior_profile": "sandboxhard",
+  "npc_behavior_profile": "juggernaut_swarm",
   "team_names": [],
   "goal_value": 0,
   "weapon_set_id": 1,

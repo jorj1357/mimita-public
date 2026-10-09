@@ -25,6 +25,7 @@
 #include "physics/physics-types.h"
 #include "world/world.h"
 #include "perf/perf.h"
+#include "debug/structured-log.h"
 
 namespace {
 
@@ -64,6 +65,78 @@ struct BuildData
         if (heightfield) rcFreeHeightField(heightfield);
     }
 };
+
+struct HeightfieldMetrics
+{
+    int spanCount = 0;
+    int walkableSpanCount = 0;
+};
+
+HeightfieldMetrics measureHeightfield(const rcHeightfield& heightfield)
+{
+    HeightfieldMetrics metrics;
+    const int cellCount = heightfield.width * heightfield.height;
+    for (int i = 0; i < cellCount; ++i) {
+        for (const rcSpan* span = heightfield.spans[i]; span; span = span->next) {
+            ++metrics.spanCount;
+            if (span->area != RC_NULL_AREA)
+                ++metrics.walkableSpanCount;
+        }
+    }
+    return metrics;
+}
+
+int countCompactWalkableSpans(const rcCompactHeightfield& compact)
+{
+    int count = 0;
+    for (int i = 0; i < compact.spanCount; ++i) {
+        if (compact.areas[i] != RC_NULL_AREA)
+            ++count;
+    }
+    return count;
+}
+
+int countCompactAssignedRegions(const rcCompactHeightfield& compact,
+                                int& regionCount)
+{
+    std::vector<unsigned char> seen(compact.maxRegions + 1, 0);
+    int assignedSpanCount = 0;
+    regionCount = 0;
+    for (int i = 0; i < compact.spanCount; ++i) {
+        const unsigned short region = compact.spans[i].reg;
+        if (region == 0)
+            continue;
+        ++assignedSpanCount;
+        if (region < seen.size() && !seen[region]) {
+            seen[region] = 1;
+            ++regionCount;
+        }
+    }
+    return assignedSpanCount;
+}
+
+void measureCompactConnections(const rcCompactHeightfield& compact,
+                               int& connectedWalkable,
+                               int& isolatedWalkable)
+{
+    connectedWalkable = 0;
+    isolatedWalkable = 0;
+    for (int i = 0; i < compact.spanCount; ++i) {
+        if (compact.areas[i] == RC_NULL_AREA)
+            continue;
+        bool hasConnection = false;
+        for (int direction = 0; direction < 4; ++direction) {
+            if (rcGetCon(compact.spans[i], direction) != RC_NOT_CONNECTED) {
+                hasConnection = true;
+                break;
+            }
+        }
+        if (hasConnection)
+            ++connectedWalkable;
+        else
+            ++isolatedWalkable;
+    }
+}
 
 float horizontalLength(const glm::vec3& a, const glm::vec3& b)
 {
@@ -181,6 +254,14 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
     rcVcopy(cfg.bmin, &bmin.x);
     rcVcopy(cfg.bmax, &bmax.x);
     rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
+    diag.sourceTriangleCount = static_cast<int>(source.size());
+    diag.recastBoundsMin = bmin;
+    diag.recastBoundsMax = bmax;
+    diag.recastGridWidth = cfg.width;
+    diag.recastGridHeight = cfg.height;
+    diag.walkableHeightCells = cfg.walkableHeight;
+    diag.walkableClimbCells = cfg.walkableClimb;
+    diag.walkableRadiusCells = cfg.walkableRadius;
     if (cfg.width <= 0 || cfg.height <= 0 || cfg.width > 8192 || cfg.height > 8192) {
         error = "recast_grid_out_of_bounds";
         return false;
@@ -204,6 +285,7 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
                             areas.data());
     for (unsigned char a : areas)
         if (a != 0) ++data.walkableTriangleCount;
+    diag.walkableTriangleCount = data.walkableTriangleCount;
     if (!rcRasterizeTriangles(&context, verts.data(),
                               static_cast<int>(verts.size() / 3), tris.data(),
                               areas.data(), static_cast<int>(source.size()),
@@ -211,26 +293,57 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         error = "rasterization_failed";
         return false;
     }
+    const HeightfieldMetrics beforeFilters = measureHeightfield(*data.heightfield);
+    diag.heightfieldSpanCount = beforeFilters.spanCount;
+    diag.heightfieldWalkableSpanCount = beforeFilters.walkableSpanCount;
     rcFilterLowHangingWalkableObstacles(&context, cfg.walkableClimb,
                                         *data.heightfield);
+    diag.afterLowHangingWalkableSpanCount =
+        measureHeightfield(*data.heightfield).walkableSpanCount;
     rcFilterLedgeSpans(&context, cfg.walkableHeight, cfg.walkableClimb,
                        *data.heightfield);
+    diag.afterLedgeWalkableSpanCount =
+        measureHeightfield(*data.heightfield).walkableSpanCount;
     rcFilterWalkableLowHeightSpans(&context, cfg.walkableHeight,
                                    *data.heightfield);
+    diag.afterLowHeightWalkableSpanCount =
+        measureHeightfield(*data.heightfield).walkableSpanCount;
+    const HeightfieldMetrics afterFilters = measureHeightfield(*data.heightfield);
+    diag.postFilterSpanCount = afterFilters.spanCount;
+    diag.postFilterWalkableSpanCount = afterFilters.walkableSpanCount;
 
     data.compact = rcAllocCompactHeightfield();
     if (!data.compact || !rcBuildCompactHeightfield(&context,
                                                      cfg.walkableHeight,
                                                      cfg.walkableClimb,
                                                      *data.heightfield,
-                                                     *data.compact) ||
-        !rcErodeWalkableArea(&context, cfg.walkableRadius, *data.compact) ||
-        !rcBuildDistanceField(&context, *data.compact) ||
-        !rcBuildRegions(&context, *data.compact, 0, cfg.minRegionArea,
-                        cfg.mergeRegionArea)) {
-        error = "compact_regions_failed";
+                                                     *data.compact)) {
+        error = "compact_build_failed";
         return false;
     }
+    diag.compactSpanCount = data.compact->spanCount;
+    diag.compactWalkableSpanCount = countCompactWalkableSpans(*data.compact);
+    if (!rcErodeWalkableArea(&context, cfg.walkableRadius, *data.compact)) {
+        error = "compact_erosion_failed";
+        return false;
+    }
+    diag.compactWalkableAfterErode = countCompactWalkableSpans(*data.compact);
+    if (!rcBuildDistanceField(&context, *data.compact)) {
+        error = "distance_field_failed";
+        return false;
+    }
+    if (!rcBuildRegions(&context, *data.compact, 0, cfg.minRegionArea,
+                        cfg.mergeRegionArea)) {
+        error = "region_build_failed";
+        return false;
+    }
+    diag.compactWalkableAfterRegions = countCompactWalkableSpans(*data.compact);
+    diag.compactMaxDistance = data.compact->maxDistance;
+    measureCompactConnections(*data.compact,
+                              diag.compactConnectedWalkableSpanCount,
+                              diag.compactIsolatedWalkableSpanCount);
+    diag.compactAssignedRegionSpanCount =
+        countCompactAssignedRegions(*data.compact, diag.compactRegionCount);
 
     data.contours = rcAllocContourSet();
     if (!data.contours || !rcBuildContours(&context, *data.compact,
@@ -239,6 +352,9 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         error = "contour_build_failed";
         return false;
     }
+    diag.contourCount = data.contours->nconts;
+    for (int i = 0; i < data.contours->nconts; ++i)
+        diag.contourVertexCount += data.contours->conts[i].nverts;
     data.polyMesh = rcAllocPolyMesh();
     if (!data.polyMesh || !rcBuildPolyMesh(&context, *data.contours,
                                            cfg.maxVertsPerPoly,
@@ -255,6 +371,11 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         error = "detail_mesh_failed";
         return false;
     }
+
+    diag.navMeshPolyCount = data.polyMesh->npolys;
+    diag.navMeshVertCount = data.polyMesh->nverts;
+    diag.detailVertCount = data.detail->nverts;
+    diag.detailTriCount = data.detail->ntris;
 
     for (int i = 0; i < data.polyMesh->npolys; ++i) {
         if (data.polyMesh->areas[i] == RC_WALKABLE_AREA) {
@@ -291,6 +412,7 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         error = "detour_data_failed";
         return false;
     }
+    diag.detourDataSize = navDataSize;
     dtNavMesh* mesh = dtAllocNavMesh();
     if (!mesh) {
         dtFree(navData);
@@ -304,12 +426,6 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
     }
     outMesh = mesh;
 
-    diag.sourceTriangleCount = static_cast<int>(source.size());
-    diag.walkableTriangleCount = data.walkableTriangleCount;
-    diag.navMeshPolyCount = data.polyMesh->npolys;
-    diag.navMeshVertCount = data.polyMesh->nverts;
-    diag.recastBoundsMin = bmin;
-    diag.recastBoundsMax = bmax;
     return true;
 }
 
@@ -384,6 +500,55 @@ RecastNavigationResult RecastNavigationBackend::prepare(
             result.buildMilliseconds = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - begin).count();
             result.queryMilliseconds = result.buildMilliseconds;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.navmesh.prepare-failed", "recast", result.failure,
+                0,
+                nlohmann::json{
+                    {"source_triangle_count", result.sourceTriangleCount},
+                    {"walkable_triangle_count", result.walkableTriangleCount},
+                    {"recast_grid_width", result.recastGridWidth},
+                    {"recast_grid_height", result.recastGridHeight},
+                    {"walkable_height_cells", result.walkableHeightCells},
+                    {"walkable_climb_cells", result.walkableClimbCells},
+                    {"walkable_radius_cells", result.walkableRadiusCells},
+                    {"heightfield_span_count", result.heightfieldSpanCount},
+                    {"heightfield_walkable_span_count", result.heightfieldWalkableSpanCount},
+                    {"after_low_hanging_walkable_span_count", result.afterLowHangingWalkableSpanCount},
+                    {"after_ledge_walkable_span_count", result.afterLedgeWalkableSpanCount},
+                    {"after_low_height_walkable_span_count", result.afterLowHeightWalkableSpanCount},
+                    {"post_filter_span_count", result.postFilterSpanCount},
+                    {"post_filter_walkable_span_count", result.postFilterWalkableSpanCount},
+                    {"compact_span_count", result.compactSpanCount},
+                    {"compact_walkable_span_count", result.compactWalkableSpanCount},
+                    {"compact_walkable_after_erode", result.compactWalkableAfterErode},
+                    {"compact_walkable_after_regions", result.compactWalkableAfterRegions},
+                    {"compact_connected_walkable_span_count", result.compactConnectedWalkableSpanCount},
+                    {"compact_isolated_walkable_span_count", result.compactIsolatedWalkableSpanCount},
+                    {"compact_max_distance", result.compactMaxDistance},
+                    {"compact_region_count", result.compactRegionCount},
+                    {"compact_assigned_region_span_count", result.compactAssignedRegionSpanCount},
+                    {"contour_count", result.contourCount},
+                    {"contour_vertex_count", result.contourVertexCount},
+                    {"navmesh_poly_count", result.navMeshPolyCount},
+                    {"navmesh_vert_count", result.navMeshVertCount},
+                    {"detail_vert_count", result.detailVertCount},
+                    {"detail_tri_count", result.detailTriCount},
+                    {"detour_data_size", result.detourDataSize},
+                    {"profile_radius", profile.radius},
+                    {"profile_height", profile.height},
+                    {"profile_step_height", profile.stepHeight},
+                    {"profile_max_slope_degrees", profile.maxSlopeDegrees},
+                    {"world_render_revision", world.renderRevision},
+                    {"world_triangle_count", world.collisionMesh.triangles.size()},
+                    {"recast_bounds_min", {result.recastBoundsMin.x,
+                                               result.recastBoundsMin.y,
+                                               result.recastBoundsMin.z}},
+                    {"recast_bounds_max", {result.recastBoundsMax.x,
+                                               result.recastBoundsMax.y,
+                                               result.recastBoundsMax.z}},
+                    {"build_ms", result.buildMilliseconds}},
+                __FILE__, __LINE__, __FUNCTION__);
             return result;
         }
         mState->world = &world;

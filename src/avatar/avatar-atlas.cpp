@@ -628,6 +628,13 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
     auto stateIt = mLoadStates.find(name);
     if (stateIt != mLoadStates.end())
     {
+        if (stateIt->second == AvatarLoadState::Failed &&
+            mRetryableAvatarLoads.erase(name) > 0)
+        {
+            mLoadStates.erase(stateIt);
+            queueAvatarLoad(name, true);
+            return nullptr;
+        }
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Avatar, StructuredLevel::Important,
             "avatar.cache.pending-or-failed", name,
@@ -640,11 +647,16 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
         return nullptr;
     }
     Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] miss: %s (queued)\n", name.c_str());
+    queueAvatarLoad(name, false);
+    return nullptr;
+}
+
+bool AvatarSystem::queueAvatarLoad(const std::string& name, bool retry) {
     mLoadStates[name] = AvatarLoadState::Loading;
     if (!mBackgroundWorker) {
         mLoadStates[name] = AvatarLoadState::Failed;
         Debug::warn(Debug::Category::Avatar, "[AVATAR ASYNC] unavailable avatar='%s' reason=no_worker\n", name.c_str());
-        return nullptr;
+        return false;
     }
     const std::string basePath = AvatarSystem::avatarPath(name);
     const std::string jsonPath = basePath + "/avatar.json";
@@ -664,11 +676,29 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
     });
     if (!accepted) {
         mLoadStates[name] = AvatarLoadState::Failed;
+        mRetryableAvatarLoads.insert(name);
         Debug::warn(Debug::Category::Avatar, "[AVATAR ASYNC] queue rejected avatar='%s' reason=worker_queue_full\n", name.c_str());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.load.queue-rejected", name,
+            "avatar load will retry after background worker capacity is available", 0,
+            nlohmann::json{{"avatar", name}, {"retry", true},
+                           {"retry_attempt", retry},
+                           {"queue_depth", mBackgroundWorker->queueDepth()},
+                           {"queue_limit", ReplaySaveWorker::kMaxQueuedJobs},
+                           {"reason", "worker_queue_full"}});
     } else {
+        mRetryableAvatarLoads.erase(name);
         Debug::log(Debug::Category::Avatar, "[AVATAR ASYNC] queued avatar='%s' worker=low_priority\n", name.c_str());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Verbose,
+            "avatar.load.queued", name,
+            retry ? "retryable avatar load queued" : "avatar load queued", 0,
+            nlohmann::json{{"avatar", name}, {"retry", retry},
+                           {"queue_depth", mBackgroundWorker->queueDepth()},
+                           {"queue_limit", ReplaySaveWorker::kMaxQueuedJobs}});
     }
-    return nullptr;
+    return accepted;
 }
 
 bool AvatarSystem::isAvatarLoadPending(const std::string& name) const {
@@ -677,6 +707,16 @@ bool AvatarSystem::isAvatarLoadPending(const std::string& name) const {
 }
 
 void AvatarSystem::pollBackgroundAvatarLoads() {
+    if (mBackgroundWorker &&
+        mBackgroundWorker->queueDepth() < ReplaySaveWorker::kMaxQueuedJobs &&
+        !mRetryableAvatarLoads.empty())
+    {
+        const std::string name = *mRetryableAvatarLoads.begin();
+        mRetryableAvatarLoads.erase(name);
+        mLoadStates.erase(name);
+        queueAvatarLoad(name, true);
+    }
+
     PendingAvatarLoad pending;
     {
         std::lock_guard<std::mutex> lock(mPendingAvatarMutex);
@@ -685,6 +725,7 @@ void AvatarSystem::pollBackgroundAvatarLoads() {
         mPendingAvatarLoads.pop_front();
     }
     if (!pending.success) {
+        mRetryableAvatarLoads.erase(pending.name);
         mLoadStates[pending.name] = AvatarLoadState::Failed;
         Debug::warn(Debug::Category::Avatar,
             "[AVATAR ASYNC] failed avatar='%s' reason=%s fallback=1\n",
