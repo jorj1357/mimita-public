@@ -31,6 +31,7 @@ static const char* damageSourceName(ServerDamageSource source)
     case ServerDamageSource::PhysicalContact: return "physical_contact";
     case ServerDamageSource::RocketExplosion: return "rocket_explosion";
     case ServerDamageSource::GrenadeExplosion: return "grenade_explosion";
+    case ServerDamageSource::Environment: return "environment";
     default: return "unknown";
     }
 }
@@ -44,6 +45,7 @@ static uint8_t damageConfirmedSource(ServerDamageSource source)
     case ServerDamageSource::PhysicalContact: return DAMAGE_CONFIRMED_PHYSICAL_CONTACT;
     case ServerDamageSource::RocketExplosion: return DAMAGE_CONFIRMED_ROCKET_EXPLOSION;
     case ServerDamageSource::GrenadeExplosion: return DAMAGE_CONFIRMED_GRENADE_EXPLOSION;
+    case ServerDamageSource::Environment: return DAMAGE_CONFIRMED_ENVIRONMENT;
     default: return 0;
     }
 }

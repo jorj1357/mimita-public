@@ -31,11 +31,16 @@ struct MapEntity
     glm::vec3 position{0.0f};
     glm::vec3 size{1.0f};
     float radius = 1.0f;
+    // Trigger shape for volume entities: "sphere" (radius) or "box" (size).
+    // Empty keeps the legacy inference (box when size != 1x1x1, else sphere).
+    std::string shape;
     bool enabled = true;
     bool visible = true;
     bool oneShot = false;
     std::string tag;
     std::string monsterPool = "default";
+    // Role id spawned by a monster_zone (e.g. "zombie"). Empty = global NPC default.
+    std::string monsterRole;
     std::string pickupId;
     std::string bossId;
     std::string damageType = "generic";
@@ -45,6 +50,8 @@ struct MapEntity
     int damageIntervalTicks = 60;
     int spawnCooldownTicks = 60;
     int checkpointRequirement = 0;
+    // Monotonic order for checkpoints so progress cannot go backwards.
+    int checkpointIndex = 0;
     bool runtimeActivated = false;
     uint32_t lastActivationTick = 0;
 };

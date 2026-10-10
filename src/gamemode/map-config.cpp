@@ -58,7 +58,12 @@ bool mapEntityContainsPoint(const MapEntity& entity, const glm::vec3& point)
     const glm::vec3 d = point - entity.position;
     const bool hasBox = entity.size.x > 1.001f || entity.size.y > 1.001f ||
                         entity.size.z > 1.001f;
-    if (hasBox) {
+    // Explicit shape wins; otherwise infer (sized volume -> box, else sphere).
+    const bool useSphere = entity.shape == "sphere" ||
+                           (entity.shape.empty() && !hasBox);
+    const bool useBox = entity.shape == "box" ||
+                        (entity.shape.empty() && hasBox);
+    if (useBox) {
         const glm::vec3 half(std::max(entity.size.x, 0.0f) * 0.5f,
                              std::max(entity.size.y, 0.0f) * 0.5f,
                              std::max(entity.size.z, 0.0f) * 0.5f);
@@ -66,7 +71,9 @@ bool mapEntityContainsPoint(const MapEntity& entity, const glm::vec3& point)
             std::abs(d.z) <= half.z)
             return true;
     }
-    return glm::dot(d, d) <= entity.radius * entity.radius;
+    if (useSphere)
+        return glm::dot(d, d) <= entity.radius * entity.radius;
+    return false;
 }
 
 MapConfigRegistry& MapConfigRegistry::instance()
@@ -161,11 +168,13 @@ bool MapConfigRegistry::load(const std::string& mapId)
                 if (item.contains("size") && item["size"].is_array() && item["size"].size() >= 3)
                     entity.size = glm::vec3(item["size"][0].get<float>(), item["size"][1].get<float>(), item["size"][2].get<float>());
                 entity.radius = std::max(0.1f, item.value("radius", entity.radius));
+                entity.shape = item.value("shape", std::string{});
                 entity.enabled = item.value("enabled", entity.enabled);
                 entity.visible = item.value("visible", entity.visible);
                 entity.oneShot = item.value("oneShot", item.value("one_shot", entity.oneShot));
                 entity.tag = item.value("tag", std::string{});
                 entity.monsterPool = item.value("monsterPool", item.value("monster_pool", entity.monsterPool));
+                entity.monsterRole = item.value("monsterRole", item.value("monster_role", std::string{}));
                 entity.pickupId = item.value("pickupId", item.value("pickup_id", std::string{}));
                 entity.bossId = item.value("bossId", item.value("boss_id", std::string{}));
                 entity.damageType = item.value("damageType", item.value("damage_type", entity.damageType));
@@ -175,6 +184,7 @@ bool MapConfigRegistry::load(const std::string& mapId)
                 entity.damageIntervalTicks = std::max(1, item.value("damageIntervalTicks", item.value("damage_interval_ticks", entity.damageIntervalTicks)));
                 entity.spawnCooldownTicks = std::max(1, item.value("spawnCooldownTicks", item.value("spawn_cooldown_ticks", entity.spawnCooldownTicks)));
                 entity.checkpointRequirement = std::max(0, item.value("checkpointRequirement", item.value("checkpoint_requirement", entity.checkpointRequirement)));
+                entity.checkpointIndex = std::max(0, item.value("checkpointIndex", item.value("checkpoint_index", entity.checkpointIndex)));
                 next.entities.push_back(std::move(entity));
             }
         }
@@ -365,13 +375,16 @@ bool MapConfigRegistry::save()
             {"id", entity.id}, {"type", entity.type},
             {"position", {entity.position.x, entity.position.y, entity.position.z}},
             {"size", {entity.size.x, entity.size.y, entity.size.z}},
-            {"radius", entity.radius}, {"enabled", entity.enabled}, {"visible", entity.visible},
+            {"radius", entity.radius}, {"shape", entity.shape},
+            {"enabled", entity.enabled}, {"visible", entity.visible},
             {"oneShot", entity.oneShot}, {"tag", entity.tag}, {"monsterPool", entity.monsterPool},
+            {"monsterRole", entity.monsterRole},
             {"pickupId", entity.pickupId}, {"bossId", entity.bossId}, {"damageType", entity.damageType},
             {"spawnCount", entity.spawnCount}, {"maxAlive", entity.maxAlive}, {"damage", entity.damage},
             {"damageIntervalTicks", entity.damageIntervalTicks},
             {"spawnCooldownTicks", entity.spawnCooldownTicks},
-            {"checkpointRequirement", entity.checkpointRequirement}
+            {"checkpointRequirement", entity.checkpointRequirement},
+            {"checkpointIndex", entity.checkpointIndex}
         });
     }
 

@@ -2826,7 +2826,8 @@ void clearNpcWaveActors(ServerGamemodeState& d,
     d.waveBannerVisible = false;
 }
 
-void addNpcWaveParticipant(ServerGamemodeState& d, ServerNpc& npc)
+void addNpcWaveParticipant(ServerGamemodeState& d, ServerNpc& npc,
+                           const std::string& roleId = "")
 {
     d.participants.push_back(npc.entityId);
     d.participantNames[npc.entityId] = npc.name;
@@ -2836,6 +2837,9 @@ void addNpcWaveParticipant(ServerGamemodeState& d, ServerNpc& npc)
     desc.controller = ActorController::Npc;
     desc.state = ActorState::Alive;
     desc.teamId = 1;
+    // Authored monster roles (e.g. "zombie") flow through the shared spawn
+    // profile resolver, which applies health/movement/behavior/loadout.
+    if (!roleId.empty()) desc.roleId = roleId;
     d.matchActors[npc.entityId] = std::move(desc);
     d.matchTeams[npc.entityId] = 1;
     npc.matchTeam = 1;
@@ -2912,7 +2916,12 @@ void spawnPersistentNpcBatchIfDue(ServerGamemodeState& d,
             npc.yaw = 0.0f;
             npc.difficulty = 1.0f;
             npc.spawnZoneId = zone.id;
-            addNpcWaveParticipant(d, npc);
+            // Authored role: prefer monsterRole, else a monsterPool that names a
+            // known role. Empty falls back to the global NPC default profile.
+            std::string zoneRole = zone.monsterRole;
+            if (zoneRole.empty() && MatchRoleRegistry::instance().get(zone.monsterPool))
+                zoneRole = zone.monsterPool;
+            addNpcWaveParticipant(d, npc, zoneRole);
             npcs.emplace(npc.entityId, std::move(npc));
         }
         zone.lastActivationTick = tick;

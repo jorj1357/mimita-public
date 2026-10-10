@@ -13,17 +13,17 @@
       "damageIntervalTicks": 60,
       "damageType": "generic",
       "enabled": true,
-      "id": "test1",
+      "id": "monster_zone_2",
       "maxAlive": 1,
       "monsterPool": "default",
       "oneShot": false,
       "pickupId": "",
       "position": [
-        -1250.9501953125,
-        -852.4348754882813,
-        390.7078857421875
+        -1245.828857421875,
+        -850.8743896484375,
+        384.64031982421875
       ],
-      "radius": 1.0,
+      "radius": 10.0,
       "size": [
         1.0,
         1.0,
@@ -32,7 +32,7 @@
       "spawnCooldownTicks": 60,
       "spawnCount": 1,
       "tag": "",
-      "type": "spawnpoint",
+      "type": "monster_zone",
       "visible": true
     }
   ]

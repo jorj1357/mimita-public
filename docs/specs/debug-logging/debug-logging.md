@@ -2,9 +2,11 @@
 
 # Implementation plan: one canonical `events.jsonl` log path
 
-Status: planning only. This section records the intended migration before any
-source or configuration changes are made. Contributors must update the
-inventory and obtain review before deleting or redirecting a logging path.
+Status: segmented canonical writer implemented on 2026-10-10 18:46:37 EDT;
+parallel legacy writers remain intentionally unchanged. This section records
+the implementation contract and the remaining migration work. Contributors
+must update the inventory and obtain review before deleting or redirecting a
+legacy logging path.
 
 ## Goal and non-negotiable result
 
@@ -103,6 +105,261 @@ Crash and assertion records must use the same quota. The earlier idea of
 keeping crash files forever is incompatible with an absolute folder-wide cap
 and must be removed or explicitly rejected during review.
 
+#### Concrete segmented-writer contract (planning snapshot: 2026-10-10 18:27:10 EDT)
+
+This is the implementation-level contract for the first safe version. It is
+more specific than “rotate when large” so a later contributor can implement
+the behavior without inventing a different retention system.
+
+##### 1. Canonical names and ownership
+
+The only diagnostic files created by `StructuredLogger` under a run directory
+are numbered JSONL segments:
+
+```text
+logs/MM-DD-YYYY/YYYYMMDD_HHMMSS/
+  events-000001.jsonl
+  events-000002.jsonl
+  events-000003.jsonl
+```
+
+`events-000001.jsonl` is the first segment. The number is six-digit,
+zero-padded, and increases monotonically within one run directory. The
+segment files are still one logical `events.jsonl` stream; the reader must
+sort by the numeric segment number and then by each record’s existing `seq`.
+No `.txt`, `.summary`, `.state`, manifest, or counter file may be created
+inside the run directory for this feature.
+
+The current ownership points are:
+
+- `src/debug/structured-log.cpp:352-410` (`createLogDir`) currently derives
+  `mLogDir` and one `mEventsPath`; it must instead derive the run directory,
+  discover the newest `events-*.jsonl`, and seed the current segment number.
+- `src/debug/structured-log.cpp:654-706` (`init`) currently opens one
+  persistent `events.jsonl` with `fopen(..., "ab")`; the first safe version
+  must initialize the segment/quota state and must not assume that one fixed
+  filename remains current forever.
+- `src/debug/structured-log.cpp:896-933` (`writeEvent`) already creates the
+  complete JSON object and increments `mSequence`; retain that sequence as
+  the ordering key across segments.
+- `src/debug/structured-log.cpp:935-961` (`writeJsonLine`) is the single
+  write boundary. All serialization, size calculation, segment selection,
+  rotation, quota cleanup, write, flush, and invariant evidence belong here
+  or in small private helpers called only from here.
+- `src/debug/structured-log.h:250-269` currently stores one path, one
+  `FILE*`, and counters. Replace that single-file state with current segment
+  number/path/byte count plus the hard-limit constants and any coordination
+  state required by the private writer helpers.
+- `src/debug/structured-log.cpp:56-64` (`eventsFileMutex`) is the starting
+  cross-process mutex. Its protected region must expand from only the append
+  to the complete decision-and-write transaction described below.
+
+##### 2. Exact byte constants and the pre-write rule
+
+Use decimal byte counts, not binary MiB values:
+
+```cpp
+constexpr uint64_t kMaxSegmentBytes = 100000000ULL;
+constexpr uint64_t kMaxLogsBytes    = 1000000000ULL;
+constexpr uint64_t kTargetSegmentBytes = 99000000ULL;
+```
+
+`kMaxSegmentBytes` and `kMaxLogsBytes` are hard invariants. The 99,000,000
+target is a rotation threshold that leaves room for a close/metadata record;
+it is not permission to exceed 100,000,000. The implementation must also
+check the exact projected size, so the real rule is:
+
+```cpp
+const uint64_t projected = currentSegmentBytes + line.size();
+if (projected > kTargetSegmentBytes || projected > kMaxSegmentBytes) {
+    rotateBeforeWriting();
+}
+```
+
+After rotation, the implementation must re-check `line.size()` against an
+empty segment. If one serialized record is itself larger than
+`kMaxSegmentBytes`, it must not be split and must not be written. Emit a
+small bounded `log.record_rejected`/`log.record_too_large` event if that event
+fits; otherwise increment the in-memory rejection counter and report it in a
+later bounded summary.
+
+The current code calculates `line` at `structured-log.cpp:937` and immediately
+calls `fwrite` at `structured-log.cpp:947`. The required change is to insert
+the projected-size decision between those operations and to make every path
+that writes a JSON line use the same decision. No caller may pre-check the
+size independently because two processes could make the same stale decision.
+
+##### 3. First safe cross-process algorithm
+
+For the first implementation, prefer correctness over keeping a file handle
+open for the entire process lifetime. Opening and closing the current segment
+inside the existing named mutex makes it impossible for one process to keep
+an old segment handle open while another process deletes that segment.
+
+The operation represented by `writeJsonLine` should be equivalent to:
+
+```cpp
+void StructuredLogger::writeJsonLine(const json& record, bool flush)
+{
+    const std::string line = record.dump() + "\\n";
+    HANDLE mutex = eventsFileMutex();
+    WaitForSingleObject(mutex, INFINITE);
+
+    // 1. Discover the newest events-*.jsonl under mLogDir.
+    // 2. Recalculate its actual file size from the filesystem.
+    // 3. If line would not fit, close/mark the old segment and create the
+    //    next numbered segment before writing anything.
+    // 4. Remove only old completed segments/runs if the folder reservation
+    //    would exceed kMaxLogsBytes.
+    // 5. Open the selected segment with "ab", write the complete line,
+    //    fflush, close it, and verify its resulting size.
+
+    ReleaseMutex(mutex);
+}
+```
+
+The pseudocode is intentionally not production code. The required ordering
+is the contract: one named mutex, fresh accounting, cleanup/rotation before
+the write, one complete write, flush/close, then verification. A per-process
+`std::mutex` alone is insufficient because the dev launcher starts a client
+and server that share the same run path.
+
+If later profiling proves open/write/close too expensive, a persistent handle
+may be optimized in a separate change, but only after adding a cross-process
+segment-generation/lease protocol that proves no process still has a segment
+open before deletion. The first implementation must not take that shortcut.
+
+##### 4. Rotation sequence
+
+When the current segment is near its limit, the writer must perform these
+steps while holding the named mutex:
+
+1. Serialize the complete JSON record and calculate its exact byte length,
+   including the newline.
+2. Enumerate `events-*.jsonl` and select the greatest numeric segment number.
+3. Re-read the selected segment’s actual byte size; do not trust only an
+   in-memory counter because another process may have written since startup.
+4. If `actualSize + line.size() <= kTargetSegmentBytes`, write to that
+   segment.
+5. Otherwise, write a bounded `log.segment_closed` metadata record if it
+   fits, close the old segment, create the next number, and write a bounded
+   `log.segment_opened` metadata record followed by the requested record.
+6. Re-read the new segment’s size and reject the transaction if it is greater
+   than `kMaxSegmentBytes`; this is a safety assertion, not normal control
+   flow.
+7. Recalculate the regular-file byte total under the configured `logs` root
+   and record the result in in-memory IO statistics and the next suitable
+   canonical metadata event.
+
+The metadata records are JSONL records, not a second logging format. They
+should include `run_id`, `segment`, `first_seq`/`last_seq` when known,
+`pid`, `process`, and the byte count. The normal event records continue to
+use the existing fields built at `structured-log.cpp:906-932`, especially
+`seq`, `run_id`, `pid`, `category`, `event`, `source`, and `line`.
+
+##### 5. Folder-quota sequence
+
+Before creating a new segment or accepting a record, calculate:
+
+```text
+total regular-file bytes under logs
++ bytes needed for the new segment metadata and record
+```
+
+If that would exceed `kMaxLogsBytes`, enumerate candidates in oldest-first
+order. A candidate is eligible only when it is:
+
+- a numbered `events-*.jsonl` segment or a completed old run directory;
+- not the newest segment of the active run;
+- not owned by a live run/process according to the existing run identity and
+  liveness mechanism;
+- not currently needed by a reader that has been registered by the canonical
+  reader contract.
+
+Delete eligible candidates until the reservation fits. Recalculate the total
+after each deletion. Do not delete the current segment to make room for its
+own next record. If there are no eligible bytes, do not write first and clean
+up later: suppress/aggregate the incoming low-priority event and record the
+drop when a later event fits.
+
+The folder quota applies to every regular file under `logs`, including
+segments from other runs. The implementation must not count directories,
+symlinks, or unrelated files as negative space, and must treat an unknown
+regular file conservatively as consuming quota until it is explicitly
+classified by the migration plan.
+
+##### 6. Preserving useful information without breaking the ceiling
+
+The hard quota means the system cannot promise to retain every event forever.
+The logger must therefore assign a retention class before serialization:
+
+```text
+critical: crash/assertion/first-divergence/quota failure
+high:     network or lifecycle failure and state mismatch
+normal:   ordinary diagnostic state
+low:      repetitive samples, heartbeats, and high-frequency traces
+```
+
+Retention is a field in the event itself, for example:
+
+```json
+{"seq":18401,"level":"important","retention":"high",
+ "category":"network","event":"snapshot_mismatch"}
+```
+
+When old data must be removed, remove old low/normal segments first. Do not
+pretend that a segment containing a few high-priority records can be kept
+forever without consuming quota. Instead, the policy must reserve a bounded
+portion of the 1 GB budget for critical/high summaries and must aggregate
+repeated low-priority records. If the protected budget is full, the logger
+keeps a bounded summary containing category, event, count, first/last time,
+first/last sequence, and drop reason; it does not bypass the hard limit.
+
+The reader must expose dropped-data summaries as part of the same logical
+stream so an investigator can distinguish “nothing happened” from “records
+were intentionally suppressed because the quota was full.”
+
+##### 7. Shared client/server path and reader contract
+
+The current launcher passes a single fixed path through `MIMITA_EVENTS_FILE`
+at `devscripts/dev-loop.py:156-165`, `1104-1130`, and `1226-1233`, and the GUI
+also exports a fixed path at `src/gui/gui-main.cpp:287-327`. Keep that
+environment variable as the initial shared run identity for compatibility,
+but derive the run directory from its parent and let both processes discover
+the newest numbered segment under the same mutex. Do not let the client and
+server independently choose timestamps or segment numbers.
+
+Update the reader/command owner at `src/devtools/dev-log-commands.cpp:30-43`
+to accept either the run directory or the initial `events.jsonl` compatibility
+path, discover all numbered segments, sort them numerically, validate each
+line as JSON, and present them as one chronological stream. Update
+`docs/specs/debug-logging/canonical-jsonl.md` and the runtime-validation
+workflow in the same change so they describe exactly this contract.
+
+##### 8. Required validation cases before implementation is considered done
+
+The later implementation must prove all of these with the real executable:
+
+- write a record that fits below 99 MB;
+- write a record that crosses the 99 MB target and verify a new segment is
+  created before the record is written;
+- run client and server concurrently and verify no duplicate segment number,
+  interleaved/corrupt JSON line, or lost complete record;
+- restart with an existing run directory and verify the newest segment size is
+  re-read rather than guessed;
+- force enough output to exceed 1 GB and verify the oldest eligible segment is
+  removed before the next write;
+- fill the folder with protected/high-priority records and verify low-priority
+  suppression plus a later drop summary rather than a quota violation;
+- inject a single record larger than 100 MB and verify it is rejected without
+  creating an oversized file;
+- terminate the client or server during rotation and verify every remaining
+  segment is individually `<= 100,000,000` bytes and parseable line-by-line;
+- verify the reader reconstructs sequence order across all remaining segments;
+  and
+- verify the recursive regular-file total under `logs` never exceeds
+  `1,000,000,000` bytes at any observation point.
+
 ### Phase 3: remove parallel file writers
 
 Each writer below must either be deleted when redundant or migrated to a
@@ -146,6 +403,8 @@ into this migration.
 | `devscripts/dev-loop.py:1153-1169` | Server launched with `CREATE_NEW_CONSOLE` | Remove the separate server console after startup/readiness is observable in `events.jsonl` and launcher UI. |
 | `devscripts/dev-loop.py:1242-1258` | Client launched with `CREATE_NEW_CONSOLE` | Remove the separate logging console after readiness/status is observable canonically. |
 | `src/gui/gui-main.cpp:939-950` | GUI-launched server with visible CMD window and raw launch messages | Replace raw launch prints with structured launch events and remove the visible CMD window when proven safe. |
+| `src/main.cpp:221-227`, `253-328` | Process startup/console-mode selection and startup diagnostic output | Make console visibility an explicit presentation choice; route diagnostic startup state to `events.jsonl` and retain only intentional user-facing CLI text. |
+| `src/main-init.cpp:176-190`, `234-244` | Early initialization logging before the normal logger path | Ensure the logger is initialized before these messages, or use a bounded startup buffer that is flushed into `events.jsonl`; do not create an early parallel sink. |
 | `src/replay/replay-export-ffmpeg.cpp:560`; `src/replay/replay-commands-export.cpp:62-107`, `138-208` | Explicit visible FFmpeg/CMD debug windows | Keep only as intentional external-tool debug mode; record mode/process identity in `events.jsonl`. |
 | `src/terminal/weapon-bench-commands.cpp:25-36`, `79-120`, `164-166` | Benchmark text files and `latest-weapon-bench-path.txt` | Convert results to structured events or explicitly classify them as user artifacts outside `logs`. |
 
@@ -182,6 +441,16 @@ Known raw-output families requiring review include:
 - `src/replay/replay-export-ffmpeg.cpp:61`, `138-255`, `485-543`,
   `678-735`;
 - all remaining repository matches found by the required search ledger.
+
+The raw-print ledger is supplemented by an owner audit of every
+`Debug::log`, `Debug::warn`, `Debug::error`, `LogManager::...`, and
+`Terminal::addLog`/`addLogf` call. These calls are not assumed to be safe just
+because they use a logging-looking API: each call must be traced to its final
+sink. Calls that resolve to `StructuredLogger` and the canonical writer are
+marked `canonical`; calls that resolve to console-only, legacy files, or
+terminal scrollback are marked for migration. The exact line inventory for
+the direct terminal/output families is below; the owner audit must be
+re-generated after every migration because line numbers move.
 
 ### Raw C/C++/Python-style print-family output
 

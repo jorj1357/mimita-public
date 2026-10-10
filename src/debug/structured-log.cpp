@@ -58,6 +58,40 @@ HANDLE eventsFileMutex() {
                                         "Local\\MiMITA_v9_events_jsonl_v1");
     return handle;
 }
+
+constexpr uint64_t kMaxSegmentBytes = 100000000ULL;
+constexpr uint64_t kTargetSegmentBytes = 99000000ULL;
+constexpr uint64_t kMaxLogsBytes = 1000000000ULL;
+
+bool parseSegmentNumber(const std::filesystem::path& path, uint64_t& number) {
+    const std::string name = path.filename().string();
+    constexpr const char* prefix = "events-";
+    constexpr const char* suffix = ".jsonl";
+    if (name.size() <= std::strlen(prefix) + std::strlen(suffix) ||
+        name.compare(0, std::strlen(prefix), prefix) != 0 ||
+        name.compare(name.size() - std::strlen(suffix), std::strlen(suffix), suffix) != 0)
+        return false;
+
+    const size_t first = std::strlen(prefix);
+    const size_t count = name.size() - first - std::strlen(suffix);
+    if (count != 6) return false;
+    for (size_t i = 0; i < count; ++i) {
+        if (name[first + i] < '0' || name[first + i] > '9') return false;
+    }
+
+    try {
+        number = std::stoull(name.substr(first, count));
+    } catch (...) {
+        return false;
+    }
+    return number > 0;
+}
+
+bool isLegacyOrSegmentedEventsFile(const std::filesystem::path& path) {
+    const std::string name = path.filename().string();
+    uint64_t ignored = 0;
+    return name == "events.jsonl" || parseSegmentNumber(path, ignored);
+}
 }
 
 // ── Singleton ───────────────────────────────────────────────
@@ -378,6 +412,7 @@ void StructuredLogger::createLogDir() {
         const std::filesystem::path events(sharedPath);
         mEventsPath = events.string();
         mLogDir = events.parent_path().string();
+        mLogsRoot = events.parent_path().parent_path().string();
         mRunId = events.parent_path().filename().string();
         if (mRunId.empty()) mRunId = runBuf;
         std::filesystem::create_directories(mLogDir, ec);
@@ -388,6 +423,7 @@ void StructuredLogger::createLogDir() {
         // Single-player / standalone: this process creates the run directory.
         mRunId = runBuf;
         mLogDir = "logs/" + std::string(dateBuf) + "/" + mRunId;
+        mLogsRoot = "logs";
         std::filesystem::create_directories(mLogDir, ec);
         if (ec)
             printf("[STRUCTURED LOG] WARNING: could not create log dir at %s (error=%d)\n",
@@ -407,6 +443,104 @@ void StructuredLogger::createLogDir() {
     }
     printf("[STRUCTURED LOG] events path: %s (run_id=%s pid=%lu)\n",
            mEventsPath.c_str(), mRunId.c_str(), (unsigned long)GetCurrentProcessId());
+}
+
+std::string StructuredLogger::segmentPath(uint64_t segmentNumber) const {
+    char name[64]{};
+    std::snprintf(name, sizeof(name), "events-%06llu.jsonl",
+                  static_cast<unsigned long long>(segmentNumber));
+    return (std::filesystem::path(mLogDir) / name).string();
+}
+
+void StructuredLogger::refreshSegmentStateLocked() {
+    std::error_code ec;
+    std::filesystem::create_directories(mLogDir, ec);
+
+    uint64_t newest = 0;
+    std::filesystem::path newestPath;
+    for (const auto& entry : std::filesystem::directory_iterator(mLogDir, ec)) {
+        if (ec || !entry.is_regular_file(ec)) continue;
+        uint64_t number = 0;
+        if (!parseSegmentNumber(entry.path(), number)) continue;
+        if (number > newest) {
+            newest = number;
+            newestPath = entry.path();
+        }
+    }
+
+    // Migrate the old single-file name once, while the same cross-process
+    // mutex is held. This lets a client and server started from the old
+    // launcher preserve their existing records without continuing to append
+    // to an unbounded events.jsonl file.
+    if (newest == 0) {
+        const std::filesystem::path legacy =
+            std::filesystem::path(mLogDir) / "events.jsonl";
+        if (std::filesystem::is_regular_file(legacy, ec)) {
+            const std::filesystem::path first = segmentPath(1);
+            std::filesystem::rename(legacy, first, ec);
+            if (!ec) {
+                newest = 1;
+                newestPath = first;
+            }
+        }
+    }
+
+    if (newest == 0) {
+        newest = 1;
+        newestPath = segmentPath(newest);
+    }
+
+    mSegmentNumber = newest;
+    mEventsPath = newestPath.string();
+    mSegmentBytes = 0;
+    if (std::filesystem::is_regular_file(newestPath, ec)) {
+        const uintmax_t size = std::filesystem::file_size(newestPath, ec);
+        if (!ec) mSegmentBytes = static_cast<uint64_t>(size);
+    }
+}
+
+bool StructuredLogger::ensureLogQuotaLocked(uint64_t incomingBytes) {
+    std::error_code ec;
+    const std::filesystem::path root =
+        mLogsRoot.empty() ? std::filesystem::path(mLogDir)
+                          : std::filesystem::path(mLogsRoot);
+    if (!std::filesystem::exists(root, ec)) return incomingBytes <= kMaxLogsBytes;
+
+    struct Candidate {
+        std::filesystem::path path;
+        uintmax_t size = 0;
+        std::filesystem::file_time_type modified{};
+    };
+    std::vector<Candidate> candidates;
+    uint64_t total = 0;
+
+    for (std::filesystem::recursive_directory_iterator it(root, ec), end;
+         it != end && !ec; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const uintmax_t size = it->file_size(ec);
+        if (ec) continue;
+        total += static_cast<uint64_t>(size);
+
+        // The quota is for the whole logs tree. Old category/summary files
+        // are therefore eligible cleanup candidates too; this keeps the
+        // ceiling enforceable while the parallel-writer migration is still
+        // in progress. Never delete the segment about to receive data.
+        if (it->path() == std::filesystem::path(mEventsPath)) continue;
+        candidates.push_back({it->path(), size, it->last_write_time(ec)});
+    }
+
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& a, const Candidate& b) {
+                  if (a.modified != b.modified) return a.modified < b.modified;
+                  return a.path.string() < b.path.string();
+              });
+
+    for (const Candidate& candidate : candidates) {
+        if (total + incomingBytes <= kMaxLogsBytes) break;
+        std::filesystem::remove(candidate.path, ec);
+        if (!ec) total -= static_cast<uint64_t>(candidate.size);
+    }
+    return total + incomingBytes <= kMaxLogsBytes;
 }
 
 StructuredLogger::IoStats StructuredLogger::ioStats(bool reset)
@@ -658,11 +792,15 @@ void StructuredLogger::init() {
     if (!mConfig.enabled) return;
 
     createLogDir();
-    mEventsFile = fopen(mEventsPath.c_str(), "ab");
-    if (!mEventsFile) {
-        printf("[STRUCTURED LOG] ERROR: could not open events path: %s\n",
-               mEventsPath.c_str());
-        return;
+    {
+        HANDLE named = eventsFileMutex();
+        if (named) WaitForSingleObject(named, INFINITE);
+        refreshSegmentStateLocked();
+        // Clean up existing log files before the first new record. This is
+        // best-effort for old files, but every new write below is refused if
+        // the hard folder reservation cannot be made.
+        ensureLogQuotaLocked(0);
+        if (named) ReleaseMutex(named);
     }
     mInitialized = true;
 
@@ -718,12 +856,6 @@ void StructuredLogger::shutdown() {
             fclose(mCategoryFiles[i]);
             mCategoryFiles[i] = nullptr;
         }
-    }
-
-    if (mEventsFile) {
-        fflush(mEventsFile);
-        fclose(mEventsFile);
-        mEventsFile = nullptr;
     }
 
     mInitialized = false;
@@ -934,8 +1066,9 @@ void StructuredLogger::writeEvent(StructuredCategory category,
 
 void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
 {
-    if (!mEventsFile) return;
+    if (!mInitialized || mLogDir.empty()) return;
     const std::string line = record.dump() + "\n";
+
     static std::mutex writeMutex;
     std::lock_guard<std::mutex> lock(writeMutex);
     HANDLE named = eventsFileMutex();
@@ -945,18 +1078,106 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
     mMutexWaitMicroseconds.fetch_add(static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(waitEnd - waitStart).count()),
         std::memory_order_relaxed);
-    std::fwrite(line.data(), 1, line.size(), mEventsFile);
-    mEventsWritten.fetch_add(1, std::memory_order_relaxed);
-    mBytesWritten.fetch_add(static_cast<uint64_t>(line.size()), std::memory_order_relaxed);
-    if (flush) {
+
+    if (line.size() > kMaxSegmentBytes) {
+        ++mDroppedRecords;
+        if (named) ReleaseMutex(named);
+        return;
+    }
+
+    refreshSegmentStateLocked();
+    const uint64_t previousSegment = mSegmentNumber;
+    const bool rotate = mSegmentBytes > 0 &&
+        mSegmentBytes + static_cast<uint64_t>(line.size()) > kTargetSegmentBytes;
+    if (rotate) {
+        ++mSegmentNumber;
+        mEventsPath = segmentPath(mSegmentNumber);
+        mSegmentBytes = 0;
+    }
+
+    std::string segmentOpened;
+    if (rotate || mSegmentBytes == 0) {
+        nlohmann::json metadata = {
+            {"type", "log_meta"},
+            {"event", "segment_opened"},
+            {"run_id", mRunId},
+            {"segment", mSegmentNumber},
+            {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+            {"process", processRole()}
+        };
+        segmentOpened = metadata.dump() + "\n";
+    }
+
+    std::string droppedSummary;
+    if (mDroppedRecords > 0) {
+        nlohmann::json dropped = {
+            {"type", "log_meta"},
+            {"event", "records_dropped"},
+            {"run_id", mRunId},
+            {"count", mDroppedRecords},
+            {"reason", "logs_quota_or_record_limit"},
+            {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+            {"process", processRole()}
+        };
+        droppedSummary = dropped.dump() + "\n";
+    }
+
+    const uint64_t incomingBytes = static_cast<uint64_t>(segmentOpened.size()) +
+                                   static_cast<uint64_t>(droppedSummary.size()) +
+                                   static_cast<uint64_t>(line.size());
+    if (mSegmentBytes + incomingBytes > kMaxSegmentBytes ||
+        !ensureLogQuotaLocked(incomingBytes)) {
+        if (rotate) {
+            mSegmentNumber = previousSegment;
+            mEventsPath = segmentPath(previousSegment);
+            std::error_code ec;
+            mSegmentBytes = std::filesystem::is_regular_file(
+                mEventsPath, ec) ? static_cast<uint64_t>(
+                    std::filesystem::file_size(mEventsPath, ec)) : 0;
+        }
+        ++mDroppedRecords;
+        if (named) ReleaseMutex(named);
+        return;
+    }
+
+    FILE* file = std::fopen(mEventsPath.c_str(), "ab");
+    if (!file) {
+        ++mDroppedRecords;
+        if (named) ReleaseMutex(named);
+        return;
+    }
+
+    auto writeLine = [&](const std::string& value) {
+        const size_t written = std::fwrite(value.data(), 1, value.size(), file);
+        if (written != value.size()) return false;
+        mEventsWritten.fetch_add(1, std::memory_order_relaxed);
+        mBytesWritten.fetch_add(static_cast<uint64_t>(value.size()),
+                                std::memory_order_relaxed);
+        mSegmentBytes += static_cast<uint64_t>(value.size());
+        return true;
+    };
+
+    bool ok = true;
+    if (!segmentOpened.empty()) ok = writeLine(segmentOpened);
+    if (ok && !droppedSummary.empty()) ok = writeLine(droppedSummary);
+    if (ok) ok = writeLine(line);
+    if (flush && ok) {
         const auto flushStart = std::chrono::steady_clock::now();
-        std::fflush(mEventsFile);
+        ok = std::fflush(file) == 0;
         const auto flushEnd = std::chrono::steady_clock::now();
         mFlushCount.fetch_add(1, std::memory_order_relaxed);
         mFlushMicroseconds.fetch_add(static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(flushEnd - flushStart).count()),
             std::memory_order_relaxed);
     }
+    std::fclose(file);
+    if (ok) mDroppedRecords = 0;
+    else ++mDroppedRecords;
+
+    std::error_code sizeEc;
+    const uintmax_t finalSize = std::filesystem::file_size(mEventsPath, sizeEc);
+    if (!sizeEc && finalSize > kMaxSegmentBytes)
+        mDroppedRecords++;
     if (named) ReleaseMutex(named);
 }
 

@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -10,6 +11,34 @@
 #include "devtools/terminal.h"
 #include "debug/log-manager.h"
 #include "debug/structured-log.h"
+
+namespace {
+bool isEventSegment(const std::filesystem::path& path) {
+    const std::string name = path.filename().string();
+    if (name == "events.jsonl") return true;
+    if (name.size() != std::string("events-000001.jsonl").size() ||
+        name.rfind("events-", 0) != 0 ||
+        name.compare(name.size() - 6, 6, ".jsonl") != 0)
+        return false;
+    for (size_t i = 7; i < 13; ++i) {
+        if (name[i] < '0' || name[i] > '9') return false;
+    }
+    return true;
+}
+
+std::vector<std::filesystem::path> eventSegmentsInRun(
+    const std::filesystem::path& current)
+{
+    std::vector<std::filesystem::path> paths;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(current.parent_path(), ec)) {
+        if (!ec && entry.is_regular_file(ec) && isEventSegment(entry.path()))
+            paths.push_back(entry.path());
+    }
+    std::sort(paths.begin(), paths.end());
+    return paths;
+}
+}
 
 void registerDevLogCommands()
 {
@@ -27,7 +56,7 @@ void registerDevLogCommands()
     });
 
     Terminal::instance().registerCommand({
-        "log_open", "Report and select the active events.jsonl", "log_open",
+        "log_open", "Report and select the active segmented events stream", "log_open",
         [](const std::vector<std::string>&) {
             auto& terminal = Terminal::instance();
             const std::string configuredPath = StructuredLogger::instance().eventsPath();
@@ -39,14 +68,14 @@ void registerDevLogCommands()
             std::error_code ec;
             const std::filesystem::path path =
                 std::filesystem::absolute(std::filesystem::path(configuredPath), ec);
-            if (ec || !std::filesystem::is_regular_file(path, ec)) {
-                terminal.addLog("[LOG] active events.jsonl was not found: " + configuredPath);
+            const auto segments = eventSegmentsInRun(path);
+            if (ec || segments.empty()) {
+                terminal.addLog("[LOG] active events stream was not found: " + configuredPath);
                 return;
             }
 
-            // Inspect the shared file so a client-only file cannot be mistaken
-            // for the client+server session record.
-            std::ifstream in(path);
+            // Inspect every numbered segment so a client-only file cannot be
+            // mistaken for the complete client+server session record.
             std::string line;
             long long lines = 0, invalid = 0, npcEvents = 0;
             long long deathEvents = 0, ragdollEvents = 0;
@@ -55,7 +84,9 @@ void registerDevLogCommands()
             std::map<std::string, int> categoryCounts;
             std::map<std::string, std::map<std::string, int>> processCounts;
             std::vector<std::string> startupIdentities;
-            if (in.is_open()) {
+            for (const auto& segment : segments) {
+                std::ifstream in(segment);
+                if (!in.is_open()) continue;
                 while (std::getline(in, line)) {
                     if (line.empty()) continue;
                     ++lines;
@@ -93,7 +124,8 @@ void registerDevLogCommands()
             }
 
             std::string report;
-            report += "events file:\n" + path.string() + "\n\n";
+            report += "events stream:\n" + path.parent_path().string() +
+                      "\nsegments: " + std::to_string(segments.size()) + "\n\n";
             report += "processes:\n";
             report += std::string("client: ") + (sawClient ? "yes" : "no") + "\n";
             report += std::string("server: ") + (sawServer ? "yes" : "no") + "\n";

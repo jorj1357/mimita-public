@@ -359,15 +359,18 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                 (std::isfinite(entity.size.x) && entity.size.x > 0.001f) ? entity.size.x : 1.0f,
                 (std::isfinite(entity.size.y) && entity.size.y > 0.001f) ? entity.size.y : 1.0f,
                 (std::isfinite(entity.size.z) && entity.size.z > 0.001f) ? entity.size.z : 1.0f);
-            drawBox(camera, entity.position, markerSize * 0.5f, color);
+            const bool sized = entity.size.x > 1.001f || entity.size.y > 1.001f || entity.size.z > 1.001f;
+            const bool drawBoxShape = entity.shape == "box" || (entity.shape.empty() && sized);
+            const bool drawSphereShape = entity.shape == "sphere" || (entity.shape.empty() && !sized);
+            if (drawBoxShape)
+                drawBox(camera, entity.position, markerSize * 0.5f, color);
             if (entity.type == "spawnpoint") {
                 drawPointCross(camera, entity.position, 0.5f, color);
             } else if (entity.type == "pickup") {
                 drawWireSphere(camera, entity.position, std::max(0.25f, entity.radius), color);
                 drawLine(camera, entity.position, entity.position + glm::vec3(0.0f, 0.0f, 1.0f), color);
-            } else {
-                if (entity.radius > 0.0f)
-                    drawWireSphere(camera, entity.position, entity.radius, {color.r, color.g, color.b, 0.35f});
+            } else if (drawSphereShape && entity.radius > 0.0f) {
+                drawWireSphere(camera, entity.position, entity.radius, {color.r, color.g, color.b, 0.6f});
             }
             char label[256];
             std::snprintf(label, sizeof(label), "%s %s", entity.type.c_str(), entity.id.c_str());

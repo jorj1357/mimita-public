@@ -85,6 +85,17 @@ void ensureEntityConfig()
         Terminal::instance().addLog("[ENTITY] no active map; using " + activeMapId());
 }
 
+void reportAutoSave(MapConfigRegistry& reg, const std::string& action)
+{
+    if (reg.save()) {
+        Terminal::instance().addLog("[ENTITY] " + action + " (auto-saved)");
+    } else {
+        Terminal::instance().addLog(
+            "[ENTITY] " + action +
+            " (auto-save failed; change remains in memory only)");
+    }
+}
+
 } // namespace
 
 void registerMapEntityCommands()
@@ -96,9 +107,9 @@ void registerMapEntityCommands()
             Terminal::instance().addLog("[ENTITY] entity_add <type> [id]");
             Terminal::instance().addLog("[ENTITY] entity_list | entity_info [id] | entity_select <id>");
             Terminal::instance().addLog("[ENTITY] entity_move_here [id] | entity_set_position <id> <x> <y> <z>");
-            Terminal::instance().addLog("[ENTITY] entity_set <id> <radius|size|spawnCount|maxAlive|spawnCooldownTicks|monsterPool|pickupId|bossId|tag|damageType|damage|damageIntervalTicks|checkpointRequirement|oneShot|enabled|visible> <value>");
+            Terminal::instance().addLog("[ENTITY] entity_set <id> <radius|shape|size|spawnCount|maxAlive|spawnCooldownTicks|monsterPool|monsterRole|pickupId|bossId|tag|damageType|damage|damageIntervalTicks|checkpointRequirement|checkpointIndex|oneShot|enabled|visible> <value>");
             Terminal::instance().addLog("[ENTITY] entity_delete [id] | entity_visibility <on|off>");
-            Terminal::instance().addLog("[ENTITY] entity_save | entity_reload");
+            Terminal::instance().addLog("[ENTITY] edits auto-save; entity_save | entity_reload");
         }, "", CommandCategory::Editor
     });
     terminal.registerCommand({
@@ -107,10 +118,11 @@ void registerMapEntityCommands()
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[ENTITY] usage: entity_add <type> [id]"); return; }
             ensureEntityConfig();
-            const std::string id = registry().createEntity(args[0], placement(), args.size() > 1 ? args[1] : "");
+            auto& reg = registry();
+            const std::string id = reg.createEntity(args[0], placement(), args.size() > 1 ? args[1] : "");
             if (id.empty()) { Terminal::instance().addLog("[ENTITY] id already exists or is invalid"); return; }
             selectedId = id;
-            Terminal::instance().addLog("[ENTITY] created " + id + " (use entity_save)");
+            reportAutoSave(reg, "created " + id);
         }, "", CommandCategory::Editor
     });
     terminal.registerCommand({
@@ -150,7 +162,7 @@ void registerMapEntityCommands()
             MapEntity* entity = registry().findEntityMutable(id);
             if (!entity) { Terminal::instance().addLog("[ENTITY] unknown id " + id); return; }
             entity->position = placement();
-            Terminal::instance().addLog("[ENTITY] moved " + id);
+            reportAutoSave(registry(), "moved " + id);
         }, "", CommandCategory::Editor
     });
     terminal.registerCommand({
@@ -163,7 +175,7 @@ void registerMapEntityCommands()
                 if (!entity) throw std::runtime_error("unknown id");
                 entity->position = glm::vec3(std::stof(args[1]), std::stof(args[2]), std::stof(args[3]));
                 selectedId = entity->id;
-                Terminal::instance().addLog("[ENTITY] position updated " + entity->id);
+                reportAutoSave(registry(), "position updated " + entity->id);
             } catch (const std::exception& e) { Terminal::instance().addLog(std::string("[ENTITY] ") + e.what()); }
         }, "", CommandCategory::Editor
     });
@@ -177,10 +189,12 @@ void registerMapEntityCommands()
                 if (!entity) throw std::runtime_error("unknown id");
                 const std::string& property = args[1];
                 if (property == "radius") entity->radius = std::stof(args[2]);
+                else if (property == "shape") entity->shape = args[2];
                 else if (property == "spawnCount") entity->spawnCount = std::stoi(args[2]);
                 else if (property == "maxAlive") entity->maxAlive = std::stoi(args[2]);
                 else if (property == "spawnCooldownTicks") entity->spawnCooldownTicks = std::stoi(args[2]);
                 else if (property == "monsterPool") entity->monsterPool = args[2];
+                else if (property == "monsterRole") entity->monsterRole = args[2];
                 else if (property == "pickupId") entity->pickupId = args[2];
                 else if (property == "bossId") entity->bossId = args[2];
                 else if (property == "tag") entity->tag = args[2];
@@ -188,6 +202,7 @@ void registerMapEntityCommands()
                 else if (property == "damage") entity->damage = std::stoi(args[2]);
                 else if (property == "damageIntervalTicks") entity->damageIntervalTicks = std::stoi(args[2]);
                 else if (property == "checkpointRequirement") entity->checkpointRequirement = std::stoi(args[2]);
+                else if (property == "checkpointIndex") entity->checkpointIndex = std::stoi(args[2]);
                 else if (property == "oneShot") entity->oneShot = args[2] != "0" && args[2] != "false";
                 else if (property == "enabled") entity->enabled = args[2] != "0" && args[2] != "false";
                 else if (property == "visible") entity->visible = args[2] != "0" && args[2] != "false";
@@ -196,7 +211,7 @@ void registerMapEntityCommands()
                     entity->size = glm::vec3(std::stof(args[2]), std::stof(args[3]), std::stof(args[4]));
                 } else throw std::runtime_error("unknown property");
                 selectedId = entity->id;
-                Terminal::instance().addLog("[ENTITY] property updated " + entity->id + "." + property);
+                reportAutoSave(registry(), "property updated " + entity->id + "." + property);
             } catch (const std::exception& e) { Terminal::instance().addLog(std::string("[ENTITY] ") + e.what()); }
         }, "", CommandCategory::Editor
     });
@@ -207,7 +222,7 @@ void registerMapEntityCommands()
             const std::string id = argOrSelection(args);
             if (!registry().deleteEntity(id)) { Terminal::instance().addLog("[ENTITY] unknown id " + id); return; }
             if (selectedId == id) selectedId.clear();
-            Terminal::instance().addLog("[ENTITY] deleted " + id + " (use entity_save)");
+            reportAutoSave(registry(), "deleted " + id);
         }, "", CommandCategory::Editor
     });
     terminal.registerCommand({
@@ -220,7 +235,7 @@ void registerMapEntityCommands()
                 DebugVis::setMasterEnabled(true);
                 DebugConfig::DEBUG_RENDER = true;
             }
-            Terminal::instance().addLog(std::string("[ENTITY] visibility=") + (visible ? "on" : "off"));
+            reportAutoSave(registry(), std::string("visibility=") + (visible ? "on" : "off"));
         }, "", CommandCategory::Editor
     });
     terminal.registerCommand({

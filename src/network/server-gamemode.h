@@ -275,6 +275,14 @@ struct ServerGamemodeState
     uint32_t activeBossNpcId = 0;
     bool progressionLocked = false;
     bool partyWipePending = false;
+    int currentCheckpointIndex = 0;
+    // Transient HUD banner (e.g. "CHECKPOINT N REACHED"). The serial changes
+    // for every new banner so clients restart their local fade; number is the
+    // display value interpolated into the layout text.
+    uint32_t bannerSerial = 0;
+    int32_t bannerNumber = 0;
+    // Per authored damage-volume cadence: entity id -> next tick allowed to hit.
+    std::unordered_map<std::string, uint32_t> damageVolumeNextTick;
 
     // Match event counter for KillEvent IDs
     uint32_t killEventCounter = 0;

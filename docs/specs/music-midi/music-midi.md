@@ -11,3 +11,17 @@ and like
 and 
 like the game canhave diffrent stages of the midi playing at once
 so a intense part = more intense music, less intense = less music happening et c
+
+2026 10 10 1835 jorj 
+
+
+AND MUSIC
+WE NED A 
+omg
+we need like a procedural in game sound generatro bro
+we getting tooooo much 
+sauce
+we need like  automatic sounds making
+and like
+in game music 
+so i need to do like sound font idk 

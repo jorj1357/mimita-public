@@ -1400,6 +1400,78 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--structured-log-segment-selftest") {
+        // Exercises the real StructuredLogger writer with enough data to
+        // cross the segmented-file boundary without starting the game loop.
+        std::string report;
+        bool ok = true;
+        auto check = [&](bool cond, const std::string& what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+            return cond;
+        };
+
+        const std::string runName =
+            "segment-selftest-" + std::to_string(GetCurrentProcessId());
+        const std::filesystem::path runDir =
+            std::filesystem::path("logs") / runName;
+        const std::filesystem::path seedPath = runDir / "events.jsonl";
+        std::error_code ec;
+        std::filesystem::create_directories(runDir, ec);
+        _putenv_s("MIMITA_EVENTS_FILE", seedPath.string().c_str());
+
+        StructuredLogger::instance().init();
+        const std::string payload(1000000, 'x');
+        for (int i = 0; i < 105; ++i) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "structured-log.segment-selftest", "", "rotation test", 0,
+                {{"index", i}, {"payload", payload}});
+        }
+        StructuredLogger::instance().shutdown();
+
+        std::vector<std::filesystem::path> segments;
+        uint64_t totalBytes = 0;
+        uintmax_t largestBytes = 0;
+        long long invalidLines = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(runDir, ec)) {
+            if (ec || !entry.is_regular_file(ec)) continue;
+            const std::string name = entry.path().filename().string();
+            if (name.rfind("events-", 0) != 0 ||
+                name.size() < std::string("events-000001.jsonl").size())
+                continue;
+            segments.push_back(entry.path());
+            const uintmax_t size = entry.file_size(ec);
+            totalBytes += static_cast<uint64_t>(size);
+            largestBytes = std::max(largestBytes, size);
+            std::ifstream input(entry.path());
+            std::string line;
+            while (std::getline(input, line)) {
+                if (line.empty()) continue;
+                try {
+                    const auto parsed = nlohmann::json::parse(line);
+                    (void)parsed;
+                }
+                catch (...) { ++invalidLines; }
+            }
+        }
+        std::sort(segments.begin(), segments.end());
+        check(segments.size() >= 2, "rotation created at least two segments");
+        check(largestBytes <= 100000000ULL,
+              "every segment is at most 100,000,000 bytes");
+        check(totalBytes <= 1000000000ULL,
+              "self-test run is at most 1,000,000,000 bytes");
+        check(invalidLines == 0, "all segment lines are valid JSON");
+        report += "  info  run_dir=" + runDir.string() + " segments=" +
+                  std::to_string(segments.size()) + " total_bytes=" +
+                  std::to_string(totalBytes) + " largest_bytes=" +
+                  std::to_string(largestBytes) + "\n";
+
+        printf("[STRUCTURED LOG SEGMENT SELFTEST]\n%s", report.c_str());
+        printf("[STRUCTURED LOG SEGMENT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--npc-movement-decision-selftest") {
         // Drives a live NPC and proves the post-physics npc.movement-decision
         // snapshot reaches events.jsonl with its required fields and is bounded

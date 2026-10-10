@@ -2,7 +2,7 @@
   "version": 1,
   "aliases": {
     "rt1": "server_start_preset juggernaut_1",
-    "CT1": "server_start_preset counterstrike_1",
+    "ct1": "server_start_preset counterstrike_1",
     "cs": "crate_spawn",
     "cc": "crate_clear",
     "tpv1": "teleport 0 0 500",
@@ -11,11 +11,12 @@
     "ha": "healthall 9999",
     "ava": "avatar.load angel2",
     "ah": "avatar.load abusivegirlheadless4",
+    "xxx": "avatar.load jason",
     "zw": "thirdp 0",
     "zz": "thirdp 1",
     "fc": "freecam 1",
+    "cfc": "freecam 0",
     "aa": "fly 25",
-    "as": "unfly",
-    "cfc": "freecam 0"
+    "as": "unfly"
   }
 }

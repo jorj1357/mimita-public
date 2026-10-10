@@ -184,7 +184,8 @@ enum DamageConfirmedSource : uint8_t
     DAMAGE_CONFIRMED_MELEE = 2,
     DAMAGE_CONFIRMED_ROCKET_EXPLOSION = 3,
     DAMAGE_CONFIRMED_GRENADE_EXPLOSION = 4,
-    DAMAGE_CONFIRMED_PHYSICAL_CONTACT = 5
+    DAMAGE_CONFIRMED_PHYSICAL_CONTACT = 5,
+    DAMAGE_CONFIRMED_ENVIRONMENT = 6
 };
 
 // Verdict the server returns for every accepted attack so the client can

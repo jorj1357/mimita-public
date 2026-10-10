@@ -171,8 +171,8 @@ public:
     // Write a structured entry
     void write(const Entry& e);
 
-    // Write one searchable record to the canonical append-only events.jsonl
-    // stream. The logger owns the file and its universal fields.
+    // Write one searchable record to the canonical append-only segmented
+    // events-*.jsonl stream. The logger owns the segment and universal fields.
     void writeEvent(StructuredCategory category, StructuredLevel level,
                     const std::string& eventName,
                     const std::string& correlationId,
@@ -242,13 +242,19 @@ private:
     std::string timestamp() const;
     std::string runTimestamp() const;
     void writeJsonLine(const nlohmann::json& record, bool flush = true);
+    void refreshSegmentStateLocked();
+    bool ensureLogQuotaLocked(uint64_t incomingBytes);
+    std::string segmentPath(uint64_t segmentNumber) const;
 
     StructuredLogConfig mConfig;
     bool mInitialized = false;
-    std::string mLogDir;       // logs/YYYY-MM-DD/
+    std::string mLogDir;       // logs/YYYY-MM-DD/<run>/
+    std::string mLogsRoot;     // logs/
     std::string mRunId;        // yyyymmdd_hhmmss for this run
-    std::string mEventsPath;   // logs/yyyy-mm-dd/yyyymmdd_hhmmss/events.jsonl
-    FILE* mEventsFile = nullptr;
+    std::string mEventsPath;   // current logs/.../events-000001.jsonl segment
+    uint64_t mSegmentNumber = 0;
+    uint64_t mSegmentBytes = 0;
+    uint64_t mDroppedRecords = 0;
     uint64_t mSequence = 0;
     uint64_t mEventCounters[(int)StructuredCategory::Count] = {};
 

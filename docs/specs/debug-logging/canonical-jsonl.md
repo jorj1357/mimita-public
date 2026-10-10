@@ -1,21 +1,30 @@
 # Canonical client/server JSONL logging
 
-MiMITA uses one authoritative structured log stream per test session:
+MiMITA uses one authoritative structured log stream per test session. The
+stream is stored as numbered JSONL segments so no individual file can grow
+without bound:
 
 ```text
-logs/<yyyy-mm-dd>/<yyyymmdd_hhmmss>/events.jsonl
+logs/<yyyy-mm-dd>/<yyyymmdd_hhmmss>/events-000001.jsonl
+logs/<yyyy-mm-dd>/<yyyymmdd_hhmmss>/events-000002.jsonl
 ```
 
-The stream is append-only and is shared by the client and dedicated server
-when the launcher supplies the same `MIMITA_EVENTS_FILE` path to both
-processes. Every record identifies its side with `process` (`client` or
-`server`) and includes the process ID. Server and client ticks, entity IDs,
-actor IDs, projectile IDs, connection/request IDs, event names, results, and
-errors remain searchable side by side in the same file.
+The logical stream is append-only and is shared by the client and dedicated
+server when the launcher supplies the same `MIMITA_EVENTS_FILE` run path to
+both processes. Each segment is rotated before it exceeds 99,000,000 decimal
+bytes and must never exceed 100,000,000 bytes. The complete `logs` tree is
+limited to 1,000,000,000 regular-file bytes; the writer deletes the oldest
+eligible files before accepting a write that would exceed that quota.
+
+Every record identifies its side with `process` (`client` or `server`) and
+includes the process ID. Server and client ticks, entity IDs, actor IDs,
+projectile IDs, connection/request IDs, event names, results, and errors
+remain searchable across all segments. Readers must sort the fixed-width
+segment numbers and then process the JSONL records in order.
 
 `StructuredLogger` is the single writer. The old `LiveEventJournal` API is
 kept as a compatibility facade for existing hot-code call sites, but it now
-emits into `events.jsonl`; new runs must not create
+emits into the numbered event segments; new runs must not create
 `logs/features/live-code/live_events_*.jsonl`. Existing live-code files are
 historical evidence and are not rewritten.
 
@@ -25,7 +34,8 @@ The shared-file bridge and launcher environment are process/runtime plumbing,
 so installing that behavior requires a cold executable build once; changing
 the category selection does not.
 
-For a local NPC crash test, inspect one file in this order:
+For a local NPC crash test, inspect the complete segmented stream in this
+order:
 
 1. `logger.started` for both sides and their PIDs.
 2. `server.started`, connection/ICE stages, and the first matching client
@@ -35,7 +45,7 @@ For a local NPC crash test, inspect one file in this order:
 4. tick fields immediately before the first error, disconnect, shutdown, or
    missing expected stage.
 
-The old per-process `events.jsonl` files remain valid for standalone launches
-that do not set `MIMITA_EVENTS_FILE`; the shared convention applies to the
-V4 session launcher and any future launcher that passes the same path to all
-participating processes.
+The logger migrates an old per-process `events.jsonl` to
+`events-000001.jsonl` when it first opens that run directory. The shared
+convention applies to standalone launches, the V4 session launcher, and any
+future launcher that passes the same path to all participating processes.
