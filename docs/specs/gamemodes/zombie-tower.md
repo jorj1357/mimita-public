@@ -16,9 +16,17 @@ Zombie Tower is a cooperative PvE mode where a very small group of players fight
 The basic fantasy is:
 
 ```text
+join = instant "INTERMISSION 30... 29... 28..."
+in the coolest lobby ever 
+i can walk around jump around
+shoot training zombies
+
+in the game:
 you are small
 
 the tower is huge, halloween, old, retro(?), 2000s roblox 2012-2015, based on zombie tower from Nooooooo
+
+as soon as u spawn in the zombie tower song plays, thats #1, then, time goeso n, other songs will play that fit the same vibe e.g. cello, violin, an ancient curse befalls this  cursed place and its only us that can reverse the curse 
 
 there are far too many monsters
 
@@ -28,7 +36,8 @@ your weapons are powerful
 
 your teammates matter
 
-you are barely surviving
+but you are barely surviving in a fun way
+its fun its joy the whole time s
 
 and somehow you keep climbing
 ```

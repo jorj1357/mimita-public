@@ -14,7 +14,10 @@ authored `spawnpoint` entities (§19, §139). The Map Entity Editor v0 already
 authored and saved the six entity types, but only `monster_zone` had a runtime
 consumer. This slice adds the checkpoint, boss_trigger, and spawnpoint
 consumers, and hardens the editor (look-to-place on geometry, full property
-editing, save round-trip safety).
+editing, save round-trip safety). A follow-up requirement is that editing
+`config/maps/<map>.json` by hand must update the running game live; the client
+previously loaded the map config once and never polled it, so the client now
+polls the active map file like the server does.
 
 ## Changes made
 
@@ -23,8 +26,15 @@ editing, save round-trip safety).
     trigger geometry (radius sphere or size box), so the volume has one owner.
   - `save()` now starts from the existing on-disk JSON and rewrites only
     `bomb`, `bomb_sites`, and `entities`, preserving unknown top-level keys.
-  - New `mapEntityConfigSelfTest()` covering trigger geometry and save
-    round-trip of an unknown top-level key.
+  - New `mapEntityConfigSelfTest()` covering trigger geometry, save
+    round-trip of an unknown top-level key, and live reload of an external
+    JSON edit through `pollReload()`.
+- `src/engine/engine-tick-setup.cpp`
+  - The client now calls `MapConfigRegistry::pollReload()` every hot-reload
+    polling cycle for the active map, instead of only loading the file when the
+    map id changes. Editing `config/maps/<map>.json` now updates the live client
+    registry (debug markers, authored entity state) without a restart, matching
+    the already-existing server poll.
 - `src/terminal/map-entity-commands.cpp`
   - `placement()` is now collision-aware: a bounded world raycast from the
     camera (`sweptSphereTraverseGridCells`) places the entity on the first
@@ -66,25 +76,30 @@ editing, save round-trip safety).
 
 ## Validation evidence
 
-- BUILD: `python build_agent.py` with `MIMITA_EXE_NAME=mimita-20261009-mapentity-cde-v2.exe`
-  returned 0; final named executable linked. Objects for the edited translation
-  units are newer than their sources.
-- COMPONENT: `mimita-20261009-mapentity-cde-v2.exe --map-entity-selftest`
-  printed `[MAP ENTITY SELFTEST] PASS` (exit 0): trigger sphere/box geometry and
-  save round-trip preserving an unknown top-level key.
+- BUILD: `python build_agent.py` with `MIMITA_EXE_NAME=mimita-20261010-mapentity-live-final.exe`
+  returned 0; final named executable linked (148,155,118 bytes).
+- BUILD (content proof): the final executable contains the new self-test string
+  `"pollReload did not detect an external JSON edit"` (binary search, 1 match),
+  so the live-reload assertion is compiled in.
+- COMPONENT: `mimita-20261010-mapentity-live-final.exe --map-entity-selftest`
+  printed `[MAP ENTITY SELFTEST] PASS` (exit 0): trigger sphere/box geometry,
+  save round-trip preserving an unknown top-level key, and `pollReload()`
+  detecting an external edit and applying the moved checkpoint position.
 - COMPONENT (no regression): `--map-config-selftest` printed `PASS`
   (`sites_checked=2`).
-- RUNTIME: `mimita-20261009-mapentity-cde-v2.exe --versioninfo` completed and
-  emitted `EVENTS_JSONL_PATH=logs/10-09-2026/20261009_092342/events.jsonl`.
+- RUNTIME: `mimita-20261010-mapentity-live-final.exe --versioninfo` completed and
+  emitted `EVENTS_JSONL_PATH=logs/10-10-2026/20261010_175319/events.jsonl`.
   That journal contains only `run.started`, `logger.started`,
   `versioninfo.executed`, and `logger.stopped`; no live match was driven, so no
   checkpoint/boss/spawn events were exercised here.
-- HUMAN ACCEPTANCE: still required. Load Zombie Tower 4 with authored
-  `checkpoint`, `boss_trigger`, and `spawnpoint` entities; confirm a live
-  `zombie_tower.checkpoint-reached` on entry, respawn-at-checkpoint after a party
+- HUMAN ACCEPTANCE: still required. Launch the final executable, load Zombie
+  Tower 4, run `entity_visibility on`, edit `config/maps/zombietower4.json`
+  (for example move the `test1` spawnpoint position), save it, and confirm the
+  on-screen marker moves within ~1/6 second without a restart. Also confirm a
+  live `zombie_tower.checkpoint-reached`, respawn-at-checkpoint after a party
   wipe while attempts remain, `zombie_tower.run-failed` on exhaustion,
-  `boss.triggered`/`boss.spawned` on entering a boss trigger, and that players
-  spawn on authored `spawnpoint` entities.
+  `boss.triggered`/`boss.spawned` on entering a boss trigger, and authored
+  `spawnpoint` selection.
 
 ## Spec and doc TODOs observed (not edited)
 

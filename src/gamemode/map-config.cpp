@@ -3,6 +3,7 @@
 #include "gamemode/map-config.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <cctype>
@@ -498,6 +499,30 @@ bool mapEntityConfigSelfTest(std::string& report)
             }
         }
     }
+
+    // Live reload: an external JSON edit must be picked up by pollReload().
+    {
+        std::ofstream out(path);
+        out << R"({"custom_section":{"note":"keep me"},"entities":[{"id":"cp1","type":"checkpoint","position":[9,9,9],"radius":5}]})";
+    }
+    {
+        // Force a distinct modification time so the mtime poll cannot miss it.
+        auto t = std::filesystem::last_write_time(path);
+        std::filesystem::last_write_time(path, t + std::chrono::seconds(5));
+    }
+    if (!reg.pollReload()) {
+        fail("pollReload did not detect an external JSON edit");
+    } else {
+        const MapEntity* cp = reg.findEntity("cp1");
+        if (!cp) {
+            fail("reloaded entity cp1 missing");
+        } else if (std::abs(cp->position.x - 9.0f) > 0.01f ||
+                   std::abs(cp->position.y - 9.0f) > 0.01f ||
+                   std::abs(cp->position.z - 9.0f) > 0.01f) {
+            fail("reloaded checkpoint position not updated from JSON");
+        }
+    }
+
     std::error_code ec;
     std::filesystem::remove(path, ec);
     reg.load("zombietower4");

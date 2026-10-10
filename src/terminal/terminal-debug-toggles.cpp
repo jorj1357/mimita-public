@@ -98,6 +98,23 @@ void registerDebugToggleCommands()
     });
 
     term.registerCommand({
+        "debug.movement_hud",
+        "Toggle the movement/camera HUD diagnostic (0=off, 1=on)",
+        "debug.movement_hud <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                DebugConfig::DEBUG_MOVEMENT_HUD = !DebugConfig::DEBUG_MOVEMENT_HUD;
+            } else {
+                DebugConfig::DEBUG_MOVEMENT_HUD = args[0] != "0";
+            }
+            Terminal::instance().addLog(
+                DebugConfig::DEBUG_MOVEMENT_HUD
+                ? "[OK] movement HUD debug enabled"
+                : "[OK] movement HUD debug disabled");
+        }
+    });
+
+    term.registerCommand({
         "debug.physics",
         "Toggle physics debug visualization (0=off, 1=on)",
         "debug.physics <0|1>",

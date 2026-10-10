@@ -14,6 +14,8 @@
     "zw": "thirdp 0",
     "zz": "thirdp 1",
     "fc": "freecam 1",
+    "aa": "fly 25",
+    "as": "unfly",
     "cfc": "freecam 0"
   }
 }

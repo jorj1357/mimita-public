@@ -1,3 +1,32 @@
+2026 10 10 1810 jorj todo explain
+
+OK BECASUE
+JUGGERNAUT MODE
+IS SO FUN
+@RETROGRAD I LOVE  YOU I DONT MEAN TO JUST COPY I LOVE U R GAME SO MUCH OK So,
+
+so much npcs all at once on the screen
+why nott akling???
+why no voicelines????
+how do we do voic elines
+we need like super godo vocie acitng
+heyyy we have voice actor i know somone
+but i want to do like
+general internet sound effects
+also procedrual
+it should be like
+voice gets generated inside the game
+thats sick
+LIKE
+LIKE LITERALLY ACTUALLY WE NE
+we could put like
+write: "Im so mad righ now!!!"
+it reads it out like according to ur behavior or actor preset
+e.g. counter strike = like slight russain  male yelling
+girl = higher 
+ brute = low distorrted voice
+ idk needs more thinking/work 
+
 // 09 06 2026, 00 00
 /* purpose
 * define the shared player and NPC gameplay architecture

@@ -44,6 +44,7 @@ bool gOverlapDebugEnabled = false;
 bool gCoordDebug = false;
 double gScrollYOffset = 0.0;
 bool gDropdownModalActive = false;
+bool gOwnsHoverInput = false;
 std::vector<UIVertex> gBatchVertices;
 }
 
@@ -65,9 +66,10 @@ void uiInit(GLFWwindow* win)
     ensureProgram();
 }
 
-void uiBeginFrame(GLFWwindow* win, const char* passName)
+void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
 {
     gWindow = win;
+    gOwnsHoverInput = ownsHoverInput;
     glfwGetFramebufferSize(win, &gFbW, &gFbH);
     if (gFbW <= 0) gFbW = 1;
     if (gFbH <= 0) gFbH = 1;
@@ -85,7 +87,8 @@ void uiBeginFrame(GLFWwindow* win, const char* passName)
     gBatchVertices.clear();
     if (gBatchVertices.capacity() == 0)
         gBatchVertices.reserve(8192);
-    gHoverOwnerKey.clear();
+    if (gOwnsHoverInput)
+        gHoverOwnerKey.clear();
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     gMouseClickEdge = gMouseDown && !gMousePrev;
 
@@ -138,7 +141,7 @@ static void drawOverlapDebug()
 
 void uiEndFrame()
 {
-    if (gHoverOwnerKey != gPrevHoverOwnerKey)
+    if (gOwnsHoverInput && gHoverOwnerKey != gPrevHoverOwnerKey)
     {
         if (!gPrevHoverOwnerKey.empty())
         {

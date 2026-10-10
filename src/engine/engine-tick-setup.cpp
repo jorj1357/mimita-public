@@ -151,6 +151,8 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
             const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
             if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)
                 MapConfigRegistry::instance().load(mapId);
+            else
+                MapConfigRegistry::instance().pollReload();
         }
         WeaponHitFxConfig::instance().pollReload();
         ImpactDecalsConfig::instance().pollReload();

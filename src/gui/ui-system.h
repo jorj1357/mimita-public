@@ -29,7 +29,7 @@ struct UITrackedWidget {
 };
 
 void uiInit(GLFWwindow* win);
-void uiBeginFrame(GLFWwindow* win, const char* passName);
+void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput = false);
 void uiEndFrame();
 
 void uiSetDebug(bool enabled);

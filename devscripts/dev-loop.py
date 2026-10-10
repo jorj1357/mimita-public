@@ -505,6 +505,7 @@ class DevLoop:
         )
         self.launch_mode = load_launch_mode(self.launch_mode_id)
         self.mode_picker_open = False
+        self.mode_picker_input = ""
         # Builds always run while this loop is open. Auto-start only controls
         # whether a successful build or an exited child may launch the EXE.
         self.auto_restart = bool(auto_restart)
@@ -1077,7 +1078,6 @@ class DevLoop:
             if not self.stop_server():
                 self.save_state("server_stop_failed")
                 return
-            self.stop_server()
         if self.server_health() and bool(self.room_code):
             room_code = self.room_code
             print(
@@ -1345,13 +1345,21 @@ class DevLoop:
             print("[DEV] no launch modes are configured")
             return
         self.mode_picker_open = True
-        print("[DEV] Choose a launch mode. Press its number:")
-        for mode_id in sorted(modes, key=lambda value: (not str(value).isdigit(), str(value))):
+        self.mode_picker_input = ""
+        print("[DEV] Choose a launch mode. Type the full number and press Enter:")
+        for mode_id in sorted(
+            modes,
+            key=lambda value: (
+                not str(value).isdigit(),
+                int(str(value)) if str(value).isdigit() else str(value),
+            ),
+        ):
             mode = modes[mode_id]
             name = mode.get("name", "unnamed") if isinstance(mode, dict) else "unnamed"
             selected = " (selected)" if str(mode_id) == self.launch_mode_id else ""
             print(f"[DEV]   {mode_id} = {name}{selected}")
         print("[DEV] Mode selection changes the next server/client launch.")
+        print("[DEV] Enter mode number (Q cancels): ", end="", flush=True)
 
     def print_status(self, force: bool = False) -> None:
         status_line = (
@@ -1398,26 +1406,56 @@ class DevLoop:
         import msvcrt
         if not msvcrt.kbhit():
             return
-        key = msvcrt.getwch().lower()
+        key = msvcrt.getwch()
         if self.mode_picker_open:
-            try:
-                selected = load_launch_mode(key)
-            except SystemExit:
+            lowered = key.lower()
+            if lowered == "q":
+                self.mode_picker_open = False
+                self.mode_picker_input = ""
+                print("\n[DEV] launch mode selection cancelled")
+                return
+            if key in ("\r", "\n"):
                 selected = None
-            if selected is not None:
-                self.launch_mode_id = key
-                self.launch_mode = selected
-                self.mode_picker_open = False
-                self.last_message = (
-                    f"launch mode {key} selected: {selected.get('name', 'unnamed')}"
+                if self.mode_picker_input:
+                    try:
+                        selected = load_launch_mode(self.mode_picker_input)
+                    except SystemExit:
+                        selected = None
+                if selected is not None:
+                    selected_id = self.mode_picker_input
+                    self.launch_mode_id = selected_id
+                    self.launch_mode = selected
+                    self.mode_picker_input = ""
+                    self.mode_picker_open = False
+                    self.last_message = (
+                        f"launch mode {selected_id} selected: {selected.get('name', 'unnamed')}"
+                    )
+                    self.save_state("launch_mode_selected")
+                    print(f"\n[DEV] selected launch mode {selected_id}: {selected.get('name', 'unnamed')}")
+                    self.print_status(force=True)
+                else:
+                    print(f"\n[DEV] unknown launch mode {self.mode_picker_input}; type a listed number and press Enter")
+                    self.mode_picker_input = ""
+                    print("[DEV] Enter mode number (Q cancels): ", end="", flush=True)
+                return
+            if key == "\b":
+                self.mode_picker_input = self.mode_picker_input[:-1]
+                print(
+                    f"\r[DEV] Enter mode number (Q cancels): {self.mode_picker_input}",
+                    end="",
+                    flush=True,
                 )
-                self.save_state("launch_mode_selected")
-                print(f"[DEV] selected launch mode {key}: {selected.get('name', 'unnamed')}")
-                self.print_status(force=True)
-            elif key == "q":
-                self.mode_picker_open = False
-                print("[DEV] launch mode selection cancelled")
+                return
+            if key.isdigit():
+                self.mode_picker_input += key
+                print(
+                    f"\r[DEV] Enter mode number (Q cancels): {self.mode_picker_input}",
+                    end="",
+                    flush=True,
+                )
+                return
             return
+        key = key.lower()
         if key == "2":
             self.show_launch_modes()
             return

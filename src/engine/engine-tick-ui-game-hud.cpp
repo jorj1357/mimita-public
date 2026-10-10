@@ -519,7 +519,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                    player.pos.x, player.pos.y, player.pos.z);
         }
     }
-    if (DebugVis::render() && (!gReplayExportRenderMode || ReplayExportUI::showDebugVis()))
+    if (DebugConfig::DEBUG_MOVEMENT_HUD &&
+        (!gReplayExportRenderMode || ReplayExportUI::showDebugVis()))
     {
         char dbg[256];
         snprintf(dbg, sizeof(dbg), "dt %.3f grounded %d vel %.2f %.2f %.2f cam %.1f %.1f %.1f",

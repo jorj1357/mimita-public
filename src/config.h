@@ -14,6 +14,9 @@ namespace DebugConfig
     inline bool DEBUG_PHYSICS = false;
     inline bool DEBUG_SOUND = false;
     inline bool DEBUG_RENDER = false;
+    // Single-line movement/camera HUD diagnostic; independent from broader
+    // render and entity debug visuals.
+    inline bool DEBUG_MOVEMENT_HUD = false;
     inline bool DEBUG_PLAYERARCH = false;
     inline bool DEBUG_WIREFRAME = false;
     inline bool DEBUG_NORMALS = false;
@@ -136,6 +139,7 @@ namespace DebugConfig
         DEBUG_PHYSICS = true;
         DEBUG_SOUND = false;
         DEBUG_RENDER = true;
+        DEBUG_MOVEMENT_HUD = false;
         DEBUG_PLAYERARCH = true;
         DEBUG_WIREFRAME = false;
         DEBUG_NORMALS = false;

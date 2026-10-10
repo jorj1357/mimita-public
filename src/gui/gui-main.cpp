@@ -661,7 +661,7 @@ void guiMain(GLFWwindow* win, GameState& state)
     }
 
     GuiLayoutManager::instance().pollReload();
-    uiBeginFrame(win, "menu");
+    uiBeginFrame(win, "menu", true);
     GuiEditor::instance().setActiveLayout(layoutFileForMenu(gGuiMenuState));
 
     switch (gGuiMenuState)

@@ -89,7 +89,7 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
     { Perf::ScopedTimer _ui("UI");
-    uiBeginFrame(engine.window(), "game-debug-overlay");
+    uiBeginFrame(engine.window(), "game-debug-overlay", true);
 
     EffectPartSystem::instance().renderText(camera);
 
