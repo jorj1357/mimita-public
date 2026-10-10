@@ -12,6 +12,7 @@
 #include "entities/player.h"
 #include "gamemode/map-config.h"
 #include "network/server-gamemode.h"
+#include "physics/movement/physics-collision.h"
 #include "terminal/terminal-state.h"
 
 namespace {
@@ -43,8 +44,25 @@ std::string argOrSelection(const std::vector<std::string>& args, size_t index = 
 
 glm::vec3 placement()
 {
-    if (gpCamera && gpPlayer)
-        return gpPlayer->pos + gpCamera->front * 5.0f;
+    // Collision-aware look-to-place: put the entity on the first surface the
+    // camera aim hits (up to a bounded distance). Falls back to five world units
+    // in front of the player camera when the world is unavailable or the ray
+    // hits nothing, preserving the original behavior.
+    if (gpCamera) {
+        const glm::vec3 fallback = gpCamera->pos + gpCamera->front * 5.0f;
+        if (gpWorld) {
+            const float maxDist = 200.0f;
+            float hitDist = maxDist;
+            glm::vec3 hitNormal(0.0f), hitPoint(0.0f);
+            if (sweptSphereTraverseGridCells(THE_WORLD, gpCamera->pos,
+                                             gpCamera->front, maxDist, 0.05f,
+                                             hitDist, hitNormal, hitPoint))
+                return hitPoint;
+        }
+        return fallback;
+    }
+    if (gpPlayer)
+        return gpPlayer->pos + glm::vec3(0.0f, 0.0f, 5.0f);
     return glm::vec3(0.0f);
 }
 
@@ -78,7 +96,7 @@ void registerMapEntityCommands()
             Terminal::instance().addLog("[ENTITY] entity_add <type> [id]");
             Terminal::instance().addLog("[ENTITY] entity_list | entity_info [id] | entity_select <id>");
             Terminal::instance().addLog("[ENTITY] entity_move_here [id] | entity_set_position <id> <x> <y> <z>");
-            Terminal::instance().addLog("[ENTITY] entity_set <id> <radius|size|spawnCount|maxAlive|spawnCooldownTicks|monsterPool|oneShot|enabled> <value>");
+            Terminal::instance().addLog("[ENTITY] entity_set <id> <radius|size|spawnCount|maxAlive|spawnCooldownTicks|monsterPool|pickupId|bossId|tag|damageType|damage|damageIntervalTicks|checkpointRequirement|oneShot|enabled|visible> <value>");
             Terminal::instance().addLog("[ENTITY] entity_delete [id] | entity_visibility <on|off>");
             Terminal::instance().addLog("[ENTITY] entity_save | entity_reload");
         }, "", CommandCategory::Editor
@@ -150,7 +168,7 @@ void registerMapEntityCommands()
         }, "", CommandCategory::Editor
     });
     terminal.registerCommand({
-        "entity_set", "Set an authored map entity property", "entity_set <id> <radius|size|spawnCount|maxAlive|spawnCooldownTicks|monsterPool|oneShot|enabled> <value>",
+        "entity_set", "Set an authored map entity property", "entity_set <id> <property> <value>",
         [](const std::vector<std::string>& args) {
             try {
                 if (args.size() < 3) throw std::runtime_error("expected id property value");
@@ -163,8 +181,16 @@ void registerMapEntityCommands()
                 else if (property == "maxAlive") entity->maxAlive = std::stoi(args[2]);
                 else if (property == "spawnCooldownTicks") entity->spawnCooldownTicks = std::stoi(args[2]);
                 else if (property == "monsterPool") entity->monsterPool = args[2];
+                else if (property == "pickupId") entity->pickupId = args[2];
+                else if (property == "bossId") entity->bossId = args[2];
+                else if (property == "tag") entity->tag = args[2];
+                else if (property == "damageType") entity->damageType = args[2];
+                else if (property == "damage") entity->damage = std::stoi(args[2]);
+                else if (property == "damageIntervalTicks") entity->damageIntervalTicks = std::stoi(args[2]);
+                else if (property == "checkpointRequirement") entity->checkpointRequirement = std::stoi(args[2]);
                 else if (property == "oneShot") entity->oneShot = args[2] != "0" && args[2] != "false";
                 else if (property == "enabled") entity->enabled = args[2] != "0" && args[2] != "false";
+                else if (property == "visible") entity->visible = args[2] != "0" && args[2] != "false";
                 else if (property == "size") {
                     if (args.size() < 5) throw std::runtime_error("size requires x y z");
                     entity->size = glm::vec3(std::stof(args[2]), std::stof(args[3]), std::stof(args[4]));

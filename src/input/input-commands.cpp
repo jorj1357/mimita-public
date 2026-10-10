@@ -59,6 +59,7 @@ void InputCommandSystem::setKeyboardEnabled(bool enabled) {
         mDashBuffer.active = false;
         mDownDashBuffer.active = false;
         mPendingPulses.clear();
+        mScheduledActionTicks.clear();
     }
 }
 
@@ -254,6 +255,23 @@ void InputCommandSystem::pulseAction(const std::string& actionName) {
     if (mActionStates.find(actionName) == mActionStates.end())
         mActionStates[actionName] = {};
     mPendingPulses[actionName] = true;
+}
+
+void InputCommandSystem::scheduleActionTicks(const std::string& actionName,
+                                              uint32_t ticks)
+{
+    if (ticks == 0) return;
+    mScheduledActionTicks[actionName] += ticks;
+}
+
+bool InputCommandSystem::consumeScheduledActionTick(const std::string& actionName)
+{
+    auto it = mScheduledActionTicks.find(actionName);
+    if (it == mScheduledActionTicks.end() || it->second == 0)
+        return false;
+    if (--it->second == 0)
+        mScheduledActionTicks.erase(it);
+    return true;
 }
 
 const InputCommandState& InputCommandSystem::getState(InputAction action) const {

@@ -44,6 +44,10 @@ public:
     void init(GLFWwindow* window);
     void update(float dt);
     void pulseAction(const std::string& actionName);
+    // Schedule an action to be presented once per fixed simulation tick.
+    // This is for bounded runtime scenarios, not a second gameplay path.
+    void scheduleActionTicks(const std::string& actionName, uint32_t ticks);
+    bool consumeScheduledActionTick(const std::string& actionName);
     void setKeyboardEnabled(bool enabled);
     bool isKeyboardEnabled() const { return mKeyboardEnabled; }
 
@@ -97,6 +101,7 @@ private:
     std::unordered_map<int, std::string> mKeyToAction;
     bool mPrevKeyStates[512] = {false};
     std::unordered_map<std::string, bool> mPendingPulses;
+    std::unordered_map<std::string, uint32_t> mScheduledActionTicks;
     bool mKeyboardEnabled = true;
     bool mFocused = true;
 

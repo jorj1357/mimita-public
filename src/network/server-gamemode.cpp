@@ -691,6 +691,18 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.npcSpawnPerInterval = std::max(1, gm.npcSpawnPerInterval);
     d.npcSpawnNextTick = 0;
     d.npcSpawnSequence = 0;
+    // Authored-map run state (checkpoints/attempts/boss) resets per match.
+    d.runAttemptsTotal = std::max(1, gm.runAttempts);
+    d.runAttemptsRemaining = d.runAttemptsTotal;
+    d.runCheckpointCount = 0;
+    d.currentCheckpointId.clear();
+    d.hasCheckpointSpawn = false;
+    d.activatedCheckpoints.clear();
+    d.activatedBossTriggers.clear();
+    d.bossEncounterActive = false;
+    d.activeBossId.clear();
+    d.progressionLocked = false;
+    d.activeBossNpcId = 0;
     d.waveNumber = d.npcWaves ? 1u : 0u;
     d.waveNpcTarget = 0;
     d.waveNpcSpawned = 0;
@@ -1174,6 +1186,27 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
 glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
 {
     static std::mt19937 rng(std::random_device{}());
+    // Prefer authored spawnpoint entities for the active map when present. An
+    // entity with no tag matches any team; otherwise its tag must equal the
+    // team's spawn_group, so an NPC never spawns on a human-only point.
+    {
+        const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+        std::string group;
+        if (team >= 0 && team < (int)gm.teams.size())
+            group = gm.teams[(size_t)team].spawnGroup;
+        std::vector<const MapEntity*> candidates;
+        for (const auto& e : MapConfigRegistry::instance().current().entities) {
+            if (e.type != "spawnpoint" || !e.enabled) continue;
+            if (e.tag.empty() || group.empty() || e.tag == group)
+                candidates.push_back(&e);
+        }
+        if (!candidates.empty()) {
+            std::uniform_int_distribution<size_t> pick(0, candidates.size() - 1);
+            const MapEntity* chosen = candidates[pick(rng)];
+            std::uniform_real_distribution<float> off(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+            return chosen->position + glm::vec3(off(rng), off(rng), 0.0f);
+        }
+    }
     std::uniform_real_distribution<float> dist(-d.spawnOffsetRadius, d.spawnOffsetRadius);
     // A teamless request (team < 0) uses the neutral map anchor, never a team
     // cluster, so an unknown team cannot silently land on the CT spawn.
@@ -1246,6 +1279,12 @@ glm::vec3 gamemodeSpawnPointForActor(
     const std::unordered_map<uint32_t, ServerNpc>& npcs,
     const char* reason)
 {
+    // A checkpointed run respawns players at the latest authored checkpoint.
+    if (d.hasCheckpointSpawn && players.find(actorId) != players.end()) {
+        static std::mt19937 crng(std::random_device{}());
+        std::uniform_real_distribution<float> off(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+        return d.currentCheckpointPos + glm::vec3(off(crng), off(crng), 0.0f);
+    }
     const int team = actorTeamOf(d, actorId, players, npcs);
     std::string roleId;
     auto aIt = d.matchActors.find(actorId);
@@ -2912,6 +2951,179 @@ void spawnPersistentNpcBatchIfDue(ServerGamemodeState& d,
         batch, livingNpcCount(npcs), d.npcSpawnMax, d.npcSpawnIntervalTicks, tick);
 }
 
+// ── Authored map-entity run runtime (checkpoint / boss_trigger) ──────────
+// Trigger geometry is owned by `mapEntityContainsPoint` in map-config.
+static bool mapEntityHasLivePlayer(const MapEntity& e,
+    const std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    for (const auto& kv : players) {
+        if (kv.second.dead || kv.second.spawnState != ServerPlayer::Active) continue;
+        if (mapEntityContainsPoint(e, kv.second.pos)) return true;
+    }
+    return false;
+}
+
+static void placeActorAtRunSpawn(ServerGamemodeState& d, ServerPlayer& p,
+    const glm::vec3& spawn)
+{
+    resetPlayerForSpawn(p, true);
+    p.duelSpawnPos = spawn;
+    p.hasDuelSpawnPos = true;
+    p.respawnSeconds = 0.0f;
+    beginAuthoritativeTransform(p, spawn,
+        SpawnVelocityConfig::instance().enabled()
+            ? SpawnVelocityConfig::instance().computeSpawnImpulse(p.yaw)
+            : glm::vec3(0.0f), p.yaw, "run-spawn");
+    p.justRespawned = true;
+}
+
+// Party wipe: when every active human is dead, spend an attempt and respawn the
+// party at the latest checkpoint; when none remain, end the run and restart.
+static void zombieTowerPartyWipeTick(
+    ServerGamemodeState& d, SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    uint32_t tick, uint64_t& totalPacketsOut)
+{
+    size_t activeHumans = 0, deadHumans = 0;
+    for (const auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active) continue;
+        ++activeHumans;
+        if (kv.second.dead) ++deadHumans;
+    }
+    if (activeHumans == 0 || deadHumans < activeHumans) return;
+
+    const bool retry = d.runAttemptsRemaining > 1;
+    if (retry) --d.runAttemptsRemaining;
+
+    const glm::vec3 checkpointSpawn = d.hasCheckpointSpawn ? d.currentCheckpointPos : glm::vec3(0.0f);
+    for (auto& kv : players) {
+        ServerPlayer& p = kv.second;
+        if (p.spawnState != ServerPlayer::Active) continue;
+        const glm::vec3 spawn = retry
+            ? (d.hasCheckpointSpawn ? checkpointSpawn
+                                    : gamemodeSpawnPointForActor(d, p.id, players, npcs, "party-wipe"))
+            : gamemodeSpawnPointForActor(d, p.id, players, npcs, "run-failed");
+        placeActorAtRunSpawn(d, p, spawn);
+    }
+
+    if (retry) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "zombie_tower.attempt-started", d.mapId,
+            "party wipe; retrying from checkpoint", tick,
+            nlohmann::json{{"map", d.mapId},
+                           {"attempts_remaining", d.runAttemptsRemaining},
+                           {"checkpoint_id", d.currentCheckpointId}});
+        Debug::warn(Debug::Category::Duel,
+            "[ZOMBIE TOWER] party wipe -> retry attempts_left=%d checkpoint=%s tick=%u\n",
+            d.runAttemptsRemaining, d.currentCheckpointId.c_str(), tick);
+    } else {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "zombie_tower.run-failed", d.mapId, "no attempts remain", tick,
+            nlohmann::json{{"map", d.mapId}, {"checkpoint_id", d.currentCheckpointId}});
+        Debug::warn(Debug::Category::Duel,
+            "[ZOMBIE TOWER] run failed; resetting attempts=%d tick=%u\n",
+            d.runAttemptsTotal, tick);
+        d.runAttemptsRemaining = d.runAttemptsTotal;
+        d.runCheckpointCount = 0;
+        d.currentCheckpointId.clear();
+        d.hasCheckpointSpawn = false;
+        d.activatedCheckpoints.clear();
+        d.activatedBossTriggers.clear();
+        d.bossEncounterActive = false;
+        d.progressionLocked = false;
+        d.activeBossNpcId = 0;
+    }
+    ++d.stateVersion;
+    broadcastDuelState(sock, d, players, totalPacketsOut);
+}
+
+// Fixed 60 Hz consumption of authored checkpoint and boss_trigger entities.
+static void mapEntityRuntimeTick(ServerGamemodeState& d, SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    uint32_t tick, uint64_t& totalPacketsOut)
+{
+    auto& mapConfig = MapConfigRegistry::instance();
+    if (mapConfig.current().mapId.empty()) return;
+
+    for (auto& e : mapConfig.entitiesMutable()) {
+        if (!e.enabled) continue;
+
+        if (e.type == "checkpoint" && d.activatedCheckpoints.count(e.id) == 0) {
+            if (!mapEntityHasLivePlayer(e, players)) continue;
+            d.activatedCheckpoints.insert(e.id);
+            d.currentCheckpointId = e.id;
+            d.currentCheckpointPos = e.position;
+            d.hasCheckpointSpawn = true;
+            ++d.runCheckpointCount;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "zombie_tower.checkpoint-reached", e.id,
+                "party entered authored checkpoint", tick,
+                nlohmann::json{{"map", d.mapId}, {"checkpoint_id", e.id},
+                               {"checkpoint_count", d.runCheckpointCount},
+                               {"position", {e.position.x, e.position.y, e.position.z}}});
+            Debug::warn(Debug::Category::Duel,
+                "[CHECKPOINT] reached id=%s pos=(%.1f %.1f %.1f) tick=%u\n",
+                e.id.c_str(), e.position.x, e.position.y, e.position.z, tick);
+        } else if (e.type == "boss_trigger" && d.activatedBossTriggers.count(e.id) == 0) {
+            if (!mapEntityHasLivePlayer(e, players)) continue;
+            d.activatedBossTriggers.insert(e.id);
+            d.bossEncounterActive = true;
+            d.activeBossId = e.bossId;
+            d.progressionLocked = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "boss.triggered", e.id, "player entered boss trigger volume", tick,
+                nlohmann::json{{"map", d.mapId}, {"trigger_id", e.id},
+                               {"boss_id", e.bossId},
+                               {"position", {e.position.x, e.position.y, e.position.z}}});
+            if (!e.bossId.empty()) {
+                while (npcs.find(d.waveNextNpcId) != npcs.end()) ++d.waveNextNpcId;
+                ServerNpc npc;
+                npc.entityId = d.waveNextNpcId++;
+                npc.name = e.bossId + " " + std::to_string(++d.npcSpawnSequence);
+                npc.pos = e.position;
+                npc.yaw = 0.0f;
+                npc.difficulty = 1.5f;
+                npc.spawnZoneId = e.id;
+                addNpcWaveParticipant(d, npc);
+                d.activeBossNpcId = npc.entityId;
+                npcs.emplace(npc.entityId, std::move(npc));
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "boss.spawned", e.id, "authored boss trigger spawned an actor", tick,
+                    nlohmann::json{{"map", d.mapId}, {"boss_id", e.bossId},
+                                   {"npc_id", d.activeBossNpcId},
+                                   {"position", {e.position.x, e.position.y, e.position.z}}});
+            }
+        }
+    }
+
+    // Resolve the boss lock once its spawned actor dies (or is removed).
+    if (d.bossEncounterActive && d.activeBossNpcId != 0) {
+        auto it = npcs.find(d.activeBossNpcId);
+        if (it == npcs.end() || it->second.health <= 0) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "boss.died", d.activeBossId, "boss encounter resolved", tick,
+                nlohmann::json{{"map", d.mapId}, {"boss_id", d.activeBossId},
+                               {"npc_id", d.activeBossNpcId}});
+            d.bossEncounterActive = false;
+            d.progressionLocked = false;
+            d.activeBossNpcId = 0;
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+        }
+    }
+
+    if (d.persistentNpcSpawns)
+        zombieTowerPartyWipeTick(d, sock, players, npcs, tick, totalPacketsOut);
+}
+
 void beginNpcWave(ServerGamemodeState& d,
                   std::unordered_map<uint32_t, ServerPlayer>& players,
                   std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -4406,6 +4618,9 @@ void serverGamemodeTick(SOCKET sock,
             break;
 
         case DUEL_PHASE_ACTIVE:
+            // Authored-map gameplay entities (checkpoints, boss triggers, and
+            // authored spawnpoint selection) tick every active frame.
+            mapEntityRuntimeTick(d, sock, players, npcs, tick, totalPacketsOut);
             if (d.npcWaves) {
                 if (d.waveNpcSpawned < d.waveNpcTarget)
                     spawnNpcWaveBatch(d, npcs);

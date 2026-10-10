@@ -1,6 +1,6 @@
 {
-    "firstBootComplete": true,
-    "musicEnabled": false,
+    "firstBootComplete": false,
+    "musicEnabled": true,
     "musicVolume": 0.019999999552965164,
     "playbackSpeed": 1.0
 }

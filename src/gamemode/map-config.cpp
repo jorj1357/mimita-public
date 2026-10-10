@@ -3,6 +3,7 @@
 #include "gamemode/map-config.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <cctype>
 
@@ -50,6 +51,22 @@ std::string resolveUnderConfig(const std::string& relative)
 }
 
 } // namespace
+
+bool mapEntityContainsPoint(const MapEntity& entity, const glm::vec3& point)
+{
+    const glm::vec3 d = point - entity.position;
+    const bool hasBox = entity.size.x > 1.001f || entity.size.y > 1.001f ||
+                        entity.size.z > 1.001f;
+    if (hasBox) {
+        const glm::vec3 half(std::max(entity.size.x, 0.0f) * 0.5f,
+                             std::max(entity.size.y, 0.0f) * 0.5f,
+                             std::max(entity.size.z, 0.0f) * 0.5f);
+        if (std::abs(d.x) <= half.x && std::abs(d.y) <= half.y &&
+            std::abs(d.z) <= half.z)
+            return true;
+    }
+    return glm::dot(d, d) <= entity.radius * entity.radius;
+}
 
 MapConfigRegistry& MapConfigRegistry::instance()
 {
@@ -312,7 +329,21 @@ bool MapConfigRegistry::setSiteVisibility(const std::string& id, bool visible)
 bool MapConfigRegistry::save()
 {
     if (mPath.empty()) return false;
-    json root;
+    // Start from the existing authored file so any top-level keys this owner
+    // does not understand (objectives, future sections, hand-authored notes)
+    // survive a save. Only the three sections below are owned and rewritten.
+    json root = json::object();
+    {
+        std::ifstream existing(mPath);
+        if (existing.is_open()) {
+            try {
+                json parsed = parseJsonConfig(existing);
+                if (parsed.is_object()) root = std::move(parsed);
+            } catch (const std::exception&) {
+                // A malformed on-disk file is replaced by the in-memory state.
+            }
+        }
+    }
     root["bomb_sites"] = json::array();
     for (const auto& site : mCurrent.bombSites) {
         json s;
@@ -407,6 +438,69 @@ bool mapConfigSelfTest(std::string& report)
         ++checked;
     }
     report += "sites_checked=" + std::to_string(checked) + "\n";
+
+    report += ok ? "PASS\n" : "FAIL\n";
+    return ok;
+}
+
+bool mapEntityConfigSelfTest(std::string& report)
+{
+    bool ok = true;
+    auto fail = [&](const std::string& why) { ok = false; report += "FAIL: " + why + "\n"; };
+
+    // Trigger geometry: sphere radius and box size.
+    MapEntity sphere;
+    sphere.type = "checkpoint";
+    sphere.position = glm::vec3(10.0f, 0.0f, 0.0f);
+    sphere.radius = 2.0f;
+    if (!mapEntityContainsPoint(sphere, glm::vec3(10.0f, 0.0f, 0.0f)))
+        fail("sphere center should be inside");
+    if (!mapEntityContainsPoint(sphere, glm::vec3(11.5f, 0.0f, 0.0f)))
+        fail("point within sphere radius should be inside");
+    if (mapEntityContainsPoint(sphere, glm::vec3(13.0f, 0.0f, 0.0f)))
+        fail("point outside sphere radius should be outside");
+
+    MapEntity box;
+    box.type = "damage_volume";
+    box.position = glm::vec3(0.0f);
+    box.radius = 0.1f;
+    box.size = glm::vec3(4.0f, 2.0f, 2.0f);
+    if (!mapEntityContainsPoint(box, glm::vec3(1.9f, 0.9f, 0.9f)))
+        fail("point inside box should be inside");
+    if (mapEntityContainsPoint(box, glm::vec3(2.5f, 0.0f, 0.0f)))
+        fail("point outside box should be outside");
+
+    // Save round-trip must preserve unknown top-level keys.
+    MapConfigRegistry& reg = MapConfigRegistry::instance();
+    const std::string mapId = "zz_entity_selftest";
+    const std::string path = MapConfigRegistry::pathForMap(mapId);
+    {
+        std::ofstream out(path);
+        out << R"({"custom_section":{"note":"keep me"},"entities":[{"id":"cp1","type":"checkpoint","position":[1,2,3],"radius":5}]})";
+    }
+    if (!reg.load(mapId))
+        fail("selftest map failed to load");
+    if (!reg.save())
+        fail("selftest map failed to save");
+    {
+        std::ifstream in(path);
+        if (!in.is_open()) {
+            fail("saved selftest map missing");
+        } else {
+            try {
+                const json root = parseJsonConfig(in);
+                if (!root.contains("custom_section"))
+                    fail("save dropped unknown top-level key");
+                if (!root.contains("entities") || root["entities"].size() != 1)
+                    fail("entities not preserved across save");
+            } catch (const std::exception& e) {
+                fail(std::string("saved json unparsable: ") + e.what());
+            }
+        }
+    }
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    reg.load("zombietower4");
 
     report += ok ? "PASS\n" : "FAIL\n";
     return ok;

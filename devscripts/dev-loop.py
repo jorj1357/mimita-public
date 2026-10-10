@@ -192,9 +192,13 @@ def select_dev_map(profile: dict, requested_map: str = "") -> str:
     maps = allowed_dev_maps(profile)
     if requested_map:
         requested_map = requested_map.strip()
-        if requested_map in maps:
+        # A launch mode's explicit map is an operator choice, so it may be
+        # outside the generic rotation pool. Keep the safety check by requiring
+        # the actual map asset to exist before allowing the override.
+        requested_asset = ROOT / "assets" / "maps" / f"{requested_map}.glb"
+        if requested_map in maps or requested_asset.is_file():
             return requested_map
-        print(f"[DEV] launch-mode map {requested_map} is not allowed; using {maps[0]}")
+        print(f"[DEV] launch-mode map {requested_map} has no map asset; using {maps[0]}")
         return maps[0]
     selection = str(profile.get("map_selection", "configured")).lower()
     configured = str(profile.get("map", "")).strip()
@@ -997,6 +1001,28 @@ class DevLoop:
         except OSError:
             return os.path.normcase(self.server_exe) == os.path.normcase(str(exe))
 
+    @staticmethod
+    def _normalized_server_args(args: list[str]) -> list[str]:
+        """Compare launch contracts without treating the temporary room path as state."""
+        normalized = []
+        index = 0
+        while index < len(args):
+            value = str(args[index])
+            normalized.append(value)
+            if value == "--room-file" and index + 1 < len(args):
+                normalized.append("<room-file>")
+                index += 2
+                continue
+            index += 1
+        return normalized
+
+    def server_matches_launch_configuration(self, exe: Path, map_name: str) -> bool:
+        """Ensure a durable server belongs to the currently selected mode/profile."""
+        if not self.server_matches_executable(exe):
+            return False
+        desired = self.build_server_args(exe, map_name, Path("<room-file>"))
+        return self._normalized_server_args(self.server_args) == self._normalized_server_args(desired)
+
     def check_server_after_client(self) -> None:
         """Observe and repair durable-server state after a client exits.
 
@@ -1045,15 +1071,12 @@ class DevLoop:
         )
         print(f"[DEV] selected allowed map: {map_name}")
         running_map = self.server_map_name()
-        if self.server_health() and not self.server_matches_executable(exe):
-            print(f"[DEV SERVER] executable changed; replacing old server "
-                  f"pid={self.server_pid} exe={self.server_exe}")
+        if self.server_health() and not self.server_matches_launch_configuration(exe, map_name):
+            print(f"[DEV SERVER] launch configuration changed; replacing old server "
+                  f"pid={self.server_pid} old_map={running_map} new_map={map_name}")
             if not self.stop_server():
                 self.save_state("server_stop_failed")
                 return
-        elif self.server_health() and running_map and running_map != map_name:
-            print(f"[DEV SERVER] map changed {running_map} -> {map_name}; "
-                  f"restarting server pid={self.server_pid}")
             self.stop_server()
         if self.server_health() and bool(self.room_code):
             room_code = self.room_code

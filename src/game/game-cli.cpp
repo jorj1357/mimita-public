@@ -1971,6 +1971,14 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--map-entity-selftest") {
+        std::string report;
+        const bool ok = mapEntityConfigSelfTest(report);
+        printf("[MAP ENTITY SELFTEST]\n%s", report.c_str());
+        printf("[MAP ENTITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--objective-selftest") {
         std::string report;
         const bool ok = objectiveSelfTest(report);

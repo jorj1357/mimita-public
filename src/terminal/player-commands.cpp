@@ -211,6 +211,34 @@ void registerPlayerCommands()
         });
     };
     registerActionCommand("walkforward", "Move forward for one simulation tick");
+    Terminal::instance().registerCommand({
+        "walkforward_ticks",
+        "Move forward once per fixed simulation tick for a bounded scenario",
+        "walkforward_ticks [ticks]",
+        [](const std::vector<std::string>& args) {
+            uint32_t ticks = 60;
+            if (args.size() > 1) {
+                Terminal::instance().addLog(
+                    "[ERROR] Usage: walkforward_ticks [ticks]");
+                return;
+            }
+            if (!args.empty()) {
+                try {
+                    size_t consumed = 0;
+                    unsigned long parsed = std::stoul(args[0], &consumed);
+                    if (consumed != args[0].size()) throw std::invalid_argument("suffix");
+                    ticks = static_cast<uint32_t>(std::clamp(parsed, 1UL, 600UL));
+                } catch (...) {
+                    Terminal::instance().addLog(
+                        "[ERROR] walkforward_ticks requires 1-600 ticks");
+                    return;
+                }
+            }
+            InputCommandSystem::instance().scheduleActionTicks("walkforward", ticks);
+            Terminal::instance().addLog(
+                "[SCENARIO] walkforward scheduled ticks=" + std::to_string(ticks));
+        }
+    });
     registerActionCommand("walkback", "Move backward for one simulation tick");
     registerActionCommand("walkleft", "Move left for one simulation tick");
     registerActionCommand("walkright", "Move right for one simulation tick");

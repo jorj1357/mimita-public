@@ -406,6 +406,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.waveBannerSeconds = std::max(0.0f, optFloat(root, "wave_banner_seconds", next.waveBannerSeconds));
         next.waveStaggerEnabled = optBool(root, "wave_stagger_enabled", next.waveStaggerEnabled);
         next.waveNpcsPerTick = std::max(1, optInt(root, "wave_npcs_per_tick", next.waveNpcsPerTick));
+        next.runAttempts = std::max(1, optInt(root, "run_attempts", next.runAttempts));
         if (root.contains("npc_spawn") && root["npc_spawn"].is_object()) {
             const auto& s = root["npc_spawn"];
             next.npcSpawnPolicy = optString(s, "policy", next.npcSpawnPolicy);

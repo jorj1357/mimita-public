@@ -258,6 +258,24 @@ struct ServerGamemodeState
     uint32_t npcSpawnNextTick = 0;
     uint32_t npcSpawnSequence = 0;
 
+    // ── Authored map-entity run state (Zombie Tower checkpoints / boss) ──
+    // Owned here so checkpoint, run attempts, boss triggers, and respawn all
+    // read the same authoritative source. Consumed by mapEntityRuntimeTick.
+    int runAttemptsTotal = 3;
+    int runAttemptsRemaining = 3;
+    uint32_t runCheckpointCount = 0;
+    std::string currentCheckpointId;
+    glm::vec3 currentCheckpointPos{0.0f};
+    bool hasCheckpointSpawn = false;
+    std::unordered_set<std::string> activatedCheckpoints;
+    // boss_trigger latches, the active encounter, and its spawned NPC owner.
+    std::unordered_set<std::string> activatedBossTriggers;
+    bool bossEncounterActive = false;
+    std::string activeBossId;
+    uint32_t activeBossNpcId = 0;
+    bool progressionLocked = false;
+    bool partyWipePending = false;
+
     // Match event counter for KillEvent IDs
     uint32_t killEventCounter = 0;
 

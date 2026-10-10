@@ -34,6 +34,7 @@
 #include "map/map-loader-collision.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "entities/aimbody-config.h"
 #include "effects/effect-part.h"
 
 namespace {
@@ -471,6 +472,14 @@ bool solveActorTriangleCollision(
                 {"depenetration_normal", vec3Json(c.normal)},
                 {"response_normal", vec3Json(responseNormal)},
                 {"surface_normal", vec3Json(c.surfaceNormal)},
+                {"sweep_velocity", vec3Json(actorSweepVelocity(c.sweepDelta, dt))},
+                {"weapon_contact", c.label && std::strcmp(c.label, "weapon") == 0},
+                {"weapon_bounce_mode", c.label && std::strcmp(c.label, "weapon") == 0
+                    ? static_cast<int>(player.weaponCollisionDebug.bounceMode) : -1},
+                {"weapon_bounce_scale", c.label && std::strcmp(c.label, "weapon") == 0
+                    ? player.weaponCollisionDebug.playerBounce : 1.0f},
+                {"equipped_weapon_id", player.equippedWeaponId},
+                {"aimbody_mode", AimBodyConfig::instance().mode()},
                 {"penetration", c.penetration},
                 {"time_of_impact", c.timeOfImpact},
                 {"walkable", walkable},

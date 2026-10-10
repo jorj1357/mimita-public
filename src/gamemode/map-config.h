@@ -60,6 +60,12 @@ struct MapObjectiveConfig
     bool loaded = false;
 };
 
+// True when a world point lies inside an authored entity's trigger volume: its
+// sphere of `radius`, or its box of `size` when the size exceeds the 1x1x1
+// default. Shared by the server run runtime and the debug/editor visuals so the
+// authored volume has exactly one owner.
+bool mapEntityContainsPoint(const MapEntity& entity, const glm::vec3& point);
+
 class MapConfigRegistry
 {
 public:
@@ -111,3 +117,7 @@ private:
 
 // World-independent selftest for map objective config parsing + site lookup.
 bool mapConfigSelfTest(std::string& report);
+
+// Focused selftest for authored entity trigger geometry and save round-trip
+// (unknown top-level keys are preserved across save).
+bool mapEntityConfigSelfTest(std::string& report);

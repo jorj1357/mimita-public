@@ -69,11 +69,14 @@
       "8": {
       "name": "zombie towerrrrr",
       "server_args": [
-        "--startup-command",
-        "help"
+        "--mode",
+        "zombie_tower",
+        "--gamemode",
+      "zombie_tower",
+        "--no-npcs"
       ],
       "client_args": [],
-      "map": "zombietower5"
+      "map": "zombietower4"
     },
        "9": {
       "name": "juggernaut",

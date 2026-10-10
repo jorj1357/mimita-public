@@ -10,6 +10,7 @@
 
 #include "sim/sim-context.h"
 #include "input/input-frame.h"
+#include "input/input-commands.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
 #include "input/input-state.h"
@@ -22,6 +23,7 @@
 #include "world/world.h"
 #include "config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "combat/weapon-hit.h"
 #include "combat/death-system.h"
 #include "effects/hit-effects.h"
@@ -32,6 +34,7 @@
 #include "terminal/terminal-state.h"
 
 #include <cmath>
+#include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -109,9 +112,31 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     s_aimLifecycleId = lifeId;
 
     if (!sim.player->dead) {
+        InputFrame tickFrame = frame;
+        if (InputCommandSystem::instance().consumeScheduledActionTick("walkforward")) {
+            tickFrame.moveY = std::max(tickFrame.moveY, 1.0f);
+            tickFrame.movementPressed = true;
+            if (StructuredLogger::instance().shouldLog(
+                    StructuredCategory::Collision, StructuredLevel::Trace)) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Collision, StructuredLevel::Trace,
+                    "scenario.walkforward_tick", "hybrid-weapon-wall-probe",
+                    "scheduled walk-forward command applied for one fixed tick",
+                    static_cast<uint32_t>(sim.player->movementSimulationTick),
+                    {
+                        {"move_x", tickFrame.moveX},
+                        {"move_y", tickFrame.moveY},
+                        {"actor_position", {sim.player->pos.x, sim.player->pos.y, sim.player->pos.z}},
+                        {"actor_velocity", {sim.player->vel.x, sim.player->vel.y, sim.player->vel.z}},
+                        {"aimbody_mode", AimBodyConfig::instance().mode()}
+                    },
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+
         // Handle ragdoll mode toggle
         static bool ragdollTogglePrev = false;
-        bool ragdollToggleNow = frame.ragdollTogglePressed;
+        bool ragdollToggleNow = tickFrame.ragdollTogglePressed;
         if (ragdollToggleNow && !ragdollTogglePrev && RagdollModeConfig::instance().data().enabled) {
             if (ragdoll.isActive()) {
                 ragdoll.deactivate(*sim.player);
@@ -127,15 +152,15 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             if (ragdoll.aimActive())
                 ragdoll.deactivateAim(*sim.player);
             MIMITA_PERF_SCOPE("RagdollModeUpdate");
-            InputState ragdollInput = inputStateFromFrame(frame);
-            ragdollInput.grabLeftHeld = frame.grabLeftHeld;
-            ragdollInput.grabRightHeld = frame.grabRightHeld;
-            ragdollInput.extendLeftMouse = frame.extendLeftMouse;
-            ragdollInput.extendRightMouse = frame.extendRightMouse;
+            InputState ragdollInput = inputStateFromFrame(tickFrame);
+            ragdollInput.grabLeftHeld = tickFrame.grabLeftHeld;
+            ragdollInput.grabRightHeld = tickFrame.grabRightHeld;
+            ragdollInput.extendLeftMouse = tickFrame.extendLeftMouse;
+            ragdollInput.extendRightMouse = tickFrame.extendRightMouse;
             ragdoll.update(TICK_DT, *sim.world, *sim.player, ragdollInput, THE_CAMERA);
         } else {
             MIMITA_PERF_SCOPE("PhysicsMainUpdate");
-            InputState normalInput = inputStateFromFrame(frame);
+            InputState normalInput = inputStateFromFrame(tickFrame);
             setCollisionEntityContext("Player", 0, false);
             physicsMainUpdate(*sim.player, *sim.world, normalInput, TICK_DT);
             clearCollisionEntityContext();

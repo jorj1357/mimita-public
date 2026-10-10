@@ -229,6 +229,9 @@ struct Gamemode {
     int npcSpawnMax = 0;
     int npcSpawnIntervalTicks = 60;
     int npcSpawnPerInterval = 1;
+    // Authored-map PvE run attempts (checkpointed modes such as Zombie Tower).
+    // Consumed by the map-entity run runtime; 3 is the documented default.
+    int runAttempts = 3;
 };
 
 class GamemodeRegistry {
