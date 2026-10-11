@@ -87,6 +87,13 @@ struct ServerTransportStats
     uint64_t inputPackets = 0;
 };
 
+struct ServerPerfIoBaseline
+{
+    uint64_t totalPacketsIn = 0;
+    uint64_t totalPacketsOut = 0;
+    ServerPacketStats transport{};
+};
+
 struct ServerTickTiming
 {
     uint64_t tickCount = 0;
@@ -235,7 +242,11 @@ void reportServerPerf(const char* label,
                       ServerLoopPerf& perf,
                       uint32_t tick,
                       uint32_t previousTick,
-                      uint64_t elapsedMs)
+                      uint64_t elapsedMs,
+                      uint64_t totalPacketsIn = 0,
+                      uint64_t totalPacketsOut = 0,
+                      const ServerPacketStats* transportStats = nullptr,
+                      ServerPerfIoBaseline* ioBaseline = nullptr)
 {
     const ServerProjectilePerfStats projectile = consumeServerProjectilePerfStats();
     const double elapsedSec = std::max(0.001, (double)elapsedMs / 1000.0);
@@ -271,6 +282,39 @@ void reportServerPerf(const char* label,
             {"projectile_corrections", projectile.correctionPackets},
             {"correction_bytes", projectile.correctionBytes}},
         __FILE__, __LINE__, __FUNCTION__);
+
+    if (transportStats && ioBaseline)
+    {
+        const auto delta = [](uint64_t current, uint64_t previous) {
+            return current >= previous ? current - previous : current;
+        };
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.server-io-window", "server",
+            "authoritative transport counters for the same performance window",
+            tick,
+            nlohmann::json{
+                {"elapsed_ms", elapsedMs},
+                {"tick_count", tick - previousTick},
+                {"packets_in_total", totalPacketsIn},
+                {"packets_out_total", totalPacketsOut},
+                {"packets_in_window", delta(totalPacketsIn, ioBaseline->totalPacketsIn)},
+                {"packets_out_window", delta(totalPacketsOut, ioBaseline->totalPacketsOut)},
+                {"recv_attempts_window", delta(transportStats->recvAttempts, ioBaseline->transport.recvAttempts)},
+                {"recv_would_block_window", delta(transportStats->recvWouldBlock, ioBaseline->transport.recvWouldBlock)},
+                {"recv_errors_window", delta(transportStats->recvErrors, ioBaseline->transport.recvErrors)},
+                {"malformed_window", delta(transportStats->malformedPackets, ioBaseline->transport.malformedPackets)},
+                {"protocol_mismatch_window", delta(transportStats->protocolMismatches, ioBaseline->transport.protocolMismatches)},
+                {"unknown_window", delta(transportStats->unknownPacketTypes, ioBaseline->transport.unknownPacketTypes)},
+                {"hello_window", delta(transportStats->helloPackets, ioBaseline->transport.helloPackets)},
+                {"join_window", delta(transportStats->joinPackets, ioBaseline->transport.joinPackets)},
+                {"reconnect_window", delta(transportStats->reconnectPackets, ioBaseline->transport.reconnectPackets)},
+                {"input_window", delta(transportStats->inputPackets, ioBaseline->transport.inputPackets)}} ,
+            __FILE__, __LINE__, __FUNCTION__);
+        ioBaseline->totalPacketsIn = totalPacketsIn;
+        ioBaseline->totalPacketsOut = totalPacketsOut;
+        ioBaseline->transport = *transportStats;
+    }
 
     if (perf.maxLoopMs >= 50.0 || perf.cappedCatchupCount > 0)
         recordCrashBreadcrumb("server-loop",
@@ -536,6 +580,7 @@ int runServer(const LaunchOptions& options)
     uint64_t totalPacketsIn = 0;
     uint64_t totalPacketsOut = 0;
     ServerPacketStats transportStats;
+    ServerPerfIoBaseline ioBaseline;
     DisagreementRetransmitState disagreementRetransmit;
     PhysicalEntityReplicationState physicalEntityReplication;
 
@@ -1007,7 +1052,8 @@ int runServer(const LaunchOptions& options)
         if (perfNowMs - lastPerfMs >= 1000)
         {
             reportServerPerf(serverTimestamp(), loopPerf, tick, lastPerfTick,
-                             perfNowMs - lastPerfMs);
+                             perfNowMs - lastPerfMs, totalPacketsIn,
+                             totalPacketsOut, &transportStats, &ioBaseline);
             lastPerfTick = tick;
             lastPerfMs = perfNowMs;
         }

@@ -27,7 +27,6 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-subgrid.h"
-#include "ragdoll/ragdoll-mode.h"
 #include "render/render-player.h"
 #include "world/world.h"
 #include "audio/audio.h"
@@ -424,7 +423,7 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
         npc.lastLoggedPursuitVisible = npc.belief.hasVisibleTarget;
         npc.lastLoggedPursuitRemembered = pursuitRemembered;
         StructuredLogger::instance().writeEvent(
-            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            StructuredCategory::NpcMovement, StructuredLevel::Verbose,
             "npc.pursuit-state", std::to_string(npc.id), "belief_changed",
             (uint32_t)(npc.sensors.time * 60.0f),
             nlohmann::json{
@@ -472,7 +471,7 @@ void logStateChange(const Npc& npc, NpcState oldState, NpcState newState)
         npc.sensors.targetDistance
     );
     StructuredLogger::instance().writeEvent(
-        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        StructuredCategory::NpcMovement, StructuredLevel::Verbose,
         "npc.state-changed", std::to_string(npc.id), "state_changed",
         (uint32_t)(npc.sensors.time * 60.0f),
         nlohmann::json{
@@ -1143,7 +1142,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                              const NpcMovementContext& context, float dt)
 {
     if (npc.body.dead || npc.body.currentHp <= 0 || !context.valid()) {
-        RagdollModeSystem::instance().clearNpcAim(npc.id);
         npc.body.updateModelWorldTransforms();
         return;
     }
@@ -2261,18 +2259,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         // navMovement (resolved above) carries the actor's role movement config
         // through the same shared kernel as the human actor.
         physicsMainUpdate(npc.body, world, input, safeDt, 2, navMovement);
-
-        // NPCs use the same AimBody hybrid body/animation solver as players.
-        // Navigation supplies movement intent only; target/facing supplies the
-        // equivalent aim input and the solver writes the final body transforms.
-        glm::vec3 aimPoint = npc.body.pos + npc.currentFacing * 100.0f;
-        glm::vec3 aimForward = npc.currentFacing;
-        if (npc.sensors.hasTarget) {
-            aimPoint = npc.sensors.predictedTarget;
-            aimForward = aimPoint - npc.body.pos;
-        }
-        RagdollModeSystem::instance().updateNpcAim(
-            safeDt, world, npc, aimForward, aimPoint);
 
         clearCollisionEntityContext();
 

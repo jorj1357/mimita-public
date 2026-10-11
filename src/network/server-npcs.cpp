@@ -44,6 +44,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
 #include <limits>
 #include <string>
 #include <utility>
@@ -987,6 +988,35 @@ void simulateSharedNpcs(SOCKET sock,
                         uint64_t& totalPacketsOut)
 {
     Perf::ScopedTimer npcSimulationTimer("Server::NpcSimulation");
+
+    struct PhaseTiming
+    {
+        uint64_t tickCount = 0;
+        uint64_t preLoopUs = 0;
+        uint64_t mainLoopUs = 0;
+        uint64_t postLoopUs = 0;
+        uint64_t maxPreLoopUs = 0;
+        uint64_t maxMainLoopUs = 0;
+        uint64_t maxPostLoopUs = 0;
+        uint64_t targetUs = 0;
+        uint64_t maxTargetUs = 0;
+        uint64_t updateUs = 0;
+        uint64_t groundUs = 0;
+        uint64_t maxGroundUs = 0;
+        uint64_t postPhysicsUs = 0;
+        uint64_t maxPostPhysicsUs = 0;
+        uint64_t npcCalls = 0;
+        uint64_t maxUpdateUs = 0;
+        uint64_t maxFunctionUs = 0;
+    };
+    static PhaseTiming phaseTiming;
+    static uint64_t lastPhaseReportMs = 0;
+
+    const auto phaseElapsedUs = [](const std::chrono::steady_clock::time_point& start) {
+        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start).count());
+    };
+    const auto functionStart = std::chrono::steady_clock::now();
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
 
@@ -1077,6 +1107,10 @@ void simulateSharedNpcs(SOCKET sock,
         && serverGamemodeState().roundCountdownFreeze
         && !serverGamemodeState().warmup;
 
+    const auto mainLoopStart = std::chrono::steady_clock::now();
+    const uint64_t preLoopUs = phaseElapsedUs(functionStart);
+    phaseTiming.preLoopUs += preLoopUs;
+    phaseTiming.maxPreLoopUs = std::max(phaseTiming.maxPreLoopUs, preLoopUs);
     for (Npc& n : npcSystem.all())
     {
         if (n.body.dead || n.body.currentHp <= 0)
@@ -1084,6 +1118,7 @@ void simulateSharedNpcs(SOCKET sock,
         if (freezeWaveBanner || freezeRoundCountdown)
             continue;
 
+        const auto targetStart = std::chrono::steady_clock::now();
         const uint32_t prevTarget = n.serverTargetId;
         const int myTeam = npcTeamOf(n);
         ServerPlayer* nearestPlayer = nullptr;
@@ -1225,13 +1260,16 @@ void simulateSharedNpcs(SOCKET sock,
 
         n.serverTargetId = nearestPlayer ? nearestPlayer->id
                         : (nearestNpc ? nearestNpc->id : 0);
+        const uint64_t targetUs = phaseElapsedUs(targetStart);
+        phaseTiming.targetUs += targetUs;
+        phaseTiming.maxTargetUs = std::max(phaseTiming.maxTargetUs, targetUs);
         if (n.serverTargetId != prevTarget)
         {
             float targetDist = 0.0f;
             if (nearestPlayer) targetDist = glm::length(nearestPlayer->pos - n.body.pos);
             else if (nearestNpc) targetDist = glm::length(nearestNpc->body.pos - n.body.pos);
             StructuredLogger::instance().writeEvent(
-                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                StructuredCategory::NpcMovement, StructuredLevel::Verbose,
                 "npc.target-changed", std::to_string(n.id), "target_changed", tick,
                 nlohmann::json{
                     {"actor", n.id},
@@ -1285,13 +1323,19 @@ void simulateSharedNpcs(SOCKET sock,
         mirrorPlayer.externalImpulse = glm::vec3(0.0f);
         const int hpBefore = mirrorPlayer.currentHp;
 
+        const auto updateStart = std::chrono::steady_clock::now();
         npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT);
+        const uint64_t updateUs = phaseElapsedUs(updateStart);
+        phaseTiming.updateUs += updateUs;
+        phaseTiming.maxUpdateUs = std::max(phaseTiming.maxUpdateUs, updateUs);
+        ++phaseTiming.npcCalls;
 
         // Ground clamp: the decimated headless collision world can miss the
         // floor, so a server NPC that ends up below the floor gets pinned back
         // onto the nearest floor triangle and marked grounded — it never sinks
         // through the ground forever. Legitimate airborne/jumping NPCs above the
         // floor are untouched; the clamp only corrects downward violations.
+        const auto groundStart = std::chrono::steady_clock::now();
         {
             constexpr float REST_HEIGHT = 1.8f; // capsule half-height (feet at pos.z - 1.8)
             const float floorZ = NpcNavigation::groundHeightAt(
@@ -1311,6 +1355,11 @@ void simulateSharedNpcs(SOCKET sock,
                 }
             }
         }
+        const uint64_t groundUs = phaseElapsedUs(groundStart);
+        phaseTiming.groundUs += groundUs;
+        phaseTiming.maxGroundUs = std::max(phaseTiming.maxGroundUs, groundUs);
+
+        const auto postPhysicsStart = std::chrono::steady_clock::now();
 
         if ((nearestPlayer || nearestNpc) && hpBefore > mirrorPlayer.currentHp)
         {
@@ -1485,7 +1534,16 @@ void simulateSharedNpcs(SOCKET sock,
                 }
             }
         }
+        const uint64_t postPhysicsUs = phaseElapsedUs(postPhysicsStart);
+        phaseTiming.postPhysicsUs += postPhysicsUs;
+        phaseTiming.maxPostPhysicsUs = std::max(
+            phaseTiming.maxPostPhysicsUs, postPhysicsUs);
     }
+
+    const uint64_t mainLoopUs = phaseElapsedUs(mainLoopStart);
+    phaseTiming.mainLoopUs += mainLoopUs;
+    phaseTiming.maxMainLoopUs = std::max(phaseTiming.maxMainLoopUs, mainLoopUs);
+    const auto postLoopStart = std::chrono::steady_clock::now();
 
     // Respawn killed NPCs (updateOneNpc freezes dead bodies; this loop drives
     // their countdown and resets them so rebuildServerNpcMap re-admits them).
@@ -1568,6 +1626,51 @@ void simulateSharedNpcs(SOCKET sock,
                 ++living;
         printf("[SERVER NPC SUMMARY] count=%zu living=%zu dead=%zu\n",
                npcs.size(), living, npcs.size() - living);
+    }
+
+    const uint64_t postLoopUs = phaseElapsedUs(postLoopStart);
+    phaseTiming.postLoopUs += postLoopUs;
+    phaseTiming.maxPostLoopUs = std::max(phaseTiming.maxPostLoopUs, postLoopUs);
+    ++phaseTiming.tickCount;
+    phaseTiming.maxFunctionUs = std::max(
+        phaseTiming.maxFunctionUs, phaseElapsedUs(functionStart));
+
+    const uint64_t phaseNow = nowMs();
+    if (phaseNow - lastPhaseReportMs >= 1000 && phaseTiming.tickCount > 0)
+    {
+        lastPhaseReportMs = phaseNow;
+        const auto avgTickMs = [count = phaseTiming.tickCount](uint64_t us) {
+            return static_cast<double>(us) / static_cast<double>(count) / 1000.0;
+        };
+        const auto avgNpcMs = [count = phaseTiming.npcCalls](uint64_t us) {
+            return static_cast<double>(us) / static_cast<double>(count) / 1000.0;
+        };
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "performance.server-npc-phase-window", "server",
+            "bounded NPC simulation phase timing",
+            tick,
+            nlohmann::json{
+                {"npcs", npcSystem.all().size()},
+                {"tick_count", phaseTiming.tickCount},
+                {"npc_calls", phaseTiming.npcCalls},
+                {"pre_loop_avg_ms", avgTickMs(phaseTiming.preLoopUs)},
+                {"main_loop_avg_ms", avgTickMs(phaseTiming.mainLoopUs)},
+                {"post_loop_avg_ms", avgTickMs(phaseTiming.postLoopUs)},
+                {"pre_loop_max_ms", static_cast<double>(phaseTiming.maxPreLoopUs) / 1000.0},
+                {"main_loop_max_ms", static_cast<double>(phaseTiming.maxMainLoopUs) / 1000.0},
+                {"post_loop_max_ms", static_cast<double>(phaseTiming.maxPostLoopUs) / 1000.0},
+                {"target_avg_ms_per_npc", avgNpcMs(phaseTiming.targetUs)},
+                {"update_avg_ms_per_npc", avgNpcMs(phaseTiming.updateUs)},
+                {"ground_avg_ms_per_npc", avgNpcMs(phaseTiming.groundUs)},
+                {"post_physics_avg_ms_per_npc", avgNpcMs(phaseTiming.postPhysicsUs)},
+                {"target_max_ms_per_npc", static_cast<double>(phaseTiming.maxTargetUs) / 1000.0},
+                {"ground_max_ms_per_npc", static_cast<double>(phaseTiming.maxGroundUs) / 1000.0},
+                {"post_physics_max_ms_per_npc", static_cast<double>(phaseTiming.maxPostPhysicsUs) / 1000.0},
+                {"function_max_ms", static_cast<double>(phaseTiming.maxFunctionUs) / 1000.0},
+                {"update_max_ms", static_cast<double>(phaseTiming.maxUpdateUs) / 1000.0}},
+            __FILE__, __LINE__, __FUNCTION__);
+        phaseTiming = PhaseTiming{};
     }
 }
 

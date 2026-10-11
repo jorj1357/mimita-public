@@ -1,8 +1,8 @@
 # Server tick rate collapses under live NPC simulation
 
 Time created: 2026-10-10T20:36:39-04:00
-Time last updated: 2026-10-10T20:40:37-04:00
-Status: UNRESOLVED
+Time last updated: 2026-10-10T20:49:30-04:00
+Status: ATTEMPTED FIX (1)
 
 ## Goal behavior
 
@@ -78,7 +78,19 @@ AimBody integration, joint solving, world collision, self-collision,
 depenetration, rotation limits, and model-transform synchronization for each
 NPC. The server journal also shows AimBody hybrid activity for this run.
 
-This is a strong code-and-timing correlation, not yet a completed A/B proof:
+The new journal makes the failed-path part of the cause concrete:
+
+- It contains approximately 82,958 `actor-hybrid.pose-input` events from the
+  server, not the client.
+- Every sampled record reports `parts: 0` while `aimbody_mode` is `hybrid`.
+- `updateNpcAim` retries whenever `body.parts.empty()` is true, so a failed
+  empty-body construction is retried and logged for the same NPC on every
+  update. This explains why NPCs look normal while the server still performs
+  the path.
+
+The performance impact is now source-and-journal confirmed at the failed-path
+level. The exact percentage attributable to the failed body setup versus the
+remaining normal NPC simulation still needs a post-fix runtime journal.
 
 - In the fresh run, ordinary Recast route queries report approximately
   `0.06--0.10 ms`, so the regular route query is not large enough to explain
@@ -92,11 +104,45 @@ This is a strong code-and-timing correlation, not yet a completed A/B proof:
   `940 ms`, but the navmesh is version 1 afterward and the continuing route
   queries are short.
 
-The next safe proof is a matched runtime A/B using the same map and NPC count:
-disable only the per-NPC `updateNpcAim` call, keep authoritative movement and
-collision enabled, and compare `performance.server-tick-window`. If the NPC
-stage returns near the prior baseline, the AimBody integration must be moved
-out of the authoritative server tick or given a cheaper server-specific path.
+## Attempted fix (1)
+
+Removed the server-side `updateNpcAim` call and its dead-NPC cleanup call from
+`src/npc/npc.cpp`. This preserves the normal authoritative NPC movement and
+collision path, which is the behavior the current client is actually showing,
+and prevents the server from repeatedly attempting a render-oriented AimBody
+that has no parts. The player/client AimBody path remains unchanged.
+
+The required proof is a new real 67-NPC run whose journal has no repeated
+`actor-hybrid.pose-input` server events and whose fixed-tick NPC stage returns
+near the pre-regression baseline.
+
+## Follow-up occurrence: 2026-10-11_004504
+
+- The journal is `C:\mimita-v9\logs\2026-10-11\20261011_004504\events-000001.jsonl`.
+- The server starts near 59--60 Hz with zero NPCs, then reaches 67 NPCs and
+  falls into alternating stalls: `0.77--48.22 Hz` in the sampled windows,
+  including a `6,462 ms` outer-loop maximum.
+- The fixed-tick evidence identifies NPC simulation as the recurring owner:
+  after activation, NPC averages range from approximately `13.6--126.9 ms`
+  in the sampled windows, with maxima up to `713.7 ms`. Gamemode work is
+  generally below `1.3 ms` after the transition.
+- The client reports snapshot inter-arrival gaps of `1,001--3,922 ms`, while
+  `snapshots_missed=0` and `tick_gap=1`. This is a server-stall/backlog
+  pattern: delayed snapshots are later observed in bursts, not evidence that
+  the client randomly dropped twenty packets.
+- This run used `.dev\builds\1964\mimita.exe`, built at `19:32:15`, before the
+  attempted source fix was built at `20:48:24`. It therefore cannot prove or
+  disprove the fix.
+
+## Diagnostics added
+
+`src/network/server.cpp::reportServerPerf` now emits one bounded
+`network.server-io-window` event per performance window for the dedicated
+server. It records packet-in/out totals and deltas plus receive attempts,
+would-blocks, errors, malformed packets, protocol mismatches, unknown packets,
+joins, reconnects, and input packets. This lets the next matched run separate
+authoritative simulation stalls from transport receive/send backlog without
+per-packet journal spam.
 
 ## Required correction
 
