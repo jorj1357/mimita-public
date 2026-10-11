@@ -106,7 +106,10 @@
     "enabled": true,
     "radius": 0.2,
     "height": 0.06,
-    "color": [0.03, 0.03, 0.03],
+    // "color": [0.03, 0.03, 0.03],
+    "color": [0.5, 0.5, 0.5],
+    // "color": [1.0, 1.0, 1.0],
+    // "color": [0.0, 0.0, 0.0],
     "alpha": 1.0,
     "lifetime": 30.0,
     "fadeTime": 5.0,
@@ -114,8 +117,12 @@
     "renderDistance": 1250.0,
     "renderFadeStartDistance": 1000.0,
     "renderFadeEndDistance": 1250.0,
-    "texture": "assets/textureshq/holes1.png",
-    "textureScale": 1.0,
+    "texture": "assets/textureshq/holesbullet4.png",
+    // "textureScale": 5.0,
+    "textureScale": 7.0,
+    // "textureScale": 1.0,
+    // "randomRotationDegrees": 0.0
+    // "randomRotationDegrees": 90.0
     "randomRotationDegrees": 360.0
   },
   "worldCracks": {
@@ -123,32 +130,68 @@
     "count": 5,
     "length": 10.0,
     "thickness": 0.015,
-    "color": [0.1, 0.1, 0.1],
-    "alpha": 0.85,
-    "lifetime": 8.0,
+    // "thickness": 1.0,
+    // "color": [0.1, 0.1, 0.1],
+    // "color": [1.0, 1.0, 1.0],
+    "color": [0.0, 0.0, 0.0],
+    "alpha": 1.0,
+    // "alpha": 0.5,
+    // "alpha": 0.85,
+    "lifetime": 30.0,
     "fadeTime": 2.0,
     "maxCount": 4096,
     "renderDistance": 1250.0,
     "renderFadeStartDistance": 1000.0,
     "renderFadeEndDistance": 1250.0,
-    "texture": "assets/textureshq/crackground1.png",
-    "textureScale": 1.0,
+    // "texture": "assets/textureshq/crackground1.png",
+    // "texture": "assets/textureshq/worldcrack2.png",
+    "texture": "assets/textureshq/worldcrack3.png",
+    // "textureScale": 2.0,
+    "textureScale": 5.0,
+    // "textureScale": 10.0,
+    // "textureScale": 25.0,
     "randomRotationDegrees": 0.0,
+    // "randomRotationDegrees": 360.0,
     "arms": {
       "base_count": 3,
+      // "weapon_force_multiplier": 5.0,
       "weapon_force_multiplier": 0.0,
       "max_count": 12
     },
     "chain": {
       "min_segments": 1,
-      "max_segments": 5,
-      "segment_length_min": 0.2,
-      "segment_length_max": 0.5,
-      "turn_degrees_min": 0.0,
-      "turn_degrees_max": 180.0,
-      "jaggedness": 1.0
+      "max_segments": 10,
+      // "max_segments": 3,
+      // "max_segments": 1,
+      // "max_segments": 2,
+      // "segment_length_min": 1.0,
+      "segment_length_min": 0.1,
+      // "segment_length_min": 0.2,
+      // "segment_length_max": 0.5,
+      // "segment_length_max": 5.0,
+      // "segment_length_max": 1.0,
+      "segment_length_max": 0.1,
+      // "segment_length_max": 0.5,
+      "turn_degrees_min": -50.0,
+      // "turn_degrees_min": -180.0,
+      // "turn_degrees_min": -10.0,
+      // "turn_degrees_min": 150.0,
+      "turn_degrees_max": 50.0,
+      // "turn_degrees_max": 180.0,
+      // "turn_degrees_max": 1.0,
+      // "turn_degrees_max": 10.0,
+      // "turn_degrees_max": 150.0,
+      // "jaggedness": 0.0
+      // "jaggedness": 12.0
+      "jaggedness": 122.0
     },
-    "center_thickness": 0.165,
-    "outer_thickness": 0.10
+    // "center_thickness": 0.05,
+    // "center_thickness": 0.1,
+    "center_thickness": 0.5,
+    // "center_thickness": 0.065,
+    // "outer_thickness": 0.10
+    // "outer_thickness": 0.01
+    // "outer_thickness": 0.1
+    "outer_thickness": 0.5
   }
 }

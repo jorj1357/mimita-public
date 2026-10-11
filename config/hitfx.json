@@ -80,21 +80,24 @@
 
     "directionalShapes": {
         "elongatedSphere": {
-            // "enabled": true,
-            "enabled": false,
+            "enabled": true,
+            // "enabled": false,
             "alignToHitDirection": true,
+            // "alignToHitDirection": false,
             "startTick": 1,
+            // "endTick": 25,
             "endTick": 5,
+            // "endTick": 555,
             "lengthStart": 0.15,
             "lengthEnd": 10.0,
             "radiusStart": 0.08,
-            "radiusEnd": 0.08,
-            "colorStart": [1.0, 1.0, 1.0],
+            "radiusEnd": 1.08,
+            "colorStart": [0.5, 0.5, 0.5],
             "colorEnd": [0.1, 0.35, 1.0],
             "alphaStart": 0.9,
             "alphaEnd": 0.0,
             "brightnessStart": 2.5,
-            "brightnessEnd": 0.0
+            "brightnessEnd": 990.0
         },
 
         "impactDisc": {
