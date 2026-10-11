@@ -22,6 +22,7 @@
 // Used by applyBodypartConfigOverrides to layer per-avatar overrides on
 // top of the global config/bodyparts.json defaults.
 nlohmann::json gAvatarBodypartOverrides;
+bool gAvatarUseModelTransforms = false;
 
 glm::mat4 nodeMatrix(const tinygltf::Node& node)
 {
@@ -181,12 +182,17 @@ void copyCachedModelIntoPlayer(const CachedPlayerModel& cached, Player& player)
     player.modelLoaded = !player.renderMesh.verts.empty();
 }
 
-// Loads config/bodyparts.json and overrides the GLB's rest-pose
-// transforms for each matching body part node.
+// Loads the legacy config/bodyparts.json and avatar overrides for each
+// matching body part node. Custom authored-model avatars bypass this layer.
 static void applyBodypartConfigOverrides(
     std::vector<glm::mat4>& restLocalTransforms,
-    const std::vector<TransformNode>& nodes)
+    const std::vector<TransformNode>& nodes,
+    bool useModelTransforms = false)
 {
+    if (useModelTransforms) {
+        gAvatarBodypartOverrides = nullptr;
+        return;
+    }
     std::ifstream file("config/bodyparts.json");
     if (!file.is_open()) {
         Debug::log(Debug::Category::General,
@@ -559,7 +565,7 @@ bool Player::loadModel(const char* path)
         copyCachedModelIntoPlayer(cached, *this);
 
         // Apply body part config overrides from config/bodyparts.json + avatar overrides
-        applyBodypartConfigOverrides(restLocalTransforms, nodes);
+        applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
         for (int i = 0; i < (int)restLocalTransforms.size(); ++i) {
             perfectPoseSkeleton.restLocalTransforms[i] = restLocalTransforms[i];
             nodes[i].localTransform = restLocalTransforms[i];
@@ -601,7 +607,7 @@ bool Player::loadModel(const char* path)
     cached.valid = true;
 
     // Apply body part config overrides from config/bodyparts.json + avatar overrides
-    applyBodypartConfigOverrides(restLocalTransforms, nodes);
+    applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
     syncPoseSkeletonFromRestLocal(*this);
 
     buildBodyPartCollidersFromModel(model, *this, /*buildRenderMeshes=*/true);
@@ -630,7 +636,7 @@ bool Player::loadModelColliders(const char* path)
     if (cacheIt != cache.end() && cacheIt->second.valid)
     {
         copyCachedModelIntoPlayer(cacheIt->second, *this);
-        applyBodypartConfigOverrides(restLocalTransforms, nodes);
+        applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
         syncPoseSkeletonFromRestLocal(*this);
         updateModelWorldTransforms();
         return !physicalBody.parts.empty();
@@ -649,7 +655,7 @@ bool Player::loadModelColliders(const char* path)
     }
 
     buildNodeHierarchyFromModel(model, *this);
-    applyBodypartConfigOverrides(restLocalTransforms, nodes);
+    applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
     syncPoseSkeletonFromRestLocal(*this);
     buildBodyPartCollidersFromModel(model, *this, /*buildRenderMeshes=*/false);
     updateModelWorldTransforms();
@@ -810,6 +816,7 @@ void Player::requestModelLoad(const std::string& filepath)
     data->resolvedPath = resolveAssetPath(filepath);
     if (!gAvatarBodypartOverrides.is_null())
         data->bodypartOverrides = gAvatarBodypartOverrides;
+    data->useModelTransforms = gAvatarUseModelTransforms;
 
     mPendingModel = data;
     PendingPlayerModel* raw = mPendingModel.get();
@@ -910,11 +917,12 @@ void Player::finalizeModelIfReady()
     }
 
     // Restore bodypart overrides from saved state (in case global was overwritten)
-    if (!d->bodypartOverrides.is_null())
+    if (!d->bodypartOverrides.is_null() && !d->useModelTransforms)
         gAvatarBodypartOverrides = d->bodypartOverrides;
+    gAvatarUseModelTransforms = d->useModelTransforms;
 
     // Apply bodypart config overrides
-    applyBodypartConfigOverrides(restLocalTransforms, nodes);
+    applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
     for (int i = 0; i < (int)restLocalTransforms.size(); ++i) {
         perfectPoseSkeleton.restLocalTransforms[i] = restLocalTransforms[i];
         nodes[i].localTransform = restLocalTransforms[i];

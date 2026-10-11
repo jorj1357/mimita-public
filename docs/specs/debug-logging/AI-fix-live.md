@@ -1,138 +1,170 @@
-2026 10 11 0337 jorj to do exlaplin 
-
-u add logging, run the exe after logs are included, check logs in the events.jsonl, make deciisons  based on those values  like implement fix if its clear, more logging if unclear
-
-2026 10 11 1138 jorj todo  this too
-
-test and ensure that  the damage voluem works, like , starting a real .exe and teleporting to the damage volume and looking at events.jsonl to prove in a live game  it does damage to me with events.jsonl
-
-like mkae this doc more general pretty much  bc it seems kinda just for weapons work 
-
-# Live AI Fix Procedure
+# Live AI fix procedure
 
 Date: 2026-10-11
 
 ## Purpose
 
-This document defines the evidence-first procedure for fixing a gameplay or
-runtime problem while the MiMITA development loop is active. It is for an AI
-agent or developer who needs to determine the first broken owner, make the
-smallest safe change, and prove the change in the real runtime.
+This is the evidence-first procedure for investigating and fixing a gameplay,
+editor, presentation, configuration, network, physics, audio, or runtime
+problem while MiMITA is being developed. It turns a user-visible symptom into
+an owner-level diagnosis, then proves the smallest fix in the real executable.
 
-This is a workflow specification, not a replacement for `AGENTS.md`,
-`docs/ROUTER.md`, the feature specification, or the runtime/build procedures.
+This is a workflow specification. It does not replace `AGENTS.md`,
+`docs/ROUTER.md`, the selected feature specification, architecture documents,
+or build/runtime procedures.
 
 ## Does not
 
-- Treat a successful compile as proof that the feature works.
-- Guess that the executable is stale before tracing the input-to-output path.
+- Treat a successful build, test, or config parse as runtime proof.
+- Guess that the executable is stale before tracing the complete data path.
 - Add a synthetic self-test before observing the real scenario.
-- Use a new hotbar slot as a workaround for a weapon-identity or permission
-  problem.
-- Claim multiplayer, visual, audio, or human acceptance without observing it.
+- Add unmanaged debug files or a feature-specific logging sink.
+- Claim visual, audio, multiplayer, network, or human acceptance without
+  directly observing the relevant result.
+- Change the specification silently to make the existing implementation look
+  correct.
 
-## Required sequence
+## 1. Route the task and freeze the observable failure
 
-### 1. Load the route and define the observable failure
+Read `AGENTS.md`, `docs/ROUTER.md`, the selected specification, related
+architecture, the runtime workflow, the focused skills, and current changelog
+state. Search the repository before proposing a new owner.
 
-Read `AGENTS.md`, `docs/ROUTER.md`, the selected specification and architecture
-documents, the relevant workflow/skill documents, and the current changelog
-state. Write the failure as an observable statement:
+Write the failure in one sentence containing:
 
-> actor, command/input, expected state, actual state, runtime identity, and
-> exact evidence location.
+```text
+actor or screen, input/action, expected state, actual state,
+runtime identity, and exact evidence location
+```
 
-For example: “In sandbox, `equipweapon heavy_shotgun` should equip the Heavy
-Shotgun without changing the 1–9 hotbar; the actual weapon remains unchanged;
-the run is identified by `EVENTS_JSONL_PATH=...`.”
+Examples:
 
-### 2. Find the authoritative live run
+- “Avatar Editor selecting `mimita-boomer-v6.glb` should preserve Blender's
+  node transforms; the preview applies default-body offsets; run identity and
+  journal are not yet known.”
+- “The player enters a real damage volume but health does not decrease; the
+  expected server damage event is absent from the fresh shared journal.”
 
-Use `python devscripts/dev-loop.py --status` and the dev-loop control path to
-identify the current build, client/server processes, profile, and journal. If
-the journal is not known, find it from the exact executable's
-`--versioninfo`; never infer it from a similarly named old run. Do not launch a
-second loop when one already owns the repository/runtime.
+If the expected behavior is not specific enough to name an observable state,
+stop at `NEEDS_SPEC_DECISION` and improve the specification before changing
+code.
 
-### 3. Trace the complete chain
+## 2. Identify the authoritative live run
 
-Follow the real path in order, naming the owner and evidence at every boundary:
+Use the repository dev-loop status/control path to identify the current
+profile, client/server processes, build, generation, and journal. When the
+journal is unknown, run the exact executable's `--versioninfo` and use its
+reported `EVENTS_JSONL_PATH`. Never infer a journal from a similarly named old
+run. Do not launch a competing loop.
 
-`terminal/input -> command handler -> local state change -> logical/native
-slot translation -> outbound packet -> server role/mode/set permission ->
-server accepted/rejected state -> replicated/current weapon -> presentation`
-
-For weapon equip, keep these values distinct:
-
-- weapon identity, such as `heavy_shotgun`;
-- native definition slot, used by the local `WeaponSystem`;
-- logical community slot, used by `equipslot(n)` and network validation;
-- active weapon set/role, which is the authority for permission.
-
-If the desired action is identity-based, prefer `equipweapon <weapon_id>` over
-renumbering the stable 1–9 hotbar. The command must still resolve through the
-active set and must not bypass server authority.
-
-### 4. Add bounded owner-level evidence
-
-If the existing journal cannot identify the first divergence, add or improve a
-`StructuredLogger` event at the owner where the decision is made. Include only
-fields needed to join the event to the run and compare expected with actual:
-
-- run/build/generation or executable identity;
-- tick, local player/client identity, role/mode, and active set;
-- command/input and requested identity or slot;
-- logical slot, native slot, old state, new state;
-- accepted/rejected result and a reason.
-
-Keep the event categorized, rate-limited where appropriate, and hot-reloadable
-under the existing logging configuration. Do not create unmanaged debug files.
-
-### 5. Build and exercise the real scenario
-
-Use the repository-root dev loop as the canonical live build/run path:
+The canonical path is:
 
 ```text
 python devscripts/dev-loop.py
 ```
 
-Use `--status` or the documented control options when a loop is already
-running. Do not manually launch a stale executable or use `build_agent.py` as
-a substitute for live runtime proof. After a code change, capture the exact
-new numbered build executable with `mimita.exe --versioninfo`, record its
-`EVENTS_JSONL_PATH`, then perform the real command/input sequence in the real
-game mode.
+Use the documented status/control options when a loop already owns the
+runtime. Preserve unrelated user-owned processes.
 
-For the weapon-equip case, the acceptance sequence is:
+## 3. Trace the complete input-to-output chain
 
-1. start or join the intended sandbox/role;
-2. issue `equipweapon heavy_shotgun`;
-3. verify the command reports the weapon identity and both slot values;
-4. verify `weapon.equip.command_accepted`, server equip acceptance, and the
-   current weapon agree in `events.jsonl`;
-5. verify the existing 1–9 hotbar mapping did not change.
+Name the owner and evidence at every boundary. Use the route appropriate to
+the feature, not a weapon-specific template:
 
-### 6. Inspect the live journal and decide
+```text
+user input or external event
+ -> command/UI/network entry
+ -> authoritative state/policy decision
+ -> serialization or handoff
+ -> client/server or async boundary
+ -> applied state
+ -> physics/presentation/output
+ -> structured journal and visible result
+```
 
-Read the new run's `events.jsonl` after the scenario. Compare expected and
-actual values and identify the first divergence, not merely the final symptom.
+For each boundary record expected value, actual value, and the first point
+where they diverge. Keep identity, configuration, source selection, and
+presentation as separate values. For an avatar GLB, for example, distinguish
+model path, root name, required body nodes, transform source, authored
+transforms, applied overrides, async completion, and final visible model.
 
-- If the evidence names a specific owner and the proposed change closes that
-  boundary, implement the smallest patch.
-- If the evidence is incomplete or contradictory, improve the owner-level
-  logging and repeat the real scenario.
-- If the server rejects the action by role/set policy, fix the role/set
-  configuration or report the intentional restriction; do not bypass it in the
-  client.
+## 4. Add bounded owner-level evidence
 
-### 7. Report separate evidence
+If the existing journal cannot identify the first divergence, add or improve a
+`StructuredLogger` event at the owner that makes the decision. Include only
+joinable fields:
 
-The completion report must separate:
+- event name, UTC time, process/PID, run/build/generation identity;
+- tick or request/operation ID when applicable;
+- actor/avatar/model/entity identity;
+- input/requested value and resolved value;
+- source/policy, old state, new state, result, and rejection/error reason;
+- the next boundary's handoff or completion state.
 
-- source/configuration change;
-- build/dev-loop identity and result;
-- runtime journal evidence and first-divergence result;
-- human-visible or multiplayer acceptance, if directly observed;
-- remaining limitations or unverified claims.
+Log transitions and bounded samples, not every render frame. Use the existing
+category/filter configuration and flush through canonical `events.jsonl`.
+Do not create a second file. If evidence is still ambiguous, add the next
+smallest owner-level field and repeat the real scenario.
 
-Every repository-touching session ends with exactly one final changelog entry.
+## 5. Run the real scenario before deciding the fix
+
+Publish a newly identified executable through the dev loop after source or
+logging changes. Capture its exact `--versioninfo` output and journal path.
+Exercise the actual user flow: click the editor control, enter gameplay,
+teleport to the damage volume, join a second client, reload a model, or use
+the relevant terminal command. Do not substitute a unit test for a runtime
+behavior that has not been observed.
+
+For an avatar model case, the minimum scenario is:
+
+1. load the target avatar;
+2. select and apply the GLB in the Avatar Editor;
+3. save, reload, and apply it again;
+4. enter the real game with that avatar;
+5. inspect the fresh journal for model selection, validation, transform source,
+   async completion, and runtime application.
+
+For a damage-volume case, the minimum scenario is:
+
+1. start the exact fresh executable;
+2. enter the real map/mode;
+3. move or teleport the player into the volume;
+4. inspect health, volume-contact, damage, and replication events in the same
+   fresh journal.
+
+## 6. Decide from evidence
+
+- If the first divergence names one owner and the intended behavior is clear,
+  implement the smallest fix at that owner.
+- If the journal is incomplete or contradictory, improve logging and repeat
+  the real scenario.
+- If the behavior is an intentional policy restriction, document it instead
+  of bypassing authority.
+- If code and specification disagree, quote the specification, record the
+  disagreement, and either align code or request a human specification
+  decision.
+
+Do not tune downstream visuals, add retries, or rewrite a packet before the
+first missing/incorrect boundary is known.
+
+## 7. Rebuild, rerun, and separate claims
+
+After the change, repeat the same scenario with a newly identified run. Report
+these claims separately:
+
+1. source/configuration change and exact owner;
+2. build/dev-loop identity and build result;
+3. fresh journal path and relevant event values;
+4. first divergence before the fix and closed boundary after it;
+5. directly observed visible, audio, network, or multiplayer acceptance;
+6. human review or limitations still required.
+
+Build success proves compilation/linking only. Journal evidence proves the
+instrumented runtime path. Human acceptance proves the experience.
+
+## Completion
+
+Every repository-touching session creates exactly one final changelog file in
+the current date folder. The changelog records routed documents, focused skill
+results, pre-existing edits, exact source/doc changes, build and runtime
+evidence, regressions if confirmed, and human review still needed.

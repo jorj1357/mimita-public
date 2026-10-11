@@ -102,7 +102,11 @@ static void logAimTransformSnapshot(const Player& player,
     const auto& skeleton = player.perfectPoseSkeleton;
     int rootIndex = -1;
     for (int i = 0; i < (int)skeleton.nodes.size(); ++i) {
-        if (skeleton.nodes[i].name == "plrOrigin") {
+        const std::string& name = skeleton.nodes[i].name;
+        const bool rootName = name == "plrOrigin" ||
+            (name.rfind("plrOrigin.", 0) == 0 && name.size() > 10 &&
+             name.find_first_not_of("0123456789", 10) == std::string::npos);
+        if (rootName) {
             rootIndex = i;
             break;
         }

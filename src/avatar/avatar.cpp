@@ -16,12 +16,14 @@
 #include "entities/player.h"
 #include "world/texture-store.h"
 #include "devtools/terminal.h"
+#include "debug/structured-log.h"
 #include "config/player-settings.h"
 #include "cosmetic-system.h"
 #include "stb_image.h"
 
 // Set by applyToPlayer before loadModel for per-avatar body part overrides
 extern nlohmann::json gAvatarBodypartOverrides;
+extern bool gAvatarUseModelTransforms;
 
 
 
@@ -102,6 +104,7 @@ void AvatarDefinition::clear() {
     bodypartOverrides = nullptr;
     activePreset.clear();
     playerModel.clear();
+    bodyTransformSource = "model";
     textureMode = "legacy_faces";
     atlasPath.clear();
     alphaMode = "blend";
@@ -381,6 +384,8 @@ void avatarToJson(const AvatarDefinition& avatar, json& j) {
     j["cosmetics"] = serializeCosmetics(avatar.cosmetics);
     if (!avatar.activePreset.empty()) j["active_preset"] = avatar.activePreset;
     if (!avatar.playerModel.empty()) j["player_model"] = avatar.playerModel;
+    if (!avatar.playerModel.empty() || avatar.bodyTransformSource != "model")
+        j["body_transform_source"] = avatar.bodyTransformSource;
     if (!avatar.bodypartOverrides.is_null())
         j["bodyparts"] = avatar.bodypartOverrides;
 
@@ -470,6 +475,10 @@ bool AvatarSystem::parseAvatarJson(const std::string& jsonPath, const std::strin
             pm = root["player_model"].get<std::string>();
         if (!pm.empty() && std::filesystem::exists(pm))
             out.playerModel = pm;
+
+        out.bodyTransformSource = root.value("body_transform_source", "model");
+        if (out.bodyTransformSource != "model" && out.bodyTransformSource != "legacy_overrides")
+            return false;
 
         if (root.contains("bodyparts") && root["bodyparts"].is_object())
             out.bodypartOverrides = root["bodyparts"];
@@ -646,6 +655,12 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
             }
         } else {
             printf("[AVATAR] No player_model field; using default player model\n");
+        }
+
+        mAvatar.bodyTransformSource = root.value("body_transform_source", "model");
+        if (mAvatar.bodyTransformSource != "model" && mAvatar.bodyTransformSource != "legacy_overrides") {
+            Terminal::instance().addLog("[AVATAR] Invalid body_transform_source; expected model or legacy_overrides");
+            mAvatar.bodyTransformSource = mAvatar.playerModel.empty() ? "legacy_overrides" : "model";
         }
 
         // ── Per-avatar body part overrides (offset/rotation/scale) ──
@@ -826,6 +841,7 @@ bool AvatarSystem::setPlayerModel(const std::string& path)
 {
     if (path.empty()) {
         mAvatar.playerModel.clear();
+        mAvatar.bodyTransformSource = "legacy_overrides";
         triggerSave();
         return true;
     }
@@ -848,6 +864,7 @@ bool AvatarSystem::setPlayerModel(const std::string& path)
     if (ec || assetPath.empty())
         return false;
     mAvatar.playerModel = assetPath.generic_string();
+    mAvatar.bodyTransformSource = "model";
     triggerSave();
     return true;
 }
@@ -1021,10 +1038,21 @@ std::vector<std::string> AvatarSystem::listPngs(const std::string& avatarName) c
     return result;
 }
 
+static bool isAuthoredRootNode(const std::string& name) {
+    if (name == "plrOrigin") return true;
+    if (name.rfind("plrOrigin.", 0) != 0 || name.size() == 10) return false;
+    for (size_t i = 10; i < name.size(); ++i)
+        if (name[i] < '0' || name[i] > '9') return false;
+    return true;
+}
+
 static bool validatePlayerBodyParts(const Player& player) {
     const char* required[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
     bool allFound = true;
     std::string missing;
+    bool rootFound = false;
+    for (const auto& node : player.perfectPoseSkeleton.nodes)
+        if (isAuthoredRootNode(node.name)) { rootFound = true; break; }
     for (const char* name : required) {
         bool found = false;
         for (const auto& part : player.physicalBody.parts) {
@@ -1035,6 +1063,11 @@ static bool validatePlayerBodyParts(const Player& player) {
             missing += name;
             allFound = false;
         }
+    }
+    if (!rootFound) {
+        if (!missing.empty()) missing += ", ";
+        missing += "plrOrigin[.digits]";
+        allFound = false;
     }
     if (!allFound) {
         printf("[AVATAR ERROR] Avatar player_model failed validation:\n");
@@ -1056,8 +1089,10 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
 
     // Load player model — custom if specified, otherwise reset to default
     if (!mAvatar.playerModel.empty()) {
+        gAvatarUseModelTransforms = mAvatar.bodyTransformSource == "model";
+        gAvatarBodypartOverrides = nullptr;
         printf("[AVATAR] Loading GLB: %s\n", mAvatar.playerModel.c_str());
-        if (!mAvatar.bodypartOverrides.is_null())
+        if (mAvatar.bodyTransformSource == "legacy_overrides" && !mAvatar.bodypartOverrides.is_null())
             gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
         bool modelOk = player.loadModel(mAvatar.playerModel.c_str());
         if (modelOk) {
@@ -1067,9 +1102,26 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
             Terminal::instance().addLog("[AVATAR] Failed to load model: " + mAvatar.playerModel);
         }
     } else {
+        gAvatarUseModelTransforms = false;
         gAvatarBodypartOverrides = nullptr;
+        mAvatar.bodyTransformSource = "legacy_overrides";
         player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
     }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "avatar.model.transforms", mAvatarName,
+        "avatar model transform source applied",
+        (uint32_t)player.movementSimulationTick,
+        nlohmann::json{{"avatar", mAvatarName},
+                       {"model_path", mAvatar.playerModel.empty()
+                           ? "assets/entity/player/default/mimita-char-no-animations-v4.glb"
+                           : mAvatar.playerModel},
+                       {"transform_source", mAvatar.bodyTransformSource},
+                       {"override_count", mAvatar.bodyTransformSource == "model" ? 0 :
+                           (mAvatar.bodypartOverrides.is_object() ? mAvatar.bodypartOverrides.size() : 0)},
+                       {"custom_model", !mAvatar.playerModel.empty()}},
+        __FILE__, __LINE__, __FUNCTION__);
 
     // ── Legacy faces mode (existing working behavior) ─────────
     if (!buildAtlas(player, reloadTextures))

@@ -6,7 +6,8 @@
     "height": 900.0,
 
     "camera": {
-        "position": [5.0, -3.0, 1.2],
+        // "position": [5.0, -3.0, 1.2],
+        "position": [11.0, -5.0, 1.2],
         "target": [0, 0.0, 1.0],
         "fov": 45.0,
         "near": 0.1,
@@ -20,6 +21,8 @@
     "character": {
         // "position": [0.0, 0.0, 0.0],
         "position": [0.0, 0.0, 0.5],
+        // "position": [0.0, 1.0, 0.5],
+        // "position": [0.0, 3.0, 0.5],
         // "rotation_degrees": [0.0, 0.0, 30.0],
         // "rotation_degrees": [0.0, 0.0, -5.0],
         "rotation_degrees": [0.0, 0.0, -75.0],
@@ -32,8 +35,11 @@
 
     "rotation": {
         "enabled": true,
+        // "enabled": false,
         "axis": "z",
-        "degrees_per_second": 5.0,
+        // "degrees_per_second": 25.0,
+        // "degrees_per_second": 5.0,
+        "degrees_per_second": 0.5,
         "clockwise": false,
         "start_angle": 0.0,
         "pause_when_hovered": false,

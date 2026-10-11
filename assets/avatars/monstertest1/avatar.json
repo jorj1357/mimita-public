@@ -1,0 +1,191 @@
+{
+  "advanced": {
+    "head_back": "Screenshot 2026-10-11 164236.png",
+    "head_bottom": "Screenshot 2026-10-11 164236.png",
+    "head_front": "Screenshot 2026-10-11 164236.png",
+    "head_left": "Screenshot 2026-10-11 164236.png",
+    "head_right": "Screenshot 2026-10-11 164236.png",
+    "head_top": "Screenshot 2026-10-11 164236.png",
+    "leftArm_back": "Screenshot 2026-10-11 164236.png",
+    "leftArm_bottom": "Screenshot 2026-10-11 164236.png",
+    "leftArm_front": "Screenshot 2026-10-11 164236.png",
+    "leftArm_left": "Screenshot 2026-10-11 164236.png",
+    "leftArm_right": "Screenshot 2026-10-11 164236.png",
+    "leftArm_top": "Screenshot 2026-10-11 164236.png",
+    "leftLeg_back": "Screenshot 2026-10-11 164236.png",
+    "leftLeg_bottom": "Screenshot 2026-10-11 164236.png",
+    "leftLeg_front": "Screenshot 2026-10-11 164236.png",
+    "leftLeg_left": "Screenshot 2026-10-11 164236.png",
+    "leftLeg_right": "Screenshot 2026-10-11 164236.png",
+    "leftLeg_top": "Screenshot 2026-10-11 164236.png",
+    "rightArm_back": "Screenshot 2026-10-11 164236.png",
+    "rightArm_bottom": "Screenshot 2026-10-11 164236.png",
+    "rightArm_front": "Screenshot 2026-10-11 164236.png",
+    "rightArm_left": "Screenshot 2026-10-11 164236.png",
+    "rightArm_right": "Screenshot 2026-10-11 164236.png",
+    "rightArm_top": "Screenshot 2026-10-11 164236.png",
+    "rightLeg_back": "Screenshot 2026-10-11 164236.png",
+    "rightLeg_bottom": "Screenshot 2026-10-11 164236.png",
+    "rightLeg_front": "Screenshot 2026-10-11 164236.png",
+    "rightLeg_left": "Screenshot 2026-10-11 164236.png",
+    "rightLeg_right": "Screenshot 2026-10-11 164236.png",
+    "rightLeg_top": "Screenshot 2026-10-11 164236.png",
+    "torso_back": "Screenshot 2026-10-11 164236.png",
+    "torso_bottom": "Screenshot 2026-10-11 164236.png",
+    "torso_front": "Screenshot 2026-10-11 164236.png",
+    "torso_left": "Screenshot 2026-10-11 164236.png",
+    "torso_right": "Screenshot 2026-10-11 164236.png",
+    "torso_top": "Screenshot 2026-10-11 164236.png"
+  },
+  "advanced_mode": true,
+  "avatar_id": "local_cb3b330533cf64d6",
+  "body_transform_source": "model",
+  "bodyparts": {
+    "head": {
+      "offset": [
+        0,
+        -2.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftArm": {
+      "offset": [
+        0,
+        0.0,
+        -2.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "leftLeg": {
+      "offset": [
+        0,
+        2.1,
+        2.25
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightArm": {
+      "offset": [
+        0,
+        1.0,
+        0.4
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "rightLeg": {
+      "offset": [
+        0,
+        -0.1,
+        -0.25
+      ],
+      "rotation": [
+        0,
+        180,
+        0
+      ],
+      "scale": [
+        -1,
+        1,
+        1
+      ]
+    },
+    "torso": {
+      "offset": [
+        0,
+        0.4,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "colors": {
+    "head": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "leftLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightArm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "rightLeg": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "torso": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "cosmetics": [],
+  "created_at": "2026-07-10T18:44:15Z",
+  "format_version": 1,
+  "name": "monstertest1",
+  "player_model": "assets/entity/player/monsters/boomer/mimita-boomer-v6.glb",
+  "simple": {
+    "face": "",
+    "pants": "",
+    "shirt": "",
+    "skin": ""
+  },
+  "updated_at": "2026-10-11T17:11:16Z"
+}

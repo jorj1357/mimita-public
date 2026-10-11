@@ -128,6 +128,9 @@ struct AvatarDefinition {
 
     // Optional custom player model GLB path
     std::string playerModel;
+    // "model" preserves custom GLB-authored transforms; "legacy_overrides"
+    // applies config/bodyparts.json and the avatar's bodyparts object.
+    std::string bodyTransformSource = "model";
     // Optional per-avatar body part transform overrides (offset/rotation/scale)
     // This is loaded from avatar.json's "bodyparts" key.
     nlohmann::json bodypartOverrides;

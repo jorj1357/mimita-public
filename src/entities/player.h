@@ -168,6 +168,7 @@ struct PendingPlayerModel {
     std::vector<tinygltf::Image> images;
     int imageCount = 0;
     nlohmann::json bodypartOverrides;
+    bool useModelTransforms = false;
 };
 
 struct AxisLock {
