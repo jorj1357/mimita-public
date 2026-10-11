@@ -665,6 +665,11 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
     // pitch/roll/yaw if an avatar's bind orientation makes the arm point down.
     target = glm::normalize(target * glm::quat(glm::radians(
         aimConfig.rightArmPointingRotationDegrees())));
+    // Weapon recoil is an additive arm response. The base aim target remains
+    // authoritative, while the transient rotation is consumed by the same
+    // physical arm solver instead of being overwritten by an animation pose.
+    target = glm::normalize(target * glm::quat(glm::radians(
+        player.weaponRecoilArmRotation)));
     part.rightArmPointingTarget = target;
     part.hasRightArmPointingTarget = true;
 
@@ -762,7 +767,9 @@ void RagdollModeSystem::applyHybridSprings(RagdollBody& b, float dt)
 // Reduce movement-induced arm sway after joints and collision have finished.
 // The target preserves the intended arm pose relative to the torso's current
 // orientation, rather than pulling toward a stale world-space angle.
-void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b, float dt)
+void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b,
+                                            const Player& player,
+                                            float dt)
 {
     const auto& pc = RagdollModeConfig::instance().data().physicalAim;
     if (b.torsoIndex < 0 || b.torsoIndex >= (int)b.parts.size()) return;
@@ -822,6 +829,16 @@ void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b, float dt)
         } else if (force > 1e-4f) {
             alpha = glm::clamp(
                 1.0f - std::exp(-force * dt), 0.0f, 1.0f);
+        }
+
+        // Hip-fire still has a physical arm response. ADS uses the target
+        // produced by applyRightArmPointMotor above, which already includes
+        // recoil; the non-ADS path layers the same transient on the normal
+        // authored arm target exactly once.
+        if (part.name == "rightArm" && !activelyPointing &&
+            glm::length(player.weaponRecoilArmRotation) > 1e-4f) {
+            target = glm::normalize(target * glm::quat(glm::radians(
+                player.weaponRecoilArmRotation)));
         }
 
         // Normal hybrid sway remains unchanged after RMB is released. While
@@ -975,6 +992,15 @@ void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player
                                     const glm::vec3& aimPosition,
                                     bool pointingWanted)
 {
+    const float armRecovery = std::max(0.0f, player.weaponRecoilArmRecoveryRate);
+    const float armStep = std::max(0.0f, dt) * armRecovery;
+    auto decayArm = [armStep](float& value) {
+        if (value > 0.0f) value = std::max(0.0f, value - armStep);
+        else if (value < 0.0f) value = std::min(0.0f, value + armStep);
+    };
+    decayArm(player.weaponRecoilArmRotation.x);
+    decayArm(player.weaponRecoilArmRotation.y);
+    decayArm(player.weaponRecoilArmRotation.z);
     const auto& cfg = RagdollModeConfig::instance().data();
     const AimBodyConfig& aimConfig = AimBodyConfig::instance();
     const bool hybrid = aimConfig.hybridMode();
@@ -1016,7 +1042,7 @@ void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player
         for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
     if (cfg.worldCollision)
         for (auto& part : b.parts) depenetrateWorld(part.body, world, 2);
-    if (hybrid) stabilizeHybridArms(b, dt);
+    if (hybrid) stabilizeHybridArms(b, player, dt);
     clampAimRanges(player, b, 1.0f);
     solveRotationLimits(1.0f, b);
     tetherAimRoot(player, b, dt);

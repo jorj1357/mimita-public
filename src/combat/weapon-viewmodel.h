@@ -42,9 +42,13 @@ struct WeaponViewModel {
     float mReloadBlend = 0.0f;       // 0=idle, 1=reload_pose (spring target)
     float mReloadBlendCurrent = 0.0f; // spring-smoothed actual value
     float mReloadBlendVelocity = 0.0f;
+    glm::vec3 mRecoilPosition{0.0f};
+    glm::vec3 mRecoilRotation{0.0f};
 
     void loadModel(const std::string& modelPath);
     void syncFromAsset();
+    void notifyShot(const WeaponDefinition& def, bool adsHeld);
+    void clearRecoil();
     void update(const Camera& camera, Player& player, float dt,
                 const WeaponDefinition* def, bool updatePlayerPose = true,
                 const class World* world = nullptr,

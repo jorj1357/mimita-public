@@ -118,6 +118,9 @@ void Player::reset()
     collision.hasWeaponCollisionCapsule = false;
     weaponCollisionCapsule = Capsule{};
     weaponModelTransform = glm::mat4(1.0f);
+    weaponRecoilArmRotation = glm::vec3(0.0f);
+    weaponRecoilArmRecoveryRate = 5.0f;
+    weaponAimDownSights = false;
     weaponCollisionName.clear();
     weaponCollisionDebug = WeaponCollisionRuntimeDebug{};
 

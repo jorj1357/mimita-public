@@ -114,10 +114,11 @@
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
 
-// Optional startup behavior for AI/dev launches. Normal launches leave both
+// Optional startup behavior for AI/dev launches. Normal launches leave these
 // flags false and retain the existing window/console behavior.
 bool gAiLaunchMode = false;
 bool gAiNoConsole = false;
+bool gUnlockCursorOnLaunch = false;
 
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
@@ -220,6 +221,8 @@ int main(int argc, char** argv)
             gAiLaunchMode = true;
         else if (strcmp(argv[i], "--ai-no-console") == 0)
             gAiNoConsole = true;
+        else if (strcmp(argv[i], "--unlock-cursor") == 0)
+            gUnlockCursorOnLaunch = true;
     }
 
     if (gAiNoConsole) {
@@ -365,13 +368,36 @@ int main(int argc, char** argv)
         // headless server. Wait until the room connection and the gameplay
         // world are both ready so commands such as crate_spawn can safely use
         // the local player and camera.
+        const bool startupNeedsWeaponSet = std::any_of(
+            launchOptions.startupCommands.begin(),
+            launchOptions.startupCommands.end(),
+            [](const std::string& command) {
+                return command.rfind("equip", 0) == 0;
+            });
         if (!startupCommandsExecuted && !launchOptions.startupCommands.empty() &&
-            gpMpContext && gpMpContext->connected && gpWorldLoaded && *gpWorldLoaded)
+            gpMpContext && gpMpContext->connected && gpWorldLoaded && *gpWorldLoaded &&
+            (!startupNeedsWeaponSet || gpMpContext->communityWeaponSetId > 0))
         {
             for (const std::string& command : launchOptions.startupCommands)
             {
                 Debug::log(Debug::Category::General,
                            "[STARTUP COMMAND] executing: %s", command.c_str());
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::General,
+                    StructuredLevel::Important,
+                    "startup.command.dispatch",
+                    "startup-command-" + std::to_string(gpMpContext->localPlayerId),
+                    "client_startup_command_ready",
+                    gpMpContext->tick,
+                    {
+                        {"command", command},
+                        {"connected", gpMpContext->connected},
+                        {"game_world_loaded", *gpWorldLoaded},
+                        {"local_player_id", gpMpContext->localPlayerId}
+                    },
+                    __FILE__,
+                    __LINE__,
+                    __func__);
                 Terminal::instance().execute(command);
             }
             startupCommandsExecuted = true;

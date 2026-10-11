@@ -23,11 +23,21 @@ Read these gates before doing anything else:
 
 4. RUNTIME EVIDENCE BEFORE NEW TESTS: For gameplay or user-visible behavior,
    do not create a new synthetic self-test as the first response. Add bounded
-   owner-level StructuredLogger diagnostics, build a newly named executable,
-   run `mimita-<timestamp>.exe --versioninfo` to capture the exact
-   `EVENTS_JSONL_PATH`, exercise the real game or runtime scenario, and inspect
-   the live journal for expected/actual state and the first divergence. Keep
-   unit/component tests only for behavior they genuinely isolate.
+   owner-level StructuredLogger diagnostics, publish a newly identified
+   executable through the dev loop, run that exact `mimita.exe --versioninfo`
+   to capture the `EVENTS_JSONL_PATH`, exercise the real game or runtime
+   scenario, and inspect the live journal for expected/actual state and the
+   first divergence. Keep unit/component tests only for behavior they
+   genuinely isolate.
+
+5. DEV LOOP IS THE LIVE BUILD/RUN AUTHORITY: For live gameplay or debugging
+   fixes, run `python devscripts/dev-loop.py` from the repository root using
+   the appropriate profile. Use its status/control path to reuse an existing
+   loop; do not launch a competing loop, manually run a stale executable, or
+   substitute `build_agent.py` for live runtime evidence. If a cold build is
+   genuinely required by the change, record why, preserve unrelated running
+   processes, and still validate the resulting behavior through the dev-loop
+   runtime journal.
 
 ## Authority and scope
 
@@ -102,5 +112,5 @@ procedures, deployment commands, asset rules, JSON inventories, focused review
 checklists, regression history, release instructions, and examples belong in
 the routed documents, not in this file.
 
-This draft intentionally does not change `AGENTS.md`. It is a proposed compact
-replacement for review and iteration.
+This compact instruction set includes the live dev-loop rule above so that
+build identity, runtime ownership, and user-visible evidence remain coupled.

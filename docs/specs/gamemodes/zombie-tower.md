@@ -26,11 +26,13 @@ you are small
 
 the tower is huge, halloween, old, retro(?), 2000s roblox 2012-2015, based on zombie tower from Nooooooo
 
+its raining, i cant see far, theres fog, its night time, i hear distant monster sounds, ambient sound of monsters and stuff 
+
 as soon as u spawn in the zombie tower song plays, thats #1, then, time goeso n, other songs will play that fit the same vibe e.g. cello, violin, an ancient curse befalls this  cursed place and its only us that can reverse the curse 
 
 there are far too many monsters
 
-your movement is extremely powerful
+your movement is extremely powerful  u can justdash and dodge th emonters monst the time 
 
 your weapons are powerful
 

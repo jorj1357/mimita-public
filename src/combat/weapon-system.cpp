@@ -80,6 +80,11 @@ WeaponSystem::WeaponSystem() {
     printf("[WORLD XH] enabled=%d\n", (int)DebugConfig::WORLD_XH_ENABLED);
 }
 
+void WeaponSystem::notifyShotPresentation(Player& player, const WeaponDefinition& def)
+{
+    mViewModels[slotIndex(def.slot)].notifyShot(def, player.weaponAimDownSights);
+}
+
 const WeaponDefinition* WeaponSystem::getDefForSlot(int slot) const {
     if (slot <= 0) return nullptr;
     for (const auto& pair : WeaponRegistry::instance().all()) {
@@ -122,11 +127,33 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
 
     mShotCooldown = std::max(0.0f, mShotCooldown - dt);
     mShootingTimer = std::max(0.0f, mShootingTimer - dt);
-    mRecoilValue = std::max(0.0f, mRecoilValue - dt * 15.0f);
     mDisturbance = std::max(0.0f, mDisturbance - dt * 8.0f);
 
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
+
+    // Recoil accumulation belongs to the active weapon. Do not carry a
+    // heavy-shotgun spray pattern into another weapon after a switch.
+    const std::string activeWeaponId = def ? def->id : std::string();
+    if (activeWeaponId != mCurrentWeaponId || player.equippedSlot != mCurrentSlot) {
+        mRecoilValue = 0.0f;
+        mRecoilShotAge = 999.0f;
+        mCurrentWeaponId = activeWeaponId;
+        player.weaponRecoilArmRotation = glm::vec3(0.0f);
+        mViewModels[slotIndex(player.equippedSlot)].clearRecoil();
+        camera.weaponRecoilPitch = 0.0f;
+        camera.weaponRecoilYaw = 0.0f;
+    }
+
+    mRecoilShotAge += std::max(0.0f, dt);
+    if (def && def->recoilDefinition.enabled) {
+        if (mRecoilShotAge >= def->recoilDefinition.recoveryDelay)
+            mRecoilValue = std::max(0.0f, mRecoilValue - dt * def->recoilDefinition.recoveryRate);
+    } else {
+        const float recoilRecovery = def && def->customParams.count("recoilRecovery")
+            ? std::max(0.0f, def->customParams.at("recoilRecovery")) : 15.0f;
+        mRecoilValue = std::max(0.0f, mRecoilValue - dt * recoilRecovery);
+    }
 
     if (def && rt) {
         if (rt->isReloading) {
@@ -164,6 +191,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             player.weaponModelTransform = glm::mat4(1.0f);
             mPhysicalAimValid = false;
         } else {
+            mViewModels[idx].recoil = mRecoilValue;
             mViewModels[idx].update(camera, player, dt, def, true, &world);
         }
         if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
@@ -855,8 +883,10 @@ RevolverShotResult WeaponSystem::fire(
         }
         rt->shootEffectTimer = weaponParamOr(*def, "shootPoseTime", 0.12f);
         mShotCooldown = def->fireDelay;
-        WeaponFire::applyRecoil(player, *def,
+        WeaponFire::applyRecoil(camera, player, *def,
             camera.front, mRecoilValue, 1.0f / 60.0f);
+        notifyShotPresentation(player, *def);
+        mRecoilShotAge = 0.0f;
         mDisturbance += 1.2f;
         AnalyticsManager::instance().trackWeaponUsed(def->id);
 
@@ -891,7 +921,7 @@ RevolverShotResult WeaponSystem::fire(
 }
 
 RevolverShotResult WeaponSystem::fireGenericProjectile(
-    const Camera& camera,
+    Camera& camera,
     Player& player,
     NpcSystem& npcs,
     const World& world)
@@ -915,7 +945,9 @@ RevolverShotResult WeaponSystem::fireGenericProjectile(
     const glm::vec3 dir = WeaponFire::computeConfiguredProjectileDirection(
         *def, *rt, glm::normalize(aim.direction));
 
-    WeaponFire::applyRecoil(player, *def, dir, mRecoilValue, 1.0f / 60.0f);
+    WeaponFire::applyRecoil(camera, player, *def, dir, mRecoilValue, 1.0f / 60.0f);
+    notifyShotPresentation(player, *def);
+    mRecoilShotAge = 0.0f;
     WeaponAudio::playShootSound(*def, muzzlePos);
     AnalyticsManager::instance().trackWeaponUsed(def->id);
 
@@ -949,7 +981,7 @@ bool WeaponSystem::removeLocalRocketByFireSerial(uint32_t fireSerial)
 }
 
 RevolverShotResult WeaponSystem::fireHitscan(
-    const Camera& camera,
+    Camera& camera,
     Player& player,
     NpcSystem& npcs,
     const World& world,
@@ -982,7 +1014,9 @@ RevolverShotResult WeaponSystem::fireHitscan(
             remotePlayers, remoteNpcs);
     }
 
-    WeaponFire::applyRecoil(player, *def, result.end - muzzlePos, mRecoilValue, 1.0f / 60.0f);
+    WeaponFire::applyRecoil(camera, player, *def, result.end - muzzlePos, mRecoilValue, 1.0f / 60.0f);
+    notifyShotPresentation(player, *def);
+    mRecoilShotAge = 0.0f;
     mDisturbance += 1.2f;
     AnalyticsManager::instance().trackWeaponUsed(def->id);
 

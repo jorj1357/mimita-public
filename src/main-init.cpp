@@ -24,6 +24,7 @@
 #include "input/input-poll.h"
 #include "input/input-frame.h"
 #include "input/input-commands.h"
+#include "input/mouse-lock.h"
 #include "render/render-world.h"
 #include "render/post-fx.h"
 #include "render/render-player.h"
@@ -170,6 +171,7 @@ extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
 
 extern Renderer* gRenderer;
 extern bool gAiLaunchMode;
+extern bool gUnlockCursorOnLaunch;
 
 void gameInit(int argc, char** argv, Engine& engine)
 {
@@ -250,6 +252,23 @@ void gameInit(int argc, char** argv, Engine& engine)
     NotificationSystem::instance().loadTipsConfig();
     Tips::load();
     NotificationSystem::instance().pushBuildNotice();
+
+    if (gUnlockCursorOnLaunch) {
+        MouseLock::set(engine.window(), false);
+        if (StructuredLogger::instance().shouldLog(
+                StructuredCategory::Gui, StructuredLevel::Important)) {
+            nlohmann::json fields = {
+                {"unlock_cursor_on_launch", true},
+                {"mouse_lock_locked", MouseLock::locked()},
+                {"cursor_mode", glfwGetInputMode(engine.window(), GLFW_CURSOR)}
+            };
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Gui, StructuredLevel::Important,
+                "cursor.launch_policy", "CURSOR_LAUNCH",
+                "Startup flag requested an unlocked gameplay cursor", 0,
+                fields, __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     // Apply the AI/dev launch preference after all normal client startup work
     // has finished. Earlier iconification can be undone by later window/UI

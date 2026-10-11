@@ -150,8 +150,8 @@ The saved entity is shaped like:
 {
   "id": "tower4_zone_a",
   "type": "monster_zone",
-  "position": [12.5, 4.0, -31.0],
-  "size": [1.0, 1.0, 1.0],
+  // "position": [12.5, 4.0, -31.0],
+  // "size": [1.0, 1.0, 1.0],
   "radius": 20.0,
   "enabled": true,
   "visible": true,

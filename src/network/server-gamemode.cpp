@@ -699,6 +699,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.hasCheckpointSpawn = false;
     d.activatedCheckpoints.clear();
     d.activatedBossTriggers.clear();
+    d.damageVolumeNextTick.clear();
     d.bossEncounterActive = false;
     d.activeBossId.clear();
     d.progressionLocked = false;
@@ -3069,6 +3070,54 @@ static void mapEntityRuntimeTick(ServerGamemodeState& d, SOCKET sock,
             Debug::warn(Debug::Category::Duel,
                 "[CHECKPOINT] reached id=%s pos=(%.1f %.1f %.1f) tick=%u\n",
                 e.id.c_str(), e.position.x, e.position.y, e.position.z, tick);
+        } else if (e.type == "damage_volume" && e.damage > 0) {
+            auto& nextTick = d.damageVolumeNextTick[e.id];
+            if (tick < nextTick) continue;
+
+            bool hitAny = false;
+            int hitPlayers = 0;
+            int hitNpcs = 0;
+            int killedPlayers = 0;
+
+            for (auto& kv : players) {
+                ServerPlayer& p = kv.second;
+                if (p.dead || !mapEntityContainsPoint(e, p.pos)) continue;
+
+                const ServerDamageResult result = applyServerDamage(
+                    players, p, 0, e.damage, glm::vec3(0.0f),
+                    ServerDamageSource::Environment);
+                if (!result.applied) continue;
+
+                queueServerDamageConfirmedEvent(
+                    sock, players, tick, totalPacketsOut, 0, p, e.damage,
+                    result, p.pos, glm::vec3(0.0f), glm::vec3(0.0f),
+                    ServerDamageSource::Environment, NETWORK_WEAPON_NONE);
+                hitAny = true;
+                ++hitPlayers;
+                if (result.killed) ++killedPlayers;
+            }
+
+            for (auto& kv : npcs) {
+                ServerNpc& n = kv.second;
+                if (n.health <= 0 || !mapEntityContainsPoint(e, n.pos)) continue;
+                n.health = std::max(0, n.health - e.damage);
+                hitAny = true;
+                ++hitNpcs;
+            }
+
+            if (hitAny) {
+                nextTick = tick + static_cast<uint32_t>(std::max(1, e.damageIntervalTicks));
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "damage-volume.damage", e.id,
+                    "actor took authored volume damage", tick,
+                    nlohmann::json{{"map", d.mapId}, {"entity_id", e.id},
+                                   {"damage_type", e.damageType},
+                                   {"damage", e.damage},
+                                   {"players_hit", hitPlayers},
+                                   {"npcs_hit", hitNpcs},
+                                   {"players_killed", killedPlayers}});
+            }
         } else if (e.type == "boss_trigger" && d.activatedBossTriggers.count(e.id) == 0) {
             if (!mapEntityHasLivePlayer(e, players)) continue;
             d.activatedBossTriggers.insert(e.id);

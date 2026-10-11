@@ -104,6 +104,7 @@ private:
     float mShotCooldown = 0.0f;
     float mShootingTimer = 0.0f;
     float mRecoilValue = 0.0f;
+    float mRecoilShotAge = 999.0f;
     float mDisturbance = 0.0f;
 
     std::string mCurrentWeaponId;
@@ -122,7 +123,7 @@ private:
     int mTrailTick = 0;
 
     RevolverShotResult fireHitscan(
-        const Camera& camera,
+        Camera& camera,
         Player& player,
         NpcSystem& npcs,
         const World& world,
@@ -141,7 +142,7 @@ private:
         const World& world,
         const std::unordered_map<uint32_t, Player>* remotePlayers);
     RevolverShotResult fireGenericProjectile(
-        const Camera& camera,
+        Camera& camera,
         Player& player,
         NpcSystem& npcs,
         const World& world);
@@ -149,4 +150,5 @@ private:
     WeaponRuntime* getCurrentRuntime(Player& player);
 
     int slotIndex(int slot) const { return std::max(0, std::min(slot, MAX_SLOTS - 1)); }
+    void notifyShotPresentation(Player& player, const WeaponDefinition& def);
 };

@@ -2,6 +2,7 @@
   // "alpha": 255,
   "alpha": 200,
   "blue": 255,
+  // "blue": 0,
   "dot": false,
   "dynamic": false,
   "enabled": true,

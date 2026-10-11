@@ -32,6 +32,7 @@ using json = nlohmann::json;
 #include "network/disagreement-visuals.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "entities/player-animation-config.h"
 
 namespace {
@@ -99,7 +100,28 @@ static int nativeSlotForCommunitySlot(int slot)
         ? MP_CONTEXT.communityWeaponSetId : 1;
     const auto* id = cfg.weaponForSlot(weaponSetId, slot);
     const auto* def = id ? WeaponRegistry::instance().get(*id) : nullptr;
-    return def ? def->slot : (MP_CONTEXT.communityWeaponSetId > 0 ? -1 : slot);
+    const int nativeSlot = def ? def->slot
+        : (MP_CONTEXT.communityWeaponSetId > 0 ? -1 : slot);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons,
+        StructuredLevel::Important,
+        "weapon.equip.slot_resolve",
+        "terminal-slot-" + std::to_string(MP_CONTEXT.tick),
+        nativeSlot > 0 ? "logical_slot_resolved" : "logical_slot_unavailable",
+        MP_CONTEXT.tick,
+        {
+            {"command", "equipslot"},
+            {"requested_logical_slot", slot},
+            {"weapon_set_id", weaponSetId},
+            {"mapped_weapon_id", id ? *id : ""},
+            {"resolved_native_slot", nativeSlot},
+            {"community_set_known", MP_CONTEXT.communityWeaponSetId > 0},
+            {"local_player_id", MP_CONTEXT.localPlayerId}
+        },
+        __FILE__,
+        __LINE__,
+        __func__);
+    return nativeSlot;
 }
 
 void unequipAndSync(Player& player, WeaponSystem& weapons)
@@ -123,6 +145,34 @@ void equipSlotToggleAndSync(Player& player, WeaponSystem& weapons, int nativeSlo
     GetPlayerSettings().equippedSlot = nativeSlot;
     SavePlayerSettings();
     Terminal::instance().addLog("[INVENTORY] equipped slot " + std::to_string(nativeSlot));
+}
+
+void logWeaponEquipCommand(const char* eventName,
+                           StructuredLevel level,
+                           const std::string& reason,
+                           const std::string& weaponId,
+                           int logicalSlot,
+                           int nativeSlot)
+{
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons,
+        level,
+        eventName,
+        "terminal-equip-" + std::to_string(MP_CONTEXT.tick),
+        reason,
+        MP_CONTEXT.tick,
+        {
+            {"command", "equipweapon"},
+            {"weapon_id", weaponId},
+            {"logical_slot", logicalSlot},
+            {"native_slot", nativeSlot},
+            {"weapon_set_id", MP_CONTEXT.communityWeaponSetId},
+            {"local_player_id", MP_CONTEXT.localPlayerId},
+            {"multiplayer_active", MP_CONTEXT.active}
+        },
+        __FILE__,
+        __LINE__,
+        __func__);
 }
 
 } // namespace
@@ -436,12 +486,83 @@ void registerWeaponCommands()
         }
     });
 
+    // Equip by stable weapon identity. This deliberately does not require a
+    // new hotbar slot; the normal network tick translates the equipped
+    // definition back to the active community set's logical slot.
+    Terminal::instance().registerCommand({
+        "equipweapon", "Equip a weapon by ID without changing hotbar slots", "equipweapon <weapon_id>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[INVENTORY] usage: equipweapon <weapon_id>");
+                logWeaponEquipCommand("weapon.equip.command_rejected",
+                                      StructuredLevel::Errors,
+                                      "missing_weapon_id", "", -1, -1);
+                return;
+            }
+
+            const std::string& weaponId = args[1];
+            const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+            if (!def) {
+                Terminal::instance().addLog("[INVENTORY] unknown weapon: " + weaponId);
+                logWeaponEquipCommand("weapon.equip.command_rejected",
+                                      StructuredLevel::Errors,
+                                      "unknown_weapon_id", weaponId, -1, -1);
+                return;
+            }
+
+            int logicalSlot = -1;
+            if (MP_CONTEXT.communityWeaponSetId > 0) {
+                auto& config = MimitaNet::CommunityServerConfig::instance();
+                if (config.weaponSets().empty()) config.load();
+                logicalSlot = config.slotForWeapon(
+                    MP_CONTEXT.communityWeaponSetId, def->id);
+                if (logicalSlot <= 0) {
+                    Terminal::instance().addLog(
+                        "[INVENTORY] weapon not available in the active weapon set: " + def->id);
+                    logWeaponEquipCommand("weapon.equip.command_rejected",
+                                          StructuredLevel::Errors,
+                                          "weapon_not_in_active_set", def->id, -1, def->slot);
+                    return;
+                }
+            }
+
+            Player& player = THE_PLAYER;
+            WeaponSystem& weapons = THE_WEAPONS;
+            equipSlotAndSync(player, weapons, def->slot);
+            GetPlayerSettings().equippedSlot = def->slot;
+            SavePlayerSettings();
+            Terminal::instance().addLog(
+                "[INVENTORY] equipped " + def->id +
+                " (logical slot " + std::to_string(logicalSlot) +
+                ", native slot " + std::to_string(def->slot) + ")");
+            logWeaponEquipCommand("weapon.equip.command_accepted",
+                                  StructuredLevel::Important,
+                                  "weapon_id_resolved_and_equipped",
+                                  def->id, logicalSlot, def->slot);
+        }
+    });
+
     // Register equipslot10 through equipslot31 for higher slots
     for (int keySlot = 10; keySlot <= 31; ++keySlot) {
         std::string name = "equipslot" + std::to_string(keySlot);
         Terminal::instance().registerCommand({
             name, "Equip inventory slot " + std::to_string(keySlot), name,
             [keySlot](const std::vector<std::string>&) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Weapons,
+                    StructuredLevel::Important,
+                    "weapon.equip.slot_handler",
+                    "terminal-slot-handler-" + std::to_string(MP_CONTEXT.tick),
+                    "fixed_logical_slot_handler_entered",
+                    MP_CONTEXT.tick,
+                    {
+                        {"requested_logical_slot", keySlot},
+                        {"weapon_set_id", MP_CONTEXT.communityWeaponSetId},
+                        {"local_player_id", MP_CONTEXT.localPlayerId}
+                    },
+                    __FILE__,
+                    __LINE__,
+                    __func__);
                 Player& player = THE_PLAYER;
                 WeaponSystem& weapons = THE_WEAPONS;
                 const int nativeSlot = nativeSlotForCommunitySlot(keySlot);

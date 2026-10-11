@@ -215,6 +215,46 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonString(root, "pose_id", def.poseId);
 }
 
+void applyWeaponRecoilJson(WeaponDefinition& def, const json& root)
+{
+    const char* keyName = root.contains("recoil_definition")
+        ? "recoil_definition" : "recoil";
+    if (!root.contains(keyName) || !root[keyName].is_object())
+        return;
+    const json& r = root[keyName];
+    weaponJsonBool(r, "enabled", def.recoilDefinition.enabled);
+    weaponJsonFloat(r, "pitch_per_shot", def.recoilDefinition.pitchPerShot);
+    weaponJsonFloat(r, "yaw_per_shot", def.recoilDefinition.yawPerShot);
+    weaponJsonFloat(r, "roll_per_shot", def.recoilDefinition.rollPerShot);
+    weaponJsonFloat(r, "accumulation_per_shot", def.recoilDefinition.accumulationPerShot);
+    weaponJsonFloat(r, "max_accumulation", def.recoilDefinition.maxAccumulation);
+    weaponJsonFloat(r, "recovery_delay", def.recoilDefinition.recoveryDelay);
+    weaponJsonFloat(r, "recovery_rate", def.recoilDefinition.recoveryRate);
+    weaponJsonFloat(r, "camera_scale", def.recoilDefinition.cameraScale);
+    weaponJsonFloat(r, "camera_ads_scale", def.recoilDefinition.cameraAdsScale);
+    weaponJsonFloat(r, "camera_recovery_rate", def.recoilDefinition.cameraRecoveryRate);
+    weaponJsonFloat(r, "viewmodel_back_per_shot", def.recoilDefinition.viewmodelBackPerShot);
+    weaponJsonFloat(r, "viewmodel_pitch_per_shot", def.recoilDefinition.viewmodelPitchPerShot);
+    weaponJsonFloat(r, "viewmodel_yaw_per_shot", def.recoilDefinition.viewmodelYawPerShot);
+    weaponJsonFloat(r, "viewmodel_roll_per_shot", def.recoilDefinition.viewmodelRollPerShot);
+    weaponJsonFloat(r, "viewmodel_recovery_rate", def.recoilDefinition.viewmodelRecoveryRate);
+    weaponJsonFloat(r, "viewmodel_ads_scale", def.recoilDefinition.viewmodelAdsScale);
+    weaponJsonFloat(r, "arm_pitch_per_shot", def.recoilDefinition.armPitchPerShot);
+    weaponJsonFloat(r, "arm_yaw_per_shot", def.recoilDefinition.armYawPerShot);
+    weaponJsonFloat(r, "arm_roll_per_shot", def.recoilDefinition.armRollPerShot);
+    weaponJsonFloat(r, "arm_recovery_rate", def.recoilDefinition.armRecoveryRate);
+    weaponJsonFloat(r, "arm_ads_scale", def.recoilDefinition.armAdsScale);
+
+    auto& rdef = def.recoilDefinition;
+    rdef.accumulationPerShot = std::max(0.0f, rdef.accumulationPerShot);
+    rdef.maxAccumulation = std::max(0.0f, rdef.maxAccumulation);
+    rdef.recoveryDelay = std::max(0.0f, rdef.recoveryDelay);
+    rdef.recoveryRate = std::max(0.0f, rdef.recoveryRate);
+    rdef.cameraRecoveryRate = std::max(0.0f, rdef.cameraRecoveryRate);
+    rdef.viewmodelRecoveryRate = std::max(0.0f, rdef.viewmodelRecoveryRate);
+    rdef.armRecoveryRate = std::max(0.0f, rdef.armRecoveryRate);
+}
+
 void applyWeaponProjectileImpactJson(WeaponDefinition& def, const json& root)
 {
     // Top-level keys win; custom_params act as a fallback, matching knockback.
@@ -307,6 +347,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
         return;
     applyWeaponIdentityJson(def, root);
     applyWeaponStatsJson(def, root);
+    applyWeaponRecoilJson(def, root);
     weaponJsonBehaviorType(root, def);
     applyWeaponExecutionType(def);
     applyWeaponSoundJson(def, root);

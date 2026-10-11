@@ -100,6 +100,9 @@ void engineTickCombat(Engine& engine, float dt)
     auto& gReplayPlayer = REPLAY_PLAYER;
     auto& gReplayFactory = REPLAY_FACTORY;
 
+    player.weaponAimDownSights =
+        glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
     { MIMITA_PERF_SCOPE("Combat::HitResolve");

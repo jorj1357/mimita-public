@@ -47,5 +47,16 @@
     "start_alpha": 1.0,
     "end_alpha": 0.15,
     "color": [0.18, 0.55, 1.0]
+  },
+  "heavy_shotgun": {
+    "enabled": true,
+    "thickness": 0.3,
+    "end_thickness": 0.3,
+    "lifetime": 0.34,
+    "scale": 0.3,
+    "end_scale": 0.05,
+    "start_alpha": 0.9,
+    "end_alpha": 0.9,
+    "color": [1.0, 0.98, 0.95]
   }
 }

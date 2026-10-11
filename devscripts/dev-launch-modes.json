@@ -67,7 +67,7 @@
       "map": "dust2cyberiav4"
     },
       "8": {
-      "name": "zombie towerrrrr",
+      "name": "zombie towerrrrr DONT USE THIS FOR TEDSTING 2026 10 11 1146 jorj",
       "server_args": [
         "--mode",
         "zombie_tower",
@@ -75,7 +75,10 @@
       "zombie_tower",
         "--no-npcs"
       ],
-      "client_args": [],
+      "client_args": [
+        "--startup-command",
+        "teleport -1263.483154296875,-820.2572021484375,379.64031982421875"
+      ],
       "map": "zombietower4"
     },
        "9": {
@@ -93,11 +96,19 @@
      "10": {
       "name": "zombie towerrrrr no npcs",
       "server_args": [
+        "--mode",
+        "zombie_tower",
+        "--gamemode",
+        "zombie_tower",
         "--no-npcs"
       ],
       "client_args": [
         "--startup-command",
-        "help"
+        "hex",
+        "--startup-command",
+        "teleport -1263.483154296875,-820.2572021484375,379.64031982421875",
+        "--startup-command",
+        "npc_delete_all"
       ],
       "map": "zombietower4"
     }

@@ -206,6 +206,17 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
 
     loadModel(modelPath);
 
+    if (def && def->recoilDefinition.enabled) {
+        const float recovery = std::max(0.0f, def->recoilDefinition.viewmodelRecoveryRate);
+        const float step = std::max(0.0f, dt) * recovery;
+        auto decay = [step](float& value) {
+            if (value > 0.0f) value = std::max(0.0f, value - step);
+            else if (value < 0.0f) value = std::min(0.0f, value + step);
+        };
+        decay(mRecoilPosition.x); decay(mRecoilPosition.y); decay(mRecoilPosition.z);
+        decay(mRecoilRotation.x); decay(mRecoilRotation.y); decay(mRecoilRotation.z);
+    }
+
     // Expose the weapon render-mesh triangles through the one shared CPU-only
     // actor loader, so the actor-triangle collision owner can consume the same
     // geometry the renderer draws. Gated by the existing mesh-collision switch
@@ -365,11 +376,6 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             else if (def)
                 isReloading = (player.networkWeaponState & MimitaNet::NET_WEAPON_STATE_RELOADING) != 0;
 
-            // Fire animation timer
-            if (hasConfig && vmcfg->hasFireAnim && recoil > recoil * 0.5f && !isReloading) {
-                // Detected a fire event (recoil snapped up)
-                mFireTimer = vmcfg->fireAnim.duration;
-            }
             mFireTimer = std::max(0.0f, mFireTimer - dt);
 
             // Reload pose blend target
@@ -415,6 +421,11 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                            def ? def->id.c_str() : "?", b);
                 }
             }
+
+            weaponTransform = glm::translate(weaponTransform, mRecoilPosition);
+            weaponTransform = glm::rotate(weaponTransform, glm::radians(mRecoilRotation.x), glm::vec3(1,0,0));
+            weaponTransform = glm::rotate(weaponTransform, glm::radians(mRecoilRotation.y), glm::vec3(0,1,0));
+            weaponTransform = glm::rotate(weaponTransform, glm::radians(mRecoilRotation.z), glm::vec3(0,0,1));
         }
 
         muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
@@ -468,6 +479,10 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                     extraTransform = glm::rotate(extraTransform, glm::radians(rpRot.y), glm::vec3(0,1,0));
                     extraTransform = glm::rotate(extraTransform, glm::radians(rpRot.z), glm::vec3(0,0,1));
                 }
+                extraTransform = glm::translate(extraTransform, mRecoilPosition);
+                extraTransform = glm::rotate(extraTransform, glm::radians(mRecoilRotation.x), glm::vec3(1,0,0));
+                extraTransform = glm::rotate(extraTransform, glm::radians(mRecoilRotation.y), glm::vec3(0,1,0));
+                extraTransform = glm::rotate(extraTransform, glm::radians(mRecoilRotation.z), glm::vec3(0,0,1));
             }
             player.weaponLocalToArm = armToWeapon * extraTransform;
             player.weaponGripLocal = colGrip;
@@ -478,24 +493,30 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     }
 
     DebugVis::recordMovement(player.pos, player.externalImpulse * 0.1f, "weapon-recoil-impulse");
-
-    if (def && player.equippedSlot == def->slot && recoil > 0.01f) {
-        for (PhysicalBodyPart& part : player.physicalBody.parts) {
-            if (part.name == "rightArm") {
-                part.pose.rotationEuler.x -= recoil * 4.0f;
-                part.pose.translation.y -= recoil * 0.015f;
-                part.pose.translation.z += recoil * 0.02f;
-                break;
-            }
-            if (part.name == "leftArm") {
-                part.pose.rotationEuler.x -= recoil * 2.0f;
-                part.pose.translation.z += recoil * 0.01f;
-                break;
-            }
-        }
-    }
-    recoil = std::max(0.0f, recoil - dt * 15.0f);
     disturbance = std::max(0.0f, disturbance - dt * 8.0f);
+}
+
+void WeaponViewModel::notifyShot(const WeaponDefinition& def, bool adsHeld)
+{
+    if (def.recoilDefinition.enabled) {
+        const auto& r = def.recoilDefinition;
+        const float scale = adsHeld ? r.viewmodelAdsScale : 1.0f;
+        // Viewmodel local +Y is the barrel direction, so recoil travels -Y.
+        mRecoilPosition.y -= r.viewmodelBackPerShot * scale;
+        mRecoilRotation += glm::vec3(
+            r.viewmodelPitchPerShot,
+            r.viewmodelYawPerShot,
+            r.viewmodelRollPerShot) * scale;
+    }
+    const WeaponViewModelConfig* vmcfg = WeaponConfig::instance().get(def.id);
+    if (vmcfg && vmcfg->hasFireAnim)
+        mFireTimer = vmcfg->fireAnim.duration;
+}
+
+void WeaponViewModel::clearRecoil()
+{
+    mRecoilPosition = glm::vec3(0.0f);
+    mRecoilRotation = glm::vec3(0.0f);
 }
 
 void WeaponViewModel::render(const Camera& camera, const Player& player, int equippedSlot) const {

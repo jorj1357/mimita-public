@@ -241,6 +241,9 @@ static void initAudioOnce()
     const char* combatSounds[] = {
         "revolvershoot", "revolverreload", "revolverchamber",
         "shotgunshoot", "shotgunreload",
+        "weapon/heavyshotgun/heavyshotgunfire",
+        "weapon/heavyshotgun/heavyshotgunreload",
+        "weapon/heavyshotgun/heavyshotgunequip",
         "godballhit",
         "swordswordhit1", "swordswordhit2", "swordswordhit3", "swordswordhit4",
         "weapon/hafs/hafsequip", "weapon/hafs/hafsswing", "weapon/hafs/hafslunge",

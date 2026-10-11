@@ -8,15 +8,17 @@
 #include "config/weapon-hitfx-config.h"
 #include "combat/weapon-execution.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "effects/hit-effects.h"
 #include "combat/death-system.h"
 #include "devtools/terminal.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "camera.h"
 
 namespace WeaponFire {
 
-void applyRecoil(Player& shooter, const WeaponDefinition& def,
+void applyRecoil(Camera& camera, Player& shooter, const WeaponDefinition& def,
                  const glm::vec3& shotDirection, float& inOutRecoil, float dt) {
     const PlayerSettings& cfg = GetPlayerSettings();
     const auto& sc = SizeScalingConfig::instance().data();
@@ -38,15 +40,71 @@ void applyRecoil(Player& shooter, const WeaponDefinition& def,
     shooter.externalImpulse.z += recoilStrength * (def.shooterKnockbackVertical > 0.0f
         ? def.shooterKnockbackVertical
         : cfg.weaponRecoilUpKick * 0.01f);
-    inOutRecoil = std::min(inOutRecoil + def.recoil * 0.25f * sc.scale(1.0f, sc.recoilExponent, ss), 8.0f * sc.scale(1.0f, sc.recoilExponent, ss));
+    float shotRecoil = 0.0f;
+    float cameraKick = 0.0f;
+    float cameraYawKick = 0.0f;
+    bool typedRecoil = def.recoilDefinition.enabled;
+    if (typedRecoil) {
+        const auto& r = def.recoilDefinition;
+        const float adsScale = shooter.weaponAimDownSights ? r.cameraAdsScale : 1.0f;
+        shotRecoil = r.accumulationPerShot * sc.scale(1.0f, sc.recoilExponent, ss);
+        inOutRecoil += shotRecoil;
+        if (r.maxAccumulation > 0.0f)
+            inOutRecoil = std::min(inOutRecoil, r.maxAccumulation * sc.scale(1.0f, sc.recoilExponent, ss));
+        cameraKick = r.pitchPerShot * r.cameraScale * adsScale;
+        cameraYawKick = r.yawPerShot * r.cameraScale * adsScale;
+        shooter.weaponRecoilArmRotation += glm::vec3(
+            -r.armPitchPerShot,
+            r.armYawPerShot,
+            r.armRollPerShot) * (shooter.weaponAimDownSights ? r.armAdsScale : 1.0f);
+        shooter.weaponRecoilArmRecoveryRate = r.armRecoveryRate;
+    } else {
+        const float recoilAccumulation = def.customParams.count("recoilAccumulation")
+            ? std::max(0.0f, def.customParams.at("recoilAccumulation")) : 1.0f;
+        const float recoilScale = std::max(0.0f, def.recoil - 1.0f);
+        shotRecoil = std::clamp(recoilScale * 0.01f * recoilAccumulation, 0.0f, 4.0f);
+        inOutRecoil += shotRecoil * sc.scale(1.0f, sc.recoilExponent, ss);
+        cameraKick = std::clamp(shotRecoil * 1.25f + inOutRecoil * 0.08f, 0.0f, 10.0f);
+    }
+
+    if (cameraKick > 0.0f || cameraYawKick != 0.0f) {
+        const glm::vec3 viewRightRaw = glm::cross(camera.front, glm::vec3(0.0f, 0.0f, 1.0f));
+        const float viewRightLength = glm::length(viewRightRaw);
+        if (viewRightLength > 0.001f) {
+            const glm::vec3 viewRight = viewRightRaw / viewRightLength;
+            const float directionLength = glm::length(shotDirection);
+            const float lateral = directionLength > 0.001f
+                ? glm::dot(shotDirection / directionLength, viewRight) : 0.0f;
+            if (typedRecoil)
+                camera.addWeaponRecoil(cameraKick, cameraYawKick - lateral * cameraKick * 0.18f);
+            else
+                camera.addPunch(cameraKick, -lateral * cameraKick * 0.18f);
+        }
+    }
 
     if (DebugConfig::DEBUG_RECOIL)
         Debug::log(Debug::Category::General,
-            "[RECOIL] impulse=(%.3f %.3f %.3f) mag=%.1f\n",
-            recoilDir.x * recoilStrength,
-            recoilDir.y * recoilStrength,
-            recoilStrength * cfg.weaponRecoilUpKick * 0.01f,
-            recoilStrength);
+            "[RECOIL] weapon=%s input=%.2f typed=%d shot=%.2f accumulated=%.2f camera=(%.2f %.2f) arm=(%.2f %.2f %.2f)\n",
+            def.id.c_str(), def.recoil, (int)typedRecoil, shotRecoil, inOutRecoil,
+            cameraKick, cameraYawKick,
+            shooter.weaponRecoilArmRotation.x,
+            shooter.weaponRecoilArmRotation.y,
+            shooter.weaponRecoilArmRotation.z);
+
+    if (StructuredLogger::instance().shouldLog(
+            StructuredCategory::Weapons, StructuredLevel::Important)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "weapon.recoil.shot", def.id, "shot-accepted", 0,
+            nlohmann::json{
+                {"typed", typedRecoil}, {"ads", shooter.weaponAimDownSights},
+                {"shot_recoil", shotRecoil}, {"accumulated_recoil", inOutRecoil},
+                {"camera_pitch", cameraKick}, {"camera_yaw", cameraYawKick},
+                {"arm_pitch", shooter.weaponRecoilArmRotation.x},
+                {"arm_yaw", shooter.weaponRecoilArmRotation.y},
+                {"arm_roll", shooter.weaponRecoilArmRotation.z}}
+        );
+    }
 }
 
 int applyDamageToEntity(const DamageContext& ctx, Npc& victim,

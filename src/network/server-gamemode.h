@@ -270,6 +270,8 @@ struct ServerGamemodeState
     std::unordered_set<std::string> activatedCheckpoints;
     // boss_trigger latches, the active encounter, and its spawned NPC owner.
     std::unordered_set<std::string> activatedBossTriggers;
+    // Per authored damage-volume cadence: entity id -> next tick allowed to hit.
+    std::unordered_map<std::string, uint32_t> damageVolumeNextTick;
     bool bossEncounterActive = false;
     std::string activeBossId;
     uint32_t activeBossNpcId = 0;

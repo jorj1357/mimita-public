@@ -156,9 +156,17 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
             bodyContact && (partInto > 0.0f || penetration > 0.0f);
         if (embedded && cfg.bounceMinPush() > 0.0f)
         {
+            if (bodyContact &&
+                p.collision.rootBounceAppliedTick == p.movementSimulationTick)
+            {
+                projectVelocityAgainstNormal(p, normal);
+                return;
+            }
             const float retention = 1.0f - cfg.bounceFriction();
             const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);
             p.vel = tangent * retention + normal * cfg.bounceMinPush();
+            if (bodyContact)
+                p.collision.rootBounceAppliedTick = p.movementSimulationTick;
             p.collision.bounceCooldown = cfg.bounceCooldown();
             return;
         }
@@ -168,23 +176,31 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
 
     const float maxInto = cfg.bounceMaxSpeed();
     const float retention = 1.0f - cfg.bounceFriction();
+    const bool rootBounceAlreadyApplied = bodyContact &&
+        p.collision.rootBounceAppliedTick == p.movementSimulationTick;
     for (glm::vec3* v : velocities)
     {
         float into = -glm::dot(*v, normal);
         if (into <= 0.0f)
             continue;
         glm::vec3 tangent = *v - normal * glm::dot(*v, normal);
-        *v = tangent * retention + normal * (std::min(into, maxInto) * strength);
+        if (!rootBounceAlreadyApplied)
+            *v = tangent * retention + normal * (std::min(into, maxInto) * strength);
+        else
+            *v = tangent * retention;
     }
 
     // Part-driven push: the moving limb/weapon is the dominant impact, so give
     // the root body an outward velocity along the surface normal.
-    if (partInto > totalInto)
+    if (partInto > totalInto && !rootBounceAlreadyApplied)
     {
         const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);
         p.vel = tangent * retention +
                 normal * (std::min(partInto, maxInto) * strength);
     }
+
+    if (bodyContact)
+        p.collision.rootBounceAppliedTick = p.movementSimulationTick;
 
     p.collision.bounceCooldown = cfg.bounceCooldown();
 }

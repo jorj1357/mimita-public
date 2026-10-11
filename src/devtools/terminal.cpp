@@ -810,6 +810,31 @@ void Terminal::executeInternal(const std::string& input, int aliasDepth) {
                 while (iss >> arg)
                     args.push_back(arg);
 
+                const bool isWeaponSlotCommand =
+                    cmdName.rfind("equipslot", 0) == 0;
+                if (isWeaponSlotCommand) {
+                    std::string argumentText;
+                    for (const std::string& value : args) {
+                        if (!argumentText.empty()) argumentText += " ";
+                        argumentText += value;
+                    }
+                    const RuntimeTickSnapshot ticks = captureRuntimeTicks();
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Weapons,
+                        StructuredLevel::Important,
+                        "terminal.command.dispatch",
+                        "terminal-command-" + std::to_string(ticks.clientTick),
+                        "weapon_slot_command_received",
+                        static_cast<uint32_t>(ticks.clientTick),
+                        {
+                            {"command", cmdName},
+                            {"arguments", argumentText}
+                        },
+                        __FILE__,
+                        __LINE__,
+                        __func__);
+                }
+
                 auto it = mCommands.find(cmdName);
                 if (it == mCommands.end()) {
                     addLog("[ERROR] unknown command: " + cmdName);

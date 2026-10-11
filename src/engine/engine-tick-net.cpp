@@ -694,10 +694,14 @@ void engineTickNet(Engine& engine, float dt)
                         shootSound = "grenadelauncher/grenadelaunchershoot";
                     else if (event.weapon == MimitaNet::NETWORK_WEAPON_LARGE_MACHINE_GUN)
                         shootSound = "weapon/machinegun/machinegunshoot";
+                    else if (event.weapon == MimitaNet::NETWORK_WEAPON_HEAVY_SHOTGUN)
+                        shootSound = "weapon/heavyshotgun/heavyshotgunfire";
                     const float shootPitch =
                         event.weapon == MimitaNet::NETWORK_WEAPON_SHOTGUN
                             ? 0.8f
                             : event.weapon == MimitaNet::NETWORK_WEAPON_LARGE_MACHINE_GUN
+                                ? 0.72f
+                            : event.weapon == MimitaNet::NETWORK_WEAPON_HEAVY_SHOTGUN
                                 ? 0.72f
                             : event.weapon == MimitaNet::NETWORK_WEAPON_REVOLVER
                                 ? 0.9f

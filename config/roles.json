@@ -40,7 +40,7 @@
       "movement_preset": "juggernaut",
       "actor_preset": "juggernaut_arcade",
       "weapon_set": "juggernaut_mode",
-      "starting_weapon": "large_machine_gun",
+      "starting_weapon": "heavy_shotgun",
       "behavior_profile": "juggernaut_limited",
       "spawn_group": "juggernauts_spawn"
     },

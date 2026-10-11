@@ -51,6 +51,7 @@
       // "enabled": true,
       "enabled": false,
       "multiplier": 0.5,
+      // "multiplier": 1.0,
       "duration": 0.5,
       "easing": "ease_in_out"
     }

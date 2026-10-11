@@ -162,7 +162,7 @@ bool applyEquipIntentFromInput(ServerPlayer& player,
         input.equipSerial,
         source);
     StructuredLogger::instance().writeEvent(
-        StructuredCategory::Weapons, StructuredLevel::Verbose,
+        StructuredCategory::Weapons, StructuredLevel::Important,
         "weapon.equip.accepted", std::to_string(player.id), "input",
         0,
         nlohmann::json{{"requested_slot", input.equippedSlot},

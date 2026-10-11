@@ -161,5 +161,20 @@
       { "enabled": true, "name": "barrel", "center": [0.0, 0.4, 0.2],
         "half_size": [0.55, 3.2, 0.8], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
     ]
+  },
+
+  "heavy_shotgun": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.04,
+    "bounce_mode": "none",
+    "player_bounce": 0.0,
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "heavy_body", "center": [0.0, 0.3, 0.15],
+        "half_size": [0.48, 1.9, 0.55], "scale": [1,1,1], "rotation_degrees": [0,0,0] },
+      { "enabled": true, "name": "heavy_barrel", "center": [0.0, 1.85, 0.15],
+        "half_size": [0.22, 1.45, 0.22], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
   }
 }

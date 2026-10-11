@@ -10,7 +10,7 @@
   "npc_behavior_profile": "juggernaut_swarm",
   "team_names": [],
   "goal_value": 0,
-  "weapon_set_id": 1,
+  "weapon_set_id": 5,
   "time_limit_seconds": 0,
   "respawn_seconds": 0.01,
   "kill_heals": false,

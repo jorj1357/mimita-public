@@ -81,6 +81,7 @@ int validateAllAssets()
         // Weapons
         {"weapon", "assets/objects/weapons/mimita-revolver-v1.glb", "glTF", 4, false},
         {"weapon", "assets/objects/weapons/mimita-shotgun-v1.glb", "glTF", 4, false},
+        {"weapon", "assets/objects/weapons/mimita-heavyshotgun-v1.glb", "glTF", 4, false},
 
         // Shaders (exist as text, just check presence)
         {"shader", "shaders/basic.vert", "", 0, true},

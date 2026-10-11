@@ -28,7 +28,33 @@
       "id": 5,
       "name": "All weapons",
       "description": "All stable and OP weapons, including future weapons.",
-      "weapons": ["*"]
+      "weapons": [
+        "revolver",
+        "shotgun",
+        "rocket_launcher",
+        "force_punch",
+        "spyknife",
+        "projectile_rifle",
+        "hitscan_rifle",
+        "big_shotgun",
+        "large_machine_gun",
+        "nothing",
+        "godball",
+        "swordsword",
+        "op_revolver",
+        "aa12",
+        "grenade_launcher",
+        "admin_revolver",
+        "hafs",
+        "quick_hit",
+        "heavy_shotgun",
+        "frag",
+        "smoke",
+        "fire",
+        "darkbang",
+        "bomb",
+        "*"
+      ]
     },
     {
       "id": 6,
@@ -42,9 +68,9 @@
       "id": 7,
       "key": "juggernaut",
       "name": "Juggernaut (role)",
-      "description": "Role loadout: Rocket Launcher, Shotgun. Not host-selectable.",
+      "description": "Role loadout: Rocket Launcher, Shotgun, Heavy Shotgun, Large Machine Gun, Force Punch. Not host-selectable.",
       "role_only": true,
-      "weapons": ["rocket_launcher", "shotgun", "nothing"]
+      "weapons": ["rocket_launcher", "shotgun", "heavy_shotgun", "large_machine_gun", "force_punch", "nothing"]
     },
     {
       "id": 8,
@@ -74,9 +100,9 @@
       "id": 11,
       "key": "juggernaut_mode",
       "name": "Juggernaut (mode role)",
-      "description": "Heavy Juggernaut loadout: large machine gun and hitscan rifle.",
+      "description": "Heavy Juggernaut loadout: Heavy Shotgun, Large Machine Gun, Force Punch.",
       "role_only": true,
-      "weapons": ["large_machine_gun", "nothing"]
+      "weapons": ["heavy_shotgun", "large_machine_gun", "force_punch", "nothing"]
     }
   ]
 }

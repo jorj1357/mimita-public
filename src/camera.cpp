@@ -49,8 +49,8 @@ void Camera::follow(const glm::vec3& target, const glm::vec3& offset, float stif
 }
 
 void Camera::updateVectors() {
-    float effectivePitch = glm::clamp(pitch + punchPitch, -89.9f, 89.9f);
-    float effectiveYaw = yaw + punchYaw;
+    float effectivePitch = glm::clamp(pitch + punchPitch + weaponRecoilPitch, -89.9f, 89.9f);
+    float effectiveYaw = yaw + punchYaw + weaponRecoilYaw;
 
     front = glm::normalize(glm::vec3(
         cos(glm::radians(effectiveYaw)) * cos(glm::radians(effectivePitch)),
@@ -77,6 +77,25 @@ void Camera::decayPunch(float dt, float decayRate) {
 void Camera::addPunch(float pitchAmount, float yawAmount) {
     punchPitch = glm::clamp(punchPitch + pitchAmount, -10.0f, 10.0f);
     punchYaw = glm::clamp(punchYaw + yawAmount, -6.0f, 6.0f);
+}
+
+void Camera::addWeaponRecoil(float pitchAmount, float yawAmount) {
+    if (!std::isfinite(pitchAmount) || !std::isfinite(yawAmount)) return;
+    weaponRecoilPitch += pitchAmount;
+    weaponRecoilYaw += yawAmount;
+    if (!std::isfinite(weaponRecoilPitch) || !std::isfinite(weaponRecoilYaw)) {
+        weaponRecoilPitch = 0.0f;
+        weaponRecoilYaw = 0.0f;
+    }
+}
+
+void Camera::decayWeaponRecoil(float dt, float recoveryRate) {
+    if (!std::isfinite(dt) || !std::isfinite(recoveryRate)) return;
+    const float step = std::max(0.0f, dt) * std::max(0.0f, recoveryRate);
+    if (weaponRecoilPitch > 0.0f) weaponRecoilPitch = std::max(0.0f, weaponRecoilPitch - step);
+    else if (weaponRecoilPitch < 0.0f) weaponRecoilPitch = std::min(0.0f, weaponRecoilPitch + step);
+    if (weaponRecoilYaw > 0.0f) weaponRecoilYaw = std::max(0.0f, weaponRecoilYaw - step);
+    else if (weaponRecoilYaw < 0.0f) weaponRecoilYaw = std::min(0.0f, weaponRecoilYaw + step);
 }
 
 void Camera::addCameraSwayImpulse(float pitchImpulse, float rollImpulse) {

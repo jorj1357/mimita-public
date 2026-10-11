@@ -75,6 +75,31 @@ enum class WeaponFireMode {
     Charge
 };
 
+struct WeaponRecoilDefinition {
+    bool enabled = false;
+    float pitchPerShot = 0.0f;
+    float yawPerShot = 0.0f;
+    float rollPerShot = 0.0f;
+    float accumulationPerShot = 1.0f;
+    float maxAccumulation = 0.0f; // 0 = no weapon-level presentation cap
+    float recoveryDelay = 0.2f;
+    float recoveryRate = 5.0f;
+    float cameraScale = 1.0f;
+    float cameraAdsScale = 1.0f;
+    float cameraRecoveryRate = 5.0f;
+    float viewmodelBackPerShot = 0.0f;
+    float viewmodelPitchPerShot = 0.0f;
+    float viewmodelYawPerShot = 0.0f;
+    float viewmodelRollPerShot = 0.0f;
+    float viewmodelRecoveryRate = 5.0f;
+    float viewmodelAdsScale = 1.0f;
+    float armPitchPerShot = 0.0f;
+    float armYawPerShot = 0.0f;
+    float armRollPerShot = 0.0f;
+    float armRecoveryRate = 5.0f;
+    float armAdsScale = 1.0f;
+};
+
 struct WeaponDefinition {
     std::string id;
     std::string displayName;
@@ -104,6 +129,7 @@ struct WeaponDefinition {
     // for weapons whose definition enables it (e.g. big_shotgun).
     bool squareSpread = false;
     float recoil = 0.0f;
+    WeaponRecoilDefinition recoilDefinition;
     float projectileSpeed = 0.0f;
     float projectileRadius = 0.0f;
     float projectileLifetime = 5.0f;

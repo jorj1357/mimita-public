@@ -118,6 +118,143 @@ def dev_print(*values, sep=" ", end="\n", file=None, flush=False):
     builtins.print(output, end=end, file=target, flush=flush)
 
 
+def _windows_launch_snapshot(process_ids: list[int] | None = None) -> dict:
+    """Return bounded foreground/window evidence for the active launch.
+
+    This is intentionally a read-only observation. It records windows owned by
+    the dev-loop children plus the current foreground/cursor windows, and only
+    includes other visible windows when their title looks like a Windows
+    Firewall consent dialog. It does not accept or dismiss security prompts.
+    """
+    if os.name != "nt":
+        return {
+            "platform": os.name,
+            "foreground": None,
+            "cursor_window": None,
+            "windows": [],
+            "firewall_windows": [],
+        }
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    tracked_pids = {int(pid) for pid in (process_ids or []) if pid}
+    foreground_hwnd = int(user32.GetForegroundWindow() or 0)
+    point = wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(point))
+    cursor_hwnd = int(user32.WindowFromPoint(point) or 0)
+    firewall_terms = (
+        "windows security",
+        "windows firewall",
+        "allow public and private",
+        "allow access",
+    )
+
+    def title_for(hwnd: int) -> str:
+        length = int(user32.GetWindowTextLengthW(hwnd))
+        if length <= 0:
+            return ""
+        buffer = ctypes.create_unicode_buffer(min(length + 1, 512))
+        user32.GetWindowTextW(hwnd, buffer, len(buffer))
+        return buffer.value[:200]
+
+    def pid_for(hwnd: int) -> int:
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return int(pid.value)
+
+    def record(hwnd: int) -> dict:
+        title = title_for(hwnd)
+        return {
+            "hwnd": hwnd,
+            "pid": pid_for(hwnd),
+            "title": title,
+            "visible": bool(user32.IsWindowVisible(hwnd)),
+            "foreground": hwnd == foreground_hwnd,
+            "under_cursor": hwnd == cursor_hwnd,
+        }
+
+    records: list[dict] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def enum_window(hwnd, _lparam):
+        hwnd_value = int(hwnd)
+        title = title_for(hwnd_value)
+        if not title:
+            return True
+        pid = pid_for(hwnd_value)
+        title_lower = title.lower()
+        is_firewall = any(term in title_lower for term in firewall_terms)
+        tracked_or_active = pid in tracked_pids or hwnd_value in (foreground_hwnd, cursor_hwnd)
+        visible_or_foreground = bool(user32.IsWindowVisible(hwnd)) or hwnd_value == foreground_hwnd
+        if (tracked_or_active and visible_or_foreground) or is_firewall:
+            records.append(record(hwnd_value))
+        return True
+
+    user32.EnumWindows(enum_window, 0)
+    by_hwnd = {item["hwnd"]: item for item in records}
+
+    def selected(hwnd: int) -> dict | None:
+        if not hwnd:
+            return None
+        return by_hwnd.get(hwnd) or record(hwnd)
+
+    firewall_windows = [
+        item for item in records
+        if any(term in item["title"].lower() for term in firewall_terms)
+    ]
+    return {
+        "platform": "windows",
+        "foreground": selected(foreground_hwnd),
+        "cursor_window": selected(cursor_hwnd),
+        "cursor_position": {"x": int(point.x), "y": int(point.y)},
+        "windows": sorted(records, key=lambda item: item["hwnd"]),
+        "firewall_windows": firewall_windows,
+    }
+
+
+def _terminal_file_link(path: str | None) -> str:
+    """Render a terminal hyperlink when the host terminal supports OSC 8."""
+    if not path:
+        return "(none)"
+    absolute = Path(path).resolve()
+    target = absolute.as_uri()
+    return f"\x1b]8;;{target}\x1b\\{absolute}\x1b]8;;\x1b\\"
+
+
+def _set_process_windows_visible(pid: int, visible: bool) -> list[dict]:
+    """Hide or show top-level windows owned by one launched child process."""
+    if os.name != "nt" or not pid:
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    windows: list[dict] = []
+    show_command = 8 if visible else 0  # SW_SHOWNA / SW_HIDE; never activate
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def enum_window(hwnd, _lparam):
+        hwnd_value = int(hwnd)
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if int(owner.value) != int(pid):
+            return True
+        if user32.IsWindowVisible(hwnd) or not visible:
+            user32.ShowWindow(hwnd, show_command)
+            windows.append({
+                "hwnd": hwnd_value,
+                "pid": int(pid),
+                "visible_requested": bool(visible),
+                "visible_after": bool(user32.IsWindowVisible(hwnd)),
+            })
+        return True
+
+    user32.EnumWindows(enum_window, 0)
+    return windows
+
+
 # All development-loop and build-child output uses the same five-second
 # moving rainbow when attached to a real terminal.
 print = dev_print
@@ -497,13 +634,28 @@ def publish_build(number: int) -> Path:
 
 
 class DevLoop:
-    def __init__(self, profile: dict, auto_restart: bool, launch_mode: str | None = None):
+    def __init__(
+        self,
+        profile: dict,
+        auto_restart: bool,
+        launch_mode: str | None = None,
+        launch_visibility: str | None = None,
+    ):
         self.profile = profile
         self.launch_mode_id = str(
             launch_mode if launch_mode is not None
             else profile.get("launch_mode", 1)
         )
         self.launch_mode = load_launch_mode(self.launch_mode_id)
+        configured_visibility = str(
+            launch_visibility if launch_visibility is not None
+            else profile.get("launch_visibility", "visible")
+        ).strip().lower()
+        if configured_visibility not in {"visible", "headless"}:
+            raise SystemExit(
+                f"[DEV] launch_visibility must be visible or headless, got {configured_visibility!r}"
+            )
+        self.launch_visibility = configured_visibility
         self.mode_picker_open = False
         self.mode_picker_input = ""
         # Builds always run while this loop is open. Auto-start only controls
@@ -525,6 +677,7 @@ class DevLoop:
         self.server_exe: str | None = None
         self.server_args: list[str] = []
         self.server_launch_ms: float = 0.0
+        self.client_launch_ms: float = 0.0
         self.server_unavailable = False
         self.running_build = None
         self.latest_build = newest_valid_published_build()
@@ -573,6 +726,25 @@ class DevLoop:
                 if latest_identity else ""
             )
         )
+        now_ms = time.time() * 1000.0
+        run_uptime = None
+        if self.run_started_utc:
+            try:
+                started = datetime.datetime.fromisoformat(
+                    self.run_started_utc.replace("Z", "+00:00")
+                ).timestamp()
+                run_uptime = max(0.0, time.time() - started)
+            except ValueError:
+                run_uptime = None
+        server_uptime = (
+            max(0.0, (now_ms - self.server_launch_ms) / 1000.0)
+            if self.server_launch_ms and self.server_health() else None
+        )
+        client_alive = [p for p in self.processes if p.poll() is None]
+        client_uptime = (
+            max(0.0, (now_ms - self.client_launch_ms) / 1000.0)
+            if self.client_launch_ms and client_alive else None
+        )
         return {
             "profile": self.profile.get("name", "unnamed"),
             "launch_mode": self.launch_mode_id,
@@ -582,6 +754,8 @@ class DevLoop:
             "latest_successful_source_generation": self.latest_generation,
             "latest_build_stale": self.latest_stale,
             "auto_restart": self.auto_restart,
+            "launch_visibility": self.launch_visibility,
+            "headless": self.launch_visibility == "headless",
             "build_status": status,
             "message": self.last_message,
             "updated_at": utc_now(),
@@ -595,11 +769,15 @@ class DevLoop:
             "server_executable": self.server_exe,
             "server_args": list(self.server_args),
             "server_alive": self.server_health(),
+            "server_uptime_seconds": server_uptime,
             "server_ready": self.server_ready,
-            "client_pids": [p.pid for p in self.processes if p.poll() is None],
+            "client_pids": [p.pid for p in client_alive],
             "client_executables": [client_executable] if self.processes and client_executable else [],
             "client_args": list(self.client_args),
             "client_ready": self.client_ready,
+            "client_uptime_seconds": client_uptime,
+            "run_alive": bool(self.server_health() or client_alive),
+            "run_uptime_seconds": run_uptime,
             "builds_match": bool(self.builds_match and identities_match),
             "map": self.current_map,
             "build_identity": self.latest_build_identity(),
@@ -642,6 +820,140 @@ class DevLoop:
                     journal.write(json.dumps(record, separators=(",", ":")) + "\n")
         except OSError as error:
             print(f"[DEV CONTROL] unable to record journal event: {error}")
+
+    def record_runtime_event(self, event: str, fields: dict, reason: str) -> None:
+        """Append bounded dev-loop launch evidence to the canonical journal."""
+        if not self.events_path:
+            return
+        record = {
+            "category": "GENERAL",
+            "event": event,
+            "event_id": f"DEV_RUNTIME_{uuid.uuid4().hex}",
+            "fields": fields,
+            "level": "IMPORTANT",
+            "pid": os.getpid(),
+            "process": "dev-loop",
+            "process_role": "dev-loop",
+            "reason": reason,
+            "run_id": self.run_id or "",
+            "wall_time": utc_now(),
+        }
+        try:
+            with self.control_event_lock:
+                with open(self.events_path, "a", encoding="utf-8", newline="\n") as journal:
+                    journal.write(json.dumps(record, separators=(",", ":")) + "\n")
+        except OSError as error:
+            print(f"[DEV RUNTIME] unable to record launch evidence: {error}")
+
+    def observe_launch_windows(self, phase: str) -> dict:
+        """Record the current child-window, focus, cursor, and firewall state."""
+        pids = [os.getpid()]
+        if self.server_pid:
+            pids.append(self.server_pid)
+        pids.extend(process.pid for process in self.processes)
+        snapshot = _windows_launch_snapshot(pids)
+        self.record_runtime_event(
+            "dev-loop.launch.windows",
+            {
+                "phase": phase,
+                "server_pid": self.server_pid,
+                "client_pids": [process.pid for process in self.processes],
+                "firewall_prompt_detected": bool(snapshot["firewall_windows"]),
+                "foreground": snapshot["foreground"],
+                "cursor_window": snapshot["cursor_window"],
+                "cursor_position": snapshot.get("cursor_position"),
+                "windows": snapshot["windows"],
+                "firewall_windows": snapshot["firewall_windows"],
+            },
+            f"dev-loop launch window snapshot phase={phase}",
+        )
+        if snapshot["firewall_windows"]:
+            self.record_runtime_event(
+                "dev-loop.firewall_prompt",
+                {
+                    "phase": phase,
+                    "detected": True,
+                    "windows": snapshot["firewall_windows"],
+                },
+                "Windows Firewall consent window detected; no automatic response was sent",
+            )
+        return snapshot
+
+    def monitor_launch_windows(self, duration: float = 5.0) -> dict:
+        """Bound firewall/focus observation after the client becomes ready."""
+        deadline = time.monotonic() + duration
+        detected = False
+        last_snapshot = self.observe_launch_windows("client_ready")
+        while time.monotonic() < deadline:
+            time.sleep(0.25)
+            last_snapshot = _windows_launch_snapshot(
+                [self.server_pid or 0] + [process.pid for process in self.processes]
+            )
+            if last_snapshot["firewall_windows"] and not detected:
+                detected = True
+                self.record_runtime_event(
+                    "dev-loop.firewall_prompt",
+                    {
+                        "phase": "post_client_monitor",
+                        "detected": True,
+                        "windows": last_snapshot["firewall_windows"],
+                    },
+                    "Windows Firewall consent window detected during bounded launch monitor",
+                )
+        self.observe_launch_windows("post_client_monitor")
+        return last_snapshot
+
+    def restore_prelaunch_foreground(self, snapshot: dict) -> None:
+        """Return focus to the user's prior window after child startup."""
+        if os.name != "nt":
+            return
+        foreground = snapshot.get("foreground") or {}
+        hwnd = int(foreground.get("hwnd") or 0)
+        current = _windows_launch_snapshot()
+        current_foreground = current.get("foreground") or {}
+        if not hwnd or hwnd == int(current_foreground.get("hwnd") or 0):
+            return
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        if not user32.IsWindow(hwnd):
+            self.record_runtime_event(
+                "dev-loop.launch.focus_restore",
+                {"requested": True, "restored": False, "reason": "prior window no longer exists"},
+                "prior foreground window was unavailable",
+            )
+            return
+        restored = bool(user32.SetForegroundWindow(hwnd))
+        after = _windows_launch_snapshot().get("foreground")
+        self.record_runtime_event(
+            "dev-loop.launch.focus_restore",
+            {
+                "requested": True,
+                "restored": restored,
+                "prior_window": foreground,
+                "after_window": after,
+                "same_window": bool(after and after.get("hwnd") == hwnd),
+            },
+            "dev-loop attempted to restore the user's prelaunch foreground window",
+        )
+
+    def apply_launch_visibility(self) -> None:
+        """Apply the profile's visible/headless policy to the client window."""
+        if not self.processes:
+            return
+        client_pid = self.processes[-1].pid
+        windows = _set_process_windows_visible(
+            client_pid, self.launch_visibility == "visible"
+        )
+        self.record_runtime_event(
+            "dev-loop.launch.visibility",
+            {
+                "policy": self.launch_visibility,
+                "client_pid": client_pid,
+                "windows": windows,
+            },
+            f"dev-loop applied {self.launch_visibility} client-window policy",
+        )
 
     def latest_executable(self) -> Path:
         if self.latest_build is None:
@@ -1048,6 +1360,7 @@ class DevLoop:
         self.room_code = None
         self.server_unavailable = True
         self.cleanup_room_file()
+        self.save_state("server_exited")
 
     def launch_latest(self) -> None:
         if self.latest_build is None:
@@ -1072,6 +1385,7 @@ class DevLoop:
         )
         print(f"[DEV] selected allowed map: {map_name}")
         running_map = self.server_map_name()
+        prelaunch_windows = self.observe_launch_windows("before_server_launch")
         if self.server_health() and not self.server_matches_launch_configuration(exe, map_name):
             print(f"[DEV SERVER] launch configuration changed; replacing old server "
                   f"pid={self.server_pid} old_map={running_map} new_map={map_name}")
@@ -1104,6 +1418,10 @@ class DevLoop:
             # One shared canonical events.jsonl for this server and its client.
             self.events_path = create_shared_events_path()
             self.run_id = Path(self.events_path).parent.name
+            # The first prelaunch snapshot above may predate creation of the
+            # canonical journal. Record the same state again once the journal
+            # exists so every fresh launch has a durable before-launch record.
+            prelaunch_windows = self.observe_launch_windows("before_server_launch")
             self.run_started_utc = utc_now()
             self.current_map = map_name
             self.server_ready = False
@@ -1152,11 +1470,26 @@ class DevLoop:
                 return
             print(f"[DEV] launching build {self.latest_build} server")
             print(f"[DEV] shared events file: {self.events_path}")
+            self.record_runtime_event(
+                "dev-loop.launch.args",
+                {
+                    "role": "server",
+                    "executable": str(exe),
+                    "args": list(server_args),
+                    "console_policy": "CREATE_NO_WINDOW",
+                    "server_bind": next(
+                        (server_args[index + 1] for index, value in enumerate(server_args[:-1])
+                         if value == "--bind"),
+                        "",
+                    ),
+                },
+                "dev-loop launching dedicated server with hidden console policy",
+            )
             server = subprocess.Popen(
                 server_args,
                 cwd=ROOT,
                 env=server_env,
-                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             self.server_process = server
             self.server_pid = server.pid
@@ -1165,6 +1498,7 @@ class DevLoop:
             self.server_launch_ms = time.time() * 1000.0
             self.server_unavailable = False
             self.server_ready = self.wait_for_logger_started("server", server.pid)
+            self.observe_launch_windows("server_ready" if self.server_ready else "server_logger_missing")
             if not self.server_ready:
                 self.last_message = f"server pid={server.pid} did not write logger.started"
                 self.save_state("server_logger_missing")
@@ -1221,6 +1555,7 @@ class DevLoop:
             str(exe), "--room", room_code,
             "--map", map_name,
             "--name", str(self.profile.get("client_name", "NPC Dev")),
+            "--unlock-cursor",
         ]
         client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
         if not self.events_path:
@@ -1241,20 +1576,38 @@ class DevLoop:
         }
         print(f"[DEV] launching build {self.latest_build} client")
         print(f"[DEV] shared events file: {self.events_path}")
+        self.record_runtime_event(
+            "dev-loop.launch.args",
+            {
+                "role": "client",
+                "executable": str(exe),
+                "args": list(client_args),
+                "console_policy": "CREATE_NO_WINDOW",
+                "window_policy": self.launch_visibility,
+                "unlock_cursor_requested": "--unlock-cursor" in client_args,
+            },
+            "dev-loop launching client with hidden console and unlocked-cursor policy",
+        )
         client = subprocess.Popen(
             client_args,
             cwd=ROOT,
             env=client_env,
-            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         self.processes.append(client)
         self.client_args = list(client_args)
+        self.client_launch_ms = time.time() * 1000.0
         self.running_build = self.latest_build
         self.client_ready = self.wait_for_logger_started("client", client.pid)
         self.builds_match = bool(self.server_ready and self.client_ready and
                                  self.server_exe == str(exe) and
                                  self.latest_build_identity() and
                                  self.latest_build_identity().get("valid"))
+        self.observe_launch_windows("client_ready" if self.client_ready else "client_logger_missing")
+        if self.client_ready:
+            self.apply_launch_visibility()
+            self.restore_prelaunch_foreground(prelaunch_windows)
+            self.monitor_launch_windows()
         self.save_state("running" if self.client_ready else "client_logger_missing")
         self.print_status()
 
@@ -1277,8 +1630,11 @@ class DevLoop:
 
     def maintain_process(self) -> None:
         had_clients = bool(self.processes)
+        previous_client_pids = tuple(process.pid for process in self.processes)
         live = [process for process in self.processes if process.poll() is None]
         self.processes = live
+        if previous_client_pids != tuple(process.pid for process in live):
+            self.save_state("running" if live or self.server_health() else "stopped_waiting")
         # The external server has an independent lifetime: after the client
         # exits, keep it and verify it is still healthy.
         if had_clients and not live:
@@ -1316,24 +1672,6 @@ class DevLoop:
         if clear_code:
             self.room_code = None
 
-    def _status_lines(self) -> list[str]:
-        lines = [
-            "",
-            f"LAUNCH MODE: {self.launch_mode_id} ({self.launch_mode.get('name', 'unnamed')})",
-            f"RUNNING: {self.running_build or '(none)'}",
-            f"LATEST:  {self.latest_build or '(none)'}",
-            f"AUTO-START: {'ON' if self.auto_restart else 'OFF'}",
-        ]
-        if self.server_process is not None:
-            lines.append(
-                f"SERVER: pid={self.server_pid} room={self.room_code or '(none)'} "
-                f"{'alive' if self.server_health() else 'exited'}"
-            )
-        if self.latest_stale:
-            lines.append("LATEST BUILD IS STALE")
-        lines.append("[1] Build/retry or launch  [2] Choose launch mode  [A] Auto-start  [Q] Quit")
-        return lines
-
     def show_launch_modes(self) -> None:
         try:
             config = read_json(LAUNCH_MODE_PATH)
@@ -1362,21 +1700,50 @@ class DevLoop:
         print("[DEV] Enter mode number (Q cancels): ", end="", flush=True)
 
     def print_status(self, force: bool = False) -> None:
+        snapshot = self.state()
         status_line = (
+            snapshot.get("build_status"),
             self.running_build,
             self.latest_build,
             self.latest_stale,
+            snapshot.get("run_alive"),
+            tuple(snapshot.get("client_pids", [])),
+            snapshot.get("server_pid"),
+            int(snapshot.get("run_uptime_seconds") or 0),
+            self.events_path,
+            self.launch_visibility,
         )
         if not force and status_line == self.last_status_line:
             return
         self.last_status_line = status_line
-        self._render_status()
+        self._render_status(snapshot)
 
-    def _render_status(self) -> None:
+    @staticmethod
+    def _duration_text(seconds: float | None) -> str:
+        if seconds is None:
+            return "-"
+        total = max(0, int(seconds))
+        hours, remainder = divmod(total, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+    def _status_lines(self, snapshot: dict) -> list[str]:
+        running = bool(snapshot.get("run_alive"))
+        client_pids = snapshot.get("client_pids", [])
+        return [
+            f"[DEV STATUS] MODE: {snapshot.get('launch_mode')} ({self.launch_mode.get('name', 'unnamed')})",
+            f"[DEV STATUS] BUILD: running={snapshot.get('running_build') or '-'} latest={snapshot.get('latest_successful_build') or '-'} match={snapshot.get('builds_match')}",
+            f"[DEV STATUS] RUN: {'RUNNING' if running else 'NOT RUNNING'} uptime={self._duration_text(snapshot.get('run_uptime_seconds'))} visibility={snapshot.get('launch_visibility')}",
+            f"[DEV STATUS] PIDS: server={snapshot.get('server_pid') or '-'} client={client_pids or '-'}",
+            f"[DEV STATUS] EVENTS: {_terminal_file_link(snapshot.get('events_path'))}",
+            "[DEV STATUS] CONTROLS: [1] build/launch  [2] mode  [V] visible/headless  [A] auto-start  [Q] quit",
+        ]
+
+    def _render_status(self, snapshot: dict | None = None) -> None:
         global _status_rendering
         if self.status_visible and _rainbow_enabled():
             sys.stdout.write(f"\x1b[{self.status_line_count}A\x1b[0J")
-        lines = self._status_lines()
+        lines = self._status_lines(snapshot or self.state())
         _status_rendering = True
         try:
             for line in lines:
@@ -1478,6 +1845,16 @@ class DevLoop:
             self.save_state("auto_start_toggled")
             print(f"[DEV] auto-start {'ON' if self.auto_restart else 'OFF'}")
             self.print_status(force=True)
+        elif key == "v":
+            self.launch_visibility = (
+                "headless" if self.launch_visibility == "visible" else "visible"
+            )
+            self.last_message = (
+                f"launch visibility set to {self.launch_visibility}; applies to the next launch"
+            )
+            self.save_state("launch_visibility_toggled")
+            print(f"[DEV] launch visibility {self.launch_visibility.upper()} (next launch)")
+            self.print_status(force=True)
         elif key == "q":
             self.stop_event.set()
 
@@ -1507,6 +1884,7 @@ class DevLoop:
                     continue
                 if self.change_event.wait(0.20):
                     self.build_pending = True
+                self.print_status()
                 self.refresh_status_animation()
         finally:
             self.stop_event.set()
@@ -1542,10 +1920,27 @@ def run_control_client(args: argparse.Namespace) -> int:
             print(json.dumps(current, indent=2))
         else:
             print(f"[DEV STATUS] status={current.get('build_status')} run={current.get('run_id') or '(none)'}")
-            print(f"[DEV STATUS] build={current.get('latest_successful_build')} stale={current.get('latest_build_stale')}")
-            print(f"[DEV STATUS] events={current.get('events_path') or '(none)'}")
-            print(f"[DEV STATUS] server pid={current.get('server_pid')} alive={current.get('server_alive')}")
-            print(f"[DEV STATUS] client pids={current.get('client_pids', [])}")
+            print(
+                f"[DEV STATUS] mode={current.get('launch_mode')} "
+                f"running_build={current.get('running_build')} "
+                f"latest_build={current.get('latest_successful_build')} "
+                f"stale={current.get('latest_build_stale')}"
+            )
+            print(
+                f"[DEV STATUS] run={'RUNNING' if current.get('run_alive') else 'NOT RUNNING'} "
+                f"uptime={DevLoop._duration_text(current.get('run_uptime_seconds'))} "
+                f"visibility={current.get('launch_visibility', 'unknown')}"
+            )
+            print(f"[DEV STATUS] events={_terminal_file_link(current.get('events_path'))}")
+            print(
+                f"[DEV STATUS] server pid={current.get('server_pid')} "
+                f"alive={current.get('server_alive')} "
+                f"uptime={DevLoop._duration_text(current.get('server_uptime_seconds'))}"
+            )
+            print(
+                f"[DEV STATUS] client pids={current.get('client_pids', [])} "
+                f"uptime={DevLoop._duration_text(current.get('client_uptime_seconds'))}"
+            )
         if not args.request:
             return 0
 
@@ -1586,6 +1981,21 @@ def main() -> int:
         "--launch-mode",
         help="numeric dev launch mode from devscripts/dev-launch-modes.json",
     )
+    visibility = parser.add_mutually_exclusive_group()
+    visibility.add_argument(
+        "--headless",
+        dest="launch_visibility",
+        action="store_const",
+        const="headless",
+        help="hide the game window while keeping the process and journal running",
+    )
+    visibility.add_argument(
+        "--visible",
+        dest="launch_visibility",
+        action="store_const",
+        const="visible",
+        help="show the game window without leaving it focused",
+    )
     parser.add_argument("--status", action="store_true", help="read the current dev-loop status and exit")
     parser.add_argument("--json", action="store_true", help="print control/status responses as JSON")
     parser.add_argument(
@@ -1601,7 +2011,12 @@ def main() -> int:
     owner_pid = acquire_dev_loop_lock()
     profile = load_profile(args.profile)
     try:
-        DevLoop(profile, args.auto_restart, args.launch_mode).run()
+        DevLoop(
+            profile,
+            args.auto_restart,
+            args.launch_mode,
+            args.launch_visibility,
+        ).run()
     finally:
         release_dev_loop_lock(owner_pid)
     return 0

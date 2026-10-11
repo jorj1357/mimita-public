@@ -377,6 +377,11 @@ struct CollisionState {
     int respondedContactCount = 0;
     uint64_t respondedContactTick = ~0ull;
 
+    // Body/weapon contacts may report several triangles for one physical
+    // impact. They can all still depenetrate and project, but only one of
+    // them may transfer a bounce impulse to the player root per fixed tick.
+    uint64_t rootBounceAppliedTick = ~0ull;
+
     bool alreadyRespondedToContact(const void* label, int worldTriangle,
                                    uint64_t tick) const {
         if (respondedContactTick != tick)
@@ -632,6 +637,11 @@ public:
     Capsule prevWeaponCollisionCapsule{}; // previous frame for sweep delta computation
     std::string weaponCollisionName;
     glm::mat4 weaponModelTransform{1.0f}; // full world-space weapon model transform (3 axes)
+    // Additive local-player weapon recoil consumed by the fixed-tick aim-body
+    // solver. This is presentation state, not damage authority.
+    glm::vec3 weaponRecoilArmRotation{0.0f};
+    float weaponRecoilArmRecoveryRate = 5.0f;
+    bool weaponAimDownSights = false;
 
     // Runtime debug data populated by collision solver, consumed by debug visuals
     WeaponCollisionRuntimeDebug weaponCollisionDebug;

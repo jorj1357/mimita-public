@@ -650,7 +650,8 @@ enum class ServerDamageSource : uint8_t
     Melee,
     PhysicalContact,
     RocketExplosion,
-    GrenadeExplosion
+    GrenadeExplosion,
+    Environment
 };
 
 enum class ServerActorKind : uint8_t { Player = ENTITY_PLAYER, Npc = ENTITY_NPC };

@@ -228,7 +228,7 @@ private:
     void tetherAimRoot(const Player& player, RagdollBody& b, float dt);
     void captureAimTargets(const Player& player, RagdollBody& b);
     void applyHybridSprings(RagdollBody& b, float dt);
-    void stabilizeHybridArms(RagdollBody& b, float dt);
+    void stabilizeHybridArms(RagdollBody& b, const Player& player, float dt);
     void stepAimBody(float dt, const World& world, Player& player,
                      RagdollBody& body, const glm::vec3& aimForward,
                      const glm::vec3& aimPosition, bool pointingWanted);

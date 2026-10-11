@@ -233,6 +233,12 @@ void engineTickCamera(Engine& engine, float dt)
 
     const auto& camCfg = CamConfig::instance().data();
     camera.decayPunch(dt);
+    const WeaponDefinition* recoilDef = weapons.getCurrentDef(player);
+    camera.decayWeaponRecoil(
+        dt,
+        recoilDef && recoilDef->recoilDefinition.enabled
+            ? recoilDef->recoilDefinition.cameraRecoveryRate
+            : 12.0f);
     camera.updateCameraSway(dt, camCfg.cameraSwaySpringStiffness,
                             camCfg.cameraSwaySpringDamping,
                             camCfg.cameraSwayMaxPitch, camCfg.cameraSwayMaxRoll);
@@ -261,6 +267,8 @@ void engineTickCamera(Engine& engine, float dt)
     if (REPLAY_PLAYER.isPlaying()) {
         camera.punchPitch = 0.0f;
         camera.punchYaw = 0.0f;
+        camera.weaponRecoilPitch = 0.0f;
+        camera.weaponRecoilYaw = 0.0f;
     }
     camera.updateVectors();
 

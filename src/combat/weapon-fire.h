@@ -115,6 +115,7 @@ void fireMultiPellet(
 );
 
 void applyRecoil(
+    Camera& camera,
     Player& shooter,
     const WeaponDefinition& def,
     const glm::vec3& shotDirection,

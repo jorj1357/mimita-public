@@ -27,6 +27,8 @@ float yaw = -90.0f;
 float pitch = 10.0f;
 float punchPitch = 0.0f;
 float punchYaw = 0.0f;
+float weaponRecoilPitch = 0.0f;
+float weaponRecoilYaw = 0.0f;
 float fov = 100.0f;
     float roll = 0.0f;
     CameraSwayState sway;
@@ -39,6 +41,8 @@ double lastX = 400, lastY = 300;
     void updateVectors(); 
     void decayPunch(float dt, float decayRate = 12.0f);
     void addPunch(float pitchAmount, float yawAmount);
+    void addWeaponRecoil(float pitchAmount, float yawAmount);
+    void decayWeaponRecoil(float dt, float recoveryRate);
     void addCameraSwayImpulse(float pitchImpulse, float rollImpulse);
     void updateCameraSway(float dt, float stiffness, float damping,
                           float maxPitch, float maxRoll);
