@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <unordered_map>
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
@@ -79,6 +80,9 @@ public:
     // Resolved role behavior profile for this life (combat tuning).
     std::string behaviorProfileId;
     NpcBehaviorTuning behavior;
+    // Per-victim tick of the last contact-weapon (claw) hit, so contact damage
+    // respects damageTickInterval per target. Not replicated.
+    std::unordered_map<uint32_t, uint32_t> contactLastTick;
     // Revision of behavior-profiles.json used to resolve `behavior`.
     // Changed profile values apply to living NPCs on the next simulation tick.
     uint64_t behaviorRevision = 0;

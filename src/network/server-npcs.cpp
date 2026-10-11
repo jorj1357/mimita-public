@@ -35,6 +35,7 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
+#include "combat/weapon-execution.h"
 #include "network/network-weapons.h"
 #include "network/packets.h"
 #include "debug/debug-log.h"
@@ -1408,6 +1409,79 @@ void simulateSharedNpcs(SOCKET sock,
                         nearestNpc->id, nearestNpc->body.username.c_str(),
                         wId, wDisp.c_str(), damage, victim.health,
                         (int)killed, tick);
+                }
+            }
+        }
+
+        // ── NPC contact weapon (claw): damage per tick while intersecting ──
+        // Reuses the shared physical-contact test (the same geometry spyknife
+        // uses) driven by the NPC body instead of a client-requesting player.
+        {
+            const WeaponDefinition* cw =
+                WeaponRegistry::instance().get(n.body.equippedWeaponId);
+            if (cw && cw->executionType == WeaponExecutionType::PhysicalContact &&
+                WeaponExecution::paramOr(*cw, "npcContact", 0.0f) > 0.5f)
+            {
+                const float radius = std::max(0.1f,
+                    WeaponExecution::paramOr(*cw, "serverContactRadius", 1.2f));
+                const float fwdOffset =
+                    WeaponExecution::paramOr(*cw, "contactForwardOffset", 0.8f);
+                const float centerZ =
+                    WeaponExecution::paramOr(*cw, "contactCenterZ", 0.9f);
+                glm::vec3 fwd(n.currentFacing.x, n.currentFacing.y, 0.0f);
+                if (glm::length(fwd) < 0.001f) fwd = glm::vec3(1.0f, 0.0f, 0.0f);
+                fwd = glm::normalize(fwd);
+                WeaponExecution::PhysicalContactShape shape;
+                shape.kind = WeaponExecution::PhysicalShapeKind::Sphere;
+                shape.currentA = shape.previousA =
+                    n.body.pos + glm::vec3(0.0f, 0.0f, centerZ) + fwd * fwdOffset;
+                shape.currentB = shape.previousB = shape.currentA;
+                shape.radius = radius;
+                const uint32_t interval = (uint32_t)std::max(1,
+                    (int)std::ceil(WeaponExecution::paramOr(
+                        *cw, "damageTickInterval", 0.5f) * 60.0f));
+                for (auto& kv : players)
+                {
+                    ServerPlayer& p = kv.second;
+                    if (p.dead || p.connectionStale ||
+                        p.spawnState != ServerPlayer::Active)
+                        continue;
+                    if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p)))
+                        continue;
+                    WeaponExecution::PlayerTarget td;
+                    td.playerId = p.id;
+                    td.spawnGeneration = p.spawnGeneration;
+                    td.position = p.pos;
+                    td.radius = PLAYER_RADIUS;
+                    td.height = PLAYER_HEIGHT;
+                    WeaponExecution::PhysicalContactHit hit;
+                    if (!WeaponExecution::testPhysicalContact(shape, td, hit)) {
+                        n.contactLastTick.erase(p.id);
+                        continue;
+                    }
+                    const uint32_t last = n.contactLastTick.count(p.id)
+                        ? n.contactLastTick[p.id] : 0;
+                    if (last != 0 && tick - last < interval) continue;
+                    n.contactLastTick[p.id] = tick;
+                    const int dmg = std::max(1, (int)std::round(cw->damage));
+                    const glm::vec3 kb = glm::vec3(fwd.x, fwd.y, 0.4f) * 6.0f;
+                    const ServerDamageResult res = applyServerDamage(
+                        players, p, 0, dmg, kb, ServerDamageSource::PhysicalContact);
+                    p.lastNpcDamageSourceId = n.id;
+                    p.lastNpcDamageTick = tick;
+                    queueServerDamageConfirmedEvent(
+                        sock, players, tick, totalPacketsOut, 0, p, dmg, res,
+                        hit.hitPosition, hit.normal, kb,
+                        ServerDamageSource::PhysicalContact,
+                        networkWeaponTypeForDefinition(*cw), 0, 0, n.id, cw->id);
+                    // Placeholder hook: the future per-attack voice line and
+                    // slash animation attach here.
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::NpcCombat, StructuredLevel::Important,
+                        "npc.attack", std::to_string(n.id), "contact_claw_hit", tick,
+                        nlohmann::json{{"actor", n.id}, {"victim", p.id},
+                                       {"weapon", cw->id}, {"damage", dmg},
+                                       {"health_after", res.healthAfter}});
                 }
             }
         }

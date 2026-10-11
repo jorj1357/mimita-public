@@ -552,6 +552,21 @@
       "pursue_last_known_position": true,
       "pursuit_search_ticks": 600,
       "after_reaching_last_known": "look_around"
+    },
+    {
+      "id": "zombie",
+      "aim_error_deg": 15.0,
+      "reaction_delay": 0.2,
+      "fire_cadence_multiplier": 1.0,
+      "aggression": 1.0,
+      "preferred_range": 1.0,
+      "target_stickiness": 0.5,
+      "target_switch_threshold": 0.2,
+      "distance_target_bias": 1.0,
+      "pursuit_mode": "persistent",
+      "continue_through_cover": true,
+      "pursue_last_known_position": true,
+      "information_mode": "memory"
     }
   ]
 }

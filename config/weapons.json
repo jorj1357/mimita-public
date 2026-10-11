@@ -20,6 +20,31 @@
     "sound": {"shoot": "", "reload": "", "equip": "", "dry_fire": ""}
   },
   "comment 7 20 2026": "this is the .json file at C:/important/mimita-priv-v8/config/weapons.json defining behavior for all weapons in mimita",
+  "zombie_claw": {
+    "id": "zombie_claw",
+    "display_name": "Zombie Claw",
+    "slot": 20,
+    "model": { "path": "" },
+    "viewmodel": {
+      "enabled": false,
+      "position": [0.0, 0.0, 0.0],
+      "rotation_degrees": [0.0, 0.0, 0.0]
+    },
+    "damage": 12.0,
+    "behavior_type": "spyknife",
+    "fire_mode": "semi_auto",
+    "magazine_size": 0,
+    "fire_delay": 0.0,
+    "reserve_ammo": 0,
+    "sound": { "shoot": "entity/falcon/falconswing", "hit": "player_hurt" },
+    "custom_params": {
+      "npcContact": 1.0,
+      "serverContactRadius": 1.2,
+      "contactForwardOffset": 0.8,
+      "contactCenterZ": 0.9,
+      "damageTickInterval": 0.5
+    }
+  },
   "revolver": {
     "id": "revolver",
     "display_name": "Revolver",

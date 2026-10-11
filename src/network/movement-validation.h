@@ -145,7 +145,8 @@ enum class MovementValidationReason : uint8_t
     BlockingGeometry,
     AbilityTransition,
     AwaitingAuthoritativeTransformAck,
-    TooFarFromAuthoritative
+    TooFarFromAuthoritative,
+    ServerAuthoritativeFlight
 };
 
 enum class MovementCorrectionClass : uint8_t

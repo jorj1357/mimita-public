@@ -357,6 +357,8 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mWaveNpcSpawned = packet.waveNpcSpawned;
     mWaveLivesRemaining = packet.waveLivesRemaining;
     mWaveHighest = packet.waveHighest;
+    mBannerSerial = packet.bannerSerial;
+    mBannerNumber = packet.bannerNumber;
     mMatchOver = packet.matchOver != 0;
     mServerTickAnchorMs = clientSteadyNowMs();
     if (packet.phase == DUEL_PHASE_GO)

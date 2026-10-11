@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cctype>
 #include <algorithm>
+#include <chrono>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "entities/player.h"
@@ -663,13 +664,15 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             {
                 GuiLayout& matchLayout =
                     GuiLayoutManager::instance().getGamemodeLayout(match.mode());
-                auto drawCentered = [&](const char* id, const std::string& text) {
+                auto drawCentered = [&](const char* id, const std::string& text, float alpha = 1.0f) {
                     const GuiElement* el = matchLayout.get(id);
                     if (!el || !el->visible) return;
                     const float scale = el->fontSize > 0.0f ? el->fontSize : 0.4f;
                     const float w = uiMeasureText(text.c_str(), scale);
+                    glm::vec4 color = el->getTextColorVec();
+                    color.a *= alpha;
                     uiDrawText(text.c_str(), uiScreenW() * 0.5f - w * 0.5f,
-                               uiScaleY(el->y), scale, el->getTextColorVec());
+                               uiScaleY(el->y), scale, color);
                 };
                 auto textTemplate = [&](const char* id, const std::vector<std::pair<std::string, std::string>>& values) {
                     const GuiElement* el = matchLayout.get(id);
@@ -758,6 +761,29 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                     drawCentered("waveText", textTemplate("waveText", {
                         {"{number}", std::to_string(match.waveNumber())},
                         {"{wave}", std::to_string(match.waveNumber())}}));
+                }
+
+                // ── Transient banner (e.g. "CHECKPOINT N REACHED") ──────
+                // The server sends a monotonic serial; the client restarts a
+                // 5-second local fade (300 client ticks) whenever it changes.
+                // Alpha starts at 0.5 (tick 1) and reaches 0.0 at tick 300,
+                // matching the "you died to X" popup fade.
+                if (match.bannerSerial() != 0 && matchLayout.get("checkpointText")) {
+                    static uint32_t sLastBannerSerial = 0;
+                    static std::chrono::steady_clock::time_point sBannerShown{};
+                    const uint32_t serial = match.bannerSerial();
+                    if (serial != sLastBannerSerial) {
+                        sLastBannerSerial = serial;
+                        sBannerShown = std::chrono::steady_clock::now();
+                    }
+                    const float elapsedMs = std::chrono::duration<float, std::milli>(
+                        std::chrono::steady_clock::now() - sBannerShown).count();
+                    constexpr float kBannerMs = 5000.0f;  // 5 s == 300 ticks @ 60 Hz
+                    if (elapsedMs < kBannerMs) {
+                        const float alpha = 0.5f * (1.0f - elapsedMs / kBannerMs);
+                        drawCentered("checkpointText", textTemplate("checkpointText", {
+                            {"{number}", std::to_string(match.bannerNumber())}}), alpha);
+                    }
                 }
 
                 if (match.mode() == "npc_waves" && match.waveLivesRemaining() > 0 &&

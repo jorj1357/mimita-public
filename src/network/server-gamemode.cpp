@@ -703,6 +703,9 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.activeBossId.clear();
     d.progressionLocked = false;
     d.activeBossNpcId = 0;
+    d.currentCheckpointIndex = 0;
+    d.bannerNumber = 0;
+    d.damageVolumeNextTick.clear();
     d.waveNumber = d.npcWaves ? 1u : 0u;
     d.waveNpcTarget = 0;
     d.waveNpcSpawned = 0;
@@ -948,6 +951,8 @@ void broadcastDuelState(SOCKET sock,
     pkt.waveBannerVisible = d.waveBannerVisible ? 1 : 0;
     pkt.waveLivesRemaining = d.npcWaves ? d.waveLivesRemaining : 0;
     pkt.waveHighest = d.npcWaves ? d.waveHighest : 0;
+    pkt.bannerSerial = d.bannerSerial;
+    pkt.bannerNumber = d.bannerNumber;
 
     // ── Gamemode visual overrides ──────────────────────────────────
     pkt.cameraFov = d.cameraFov;
@@ -3063,21 +3068,155 @@ static void mapEntityRuntimeTick(ServerGamemodeState& d, SOCKET sock,
 
         if (e.type == "checkpoint" && d.activatedCheckpoints.count(e.id) == 0) {
             if (!mapEntityHasLivePlayer(e, players)) continue;
+            // Monotonic progress: a checkpoint at or before the current one is
+            // never accepted again (no going from checkpoint 3 back to 2).
+            if (e.checkpointIndex > 0 && e.checkpointIndex <= d.currentCheckpointIndex) {
+                d.activatedCheckpoints.insert(e.id);
+                continue;
+            }
             d.activatedCheckpoints.insert(e.id);
             d.currentCheckpointId = e.id;
             d.currentCheckpointPos = e.position;
             d.hasCheckpointSpawn = true;
+            if (e.checkpointIndex > 0) d.currentCheckpointIndex = e.checkpointIndex;
             ++d.runCheckpointCount;
+            // Transient client banner (fades locally over 5 seconds).
+            ++d.bannerSerial;
+            d.bannerNumber = e.checkpointIndex > 0 ? e.checkpointIndex : (int)d.runCheckpointCount;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
                 "zombie_tower.checkpoint-reached", e.id,
                 "party entered authored checkpoint", tick,
                 nlohmann::json{{"map", d.mapId}, {"checkpoint_id", e.id},
+                               {"checkpoint_index", e.checkpointIndex},
                                {"checkpoint_count", d.runCheckpointCount},
                                {"position", {e.position.x, e.position.y, e.position.z}}});
             Debug::warn(Debug::Category::Duel,
-                "[CHECKPOINT] reached id=%s pos=(%.1f %.1f %.1f) tick=%u\n",
-                e.id.c_str(), e.position.x, e.position.y, e.position.z, tick);
+                "[CHECKPOINT] reached id=%s index=%d pos=(%.1f %.1f %.1f) tick=%u\n",
+                e.id.c_str(), e.checkpointIndex,
+                e.position.x, e.position.y, e.position.z, tick);
+        } else if (e.type == "damage_volume" && e.damage > 0) {
+            auto& nextTick = d.damageVolumeNextTick[e.id];
+            if ((tick % 60u) == 0u) {
+                nlohmann::json playerSamples = nlohmann::json::array();
+                int playersInside = 0;
+                for (const auto& kv : players) {
+                    const ServerPlayer& p = kv.second;
+                    const bool inside = mapEntityContainsPoint(e, p.pos);
+                    if (inside) ++playersInside;
+                    if (playerSamples.size() < 8) {
+                        playerSamples.push_back({
+                            {"player_id", p.id},
+                            {"position", {p.pos.x, p.pos.y, p.pos.z}},
+                            {"inside", inside},
+                            {"dead", p.dead},
+                            {"active", p.spawnState == ServerPlayer::Active},
+                            {"health", p.health},
+                            {"teleport_invulnerability_ticks", p.teleportInvulnerabilityTicks}});
+                    }
+                }
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "damage-volume.probe", e.id,
+                    "authored damage-volume containment sample", tick,
+                    nlohmann::json{
+                        {"map", d.mapId},
+                        {"entity_id", e.id},
+                        {"shape", e.shape},
+                        {"position", {e.position.x, e.position.y, e.position.z}},
+                        {"radius", e.radius},
+                        {"size", {e.size.x, e.size.y, e.size.z}},
+                        {"damage", e.damage},
+                        {"damage_interval_ticks", e.damageIntervalTicks},
+                        {"players_inside", playersInside},
+                        {"players_total", players.size()},
+                        {"players", std::move(playerSamples)}});
+            }
+            if (tick < nextTick) continue;
+            bool hitAny = false;
+            int hitPlayers = 0, hitNpcs = 0, killedPlayers = 0;
+            for (auto& kv : players) {
+                ServerPlayer& p = kv.second;
+                const bool inside = mapEntityContainsPoint(e, p.pos);
+                if (!inside) continue;
+                if (p.dead || p.spawnState != ServerPlayer::Active) {
+                    if ((tick % 60u) == 0u) {
+                        const char* spawnStateName =
+                            p.spawnState == ServerPlayer::AwaitingMapReady
+                                ? "awaiting_map_ready"
+                                : p.spawnState == ServerPlayer::AwaitingSpawnAck
+                                    ? "awaiting_spawn_ack"
+                                    : "active";
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::World, StructuredLevel::Important,
+                            "damage-volume.player-skip", e.id,
+                            "authored damage-volume skipped non-active player", tick,
+                            nlohmann::json{
+                                {"map", d.mapId},
+                                {"entity_id", e.id},
+                                {"player_id", p.id},
+                                {"position", {p.pos.x, p.pos.y, p.pos.z}},
+                                {"inside", inside},
+                                {"dead", p.dead},
+                                {"spawn_state", static_cast<int>(p.spawnState)},
+                                {"spawn_state_name", spawnStateName},
+                                {"health", p.health},
+                                {"teleport_invulnerability_ticks", p.teleportInvulnerabilityTicks}});
+                    }
+                    continue;
+                }
+                const ServerDamageResult res = applyServerDamage(
+                    players, p, 0, e.damage, glm::vec3(0.0f),
+                    ServerDamageSource::Environment);
+                int confirmationStatus = -1;
+                if (res.applied) {
+                    const auto confirmation = queueServerDamageConfirmedEvent(
+                        sock, players, tick, totalPacketsOut, 0, p, e.damage, res,
+                        p.pos, glm::vec3(0.0f), glm::vec3(0.0f),
+                        ServerDamageSource::Environment, NETWORK_WEAPON_NONE);
+                    confirmationStatus = static_cast<int>(confirmation);
+                    hitAny = true;
+                    ++hitPlayers;
+                    if (res.killed) ++killedPlayers;
+                }
+                if ((tick % 60u) == 0u) {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::World, StructuredLevel::Important,
+                        "damage-volume.player-result", e.id,
+                        "authored damage-volume player result", tick,
+                        nlohmann::json{
+                            {"map", d.mapId},
+                            {"entity_id", e.id},
+                            {"player_id", p.id},
+                            {"position", {p.pos.x, p.pos.y, p.pos.z}},
+                            {"damage_requested", e.damage},
+                            {"damage_applied", res.applied},
+                            {"health_before", res.healthBefore},
+                            {"health_after", res.healthAfter},
+                            {"killed", res.killed},
+                            {"confirmation_status", confirmationStatus},
+                            {"teleport_invulnerability_ticks", p.teleportInvulnerabilityTicks}});
+                }
+            }
+            for (auto& kv : npcs) {
+                ServerNpc& n = kv.second;
+                if (n.health <= 0) continue;
+                if (!mapEntityContainsPoint(e, n.pos)) continue;
+                n.health = std::max(0, n.health - e.damage);
+                hitAny = true; ++hitNpcs;
+            }
+            if (hitAny) {
+                nextTick = tick + (uint32_t)std::max(1, e.damageIntervalTicks);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "damage-volume.damage", e.id,
+                    "actor took authored volume damage", tick,
+                    nlohmann::json{{"map", d.mapId}, {"entity_id", e.id},
+                                   {"damage_type", e.damageType},
+                                   {"damage", e.damage},
+                                   {"players_hit", hitPlayers}, {"npcs_hit", hitNpcs},
+                                   {"players_killed", killedPlayers}});
+            }
         } else if (e.type == "boss_trigger" && d.activatedBossTriggers.count(e.id) == 0) {
             if (!mapEntityHasLivePlayer(e, players)) continue;
             d.activatedBossTriggers.insert(e.id);
@@ -3859,6 +3998,42 @@ void serverGamemodeTick(SOCKET sock,
             d.npcSpawnPerInterval = std::max(1, live.npcSpawnPerInterval);
             d.intermissionSeconds = (float)live.intermissionSeconds;
             d.resultsSeconds = (float)live.resultsSeconds;
+        }
+    }
+    if ((tick % 60u) == 0u) {
+        size_t damageVolumeCount = 0;
+        nlohmann::json damageVolumes = nlohmann::json::array();
+        for (const auto& entity : MapConfigRegistry::instance().entitiesMutable()) {
+            if (entity.type != "damage_volume") continue;
+            ++damageVolumeCount;
+            damageVolumes.push_back({
+                {"entity_id", entity.id},
+                {"enabled", entity.enabled},
+                {"shape", entity.shape},
+                {"position", {entity.position.x, entity.position.y, entity.position.z}},
+                {"radius", entity.radius},
+                {"size", {entity.size.x, entity.size.y, entity.size.z}},
+                {"damage", entity.damage},
+                {"damage_interval_ticks", entity.damageIntervalTicks}});
+        }
+        if (damageVolumeCount > 0) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "damage-volume.runtime-gate", d.mapId,
+                "authored damage-volume runtime gate sample", tick,
+                nlohmann::json{
+                    {"map", d.mapId},
+                    {"match_mode", d.matchMode},
+                    {"phase", d.phase},
+                    {"phase_active", d.phase == DUEL_PHASE_ACTIVE},
+                    {"managed_match_branch",
+                     d.npcWaves || d.persistentNpcSpawns || d.matchMode == "ffa" ||
+                         d.matchMode == "tdm" || d.winCondition == "last_team_standing" ||
+                         d.winCondition == "last_actor_alive"},
+                    {"active_players", countActivePlayers(players)},
+                    {"players_total", players.size()},
+                    {"damage_volume_count", damageVolumeCount},
+                    {"damage_volumes", std::move(damageVolumes)}});
         }
     }
     updateActorStates(d, players, npcs);

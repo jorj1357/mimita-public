@@ -278,9 +278,9 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingTeleportPosition = glm::vec3(0.0f);
     ctx.pendingTeleportSentMs = 0;
     ctx.awaitingTeleportAck = false;
-    ctx.proceduralTeleportStartEpoch = 0;
-    ctx.proceduralTeleportSentMs = 0;
-    ctx.proceduralTeleportPending = false;
+    ctx.authoritativeTransformStartEpoch = 0;
+    ctx.authoritativeTransformSentMs = 0;
+    ctx.authoritativeTransformPending = false;
     ctx.awaitingExplodeDeath = false;
     ctx.explodeRequestLastSendMs = 0;
     ctx.teleportResync = false;
@@ -434,9 +434,9 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.pendingTeleportPosition = glm::vec3(0.0f);
     ctx.pendingTeleportSentMs = 0;
     ctx.awaitingTeleportAck = false;
-    ctx.proceduralTeleportStartEpoch = 0;
-    ctx.proceduralTeleportSentMs = 0;
-    ctx.proceduralTeleportPending = false;
+    ctx.authoritativeTransformStartEpoch = 0;
+    ctx.authoritativeTransformSentMs = 0;
+    ctx.authoritativeTransformPending = false;
     ctx.awaitingExplodeDeath = false;
     ctx.localServerVelocity = glm::vec3(0.0f);
     ctx.localServerYaw = 0.0f;
@@ -517,17 +517,10 @@ void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position)
     if (!ctx.active || !ctx.localPlayerId)
         return;
 
-    TeleportRequestPacket request{};
-    request.header.type = PACKET_TELEPORT_REQUEST;
-    request.header.tick = ctx.tick;
-    request.header.playerId = ctx.localPlayerId;
-    request.px = position.x;
-    request.py = position.y;
-    request.pz = position.z;
-    ctx.pendingTeleportPosition = position;
-    ctx.pendingTeleportSentMs = nowMs();
-    ctx.awaitingTeleportAck = true;
-    mpSendPacket(ctx, &request, sizeof(request));
+    char command[128]{};
+    std::snprintf(command, sizeof(command), "teleport %.9g,%.9g,%.9g",
+                  position.x, position.y, position.z);
+    mpSendServerCommand(ctx, command);
 }
 
 void mpRequestExplode(MultiplayerContext& ctx)
@@ -649,17 +642,33 @@ void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command)
     if (!ctx.active || !ctx.localPlayerId)
         return;
 
-    if (command == "procedural_world_teleport_highest")
+    const bool privilegedTransformCommand =
+        command == "unfly" ||
+        command == "procedural_world_teleport_highest" ||
+        command.rfind("fly ", 0) == 0 ||
+        command.rfind("teleport ", 0) == 0;
+    if (privilegedTransformCommand)
     {
-        // The server chooses the destination.  Mark the handoff before the
-        // command leaves the client so the next movement packet cannot carry
-        // the old predicted room position while the command is in flight.
-        ctx.proceduralTeleportStartEpoch = ctx.transformEpoch;
-        ctx.proceduralTeleportSentMs = nowMs();
-        ctx.proceduralTeleportPending = true;
+        // Mark the handoff before the command leaves the client so the next
+        // movement packet cannot carry the old predicted position while the
+        // server applies the command.
+        ctx.authoritativeTransformStartEpoch = ctx.transformEpoch;
+        ctx.authoritativeTransformSentMs = nowMs();
+        ctx.authoritativeTransformPending = true;
         ctx.teleportResync = true;
-        printf("[CLIENT PROCEDURAL TELEPORT BEGIN] playerId=%u startEpoch=%u\n",
-               ctx.localPlayerId, (unsigned)ctx.proceduralTeleportStartEpoch);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.client-privileged-transform", std::to_string(ctx.localPlayerId),
+            "privileged transform command sent", ctx.tick,
+            nlohmann::json{{"player_id", ctx.localPlayerId},
+                           {"command", command},
+                           {"start_epoch", ctx.authoritativeTransformStartEpoch},
+                           {"pending", true}},
+            __FILE__, __LINE__, __FUNCTION__);
+        printf("[CLIENT PRIVILEGED TRANSFORM BEGIN] playerId=%u startEpoch=%u command=\"%s\"\n",
+               ctx.localPlayerId,
+               (unsigned)ctx.authoritativeTransformStartEpoch,
+               command.c_str());
     }
 
     ServerCommandPacket packet{};

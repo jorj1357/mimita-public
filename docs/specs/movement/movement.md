@@ -1043,6 +1043,54 @@ Later wehn i can figure it out  movement can be more server authoritative but fo
 ________________
 
 
+16.1 Privileged movement and transform handoff
+Ordinary movement reports and privileged administrative movement are separate
+protocol meanings.
+
+Ordinary movement follows section 16: the client predicts, reports intent and
+state, and the server validates the report. An administrator `fly`, `unfly`,
+or `teleport` command is instead an explicit server-authorized transform
+operation. Permission authorizes the operation, while the server remains the
+authority that changes the actor.
+
+All discontinuous movement must use one authoritative-transform owner. That
+owner must:
+
+1. authorize the command or server lifecycle operation;
+2. validate finite values, actor ownership, lifecycle, and destination bounds;
+3. apply the destination or flight-mode transition on the server;
+4. increment the transform epoch;
+5. clear stale movement/prediction/contact history and reset the movement
+   validation baseline;
+6. publish the authoritative transform and transition reason; and
+7. hold ordinary movement replacement until the client acknowledges the new
+   epoch.
+
+The destination of an explicit administrator teleport is not required to be
+reachable by a continuous ordinary walk from the previous position. The
+teleport operation is the exception that authorizes the discontinuity. This
+does not mean that arbitrary client packets may skip validation.
+
+While server-authorized flight is active, the server owns the actor position
+and the client sends only flight intent. Flight may pass through world walls
+because the server granted that mode. `unfly` must end the mode through the
+same transform handoff, so the first ordinary movement report cannot be
+mistaken for a stale pre-flight position or used to pull the actor backward.
+
+This contract prevents three competing owners from fighting over one actor:
+
+* command/permission owner: decides whether the operation is authorized;
+* authoritative-transform owner: applies teleport, flight transitions, and
+  lifecycle position replacement;
+* ordinary movement owner: validates and simulates normal movement only after
+  the transform handoff is complete.
+
+The client reconciliation owner presents the server result and clears or
+rebases prediction; it does not decide whether an administrator transform was
+legal.
+________________
+
+
 17. Shared simulation and future authority
 Even during the client-trusting phase, movement should be represented through shared structures and reusable functions. AND DONT DUPLCIATE ALREDT EXISTING things . client server both use SAME FUNCTIONS client server dont know dontcare if its client or server the just both do the same math both do the same functions. Same numbers etc.
 Target API:

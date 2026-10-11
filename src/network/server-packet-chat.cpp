@@ -340,7 +340,9 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
                          const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
-                         uint32_t tick, uint64_t& totalPacketsOut)
+                         const HeadlessWorld& world,
+                         uint32_t tick, uint64_t& totalPacketsOut,
+                         const TransportConnectionId* connectionId)
 {
     if (bytes < (int)sizeof(ServerCommandPacket))
         return;
@@ -348,6 +350,8 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         const_cast<ServerCommandPacket*>(reinterpret_cast<const ServerCommandPacket*>(buffer));
     auto it = players.find(cmd->header.playerId);
     if (it == players.end())
+        return;
+    if (!playerOwnsConnectionSource(it->second, &from, connectionId))
         return;
 
     cmd->commandText[239] = '\0';
@@ -397,51 +401,6 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         return;
     }
 
-    // Flight is a self-only developer movement mode. The server accepts the
-    // request for the sender and still owns the actual movement/position.
-    if (commandStr.rfind("fly ", 0) == 0)
-    {
-        try
-        {
-            const float multiplier = std::stof(commandStr.substr(4));
-            if (!std::isfinite(multiplier) || multiplier <= 0.0f)
-                throw std::invalid_argument("non-positive");
-            it->second.flyEnabled = true;
-            it->second.flySpeedMultiplier = std::clamp(multiplier, 0.01f, 100.0f);
-            ack(true, "applied: fly");
-        }
-        catch (...)
-        {
-            ack(false, "rejected: usage fly <positive speed multiplier>");
-        }
-        return;
-    }
-    if (commandStr == "unfly")
-    {
-        it->second.flyEnabled = false;
-        it->second.flySpeedMultiplier = 1.0f;
-        it->second.vel = glm::vec3(0.0f);
-        ack(true, "applied: unfly");
-        return;
-    }
-
-    // Procedural teleport uses the existing teleport request/authority path, so
-    // any player (not only the host) may request it. The server resolves the
-    // highest accessible room and moves the requester to that entrance.
-    if (commandStr == "procedural_world_teleport_highest")
-    {
-        ServerGamemodeState& state = serverGamemodeState();
-        if (!state.procedural.enabled)
-        {
-            ack(false, "rejected: procedural world is not active");
-            return;
-        }
-        state.pendingProcedural.teleportHighest = true;
-        state.pendingProcedural.teleportRequesterId = it->second.id;
-        ack(true, "applied: procedural_world_teleport_highest");
-        return;
-    }
-
     // Self-only health is a player action, not a host-wide server override.
     // Keep it before the host gate so every player can change only their own
     // authoritative spawn health.
@@ -479,10 +438,9 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         return;
     }
 
-    // Host-gate: only the player whose name matches the server host (or the
-    // first joiner when no host name is set) may issue server-authoritative
-    // commands. This also stops any client from deleting all NPCs.
-    if (!it->second.isHost)
+    // Host-gate: only the server-side administrative identity may issue
+    // server-authoritative commands. This also protects privileged transforms.
+    if (!serverPlayerMayUsePrivilegedTransforms(it->second))
     {
         Debug::warn(Debug::Category::Networking,
             "%s [SERVER COMMAND REJECT] playerId=%u name=\"%s\" cmd=\"%s\" reason=not-host hostPlayerId=%u\n",
@@ -497,6 +455,84 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
            commandStr.c_str());
 
     ServerGameOverrides& ov = serverGameOverrides();
+
+    // Privileged transforms all use the same server-owned epoch handoff. The
+    // client supplies intent or a destination; it never commits the position.
+    if (commandStr.rfind("fly ", 0) == 0)
+    {
+        try
+        {
+            const float multiplier = std::stof(commandStr.substr(4));
+            if (!std::isfinite(multiplier) || multiplier <= 0.0f)
+                throw std::invalid_argument("non-positive");
+            it->second.flySpeedMultiplier = std::clamp(multiplier, 0.01f, 100.0f);
+            it->second.flyEnabled = true;
+            beginAuthoritativeTransform(it->second, it->second.pos,
+                                        glm::vec3(0.0f), it->second.yaw,
+                                        "fly_enable");
+            ack(true, ("applied: fly " + std::to_string(it->second.flySpeedMultiplier)).c_str());
+        }
+        catch (...)
+        {
+            ack(false, "rejected: usage fly <positive speed multiplier>");
+        }
+        return;
+    }
+    if (commandStr == "unfly")
+    {
+        it->second.flyEnabled = false;
+        it->second.flySpeedMultiplier = 1.0f;
+        beginAuthoritativeTransform(it->second, it->second.pos,
+                                    glm::vec3(0.0f), it->second.yaw,
+                                    "fly_disable");
+        ack(true, "applied: unfly");
+        return;
+    }
+    if (commandStr.rfind("teleport ", 0) == 0)
+    {
+        try
+        {
+            const std::string args = commandStr.substr(9);
+            const size_t first = args.find(',');
+            const size_t second = first == std::string::npos
+                ? std::string::npos : args.find(',', first + 1);
+            if (first == std::string::npos || second == std::string::npos)
+                throw std::invalid_argument("format");
+            const glm::vec3 requested{
+                std::stof(args.substr(0, first)),
+                std::stof(args.substr(first + 1, second - first - 1)),
+                std::stof(args.substr(second + 1))};
+            if (!std::isfinite(requested.x) || !std::isfinite(requested.y) ||
+                !std::isfinite(requested.z))
+                throw std::invalid_argument("non-finite-or-no-world");
+            const glm::vec3 destination = glm::clamp(
+                requested, world.boundsMin - glm::vec3(2.0f),
+                world.boundsMax + glm::vec3(2.0f));
+            it->second.flyEnabled = false;
+            it->second.flySpeedMultiplier = 1.0f;
+            beginAuthoritativeTeleport(it->second, destination, it->second.yaw,
+                                       "teleport");
+            ack(true, "applied: teleport");
+        }
+        catch (...)
+        {
+            ack(false, "rejected: usage teleport x,y,z");
+        }
+        return;
+    }
+    if (commandStr == "procedural_world_teleport_highest")
+    {
+        ServerGamemodeState& state = serverGamemodeState();
+        if (!state.procedural.enabled)
+        {
+            ack(false, "rejected: procedural world is not active");
+            return;
+        }
+        state.pendingProcedural.teleportHighest = true;
+        state.pendingProcedural.teleportRequesterId = it->second.id;
+        ack(true, "applied: procedural_world_teleport_highest");
+        return;
+    }
 
     if (commandStr == "modelist")
     {

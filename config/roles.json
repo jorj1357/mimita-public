@@ -97,6 +97,16 @@
       "objective_permissions": [],
       "avatar": "jason",
       "avatar_forced": true
+    },
+    {
+      "id": "zombie",
+      "display_name": "Zombie",
+      "team": 1,
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "zombie",
+      "starting_weapon": "zombie_claw",
+      "behavior_profile": "zombie"
     }
   ]
 }

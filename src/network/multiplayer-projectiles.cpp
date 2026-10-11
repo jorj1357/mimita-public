@@ -1363,6 +1363,12 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
 
                 if (event->killed != 0)
                 {
+                    // Specific death attribution for the "you died to X" popup.
+                    if (event->source == DAMAGE_CONFIRMED_ENVIRONMENT)
+                        gpPlayer->killedBy = "the environment";
+                    else if (event->source == DAMAGE_CONFIRMED_PHYSICAL_CONTACT &&
+                             event->attackerEntityType == ENTITY_NPC)
+                        gpPlayer->killedBy = "a monster";
                     const bool spawnEligible = !presentedBefore;
                     StructuredLogger::instance().writeEvent(
                         StructuredCategory::Network, StructuredLevel::Important,

@@ -366,7 +366,8 @@ int main(int argc, char** argv)
         // world are both ready so commands such as crate_spawn can safely use
         // the local player and camera.
         if (!startupCommandsExecuted && !launchOptions.startupCommands.empty() &&
-            gpMpContext && gpMpContext->connected && gpWorldLoaded && *gpWorldLoaded)
+            gpMpContext && gpMpContext->connected && gpMpContext->gameplayActive &&
+            gpWorldLoaded && *gpWorldLoaded)
         {
             for (const std::string& command : launchOptions.startupCommands)
             {

@@ -400,6 +400,8 @@ const char* movementValidationReasonName(MovementValidationReason reason)
         return "awaiting-authoritative-transform-ack";
     case MovementValidationReason::TooFarFromAuthoritative:
         return "too-far-from-authoritative";
+    case MovementValidationReason::ServerAuthoritativeFlight:
+        return "server-authoritative-flight";
     default: return "unknown";
     }
 }
@@ -576,6 +578,22 @@ MovementValidationResult validateClientMovementReport(
         result.acceptedState.baseVelocity = glm::vec3(0.0f);
         result.acceptedState.externalImpulse = glm::vec3(0.0f);
         result.clearsAuthoritativeTransformAck = true;
+    }
+
+    // Flight is an explicit server-authoritative movement mode. The client
+    // report still carries useful input and presentation data, but its
+    // position, velocity, and wall-crossing path must never become server
+    // state. server-players.cpp advances the authoritative position from the
+    // accepted direction buttons below.
+    if (player.flyEnabled)
+    {
+        result.decision = MovementValidationDecision::Accept;
+        result.reason = MovementValidationReason::ServerAuthoritativeFlight;
+        result.acceptedState = stateFromAcceptedReport(player, report, config);
+        result.acceptedState.position = player.pos;
+        result.acceptedState.baseVelocity = player.vel;
+        result.acceptedState.externalImpulse = glm::vec3(0.0f);
+        return result;
     }
 
     // ── Active human players use validated client-transform authority ──

@@ -22,7 +22,7 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 39: Replicated NPC avatars and match actor identities use expanded fields.
 // 41: WelcomePacket carries the dev-loop run/build identity so a new client
 //      cannot silently attach to an older persistent server.
-constexpr uint16_t PROTOCOL_VERSION = 41;
+constexpr uint16_t PROTOCOL_VERSION = 42;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -1236,6 +1236,11 @@ struct DuelStatePacket
     // ── Procedural world (Infinite Dungeon Slayer) ──────────────────
     // Appended section: server-owned room state. All-zero means disabled.
     ProceduralWorldNetworkState procedural = {};
+    // ── Transient HUD banner (e.g. "CHECKPOINT N REACHED") ──────────
+    // bannerSerial changes for every new banner so clients restart their local
+    // fade; bannerNumber is the value interpolated into the layout text.
+    uint32_t bannerSerial = 0;
+    int32_t bannerNumber = 0;
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a

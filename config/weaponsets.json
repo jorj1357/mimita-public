@@ -77,6 +77,14 @@
       "description": "Heavy Juggernaut loadout: large machine gun and hitscan rifle.",
       "role_only": true,
       "weapons": ["large_machine_gun", "nothing"]
+    },
+    {
+      "id": 12,
+      "key": "zombie",
+      "name": "Zombie (role)",
+      "description": "Zombie melee contact loadout: claw only.",
+      "role_only": true,
+      "weapons": ["zombie_claw", "nothing"]
     }
   ]
 }

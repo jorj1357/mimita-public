@@ -55,6 +55,54 @@ their documented fixed tick.
 Commands that send network input should use the same client send path as normal
 input. Commands must not directly mutate server-owned state from the client.
 
+## Privileged transform command contract
+
+Commands that can change an actor's position or movement authority must declare
+whether they are ordinary movement input or a privileged server transform
+operation. The following are privileged-transform examples:
+
+* `fly <speed>` — request server-authorized flight for the issuing actor;
+* `unfly` — end server-authorized flight and request an authoritative handoff;
+* `teleport <x> <y> <z>` — request an administrator teleport to a destination.
+
+The exact command names and argument syntax remain implementation details, but
+their ownership and timing are not optional. A privileged transform command
+must:
+
+1. reach the authoritative server or the server-owned console path;
+2. check the issuer's administrator/host permission on the server;
+3. validate finite values, actor ownership, lifecycle, and destination bounds;
+4. call the single authoritative-transform owner rather than mutating a client
+   position or inventing a second teleport path;
+5. increment the actor's transform epoch and clear/rebase stale movement and
+   prediction state;
+6. return a structured accepted/rejected result with a reason and transition
+   identifier; and
+7. make the client adopt and acknowledge the authoritative transform before
+   ordinary movement reports can replace it.
+
+For `fly`, the server owns the position while the mode is active. The client
+sends direction/input intent only. The server may intentionally skip ordinary
+wall-crossing validation for that explicitly granted mode, but the command
+must not disable permission, finite-state, lifecycle, or world-bound checks.
+
+For `teleport`, the requested destination is an explicit discontinuity. It is
+not validated as though the actor walked there through every intervening wall.
+The server still decides whether the destination is acceptable and publishes
+the resulting authoritative transform.
+
+This contract is the command-side companion to the movement and networking
+specifications:
+
+* `docs/specs/movement/movement.md`, section 16.1, defines the movement-mode
+  and transform handoff rules.
+* `docs/specs/networking/networking.md`, section 3.1, defines privileged
+  administrative transform authority and reconciliation.
+
+Commands must not infer authority merely because the issuer is the local host.
+Host privilege is an explicit server permission, and the server remains the
+single authority in listen-server and dedicated-server sessions.
+
 ## Command ownership
 
 Commands belong to the subsystem they control. Prefer small registrations such

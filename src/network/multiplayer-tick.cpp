@@ -297,6 +297,18 @@ static void processSnapshotEntities(
                        ctx.localServerPosition.x, ctx.localServerPosition.y,
                        ctx.localServerPosition.z);
             }
+            if (ctx.authoritativeTransformPending &&
+                ctx.localServerEpoch != 0 &&
+                ctx.localServerEpoch != ctx.authoritativeTransformStartEpoch)
+            {
+                printf("[CLIENT PRIVILEGED TRANSFORM SNAPSHOT] playerId=%u "
+                       "startEpoch=%u serverEpoch=%u position=(%.2f,%.2f,%.2f)\n",
+                       ctx.localPlayerId,
+                       (unsigned)ctx.authoritativeTransformStartEpoch,
+                       (unsigned)ctx.localServerEpoch,
+                       ctx.localServerPosition.x, ctx.localServerPosition.y,
+                       ctx.localServerPosition.z);
+            }
             if (ctx.awaitingExplodeDeath && entity.health <= 0)
             {
                 ctx.awaitingExplodeDeath = false;
@@ -1707,6 +1719,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             const SpawnActivatedPacket* act = reinterpret_cast<const SpawnActivatedPacket*>(buffer);
             if (act->spawnGeneration == ctx.lastKnownSpawnGeneration)
             {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "spawn-handshake.client-activated-received",
+                    std::to_string(ctx.localPlayerId), "spawn-activated", ctx.tick,
+                    nlohmann::json{{"received_generation", act->spawnGeneration},
+                                   {"received_epoch", act->transformEpoch},
+                                   {"current_generation", ctx.lastKnownSpawnGeneration},
+                                   {"pending_ack_generation", ctx.pendingSpawnAckGeneration},
+                                   {"pending_ack_epoch", ctx.pendingSpawnAckEpoch}});
                 // Server confirmed our SpawnAck — stop retrying it.
                 if (ctx.pendingSpawnAckGeneration == act->spawnGeneration)
                 {
@@ -1973,6 +1994,25 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                                      strnlen(res->statusText, sizeof(res->statusText)));
             if (res->accepted)
             {
+                if (status.rfind("applied: fly", 0) == 0)
+                {
+                    ctx.flyEnabled = true;
+                    const size_t speedStart = std::string("applied: fly ").size();
+                    if (status.size() > speedStart)
+                    {
+                        try
+                        {
+                            ctx.flySpeedMultiplier = std::clamp(
+                                std::stof(status.substr(speedStart)), 0.01f, 100.0f);
+                        }
+                        catch (...) {}
+                    }
+                }
+                else if (status.rfind("applied: unfly", 0) == 0)
+                {
+                    ctx.flyEnabled = false;
+                    ctx.flySpeedMultiplier = 1.0f;
+                }
                 Debug::warn(Debug::Category::Networking,
                     "[HOST COMMAND APPLIED] %s\n", status.c_str());
                 NotificationSystem::instance().pushCritical(
@@ -1980,6 +2020,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             }
             else
             {
+                if (status.rfind("rejected:", 0) == 0)
+                {
+                    ctx.authoritativeTransformPending = false;
+                    ctx.teleportResync = true;
+                    if (status.find("fly") != std::string::npos)
+                    {
+                        ctx.flyEnabled = false;
+                        ctx.flySpeedMultiplier = 1.0f;
+                    }
+                }
                 Debug::warn(Debug::Category::Networking,
                     "[HOST COMMAND REJECTED] %s\n", status.c_str());
                 NotificationSystem::instance().pushCritical(
@@ -2150,6 +2200,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             retry.transformEpoch = ctx.pendingSpawnAckEpoch;
             mpSendPacket(ctx, &retry, sizeof(retry));
             ctx.pendingSpawnAckLastSendMs = nowSpawnAck;
+            if (ctx.tick % 60u == 0u)
+            {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "spawn-handshake.client-ack-retry",
+                    std::to_string(ctx.localPlayerId), "awaiting-server-activation", ctx.tick,
+                    nlohmann::json{{"spawn_generation", retry.spawnGeneration},
+                                   {"transform_epoch", retry.transformEpoch},
+                                   {"gameplay_active", ctx.gameplayActive}});
+            }
             Debug::log(Debug::Category::Weapons,
                        "[SPAWN ACK RETRY] playerId=%u spawnGen=%u epoch=%u\n",
                        ctx.localPlayerId, ctx.pendingSpawnAckGeneration,
@@ -2163,25 +2223,24 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         ctx.lastInputSentMs == 0 ||
         (double)(currentMs - ctx.lastInputSentMs) >= inputIntervalMs;
 
-    // procedural_world_teleport_highest has no client-known destination.
-    // Do not send the old predicted transform while waiting for the server's
-    // newer epoch.  The server command itself uses its separate reliable
-    // command packet, so suppressing this movement packet cannot cancel the
-    // teleport request.
-    if (ctx.proceduralTeleportPending &&
-        currentMs - ctx.proceduralTeleportSentMs >= 3000)
+    // Privileged transforms may have an unknown destination or a server-owned
+    // position. Do not send the old predicted transform while waiting for the
+    // newer epoch. The command packet is independent, so suppressing movement
+    // cannot cancel the request.
+    if (ctx.authoritativeTransformPending &&
+        currentMs - ctx.authoritativeTransformSentMs >= 3000)
     {
         // A lost command must not freeze movement forever.  The server-side
         // transform-ack timeout is also bounded, so use the same recovery
         // principle here and allow normal input to resume.
-        printf("[CLIENT PROCEDURAL TELEPORT TIMEOUT] playerId=%u startEpoch=%u\n",
-               ctx.localPlayerId, (unsigned)ctx.proceduralTeleportStartEpoch);
-        ctx.proceduralTeleportPending = false;
+        printf("[CLIENT PRIVILEGED TRANSFORM TIMEOUT] playerId=%u startEpoch=%u\n",
+               ctx.localPlayerId, (unsigned)ctx.authoritativeTransformStartEpoch);
+        ctx.authoritativeTransformPending = false;
         ctx.teleportResync = true;
     }
 
     if (ctx.connected && ctx.localPlayerId && input && inputDue &&
-        !ctx.proceduralTeleportPending)
+        !ctx.authoritativeTransformPending)
     {
         InputPacket in{};
         in.header.type = PACKET_INPUT;

@@ -801,6 +801,34 @@ WeaponDefinition createSpyKnifeDefinition() {
     return def;
 }
 
+WeaponDefinition createZombieClawDefinition() {
+    WeaponDefinition def;
+    def.id = "zombie_claw";
+    def.displayName = "Zombie Claw";
+    def.slot = 20;
+    def.modelPath = "";
+    def.damage = 12.0f;
+    def.headshotMultiplier = 1.0f;
+    def.fireDelay = 0.0f;
+    def.reloadTime = 0.0f;
+    def.magazineSize = 0;
+    def.pelletCount = 1;
+    def.fireMode = WeaponFireMode::SemiAuto;
+    // Reuses the SpyKnife physical-contact execution; NPC contact damage in
+    // server-npcs.cpp is gated by the "npcContact" custom param below.
+    def.behaviorType = WeaponBehaviorType::SpyKnife;
+    def.hitscan = false;
+    def.usesPhysicsProjectile = false;
+    def.soundShoot = "entity/falcon/falconswing";
+    def.soundHit = "player_hurt";
+    def.customParams["npcContact"] = 1.0f;
+    def.customParams["serverContactRadius"] = 1.2f;
+    def.customParams["contactForwardOffset"] = 0.8f;
+    def.customParams["contactCenterZ"] = 0.9f;
+    def.customParams["damageTickInterval"] = 0.5f;
+    return def;
+}
+
 WeaponDefinition createProjectileRifleDefinition() {
     WeaponDefinition def;
     def.id = "projectile_rifle";
@@ -1021,6 +1049,7 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createQuickHitDefinition());
     registerWeaponFromJson(createForcePunchDefinition());
     registerWeaponFromJson(createSpyKnifeDefinition());
+    registerWeaponFromJson(createZombieClawDefinition());
     registerWeaponFromJson(createProjectileRifleDefinition());
     registerWeaponFromJson(createHitscanRifleDefinition());
     registerWeaponFromJson(createBigShotgunDefinition());

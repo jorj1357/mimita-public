@@ -56,17 +56,17 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.lastAppliedEpoch = ctx.localServerEpoch;
         ctx.localPlayerReconciled = true;
 
-        if (ctx.proceduralTeleportPending &&
-            ctx.localServerEpoch != ctx.proceduralTeleportStartEpoch)
+        if (ctx.authoritativeTransformPending &&
+            ctx.localServerEpoch != ctx.authoritativeTransformStartEpoch)
         {
-            printf("[CLIENT PROCEDURAL TELEPORT COMPLETE] playerId=%u "
+            printf("[CLIENT PRIVILEGED TRANSFORM COMPLETE] playerId=%u "
                    "epoch=%u position=(%.2f,%.2f,%.2f)\n",
                    ctx.localPlayerId,
                    (unsigned)ctx.localServerEpoch,
                    ctx.localServerPosition.x,
                    ctx.localServerPosition.y,
                    ctx.localServerPosition.z);
-            ctx.proceduralTeleportPending = false;
+            ctx.authoritativeTransformPending = false;
             ctx.teleportResync = true;
         }
     }

@@ -1193,7 +1193,21 @@ void handleInputPacket(const char* buffer, int bytes,
     }
 
     const bool hadSimBroadcastPosition = p.hasSimBroadcastPos;
-    applyMovementStateToServerPlayer(result.acceptedState, p);
+    if (!p.flyEnabled)
+    {
+        applyMovementStateToServerPlayer(result.acceptedState, p);
+    }
+    else
+    {
+        // Flight reports carry input intent, but the server simulation owns
+        // position and velocity. Never let a client report overwrite the
+        // position that server-players.cpp will advance this tick.
+        p.clientStateUpdated = false;
+        p.lastAcceptedClientPosition = p.pos;
+        p.lastAcceptedClientVelocity = p.vel;
+        p.lastAcceptedClientTransformMs = currentMs;
+        p.hasAcceptedClientTransform = true;
+    }
     // The first accepted current-life report after a duel teleport must become
     // visible to remote clients immediately. Otherwise server_sim broadcasting
     // can continue publishing the pre-duel spawn while local prediction moves.
@@ -1220,10 +1234,13 @@ void handleInputPacket(const char* buffer, int bytes,
     }
 
     p.clientStateUpdated = true;
-    p.lastAcceptedClientPosition = result.acceptedState.position;
-    p.lastAcceptedClientVelocity =
-        result.acceptedState.baseVelocity + result.acceptedState.externalImpulse;
-    p.lastAcceptedClientOnGround = result.acceptedState.ground.onGround;
+    p.lastAcceptedClientPosition = p.flyEnabled
+        ? p.pos : result.acceptedState.position;
+    p.lastAcceptedClientVelocity = p.flyEnabled
+        ? p.vel
+        : result.acceptedState.baseVelocity + result.acceptedState.externalImpulse;
+    p.lastAcceptedClientOnGround = p.flyEnabled
+        ? false : result.acceptedState.ground.onGround;
     p.lastAcceptedClientTransformMs = currentMs;
     p.hasAcceptedClientTransform = true;
     p.lastMovementSequence = report.movementSequence;
@@ -1304,7 +1321,9 @@ void handleSpawnNpcRequest(const char* buffer, int bytes,
 
 void handleTeleportRequest(const char* buffer, int bytes,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
-                           const HeadlessWorld& world)
+                           const HeadlessWorld& world,
+                           const sockaddr_in* from,
+                           const TransportConnectionId* connectionId)
 {
     if (bytes < (int)sizeof(TeleportRequestPacket))
         return;
@@ -1313,6 +1332,13 @@ void handleTeleportRequest(const char* buffer, int bytes,
     auto it = players.find(request->header.playerId);
     if (it == players.end() || it->second.dead)
         return;
+    if (!serverPlayerMayUsePrivilegedTransforms(it->second) ||
+        !playerOwnsConnectionSource(it->second, from, connectionId))
+    {
+        printf("%s [SERVER TELEPORT] playerId=%u rejected=not-authorized\n",
+               serverTimestamp(), request->header.playerId);
+        return;
+    }
 
     const glm::vec3 requestedPosition{
         request->px, request->py, request->pz};
@@ -1933,7 +1959,8 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_TELEPORT_REQUEST)
     {
-        handleTeleportRequest(buffer, bytes, players, world);
+        handleTeleportRequest(buffer, bytes, players, world, &from,
+                              sourceConnection);
         result.handled = true;
     }
     else if (header->type == PACKET_EXPLODE_REQUEST)
@@ -2049,7 +2076,7 @@ ServerPacketProcessResult processServerPacket(
     else if (header->type == PACKET_SERVER_COMMAND)
     {
         handleServerCommand(sock, from, buffer, bytes, players, npcs,
-                            tick, totalPacketsOut);
+                            world, tick, totalPacketsOut, sourceConnection);
         result.handled = true;
     }
     else if (header->type == PACKET_DUEL_REMATCH_REQUEST)
@@ -2076,6 +2103,15 @@ ServerPacketProcessResult processServerPacket(
     {
         const ClientMapReadyPacket* ready =
             reinterpret_cast<const ClientMapReadyPacket*>(buffer);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "spawn-handshake.server-map-ready-received",
+            std::to_string(ready->header.playerId), "client-map-ready", tick,
+            nlohmann::json{{"assigned_player_id", ready->assignedPlayerId},
+                           {"map", boundedPacketString(ready->mapId, sizeof(ready->mapId))},
+                           {"server_map", getServerMapId()},
+                           {"transport", transportKindName(event.transportKind)},
+                           {"connection_id", event.connectionId.value}});
         if (ready->header.playerId != ready->assignedPlayerId)
         {
             printf("%s [SERVER MAP READY REJECT] reason=assignedPlayerId-mismatch "
@@ -2117,6 +2153,15 @@ ServerPacketProcessResult processServerPacket(
                     it->second.vel = glm::vec3(0.0f);
                     it->second.clientStateUpdated = false;
                     completeAuthoritativeSpawn(sock, it->second, true);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "spawn-handshake.server-spawn-issued",
+                        std::to_string(it->second.id), "map-ready-accepted", tick,
+                        nlohmann::json{{"spawn_generation", it->second.spawnGeneration},
+                                       {"transform_epoch", it->second.transformEpoch},
+                                       {"spawn_state", (int)it->second.spawnState},
+                                       {"position", {it->second.pos.x, it->second.pos.y,
+                                                      it->second.pos.z}}});
                     printf("%s [SERVER MAP READY] transport=%s connection=%llu "
                            "id=%u name=\"%s\"\n",
                            serverTimestamp(), transportKindName(event.transportKind),
@@ -2202,6 +2247,25 @@ void beginAuthoritativeTransform(ServerPlayer& player,
            serverTimestamp(), player.id, reason,
            (unsigned)player.transformEpoch,
            position.x, position.y, position.z);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.server-authoritative-transform", std::to_string(player.id),
+        "authoritative transform assigned", player.transformEpoch,
+        nlohmann::json{{"player_id", player.id},
+                       {"reason", reason ? reason : "unknown"},
+                       {"epoch", player.transformEpoch},
+                       {"position", {position.x, position.y, position.z}},
+                       {"velocity", {velocity.x, velocity.y, velocity.z}},
+                       {"awaiting_ack", true}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+bool serverPlayerMayUsePrivilegedTransforms(const ServerPlayer& player)
+{
+    // Host is the existing server-side administrative identity. Keeping this
+    // behind a named policy function makes every privileged transform use the
+    // same decision and leaves one seam for a future role-based admin system.
+    return player.isHost;
 }
 
 void beginAuthoritativeTeleport(ServerPlayer& player,
@@ -2659,6 +2723,7 @@ void handleReloadRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
         return;
 
     ServerPlayer& p = it->second;
+
     const std::string* wepId = weaponIdForDefNetworkId(req->weaponDefNetworkId);
     if (!wepId)
         return;
@@ -2786,6 +2851,19 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
 
     ServerPlayer& p = it->second;
 
+    if (tick % 60u == 0u)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "spawn-handshake.server-ack-received", std::to_string(p.id),
+            "spawn-ack", tick,
+            nlohmann::json{{"received_generation", ack->spawnGeneration},
+                           {"received_epoch", ack->transformEpoch},
+                           {"expected_generation", p.spawnGeneration},
+                           {"expected_epoch", p.transformEpoch},
+                           {"spawn_state", (int)p.spawnState}});
+    }
+
     // A matching ack (same generation + epoch) proves the client received the
     // spawn sync. Whether we are still AwaitingSpawnAck or already Active, the
     // server re-sends SpawnActivated so the client's reliable ack retry always
@@ -2796,6 +2874,15 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
 
     if (!matchesLifecycle)
     {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "spawn-handshake.server-ack-rejected", std::to_string(p.id),
+            "generation-or-epoch-mismatch", tick,
+            nlohmann::json{{"received_generation", ack->spawnGeneration},
+                           {"received_epoch", ack->transformEpoch},
+                           {"expected_generation", p.spawnGeneration},
+                           {"expected_epoch", p.transformEpoch},
+                           {"spawn_state", (int)p.spawnState}});
         Debug::log(Debug::Category::Weapons, "[SPAWN ACK REJECT] playerId=%u recvGen=%u recvEpoch=%u expectGen=%u expectEpoch=%u state=%d\n",
                    p.id, ack->spawnGeneration, ack->transformEpoch, p.spawnGeneration, p.transformEpoch, (int)p.spawnState);
         return;
@@ -2808,6 +2895,13 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
             p, makeCurrentRuntimeMovementConfig());
         Debug::log(Debug::Category::Weapons, "[SPAWN ACK ACCEPT] playerId=%u spawnGen=%u epoch=%u — now Active\n",
                    p.id, ack->spawnGeneration, ack->transformEpoch);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "spawn-handshake.server-activated", std::to_string(p.id),
+            "spawn-ack-accepted", tick,
+            nlohmann::json{{"spawn_generation", p.spawnGeneration},
+                           {"transform_epoch", p.transformEpoch},
+                           {"spawn_state", (int)p.spawnState}});
     }
     else if (p.spawnState == ServerPlayer::Active)
     {

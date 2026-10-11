@@ -174,13 +174,11 @@ void registerPlayerCommands()
                     Terminal::instance().addLog("[FLY] not connected to a server");
                     return;
                 }
-                mp.flyEnabled = true;
-                mp.flySpeedMultiplier = std::clamp(multiplier, 0.01f, 100.0f);
                 MimitaNet::mpSendServerCommand(
-                    mp, "fly " + std::to_string(mp.flySpeedMultiplier));
+                    mp, "fly " + std::to_string(std::clamp(multiplier, 0.01f, 100.0f)));
                 Terminal::instance().addLog(
-                    "[FLY] ON speed=" + std::to_string(mp.flySpeedMultiplier) +
-                    " (WASD, E up, Q down, Shift faster)");
+                    "[FLY] request sent speed=" + std::to_string(std::clamp(multiplier, 0.01f, 100.0f)) +
+                    " (waiting for server authority)");
             }
             catch (...)
             {
@@ -193,11 +191,9 @@ void registerPlayerCommands()
         "unfly", "Stop server-authoritative free flight", "unfly",
         [](const std::vector<std::string>&) {
             auto& mp = MP_CONTEXT;
-            mp.flyEnabled = false;
-            mp.flySpeedMultiplier = 1.0f;
             if (mp.active)
                 MimitaNet::mpSendServerCommand(mp, "unfly");
-            Terminal::instance().addLog("[FLY] OFF");
+            Terminal::instance().addLog("[FLY] off request sent (waiting for server authority)");
         }
     });
 
@@ -259,25 +255,27 @@ void registerPlayerCommands()
                 return;
             }
 
-            player.pos = destination;
-            player.vel = glm::vec3(0.0f);
-            player.externalImpulse = glm::vec3(0.0f);
-            player.inputWishMove = glm::vec2(0.0f);
-            player.ground.onGround = false;
-            player.jump.jumpHeldPrev = false;
-            player.dash.moveHeldPrev = false;
-            player.dash.dashHeldPrev = false;
-            player.freeze.freezeHeldPrev = false;
-            player.syncLegacyStateToLayers();
-            player.updateModelWorldTransforms();
-
             MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
             if (mpContext.active)
                 MimitaNet::mpRequestTeleport(mpContext, destination);
+            else
+            {
+                player.pos = destination;
+                player.vel = glm::vec3(0.0f);
+                player.externalImpulse = glm::vec3(0.0f);
+                player.inputWishMove = glm::vec2(0.0f);
+                player.ground.onGround = false;
+                player.jump.jumpHeldPrev = false;
+                player.dash.moveHeldPrev = false;
+                player.dash.dashHeldPrev = false;
+                player.freeze.freezeHeldPrev = false;
+                player.syncLegacyStateToLayers();
+                player.updateModelWorldTransforms();
+            }
 
             char line[128];
             snprintf(line, sizeof(line),
-                     "[GAMEPLAY] teleported to %.2f,%.2f,%.2f",
+                     "[GAMEPLAY] teleport request %.2f,%.2f,%.2f",
                      destination.x, destination.y, destination.z);
             Terminal::instance().addLog(line);
         }

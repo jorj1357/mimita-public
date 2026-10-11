@@ -8,6 +8,7 @@
   "entities": [
     {
       "bossId": "",
+      "checkpointIndex": 0,
       "checkpointRequirement": 0,
       "damage": 0,
       "damageIntervalTicks": 60,
@@ -16,6 +17,7 @@
       "id": "monster_zone_2",
       "maxAlive": 1,
       "monsterPool": "default",
+      "monsterRole": "zombie",
       "oneShot": false,
       "pickupId": "",
       "position": [
@@ -24,6 +26,7 @@
         384.64031982421875
       ],
       "radius": 10.0,
+      "shape": "",
       "size": [
         1.0,
         1.0,
@@ -33,6 +36,102 @@
       "spawnCount": 1,
       "tag": "",
       "type": "monster_zone",
+      "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointIndex": 1,
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "checkpoint_1",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "monsterRole": "",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        -1235.0,
+        -850.0,
+        385.0
+      ],
+      "radius": 4.0,
+      "shape": "sphere",
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "checkpoint",
+      "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointIndex": 0,
+      "checkpointRequirement": 0,
+      "damage": 8,
+      "damageIntervalTicks": 30,
+      "damageType": "lava",
+      "enabled": true,
+      "id": "lava_1",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "monsterRole": "",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        -1255.0,
+        -840.0,
+        384.0
+      ],
+      "radius": 5.0,
+      "shape": "sphere",
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "damage_volume",
+      "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointIndex": 0,
+      "checkpointRequirement": 0,
+      "damage": 5,
+      "damageIntervalTicks": 5,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "damage_volume_1",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "monsterRole": "",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        -1263.483154296875,
+        -820.2572021484375,
+        379.64031982421875
+      ],
+      "radius": 5.0,
+      "shape": "",
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "damage_volume",
       "visible": true
     }
   ]

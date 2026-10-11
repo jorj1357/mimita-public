@@ -441,6 +441,15 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.pendingSpawnAckGeneration = spawn.spawnGeneration;
                 mpContext.pendingSpawnAckEpoch = spawn.transformEpoch;
                 mpContext.pendingSpawnAckLastSendMs = MimitaNet::nowMs();
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "spawn-handshake.client-ack-sent",
+                    std::to_string(mpContext.localPlayerId),
+                    "authoritative-spawn-applied", mpContext.tick,
+                    nlohmann::json{{"spawn_generation", ack.spawnGeneration},
+                                   {"transform_epoch", ack.transformEpoch},
+                                   {"weapon_count", spawn.weaponCount},
+                                   {"gameplay_active", mpContext.gameplayActive}});
                 Debug::log(Debug::Category::Weapons, "[SPAWN ACK SEND] playerId=%u spawnGen=%u epoch=%u (after weapon reconciliation)\n",
                            mpContext.localPlayerId, ack.spawnGeneration, ack.transformEpoch);
             }
@@ -499,6 +508,26 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.clientMapReadySentForPlayerId == mpContext.localPlayerId &&
                 mapIdsReferToSameMap(mpContext.clientMapReadySentForMap, mpContext.requiredMapId);
 
+            static uint64_t lastClientMapReadyDiagnosticMs = 0;
+            const uint64_t clientMapReadyDiagnosticMs = MimitaNet::nowMs();
+            if (lastClientMapReadyDiagnosticMs == 0 ||
+                clientMapReadyDiagnosticMs - lastClientMapReadyDiagnosticMs >= 1000)
+            {
+                lastClientMapReadyDiagnosticMs = clientMapReadyDiagnosticMs;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "spawn-handshake.client-map-ready-state",
+                    std::to_string(mpContext.localPlayerId), "map-ready-gate", mpContext.tick,
+                    nlohmann::json{{"connected", mpContext.connected},
+                                   {"local_player_id", mpContext.localPlayerId},
+                                   {"required_map", mpContext.requiredMapId},
+                                   {"active_map", ACTIVE_MAP_PATH},
+                                   {"world_loaded", worldLoaded},
+                                   {"map_ready", mapReady},
+                                   {"ready_already_sent", readyAlreadySent},
+                                   {"waiting_for_map_load", mpContext.waitingForMapLoad}});
+            }
+
             if (mpContext.connected && mpContext.localPlayerId != 0 &&
                 mapReady && !readyAlreadySent)
             {
@@ -511,6 +540,15 @@ void engineTickNet(Engine& engine, float dt)
                 size_t mapIdLen = normalizedRequired.copy(ready.mapId, sizeof(ready.mapId) - 1);
                 ready.mapId[mapIdLen] = '\0';
                 mpSendPacket(mpContext, &ready, sizeof(ready));
+
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "spawn-handshake.client-map-ready-sent",
+                    std::to_string(mpContext.localPlayerId), "map-ready-gate-passed", mpContext.tick,
+                    nlohmann::json{{"map", ready.mapId},
+                                   {"required_map", mpContext.requiredMapId},
+                                   {"connected", mpContext.connected},
+                                   {"world_loaded", worldLoaded}});
 
                 mpContext.clientMapReadySent = true;
                 mpContext.clientMapReadySentForPlayerId = mpContext.localPlayerId;

@@ -70,6 +70,65 @@ The difference is only where the authoritative server process runs.
 ________________
 
 
+3.1 Privileged administrative transform operations
+An administrator command is not ordinary client movement and must not reuse
+ordinary movement validation as if it were a normal input report.
+
+Examples include:
+
+* `fly` and `unfly`.
+* An administrator `teleport` command.
+* Server-owned respawn, map-change, duel, or procedural-world teleports.
+
+The administrator's permission authorizes the request; it does not make the
+client authoritative. The server remains the one authority that applies the
+result. The command path is:
+
+```text
+admin client or server console
+        ↓
+server receives and authorizes command
+        ↓
+server applies one authoritative transform/movement-mode transition
+        ↓
+server increments the transform epoch and resets stale movement history
+        ↓
+server sends the authoritative position and transition acknowledgement
+        ↓
+client adopts that position before sending ordinary movement again
+```
+
+The command path must not be implemented by pretending that a normal client
+position report is trustworthy. It must use one shared authoritative-transform
+owner for all discontinuous moves. That owner is responsible for permission,
+finite-value and map-bound checks, selecting the destination or server-owned
+flight state, incrementing the transform epoch, clearing or rebasing movement
+sequence/prediction/reconciliation state, broadcasting the new authoritative
+state, and requiring a matching-epoch acknowledgement before ordinary movement
+reports can replace the transform.
+
+For `fly`, the server owns the position while flight is enabled. The client
+sends only flight intent/direction. Flight may bypass ordinary wall-sweep and
+trajectory checks because the server explicitly granted that mode, but it must
+still obey permission, finite-state, lifecycle, and world-bound checks. On
+`unfly`, the server ends flight and performs the same authoritative transform
+handoff before normal movement validation resumes.
+
+For an administrator teleport, the server may accept the requested destination
+as the intended authoritative destination without requiring a continuous
+ordinary-movement path from the old position. It must still validate the
+destination according to the command's safety policy and then publish the
+authoritative transform. A later ordinary movement packet must never overwrite
+the teleport merely because it was already in flight when the command arrived.
+
+The host's low latency does not create an implicit bypass. The bypass comes
+only from an explicitly authorized server command or server-owned lifecycle
+operation, and every such operation must be visible in structured diagnostics.
+See `docs/architecture/terminal-commands/terminal-commands.md` and the
+ordinary movement/reconciliation rules in sections 20-23 below.
+________________
+
+
 2. Fundamental rule
 The networking pattern is always:
 client captures intent (i wanna shoot)

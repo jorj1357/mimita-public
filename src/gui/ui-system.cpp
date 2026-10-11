@@ -89,6 +89,10 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
         gBatchVertices.reserve(8192);
     if (gOwnsHoverInput)
         gHoverOwnerKey.clear();
+    // Dropdown blocking belongs to the current UI frame. The community menu
+    // may set it while drawing its open dropdown, but it must not leak into
+    // the pause menu or another interactive screen on the next frame.
+    gDropdownModalActive = false;
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     gMouseClickEdge = gMouseDown && !gMousePrev;
 

@@ -75,7 +75,10 @@
       "zombie_tower",
         "--no-npcs"
       ],
-      "client_args": [],
+      "client_args": [
+        "--startup-command",
+        "teleport -1263.483154296875,-820.2572021484375,379.64031982421875"
+      ],
       "map": "zombietower4"
     },
        "9": {
@@ -93,11 +96,15 @@
      "10": {
       "name": "zombie towerrrrr no npcs",
       "server_args": [
+        "--mode",
+        "zombie_tower",
+        "--gamemode",
+        "zombie_tower",
         "--no-npcs"
       ],
       "client_args": [
         "--startup-command",
-        "help"
+        "teleport -1263.483154296875,-820.2572021484375,379.64031982421875"
       ],
       "map": "zombietower4"
     }

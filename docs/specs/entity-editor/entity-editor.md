@@ -117,20 +117,27 @@ gameplay-active. The current consumers are:
 
 | Type | Meaning in the current code | Shape used | Current gameplay result |
 |---|---|---|---|
-| `monster_zone` | A player-proximity monster activation region. | `radius` sphere for activation. | When an active player is inside the radius, the server spawns up to `spawnCount` NPCs from `monsterPool`, subject to `maxAlive`, `spawnCooldownTicks`, and `oneShot`. The current implementation places each NPC at the zone center; it does not yet choose a random point inside the zone. |
-| `checkpoint` | A one-time Zombie Tower progress marker. | Shared containment test: a box is accepted when inside it, and the sphere is also accepted. With the default `radius` of `1`, a larger box behaves like the visible trigger box. | The first active player who enters records this checkpoint as the party's latest respawn position. A later party wipe respawns the party there. It is consumed once per run. |
+| `monster_zone` | A player-proximity monster activation region. | The active monster-zone path currently checks `radius` only. `shape: "box"` does not yet change monster-zone activation. | When an active player is inside the radius, the server spawns up to `spawnCount` NPCs, applies `monsterRole` such as `zombie`, and respects `maxAlive`, `spawnCooldownTicks`, and `oneShot`. The current implementation places each NPC at the zone center; it does not yet choose a random point inside the zone. |
+| `checkpoint` | A one-time Zombie Tower progress marker. | Explicit `sphere` or `box` containment. Empty `shape` keeps the legacy inference. | The first active player who enters records this checkpoint as the party's latest respawn position, subject to its monotonic `checkpointIndex`. A later party wipe respawns the party there. |
 | `pickup` | A future/general pickup location. | Debug geometry only at present. | The entity is saved, reloaded, and drawn. `pickupId` is stored, but this map-entity loop does not yet grant health, ammo, weapons, or other items. |
-| `damage_volume` | A future authored hazard volume. | Debug geometry only at present. | The entity is saved, reloaded, and drawn. `damage`, `damageType`, and `damageIntervalTicks` are stored, but this map-entity loop does not yet apply damage. |
+| `damage_volume` | An authored environmental hazard volume. | Explicit `sphere` or `box` containment. Empty `shape` keeps the legacy inference. | Every `damageIntervalTicks` while players or living NPCs are inside, the server applies `damage` through the environment damage path and emits a `damage-volume.damage` event. |
 | `boss_trigger` | A one-time Zombie Tower boss encounter trigger. | Same shared containment test as `checkpoint`: a larger box is accepted, and the sphere is also accepted. | Entering it starts the boss encounter, locks progression, and spawns `bossId` at the entity position. The lock is released when that spawned boss dies. Set `bossId`; an empty `bossId` can activate the lock without creating a boss actor. |
 | `spawnpoint` | A selectable player spawn location. | Point placement; `radius`/`size` are not used to select the location. | Enabled spawnpoints are candidates for player spawning. The optional `tag` can separate groups, for example `CT` and `T`; the server randomly selects among matching authored points. |
 
-The shape rule is important: for `checkpoint` and `boss_trigger`, the shared
-containment helper accepts a point if it is inside the axis-aligned box when
-`size` is larger than the default `1 1 1`, or if it is inside the sphere
-centered at `position` using `radius`. In practice, a large box plus a large
-radius creates the union of those two shapes. `monster_zone` is a special case
-in the active server path and currently checks only its radius, even if a
-larger `size` is authored.
+The shape rule is explicit for volume consumers:
+
+```text
+shape = sphere  -> use radius; ignore size for containment
+shape = box     -> use size; ignore radius for containment
+shape omitted   -> legacy inference: box when size is larger than 1 1 1,
+                   otherwise sphere
+```
+
+The box is centered at `position`, uses full dimensions `size x y z`, is
+axis-aligned, and cannot currently be rotated. `checkpoint`, `boss_trigger`,
+and `damage_volume` use this shape rule. `monster_zone` is a special case in
+the active server path and currently checks only its spherical `radius`, even
+if `shape: "box"` is authored.
 
 The colored debug markers are only an authoring aid. They prove that the
 entity is loaded and visible, not that its gameplay consumer exists or has
@@ -145,7 +152,7 @@ spawnpoint     = where an actor may be placed at spawn time
 monster_zone   = where entering should start/replenish a monster wave
 checkpoint     = where entering records a later party respawn location
 pickup         = where a future item interaction will be authored
-damage_volume  = where a future hazard effect will be authored
+damage_volume  = where an environmental hazard applies damage
 boss_trigger   = where entering should start a boss encounter
 ```
 
@@ -180,20 +187,92 @@ The properties are interpreted by type as follows:
 
 | Property | Used by | Explanation |
 |---|---|---|
-| `radius` | `monster_zone`, `checkpoint`, `boss_trigger` | Spherical entry/activation distance. |
-| `size` | `checkpoint`, `boss_trigger` currently | Axis-aligned trigger box when a component is greater than `1`. It is also saved for every entity type, but that does not make it active for that type. |
+| `shape` | `checkpoint`, `boss_trigger`, `damage_volume` | Exact supported values are `sphere` or `box`. Empty keeps legacy inference. It is saved for every entity type, but `monster_zone` currently still uses radius-only activation. |
+| `radius` | `monster_zone`, `checkpoint`, `boss_trigger`, `damage_volume` | Sphere radius when `shape` is `sphere`; also the current activation radius for `monster_zone`. |
+| `size` | `checkpoint`, `boss_trigger`, `damage_volume` | Full axis-aligned box dimensions when `shape` is `box`. |
 | `spawnCount` | `monster_zone` | Maximum number requested in one activation, limited by available `maxAlive` room. |
 | `maxAlive` | `monster_zone` | Maximum living NPCs associated with that zone. |
 | `spawnCooldownTicks` | `monster_zone` | Minimum fixed-tick delay between activations. |
 | `monsterPool` | `monster_zone` | String used as the spawned NPC's pool/name prefix by the current path. It is not a documented catalog lookup here. |
 | `oneShot` | `monster_zone` | Prevents that zone from activating again after its first activation. |
 | `pickupId` | `pickup` future consumer | Identifier stored for the item/effect that should be granted later. |
-| `damage`, `damageType`, `damageIntervalTicks` | `damage_volume` future consumer | Authored hazard settings currently stored but not applied by this map-entity runtime. |
+| `damage`, `damageType`, `damageIntervalTicks` | `damage_volume` | Environment damage amount, label, and fixed-tick interval. Applies to players and living NPCs inside the volume. |
 | `bossId` | `boss_trigger` | Identifier/name used to create the boss NPC when the trigger is entered. |
 | `tag` | `spawnpoint` | Optional spawn group filter, such as `CT` or `T`. |
 | `checkpointRequirement` | reserved/future | Loaded and saved, but no current map-entity runtime check consumes it. |
+| `checkpointIndex` | `checkpoint` | Monotonic progress number; a checkpoint only advances the run when its index is greater than the current checkpoint index. |
+| `monsterRole` | `monster_zone` | Shared NPC role, such as `zombie`, used when the zone creates NPCs. |
 | `enabled` | all types | Disabled entities are ignored by the active consumers and hidden from gameplay selection. |
 | `visible` | editor/debug drawing | Controls the authored debug marker, not gameplay activation. |
+
+### Shape examples: exactly what to type
+
+Use lowercase `sphere` or `box` as the value. These are the complete explicit
+shape values currently supported by the entity system.
+
+#### Sphere
+
+A sphere is centered at the entity's `position` and uses `radius`:
+
+```text
+entity_add damage_volume lava_sphere
+entity_set lava_sphere shape sphere
+entity_set lava_sphere radius 5
+entity_set lava_sphere damage 8
+entity_set lava_sphere damageType lava
+entity_set lava_sphere damageIntervalTicks 30
+```
+
+This damages players and living NPCs while they are inside a 5-unit sphere.
+The `size` field does not define the sphere's containment.
+
+#### Box
+
+A box is centered at the entity's `position` and uses full dimensions from
+`size`:
+
+```text
+entity_add damage_volume lava_box
+entity_set lava_box shape box
+entity_set lava_box size 20 2 12
+entity_set lava_box damage 8
+entity_set lava_box damageType lava
+entity_set lava_box damageIntervalTicks 30
+```
+
+This creates a box that is 20 units wide, 2 units tall, and 12 units deep.
+The box is axis-aligned; there is currently no `rotation` property. The
+`radius` field does not define a box's containment.
+
+For an existing entity, changing from sphere to box is just:
+
+```text
+entity_set lava_1 shape box
+entity_set lava_1 size 20 2 12
+```
+
+Changing it back is:
+
+```text
+entity_set lava_1 shape sphere
+entity_set lava_1 radius 5
+```
+
+Every successful command auto-saves, so no separate `entity_save` command is
+needed. `entity_info lava_1` and `entity_visibility on` help confirm the
+authored values and debug marker.
+
+#### Empty shape / legacy inference
+
+If `shape` is omitted or set to an empty string in JSON, the old rule remains:
+an entity with any `size` component larger than `1` is treated as a box;
+otherwise it is treated as a sphere. New JSON should use explicit `shape` so
+the intended geometry is obvious.
+
+Important limitation: `checkpoint`, `boss_trigger`, and `damage_volume` honor
+the explicit shape. `monster_zone` currently uses only its radius to decide
+whether a player activates it, so writing `entity_set tower4_zone_a shape box`
+does not make its activation region rectangular yet.
 
 ## Complete Zombie Tower 4 example: tower encounter
 
@@ -224,6 +303,7 @@ fields and add the type-specific fields described above):
   "position": [12.5, 4.0, -31.0],
   "size": [1.0, 1.0, 1.0],
   "radius": 20.0,
+  "shape": "sphere",
   "enabled": true,
   "visible": true,
   "oneShot": false,
@@ -268,12 +348,14 @@ This makes a spherical checkpoint at the current camera-forward placement:
 
 ```text
 entity_add checkpoint tower4_floor_02_checkpoint
+entity_set tower4_floor_02_checkpoint shape sphere
 entity_set tower4_floor_02_checkpoint radius 5
 ```
 
 To make the checkpoint cover a doorway or a short hallway instead of a sphere:
 
 ```text
+entity_set tower4_floor_02_checkpoint shape box
 entity_set tower4_floor_02_checkpoint size 8 4 12
 ```
 
@@ -298,21 +380,22 @@ not yet make walking over the marker grant health, because no current
 map-entity consumer reads `pickupId`. The `tag` is also just authored metadata
 for this type at present.
 
-### Example: damage volume (authored, not gameplay-active yet)
+### Example: damage volume
 
 This describes a lava-like hazard region:
 
 ```text
 entity_add damage_volume tower4_lava_01
+entity_set tower4_lava_01 shape box
 entity_set tower4_lava_01 size 20 2 12
 entity_set tower4_lava_01 damage 25
 entity_set tower4_lava_01 damageType lava
 entity_set tower4_lava_01 damageIntervalTicks 30
 ```
 
-The intended meaning is “a 20 by 2 by 12 authored hazard that deals 25
-`lava` damage every 30 fixed ticks,” but the current map-entity runtime only
-loads and draws this data. It does not yet damage a player who enters it.
+This creates a 20 by 2 by 12 box that deals 25 `lava` damage to players and
+living NPCs inside it every 30 fixed ticks. The server emits a
+`damage-volume.damage` event when damage is applied.
 
 ### Example: boss trigger at the top of a floor
 
@@ -321,9 +404,11 @@ Put the trigger before the arena and name the boss definition/actor with
 
 ```text
 entity_add checkpoint tower4_boss_checkpoint
+entity_set tower4_boss_checkpoint shape sphere
 entity_set tower4_boss_checkpoint radius 6
 
 entity_add boss_trigger tower4_floor_05_boss
+entity_set tower4_floor_05_boss shape box
 entity_set tower4_floor_05_boss size 18 6 18
 entity_set tower4_floor_05_boss bossId tower_guardian
 ```
@@ -396,18 +481,20 @@ All six entity types can currently be authored, saved, reloaded, and shown as
 debug geometry. The current authoritative consumers are:
 
 - `monster_zone`: live player-radius activation and configured NPC spawning,
-  including cooldown, maximum-alive, and one-shot rules.
+  including role selection, cooldown, maximum-alive, and one-shot rules.
 - `checkpoint`: live one-time run-progress and party-respawn recording.
+- `damage_volume`: live environment damage to players and living NPCs inside
+  an explicit sphere or box.
 - `boss_trigger`: live one-time boss activation, progression lock, boss spawn,
   and unlock-on-boss-death.
 - `spawnpoint`: live selection of player spawn positions, including authored
   group tags.
 
-`pickup` and `damage_volume` are currently authoring/visualization entities.
-Their fields are loaded and saved, but their map-entity gameplay consumers are
-future slices and must not be assumed from the JSON shape alone. Likewise,
-random interior spawning for `monster_zone` is a desired behavior not yet
-provided by the current implementation.
+`pickup` is currently an authoring/visualization entity. Its fields are loaded
+and saved, but its map-entity gameplay consumer is a future slice and must not
+be assumed from the JSON shape alone. Random interior spawning for
+`monster_zone` is also a desired behavior not yet provided by the current
+implementation.
 
 ## Safe editing checklist
 

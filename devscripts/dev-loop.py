@@ -971,24 +971,32 @@ class DevLoop:
         return stopped
 
     def wait_for_logger_started(self, role: str, pid: int, timeout: float = 20.0) -> bool:
-        """Confirm the exact child wrote its own logger.started event."""
+        """Confirm the exact child wrote logger.started to any run segment."""
         if not self.events_path:
             return False
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
-                with open(self.events_path, "r", encoding="utf-8") as journal:
-                    for line in journal:
-                        try:
-                            event = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if event.get("event") != "logger.started":
-                            continue
-                        fields = event.get("fields", {})
-                        if (fields.get("pid") == pid and
-                                fields.get("process_role", fields.get("process")) == role):
-                            return True
+                base = Path(self.events_path)
+                paths = [base]
+                if base.parent.is_dir():
+                    paths.extend(sorted(base.parent.glob("events-*.jsonl")))
+                for path in paths:
+                    try:
+                        with open(path, "r", encoding="utf-8") as journal:
+                            for line in journal:
+                                try:
+                                    event = json.loads(line)
+                                except json.JSONDecodeError:
+                                    continue
+                                if event.get("event") != "logger.started":
+                                    continue
+                                fields = event.get("fields", {})
+                                if (fields.get("pid") == pid and
+                                        fields.get("process_role", fields.get("process")) == role):
+                                    return True
+                    except OSError:
+                        continue
             except OSError:
                 pass
             time.sleep(0.1)

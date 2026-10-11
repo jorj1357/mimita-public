@@ -962,7 +962,9 @@ void handleSpawnNpcRequest(const char* buffer, int bytes,
                            std::unordered_map<uint32_t, ServerNpc>& npcs);
 void handleTeleportRequest(const char* buffer, int bytes,
                            std::unordered_map<uint32_t, ServerPlayer>& players,
-                           const HeadlessWorld& world);
+                           const HeadlessWorld& world,
+                           const sockaddr_in* from = nullptr,
+                           const TransportConnectionId* connectionId = nullptr);
 void handleExplodeRequest(const char* buffer, int bytes,
                           std::unordered_map<uint32_t, ServerPlayer>& players);
 // ── Disagreement retransmission (defined before use in shot/send helpers) ─
@@ -1094,7 +1096,9 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
                          const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
-                         uint32_t tick, uint64_t& totalPacketsOut);
+                         const HeadlessWorld& world,
+                         uint32_t tick, uint64_t& totalPacketsOut,
+                         const TransportConnectionId* connectionId = nullptr);
 
 // ── Migration: join/reconnect packet handlers ────────────────────────
 void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
@@ -1173,6 +1177,11 @@ void beginAuthoritativeTransform(ServerPlayer& player,
 void beginAuthoritativeTeleport(ServerPlayer& player,
     const glm::vec3& position, float yaw, const char* reason,
     uint16_t invulnerabilityTicks = 0);
+
+// Privileged transform commands are currently owned by the server host. Keep
+// this decision in one helper so command and packet paths cannot drift apart
+// when a separate admin role is introduced.
+bool serverPlayerMayUsePrivilegedTransforms(const ServerPlayer& player);
 
 // Post-tick helpers
 void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,

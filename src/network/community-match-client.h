@@ -48,6 +48,11 @@ public:
     uint32_t waveNumber() const { return mWaveNumber; }
     int waveLivesRemaining() const { return mWaveLivesRemaining; }
     uint32_t waveHighest() const { return mWaveHighest; }
+    // Transient HUD banner (e.g. "CHECKPOINT N REACHED"). The serial changes for
+    // every new banner so the local fade restarts; the client drives the fade
+    // from its own tick clock and the number is the display value.
+    uint32_t bannerSerial() const { return mBannerSerial; }
+    int32_t bannerNumber() const { return mBannerNumber; }
     bool matchOver() const { return mMatchOver; }
     int timeLimitSeconds() const { return mTimeLimitSeconds; }
     int goal() const { return mGoal; }
@@ -160,6 +165,8 @@ private:
     uint32_t mWaveNpcSpawned = 0;
     int mWaveLivesRemaining = 0;
     uint32_t mWaveHighest = 0;
+    uint32_t mBannerSerial = 0;
+    int32_t mBannerNumber = 0;
     bool mMatchOver = false;
     int mTimeLimitSeconds = 0;
     int mGoal = 0;
