@@ -131,6 +131,23 @@
                 "randomRadiusMin": 0.9,
                 "randomRadiusMax": 1.1
             }
+        },
+        "large_machine_gun": {
+            "muzzleFlash": {
+                "enabled": true,
+                "color": [0.0, 0.0, 0.1],
+                "intensity": 200.0,
+                "radius": 16.0,
+                "lifetime": 0.08,
+                "fadeIn": 0.0,
+                "fadeOut": 0.08,
+                "positionOffset": [0.0, 0.0, 0.0],
+                "randomIntensityMin": 0.9,
+                "randomIntensityMax": 1.1,
+                "randomRadiusMin": 0.9,
+                "randomRadiusMax": 1.1
+            }
         }
+
     }
 }

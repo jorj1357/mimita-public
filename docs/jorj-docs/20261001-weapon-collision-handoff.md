@@ -1,3 +1,25 @@
+2026 10 11 1420  jorj todo 
+weapon colisions stillnot good
+
+what i mean is
+
+desire behavior: like how it was when  aimbody.json has mode default for body adn arms. u run into the wall with teh weapon, andits thet exact same bounce as if u just hit it with ur body limbs
+
+current beahvior: walk into a wall with a weapon, and instnat like 1 frame snap out, not good. something to do with aimbody.json, bc when i  set mode to defualt, its fine, the collisions 
+
+and even with it in default, itll go into the grund like it should but it will like snap me around and bounce me around? im not sure how to even describe
+but it ends up in m eclipping thru the map and like on a smaller map liek cramped or juggernaut4  especailly that  in te juggernaut mode i clip thru the map with the LMB  bc thats the big weapon for juggernauts 
+cant hav e that happen, jsut need to bounce like nromal
+
+so we need to inspect liek what even is going on and why 
+and we need to fix according to the  C:\mimita-v9\docs\specs\debug-logging\AI-fix-live.md
+this doc  
+
+so we have live testing adn live events.jsonl checking 
+
+
+
+
 // 2026-10-02T05:31:34Z (display: 2026-10-02 01:31:34 EDT)
 /* purpose
 * Focused handoff for a new agent to work ONLY on weapon collisions.
