@@ -54,7 +54,7 @@
       "alphaMax": 0.95,
       "gravity": 99.0,
       "debris": {
-        "enabled": true,
+        "enabled": false,
         "countFraction": 0.33,
         "color": [0.85, 0.03, 0.02],
         "alpha": 0.7,
