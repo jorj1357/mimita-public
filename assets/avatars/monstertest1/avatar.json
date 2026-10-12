@@ -180,12 +180,12 @@
   "created_at": "2026-07-10T18:44:15Z",
   "format_version": 1,
   "name": "monstertest1",
-  "player_model": "assets/entity/player/monsters/boomer/mimita-boomer-v11.glb",
+  "player_model": "assets/entity/player/monsters/boomer/mimita-boomer-v21.glb",
   "simple": {
     "face": "",
     "pants": "",
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-10-11T21:06:05Z"
+  "updated_at": "2026-10-11T21:37:48Z"
 }
