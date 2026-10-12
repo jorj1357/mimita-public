@@ -497,6 +497,48 @@
       "after_reaching_last_known": "patrol"
     },
     {
+      // Cautious profile: losing sight cancels pursuit and returns to patrol.
+      // 2026 10 11 2230 jorj todo making a  npc that doesnt move really
+      "id": "nervousbad",
+      // Movement replanning + commitment defaults (documented in `balanced`).
+      "repath_interval_seconds": 99.9,
+      "goal_move_threshold_meters": 299.5,
+      "movement_commitment": {
+        "enabled": true,
+        "direction_commit_seconds": 0.01,
+        "progress_check_seconds": 99.0,
+        "minimum_progress_meters": 110.5,
+        "candidate_distance_meters": 20.0,
+        "allow_reverse": false,
+        "avoid_recent_path": false,
+        "recent_path_avoid_radius": 0.01,
+        "visible_enemy_allows_combat_movement": true,
+        "forward_bias": 0.0,
+        "target_progress_bias": 0.01,
+        "open_distance_bias": 0.01,
+        "reverse_penalty": 0.01
+      },
+      "aim_error_deg": 82.0,
+      "reaction_delay": 0.25,
+      "fire_cadence_multiplier": 0.01,
+      "aggression": 0.01,
+      "preferred_range": 18.0,
+      "target_stickiness": 0.05,
+      "target_switch_threshold": 0.03,
+      "low_health_target_bias": 0.1,
+      "threat_bias": 0.05,
+      "distance_target_bias": 1.2,
+      "weapon_range_bias": 1.2,
+      "weapon_damage_bias": 0.2,
+      "weapon_safety_bias": 1.2,
+      "weapon_switch_threshold": 0.03,
+      "pursuit_mode": "forget_when_hidden",
+      "continue_through_cover": false,
+      "pursue_last_known_position": false,
+      "pursuit_search_ticks": 1,
+      "after_reaching_last_known": "patrol"
+    },
+    {
       // Juggernaut Fighter: fast, aggressive, and focused on the hostile team.
       // Composes the general group/focus layer (npc-group-behavior.md): the
       // Fighter participates in TeamFocus and moves to a distributed squad slot

@@ -97,7 +97,7 @@
             "alphaStart": 0.9,
             "alphaEnd": 0.0,
             "brightnessStart": 2.5,
-            "brightnessEnd": 990.0
+            "brightnessEnd": 0.0
         },
 
         "impactDisc": {
@@ -147,11 +147,11 @@
         "lifetime": 1.0,
         "criticalDamageThreshold": 200,
         "criticalLifetimeTicks": 30,
-        "startOpacity": 1.0,
+        "startOpacity": 0.5,
         "endOpacity": 0.0,
         "fadeStart": 0.0,
         "fadeEnd": 1.0,
-        "worldOffset": [1.0, 0.0, 0.20],
+        "worldOffset": [0.0, 0.0, 2.20],
         "screenOffset": [0.0, 0.0],
         "moveVelocity": [1.0, 0.0, 0.8],
         "moveSpeed": 1.0,
