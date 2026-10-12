@@ -1,3 +1,19 @@
+2026 10 11 1737  we  can do 
+like
+super aewsome 
+make big big big avatars
+fo the juggernaut
+and mkae them super big and fat and slow
+but HUUUUg
+huuuuge
+like
+madness combat too
+u can maekm it so   u can shoot a massssssssssssssssssive  revovler
+s ke  i thougth wS brkoken
+ok
+
+
+
 # Juggernaut mode plan
 
 Date file created: 2026-10-06

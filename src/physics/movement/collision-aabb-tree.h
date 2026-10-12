@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <utility> // actor/world pair traversal requires stable pair values
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -96,6 +97,20 @@ struct AabbTree
         }
     }
 
+    // Traverse this tree against another tree and emit only overlapping leaf
+    // primitive pairs. The first ID in each pair belongs to this tree and the
+    // second belongs to `other`. This is the important distinction from calling
+    // query() once for every actor triangle: whole actor node/world node pairs
+    // can be rejected before visiting their leaves.
+    void queryPairs(const AabbTree& other,
+                    std::vector<std::pair<int, int>>& out) const
+    {
+        out.clear();
+        if (nodes.empty() || other.nodes.empty())
+            return;
+        queryPairsRecursive(0, other, 0, out);
+    }
+
 private:
     static bool overlaps(const AABB& a, const AABB& b)
     {
@@ -156,4 +171,49 @@ private:
         nodes[nodeIndex].right = right;
         return nodeIndex;
     }
+
+    void queryPairsRecursive(int nodeIndex,
+                             const AabbTree& other,
+                             int otherNodeIndex,
+                             std::vector<std::pair<int, int>>& out) const
+    {
+        const Node& a = nodes[nodeIndex];
+        const Node& b = other.nodes[otherNodeIndex];
+        if (!overlaps(a.bounds, b.bounds))
+            return;
+
+        if (a.left < 0 && b.left < 0)
+        {
+            for (int ai = 0; ai < a.count; ++ai)
+            {
+                const int apos = order[a.start + ai];
+                for (int bi = 0; bi < b.count; ++bi)
+                {
+                    const int bpos = other.order[b.start + bi];
+                    if (overlaps(primAABBs[apos], other.primAABBs[bpos]))
+                        out.emplace_back(ids[apos], other.ids[bpos]);
+                }
+            }
+            return;
+        }
+
+        if (a.left < 0)
+        {
+            queryPairsRecursive(nodeIndex, other, b.left, out);
+            queryPairsRecursive(nodeIndex, other, b.right, out);
+            return;
+        }
+        if (b.left < 0)
+        {
+            queryPairsRecursive(a.left, other, otherNodeIndex, out);
+            queryPairsRecursive(a.right, other, otherNodeIndex, out);
+            return;
+        }
+
+        queryPairsRecursive(a.left, other, b.left, out);
+        queryPairsRecursive(a.left, other, b.right, out);
+        queryPairsRecursive(a.right, other, b.left, out);
+        queryPairsRecursive(a.right, other, b.right, out);
+    }
+
 };

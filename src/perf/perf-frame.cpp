@@ -37,6 +37,18 @@ struct ResourceWindow {
     int maxNpcCount = 0;
     int maxEffectCount = 0;
     int maxProjectileCount = 0;
+    uint64_t broadphaseQueries = 0;
+    uint64_t repeatedQueries = 0;
+    uint64_t chunkCellsVisited = 0;
+    uint64_t uniqueTriangles = 0;
+    uint64_t triangleTests = 0;
+    uint64_t visibleMeshes = 0;
+    uint64_t visibleTriangles = 0;
+    uint64_t totalDrawCalls = 0;
+    int maxBroadphaseQueries = 0;
+    int maxUniqueTriangles = 0;
+    int maxVisibleMeshes = 0;
+    int maxVisibleTriangles = 0;
     WindowScopeStats scopes[32];
     int scopeCount = 0;
 };
@@ -74,6 +86,18 @@ void accumulateResourceFrame(const PerfFrame& frame)
     gResourceWindow.maxNpcCount = std::max(gResourceWindow.maxNpcCount, frame.npcCount);
     gResourceWindow.maxEffectCount = std::max(gResourceWindow.maxEffectCount, frame.effectCount);
     gResourceWindow.maxProjectileCount = std::max(gResourceWindow.maxProjectileCount, frame.projectileCount);
+    gResourceWindow.broadphaseQueries += frame.broadphaseQueries;
+    gResourceWindow.repeatedQueries += frame.repeatedQueries;
+    gResourceWindow.chunkCellsVisited += frame.chunkCellsVisited;
+    gResourceWindow.uniqueTriangles += frame.uniqueTriangles;
+    gResourceWindow.triangleTests += frame.triangleTests;
+    gResourceWindow.visibleMeshes += frame.visibleMeshes;
+    gResourceWindow.visibleTriangles += frame.visibleTriangles;
+    gResourceWindow.totalDrawCalls += frame.totalDrawCalls;
+    gResourceWindow.maxBroadphaseQueries = std::max(gResourceWindow.maxBroadphaseQueries, frame.broadphaseQueries);
+    gResourceWindow.maxUniqueTriangles = std::max(gResourceWindow.maxUniqueTriangles, frame.uniqueTriangles);
+    gResourceWindow.maxVisibleMeshes = std::max(gResourceWindow.maxVisibleMeshes, frame.visibleMeshes);
+    gResourceWindow.maxVisibleTriangles = std::max(gResourceWindow.maxVisibleTriangles, frame.visibleTriangles);
     for (int i = 0; i < frame.entryCount; ++i) {
         const PerfBreakdownEntry& in = frame.entries[i];
         WindowScopeStats* out = scopeStatsFor(in.label);
@@ -115,6 +139,18 @@ void emitResourceWindowSummary()
         {"max_npc_count", gResourceWindow.maxNpcCount},
         {"max_effect_count", gResourceWindow.maxEffectCount},
         {"max_projectile_count", gResourceWindow.maxProjectileCount},
+        {"broadphase_queries", gResourceWindow.broadphaseQueries},
+        {"repeated_queries", gResourceWindow.repeatedQueries},
+        {"chunk_cells_visited", gResourceWindow.chunkCellsVisited},
+        {"unique_triangles", gResourceWindow.uniqueTriangles},
+        {"triangle_tests", gResourceWindow.triangleTests},
+        {"visible_meshes", gResourceWindow.visibleMeshes},
+        {"visible_triangles", gResourceWindow.visibleTriangles},
+        {"total_draw_calls", gResourceWindow.totalDrawCalls},
+        {"max_broadphase_queries_frame", gResourceWindow.maxBroadphaseQueries},
+        {"max_unique_triangles_frame", gResourceWindow.maxUniqueTriangles},
+        {"max_visible_meshes_frame", gResourceWindow.maxVisibleMeshes},
+        {"max_visible_triangles_frame", gResourceWindow.maxVisibleTriangles},
         {"logger_events_written", io.eventsWritten},
         {"logger_bytes_written", io.bytesWritten},
         {"logger_flush_count", io.flushCount},
@@ -193,6 +229,14 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
     frame.bloodDecalCount = ps.current.damageNumbersAlive;
     frame.projectileCount = ps.projectileCount;
     frame.collisionQueryCount = ps.queryRecordCount;
+    frame.broadphaseQueries = ps.current.broadphaseQueries;
+    frame.repeatedQueries = ps.current.repeatedQueries;
+    frame.chunkCellsVisited = ps.current.chunkCellsVisited;
+    frame.uniqueTriangles = ps.current.uniqueTriangles;
+    frame.triangleTests = ps.current.triangleTestsCount;
+    frame.visibleMeshes = ps.current.visibleMeshes;
+    frame.visibleTriangles = ps.current.visibleTriangles;
+    frame.totalDrawCalls = ps.current.totalDrawCalls;
 
     // Allocation frame deltas from monotonically increasing global counters.
     // These globals (std::atomic<uint64_t>) are incremented by operator new

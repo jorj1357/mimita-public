@@ -36,6 +36,14 @@ struct PerfFrame {
     uint64_t allocCount = 0;
     uint64_t allocBytes = 0;
     int collisionQueryCount = 0;
+    int broadphaseQueries = 0;
+    int repeatedQueries = 0;
+    int chunkCellsVisited = 0;
+    int uniqueTriangles = 0;
+    int triangleTests = 0;
+    int visibleMeshes = 0;
+    int visibleTriangles = 0;
+    int totalDrawCalls = 0;
 };
 
 // ── Ring buffer ──────────────────────────────────────────────

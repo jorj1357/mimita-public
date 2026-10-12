@@ -28,7 +28,7 @@
       "file_output": false
     },
     "collision": {
-      "level": "off",
+      "level": "verbose",
       "file_output": false
     },
     "npc_combat": { "level": "off", "file_output": false },
@@ -40,7 +40,7 @@
       "file_output": false
     },
     "avatar": {
-      "level": "important",
+      "level": "off",
       "file_output": false
     },
     "network": {

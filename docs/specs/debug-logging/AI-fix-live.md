@@ -1,3 +1,9 @@
+
+
+put logs + run the exe + see the value of the logs + use that info to make decisions e.g. confident theres a clear solution = implement, not confident yet = imrpove/edit/cahnge/add/remove/etc logs   - 
+continue, getting more evidence for/against and building evidence to support claim that  whatevre fix  u want to implement is the best solution for it right now 
+put this in here gernally 
+
 # Live AI fix procedure
 
 Date: 2026-10-11

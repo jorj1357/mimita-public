@@ -52,6 +52,10 @@ struct ActorTriangleCollisionResult {
     // World-space size of the swept broadphase query box (post margin).
     glm::vec3 queryBoxSize{0.0f};
     int iterations = 0;
+    int actorMeshCount = 0;
+    int actorMeshTriangles = 0;
+    float candidateMaxSpan = 0.0f;
+    float largeCandidateMaxSpan = 0.0f;
     float solveMs = 0.0f;   // solveActorTriangleCollision body
     float totalMs = 0.0f;   // runActorTriangleCollisionStep (query + solve + post)
 };

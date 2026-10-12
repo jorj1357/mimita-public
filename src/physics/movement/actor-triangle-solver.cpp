@@ -241,6 +241,14 @@ bool solveActorTriangleCollision(
         collectActorCollisionMeshes(player);
     if (baseMeshes.empty())
         return false;
+    int actorMeshTriangles = 0;
+    for (const ActorCollisionMesh& mesh : baseMeshes)
+    {
+        if (mesh.localTriangles)
+            actorMeshTriangles += static_cast<int>(mesh.localTriangles->size());
+    }
+    result.actorMeshCount = static_cast<int>(baseMeshes.size());
+    result.actorMeshTriangles = actorMeshTriangles;
 
     // Weapon collision: a configured triangle hitbox (weaponcollisions.json
     // source "boxes"/triangle mode) is already part of `baseMeshes`, so the
@@ -261,6 +269,29 @@ bool solveActorTriangleCollision(
     box.max += glm::vec3(queryMargin);
     appendChunkTrianglesForAABB(world, box, queryMargin,
                                 candidates, "actorTriangleSolve");
+    // Large visible triangles legitimately reach this point because their
+    // axis-aligned boxes span many chunks. Before building the actor/world
+    // BVH, reject the ones whose oriented triangle prism cannot reach the
+    // actor's swept box. The final contact test still reads the original GLB
+    // triangle, so this changes only index work, never collision geometry.
+    if (world.collisionMesh.triangleOBBs.size() ==
+        world.collisionMesh.triangles.size())
+    {
+        size_t kept = 0;
+        for (int triangleIndex : candidates)
+        {
+            if (triangleIndex >= 0 &&
+                triangleIndex < static_cast<int>(world.collisionMesh.triangleOBBs.size()) &&
+                !aabbOverlapsTriangleOBB(
+                    world.collisionMesh.triangleOBBs[triangleIndex], box, queryMargin))
+            {
+                ++gActorNarrowphase.worldObbRejected;
+                continue;
+            }
+            candidates[kept++] = triangleIndex;
+        }
+        candidates.resize(kept);
+    }
     result.candidates = (int)candidates.size();
     result.queryBoxSize = box.max - box.min;
 
@@ -277,6 +308,9 @@ bool solveActorTriangleCollision(
             if (ci < 0 || ci >= (int)world.collisionMesh.triangleAABBs.size())
                 continue;
             const AABB& b = world.collisionMesh.triangleAABBs[ci];
+            const glm::vec3 span = b.max - b.min;
+            const float maxSpan = std::max({span.x, span.y, span.z});
+            result.candidateMaxSpan = std::max(result.candidateMaxSpan, maxSpan);
             glm::ivec3 c0((int)std::floor(b.min.x / world.collisionChunkSize),
                           (int)std::floor(b.min.y / world.collisionChunkSize),
                           (int)std::floor(b.min.z / world.collisionChunkSize));
@@ -286,7 +320,11 @@ bool solveActorTriangleCollision(
             int64_t cells = (int64_t)(c1.x - c0.x + 1) *
                             (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
             if (cells > kMaxChunksPerTriangle)
+            {
                 ++large;
+                result.largeCandidateMaxSpan =
+                    std::max(result.largeCandidateMaxSpan, maxSpan);
+            }
         }
         result.largeTriangles = large;
     }
@@ -305,6 +343,88 @@ bool solveActorTriangleCollision(
         worldTree = &s_worldTree;
     }
     const bool comparison = collisionConfig.actorCollisionComparison();
+
+    // Build one swept actor BVH for this solve and traverse it against the
+    // already-built world candidate tree. This preserves every actor triangle
+    // and every original world triangle ID, but rejects whole actor/world node
+    // pairs before the exact narrowphase. The topology is rebuilt per solve for
+    // the transformed sweep bounds; no allocation occurs inside the per-triangle
+    // narrowphase after these thread-local buffers have grown once.
+    static thread_local AabbTree s_actorTree;
+    static thread_local std::vector<AABB> s_actorTriangleBounds;
+    static thread_local std::vector<int> s_actorTriangleIds;
+    static thread_local std::vector<std::pair<int, int>> s_actorWorldPairs;
+    static thread_local std::vector<int> s_actorPairCursors;
+    static thread_local ActorTriangleBroadphase s_actorBroadphase;
+    s_actorBroadphase.clear();
+    if (worldTree && !worldTree->empty())
+    {
+        s_actorBroadphase.meshTriangleOffsets.reserve(baseMeshes.size() + 1);
+        s_actorBroadphase.meshTriangleOffsets.push_back(0);
+        s_actorTriangleBounds.clear();
+        s_actorTriangleIds.clear();
+        int flatTriangle = 0;
+        const float actorBoundsMargin = queryMargin +
+            std::max(MOVEMENT_FEATURE_SMOOTHNESS,
+                     collisionConfig.collisionSkin());
+        for (const ActorCollisionMesh& mesh : baseMeshes)
+        {
+            if (mesh.localTriangles)
+            {
+                for (const CollisionTriangle& tri : *mesh.localTriangles)
+                {
+                    const glm::vec3 a0 = glm::vec3(
+                        mesh.previousTransform * glm::vec4(tri.a, 1.0f));
+                    const glm::vec3 b0 = glm::vec3(
+                        mesh.previousTransform * glm::vec4(tri.b, 1.0f));
+                    const glm::vec3 c0 = glm::vec3(
+                        mesh.previousTransform * glm::vec4(tri.c, 1.0f));
+                    const glm::vec3 a1 = glm::vec3(
+                        mesh.desiredTransform * glm::vec4(tri.a, 1.0f));
+                    const glm::vec3 b1 = glm::vec3(
+                        mesh.desiredTransform * glm::vec4(tri.b, 1.0f));
+                    const glm::vec3 c1 = glm::vec3(
+                        mesh.desiredTransform * glm::vec4(tri.c, 1.0f));
+                    AABB bounds;
+                    bounds.min = glm::min(glm::min(a0, glm::min(b0, c0)),
+                                          glm::min(a1, glm::min(b1, c1)));
+                    bounds.max = glm::max(glm::max(a0, glm::max(b0, c0)),
+                                          glm::max(a1, glm::max(b1, c1)));
+                    bounds.min -= glm::vec3(actorBoundsMargin);
+                    bounds.max += glm::vec3(actorBoundsMargin);
+                    s_actorTriangleBounds.push_back(bounds);
+                    s_actorTriangleIds.push_back(flatTriangle++);
+                }
+            }
+            s_actorBroadphase.meshTriangleOffsets.push_back(flatTriangle);
+        }
+        s_actorTree.build(s_actorTriangleIds, s_actorTriangleBounds, 4);
+        s_actorTree.queryPairs(*worldTree, s_actorWorldPairs);
+        s_actorBroadphase.triangleCandidateOffsets.assign(
+            s_actorTriangleIds.size() + 1, 0);
+        for (const auto& pair : s_actorWorldPairs)
+        {
+            if (pair.first >= 0 &&
+                pair.first < static_cast<int>(s_actorTriangleIds.size()))
+                ++s_actorBroadphase.triangleCandidateOffsets[pair.first + 1];
+        }
+        for (size_t i = 1;
+             i < s_actorBroadphase.triangleCandidateOffsets.size(); ++i)
+            s_actorBroadphase.triangleCandidateOffsets[i] +=
+                s_actorBroadphase.triangleCandidateOffsets[i - 1];
+        s_actorBroadphase.worldTriangleIds.resize(s_actorWorldPairs.size());
+        s_actorPairCursors = s_actorBroadphase.triangleCandidateOffsets;
+        for (const auto& pair : s_actorWorldPairs)
+        {
+            if (pair.first < 0 ||
+                pair.first >= static_cast<int>(s_actorTriangleIds.size()))
+                continue;
+            const int dst = s_actorPairCursors[pair.first]++;
+            s_actorBroadphase.worldTriangleIds[dst] = pair.second;
+        }
+        gActorNarrowphase.bvhLeafPairs =
+            static_cast<int>(s_actorWorldPairs.size());
+    }
 
     // Reused fixed-tick scratch. The correction loop no longer allocates a mesh
     // vector, a contact vector, or an accumulated-contact vector per iteration.
@@ -333,7 +453,9 @@ bool solveActorTriangleCollision(
         const glm::vec3 refPoint = (poseBox.min + poseBox.max) * 0.5f;
 
         collectActorMeshContactsInto(world, s_meshes, candidates, refPoint, s_contacts,
-                                     true, -1.0f, worldTree, comparison);
+                                     true, -1.0f, worldTree, comparison,
+                                     MOVEMENT_FEATURE_SMOOTHNESS,
+                                     &s_actorBroadphase);
 
         // The weapon sphere/capsule collector uses the same world-triangle
         // contact facts and response owner, but only needs to run once per
@@ -607,10 +729,20 @@ bool solveActorTriangleCollision(
              {"grounded", result.grounded},
              {"candidates", result.candidates},
              {"large_triangles", result.largeTriangles},
+             {"candidate_max_span", result.candidateMaxSpan},
+             {"large_candidate_max_span", result.largeCandidateMaxSpan},
              {"query_box", vec3Json(result.queryBoxSize)},
              {"candidate_pairs", gActorNarrowphase.candidatePairs},
              {"triangle_tests", gActorNarrowphase.triangleTests},
              {"rounded_feature_calls", gActorNarrowphase.roundedFeatureCalls},
+             {"bvh_leaf_pairs", gActorNarrowphase.bvhLeafPairs},
+             {"world_obb_rejected", gActorNarrowphase.worldObbRejected},
+             {"oriented_box_rejected", gActorNarrowphase.orientedBoxRejected},
+             {"actor_avatar", player.avatarName()},
+             {"actor_mesh_count", result.actorMeshCount},
+             {"actor_mesh_triangles", result.actorMeshTriangles},
+             {"triangle_test_budget", 200000},
+             {"triangle_test_budget_hit", gActorNarrowphase.triangleTests >= 200000},
              {"solve_ms", result.solveMs}},
             __FILE__, __LINE__, __FUNCTION__);
     }
@@ -742,7 +874,12 @@ bool runActorTriangleCollisionStep(
             {{"query_box", vec3Json(result.queryBoxSize)},
              {"candidates", result.candidates},
              {"large_triangles", result.largeTriangles},
+             {"candidate_max_span", result.candidateMaxSpan},
+             {"large_candidate_max_span", result.largeCandidateMaxSpan},
              {"triangle_tests", gActorNarrowphase.triangleTests},
+             {"actor_mesh_count", result.actorMeshCount},
+             {"actor_mesh_triangles", result.actorMeshTriangles},
+             {"triangle_test_budget_hit", gActorNarrowphase.triangleTests >= 200000},
              {"solve_ms", result.solveMs},
              {"total_ms", result.totalMs},
              {"grounded", result.grounded},

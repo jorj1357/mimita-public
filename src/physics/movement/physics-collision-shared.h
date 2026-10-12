@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <algorithm>
+#include <utility> // broadphase candidate ranges use pointer pairs
 #include <glm/glm.hpp>
 
 #include "physics/physics-types.h"
@@ -292,6 +293,57 @@ inline bool overlaps(const AABB& a, const AABB& b)
            (a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
 
+inline bool sweptTriangleOverlapsTriangleOBB(
+    const CollisionTriangleOBB& obb,
+    const glm::vec3& a, const glm::vec3& b, const glm::vec3& c,
+    const glm::vec3& pa, const glm::vec3& pb, const glm::vec3& pc,
+    float margin)
+{
+    if (!obb.valid)
+        return true;
+    glm::vec3 mn(std::numeric_limits<float>::max());
+    glm::vec3 mx(std::numeric_limits<float>::lowest());
+    for (const glm::vec3& p : {a, b, c, pa, pb, pc})
+    {
+        const glm::vec3 d = p - obb.origin;
+        const glm::vec3 q(glm::dot(d, obb.axisU),
+                          glm::dot(d, obb.axisV),
+                          glm::dot(d, obb.axisN));
+        mn = glm::min(mn, q);
+        mx = glm::max(mx, q);
+    }
+    const float e = std::max(0.0f, margin);
+    return mn.x <= obb.localMax.x + e && mx.x >= obb.localMin.x - e &&
+           mn.y <= obb.localMax.y + e && mx.y >= obb.localMin.y - e &&
+           mn.z <= obb.localMax.z + e && mx.z >= obb.localMin.z - e;
+}
+
+// Conservative first-stage rejection for a world triangle's thin oriented
+// prism.  It projects the actor query box onto the prism axes; it can retain
+// extra pairs, but can never remove an exact triangle contact.  This is what
+// keeps a very large visible map triangle from pairing with every avatar
+// triangle just because its axis-aligned bounds cover the whole room.
+inline bool aabbOverlapsTriangleOBB(
+    const CollisionTriangleOBB& obb, const AABB& aabb, float margin)
+{
+    if (!obb.valid)
+        return true;
+    const glm::vec3 center = (aabb.min + aabb.max) * 0.5f;
+    const glm::vec3 half = (aabb.max - aabb.min) * 0.5f;
+    const float e = std::max(0.0f, margin);
+    const auto overlapsAxis = [&](const glm::vec3& axis,
+                                  float localMin, float localMax) {
+        const glm::vec3 delta = center - obb.origin;
+        const float projectedCenter = glm::dot(delta, axis);
+        const float projectedHalf = glm::dot(glm::abs(axis), half);
+        return projectedCenter - projectedHalf <= localMax + e &&
+               projectedCenter + projectedHalf >= localMin - e;
+    };
+    return overlapsAxis(obb.axisU, obb.localMin.x, obb.localMax.x) &&
+           overlapsAxis(obb.axisV, obb.localMin.y, obb.localMax.y) &&
+           overlapsAxis(obb.axisN, obb.localMin.z, obb.localMax.z);
+}
+
 inline glm::ivec3 collisionChunkCoord(const glm::vec3& p, float size)
 {
     return glm::ivec3(
@@ -422,6 +474,9 @@ struct ActorNarrowphaseStats {
     int candidatePairs = 0;      // actor-triangle x candidate AABB tests
     int triangleTests = 0;       // narrowphase triangle/segment tests
     int roundedFeatureCalls = 0; // closestRoundedTriangleFeatures calls
+    int bvhLeafPairs = 0;         // exact actor/world leaf pairs emitted
+    int orientedBoxRejected = 0;   // AABB pairs rejected by triangle prism
+    int worldObbRejected = 0;      // gathered map candidates rejected before BVH
 };
 extern ActorNarrowphaseStats gActorNarrowphase;
 
@@ -478,6 +533,72 @@ std::vector<RecoveryContact> collectActorMeshContacts(
 // Scratch-buffer form: appends into `out` (cleared first) so the fixed-tick
 // solver never allocates a contact vector per correction iteration.
 struct AabbTree;
+// Exact actor/world broadphase result. `meshTriangleOffsets` maps each mesh to
+// a compact flattened actor-triangle range, while `triangleCandidateOffsets`
+// maps each flattened actor triangle to its world-triangle range. The IDs in
+// `worldTriangleIds` are only
+// original world triangle IDs produced by the actor-BVH/world-BVH traversal.
+// This is an index/cache around the real triangles; it never replaces them.
+struct ActorTriangleBroadphase
+{
+    std::vector<int> meshTriangleOffsets;
+    std::vector<int> triangleCandidateOffsets;
+    std::vector<int> worldTriangleIds;
+
+    void clear()
+    {
+        meshTriangleOffsets.clear();
+        triangleCandidateOffsets.clear();
+        worldTriangleIds.clear();
+    }
+
+    bool validForMesh(size_t meshIndex, size_t triangleCount) const
+    {
+        return meshIndex + 1 < meshTriangleOffsets.size() &&
+               meshTriangleOffsets[meshIndex + 1] - meshTriangleOffsets[meshIndex] ==
+                   static_cast<int>(triangleCount);
+    }
+
+    std::pair<const int*, const int*> candidatesFor(
+        size_t meshIndex, size_t triangleIndex) const
+    {
+        if (meshIndex + 1 >= meshTriangleOffsets.size())
+            return {nullptr, nullptr};
+        const int meshBegin = meshTriangleOffsets[meshIndex];
+        const int meshEnd = meshTriangleOffsets[meshIndex + 1];
+        if (triangleIndex >= static_cast<size_t>(std::max(0, meshEnd - meshBegin)))
+            return {nullptr, nullptr};
+        const int flat = meshBegin + static_cast<int>(triangleIndex);
+        if (flat < 0 || flat + 1 >= static_cast<int>(triangleCandidateOffsets.size()))
+            return {nullptr, nullptr};
+        const int begin = triangleCandidateOffsets[flat];
+        const int end = triangleCandidateOffsets[flat + 1];
+        if (begin < 0 || end < begin ||
+            end > static_cast<int>(worldTriangleIds.size()))
+            return {nullptr, nullptr};
+        return {worldTriangleIds.data() + begin, worldTriangleIds.data() + end};
+    }
+
+    int candidateCountFor(size_t meshIndex, size_t triangleIndex) const
+    {
+        if (meshIndex + 1 >= meshTriangleOffsets.size())
+            return -1;
+        const int meshBegin = meshTriangleOffsets[meshIndex];
+        const int meshEnd = meshTriangleOffsets[meshIndex + 1];
+        if (triangleIndex >= static_cast<size_t>(std::max(0, meshEnd - meshBegin)))
+            return -1;
+        const int flat = meshBegin + static_cast<int>(triangleIndex);
+        if (flat < 0 || flat + 1 >= static_cast<int>(triangleCandidateOffsets.size()))
+            return -1;
+        const int begin = triangleCandidateOffsets[flat];
+        const int end = triangleCandidateOffsets[flat + 1];
+        if (begin < 0 || end < begin ||
+            end > static_cast<int>(worldTriangleIds.size()))
+            return -1;
+        return end - begin;
+    }
+};
+
 void collectActorMeshContactsInto(
     const World& world,
     const std::vector<ActorCollisionMesh>& meshes,
@@ -492,7 +613,8 @@ void collectActorMeshContactsInto(
     // MOVEMENT_FEATURE_SMOOTHNESS; a deep-depenetration recovery pass passes a
     // larger radius so a body that is already embedded (e.g. fell through the
     // floor) is still detected and pushed out.
-    float featureRadius = MOVEMENT_FEATURE_SMOOTHNESS);
+    float featureRadius = MOVEMENT_FEATURE_SMOOTHNESS,
+    const ActorTriangleBroadphase* actorBroadphase = nullptr);
 
 // Union swept AABB (previous + desired + move) of every supplied mesh, in local
 // triangle space transformed to world. Used to gather broadphase candidates.

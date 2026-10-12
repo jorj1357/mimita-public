@@ -1049,6 +1049,19 @@ void Perf::endFrame(float currentFrameMs)
             fields["max_entity_physics_ms"] = w.maxEntity;
             fields["avg_simulation_ms"] = w.sumSim / frames;
             fields["max_simulation_ms"] = w.maxSim;
+            auto currentScopeMaxMs = [](const char* label) {
+                uint64_t maxCycles = 0;
+                for (int i = 0; i < gPerfScopeCount; ++i)
+                {
+                    const PerfScopeCapture& scope = gPerfScopes[i];
+                    if (scope.label && std::strcmp(scope.label, label) == 0)
+                        maxCycles = std::max(maxCycles, scope.cyclesInclusive);
+                }
+                return static_cast<double>(maxCycles) / 1000000.0;
+            };
+            fields["physics_main_update_ms"] = currentScopeMaxMs("PhysicsMainUpdate");
+            fields["aim_body_update_ms"] = currentScopeMaxMs("AimBodyUpdate");
+            fields["ragdoll_mode_update_ms"] = currentScopeMaxMs("RagdollModeUpdate");
             fields["avg_rendering_ms"] = w.sumRender / frames;
             fields["max_rendering_ms"] = w.maxRender;
             fields["avg_networking_ms"] = w.sumNet / frames;

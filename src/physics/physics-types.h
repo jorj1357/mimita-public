@@ -18,6 +18,7 @@
 #include <glm/mat4x4.hpp>
 #include <string>
 #include <vector>
+#include <limits>
 
 // Absolute sanity limit for one world-space coordinate. The chunk broadphase
 // works for any finite position; this only rejects absurd/garbage values before
@@ -120,6 +121,19 @@ struct AABB {
     glm::vec3 max{0.0f};
 };
 
+// Conservative triangle-oriented prism used only for broadphase rejection.
+// The original CollisionTriangle remains the authoritative collision shape.
+struct CollisionTriangleOBB
+{
+    glm::vec3 origin{0.0f};
+    glm::vec3 axisU{1.0f, 0.0f, 0.0f};
+    glm::vec3 axisV{0.0f, 1.0f, 0.0f};
+    glm::vec3 axisN{0.0f, 0.0f, 1.0f};
+    glm::vec3 localMin{0.0f};
+    glm::vec3 localMax{0.0f};
+    bool valid = false;
+};
+
 struct CollisionMeshCache
 {
     std::vector<CollisionTriangle> triangles;
@@ -127,6 +141,7 @@ struct CollisionMeshCache
     // world collision mesh/chunks are built so the actor narrowphase never
     // recomputes a world triangle's bounds inside a per-pair loop.
     std::vector<AABB> triangleAABBs;
+    std::vector<CollisionTriangleOBB> triangleOBBs;
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
 
@@ -135,6 +150,7 @@ struct CollisionMeshCache
     {
         triangles.clear();
         triangleAABBs.clear();
+        triangleOBBs.clear();
         boundsMin = glm::vec3(0.0f);
         boundsMax = glm::vec3(0.0f);
     }

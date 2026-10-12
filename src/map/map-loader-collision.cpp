@@ -163,6 +163,7 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
     // overlap filters read these instead of recomputing makeTriangleAABB for
     // every candidate/actor-triangle pair.
     world.collisionMesh.triangleAABBs.resize(world.collisionMesh.triangles.size());
+    world.collisionMesh.triangleOBBs.resize(world.collisionMesh.triangles.size());
 
     uint64_t totalRefs = 0;
     uint64_t maxChunks = 0;
@@ -175,6 +176,31 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
         glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
         glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
         world.collisionMesh.triangleAABBs[i] = AABB{mn, mx};
+        CollisionTriangleOBB obb;
+        obb.origin = tri.a;
+        const glm::vec3 uRaw = tri.b - tri.a;
+        const glm::vec3 nRaw = glm::cross(tri.b - tri.a, tri.c - tri.a);
+        const float uLen = glm::length(uRaw);
+        const float nLen = glm::length(nRaw);
+        if (uLen > 1e-6f && nLen > 1e-6f)
+        {
+            obb.axisU = uRaw / uLen;
+            obb.axisN = nRaw / nLen;
+            obb.axisV = glm::normalize(glm::cross(obb.axisN, obb.axisU));
+            obb.localMin = glm::vec3(std::numeric_limits<float>::max());
+            obb.localMax = glm::vec3(std::numeric_limits<float>::lowest());
+            for (const glm::vec3& p : {tri.a, tri.b, tri.c})
+            {
+                const glm::vec3 d = p - obb.origin;
+                const glm::vec3 q(glm::dot(d, obb.axisU),
+                                  glm::dot(d, obb.axisV),
+                                  glm::dot(d, obb.axisN));
+                obb.localMin = glm::min(obb.localMin, q);
+                obb.localMax = glm::max(obb.localMax, q);
+            }
+            obb.valid = true;
+        }
+        world.collisionMesh.triangleOBBs[i] = obb;
         glm::ivec3 c0 = collisionChunkCoord(mn, world.collisionChunkSize);
         glm::ivec3 c1 = collisionChunkCoord(mx, world.collisionChunkSize);
 

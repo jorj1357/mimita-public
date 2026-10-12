@@ -1016,7 +1016,7 @@
       "lungeForwardImpulse": 12.0,
       "allowAttackSpam": false,
       "interruptCurrentAttackOnNewInput": true,
-      "heavyWeaponEnabled": true,
+      "heavyWeaponEnabled": false,
       "worldHitSoundMinSpeed": 4.0,
       "worldHitSoundCooldown": 0.12,
       "knockbackSoundMinForce": 40.0,

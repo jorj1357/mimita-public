@@ -111,6 +111,20 @@
         "npc_delete_all"
       ],
       "map": "zombietower4"
+      
+    },
+     "11": {
+      "name": "atdm map collision lag test 2026 10 11",
+      "server_args": [
+        "--no-npcs"
+      ],
+      "client_args": [
+        "--startup-command",
+        "teleport -43, -28, 290",
+        "--startup-command",
+        "xxx"
+      ],
+      "map": "atdm"  
     }
   }
 }

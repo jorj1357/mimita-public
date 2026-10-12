@@ -1,3 +1,40 @@
+2026 10 11 1717 jorj todo 
+the  rotations of the boomer model  "C:\mimita-v9\assets\entity\player\monsters\boomer\mimita-boomer-v7.glb"
+i even put it to be XYZ in blender
+and rotate and stuff
+but it wont  rotate the right way
+
+havent applied like  scale or offsets
+
+ok im gonna do hmmmm
+apply rotaiton s
+
+2026 10 11 1720 ITS BC  
+U HAVE TO APPLY ROTATIONS
+AND ALSO DO ORIGIN
+THE ORIGIN = THE POINT THAT ROTATES AROUND Mkay
+so
+set the origins to be right
+and make rotiatons applied to be 0 
+scale is fine
+offset its fine
+
+2026 10 11 1811 jorj so 
+griver is just  aball
+it rolls at u
+so its like
+head orso left rigt arm?
+n
+no no rellly
+but the wasp too
+left rig tharm?n 
+no its wings 
+so
+ueah 
+need like ball 
+ragdoll modw or ball mode idk
+
+
 # Avatar editor and authored GLB workflow
 
 Date: 2026-10-11

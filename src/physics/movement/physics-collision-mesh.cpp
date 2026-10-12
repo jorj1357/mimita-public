@@ -418,7 +418,8 @@ void collectActorMeshContactsInto(
     float contactSkin,
     const AabbTree* worldTree,
     bool comparison,
-    float featureRadius)
+    float featureRadius,
+    const ActorTriangleBroadphase* actorBroadphase)
 {
     // Comparison mode: produce the authoritative linear result, also produce the
     // accelerated result, log the diff, and keep the linear result so behavior is
@@ -427,11 +428,12 @@ void collectActorMeshContactsInto(
     {
         collectActorMeshContactsInto(world, meshes, candidates, actorPos, contacts,
                                      filterCandidatesByMeshAabb, contactSkin,
-                                     nullptr, false, featureRadius);
+                                      nullptr, false, featureRadius, nullptr);
         static thread_local std::vector<RecoveryContact> s_compare;
         collectActorMeshContactsInto(world, meshes, candidates, actorPos, s_compare,
                                      filterCandidatesByMeshAabb, contactSkin,
-                                     worldTree, false, featureRadius);
+                                      worldTree, false, featureRadius,
+                                      actorBroadphase);
         logActorNarrowphaseComparison(contacts, s_compare);
         return;
     }
@@ -458,8 +460,9 @@ void collectActorMeshContactsInto(
     // still needs its own narrowphase AABB filter. Without this, a hand or
     // weapon tests against every triangle near the whole actor, including
     // triangles that belong only to another limb or nearby geometry.
-    for (const ActorCollisionMesh& mesh : meshes)
+    for (size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
     {
+        const ActorCollisionMesh& mesh = meshes[meshIndex];
         if (!mesh.localTriangles || mesh.localTriangles->empty())
             continue;
 
@@ -509,11 +512,20 @@ void collectActorMeshContactsInto(
                 actorTriangleBounds.max += glm::vec3(featureRadius);
             }
 
-            // AABB-tree pair traversal: only candidates whose bounds overlap the
-            // swept actor triangle are visited. Without a tree the whole gathered
-            // candidate list is scanned (the original behavior).
+            // Prefer the precomputed actor-BVH/world-BVH pair list. It contains
+            // the same original world triangle IDs, but the actor tree rejected
+            // whole groups before this per-triangle exact narrowphase. The
+            // temporary per-triangle query remains the safe fallback for callers
+            // that do not provide the new pair cache.
             static thread_local std::vector<int> s_triCandidates;
-            const bool useTree = worldTree && !worldTree->empty();
+            const auto pairRange = actorBroadphase
+                ? actorBroadphase->candidatesFor(meshIndex, static_cast<size_t>(ti))
+                : std::pair<const int*, const int*>{nullptr, nullptr};
+            const int pairCount = actorBroadphase
+                ? actorBroadphase->candidateCountFor(meshIndex, static_cast<size_t>(ti))
+                : -1;
+            const bool usePairCache = pairCount >= 0;
+            const bool useTree = !usePairCache && worldTree && !worldTree->empty();
             if (useTree)
             {
                 s_triCandidates.clear();
@@ -521,11 +533,14 @@ void collectActorMeshContactsInto(
             }
             const std::vector<int>& scan = useTree ? s_triCandidates : candidates;
 
-            for (size_t ci = 0; ci < scan.size(); ++ci)
+            const size_t scanCount = usePairCache
+                ? static_cast<size_t>(pairCount)
+                : scan.size();
+            for (size_t ci = 0; ci < scanCount; ++ci)
             {
                 if (triangleTests >= kMaxTriangleTests)
                     return;
-                const int wi = scan[ci];
+                const int wi = usePairCache ? pairRange.first[ci] : scan[ci];
                 if (wi < 0 || wi >= (int)world.collisionMesh.triangles.size())
                     continue;
                 ++gActorNarrowphase.candidatePairs;
@@ -540,6 +555,14 @@ void collectActorMeshContactsInto(
                 // feature pair can be within the movement radius.
                 if (!overlaps(actorTriangleBounds, candidateBounds))
                     continue;
+                if (wi >= 0 && wi < static_cast<int>(world.collisionMesh.triangleOBBs.size()) &&
+                    !sweptTriangleOverlapsTriangleOBB(
+                        world.collisionMesh.triangleOBBs[wi],
+                        a, b, c, pa, pb, pc, queryMargin))
+                {
+                    ++gActorNarrowphase.orientedBoxRejected;
+                    continue;
+                }
                 const CollisionTriangle& wt = world.collisionMesh.triangles[wi];
                 glm::vec3 hitCentroid(0.0f);
                 bool hit = false;
