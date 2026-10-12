@@ -467,7 +467,12 @@ void collectActorMeshContactsInto(
             continue;
 
         AABB meshBounds;
-        if (filterCandidatesByMeshAabb)
+        // A cached actor/world pair list is already per mesh and per triangle.
+        // Rebuilding this mesh AABB by scanning every local triangle would only
+        // repeat a broadphase decision the cache has made conservatively.
+        const bool needsMeshAabbFilter =
+            filterCandidatesByMeshAabb && actorBroadphase == nullptr;
+        if (needsMeshAabbFilter)
         {
             glm::vec3 localMin, localMax;
             localBoundsOfMesh(mesh, localMin, localMax);
@@ -485,6 +490,19 @@ void collectActorMeshContactsInto(
 
         for (int ti = 0; ti < triCount && partContacts < kMaxContactsPerPart; ++ti)
         {
+            // The solver's cached local BVH has already determined which
+            // original map triangles can reach this actor triangle. Check it
+            // before transforming six vertices and constructing sweep data;
+            // the common zero-pair case must cost only this lookup.
+            const auto pairRange = actorBroadphase
+                ? actorBroadphase->candidatesFor(meshIndex, static_cast<size_t>(ti))
+                : std::pair<const int*, const int*>{nullptr, nullptr};
+            const int pairCount = actorBroadphase
+                ? actorBroadphase->candidateCountFor(meshIndex, static_cast<size_t>(ti))
+                : -1;
+            const bool usePairCache = pairCount >= 0;
+            if (actorBroadphase && usePairCache && pairCount == 0)
+                continue;
             const CollisionTriangle& lt = (*mesh.localTriangles)[ti];
             const glm::vec3 a = glm::vec3(mesh.desiredTransform * glm::vec4(lt.a, 1.0f));
             const glm::vec3 b = glm::vec3(mesh.desiredTransform * glm::vec4(lt.b, 1.0f));
@@ -518,13 +536,6 @@ void collectActorMeshContactsInto(
             // temporary per-triangle query remains the safe fallback for callers
             // that do not provide the new pair cache.
             static thread_local std::vector<int> s_triCandidates;
-            const auto pairRange = actorBroadphase
-                ? actorBroadphase->candidatesFor(meshIndex, static_cast<size_t>(ti))
-                : std::pair<const int*, const int*>{nullptr, nullptr};
-            const int pairCount = actorBroadphase
-                ? actorBroadphase->candidateCountFor(meshIndex, static_cast<size_t>(ti))
-                : -1;
-            const bool usePairCache = pairCount >= 0;
             const bool useTree = !usePairCache && worldTree && !worldTree->empty();
             if (useTree)
             {
@@ -546,7 +557,7 @@ void collectActorMeshContactsInto(
                 ++gActorNarrowphase.candidatePairs;
                 const AABB candidateBounds = collisionTriangleAABB(
                     world.collisionMesh, wi);
-                if (filterCandidatesByMeshAabb &&
+                if (needsMeshAabbFilter &&
                     !overlaps(meshBounds, candidateBounds))
                     continue;
                 // The rounded narrowphase is more expensive than the exact
