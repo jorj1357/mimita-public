@@ -1384,8 +1384,8 @@
     "recoil": 120.0,
     "recoil_definition": {
       "enabled": true,
-      "pitch_per_shot": 2.5,
-      "yaw_per_shot": 0.35,
+      "pitch_per_shot": 1.0,
+      "yaw_per_shot": 1.35,
       "roll_per_shot": 1.0,
       "accumulation_per_shot": 2.0,
       "max_accumulation": 100.0,
@@ -1395,7 +1395,7 @@
       "camera_ads_scale": 0.85,
       "camera_recovery_rate": 40.0,
       "viewmodel_back_per_shot": 0.2,
-      "viewmodel_pitch_per_shot": 8.0,
+      "viewmodel_pitch_per_shot": 3.0,
       "viewmodel_yaw_per_shot": 0.5,
       "viewmodel_roll_per_shot": 0.5,
       "viewmodel_recovery_rate": 100.0,
@@ -1403,7 +1403,7 @@
       "arm_pitch_per_shot": -0.5,
       "arm_yaw_per_shot": -3.0,
       "arm_roll_per_shot": -0.1,
-      "arm_recovery_rate": 30.0,
+      "arm_recovery_rate": 40.0,
       "arm_ads_scale": 0.85
     },
     "behavior_type": "hitscan",
