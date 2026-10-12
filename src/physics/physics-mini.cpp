@@ -251,8 +251,8 @@ static void physicsMainUpdate_Internal(
     // Anti-tunneling: at extreme speed a single fixed sub-step can move the
     // actor far enough that the swept narrowphase's sampling/contact budget is
     // exhausted. Derive extra collision sub-steps from the actual per-tick
-    // travel so each sub-step stays under maxSubStepDistance. Normal speeds
-    // keep the configured subSteps unchanged.
+    // travel so each sub-step stays under maxSubStepDistance. A normal actor
+    // takes its one swept fixed-tick solve; only real travel adds work.
     int steps = std::max(1, subSteps);
     {
         const CollisionConfig& collisionCfg = CollisionConfig::instance();

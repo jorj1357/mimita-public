@@ -2,7 +2,45 @@
 
 put logs + run the exe + see the value of the logs + use that info to make decisions e.g. confident theres a clear solution = implement, not confident yet = imrpove/edit/cahnge/add/remove/etc logs   - 
 continue, getting more evidence for/against and building evidence to support claim that  whatevre fix  u want to implement is the best solution for it right now 
-put this in here gernally 
+
+C:\mimita-v9\docs\specs\colliisons\collisions.md
+
+C:\mimita-v9\docs\specs\debug-logging\AI-fix-live.md
+
+work according to ai fix live  , to get this to be true:
+
+events.jsonl shows a consistent  240fps or more when using the dve loop script in mode 11  with the avatar being equipped is "monstertest1"
+
+
+11": {
+      "name": "atdm map collision lag test 2026 10 11",
+      "server_args": [
+        "--no-npcs"
+      ],
+      "client_args": [
+        "--startup-command",
+        "teleport -43, -28, 290",
+        "--startup-command",
+        "m1"
+      ],
+      "map": "atdm"  
+    }
+
+i switched it to "m1" bc that equips the  boomer avatar
+so , keep that there, and work according to the ai live fix doc, and get it so  1. the monster avatar is equipped, and 2. real .exe is at 240fps with collisions working and monstertest1  avatar equipped , i tested  just now adn i was at like 5-10 fps not good 
+it sas fps is 4 or 5  avg is 10 or 9 or 8  dropping 
+
+ING uptime=00:03:55 visibility=visible
+[DEV STATUS] PIDS: server=28420 client=[28960]
+[DEV STATUS] EVENTS: ]8;;file:///C:/mimita-v9/lo[DEV STATUS] MODE: 11 (atdm map collision lag test 2026 10 11)
+[DEV STATUS] BUILD: running=- latest=2151 match=False
+[DEV STATUS] RUN: RUNNING uptime=00:03:55 visibility=visible
+
+this the log im using 
+
+run the exe , look at events.jsonl for results of ur changes, and work based on the logs to get the success condition to be true
+
+todo 2026 10 11 2028 jorj  put this in here gernally , like the above is not clean i want to implement in a  general  applies to any task way
 
 # Live AI fix procedure
 

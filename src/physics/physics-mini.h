@@ -24,6 +24,9 @@ void physicsMainUpdate(
     const World& world,
     const InputState& input,
     float dt,
-    int subSteps = 6,
+    // The collision solver is swept, so a normal fixed tick needs one solve.
+    // physics-mini.cpp adds only the extra speed-derived substeps needed to
+    // keep a fast actor below CollisionConfig::maxSubStepDistance().
+    int subSteps = 1,
     const MovementConfig* overrideConfig = nullptr
 );

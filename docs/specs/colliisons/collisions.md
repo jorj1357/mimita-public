@@ -32,7 +32,7 @@ when ur around like normal nothingness objects its fine  no fps drops
 
 but when u ahve curved objects then it ahs big big fps drops
 
-need to investigate using events.jsonl  
+need to investigate using events.jsonl   
 C:\mimita-v9\docs\specs\debug-logging\AI-fix-live.md  according to this  use this 
 
 2026 10 11 1829

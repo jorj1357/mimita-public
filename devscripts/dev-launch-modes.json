@@ -122,7 +122,7 @@
         "--startup-command",
         "teleport -43, -28, 290",
         "--startup-command",
-        "xxx"
+        "m1"
       ],
       "map": "atdm"  
     }
