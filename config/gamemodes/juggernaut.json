@@ -59,9 +59,9 @@
   "ragdoll_enabled": true,
   "blood_enabled": true,
   "presentation": {
-    "damage_numbers": true,
-    "hit_effects": true,
-    "world_impact_effects": true,
+    "damage_numbers": false,
+    "hit_effects": false,
+    "world_impact_effects": false,
     "hit_markers": true,
     "hit_sounds": true,
     "blood": true,

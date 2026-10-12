@@ -255,7 +255,8 @@
     //
     // 9999 is intentionally effectively unlimited for normal gameplay.
     "max_external_impulse_speed": 9999.0,
-    "external_impulse_resistance_multiplier": 50.0,
+    // "external_impulse_resistance_multiplier": 50.0,
+    "external_impulse_resistance_multiplier": 5.0,
 
     // Match the current fast Source preset's knockback behavior.
     //
