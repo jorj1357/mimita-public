@@ -56,6 +56,10 @@ struct ActorTriangleCollisionResult {
     int actorMeshTriangles = 0;
     float candidateMaxSpan = 0.0f;
     float largeCandidateMaxSpan = 0.0f;
+    float meshCollectMs = 0.0f;
+    float worldTreeMs = 0.0f;
+    float actorTreeMs = 0.0f;
+    float contactCollectMs = 0.0f;
     float solveMs = 0.0f;   // solveActorTriangleCollision body
     float totalMs = 0.0f;   // runActorTriangleCollisionStep (query + solve + post)
 };

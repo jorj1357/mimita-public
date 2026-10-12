@@ -52,9 +52,125 @@ bool finiteAabb(const AABB& a)
            a.max.x >= a.min.x && a.max.y >= a.min.y && a.max.z >= a.min.z;
 }
 
+AABB transformedActorAabb(const AABB& local, const glm::mat4& transform)
+{
+    AABB out;
+    out.min = glm::vec3(std::numeric_limits<float>::max());
+    out.max = glm::vec3(std::numeric_limits<float>::lowest());
+    for (int x = 0; x < 2; ++x)
+        for (int y = 0; y < 2; ++y)
+            for (int z = 0; z < 2; ++z)
+            {
+                const glm::vec3 p(x ? local.max.x : local.min.x,
+                                  y ? local.max.y : local.min.y,
+                                  z ? local.max.z : local.min.z);
+                const glm::vec3 world = glm::vec3(transform * glm::vec4(p, 1.0f));
+                out.min = glm::min(out.min, world);
+                out.max = glm::max(out.max, world);
+            }
+    return out;
+}
+
+AABB mergedActorAabb(const AABB& a, const AABB& b)
+{
+    return AABB{glm::min(a.min, b.min), glm::max(a.max, b.max)};
+}
+
 nlohmann::json vec3Json(const glm::vec3& v)
 {
     return {v.x, v.y, v.z};
+}
+
+struct LocalActorTriangleTree
+{
+    const std::vector<CollisionTriangle>* source = nullptr;
+    const CollisionTriangle* data = nullptr;
+    size_t triangleCount = 0;
+    std::vector<AABB> localBounds;
+    std::vector<int> triangleIds;
+    AabbTree tree;
+};
+
+LocalActorTriangleTree& localActorTreeFor(
+    const std::vector<CollisionTriangle>& triangles)
+{
+    static thread_local std::vector<LocalActorTriangleTree> cache;
+    for (LocalActorTriangleTree& entry : cache)
+    {
+        if (entry.source == &triangles && entry.data == triangles.data() &&
+            entry.triangleCount == triangles.size())
+            return entry;
+    }
+    // Avatar reload creates new collider storage. Bound the idle cache so an
+    // avatar carousel cannot retain every previously selected model forever.
+    if (cache.size() >= 32)
+        cache.clear();
+    cache.push_back(LocalActorTriangleTree{});
+    LocalActorTriangleTree& entry = cache.back();
+    entry.source = &triangles;
+    entry.data = triangles.data();
+    entry.triangleCount = triangles.size();
+    entry.localBounds.resize(triangles.size());
+    entry.triangleIds.resize(triangles.size());
+    for (size_t i = 0; i < triangles.size(); ++i)
+    {
+        const CollisionTriangle& tri = triangles[i];
+        entry.localBounds[i] = AABB{
+            glm::min(glm::min(tri.a, tri.b), tri.c),
+            glm::max(glm::max(tri.a, tri.b), tri.c)};
+        entry.triangleIds[i] = static_cast<int>(i);
+    }
+    entry.tree.build(entry.triangleIds, entry.localBounds, 4);
+    return entry;
+}
+
+void appendLocalTreeTriangleCandidates(
+    const LocalActorTriangleTree& localTree,
+    const CollisionTriangleOBB& worldObb,
+    const ActorCollisionMesh& mesh,
+    float margin,
+    std::vector<int>& out)
+{
+    out.clear();
+    if (localTree.tree.empty())
+        return;
+    if (!worldObb.valid)
+    {
+        localTree.tree.query(localTree.tree.nodes.front().bounds, out);
+        return;
+    }
+    int stack[128];
+    int stackSize = 0;
+    stack[stackSize++] = 0;
+    while (stackSize > 0)
+    {
+        const AabbTree::Node& node = localTree.tree.nodes[stack[--stackSize]];
+        const AABB nodeWorldBounds = mergedActorAabb(
+            transformedActorAabb(node.bounds, mesh.previousTransform),
+            transformedActorAabb(node.bounds, mesh.desiredTransform));
+        if (!aabbOverlapsTriangleOBB(worldObb, nodeWorldBounds, margin))
+            continue;
+        if (node.left < 0)
+        {
+            for (int i = 0; i < node.count; ++i)
+            {
+                const int position = localTree.tree.order[node.start + i];
+                const AABB primitiveWorldBounds = mergedActorAabb(
+                    transformedActorAabb(localTree.tree.primAABBs[position],
+                                         mesh.previousTransform),
+                    transformedActorAabb(localTree.tree.primAABBs[position],
+                                         mesh.desiredTransform));
+                if (aabbOverlapsTriangleOBB(worldObb, primitiveWorldBounds,
+                                             margin))
+                    out.push_back(localTree.tree.ids[position]);
+            }
+        }
+        else if (stackSize + 2 <= 128)
+        {
+            stack[stackSize++] = node.left;
+            stack[stackSize++] = node.right;
+        }
+    }
 }
 
 // Combines contacts whose normals point the same way into one surface, keeping
@@ -237,8 +353,11 @@ bool solveActorTriangleCollision(
     // the actor up across a floor would look like a fresh downward sweep and
     // flip the normal. Corrections accumulate and are applied once at the end.
     const CollisionConfig& collisionConfig = CollisionConfig::instance();
+    const auto meshCollectStart = std::chrono::steady_clock::now();
     const std::vector<ActorCollisionMesh> baseMeshes =
         collectActorCollisionMeshes(player);
+    result.meshCollectMs = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - meshCollectStart).count();
     if (baseMeshes.empty())
         return false;
     int actorMeshTriangles = 0;
@@ -335,6 +454,7 @@ bool solveActorTriangleCollision(
     const bool accelerated = collisionConfig.actorCollisionAccelerated();
     static thread_local AabbTree s_worldTree;
     const AabbTree* worldTree = nullptr;
+    const auto worldTreeStart = std::chrono::steady_clock::now();
     if (accelerated && !candidates.empty() &&
         world.collisionMesh.triangleAABBs.size() ==
             world.collisionMesh.triangles.size())
@@ -342,70 +462,59 @@ bool solveActorTriangleCollision(
         s_worldTree.build(candidates, world.collisionMesh.triangleAABBs);
         worldTree = &s_worldTree;
     }
+    result.worldTreeMs = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - worldTreeStart).count();
     const bool comparison = collisionConfig.actorCollisionComparison();
 
-    // Build one swept actor BVH for this solve and traverse it against the
-    // already-built world candidate tree. This preserves every actor triangle
-    // and every original world triangle ID, but rejects whole actor/world node
-    // pairs before the exact narrowphase. The topology is rebuilt per solve for
-    // the transformed sweep bounds; no allocation occurs inside the per-triangle
-    // narrowphase after these thread-local buffers have grown once.
-    static thread_local AabbTree s_actorTree;
-    static thread_local std::vector<AABB> s_actorTriangleBounds;
-    static thread_local std::vector<int> s_actorTriangleIds;
+    // Each body part is a rigid transform of immutable local GLB triangles.
+    // Cache that local tree instead of rebuilding a world-space tree every
+    // fixed tick. Each candidate map triangle is transformed into the part's
+    // previous and desired local spaces and queries the cached tree there.
+    // This retains original actor/world triangle IDs for the final contact.
     static thread_local std::vector<std::pair<int, int>> s_actorWorldPairs;
     static thread_local std::vector<int> s_actorPairCursors;
+    static thread_local std::vector<int> s_localTriangleCandidates;
     static thread_local ActorTriangleBroadphase s_actorBroadphase;
     s_actorBroadphase.clear();
+
+    const auto actorTreeStart = std::chrono::steady_clock::now();
     if (worldTree && !worldTree->empty())
     {
         s_actorBroadphase.meshTriangleOffsets.reserve(baseMeshes.size() + 1);
         s_actorBroadphase.meshTriangleOffsets.push_back(0);
-        s_actorTriangleBounds.clear();
-        s_actorTriangleIds.clear();
+        s_actorWorldPairs.clear();
         int flatTriangle = 0;
         const float actorBoundsMargin = queryMargin +
             std::max(MOVEMENT_FEATURE_SMOOTHNESS,
                      collisionConfig.collisionSkin());
         for (const ActorCollisionMesh& mesh : baseMeshes)
         {
-            if (mesh.localTriangles)
+            if (mesh.localTriangles && !mesh.localTriangles->empty())
             {
-                for (const CollisionTriangle& tri : *mesh.localTriangles)
+                LocalActorTriangleTree& localTree =
+                    localActorTreeFor(*mesh.localTriangles);
+                for (int worldTriangle : candidates)
                 {
-                    const glm::vec3 a0 = glm::vec3(
-                        mesh.previousTransform * glm::vec4(tri.a, 1.0f));
-                    const glm::vec3 b0 = glm::vec3(
-                        mesh.previousTransform * glm::vec4(tri.b, 1.0f));
-                    const glm::vec3 c0 = glm::vec3(
-                        mesh.previousTransform * glm::vec4(tri.c, 1.0f));
-                    const glm::vec3 a1 = glm::vec3(
-                        mesh.desiredTransform * glm::vec4(tri.a, 1.0f));
-                    const glm::vec3 b1 = glm::vec3(
-                        mesh.desiredTransform * glm::vec4(tri.b, 1.0f));
-                    const glm::vec3 c1 = glm::vec3(
-                        mesh.desiredTransform * glm::vec4(tri.c, 1.0f));
-                    AABB bounds;
-                    bounds.min = glm::min(glm::min(a0, glm::min(b0, c0)),
-                                          glm::min(a1, glm::min(b1, c1)));
-                    bounds.max = glm::max(glm::max(a0, glm::max(b0, c0)),
-                                          glm::max(a1, glm::max(b1, c1)));
-                    bounds.min -= glm::vec3(actorBoundsMargin);
-                    bounds.max += glm::vec3(actorBoundsMargin);
-                    s_actorTriangleBounds.push_back(bounds);
-                    s_actorTriangleIds.push_back(flatTriangle++);
+                    if (worldTriangle < 0 ||
+                        worldTriangle >= static_cast<int>(world.collisionMesh.triangleOBBs.size()))
+                        continue;
+                    appendLocalTreeTriangleCandidates(
+                        localTree, world.collisionMesh.triangleOBBs[worldTriangle],
+                        mesh, actorBoundsMargin, s_localTriangleCandidates);
+                    for (int localTriangle : s_localTriangleCandidates)
+                        s_actorWorldPairs.emplace_back(
+                            flatTriangle + localTriangle, worldTriangle);
                 }
+                flatTriangle += static_cast<int>(mesh.localTriangles->size());
             }
             s_actorBroadphase.meshTriangleOffsets.push_back(flatTriangle);
         }
-        s_actorTree.build(s_actorTriangleIds, s_actorTriangleBounds, 4);
-        s_actorTree.queryPairs(*worldTree, s_actorWorldPairs);
         s_actorBroadphase.triangleCandidateOffsets.assign(
-            s_actorTriangleIds.size() + 1, 0);
+            static_cast<size_t>(flatTriangle) + 1, 0);
         for (const auto& pair : s_actorWorldPairs)
         {
             if (pair.first >= 0 &&
-                pair.first < static_cast<int>(s_actorTriangleIds.size()))
+                pair.first < flatTriangle)
                 ++s_actorBroadphase.triangleCandidateOffsets[pair.first + 1];
         }
         for (size_t i = 1;
@@ -417,7 +526,7 @@ bool solveActorTriangleCollision(
         for (const auto& pair : s_actorWorldPairs)
         {
             if (pair.first < 0 ||
-                pair.first >= static_cast<int>(s_actorTriangleIds.size()))
+                pair.first >= flatTriangle)
                 continue;
             const int dst = s_actorPairCursors[pair.first]++;
             s_actorBroadphase.worldTriangleIds[dst] = pair.second;
@@ -425,6 +534,8 @@ bool solveActorTriangleCollision(
         gActorNarrowphase.bvhLeafPairs =
             static_cast<int>(s_actorWorldPairs.size());
     }
+    result.actorTreeMs = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - actorTreeStart).count();
 
     // Reused fixed-tick scratch. The correction loop no longer allocates a mesh
     // vector, a contact vector, or an accumulated-contact vector per iteration.
@@ -452,10 +563,13 @@ bool solveActorTriangleCollision(
         const AABB poseBox = makeSweptActorMeshAABB(s_meshes, glm::vec3(0.0f));
         const glm::vec3 refPoint = (poseBox.min + poseBox.max) * 0.5f;
 
+        const auto contactCollectStart = std::chrono::steady_clock::now();
         collectActorMeshContactsInto(world, s_meshes, candidates, refPoint, s_contacts,
                                      true, -1.0f, worldTree, comparison,
                                      MOVEMENT_FEATURE_SMOOTHNESS,
                                      &s_actorBroadphase);
+        result.contactCollectMs += std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - contactCollectStart).count();
 
         // The weapon sphere/capsule collector uses the same world-triangle
         // contact facts and response owner, but only needs to run once per
@@ -708,15 +822,30 @@ bool solveActorTriangleCollision(
     result.correctedPos = player.pos;
     result.solveMs = std::chrono::duration<float, std::milli>(
         std::chrono::steady_clock::now() - solveStart).count();
-    // The solve summary is a debug record; only build the JSON when enabled.
-    if (StructuredLogger::instance().shouldLog(StructuredCategory::Collision,
-                                               StructuredLevel::Verbose))
+    // Emit every solve only during an explicit verbose investigation. Normal
+    // live evidence gets one representative fixed-tick sample per second, so
+    // events.jsonl can prove collision health without becoming collision work.
+    const uint32_t collisionTick =
+        static_cast<uint32_t>(player.movementSimulationTick);
+    const bool verboseCollisionLog = StructuredLogger::instance().shouldLog(
+        StructuredCategory::Collision, StructuredLevel::Verbose);
+    static thread_local uint32_t sLastCollisionSampleTick = 0;
+    const bool boundedCollisionSample =
+        StructuredLogger::instance().shouldLog(
+            StructuredCategory::Collision, StructuredLevel::Important) &&
+        (sLastCollisionSampleTick == 0 ||
+         collisionTick - sLastCollisionSampleTick >= 60);
+    if (verboseCollisionLog || boundedCollisionSample)
     {
+        if (boundedCollisionSample)
+            sLastCollisionSampleTick = collisionTick;
         StructuredLogger::instance().writeEvent(
-            StructuredCategory::Collision, StructuredLevel::Verbose,
+            StructuredCategory::Collision,
+            verboseCollisionLog ? StructuredLevel::Verbose
+                                : StructuredLevel::Important,
             "collision.solve.summary", "slope-edge-investigation",
             "actor-triangle solve completed",
-            static_cast<uint32_t>(player.movementSimulationTick),
+            collisionTick,
             {{"position_before", vec3Json(result.startPos)},
              {"position_after", vec3Json(player.pos)},
              {"velocity_before", vec3Json(velocityBeforeSolve)},
@@ -741,6 +870,10 @@ bool solveActorTriangleCollision(
              {"actor_avatar", player.avatarName()},
              {"actor_mesh_count", result.actorMeshCount},
              {"actor_mesh_triangles", result.actorMeshTriangles},
+             {"mesh_collect_ms", result.meshCollectMs},
+             {"world_tree_ms", result.worldTreeMs},
+             {"actor_tree_ms", result.actorTreeMs},
+             {"contact_collect_ms", result.contactCollectMs},
              {"triangle_test_budget", 200000},
              {"triangle_test_budget_hit", gActorNarrowphase.triangleTests >= 200000},
              {"solve_ms", result.solveMs}},

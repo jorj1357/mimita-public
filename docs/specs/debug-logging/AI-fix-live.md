@@ -40,7 +40,7 @@ this the log im using
 
 run the exe , look at events.jsonl for results of ur changes, and work based on the logs to get the success condition to be true
 
-todo 2026 10 11 2028 jorj  put this in here gernally , like the above is not clean i want to implement in a  general  applies to any task way
+todo 2026 10 11 2028 jorj  put this in here gernally , like the above is not clean i want to implement in a  general  applies to any task way 
 
 # Live AI fix procedure
 
