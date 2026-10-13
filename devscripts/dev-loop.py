@@ -48,6 +48,7 @@ DEV_ROOT = ROOT / ".dev"
 BUILD_ROOT = DEV_ROOT / "builds"
 STATE_PATH = DEV_ROOT / "state.json"
 CURRENT_RUN_PATH = DEV_ROOT / "current-run.json"
+SERVER_MARKER_PATH = DEV_ROOT / "server-owner.json"
 LOCK_PATH = DEV_ROOT / "dev-loop.lock"
 PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
 LAUNCH_MODE_PATH = ROOT / "devscripts" / "dev-launch-modes.json"
@@ -408,6 +409,32 @@ def existing_dev_loop_pids() -> list[int]:
     return pids
 
 
+def windows_process_identity(pid: int) -> dict | None:
+    """Read identity data for one Windows process without changing it."""
+    if os.name != "nt" or not pid:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-Command",
+                "$p = Get-CimInstance Win32_Process -Filter "
+                f"\"ProcessId={int(pid)}\"; "
+                "if ($null -ne $p) { "
+                "[Console]::WriteLine((ConvertTo-Json -Compress "
+                "@{pid=[int]$p.ProcessId; executable=$p.ExecutablePath; "
+                "command_line=$p.CommandLine})) }",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        value = json.loads(result.stdout.strip()) if result.stdout.strip() else None
+    except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def acquire_dev_loop_lock() -> int:
     """Allow exactly one dev-loop daemon for this checkout."""
     DEV_ROOT.mkdir(parents=True, exist_ok=True)
@@ -676,6 +703,9 @@ class DevLoop:
         self.server_pid: int | None = None
         self.server_exe: str | None = None
         self.server_args: list[str] = []
+        self.server_adopted = False
+        self.build_mismatch_reason = ""
+        self.firewall_result = "NOT_CHECKED"
         self.server_launch_ms: float = 0.0
         self.client_launch_ms: float = 0.0
         self.server_unavailable = False
@@ -714,6 +744,81 @@ class DevLoop:
         self.builds_match = False
         self.status_visible = False
         self.status_line_count = 0
+        self.adopt_persisted_server()
+
+    def adopt_persisted_server(self) -> None:
+        """Adopt only a previously recorded server that still proves its identity."""
+        if not SERVER_MARKER_PATH.is_file():
+            return
+        try:
+            marker = read_json(SERVER_MARKER_PATH)
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(marker, dict) or marker.get("root") != str(ROOT):
+            return
+        try:
+            pid = int(marker.get("pid", 0))
+        except (TypeError, ValueError):
+            return
+        identity = windows_process_identity(pid)
+        expected_exe = str(marker.get("executable", ""))
+        command_line = str((identity or {}).get("command_line", ""))
+        actual_exe = str((identity or {}).get("executable", ""))
+        if not identity or not expected_exe:
+            return
+        if os.path.normcase(actual_exe) != os.path.normcase(expected_exe):
+            return
+        if "--server" not in command_line.lower():
+            return
+        self.server_pid = pid
+        self.server_exe = expected_exe
+        self.server_args = list(marker.get("args", []))
+        self.server_adopted = True
+        self.server_ready = bool(marker.get("server_ready", False))
+        self.server_launch_ms = float(marker.get("launch_ms", 0.0) or 0.0)
+        self.run_id = str(marker.get("run_id", "")) or self.run_id
+        self.events_path = str(marker.get("events_path", "")) or self.events_path
+        self.last_message = f"adopted verified dev-loop server pid={pid}"
+        self.record_runtime_event(
+            "dev-loop.process.adopted",
+            {
+                "role": "server",
+                "pid": pid,
+                "executable": expected_exe,
+                "build_id": marker.get("build_id", ""),
+                "run_id": marker.get("run_id", ""),
+            },
+            "persisted server marker and live process identity matched",
+        )
+
+    def write_server_marker(self) -> None:
+        write_json(SERVER_MARKER_PATH, {
+            "root": str(ROOT),
+            "pid": self.server_pid,
+            "executable": self.server_exe,
+            "args": list(self.server_args),
+            "build_id": self.run_metadata.get("build_id", ""),
+            "run_id": self.run_id,
+            "events_path": self.events_path,
+            "server_ready": self.server_ready,
+            "launch_ms": self.server_launch_ms,
+            "updated_utc": utc_now(),
+        })
+
+    def clear_server_marker(self) -> None:
+        try:
+            marker = read_json(SERVER_MARKER_PATH)
+        except (OSError, json.JSONDecodeError):
+            marker = None
+        try:
+            marker_pid = int(marker.get("pid", 0) or 0) if isinstance(marker, dict) else 0
+        except (TypeError, ValueError):
+            marker_pid = 0
+        if not isinstance(marker, dict) or marker_pid == int(self.server_pid or 0):
+            try:
+                SERVER_MARKER_PATH.unlink()
+            except FileNotFoundError:
+                pass
 
     def state(self, status: str = "idle") -> dict:
         client_executable = self.client_args[0] if self.client_args else None
@@ -726,6 +831,15 @@ class DevLoop:
                 if latest_identity else ""
             )
         )
+        mismatch_reason = self.build_mismatch_reason
+        if not mismatch_reason and self.server_exe and latest_identity:
+            if os.path.normcase(self.server_exe) != os.path.normcase(str(latest_identity.get("path", ""))):
+                mismatch_reason = "server_uses_older_published_build"
+        if not mismatch_reason and self.server_exe and client_executable:
+            if os.path.normcase(self.server_exe) != os.path.normcase(client_executable):
+                mismatch_reason = "server_client_executable_path"
+        if not mismatch_reason and self.latest_stale:
+            mismatch_reason = "latest_build_stale_after_source_change"
         now_ms = time.time() * 1000.0
         run_uptime = None
         if self.run_started_utc:
@@ -767,6 +881,7 @@ class DevLoop:
             "control_token": self.control_token if self.control_port else None,
             "server_pid": self.server_pid,
             "server_executable": self.server_exe,
+            "server_adopted": self.server_adopted,
             "server_args": list(self.server_args),
             "server_alive": self.server_health(),
             "server_uptime_seconds": server_uptime,
@@ -779,6 +894,8 @@ class DevLoop:
             "run_alive": bool(self.server_health() or client_alive),
             "run_uptime_seconds": run_uptime,
             "builds_match": bool(self.builds_match and identities_match),
+            "build_mismatch_reason": mismatch_reason,
+            "firewall_result": self.firewall_result,
             "map": self.current_map,
             "build_identity": self.latest_build_identity(),
             "launch_mode_name": self.launch_mode.get("name", "unnamed"),
@@ -901,6 +1018,10 @@ class DevLoop:
                     "Windows Firewall consent window detected during bounded launch monitor",
                 )
         self.observe_launch_windows("post_client_monitor")
+        if last_snapshot.get("firewall_windows"):
+            self.firewall_result = "FIREWALL_PROMPT_DETECTED"
+        elif self.firewall_result == "LOOPBACK_ONLY":
+            self.firewall_result = "FIREWALL_CLEAR"
         return last_snapshot
 
     def restore_prelaunch_foreground(self, snapshot: dict) -> None:
@@ -1234,10 +1355,54 @@ class DevLoop:
         args.extend(str(value) for value in self.launch_mode.get("server_args", []))
         return args
 
+    def validate_firewall_policy(self) -> bool:
+        """Prevent dev servers from requesting a public inbound firewall rule."""
+        bind = str(self.profile.get("server_bind", "127.0.0.1:1357")).strip()
+        host = bind.rsplit(":", 1)[0].strip("[]").lower()
+        loopback = host in {"127.0.0.1", "localhost", "::1"}
+        if not loopback and not bool(self.profile.get("allow_external_bind", False)):
+            self.firewall_result = "FIREWALL_POLICY_BLOCKED"
+            self.last_message = (
+                f"refusing non-loopback dev server bind {bind}; "
+                "set allow_external_bind only for an intentional network test"
+            )
+            self.record_runtime_event(
+                "dev-loop.firewall.preflight",
+                {"bind": bind, "result": self.firewall_result},
+                self.last_message,
+            )
+            self.save_state("firewall_policy_blocked")
+            return False
+        if not loopback:
+            self.firewall_result = "EXTERNAL_BIND_REQUIRES_FIREWALL_REVIEW"
+            self.record_runtime_event(
+                "dev-loop.firewall.preflight",
+                {"bind": bind, "result": self.firewall_result},
+                "explicit external bind requested; firewall permission requires review",
+            )
+            return True
+        self.firewall_result = "LOOPBACK_ONLY"
+        self.record_runtime_event(
+            "dev-loop.firewall.preflight",
+            {"bind": bind, "result": self.firewall_result},
+            "dev server restricted to loopback; no public inbound rule requested",
+        )
+        return True
+
     def server_health(self) -> bool:
         """True when the durable external server process is still alive."""
         process = self.server_process
-        return process is not None and process.poll() is None
+        if process is not None:
+            return process.poll() is None
+        if self.server_adopted and self.server_pid:
+            identity = windows_process_identity(self.server_pid)
+            return bool(
+                identity
+                and os.path.normcase(str(identity.get("executable", "")))
+                == os.path.normcase(str(self.server_exe or ""))
+                and "--server" in str(identity.get("command_line", "")).lower()
+            )
+        return False
 
     def server_map_name(self) -> str:
         """The --map value the running external server was launched with."""
@@ -1265,8 +1430,54 @@ class DevLoop:
                     process.wait(timeout=3.0)
                 except subprocess.TimeoutExpired:
                     stopped = False
+        elif self.server_adopted and self.server_pid and self.server_health():
+            identity = windows_process_identity(self.server_pid)
+            owned = bool(
+                identity
+                and os.path.normcase(str(identity.get("executable", "")))
+                == os.path.normcase(str(self.server_exe or ""))
+                and "--server" in str(identity.get("command_line", "")).lower()
+            )
+            if not owned:
+                stopped = False
+                self.last_message = (
+                    f"refused to stop unverified server pid={self.server_pid}"
+                )
+            else:
+                result = subprocess.run(
+                    ["taskkill", "/PID", str(self.server_pid), "/T", "/F"],
+                    capture_output=True, text=True, timeout=5, check=False,
+                )
+                stopped = result.returncode == 0
         if process is not None and process.poll() is None:
             stopped = False
+        if stopped and self.server_pid and self.server_health():
+            stopped = False
+        self.record_runtime_event(
+            "dev-loop.process.stop_result",
+            {
+                "role": "server",
+                "pid": self.server_pid,
+                "executable": self.server_exe,
+                "owned": bool(self.server_process is not None or self.server_adopted),
+                "stopped": stopped,
+            },
+            "server replacement or explicit server-stop completed",
+        )
+        if stopped:
+            try:
+                marker = read_json(SERVER_MARKER_PATH)
+            except (OSError, json.JSONDecodeError):
+                marker = None
+            try:
+                marker_pid = int(marker.get("pid", 0) or 0) if isinstance(marker, dict) else 0
+            except (TypeError, ValueError):
+                marker_pid = 0
+            if isinstance(marker, dict) and marker_pid == int(self.server_pid or 0):
+                try:
+                    SERVER_MARKER_PATH.unlink()
+                except FileNotFoundError:
+                    pass
         self.server_process = None
         self.server_pid = None
         self.server_exe = None
@@ -1274,6 +1485,7 @@ class DevLoop:
         self.server_unavailable = True
         self.server_ready = False
         self.builds_match = False
+        self.server_adopted = False
         self.events_path = None
         self.run_metadata = {}
         self.cleanup_room_file()
@@ -1307,12 +1519,19 @@ class DevLoop:
         return False
 
     def server_matches_executable(self, exe: Path) -> bool:
-        if not self.server_health() or not self.server_exe:
+        if not self.server_health():
+            self.build_mismatch_reason = "server_not_alive"
+            return False
+        if not self.server_exe:
+            self.build_mismatch_reason = "server_executable_unknown"
             return False
         try:
-            return Path(self.server_exe).resolve() == exe.resolve()
+            matches = Path(self.server_exe).resolve() == exe.resolve()
         except OSError:
-            return os.path.normcase(self.server_exe) == os.path.normcase(str(exe))
+            matches = os.path.normcase(self.server_exe) == os.path.normcase(str(exe))
+        if not matches:
+            self.build_mismatch_reason = "server_executable_build_number_or_hash"
+        return matches
 
     @staticmethod
     def _normalized_server_args(args: list[str]) -> list[str]:
@@ -1334,7 +1553,10 @@ class DevLoop:
         if not self.server_matches_executable(exe):
             return False
         desired = self.build_server_args(exe, map_name, Path("<room-file>"))
-        return self._normalized_server_args(self.server_args) == self._normalized_server_args(desired)
+        matches = self._normalized_server_args(self.server_args) == self._normalized_server_args(desired)
+        if not matches:
+            self.build_mismatch_reason = "server_launch_configuration"
+        return matches
 
     def check_server_after_client(self) -> None:
         """Observe and repair durable-server state after a client exits.
@@ -1343,6 +1565,9 @@ class DevLoop:
         stale room code/file is cleared if it died unexpectedly.
         """
         if self.server_process is None:
+            if self.server_adopted and self.server_health():
+                print(f"[DEV SERVER] client exited; adopted server retained pid={self.server_pid} "
+                      f"room={self.room_code}")
             return
         code = self.server_process.poll()
         if code is None:
@@ -1384,11 +1609,24 @@ class DevLoop:
             str(self.launch_mode.get("map", "")),
         )
         print(f"[DEV] selected allowed map: {map_name}")
+        if not self.validate_firewall_policy():
+            return
         running_map = self.server_map_name()
         prelaunch_windows = self.observe_launch_windows("before_server_launch")
         if self.server_health() and not self.server_matches_launch_configuration(exe, map_name):
             print(f"[DEV SERVER] launch configuration changed; replacing old server "
                   f"pid={self.server_pid} old_map={running_map} new_map={map_name}")
+            self.record_runtime_event(
+                "dev-loop.process.replace_requested",
+                {
+                    "role": "server",
+                    "pid": self.server_pid,
+                    "old_executable": self.server_exe,
+                    "new_executable": str(exe),
+                    "reason": self.build_mismatch_reason,
+                },
+                "owned server does not match the selected build or launch configuration",
+            )
             if not self.stop_server():
                 self.save_state("server_stop_failed")
                 return
@@ -1399,6 +1637,7 @@ class DevLoop:
             )
         else:
             # A dead server's room code must never be reused.
+            self.clear_server_marker()
             if self.server_process is not None:
                 code = self.server_process.poll()
                 print(f"[DEV SERVER] unexpected exit code={code} pid={self.server_pid} "
@@ -1407,6 +1646,7 @@ class DevLoop:
             self.server_pid = None
             self.server_exe = None
             self.server_args = []
+            self.server_adopted = False
             self.room_code = None
             self.server_unavailable = True
             self.cleanup_room_file()
@@ -1495,6 +1735,7 @@ class DevLoop:
             self.server_pid = server.pid
             self.server_exe = str(exe)
             self.server_args = list(server_args)
+            self.server_adopted = False
             self.server_launch_ms = time.time() * 1000.0
             self.server_unavailable = False
             self.server_ready = self.wait_for_logger_started("server", server.pid)
@@ -1506,6 +1747,7 @@ class DevLoop:
                     print(f"[DEV SERVER] {self.last_message}; server could not be stopped")
                 return
             print(f"[DEV SERVER] launched pid={server.pid} args={' '.join(server_args[1:])}")
+            self.write_server_marker()
 
             # The dedicated server registers with the coordinator, then writes
             # the room code. This is the same handshake the GUI uses before it

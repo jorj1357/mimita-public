@@ -783,6 +783,15 @@ touch
 
 These map to named actions rather than embedding gameplay logic in the GUI.
 
+## **Interactive Input Ownership**
+
+Within a rendered frame, exactly one UI pass owns interactive mouse input.
+That pass may calculate and advance button-edge state. Rendering-only passes
+may observe the current state for diagnostics or presentation, but must not
+consume or advance the click edge before the owning pass evaluates buttons.
+This keeps hover/label overlays from making named actions such as Leave Room
+appear unresponsive.
+
 ---
 
 # **8\. JSON Hot Reload**

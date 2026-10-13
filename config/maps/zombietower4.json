@@ -38,8 +38,8 @@
     {
       "bossId": "",
       "checkpointRequirement": 0,
-      "damage": 0,
-      "damageIntervalTicks": 60,
+      "damage": 5,
+      "damageIntervalTicks": 1,
       "damageType": "generic",
       "enabled": true,
       "id": "damage_volume_1",
@@ -50,9 +50,9 @@
       "position": [
         -1255.6163330078125,
         -828.3872680664063,
-        379.64031982421875
+        381.64031982421875
       ],
-      "radius": 1.0,
+      "radius": 5.0,
       "size": [
         1.0,
         1.0,

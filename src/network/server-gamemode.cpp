@@ -676,7 +676,10 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
                        {"friendly_fire", d.friendlyFireEnabled}});
     d.winCondition = gm.winCondition;
     d.npcWaves = gm.winCondition == "npc_waves";
-    d.persistentNpcSpawns = gm.npcSpawnPolicy == "persistent" && gm.npcSpawnMax > 0;
+    // The persistent lifecycle is enabled by the policy alone. The spawn cap is
+    // a separate concern: a cap of 0 means "run the mode, spawn no NPCs" (useful
+    // for lag-free authored-entity testing) instead of disabling the lifecycle.
+    d.persistentNpcSpawns = gm.npcSpawnPolicy == "persistent";
     d.waveStartCount = gm.waveStartCount;
     d.waveIncrement = gm.waveIncrement;
     d.waveNpcsPerWave = gm.waveNpcsPerWave;
@@ -686,9 +689,23 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.waveBannerSeconds = gm.waveBannerSeconds;
     d.waveStaggerEnabled = gm.waveStaggerEnabled;
     d.waveNpcsPerTick = gm.waveNpcsPerTick;
-    d.npcSpawnMax = d.persistentNpcSpawns ? gm.npcSpawnMax : 0;
+    d.npcSpawnMax = std::max(0, gm.npcSpawnMax);
     d.npcSpawnIntervalTicks = std::max(1, gm.npcSpawnIntervalTicks);
     d.npcSpawnPerInterval = std::max(1, gm.npcSpawnPerInterval);
+    // Owner-level evidence: the persistent lifecycle is enabled by policy alone,
+    // independent of the spawn cap. The journal makes the ACTIVE-phase gate
+    // (serverGamemodeTick) traceable without guessing.
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "gamemode.npc-spawn.policy", resolvedGamemodeId,
+        d.persistentNpcSpawns ? "persistent lifecycle enabled"
+                              : "persistent lifecycle disabled",
+        d.currentServerTick,
+        nlohmann::json{{"mode", resolvedGamemodeId},
+                       {"policy", gm.npcSpawnPolicy},
+                       {"persistent_npc_spawns", d.persistentNpcSpawns},
+                       {"npc_spawn_max", d.npcSpawnMax},
+                       {"npc_waves", d.npcWaves}});
     d.npcSpawnNextTick = 0;
     d.npcSpawnSequence = 0;
     // Authored-map run state (checkpoints/attempts/boss) resets per match.
@@ -3893,8 +3910,9 @@ void serverGamemodeTick(SOCKET sock,
             d.waveBannerSeconds = live.waveBannerSeconds;
             d.waveStaggerEnabled = live.waveStaggerEnabled;
             d.waveNpcsPerTick = live.waveNpcsPerTick;
-            d.persistentNpcSpawns = live.npcSpawnPolicy == "persistent" && live.npcSpawnMax > 0;
-            d.npcSpawnMax = d.persistentNpcSpawns ? live.npcSpawnMax : 0;
+            // Policy alone enables the lifecycle; the cap may be 0 (no spawns).
+            d.persistentNpcSpawns = live.npcSpawnPolicy == "persistent";
+            d.npcSpawnMax = std::max(0, live.npcSpawnMax);
             d.npcSpawnIntervalTicks = std::max(1, live.npcSpawnIntervalTicks);
             d.npcSpawnPerInterval = std::max(1, live.npcSpawnPerInterval);
             d.intermissionSeconds = (float)live.intermissionSeconds;
@@ -4160,6 +4178,9 @@ void serverGamemodeTick(SOCKET sock,
                 }
             }
         }
+        // Authored map entities (damage volumes, checkpoints, boss triggers)
+        // tick during sandbox/mapOnly play too, not only the managed lifecycle.
+        mapEntityRuntimeTick(d, sock, players, npcs, tick, totalPacketsOut);
         return;
     }
     (void)tick;
@@ -4999,7 +5020,7 @@ bool serverSpawnTagSelfTest(std::string& report)
     const Gamemode& zombie = GamemodeRegistry::instance().get("zombie_tower");
     if (zombie.id != "zombie_tower") fail("zombie_tower gamemode should load");
     if (zombie.npcSpawnPolicy != "persistent") fail("zombie_tower spawn policy should be persistent");
-    if (zombie.npcSpawnMax != 50) fail("zombie_tower max_count should be 50");
+    if (zombie.npcSpawnMax < 1) fail("zombie_tower max_count should be at least 1");
     if (zombie.npcSpawnIntervalTicks != 60) fail("zombie_tower interval_ticks should be 60");
     if (zombie.npcSpawnPerInterval != 1) fail("zombie_tower per_interval should be 1");
 

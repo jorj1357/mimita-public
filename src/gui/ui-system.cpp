@@ -91,7 +91,10 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
     if (gOwnsHoverInput)
         gHoverOwnerKey.clear();
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    gMouseClickEdge = gMouseDown && !gMousePrev;
+    // Mouse edge state belongs to the one interactive UI pass. Rendering-only
+    // passes must observe the edge without consuming it before buttons run.
+    if (gOwnsHoverInput)
+        gMouseClickEdge = gMouseDown && !gMousePrev;
 
     if (gMouseDown != gMousePrev &&
         StructuredLogger::instance().shouldLog(
@@ -241,7 +244,8 @@ void uiEndFrame()
 
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
-    gMousePrev = gMouseDown;
+    if (gOwnsHoverInput)
+        gMousePrev = gMouseDown;
     MIMITA_GL_CALL(glUseProgram(0));
     MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
 }
