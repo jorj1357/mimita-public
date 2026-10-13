@@ -11,8 +11,14 @@
 #include "gui/font-stuff/font-loader.h"
 #include "audio/audio.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 using namespace UISys;
+
+namespace {
+// Bounded runtime evidence for one physical press; gameplay behavior remains unchanged.
+bool gButtonPressDiagnosticEmitted = false;
+}
 
 void debugWidget(const char* type, const char* name, UIRect r, bool hovered, bool pressed);
 
@@ -38,6 +44,9 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     const bool rawHovered = pointIn(fbx, fby, fbR);
     s.pressed = rawHovered && gMouseDown;
     s.clicked = !gUiEditMode && rawHovered && gMouseClickEdge && !gDropdownModalActive;
+
+    if (!gMouseDown)
+        gButtonPressDiagnosticEmitted = false;
 
     const char* key = id ? id : text;
 
@@ -69,6 +78,35 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     uiDrawText(text, textX, textY, textScale, {1.0f, 1.0f, 1.0f, 1.0f});
     debugWidget("BUTTON", text, fbR, s.hovered, s.pressed);
     gTrackedWidgets.push_back({key, r, s.hovered, s.pressed});
+
+    if (rawHovered && gMouseDown && !gButtonPressDiagnosticEmitted &&
+        StructuredLogger::instance().shouldLog(
+            StructuredCategory::Gui, StructuredLevel::Important)) {
+        const char* rejectionReason = s.clicked ? "accepted" :
+            (gUiEditMode ? "ui_edit_mode" :
+             (!gMouseClickEdge ? "mouse_click_edge_missing" :
+              (gDropdownModalActive ? "dropdown_modal_active" : "unknown")));
+        nlohmann::json fields = {
+            {"element_id", key ? key : ""},
+            {"text", text ? text : ""},
+            {"raw_hovered", rawHovered},
+            {"pressed", s.pressed},
+            {"clicked", s.clicked},
+            {"mouse_down", gMouseDown},
+            {"mouse_click_edge", gMouseClickEdge},
+            {"ui_edit_mode", gUiEditMode},
+            {"dropdown_modal_active", gDropdownModalActive},
+            {"cursor_mode", glfwGetInputMode(win, GLFW_CURSOR)},
+            {"decision", s.clicked ? "accepted" : "rejected"},
+            {"rejection_reason", rejectionReason}
+        };
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "ui.button_input", "UI_BUTTON",
+            "UI button press decision at the shared button owner", 0,
+            fields, __FILE__, __LINE__, __FUNCTION__);
+        gButtonPressDiagnosticEmitted = true;
+    }
 
     if (s.clicked)
     {

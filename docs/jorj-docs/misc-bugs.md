@@ -13,3 +13,12 @@ idk
 also so that wheneve it launches it does not launch the cmd window bc, it launches and then overtakes the cursor
 
 the ideal is that the game launchews like super ultra contained like, we can see the cmds if we need, 
+
+### 2026 10 13 1122 jorj 
+
+xxx command = load jason avatar, bc, monsetr avatar right now, not good. its not good limbs orietnation andppositins etc, so, doing "xxx" then "m1" to  get the mosnter avatar it makes better.
+but need to just have it work off the bat 
+
+1. lalal
+2. lalala
+...1. lalala 

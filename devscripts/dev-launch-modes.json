@@ -94,7 +94,7 @@
       "map": "dust2cyberiav4"
     },
      "10": {
-      "name": "zombie towerrrrr no npcs",
+      "name": "zombie towerrrrr ",
       "server_args": [
         "--mode",
         "zombie_tower",
@@ -125,6 +125,17 @@
         "m1"
       ],
       "map": "atdm"  
+    },
+     "12": {
+      "name": "zombie tower no npcs sandbox mode pure dont edit",
+      "server_args": [
+        "--no-npcs"
+      ],
+      "client_args": [
+        "--startup-command",
+        "help"
+      ],
+      "map": "zombietower4"  
     }
   }
 }

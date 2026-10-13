@@ -1,3 +1,10 @@
+2026 10 12 2027 jorj  
+i want to  do thsissssssssssssssssssssss
+but zomb tower first i tihnk
+
+bc its like on tehway here 
+whateverrrrr rehatber whatever whatber 
+
 2026 10 06 1640 jorj todo expand more 
 
 survei the disasters is like 

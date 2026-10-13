@@ -31,7 +31,7 @@
   "lives": 999,
   "npc_spawn": {
     "policy": "persistent",
-    "max_count": 50,
+    "max_count": 0,
     "interval_ticks": 60,
     "per_interval": 1
   }

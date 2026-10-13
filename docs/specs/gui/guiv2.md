@@ -1,3 +1,25 @@
+2026 10 13 1536 jorj todo - cant press buttons, this happened like
+we werere doing
+bc when u die, u become spectator, and then couldnt see the cursor
+so then, we do it like 
+we do a fix 
+matbe like 6 days ago? 
+then it made it so , no sounds of hovering, and couldnt click
+then we did another fix, then it was fine
+
+but now, issue is , hover sounds do pla, but, me in 
+ client=[28628]
+[DEV STATUS] EVENTS: ]8;;file:///C:/mimita-v9/lo[DEV STATUS] MODE: 12 (zombie tower no npcs pure dont edit)
+[DEV STATUS] BUILD: running=- latest=2191 match=False
+[DEV STATUS] RUN: RUNNING uptime=00:03:02 visibility=visible
+[DEV STATUS] PIDS: server=26188 client=[28628]
+[DEV STATUS] EVENTS: ]8;;file:///C:/mimita-v9/lo[DEV STATUS] MODE: 12 (zombie tow
+[DEV STATUS] EVENTS: ]8;;file:///C:/mimita-v9/logs/2026-10-13/20261013_193457/events.jsonl\C:\mimita
+
+this , the menu is not working like i  hear hovering sounds but its not doing the action, buttons wont do the action e.g. leave room does nothing instaed of  putting hte leave menu menu on sceren 
+
+so then what i do is i run the command "mainmenu" which 2026 10 13 1539 made teh mimita.exe window sa not responding, and i think alst time it just closesd the server
+
 9 7 2026  0928 jorj - todo, add a section or explain how the entire game is DATA/COMMAND/TERMINAL driven, not gui driven. that means, gui buttons are dumb, they just call the same functions that  u can write in the command/terminal bar. so first, we should maek it work with terminal commands, and then maek the gui just call those terminal commands. that is much better overall, its like steam/valve/source engine and source engine i believe is a great example of waht to build/how to build.
 
 9 8 226 jorj - todo explain we need to work terminal first, command line only first, then make the GUI just call those commands that work in the terminal already 

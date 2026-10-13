@@ -1,3 +1,31 @@
+2026 10 13 1134 jorj todo - 
+in non legal terms i want to 
+
+mimita can alwas be downloaded for free 
+which means its like alwas open source on github 
+u can change all the source code look at what does what 
+u can fix things u find  arer sucking and have issues 
+
+hmm
+
+if someone does a total visual overhaul and makes it look like realisitc with same engine and colisions underneath
+
+all the assets and art and stuff they did = credited and tracked directly to them
+
+maybe relates to C:\mimita-v9\CREDITS-AND-INSPIRATION.md ? idk 
+
+but in that situaiton, i predict that, to do that, there would be other optimization ssuch as
+networking and collisions and rednering huge rendering 
+to get it to run smooth with more realsitic graphics its huge
+so , ideally, that code  like 
+renderer-but-better.cpp 
+is open source, shareable, usable,
+because , future additions/improvemnts/updates/edits to the repo will benefit greatly 
+
+idk need more thought and work and writing 
+
+# actual license
+
 MIT License
 
 Copyright (c) 2026 MiMITA contributors

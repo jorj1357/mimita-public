@@ -9,6 +9,7 @@
 
 #include <glad/glad.h>
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/gl-debug.h"
 #include "gui/gui-media.h"
 #include "gui/gui-coord.h"
@@ -91,6 +92,25 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
         gHoverOwnerKey.clear();
     gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     gMouseClickEdge = gMouseDown && !gMousePrev;
+
+    if (gMouseDown != gMousePrev &&
+        StructuredLogger::instance().shouldLog(
+            StructuredCategory::Gui, StructuredLevel::Important)) {
+        nlohmann::json fields = {
+            {"pass_name", passName ? passName : "unknown"},
+            {"owns_hover_input", gOwnsHoverInput},
+            {"mouse_down", gMouseDown},
+            {"mouse_prev", gMousePrev},
+            {"click_edge", gMouseClickEdge},
+            {"cursor_mode", glfwGetInputMode(win, GLFW_CURSOR)},
+            {"transition", gMouseDown ? "press" : "release"}
+        };
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "ui.mouse_transition", "UI_MOUSE",
+            "UI mouse button transition observed at a UI pass boundary", 0,
+            fields, __FILE__, __LINE__, __FUNCTION__);
+    }
 
     MIMITA_GL_CLEAR_STAGE("uiBeginFrame");
     MIMITA_GL_CALL(glViewport(0, 0, gFbW, gFbH));

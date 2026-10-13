@@ -42,15 +42,15 @@
       "damageIntervalTicks": 60,
       "damageType": "generic",
       "enabled": true,
-      "id": "test1",
+      "id": "damage_volume_1",
       "maxAlive": 1,
       "monsterPool": "default",
       "oneShot": false,
       "pickupId": "",
       "position": [
-        -250.9501953125,
-        -852.4348754882813,
-        390.7078857421875
+        -1255.6163330078125,
+        -828.3872680664063,
+        379.64031982421875
       ],
       "radius": 1.0,
       "size": [
@@ -61,7 +61,7 @@
       "spawnCooldownTicks": 60,
       "spawnCount": 1,
       "tag": "",
-      "type": "spawnpoint",
+      "type": "damage_volume",
       "visible": true
     }
   ]
