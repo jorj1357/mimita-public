@@ -1,4 +1,12 @@
-
+2026 10 13 1600 jorj - 
+since we are using docuemnts more often thats aweesome
+so 
+write in the .md what u want the exact behavior to be
+adn then reference that doc when working on things 
+for example, C:\mimita-v9\docs\specs\dev-loop\dev-loop.md  not 
+not super specific
+so 1. make it super ultra specific in explaingin what we want it to  do 
+2. work with the code and stuff and then mak the script match the spec as best as it can 
 
 put logs + run the exe + see the value of the logs + use that info to make decisions e.g. confident theres a clear solution = implement, not confident yet = imrpove/edit/cahnge/add/remove/etc logs   - 
 continue, getting more evidence for/against and building evidence to support claim that  whatevre fix  u want to implement is the best solution for it right now 
