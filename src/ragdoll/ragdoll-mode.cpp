@@ -55,21 +55,19 @@ static glm::mat4 rigidWorld(const RigidBody& body)
          * glm::mat4_cast(body.orientation);
 }
 
-// Build the visual skeleton-node frame from a physics body without making the
-// node origin orbit the body's center of mass.  meshLocal contains the bind
-// rotation/scale from the canonical body frame to the Blender node frame;
-// its translation is the old COM-to-node offset.  For an attached part the
-// Blender node origin is the joint pivot (shoulder/hip/etc.), so its rendered
-// translation must come from childLocalAnchor instead.  Physics and collision
-// continue to use body.position and the full meshLocal unchanged.
+// Build the visual skeleton-node frame from a physics body.  meshLocal carries
+// the bind rotation/scale from the canonical body frame to the Blender node
+// frame plus the COM-to-node bind translation, so
+// position + orientation * meshLocal[3] reproduces the authored Blender node
+// origin for every part, root and attached alike.  childLocalAnchor is the
+// physics joint anchor and must not be used as the render origin; doing so
+// shifted arms, legs, and the head away from their authored positions.
+// Physics and collision continue to use body.position and childLocalAnchor.
 static glm::vec3 visualPartOrigin(const RagdollModePart& part,
                                   const glm::vec3& position,
                                   const glm::quat& orientation)
 {
-    glm::vec3 nodeOrigin = position;
-    if (part.parentIndex >= 0)
-        nodeOrigin += orientation * part.childLocalAnchor;
-    return nodeOrigin;
+    return position + orientation * glm::vec3(part.meshLocal[3]);
 }
 
 static glm::mat4 visualPartWorld(const RagdollModePart& part,
@@ -184,6 +182,17 @@ static void logAimTransformSnapshot(const Player& player,
             {"mesh_local_quaternion_wxyz", quatJson(meshLocalRotation)},
             {"mesh_local_matrix_column_major", transformMatrixJson(part.meshLocal)},
             {"mesh_local_basis_determinant", glm::determinant(meshBasis)},
+            // At stage "bind" the skeleton is still at its authored rest pose,
+            // so node.worldTransform[3] is the true node origin. Comparing it
+            // against the visual rule is a non-circular check that the render
+            // origin matches the imported bind position (arms/legs/head).
+            {"expected_visual_pivot_world_position",
+                vec3Json(visualPartOrigin(part, part.body.position,
+                                          part.body.orientation))},
+            {"bind_node_pivot_error",
+                vec3Json(glm::vec3(node.worldTransform[3]) -
+                         visualPartOrigin(part, part.body.position,
+                                          part.body.orientation))},
             {"final_world_matrix_column_major", transformMatrixJson(node.worldTransform)}
         };
         logger.writeEvent(StructuredCategory::Avatar, StructuredLevel::Important,
@@ -1419,9 +1428,11 @@ void RagdollModeSystem::initParts(const Player& player, RagdollBody& b,
         }
     }
 
-    // Attachments: connect the capsule end nearest the parent body to a point
-    // on the parent. The joint then pivots about that attachment (shoulder/hip),
-    // not the player origin.
+    // Attachments: connect the child's authored Blender node origin to a point
+    // on the parent. meshLocal[3] is the COM-to-node bind translation, so this
+    // pins the joint at the shoulder/hip node origin rather than the capsule end
+    // near the middle of the limb. With the visual origin using the same
+    // meshLocal[3], a limb then rotates about its shoulder/hip, not its center.
     const char* attachNames[] = {"head", "leftArm", "rightArm", "leftLeg", "rightLeg"};
     for (const char* name : attachNames) {
         int childIdx = findPartByName(b.parts, name);
@@ -1445,13 +1456,11 @@ void RagdollModeSystem::initParts(const Player& player, RagdollBody& b,
         child.rotMinDeg = attIt->second.rotMinDeg;
         child.rotMaxDeg = attIt->second.rotMaxDeg;
 
-        // Default anchor: the capsule end nearest the parent body. Can be
-        // overridden independently on the parent side and the child side, so
-        // an arm can attach and pivot at the top of the limb rather than the
-        // capsule center.
-        Capsule cap = capsuleOf(child.body);
-        glm::vec3 anchor = (glm::length(cap.a - parent.body.position)
-                            < glm::length(cap.b - parent.body.position)) ? cap.a : cap.b;
+        // Default anchor: the child's authored node origin from the bind pose
+        // (shoulder/hip). Can be overridden independently on the parent side
+        // and the child side from config.
+        glm::vec3 anchor = child.body.position
+            + child.body.orientation * glm::vec3(child.meshLocal[3]);
 
         if (attIt->second.hasChildOffset && !deriveAttachmentAnchorsFromBind)
             child.childLocalAnchor = attIt->second.childOffset;
