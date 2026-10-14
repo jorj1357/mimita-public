@@ -195,5 +195,130 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-10-13T21:05:11Z"
+  "updated_at": "2026-10-13T21:05:11Z",
+  "animations": "animations.json",
+  "rig": {
+    "version": 1,
+    "movement": {
+      "mode": "crawl",
+      "gravity_scale": 1.0,
+      "hover": false
+    },
+    "parts": [
+      {
+        "name": "core",
+        "node": "Sphere.055",
+        "role": "torso",
+        "physical": false
+      },
+      {
+        "name": "spike_00",
+        "node": "Cone.042",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_01",
+        "node": "Cone.043",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_02",
+        "node": "Cone.044",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_03",
+        "node": "Cone.045",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_04",
+        "node": "Cone.046",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_05",
+        "node": "Cone.047",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_06",
+        "node": "Cone.048",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_07",
+        "node": "Cone.049",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_08",
+        "node": "Cone.050",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_09",
+        "node": "Cone.051",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_10",
+        "node": "Cone.052",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_11",
+        "node": "Cone.053",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_12",
+        "node": "Cone.054",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_13",
+        "node": "Cone.055",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_14",
+        "node": "Cone.056",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_15",
+        "node": "Cone.057",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_16",
+        "node": "Cone.058",
+        "role": "helper",
+        "physical": false
+      },
+      {
+        "name": "spike_17",
+        "node": "Cone.059",
+        "role": "helper",
+        "physical": false
+      }
+    ]
+  }
 }

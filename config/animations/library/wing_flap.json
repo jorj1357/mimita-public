@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "clips": {
+    "wing_flap": {
+      "durationTicks": 12,
+      "loop": true,
+      "speedBased": false,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "smooth",
+          "parts": {
+            "leftArm": {
+              "rotation": [
+                0,
+                -55,
+                0
+              ]
+            },
+            "rightArm": {
+              "rotation": [
+                0,
+                55,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "tick": 6,
+          "interp": "smooth",
+          "parts": {
+            "leftArm": {
+              "rotation": [
+                0,
+                25,
+                0
+              ]
+            },
+            "rightArm": {
+              "rotation": [
+                0,
+                -25,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "tick": 12,
+          "interp": "smooth",
+          "parts": {
+            "leftArm": {
+              "rotation": [
+                0,
+                -55,
+                0
+              ]
+            },
+            "rightArm": {
+              "rotation": [
+                0,
+                55,
+                0
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

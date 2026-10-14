@@ -230,6 +230,18 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                                      .getRig(mResolvedAnimAvatar);
             if (r) rig = *r;
         }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "anim.set.bound", mResolvedAnimAvatar,
+            "player bound to avatar animation set",
+            (uint32_t)movementSimulationTick,
+            {{"avatar", mResolvedAnimAvatar},
+             {"set_valid", animationSet && animationSet->valid},
+             {"clip_count", animationSet ? animationSet->clips.size() : 0},
+             {"has_rig", rig.present},
+             {"rig_parts", rig.parts.size()},
+             {"movement_mode", rig.movement.mode}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     auto clipFromAvatar = [&](const std::string& name) -> bool {

@@ -496,10 +496,18 @@ static void buildExtraRenderPartsFromModel(
         return;
 
     for (const auto& [partName, nodeName] : extraNodes) {
-        const std::string base = playerBodyPartBaseName(nodeName);
+        // Prefer an exact node-name match (rigs may reference distinct duplicate
+        // nodes such as "Cone.042".."Cone.059"); fall back to a base-name match
+        // so a Blender ".NNN" suffix is still tolerated.
         int idx = -1;
         for (int i = 0; i < (int)nodes.size(); ++i) {
-            if (playerBodyPartBaseName(nodes[i].name) == base) { idx = i; break; }
+            if (nodes[i].name == nodeName) { idx = i; break; }
+        }
+        if (idx < 0) {
+            const std::string base = playerBodyPartBaseName(nodeName);
+            for (int i = 0; i < (int)nodes.size(); ++i) {
+                if (playerBodyPartBaseName(nodes[i].name) == base) { idx = i; break; }
+            }
         }
         if (idx < 0) {
             Debug::warn(Debug::Category::GLB,
@@ -517,6 +525,17 @@ static void buildExtraRenderPartsFromModel(
         outParts.push_back(std::move(part));
         outMeshes.push_back(std::move(mesh));
     }
+
+    nlohmann::json resolved = nlohmann::json::array();
+    for (const auto& p : outParts)
+        resolved.push_back({{"name", p.name}, {"node_index", p.nodeIndex}});
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "anim.rig.parts", "rig",
+        "render-only rig parts resolved", 0,
+        {{"declared", extraNodes.size()}, {"resolved", outParts.size()},
+         {"parts", resolved}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 // Loads the legacy config/bodyparts.json and avatar overrides for each

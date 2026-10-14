@@ -14,6 +14,7 @@
 #include <nlohmann/json.hpp>
 
 #include "entities/player.h"
+#include "entities/player-avatar-animations.h"
 #include "world/texture-store.h"
 #include "devtools/terminal.h"
 #include "debug/structured-log.h"
@@ -526,34 +527,7 @@ bool AvatarSystem::parseAvatarJson(const std::string& jsonPath, const std::strin
         if (root.contains("bodyparts") && root["bodyparts"].is_object())
             out.bodypartOverrides = root["bodyparts"];
 
-        if (root.contains("rig") && root["rig"].is_object()) {
-            const auto& rj = root["rig"];
-            out.rig.present = true;
-            if (rj.contains("movement") && rj["movement"].is_object()) {
-                const auto& m = rj["movement"];
-                out.rig.movement.mode = m.value("mode", out.rig.movement.mode);
-                out.rig.movement.gravityScale = m.value("gravity_scale", out.rig.movement.gravityScale);
-                out.rig.movement.hover = m.value("hover", out.rig.movement.hover);
-                out.rig.movement.hoverHeight = m.value("hover_height", out.rig.movement.hoverHeight);
-                out.rig.movement.altitudeChange = m.value("altitude_change", out.rig.movement.altitudeChange);
-            }
-            if (rj.contains("parts") && rj["parts"].is_array()) {
-                for (const auto& p : rj["parts"]) {
-                    if (!p.is_object()) continue;
-                    AvatarRigPart part;
-                    part.name = p.value("name", "");
-                    if (part.name.empty()) continue;
-                    part.node = p.value("node", part.name);
-                    part.role = p.value("role", "");
-                    const bool canonical =
-                        part.name == "head" || part.name == "torso" ||
-                        part.name == "leftArm" || part.name == "rightArm" ||
-                        part.name == "leftLeg" || part.name == "rightLeg";
-                    part.physical = p.value("physical", canonical);
-                    out.rig.parts.push_back(std::move(part));
-                }
-            }
-        }
+        parseAvatarRigJson(root, out.rig);
 
         out.textureMode = root.value("texture_mode", "legacy_faces");
         if (out.textureMode == "uv_atlas") {
@@ -750,6 +724,12 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
                 printf("%s ", it.key().c_str());
             printf("\n");
         }
+
+        // ── Per-avatar rig (named parts/roles + movement capability) ──
+        parseAvatarRigJson(root, mAvatar.rig);
+        if (mAvatar.rig.present)
+            printf("[AVATAR] loaded rig: parts=%zu movement=%s\n",
+                   mAvatar.rig.parts.size(), mAvatar.rig.movement.mode.c_str());
 
         // ── UV atlas mode ──────────────────────────────────────────
         mAvatar.textureMode = root.value("texture_mode", "legacy_faces");

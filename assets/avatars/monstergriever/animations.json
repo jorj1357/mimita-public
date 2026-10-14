@@ -1,0 +1,1630 @@
+{
+  "version": 1,
+  "states": {
+    "default": "idle",
+    "locomotion": {
+      "walk": "idle",
+      "fly": "idle",
+      "crawl": "crawl",
+      "swim": "idle"
+    },
+    "attack": "attack_1",
+    "hurt": "hurt"
+  },
+  "clips": {
+    "idle": {
+      "durationTicks": 60,
+      "loop": true,
+      "speedBased": false,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "smooth",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "tick": 30,
+          "interp": "smooth",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                12
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                -12
+              ]
+            }
+          }
+        },
+        {
+          "tick": 60,
+          "interp": "smooth",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "crawl": {
+      "durationTicks": 30,
+      "loop": true,
+      "speedBased": false,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "linear",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            }
+          }
+        },
+        {
+          "tick": 15,
+          "interp": "linear",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            }
+          }
+        },
+        {
+          "tick": 30,
+          "interp": "linear",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                -20
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                20
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "attack_1": {
+      "durationTicks": 24,
+      "loop": false,
+      "speedBased": false,
+      "priority": 5,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "easeinout",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "tick": 8,
+          "interp": "easeout",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                -60
+              ]
+            }
+          }
+        },
+        {
+          "tick": 16,
+          "interp": "easeinout",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                40
+              ]
+            }
+          }
+        },
+        {
+          "tick": 24,
+          "interp": "easeinout",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "hurt": {
+      "durationTicks": 16,
+      "loop": false,
+      "speedBased": false,
+      "priority": 8,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "easeout",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            }
+          }
+        },
+        {
+          "tick": 16,
+          "interp": "smooth",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

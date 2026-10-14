@@ -13,7 +13,13 @@
 #include <string>
 #include <unordered_map>
 
+#include <nlohmann/json.hpp>
+
 #include "player.h"
+
+// Parse the avatar.json "rig" object into an AvatarRig. Shared by the sync
+// avatar loader, the per-instance parser, and the animation registry.
+void parseAvatarRigJson(const nlohmann::json& root, AvatarRig& out);
 
 class AvatarAnimationRegistry {
 public:

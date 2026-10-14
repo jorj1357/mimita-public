@@ -195,5 +195,54 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-10-13T21:00:32Z"
+  "updated_at": "2026-10-13T21:00:32Z",
+  "animations": "animations.json",
+  "rig": {
+    "version": 1,
+    "movement": {
+      "mode": "fly",
+      "gravity_scale": 0.0,
+      "hover": true,
+      "hover_height": 2.0,
+      "altitude_change": 6.0
+    },
+    "parts": [
+      {
+        "name": "head",
+        "node": "head",
+        "role": "head",
+        "physical": true
+      },
+      {
+        "name": "torso",
+        "node": "torso",
+        "role": "torso",
+        "physical": true
+      },
+      {
+        "name": "leftArm",
+        "node": "leftArm",
+        "role": "wing",
+        "physical": true
+      },
+      {
+        "name": "rightArm",
+        "node": "rightArm",
+        "role": "wing",
+        "physical": true
+      },
+      {
+        "name": "leftLeg",
+        "node": "leftLeg",
+        "role": "leg",
+        "physical": true
+      },
+      {
+        "name": "rightLeg",
+        "node": "rightLeg",
+        "role": "leg",
+        "physical": true
+      }
+    ]
+  }
 }

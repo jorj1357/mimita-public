@@ -485,7 +485,13 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
     glUseProgram(shadowShader);
     GLint loc = glGetUniformLocation(shadowShader, "uLightMVP");
 
-    if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
+    const bool havePhysicalParts =
+        !physicalBody.parts.empty() &&
+        physicalBody.partMeshes.size() == physicalBody.parts.size();
+    const bool haveExtraParts =
+        !physicalBody.extraParts.empty() &&
+        physicalBody.extraPartMeshes.size() == physicalBody.extraParts.size();
+    if (modelLoaded && (havePhysicalParts || haveExtraParts))
     {
         for (size_t i = 0; i < physicalBody.parts.size(); ++i)
         {

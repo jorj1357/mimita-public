@@ -45,43 +45,6 @@ std::string avatarDir(const std::string& avatarName)
     return "assets/avatars/" + avatarName;
 }
 
-void parseRig(const nlohmann::json& root, AvatarRig& rig)
-{
-    if (!root.contains("rig") || !root["rig"].is_object())
-        return;
-    const auto& j = root["rig"];
-    rig.present = true;
-
-    if (j.contains("movement") && j["movement"].is_object()) {
-        const auto& m = j["movement"];
-        rig.movement.mode = m.value("mode", rig.movement.mode);
-        rig.movement.gravityScale = m.value("gravity_scale", rig.movement.gravityScale);
-        rig.movement.hover = m.value("hover", rig.movement.hover);
-        rig.movement.hoverHeight = m.value("hover_height", rig.movement.hoverHeight);
-        rig.movement.altitudeChange = m.value("altitude_change", rig.movement.altitudeChange);
-    }
-
-    if (!j.contains("parts") || !j["parts"].is_array())
-        return;
-    for (const auto& p : j["parts"]) {
-        if (!p.is_object())
-            continue;
-        AvatarRigPart part;
-        part.name = p.value("name", "");
-        if (part.name.empty())
-            continue;
-        part.node = p.value("node", part.name);
-        part.role = p.value("role", "");
-        // Six canonical names are physical by default; anything else is not.
-        const bool canonical =
-            part.name == "head" || part.name == "torso" ||
-            part.name == "leftArm" || part.name == "rightArm" ||
-            part.name == "leftLeg" || part.name == "rightLeg";
-        part.physical = p.value("physical", canonical);
-        rig.parts.push_back(std::move(part));
-    }
-}
-
 void parseStateMap(const nlohmann::json& root, AvatarStateMap& states)
 {
     if (!root.contains("states") || !root["states"].is_object())
@@ -151,6 +114,44 @@ void loadIncludes(const nlohmann::json& root, AvatarAnimationSet& set)
 
 } // namespace
 
+void parseAvatarRigJson(const nlohmann::json& root, AvatarRig& rig)
+{
+    rig = AvatarRig{};  // never accumulate across parses
+    if (!root.contains("rig") || !root["rig"].is_object())
+        return;
+    const auto& j = root["rig"];
+    rig.present = true;
+
+    if (j.contains("movement") && j["movement"].is_object()) {
+        const auto& m = j["movement"];
+        rig.movement.mode = m.value("mode", rig.movement.mode);
+        rig.movement.gravityScale = m.value("gravity_scale", rig.movement.gravityScale);
+        rig.movement.hover = m.value("hover", rig.movement.hover);
+        rig.movement.hoverHeight = m.value("hover_height", rig.movement.hoverHeight);
+        rig.movement.altitudeChange = m.value("altitude_change", rig.movement.altitudeChange);
+    }
+
+    if (!j.contains("parts") || !j["parts"].is_array())
+        return;
+    for (const auto& p : j["parts"]) {
+        if (!p.is_object())
+            continue;
+        AvatarRigPart part;
+        part.name = p.value("name", "");
+        if (part.name.empty())
+            continue;
+        part.node = p.value("node", part.name);
+        part.role = p.value("role", "");
+        // Six canonical names are physical by default; anything else is not.
+        const bool canonical =
+            part.name == "head" || part.name == "torso" ||
+            part.name == "leftArm" || part.name == "rightArm" ||
+            part.name == "leftLeg" || part.name == "rightLeg";
+        part.physical = p.value("physical", canonical);
+        rig.parts.push_back(std::move(part));
+    }
+}
+
 AvatarAnimationRegistry& AvatarAnimationRegistry::instance()
 {
     static AvatarAnimationRegistry registry;
@@ -171,7 +172,7 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
     std::string animFile = "animations.json";
     nlohmann::json avatarRoot;
     if (readJsonFile(avatarJson, avatarRoot)) {
-        parseRig(avatarRoot, entry.rig);
+        parseAvatarRigJson(avatarRoot, entry.rig);
         if (avatarRoot.contains("animations") && avatarRoot["animations"].is_string())
             animFile = avatarRoot["animations"].get<std::string>();
     }

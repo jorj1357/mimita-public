@@ -192,3 +192,53 @@ Recorded regression:
 - Human visual acceptance of a flying monster: NOT performed.
 - Editor animation panel, replication/NPC parity evidence, and full flight
   steering remain (slices 2/4/5/6 in the spec).
+
+## Follow-up: griever + wasp rigs, and two parser/loader fixes
+
+Time: 2026-10-14T02:33:57Z
+
+### Authored avatars
+
+- `assets/avatars/monstergriever/avatar.json` + `animations.json`: the griever
+  GLB uses arbitrary nodes (`Sphere.055`, `Cone.042`..`Cone.059`), so a `rig`
+  maps `core` + `spike_00..17` (19 render-only parts) with `movement.mode=crawl`
+  and idle/crawl/attack_1/hurt clips.
+- `assets/avatars/monstermutantwasp/avatar.json` + `animations.json`: canonical
+  six parts declared with `movement.mode=fly`, `gravity_scale=0`, `hover=true`;
+  clips idle/fly/attack_1/hurt, with `fly` resolved from the shared library clip
+  `config/animations/library/wing_flap.json` via `include`.
+
+### Fixes found during verification
+
+- `player-loader.cpp`: extra rig-part lookup now prefers an exact node-name match
+  before base-name matching, so distinct duplicate nodes (`Cone.042` vs
+  `Cone.043`) map correctly instead of collapsing to `Cone`.
+- `avatar.cpp`: the synchronous `loadAvatar` parser (used by `avatar.load`)
+  never parsed `rig`; added a shared `parseAvatarRigJson` used by both the sync
+  loader, the per-instance parser, and the animation registry, and made it reset
+  the rig so repeated loads do not accumulate parts.
+- `player-render.cpp`: the per-part draw path now also activates when only
+  render-only rig parts exist (an avatar with no canonical six parts).
+- Added bounded diagnostics `anim.rig.parts` (declared/resolved) and
+  `anim.set.bound` (per avatar-set bind).
+
+### Runtime evidence
+
+- Builds `2278`/`2282`/`2285` published through the reused dev loop; run
+  `C:\mimita-v9\logs\2026-10-14\20261014_023133\events.jsonl`.
+- Griever: `anim.set.loaded` (clip_count=4, movement_mode=crawl, rig_parts=19,
+  valid=true), `anim.rig.parts` declared=19 resolved=19 (core, spike_00..),
+  `anim.set.bound` set_valid=true. Client remained alive while rendering the
+  19-part model.
+- Wasp: `anim.set.loaded` (clip_count=5, movement_mode=fly, rig_parts=6,
+  valid=true) and `anim.set.bound` set_valid=true; `wing_flap` resolved from the
+  shared library.
+- The registry is exercised for many other avatars (`angel2`, `headlessredux`,
+  ...) with no crash and `set_valid=false` fallback for those without files.
+
+### Still not verified
+
+- Locomotion state selection (`crawl`/`fly`) while moving: the local player's
+  velocity stayed 0 during `agent.move` in this sandbox run (a separate
+  movement/command issue), so `active_animation` stayed `idle`. Not a claim.
+- Human visual acceptance of the griever spikes or wasp flight.
