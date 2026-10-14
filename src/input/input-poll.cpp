@@ -20,6 +20,7 @@ InputFrame gTerminalInputOverride;
 
 namespace {
 int gScheduledMoveTicks = 0;
+int gScheduledMoveTotal = 0;
 float gScheduledMoveX = 0.0f;
 float gScheduledMoveY = 0.0f;
 }
@@ -29,24 +30,29 @@ void scheduleTerminalMove(float moveX, float moveY, int durationTicks)
     gScheduledMoveX = moveX;
     gScheduledMoveY = moveY;
     gScheduledMoveTicks = durationTicks > 0 ? durationTicks : 0;
+    gScheduledMoveTotal = gScheduledMoveTicks;
 }
 
-bool consumeScheduledTerminalMove(float& moveX, float& moveY)
+bool consumeScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted)
 {
     if (gScheduledMoveTicks <= 0)
         return false;
     moveX = gScheduledMoveX;
     moveY = gScheduledMoveY;
+    if (justStarted)
+        *justStarted = (gScheduledMoveTicks == gScheduledMoveTotal);
     --gScheduledMoveTicks;
     return true;
 }
 
-bool peekScheduledTerminalMove(float& moveX, float& moveY)
+bool peekScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted)
 {
     if (gScheduledMoveTicks <= 0)
         return false;
     moveX = gScheduledMoveX;
     moveY = gScheduledMoveY;
+    if (justStarted)
+        *justStarted = (gScheduledMoveTicks == gScheduledMoveTotal);
     return true;
 }
 
@@ -83,9 +89,11 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
 
     float scheduledSide = 0.0f;
     float scheduledForward = 0.0f;
-    const bool scheduledMove = consumeScheduledTerminalMove(
-        scheduledSide, scheduledForward);
-    
+    bool scheduledJustStarted = false;
+    // Peek: engineTickNet owns the single per-frame consume of a scheduled move.
+    const bool scheduledMove = peekScheduledTerminalMove(
+        scheduledSide, scheduledForward, &scheduledJustStarted);
+
     if (cmd.getState("walkforward").held) {
         wish.x += f.x;
         wish.y += f.y;
@@ -116,24 +124,25 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
                scheduledSide * glm::vec2(r.x, r.y);
         if (glm::length(wish) > 0.0001f)
             wish = glm::normalize(wish);
-        in.movementPressed = true;
-        in.movementJustPressed = true;
     }
 
     in.wishMoveXY = wish;
 
-    // 6 6 2026 for fixing cam moving with wads but not moving walk diection ? 
-    in.movementPressed =
+    // Keyboard movement OR a scheduled agent.move keeps movementPressed true;
+    // the previous code overwrote the scheduled flag with keyboard-only state,
+    // so agent.move reported movementPressed=false.
+    const bool keyboardMoving =
         cmd.getState("walkforward").held ||
         cmd.getState("walkback").held ||
         cmd.getState("walkleft").held ||
         cmd.getState("walkright").held;
-
-    in.movementJustPressed =
+    const bool keyboardJustPressed =
         cmd.getState("walkforward").pressed ||
         cmd.getState("walkback").pressed ||
         cmd.getState("walkleft").pressed ||
         cmd.getState("walkright").pressed;
+    in.movementPressed = scheduledMove || keyboardMoving;
+    in.movementJustPressed = scheduledJustStarted || keyboardJustPressed;
     
     in.movementHeldDuration = cmd.getMovementHoldDuration();
     in.jumpHeld = cmd.isJumpHeld();
@@ -202,27 +211,26 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     // command; engineTickNet consumes one scheduled tick afterward.
     float scheduledSide = 0.0f;
     float scheduledForward = 0.0f;
-    if (peekScheduledTerminalMove(scheduledSide, scheduledForward)) {
+    bool scheduledJustStarted = false;
+    const bool scheduledMove =
+        peekScheduledTerminalMove(scheduledSide, scheduledForward, &scheduledJustStarted);
+    if (scheduledMove) {
         frame.moveX = scheduledForward * f.x + scheduledSide * r.x;
         frame.moveY = scheduledForward * f.y + scheduledSide * r.y;
-        frame.movementPressed = true;
-        frame.movementJustPressed = true;
     }
-    // frame.movementPressed =
-    //     cmd.getState("walkforward").pressed || cmd.getState("walkback").pressed ||
-    //     cmd.getState("walkleft").pressed || cmd.getState("walkright").pressed;
 
-    frame.movementPressed =
+    const bool keyboardMoving =
         cmd.getState("walkforward").held ||
         cmd.getState("walkback").held ||
         cmd.getState("walkleft").held ||
         cmd.getState("walkright").held;
-
-    frame.movementJustPressed =
+    const bool keyboardJustPressed =
         cmd.getState("walkforward").pressed ||
         cmd.getState("walkback").pressed ||
         cmd.getState("walkleft").pressed ||
         cmd.getState("walkright").pressed;
+    frame.movementPressed = scheduledMove || keyboardMoving;
+    frame.movementJustPressed = scheduledJustStarted || keyboardJustPressed;
 
     frame.jump = cmd.isJumpHeld() || gTerminalInputOverride.jump;
     frame.jumpPressed = cmd.getState("jump").pressed || gTerminalInputOverride.jumpPressed;

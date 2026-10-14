@@ -24,5 +24,5 @@ void consumeTerminalInputOverride();
 // input boundary. moveX is side (-left/+right), moveY is forward
 // (-back/+forward). The override expires automatically after fixed ticks.
 void scheduleTerminalMove(float moveX, float moveY, int durationTicks);
-bool peekScheduledTerminalMove(float& moveX, float& moveY);
-bool consumeScheduledTerminalMove(float& moveX, float& moveY);
+bool peekScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted = nullptr);
+bool consumeScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted = nullptr);

@@ -324,8 +324,21 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     if (activeAnim != currentAnimName) {
+        const std::string prevAnim = currentAnimName;
         currentAnimName = activeAnim;
         animStateTime = 0.0f;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "anim.state.changed", avatarName().empty() ? username : avatarName(),
+            "animation state changed",
+            (uint32_t)movementSimulationTick,
+            {{"avatar", avatarName()},
+             {"from", prevAnim}, {"to", activeAnim},
+             {"moving", nowMoving},
+             {"movement_mode", rig.movement.mode},
+             {"move01", move01},
+             {"velocity", {vel.x, vel.y, vel.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     animStateTime += dt;

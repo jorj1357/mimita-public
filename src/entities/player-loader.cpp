@@ -480,6 +480,51 @@ void copyCachedModelIntoPlayer(const CachedPlayerModel& cached, Player& player)
 
 void appendNodeRenderMesh(const tinygltf::Model& model, int nodeIndex, Mesh& out);
 
+// Load every remaining mesh node (not already a physical or rig part) as a
+// render-only animated part. This makes an avatar with arbitrary node names
+// (e.g. "Cone.042", "Sphere.055") a real, animated, rendered body instead of
+// silently falling back to the default model. Names use the base node name and
+// are de-duplicated.
+static void appendGenericRenderParts(
+        const tinygltf::Model& model,
+        const std::vector<TransformNode>& nodes,
+        const std::vector<PhysicalBodyPart>& physical,
+        std::vector<PhysicalBodyPart>& extras,
+        std::vector<Mesh>& extraMeshes)
+{
+    std::unordered_set<int> used;
+    for (const auto& p : physical)
+        if (p.nodeIndex >= 0) used.insert(p.nodeIndex);
+    for (const auto& p : extras)
+        if (p.nodeIndex >= 0) used.insert(p.nodeIndex);
+
+    std::unordered_map<std::string, int> nameCount;
+    for (int i = 0; i < (int)nodes.size(); ++i) {
+        if (used.count(i))
+            continue;
+        const tinygltf::Node& node = model.nodes[i];
+        if (node.mesh < 0 || node.mesh >= (int)model.meshes.size())
+            continue;
+        Mesh mesh;
+        appendNodeRenderMesh(model, i, mesh);
+        if (mesh.verts.empty())
+            continue;
+
+        std::string base = playerBodyPartBaseName(nodes[i].name);
+        if (base.empty())
+            base = "part";
+        int& c = nameCount[base];
+        const std::string name = (c == 0) ? base : base + "_" + std::to_string(c);
+        ++c;
+
+        PhysicalBodyPart part;
+        part.name = name;
+        part.nodeIndex = i;
+        extras.push_back(std::move(part));
+        extraMeshes.push_back(std::move(mesh));
+    }
+}
+
 // Build render-only parts (wings/stinger/tail) declared by the avatar rig.
 // Each extra node is looked up by base name, given a render mesh and a
 // nodeIndex, and animated by the same clip runtime as physical parts.
@@ -904,11 +949,18 @@ static void buildBodyPartCollidersFromModel(const tinygltf::Model& model, Player
         );
     }
 
-    if (buildRenderMeshes)
+    if (buildRenderMeshes) {
         buildExtraRenderPartsFromModel(model, gAvatarRigExtraNodes,
                                        player.physicalBody.extraParts,
                                        player.physicalBody.extraPartMeshes,
                                        player.nodes);
+        // Only generalize when the model has no canonical body or declares a
+        // rig, so existing six-part avatars are unchanged.
+        if (player.physicalBody.parts.empty() || !gAvatarRigExtraNodes.empty())
+            appendGenericRenderParts(model, player.nodes, player.physicalBody.parts,
+                                     player.physicalBody.extraParts,
+                                     player.physicalBody.extraPartMeshes);
+    }
 }
 
 bool Player::loadModel(const char* path)
@@ -1171,6 +1223,10 @@ static void buildPlayerDataFromModel(PendingPlayerModel* d, const tinygltf::Mode
                                    d->physicalBodyData.extraParts,
                                    d->physicalBodyData.extraPartMeshes,
                                    d->nodes);
+    if (d->physicalBodyData.parts.empty() || !d->rigExtraNodes.empty())
+        appendGenericRenderParts(model, d->nodes, d->physicalBodyData.parts,
+                                 d->physicalBodyData.extraParts,
+                                 d->physicalBodyData.extraPartMeshes);
 }
 
 static void modelLoadThreadFunc(PendingPlayerModel* d)

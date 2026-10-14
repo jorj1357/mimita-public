@@ -1204,8 +1204,19 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
                        {"body_frame_policy", mAvatar.bodyFramePolicy},
                        {"legacy_overrides_applied", mAvatar.bodyTransformSource == "legacy_overrides" &&
                            !mAvatar.bodypartOverrides.is_null() ? 1 : 0},
-                       {"canonicalize_player_model", gAvatarCanonicalizePlayerModel}},
+                        {"canonicalize_player_model", gAvatarCanonicalizePlayerModel}},
         __FILE__, __LINE__, __FUNCTION__);
+
+    // Bind the per-avatar rig + animation set at apply time so the visible
+    // player has its movement capability and clips even before/without the
+    // procedural-animation call path (e.g. frozen or replicated frames).
+    {
+        AvatarAnimationRegistry& reg = AvatarAnimationRegistry::instance();
+        player.animationSet = reg.getAnimationSet(mAvatarName);
+        const AvatarRig* r = reg.getRig(mAvatarName);
+        if (r) player.rig = *r;
+    }
+
 
     // ── Legacy faces mode (existing working behavior) ─────────
     if (!buildAtlas(player, reloadTextures))

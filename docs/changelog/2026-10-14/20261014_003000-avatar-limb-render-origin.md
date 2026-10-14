@@ -242,3 +242,65 @@ Time: 2026-10-14T02:33:57Z
   velocity stayed 0 during `agent.move` in this sandbox run (a separate
   movement/command issue), so `active_animation` stayed `idle`. Not a claim.
 - Human visual acceptance of the griever spikes or wasp flight.
+
+## Follow-up: movement input, arbitrary parts, spawn avatar, editor tab
+
+Time: 2026-10-14T03:05:21Z
+
+### Fixes
+
+- `src/input/input-poll.cpp` + `.h`: a scheduled `agent.move` set
+  `movementPressed`/`movementJustPressed`, but the following keyboard-only
+  assignment overwrote them (so movement reported pressed=false). Now the
+  scheduled flag is combined with keyboard state, with a `justStarted`
+  out-param for the edge. The scheduled move was also consumed twice per frame
+  (`pollInput` and `engineTickNet`); `pollInput` now peeks and `engineTickNet`
+  owns the single consume.
+- `src/entities/player-loader.cpp`: `appendGenericRenderParts` loads every
+  remaining mesh node (arbitrary names such as `Cone.042`, `Sphere.055`) as a
+  render-only animated part, so an avatar without the six canonical names is a
+  real, rendered, animatable body instead of falling back to the default model.
+  Applied only when the model has no canonical parts or declares a rig, so
+  existing six-part avatars are unchanged. Exact-name rig matching was added
+  earlier so duplicate nodes map correctly.
+- `src/render/render-player.cpp`: the local player now adopts
+  `GetPlayerSettings().avatarName` on first render, so spawn no longer leaves
+  the default fallback model ("green capsule") until a manual load.
+- `src/avatar/avatar.cpp` + `avatar-atlas.cpp`: bind the per-avatar rig and
+  animation set at avatar-apply/finalize time (not only in the procedural-
+  animation call path), so the visible player has its movement capability and
+  clips even on frames where animation does not run.
+- `src/main-systems.cpp`: `agent.snapshot` now records `on_ground`,
+  `stable_on_ground`, `has_world_contact`, `size_scale`, `model_loaded`,
+  `freeze_active`, `procedural_frozen`, `ragdoll_active`, `movement_mode`,
+  `anim_clip_count`, and `server_pos_error` (schema 3).
+- `src/entities/player-animation.cpp`: emit `anim.state.changed` (from/to clip,
+  moving, movement mode, velocity) — the moving-state snapshot evidence.
+- `src/avatar/avatar-editor-animation.{h,cpp}` (new): data-driven Animation tab
+  listing the current avatar's rig parts/roles, clips (with Play), states, and a
+  Reload action; registered as the sixth editor tab (`avatar-editor.cpp`,
+  `config/gui/avatar-creator.json`).
+
+### Runtime evidence
+
+- Builds `2296`/`2301`/`2305` published through the dev loop; runs
+  `20261014_024652`, `20261014_025815`, `20261014_030308`.
+- `agent.move.applied` now shows non-zero velocity (e.g. `[40,0,0]`) and the
+  player position changes across the move for `jason` and `monstergriever`.
+- `anim.state.changed` shows `monstergriever` `idle -> crawl` while moving
+  (`movement_mode=crawl`) and back to `idle` when stopped.
+- After the apply-time bind, the local player snapshot reports
+  `movement_mode=crawl` and `anim_clip_count=4` for `monstergriever`.
+- `anim.rig.parts` declared=19 resolved=19 for the griever.
+
+### Investigated but NOT fixed (not avatar-specific)
+
+- In some dev-loop runs the client never receives the local authoritative spawn
+  (`server_pos_error=-1`, `hasLocalServerPosition=false`), so the player is
+  frozen at the initial position with zero velocity and cannot move. This
+  reproduces identically for `jason` and `monstergriever`, so it is a
+  client spawn/reconciliation state, not the griever model. In a healthy run
+  (`20261014_025225`) both avatars moved and `server_pos_error` was < 0.01 m.
+  This remains open.
+- Human visual acceptance of the griever spikes, wasp flight, and the editor
+  Animation tab.

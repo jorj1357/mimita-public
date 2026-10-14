@@ -12,6 +12,7 @@
 #include "avatar-editor-image.h"
 #include "avatar-editor-cosmetics.h"
 #include "avatar-editor-popups.h"
+#include "avatar-editor-animation.h"
 #include "avatar-drop-target.h"
 #include "avatar.h"
 #include "avatar-editor-dropdown.h"
@@ -39,9 +40,10 @@ UITextInputState gSaveNameState;
 namespace {
 
 constexpr const char* kTabIds[] = {
-    "tabPngLibrary", "tabPartPicker", "tabImageEditor", "tabCosmetics", "tabSaveLoad"
+    "tabPngLibrary", "tabPartPicker", "tabImageEditor", "tabCosmetics", "tabSaveLoad",
+    "tabAnimation"
 };
-constexpr int kTabCount = 5;
+constexpr int kTabCount = 6;
 
 float gTabScrollX = 0.0f;
 DropdownState gAvatarLoadDropdown;
@@ -284,6 +286,7 @@ void drawEditorContent(GLFWwindow* win)
         case 2: drawAvatarImageEditorTab(win, px, py, pw, ph); break;
         case 3: drawAvatarCosmeticsTab(win, px, py, pw, ph); break;
         case 4: drawSaveLoadTab(win, px, py, pw, ph); break;
+        case 5: drawAvatarAnimationTab(win, px, py, pw, ph); break;
         default: gEditorTab = 0; break;
     }
 }

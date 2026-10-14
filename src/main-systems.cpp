@@ -275,7 +275,22 @@ void registerAgentCommands()
                 {"camera_forward", {gpCamera->front.x, gpCamera->front.y, gpCamera->front.z}},
                 {"camera_yaw", gpCamera->yaw}, {"camera_pitch", gpCamera->pitch},
                 {"current_animation", gpPlayer->currentAnimName},
-                {"snapshot_schema_version", 2}, {"parts", std::move(parts)}};
+                {"on_ground", gpPlayer->ground.onGround},
+                {"stable_on_ground", gpPlayer->ground.stableOnGround},
+                {"has_world_contact", gpPlayer->ground.hasWorldContact},
+                {"size_scale", gpPlayer->sizeScale},
+                {"model_loaded", gpPlayer->modelLoaded},
+                {"freeze_active", gpPlayer->freeze.freezeActive},
+                {"procedural_frozen", gpPlayer->proceduralFrozen},
+                {"ragdoll_active", gpPlayer->ragdollModeActive},
+                {"movement_mode", gpPlayer->rig.movement.mode},
+                {"anim_clip_count",
+                    gpPlayer->animationSet ? gpPlayer->animationSet->clips.size() : 0},
+                {"server_pos_error",
+                    (gpMpContext && gpMpContext->hasLocalServerPosition)
+                        ? glm::length(gpPlayer->pos - gpMpContext->localServerPosition)
+                        : -1.0f},
+                {"snapshot_schema_version", 3}, {"parts", std::move(parts)}};
             fields["active_animation"] = gpPlayer->currentAnimName;
             fields["physicalBody"] = {{"parts", fields["parts"]}};
             if (gpPlayer->avatarInstance) {

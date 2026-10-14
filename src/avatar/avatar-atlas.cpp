@@ -1,4 +1,5 @@
 #include "avatar.h"
+#include "entities/player-avatar-animations.h"
 
 #include <algorithm>
 #include <cmath>
@@ -925,6 +926,15 @@ bool AvatarSystem::finalizeAvatarForPlayer(Player& player)
         return false;
     if (!applyAtlasFromInstance(*inst, player))
         return false;
+
+    // Bind the per-avatar rig + animation set for the visible player.
+    {
+        AvatarAnimationRegistry& reg = AvatarAnimationRegistry::instance();
+        const std::string& name = inst->definition.name;
+        player.animationSet = reg.getAnimationSet(name);
+        const AvatarRig* r = reg.getRig(name);
+        if (r) player.rig = *r;
+    }
 
     if (!inst->definition.cosmetics.empty()) {
         CosmeticSystem::instance().loadCosmetics(inst->definition.cosmetics);

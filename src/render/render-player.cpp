@@ -15,6 +15,7 @@
 #include "renderer/renderer.h"
 #include "terminal/terminal-state.h"
 #include "avatar/cosmetic-system.h"
+#include "config/player-settings.h"
 #include "config/player-visuals-config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
@@ -54,6 +55,15 @@ void renderPlayerInternal(
 {
     Player& p = const_cast<Player&>(player);
     AvatarSystem& av = AvatarSystem::instance();
+
+    // The local player must adopt the saved avatar identity on first render,
+    // otherwise spawn leaves it as the default fallback model (the "green
+    // capsule") until an avatar is loaded manually.
+    if (isLocal && p.avatarName().empty()) {
+        const std::string& savedAvatar = GetPlayerSettings().avatarName;
+        if (!savedAvatar.empty())
+            p.setAvatarName(savedAvatar);
+    }
 
     // NPCs carry their own per-life avatar identity. Bind it before queuing
     // the shared async model load; this keeps avatar work out of spawn/update.
