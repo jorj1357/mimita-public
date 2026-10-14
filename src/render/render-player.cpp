@@ -61,8 +61,9 @@ void renderPlayerInternal(
     // capsule") until an avatar is loaded manually.
     if (isLocal && p.avatarName().empty()) {
         const std::string& savedAvatar = GetPlayerSettings().avatarName;
-        if (!savedAvatar.empty())
-            p.setAvatarName(savedAvatar);
+        // Never leave the player as the default fallback model: fall back to
+        // the jason avatar when no avatar has been chosen.
+        p.setAvatarName(savedAvatar.empty() ? "jason" : savedAvatar);
     }
 
     // NPCs carry their own per-life avatar identity. Bind it before queuing

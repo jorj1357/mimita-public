@@ -20,6 +20,7 @@
 #include "network/simulation-constants.h"
 #include "physics/physics-types.h"
 #include "physics/config.h"
+#include "entities/avatar-rig.h"
 #include "combat/weapon-execution.h"
 #include "combat/attack-timeline.h"
 #include "combat/weapon-swordsword.h"
@@ -282,6 +283,11 @@ struct ServerPlayer
     int weaponSetId = 0;
     // Role movement preset resolved for this life; empty = legacy/global.
     std::string movementProfileId;
+    // Per-avatar movement capability resolved from the avatar rig (e.g. mode
+    // "roll" drives the force-based physical body). Re-resolved whenever the
+    // avatar identity changes, not only at spawn.
+    AvatarMovementCap movementCap;
+    std::string movementCapAvatar;
     bool onGround = false;
     bool dashAvailable = true;
     bool attackQueued = false;

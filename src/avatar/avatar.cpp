@@ -418,7 +418,14 @@ void avatarToJson(const AvatarDefinition& avatar, json& j) {
             {"gravity_scale", avatar.rig.movement.gravityScale},
             {"hover", avatar.rig.movement.hover},
             {"hover_height", avatar.rig.movement.hoverHeight},
-            {"altitude_change", avatar.rig.movement.altitudeChange}
+            {"altitude_change", avatar.rig.movement.altitudeChange},
+            {"force", avatar.rig.movement.force},
+            {"mass", avatar.rig.movement.mass},
+            {"max_speed", avatar.rig.movement.maxSpeed},
+            {"restitution", avatar.rig.movement.restitution},
+            {"radius", avatar.rig.movement.radius},
+            {"height", avatar.rig.movement.height},
+            {"root_offset_z", avatar.rig.movement.rootOffsetZ}
         };
         json parts = json::array();
         for (const auto& p : avatar.rig.parts) {
@@ -1214,7 +1221,7 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
         AvatarAnimationRegistry& reg = AvatarAnimationRegistry::instance();
         player.animationSet = reg.getAnimationSet(mAvatarName);
         const AvatarRig* r = reg.getRig(mAvatarName);
-        if (r) player.rig = *r;
+        player.applyAvatarMovementCap(r ? *r : AvatarRig{});
     }
 
 

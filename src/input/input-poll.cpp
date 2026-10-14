@@ -90,8 +90,10 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     float scheduledSide = 0.0f;
     float scheduledForward = 0.0f;
     bool scheduledJustStarted = false;
-    // Peek: engineTickNet owns the single per-frame consume of a scheduled move.
-    const bool scheduledMove = peekScheduledTerminalMove(
+    // pollInput owns the single per-frame consume of a scheduled move: its
+    // output feeds the InputPacket sent to the authoritative server, so the
+    // wish must not be consumed by the local-prediction path first.
+    const bool scheduledMove = consumeScheduledTerminalMove(
         scheduledSide, scheduledForward, &scheduledJustStarted);
 
     if (cmd.getState("walkforward").held) {

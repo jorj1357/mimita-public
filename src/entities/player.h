@@ -595,6 +595,13 @@ public:
     const AvatarAnimationSet* animationSet = nullptr;
     // Per-avatar rig + movement capability (resolved with the animation set).
     AvatarRig rig;
+    // Model-root Z offset (model frame) from the rig; 0 = none.
+    float avatarRootOffsetZ = 0.0f;
+
+    // Apply an avatar rig's movement capability, resetting every roll-specific
+    // value when the rig is absent or non-roll so a humanoid never inherits the
+    // griever's offset, capsule size, or rolling model rotation.
+    void applyAvatarMovementCap(const AvatarRig& rig);
     // One-shot state machine: while non-empty the named clip owns the pose.
     std::string lockedClip;
     float lockedClipTime = 0.0f;

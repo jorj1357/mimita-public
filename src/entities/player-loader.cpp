@@ -479,6 +479,7 @@ void copyCachedModelIntoPlayer(const CachedPlayerModel& cached, Player& player)
 }
 
 void appendNodeRenderMesh(const tinygltf::Model& model, int nodeIndex, Mesh& out);
+void appendNodeCollider(const tinygltf::Model& model, int nodeIndex, Collider& collider);
 
 // Load every remaining mesh node (not already a physical or rig part) as a
 // render-only animated part. This makes an avatar with arbitrary node names
@@ -520,6 +521,7 @@ static void appendGenericRenderParts(
         PhysicalBodyPart part;
         part.name = name;
         part.nodeIndex = i;
+        appendNodeCollider(model, i, part.collider);
         extras.push_back(std::move(part));
         extraMeshes.push_back(std::move(mesh));
     }
@@ -567,6 +569,7 @@ static void buildExtraRenderPartsFromModel(
         PhysicalBodyPart part;
         part.name = partName;
         part.nodeIndex = idx;
+        appendNodeCollider(model, idx, part.collider);
         outParts.push_back(std::move(part));
         outMeshes.push_back(std::move(mesh));
     }

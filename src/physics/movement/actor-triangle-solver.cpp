@@ -892,8 +892,9 @@ bool runActorTriangleCollisionStep(
     if (world.collisionMesh.triangles.empty())
         return false;
     // Without body triangles the solver has no geometry; let the legacy path
-    // handle this actor instead of freezing it.
-    if (player.physicalBody.parts.empty())
+    // handle this actor instead of freezing it. A rig-only avatar (e.g. the
+    // griever's spike ball) has its geometry in extraParts.
+    if (player.physicalBody.parts.empty() && player.physicalBody.extraParts.empty())
         return false;
 
     const auto stepStart = std::chrono::steady_clock::now();

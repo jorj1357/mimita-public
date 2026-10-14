@@ -21,6 +21,7 @@
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
 #include "entities/aimbody-config.h"
+#include "entities/player-avatar-animations.h"
 #include "config/networking-config.h"
 #include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
@@ -364,6 +365,12 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.health = maxHp;
     if (!profile.avatarName.empty())
         player.avatarName = profile.avatarName;
+    // Per-avatar movement capability (roll/fly/crawl) from the avatar rig.
+    if (!player.avatarName.empty()) {
+        const AvatarRig* rig =
+            AvatarAnimationRegistry::instance().getRig(player.avatarName);
+        if (rig) player.movementCap = rig->movement;
+    }
     // Role movement identity persists for this life; used by the shared kernel.
     player.movementProfileId = profile.movementPreset;
 
@@ -865,6 +872,28 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             cmd = movementCommandFromServerInput(
                 p.input, p.lastMovementSequence,
                 MovementLifecycleIdentity{p.spawnGeneration, p.transformEpoch});
+        }
+
+        // Re-resolve the avatar movement capability when the avatar changes
+        // mid-life (e.g. switching from a roll avatar to a walk avatar).
+        if (p.movementCapAvatar != p.avatarName)
+        {
+            p.movementCapAvatar = p.avatarName;
+            const AvatarRig* rig =
+                AvatarAnimationRegistry::instance().getRig(p.avatarName);
+            p.movementCap = rig ? rig->movement : AvatarMovementCap{};
+        }
+
+        // Roll mode is client-authoritative: the owning client simulates the
+        // force-driven body and reports its transform; the movement validation
+        // accepts it (see movement-validation.cpp). The server keeps that
+        // accepted transform instead of re-simulating, so a rolling avatar is
+        // responsive. It still clamps to blocking geometry as a safety guard.
+        if (p.movementCap.mode == "roll" && p.avatarName == "monstergriever")
+        {
+            p.clientStateUpdated = false;
+            syncServerMovementRuntime(p, true);
+            return;
         }
 
         // Role movement preset (if any) drives the shared kernel for this

@@ -200,9 +200,16 @@
   "rig": {
     "version": 1,
     "movement": {
-      "mode": "crawl",
+      "mode": "roll",
       "gravity_scale": 1.0,
-      "hover": false
+      "hover": false,
+      "force": 60.0,
+      "mass": 10.0,
+      "max_speed": 10.0,
+      "restitution": 0.6,
+      "radius": 3.5,
+      "height": 0.0,
+      "root_offset_z": 3.5
     },
     "parts": [
       {

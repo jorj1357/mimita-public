@@ -11,6 +11,7 @@
 #include "network/movement-validation.h"
 
 #include "network/server.h"
+#include "entities/player-avatar-animations.h"
 
 #include <algorithm>
 #include <cmath>
@@ -515,6 +516,27 @@ MovementValidationResult validateClientMovementReport(
         report.clientSimulationTick <= player.movementValidation.lastAcceptedClientTick)
     {
         return reject(MovementValidationReason::StaleClientTick);
+    }
+
+    // Client-authoritative physical body: a force-driven "roll" avatar is
+    // simulated by its owning client (the same rule runs server-side as a
+    // fallback). After the ownership/lifecycle/sequence checks above, accept the
+    // client's reported transform so the rolling body stays responsive. This
+    // mirrors the ragdoll root-authoritative path.
+    {
+        const AvatarRig* rig =
+            AvatarAnimationRegistry::instance().getRig(player.avatarName);
+        if (rig && rig->movement.mode == "roll" &&
+            player.avatarName == "monstergriever" &&
+            movementIsFinite(report.position) &&
+            movementIsFinite(report.baseVelocity)) {
+            MovementValidationResult accepted;
+            accepted.decision = MovementValidationDecision::Accept;
+            accepted.reason = MovementValidationReason::None;
+            accepted.acceptedState = stateFromAcceptedReport(player, report, config);
+            accepted.clearsAuthoritativeTransformAck = true;
+            return accepted;
+        }
     }
 
     MovementValidationResult result;

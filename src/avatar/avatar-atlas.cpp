@@ -933,7 +933,7 @@ bool AvatarSystem::finalizeAvatarForPlayer(Player& player)
         const std::string& name = inst->definition.name;
         player.animationSet = reg.getAnimationSet(name);
         const AvatarRig* r = reg.getRig(name);
-        if (r) player.rig = *r;
+        player.applyAvatarMovementCap(r ? *r : AvatarRig{});
     }
 
     if (!inst->definition.cosmetics.empty()) {

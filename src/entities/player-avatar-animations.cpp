@@ -129,6 +129,13 @@ void parseAvatarRigJson(const nlohmann::json& root, AvatarRig& rig)
         rig.movement.hover = m.value("hover", rig.movement.hover);
         rig.movement.hoverHeight = m.value("hover_height", rig.movement.hoverHeight);
         rig.movement.altitudeChange = m.value("altitude_change", rig.movement.altitudeChange);
+        rig.movement.force = m.value("force", rig.movement.force);
+        rig.movement.mass = m.value("mass", rig.movement.mass);
+        rig.movement.maxSpeed = m.value("max_speed", rig.movement.maxSpeed);
+        rig.movement.restitution = m.value("restitution", rig.movement.restitution);
+        rig.movement.radius = m.value("radius", rig.movement.radius);
+        rig.movement.height = m.value("height", rig.movement.height);
+        rig.movement.rootOffsetZ = m.value("root_offset_z", rig.movement.rootOffsetZ);
     }
 
     if (!j.contains("parts") || !j["parts"].is_array())

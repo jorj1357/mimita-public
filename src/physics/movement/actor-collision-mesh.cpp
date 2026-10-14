@@ -228,10 +228,9 @@ std::vector<ActorCollisionMesh> collectActorBodyCollisionMeshes(Player& player)
     std::vector<ActorCollisionMesh> meshes;
     meshes.reserve(player.physicalBody.parts.size());
 
-    for (const PhysicalBodyPart& part : player.physicalBody.parts)
-    {
+    auto append = [&](const PhysicalBodyPart& part) {
         if (part.collider.triangles.empty())
-            continue;
+            return;
         ActorCollisionMesh mesh;
         mesh.label = part.name.c_str();
         mesh.localTriangles = &part.collider.triangles;
@@ -239,7 +238,13 @@ std::vector<ActorCollisionMesh> collectActorBodyCollisionMeshes(Player& player)
         mesh.desiredTransform = part.worldTransform;
         mesh.affectsMovement = true;
         meshes.push_back(mesh);
-    }
+    };
+    for (const PhysicalBodyPart& part : player.physicalBody.parts)
+        append(part);
+    // Render-only rig parts (e.g. the griever's spikes) carry real triangles so
+    // a spike-ball avatar collides triangle-vs-triangle, not as a capsule.
+    for (const PhysicalBodyPart& part : player.physicalBody.extraParts)
+        append(part);
 
     return meshes;
 }

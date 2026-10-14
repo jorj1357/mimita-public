@@ -19,6 +19,7 @@
 #include "entities/aimbody-config.h"
 #include "world/world.h"
 #include "physics/config.h"
+#include "debug/structured-log.h"
 
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-gravity.h"
@@ -217,6 +218,55 @@ static void physicsMainUpdate_Internal(
         p.ground.realWorldContactThisFrame = false;
         ++p.movementSimulationTick;
         p.updateModelWorldTransforms();
+        return;
+    }
+
+    // ── Roll mode: a physical body driven by a force in the look direction ──
+    // WASD becomes a force along camera forward/strafe; gravity and the shared
+    // swept collision integrate and bounce the actor. See
+    // docs/specs/animations/animations.md (rig.movement.mode == "roll").
+    if (p.rig.movement.mode == "roll")
+    {
+        const AvatarMovementCap& m = p.rig.movement;
+        glm::vec3 dir(wishMoveXY.x, wishMoveXY.y, 0.0f);
+        if (glm::length(dir) > 1.0f)
+            dir = glm::normalize(dir);
+
+        const float invMass = 1.0f / std::max(m.mass, 0.01f);
+        p.vel += dir * (m.force * invMass) * dt;
+        p.vel.z -= PHYS.gravity * m.gravityScale * dt;
+
+        const float speed = glm::length(p.vel);
+        if (m.maxSpeed > 0.0f && speed > m.maxSpeed)
+            p.vel *= m.maxSpeed / speed;
+
+        p.externalImpulse = glm::vec3(0.0f);
+        p.movementContacts.clear();
+        ++p.movementSimulationTick;
+
+        bool groundedThisFrame = false;
+        const int rollSteps = std::max(1, subSteps);
+        const float rollSubdt = dt / (float)rollSteps;
+        for (int i = 0; i < rollSteps; i++)
+            doCollisions(p, world, groundedThisFrame, rollSubdt);
+        p.ground.onGround = groundedThisFrame;
+        p.ground.stableOnGround = groundedThisFrame;
+
+        static uint32_t rollLogCounter = 0;
+        if ((rollLogCounter++ % 30u) == 0u)
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "roll.client", p.username, "roll tick",
+                (uint32_t)p.movementSimulationTick,
+                {{"wish", {wishMoveXY.x, wishMoveXY.y}},
+                 {"vel", {p.vel.x, p.vel.y, p.vel.z}},
+                 {"pos", {p.pos.x, p.pos.y, p.pos.z}},
+                 {"force", m.force}, {"mass", m.mass},
+                 {"grounded", groundedThisFrame}},
+                __FILE__, __LINE__, __FUNCTION__);
+
+        updateVisualFacingFromCamera(p, camForward, dt);
+        p.updateProceduralAnimation(dt, camForward, p.pos, true);
         return;
     }
 

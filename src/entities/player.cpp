@@ -156,6 +156,30 @@ void Player::syncLegacyStateToLayers()
     movementCapsule.height = PLAYER_HEIGHT;
 }
 
+void Player::applyAvatarMovementCap(const AvatarRig& newRig)
+{
+    rig = newRig;
+    const bool roll = rig.present && rig.movement.mode == "roll";
+
+    avatarRootOffsetZ = roll ? rig.movement.rootOffsetZ : 0.0f;
+
+    if (rig.present && rig.movement.radius > 0.0f)
+        movementCapsule.radius = rig.movement.radius;
+    else
+        movementCapsule.radius = PLAYER_RADIUS;
+    if (rig.present && rig.movement.height > 0.0f)
+        movementCapsule.height = rig.movement.height;
+    else
+        movementCapsule.height = PLAYER_HEIGHT;
+
+    if (!roll) {
+        // Humanoid (or any non-roll) avatars must never inherit the ball's
+        // free 3D rotation: reset to yaw-only so limbs rotate normally.
+        modelRootRotationActive = false;
+        modelRootRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    }
+}
+
 void Player::syncLayersToLegacyState()
 {
     pos = origin.position;
@@ -169,8 +193,13 @@ void Player::updateModelWorldTransforms()
     // Save previous transforms for limb sweep collision
     for (PhysicalBodyPart& part : physicalBody.parts)
         part.previousWorldTransform = part.worldTransform;
+    for (PhysicalBodyPart& part : physicalBody.extraParts)
+        part.previousWorldTransform = part.worldTransform;
 
     glm::mat4 rootWorld = transformMatrix(movementCapsule.position, movementCapsule.rotation);
+    if (avatarRootOffsetZ != 0.0f)
+        rootWorld = rootWorld *
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, avatarRootOffsetZ));
 
     // Death animation: freeze position at death point, apply rotation lerp
     if (deathAnim.active) {

@@ -71,6 +71,13 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         }
     }
 
+    // Client-authoritative roll avatars: the local prediction owns the
+    // transform, so skip drift correction (the epoch hard-snap above still
+    // applies for spawn/respawn/teleport).
+    if (player.rig.movement.mode == "roll" &&
+        player.avatarName() == "monstergriever")
+        return;
+
     const glm::vec3 clientPosition = player.pos;
     const glm::vec3 correction = ctx.localServerPosition - player.pos;
     const float error = glm::length(correction);

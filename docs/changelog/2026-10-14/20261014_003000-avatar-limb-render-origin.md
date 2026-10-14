@@ -304,3 +304,182 @@ Time: 2026-10-14T03:05:21Z
   This remains open.
 - Human visual acceptance of the griever spikes, wasp flight, and the editor
   Animation tab.
+
+## Follow-up: force-driven "roll" movement mode
+
+Time: 2026-10-14T03:33:51Z
+
+### Feature
+
+`rig.movement.mode == "roll"` turns an avatar into a physical body driven by a
+force in the look direction (WASD = force along camera forward/strafe), with
+gravity and the shared swept collision. New `AvatarMovementCap` fields:
+`force` (N), `mass` (kg; acceleration = force/mass), `max_speed`, and
+`restitution`. The griever (`assets/avatars/monstergriever/avatar.json`) is set
+to `mode=roll, force=50, mass=2, max_speed=999999, restitution=0.6`.
+
+### Source changes
+
+- `src/entities/avatar-rig.h`, `player-avatar-animations.cpp`, `avatar.cpp`:
+  new roll fields parsed/serialized.
+- `src/physics/physics-mini.cpp`: roll branch (client/local path) — force +
+  gravity, speed clamp, `doCollisions` integrate/bounce.
+- `src/network/server.h`, `server-players.cpp`: `ServerPlayer.movementCap`
+  resolved from the avatar rig at spawn; server roll branch (authoritative).
+- `src/input/input-poll.cpp`: `pollInput` now owns the single consume of a
+  scheduled move (its output feeds the InputPacket), and `engine-tick-net`
+  peeks. Previously the wish was consumed before the packet was built, so the
+  server never received `agent.move` (server wish stayed 0).
+- Bounded diagnostics `roll.client` / `roll.server` (every 30 ticks).
+
+### Runtime evidence
+
+- Builds `2314`/`2317` published; runs `20261014_032622`, `20261014_033139`.
+- `monstergriever` snapshots report `movement_mode=roll`, `server_pos_error`
+  ~0.02 m (server agrees).
+- `roll.server` shows the wish reaching the server (`wish [0,1]`) and the body
+  gaining velocity and translating (`vel [0,0.83,1.93]`, position changing),
+  i.e. the authoritative roll works.
+
+### Known limitations (not fixed)
+
+- The client does not run local roll prediction in this multiplayer path
+  (`roll.client` never fires); the visible player follows the server, so input
+  feels server-authoritative.
+- Roll velocity does not accumulate to the configured speed because the
+  server's per-tick wish from the dev-loop burst is intermittent and the
+  collision resolve damps it; held WASD in real play applies a continuous
+  force.
+- The griever's collision is still the default capsule, not a spike-ball
+  radius, so "bouncing off the spikes" is not yet modeled.
+- Human visual acceptance of rolling/bouncing.
+
+## Follow-up: roll regression fixes, client prediction, spike collision
+
+Time: 2026-10-14T04:07:56Z
+
+### Regression fixes
+
+- `src/engine/engine-tick-net.cpp`: the scheduled-move peek (previous follow-up)
+  left the move un-expired when `pollInput` did not run, so players could not
+  stop moving forward / could not air-strafe. Reverted to the original
+  double-consume (`pollInput` + `engineTickNet`), keeping only the
+  `movementPressed` combination fix.
+- `src/network/server-players.cpp` + `server.h`: the server resolved
+  `ServerPlayer.movementCap` only at spawn, so switching from the griever (roll)
+  to `jason` mid-life left the server running the roll branch for jason and
+  launched it (server_pos_error > 300 m). The cap is now re-resolved whenever
+  `avatarName` changes. Verified: `jason` `server_pos_error` 0.005-0.01 m,
+  grounded; no launch.
+
+### Client-side roll prediction (A)
+
+- `src/engine/engine-tick-net.cpp`: when the local player's
+  `rig.movement.mode == "roll"`, the roll force + gravity + collision are
+  simulated locally each frame and the packet carries the predicted
+  position/velocity. Non-roll avatars are untouched. Verified: the griever
+  position changes (`[16.99,-30.07,84.57] -> [17.10,-29.94,84.56]`).
+
+### Spike-ball collision (B, partial)
+
+- `src/entities/player-loader.cpp`: render-only/generic rig parts now also
+  build real collision triangles (`appendNodeCollider`).
+- `src/physics/movement/actor-collision-mesh.cpp`: `collectActorBodyCollisionMeshes`
+  now includes `physicalBody.extraParts`, so a spike-ball avatar's cones/sphere
+  participate in triangle collision.
+- `avatar-rig.h` + parse/serialize + client bind: new `radius`/`height` on
+  `AvatarMovementCap`; the griever sets `radius=3.5` so its movement capsule is
+  a ball. `monstergriever/avatar.json` movement now includes these.
+
+### Known limitations
+
+- True player-vs-world triangle-vs-triangle collision is not wired: the
+  player's world movement uses the movement capsule, so B currently makes the
+  griever a large ball (and adds real triangles for actor-vs-actor collision)
+  rather than a literal per-spike solve.
+- Client roll prediction is partially overwritten by `mpReconcileLocalPlayer`
+  each frame, so the observed dev-loop speed stays low (~1 m/s) with the burst
+  command; making roll client-authoritative is the next step. Held WASD applies
+  a continuous force.
+- Human visual acceptance still required.
+
+## Follow-up: client-authoritative roll + true triangle collision
+
+Time: 2026-10-14T12:25:43Z
+
+### 1. Roll is now client-authoritative
+
+- `src/network/movement-validation.cpp`: after the ownership/lifecycle/sequence
+  checks, a `roll` avatar's reported position/velocity is accepted directly
+  (like the ragdoll root-authoritative path), with an 8 m/report step clamp so a
+  bad tick cannot teleport it.
+- `src/network/server-players.cpp`: the server roll branch no longer
+  re-simulates; it keeps the client's accepted transform.
+- `src/network/multiplayer-reconcile.cpp`: drift correction is skipped for roll
+  avatars so the local prediction is not overwritten (epoch hard-snap still
+  applies for spawn/teleport).
+- `src/engine/engine-tick-net.cpp`: the local roll prediction is the authority;
+  a vertical response clamp (`-60..+12` m/s) limits spike-ball ejection.
+
+### 2. True player-vs-world triangle collision
+
+- `src/physics/movement/actor-triangle-solver.cpp`: `runActorTriangleCollisionStep`
+  now accepts actors whose geometry is in `extraParts` (rig-only avatars).
+- `src/entities/player-loader.cpp`: render-only/generic parts build real
+  collision triangles.
+- `src/physics/movement/actor-collision-mesh.cpp`: extra parts included.
+- `src/entities/player.cpp`: `previousWorldTransform` tracked for extra parts
+  so the triangle sweep has both poses.
+- `src/entities/avatar-rig.h` + parse/serialize/bind: new `radius`, `height`,
+  `root_offset_z`; the griever uses `radius=3.5`, `root_offset_z=3.5`.
+
+### Runtime evidence
+
+- Builds `2335`-`2342` published; runs `20261014_120958`-`20261014_122404`.
+- `monstergriever` now translates quickly (velocity tens of m/s) with
+  `movement_mode=roll` and small `server_pos_error` (~1-3 m) — the server accepts
+  the client's transform.
+
+### Known limitation
+
+- The griever's model origin is at the ball center and the spike-ball triangle
+  solve ejects it upward continuously (it climbs instead of resting/rolling on
+  the ground). `root_offset_z` did not resolve it. This needs model-origin or
+  collision-response tuning (next). Human visual acceptance still required.
+
+## Follow-up: camera-relative roll, speed, settling, rolling mesh
+
+Time: 2026-10-14T12:50:58Z
+
+### Fixes
+
+- **Camera-relative WASD**: the roll force now uses the camera basis
+  (`forward * wishForward + right * wishSide`) instead of the raw world axes, so
+  W moves along the look direction as the camera turns.
+- **Roll gated to `monstergriever` only** (client prediction, server branch,
+  movement-validation bypass, and reconciliation skip all require the name).
+- **Default avatar**: `render-player.cpp` adopts `jason` when no avatar is
+  chosen, so the local player is never left as the default fallback model.
+- **Speed**: griever `force=60`, `mass=10`, `max_speed=10` → ~10 m/s, heavy.
+- **Settling / no infinite climb**: upward velocity from the spike-ball contact
+  is damped (`*0.2` airborne, `0` grounded) and clamped, and `root_offset_z=3.5`
+  lifts the ball's origin to its bottom. The griever now comes to rest grounded.
+- **Replication**: the server accepts the client roll transform (no clamp) and
+  broadcasts it; observed `server_pos_error` is now 0.0001-0.016 m (was 13.6k).
+- **Rolling mesh**: the model root rotation accumulates
+  `angleAxis(speed*dt/radius, up x velocity)` so the visible ball spins with
+  travel; `roll.client` now logs per-part world positions and the model-root
+  quaternion (bounded, every 30 ticks).
+
+### Runtime evidence
+
+- Builds `2348`-`2350`; runs `20261014_124441`-`20261014_124854`.
+- `roll.client` shows `dir` following the camera, `vel` ~10 m/s, part positions
+  changing, and `model_root_quat` rotating from identity (e.g.
+  `[0.9,0.01,-0.43,0]`), proving the mesh is not stuck to world axes.
+- `monstergriever` settles grounded with `server_pos_error` 0.0001-0.016 m.
+- `jason` remains `movement_mode=walk`, grounded.
+
+### Still open
+
+- Human visual acceptance of rolling/bouncing; fine tuning of bounce/restitution.
