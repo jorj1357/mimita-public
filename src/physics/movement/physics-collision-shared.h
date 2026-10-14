@@ -163,7 +163,8 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
                 projectVelocityAgainstNormal(p, normal);
                 return;
             }
-            const float retention = 1.0f - cfg.bounceFriction();
+            const float retention =
+                p.rollLowFriction ? 1.0f : (1.0f - cfg.bounceFriction());
             const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);
             p.vel = tangent * retention + normal * cfg.bounceMinPush();
             if (bodyContact)

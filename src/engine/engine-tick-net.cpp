@@ -153,15 +153,12 @@ void engineTickNet(Engine& engine, float dt)
             doCollisions(player, world, grounded, sub);
             doCollisions(player, world, grounded, sub);
 
-            // Damp upward ejection from the spike-ball contact response so the
-            // ball settles instead of climbing. On the ground, kill any residual
-            // upward velocity.
-            if (player.vel.z > 0.0f)
-                player.vel.z *= grounded ? 0.0f : 0.2f;
-            // Kill the slow residual hover; keep only real bounce impulses.
-            if (std::fabs(player.vel.z) < 0.8f)
+            // Keep bounce impulses (super bouncy); only kill the tiny residual
+            // hover velocity when the ball is effectively at rest. High gravity
+            // (rig.movement.gravity_scale) brings it back down.
+            if (std::fabs(player.vel.z) < 0.3f)
                 player.vel.z = 0.0f;
-            player.vel.z = std::clamp(player.vel.z, -60.0f, 8.0f);
+            player.vel.z = std::clamp(player.vel.z, -80.0f, 40.0f);
             player.ground.onGround = grounded;
             player.ground.stableOnGround = grounded;
 
@@ -197,13 +194,16 @@ void engineTickNet(Engine& engine, float dt)
                     StructuredCategory::Avatar, StructuredLevel::Important,
                     "roll.client", player.avatarName(), "roll tick",
                     (uint32_t)player.movementSimulationTick,
-                    {{"wish", {mpInput.wishX, mpInput.wishY}},
-                     {"dir", {dir.x, dir.y, dir.z}},
-                     {"vel", {player.vel.x, player.vel.y, player.vel.z}},
-                     {"pos", {player.pos.x, player.pos.y, player.pos.z}},
-                     {"grounded", grounded},
-                     {"model_root_quat", {q.w, q.x, q.y, q.z}},
-                     {"parts", samples}},
+                     {{"wish", {mpInput.wishX, mpInput.wishY}},
+                      {"dir", {dir.x, dir.y, dir.z}},
+                      {"force", m.force}, {"mass", m.mass}, {"max_speed", m.maxSpeed},
+                      {"vel", {player.vel.x, player.vel.y, player.vel.z}},
+                      {"speed", glm::length(player.vel)},
+                      {"pos", {player.pos.x, player.pos.y, player.pos.z}},
+                      {"contacts", (int)player.movementContacts.size()},
+                      {"grounded", grounded},
+                      {"model_root_quat", {q.w, q.x, q.y, q.z}},
+                      {"parts", samples}},
                     __FILE__, __LINE__, __FUNCTION__);
             }
 

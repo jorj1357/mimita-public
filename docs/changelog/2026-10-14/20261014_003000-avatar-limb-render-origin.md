@@ -528,3 +528,32 @@ Time: 2026-10-14T13:37:44Z
 ### Still open
 
 - Human visual acceptance; residual slow vertical drift tuning.
+
+## Follow-up: griever speed, bounce, center origin
+
+Time: 2026-10-14T14:07:48Z
+
+### Changes
+
+- `assets/avatars/monstergriever/avatar.json` movement: `force=5000`,
+  `mass=10`, `max_speed=999`, `restitution=0.9`, `gravity_scale=3.0`,
+  `radius=3.5`, `root_offset_z=0` (plr origin now at the sphere center; the
+  triangle contact rests the ball on its spike tips).
+- `src/engine/engine-tick-net.cpp`: removed the aggressive upward damp; only a
+  tiny residual hover (<0.3 m/s) is zeroed, so bounces and momentum survive.
+  `roll.client` now logs `force`, `mass`, `max_speed`, `speed`, and `contacts`.
+
+### Runtime evidence
+
+- Build `2366`; run `20261014_140602`.
+- `roll.client`: `force=5000 mass=10` confirmed applied; speed rises to a
+  measured **88.6 m/s** (was ~0.99 capped), with `contacts` up to 32 when the
+  spikes are on the ground.
+
+### Known limitation
+
+- The actor-triangle contact response damps the grounded roll to ~29 m/s, so
+  sustained 999 m/s is not reached while the spikes stay in contact with the
+  ground; airborne segments exceed 88 m/s. Reaching 999 would need a
+  lower-friction / rolling-specific contact response (next), not just more
+  force. Human visual acceptance still required.

@@ -172,6 +172,8 @@ void Player::applyAvatarMovementCap(const AvatarRig& newRig)
     else
         movementCapsule.height = PLAYER_HEIGHT;
 
+    rollLowFriction = roll;
+
     if (!roll) {
         // Humanoid (or any non-roll) avatars must never inherit the ball's
         // free 3D rotation: reset to yaw-only so limbs rotate normally.

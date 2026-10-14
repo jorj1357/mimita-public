@@ -597,6 +597,9 @@ public:
     AvatarRig rig;
     // Model-root Z offset (model frame) from the rig; 0 = none.
     float avatarRootOffsetZ = 0.0f;
+    // Roll avatars use a frictionless contact response so a rolling ball keeps
+    // its momentum instead of being decelerated by surface friction.
+    bool rollLowFriction = false;
 
     // Apply an avatar rig's movement capability, resetting every roll-specific
     // value when the rig is absent or non-roll so a humanoid never inherits the

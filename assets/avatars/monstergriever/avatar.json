@@ -201,15 +201,15 @@
     "version": 1,
     "movement": {
       "mode": "roll",
-      "gravity_scale": 1.0,
+      "gravity_scale": 3.0,
       "hover": false,
-      "force": 60.0,
+      "force": 5000.0,
       "mass": 10.0,
-      "max_speed": 10.0,
-      "restitution": 0.6,
+      "max_speed": 999.0,
+      "restitution": 0.9,
       "radius": 3.5,
       "height": 0.0,
-      "root_offset_z": 3.5
+      "root_offset_z": 0.0
     },
     "parts": [
       {
