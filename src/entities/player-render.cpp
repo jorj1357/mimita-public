@@ -148,7 +148,13 @@ void Player::renderCurrentPose(unsigned int shader,
         }
     }
 
-    if (modelLoaded && !physicalBody.parts.empty() && physicalBody.partMeshes.size() == physicalBody.parts.size())
+    const bool renderPhysicalParts =
+        !physicalBody.parts.empty() &&
+        physicalBody.partMeshes.size() == physicalBody.parts.size();
+    const bool renderExtraParts =
+        !physicalBody.extraParts.empty() &&
+        physicalBody.extraPartMeshes.size() == physicalBody.extraParts.size();
+    if (modelLoaded && (renderPhysicalParts || renderExtraParts))
     {
         size_t drawableParts = 0;
         size_t drawableBatches = 0;
@@ -371,6 +377,27 @@ void Player::renderCurrentPose(unsigned int shader,
                         outlinePass ? outlineColor.g : 1.0f,
                         outlinePass ? outlineColor.b : 1.0f,
                         outlinePass ? outlineColor.a : deathAlpha);
+
+            // Evidence: what the renderer actually submits for a rig part.
+            static uint32_t sRollRenderLog = 0;
+            if ((sRollRenderLog++ % 120u) == 0u) {
+                const glm::quat q =
+                    glm::normalize(glm::quat_cast(glm::mat3(part.worldTransform)));
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "roll.render", username, "rendered rig-part transform", 0,
+                    {{"part", part.name},
+                     {"pos", {part.worldTransform[3].x,
+                              part.worldTransform[3].y,
+                              part.worldTransform[3].z}},
+                     {"quat", {q.w, q.x, q.y, q.z}},
+                     {"model_root_active", modelRootRotationActive},
+                     {"model_root_quat", {modelRootRotation.w,
+                                          modelRootRotation.x,
+                                          modelRootRotation.y,
+                                          modelRootRotation.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
 
             for (const Mesh::Batch& batch : mesh.batches)
             {

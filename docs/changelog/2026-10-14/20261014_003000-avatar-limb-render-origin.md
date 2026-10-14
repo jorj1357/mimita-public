@@ -483,3 +483,48 @@ Time: 2026-10-14T12:50:58Z
 ### Still open
 
 - Human visual acceptance of rolling/bouncing; fine tuning of bounce/restitution.
+
+## Follow-up: griever render path + humanoid rotation reset
+
+Time: 2026-10-14T13:37:44Z
+
+### Root causes (found via live journal per AI-fix-live)
+
+1. The griever was rendered by the **whole-mesh fallback** (yaw only), not the
+   per-part path, so its spikes never tumbled. The `renderCurrentPose`
+   condition still required `!physicalBody.parts.empty()`; my earlier
+   `haveExtraParts` fix had landed in `renderDepth` instead. `roll.render` had
+   zero samples before the fix.
+2. Humanoids rotated sideways because the griever's roll state
+   (`modelRootRotationActive`, `modelRootRotation`, `avatarRootOffsetZ`,
+   capsule size) persisted after switching avatars — the bind only set values
+   when a rig was present and never reset them.
+
+### Fixes
+
+- `src/entities/player-render.cpp`: `renderCurrentPose` now selects the
+  per-part path when either physical **or** extra parts exist, so the griever's
+  spikes are drawn with their per-part world transforms and tumble.
+- `src/entities/player.cpp`: `Player::applyAvatarMovementCap` resets every
+  roll-specific value (model-root rotation, root offset, capsule size) for
+  non-roll avatars; `avatar.cpp` and `avatar-atlas.cpp` call it on every bind.
+- `src/engine/engine-tick-net.cpp`: roll prediction uses the real frame delta
+  (frame-rate independent); vertical deadzone kills residual hover; new
+  `avatar.pose.live` event logs part world positions + quaternions for ANY
+  avatar.
+- `src/entities/player-render.cpp`: new `roll.render` event logs the transform
+  the renderer actually submits for a rig part.
+
+### Runtime evidence
+
+- Builds `2356`-`2362`; runs `20261014_131908`-`20261014_133450`.
+- `roll.render`: 4066 samples; `core`/`spike_*` quaternions change on all axes
+  (`[0.71,0,0,-0.71] -> [0.97,0,0.24,0] -> [0.96,0.13,0.24,0.03]`) — the
+  spikes tumble, not yaw-only.
+- `avatar.pose.live` (jason): `movement_mode=walk`, `model_root_active=false`,
+  6 parts with normal rest quaternions — humanoid rotation restored.
+- Griever: `server_pos_error` 0.006-0.03 m.
+
+### Still open
+
+- Human visual acceptance; residual slow vertical drift tuning.
