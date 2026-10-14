@@ -55,7 +55,7 @@
     "hunt_bias": 1.0,
     "explore_bias": 0.0
   },
-  "hide_healthbars": false,
+  "hide_healthbars": true,
   "ragdoll_enabled": true,
   "blood_enabled": true,
   "presentation": {
@@ -67,7 +67,7 @@
     "blood": true,
     "killfeed": true,
     "ragdolls": true,
-    "enemy_healthbars": true,
+    "enemy_healthbars": false,
     "player_outlines": true,
     "friendly_outline_color": [0, 255, 0],
     "enemy_outline_color": [255, 0, 0]

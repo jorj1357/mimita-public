@@ -74,6 +74,8 @@ public:
     void registerCommand(const ConsoleCommand& cmd, CommandCategory category);
     void registerCommand(const ConsoleCommand& cmd, const std::string& dateAdded, CommandCategory category);
     void execute(const std::string& input);
+    void executeWithRequestId(const std::string& input, const std::string& requestId);
+    const std::string& currentRequestId() const { return mCurrentRequestId; }
     void addLog(const std::string& text);
 
     // Multi-step interactive input: the next submitted line is routed to the
@@ -127,6 +129,7 @@ private:
     std::vector<std::string> mScrollback;
     std::vector<std::string> mHistory;
     int mHistoryIndex = -1;
+    std::string mCurrentRequestId;
 
     std::unordered_map<std::string, ConsoleCommand> mCommands;
     std::unordered_map<std::string, std::string> mCommandAliases;

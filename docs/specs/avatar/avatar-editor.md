@@ -1,3 +1,8 @@
+2026 10 13 1923 jorj todo problems
+"
+i also saw offsets not so good like  when u do "xxx" it equips jason avatar which works but  just spawnign like nromal with mosnter avatar has brkoen offsets
+then switching to jason avatar then abck tomonster its fine "
+
 # Avatar Editor and Player-Model Transform Normalization
 
 Date: 2026-10-11
@@ -20,7 +25,7 @@ This document defines:
 1. the Blender authoring/export contract;
 2. the explicit opt-in policy that enables player-body normalization;
 3. the exact canonical frame and six-part contract;
-4. the normalization algorithm for rotations, scale, location, axes, and
+4. the normalization algorithm for rotations, s cale, location, axes, and
    shoulder/hip pivots;
 5. failure, ambiguity, last-good, and backward-compatibility behavior;
 6. ownership, configuration, diagnostics, implementation slices, tests, and
@@ -73,6 +78,63 @@ The current Boomer revisions demonstrated two separate asset problems:
 Changing Blender's Euler display from XYZ to another order cannot fix a wrong
 coordinate basis, a wrong node location, or a mesh origin at the limb center.
 The normalizer defined here addresses those as separate transform stages.
+
+### Confirmed comparison: Boomer v21 versus Stabber v6
+
+These two files are useful because they isolate the problem without involving
+skeletal animation. Both are rigid multipart GLBs with the same structural
+shape:
+
+- seven nodes total: `plrOrigin` plus `head`, `torso`, `leftArm`, `rightArm`,
+  `leftLeg`, and `rightLeg`;
+- six meshes;
+- no skins;
+- no animation clips;
+- node scale omitted, which means the default scale is one.
+
+They are not equivalent transform data, however:
+
+| Field | Working Boomer v21 | Failing Stabber v6 | Meaning |
+|---|---|---|---|
+| `plrOrigin` quaternion | approximately `[0.7071, 0, 0, 0.7071]` | approximately `[0, 0, 0.7071, 0.7071]` | Boomer has a 90-degree X root frame; Stabber has a 90-degree Z root frame. |
+| Arm mesh long direction | local Y, roughly `-2.39..0.08` | local Z, roughly `-3.02..0.11` | The runtime receives the arm length on a different local axis. |
+| Arm node rotation | small X rotations on each arm | identity rotation on both arms | Stabber leaves the axis mismatch entirely to the root/mesh data. |
+| Arm node locations | authored in Boomer's X-root frame | authored in Stabber's Z-root frame | The same-looking numeric locations do not mean the same world positions after the root rotation. |
+| Arm mesh origin | near the shoulder-facing end after the v21 edits | not in the same canonical shoulder frame | Animation can rotate around a different point even when the visible arm is in the right area. |
+
+In simple terms, Boomer v21 works because its root rotation, child locations,
+arm mesh axis, and arm pivot happen to agree with the transform frame expected
+by the current player animation. Stabber v6 has the right names and roughly the
+right body parts, but its coordinate system is rotated differently and its arm
+length is stored on local Z instead of the local arm axis expected by the
+animation. Changing `XYZ Euler` to `WXYZ` does not repair this: Euler order is
+only the order used to convert one already-defined rotation, not a declaration
+of what the model's forward/up/arm axes mean.
+
+The important consequence is that v21 is a working reference, not a universal
+correction to copy into every model. Copying only its root quaternion would
+make another model worse if that model's child locations or mesh vertices are
+still in a different basis. The normalizer must convert the complete bind
+frame: root, child locations, child rotations, mesh vertices, and joint pivot
+together, exactly once.
+
+For this evidence, the first safe import behavior is:
+
+1. read the six named parts and their actual mesh bounds;
+2. resolve the source basis from metadata or an explicit import declaration;
+3. convert the complete root/child/mesh frame to the canonical player frame;
+4. move each arm mesh into a node whose origin is the shoulder joint;
+5. bake the conversion into the imported model representation;
+6. let the ordinary animation rotate that normalized arm node;
+7. reject the model when the source basis or shoulder endpoint is genuinely
+   ambiguous instead of guessing a visually plausible but incorrect result.
+
+This is the boundary of what “any kind of issue” can safely mean. The engine
+can automatically repair transform-frame mistakes, unapplied scale, common
+root rotations, wrong mesh-axis placement, and misplaced named-part pivots.
+It cannot safely infer an intended front direction or shoulder on arbitrary
+unlabeled/disconnected geometry. Those cases need exporter metadata or an
+editor correction before the model can be canonicalized.
 
 ## Supported model classes
 
@@ -620,6 +682,101 @@ When hybrid/ragdoll diagnostics are enabled, emit a bounded sample containing:
 - target, physical, and final orientations;
 - weapon grip/muzzle frame for the equipped right-arm weapon;
 - first divergence classification if target, physical, and final frames differ.
+
+### Required avatar transform evidence in `events.jsonl`
+
+The following records are the minimum evidence needed to diagnose a model that
+loads but rotates around the wrong axis. They are emitted by the player-model
+loader and pose/weapon bind owners, not by a Python sidecar. All records use
+`StructuredLogger::writeEvent(StructuredCategory::Avatar, ...)` and therefore
+share the canonical `events.jsonl` fields: `wall_time`, `run_id`, `pid`,
+`process`, `tick`, `source`, `line`, and `func`.
+
+#### `avatar.model.transform-source`
+
+Emit once when a model request resolves its policy:
+
+```json
+{
+  "event": "avatar.model.transform-source",
+  "fields": {
+    "avatar": "monstertest1",
+    "model_path": "assets/entity/player/monsters/boomer/mimita-boomer-v21.glb",
+    "resolved_path": "C:/mimita-v9/assets/entity/player/monsters/boomer/mimita-boomer-v21.glb",
+    "source": "model",
+    "body_frame_policy": "player_canonical",
+    "legacy_overrides_applied": 0,
+    "source_hash": "...",
+    "cache": "miss"
+  }
+}
+```
+
+The record proves whether the loader used the model's transforms, legacy
+`config/bodyparts.json`, or a mixture. A custom model must never report both
+`source=model` and `legacy_overrides_applied=1`.
+
+#### `avatar.model.raw-node`
+
+Emit one bounded record per required node during the first parse of a source
+hash. It must include:
+
+- node name and index;
+- parent index and parent name;
+- raw local translation, quaternion, scale, and 4x4 matrix;
+- raw world bind matrix;
+- mesh index and primitive count;
+- position vertex count and local min/max bounds;
+- finite-value result and determinant.
+
+This is the evidence that distinguishes a wrong root axis from a wrong arm
+pivot. It is not emitted every frame and is not an unmanaged debug file.
+
+#### `avatar.model.normalized-node`
+
+Emit one bounded record per required node after canonicalization. It must
+include raw and normalized matrices, mesh-local correction, normalized
+translation, normalized quaternion, scale-bake result, long axis, joint
+endpoint, determinant, and the reason for any warning or rejection.
+
+The key invariant is:
+
+```text
+raw_world_bind * raw_mesh_vertex
+  == normalized_world_bind * normalized_mesh_vertex
+```
+
+within the configured floating-point tolerance. This proves that normalization
+changes the animation frame without changing the visible bind pose.
+
+#### `avatar.pose.sample`
+
+Emit at most once per second while avatar transform diagnostics are enabled and
+the player is moving or aiming. Include:
+
+- avatar/model hash and player identity;
+- active animation and simulation tick;
+- per-part rest matrix, pose matrix, world matrix, world position, and local
+  long-axis direction for `leftArm` and `rightArm`;
+- camera forward and requested aim pitch;
+- weapon grip and muzzle world position/direction when equipped.
+
+This record allows a test to determine whether the wrong value first appears
+in the model bind frame, procedural pose, camera aim, or weapon attachment.
+
+#### `avatar.command.assert`
+
+The deterministic command scenario uses this event for machine-checkable
+assertions. Fields include `scenario_id`, `step`, `command`, `expected`,
+`actual`, `tolerance`, `passed`, `player_position`, `player_velocity`,
+`camera_forward`, and `model_signature`. Assertions compare numbers and
+vectors from the live player state; they do not infer correctness from a
+screenshot.
+
+Diagnostics are off by default. Enable them with the existing categorized
+structured-logging configuration or a dedicated terminal toggle that changes
+only avatar transform diagnostics. Normal gameplay must not write per-frame
+vertex dumps.
 
 ## Editor behavior
 

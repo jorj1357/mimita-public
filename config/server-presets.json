@@ -20,6 +20,27 @@
       "discord_notification": false,
       "map_rotation": false,
       "join_host": true
+    },
+      "sandbox_1": {
+      "server_name": "sandboxlalal",
+      "map": "funworld3",
+      "mode": "sandbox",
+      "startup_npcs": true,
+      "npc_count": 1,
+      "discord_notification": false,
+      "map_rotation": false,
+      "join_host": true
+    },
+    "zombie_tower_1": {
+      "server_name": "Zombie Tower 1",
+      "map": "zombietower4",
+      "mode": "zombie_tower",
+      "startup_npcs": false,
+      "npc_count": 0,
+      "discord_notification": false,
+      "map_rotation": false,
+      "join_host": true
     }
+
   }
 }

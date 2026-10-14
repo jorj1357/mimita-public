@@ -97,6 +97,23 @@ void engineTickNet(Engine& engine, float dt)
         if (cmd.getState("walkback").held)    mpInput.wishY -= 1.0f;
         if (cmd.getState("walkleft").held)    mpInput.wishX -= 1.0f;
         if (cmd.getState("walkright").held)   mpInput.wishX += 1.0f;
+        float scheduledSide = 0.0f;
+        float scheduledForward = 0.0f;
+        if (consumeScheduledTerminalMove(scheduledSide, scheduledForward)) {
+            mpInput.wishX = scheduledSide;
+            mpInput.wishY = scheduledForward;
+            static uint32_t scheduledMoveLogCounter = 0;
+            if ((scheduledMoveLogCounter++ % 30u) == 0u) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "agent.move.applied", "agent-move", "scheduled axes applied",
+                    0,
+                    {{"move_x", scheduledSide}, {"move_y", scheduledForward},
+                     {"player_position", {player.pos.x, player.pos.y, player.pos.z}},
+                     {"player_velocity", {player.vel.x, player.vel.y, player.vel.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
         mpInput.jumpHeld = cmd.isJumpHeld();
         mpInput.dashPressed = cmd.isDashPressed();
         mpInput.downDashPressed = cmd.isDownDashPressed();

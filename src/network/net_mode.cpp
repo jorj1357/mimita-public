@@ -82,6 +82,8 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.discordNotification = false;
         else if (std::strcmp(argv[i], "--startup-command") == 0 && i + 1 < argc)
             options.startupCommands.emplace_back(argv[++i]);
+        else if (std::strcmp(argv[i], "--agent-command-file") == 0 && i + 1 < argc)
+            options.agentCommandFile = argv[++i];
         else if (std::strcmp(argv[i], "--map-rotation-minutes") == 0 && i + 1 < argc)
             options.mapRotationMinutes = (uint32_t)std::clamp(std::atoi(argv[++i]), 1, 9999);
         else if (std::strcmp(argv[i], "--udp-echo") == 0)
@@ -114,6 +116,7 @@ void printLaunchUsage()
     printf("  --map-rotation-minutes <1-9999> Automatic map rotation interval\n");
     printf("  --no-discord-notification Disable the server-live Discord announcement\n");
     printf("  --startup-command <cmd>  Run a client terminal command once after gameplay loads\n");
+    printf("  --agent-command-file <path>  Read bounded dev-loop command requests after gameplay loads\n");
     printf("  --procedural-mode <id> Start a procedural mode after the first client joins\n");
     printf("  --procedural-seed <n> Seed for an automatic procedural mode start\n");
     printf("  --ice             ICE NAT traversal is always enabled\n");

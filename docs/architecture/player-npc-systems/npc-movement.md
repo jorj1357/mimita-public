@@ -1,3 +1,13 @@
+2026 10 13  2005 i moved teh docs to  C:\mimita-v9\docs\architecture\player-npc-systems\archive-old\npc-agent-work-20261006.md 
+cuz i want to use  jsut this doc
+but 
+new bug 
+on map juggernaut4 the npc will get stuck in like the  freezer part 
+in the back
+and go back adn froth 
+it wont get out of that room 
+so need to fix gernalizstion behavor ok 
+
 9 8 2026 1019 est jorj todo - explain 
 
 npc movment not super good right now

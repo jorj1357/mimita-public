@@ -19,3 +19,10 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam);
 
 extern InputFrame gTerminalInputOverride;
 void consumeTerminalInputOverride();
+
+// Schedule deterministic camera-relative movement axes through the shared
+// input boundary. moveX is side (-left/+right), moveY is forward
+// (-back/+forward). The override expires automatically after fixed ticks.
+void scheduleTerminalMove(float moveX, float moveY, int durationTicks);
+bool peekScheduledTerminalMove(float& moveX, float& moveY);
+bool consumeScheduledTerminalMove(float& moveX, float& moveY);

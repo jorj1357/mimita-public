@@ -131,6 +131,11 @@ struct AvatarDefinition {
     // "model" preserves custom GLB-authored transforms; "legacy_overrides"
     // applies config/bodyparts.json and the avatar's bodyparts object.
     std::string bodyTransformSource = "model";
+    // "authored" preserves the historical custom-model behavior.  The
+    // player_canonical policy converts the complete GLB bind frame once so
+    // procedural animation, weapons, collision, and ragdoll share one axis
+    // and joint-pivot contract.
+    std::string bodyFramePolicy = "authored";
     // Optional per-avatar body part transform overrides (offset/rotation/scale)
     // This is loaded from avatar.json's "bodyparts" key.
     nlohmann::json bodypartOverrides;

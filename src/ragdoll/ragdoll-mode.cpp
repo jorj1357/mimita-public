@@ -55,6 +55,36 @@ static glm::mat4 rigidWorld(const RigidBody& body)
          * glm::mat4_cast(body.orientation);
 }
 
+// Build the visual skeleton-node frame from a physics body without making the
+// node origin orbit the body's center of mass.  meshLocal contains the bind
+// rotation/scale from the canonical body frame to the Blender node frame;
+// its translation is the old COM-to-node offset.  For an attached part the
+// Blender node origin is the joint pivot (shoulder/hip/etc.), so its rendered
+// translation must come from childLocalAnchor instead.  Physics and collision
+// continue to use body.position and the full meshLocal unchanged.
+static glm::vec3 visualPartOrigin(const RagdollModePart& part,
+                                  const glm::vec3& position,
+                                  const glm::quat& orientation)
+{
+    glm::vec3 nodeOrigin = position;
+    if (part.parentIndex >= 0)
+        nodeOrigin += orientation * part.childLocalAnchor;
+    return nodeOrigin;
+}
+
+static glm::mat4 visualPartWorld(const RagdollModePart& part,
+                                  const glm::vec3& position,
+                                  const glm::quat& orientation)
+{
+    glm::mat4 visualLinear = part.meshLocal;
+    visualLinear[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    return glm::translate(glm::mat4(1.0f),
+                          visualPartOrigin(part, position, orientation))
+         * glm::mat4_cast(orientation)
+         * visualLinear;
+}
+
 static nlohmann::json transformMatrixJson(const glm::mat4& m)
 {
     nlohmann::json values = nlohmann::json::array();
@@ -231,6 +261,16 @@ static void logAimLiveSnapshot(const Player& player, const RagdollBody& body,
             {"parent_part_index", part.parentIndex},
             {"parent_local_anchor", vec3Json(part.parentLocalAnchor)},
             {"child_local_anchor", vec3Json(part.childLocalAnchor)},
+            {"physics_position", vec3Json(part.body.position)},
+            {"expected_visual_pivot_world_position",
+                vec3Json(visualPartOrigin(part, part.body.position,
+                                           part.body.orientation))},
+            {"final_node_world_position",
+                vec3Json(glm::vec3(node.worldTransform[3]))},
+            {"final_node_pivot_error",
+                vec3Json(glm::vec3(node.worldTransform[3]) -
+                         visualPartOrigin(part, part.body.position,
+                                          part.body.orientation))},
             {"rest_length", part.restLength},
             {"physics_quaternion_wxyz", quatJson(part.body.orientation)},
             {"physics_angular_velocity", vec3Json(part.body.angularVelocity)},
@@ -941,16 +981,14 @@ void RagdollModeSystem::syncAimToPlayer(Player& player, RagdollBody& b)
             || part.nodeIndex >= (int)player.perfectPoseSkeleton.nodes.size())
             continue;
 
-        glm::mat4 childWorld = glm::translate(glm::mat4(1.0f), part.body.position)
-                             * glm::mat4_cast(part.body.orientation)
-                             * part.meshLocal;
+        glm::mat4 childWorld = visualPartWorld(
+            part, part.body.position, part.body.orientation);
         glm::mat4 parentWorld = rootWorld;
         if (part.skeletonParentPart >= 0
             && part.skeletonParentPart < (int)b.parts.size()) {
             const RagdollModePart& parent = b.parts[part.skeletonParentPart];
-            parentWorld = glm::translate(glm::mat4(1.0f), parent.body.position)
-                        * glm::mat4_cast(parent.body.orientation)
-                        * parent.meshLocal;
+            parentWorld = visualPartWorld(
+                parent, parent.body.position, parent.body.orientation);
         }
 
         player.perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =
@@ -1992,15 +2030,13 @@ void RagdollModeSystem::syncToPlayer(Player& player, RagdollBody& b)
                 glm::slerp(part.renderOrientation, part.body.orientation, smoothAlpha));
         }
 
-        glm::mat4 childWorld = glm::translate(glm::mat4(1.0f), part.renderPosition)
-                             * glm::mat4_cast(part.renderOrientation)
-                             * part.meshLocal;
+        glm::mat4 childWorld = visualPartWorld(
+            part, part.renderPosition, part.renderOrientation);
         glm::mat4 parentWorld = rootWorld;
         if (part.skeletonParentPart >= 0 && part.skeletonParentPart < (int)b.parts.size()) {
             const RagdollModePart& parent = b.parts[part.skeletonParentPart];
-            parentWorld = glm::translate(glm::mat4(1.0f), parent.renderPosition)
-                        * glm::mat4_cast(parent.renderOrientation)
-                        * parent.meshLocal;
+            parentWorld = visualPartWorld(
+                parent, parent.renderPosition, parent.renderOrientation);
         }
 
         player.perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =

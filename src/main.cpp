@@ -29,8 +29,10 @@
 #include <vector>
 #include <random>
 #include <filesystem>
+#include <fstream>
 #include <shellapi.h>
 #include <windows.h>
+#include <nlohmann/json.hpp>
 #include "engine/engine.h"
 #include "world/world.h"
 #include "world/world-loader.h"
@@ -119,6 +121,136 @@
 bool gAiLaunchMode = false;
 bool gAiNoConsole = false;
 bool gUnlockCursorOnLaunch = false;
+
+namespace {
+
+void writeAgentQueueEvent(const std::string& eventName,
+                          const std::string& requestId,
+                          const std::string& reason,
+                          uint32_t tick,
+                          const nlohmann::json& fields)
+{
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General,
+        StructuredLevel::Important,
+        eventName,
+        requestId.empty() ? "agent-queue" : requestId,
+        reason,
+        tick,
+        fields,
+        __FILE__,
+        __LINE__,
+        __func__);
+}
+
+void processAgentCommandQueue(const std::string& queuePath,
+                              bool gameplayReady,
+                              uint32_t tick)
+{
+    static std::string activePath;
+    static std::streamoff offset = 0;
+    if (queuePath.empty() || !gameplayReady)
+        return;
+    if (activePath != queuePath)
+    {
+        activePath = queuePath;
+        offset = 0;
+    }
+
+    std::ifstream queue(queuePath, std::ios::binary);
+    if (!queue.is_open())
+        return;
+    queue.seekg(offset);
+    std::string line;
+    while (std::getline(queue, line))
+    {
+        const std::streamoff lineStart = offset;
+        const std::streampos next = queue.tellg();
+        if (next >= 0)
+            offset = static_cast<std::streamoff>(next);
+        else
+        {
+            std::error_code error;
+            offset = static_cast<std::streamoff>(
+                std::filesystem::file_size(queuePath, error));
+        }
+        if (line.empty())
+            continue;
+
+        try
+        {
+            const nlohmann::json request = nlohmann::json::parse(line);
+            const std::string requestId = request.value("request_id", "");
+            const std::string command = request.value("command", "");
+            if (requestId.empty() || command.empty())
+            {
+                writeAgentQueueEvent(
+                    "dev-loop.command.invalid", requestId,
+                    "agent queue entry missing request_id or command", tick,
+                    {{"queue_path", queuePath}, {"line", line}});
+                continue;
+            }
+
+            const uint64_t notBeforeMs = request.value("not_before_ms", uint64_t{0});
+            const uint64_t nowMs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            if (notBeforeMs > nowMs)
+            {
+                // Leave the file offset at this record. The next fixed loop
+                // will retry it after the scenario's requested observation
+                // delay, without blocking the client thread.
+                offset = lineStart;
+                break;
+            }
+
+            nlohmann::json received = {
+                {"request_id", requestId}, {"command", command},
+                {"queue_path", queuePath}, {"client_tick", tick},
+                {"scenario_id", request.value("scenario_id", "")},
+                {"step_id", request.value("step_id", "")},
+                {"step_index", request.value("step_index", -1)},
+                {"step_count", request.value("step_count", -1)},
+                {"not_before_ms", notBeforeMs}};
+            writeAgentQueueEvent(
+                "dev-loop.command.delivered", requestId,
+                "client consumed queued command", tick, received);
+
+            Terminal::instance().executeWithRequestId(command, requestId);
+
+            if (!request.value("scenario_id", "").empty())
+            {
+                writeAgentQueueEvent(
+                    "scenario.step", requestId,
+                    "scenario command executed on client thread", tick,
+                    received);
+                const int stepIndex = request.value("step_index", -1);
+                const int stepCount = request.value("step_count", -1);
+                if (stepIndex >= 0 && stepCount > 0 && stepIndex + 1 >= stepCount)
+                {
+                    nlohmann::json finished = received;
+                    // Delivery/execution is not the same as scenario assertion
+                    // evaluation.  Keep the journal honest until the control
+                    // client has compared the requested pose invariants.
+                    finished["assertions_evaluated"] = false;
+                    finished["execution_complete"] = true;
+                    writeAgentQueueEvent(
+                        "scenario.finished", requestId,
+                        "all scenario commands returned", tick, finished);
+                }
+            }
+        }
+        catch (const std::exception& error)
+        {
+            writeAgentQueueEvent(
+                "dev-loop.command.invalid", "",
+                "agent queue JSON parse failed", tick,
+                {{"queue_path", queuePath}, {"error", error.what()}});
+        }
+    }
+}
+
+} // namespace
 
 // todo sort 6 7 2026 alphabetical
 #include "game/duel.h"
@@ -378,18 +510,23 @@ int main(int argc, char** argv)
             gpMpContext && gpMpContext->connected && gpWorldLoaded && *gpWorldLoaded &&
             (!startupNeedsWeaponSet || gpMpContext->communityWeaponSetId > 0))
         {
+            size_t startupIndex = 0;
             for (const std::string& command : launchOptions.startupCommands)
             {
+                const std::string requestId =
+                    "startup:" + std::to_string(gpMpContext->tick) + ":" +
+                    std::to_string(startupIndex++);
                 Debug::log(Debug::Category::General,
                            "[STARTUP COMMAND] executing: %s", command.c_str());
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::General,
                     StructuredLevel::Important,
                     "startup.command.dispatch",
-                    "startup-command-" + std::to_string(gpMpContext->localPlayerId),
+                    requestId,
                     "client_startup_command_ready",
                     gpMpContext->tick,
                     {
+                        {"request_id", requestId},
                         {"command", command},
                         {"connected", gpMpContext->connected},
                         {"game_world_loaded", *gpWorldLoaded},
@@ -398,10 +535,17 @@ int main(int argc, char** argv)
                     __FILE__,
                     __LINE__,
                     __func__);
-                Terminal::instance().execute(command);
+                Terminal::instance().executeWithRequestId(command, requestId);
             }
             startupCommandsExecuted = true;
         }
+
+        const bool gameplayReady =
+            gpMpContext && gpMpContext->connected && gpWorldLoaded && *gpWorldLoaded;
+        processAgentCommandQueue(
+            launchOptions.agentCommandFile,
+            gameplayReady,
+            gpMpContext ? gpMpContext->tick : 0);
     }
     AnalyticsManager::instance().shutdown();
     StructuredLogger::instance().shutdown();

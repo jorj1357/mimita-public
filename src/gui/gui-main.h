@@ -16,6 +16,7 @@
 #pragma once
 #include <GLFW/glfw3.h>
 #include "game/game-state.h"
+#include "network/server.h"
 #include <string>
 
 struct DuelConfigResult;
@@ -114,6 +115,12 @@ bool launchDuelHostServer(const std::string& mapName);
 bool pollDuelServerRoomCode(std::string& outCode);
 // Terminate a launched duel/community server process and clean up its files.
 void stopExternalServerProcess();
+
+// Start a community server through the same external-process path used by the
+// Online menu, then immediately queue a localhost join for terminal callers.
+// The child inherits the client's runtime identity environment so the client
+// and server pass the identity guard as one launch session.
+bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings);
 
 namespace MimitaNet {
 struct ListenServerState;

@@ -739,6 +739,7 @@ class DevLoop:
         self.control_port: int | None = None
         self.current_map = ""
         self.client_args: list[str] = []
+        self.command_queue_path: str | None = None
         self.server_ready = False
         self.client_ready = False
         self.builds_match = False
@@ -889,6 +890,7 @@ class DevLoop:
             "client_pids": [p.pid for p in client_alive],
             "client_executables": [client_executable] if self.processes and client_executable else [],
             "client_args": list(self.client_args),
+            "command_queue_path": self.command_queue_path,
             "client_ready": self.client_ready,
             "client_uptime_seconds": client_uptime,
             "run_alive": bool(self.server_health() or client_alive),
@@ -961,6 +963,105 @@ class DevLoop:
                     journal.write(json.dumps(record, separators=(",", ":")) + "\n")
         except OSError as error:
             print(f"[DEV RUNTIME] unable to record launch evidence: {error}")
+
+    def _scenario_json(self, path_text: str) -> dict:
+        path = Path(path_text).expanduser()
+        if not path.is_absolute():
+            path = ROOT / path
+        text = path.read_text(encoding="utf-8")
+        if "```json" in text:
+            text = text.split("```json", 1)[1].split("```", 1)[0]
+        value = json.loads(text.strip())
+        if not isinstance(value, dict) or not value.get("id"):
+            raise ValueError("scenario must be an object with a non-empty id")
+        return value
+
+    def _queue_agent_requests(self, request: dict, entries: list[dict]) -> dict:
+        live_clients = [process for process in self.processes if process.poll() is None]
+        if not live_clients or not self.client_ready:
+            message = "client is not alive and logger-ready"
+            self.record_control_event(request, "rejected", message)
+            self.save_state("command_rejected")
+            return {"accepted": False, "queued": False, "error": message}
+        if not self.command_queue_path:
+            message = "client command queue is not configured"
+            self.record_control_event(request, "rejected", message)
+            self.save_state("command_rejected")
+            return {"accepted": False, "queued": False, "error": message}
+
+        request_id = str(request.get("request_id", "")) or f"agent-{uuid.uuid4().hex[:12]}"
+        scenario_id = str(request.get("scenario_id", ""))
+        queue_records = []
+        not_before_ms = int(time.time() * 1000)
+        for index, entry in enumerate(entries):
+            command = str(entry.get("command", "")).strip()
+            args = entry.get("args", [])
+            if not command or not isinstance(args, list):
+                raise ValueError(f"scenario entry {index} must have command and args list")
+            command_text = " ".join([command, *(str(value) for value in args)]).strip()
+            queue_records.append({
+                "request_id": f"{request_id}:{index}",
+                "command": command_text,
+                "scenario_id": scenario_id,
+                "step_id": str(entry.get("id", entry.get("label", index))),
+                "step_index": index,
+                "step_count": len(entries),
+                "not_before_ms": not_before_ms,
+            })
+            not_before_ms += max(0, int(entry.get("delay_ms_after", 0) or 0))
+
+        with open(self.command_queue_path, "a", encoding="utf-8", newline="\n") as queue:
+            for record in queue_records:
+                queue.write(json.dumps(record, separators=(",", ":")) + "\n")
+
+        self.record_runtime_event(
+            "dev-loop.command.request",
+            {
+                "request_id": request_id,
+                "command_count": len(queue_records),
+                "scenario_id": scenario_id,
+                "client_pid": live_clients[0].pid,
+                "build": self.running_build,
+                "events_path": self.events_path,
+                "queue_path": self.command_queue_path,
+            },
+            "dev-loop queued client command request",
+        )
+        self.record_control_event(request, "accepted", f"queued {len(queue_records)} client command(s)")
+        self.save_state("command_queued")
+        return {
+            "accepted": True,
+            "queued": True,
+            "request_id": request_id,
+            "command_count": len(queue_records),
+            "client_pid": live_clients[0].pid,
+            "build": self.running_build,
+            "events_path": self.events_path,
+            "queue_path": self.command_queue_path,
+        }
+
+    def queue_agent_command(self, request: dict) -> dict:
+        command = str(request.get("command", "")).strip()
+        if not command:
+            return {"accepted": False, "queued": False, "error": "missing command"}
+        return self._queue_agent_requests(request, [{"command": command, "args": []}])
+
+    def queue_agent_scenario(self, request: dict) -> dict:
+        try:
+            scenario = self._scenario_json(str(request.get("scenario_file", "")))
+            entries = []
+            entries.extend(scenario.get("setup", []))
+            entries.extend(scenario.get("steps", []))
+            if not entries:
+                raise ValueError("scenario has no setup or steps")
+            request = dict(request)
+            request["scenario_id"] = str(scenario["id"])
+            return self._queue_agent_requests(request, entries)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            message = f"scenario rejected: {error}"
+            self.record_control_event(request, "rejected", message)
+            self.save_state("scenario_rejected")
+            return {"accepted": False, "queued": False, "error": message}
 
     def observe_launch_windows(self, phase: str) -> dict:
         """Record the current child-window, focus, cursor, and firewall state."""
@@ -1187,6 +1288,10 @@ class DevLoop:
                 self.stop_processes()
                 self.record_control_event(request, "completed", "client stopped")
                 self.save_state("client_stopped")
+            elif action == "command":
+                self.queue_agent_command(request)
+            elif action == "scenario-file":
+                self.queue_agent_scenario(request)
             elif action == "stop-server":
                 self.stop_server()
                 self.record_control_event(request, "completed", "server stop requested")
@@ -1657,6 +1762,7 @@ class DevLoop:
             server_args = self.build_server_args(exe, map_name, self.room_file_path)
             # One shared canonical events.jsonl for this server and its client.
             self.events_path = create_shared_events_path()
+            self.command_queue_path = None
             self.run_id = Path(self.events_path).parent.name
             # The first prelaunch snapshot above may predate creation of the
             # canonical journal. Record the same state again once the journal
@@ -1802,6 +1908,11 @@ class DevLoop:
         client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
         if not self.events_path:
             self.events_path = create_shared_events_path()
+        if not self.command_queue_path:
+            run_key = self.run_id or Path(self.events_path).parent.name
+            self.command_queue_path = str(DEV_ROOT / f"agent-command-{run_key}.jsonl")
+            Path(self.command_queue_path).write_text("", encoding="utf-8")
+        client_args.extend(["--agent-command-file", self.command_queue_path])
         # The client may run generic leave/queue cleanup that is allowed to
         # stop a server it launched through the GUI. This server belongs to
         # the dev-loop instead, so the client must never claim ownership of it.
@@ -2183,7 +2294,7 @@ def run_control_client(args: argparse.Namespace) -> int:
                 f"[DEV STATUS] client pids={current.get('client_pids', [])} "
                 f"uptime={DevLoop._duration_text(current.get('client_uptime_seconds'))}"
             )
-        if not args.request:
+    if not args.request and not args.command and not args.scenario_file:
             return 0
 
     port = current.get("control_port")
@@ -2192,12 +2303,21 @@ def run_control_client(args: argparse.Namespace) -> int:
         print("[DEV CONTROL] no running daemon control endpoint; start the dev loop once", file=sys.stderr)
         return 2
 
+    action = args.request
+    if args.command:
+        action = "command"
+    elif args.scenario_file:
+        action = "scenario-file"
     request = {
         "token": token,
-        "action": args.request,
+        "action": action,
         "launch_mode": args.launch_mode,
         "request_id": f"{utc_now()}-{uuid.uuid4().hex[:8]}",
     }
+    if args.command:
+        request["command"] = args.command
+    if args.scenario_file:
+        request["scenario_file"] = args.scenario_file
     try:
         with socket.create_connection(("127.0.0.1", int(port)), timeout=5.0) as connection:
             connection.sendall((json.dumps(request) + "\n").encode("utf-8"))
@@ -2240,6 +2360,8 @@ def main() -> int:
     )
     parser.add_argument("--status", action="store_true", help="read the current dev-loop status and exit")
     parser.add_argument("--json", action="store_true", help="print control/status responses as JSON")
+    parser.add_argument("--command", help="queue one terminal command in the running client")
+    parser.add_argument("--scenario-file", help="queue a repository-local Markdown/JSON scenario in the running client")
     parser.add_argument(
         "--request",
         choices=("launch", "stop-client", "stop-server", "stop"),
@@ -2247,7 +2369,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.status or args.request:
+    if args.status or args.request or args.command or args.scenario_file:
         return run_control_client(args)
 
     owner_pid = acquire_dev_loop_lock()

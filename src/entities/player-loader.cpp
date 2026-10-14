@@ -1,16 +1,23 @@
 #include "player.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <functional>
+#include <cstring>
+#include <filesystem>
+#include <limits>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <unordered_map>
 #include <vector>
 
 #include "avatar/character-registry.h"
 #include "camera.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "map/map_loader.h"
 #include "physics/config.h"
 #include "tinygltf/tiny_gltf.h"
@@ -23,6 +30,7 @@
 // top of the global config/bodyparts.json defaults.
 nlohmann::json gAvatarBodypartOverrides;
 bool gAvatarUseModelTransforms = false;
+bool gAvatarCanonicalizePlayerModel = false;
 
 glm::mat4 nodeMatrix(const tinygltf::Node& node)
 {
@@ -126,6 +134,263 @@ bool isPlayerBodyPart(const std::string& name)
             name == "leftLeg" || name == "rightLeg";
 }
 
+static nlohmann::json vec3Json(const glm::vec3& v)
+{
+    return {v.x, v.y, v.z};
+}
+
+static nlohmann::json mat4Json(const glm::mat4& m)
+{
+    nlohmann::json out = nlohmann::json::array();
+    for (int col = 0; col < 4; ++col)
+        for (int row = 0; row < 4; ++row)
+            out.push_back(m[col][row]);
+    return out;
+}
+
+static std::string modelSourceSignature(const std::string& path)
+{
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    const auto stamp = std::filesystem::last_write_time(path, ec).time_since_epoch().count();
+    const std::string input = path + ":" + std::to_string(size) + ":" + std::to_string(stamp);
+    return std::to_string(std::hash<std::string>{}(input));
+}
+
+static glm::vec3 readAccessorVec3(const tinygltf::Model& model,
+                                  const tinygltf::Accessor& accessor,
+                                  size_t index)
+{
+    const unsigned char* base = accessorPtr(model, accessor);
+    const size_t stride = accessorStride(model, accessor);
+    glm::vec3 value(0.0f);
+    std::memcpy(&value.x, base + index * stride + sizeof(float) * 0, sizeof(float));
+    std::memcpy(&value.y, base + index * stride + sizeof(float) * 1, sizeof(float));
+    std::memcpy(&value.z, base + index * stride + sizeof(float) * 2, sizeof(float));
+    return value;
+}
+
+static void writeAccessorVec3(const tinygltf::Model& model,
+                              const tinygltf::Accessor& accessor,
+                              size_t index,
+                              const glm::vec3& value)
+{
+    const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
+    tinygltf::Buffer& buffer = const_cast<tinygltf::Buffer&>(model.buffers[view.buffer]);
+    unsigned char* base = buffer.data.data() + view.byteOffset + accessor.byteOffset;
+    const size_t stride = accessorStride(model, accessor);
+    unsigned char* dst = base + index * stride;
+    std::memcpy(dst + sizeof(float) * 0, &value.x, sizeof(float));
+    std::memcpy(dst + sizeof(float) * 1, &value.y, sizeof(float));
+    std::memcpy(dst + sizeof(float) * 2, &value.z, sizeof(float));
+}
+
+static bool accessorFiniteAndBounds(const tinygltf::Model& model,
+                                    const tinygltf::Accessor& accessor,
+                                    glm::vec3& outMin,
+                                    glm::vec3& outMax)
+{
+    if (accessor.type != TINYGLTF_TYPE_VEC3 ||
+        accessor.componentType != TINYGLTF_COMPONENT_TYPE_FLOAT ||
+        accessor.count == 0 || accessor.bufferView < 0 ||
+        accessor.bufferView >= (int)model.bufferViews.size())
+        return false;
+
+    outMin = glm::vec3(std::numeric_limits<float>::max());
+    outMax = glm::vec3(std::numeric_limits<float>::lowest());
+    for (size_t i = 0; i < accessor.count; ++i) {
+        const glm::vec3 p = readAccessorVec3(model, accessor, i);
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+            return false;
+        outMin = glm::min(outMin, p);
+        outMax = glm::max(outMax, p);
+    }
+    return true;
+}
+
+// Convert a rigid multipart custom model into the same bind-frame convention
+// used by the default player GLB. The visible rest pose is preserved by moving
+// the inverse correction into mesh-local vertices. This is intentionally
+// player-only and runs before the immutable model cache is published.
+static bool normalizePlayerModelTransforms(tinygltf::Model& model,
+                                            const std::string& resolvedPath)
+{
+    const std::string signature = modelSourceSignature(resolvedPath);
+    int rootIndex = -1;
+    std::unordered_map<std::string, int> partIndices;
+    for (int i = 0; i < (int)model.nodes.size(); ++i) {
+        const std::string& name = model.nodes[i].name;
+        if (name == "plrOrigin" ||
+            (name.rfind("plrOrigin.", 0) == 0 && name.size() > 10 &&
+             name.find_first_not_of("0123456789", 10) == std::string::npos))
+            rootIndex = rootIndex < 0 ? i : -2;
+        if (isPlayerBodyPart(name))
+            partIndices[name] = i;
+    }
+
+    const char* required[] = {"head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+    if (rootIndex < 0 || rootIndex == -2 || partIndices.size() != 6) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.model.normalized-node", signature,
+            "canonicalization rejected: root or required parts invalid", 0,
+            {{"model_path", resolvedPath}, {"result", "rejected"},
+             {"reason", "root_or_required_parts"}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return false;
+    }
+
+    std::vector<int> parents(model.nodes.size(), -1);
+    for (int i = 0; i < (int)model.nodes.size(); ++i)
+        for (int child : model.nodes[i].children)
+            if (child >= 0 && child < (int)parents.size())
+                parents[child] = i;
+
+    std::vector<int> visiting(model.nodes.size(), 0);
+    std::vector<glm::mat4> worlds(model.nodes.size(), glm::mat4(1.0f));
+    std::function<bool(int)> computeWorld = [&](int index) {
+        if (index < 0 || index >= (int)model.nodes.size()) return false;
+        if (visiting[index] == 2) return true;
+        if (visiting[index] == 1) return false;
+        visiting[index] = 1;
+        const int parent = parents[index];
+        worlds[index] = parent >= 0
+            ? worlds[parent] * nodeMatrix(model.nodes[index])
+            : nodeMatrix(model.nodes[index]);
+        if (parent >= 0 && !computeWorld(parent)) return false;
+        if (parent >= 0)
+            worlds[index] = worlds[parent] * nodeMatrix(model.nodes[index]);
+        visiting[index] = 2;
+        return true;
+    };
+    for (int i = 0; i < (int)model.nodes.size(); ++i)
+        if (!computeWorld(i))
+            return false;
+
+    for (const char* requiredName : required) {
+        const int index = partIndices[requiredName];
+        if (parents[index] != rootIndex) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "avatar.model.normalized-node", signature,
+                "canonicalization rejected: body part is not a direct root child", 0,
+                {{"model_path", resolvedPath}, {"part", requiredName},
+                 {"result", "rejected"}, {"reason", "non_direct_parent"}},
+                __FILE__, __LINE__, __FUNCTION__);
+            return false;
+        }
+    }
+
+    const glm::quat canonicalRotation = glm::angleAxis(
+        glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    std::unordered_set<int> transformedMeshes;
+    for (const char* requiredName : required) {
+        const int index = partIndices[requiredName];
+        const tinygltf::Node& rawNode = model.nodes[index];
+        const glm::mat4 rawWorld = worlds[index];
+        const glm::vec3 rawPosition = glm::vec3(rawWorld[3]);
+        const int meshIndex = rawNode.mesh;
+        if (meshIndex < 0 || meshIndex >= (int)model.meshes.size())
+            return false;
+        if (!transformedMeshes.insert(meshIndex).second)
+            return false;
+
+        glm::vec3 rawBoundsMin(0.0f), rawBoundsMax(0.0f);
+        size_t rawVertexCount = 0;
+        bool rawBoundsValid = false;
+        for (const tinygltf::Primitive& primitive : model.meshes[meshIndex].primitives) {
+            auto posIt = primitive.attributes.find("POSITION");
+            if (posIt == primitive.attributes.end()) return false;
+            const tinygltf::Accessor& posAccessor = model.accessors[posIt->second];
+            rawBoundsValid = accessorFiniteAndBounds(
+                model, posAccessor, rawBoundsMin, rawBoundsMax);
+            rawVertexCount += posAccessor.count;
+            if (!rawBoundsValid) return false;
+        }
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.model.raw-node", signature,
+            "raw custom player model node", 0,
+            {{"model_path", resolvedPath}, {"part", requiredName},
+             {"node_index", index}, {"parent_index", parents[index]},
+             {"mesh_index", meshIndex}, {"world_matrix", mat4Json(rawWorld)},
+             {"world_position", vec3Json(rawPosition)},
+             {"local_matrix", mat4Json(nodeMatrix(rawNode))},
+             {"vertex_count", rawVertexCount},
+             {"bounds_min", vec3Json(rawBoundsMin)},
+             {"bounds_max", vec3Json(rawBoundsMax)},
+             {"finite_vertices", rawBoundsValid}},
+            __FILE__, __LINE__, __FUNCTION__);
+
+        const glm::mat4 canonicalWorld =
+            glm::translate(glm::mat4(1.0f), rawPosition) *
+            glm::mat4_cast(canonicalRotation);
+        const glm::mat4 meshCorrection = glm::inverse(canonicalWorld) * rawWorld;
+        const glm::mat3 normalCorrection = glm::transpose(glm::inverse(glm::mat3(meshCorrection)));
+
+        tinygltf::Mesh& mesh = model.meshes[meshIndex];
+        for (tinygltf::Primitive& primitive : mesh.primitives) {
+            auto posIt = primitive.attributes.find("POSITION");
+            if (posIt == primitive.attributes.end()) return false;
+            const tinygltf::Accessor& posAccessor = model.accessors[posIt->second];
+            glm::vec3 mn, mx;
+            if (!accessorFiniteAndBounds(model, posAccessor, mn, mx)) return false;
+            for (size_t v = 0; v < posAccessor.count; ++v) {
+                const glm::vec3 p = glm::vec3(meshCorrection * glm::vec4(
+                    readAccessorVec3(model, posAccessor, v), 1.0f));
+                writeAccessorVec3(model, posAccessor, v, p);
+            }
+            auto normalIt = primitive.attributes.find("NORMAL");
+            if (normalIt != primitive.attributes.end()) {
+                const tinygltf::Accessor& normalAccessor = model.accessors[normalIt->second];
+                for (size_t v = 0; v < normalAccessor.count; ++v) {
+                    glm::vec3 n = normalCorrection * readAccessorVec3(model, normalAccessor, v);
+                    if (glm::dot(n, n) > 0.000001f) n = glm::normalize(n);
+                    writeAccessorVec3(model, normalAccessor, v, n);
+                }
+            }
+        }
+
+        tinygltf::Node& normalizedNode = model.nodes[index];
+        normalizedNode.matrix.clear();
+        normalizedNode.translation = {rawPosition.x, rawPosition.y, rawPosition.z};
+        normalizedNode.rotation = {canonicalRotation.x, canonicalRotation.y,
+                                   canonicalRotation.z, canonicalRotation.w};
+        normalizedNode.scale = {1.0, 1.0, 1.0};
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.model.normalized-node", signature,
+            "custom player model node normalized", 0,
+            {{"model_path", resolvedPath}, {"part", requiredName},
+             {"node_index", index}, {"result", "normalized"},
+             {"source_world_matrix", mat4Json(rawWorld)},
+             {"output_world_matrix", mat4Json(canonicalWorld)},
+             {"mesh_correction", mat4Json(meshCorrection)},
+             {"canonical_rotation", {canonicalRotation.x, canonicalRotation.y,
+                                      canonicalRotation.z, canonicalRotation.w}},
+             {"pivot", vec3Json(rawPosition)}, {"scale_baked", true}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    tinygltf::Node& root = model.nodes[rootIndex];
+    root.matrix.clear();
+    root.translation = {0.0, 0.0, 0.0};
+    root.rotation = {0.0, 0.0, 0.0, 1.0};
+    root.scale = {1.0, 1.0, 1.0};
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "avatar.model.normalized-node", signature,
+        "custom player model canonicalization complete", 0,
+        {{"model_path", resolvedPath}, {"result", "success"},
+         {"root_index", rootIndex}, {"root_reset_identity", true},
+         {"part_count", 6}, {"canonical_axis", "default_player_bind_frame"}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return true;
+}
+
 // ── Immutable GLB parse cache ─────────────────────────────────────
 // Parsing a player GLB (tinygltf file IO + hierarchy + colliders +
 // part meshes) is expensive and identical for every replica of the same
@@ -149,6 +414,11 @@ std::unordered_map<std::string, CachedPlayerModel>& playerModelCache()
 {
     static std::unordered_map<std::string, CachedPlayerModel> cache;
     return cache;
+}
+
+static std::string playerModelCacheKey(const std::string& resolvedPath)
+{
+    return resolvedPath + (gAvatarCanonicalizePlayerModel ? "|player_canonical" : "|authored");
 }
 
 void clearPlayerModelCache()
@@ -553,12 +823,13 @@ bool Player::loadModel(const char* path)
 {
     const std::string resolvedPath = resolveAssetPath(path);
     auto& cache = playerModelCache();
+    const std::string cacheKey = playerModelCacheKey(resolvedPath);
 
     // Fast path: reuse the parsed immutable GLB data. The cache stores the
     // pristine skeleton as read from the file (pre-override); per-avatar
     // body-part overrides are applied fresh on this player's copy, so shared
     // cache entries never leak mutable per-player state.
-    auto cacheIt = cache.find(resolvedPath);
+    auto cacheIt = cache.find(cacheKey);
     if (cacheIt != cache.end() && cacheIt->second.valid)
     {
         const CachedPlayerModel& cached = cacheIt->second;
@@ -594,6 +865,16 @@ bool Player::loadModel(const char* path)
         return modelLoaded;
     }
 
+    if (gAvatarCanonicalizePlayerModel &&
+        !normalizePlayerModelTransforms(model, resolvedPath)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.model.normalized-node", modelSourceSignature(resolvedPath),
+            "canonicalization rejected; preserving authored model", 0,
+            {{"model_path", resolvedPath}, {"result", "fallback_authored"}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     buildNodeHierarchyFromModel(model, *this);
 
     // ── Snapshot pristine (pre-override) skeleton + mesh data ─────────
@@ -616,7 +897,7 @@ bool Player::loadModel(const char* path)
     cached.bodyColliders = bodyColliders;
     cached.bodyParts = bodyParts;
     cached.bodyPartMeshes = bodyPartMeshes;
-    cache[resolvedPath] = std::move(cached);
+    cache[cacheKey] = std::move(cached);
     printf("[AVATAR CACHE] model=%s result=miss (skeleton)\n", resolvedPath.c_str());
 
     updateModelWorldTransforms();
@@ -629,10 +910,11 @@ bool Player::loadModelColliders(const char* path)
 {
     const std::string resolvedPath = resolveAssetPath(path);
     auto& cache = playerModelCache();
+    const std::string cacheKey = playerModelCacheKey(resolvedPath);
 
     // Reuse an already-parsed model when a client has cached it. The cache
     // holds the pristine skeleton; overrides are re-applied per actor.
-    auto cacheIt = cache.find(resolvedPath);
+    auto cacheIt = cache.find(cacheKey);
     if (cacheIt != cache.end() && cacheIt->second.valid)
     {
         copyCachedModelIntoPlayer(cacheIt->second, *this);
@@ -652,6 +934,16 @@ bool Player::loadModelColliders(const char* path)
             "[PLAYER GLB HEADLESS] failed to load %s: %s\n",
             resolvedPath.c_str(), err.c_str());
         return false;
+    }
+
+    if (gAvatarCanonicalizePlayerModel &&
+        !normalizePlayerModelTransforms(model, resolvedPath)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.model.normalized-node", modelSourceSignature(resolvedPath),
+            "canonicalization rejected; preserving authored collider model", 0,
+            {{"model_path", resolvedPath}, {"result", "fallback_authored"}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     buildNodeHierarchyFromModel(model, *this);
@@ -797,6 +1089,16 @@ static void modelLoadThreadFunc(PendingPlayerModel* d)
         return;
     }
 
+    if (d->canonicalizePlayerModel &&
+        !normalizePlayerModelTransforms(model, d->resolvedPath)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.model.normalized-node", modelSourceSignature(d->resolvedPath),
+            "canonicalization rejected; preserving authored async model", 0,
+            {{"model_path", d->resolvedPath}, {"result", "fallback_authored"}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     d->loadOk = true;
     d->glbDir = std::filesystem::path(d->resolvedPath).parent_path().string();
     d->images = std::move(model.images);
@@ -817,6 +1119,7 @@ void Player::requestModelLoad(const std::string& filepath)
     if (!gAvatarBodypartOverrides.is_null())
         data->bodypartOverrides = gAvatarBodypartOverrides;
     data->useModelTransforms = gAvatarUseModelTransforms;
+    data->canonicalizePlayerModel = gAvatarCanonicalizePlayerModel;
 
     mPendingModel = data;
     PendingPlayerModel* raw = mPendingModel.get();

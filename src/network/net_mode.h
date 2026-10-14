@@ -51,6 +51,10 @@ struct LaunchOptions
     // Client-only terminal commands executed once after the room connection
     // and gameplay world/player are ready.
     std::vector<std::string> startupCommands;
+    // Optional dev-loop-owned JSONL command queue. The client reads requests
+    // only after the connection/world readiness gate and executes them on the
+    // normal client thread.
+    std::string agentCommandFile;
 };
 
 LaunchOptions parseLaunchOptions(int argc, char** argv);

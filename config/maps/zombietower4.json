@@ -63,6 +63,35 @@
       "tag": "",
       "type": "damage_volume",
       "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "monster_zone_1",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        -1252.8250732421875,
+        -813.3982543945313,
+        379.64031982421875
+      ],
+      "radius": 5.0,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "monster_zone",
+      "visible": true
     }
   ]
 }

@@ -220,3 +220,45 @@ Every repository-touching session creates exactly one final changelog file in
 the current date folder. The changelog records routed documents, focused skill
 results, pre-existing edits, exact source/doc changes, build and runtime
 evidence, regressions if confirmed, and human review still needed.
+## Avatar transform and deterministic-action evidence profile
+
+For avatar rotation investigations, the live-fix owner must emit bounded
+records to the canonical `events.jsonl` before changing transform math. The
+minimum chain is:
+
+```text
+model selection/policy
+ -> raw GLB hierarchy and mesh bounds
+ -> normalized bind frame
+ -> procedural pose
+ -> camera aim
+ -> weapon grip/muzzle
+ -> collision/ragdoll bind
+ -> deterministic action assertion
+```
+
+Use these event names and fields:
+
+- `avatar.model.transform-source`: avatar, model path/hash, source policy,
+  canonical/authored policy, legacy override count, cache result.
+- `avatar.model.raw-node`: node name/index/parent, local/world matrices,
+  quaternion/scale, mesh index, vertex count/bounds, determinant, finite result.
+- `avatar.model.normalized-node`: source/output matrices, mesh correction,
+  pivot, long axis, scale bake, determinant, confidence, warning/rejection.
+- `avatar.pose.sample`: fixed tick, active animation, camera forward, per-part
+  rest/pose/world matrices and positions, arm long axes, weapon grip/muzzle.
+- `avatar.command.assert`: scenario/step/command, expected/actual/tolerance,
+  pass/fail, position/velocity/camera/model signature.
+
+The first divergence must be named from these records. A visual symptom alone
+does not identify whether the loader, animation, aim, weapon, or ragdoll owner
+is wrong. Emit transitions and at most one pose sample per second while the
+diagnostic toggle is enabled; never dump every vertex or render frame during
+ordinary gameplay.
+
+For deterministic testing, use the running client's shared command registry:
+`agent.move`, `agent.aim`, `agent.shoot`, `agent.snapshot`, and
+`agent.scenario_file`. These commands must feed the same movement, aim, and
+weapon action owners as keyboard/mouse input. The dev loop may submit the
+commands and parse `events.jsonl`, but it must not synthesize a parallel input
+system or declare success from process/build status.

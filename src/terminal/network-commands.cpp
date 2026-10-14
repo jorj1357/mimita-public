@@ -372,13 +372,8 @@ void registerNetworkCommands()
                 return;
             }
 
-            MimitaNet::ListenServerState* server = getListenServerState();
-            if (!server) {
-                Terminal::instance().addLog("[SERVER PRESET] failed: local server state unavailable");
-                return;
-            }
-            if (server->active || MP_CONTEXT.active) {
-                Terminal::instance().addLog("[SERVER PRESET] failed: a server or connection is already active");
+            if (MP_CONTEXT.active) {
+                Terminal::instance().addLog("[SERVER PRESET] failed: a connection is already active");
                 return;
             }
 
@@ -396,19 +391,9 @@ void registerNetworkCommands()
             settings.startLocalServer = true;
             settings.hostPlayerName = AuthSystem::instance().displayName();
 
-            if (!MimitaNet::startListenServer(*server, settings.port, "", "", &settings)) {
-                Terminal::instance().addLog("[SERVER PRESET] failed to start local server");
+            if (!launchServerPresetAndJoin(settings)) {
+                Terminal::instance().addLog("[SERVER PRESET] failed to start server through the GUI launch path");
                 return;
-            }
-
-            if (preset.joinHost) {
-                MultiplayerConnectInfo connect;
-                connect.shouldConnect = true;
-                connect.directAddress = "127.0.0.1:" + std::to_string(settings.port);
-                connect.mapName = preset.mapName;
-                connect.serverName = preset.serverName;
-                setPendingMultiplayerConnect(connect);
-                GAME_STATE = GAME_PLAYING;
             }
 
             Terminal::instance().addLog(

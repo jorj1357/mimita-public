@@ -349,6 +349,42 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
     return true;
 }
 
+bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
+{
+    if (gListenServer.active || gServerProcessLaunched)
+        return false;
+
+    gServerLaunchSettings = settings;
+    if (!launchServerProcess(gServerLaunchSettings))
+    {
+        // Keep the GUI's existing in-process fallback available when the
+        // external child cannot be created.
+        if (!MimitaNet::startListenServer(
+                gListenServer, gServerLaunchSettings.port, "", "",
+                &gServerLaunchSettings))
+            return false;
+
+        gPendingConnect = {};
+        gPendingConnect.shouldConnect = true;
+        gPendingConnect.directAddress =
+            "127.0.0.1:" + std::to_string(gServerLaunchSettings.port);
+        gPendingConnect.mapName = gServerLaunchSettings.mapName;
+        gPendingConnect.serverName = gServerLaunchSettings.serverName;
+        GAME_STATE = GAME_PLAYING;
+        return true;
+    }
+
+    gServerLaunchSettings.externalProcessLaunched = true;
+    gPendingConnect = {};
+    gPendingConnect.shouldConnect = true;
+    gPendingConnect.directAddress =
+        "127.0.0.1:" + std::to_string(gServerLaunchSettings.port);
+    gPendingConnect.mapName = gServerLaunchSettings.mapName;
+    gPendingConnect.serverName = gServerLaunchSettings.serverName;
+    GAME_STATE = GAME_PLAYING;
+    return true;
+}
+
 static void stopServerProcess()
 {
     if (gServerProcessLaunched &&

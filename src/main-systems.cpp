@@ -10,6 +10,7 @@
 #include "main-systems.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -53,6 +54,7 @@
 #include "game/game-cli.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/transform-debug.h"
 #include "debug/transform-debug-commands.h"
 #include "debug/debug-diag.h"
@@ -114,6 +116,182 @@
 void registerCompetitiveCommands();
 void registerLeaderboardCommands();
 void registerCursorCommands();
+
+// The terminal-state convenience macros are included later with the command
+// declarations; these globals are needed by the early deterministic-command
+// registration helpers below.
+extern Player* gpPlayer;
+extern Camera* gpCamera;
+extern MimitaNet::MultiplayerContext* gpMpContext;
+
+namespace {
+
+bool parseAgentFloat(const std::vector<std::string>& args, size_t index, float& out)
+{
+    if (index >= args.size()) return false;
+    try {
+        size_t consumed = 0;
+        out = std::stof(args[index], &consumed);
+        return consumed == args[index].size() && std::isfinite(out);
+    } catch (...) {
+        return false;
+    }
+}
+
+void writeAgentCommandEvent(const std::string& eventName,
+                            const std::string& reason,
+                            nlohmann::json fields)
+{
+    const std::string requestId = Terminal::instance().currentRequestId();
+    fields["request_id"] = requestId;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        eventName, requestId.empty() ? "agent-command" : requestId,
+        reason, 0, fields,
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void registerAgentCommands()
+{
+    Terminal::instance().registerCommand({
+        "agent.move", "Hold camera-relative movement for fixed ticks",
+        "agent.move <forward> <side> <duration_ticks>",
+        [](const std::vector<std::string>& args) {
+            float forward = 0.0f, side = 0.0f, ticksFloat = 0.0f;
+            if (args.size() != 3 || !parseAgentFloat(args, 0, forward) ||
+                !parseAgentFloat(args, 1, side) || !parseAgentFloat(args, 2, ticksFloat)) {
+                Terminal::instance().addLog(
+                    "[AGENT] Usage: agent.move <forward> <side> <duration_ticks>");
+                return;
+            }
+            const int ticks = std::clamp((int)std::lround(ticksFloat), 1, 3600);
+            glm::vec3 forwardVec = gpCamera->front;
+            forwardVec.z = 0.0f;
+            if (glm::length(forwardVec) < 0.001f)
+                forwardVec = glm::vec3(0.0f, 1.0f, 0.0f);
+            else
+                forwardVec = glm::normalize(forwardVec);
+            const glm::vec3 rightVec = glm::normalize(
+                glm::cross(forwardVec, glm::vec3(0.0f, 0.0f, 1.0f)));
+            const glm::vec3 worldMove = forward * forwardVec + side * rightVec;
+            // The modern multiplayer owner consumes raw camera-relative axes;
+            // it applies camera orientation exactly like keyboard input.
+            scheduleTerminalMove(side, forward, ticks);
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.move accepted",
+                {{"command", "agent.move"}, {"forward", forward}, {"side", side},
+                 {"duration_ticks", ticks}, {"move_axes", {side, forward}},
+                 {"world_move", {worldMove.x, worldMove.y}},
+                 {"player", gpPlayer->username}});
+        }, "2026-10-13", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.aim", "Aim the normal camera and player input owner at a world point",
+        "agent.aim <x> <y> <z>",
+        [](const std::vector<std::string>& args) {
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            if (args.size() != 3 || !parseAgentFloat(args, 0, x) ||
+                !parseAgentFloat(args, 1, y) || !parseAgentFloat(args, 2, z)) {
+                Terminal::instance().addLog(
+                    "[AGENT] Usage: agent.aim <x> <y> <z>");
+                return;
+            }
+            glm::vec3 direction = glm::vec3(x, y, z) - gpCamera->pos;
+            if (glm::length(direction) < 0.001f) {
+                Terminal::instance().addLog("[AGENT] aim target is at camera position");
+                return;
+            }
+            direction = glm::normalize(direction);
+            gpCamera->yaw = glm::degrees(std::atan2(direction.y, direction.x));
+            gpCamera->pitch = glm::degrees(std::asin(std::clamp(direction.z, -1.0f, 1.0f)));
+            gpCamera->updateVectors();
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.aim accepted",
+                {{"command", "agent.aim"}, {"target", {x, y, z}},
+                 {"camera_position", {gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z}},
+                 {"camera_front", {gpCamera->front.x, gpCamera->front.y, gpCamera->front.z}},
+                 {"yaw", gpCamera->yaw}, {"pitch", gpCamera->pitch},
+                 {"player", gpPlayer->username}});
+        }, "2026-10-13", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.shoot", "Fire once through the normal weapon command owner",
+        "agent.shoot",
+        [](const std::vector<std::string>& args) {
+            if (!args.empty()) {
+                Terminal::instance().addLog("[AGENT] agent.shoot currently accepts no duration; use repeated commands");
+                return;
+            }
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.shoot accepted",
+                {{"command", "agent.shoot"}, {"player", gpPlayer->username},
+                 {"camera_front", {gpCamera->front.x, gpCamera->front.y, gpCamera->front.z}}});
+            Terminal::instance().execute("shoot");
+        }, "2026-10-13", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.action", "Issue one normal action edge",
+        "agent.action <jump|dash>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 1 || (args[0] != "jump" && args[0] != "dash")) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.action <jump|dash>");
+                return;
+            }
+            if (args[0] == "jump") gTerminalInputOverride.jumpPressed = true;
+            if (args[0] == "dash") gTerminalInputOverride.dashPressed = true;
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.action accepted",
+                {{"command", "agent.action"}, {"action", args[0]},
+                 {"player", gpPlayer->username}});
+        }, "2026-10-13", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.snapshot", "Record player, camera, avatar, and posed body transforms",
+        "agent.snapshot <label>",
+        [](const std::vector<std::string>& args) {
+            const std::string label = args.empty() ? "unnamed" : args[0];
+            nlohmann::json parts = nlohmann::json::array();
+            for (const auto& part : gpPlayer->physicalBody.parts) {
+                nlohmann::json item = {
+                    {"name", part.name}, {"node_index", part.nodeIndex},
+                    {"world_matrix", nlohmann::json::array()}};
+                for (int col = 0; col < 4; ++col)
+                    for (int row = 0; row < 4; ++row)
+                        item["world_matrix"].push_back(part.worldTransform[col][row]);
+                parts.push_back(std::move(item));
+            }
+            nlohmann::json fields = {
+                {"command", "agent.snapshot"}, {"label", label},
+                {"player", gpPlayer->username},
+                {"fixed_tick", gpMpContext ? gpMpContext->tick : 0},
+                {"player_position", {gpPlayer->pos.x, gpPlayer->pos.y, gpPlayer->pos.z}},
+                {"player_velocity", {gpPlayer->vel.x, gpPlayer->vel.y, gpPlayer->vel.z}},
+                {"camera_position", {gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z}},
+                {"camera_front", {gpCamera->front.x, gpCamera->front.y, gpCamera->front.z}},
+                {"camera_forward", {gpCamera->front.x, gpCamera->front.y, gpCamera->front.z}},
+                {"camera_yaw", gpCamera->yaw}, {"camera_pitch", gpCamera->pitch},
+                {"current_animation", gpPlayer->currentAnimName},
+                {"snapshot_schema_version", 2}, {"parts", std::move(parts)}};
+            fields["active_animation"] = gpPlayer->currentAnimName;
+            fields["physicalBody"] = {{"parts", fields["parts"]}};
+            if (gpPlayer->avatarInstance) {
+                fields["avatar_name"] = gpPlayer->avatarInstance->definition.name;
+                fields["model_path"] = gpPlayer->avatarInstance->definition.playerModel;
+                fields["body_transform_source"] = gpPlayer->avatarInstance->definition.bodyTransformSource;
+                fields["body_frame_policy"] = gpPlayer->avatarInstance->definition.bodyFramePolicy;
+            }
+            writeAgentCommandEvent("avatar.pose.sample", "agent.snapshot captured pose", fields);
+            writeAgentCommandEvent("avatar.command.assert", "agent.snapshot captured", fields);
+            Terminal::instance().addLog("[AGENT] snapshot captured: " + label);
+        }, "2026-10-13", CommandCategory::Debug
+    });
+}
+
+} // namespace
 
 #include "avatar/character-registry.h"
 #include "render/lighting-config.h"
@@ -441,6 +619,7 @@ void gameInitSubsystems(Engine& engine)
         binds[GLFW_KEY_J] = "replay_open_last_export";
     }
     registerAvatarCommands(player);
+    registerAgentCommands();
     registerVoidDeathCommands();
     registerHitmarkerAudioCommands();
     registerOutroCommands();

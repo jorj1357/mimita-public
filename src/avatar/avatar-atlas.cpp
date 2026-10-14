@@ -13,6 +13,8 @@
 #include "avatar/character-registry.h"
 #include "replay/replay-factory-worker.h"
 extern nlohmann::json gAvatarBodypartOverrides;
+extern bool gAvatarUseModelTransforms;
+extern bool gAvatarCanonicalizePlayerModel;
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -840,6 +842,10 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
     // identity now, but defer model/texture/cosmetic loading to the existing
     // async model-ready path so network/NPC creation cannot hitch.
     if (!player.modelLoaded && !reloadTextures) {
+        gAvatarUseModelTransforms = !inst->definition.playerModel.empty() &&
+            inst->definition.bodyTransformSource == "model";
+        gAvatarCanonicalizePlayerModel = gAvatarUseModelTransforms &&
+            inst->definition.bodyFramePolicy == "player_canonical";
         if (!inst->definition.bodypartOverrides.is_null())
             gAvatarBodypartOverrides = inst->definition.bodypartOverrides;
         else
@@ -858,10 +864,15 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
 
     // Load model from THIS avatar's definition, NOT from the singleton
     if (!inst->definition.playerModel.empty()) {
+        gAvatarUseModelTransforms = inst->definition.bodyTransformSource == "model";
+        gAvatarCanonicalizePlayerModel = gAvatarUseModelTransforms &&
+            inst->definition.bodyFramePolicy == "player_canonical";
         if (!inst->definition.bodypartOverrides.is_null())
             gAvatarBodypartOverrides = inst->definition.bodypartOverrides;
         player.loadModel(inst->definition.playerModel.c_str());
     } else {
+        gAvatarUseModelTransforms = false;
+        gAvatarCanonicalizePlayerModel = false;
         gAvatarBodypartOverrides = nullptr;
         player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
     }

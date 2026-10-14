@@ -169,6 +169,7 @@ struct PendingPlayerModel {
     int imageCount = 0;
     nlohmann::json bodypartOverrides;
     bool useModelTransforms = false;
+    bool canonicalizePlayerModel = false;
 };
 
 struct AxisLock {

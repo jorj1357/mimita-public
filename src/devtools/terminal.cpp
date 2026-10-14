@@ -752,8 +752,17 @@ void Terminal::pollCommandAliases()
 
 void Terminal::execute(const std::string& input)
 {
+    const std::string requestId = mCurrentRequestId;
+    executeWithRequestId(input, requestId);
+}
+
+void Terminal::executeWithRequestId(const std::string& input, const std::string& requestId)
+{
+    const std::string previousRequestId = mCurrentRequestId;
+    mCurrentRequestId = requestId;
     pollCommandAliases();
     executeInternal(input, 0);
+    mCurrentRequestId = previousRequestId;
 }
 
 void Terminal::executeInternal(const std::string& input, int aliasDepth) {
@@ -810,6 +819,24 @@ void Terminal::executeInternal(const std::string& input, int aliasDepth) {
                 while (iss >> arg)
                     args.push_back(arg);
 
+                const RuntimeTickSnapshot commandTicks = captureRuntimeTicks();
+                const bool recordCommandEvidence = !mCurrentRequestId.empty();
+                if (recordCommandEvidence)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::General,
+                        StructuredLevel::Important,
+                        "terminal.command.received",
+                        mCurrentRequestId,
+                        "terminal command entered command registry",
+                        static_cast<uint32_t>(commandTicks.clientTick),
+                        {{"request_id", mCurrentRequestId},
+                         {"command", cmdName},
+                         {"arguments", args},
+                         {"client_tick", commandTicks.clientTick}},
+                        __FILE__, __LINE__, __func__);
+                }
+
                 const bool isWeaponSlotCommand =
                     cmdName.rfind("equipslot", 0) == 0;
                 if (isWeaponSlotCommand) {
@@ -837,17 +864,76 @@ void Terminal::executeInternal(const std::string& input, int aliasDepth) {
 
                 auto it = mCommands.find(cmdName);
                 if (it == mCommands.end()) {
+                    if (recordCommandEvidence)
+                    {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::General,
+                            StructuredLevel::Important,
+                            "terminal.command.unknown",
+                            mCurrentRequestId,
+                            "terminal command was not registered",
+                            static_cast<uint32_t>(commandTicks.clientTick),
+                            {{"request_id", mCurrentRequestId},
+                             {"command", cmdName},
+                             {"build_command_line", "client"}},
+                            __FILE__, __LINE__, __func__);
+                    }
                     addLog("[ERROR] unknown command: " + cmdName);
                     addLog("type 'help' for a list of commands");
                     return;
                 }
 
+                if (recordCommandEvidence)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::General,
+                        StructuredLevel::Important,
+                        "terminal.command.resolved",
+                        mCurrentRequestId,
+                        "terminal command handler resolved",
+                        static_cast<uint32_t>(commandTicks.clientTick),
+                        {{"request_id", mCurrentRequestId},
+                         {"command", cmdName},
+                         {"arguments", args},
+                         {"client_tick", commandTicks.clientTick}},
+                        __FILE__, __LINE__, __func__);
+                }
+
                 try {
                     it->second.fn(args);
+                    if (recordCommandEvidence)
+                    {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::General,
+                            StructuredLevel::Important,
+                            "terminal.command.completed",
+                            mCurrentRequestId,
+                            "terminal command handler returned",
+                            static_cast<uint32_t>(captureRuntimeTicks().clientTick),
+                            {{"request_id", mCurrentRequestId},
+                             {"command", cmdName},
+                             {"success", true}},
+                            __FILE__, __LINE__, __func__);
+                    }
                 } catch (const std::exception& e) {
                     char buf[256];
                     snprintf(buf, sizeof(buf), "[ERROR] %s: %s", cmdName.c_str(), e.what());
                     addLog(buf);
+                    if (recordCommandEvidence)
+                    {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::General,
+                            StructuredLevel::Important,
+                            "terminal.command.completed",
+                            mCurrentRequestId,
+                            "terminal command handler threw",
+                            static_cast<uint32_t>(captureRuntimeTicks().clientTick),
+                            {{"request_id", mCurrentRequestId},
+                             {"command", cmdName},
+                             {"success", false},
+                             {"error", e.what()}},
+                            __FILE__, __LINE__, __func__);
+                    }
                 }
             }
         }

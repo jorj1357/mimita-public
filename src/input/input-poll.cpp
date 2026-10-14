@@ -18,6 +18,38 @@
 static bool gInputInitialized = false;
 InputFrame gTerminalInputOverride;
 
+namespace {
+int gScheduledMoveTicks = 0;
+float gScheduledMoveX = 0.0f;
+float gScheduledMoveY = 0.0f;
+}
+
+void scheduleTerminalMove(float moveX, float moveY, int durationTicks)
+{
+    gScheduledMoveX = moveX;
+    gScheduledMoveY = moveY;
+    gScheduledMoveTicks = durationTicks > 0 ? durationTicks : 0;
+}
+
+bool consumeScheduledTerminalMove(float& moveX, float& moveY)
+{
+    if (gScheduledMoveTicks <= 0)
+        return false;
+    moveX = gScheduledMoveX;
+    moveY = gScheduledMoveY;
+    --gScheduledMoveTicks;
+    return true;
+}
+
+bool peekScheduledTerminalMove(float& moveX, float& moveY)
+{
+    if (gScheduledMoveTicks <= 0)
+        return false;
+    moveX = gScheduledMoveX;
+    moveY = gScheduledMoveY;
+    return true;
+}
+
 void consumeTerminalInputOverride() {
     gTerminalInputOverride = InputFrame{};
 }
@@ -48,6 +80,11 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     glm::vec2 wish(0.0f);
 
     const auto& cmd = InputCommandSystem::instance();
+
+    float scheduledSide = 0.0f;
+    float scheduledForward = 0.0f;
+    const bool scheduledMove = consumeScheduledTerminalMove(
+        scheduledSide, scheduledForward);
     
     if (cmd.getState("walkforward").held) {
         wish.x += f.x;
@@ -69,6 +106,19 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     // 6 6 2026 also add this for normaliz 
     if (glm::length(wish) > 0.0001f)
         wish = glm::normalize(wish);
+
+    // agent.move is scheduled at the same input boundary as keyboard input.
+    // The previous code populated only gTerminalInputOverride, while the
+    // network client serializes InputState::wishMoveXY, so the command was
+    // acknowledged but sent a zero movement vector.
+    if (scheduledMove) {
+        wish = scheduledForward * glm::vec2(f.x, f.y) +
+               scheduledSide * glm::vec2(r.x, r.y);
+        if (glm::length(wish) > 0.0001f)
+            wish = glm::normalize(wish);
+        in.movementPressed = true;
+        in.movementJustPressed = true;
+    }
 
     in.wishMoveXY = wish;
 
@@ -146,6 +196,18 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     if (cmd.getState("walkback").held)    { frame.moveX -= f.x; frame.moveY -= f.y; }
     if (cmd.getState("walkright").held)   { frame.moveX += r.x; frame.moveY += r.y; }
     if (cmd.getState("walkleft").held)    { frame.moveX -= r.x; frame.moveY -= r.y; }
+
+    // The fixed-step simulation reads this frame before the multiplayer
+    // packet is assembled. Peek here so physics and animation see the
+    // command; engineTickNet consumes one scheduled tick afterward.
+    float scheduledSide = 0.0f;
+    float scheduledForward = 0.0f;
+    if (peekScheduledTerminalMove(scheduledSide, scheduledForward)) {
+        frame.moveX = scheduledForward * f.x + scheduledSide * r.x;
+        frame.moveY = scheduledForward * f.y + scheduledSide * r.y;
+        frame.movementPressed = true;
+        frame.movementJustPressed = true;
+    }
     // frame.movementPressed =
     //     cmd.getState("walkforward").pressed || cmd.getState("walkback").pressed ||
     //     cmd.getState("walkleft").pressed || cmd.getState("walkright").pressed;
@@ -174,6 +236,8 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     if (gTerminalInputOverride.moveX != 0.0f || gTerminalInputOverride.moveY != 0.0f) {
         frame.moveX = gTerminalInputOverride.moveX;
         frame.moveY = gTerminalInputOverride.moveY;
+        frame.movementPressed = true;
+        frame.movementJustPressed = true;
     }
 
     frame.lookYaw = (gTerminalInputOverride.lookYaw != 0.0f) ? gTerminalInputOverride.lookYaw : cam.yaw;

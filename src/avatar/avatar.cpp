@@ -24,6 +24,7 @@
 // Set by applyToPlayer before loadModel for per-avatar body part overrides
 extern nlohmann::json gAvatarBodypartOverrides;
 extern bool gAvatarUseModelTransforms;
+extern bool gAvatarCanonicalizePlayerModel;
 
 
 
@@ -105,6 +106,7 @@ void AvatarDefinition::clear() {
     activePreset.clear();
     playerModel.clear();
     bodyTransformSource = "model";
+    bodyFramePolicy = "authored";
     textureMode = "legacy_faces";
     atlasPath.clear();
     alphaMode = "blend";
@@ -386,6 +388,8 @@ void avatarToJson(const AvatarDefinition& avatar, json& j) {
     if (!avatar.playerModel.empty()) j["player_model"] = avatar.playerModel;
     if (!avatar.playerModel.empty() || avatar.bodyTransformSource != "model")
         j["body_transform_source"] = avatar.bodyTransformSource;
+    if (!avatar.playerModel.empty() && avatar.bodyFramePolicy != "authored")
+        j["body_frame_policy"] = avatar.bodyFramePolicy;
     if (!avatar.bodypartOverrides.is_null())
         j["bodyparts"] = avatar.bodypartOverrides;
 
@@ -478,6 +482,9 @@ bool AvatarSystem::parseAvatarJson(const std::string& jsonPath, const std::strin
 
         out.bodyTransformSource = root.value("body_transform_source", "model");
         if (out.bodyTransformSource != "model" && out.bodyTransformSource != "legacy_overrides")
+            return false;
+        out.bodyFramePolicy = root.value("body_frame_policy", "authored");
+        if (out.bodyFramePolicy != "authored" && out.bodyFramePolicy != "player_canonical")
             return false;
 
         if (root.contains("bodyparts") && root["bodyparts"].is_object())
@@ -661,6 +668,13 @@ bool AvatarSystem::loadAvatar(const std::string& avatarName) {
         if (mAvatar.bodyTransformSource != "model" && mAvatar.bodyTransformSource != "legacy_overrides") {
             Terminal::instance().addLog("[AVATAR] Invalid body_transform_source; expected model or legacy_overrides");
             mAvatar.bodyTransformSource = mAvatar.playerModel.empty() ? "legacy_overrides" : "model";
+        }
+        mAvatar.bodyFramePolicy = root.value("body_frame_policy", "authored");
+        if (mAvatar.bodyFramePolicy != "authored" &&
+            mAvatar.bodyFramePolicy != "player_canonical") {
+            Terminal::instance().addLog(
+                "[AVATAR] Invalid body_frame_policy; expected authored or player_canonical");
+            mAvatar.bodyFramePolicy = "authored";
         }
 
         // ── Per-avatar body part overrides (offset/rotation/scale) ──
@@ -1090,6 +1104,8 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     // Load player model — custom if specified, otherwise reset to default
     if (!mAvatar.playerModel.empty()) {
         gAvatarUseModelTransforms = mAvatar.bodyTransformSource == "model";
+        gAvatarCanonicalizePlayerModel =
+            gAvatarUseModelTransforms && mAvatar.bodyFramePolicy == "player_canonical";
         gAvatarBodypartOverrides = nullptr;
         printf("[AVATAR] Loading GLB: %s\n", mAvatar.playerModel.c_str());
         if (mAvatar.bodyTransformSource == "legacy_overrides" && !mAvatar.bodypartOverrides.is_null())
@@ -1118,9 +1134,30 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
                            ? "assets/entity/player/default/mimita-char-no-animations-v4.glb"
                            : mAvatar.playerModel},
                        {"transform_source", mAvatar.bodyTransformSource},
+                       {"body_frame_policy", mAvatar.bodyFramePolicy},
+                       {"canonicalize_player_model", gAvatarCanonicalizePlayerModel},
                        {"override_count", mAvatar.bodyTransformSource == "model" ? 0 :
                            (mAvatar.bodypartOverrides.is_object() ? mAvatar.bodypartOverrides.size() : 0)},
                        {"custom_model", !mAvatar.playerModel.empty()}},
+        __FILE__, __LINE__, __FUNCTION__);
+
+    // Keep the original event for existing journal consumers and also emit
+    // the explicit policy-resolution name used by the avatar diagnostics
+    // contract. Both records describe the same model-load decision.
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "avatar.model.transform-source", mAvatarName,
+        "avatar model transform policy resolved",
+        (uint32_t)player.movementSimulationTick,
+        nlohmann::json{{"avatar", mAvatarName},
+                       {"model_path", mAvatar.playerModel.empty()
+                           ? "assets/entity/player/default/mimita-char-no-animations-v4.glb"
+                           : mAvatar.playerModel},
+                       {"source", mAvatar.bodyTransformSource},
+                       {"body_frame_policy", mAvatar.bodyFramePolicy},
+                       {"legacy_overrides_applied", mAvatar.bodyTransformSource == "legacy_overrides" &&
+                           !mAvatar.bodypartOverrides.is_null() ? 1 : 0},
+                       {"canonicalize_player_model", gAvatarCanonicalizePlayerModel}},
         __FILE__, __LINE__, __FUNCTION__);
 
     // ── Legacy faces mode (existing working behavior) ─────────

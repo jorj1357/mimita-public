@@ -40,6 +40,7 @@
   "advanced_mode": true,
   "avatar_id": "local_cb3b330533cf64d6",
   "body_transform_source": "model",
+  "body_frame_policy": "player_canonical",
   "bodyparts": {
     "head": {
       "offset": [
