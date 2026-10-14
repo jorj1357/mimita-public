@@ -4,6 +4,7 @@
 
 #include "devtools/terminal.h"
 #include "entities/player.h"
+#include "entities/player-avatar-animations.h"
 #include "config/player-settings.h"
 #include "config.h"
 #include "tinygltf/tiny_gltf.h"
@@ -421,6 +422,36 @@ void registerAvatarCommands(Player& player) {
             printf("[CULL DEBUG] set to %d (1=colored culling test, run avatar_render_info for full report)\n",
                    (int)DebugConfig::DEBUG_CULL);
             Terminal::instance().addLog(std::string("[CULL DEBUG] ") + (DebugConfig::DEBUG_CULL ? "ON" : "OFF"));
+        },
+        std::string(),
+        CommandCategory::Debug
+    });
+
+    // ── anim.play: deterministic one-shot clip for the local player ──
+    t.registerCommand({
+        "anim.play",
+        "Play an avatar animation clip once (e.g. attack_1, hurt)",
+        "anim.play <clip>",
+        [&player](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ERROR] Usage: anim.play <clip>");
+                return;
+            }
+            player.playOneShot(args[0]);
+            Terminal::instance().addLog("[ANIM] one-shot: " + args[0]);
+        },
+        std::string(),
+        CommandCategory::Debug
+    });
+
+    // ── anim.reload: re-read per-avatar animation files from disk ────
+    t.registerCommand({
+        "anim.reload",
+        "Re-read per-avatar animations.json and shared clip library",
+        "anim.reload",
+        [](const std::vector<std::string>&) {
+            AvatarAnimationRegistry::instance().invalidate();
+            Terminal::instance().addLog("[ANIM] animation sets invalidated; will reload on next tick");
         },
         std::string(),
         CommandCategory::Debug

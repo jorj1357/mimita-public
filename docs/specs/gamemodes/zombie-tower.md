@@ -1,3 +1,40 @@
+2026 10 13 2102 
+crwaler needs its own aniatmions
+the wasp need its own aniations
+griever needs its own like method of moving bc its just  a ball with spike 
+working on it in  C:\mimita-v9\docs\specs\avatar\avatar-editor.md here 
+
+might not be the right doc buuttttt whatevr 
+
+here we need monster attacks 
+but what even?
+
+mosnters for v1: 
+
+boomer: spit acid, green spheres on fire, touch world = pool of poison, and touching = take damage, and a normal typical swing arm = do damage anim
+
+stabber: stabs arms forward, runs at players, touch = do damage, just stabs over adn over
+
+crawler: swing head around, touch crwaler = does damage, matbe poison crawlers too? with difrent skin and bigger/smaller idk
+
+mutant wasp: stings, so , just moevs toward u , todo need to fly !!!!  C:\mimita-v9\docs\architecture\player-npc-systems\npc-movement.md defined here 
+touch = do damage
+
+griever = rolls aronud, spike ball, touch = do damage
+
+brute = huuuuge damage and knockback, animations, do an animtaion for like ground smash , hits ppl into the air, huge dknockback and damage, touch does damage
+
+normal zombie  = slash forward , touch = damage
+
+chainsaw boss = slides around, super scary, much faster than the player, but low low friction, so its like hard to  idk avoid and can air strafe knida, needs special animtions to attack player, TODO WE NEED PROCEDURAL AND  JSON ANIMATION KEFRAMES SO ITS NOST JUST STUCK AT THE ANIMATION IT CAN MOEV A LITTLE
+
+charger = chargres forward, special anim, and punchihg
+
+so, old = touching = do damage, spknife for this
+anims = extend the arms that does damage already, dont have to do damage only when animation
+
+new = animations , wasp, griever, charger attack, chainsaw attacks arms, , acid spit makes a damage volume 
+
 ### zomb tower v1 spec  2026 10 08 1303 jorj 
 
 # MiMITA Zombie Tower — Full Specification v1

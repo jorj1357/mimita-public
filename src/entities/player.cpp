@@ -210,6 +210,11 @@ void Player::updateModelWorldTransforms()
         if (part.nodeIndex >= 0 && part.nodeIndex < (int)perfectPoseSkeleton.nodes.size())
             part.worldTransform = perfectPoseSkeleton.nodes[part.nodeIndex].worldTransform;
     }
+    for (PhysicalBodyPart& part : physicalBody.extraParts)
+    {
+        if (part.nodeIndex >= 0 && part.nodeIndex < (int)perfectPoseSkeleton.nodes.size())
+            part.worldTransform = perfectPoseSkeleton.nodes[part.nodeIndex].worldTransform;
+    }
 }
 
 Capsule Player::getCapsule() const

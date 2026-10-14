@@ -196,7 +196,9 @@ void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex)
 {
     MIMITA_GL_CLEAR_STAGE("uploadBodyPartMeshPart");
     if (!bodyPartVAOs) {
-        int count = 8;
+        // 6 canonical physical parts plus headroom for rig render-only parts
+        // (wings, stingers, tails, centipede segments).
+        int count = 64;
         bodyPartVAOs = new GLuint[count]();
         bodyPartVBOs = new GLuint[count]();
         bodyPartUploadGenerations = new uint64_t[count]();

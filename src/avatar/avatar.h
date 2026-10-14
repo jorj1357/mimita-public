@@ -14,6 +14,7 @@
 #include <glad/glad.h>
 #include <nlohmann/json.hpp>
 #include "avatar-autosave.h"
+#include "entities/avatar-rig.h"
 
 class Player;
 class ReplaySaveWorker;
@@ -139,6 +140,11 @@ struct AvatarDefinition {
     // Optional per-avatar body part transform overrides (offset/rotation/scale)
     // This is loaded from avatar.json's "bodyparts" key.
     nlohmann::json bodypartOverrides;
+
+    // Optional per-avatar rig: named parts/roles (wings, stinger, tail) and
+    // movement capability. Loaded from avatar.json's "rig" key. The animation
+    // set is resolved separately by AvatarAnimationRegistry.
+    AvatarRig rig;
 
     // ── UV atlas mode fields ────────────────────────────────────
     std::string textureMode = "legacy_faces";  // "legacy_faces" or "uv_atlas"

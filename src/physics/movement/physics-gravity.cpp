@@ -35,7 +35,20 @@ void doGravity(
 
     float beforeVelZ = p.vel.z;
 
-    p.vel.z = movementApplyGravityZ(p.vel.z, PHYS.gravity, MAX_FALL_SPEED, safeDt);
+    // Per-avatar movement capability (see docs/specs/animations/animations.md).
+    // First slice: a flyer/hover actor is weightless with a damped vertical
+    // command; gravity_scale 0 removes gravity. Default actors are unchanged.
+    if (p.rig.movement.hover) {
+        const float damp = std::min(1.0f, 6.0f * safeDt);
+        p.vel.z *= (1.0f - damp);
+        p.vel.z = std::clamp(p.vel.z,
+                             -p.rig.movement.altitudeChange,
+                              p.rig.movement.altitudeChange);
+        return;
+    }
+
+    const float gravity = PHYS.gravity * p.rig.movement.gravityScale;
+    p.vel.z = movementApplyGravityZ(p.vel.z, gravity, MAX_FALL_SPEED, safeDt);
 
     if (p.vel.z <= -MAX_FALL_SPEED && beforeVelZ + PHYS.gravity * safeDt < -MAX_FALL_SPEED) {
         GRAV_LOG(

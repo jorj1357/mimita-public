@@ -21,35 +21,23 @@ bool readAnimPart(const nlohmann::json& j, AnimKeyframePart& part)
         part.rotation = glm::vec3(j["rotation"][0], j["rotation"][1], j["rotation"][2]);
         read = true;
     }
+    if (j.contains("scale") && j["scale"].is_array() && j["scale"].size() >= 3) {
+        part.scale = glm::vec3(j["scale"][0], j["scale"][1], j["scale"][2]);
+        read = true;
+    }
     return read;
 }
 
-AnimClip parseClip(const nlohmann::json& j)
+static AnimInterp parseInterp(const std::string& s)
 {
-    AnimClip clip;
-    clip.durationTicks = j.value("durationTicks", 60);
-    clip.loop = j.value("loop", true);
-    clip.speedScaleFromVelocity = j.value("speedScaleFromVelocity", true);
-    clip.speedBased = j.value("speedBased", true);
-    clip.inputTriggered = j.value("inputTriggered", false);
-    clip.tickBasedReturnToIdle = j.value("tickBasedReturnToIdle", false);
-    if (!j.contains("keyframes") || !j["keyframes"].is_array())
-        return clip;
-
-    for (const auto& kf : j["keyframes"]) {
-        AnimKeyframe keyframe;
-        keyframe.tick = kf.value("tick", 0);
-        if (kf.contains("parts") && kf["parts"].is_object()) {
-            for (auto p = kf["parts"].begin(); p != kf["parts"].end(); ++p) {
-                AnimKeyframePart part;
-                readAnimPart(p.value(), part);
-                keyframe.parts[p.key()] = part;
-            }
-        }
-        clip.keyframes.push_back(keyframe);
-    }
-    return clip;
+    if (s == "smooth") return AnimInterp::Smooth;
+    if (s == "easein") return AnimInterp::EaseIn;
+    if (s == "easeout") return AnimInterp::EaseOut;
+    if (s == "easeinout") return AnimInterp::EaseInOut;
+    if (s == "step" || s == "cut") return AnimInterp::Step;
+    return AnimInterp::Linear;
 }
+
 
 WeaponPoseConfig parseWeaponPose(const nlohmann::json& j)
 {
@@ -71,7 +59,7 @@ void parseLayers(const nlohmann::json& root, PlayerProceduralConfig& loaded)
     if (layers.contains("animations") && layers["animations"].is_object()) {
         loaded.layers.animations.clear();
         for (auto it = layers["animations"].begin(); it != layers["animations"].end(); ++it)
-            loaded.layers.animations[it.key()] = parseClip(it.value());
+            loaded.layers.animations[it.key()] = parseAnimClipJson(it.value());
     }
     if (layers.contains("reloadOverlay") && layers["reloadOverlay"].is_object())
         readAnimPart(layers["reloadOverlay"], loaded.layers.reloadOverlay);
@@ -153,6 +141,38 @@ void parseWeaponPoses(const nlohmann::json& root, PlayerProceduralConfig& loaded
 }
 
 } // namespace
+
+AnimClip parseAnimClipJson(const nlohmann::json& j)
+{
+    AnimClip clip;
+    clip.durationTicks = j.value("durationTicks", 60);
+    clip.loop = j.value("loop", true);
+    clip.speedScaleFromVelocity = j.value("speedScaleFromVelocity", true);
+    clip.speedBased = j.value("speedBased", true);
+    clip.inputTriggered = j.value("inputTriggered", false);
+    clip.tickBasedReturnToIdle = j.value("tickBasedReturnToIdle", false);
+    clip.priority = j.value("priority", 0);
+    clip.blendInTicks = j.value("blendInTicks", 0);
+    clip.blendOutTicks = j.value("blendOutTicks", 0);
+    if (!j.contains("keyframes") || !j["keyframes"].is_array())
+        return clip;
+
+    for (const auto& kf : j["keyframes"]) {
+        AnimKeyframe keyframe;
+        keyframe.tick = kf.value("tick", 0);
+        if (kf.contains("interp") && kf["interp"].is_string())
+            keyframe.interp = parseInterp(kf["interp"].get<std::string>());
+        if (kf.contains("parts") && kf["parts"].is_object()) {
+            for (auto p = kf["parts"].begin(); p != kf["parts"].end(); ++p) {
+                AnimKeyframePart part;
+                readAnimPart(p.value(), part);
+                keyframe.parts[p.key()] = part;
+            }
+        }
+        clip.keyframes.push_back(keyframe);
+    }
+    return clip;
+}
 
 bool animationConfigChanged()
 {

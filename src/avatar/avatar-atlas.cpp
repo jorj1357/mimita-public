@@ -15,6 +15,17 @@
 extern nlohmann::json gAvatarBodypartOverrides;
 extern bool gAvatarUseModelTransforms;
 extern bool gAvatarCanonicalizePlayerModel;
+extern std::vector<std::pair<std::string, std::string>> gAvatarRigExtraNodes;
+
+static void fillAvatarRigExtraNodes(const AvatarRig& rig)
+{
+    gAvatarRigExtraNodes.clear();
+    if (!rig.present) return;
+    for (const auto& p : rig.parts) {
+        if (p.physical) continue;
+        gAvatarRigExtraNodes.emplace_back(p.name, p.node.empty() ? p.name : p.node);
+    }
+}
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -850,6 +861,7 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
             gAvatarBodypartOverrides = inst->definition.bodypartOverrides;
         else
             gAvatarBodypartOverrides = nullptr;
+        fillAvatarRigExtraNodes(inst->definition.rig);
         player.setCosmetics(inst->definition.cosmetics);
         const std::string modelPath = !inst->definition.playerModel.empty()
             ? inst->definition.playerModel
@@ -869,11 +881,13 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
             inst->definition.bodyFramePolicy == "player_canonical";
         if (!inst->definition.bodypartOverrides.is_null())
             gAvatarBodypartOverrides = inst->definition.bodypartOverrides;
+        fillAvatarRigExtraNodes(inst->definition.rig);
         player.loadModel(inst->definition.playerModel.c_str());
     } else {
         gAvatarUseModelTransforms = false;
         gAvatarCanonicalizePlayerModel = false;
         gAvatarBodypartOverrides = nullptr;
+        gAvatarRigExtraNodes.clear();
         player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
     }
 

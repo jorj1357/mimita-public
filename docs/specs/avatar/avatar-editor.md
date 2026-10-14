@@ -3,6 +3,43 @@
 i also saw offsets not so good like  when u do "xxx" it equips jason avatar which works but  just spawnign like nromal with mosnter avatar has brkoen offsets
 then switching to jason avatar then abck tomonster its fine "
 
+2026 10 13 2106 jorj 
+we need 
+griever new moevment 
+and
+crawler movemetn
+and
+wasp movement
+
+so we need like, flying
+
+we need to make it so like u dont even have 
+specific arms legs torso etc
+it needs to be editable in the engine like what part u want  to have what ebahvior
+and this prob connects to the general animtion system that i wan tto do 
+
+where u can export from blender  animations, convert to .json , store it in like  C:\mimita-v9\config\animations\readmewhat.md
+according tot his we shoudl do it like this 
+
+and it should be like
+per body part , and per tick
+and u can just define like 4 poses e.g.
+tick 0 = pose 1, tick 15 = pose 2, tick 30 = pose 3, pose 4 = tick 45, then tick 60 is just  back to tick 0 
+with interpolation smoothing modes per pose 
+
+so we can expand it to be like 
+a centipede with 100 limbs, u can author in theory each leg to do each animtion 
+
+but here , it can be like 
+wasp = the wings have specific animations, the stinger has animtions etc
+and u can make it have like speicifc fight animations
+as well as connect it to super smash bros melee mode instead of it being purely phsical it need to be more like fixed and stable but with for real authored animations 
+
+animation starting at tick 0 , running thru tick 17, imagine u do a new attack , instead of walk anim 1, u do attack anim 1
+that means, stop walk anim at tick 17, start attack anim at tick 0 , and play it thru until its done , then just go to idle anim/idle pose 
+
+need animations for  wings, monsters, atttacks, etc 
+
 # Avatar Editor and Player-Model Transform Normalization
 
 Date: 2026-10-11
@@ -56,6 +93,19 @@ ambiguous to repair safely.
   when its transform source is `model`.
 - Use a second player-only animation or weapon-aim implementation to compensate
   for an unnormalized asset.
+
+## Related animation and rig specification
+
+This document owns the rigid-part transform/pivot contract. The authored,
+data-driven animation of those parts — per-avatar `animations.json`, the shared
+clip library, the state machine, arbitrary named parts (wings, stingers, tails),
+movement capability (walk/fly/crawl), and live editing — is specified in
+`docs/specs/animations/animations.md`.
+
+An avatar's parts/roles are declared in `avatar.json` under `rig`, and the rig
+reuses the normalized bind frame and joint pivot defined here. The six canonical
+part names remain the humanoid default; additional parts are render-only unless
+declared `physical: true`.
 
 ## Historical context
 

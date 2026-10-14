@@ -75,6 +75,7 @@ systems first. Use this default order:
 | UI, HUD, menus, text | `docs/specs/gui/gui.md`, `docs/skills/documentation-checker-v1.md` |
 | Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md` |
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |
+| Animation, rigs, monster/NPC clips, arbitrary body parts, flying/crawling actors | `docs/specs/animations/animations.md`, `docs/specs/avatar/avatar-editor.md`, `docs/skills/spec-behavior-review-v1.md` |
 | Multiplayer or server behavior | `docs/specs/networking/networking.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Logging or diagnostics | `docs/specs/debug-logging/debug-logging.md`, `docs/skills/logging-checker-v1.md` |
 | Performance | `docs/specs/performance/performance.md`, `docs/skills/efficiency-checker-v1.md` |

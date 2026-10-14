@@ -100,7 +100,9 @@
         "angular_damping": 25.0,
         "max_angular_speed": 30.0,
         "head_weight": 1.0,
+        // "head_weight": 0.1,
         "torso_weight": 1.0,
+        // "torso_weight": 0.1,
         "limb_inheritance": 1.0,
         // "limb_inheritance": 0.0,
         // "torso_tether_stiffness": 200.0,
@@ -167,8 +169,8 @@
             // 1.0 = current hybrid arm behavior. 10.0 = movement affects the
             // arms 10x less and the arms are 90% closer to their default
             // aimbody/animation pose. Weapon attachment offsets stay weapon-owned.
-            // "arms_camera_follow": 1.0
-            "arms_camera_follow": 0.1
+            "arms_camera_follow": 1.0
+            // "arms_camera_follow": 0.1
             // "arms_camera_follow": 10.0
             // "arms_camera_follow": 100.0
             // "arms_camera_follow": 2.0

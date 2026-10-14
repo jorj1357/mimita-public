@@ -8,6 +8,17 @@ and go back adn froth
 it wont get out of that room 
 so need to fix gernalizstion behavor ok 
 
+2026 10 13 2116 jorj todo - 
+flying movemnt
+griever movemnet  C:\mimita-v9\docs\specs\gamemodes\zombie-tower.md here 
+like
+rolling ball with spikes 
+flying is for the wasp
+charger for like , a sprint and attack supr quick 
+works with animations as well, npcs need to ahve animaitons and movemnt 
+as well as hybrid movemnt but idk matbe later
+bc idk how to do the performance ughhh 
+
 9 8 2026 1019 est jorj todo - explain 
 
 npc movment not super good right now

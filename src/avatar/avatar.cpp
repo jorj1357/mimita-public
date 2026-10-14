@@ -25,6 +25,22 @@
 extern nlohmann::json gAvatarBodypartOverrides;
 extern bool gAvatarUseModelTransforms;
 extern bool gAvatarCanonicalizePlayerModel;
+extern std::vector<std::pair<std::string, std::string>> gAvatarRigExtraNodes;
+
+// Fill the loader's render-only rig part list from an avatar rig. Physical
+// parts are handled by the canonical six-part path; only render-only parts
+// (wings, stingers, tails) are added here.
+static void setAvatarRigForLoader(const AvatarRig& rig)
+{
+    gAvatarRigExtraNodes.clear();
+    if (!rig.present)
+        return;
+    for (const auto& p : rig.parts) {
+        if (p.physical)
+            continue;
+        gAvatarRigExtraNodes.emplace_back(p.name, p.node.empty() ? p.name : p.node);
+    }
+}
 
 
 
@@ -393,6 +409,26 @@ void avatarToJson(const AvatarDefinition& avatar, json& j) {
     if (!avatar.bodypartOverrides.is_null())
         j["bodyparts"] = avatar.bodypartOverrides;
 
+    if (avatar.rig.present) {
+        json r = json::object();
+        r["version"] = 1;
+        r["movement"] = {
+            {"mode", avatar.rig.movement.mode},
+            {"gravity_scale", avatar.rig.movement.gravityScale},
+            {"hover", avatar.rig.movement.hover},
+            {"hover_height", avatar.rig.movement.hoverHeight},
+            {"altitude_change", avatar.rig.movement.altitudeChange}
+        };
+        json parts = json::array();
+        for (const auto& p : avatar.rig.parts) {
+            json jp = {{"name", p.name}, {"node", p.node}, {"role", p.role}};
+            jp["physical"] = p.physical;
+            parts.push_back(std::move(jp));
+        }
+        r["parts"] = std::move(parts);
+        j["rig"] = std::move(r);
+    }
+
     if (avatar.textureMode == "uv_atlas") {
         j["texture_mode"] = "uv_atlas";
         if (!avatar.atlasPath.empty()) j["atlas"] = avatar.atlasPath;
@@ -489,6 +525,35 @@ bool AvatarSystem::parseAvatarJson(const std::string& jsonPath, const std::strin
 
         if (root.contains("bodyparts") && root["bodyparts"].is_object())
             out.bodypartOverrides = root["bodyparts"];
+
+        if (root.contains("rig") && root["rig"].is_object()) {
+            const auto& rj = root["rig"];
+            out.rig.present = true;
+            if (rj.contains("movement") && rj["movement"].is_object()) {
+                const auto& m = rj["movement"];
+                out.rig.movement.mode = m.value("mode", out.rig.movement.mode);
+                out.rig.movement.gravityScale = m.value("gravity_scale", out.rig.movement.gravityScale);
+                out.rig.movement.hover = m.value("hover", out.rig.movement.hover);
+                out.rig.movement.hoverHeight = m.value("hover_height", out.rig.movement.hoverHeight);
+                out.rig.movement.altitudeChange = m.value("altitude_change", out.rig.movement.altitudeChange);
+            }
+            if (rj.contains("parts") && rj["parts"].is_array()) {
+                for (const auto& p : rj["parts"]) {
+                    if (!p.is_object()) continue;
+                    AvatarRigPart part;
+                    part.name = p.value("name", "");
+                    if (part.name.empty()) continue;
+                    part.node = p.value("node", part.name);
+                    part.role = p.value("role", "");
+                    const bool canonical =
+                        part.name == "head" || part.name == "torso" ||
+                        part.name == "leftArm" || part.name == "rightArm" ||
+                        part.name == "leftLeg" || part.name == "rightLeg";
+                    part.physical = p.value("physical", canonical);
+                    out.rig.parts.push_back(std::move(part));
+                }
+            }
+        }
 
         out.textureMode = root.value("texture_mode", "legacy_faces");
         if (out.textureMode == "uv_atlas") {
@@ -904,7 +969,7 @@ void AvatarSystem::setBodypartOverride(Player& player, const std::string& part,
     local = glm::scale(local, scale);
 
     for (auto& node : player.perfectPoseSkeleton.nodes) {
-        if (node.name == part)
+        if (playerBodyPartBaseName(node.name) == part)
             node.localTransform = local;
     }
     player.updateModelWorldTransforms();
@@ -1107,6 +1172,7 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
         gAvatarCanonicalizePlayerModel =
             gAvatarUseModelTransforms && mAvatar.bodyFramePolicy == "player_canonical";
         gAvatarBodypartOverrides = nullptr;
+        setAvatarRigForLoader(mAvatar.rig);
         printf("[AVATAR] Loading GLB: %s\n", mAvatar.playerModel.c_str());
         if (mAvatar.bodyTransformSource == "legacy_overrides" && !mAvatar.bodypartOverrides.is_null())
             gAvatarBodypartOverrides = mAvatar.bodypartOverrides;
@@ -1120,6 +1186,7 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
     } else {
         gAvatarUseModelTransforms = false;
         gAvatarBodypartOverrides = nullptr;
+        gAvatarRigExtraNodes.clear();
         mAvatar.bodyTransformSource = "legacy_overrides";
         player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
     }

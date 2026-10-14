@@ -7,6 +7,7 @@
 #include "combat/weapon-registry.h"
 #include "config.h"
 #include "entities/aimbody-config.h"
+#include "entities/player-avatar-animations.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -16,6 +17,7 @@ using namespace MimitaNet;
 struct AnimOverlayResult {
     glm::vec3 translation{0.0f};
     glm::vec3 rotation{0.0f};
+    glm::vec3 scale{1.0f};
 };
 
 static glm::mat4 poseMatrix(const ProceduralPose& pose)
@@ -24,7 +26,24 @@ static glm::mat4 poseMatrix(const ProceduralPose& pose)
     m = glm::rotate(m, glm::radians(pose.rotationEuler.x), glm::vec3(1, 0, 0));
     m = glm::rotate(m, glm::radians(pose.rotationEuler.y), glm::vec3(0, 1, 0));
     m = glm::rotate(m, glm::radians(pose.rotationEuler.z), glm::vec3(0, 0, 1));
+    m = glm::scale(m, pose.scale);
     return m;
+}
+
+// Per-keyframe interpolation easing (see docs/specs/animations/animations.md).
+static float applyAnimEase(float t, AnimInterp interp)
+{
+    t = std::clamp(t, 0.0f, 1.0f);
+    switch (interp) {
+        case AnimInterp::Smooth:    return t * t * (3.0f - 2.0f * t);
+        case AnimInterp::EaseIn:    return t * t;
+        case AnimInterp::EaseOut:   return 1.0f - (1.0f - t) * (1.0f - t);
+        case AnimInterp::EaseInOut: return t < 0.5f ? 2.0f * t * t
+                                                    : 1.0f - 2.0f * (1.0f - t) * (1.0f - t);
+        case AnimInterp::Step:      return 0.0f;
+        case AnimInterp::Linear:
+        default:                    return t;
+    }
 }
 
 static glm::vec3 springVec3(SpringState& spring, const glm::vec3& target, float stiffness, float damping, float dt)
@@ -72,7 +91,7 @@ static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
         range = (float)(next->tick - prev->tick);
         t = (range > 0.001f) ? (loopedTick - (float)prev->tick) / range : 0.0f;
     }
-    t = std::clamp(t, 0.0f, 1.0f);
+    t = applyAnimEase(t, prev->interp);
 
     std::vector<std::string> allParts;
     for (const auto& p : prev->parts) allParts.push_back(p.first);
@@ -93,13 +112,25 @@ static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
         glm::vec3 nextTrans = (nextIt != next->parts.end()) ? nextIt->second.translation : glm::vec3(0.0f);
         glm::vec3 prevRot = (prevIt != prev->parts.end()) ? prevIt->second.rotation : glm::vec3(0.0f);
         glm::vec3 nextRot = (nextIt != next->parts.end()) ? nextIt->second.rotation : glm::vec3(0.0f);
+        glm::vec3 prevScale = (prevIt != prev->parts.end()) ? prevIt->second.scale : glm::vec3(1.0f);
+        glm::vec3 nextScale = (nextIt != next->parts.end()) ? nextIt->second.scale : glm::vec3(1.0f);
 
         overlay.translation = glm::mix(prevTrans, nextTrans, t);
         overlay.rotation = glm::mix(prevRot, nextRot, t);
+        overlay.scale = glm::mix(prevScale, nextScale, t);
         result[partName] = overlay;
     }
 
     return result;
+}
+
+void Player::playOneShot(const std::string& clip, bool loop)
+{
+    if (clip.empty())
+        return;
+    lockedClip = clip;
+    lockedClipTime = 0.0f;
+    lockedClipLoop = loop;
 }
 
 static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
@@ -186,40 +217,82 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     previousProceduralVelocity = vel;
 
     // === ANIMATION STATE MACHINE ===
-    auto walkClipIt = gPlayerProcedural.layers.animations.find("walk");
-    bool walkInputTriggered = (walkClipIt != gPlayerProcedural.layers.animations.end())
-        ? walkClipIt->second.inputTriggered : false;
-    bool nowMoving = walkInputTriggered ? movementPressed : (move01 >= 0.01f);
-    bool wasMoving = previousMove01 >= 0.01f;
+    // Resolve the per-avatar rig + animation set (falls back to the global
+    // profile in gPlayerProcedural). See docs/specs/animations/animations.md.
+    if (avatarName() != mResolvedAnimAvatar) {
+        mResolvedAnimAvatar = avatarName();
+        animationSet = nullptr;
+        rig = AvatarRig{};
+        if (!mResolvedAnimAvatar.empty()) {
+            animationSet = AvatarAnimationRegistry::instance()
+                               .getAnimationSet(mResolvedAnimAvatar);
+            const AvatarRig* r = AvatarAnimationRegistry::instance()
+                                     .getRig(mResolvedAnimAvatar);
+            if (r) rig = *r;
+        }
+    }
+
+    auto clipFromAvatar = [&](const std::string& name) -> bool {
+        return animationSet && animationSet->valid &&
+               animationSet->clips.find(name) != animationSet->clips.end();
+    };
+    auto findClip = [&](const std::string& name) -> const AnimClip* {
+        if (name.empty()) return nullptr;
+        if (clipFromAvatar(name))
+            return &animationSet->clips.find(name)->second;
+        auto it = gPlayerProcedural.layers.animations.find(name);
+        return it != gPlayerProcedural.layers.animations.end() ? &it->second : nullptr;
+    };
+
+    const AvatarStateMap* sm = (animationSet && animationSet->valid)
+        ? &animationSet->states : nullptr;
+    auto locomotionClip = [&]() -> std::string {
+        if (!sm) return "walk";
+        const std::string& mode = rig.movement.mode;
+        if (mode == "fly") return sm->fly;
+        if (mode == "crawl") return sm->crawl;
+        if (mode == "swim") return sm->swim;
+        return sm->walk;
+    };
+    auto defaultClip = [&]() -> std::string { return sm ? sm->def : "idle"; };
+
+    // One-shot lock (attack/hurt/death) owns the pose while it plays.
+    if (!lockedClip.empty()) {
+        const AnimClip* lc = findClip(lockedClip);
+        if (!lc) {
+            lockedClip.clear();
+        } else {
+            lockedClipTime += dt;
+            if (!lockedClipLoop &&
+                lockedClipTime >= (float)lc->durationTicks / 60.0f) {
+                lockedClip.clear();
+            }
+        }
+    }
+
+    const AnimClip* locoClip = findClip(locomotionClip());
+    bool locoInputTriggered = locoClip ? locoClip->inputTriggered : false;
+    bool nowMoving = locoInputTriggered ? movementPressed : (move01 >= 0.01f);
     previousMove01 = move01;
 
     std::string activeAnim = currentAnimName;
-    if (nowMoving)
-    {
-        activeAnim = "walk";
-    }
-    else if (currentAnimName == "walk")
-    {
-        if (walkClipIt != gPlayerProcedural.layers.animations.end()
-            && walkClipIt->second.tickBasedReturnToIdle
-            && gPlayerProcedural.layers.animations.find("return_to_idle")
-               != gPlayerProcedural.layers.animations.end())
+    if (!lockedClip.empty()) {
+        activeAnim = lockedClip;
+    } else if (nowMoving) {
+        activeAnim = locomotionClip();
+    } else if (currentAnimName != defaultClip()) {
+        const AnimClip* cur = findClip(currentAnimName);
+        const bool returnToIdle =
+            cur && cur->tickBasedReturnToIdle && findClip("return_to_idle") &&
+            currentAnimName != "return_to_idle";
+        if (returnToIdle) {
             activeAnim = "return_to_idle";
-        else
-            activeAnim = "idle";
-    }
-    else if (currentAnimName == "return_to_idle")
-    {
-        auto retClipIt = gPlayerProcedural.layers.animations.find("return_to_idle");
-        if (retClipIt != gPlayerProcedural.layers.animations.end())
-        {
-            float clipDuration = (float)retClipIt->second.durationTicks / 60.0f;
-            if (animStateTime >= clipDuration)
-                activeAnim = "idle";
-        }
-        else
-        {
-            activeAnim = "idle";
+        } else if (currentAnimName == "return_to_idle") {
+            const AnimClip* rc = findClip("return_to_idle");
+            activeAnim = (rc && animStateTime < (float)rc->durationTicks / 60.0f)
+                ? "return_to_idle" : defaultClip();
+        } else {
+            activeAnim = defaultClip();
         }
     }
 
@@ -228,10 +301,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         uint64_t nowAnim = nowMs();
         if (nowAnim - lastAnimStateLogMs >= 1000)
         {
-            DBG(Animation, "player=%s movementPressed=%d walkInputTriggered=%d "
+            DBG(Animation, "player=%s movementPressed=%d locoInputTriggered=%d "
                 "speed=%.2f move01=%.3f nowMoving=%d currentAnim=%s activeAnim=%s "
                 "animStateTimeBefore=%.3f",
-                username.c_str(), (int)movementPressed, (int)walkInputTriggered,
+                username.c_str(), (int)movementPressed, (int)locoInputTriggered,
                 speed, move01, (int)nowMoving,
                 currentAnimName.c_str(), activeAnim.c_str(), animStateTime);
             lastAnimStateLogMs = nowAnim;
@@ -240,24 +313,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     if (activeAnim != currentAnimName) {
         currentAnimName = activeAnim;
-        if (activeAnim == "walk")
-            animStateTime = 1.0f / 60.0f;
-        else
-            animStateTime = 0.0f;
+        animStateTime = 0.0f;
     }
 
     animStateTime += dt;
-
-    {
-        static uint64_t lastAnimResultLogMs = 0;
-        uint64_t nowAnim2 = nowMs();
-        if (nowAnim2 - lastAnimResultLogMs >= 1000)
-        {
-            printf("[ANIM STATE RESULT] player=%s currentAnim=%s animStateTime=%.3f\n",
-                   username.c_str(), currentAnimName.c_str(), animStateTime);
-            lastAnimResultLogMs = nowAnim2;
-        }
-    }
 
     // === DASH POSE TIMER ===
     if (dash.didDash && dashPoseTimer < 0.0f)
@@ -326,17 +385,19 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     // === COMPUTE JSON KEYFRAME ANIMATION ===
-    auto animIt = gPlayerProcedural.layers.animations.find(activeAnim);
+    const AnimClip* activeClip = findClip(activeAnim);
     std::unordered_map<std::string, AnimOverlayResult> animOverlay;
-    if (animIt != gPlayerProcedural.layers.animations.end()) {
+    if (activeClip) {
         float animSpeedScale = 1.0f;
-        if (animIt->second.speedBased && animIt->second.speedScaleFromVelocity)
+        if (activeClip->speedBased && activeClip->speedScaleFromVelocity)
             animSpeedScale = 0.3f + move01 * 1.2f;
 
-        float playbackMultiplier = std::max(0.01f,
-            gPlayerProcedural.walkFrequency *
-            gPlayerProcedural.walkFrequencyMultiplier);
-        animSpeedScale *= playbackMultiplier;
+        // The global profile scales playback by the walk frequency knobs;
+        // per-avatar clips play at their authored rate.
+        if (!clipFromAvatar(activeAnim))
+            animSpeedScale *= std::max(0.01f,
+                gPlayerProcedural.walkFrequency *
+                gPlayerProcedural.walkFrequencyMultiplier);
 
         if (DebugConfig::DEBUG_ANIMATION) {
             Debug::log(Debug::Category::Animation,
@@ -345,7 +406,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 animSpeedScale, move01, (int)nowMoving);
         }
 
-        animOverlay = interpolateAnimClip(animIt->second, animStateTime, animSpeedScale);
+        animOverlay = interpolateAnimClip(*activeClip, animStateTime, animSpeedScale);
     }
 
     // Weapon state
@@ -430,6 +491,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             if (ovIt != animOverlay.end()) {
                 target.translation = ovIt->second.translation;
                 target.rotationEuler = ovIt->second.rotation;
+                target.scale = ovIt->second.scale;
             }
         }
 
@@ -529,6 +591,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             springVec3(part.translationSpring, target.translation, 90.0f, 16.0f, dt);
         part.pose.rotationEuler =
             springVec3(part.rotationSpring, target.rotationEuler, 80.0f, 14.0f, dt);
+        part.pose.scale = target.scale;
 
         // Apply to skeleton for rendering
         glm::mat4 restM = perfectPoseSkeleton.restLocalTransforms[part.nodeIndex];
@@ -569,6 +632,32 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             legacyPart.rotationSpring = part.rotationSpring;
             break;
         }
+    }
+
+    // Render-only rig parts (wings/stinger/tail): animated by the same clip
+    // overlay, drawn by the renderer, never simulated.
+    for (PhysicalBodyPart& part : physicalBody.extraParts)
+    {
+        if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size())
+            continue;
+
+        ProceduralPose target;
+        auto ovIt = animOverlay.find(part.name);
+        if (ovIt != animOverlay.end()) {
+            target.translation = ovIt->second.translation;
+            target.rotationEuler = ovIt->second.rotation;
+            target.scale = ovIt->second.scale;
+        }
+        part.perfectPose = target;
+        part.pose.translation =
+            springVec3(part.translationSpring, target.translation, 90.0f, 16.0f, dt);
+        part.pose.rotationEuler =
+            springVec3(part.rotationSpring, target.rotationEuler, 80.0f, 14.0f, dt);
+        part.pose.scale = target.scale;
+
+        const glm::mat4 restM = perfectPoseSkeleton.restLocalTransforms[part.nodeIndex];
+        perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =
+            restM * poseMatrix(part.pose);
     }
 
     if (DebugConfig::DEBUG_ANIMATION) {
@@ -697,7 +786,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             float tickTime = animStateTime * 60.0f;
             printf("[ANIM] state=%s tick=%.2f move01=%.2f keyframes=%zu\n",
                    activeAnim.c_str(), tickTime, move01,
-                   animIt != gPlayerProcedural.layers.animations.end() ? animIt->second.keyframes.size() : 0);
+                   activeClip ? activeClip->keyframes.size() : 0);
             for (const PhysicalBodyPart& part : physicalBody.parts) {
                 printf("[ANIM]   perfectPose %s trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
                        part.name.c_str(),

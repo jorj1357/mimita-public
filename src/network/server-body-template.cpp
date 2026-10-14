@@ -30,11 +30,26 @@ namespace {
 constexpr const char* kDefaultBodyPath =
     "assets/entity/player/default/mimita-char-no-animations-v4.glb";
 
+// Blender appends a ".NNN" duplicate suffix to datablock names (for example
+// "torso.184"). Body parts are identified by their base name, so strip a
+// trailing ".<digits>" before matching.
+std::string bodyPartBaseName(const std::string& name)
+{
+    const size_t dot = name.rfind('.');
+    if (dot == std::string::npos || dot + 1 >= name.size())
+        return name;
+    for (size_t i = dot + 1; i < name.size(); ++i)
+        if (name[i] < '0' || name[i] > '9')
+            return name;
+    return name.substr(0, dot);
+}
+
 bool isBodyPartName(const std::string& name)
 {
-    return name == "head" || name == "torso" ||
-           name == "leftArm" || name == "rightArm" ||
-           name == "leftLeg" || name == "rightLeg";
+    const std::string base = bodyPartBaseName(name);
+    return base == "head" || base == "torso" ||
+           base == "leftArm" || base == "rightArm" ||
+           base == "leftLeg" || base == "rightLeg";
 }
 
 glm::mat4 nodeMatrix(const tinygltf::Node& node)
@@ -221,7 +236,7 @@ bool loadServerBodyTemplateFromGlb(const char* path,
 
     for (size_t i = 0; i < n; ++i)
     {
-        const std::string& name = model.nodes[i].name;
+        const std::string name = bodyPartBaseName(model.nodes[i].name);
         if (!isBodyPartName(name))
             continue;
         glm::vec3 mn, mx;

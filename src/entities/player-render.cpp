@@ -350,6 +350,38 @@ void Player::renderCurrentPose(unsigned int shader,
             }
         }
 
+        // Render-only rig parts (wings/stinger/tail). Drawn after physical
+        // parts with their own node world transform; never simulated.
+        for (size_t i = 0; i < physicalBody.extraParts.size(); ++i)
+        {
+            const PhysicalBodyPart& part = physicalBody.extraParts[i];
+            const Mesh& mesh = physicalBody.extraPartMeshes[i];
+            if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
+                continue;
+
+            ++drawableParts;
+            drawableBatches += mesh.batches.size();
+            drawableVertices += mesh.verts.size();
+
+            uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i));
+
+            const glm::mat4& model = part.worldTransform;
+            glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
+            glUniform4f(uColorLoc, outlinePass ? outlineColor.r : 1.0f,
+                        outlinePass ? outlineColor.g : 1.0f,
+                        outlinePass ? outlineColor.b : 1.0f,
+                        outlinePass ? outlineColor.a : deathAlpha);
+
+            for (const Mesh::Batch& batch : mesh.batches)
+            {
+                MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
+                if (outlinePass) { glEnable(GL_CULL_FACE); glCullFace(GL_FRONT); }
+                else glDisable(GL_CULL_FACE);
+                MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+                diagRenderCountPlayerDraw();
+            }
+        }
+
         // Restore culling state
         if (cullWas) {
             glEnable(GL_CULL_FACE);

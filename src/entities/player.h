@@ -21,6 +21,7 @@
 #include "map/map_common.h"
 #include "physics/physics-types.h"
 #include "gui/hud/chat-bubble.h"
+#include "entities/avatar-rig.h"
 
 #include "avatar/avatar.h"
 #include "combat/weapon-collision-config.h"
@@ -132,6 +133,10 @@ struct PerfectPoseSkeleton {
     std::vector<glm::mat4> restLocalTransforms;
 };
 
+// Strip a Blender ".NNN" duplicate suffix (for example "torso.184",
+// "leftLeg.001", "plrOrigin.091") so body parts are identified by base name.
+std::string playerBodyPartBaseName(const std::string& name);
+
 struct PhysicalBodyPart {
     std::string name;
     int nodeIndex = -1;
@@ -147,6 +152,10 @@ struct PhysicalBodyPart {
 struct PhysicalBody {
     std::vector<PhysicalBodyPart> parts;
     std::vector<Mesh> partMeshes;
+    // Render-only animated parts declared by the avatar rig (wings, stingers,
+    // tails). Drawn and animated but never simulated or hit-tested.
+    std::vector<PhysicalBodyPart> extraParts;
+    std::vector<Mesh> extraPartMeshes;
 };
 
 struct PendingPlayerModel {
@@ -170,6 +179,7 @@ struct PendingPlayerModel {
     nlohmann::json bodypartOverrides;
     bool useModelTransforms = false;
     bool canonicalizePlayerModel = false;
+    std::vector<std::pair<std::string, std::string>> rigExtraNodes;
 };
 
 struct AxisLock {
@@ -178,13 +188,20 @@ struct AxisLock {
     bool z = true;
 };
 
+// Per-keyframe interpolation to the next keyframe.
+enum class AnimInterp : uint8_t {
+    Linear = 0, Smooth, EaseIn, EaseOut, EaseInOut, Step
+};
+
 struct AnimKeyframePart {
     glm::vec3 translation{0.0f};
-    glm::vec3 rotation{0.0f};
+    glm::vec3 rotation{0.0f};        // Euler degrees about the part pivot
+    glm::vec3 scale{1.0f};           // multiplier on the part's mesh
 };
 
 struct AnimKeyframe {
     int tick = 0;
+    AnimInterp interp = AnimInterp::Linear;
     std::unordered_map<std::string, AnimKeyframePart> parts;
 };
 
@@ -195,7 +212,28 @@ struct AnimClip {
     bool speedBased = true;         // false = fixed tick rate, not velocity-scaled
     bool inputTriggered = false;    // true = state change on input, not velocity
     bool tickBasedReturnToIdle = false; // true = play return_to_idle clip before idle
+    int priority = 0;               // higher interrupts lower
+    int blendInTicks = 0;           // blend from previous pose over N ticks
+    int blendOutTicks = 0;          // reserved: blend toward next pose over N ticks
     std::vector<AnimKeyframe> keyframes;
+};
+
+// ── Per-avatar animation set (animations.json + includes) ──────────
+struct AvatarStateMap {
+    std::string def = "idle";
+    std::string walk = "walk";
+    std::string fly = "fly";
+    std::string crawl = "crawl";
+    std::string swim = "swim";
+    std::string attack;   // empty = off
+    std::string hurt;     // empty = off
+    std::string death;    // empty = off
+};
+
+struct AvatarAnimationSet {
+    bool valid = false;
+    std::unordered_map<std::string, AnimClip> clips;
+    AvatarStateMap states;
 };
 
 struct WeaponPoseConfig {
@@ -552,6 +590,22 @@ public:
     float previousMove01 = 0.0f;
     float animStateTime = 0.0f;
     std::string currentAnimName = "idle";
+    // Per-avatar animation set resolved from the avatar name (may be null ->
+    // global config fallback). Owned by AvatarAnimationRegistry.
+    const AvatarAnimationSet* animationSet = nullptr;
+    // Per-avatar rig + movement capability (resolved with the animation set).
+    AvatarRig rig;
+    // One-shot state machine: while non-empty the named clip owns the pose.
+    std::string lockedClip;
+    float lockedClipTime = 0.0f;
+    bool lockedClipLoop = false;
+    float hurtTimer = 0.0f;
+    std::string mResolvedAnimAvatar;  // avatar name whose set is currently bound
+
+    // Trigger a one-shot clip (attack/hurt/...) that owns the pose until done.
+    // loop=true keeps it until cleared. Missing clips are ignored.
+    void playOneShot(const std::string& clip, bool loop = false);
+    void clearOneShot() { lockedClip.clear(); lockedClipTime = 0.0f; }
 
     // -------- Construction --------
     Player();

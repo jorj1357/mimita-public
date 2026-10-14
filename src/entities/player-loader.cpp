@@ -31,6 +31,9 @@
 nlohmann::json gAvatarBodypartOverrides;
 bool gAvatarUseModelTransforms = false;
 bool gAvatarCanonicalizePlayerModel = false;
+// Render-only animated parts declared by the avatar rig, as (partName, nodeName).
+// Set by AvatarSystem before loadModel; consumed to build extra render meshes.
+std::vector<std::pair<std::string, std::string>> gAvatarRigExtraNodes;
 
 glm::mat4 nodeMatrix(const tinygltf::Node& node)
 {
@@ -127,11 +130,27 @@ static GLuint getOpaqueWhiteTexture() {
     return tex;
 }
 
+// Blender appends a ".NNN" duplicate suffix to datablock names (for example
+// "torso.184", "leftLeg.001", "plrOrigin.091"). The engine identifies body
+// parts by their base name, so strip a trailing ".<digits>" before matching,
+// storing, or looking up a part.
+std::string playerBodyPartBaseName(const std::string& name)
+{
+    const size_t dot = name.rfind('.');
+    if (dot == std::string::npos || dot + 1 >= name.size())
+        return name;
+    for (size_t i = dot + 1; i < name.size(); ++i)
+        if (name[i] < '0' || name[i] > '9')
+            return name;
+    return name.substr(0, dot);
+}
+
 bool isPlayerBodyPart(const std::string& name)
 {
-    return name == "head" || name == "torso" ||
-           name == "leftArm" || name == "rightArm" ||
-            name == "leftLeg" || name == "rightLeg";
+    const std::string base = playerBodyPartBaseName(name);
+    return base == "head" || base == "torso" ||
+           base == "leftArm" || base == "rightArm" ||
+           base == "leftLeg" || base == "rightLeg";
 }
 
 static nlohmann::json vec3Json(const glm::vec3& v)
@@ -219,10 +238,8 @@ static bool normalizePlayerModelTransforms(tinygltf::Model& model,
     int rootIndex = -1;
     std::unordered_map<std::string, int> partIndices;
     for (int i = 0; i < (int)model.nodes.size(); ++i) {
-        const std::string& name = model.nodes[i].name;
-        if (name == "plrOrigin" ||
-            (name.rfind("plrOrigin.", 0) == 0 && name.size() > 10 &&
-             name.find_first_not_of("0123456789", 10) == std::string::npos))
+        const std::string name = playerBodyPartBaseName(model.nodes[i].name);
+        if (name == "plrOrigin")
             rootIndex = rootIndex < 0 ? i : -2;
         if (isPlayerBodyPart(name))
             partIndices[name] = i;
@@ -406,6 +423,8 @@ struct CachedPlayerModel
     std::vector<Collider> bodyColliders;
     std::vector<BodyPart> bodyParts;
     std::vector<Mesh> bodyPartMeshes;
+    std::vector<PhysicalBodyPart> extraParts;
+    std::vector<Mesh> extraPartMeshes;
     PerfectPoseSkeleton perfectPose;
     bool valid = false;
 };
@@ -418,7 +437,12 @@ std::unordered_map<std::string, CachedPlayerModel>& playerModelCache()
 
 static std::string playerModelCacheKey(const std::string& resolvedPath)
 {
-    return resolvedPath + (gAvatarCanonicalizePlayerModel ? "|player_canonical" : "|authored");
+    std::string key = resolvedPath +
+        (gAvatarCanonicalizePlayerModel ? "|player_canonical" : "|authored");
+    // Extra render parts depend on the avatar rig, so include it in the key.
+    for (const auto& [partName, nodeName] : gAvatarRigExtraNodes)
+        key += "|" + partName + ":" + nodeName;
+    return key;
 }
 
 void clearPlayerModelCache()
@@ -449,7 +473,50 @@ void copyCachedModelIntoPlayer(const CachedPlayerModel& cached, Player& player)
         player.physicalBody.parts.push_back(physicalPart);
     }
     player.physicalBody.partMeshes = cached.bodyPartMeshes;
+    player.physicalBody.extraParts = cached.extraParts;
+    player.physicalBody.extraPartMeshes = cached.extraPartMeshes;
     player.modelLoaded = !player.renderMesh.verts.empty();
+}
+
+void appendNodeRenderMesh(const tinygltf::Model& model, int nodeIndex, Mesh& out);
+
+// Build render-only parts (wings/stinger/tail) declared by the avatar rig.
+// Each extra node is looked up by base name, given a render mesh and a
+// nodeIndex, and animated by the same clip runtime as physical parts.
+static void buildExtraRenderPartsFromModel(
+        const tinygltf::Model& model,
+        const std::vector<std::pair<std::string, std::string>>& extraNodes,
+        std::vector<PhysicalBodyPart>& outParts,
+        std::vector<Mesh>& outMeshes,
+        const std::vector<TransformNode>& nodes)
+{
+    outParts.clear();
+    outMeshes.clear();
+    if (extraNodes.empty())
+        return;
+
+    for (const auto& [partName, nodeName] : extraNodes) {
+        const std::string base = playerBodyPartBaseName(nodeName);
+        int idx = -1;
+        for (int i = 0; i < (int)nodes.size(); ++i) {
+            if (playerBodyPartBaseName(nodes[i].name) == base) { idx = i; break; }
+        }
+        if (idx < 0) {
+            Debug::warn(Debug::Category::GLB,
+                "[PLAYER GLB] rig part '%s' node '%s' not found\n",
+                partName.c_str(), nodeName.c_str());
+            continue;
+        }
+        Mesh mesh;
+        appendNodeRenderMesh(model, idx, mesh);
+        if (mesh.verts.empty())
+            continue;
+        PhysicalBodyPart part;
+        part.name = partName;
+        part.nodeIndex = idx;
+        outParts.push_back(std::move(part));
+        outMeshes.push_back(std::move(mesh));
+    }
 }
 
 // Loads the legacy config/bodyparts.json and avatar overrides for each
@@ -478,7 +545,7 @@ static void applyBodypartConfigOverrides(
 
     int overrides = 0;
     for (int i = 0; i < (int)nodes.size(); ++i) {
-        const std::string& name = nodes[i].name;
+        const std::string name = playerBodyPartBaseName(nodes[i].name);
         if (!j.contains(name)) continue;
         if (!isPlayerBodyPart(name)) continue;
 
@@ -522,7 +589,7 @@ static void applyBodypartConfigOverrides(
     if (!gAvatarBodypartOverrides.is_null() && gAvatarBodypartOverrides.is_object()) {
         int avOverrides = 0;
         for (int i = 0; i < (int)nodes.size(); ++i) {
-            const std::string& name = nodes[i].name;
+            const std::string name = playerBodyPartBaseName(nodes[i].name);
             if (!gAvatarBodypartOverrides.contains(name)) continue;
             if (!isPlayerBodyPart(name)) continue;
 
@@ -776,7 +843,7 @@ static void buildBodyPartCollidersFromModel(const tinygltf::Model& model, Player
 {
     for (int i = 0; i < (int)model.nodes.size(); ++i)
     {
-        const std::string& name = player.nodes[i].name;
+        const std::string name = playerBodyPartBaseName(player.nodes[i].name);
         if (!isPlayerBodyPart(name))
             continue;
 
@@ -817,6 +884,12 @@ static void buildBodyPartCollidersFromModel(const tinygltf::Model& model, Player
             collider.localMax.x, collider.localMax.y, collider.localMax.z
         );
     }
+
+    if (buildRenderMeshes)
+        buildExtraRenderPartsFromModel(model, gAvatarRigExtraNodes,
+                                       player.physicalBody.extraParts,
+                                       player.physicalBody.extraPartMeshes,
+                                       player.nodes);
 }
 
 bool Player::loadModel(const char* path)
@@ -897,6 +970,8 @@ bool Player::loadModel(const char* path)
     cached.bodyColliders = bodyColliders;
     cached.bodyParts = bodyParts;
     cached.bodyPartMeshes = bodyPartMeshes;
+    cached.extraParts = physicalBody.extraParts;
+    cached.extraPartMeshes = physicalBody.extraPartMeshes;
     cache[cacheKey] = std::move(cached);
     printf("[AVATAR CACHE] model=%s result=miss (skeleton)\n", resolvedPath.c_str());
 
@@ -1046,7 +1121,7 @@ static void buildPlayerDataFromModel(PendingPlayerModel* d, const tinygltf::Mode
 
     for (int i = 0; i < (int)model.nodes.size(); ++i)
     {
-        const std::string& name = d->nodes[i].name;
+        const std::string name = playerBodyPartBaseName(d->nodes[i].name);
         if (!isPlayerBodyPart(name))
             continue;
 
@@ -1072,6 +1147,11 @@ static void buildPlayerDataFromModel(PendingPlayerModel* d, const tinygltf::Mode
         d->bodyPartMeshes.push_back(bodyMesh);
         d->physicalBodyData.partMeshes.push_back(bodyMesh);
     }
+
+    buildExtraRenderPartsFromModel(model, d->rigExtraNodes,
+                                   d->physicalBodyData.extraParts,
+                                   d->physicalBodyData.extraPartMeshes,
+                                   d->nodes);
 }
 
 static void modelLoadThreadFunc(PendingPlayerModel* d)
@@ -1120,6 +1200,7 @@ void Player::requestModelLoad(const std::string& filepath)
         data->bodypartOverrides = gAvatarBodypartOverrides;
     data->useModelTransforms = gAvatarUseModelTransforms;
     data->canonicalizePlayerModel = gAvatarCanonicalizePlayerModel;
+    data->rigExtraNodes = gAvatarRigExtraNodes;
 
     mPendingModel = data;
     PendingPlayerModel* raw = mPendingModel.get();
@@ -1212,6 +1293,13 @@ void Player::finalizeModelIfReady()
         }
     }
     for (Mesh& bpm : physicalBody.partMeshes) {
+        for (auto& batch : bpm.batches) {
+            if (tidx < (int)texIds.size()) {
+                batch.texture = texIds[tidx++];
+            }
+        }
+    }
+    for (Mesh& bpm : physicalBody.extraPartMeshes) {
         for (auto& batch : bpm.batches) {
             if (tidx < (int)texIds.size()) {
                 batch.texture = texIds[tidx++];

@@ -95,6 +95,7 @@ struct ProceduralPose
 {
     glm::vec3 translation{0.0f};
     glm::vec3 rotationEuler{0.0f};
+    glm::vec3 scale{1.0f};
 };
 
 struct BodyPart
