@@ -817,8 +817,14 @@ bool mpLocalGameplaySimulationReady(const MultiplayerContext& ctx,
     view.hasServerEpoch = ctx.localServerEpoch != 0;
     view.outgoingEpochMatches = ctx.transformEpoch == ctx.localServerEpoch;
     view.appliedEpochMatches = ctx.lastAppliedEpoch == ctx.localServerEpoch;
-    view.modelReady = !player.physicalBody.parts.empty()
-        && !player.perfectPoseSkeleton.nodes.empty();
+    // A rig-only avatar (a spike-ball with no canonical humanoid parts) still
+    // has a physical body: its parts live in extraParts. Accept either so the
+    // fixed-tick roll path is not skipped and the render-frame fallback is not
+    // the only thing moving the actor.
+    view.modelReady =
+        (!player.physicalBody.parts.empty() ||
+         !player.physicalBody.extraParts.empty()) &&
+        !player.perfectPoseSkeleton.nodes.empty();
     return localGameplaySimulationReady(view);
 }
 

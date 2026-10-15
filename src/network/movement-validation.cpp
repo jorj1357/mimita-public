@@ -527,7 +527,6 @@ MovementValidationResult validateClientMovementReport(
         const AvatarRig* rig =
             AvatarAnimationRegistry::instance().getRig(player.avatarName);
         if (rig && rig->movement.mode == "roll" &&
-            player.avatarName == "monstergriever" &&
             movementIsFinite(report.position) &&
             movementIsFinite(report.baseVelocity)) {
             MovementValidationResult accepted;

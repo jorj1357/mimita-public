@@ -557,3 +557,38 @@ Time: 2026-10-14T14:07:48Z
   ground; airborne segments exceed 88 m/s. Reaching 999 would need a
   lower-friction / rolling-specific contact response (next), not just more
   force. Human visual acceptance still required.
+
+## Follow-up: rolling contact response (low friction, no hover, bouncy)
+
+Time: 2026-10-14T14:27:27Z
+
+### Changes
+
+- `src/entities/player.h` + `player.cpp`: `Player::rollLowFriction` and
+  `rollBounceScale`, set from `applyAvatarMovementCap` (true for roll;
+  bounce scale = rig `restitution`).
+- `src/physics/movement/physics-collision-shared.h`
+  (`respondVelocityAgainstNormal`):
+  - roll contacts use `retention = 1.0` (no tangential friction) so the ball
+    keeps momentum;
+  - the constant embedded `bounceMinPush` is disabled for roll (it added
+    upward velocity every tick and made the ball hover);
+  - against an up-facing normal (`normal.z > 0.5`) a roll avatar only projects
+    (rolls) — it does not bounce upward, which stops the launch/hover;
+  - roll bounce strength comes from the rig `restitution` and works even when
+    the global bounce is disabled.
+- `src/engine/engine-tick-net.cpp`: while the ball touches anything its upward
+  velocity is zeroed (no climb); tiny residual hover is still removed.
+
+### Runtime evidence
+
+- Builds `2366`-`2376`; runs `20261014_140602`-`20261014_142612`.
+- `roll.client`: `force=5000 mass=10` applied; max speed **71.9 m/s** (was
+  ~0.99), and max height dropped from ~944 to ~105 — the infinite climb is
+  gone; the ball settles grounded (`grounded=True`) at rest.
+- The remaining limit is the dev-loop map geometry (the ball reaches 25-32
+  contacts against walls); an open area is needed for sustained top speed.
+
+### Still open
+
+- Human visual acceptance; sustained top speed in open space.

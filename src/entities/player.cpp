@@ -173,6 +173,27 @@ void Player::applyAvatarMovementCap(const AvatarRig& newRig)
         movementCapsule.height = PLAYER_HEIGHT;
 
     rollLowFriction = roll;
+    rollBounceScale = roll ? glm::clamp(rig.movement.restitution, 0.0f, 2.0f) : 1.0f;
+
+    // Resolved-capability evidence (spec 7.1/Slice 2): one record per avatar
+    // bind so spawn/respawn/avatar-switch resolution is observable without a
+    // per-frame trace.
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "griever.capability.resolved", avatarName(), "avatar movement capability resolved",
+        (uint32_t)movementSimulationTick,
+        {{"avatar", avatarName()},
+         {"mode", rig.movement.mode},
+         {"present", rig.present},
+         {"force", rig.movement.force},
+         {"mass", rig.movement.mass},
+         {"gravity_scale", rig.movement.gravityScale},
+         {"restitution", rig.movement.restitution},
+         {"radius", movementCapsule.radius},
+         {"height", movementCapsule.height},
+         {"root_offset_z", avatarRootOffsetZ},
+         {"spawn_generation", (uint32_t)spawnGeneration}},
+        __FILE__, __LINE__, __FUNCTION__);
 
     if (!roll) {
         // Humanoid (or any non-roll) avatars must never inherit the ball's

@@ -376,6 +376,10 @@ struct MultiplayerContext
     // does not already contain that exact file.
     bool avatarNetworkPublished = false;
     std::string avatarNetworkManifestHash;
+    // Avatar name the current manifest publication describes. When the local
+    // avatar changes the manifest is republished so the server can re-resolve
+    // the movement capability (spec 7.1: resolve at avatar change on both sides).
+    std::string avatarNetworkName;
     std::vector<std::vector<uint8_t>> avatarNetworkUploadQueue;
     size_t avatarNetworkUploadIndex = 0;
     std::unordered_map<std::string, RemoteAvatarManifest> remoteAvatarManifests;

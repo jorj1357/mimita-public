@@ -486,7 +486,13 @@ static bool isKnownPacketType(uint8_t type)
     if (type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION)
         return true;
     // Newer gameplay packets above the legacy numeric range. Add each here.
-    return type == PACKET_RAGDOLL_STATE;
+    // Avatar manifest/asset packets are client -> server -> clients, so the
+    // server must accept them or remote avatars and avatar-change capability
+    // resolution never reach the server.
+    return type == PACKET_AVATAR_MANIFEST ||
+           type == PACKET_AVATAR_ASSET_REQUEST ||
+           type == PACKET_AVATAR_ASSET_CHUNK ||
+           type == PACKET_RAGDOLL_STATE;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -1148,6 +1154,29 @@ void handleInputPacket(const char* buffer, int bytes,
                 (unsigned)report.lifecycle.transformEpoch,
                 report.position.x, report.position.y, report.position.z,
                 p.pos.x, p.pos.y, p.pos.z);
+
+            // Structured, bounded roll-actor evidence (spec 7.2/10): the
+            // accepted/rejected report and the before/report/accepted values
+            // needed to find the first divergence without per-frame spam.
+            if (p.movementCap.mode == "roll")
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    result.decision == MovementValidationDecision::Reject
+                        ? "griever.network.rejected"
+                        : "griever.network.accepted",
+                    p.avatarName, "roll movement report decision",
+                    (uint32_t)report.clientSimulationTick,
+                    {{"decision", movementValidationDecisionName(result.decision)},
+                     {"reason", movementValidationReasonName(result.reason)},
+                     {"seq", report.movementSequence},
+                     {"report_pos", {report.position.x, report.position.y, report.position.z}},
+                     {"accepted_pos", {result.acceptedState.position.x,
+                                       result.acceptedState.position.y,
+                                       result.acceptedState.position.z}},
+                     {"server_pos", {p.pos.x, p.pos.y, p.pos.z}},
+                     {"spawn_generation", report.lifecycle.spawnGeneration},
+                     {"transform_epoch", report.lifecycle.transformEpoch}},
+                    __FILE__, __LINE__, __FUNCTION__);
         }
     }
 

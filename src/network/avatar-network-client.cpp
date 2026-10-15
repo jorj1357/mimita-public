@@ -13,6 +13,7 @@
 #include "avatar/avatar.h"
 #include "entities/player.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cctype>
@@ -218,6 +219,7 @@ void buildLocalAvatarPublication(MultiplayerContext& ctx)
     }
 
     ctx.avatarNetworkManifestHash = manifestHash;
+    ctx.avatarNetworkName = avatarName;
     ctx.avatarNetworkPublished = true;
     Debug::log(Debug::Category::Networking,
         "[AVATAR NET] publish avatar=%s manifest=%s images=%zu packets=%zu\n",
@@ -305,6 +307,20 @@ void mpResetAvatarNetwork(MultiplayerContext& ctx)
 void mpAvatarNetworkTick(MultiplayerContext& ctx)
 {
     if (!ctx.connected || ctx.localPlayerId == 0) return;
+    // Republish when the local avatar changes so the server learns the new
+    // avatar name and re-resolves its movement capability.
+    const std::string currentAvatar = AvatarSystem::instance().currentName();
+    if (!currentAvatar.empty() && currentAvatar != ctx.avatarNetworkName)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "griever.manifest.republish", currentAvatar,
+            "local avatar changed; republishing manifest",
+            (uint32_t)ctx.tick,
+            {{"previous", ctx.avatarNetworkName}, {"current", currentAvatar}},
+            __FILE__, __LINE__, __FUNCTION__);
+        ctx.avatarNetworkPublished = false;
+    }
     if (!ctx.avatarNetworkPublished)
         buildLocalAvatarPublication(ctx);
     if (ctx.avatarNetworkUploadIndex < ctx.avatarNetworkUploadQueue.size())

@@ -116,7 +116,7 @@
         "right_arm_pointing_position_damping": 2.0,
         "right_arm_pointing_max_stretch": 0.9,
         // "damping_mode": "physical",
-        "damping_mode": "look",
+        "damping_mode": "qlook",
         "limits": {
             "comment": "Range of motion in degrees. Torso is clamped relative to the movement root; child limbs are clamped by swing from their bind orientation.",
             "torso_max_pitch_deg": 90.0,

@@ -11,14 +11,54 @@
 #include "network/server.h"
 #include "network/avatar-transfer.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cstring>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 namespace MimitaNet {
 
 namespace {
+
+// Reassemble a complete manifest chunk set and read only the avatar name. The
+// server needs this so a mid-session avatar change re-resolves the movement
+// capability instead of leaving the player on its join-time mode (spec 7.1).
+std::string manifestAvatarName(
+    const std::vector<std::vector<uint8_t>>& chunks)
+{
+    std::string jsonBytes;
+    uint16_t expected = 0;
+    for (size_t i = 0; i < chunks.size(); ++i)
+    {
+        if (chunks[i].size() != sizeof(AvatarManifestChunkPacket))
+            return {};
+        const auto& pk = *reinterpret_cast<const AvatarManifestChunkPacket*>(
+            chunks[i].data());
+        if (i == 0)
+            expected = pk.chunkCount;
+        if (pk.chunkIndex != i || pk.chunkCount != expected ||
+            pk.payloadBytes > AVATAR_MANIFEST_PAYLOAD_BYTES)
+            return {};
+        jsonBytes.append(reinterpret_cast<const char*>(pk.payload),
+                         pk.payloadBytes);
+    }
+    if (jsonBytes.empty())
+        return {};
+    try
+    {
+        const auto j = nlohmann::json::parse(jsonBytes);
+        const auto it = j.find("avatarName");
+        if (it != j.end() && it->is_string())
+            return it->get<std::string>();
+    }
+    catch (...)
+    {
+    }
+    return {};
+}
 
 std::string hashHex(const uint8_t bytes[32])
 {
@@ -77,8 +117,30 @@ void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
         Debug::warn(Debug::Category::Networking,
             "[AVATAR NET] manifest rejected player=%u bytes=%d\n",
             packet.header.playerId, bytes);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "griever.manifest.rejected", "server",
+            "avatar manifest chunk rejected",
+            (uint32_t)packet.header.tick,
+            {{"header_player", packet.header.playerId},
+             {"owner_player", packet.ownerPlayerId},
+             {"bytes", bytes},
+             {"expected_bytes", (int)sizeof(packet)},
+             {"known_player", (int)(players.find(packet.header.playerId) != players.end())}},
+            __FILE__, __LINE__, __FUNCTION__);
         return;
     }
+
+    if (packet.chunkIndex == 0)
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "griever.manifest.arrived", owner->second.avatarName,
+            "server received avatar manifest first chunk",
+            (uint32_t)owner->second.spawnGeneration,
+            {{"chunk_count", packet.chunkCount},
+             {"payload_bytes", packet.payloadBytes},
+             {"player_id", owner->first}},
+            __FILE__, __LINE__, __FUNCTION__);
 
     const std::string key = hashHex(packet.manifestHash);
     auto& chunks = owner->second.avatarManifestChunks[key];
@@ -87,6 +149,28 @@ void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
     chunks[packet.chunkIndex].assign(
         reinterpret_cast<const uint8_t*>(&packet),
         reinterpret_cast<const uint8_t*>(&packet) + sizeof(packet));
+
+    // A complete manifest tells the server the player's current avatar name.
+    // Apply it so server-players re-resolves the movement capability on the
+    // next tick (spec 7.1) without waiting for a reconnect.
+    if (chunks.size() == packet.chunkCount)
+    {
+        const std::string name = manifestAvatarName(chunks);
+        if (!name.empty() && name.size() <= 32 &&
+            name != owner->second.avatarName)
+        {
+            const std::string previous = owner->second.avatarName;
+            owner->second.avatarName = name;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "griever.capability.resolved", name,
+                "server applied avatar change from manifest",
+                (uint32_t)owner->second.spawnGeneration,
+                {{"avatar", name}, {"previous", previous},
+                 {"player_id", owner->first}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     for (auto& peer : players)
     {

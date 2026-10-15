@@ -600,6 +600,8 @@ public:
     // Roll avatars use a frictionless contact response so a rolling ball keeps
     // its momentum instead of being decelerated by surface friction.
     bool rollLowFriction = false;
+    // Bounce strength for roll contacts (from rig.movement.restitution).
+    float rollBounceScale = 1.0f;
 
     // Apply an avatar rig's movement capability, resetting every roll-specific
     // value when the rig is absent or non-roll so a humanoid never inherits the

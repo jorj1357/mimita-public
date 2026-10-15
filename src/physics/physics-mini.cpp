@@ -29,6 +29,7 @@
 #include "physics/movement/physics-ground-return.h"
 #include "physics/movement/physics-down-dash.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/roll-movement.h"
 #include "config/collision-config.h"
 #include "physics/movement/physics-friction.h"
 #include "physics/movement/physics-freeze.h"
@@ -222,23 +223,40 @@ static void physicsMainUpdate_Internal(
     }
 
     // ── Roll mode: a physical body driven by a force in the look direction ──
-    // WASD becomes a force along camera forward/strafe; gravity and the shared
-    // swept collision integrate and bounce the actor. See
-    // docs/specs/animations/animations.md (rig.movement.mode == "roll").
+    // WASD becomes a force along the full camera basis; gravity and the shared
+    // swept collision integrate and bounce the actor. All force/gravity/speed
+    // math lives in the shared roll kernel. See
+    // docs/specs/griever-monster/griever-monster.md (Slice 1).
     if (p.rig.movement.mode == "roll")
     {
         const AvatarMovementCap& m = p.rig.movement;
-        glm::vec3 dir(wishMoveXY.x, wishMoveXY.y, 0.0f);
-        if (glm::length(dir) > 1.0f)
-            dir = glm::normalize(dir);
 
-        const float invMass = 1.0f / std::max(m.mass, 0.01f);
-        p.vel += dir * (m.force * invMass) * dt;
-        p.vel.z -= PHYS.gravity * m.gravityScale * dt;
+        // Full camera basis including pitch (spec 5.3): W/S follow the camera
+        // forward, so looking down + W applies downward force; A/D use the
+        // horizontal right. wishMoveXY is already camera-relative in world X/Y,
+        // so recover the raw forward/side axes from it without re-reading input.
+        glm::vec3 fwdFlat(camForward.x, camForward.y, 0.0f);
+        if (glm::length(fwdFlat) > 1e-4f)
+            fwdFlat = glm::normalize(fwdFlat);
+        else
+            fwdFlat = glm::vec3(1.0f, 0.0f, 0.0f);
+        const glm::vec3 right = glm::normalize(
+            glm::cross(fwdFlat, glm::vec3(0.0f, 0.0f, 1.0f)));
+        const float moveForward =
+            glm::dot(wishMoveXY, glm::vec2(fwdFlat.x, fwdFlat.y));
+        const float moveSide =
+            glm::dot(wishMoveXY, glm::vec2(right.x, right.y));
 
-        const float speed = glm::length(p.vel);
-        if (m.maxSpeed > 0.0f && speed > m.maxSpeed)
-            p.vel *= m.maxSpeed / speed;
+        glm::vec3 camFull = camForward;
+        if (glm::length(camFull) > 1e-4f)
+            camFull = glm::normalize(camFull);
+
+        RollIntent intent;
+        intent.direction = camFull * moveForward + right * moveSide;
+        if (glm::length(intent.direction) > 1.0f)
+            intent.direction = glm::normalize(intent.direction);
+
+        p.vel = rollIntegrateVelocity(p.vel, intent, m, PHYS.gravity, dt);
 
         p.externalImpulse = glm::vec3(0.0f);
         p.movementContacts.clear();
@@ -252,17 +270,35 @@ static void physicsMainUpdate_Internal(
         p.ground.onGround = groundedThisFrame;
         p.ground.stableOnGround = groundedThisFrame;
 
+        rollCleanupContactVelocity(
+            p.vel, groundedThisFrame || !p.movementContacts.empty());
+
+        // Presentation: roll the visible root from horizontal travel. This
+        // never feeds back into position or velocity.
+        const glm::quat dq = rollRotationDelta(
+            glm::vec3(p.vel.x, p.vel.y, 0.0f), m.radius, dt);
+        if (dq != glm::quat(1.0f, 0.0f, 0.0f, 0.0f))
+        {
+            p.modelRootRotation = glm::normalize(dq * p.modelRootRotation);
+            p.modelRootRotationActive = true;
+        }
+
+        p.updateModelWorldTransforms();
+
         static uint32_t rollLogCounter = 0;
         if ((rollLogCounter++ % 30u) == 0u)
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Avatar, StructuredLevel::Important,
-                "roll.client", p.username, "roll tick",
+                "griever.roll.step", p.avatarName(), "fixed-tick roll step",
                 (uint32_t)p.movementSimulationTick,
-                {{"wish", {wishMoveXY.x, wishMoveXY.y}},
+                {{"mode", m.mode},
+                 {"intent", {intent.direction.x, intent.direction.y, intent.direction.z}},
                  {"vel", {p.vel.x, p.vel.y, p.vel.z}},
                  {"pos", {p.pos.x, p.pos.y, p.pos.z}},
                  {"force", m.force}, {"mass", m.mass},
-                 {"grounded", groundedThisFrame}},
+                 {"gravity_scale", m.gravityScale},
+                 {"grounded", groundedThisFrame},
+                 {"contacts", (int)p.movementContacts.size()}},
                 __FILE__, __LINE__, __FUNCTION__);
 
         updateVisualFacingFromCamera(p, camForward, dt);

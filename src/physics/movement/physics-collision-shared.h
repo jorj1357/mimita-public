@@ -111,8 +111,19 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
     // Per-contact bounce scale. Weapon contacts pass their configured
     // "player_bounce" (0 by default), so a weapon brushing the world blocks
     // movement but does not launch the player from the weapon's sweep velocity.
-    const float strength = cfg.bounceStrength() * std::max(0.0f, bounceScale);
-    if (!cfg.bounceEnabled() || strength <= 0.0f)
+    const float strength = p.rollLowFriction
+        ? glm::clamp(p.rollBounceScale, 0.0f, 2.0f)
+        : cfg.bounceStrength() * std::max(0.0f, bounceScale);
+    if ((!cfg.bounceEnabled() && !p.rollLowFriction) || strength <= 0.0f)
+    {
+        projectVelocityAgainstNormal(p, normal);
+        return;
+    }
+
+    // A rolling ball must not bounce off the ground (that causes hover/launch):
+    // against an up-facing normal it just projects (rolls). It still bounces off
+    // walls and obstacles (horizontal normals).
+    if (p.rollLowFriction && normal.z > 0.5f)
     {
         projectVelocityAgainstNormal(p, normal);
         return;
@@ -166,7 +177,11 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
             const float retention =
                 p.rollLowFriction ? 1.0f : (1.0f - cfg.bounceFriction());
             const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);
-            p.vel = tangent * retention + normal * cfg.bounceMinPush();
+            // A rolling ball must not get the constant embedded push: it would
+            // add upward velocity every tick and make the ball hover. Position
+            // depenetration still keeps it on the surface; gravity holds it down.
+            const float push = p.rollLowFriction ? 0.0f : cfg.bounceMinPush();
+            p.vel = tangent * retention + normal * push;
             if (bodyContact)
                 p.collision.rootBounceAppliedTick = p.movementSimulationTick;
             p.collision.bounceCooldown = cfg.bounceCooldown();

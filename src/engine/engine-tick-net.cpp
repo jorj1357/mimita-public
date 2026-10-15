@@ -116,101 +116,11 @@ void engineTickNet(Engine& engine, float dt)
                     __FILE__, __LINE__, __FUNCTION__);
             }
         }
-        // Local roll prediction: the monstergriever is a force-driven physical
-        // body simulated by its owning client (the server accepts the reported
-        // transform). WASD is a force along the camera's forward/right.
-        if (player.rig.movement.mode == "roll" &&
-            player.avatarName() == "monstergriever") {
-            const AvatarMovementCap& m = player.rig.movement;
-
-            glm::vec3 f = camera.front;
-            f.z = 0.0f;
-            if (glm::length(f) > 1e-4f) f = glm::normalize(f);
-            glm::vec3 r = glm::normalize(glm::cross(f, glm::vec3(0.0f, 0.0f, 1.0f)));
-            glm::vec3 dir = f * mpInput.wishY + r * mpInput.wishX;
-            if (glm::length(dir) > 1.0f) dir = glm::normalize(dir);
-
-            const float invMass = 1.0f / std::max(m.mass, 0.01f);
-            // Use the real frame delta so the physical body integrates the same
-            // total each second regardless of render FPS (this path runs once
-            // per render frame, not once per fixed tick).
-            const float rollDt = std::clamp(dt, 0.0f, 1.0f / 30.0f);
-            player.vel += dir * (m.force * invMass) * rollDt;
-            player.vel.z -= PHYS.gravity * m.gravityScale * rollDt;
-
-            // Horizontal speed cap only (0 = no limit); vertical is bounded to
-            // stop the spike-ball from climbing forever.
-            glm::vec3 horiz(player.vel.x, player.vel.y, 0.0f);
-            float hspeed = glm::length(horiz);
-            if (m.maxSpeed > 0.0f && hspeed > m.maxSpeed) {
-                horiz *= m.maxSpeed / hspeed;
-                player.vel.x = horiz.x;
-                player.vel.y = horiz.y;
-            }
-
-            bool grounded = false;
-            const float sub = rollDt * 0.5f;
-            doCollisions(player, world, grounded, sub);
-            doCollisions(player, world, grounded, sub);
-
-            // Keep bounce impulses (super bouncy); only kill the tiny residual
-            // hover velocity when the ball is effectively at rest. High gravity
-            // (rig.movement.gravity_scale) brings it back down.
-            if (std::fabs(player.vel.z) < 0.3f)
-                player.vel.z = 0.0f;
-            player.vel.z = std::clamp(player.vel.z, -80.0f, 40.0f);
-            player.ground.onGround = grounded;
-            player.ground.stableOnGround = grounded;
-
-            // Roll the mesh: angular velocity = (up x v) / radius. Set the model
-            // root rotation so the visible ball spins with travel.
-            horiz = glm::vec3(player.vel.x, player.vel.y, 0.0f);
-            hspeed = glm::length(horiz);
-            if (hspeed > 0.05f) {
-                const float radius = std::max(m.radius, 0.1f);
-                glm::vec3 axis = glm::normalize(glm::cross(glm::vec3(0.0f, 0.0f, 1.0f), horiz));
-                const glm::quat dq = glm::angleAxis(hspeed * rollDt / radius, axis);
-                player.modelRootRotation = glm::normalize(dq * player.modelRootRotation);
-                player.modelRootRotationActive = true;
-            }
-
-            player.updateModelWorldTransforms();
-
-            // Bounded evidence: the mesh must move AND rotate, so sample a few
-            // render-only part world positions and the model-root quaternion.
-            static uint32_t rollLogCounter = 0;
-            if ((rollLogCounter++ % 30u) == 0u) {
-                nlohmann::json samples = nlohmann::json::array();
-                for (size_t i = 0; i < player.physicalBody.extraParts.size() && i < 4; ++i) {
-                    const auto& part = player.physicalBody.extraParts[i];
-                    samples.push_back({
-                        {"name", part.name},
-                        {"pos", {part.worldTransform[3].x,
-                                 part.worldTransform[3].y,
-                                 part.worldTransform[3].z}}});
-                }
-                const glm::quat q = player.modelRootRotation;
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Avatar, StructuredLevel::Important,
-                    "roll.client", player.avatarName(), "roll tick",
-                    (uint32_t)player.movementSimulationTick,
-                     {{"wish", {mpInput.wishX, mpInput.wishY}},
-                      {"dir", {dir.x, dir.y, dir.z}},
-                      {"force", m.force}, {"mass", m.mass}, {"max_speed", m.maxSpeed},
-                      {"vel", {player.vel.x, player.vel.y, player.vel.z}},
-                      {"speed", glm::length(player.vel)},
-                      {"pos", {player.pos.x, player.pos.y, player.pos.z}},
-                      {"contacts", (int)player.movementContacts.size()},
-                      {"grounded", grounded},
-                      {"model_root_quat", {q.w, q.x, q.y, q.z}},
-                      {"parts", samples}},
-                    __FILE__, __LINE__, __FUNCTION__);
-            }
-
-            mpInput.position = player.pos;
-            mpInput.velocity = player.vel;
-            mpInput.onGround = grounded;
-        }
+        // Roll prediction is owned by the fixed-tick shared roll kernel in
+        // physicsMainUpdate (see physics/movement/roll-movement.h). This render
+        // path must not integrate the roll body again: mpInput already carries
+        // the fixed-tick position/velocity, so a second integration here made
+        // the actor move at render FPS and diverge from server authority.
 
         // Bounded local-player pose evidence for ANY avatar (griever or
         // humanoid): part world positions + orientations must change, proving

@@ -882,6 +882,22 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             const AvatarRig* rig =
                 AvatarAnimationRegistry::instance().getRig(p.avatarName);
             p.movementCap = rig ? rig->movement : AvatarMovementCap{};
+            // Resolved-capability evidence (spec 7.1/Slice 2): the server sees
+            // the same mode the client resolved, with no avatar-name gate.
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "griever.capability.resolved", p.avatarName,
+                "server resolved avatar movement capability",
+                (uint32_t)p.spawnGeneration,
+                {{"avatar", p.avatarName},
+                 {"mode", p.movementCap.mode},
+                 {"force", p.movementCap.force},
+                 {"mass", p.movementCap.mass},
+                 {"gravity_scale", p.movementCap.gravityScale},
+                 {"restitution", p.movementCap.restitution},
+                 {"radius", p.movementCap.radius},
+                 {"height", p.movementCap.height}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
 
         // Roll mode is client-authoritative: the owning client simulates the
@@ -889,7 +905,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         // accepts it (see movement-validation.cpp). The server keeps that
         // accepted transform instead of re-simulating, so a rolling avatar is
         // responsive. It still clamps to blocking geometry as a safety guard.
-        if (p.movementCap.mode == "roll" && p.avatarName == "monstergriever")
+        if (p.movementCap.mode == "roll")
         {
             p.clientStateUpdated = false;
             syncServerMovementRuntime(p, true);
