@@ -1,3 +1,90 @@
+2026 10 15 2016
+can u check new loading for avatars do we have a normalization for this issues? how did we fix boomer avatar it ahd teh same issues
+like do we have normalization function even 
+
+also todo clean this doc!!!!!! cant have so much stuff inthis doc just spam 
+
+2026 10 15 2021  
+OK SO HTE ISSUE was
+leftArm and leftArm
+no
+not good
+u ahve to  just name them right 
+its fine 
+
+## Current investigation: Brute v3 rotates around the wrong axis
+
+Asset under investigation:
+
+`C:\mimita-v9\assets\entity\player\monsters\brute\mimita-brute-v3.glb`
+
+### What is actually wrong
+
+This is a transform-and-structure mismatch, not an Euler-display setting:
+
+1. The file has one `plrOrigin` root with an approximately `-90°` X rotation.
+   That is a valid authored root frame only if every child location and mesh
+   basis is interpreted through that same frame.
+2. The file has no leg nodes. It contains `head`, `torso`, two left-arm mesh
+   nodes (`leftArm.020` and `leftArm.021`), and two right-arm mesh nodes
+   (`rightArm.022` and `rightArm.023`). The second node on each side is a
+   separate arm segment, not a child of the first segment.
+3. The arm mesh vertices are long on local Z (about 4.34–4.42 units), while
+   the current player animation/aim contract expects a normalized limb long
+   axis and a single semantic `leftArm`/`rightArm` pivot at the shoulder.
+4. The node names are Blender duplicate-name outputs, not the exact canonical
+   six-part names. A suffix-tolerant lookup may find one segment, but it cannot
+   infer that the two segments should form one articulated arm or where the
+   elbow pivot belongs.
+5. The arm node origins are not declared as shoulder pivots. Rotating the
+   selected arm node therefore rotates that segment around its imported node
+   origin, which can be its segment center or another authored point instead
+   of the shoulder.
+
+The resulting failure is predictable: the runtime can apply a mathematically
+valid quaternion, but it is applying it to the wrong semantic part, in the
+wrong local basis, and with an incomplete rig. The visible arm may twist,
+orbit, or point sideways instead of swinging forward and backward from the
+shoulder. Changing `XYZ Euler` to another Euler order cannot repair any of
+these conditions; Euler order only changes how an already-defined rotation is
+converted.
+
+### Important configuration fact
+
+The active avatar manifest currently points `monsterbrute` at
+`assets/entity/player/monsters/brute/mimita-brute-v2.glb`, not v3. Therefore a
+test of v3 must explicitly load v3 through the avatar/import test path or first
+update the avatar selection through the normal avatar lifecycle. A screenshot
+of `monsterbrute` alone does not prove that v3 was loaded.
+
+### Why Boomer v21 appeared to work
+
+Boomer v21 is a useful reference because it already has exactly six canonical
+nodes (`head`, `torso`, `leftArm`, `rightArm`, `leftLeg`, `rightLeg`), a root
+frame that agrees with its child locations, arm node rotations that compensate
+for its authored mesh basis, and arm origins placed near the shoulder-facing
+ends. It is not a universal quaternion to copy into Brute. Brute needs its
+complete bind frame normalized: semantic part mapping, root basis, mesh long
+axis, node locations, and shoulder/elbow pivots must be resolved together.
+
+### Correct fix direction
+
+Do not fix Brute with a new hard-coded quaternion or a different Euler mode.
+Use the player-only normalization path defined below and require one of these
+explicit authoring choices:
+
+- export six canonical rigid parts, with one node per canonical part and the
+  object origin at each intended joint; or
+- declare the two-segment arm rig explicitly in `avatar.json`, including the
+  upper-arm shoulder pivot and lower-arm elbow pivot, then let the generalized
+  rig/animation path animate both nodes.
+
+Until that mapping exists, the normalizer must reject Brute v3 as an
+ambiguous/incomplete six-part player body rather than silently guessing which
+arm segment is the `leftArm` or `rightArm` pivot. This preserves the working
+Boomer, Jason, and older avatars while making the failure explainable in
+`events.jsonl`.
+
 2026 10 13 1923 jorj todo problems
 "
 i also saw offsets not so good like  when u do "xxx" it equips jason avatar which works but  just spawnign like nromal with mosnter avatar has brkoen offsets

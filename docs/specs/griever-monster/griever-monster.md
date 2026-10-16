@@ -1,3 +1,6 @@
+relaets to C:\mimita-v9\docs\specs\gamemodes\zombie-tower.md
+and C:\mimita-v9\docs\specs\avatar\avatar-editor.md 
+
 # Griever monster specification
 
 **Date:** 2026-10-15  

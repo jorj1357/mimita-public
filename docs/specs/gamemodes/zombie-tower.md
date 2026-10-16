@@ -1,3 +1,25 @@
+2026 10 15 2002 jorj explain
+heres all the mosnters for v1
+
+boomer:
+
+stabber: 
+
+crawler: 
+
+mutant wasp: 
+
+griever
+
+brute
+
+normal zombie 
+
+chainsaw boss
+
+charger 
+
+
 2026 10 13 2102 
 crwaler needs its own aniatmions
 the wasp need its own aniations
