@@ -1,7 +1,7 @@
 {
   "advanced": {
     "head_back": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -17,7 +17,7 @@
       "texture": "clown1.png"
     },
     "head_bottom": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -33,7 +33,7 @@
       "texture": "clown1.png"
     },
     "head_front": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -49,7 +49,7 @@
       "texture": "clown1.png"
     },
     "head_left": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -65,7 +65,7 @@
       "texture": "clown1.png"
     },
     "head_right": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -81,7 +81,7 @@
       "texture": "clown1.png"
     },
     "head_top": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -97,7 +97,7 @@
       "texture": "clown1.png"
     },
     "leftArm_back": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -113,7 +113,7 @@
       "texture": "clown1.png"
     },
     "leftArm_bottom": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -129,7 +129,7 @@
       "texture": "clown1.png"
     },
     "leftArm_front": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -145,7 +145,7 @@
       "texture": "clown1.png"
     },
     "leftArm_left": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -161,7 +161,7 @@
       "texture": "clown1.png"
     },
     "leftArm_right": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -177,7 +177,7 @@
       "texture": "clown1.png"
     },
     "leftArm_top": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -193,7 +193,7 @@
       "texture": "clown1.png"
     },
     "leftLeg_back": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -209,7 +209,7 @@
       "texture": "clown1.png"
     },
     "leftLeg_bottom": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -225,7 +225,7 @@
       "texture": "clown1.png"
     },
     "leftLeg_front": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -241,7 +241,7 @@
       "texture": "clown1.png"
     },
     "leftLeg_left": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -257,7 +257,7 @@
       "texture": "clown1.png"
     },
     "leftLeg_right": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -273,7 +273,7 @@
       "texture": "clown1.png"
     },
     "leftLeg_top": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -289,7 +289,7 @@
       "texture": "clown1.png"
     },
     "rightArm_back": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -305,7 +305,7 @@
       "texture": "clown1.png"
     },
     "rightArm_bottom": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -321,7 +321,7 @@
       "texture": "clown1.png"
     },
     "rightArm_front": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -337,7 +337,7 @@
       "texture": "clown1.png"
     },
     "rightArm_left": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -353,7 +353,7 @@
       "texture": "clown1.png"
     },
     "rightArm_right": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -369,7 +369,7 @@
       "texture": "clown1.png"
     },
     "rightArm_top": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -385,7 +385,7 @@
       "texture": "clown1.png"
     },
     "rightLeg_back": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -401,7 +401,7 @@
       "texture": "clown1.png"
     },
     "rightLeg_bottom": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -417,7 +417,7 @@
       "texture": "clown1.png"
     },
     "rightLeg_front": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -433,7 +433,7 @@
       "texture": "clown1.png"
     },
     "rightLeg_left": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -449,7 +449,7 @@
       "texture": "clown1.png"
     },
     "rightLeg_right": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -465,7 +465,7 @@
       "texture": "clown1.png"
     },
     "rightLeg_top": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -481,7 +481,7 @@
       "texture": "clown1.png"
     },
     "torso_back": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -497,7 +497,7 @@
       "texture": "clown1.png"
     },
     "torso_bottom": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -513,7 +513,7 @@
       "texture": "clown1.png"
     },
     "torso_front": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -529,7 +529,7 @@
       "texture": "clown1.png"
     },
     "torso_left": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -545,7 +545,7 @@
       "texture": "clown1.png"
     },
     "torso_right": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -561,7 +561,7 @@
       "texture": "clown1.png"
     },
     "torso_top": {
-      "brightness": 2.8671951293945313,
+      "brightness": 3.142594337463379,
       "color": [
         0.6349448561668396,
         0.6533046960830688,
@@ -579,6 +579,7 @@
   },
   "advanced_mode": true,
   "avatar_id": "local_jorj1357large",
+  "body_transform_source": "model",
   "bodyparts": {
     "head": {
       "offset": [
@@ -719,12 +720,12 @@
   "created_at": "2026-07-12T03:55:00Z",
   "format_version": 1,
   "name": "jorj1357large",
-  "player_model": "assets/entity/player/girllarge/girl-large-mimita-v7.glb",
+  "player_model": "assets/entity/player/girllarge/girl-large-mimita-v5.glb",
   "simple": {
     "face": "",
     "pants": "",
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-20T17:09:51Z"
+  "updated_at": "2026-10-15T21:40:58Z"
 }
