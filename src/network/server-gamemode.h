@@ -236,6 +236,7 @@ struct ServerGamemodeState
 
     bool npcWaves = false;
     bool persistentNpcSpawns = false;
+    uint32_t teamRosterNpcId = 0; // single mode-owned opponent for solo team-roster matches
     uint32_t waveNumber = 0;
     int waveStartCount = 1;
     int waveIncrement = 1;
@@ -465,6 +466,8 @@ void serverCommunityMapStart(const std::vector<std::string>& mapPool,
 void serverCommunitySetMode(const std::string& modeId);
 void serverCommunitySetWeaponSet(int weaponSetId);
 bool serverCommunityWeaponAllowed(const std::string& weaponId);
+bool serverCommunityWeaponAllowed(const ServerPlayer& player,
+                                 const std::string& weaponId);
 int serverCommunityWeaponNativeSlot(int logicalSlot);
 int serverCommunityWeaponLogicalSlot(const std::string& weaponId);
 int serverCommunityWeaponNativeSlot(const ServerPlayer& player, int logicalSlot);

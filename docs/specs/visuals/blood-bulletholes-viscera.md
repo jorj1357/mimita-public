@@ -274,6 +274,18 @@ Avoid creating a special isolated gore engine if the shared systems can represen
 
 # 8. Effect Representation Modes
 
+## Reference appearance: recognizable bullet holes and blood stamps
+
+Bullet-hole and blood decal textures should remain recognizable as their
+authored complete images. Projection onto a surface must preserve the texture's
+aspect and avoid stretched, repeated, fragmented, or smeared marks caused by
+projection geometry or UV mapping. Blood variants may reflect the target's
+alive/dead state when that state is part of the effect definition; the exact
+variant rules remain an authoring decision. Keep the impact placement and
+surface orientation correct while preserving the visual stamp. The 2026-10-16
+gameplay screenshots are a report of distorted marks and a reference for the
+desired whole-image appearance, not proof of a specific rendering cause.
+
 An effect may have different representations.
 
 Examples include:

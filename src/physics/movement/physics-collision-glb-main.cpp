@@ -11,6 +11,8 @@
 #include <vector>
 #include <string>
 #include <unordered_set>
+#include <unordered_map>
+#include <mutex>
 #include <glm/glm.hpp>
 #include "physics/config.h"
 #include "world/world.h"
@@ -24,6 +26,40 @@
 #include "physics/movement/physics-collision.h"
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
+
+namespace {
+struct FallbackLogState {
+    uint32_t lastLoggedTick = 0;
+    uint64_t suppressed = 0;
+};
+
+bool shouldLogActorTriangleFallback(const std::string& actorId, uint32_t tick,
+                                    bool recovered, uint64_t& suppressed) {
+    static std::mutex mutex;
+    static std::unordered_map<std::string, FallbackLogState> states;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (recovered) {
+        states.erase(actorId);
+        return false;
+    }
+
+    auto it = states.find(actorId);
+    if (it == states.end()) {
+        states.emplace(actorId, FallbackLogState{tick, 0});
+        suppressed = 0;
+        return true;
+    }
+    if (tick < it->second.lastLoggedTick ||
+        tick - it->second.lastLoggedTick >= 1200) {
+        suppressed = it->second.suppressed;
+        it->second.lastLoggedTick = tick;
+        it->second.suppressed = 0;
+        return true;
+    }
+    ++it->second.suppressed;
+    return false;
+}
+}
 
 struct CollisionFrameDiag {
     double sweepSlideMs = 0.0;
@@ -131,6 +167,11 @@ void doGLBTriangleCollisions(
     {
         if (runActorTriangleCollisionStep(p, world, groundedThisFrame, dt))
         {
+            if (isCurrentEntityNpc()) {
+                uint64_t ignored = 0;
+                shouldLogActorTriangleFallback(p.username,
+                    static_cast<uint32_t>(p.movementSimulationTick), true, ignored);
+            }
             gLastCollisionTrace = CollisionTraceSnapshot{};
             gLastCollisionTrace.startPos = p.pos;
             gLastCollisionTrace.finalPos = p.pos;
@@ -141,15 +182,20 @@ void doGLBTriangleCollisions(
         // must be visible in events.jsonl instead of silently looking like a
         // successful triangle solve.
         if (isCurrentEntityNpc()) {
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Collision, StructuredLevel::Important,
-                "actor-collision.fallback", p.username,
-                "triangle backend unavailable for NPC", (uint32_t)p.movementSimulationTick,
-                {{"actor_kind", "npc"}, {"backend_requested", "triangle"},
-                 {"fallback_backend", "legacy"}, {"reason", "missing_world_or_body_triangles"},
-                 {"body_part_count", p.physicalBody.parts.size()},
-                 {"world_triangle_count", world.collisionMesh.triangles.size()}},
-                __FILE__, __LINE__, __FUNCTION__);
+            uint64_t suppressed = 0;
+            if (shouldLogActorTriangleFallback(p.username,
+                    static_cast<uint32_t>(p.movementSimulationTick), false, suppressed)) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Collision, StructuredLevel::Important,
+                    "actor-collision.fallback", p.username,
+                    "triangle backend unavailable for NPC", (uint32_t)p.movementSimulationTick,
+                    {{"actor_kind", "npc"}, {"backend_requested", "triangle"},
+                     {"fallback_backend", "legacy"}, {"reason", "missing_world_or_body_triangles"},
+                     {"body_part_count", p.physicalBody.parts.size()},
+                     {"world_triangle_count", world.collisionMesh.triangles.size()},
+                     {"suppressed_since_last", suppressed}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
         }
     }
 

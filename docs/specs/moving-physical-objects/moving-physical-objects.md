@@ -15,6 +15,27 @@ todo 9 8 2026 1039 est jorj - do we need map editor fo rthis?
 
 # Physical Moving Objects
 
+## User-reported weapon/world collision issue — 2026-10-16
+
+The user reports that on Juggernaut4, the Juggernaut's large machine gun can
+push the player around and potentially out of the playable world, and weapon
+collision geometry can catch on sharp edges. This is an observation to
+reproduce, not a confirmed diagnosis that weapon mass, shape, or one collision
+solver is responsible.
+
+Desired outcome: preserve substantial, fun weapon-to-world physical response
+while preventing wall traversal, out-of-world launches, and persistent edge
+snags. Test large/heavy and ordinary weapons, tight and open maps, and contacts
+with walls, corners, floors, and edges. Record the weapon pose, contact points,
+impulse, player state, map bounds, and authoritative position at the first
+failure.
+
+Rounded/beveled collision features or denser triangle geometry are candidates
+to investigate, not selected fixes. Compare them against the current exact
+triangle collision requirement and performance budget in
+`docs/architecture/collision/collision.md`; do not replace authored world
+triangles with a coarse proxy without a separate decision.
+
 **Created:** 2026-09-07T17:06:00-04:00  
 **Last updated:** 2026-09-09T10:01:00-04:00
 

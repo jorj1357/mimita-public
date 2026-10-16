@@ -549,7 +549,11 @@ int runServer(const LaunchOptions& options)
     dedicatedIceState.serverName = options.name.empty() ? "MiMITA Server" : options.name;
     dedicatedIceState.mapName = mapName;
     dedicatedIceState.gameMode = options.gameMode;
-    dedicatedIceState.maxPlayers = options.maxPlayers;
+    const CommunityMode* selectedCommunityMode =
+        CommunityServerConfig::instance().modeById(options.gameMode);
+    dedicatedIceState.maxPlayers = selectedCommunityMode && selectedCommunityMode->maxPlayers > 0
+        ? std::min<uint32_t>(options.maxPlayers, (uint32_t)selectedCommunityMode->maxPlayers)
+        : options.maxPlayers;
     dedicatedIceState.weaponSetId = options.weaponSetId;
     dedicatedIceState.autoMapRotation = options.autoMapRotation;
     dedicatedIceState.mapRotationMinutes = options.mapRotationMinutes;

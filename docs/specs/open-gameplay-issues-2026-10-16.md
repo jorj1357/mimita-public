@@ -1,0 +1,332 @@
+# Open gameplay issue index — 2026-10-16
+
+This index collects user-reported issues and links to the behavior owner. The
+reports have not all been reproduced. An entry is not proof of root cause or a
+claim that a fix is implemented. Keep requirements and future evidence in the
+owner document, then update this index when an issue is reproduced or resolved.
+
+This document does not replace the linked specifications, confirm a bug, or
+authorize implementation choices that are still marked open.
+
+| Issue | Current status | Owner / details |
+|---|---|---|
+| Griever behavior still does not fully match intent: server position errors, hovering, and a report that it rolls but does not bounce enough | Prior reports and an attempt note exist; current root cause and latest runtime result are not established in this document | [`griever-monster/griever-monster.md`](griever-monster/griever-monster.md), [`movement/movement.md`](movement/movement.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md) |
+| Custom animation authoring for monsters and attacks | Runtime animation system is specified; Blender export remains a proposal with open format/authoring decisions | [`animations/animations.md`](animations/animations.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md), [`gamemodes/zombie-tower.md`](gamemodes/zombie-tower.md) |
+| Spy Knife shows predicted hit effects but NPC health does not change; PvP is reported absent/nonfunctional | NPC mismatch already documented; PvP report not reproduced | [`weapons/melee-weapons.md`](weapons/melee-weapons.md), [`networking/networking.md`](networking/networking.md) |
+| Godball and HAFS need further investigation | Existing Godball and HAFS definitions/specs found; exact failing behavior unspecified | [`weapons/weapons.md`](weapons/weapons.md), `config/weapons.json` (`godball`, `hafs`) |
+| SwordSword needs its own model, attacks, animation, damage, and collision coverage | Informal notes now linked to explicit open issues; no runtime proof here | [`weapons/swordsword.md`](weapons/swordsword.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
+| Ragdoll/limb collision is inconsistent; long-arm grabbing should not tunnel | Existing `RAG-011` already forbids free tunneling; reported runtime gap needs reproduction | [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md) |
+| Weapon collision can snag or launch the Juggernaut out of Juggernaut4 | User-reported; collision shape/bevel proposal is undecided | [`moving-physical-objects/moving-physical-objects.md`](moving-physical-objects/moving-physical-objects.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md) |
+| Entity Editor spawn points should work immediately in Sandbox for players and NPCs | Authored points already serve some gamemode respawn/map-change paths; initial join and `npc_spawn` use separate GLB/local-world paths | [`entity-editor/entity-editor.md`](entity-editor/entity-editor.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md) |
+| Hospital NPC pursuit can stall across floors | User-reported; multi-floor navigation is already a stated capability | [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md) |
+| Client/server player position can disagree by about 25 m and rubber-band toward stale state | User-reported; cause unconfirmed; do not blindly trust client transforms | [`movement/movement.md`](movement/movement.md), [`networking/networking.md`](networking/networking.md) |
+| Melee-inspired 3D arena mode and Blender-authored attacks | Mode proposal clarified; core gameplay choices remain open | [`gamemodes/supersmashbrosmelee.md`](gamemodes/supersmashbrosmelee.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
+
+## Triage for the 2026-10-16 play report
+
+Priority is based on whether the issue blocks joining or causes authoritative
+gameplay rejection, then on how broadly it affects play, and finally on
+whether the behavior is sufficiently specified to implement. “Do now” means
+investigate and reproduce first; it is not permission to bypass the required
+runtime evidence or make a guessed code change.
+
+### Do now: reproduce and trace blockers
+
+| Rank | Report / evidence | Why this priority | Owner |
+|---|---|---|---|
+| 1 | Below-world spawn and map disagreement. The selected journal contains conflicting server/client map loads, repeated missing-map load failures, and a local actor/corpse presentation around Z=-501 below loaded map bounds. | A bad spawn makes the session unplayable and can invalidate later combat evidence. The journal narrows the trace but does not identify the spawn writer. | [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`networking/networking.md`](networking/networking.md) |
+| 2 | Rocket Launcher and Force Punch attacks rejected as not equipped; 26 rejections in the journal, including five Rocket Launcher rejects with logical/native slot disagreement. | Authoritative combat rejection directly invalidates shots and is recurring across lives/weapons. Validate without manual re-equip and attach actor-generation identity. | [`networking/networking.md`](networking/networking.md), [`weapons/weapons.md`](weapons/weapons.md) |
+| 3 | Dev-loop repeats status blocks and can show `NOT RUNNING` with old uptime and empty process/journal identity; launch also feels slow. | Confusing lifecycle output obscures build/run evidence and delays all play scenarios. Fixing attribution and status clarity precedes performance claims. | [`dev-loop/dev-loop.md`](dev-loop/dev-loop.md) |
+| 4 | Leave-room / `ss` / reconnect sequence appears to require repeated GUI actions and may return to the sandbox server browser unexpectedly. | This is a core session lifecycle failure, but the owner docs already define the intended zero-extra-action join/rejoin contract; reproduce against that contract before expanding it. | [`dev-loop/dev-loop.md`](dev-loop/dev-loop.md), [`networking/networking.md`](networking/networking.md) |
+
+### Handoff readiness for priorities 1 and 2
+
+These entries are ready to hand off as trace-first investigation and repair
+tasks, with acceptance criteria below. The journal identifies concrete paths
+and rejects a blind fix; it does not name the final root cause. The agent must
+reproduce or instrument the first missing state transition before changing an
+owner.
+
+#### Priority 1 — below-world spawn / map disagreement
+
+- **Known evidence:** run `20261016_134002`, server PID 22216 loaded
+  `mimita-aabb-only-interior-small-v4.glb` with zero spawn points; client PID
+  32808 loaded `dust2cyberiav4.glb` with two spawn points; the client then
+  retried missing `mimita-aabb-only-interior-small.glb` 30 times; later server
+  PID 32276 and client PID 32808 reported `funworld3.glb`. A local
+  actor/corpse-presentation event reported Z≈−501, below loaded map bounds.
+  This supports map/session inconsistency and an out-of-world actor position,
+  but does not identify the exact spawn writer.
+- **First trace:** reconstruct command/GUI selection, server preset and
+  authoritative map ID, client join/room sequence, every map load request,
+  map-config resolution, spawn selection/application, and replication around
+  the first bad position. Identify PID 32276's launch request and ownership
+  from dev-loop/server records; do not assume it is a duplicate server or
+  blame a stale executable.
+- **Required outcome:** one canonical server-selected map/content revision;
+  matching client load readiness before join/spawn; all player and NPC spawn
+  routes use the authoritative safe-spawn policy; no stale-map coordinates;
+  invalid map or spawn fails visibly.
+- **Required scenario:** fresh dev-loop run; select the reported map/mode;
+  record server start, room registration, client join, initial spawn,
+  death/respawn, and NPC spawn. Repeat `ss` leave/rejoin if that is the entry
+  path. Confirm map ID/revision, server/client readiness, spawn source and
+  position, actor generation, and in-bounds collision contact. Inspect the
+  exact new `EVENTS_JSONL_PATH` and first divergence.
+- **Handoff status:** ready for investigation and repair without more product
+  clarification; not enough evidence for a guessed one-line fix.
+
+#### Priority 2 — equipped weapon disagreement across lives
+
+- **Known evidence:** run `20261016_134002` has 26 server
+  `weapon.attack.weapon_not_equipped` events (21 Force Punch, 5 Rocket
+  Launcher). Rocket events show client slot 3, weapon native slot 7, server
+  equipped slot 0, weapon set 1; a later accepted equip maps logical slot 3
+  to native slot 7. Rejections occur near death events. The rejection event
+  lacks actor generation and authoritative equipped definition ID, so the
+  precise race/stale-state cause remains open.
+- **First trace:** follow one weapon from active weapon-set data through client
+  hotbar selection, local runtime/equipped identity, equip request encoding,
+  server logical/native resolution, authoritative equip state, respawn
+  inventory initialization, attack identity, validation, and result
+  replication. Emit a bounded event chain with request ID, actor generation,
+  definition/instance ID, hotbar index, equip revision, weapon set, and
+  validated attack tick.
+- **Required outcome:** stable item identity authorizes equip and attack;
+  hotbar index is UI mapping only. The server owns inventory and
+  equipped-item history, including respawn initialization. Legal shots after
+  respawn work without manual re-equip; stale-generation, unowned, disallowed,
+  or genuinely unequipped requests still reject with a reason.
+- **Architecture outcome:** migrate toward the data-driven item/tool
+  definition with reusable components in
+  [`weapons/weapons.md`](weapons/weapons.md). Do not add or align another
+  hard-coded slot. First repair the current lifecycle at its identity owner;
+  then migrate `create...Definition()` registrations through parity-checked
+  slices. Do not combine a full rewrite with the immediate respawn fix unless
+  tracing proves the current model prevents a safe repair.
+- **Required scenario:** using the real dev-loop executable, select a loadout
+  where Rocket Launcher hotbar position differs from its legacy native slot;
+  equip/fire, die, respawn without manual re-equip, then fire again. Repeat
+  several lives and with two sets placing the same weapon at different
+  positions. Confirm server/client identity, ammo/cooldown policy, equip
+  acknowledgement, attack acceptance, and no false disagreement effects.
+  Also confirm invalid item identity is rejected.
+- **Scenario spec:** the full setup, event chain, and assertions are in
+  [`networking/networking.md`](networking/networking.md), under “Reproducible
+  scenario: equip, fire, die, respawn, fire again.” The current runner queues
+  steps but does not yet evaluate those assertions or launch/join the session.
+- **Handoff status:** ready for an agent to trace and repair respawn/equip.
+  The component-based weapon migration is a separately staged architecture
+  task, not an implied one-shot rewrite.
+
+### Execution order and agent handoff for priorities 1 and 2
+
+The work is split into evidence gates so the first agent can make the test
+surface reliable without guessing at either gameplay root cause:
+
+1. **Prove the existing `agent.*` command adapters.** Follow the command
+   registry through normal owners and record dispatch, acceptance, application,
+   and resulting state in the fresh executable's exact `EVENTS_JSONL_PATH`.
+   The adapter-specific owners and minimum journal evidence are in
+   [`dev-loop.md`](dev-loop/dev-loop.md), “Agent command proof before scenario
+   automation.” A command being listed in help or returning queued is not
+   proof it moved, aimed, acted, shot, or captured the intended state.
+2. **Complete the one-command scenario runner.** Implement the existing
+   [`dev-loop.md`](dev-loop/dev-loop.md) scenario-file contract: daemon/run
+   identity, readiness waits, bounded event/state conditions, assertions,
+   correlated final verdict, and nonzero failure status. Use a small command
+   smoke scenario first. Do not claim end-to-end automation until its verdict
+   is evaluated from the live journal.
+3. **Reproduce and fix priority 1.** Use the runner to trace map selection,
+   readiness, initial spawn, and respawn; require authoritative map identity
+   and in-bounds spawn evidence. This is the gate for trustworthy gameplay
+   scenarios, not a reason to block source-level priority 2 tracing.
+4. **Reproduce and fix priority 2's current lifecycle.** Run equip/fire/death/
+   respawn/fire without manual re-equip and capture the correlated
+   client/server identity path. Repair the first demonstrated divergence.
+   Keep the general weapon architecture migration staged unless that trace
+   proves identity migration is necessary to remove the bug safely.
+5. **Migrate the weapon architecture in parity slices.** First establish
+   stable definition/instance identity and respawn correctness. Then create a
+   generic validated definition loader, migrate one behavior family at a
+   time, prove JSON-only addition/reload for capabilities already implemented,
+   and delete old per-weapon constructors/slot compatibility only after
+   equivalent behavior passes the same live scenarios. Unknown component or
+   network protocol decisions remain explicit design work, not permission for
+   an agent to invent arbitrary JSON scripting.
+
+Priority 1 scenario acceptance requires the canonical map and revision to
+match on server/client, map readiness before spawn, recorded spawn source and
+safe position, and successful initial spawn plus respawn. Priority 2 requires
+an item in different hotbar positions across sets, identity-based acceptance,
+successful fire before and after at least three deaths without equip input,
+and reasoned rejection of an invalid/unowned/stale identity. Both scenarios
+must use normal command/game/network owners and the exact live journal; a
+synthetic self-test or build result alone does not pass.
+
+#### Copyable first-agent handoff
+
+```text
+Read AGENTS.md and docs/ROUTER.md, then follow the routed dev-loop,
+networking, debug-logging, and weapon documents. Work specification-first and
+preserve unrelated changes. Do not change gameplay code yet.
+
+Audit the current implementation of agent.move, agent.aim, agent.action,
+agent.shoot, and agent.snapshot. For each command, name the registration
+owner, normal action/application owner, existing StructuredLogger events,
+missing correlation or outcome evidence, and whether the live journal proves
+accepted versus actually applied behavior. Inspect the scenario-file runner
+and identify exactly which parts of the documented one-command contract are
+implemented versus missing. Do not infer runtime success from source or a
+queued response.
+
+Update the existing dev-loop/networking/open-gameplay-issues specifications
+with only evidence-backed corrections and concrete acceptance details. Define
+the smallest live command-proof scenario and the implementation gates for the
+one-command runner, including exact executable identity, EVENTS_JSONL_PATH,
+bounded waits/assertions, and final pass/fail semantics. Keep priority 1
+below-world spawn ahead of priority 2 integrated combat acceptance, while
+allowing priority 2 source tracing in parallel. Keep the broad component
+weapon migration separate from an immediate identity/respawn fix unless the
+trace demonstrates it is required. Do not claim a fix or runtime proof.
+
+Return exact source paths/functions and journal event names, spec gaps, a
+sequenced implementation handoff, and any unresolved product decision. Add
+the required single append-only changelog with exact before/after quotes.
+```
+
+The next implementation agent can then take the scenario-runner slice first;
+after that runner has a live pass/fail proof, separate agents can implement
+priority 1 and priority 2 against the same evidence contract. The current
+weapon spec is sufficient to set the destination architecture, but migration
+is broad enough to require its own owner-by-owner parity plan and live
+acceptance rather than bundling it into the respawn bug fix by assumption.
+
+### Plan next: high-impact gameplay and visual work
+
+| Rank | Report | Why this priority | Owner |
+|---|---|---|---|
+| 5 | NPC combat needs stronger challenge, rapid legal weapon rotation, and authored movement sequences; three-NPC play reportedly drops frame rate. | Affects core match quality. First separate behavior tuning from measured performance; current selected resource windows do not establish NPC count as the bottleneck. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`performance/performance.md`](performance/performance.md) |
+| 6 | Knife/melee should be a viable option and a full melee mode should support NPCs; Blender-authored attacks should run on deterministic ticks. | Large feature set with multiple open combat decisions. NPC participation is now specified; hitstun, scoring, recovery, and balance still need design decisions. | [`weapons/melee-weapons.md`](weapons/melee-weapons.md), [`gamemodes/supersmashbrosmelee.md`](gamemodes/supersmashbrosmelee.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
+| 7 | Bullet-hole and blood marks appear stretched/broken; intended appearance is complete recognizable PNG stamps with state-aware variants. | Visible quality issue with screenshots, but rendering cause and exact alive/dead variant policy need a focused repro and authoring decision. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md) |
+| 8 | Replay export and ragdolls are reported unreliable; export should work headless and show progress every 60 ticks. | Useful creator workflow, but the current report lacks a failing export journal; first isolate recording, serialization, playback, and presentation. | [`replay/replay.md`](replay/replay.md), [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md) |
+
+### Needs planning: architecture, scale, and future capabilities
+
+| Report | Why it needs planning | Existing owner |
+|---|---|---|
+| Multi-core execution, low-power support, and 240 FPS / aspirational 999 FPS. | The current journal is not a per-thread profile. Establish representative hardware, CPU/GPU/frame pacing measurements, determinism constraints, and a staged target before redesigning concurrency. | [`performance/performance.md`](performance/performance.md) |
+| Combined adverse-network and low-render-rate testing (500 ms latency and about 23 FPS). | Existing networking docs define prediction/rewind and network scenarios; combined latency, loss/jitter, and low-FPS acceptance needs a bounded matrix and reproducible harness. The current screenshot shows about 8 ms ping, not this test. | [`networking/networking.md`](networking/networking.md) |
+| Avatar-specific NPC collision, grappling hook/upward mobility, additional movement-tech library, generalized weapon/tool components, vehicles, and Juggernaut crowd readability. | These need explicit gameplay shape, ownership, performance budgets, and acceptance cases. Avoid making one bespoke subsystem for each item. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`movement/movement.md`](movement/movement.md), [`weapons/weapons.md`](weapons/weapons.md), [`gamemodes/juggernaut4.md`](gamemodes/juggernaut4.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md) |
+
+### Already documented sufficiently; no duplicate spec added
+
+- One-command `ss` start/rejoin, leaving a room while keeping a healthy server
+  alive, and required session identity evidence are in
+  [`networking/networking.md`](networking/networking.md) section 67.1 and
+  [`dev-loop/dev-loop.md`](dev-loop/dev-loop.md).
+- JSON polling/hot reload and live mode switching are described in the JSON
+  configuration/live-development and gamemode specifications.
+- Generic weapon requests and reusable hitscan/projectile behavior are in
+  [`weapons/weapons.md`](weapons/weapons.md); the Blender-to-runtime proposal
+  and 60 Hz animation contract are in
+  [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md)
+  and [`animations/animations.md`](animations/animations.md).
+- `logs/2026-10-16/20261016_134002/events.jsonl` contains 82,126
+  `client.npc-avatar.snapshot-reassembled` events. This is a large repeated
+  diagnostic count worth reviewing for bounded logging, but it does not prove
+  that logging caused the reported frame-rate issue.
+- The screenshot with `Room: ZZCV2WK` proves that a room code was visible in
+  that captured later state; it does not disprove the earlier missing-code
+  report or prove the leave/rejoin flow.
+
+## Play-and-speak issue discovery
+
+**Audience:** the player describing an issue during a live play session and
+the AI/helper who records it. This section defines issue capture and routing;
+it does not make an unverified report an accepted requirement, diagnose a
+root cause by itself, or replace the owner specification and runtime evidence.
+
+When an issue is spoken during play, capture the player's words as a short
+verbatim quote when possible, then record the context separately:
+
+1. **What was happening?** Map/mode, actor/avatar, weapon or ability, client
+   or host role, and the command/input immediately before the issue.
+2. **What did the player expect?** Keep the intended behavior in the player's
+   own words; do not infer a new rule from the symptom alone.
+3. **What actually happened?** Record visible result, error text, whether it
+   repeated, and whether leaving/rejoining or another action changed it.
+4. **Where does this belong?** Search current specs, issue notes, regressions,
+   and code ownership. Link the existing owner and add the report there; do
+   not create a competing spec when one already owns the behavior.
+5. **What is known?** Mark each item as user-reported, source-traced,
+   runtime-reproduced, or human-accepted. If the owner is unclear, preserve
+   the report in this index with candidate links until it can be routed.
+6. **What evidence can help reproduce it?** When available, record build and
+   executable identity, exact `EVENTS_JSONL_PATH`, scenario/action sequence,
+   server/client roles, and the first expected-versus-actual divergence. Do
+   not interrupt play to guess a cause; capture the report first and investigate
+   after or between play attempts.
+
+The working loop is: play and speak → capture the report → find the owning
+spec → clarify expected behavior → append the issue and acceptance scenario →
+implement only after the requirement is clear → replay the same scenario on
+the live dev-loop executable → inspect the event journal → update the issue
+with the result. A transcript is useful evidence of intent, not proof that the
+game behaved that way.
+
+## When an implementation does not work in play
+
+Do not conclude that “the code was ignored” or that the executable is stale
+until the path is traced. Find the first missing step among:
+
+1. the requested behavior is clear and has a checkable acceptance scenario;
+2. the intended command/input reaches the documented owner;
+3. the expected config, avatar, map, or animation asset is the one actually
+   loaded;
+4. the correct client/server authority accepts or rejects the action, with a
+   reason;
+5. simulation changes the authoritative state;
+6. replication carries that state to the other side; and
+7. presentation displays the resulting state.
+
+For each attempt, record what changed, the exact executable/build identity,
+the runtime scenario, journal evidence, the first divergence, and what will be
+tried next. A successful compile proves only that the code compiled. A runtime
+event proves that a path ran, not that the behavior felt or looked correct;
+human acceptance remains its own result. Follow
+[`../workflows/runtime-scenario-validation.md`](../workflows/runtime-scenario-validation.md).
+
+### Griever example
+
+The existing Griever specification already records a report of persistent
+server-position error and slow hovering, with the first cause unconfirmed. Its
+attempt log also includes the short report “good rolling but doesnt bounce,
+needs to bounce a lot lot lot.” Treat these as separate observed symptoms:
+rolling motion, bounce response, resting/floor behavior, and client/server
+position agreement. For the next play attempt, state the intended bounce
+behavior before tuning, record the exact executable and journal, and identify
+whether the first divergence is capability/config selection, input, server
+acceptance, collision contact/response, reconciliation, or presentation. Keep
+the actual Griever requirements and attempt evidence in
+[`griever-monster/griever-monster.md`](griever-monster/griever-monster.md).
+
+## Work focus noted for 2026-10-16
+
+The planned work focus is to improve the custom animation authoring/runtime
+path, make Zombie Tower better through actual play, and speak issue reports as
+they happen so they can be routed into the right specification. This is a
+planning note, not a claim that these tasks were implemented or accepted. For
+animation, first compare the runtime contract in `animations.md` with the
+Blender proposal and decide the smallest export slice. For Zombie Tower, use
+the existing mode and Griever specifications, then record real play scenarios
+and outcomes in their attempt/issue sections.
+
+## Documentation follow-up
+
+Review each linked owner spec with the user before implementation. Lock open
+choices (especially collision shape, authority/correction, PvP mode policy,
+spawn selection, and SSBM rules) into acceptance scenarios first. Implementation
+should then run those scenarios on the dev-loop executable and inspect live
+runtime evidence; a document change or successful build alone does not prove a
+fix.

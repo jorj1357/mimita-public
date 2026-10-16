@@ -31,7 +31,8 @@ static const WeaponDefinition* equippedWeaponDefinition(const ServerPlayer& play
     for (const std::string& id : player.ownedWeaponIds)
     {
         const WeaponDefinition* def = WeaponRegistry::instance().get(id);
-        if (def && def->slot == player.equippedSlot && serverCommunityWeaponAllowed(def->id))
+        if (def && def->slot == player.equippedSlot &&
+            serverCommunityWeaponAllowed(player, def->id))
             return def;
     }
     return nullptr;

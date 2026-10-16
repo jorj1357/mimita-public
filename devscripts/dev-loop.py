@@ -1599,12 +1599,19 @@ class DevLoop:
             print(f"[DEV SERVER] {self.last_message}")
         return stopped
 
-    def wait_for_logger_started(self, role: str, pid: int, timeout: float = 20.0) -> bool:
+    def wait_for_logger_started(self, role: str, pid: int, timeout: float = 20.0,
+                                process: subprocess.Popen | None = None) -> bool:
         """Confirm the exact child wrote its own logger.started event."""
         if not self.events_path:
             return False
         deadline = time.time() + timeout
         while time.time() < deadline:
+            if process is not None and process.poll() is not None:
+                self.last_message = (
+                    f"{role} pid={pid} exited before logger.started "
+                    f"(exit_code={process.returncode})"
+                )
+                return False
             try:
                 with open(self.events_path, "r", encoding="utf-8") as journal:
                     for line in journal:
@@ -1844,10 +1851,27 @@ class DevLoop:
             self.server_adopted = False
             self.server_launch_ms = time.time() * 1000.0
             self.server_unavailable = False
-            self.server_ready = self.wait_for_logger_started("server", server.pid)
+            self.server_ready = self.wait_for_logger_started(
+                "server", server.pid, process=server)
             self.observe_launch_windows("server_ready" if self.server_ready else "server_logger_missing")
             if not self.server_ready:
-                self.last_message = f"server pid={server.pid} did not write logger.started"
+                if not self.last_message or not self.last_message.startswith(
+                        f"server pid={server.pid} exited before logger.started"):
+                    self.last_message = (
+                        f"server pid={server.pid} stayed alive but did not write "
+                        "logger.started before the readiness timeout"
+                    )
+                self.record_runtime_event(
+                    "dev-loop.server.startup_failed",
+                    {
+                        "pid": server.pid,
+                        "executable": str(exe),
+                        "exit_code": server.returncode,
+                        "failure": self.last_message,
+                        "journal_path": self.events_path,
+                    },
+                    "server failed the logger.started readiness check",
+                )
                 self.save_state("server_logger_missing")
                 if not self.stop_server():
                     print(f"[DEV SERVER] {self.last_message}; server could not be stopped")

@@ -17,7 +17,7 @@ from AI, so , we need a way to edit the script, rebuild it, and it does not disa
 The unresolved user problem is not “add more command names.” It is to define
 one reliable path through which an AI can send a command to one already-running
 MiMITA client, prove that the client received it, prove that the normal gameplay
-owner applied it, and keep the dev-loop supervisor alive long enough to collect
+owner applied it, and keep the dev-loop daemon available long enough to collect
 the result.
 
 The desired user-facing shape is one script, not a second gameplay controller:
@@ -229,6 +229,41 @@ The loop must expose enough status to distinguish at least:
 - ownership or port conflict;
 - stopped with persistent server retained.
 
+### 5.1 Lower-priority update-speed and script-structure investigation
+
+The user reports that updates can feel slow, but says the dev loop currently
+works and this is not a high-priority problem. Treat this as a future
+investigation, not an immediate rewrite or a reason to risk the always-running
+loop. The question of splitting `dev-loop.py` into smaller files is open; do
+not split it just because the file is large.
+
+Current source has several distinct waits and costs:
+
+- `POLL_SECONDS = 0.50`: the watcher checks for file changes twice per second.
+- `snapshot_inputs()` recursively walks the watched source trees for each
+  watcher pass. The script comment estimates about 60 ms for a snapshot on
+  this checkout; that is a source comment, not a fresh measurement.
+- `DEBOUNCE_SECONDS = 0.30`: after a change is queued, the loop waits before
+  starting the build.
+- `run_build()` invokes `build.py build-only`; actual C++ compile/link time
+  depends on changed files, compiler cache hits, and build state.
+- `publish_build()` validates and copies the executable and runtime DLLs into
+  a numbered build directory after compilation.
+
+These stages mean the code intentionally trades some edit-to-build delay for
+lower background polling during gameplay, safe build completion, artifact
+validation, and build identity. Do not remove the delay, cache checks, copy
+validation, or identity guards by guessing.
+
+If the user asks to prioritize speed later, first record timestamps for edit
+observed, debounce complete, build start/end, publish complete, and any second
+build queued. Measure a no-op edit, a small C++ edit, and a broad/header edit.
+Then tune only the measured bottleneck while preserving one build at a time,
+correct source-generation identity, a running client's stability, and the
+persistent daemon. Consider splitting the script only if measurements reveal a
+specific maintenance or timing boundary that benefits from separate modules;
+the single `dev-loop.py` entry point and one-daemon lifecycle must remain.
+
 ## 6. Build and publish contract
 
 The loop invokes the canonical build-only command and captures its output and
@@ -366,11 +401,23 @@ the loop must not infer a journal from an older similarly named file.
 - a security dialog cannot appear;
 - the runtime is validated without reading its journal.
 
-Every ordinary local dev profile must bind to `127.0.0.1` (or another explicit
-loopback address) and record that policy. A non-loopback bind is rejected unless
-the profile explicitly sets `allow_external_bind`; that exception is an
-intentional network test and can never claim `FIREWALL_CLEAR` merely because
-the process started. Before or during a bounded launch monitor it must record:
+A loopback-only bind such as `127.0.0.1` may be used only by a clearly named
+isolated local test profile. It is not acceptable for `ss`, a server-preset
+start, or any scenario claimed to prove an online-capable client/server path.
+Those flows must start the dedicated server using the same registered room
+setup as the GUI, then join by room code through the coordinator/ICE flow; the
+server must use a supported non-loopback bind for the intended network scope.
+A direct client `127.0.0.1` address is not an acceptable substitute.
+
+The dev-loop's own control socket may bind to `127.0.0.1`: that socket carries
+AI commands to the Python dev-loop on this same computer. It is local process
+control, not the game client's connection to the dedicated server. Keep these
+addresses and purposes distinct in status and logs.
+
+A non-loopback server bind is rejected unless the profile explicitly sets
+`allow_external_bind`; that exception is an intentional network test and can
+never claim `FIREWALL_CLEAR` merely because the process started. Before or
+during a bounded launch monitor it must record:
 
 - bind address and ports;
 - executable and process role;
@@ -601,12 +648,16 @@ keyboard, mouse, or GUI action:
 | inspect state | `agent.snapshot <label>` | one structured state sample is written |
 | run a bounded scenario | `agent.scenario <id>` | registered steps execute in order with step IDs and assertions |
 
-These names are the v1 command contract. The current implementation provides
+These names are the v1 command contract. The current source provides
 `agent.move`, `agent.aim`, `agent.action`, `agent.shoot`, and
-`agent.snapshot`; the scenario queue/file and assertion runner are the next
-slice and must not be described as implemented until their events are present
-in a live journal. Existing commands remain valid. The adapters must call the
-same action/input functions used by normal gameplay;
+`agent.snapshot`. `dev-loop.py --scenario-file` also reads a repository-local
+JSON (or fenced-JSON Markdown) file and queues its `setup` and `steps` commands
+in the existing ready client's command queue. The command queue executes
+steps, but it is not yet a complete scenario runner: assertions are not
+evaluated, `scenario.finished` explicitly records
+`assertions_evaluated=false`, and the control call returns a queued response
+rather than a final pass/fail result. Existing commands remain valid. The
+adapters must call the same action/input functions used by normal gameplay;
 they must not teleport by editing `Player::pos`, fire by spawning a projectile
 directly, or rotate a limb by bypassing the animation owner.
 
@@ -624,18 +675,76 @@ dev-loop.py --launch-mode <mode>
   -> events.jsonl
 ```
 
-`--startup-command` remains useful for setup such as `teleport`, avatar
-selection, and `equipslot`. A bounded scenario begins only after the client is
-connected and the world is loaded. The scenario state machine then owns a
-single queue of timestamped steps and emits `scenario.started`,
-`scenario.step`, `scenario.assert`, and `scenario.finished` records. A second
-client or competing dev loop is not required for a local transform test.
+`--startup-command` remains useful for setup such as avatar selection and
+`equipslot`. Today, `--scenario-file` requires the dev-loop daemon and a
+logger-ready client; it does not launch the server/client or wait for network
+join itself. It queues ordered commands with optional `delay_ms_after`; the
+client emits delivery and `scenario.step`, followed by `scenario.finished`
+when the last command returns. A second client or competing dev loop is not
+required for a local transform test.
+
+The complete target workflow is one scenario-file request from any supported
+dev-loop state: ensure exactly one daemon, build/launch the selected run if
+needed, wait for server readiness/room registration and client connection/map
+readiness, then execute scenario steps and assertions. Lifecycle actions use
+the existing dev-loop and game owners; the runner must not start a second
+server, fake a join, or bypass normal gameplay commands.
+
+#### End-to-end scenario file contract
+
+The file should be versioned JSON with these top-level fields:
+
+```json
+{
+  "schema_version": 1,
+  "id": "weapon_respawn_identity_v1",
+  "launch": {
+    "profile": "networking-regression",
+    "launch_mode": 1,
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [],
+  "assertions": [],
+  "timeout_seconds": 180
+}
+```
+
+`launch` asks the dev-loop to ensure one daemon and a matching client/server
+run; it never authorizes stopping an unrelated or ambiguously owned process.
+If a run is started, it uses the selected mode's normal server registration
+and client join flow. If a healthy matching run is reused, the runner verifies
+its build, mode, server, room/session, map, and journal identity before acting.
+The invocation returns the scenario ID/revision, request ID, run/build
+identity, client/server PIDs, and exact journal path.
+
+Each ordered step has a stable ID and one operation: `command` routes through
+the normal client terminal, `wait_for_event` waits for a correlated structured
+event, `wait_for_state` waits for a named authoritative/presented state from an
+existing snapshot owner, `snapshot` captures state without mutation, and
+`assert` compares expected and actual values with explicit tolerance. Waits
+have bounded tick/time limits and report the last event/state observed on
+timeout. Wall-clock delay is optional pacing only; it must not substitute for
+waiting on readiness or game state. Bounded repeats may continue a normal
+action until an event/state condition (for example NPC death) or a maximum
+count/deadline; unbounded loops are invalid.
+
+The runner emits `scenario.started` before setup, `scenario.step` on each
+operation, `scenario.assert` for every assertion, and exactly one terminal
+`scenario.finished` with `passed`, `failure_kind`, first failed step/assertion,
+last successful step, expected/actual values, and whether the run was
+intervened. The CLI waits for that record by request ID and returns nonzero
+unless `passed=true`. Missing logs, timeouts, stale build/run identity,
+unmatched server/client identity, early client/server exit, or incomplete
+assertions fail the scenario rather than producing a queued-as-success result.
 
 ### Scenario file
 
-The planned scenario runner will accept a repository-local JSON scenario file
-through the terminal command `agent.scenario_file <path>`. The current
-repository scenario document is
+The current runner accepts a repository-local JSON scenario file through
+`python devscripts/dev-loop.py --scenario-file <path>`; it does not require a
+game-terminal `agent.scenario_file` command. The current repository scenario
+document is
 `C:\mimita-v9\devscripts\scenarios\readmewhat.md`. The file is
 declarative:
 
@@ -661,11 +770,13 @@ declarative:
 }
 ```
 
-For the current slice, submit the individual commands directly through the
-client terminal after the startup readiness gate. Arguments are parsed and
-validated by the client command owner. The future scenario file is not a
-second gameplay configuration system and is never loaded by maps, servers, or
-ordinary players. It is a bounded development/test input.
+Currently, the control-side parser queues each `setup` and `steps` command in
+order, with wall-clock delays from `delay_ms_after`. It does not evaluate the
+example `assertions` array, wait for state/event predicates between commands,
+or return a scenario verdict. It also does not launch a server/client or join a
+room. Client arguments are parsed by each command owner. The scenario file is
+a bounded development input, not a gameplay configuration system loaded by
+ordinary players.
 
 ### Avatar transform scenario
 
@@ -683,11 +794,14 @@ canonical frame, and non-player GLBs produce no player-normalization records.
 
 ### Python responsibilities
 
-Python may launch/reuse the dev loop, submit a bounded command sequence through
-the documented terminal/control path, wait for `scenario.finished`, and parse
-`events.jsonl`. Python must not manipulate the game window to synthesize
-keyboard/mouse events for this contract, and must not declare success from
-process liveness or build status alone.
+Today Python can submit a command or queue a scenario into an already-running
+logger-ready client and return the queue acknowledgement. The AI caller must
+then inspect the exact journal; the current `scenario.finished` is execution
+completion only, not a pass. The target Python entry point must be able to
+ensure daemon/run readiness, wait for the matching final verdict, and return
+that verdict and journal path. It must not manipulate the game window to
+synthesize keyboard/mouse events, and must not declare success from process
+liveness or build status alone.
 
 ### Completion evidence
 
@@ -708,6 +822,58 @@ fresh journal for the exact executable:
 
 Build success and a running window are necessary setup evidence, not feature
 acceptance.
+
+### Agent command proof before scenario automation
+
+Do not treat command registration, queue acknowledgement, or a
+`startup.command.dispatch` event as proof that an agent action worked. Prove
+each adapter through its full owner path in a fresh identified run before
+building a larger scenario around it:
+
+| Adapter | Current owner path to trace | Minimum live-journal proof |
+|---|---|---|
+| `agent.move` | `src/main-systems.cpp` registration -> scheduled input -> `src/input/input-poll.cpp` -> fixed-tick application in `src/engine/engine-tick-net.cpp` -> movement state | request/dispatch, accepted axes and tick window, applied axes/tick, before/after position or velocity, then release after requested ticks |
+| `agent.aim` | command registration -> shared aim/camera owner -> player aim state | requested world target, accepted target, resulting direction/state and tick |
+| `agent.action` | command registration -> shared action-edge/input owner -> fixed-tick action handler | action name, accepted edge, consuming owner and result/state at the corresponding tick |
+| `agent.shoot` | command registration -> normal weapon input -> attack request -> authoritative server validation/result | equipped stable identity plus generation/revision, attempt, server accept/reject reason, ammo/cooldown/result; command acceptance alone is insufficient |
+| `agent.snapshot` | command registration -> state sampler -> StructuredLogger | labeled sample with tick and the fields needed by the scenario; it is observation, not proof that prior actions succeeded |
+
+The command-proof slice should first run bounded isolated checks through the
+real command entry point and exact executable journal. It must show one
+successful example and one deliberate invalid-argument/blocked-state example
+per adapter, with request/step correlation and rate-limited owner diagnostics.
+If an adapter has no owner event or cannot distinguish accepted from applied,
+specify and add that diagnostic at its existing owner before writing a
+high-level pass assertion. Do not add a parallel logger or bypass normal input,
+movement, weapon, or server owners. Record the executable identity and exact
+`EVENTS_JSONL_PATH`; distinguish source review, build, live action evidence,
+and visual review.
+
+After those proofs, implement the end-to-end scenario lifecycle and verdict
+contract above. Then author the priority 1 spawn scenario and priority 2
+weapon lifecycle scenario as separate files. Priority 1 should be proven first
+because a valid map and in-bounds spawn are prerequisites for trustworthy
+combat testing. Priority 2 can be traced in parallel, but its final integrated
+scenario should run only on a known-good map/session. The broader weapon
+component migration is not a prerequisite for fixing a reproduced equip or
+respawn lifecycle defect; promote it into the bug fix only if the trace proves
+the current identity/slot model prevents a safe, bounded correction.
+
+### Live scenario inspection and steering
+
+An agent must be able to inspect the matching journal while a scenario runs
+and issue a normal `--command` to investigate an unexpected state. Commands
+submitted during a scenario must be serialized at a declared step boundary
+and tagged with the parent scenario ID, intervention ID, reason, and current
+step. An intervention that changes gameplay marks the original run as
+`intervened`; its original assertions cannot silently remain a clean pass.
+The agent can then continue from a recorded checkpoint, or abort and submit a
+revised scenario file with a new content hash/revision. Edits to a scenario
+file after it was queued must not change the already-running request.
+
+Current limitation: the dev-loop accepts new command requests and appends
+them to the same client queue, but it does not provide scenario pause,
+step-boundary arbitration, intervention correlation, or assertion invalidation.
 
 ## 18. What must be solved before AI commands are reliable
 
@@ -843,9 +1009,24 @@ control socket, writes a stopped status, and leaves the persistent server.
 still alive; it cannot revive a closed Python process. `--headless` hides the
 game client and consoles; it does not make the Python daemon persistent.
 
-The required fix is a supervisor contract, not an unconditional infinite
-loop:
+The required design is one self-starting entry point, not a separate
+supervisor program. An AI call such as
+`python devscripts/dev-loop.py --command "agent.move 1 0 120"` is both the
+command interface and the recovery entry point:
 
+- The entry point checks whether this checkout already has one healthy daemon
+  by checking its PID, authenticated control socket, heartbeat, run, and
+  source identity.
+- If the daemon is healthy, the entry point sends the request to it and exits
+  with the request result.
+- If the daemon is absent, stale, or has a different script identity, the
+  entry point starts exactly one background instance of the same
+  `dev-loop.py`, waits for it to publish ready status, then sends the request
+  once. It must not start duplicate daemons or duplicate a command during
+  recovery.
+- The background instance stays alive between requests so its watcher,
+  builder, status, and command socket remain ready. It does not exit just
+  because one AI command finished or the game client closed.
 - The daemon writes a heartbeat and last-exit reason to the status snapshot.
 - Every uncaught exception is written to the run journal before shutdown.
 - A client exit records exit code, signal/termination reason, and whether the
@@ -854,16 +1035,19 @@ loop:
   `server_alive`.
 - A control request can explicitly stop the client, server, or whole daemon;
   normal client exit must not silently stop the server.
-- AI tests launch the daemon in a host-managed process/session whose stdout
-  and stderr are redirected to a durable log. Closing a visible terminal
-  window must not be the mechanism used to keep the test alive.
+- The script itself launches its background daemon in a durable process
+  session. Its stdout and stderr go to a durable log. Closing the short-lived
+  command window does not close the daemon.
 - The loop refuses to start a competing daemon and reports the existing PID,
   status path, control port, journal path, and recovery instructions.
 
-The implementation must not claim “running all the time” if the daemon is
-gone. The status path and heartbeat are the authority, and a fresh daemon
-must be started only through the controlled lifecycle path when the old one is
-actually absent.
+This design keeps the loop running continuously during AI work without asking
+the user to keep a second supervisor application open. If Windows, a user, or
+an error still closes the daemon, the next `--command`, `--scenario-file`, or
+`--ensure-running` call must restore it before sending work. No software can
+promise that a process is literally impossible to close; the guarantee is that
+the normal AI entry point detects a dead loop, explains the last known reason,
+and brings up one healthy replacement before proceeding.
 
 ### 19.1 The exact process topology
 
@@ -871,18 +1055,20 @@ The implementation and every future investigation must treat these as three
 different processes with three different lifetimes:
 
 ```text
-host supervisor (future required layer)
-  -> Python dev-loop daemon
-       -> dev-loop-launched MiMITA client
-       -> dev-loop-launched dedicated server
+AI/task runner repeatedly calls dev-loop.py
+  -> short-lived dev-loop.py command entry point
+       -> starts the same script in background daemon mode if needed
+       -> sends one request to the single Python dev-loop daemon
+            -> dev-loop-launched MiMITA client
+            -> dev-loop-launched dedicated server
 ```
 
 The responsibilities are deliberately separated:
 
 | Process | Owns | May restart | Must not silently restart or kill |
 |---|---|---|---|
-| host supervisor | keeping the Python daemon available, durable stdout/stderr, daemon PID and restart policy | the Python daemon after a verified unexpected exit | unrelated Python processes, unrelated game/server processes |
-| Python dev-loop daemon | file watcher, build worker, control socket, status, command queue, owned client lifecycle | its owned client when `--auto-restart` is enabled; a client after an explicit launch request | the daemon itself after it has already exited; an unverified server |
+| dev-loop.py command entry point | ensure one matching daemon, start it if absent, forward one command/scenario | the same script in background daemon mode | unrelated Python processes, unrelated game/server processes |
+| Python dev-loop daemon | file watcher, build worker, control socket, status, command queue, owned client lifecycle | its owned client when `--auto-restart` is enabled; itself only through one controlled replacement | an unverified server or duplicate command |
 | MiMITA client | gameplay, terminal registry, fixed-tick input, animation, snapshots | only through the daemon's controlled launch/recovery path | the Python daemon or dedicated server |
 | dedicated server | authoritative server state and server tick | only through explicit server replacement/stop policy | merely because the client or daemon exits |
 
@@ -895,9 +1081,11 @@ is available. The minimum availability check is:
 4. the status file identifies the current run and journal;
 5. the client and server identities are separately reported.
 
-If the daemon is absent, commands must fail clearly with
-`NO_RUNNING_DAEMON`. They must not silently start a second daemon as a side
-effect of `--command` or `--scenario-file`.
+If the daemon is absent, `--command`, `--scenario-file`, and
+`--ensure-running` must start one daemon, wait until its authenticated control
+socket and heartbeat are ready, then continue. If recovery fails, they return
+`DAEMON_START_FAILED` with the exit reason and log location. `--status` stays
+read-only and reports `NO_RUNNING_DAEMON`; it does not start anything.
 
 ### 19.2 Why the current Python daemon becomes stale
 
@@ -950,8 +1138,9 @@ with new code. The required behavior is a controlled daemon replacement:
    duplicate a command after restart. Every queued request is marked
    `preserved`, `cancelled`, or `completed`.
 6. The daemon closes its control socket and writes a final handoff record.
-7. A host supervisor starts exactly one replacement daemon using the new
-   script identity.
+7. The next CLI entry point starts exactly one replacement daemon using the
+   new script identity. The same script is used as the bootstrap and daemon;
+   no separate supervisor application is required.
 8. The replacement daemon obtains the checkout lock, creates a new control
    token, opens or adopts the documented current run, and writes a new
    heartbeat.
@@ -960,37 +1149,38 @@ with new code. The required behavior is a controlled daemon replacement:
    restart must not automatically replace a healthy game pair unless the
    launch policy explicitly requires it.
 
-The simpler allowed implementation is for the host supervisor to stop and
-restart the daemon after detecting a script change. In either implementation,
-the important contract is that the old interpreter cannot continue presenting
-itself as the current daemon after its source identity changed.
+The CLI entry point may detect the stale script hash and perform this
+controlled replacement. The important contract is that the old interpreter
+cannot continue presenting itself as the current daemon after its source
+identity changed.
 
-### 19.4 Visible supervisor versus visible game
+### 19.4 Visible dev-loop daemon versus visible game
 
 `launch_visibility=visible` applies to the MiMITA client window. It does not
 promise a separate dev-loop console window. The current client/server launch
 policy also uses `CREATE_NO_WINDOW` for child consoles, so a user may see the
 game while seeing no separate dev-loop item in the Windows taskbar.
 
-If humans must watch the AI commands, the future implementation must define a
-separate supervisor visibility policy:
+If humans must watch the AI commands, the script needs a visibility option for
+its own background daemon window:
 
 ```text
-supervisor_visibility = visible | hidden
+daemon_visibility     = visible | hidden
 client_visibility     = visible | headless
 server_console        = hidden | visible
 ```
 
-For `supervisor_visibility=visible`:
+For `daemon_visibility=visible`:
 
-- launch the daemon in its own durable Windows console/process group;
+- launch the daemon from the entry point in its own durable Windows
+  console/process group;
 - keep stdout and stderr attached to a durable log as well as the console;
 - give the console a stable title containing the checkout and run ID;
 - do not use closing the console as the normal way to stop the daemon;
 - show the control port, daemon PID, client PID, server PID, build identity,
   and journal path in the status display.
 
-For `supervisor_visibility=hidden`, the same records must still exist in the
+For `daemon_visibility=hidden`, the same records must still exist in the
 durable log and status file. Hidden operation is not allowed to reduce the
 available evidence.
 
@@ -1039,19 +1229,277 @@ The following outcomes must be explicit and independently testable:
 
 | Failure | Required result | Allowed recovery |
 |---|---|---|
-| daemon exits unexpectedly | heartbeat stops; final/host log records exit reason if possible | host supervisor starts one replacement daemon |
+| daemon exits unexpectedly | heartbeat stops; status preserves last heartbeat and durable log records exit reason if possible | next command/scenario entry point starts one replacement daemon |
 | client exits while daemon lives | client exit event includes PID/code/reason | daemon may relaunch only when `--auto-restart` policy allows |
 | server exits while client lives | server exit event and client connection state are recorded | explicit server relaunch/replacement policy only |
-| script changes while daemon lives | daemon/script identity becomes stale or controlled restart begins | host supervisor performs one daemon replacement |
+| script changes while daemon lives | daemon/script identity becomes stale or controlled restart begins | next command entry point performs one daemon replacement |
 | build succeeds while client lives | new artifact is published; current client remains on old verified build | explicit launch request selects new artifact |
 | build fails | old artifact remains identifiable but stale for new source | no launch of the stale artifact as current |
-| control socket is absent | command exits with `NO_RUNNING_DAEMON` | start/recover daemon through lifecycle entry point |
+| control socket is absent | `--status` reports `NO_RUNNING_DAEMON`; a work request waits for daemon readiness | `--command`, `--scenario-file`, or `--ensure-running` starts one daemon |
 | second daemon requested | request is rejected with existing PID/status/control details | use the existing daemon |
 | client and server build IDs differ | launch/rejoin is rejected or explicitly reconciled | controlled replacement of the mismatched owner |
 
 The system must not “fix” these cases by killing every `mimita.exe`, every
 `python.exe`, or every server process. Ownership must be proven from the
 checkout, run ID, executable identity, command line, and recorded PID.
+
+### 19.7 Investigation note: daemon availability and one-command room launch
+
+The user reports that the development loop sometimes disappears while the
+game executable or server remains in the background. They also report that
+leaving a room can make it unavailable, and that running `ss` can report a
+missing room identity or require leaving/joining more than once. These are
+separate ownership failures and must be diagnosed independently.
+
+The current source/spec comparison identifies these concrete gaps:
+
+- `devscripts/dev-loop.py` currently runs as a foreground Python process. Its
+  `finally` block closes the control socket and writes stopped status; a later
+  `--command` call does not currently restart it. This is the main mismatch
+  with the user's desired workflow.
+- Current `state()` writes `run_alive` as `server_alive OR client_alive`. It
+  does not report whether the Python daemon itself is alive. The status file
+  can therefore say the run is alive because a server remains, even when the
+  command/control owner is gone. This does not meet section 19.1's availability
+  check, which requires a live daemon PID, authenticated control socket, and
+  fresh heartbeat.
+- `--auto-restart` is a client recovery option; it is not a daemon supervisor.
+  Closing the terminal, Ctrl-C, console termination, or an uncaught Python
+  exception can end the daemon while leaving the separately owned server.
+- `config/command-aliases.json` maps `ss` to
+  `server_start_preset sandbox_1`. The desired behavior in networking
+  section 67.1 is one idempotent start-or-rejoin action. The helper now
+  follows the room-code start path and reuses a live matching local server;
+  end-to-end behavior remains unverified.
+- At the time of the original investigation, the terminal helper rejected an
+  already-running server and queued a localhost direct address, so it could
+  neither reuse the room nor follow the GUI registration handshake. On
+  2026-10-16, `launchServerPresetAndJoin()` was changed to queue the registered
+  room-code path for a newly launched, reused, or in-process preset server.
+  It compares an existing external server's live process and basic preset
+  settings before reuse. This source change still needs a live leave-once,
+  `ss`-once acceptance run.
+- The historical report “room identity not found” was not found as a literal
+  in the inspected network/terminal owners. The exact user-facing text and
+  journal event still need capture during a fresh reproduction before
+  assigning that separate failure diagnosis.
+- `src/network/multiplayer-tick.cpp` intentionally rejects a WELCOME packet
+  whose run ID or build ID differs from the client's expected identity. This
+  guard protects against joining the wrong server and must not be removed to
+  make `ss` appear to work. The launch/rejoin owner must instead resolve the
+  old connection/server and start or join the intended matching instance.
+- The GUI room-code path polls the server's room-file result and sets
+  `gPendingConnect.roomCode`. The terminal preset helper now uses this same
+  path instead of queuing a gameplay `directAddress`. `server_leave` still
+  disconnects only the client (`src/terminal/network-commands.cpp`, around
+  lines 516-523); the helper now reuses a live matching preset server and its
+  published room code. If the connection is still active, the command says
+  the player is already in a game and leaves it unchanged.
+- The current `npc-navigation` profile binds its dev-loop-launched server to
+  `127.0.0.1:1357` (`devscripts/dev-profiles/npc-navigation.json`), and the
+  general bind preflight treats loopback as the normal local-test policy
+  (`devscripts/dev-loop.py`, `build_server_args()` and
+  `validate_firewall_policy()`). This is suitable only for a local-only test;
+  it does not satisfy the required `ss` online-room scenario. The dev-loop
+  control socket's separate loopback address is local AI-to-script IPC and is
+  not the gameplay connection.
+- `src/terminal/network-commands.cpp` constructs preset settings from the JSON
+  preset then delegates to the helper. The intended contract is to apply those
+  same map/mode/player/NPC settings using the same registered server startup
+  and room join flow as the GUI buttons. Keep the command as a shortcut for
+  those setup actions, not a second local-only server implementation. Player
+  gameplay actions must still originate from the client and reach the
+  authoritative server over its normal packets.
+
+Read-only evidence from 2026-10-16: `.dev/state.json` reported build 2429 as
+the latest current artifact, an adopted server PID 33140 still running build
+2427, `builds_match=false`, and no client PID. The control port and token were
+present, but this snapshot did not contain a daemon PID, daemon heartbeat, or
+daemon source hash. This establishes a stale server/build mismatch and
+insufficient daemon-liveness reporting for that snapshot. It does not prove
+that this exact mismatch caused the user's earlier “room identity not found”
+message; that message and the leave/second-leave sequence still need a fresh
+runtime journal from reproduction.
+
+### Launch incident: build 2430 did not reach the client launch step
+
+Evidence supplied and inspected for run `20261016_074515`:
+
+- `--versioninfo` succeeded for `.dev/builds/2430/mimita.exe`; this proves the
+  selected executable could run the bounded identity probe, not that its
+  server mode started successfully.
+- The dev-loop journal recorded `dev-loop.launch.args` for server PID `10820`,
+  build path `.dev/builds/2430/mimita.exe`, and bind `127.0.0.1:1357`.
+- The journal then recorded phase `server_logger_missing`. It contains no
+  matching `logger.started` event for process role `server` and PID `10820`.
+- `DevLoop.launch_latest()` waits up to 20 seconds for exactly that event. If
+  it does not find it, it saves `server_logger_missing`, stops that owned
+  server, and returns before constructing or launching the client.
+- The saved state showed `server_ready=false`, no client PID, and
+  `build_status=server_logger_missing`. A later process check found PID `10820`
+  no longer running. The client was therefore never launched; `[1]` did run
+  its launch path, but it stopped at server readiness.
+
+The exact reason the server did not write `logger.started` is not proven. The
+journal has no server startup error or server exit code. The launcher does not
+capture the child's stdout/stderr into a durable diagnostic record, so the
+first startup error may have existed only in transient console output. `--versioninfo`
+working does not rule out a failure specific to `--server`, logger setup, a
+port conflict, or another startup dependency; these remain possibilities, not
+findings.
+
+### Launch incident: build 2431 did not reach the client launch step
+
+Evidence supplied by the user for run `20261016_075225`:
+
+- The selected executable's `--versioninfo` succeeded for build 2431.
+- The journal recorded `dev-loop.launch.windows` before server launch,
+  `dev-loop.launch.args` for the server, and then phase
+  `server_logger_missing`.
+- The journal had no matching server `logger.started` event. The dev loop
+  stopped that server child and returned before the client creation code.
+- The console later showed `RUN: NOT RUNNING`, no server/client PIDs, and no
+  events path for the run. Therefore the game window was not launched by this
+  attempt: the server readiness gate prevented it.
+- Source review confirms `StructuredLogger::init()` is the first operation in
+  `runServer()` that should emit `logger.started`. The pasted journal does not
+  contain the child's exit code or a startup error, so the cause before that
+  logger call remains unknown. Do not label this a port conflict or logger
+  failure without the next run's process exit result.
+
+The readiness wait now checks whether the child exits while it waits. On
+failure, the dev loop records `dev-loop.server.startup_failed` with the exact
+PID, executable, exit code when available, journal path, and whether it exited
+before the deadline or stayed alive without announcing readiness. This makes
+the next reproduction distinguish an early process exit from a live startup
+stall. No new live run has yet validated this diagnostic.
+
+There is also a status-ordering gap: on this failure branch the loop writes
+`state.json` before calling `stop_server()`. `stop_server()` then clears the
+server PID/readiness in memory but does not write another state snapshot. The
+saved state can consequently continue to say the server is alive after the
+loop stopped it. Also, `run_alive` currently means server alive OR client
+alive, so it does not by itself mean “the client launched and is playable.”
+The next status update should be written after cleanup and should show daemon,
+server, and client liveness separately.
+
+For this failure class, diagnostics should preserve the first server startup
+failure or exit result, the matching child PID/role, and the selected build
+identity; cleanup should then be reflected in a fresh status snapshot. Do not
+report `RUNNING` until the server is ready, the room code is registered, and
+the client has launched and passed its readiness/identity checks.
+
+The desired simple behavior is:
+
+```text
+AI calls dev-loop.py --command "ss"
+  -> entry point makes sure one current dev-loop daemon is ready
+  -> client receives the alias once
+  -> old connection is either confirmed closed or safely reused
+  -> one sandbox server is confirmed alive with the expected room identity
+  -> client joins that server once
+  -> command result says joined, or gives the first clear failure reason
+```
+
+In everyday terms:
+
+| Word | Simple meaning |
+|---|---|
+| server | The running game process that owns the match. It can outlive the visible client. |
+| room code | The short code or address used to find/join that server. |
+| room identity | Proof that the server found is the intended server/run/build, not an older one on the same computer. |
+| leave | Disconnect this player from the match. It does not necessarily shut down the server. |
+| `ss` | Start or enter the sandbox preset in one action. It should not require menu steps or repeated leave/join commands. |
+
+The original mismatch was that `leave` kept the server running while the old
+`ss` implementation refused to reuse it. The helper now checks for a live
+matching preset server and queues its room code. This is source-level
+alignment only; the full leave-once, `ss`-once flow still needs runtime proof.
+Target behavior for `ss`:
+
+1. If connected to any game as host or client, do nothing and print
+   `You're already in a game.` (or an equally clear message).
+2. If disconnected, reuse the healthy, registered sandbox server left running
+   from before. If none exists, start one and wait until it is ready and
+   registered.
+3. Start it through the same server setup and room-registration path as the
+   GUI, apply the selected preset's settings, and join exactly once as a client
+   using the room code, coordinator, and ICE path. Do not substitute a hard-
+   coded `127.0.0.1` gameplay connection or loopback-only server bind. Localhost
+   can be used for a clearly separate same-computer packet test, but that test
+   does not prove another computer can join.
+4. Leaving disconnects the player only; the server stays up and joinable.
+5. Report success only once connected. If the previous disconnect is still
+   finishing, wait or report that state; do not require another leave.
+
+This rule is detailed in networking section 67.1. The same flow is safe to
+repeat: while connected it reports “already in a game”; after leaving it
+returns the player to the existing sandbox server, or starts one only if the
+old one is no longer usable.
+
+“Room identity” here means the identity the client uses to tell which server
+it reached, including its run/build identity and room code. “Room identity not
+found” is the user's report, not a confirmed event string from this session.
+It could mean the server never published a room code, the room lookup was
+stale, the client reached a different server, or the client still had old
+connection state. Only a fresh journal can distinguish these.
+
+Required follow-up evidence before implementation is accepted:
+
+1. Make every AI work call (`--command`, `--scenario-file`) ensure the same
+   background `dev-loop.py` daemon is ready, starting it only when absent;
+   keep `--status` read-only. Record daemon PID, heartbeat, source hash, and
+   last exit reason. Do not require a separate supervisor program.
+2. Reproduce `ss` with a fresh matching build and trace alias expansion,
+   connection state, preset launch decision, room-code publication, identity
+   validation, and first successful gameplay state in the canonical journal.
+3. Reproduce leave once, then immediately issue `ss` once. Record whether the
+   disconnect completed, whether the room remained joinable, and the first
+   room/identity lookup result. The operation must be idempotent: one command
+   gets the player into one sandbox session without extra leave commands or
+   GUI steps.
+4. Preserve run/build identity rejection. Fix stale ownership or launch
+   reconciliation at the owner that produced the mismatch; do not bypass the
+   identity guard or kill an unverified process.
+
+Status: investigation recorded; no runtime reproduction or lifecycle change
+was made in this documentation update.
+
+### 19.8 Control socket, in plain language
+
+The dev-loop is a Python program that stays open to watch files, build the
+executable, keep status, and send requested game-terminal commands. A later AI
+call starts a short-lived copy of `dev-loop.py`; that copy needs a way to ask
+the already-running copy to do work. The control socket is that private
+same-computer message line:
+
+```text
+AI runs dev-loop.py --command "ss"
+  -> short-lived Python command sender
+  -> local control socket
+  -> persistent Python dev-loop
+  -> client command queue
+  -> MiMITA client runs "ss"
+  -> client joins or sends gameplay requests to the authoritative server
+```
+
+The socket currently binds to `127.0.0.1` on a local port and checks a secret
+token. That address is only for Python-to-Python control on this computer; it
+is not a player connection and is not sent to the game server. The server
+connection must follow the networking spec's registered room-code/ICE path.
+
+The control socket does not run the game command itself. The Python loop puts
+the command in the client queue; the client executes it after its readiness
+gates. The game client then uses its regular networking path for server-owned
+actions. This separation lets AI request a command without typing into the
+visible game window.
+
+Current behavior and desired behavior differ: today `--command` connects to an
+already-running dev-loop and returns an error if it cannot find one. The spec's
+target is for that same entry point to start one daemon if needed, wait until
+its socket is ready, then send the command once. This is still one script and
+one persistent daemon, not a second supervisor app. `--status` stays
+read-only.
 
 ## 20. Required implementation phases
 
@@ -1072,9 +1520,10 @@ complete only when its runtime evidence and failure behavior are verified.
 5. Add the scenario JSON runner and avatar assertions. Run Jason/default,
    legacy authored, Boomer canonical, Stabber canonical, and a non-player GLB
    control using fresh matching builds.
-6. Add the host supervisor and controlled daemon replacement contract from
-   section 19.3. Verify script-change restart, one-daemon locking, durable
-   console/logging, queue handoff, and preservation of a healthy game pair.
+6. Add the self-starting CLI/background-daemon contract from section 19.
+   Verify that repeated command calls reuse one daemon, a missing/stale daemon
+   starts exactly once, script updates replace it without duplicating queued
+   commands, durable logs explain exits, and a healthy game pair is preserved.
 
 Each phase requires source evidence, build evidence, a fresh executable and
 journal, and separate human visual acceptance where appearance is part of the
@@ -1092,8 +1541,8 @@ The following remain distinct open requirements unless a fresh runtime record
 proves them:
 
 - the Python daemon does not hot-reload its own source;
-- an outer host supervisor does not yet guarantee daemon resurrection;
-- a separate visible supervisor console is not implied by client visibility;
+- work commands do not yet start or recover a missing daemon;
+- a visible dev-loop daemon console is not implied by client visibility;
 - a command response is not a gameplay assertion;
 - a published build is not the same as the running client build;
 - `scenario.finished` is not a pass unless assertions were actually evaluated
@@ -1112,8 +1561,8 @@ proves them:
 8. inspect the exact journal from status, then perform visual review if needed
 ```
 
-The supported AI entry point is now the existing daemon control path when the
-status check proves that one matching daemon is alive:
+Every work call is the supported AI entry point. It must reuse one healthy
+daemon or start one if absent, then send the request exactly once:
 
 ```text
 python devscripts/dev-loop.py --status --json
@@ -1121,13 +1570,126 @@ python devscripts/dev-loop.py --command "agent.move 1 0 120"
 python devscripts/dev-loop.py --scenario-file C:\mimita-v9\devscripts\scenarios\readmewhat.md
 ```
 
-If status does not prove daemon liveness, the command must stop with a clear
-daemon-lifecycle error. It must not create a competing daemon. Until the host
-supervisor and controlled daemon replacement requirements are implemented, a
-human or task runner must start the daemon through the documented lifecycle
-entry point and keep that owner process alive.
+`--status` is read-only and may report `NO_RUNNING_DAEMON`; the next work call
+must recover it. The user or AI should not need to leave a separate Python
+window open just to keep the command interface available.
 
 The desired end state is that an AI can issue one command or one
 repository-local scenario through `dev-loop.py`, keep one identified
 executable pair alive, survive a controlled Python-script update, and receive
 a bounded pass/fail result from the same `events.jsonl` file.
+
+## 22. Command reference
+
+### Status display and launch-time feedback
+
+The interactive status display should update in place when the terminal
+supports cursor control. In plain logs or terminals without that support, it
+must not append an unchanged full status block repeatedly. Emit a new status
+only when a displayed field changes, or at a bounded low-frequency heartbeat;
+keep the detailed status snapshot available through `--status --json`.
+
+The display should distinguish daemon, build, server, client, and journal
+identity, and it must not combine stale uptime or visibility values with a
+`NOT RUNNING` state. Launch feedback should name the current stage (build,
+server readiness, client launch, map readiness, join readiness) and its elapsed
+time so a slow launch can be attributed to a stage. Do not promise a launch
+duration until a baseline has been measured. The 2026-10-16 screenshot shows
+repeated MODE/BUILD blocks followed by `RUN: NOT RUNNING` with old uptime,
+empty PIDs, and no journal; this is a report of confusing output, not proof of
+which state transition caused it.
+
+This section lists the command-line and keyboard controls currently present
+in `devscripts/dev-loop.py`. It does not list every command accepted by the
+game's terminal; `--command` forwards one of those game commands to a running
+client. The `ss` alias is a game-terminal alias defined in
+`config/command-aliases.json`, not a dev-loop option.
+
+### 22.1 Command-line options currently in the script
+
+| Option | What it does | Current behavior / caution |
+|---|---|---|
+| `--help` | Shows the script's available options. | Supplied by Python's argument parser. |
+| `--profile NAME` | Selects a profile from `devscripts/dev-profiles/`. | Default is `npc-navigation`; used when starting the loop. |
+| `--auto-restart` | Enables recovery of the game client after it exits. | Does not restart the Python dev-loop daemon. |
+| `--launch-mode NUMBER` | Selects a numbered server/client launch configuration. | Modes are in `devscripts/dev-launch-modes.json`. |
+| `--headless` | Hides the game client window on its next launch. | Does not hide the dev-loop terminal that was started interactively. |
+| `--visible` | Shows the game client window on its next launch. | Does not guarantee a separate daemon window or taskbar item. |
+| `--status` | Prints the last saved status. | Read-only; current status fields do not yet prove Python daemon liveness. |
+| `--json` | Prints status or control response as JSON. | Useful with `--status`, `--request`, `--command`, or `--scenario-file`. |
+| `--command "GAME COMMAND"` | Queues one game-terminal command in the running client. | Today it requires a running dev-loop daemon and a ready client. Self-start recovery is specified in section 19 but is not implemented yet. |
+| `--scenario-file PATH` | Queues a repository-local Markdown/JSON scenario. | Today it also requires the daemon; see the self-start recovery requirement in section 19. |
+| `--request launch` | Requests a build if needed, then launches the selected mode. | May include `--launch-mode NUMBER`. |
+| `--request stop-client` | Stops the dev-loop-owned client. | Leaves a healthy dedicated server running. |
+| `--request stop-server` | Requests stop of the identified dev-loop server. | Refuses to stop an unverified process. |
+| `--request stop` | Requests shutdown of the Python dev-loop daemon. | The server has its own lifetime and may remain running. |
+
+Examples that work with the current implementation when the daemon is already
+running:
+
+```text
+python devscripts/dev-loop.py --status --json
+python devscripts/dev-loop.py --request launch --launch-mode 1
+python devscripts/dev-loop.py --command "versioninfo"
+python devscripts/dev-loop.py --scenario-file C:\mimita-v9\devscripts\scenarios\readmewhat.md
+python devscripts/dev-loop.py --request stop-client
+python devscripts/dev-loop.py --request stop-server
+python devscripts/dev-loop.py --request stop
+```
+
+The planned behavior is that `--command` and `--scenario-file` first ensure
+the daemon is alive, start one if absent, wait for readiness, and then forward
+the request once. Until that behavior is implemented, do not read the examples
+above as proof that the command can launch a missing daemon.
+
+### 22.2 Interactive controls shown by the running loop
+
+| Key | What it does |
+|---|---|
+| `1` | Build if the latest artifact is stale/missing; otherwise launch the latest build. |
+| `2` | Open the launch-mode picker; type a mode number, press Enter, or press `Q` to cancel. |
+| `V` | Toggle the game client's visible/headless setting for the next launch. |
+| `A` | Toggle client auto-restart. This does not keep the Python daemon alive. |
+| `Q` | Shut down the dev-loop daemon through its normal shutdown path; the dedicated server may remain alive. |
+
+### 22.3 Where game-terminal commands and aliases live
+
+The game-terminal command surface is registered by C++ command owners and
+documented by the owning feature specs. `help` and `aliases` in the game show
+the commands and aliases loaded by that executable. Alias definitions are
+stored in `config/command-aliases.json`. For example, `ss` expands to
+`server_start_preset sandbox_1`; the alias itself does not prove that the
+server started or that the client joined. See networking section 67.1 for the
+required start/rejoin behavior and this document's section 19.7 for the
+AI/dev-loop issue and evidence plan.
+
+### Startup scan follow-up: oversized logs can delay server readiness
+
+A new dev-loop launch was attempted on 2026-10-16 using published build 2436,
+run `20261016_075833`. The server child PID 33560 remained alive during the
+20-second readiness wait, but the shared journal received no server
+`logger.started` event. At the deadline, the loop stopped that child and did
+not launch a client. The journal records the child launch, the readiness
+failure window snapshot, and `dev-loop.process.stop_result`; it contains no
+server startup record. The client was never attempted.
+
+Source tracing found that `StructuredLogger::init()` holds the cross-process
+log mutex while it reconciles the log-tree byte total, calls pruning (which
+scans the tree again), and reconciles a second time. The server shares the
+same events path and quota mapping as the preflight process. With the previously
+measured multi-gigabyte log tree, these redundant full-tree walks are a credible
+cause of the 20-second stall, but the run had no stack trace or stage timers,
+so this remains a likely cause rather than a proven one.
+
+The startup path now reconciles the tree once, then reuses that exact
+mutex-protected total for pruning and updates it by the bytes pruned. It removes
+the extra full-tree scans before and after pruning while still counting legacy
+or externally-created files. The live quota-limit path still reconciles before
+pruning when a write would cross the ceiling. Runtime proof that startup now
+reaches `logger.started` quickly is still required.
+
+Two dev-loop Python processes were active in the same checkout and alternated
+writes to `.dev/state.json` while publishing builds. Their conflicting status
+snapshots make build/run identity unreliable. Neither process was terminated
+during this investigation. Before the next runtime acceptance, establish one
+dev-loop owner; do not launch another loop to work around the conflict.

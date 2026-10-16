@@ -1376,3 +1376,18 @@ client movement is initially trusted after sanity validation
 shared structures preserve a path to stronger authority later
 This document is the target MiMITA movement reference.
 Every future movement or networking task should compare its changes against this specification.
+
+## User-reported large movement disagreement — 2026-10-16
+
+The user reports seeing roughly 25 m between their client position and the server's
+position, followed by repeated correction/rubber-banding toward an old position
+when returning near it. They suspect collision or passing through world geometry,
+but the cause is unverified. Track this with networking's snapshot, input
+acknowledgement, collision correction, and major-error correction requirements.
+
+Do not resolve this by blindly accepting client transforms or disabling world
+collision. First capture predicted position, server position, last processed input,
+correction class/reason, collision result, map bounds, and transform/lifecycle
+identity at the first divergence. The desired result is responsive movement with
+valid collision and a bounded, explainable correction that does not keep pulling
+the player toward obsolete state.

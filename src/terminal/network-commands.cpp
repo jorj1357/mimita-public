@@ -373,7 +373,7 @@ void registerNetworkCommands()
             }
 
             if (MP_CONTEXT.active) {
-                Terminal::instance().addLog("[SERVER PRESET] failed: a connection is already active");
+                Terminal::instance().addLog("[SERVER PRESET] you're already in a game");
                 return;
             }
 

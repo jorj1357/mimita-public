@@ -3019,3 +3019,17 @@ Combat intelligence determines when the best route is not simply the shortest ro
 Human movement recordings teach it additional ways that skilled players already know how to move.
 
 All of these feed one shared actor execution system.
+## User-reported hospital multi-floor pursuit issue — 2026-10-16
+
+The user reports that in the hospital map an NPC can appear to treat the player
+as being on its floor while failing to route down/up to reach them. This is not
+yet reproduced or attributed to Recast, floor classification, goal selection,
+or a missing vertical transition.
+
+Use the existing multi-floor navigation design in this document. Add a live
+scenario with two vertically separated walkable floors and a valid stair/ramp
+connection: place the NPC and player on opposite floors, verify each actor's
+floor/region identity and goal projection, inspect the Detour corridor and
+transition nodes, and prove that the NPC takes the connection instead of
+stalling or falsely treating the floors as one surface. Also test genuinely
+disconnected floors so the NPC does not invent a path through solid geometry.

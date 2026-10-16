@@ -1112,18 +1112,23 @@ void RagdollModeSystem::updateNpcAim(float dt, const World& world, Npc& npc,
 
     auto& body = mNpcAimBodies[npc.id];
     const std::string avatar = npc.body.avatarName();
-    if (body.parts.empty() || mNpcAimAvatarNames[npc.id] != avatar) {
+    const auto knownAvatar = mNpcAimAvatarNames.find(npc.id);
+    const bool avatarChanged = knownAvatar == mNpcAimAvatarNames.end() ||
+                               knownAvatar->second != avatar;
+    if (body.parts.empty() || avatarChanged) {
         buildAimBody(npc.body, body);
-        mNpcAimAvatarNames[npc.id] = avatar;
-        mNpcAimLogTicks[npc.id] = 0;
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::NpcMovement, StructuredLevel::Important,
-            "actor-hybrid.pose-input", "npc-" + std::to_string(npc.id),
-            "npc hybrid body initialized", (uint32_t)npc.body.movementSimulationTick,
-            {{"actor_id", npc.id}, {"actor_kind", "npc"}, {"pose_source", "server_npc_aim"},
-             {"aimbody_mode", AimBodyConfig::instance().mode()},
-             {"hybrid", AimBodyConfig::instance().hybridMode()}, {"parts", body.parts.size()}},
-            __FILE__, __LINE__, __FUNCTION__);
+        if (avatarChanged) {
+            mNpcAimAvatarNames[npc.id] = avatar;
+            mNpcAimLogTicks[npc.id] = 0;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "actor-hybrid.pose-input", "npc-" + std::to_string(npc.id),
+                "npc hybrid body initialized", (uint32_t)npc.body.movementSimulationTick,
+                {{"actor_id", npc.id}, {"actor_kind", "npc"}, {"pose_source", "server_npc_aim"},
+                 {"aimbody_mode", AimBodyConfig::instance().mode()},
+                 {"hybrid", AimBodyConfig::instance().hybridMode()}, {"parts", body.parts.size()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     glm::vec3 forward = aimForward;

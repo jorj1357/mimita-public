@@ -195,6 +195,21 @@ void registerWeaponCommands()
             std::unordered_map<uint32_t, Player>* remoteNpcs = mpContext.active
                 ? &mpContext.remoteNpcs
                 : nullptr;
+            const std::string terminalRequestId =
+                Terminal::instance().currentRequestId();
+            auto emitLocalAttack = [&](const char* reason, nlohmann::json extra) {
+                extra["request_id"] = terminalRequestId;
+                extra["command"] = "shoot";
+                extra["player"] = player.username;
+                extra["client_tick"] = mpContext.tick;
+                extra["gameplay_active"] = mpContext.gameplayActive;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Weapons, StructuredLevel::Important,
+                    "weapon.attack.local_request",
+                    terminalRequestId.empty() ? "weapon-fire" : terminalRequestId,
+                    reason, mpContext.tick, extra,
+                    __FILE__, __LINE__, __FUNCTION__);
+            };
             RevolverShotResult shot = weapons.fire(
                 camera, player, npcSystem, world, remotePlayers, remoteNpcs);
 
@@ -210,6 +225,10 @@ void registerWeaponCommands()
             }
 
             if (!shot.fired) {
+                const WeaponDefinition* dryDef = weapons.getCurrentDef(player);
+                emitLocalAttack("dry_fire_or_no_active_weapon",
+                                {{"weapon", dryDef ? dryDef->id : std::string()},
+                                 {"auto_reload_triggered", shot.autoReloadTriggered}});
                 if (!shot.autoReloadTriggered)
                     Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
                 return;
@@ -227,6 +246,10 @@ void registerWeaponCommands()
                 // Block attacks until SpawnActivated confirms server has accepted our spawn ACK
                 if (!mpContext.gameplayActive)
                 {
+                    const WeaponDefinition* blockedDef = weapons.getCurrentDef(player);
+                    emitLocalAttack("blocked_not_active",
+                                    {{"weapon", blockedDef ? blockedDef->id : std::string()},
+                                     {"slot", blockedDef ? blockedDef->slot : 0}});
                     Debug::log(Debug::Category::Weapons, "[ATTACK BLOCKED] playerId=%u — not yet Active (awaiting SpawnActivated)\n",
                                mpContext.localPlayerId);
                     Terminal::instance().addLog("[WEAPON] not yet ready");
@@ -334,6 +357,15 @@ void registerWeaponCommands()
                                 mpContext, netId, requestSlot,
                                 shot.start, direction, shot.start, attackVariant,
                                 claimedTargetId, shot.end, claimedBodyPart);
+                            emitLocalAttack("attack_request_sent",
+                                            {{"weapon", wdef2->id},
+                                             {"weapon_def_network_id", netId},
+                                             {"native_slot", wdef2->slot},
+                                             {"logical_slot", requestSlot},
+                                             {"attack_request_id", requestId},
+                                             {"claimed_target_id", claimedTargetId},
+                                             {"hit_world", shot.hitWorld},
+                                             {"hit_remote", shot.targetIsRemotePlayer}});
                             Debug::log(Debug::Category::Weapons,
                                        "[ATTACK] INPUT_FIRE playerId=%u weapon=%s slot=%d "
                                        "requestId=%u claimedTarget=%u gameplay=%d\n",

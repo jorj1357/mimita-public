@@ -1576,7 +1576,17 @@ void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const cha
     {
         int slotForWeapon = slotForNetworkWeaponType(request->weapon);
         if (slotForWeapon > 0)
+        {
             shooter.equippedSlot = slotForWeapon;
+            // Keep the stable identity consistent with the reconciled slot so
+            // the authoritative attack validator never sees them disagree.
+            for (const auto& kv : WeaponRegistry::instance().all()) {
+                if (kv.second.slot == slotForWeapon) {
+                    shooter.equippedWeaponId = kv.first;
+                    break;
+                }
+            }
+        }
     }
     const glm::vec3 dir = glm::normalize(direction);
 

@@ -420,6 +420,42 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
         player.weaponRuntimes[wepId] = rt;
     }
 
+    // The server owns the equipped item identity for this life. Preserve and
+    // reapply the previous stable item when it is still owned and allowed by
+    // the new life/loadout; otherwise fall back to the role's documented
+    // starting weapon. The native slot is derived from the chosen stable id
+    // for replication/HUD and must not itself decide equip or attack validity.
+    const std::string previousEquipped = player.equippedWeaponId;
+    player.equippedWeaponId.clear();
+    player.equippedSlot = 0;
+    auto applyEquippedById = [&](const std::string& weaponId) -> bool {
+        if (weaponId.empty())
+            return false;
+        const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
+        const auto runtime = player.weaponRuntimes.find(weaponId);
+        if (!def || runtime == player.weaponRuntimes.end() ||
+            !runtime->second.initialized)
+            return false;
+        if (player.weaponSetId > 0 &&
+            !serverCommunityWeaponAllowed(player, def->id))
+            return false;
+        player.equippedWeaponId = def->id;
+        player.equippedSlot = def->slot;
+        return true;
+    };
+    if (!applyEquippedById(previousEquipped) &&
+        !applyEquippedById(profile.startingWeapon) &&
+        !profile.startingWeapon.empty()) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Errors,
+            "weapon.spawn.starting_weapon_invalid", std::to_string(player.id),
+            "role-starting-weapon-not-in-authoritative-loadout", 0,
+            nlohmann::json{{"weapon", profile.startingWeapon},
+                           {"previous_equipped", previousEquipped},
+                           {"weapon_set", player.weaponSetId},
+                           {"spawn_generation", player.spawnGeneration}});
+    }
+
     // Clear transient combat/reload state
     player.projectileFireCooldown = 0.0f;
     player.nextProjectileFireTick = 0;
@@ -511,6 +547,31 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
     spawnSync.health = player.health;
     spawnSync.communityWeaponSetId = serverGamemodeState().enabled
         ? static_cast<uint8_t>(std::clamp(player.weaponSetId, 0, 255)) : 0;
+    if (!player.equippedWeaponId.empty() &&
+        player.weaponRuntimes.find(player.equippedWeaponId) != player.weaponRuntimes.end()) {
+        spawnSync.equippedWeaponDefNetworkId =
+            weaponDefNetworkIdFor(player.equippedWeaponId);
+    } else {
+        for (const auto& weapon : WeaponRegistry::instance().all()) {
+            if (weapon.second.slot == player.equippedSlot &&
+                player.weaponRuntimes.find(weapon.first) != player.weaponRuntimes.end()) {
+                spawnSync.equippedWeaponDefNetworkId =
+                    weaponDefNetworkIdFor(weapon.first);
+                break;
+            }
+        }
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons, StructuredLevel::Important,
+        "weapon.spawn.equipped_published", std::to_string(player.id),
+        "authoritative-equipped-identity-for-life",
+        static_cast<uint32_t>(player.spawnGeneration),
+        nlohmann::json{{"spawn_generation", player.spawnGeneration},
+                       {"weapon_id", player.equippedWeaponId},
+                       {"native_slot", player.equippedSlot},
+                       {"weapon_def_network_id", spawnSync.equippedWeaponDefNetworkId},
+                       {"initial_spawn", isInitialSpawn},
+                       {"weapon_set", player.weaponSetId}});
     Debug::log(Debug::Category::Duel,
         "[DuelPacketSend] type=PlayerRespawnedPacket reliable=1 player=%u spawnGeneration=%u epoch=%u pos=(%.3f,%.3f,%.3f) velocity=(%.3f,%.3f,%.3f)\n",
         player.id, spawnSync.spawnGeneration, spawnSync.transformEpoch,

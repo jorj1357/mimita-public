@@ -24,6 +24,7 @@ struct CommunityMode
     std::string description;
     int teams = 0;
     int scoreLimit = 0;
+    int maxPlayers = 0; // 0 = use the server's configured capacity
 };
 
 struct CommunityWeaponSet

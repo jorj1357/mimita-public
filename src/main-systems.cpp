@@ -176,7 +176,8 @@ void registerAgentCommands()
             const glm::vec3 worldMove = forward * forwardVec + side * rightVec;
             // The modern multiplayer owner consumes raw camera-relative axes;
             // it applies camera orientation exactly like keyboard input.
-            scheduleTerminalMove(side, forward, ticks);
+            scheduleTerminalMove(side, forward, ticks,
+                                 Terminal::instance().currentRequestId());
             writeAgentCommandEvent(
                 "avatar.command.dispatch", "agent.move accepted",
                 {{"command", "agent.move"}, {"forward", forward}, {"side", side},
@@ -213,6 +214,15 @@ void registerAgentCommands()
                  {"camera_front", {gpCamera->front.x, gpCamera->front.y, gpCamera->front.z}},
                  {"yaw", gpCamera->yaw}, {"pitch", gpCamera->pitch},
                  {"player", gpPlayer->username}});
+            // agent.aim writes the shared camera owner synchronously, so the
+            // accepted state is the applied state; record it as applied with
+            // the resulting world direction for correlation and assertion.
+            writeAgentCommandEvent(
+                "agent.aim.applied", "camera/aim owner updated",
+                {{"command", "agent.aim"}, {"target", {x, y, z}},
+                 {"camera_front", {gpCamera->front.x, gpCamera->front.y, gpCamera->front.z}},
+                 {"yaw", gpCamera->yaw}, {"pitch", gpCamera->pitch},
+                 {"player", gpPlayer->username}});
         }, "2026-10-13", CommandCategory::Debug
     });
 
@@ -240,6 +250,7 @@ void registerAgentCommands()
                 Terminal::instance().addLog("[AGENT] Usage: agent.action <jump|dash>");
                 return;
             }
+            noteTerminalInputOverrideRequestId(Terminal::instance().currentRequestId());
             if (args[0] == "jump") gTerminalInputOverride.jumpPressed = true;
             if (args[0] == "dash") gTerminalInputOverride.dashPressed = true;
             writeAgentCommandEvent(

@@ -52,3 +52,18 @@ todo figure out commands exact commands and what they do
 todo figure out  data saving how u can roll like 50 replay separate files into 1 bigger movie file with a lot of replays in it etc 
 
 todo add the google doc  replay editor spec cuz i wrote a bunch about it 
+
+## Export execution and progress
+
+Replay export should be available in headless operation as well as from the
+interactive replay editor, using the same export path and result reporting.
+The interactive game should show export progress at least once per 60 source
+simulation ticks, plus a clear completion or failure result; headless runs
+should expose equivalent progress and final status through the existing
+diagnostic/output path. Progress reporting must not require rendering every
+exported frame in a visible window. This is a desired behavior; supported
+headless export and current export reliability remain to be verified.
+
+Ragdoll state and sound retrigger behavior are separate replay fidelity
+requirements. An export completing does not establish that either has been
+captured and replayed correctly.

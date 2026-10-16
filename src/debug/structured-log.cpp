@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -14,6 +15,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <io.h>
 #include <mutex>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
@@ -57,6 +59,205 @@ HANDLE eventsFileMutex() {
     static HANDLE handle = CreateMutexA(nullptr, FALSE,
                                         "Local\\MiMITA_v9_events_jsonl_v1");
     return handle;
+}
+
+constexpr uint64_t kMaxLogFileBytes = 100000000ULL;
+constexpr uint64_t kMaxLogTreeBytes = 1000000000ULL;
+constexpr uint64_t kStartupLogTargetBytes =
+    kMaxLogTreeBytes - kMaxLogFileBytes;
+
+struct SharedLogQuotaState {
+    volatile LONG initialized;
+    unsigned long long totalBytes;
+    struct FileEntry {
+        char path[512];
+        unsigned long long bytes;
+    } files[64];
+};
+
+struct SharedLogQuota {
+    HANDLE mapping = nullptr;
+    SharedLogQuotaState* state = nullptr;
+};
+
+uint64_t logPathHash(const std::string& path) {
+    uint64_t hash = 1469598103934665603ULL;
+    for (unsigned char c : path) {
+        const unsigned char folded = static_cast<unsigned char>(std::tolower(c));
+        hash ^= folded;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+SharedLogQuota& sharedLogQuota(const std::filesystem::path& root) {
+    static SharedLogQuota quota;
+    if (quota.state) return quota;
+
+    std::error_code ec;
+    std::string normalized = std::filesystem::absolute(root, ec).lexically_normal().string();
+    if (ec) normalized = root.lexically_normal().string();
+    char name[96]{};
+    std::snprintf(name, sizeof(name), "Local\\MiMITA_v9_log_quota_%016llx",
+                  static_cast<unsigned long long>(logPathHash(normalized)));
+    quota.mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+                                       0, sizeof(SharedLogQuotaState), name);
+    if (quota.mapping)
+        quota.state = static_cast<SharedLogQuotaState*>(MapViewOfFile(
+            quota.mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedLogQuotaState)));
+    return quota;
+}
+
+uint64_t directoryFileBytes(const std::filesystem::path& root) {
+    std::error_code ec;
+    uint64_t total = 0;
+    if (!std::filesystem::exists(root, ec) || ec) return 0;
+    for (std::filesystem::recursive_directory_iterator it(
+             root, std::filesystem::directory_options::skip_permission_denied, ec), end;
+         it != end; it.increment(ec)) {
+        if (ec) { ec.clear(); continue; }
+        if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+        const uint64_t size = it->file_size(ec);
+        if (!ec) total = (UINT64_MAX - total < size) ? UINT64_MAX : total + size;
+        ec.clear();
+    }
+    return total;
+}
+
+std::filesystem::path logRootForEventsPath(const std::string& eventsPath) {
+    const auto runDir = std::filesystem::path(eventsPath).parent_path();
+    return runDir.parent_path().parent_path();
+}
+
+std::string runLeaseName(const std::filesystem::path& root,
+                         const std::string& runId) {
+    std::error_code ec;
+    std::string normalized = std::filesystem::absolute(root, ec).lexically_normal().string();
+    if (ec) normalized = root.lexically_normal().string();
+    std::string safeRunId;
+    safeRunId.reserve(runId.size());
+    for (unsigned char c : runId)
+        safeRunId.push_back(std::isalnum(c) || c == '_' || c == '-'
+            ? static_cast<char>(c) : '_');
+    char prefix[64]{};
+    std::snprintf(prefix, sizeof(prefix), "Local\\MiMITA_v9_log_run_%016llx_",
+                  static_cast<unsigned long long>(logPathHash(normalized)));
+    return std::string(prefix) + safeRunId;
+}
+
+bool samePath(const std::filesystem::path& a, const std::filesystem::path& b) {
+    std::error_code ecA, ecB;
+    const auto aa = std::filesystem::absolute(a, ecA).lexically_normal().string();
+    const auto bb = std::filesystem::absolute(b, ecB).lexically_normal().string();
+    if (ecA || ecB) return a.lexically_normal() == b.lexically_normal();
+    return _stricmp(aa.c_str(), bb.c_str()) == 0;
+}
+
+uint64_t pruneCompletedRuns(const std::filesystem::path& root,
+                            const std::filesystem::path& activeRunDir,
+                            uint64_t targetBytes,
+                            uint64_t reservedTotal = 0) {
+    // The caller holds the shared quota mutex and supplies its reconciled
+    // total. Re-scanning the whole logs tree here made every process startup
+    // walk a potentially multi-gigabyte directory before logger.started.
+    uint64_t total = reservedTotal;
+    if (total <= targetBytes) return 0;
+    uint64_t reclaimed = 0;
+
+    std::vector<std::filesystem::path> runs;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator dayIt(root, ec), dayEnd;
+         dayIt != dayEnd; dayIt.increment(ec)) {
+        if (ec) { ec.clear(); continue; }
+        if (!dayIt->is_directory(ec) || ec) { ec.clear(); continue; }
+        for (std::filesystem::directory_iterator runIt(dayIt->path(), ec), runEnd;
+             runIt != runEnd; runIt.increment(ec)) {
+            if (ec) { ec.clear(); continue; }
+            if (runIt->is_directory(ec) && !ec && !samePath(runIt->path(), activeRunDir) &&
+                std::filesystem::is_regular_file(runIt->path() / "events.jsonl", ec) && !ec)
+                runs.push_back(runIt->path());
+            ec.clear();
+        }
+        ec.clear();
+    }
+    std::sort(runs.begin(), runs.end(), [](const auto& a, const auto& b) {
+        std::error_code ea, eb;
+        const auto ta = std::filesystem::last_write_time(a, ea);
+        const auto tb = std::filesystem::last_write_time(b, eb);
+        if (!ea && !eb && ta != tb) return ta < tb;
+        return a.string() < b.string();
+    });
+
+    for (const auto& run : runs) {
+        if (total <= targetBytes) break;
+        const uint64_t runBytes = directoryFileBytes(run);
+        if (!runBytes) continue;
+
+        HANDLE lease = OpenEventA(SYNCHRONIZE, FALSE,
+            runLeaseName(root, run.filename().string()).c_str());
+        if (lease) {
+            CloseHandle(lease);
+            continue;
+        }
+
+        // Renaming an open run directory fails on Windows because the logger's
+        // FILE handle does not grant delete sharing. That makes this a safe
+        // active-run check without relying on stale PID metadata.
+        const auto parked = run.parent_path() /
+            (".prune-" + run.filename().string() + "-" +
+             std::to_string(GetCurrentProcessId()));
+        std::error_code renameError;
+        std::filesystem::rename(run, parked, renameError);
+        if (renameError) continue;
+
+        std::error_code removeError;
+        std::filesystem::remove_all(parked, removeError);
+        if (!removeError) {
+            total = (runBytes > total) ? 0 : total - runBytes;
+            reclaimed += runBytes;
+        }
+    }
+    return reclaimed;
+}
+
+void initializeQuotaState(SharedLogQuotaState& state,
+                          const std::filesystem::path& root) {
+    if (InterlockedCompareExchange(&state.initialized, 0, 0) == 0) {
+        state.totalBytes = directoryFileBytes(root);
+        MemoryBarrier();
+        InterlockedExchange(&state.initialized, 1);
+    }
+}
+
+void reconcileQuotaState(SharedLogQuotaState& state,
+                         const std::filesystem::path& root) {
+    state.totalBytes = std::max<uint64_t>(state.totalBytes, directoryFileBytes(root));
+    for (auto& entry : state.files) {
+        if (!entry.path[0]) continue;
+        std::error_code ec;
+        if (!std::filesystem::exists(entry.path, ec) || ec) {
+            entry.path[0] = '\0';
+            entry.bytes = 0;
+        }
+    }
+    MemoryBarrier();
+    InterlockedExchange(&state.initialized, 1);
+}
+
+SharedLogQuotaState::FileEntry* quotaFileEntry(SharedLogQuotaState& state,
+                                               const std::string& path) {
+    SharedLogQuotaState::FileEntry* empty = nullptr;
+    for (auto& entry : state.files) {
+        if (entry.path[0] && _stricmp(entry.path, path.c_str()) == 0) return &entry;
+        if (!entry.path[0] && !empty) empty = &entry;
+    }
+    if (!empty || path.size() >= sizeof(empty->path)) return nullptr;
+    std::memcpy(empty->path, path.c_str(), path.size() + 1);
+    std::error_code ec;
+    empty->bytes = std::filesystem::exists(path, ec) && !ec
+        ? std::filesystem::file_size(path, ec) : 0;
+    if (ec) empty->bytes = 0;
+    return empty;
 }
 }
 
@@ -658,10 +859,35 @@ void StructuredLogger::init() {
     if (!mConfig.enabled) return;
 
     createLogDir();
+    const auto logRoot = logRootForEventsPath(mEventsPath);
+    mRunLease = CreateEventA(nullptr, TRUE, FALSE,
+        runLeaseName(logRoot, mRunId).c_str());
+    HANDLE quotaMutex = eventsFileMutex();
+    if (quotaMutex) {
+        WaitForSingleObject(quotaMutex, INFINITE);
+        SharedLogQuota& quota = sharedLogQuota(logRoot);
+        if (quota.state) {
+            initializeQuotaState(*quota.state, logRoot);
+            // Reconcile once so legacy or externally-created files still
+            // count toward the ceiling, then reuse that exact total below.
+            reconcileQuotaState(*quota.state, logRoot);
+            const uint64_t reclaimed = pruneCompletedRuns(
+                logRoot, std::filesystem::path(mLogDir), kStartupLogTargetBytes,
+                quota.state->totalBytes);
+            quota.state->totalBytes = reclaimed > quota.state->totalBytes
+                ? 0 : quota.state->totalBytes - reclaimed;
+        }
+        ReleaseMutex(quotaMutex);
+    }
+
     mEventsFile = fopen(mEventsPath.c_str(), "ab");
     if (!mEventsFile) {
         printf("[STRUCTURED LOG] ERROR: could not open events path: %s\n",
                mEventsPath.c_str());
+        if (mRunLease) {
+            CloseHandle(static_cast<HANDLE>(mRunLease));
+            mRunLease = nullptr;
+        }
         return;
     }
     mInitialized = true;
@@ -724,6 +950,11 @@ void StructuredLogger::shutdown() {
         fflush(mEventsFile);
         fclose(mEventsFile);
         mEventsFile = nullptr;
+    }
+
+    if (mRunLease) {
+        CloseHandle(static_cast<HANDLE>(mRunLease));
+        mRunLease = nullptr;
     }
 
     mInitialized = false;
@@ -935,17 +1166,83 @@ void StructuredLogger::writeEvent(StructuredCategory category,
 void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
 {
     if (!mEventsFile) return;
-    const std::string line = record.dump() + "\n";
     static std::mutex writeMutex;
     std::lock_guard<std::mutex> lock(writeMutex);
     HANDLE named = eventsFileMutex();
+    if (!named) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     const auto waitStart = std::chrono::steady_clock::now();
     if (named) WaitForSingleObject(named, INFINITE);
     const auto waitEnd = std::chrono::steady_clock::now();
     mMutexWaitMicroseconds.fetch_add(static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(waitEnd - waitStart).count()),
         std::memory_order_relaxed);
-    std::fwrite(line.data(), 1, line.size(), mEventsFile);
+
+    const auto root = logRootForEventsPath(mEventsPath);
+    SharedLogQuota& quota = sharedLogQuota(root);
+    if (!quota.state) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        if (named) ReleaseMutex(named);
+        return;
+    }
+    initializeQuotaState(*quota.state, root);
+
+    nlohmann::json outputRecord = record;
+    const uint64_t previouslyDropped =
+        mQuotaDroppedRecords.load(std::memory_order_relaxed);
+    if (previouslyDropped)
+        outputRecord["quota_dropped_records_before_this"] = previouslyDropped;
+    const std::string line = outputRecord.dump() + "\n";
+    if (line.size() > kMaxLogFileBytes) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        if (named) ReleaseMutex(named);
+        return;
+    }
+
+    auto* fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+    if (!fileEntry || fileEntry->bytes > kMaxLogFileBytes ||
+        line.size() > kMaxLogFileBytes - fileEntry->bytes) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        if (named) ReleaseMutex(named);
+        return;
+    }
+
+    if (line.size() > kMaxLogTreeBytes -
+            std::min<uint64_t>(quota.state->totalBytes, kMaxLogTreeBytes)) {
+        // Reconcile non-logger files and remove eligible completed runs only
+        // when an incoming record would cross the folder ceiling.
+        reconcileQuotaState(*quota.state, root);
+        const uint64_t reclaimed = pruneCompletedRuns(
+            root, std::filesystem::path(mLogDir), kMaxLogTreeBytes - line.size(),
+            quota.state->totalBytes);
+        quota.state->totalBytes = reclaimed > quota.state->totalBytes
+            ? 0 : quota.state->totalBytes - reclaimed;
+        fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+        if (!fileEntry || quota.state->totalBytes > kMaxLogTreeBytes ||
+            line.size() > kMaxLogTreeBytes - quota.state->totalBytes ||
+            fileEntry->bytes > kMaxLogFileBytes ||
+            line.size() > kMaxLogFileBytes - fileEntry->bytes) {
+            mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+            if (named) ReleaseMutex(named);
+            return;
+        }
+    }
+
+    const unsigned long long oldFileBytes = fileEntry->bytes;
+    const size_t written = std::fwrite(line.data(), 1, line.size(), mEventsFile);
+    if (written != line.size()) {
+        std::fflush(mEventsFile);
+        _chsize_s(_fileno(mEventsFile), oldFileBytes);
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        if (named) ReleaseMutex(named);
+        return;
+    }
+    fileEntry->bytes += line.size();
+    quota.state->totalBytes += line.size();
+    if (previouslyDropped)
+        mQuotaDroppedRecords.fetch_sub(previouslyDropped, std::memory_order_relaxed);
     mEventsWritten.fetch_add(1, std::memory_order_relaxed);
     mBytesWritten.fetch_add(static_cast<uint64_t>(line.size()), std::memory_order_relaxed);
     if (flush) {

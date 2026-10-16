@@ -164,6 +164,7 @@
   },
   "advanced_mode": true,
   "avatar_id": "local_cb3b330533cf64d6",
+  "body_transform_source": "model",
   "bodyparts": {
     "head": {
       "offset": [
@@ -304,12 +305,12 @@
   "created_at": "2026-07-10T18:44:15Z",
   "format_version": 1,
   "name": "abusivegirlheadless4",
-  "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
+  "player_model": "assets/entity/player/girl/mimita-girl-char-YES-Y-UP-YES-TRANSFORMS-ONLY-ROT-AND-SCALE-v3.glb",
   "simple": {
     "face": "",
     "pants": "",
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-09-05T10:03:24Z"
+  "updated_at": "2026-10-16T00:26:05Z"
 }

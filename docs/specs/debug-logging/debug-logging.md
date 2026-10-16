@@ -2,9 +2,41 @@
 
 # Implementation plan: one canonical `events.jsonl` log path
 
-Status: planning only. This section records the intended migration before any
-source or configuration changes are made. Contributors must update the
-inventory and obtain review before deleting or redirecting a logging path.
+Status: partial implementation. `StructuredLogger` now enforces a 100,000,000
+byte canonical file ceiling and a 1,000,000,000 byte `logs` tree ceiling,
+tracks concurrent processes with shared Windows coordination, prunes eligible
+completed run directories, and counts records it cannot accept. The source was
+compiled into published build 2429 on 2026-10-16. Runtime quota enforcement,
+retention under live writers, and behavior when the quota is exhausted have
+not yet been verified in a fresh game/server run. This is not completion of the
+canonical-writer migration below.
+
+### Current evidence status — 2026-10-16
+
+Source inspection confirms a named cross-process mutex, shared quota state,
+pre-write per-file and total-tree checks, pruning of eligible completed runs,
+and dropped-record accounting in `src/debug/structured-log.cpp`. The active
+writer does not rotate an oversized/current `events.jsonl` into segments, and
+the repository still contains direct/category diagnostic sinks that have not
+been migrated. Source guards therefore exist, but the full storage issue is
+not confirmed resolved.
+
+The inspected run
+`logs/2026-10-16/20261016_134002/events.jsonl` is 100,004,632 bytes, exceeding
+the specified 100,000,000-byte per-file ceiling by 4,632 bytes. Its last-write
+time was 2026-10-16T13:53:13Z. This proves that an over-limit file exists; it
+does not establish whether the current writer appended past its guard, an
+older process/configuration wrote it, or an external/direct writer bypassed
+the guard. Runtime cap behavior, concurrent writers, and handling of legacy
+oversized files remain unverified. Do not report the 1 GB tree limit or
+per-file limit as resolved until Phase 5's live validation passes and the
+repository-wide writer inventory is complete.
+
+At 2026-10-16T22:59:28Z, a workspace scan found 78 regular files under
+`logs/`, totaling 349,784,205 bytes, below the 1,000,000,000-byte tree ceiling.
+The `events.jsonl` above was the only file larger than the per-file ceiling.
+This is a current disk snapshot, not proof that concurrent runtime writes
+always respect either ceiling.
 
 ## Goal and non-negotiable result
 
@@ -21,7 +53,7 @@ files, feature-specific debug files, `printf`/`fprintf` diagnostic sinks, or
 parallel JSONL journals under `logs/`. Terminal display may remain as a
 presentation of the same structured record, but it is not a second file sink.
 
-The final storage invariant is absolute, not best-effort:
+The desired storage invariant is absolute, not best-effort:
 
 1. The complete `logs` directory tree must never exceed exactly
    `1,000,000,000` bytes of regular-file content.
@@ -36,6 +68,14 @@ The final storage invariant is absolute, not best-effort:
    aggregated and the drop is itself reported through the surviving canonical
    stream when space becomes available. The logger must not bypass the quota
    for errors, crashes, or assertions.
+
+The current source does not rotate a full active `events.jsonl` into segments;
+it rejects a record that would cross the per-file ceiling. Drop counts are
+attached to a later accepted canonical record. If the active file stays full,
+there is no available record in that file to report the accumulated count.
+StructuredLogger also does not cover every legacy or direct-file diagnostic
+sink in the inventory below. These are known gaps and must remain visible in
+validation and user-facing storage claims.
 
 The exact byte units are decimal bytes, not MiB/GiB. The implementation may
 reserve internal headroom below 1,000,000,000 bytes, but the specification's

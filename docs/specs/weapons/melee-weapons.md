@@ -880,6 +880,63 @@ proof
 
 should be recorded according to the regression/debug specifications.
 
+## **Additional user report — NPC and PvP coverage**
+
+The existing NPC report above already describes client-side Spy Knife
+presentation without authoritative NPC health loss. A newer user report says
+the same mismatch is still encountered and that Spy Knife versus player (PvP)
+damage is absent or nonfunctional. This report is not independently
+reproduced here; keep NPC and player targets as separate scenarios while
+tracing the same shared contact/authority pipeline.
+
+### Source audit — client target selection and authoritative validation (2026-10-16)
+
+Code review found two concrete client-side mismatches and two server-side
+observability/geometry risks. These findings identify likely failure paths;
+they do not prove which one caused a particular live report.
+
+- In `src/combat/weapon-spyknife.cpp`, remote contact selection chooses the
+  NPC replica map and falls back to remote players only when the NPC map is
+  empty. When both target types are present, the current loop therefore never
+  tests remote players. The client must evaluate both maps and preserve the
+  target type for each contact.
+- `applySpyKnifeRemoteHit()` calls `mpApplyPredictedDamage(..., true)` for the
+  remote target. The boolean selects the NPC prediction store in
+  `src/network/multiplayer-interpolation.cpp`; for a player target, prediction
+  is therefore written to the wrong replica state. Pass the actual target
+  type through the hit helper.
+- On the server, `handleSpyKnifeHitClaim()` resolves an NPC ID before trying a
+  player ID and does not use the packet's `targetIsNpc` bit to select the
+  namespace. Verify whether player and NPC IDs can overlap before relying on
+  this ordering; then make target kind explicit and validate it against the
+  authoritative entity registry.
+- Server hit validation checks the client OBB against a historical
+  root-centered sphere, while client contact generation tests replicated
+  physical-body parts. Long limbs or pose/rewind differences can create
+  client-hit/server-reject disagreements. Align the authoritative historical
+  body representation with the accepted melee contract; do not enlarge reach
+  or radii without evidence.
+- Missing historical NPC/player poses currently `continue` without a specific
+  rejection record in the shown handler. Emit bounded categorized reasons so
+  each candidate contact can be followed from client detection through server
+  accept/reject and confirmation or correction.
+
+Recommended implementation order after spec approval: (1) test NPC and player
+maps independently and carry typed target identity end-to-end; (2) route
+prediction to the correct replica store; (3) validate type/ID unambiguously;
+(4) choose and align the authoritative historical hit geometry; (5) add
+bounded contact-decision diagnostics. Validate with a real two-client server,
+with at least one NPC present, plus NPC-only, player-only, rejected-hit,
+rollback, and varied-avatar/body-pose cases. Keep PvP mode policy separate
+from a contact validation failure. Runtime proof remains required before
+calling any of these the reproduced root cause.
+
+Required proof for both target types: client prediction/effects, contact
+batch, server receipt and validation, authoritative damage/knockback result,
+and target health/state after the result. Confirm player damage is permitted
+by the active mode before calling a rejected hit a bug. A PvP test must use two
+real clients on the authoritative server; NPC success does not prove PvP.
+
 ## **Required Melee Diagnostics**
 
 For development/debugging, a contact should be traceable through:

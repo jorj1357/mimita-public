@@ -438,7 +438,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 
     MatchLeaderboard& hud = MatchLeaderboard::instance();
     hud.setMode(mMode, mGoal);
-    if (mMode == "ffa") hud.updateFFA(leaders);
+    if (mMode != "tdm") hud.updateFFA(leaders);
     else if (mMode == "tdm") {
         bool isRed = false;
         for (uint8_t i = 0; i < packet.participantCount; ++i)
@@ -447,6 +447,17 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         newLocalScore = isRed ? mRedScore : mBlueScore;
         hud.updateTDM(mRedScore, mBlueScore, isRed);
     }
+    std::string winnerName;
+    if (packet.winnerPlayerId != 0) {
+        for (int i = 0; i < 3; ++i) {
+            if (packet.ffaLeaderIds[i] == packet.winnerPlayerId) {
+                winnerName = packet.ffaLeaderNames[i];
+                break;
+            }
+        }
+    }
+    hud.setWinner(winnerName,
+        packet.matchOver != 0 && packet.phase == DUEL_PHASE_RESULTS);
     if (newLocalScore > mLocalScore) hud.onConfirmedScoreGain();
     mLocalScore = newLocalScore;
 

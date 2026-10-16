@@ -191,6 +191,138 @@ server replication
 ________________
 
 
+## Authoritative direction: data-defined items, components, and identity
+
+The target architecture is one generic data loader and registry for items and
+tools. A weapon is one kind of item/tool definition. Adding a new weapon must
+not require a new `create<Weapon>Definition()` function, a new weapon-specific
+packet, or a new weapon-specific firing system when existing behavior
+components can express it.
+
+Each definition has a stable string `id` and display metadata, plus zero or
+more reusable behavior components. Initial component families include
+inventory/equip, ammo, trigger/cooldown, hitscan, projectile, melee, explosion,
+throwable, damage, knockback, recoil, effects, and tool actions. A definition
+may combine compatible components; a projectile may also use explosion,
+damage, and knockback components. A non-weapon tool may have tool actions
+without being forced into weapon damage behavior. C++ owns reusable component
+implementations; JSON owns per-item selection and values. Schemas validate
+required fields and reject unsupported combinations with a clear diagnostic.
+
+Stable definition identity, runtime instance identity, and hotbar position are
+separate concepts:
+
+- `definition_id` identifies behavior and presentation (for example,
+  `rocket_launcher`).
+- `instance_id` identifies one owned item and its independent runtime state,
+  such as magazine ammo, reload, and cooldown. If inventory guarantees one
+  instance per definition, the definition ID may serve as the instance key;
+  that rule must be explicit and enforced.
+- `hotbar_index` is a presentation/input position chosen by the active weapon
+  set. It maps to an item identity and may change between sets. It is never
+  weapon identity or proof that a particular weapon is equipped.
+- Legacy native slot values are a temporary compatibility boundary.
+  Gameplay validation, ownership, attacks, and persistent item state must not
+  depend on duplicating the same integer across files.
+
+The server owns inventory and equipped item identity. Equip requests identify
+an owned item/instance; the server validates ownership and mode allowlist,
+updates authoritative equipped identity/revision, and replicates acceptance.
+An attack request identifies the item/instance that produced it. The server
+validates it against authoritative equipped history at the validated
+simulation tick and spawn generation, then resolves behavior from the
+definition registry. Hotbar indices may be diagnostic context but never the
+deciding identity check. Prediction, viewmodels, HUD, and animation resolve
+the same item identity.
+
+Migration preserves behavior before deleting constructors or slot paths:
+load existing definitions through the generic loader, compare resolved
+components and values to the existing runtime definition, then migrate one
+behavior family at a time. Keep an explicit compatibility adapter only while
+old data must load; ID and native-slot state must not remain competing
+authorities. Generic request protocols remain bounded and versioned; adding
+content must not require growing a packet per weapon.
+
+Acceptance before calling this architecture complete:
+
+1. Add a test weapon through validated data and asset references only, with no
+   per-weapon C++ constructor or packet.
+2. Put that weapon in two sets at different hotbar positions; both must equip,
+   predict, attack, and replicate the same stable identity.
+3. Reorder a set without changing definitions; no wrong-weapon rejection or
+   wrong viewmodel may result.
+4. Die and respawn without manual re-equip; verify server/client equipped
+   identity, ammo policy, spawn generation, and prediction before first fire.
+5. Forged, unowned, disallowed, stale-generation, and unequipped identities
+   reject with reasons; legal attacks succeed.
+6. Verify hitscan, projectile/explosive, melee, throwable, and non-weapon tool
+   definitions select only their declared reusable components.
+
+### Data-only additions and live reload boundary
+
+When all needed component implementations already exist, adding a weapon must
+require only a validated `config/weapons.json` entry and referenced assets;
+it must not require a C++ edit or rebuild. The generic loader constructs the
+definition, resolves its component IDs, validates cross-references, and
+registers it by stable ID. A new mechanic or component implementation still
+requires one shared C++ implementation; JSON chooses and configures existing
+capabilities and is not arbitrary executable code.
+
+Weapon definition reload is atomic at a fixed-tick boundary. The loader parses
+and validates a candidate snapshot first. On failure it keeps the last valid
+snapshot and reports the definition ID, path, and reason. On success it
+publishes one revision/hash. The authoritative server owns that revision for
+an online match and clients must use the matching definition for prediction
+and presentation. Existing projectiles/attacks retain the definition revision
+they began with; subsequent attacks use the new revision. A new or changed
+asset path must go through existing model, texture, and audio asset
+load/reload owners; a missing asset fails visibly without invalidating the
+last valid weapon snapshot. Runtime acceptance must prove edit -> detected
+reload -> valid revision -> client/server agreement -> visible new behavior
+without restarting the process. Until proven, call a JSON field
+hot-reloadable only when its owning loader supports it.
+
+This is the desired architecture, not a claim about current implementation.
+The existing `createRevolverDefinition()`-style registrations and slot-based
+equip plumbing are migration debt and must be measured before removal.
+
+### Current implementation audit — 2026-10-16
+
+The runtime is mixed, not yet the target architecture above:
+
+- `src/combat/weapon-data.cpp::registerBuiltinWeapons()` first loads
+  `config/weapons.json`, then calls one `create...Definition()` function per
+  built-in and registers each result. `src/combat/weapon-json-config.cpp::registerWeaponFromJson()`
+  applies JSON values to an already-created definition; it does not currently
+  construct and register an arbitrary new definition from a JSON key alone.
+- `config/weapons.json` stores each definition's `slot` (Rocket Launcher is
+  native slot 7 in the inspected checkout). `config/weaponsets.json` stores
+  arrays of weapon IDs; their array positions are the logical hotbar positions.
+  Those are different numbers with a conversion path, not a single slot value
+  that should be copied everywhere.
+- `src/terminal/weapon-commands.cpp::nativeSlotForCommunitySlot()` maps a
+  logical position through the selected set to a weapon ID and then to its
+  native definition slot. The server has corresponding mapping helpers in
+  `src/network/server-gamemode.cpp` and resolves equip input in
+  `src/network/server-packets.cpp::playerNativeSlotForEquip()`.
+- The generic attack packet already identifies the definition through
+  `weaponDefNetworkId`; `src/network/server-attack.cpp` resolves that ID but
+  then validates `shooter.equippedSlot == def->slot`. Thus an attack does not
+  authorize itself from the client's slot number, but equip/respawn state is
+  still represented and compared using native slots. The present report is
+  consistent with stale or missing equip state around a life transition; the
+  selected journal does not prove which transition lost it.
+- `reloadBuiltinWeaponsIfChanged()` polls the JSON file and rebuilds the
+  existing built-in registry after a detected file change. Since registration
+  still iterates the fixed constructor list, adding an arbitrary new JSON ID
+  alone does not create a registered weapon. Source inspection is not proof
+  that every JSON field, referenced model/sound/texture, or client/server
+  definition revision reloads and agrees live; those require runtime acceptance.
+
+This audit is source/config evidence, not a runtime proof that every configured
+weapon takes this path. Re-audit the owners before implementation because the
+repository may change.
+
 WeaponDefinition
 WeaponDefinition contains permanent weapon configuration.
 It describes the rules of the weapon.
@@ -351,7 +483,7 @@ struct WeaponEffectsDefinition
 
 struct WeaponDefinition
 {
-    std::string id; // 1,2,3,4,5,6.. 
+    std::string id; // stable identity, e.g. "revolver"; never a hotbar slot
     std::string displayName; // godball,revolver, shotgun, rocket launcher... 
 
 
@@ -1987,3 +2119,31 @@ generic damage
 generic knockback
 generic replication
 The grenade launcher is simply one configuration that activates those systems.
+
+# User-reported Godball and HAFS follow-up (2026-10-16)
+
+## Weapon document map
+
+- **Godball:** this file, §8 above. It is explicitly a sphere that passes
+  through world geometry while sweeping and damaging overlapping player bodies.
+- **SwordSword:** this file, §9 above, plus
+  [`swordsword.md`](swordsword.md) for its user-reported model, move-set,
+  damage, and collision issues.
+- **Spy Knife:** [`melee-weapons.md`](melee-weapons.md), especially §§4–9 for
+  behavior, damage, networking, and reported failures.
+- **HAFS:** [`hafs.md`](hafs.md), a new draft source audit because HAFS is a
+  separate configured weapon and does not inherit Godball's rules.
+
+The user reports that Godball and HAFS need further work. The current spec
+already contains detailed physical-contact contracts for Godball and a shared
+contact model for Godball/Swordsword; that does not prove the current build
+meets them. `HAFS` is a separate configured weapon (`config/weapons.json`,
+weapon ID `hafs`) and should be investigated through its own definition and
+runtime path rather than assumed to inherit Godball behavior.
+
+For each weapon, compare the exact current weapon definition, collision/attack
+path, server-authoritative damage, movement/force, and visible presentation
+with the existing requirements in this document. Capture concrete expected
+versus actual behavior before changing values or sharing behavior. Do not
+rewrite Godball's intentional world pass-through rule as part of generic
+weapon collision work.

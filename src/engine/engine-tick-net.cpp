@@ -101,18 +101,32 @@ void engineTickNet(Engine& engine, float dt)
         if (cmd.getState("walkright").held)   mpInput.wishX += 1.0f;
         float scheduledSide = 0.0f;
         float scheduledForward = 0.0f;
-        if (consumeScheduledTerminalMove(scheduledSide, scheduledForward)) {
+        bool scheduledJustStarted = false;
+        bool scheduledJustEnded = false;
+        if (consumeScheduledTerminalMove(scheduledSide, scheduledForward,
+                                         &scheduledJustStarted, &scheduledJustEnded)) {
             mpInput.wishX = scheduledSide;
             mpInput.wishY = scheduledForward;
-            static uint32_t scheduledMoveLogCounter = 0;
-            if ((scheduledMoveLogCounter++ % 30u) == 0u) {
+            // Bounded applied evidence: one event when the scheduled move first
+            // reaches the fixed-tick input owner and one when it is released.
+            // This proves applied axes and the release boundary without logging
+            // every tick of a long scheduled move.
+            if (scheduledJustStarted || scheduledJustEnded) {
+                const std::string& requestId = scheduledTerminalMoveRequestId();
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Avatar, StructuredLevel::Important,
-                    "agent.move.applied", "agent-move", "scheduled axes applied",
+                    "agent.move.applied",
+                    requestId.empty() ? "agent-move" : requestId,
+                    scheduledJustEnded ? "scheduled move released"
+                                       : "scheduled axes applied",
                     0,
-                    {{"move_x", scheduledSide}, {"move_y", scheduledForward},
-                     {"player_position", {player.pos.x, player.pos.y, player.pos.z}},
-                     {"player_velocity", {player.vel.x, player.vel.y, player.vel.z}}},
+                    nlohmann::json{{"request_id", requestId},
+                                   {"command", "agent.move"},
+                                   {"phase", scheduledJustEnded ? "end" : "start"},
+                                   {"move_x", scheduledSide},
+                                   {"move_y", scheduledForward},
+                                   {"player_position", {player.pos.x, player.pos.y, player.pos.z}},
+                                   {"player_velocity", {player.vel.x, player.vel.y, player.vel.z}}},
                     __FILE__, __LINE__, __FUNCTION__);
             }
         }
@@ -459,6 +473,39 @@ void engineTickNet(Engine& engine, float dt)
                     "spawn-packet");
             }
 
+            if (spawn.equippedWeaponDefNetworkId != 0) {
+                const std::string* weaponId = MimitaNet::weaponIdForDefNetworkId(
+                    spawn.equippedWeaponDefNetworkId);
+                const WeaponDefinition* def = weaponId
+                    ? WeaponRegistry::instance().get(*weaponId) : nullptr;
+                if (def && player.weaponRuntimes.find(def->id) != player.weaponRuntimes.end() &&
+                    (mpContext.communityWeaponSetId <= 0 ||
+                     MimitaNet::CommunityServerConfig::instance().weaponAllowed(
+                         mpContext.communityWeaponSetId, def->id))) {
+                    weapons.equip(player, def->slot);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Weapons, StructuredLevel::Important,
+                        "weapon.spawn.equipped_applied",
+                        std::to_string(mpContext.localPlayerId), "authoritative-spawn",
+                        mpContext.tick,
+                        nlohmann::json{{"weapon", def->id},
+                                       {"native_slot", def->slot},
+                                       {"weapon_set", mpContext.communityWeaponSetId},
+                                       {"weapon_def_network_id", spawn.equippedWeaponDefNetworkId},
+                                       {"spawn_generation", spawn.spawnGeneration}});
+                } else {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Weapons, StructuredLevel::Errors,
+                        "weapon.spawn.equipped_apply_failed",
+                        std::to_string(mpContext.localPlayerId),
+                        "unknown-or-not-owned-authoritative-equipped-weapon",
+                        mpContext.tick,
+                        nlohmann::json{{"weapon_def_network_id", spawn.equippedWeaponDefNetworkId},
+                                       {"weapon_set", mpContext.communityWeaponSetId},
+                                       {"spawn_generation", spawn.spawnGeneration}});
+                }
+            }
+
             const auto& match = MimitaNet::CommunityMatchClient::instance();
             if (match.mode() == "juggernaut" &&
                 match.fighterWeaponChoiceCommitted(mpContext.localPlayerId)) {
@@ -554,9 +601,28 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.waitingForMapLoad = false;
             }
 
-            // Send ClientMapReady whenever the required map is ready,
-            // regardless of whether it was already loaded or just switched.
-            const bool mapReady = !mpContext.requiredMapId.empty() && worldLoaded;
+            // Send ClientMapReady only when the world actually loaded for the
+            // server-required map. A failed map load must not be reported as
+            // ready while the stale previous world is still active; otherwise
+            // the server admits a client whose collision world does not match
+            // and authoritative spawn positions become out-of-world.
+            const bool mapReady = !mpContext.requiredMapId.empty() && worldLoaded &&
+                mapIdsReferToSameMap(ACTIVE_MAP_PATH, mpContext.requiredMapId);
+            if (!mpContext.requiredMapId.empty() && worldLoaded && !mapReady) {
+                static uint64_t lastMapMismatchLogMs = 0;
+                if (now - lastMapMismatchLogMs >= 1000) {
+                    lastMapMismatchLogMs = now;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Errors,
+                        "network.client-map-not-ready", "",
+                        "client world does not match server-required map",
+                        mpContext.tick,
+                        {{"required_map_id", mpContext.requiredMapId},
+                         {"active_map_path", ACTIVE_MAP_PATH},
+                         {"load_attempts", mpContext.mapLoadAttempts}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
             const bool readyAlreadySent =
                 mpContext.clientMapReadySent &&
                 mpContext.clientMapReadySentForPlayerId == mpContext.localPlayerId &&

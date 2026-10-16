@@ -542,6 +542,17 @@ bool serverCommunityWeaponAllowed(const std::string& weaponId)
     return config.weaponAllowed(state.communityWeaponSetId, weaponId);
 }
 
+bool serverCommunityWeaponAllowed(const ServerPlayer& player,
+                                  const std::string& weaponId)
+{
+    if (player.weaponSetId <= 0)
+        return serverCommunityWeaponAllowed(weaponId);
+
+    CommunityServerConfig& config = CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    return config.weaponAllowed(player.weaponSetId, weaponId);
+}
+
 int serverCommunityWeaponNativeSlot(int logicalSlot)
 {
     if (logicalSlot == 0)
@@ -566,8 +577,7 @@ int serverCommunityWeaponNativeSlot(const ServerPlayer& player, int logicalSlot)
 {
     if (logicalSlot == 0)
         logicalSlot = serverCommunityWeaponLogicalSlot(player, "nothing");
-    const ServerGamemodeState& state = serverGamemodeState();
-    if (state.objectiveRounds && player.weaponSetId > 0) {
+    if (player.weaponSetId > 0) {
         CommunityServerConfig& config = CommunityServerConfig::instance();
         if (config.weaponSets().empty()) config.load();
         const std::string* id = config.weaponForSlot(player.weaponSetId, logicalSlot);
@@ -581,8 +591,7 @@ int serverCommunityWeaponNativeSlot(const ServerPlayer& player, int logicalSlot)
 int serverCommunityWeaponLogicalSlot(const ServerPlayer& player,
                                      const std::string& weaponId)
 {
-    const ServerGamemodeState& state = serverGamemodeState();
-    if (state.objectiveRounds && player.weaponSetId > 0) {
+    if (player.weaponSetId > 0) {
         CommunityServerConfig& config = CommunityServerConfig::instance();
         if (config.weaponSets().empty()) config.load();
         const int slot = config.slotForWeapon(player.weaponSetId, weaponId);
@@ -852,7 +861,8 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.hasPendingKill = false;
     d.spawnsAssigned = false;
     d.startCountdownImmediately = skipIntermission;
-    d.phase = DUEL_PHASE_INTERMISSION;
+    d.phase = (gm.winCondition == "first_to_score" && !skipIntermission)
+        ? DUEL_PHASE_WAITING : DUEL_PHASE_INTERMISSION;
     d.phaseTimer = skipIntermission ? 0.0f : d.intermissionSeconds;
     d.matchOver = false;
     d.winnerPlayerId = 0;
@@ -876,7 +886,8 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     Debug::warn(Debug::Category::Duel,
         "[MODESTART] community=%s gamemode=%s phase=%s goal=%d timeLimit=%d intermission=%.0f\n",
         d.communityMode.c_str(), resolvedGamemodeId.c_str(),
-        skipIntermission ? "COUNTDOWN_PENDING" : "INTERMISSION",
+        skipIntermission ? "COUNTDOWN_PENDING" :
+            (gm.winCondition == "first_to_score" ? "WAITING_FOR_PLAYER" : "INTERMISSION"),
         d.goalValue,
         d.timeLimitSeconds, d.intermissionSeconds);
 }
@@ -1029,8 +1040,8 @@ void broadcastDuelState(SOCKET sock,
     std::snprintf(pkt.procedural.modeId, sizeof(pkt.procedural.modeId), "%s",
                   d.procedural.modeId.c_str());
 
-    // FFA top-3 leaderboard
-    if (d.matchMode == "ffa") {
+    // FFA and generic first-to-score top-3 leaderboard.
+    if (d.matchMode == "ffa" || d.winCondition == "first_to_score") {
         // Sort players by kills descending
         std::vector<std::pair<uint32_t, int>> sorted;
         for (const auto& kv : d.ffaKills)
@@ -2614,6 +2625,81 @@ void assignMatchParticipants(ServerGamemodeState& d,
     }
 }
 
+static void reconcileTeamRosterNpc(ServerGamemodeState& d,
+                                   std::unordered_map<uint32_t, ServerPlayer>& players,
+                                   std::unordered_map<uint32_t, ServerNpc>& npcs,
+                                   NpcSystem& npcSystem,
+                                   std::unordered_set<uint32_t>& npcIdsAlive)
+{
+    if (d.winCondition != "first_to_score" ||
+        GamemodeRegistry::instance().get(d.matchMode).npcSpawnPolicy != "team_roster")
+        return;
+
+    std::vector<uint32_t> unrelatedNpcIds;
+    for (const auto& entry : npcs)
+        if (entry.first != d.teamRosterNpcId) unrelatedNpcIds.push_back(entry.first);
+    if (!unrelatedNpcIds.empty()) {
+        for (uint32_t id : unrelatedNpcIds) {
+            npcs.erase(id);
+            npcIdsAlive.erase(id);
+        }
+        npcSystem.destroySelected(unrelatedNpcIds);
+    }
+
+    size_t humans = 0;
+    for (const auto& entry : players)
+        if (entry.second.spawnState == ServerPlayer::Active) ++humans;
+
+    if (humans == 1 && d.teamRosterNpcId == 0) {
+        uint32_t npcId = 200000;
+        while (npcs.find(npcId) != npcs.end() || players.find(npcId) != players.end()) ++npcId;
+        const glm::vec3 spawn = gamemodeSpawnPoint(d, 1);
+        ServerNpc npc;
+        npc.entityId = npcId;
+        npc.name = "Juggernaut Opponent";
+        npc.pos = spawn;
+        npc.yaw = 3.14159265f;
+        npc.health = 3500;
+        npc.matchTeam = 1;
+        npcs.emplace(npcId, npc);
+        d.teamRosterNpcId = npcId;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "gamemode.team-roster-npc.created", std::to_string(npcId),
+            "solo-opponent", d.currentServerTick,
+            nlohmann::json{{"actor", npcId}, {"team", 1}, {"mode", d.matchMode},
+                           {"human_count", humans}},
+            __FILE__, __LINE__, __FUNCTION__);
+    } else if (humans == 1) {
+        auto opponent = npcs.find(d.teamRosterNpcId);
+        if (opponent != npcs.end()) {
+            opponent->second.health = 3500;
+            opponent->second.pos = gamemodeSpawnPoint(d, 1);
+            opponent->second.matchTeam = 1;
+        }
+    } else if (humans != 1 && d.teamRosterNpcId != 0) {
+        const uint32_t npcId = d.teamRosterNpcId;
+        npcs.erase(npcId);
+        npcIdsAlive.erase(npcId);
+        npcSystem.destroySelected({npcId});
+        d.matchActors.erase(npcId);
+        d.matchTeams.erase(npcId);
+        d.participantNames.erase(npcId);
+        d.ffaKills.erase(npcId);
+        d.ffaDeaths.erase(npcId);
+        d.participants.erase(std::remove(d.participants.begin(), d.participants.end(), npcId),
+                             d.participants.end());
+        d.teamRosterNpcId = 0;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "gamemode.team-roster-npc.removed", std::to_string(npcId),
+            "human-roster-changed", d.currentServerTick,
+            nlohmann::json{{"actor", npcId}, {"mode", d.matchMode},
+                           {"human_count", humans}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
+
 // Advance each participant's authoritative match lifecycle state. This is the
 // single owner of the Alive/Dead/Respawning/Spectating transitions and maps the
 // legacy `dead`/health fields onto ActorState:
@@ -3272,7 +3358,7 @@ static void emitGamemodeMatchPersistence(ServerGamemodeState& d, uint32_t tick,
         p.kills = kv.second.kills;
         p.deaths = kv.second.deaths;
 
-        if (d.matchMode == "ffa") {
+        if (d.matchMode == "ffa" || d.winCondition == "first_to_score") {
             auto killIt = d.ffaKills.find(kv.first);
             p.kills = killIt != d.ffaKills.end() ? killIt->second : 0;
             auto deathIt = d.ffaDeaths.find(kv.first);
@@ -3406,12 +3492,16 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
         }
     }
 
-    if (d.matchMode == "ffa") {
+    // Score-limit ownership is selected by win_condition; FFA keeps its legacy
+    // behavior while other modes can reuse the same individual score ledger.
+    if (d.winCondition == "first_to_score" || d.matchMode == "ffa") {
         for (const auto& kv : d.ffaKills) {
             if (kv.second >= d.goalValue) {
                 d.matchOver = true;
                 d.phase = DUEL_PHASE_RESULTS;
                 d.winnerPlayerId = kv.first;
+                auto winnerTeam = d.matchTeams.find(kv.first);
+                d.winnerTeam = winnerTeam == d.matchTeams.end() ? -1 : winnerTeam->second;
                 d.victoryType = 0;  // ScoreLimit
                 d.phaseTimer = d.resultsSeconds;
                 ++d.stateVersion;
@@ -3446,7 +3536,7 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
         d.phase = DUEL_PHASE_RESULTS;
         d.victoryType = 1;  // TimeLimit
         d.phaseTimer = d.resultsSeconds;
-        if (d.matchMode == "ffa") {
+        if (d.matchMode == "ffa" || d.winCondition == "first_to_score") {
             int best = -1;
             for (const auto& kv : d.ffaKills) {
                 if (kv.second > best) {
@@ -4343,6 +4433,18 @@ void serverGamemodeTick(SOCKET sock,
                     deathsBefore, d.ffaDeaths[victimId],
                     tick, (int)d.phase, (int)d.matchOver);
             }
+            // Data-selected competitor scoring. Only confirmed kills between
+            // opposing assigned teams count; human and NPC actors share this map.
+            else if (d.winCondition == "first_to_score") {
+                const auto killerTeam = d.matchTeams.find(killerId);
+                const auto victimTeam = d.matchTeams.find(victimId);
+                if (killerTeam != d.matchTeams.end() && victimTeam != d.matchTeams.end() &&
+                    killerTeam->second >= 0 && victimTeam->second >= 0 &&
+                    killerTeam->second != victimTeam->second) {
+                    ++d.ffaKills[killerId];
+                    ++d.ffaDeaths[victimId];
+                }
+            }
             // TDM scoring
             else if (d.matchMode == "tdm") {
                 ++d.ffaKills[killerId];
@@ -4575,6 +4677,7 @@ void serverGamemodeTick(SOCKET sock,
     // Any mode with a generic win condition (e.g. last_team_standing) uses the
     // same lifecycle instead of requiring a mode-specific branch.
     if (d.npcWaves || d.persistentNpcSpawns || d.matchMode == "ffa" || d.matchMode == "tdm" ||
+        d.winCondition == "first_to_score" ||
         d.winCondition == "last_team_standing" ||
         d.winCondition == "last_actor_alive")
     {
@@ -4589,7 +4692,8 @@ void serverGamemodeTick(SOCKET sock,
         switch (d.phase)
         {
         case DUEL_PHASE_WAITING:
-            if (((d.npcWaves || d.persistentNpcSpawns) && countActivePlayers(players) >= 1) ||
+            if (((d.npcWaves || d.persistentNpcSpawns || d.winCondition == "first_to_score") &&
+                 countActivePlayers(players) >= 1) ||
                 (!d.npcWaves && (countActivePlayers(players) >= 2 ||
                 (countActivePlayers(players) >= 1 && !npcs.empty()))))
             {
@@ -4597,6 +4701,17 @@ void serverGamemodeTick(SOCKET sock,
                 if (world.spawnPoints.empty())
                     rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                 assignGamemodeSpawns(d, world);
+                if (d.winCondition == "first_to_score" && !d.startCountdownImmediately) {
+                    d.phase = DUEL_PHASE_INTERMISSION;
+                    d.phaseTimer = d.intermissionSeconds;
+                    ++d.stateVersion;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    Debug::warn(Debug::Category::Duel,
+                        "[MATCH] first participant joined; intermission started mode=%s seconds=%.1f\n",
+                        d.matchMode.c_str(), d.intermissionSeconds);
+                    break;
+                }
+                reconcileTeamRosterNpc(d, players, npcs, npcSystem, npcIdsAlive);
                 if (d.npcWaves) {
                     d.waveNumber = 1;
                     beginNpcWave(d, players, npcs, npcSystem, npcIdsAlive, tick);
@@ -4839,10 +4954,20 @@ void serverGamemodeTick(SOCKET sock,
             d.phaseTimer -= SERVER_DT;
             if (d.phaseTimer <= 0.0f)
             {
+                if (d.winCondition == "first_to_score" && countActivePlayers(players) == 0) {
+                    d.phase = DUEL_PHASE_WAITING;
+                    d.phaseTimer = 0.0f;
+                    ++d.stateVersion;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    Debug::warn(Debug::Category::Duel,
+                        "[MATCH] empty lobby returned to waiting mode=%s\n", d.matchMode.c_str());
+                    break;
+                }
                 // Rotate map if configured
                 if (d.rotateMaps && d.mapPool.size() > 1)
                     rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                 assignGamemodeSpawns(d, world);
+                reconcileTeamRosterNpc(d, players, npcs, npcSystem, npcIdsAlive);
                 assignMatchParticipants(d, players, &npcs);
                 beginMatchCountdown(d, players, npcs, npcSystem, tick);
                 ++d.stateVersion;

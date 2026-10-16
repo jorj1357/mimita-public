@@ -73,6 +73,15 @@
       "score_limit": 0
     },
     {
+      "id": "juggernaut_duel",
+      "gamemode_id": "juggernaut_duel",
+      "name": "Juggernaut Duel",
+      "description": "Two Juggernauts. First to 20 kills wins.",
+      "teams": 2,
+      "score_limit": 20,
+      "max_players": 2
+    },
+    {
       "id": "npc_waves",
       "gamemode_id": "npc_waves",
       "name": "NPC Waves",

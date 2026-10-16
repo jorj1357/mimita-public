@@ -69,6 +69,73 @@ identity, scores, results, Bomb Tag state, killfeed, and leaderboard state. A
 new server session has a new generation, so packets from a stopped server
 cannot revive its countdown or presentation state.
 
+## Authored map spawnpoint consumption
+
+`MapConfigRegistry` owns authored map entities. The Entity Editor owns how a
+creator adds, positions, tags, enables, saves, and reloads a `spawnpoint`; this
+shared gamemode specification owns how an authoritative spawn request chooses
+one. All spawn entry paths must use the same server-side selection policy:
+initial player join, respawn, map change, team/role assignment, and NPC spawn
+commands or waves. They must not independently pick from different local
+lists.
+
+Selection order for ordinary spawns:
+
+1. Preserve a higher-priority lifecycle rule already in effect, such as a
+   valid checkpoint spawn or explicit server-approved teleport.
+2. Select an enabled map-config spawnpoint eligible for the actor's active
+   mode/team/role. A point with a configured tag must match the actor's
+   configured spawn group; an untagged point is the generic candidate.
+3. If no eligible authored point exists, use the legacy map-GLB spawn list for
+   compatibility.
+4. Validate the candidate with the server's existing safe-spawn checks. If no
+   candidate is safe, use the existing documented safe fallback and emit a
+   reasoned diagnostic.
+
+The selected position is applied through the existing authoritative spawn
+lifecycle, which updates actor generation/transform identity and replicates
+the spawn. Creating or moving an authored point changes future spawn selection;
+it does not teleport actors who are already alive. An editor change is active
+in the session after the authoritative server accepts it. In a remote session,
+the client must submit an authorized edit request to the server; a client-local
+JSON write is not a remote server update. `entity_save` persists accepted map
+data, while the in-memory change should be available for the next spawn in the
+same session.
+
+Implementation audit (2026-10-16): `gamemodeSpawnPoint()` already consumes
+enabled authored points for some gamemode-managed spawn events, while initial
+join and `npc_spawn` still follow GLB/local-world paths. Consolidate those
+callers into this contract instead of adding another spawn-point owner. This
+is a proposed alignment; runtime acceptance is still required.
+
+### 2026-10-16 runtime evidence: Dust2 Cyberia spawn report
+
+The selected journal `logs/2026-10-16/20261016_134002/events.jsonl` records
+the server loading `mimita-aabb-only-interior-small-v4.glb` with zero spawn
+points, while the client loads `dust2cyberiav4.glb` with two spawn points.
+The client then reports repeated failures to load the non-v4
+`mimita-aabb-only-interior-small.glb`. Later server and client map events
+report `funworld3.glb`. A local actor/corpse presentation event records
+position Z≈−501 while the successfully loaded map bounds in this journal begin
+at Z≈−5 or higher. This supports the reported below-world condition and a
+map/session divergence investigation; it does not yet identify which spawn
+caller wrote that position or prove the complete join sequence.
+
+Acceptance: on the same fresh server session, initial player join, respawn,
+map change, and NPC spawn all use the selected authoritative map and the same
+safe authored-spawn policy. Record expected and actual map/session identity,
+chosen spawnpoint, actor generation, and final transform in the live journal.
+Before a player is admitted or spawned, the server and client must agree on a
+canonical map ID/content revision, and the server must confirm that collision
+world and spawn data are ready. The client must not independently load a
+fallback or stale map while joining the server's room. If map identity differs
+or no safe spawn exists, stop the join/spawn transition with a visible reason;
+never apply a stale-world coordinate or silently continue below/outside the
+loaded map. Diagnostics connect session/run ID, selected map ID and content
+revision, requested/resolved asset path, process role, load readiness, spawn
+source/candidate, validation result, actor ID/generation, and final
+authoritative transform.
+
 ## General NPC intent contract (objective / focus / patrol)
 
 A gamemode does not own NPC artificial intelligence. It selects roles, presets,

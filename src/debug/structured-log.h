@@ -249,6 +249,7 @@ private:
     std::string mRunId;        // yyyymmdd_hhmmss for this run
     std::string mEventsPath;   // logs/yyyy-mm-dd/yyyymmdd_hhmmss/events.jsonl
     FILE* mEventsFile = nullptr;
+    void* mRunLease = nullptr; // named event held while this run has a live process
     uint64_t mSequence = 0;
     uint64_t mEventCounters[(int)StructuredCategory::Count] = {};
 
@@ -273,6 +274,7 @@ private:
     std::atomic<uint64_t> mFlushCount{0};
     std::atomic<uint64_t> mFlushMicroseconds{0};
     std::atomic<uint64_t> mMutexWaitMicroseconds{0};
+    std::atomic<uint64_t> mQuotaDroppedRecords{0};
 };
 
 // ── Convenience: structured log with formatted message ─────────────

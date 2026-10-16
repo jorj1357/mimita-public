@@ -45,6 +45,34 @@
       "spawn_group": "juggernauts_spawn"
     },
     {
+      "id": "juggernaut_duel_jason",
+      "display_name": "Jason Juggernaut",
+      "team": 0,
+      "team_id": "jason",
+      "health": 3500,
+      "movement_preset": "juggernaut",
+      "actor_preset": "juggernaut_arcade",
+      "weapon_set": "juggernaut_mode",
+      "starting_weapon": "heavy_shotgun",
+      "behavior_profile": "juggernaut_limited",
+      "avatar": "jason",
+      "avatar_forced": true
+    },
+    {
+      "id": "juggernaut_duel_clown",
+      "display_name": "Clown Juggernaut",
+      "team": 1,
+      "team_id": "clown",
+      "health": 3500,
+      "movement_preset": "juggernaut",
+      "actor_preset": "juggernaut_arcade",
+      "weapon_set": "juggernaut_mode",
+      "starting_weapon": "heavy_shotgun",
+      "behavior_profile": "juggernaut_limited",
+      "avatar": "clown",
+      "avatar_forced": true
+    },
+    {
       "id": "skirmisher",
       "team": 0,
       "health": 100,

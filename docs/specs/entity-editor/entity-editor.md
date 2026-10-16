@@ -205,9 +205,54 @@ debug geometry. `monster_zone` is the first type with authoritative gameplay:
 when a live player enters its radius, the server can create a configured NPC
 wave and apply its cooldown, maximum-alive, and one-shot rules.
 
-`spawnpoint`, `checkpoint`, `pickup`, `damage_volume`, and `boss_trigger` are
-currently authoring/visualization entities. Their full gameplay consumers are
-future slices and must not be assumed from the JSON shape alone.
+`checkpoint`, `pickup`, `damage_volume`, and `boss_trigger` can currently be
+authored, saved, reloaded, and shown as debug geometry, but their full gameplay
+consumers are future slices. `spawnpoint` is different: the server already
+consumes enabled authored spawnpoint entities in some gamemode-managed spawn
+paths, with optional team spawn-group tag matching. That consumption is
+incomplete and does not cover every spawn entry path.
+
+## Open issue: one authored spawn point is not used by every spawn path
+
+User-reported desired behavior: after placing a spawn point, it should be
+usable by the next player or NPC spawn in the current Sandbox session. It
+should also be saved so the same point is available after a restart.
+
+Source review found three different paths today:
+
+- Gamemode-managed respawn/map-change selection in
+  `src/network/server-gamemode.cpp` reads enabled `MapConfigRegistry` spawnpoint
+  entities and filters their `tag` against the team's `spawn_group`.
+- Initial player join in `src/network/server-packets.cpp` selects from
+  `HeadlessWorld::spawnPoints`, which are loaded from spawn nodes in the map
+  GLB; it does not consult authored map-config spawnpoint entities.
+- The `npc_spawn` terminal command in `src/terminal/npc-commands.cpp` chooses
+  from the client/local `World::spawnPoints` through
+  `src/game/spawn-utils.cpp`. In multiplayer it sends that chosen position in
+  `SpawnNpcRequestPacket`, rather than asking the server to select an authored
+  spawnpoint.
+
+The intended design is one server-owned spawn-selection policy, specified in
+[`gamemodes.md`](../gamemodes/gamemodes.md), used by initial player join,
+respawn/map changes, and NPC spawn commands. It should prefer enabled authored
+map-config spawnpoints that match the active mode/team/role rules, then use
+legacy GLB spawnpoints as a compatibility fallback, then the existing safe
+fallback. The server must validate the selected position and apply it through
+the existing authoritative player/NPC spawn lifecycle. Existing checkpoint,
+explicit teleport, and mode-specific placement rules keep their documented
+precedence.
+
+`entity_add` / `entity_set_position` make the point available in the current
+authoring session; `entity_save` persists it. A newly placed point affects the
+next spawn, not actors already alive. For a remote server, the editor must send
+an authorized edit request to the server; saving only the client's local map
+JSON cannot change a different machine's spawn registry.
+
+Acceptance must cover initial player join, player respawn, `npc_spawn`, NPC
+wave/role spawns, team-tag filtering, disabled points, map-config reload,
+legacy-GLB fallback, safe-position rejection, and a remote client/server edit.
+This is a spec and implementation gap; runtime behavior was not reproduced in
+this review.
 
 ## Safe editing checklist
 

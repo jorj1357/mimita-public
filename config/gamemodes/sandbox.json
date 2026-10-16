@@ -7,8 +7,8 @@
   // "nervous". Humans are not affected. Hot-reloadable. 
   // "npc_behavior_profile": "balanced", 
   // "npc_behavior_profile": "sandboxhard",
-  // "npc_behavior_profile": "juggernaut_swarm",
-  "npc_behavior_profile": "nervousbad",
+  "npc_behavior_profile": "juggernaut_swarm",
+  // "npc_behavior_profile": "nervousbad",
   // "npc_behavior_profile": "juggernaut_limited",
   "team_names": [],
   "goal_value": 0,

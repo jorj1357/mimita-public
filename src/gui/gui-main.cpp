@@ -204,6 +204,9 @@ static void readServerSettingsFromBindings()
     const MimitaNet::CommunityMode* selectedMode =
         MimitaNet::CommunityServerConfig::instance().modeByName(mode);
     gServerLaunchSettings.gameMode = selectedMode ? selectedMode->id : "sandbox";
+    if (selectedMode && selectedMode->maxPlayers > 0)
+        gServerLaunchSettings.maxPlayers = std::min<uint32_t>(
+            gServerLaunchSettings.maxPlayers, (uint32_t)selectedMode->maxPlayers);
     gServerLaunchSettings.weaponSetId = weaponSet.rfind("Set ", 0) == 0
         ? std::max(1, std::atoi(weaponSet.c_str() + 4)) : 1;
     gServerLaunchSettings.autoMapRotation =
@@ -351,34 +354,84 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
 
 bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
 {
-    if (gListenServer.active || gServerProcessLaunched)
+    if (MP_CONTEXT.active)
         return false;
+
+    auto queueRoomJoin = [](const std::string& roomCode,
+                            const MimitaNet::ServerLaunchSettings& launchSettings) {
+        gPendingConnect = {};
+        gPendingConnect.shouldConnect = true;
+        gPendingConnect.roomCode = roomCode;
+        gPendingConnect.mapName = launchSettings.mapName;
+        gPendingConnect.serverName = launchSettings.serverName;
+        GAME_STATE = GAME_PLAYING;
+    };
+
+    // Match the GUI launch path: join only after the server has registered a
+    // room and supplied its coordinator room code. A running preset server is
+    // retained across client leave and reused rather than started a second time.
+    if (gListenServer.active)
+    {
+        if (gListenServer.serverCode.empty())
+            return false;
+        queueRoomJoin(gListenServer.serverCode, gServerLaunchSettings);
+        return true;
+    }
+
+    if (gServerProcessLaunched && gServerProcessInfo.hProcess)
+    {
+        DWORD exitCode = 0;
+        if (GetExitCodeProcess(gServerProcessInfo.hProcess, &exitCode) &&
+            exitCode == STILL_ACTIVE)
+        {
+            const bool samePreset =
+                gServerLaunchSettings.mapName == settings.mapName &&
+                gServerLaunchSettings.gameMode == settings.gameMode &&
+                gServerLaunchSettings.serverName == settings.serverName &&
+                gServerLaunchSettings.port == settings.port;
+            if (!samePreset)
+                return false;
+            if (!gServerLaunchSettings.serverCode.empty())
+            {
+                queueRoomJoin(gServerLaunchSettings.serverCode,
+                              gServerLaunchSettings);
+                return true;
+            }
+            if (gWaitingForServerRoomCode)
+            {
+                gPendingConnect = {};
+                gPendingConnect.mapName = gServerLaunchSettings.mapName;
+                gPendingConnect.serverName = gServerLaunchSettings.serverName;
+                GAME_STATE = GAME_PLAYING;
+                return true;
+            }
+            return false;
+        }
+
+        CloseHandle(gServerProcessInfo.hProcess);
+        CloseHandle(gServerProcessInfo.hThread);
+        gServerProcessInfo = {};
+        gServerProcessLaunched = false;
+        gServerLaunchSettings.serverCode.clear();
+    }
 
     gServerLaunchSettings = settings;
     if (!launchServerProcess(gServerLaunchSettings))
     {
-        // Keep the GUI's existing in-process fallback available when the
-        // external child cannot be created.
+        // Keep the GUI's listen-server fallback, but join by its registered
+        // room code just like the GUI button does.
         if (!MimitaNet::startListenServer(
                 gListenServer, gServerLaunchSettings.port, "", "",
-                &gServerLaunchSettings))
+                &gServerLaunchSettings) || gListenServer.serverCode.empty())
             return false;
-
-        gPendingConnect = {};
-        gPendingConnect.shouldConnect = true;
-        gPendingConnect.directAddress =
-            "127.0.0.1:" + std::to_string(gServerLaunchSettings.port);
-        gPendingConnect.mapName = gServerLaunchSettings.mapName;
-        gPendingConnect.serverName = gServerLaunchSettings.serverName;
-        GAME_STATE = GAME_PLAYING;
+        queueRoomJoin(gListenServer.serverCode, gServerLaunchSettings);
         return true;
     }
 
     gServerLaunchSettings.externalProcessLaunched = true;
+    // guiMain() polls the room-file handshake and then queues the room-code
+    // connection. Do not connect here before the coordinator has registered it.
     gPendingConnect = {};
-    gPendingConnect.shouldConnect = true;
-    gPendingConnect.directAddress =
-        "127.0.0.1:" + std::to_string(gServerLaunchSettings.port);
     gPendingConnect.mapName = gServerLaunchSettings.mapName;
     gPendingConnect.serverName = gServerLaunchSettings.serverName;
     GAME_STATE = GAME_PLAYING;

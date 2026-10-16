@@ -1695,6 +1695,7 @@ struct PlayerRespawnedPacket
     WeaponSlot weapons[16];
     uint8_t weaponCount = 0;
     uint8_t communityWeaponSetId = 0;
+    uint16_t equippedWeaponDefNetworkId = 0;
 };
 
 // ── Spawn acknowledgement ────────────────────────────────────────────

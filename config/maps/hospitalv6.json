@@ -1,0 +1,184 @@
+{
+  "bomb": {
+    "defuse_seconds": 5.0,
+    "explosion_seconds": 40.0,
+    "plant_seconds": 3.0
+  },
+  "bomb_sites": [],
+  "entities": [
+    {
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "spawnpoint_1",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        146.64256286621094,
+        -8.983756065368652,
+        -15.629225730895996
+      ],
+      "radius": 1.0,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "spawnpoint",
+      "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "spawnpoint_2",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        139.27645874023438,
+        -7.615628242492676,
+        -5.385743141174316
+      ],
+      "radius": 1.0,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "spawnpoint",
+      "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "spawnpoint_3",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        138.49530029296875,
+        -7.977978706359863,
+        10.614255905151367
+      ],
+      "radius": 1.0,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "spawnpoint",
+      "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "spawnpoint_4",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        137.4400177001953,
+        -5.136312484741211,
+        26.603273391723633
+      ],
+      "radius": 1.0,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "spawnpoint",
+      "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "spawnpoint_5",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        137.5465850830078,
+        -3.0074028968811035,
+        58.6142578125
+      ],
+      "radius": 1.0,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "spawnpoint",
+      "visible": true
+    },
+    {
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "id": "spawnpoint_6",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "pickupId": "",
+      "position": [
+        139.76458740234375,
+        -4.810805320739746,
+        42.614253997802734
+      ],
+      "radius": 1.0,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "spawnpoint",
+      "visible": true
+    }
+  ]
+}

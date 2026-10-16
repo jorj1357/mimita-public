@@ -11,6 +11,7 @@
 #include "network/server.h"
 #include "network/server-gamemode.h"
 #include "network/server-gamemode.h"
+#include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
@@ -93,17 +94,32 @@ const WeaponDefinition* weaponDefinitionForSlot(int slot)
     return nullptr;
 }
 
-bool playerCanEquipSlot(const ServerPlayer& player, int slot)
+int playerNativeSlotForEquip(const ServerPlayer& player, int slot,
+                             std::string* outWeaponId = nullptr)
 {
     if (slot == 0)
-        return true;
-    const WeaponDefinition* def = weaponDefinitionForSlot(serverCommunityWeaponNativeSlot(player, slot));
+        return serverCommunityWeaponNativeSlot(player, slot);
+
+    int nativeSlot = serverCommunityWeaponNativeSlot(player, slot);
+    const WeaponDefinition* def = weaponDefinitionForSlot(nativeSlot);
+    // Older clients may send the weapon definition's native slot instead of
+    // its logical position in the role set. Accept that form only when the
+    // assigned set owns the identified weapon.
     if (!def)
-        return false;
-    if (!serverCommunityWeaponAllowed(def->id))
-        return false;
+    {
+        def = weaponDefinitionForSlot(slot);
+        if (!def)
+            return -1;
+        nativeSlot = def->slot;
+    }
+    if (!serverCommunityWeaponAllowed(player, def->id))
+        return -1;
     auto rt = player.weaponRuntimes.find(def->id);
-    return rt != player.weaponRuntimes.end() && rt->second.initialized;
+    if (rt == player.weaponRuntimes.end() || !rt->second.initialized)
+        return -1;
+    if (outWeaponId)
+        *outWeaponId = def->id;
+    return nativeSlot;
 }
 
 bool applyEquipIntentFromInput(ServerPlayer& player,
@@ -123,7 +139,10 @@ bool applyEquipIntentFromInput(ServerPlayer& player,
     if (!serialChanged && !slotChanged)
         return false;
 
-    if (!playerCanEquipSlot(player, input.equippedSlot))
+    std::string resolvedWeaponId;
+    const int resolvedNativeSlot =
+        playerNativeSlotForEquip(player, input.equippedSlot, &resolvedWeaponId);
+    if (resolvedNativeSlot < 0)
     {
         Debug::logThrottled(
             Debug::Category::Weapons,
@@ -140,7 +159,7 @@ bool applyEquipIntentFromInput(ServerPlayer& player,
             "weapon.equip.rejected", std::to_string(player.id), "not-owned-or-unknown",
             0,
             nlohmann::json{{"requested_slot", input.equippedSlot},
-                           {"resolved_native_slot", serverCommunityWeaponNativeSlot(player, input.equippedSlot)},
+                           {"resolved_native_slot", resolvedNativeSlot},
                            {"weapon_set", player.weaponSetId},
                            {"mode", serverGamemodeState().matchMode},
                            {"equip_serial", input.equipSerial}});
@@ -150,7 +169,8 @@ bool applyEquipIntentFromInput(ServerPlayer& player,
     const int oldSlot = player.equippedSlot;
     if (input.equipSerial != 0)
         player.lastEquipSerial = input.equipSerial;
-    player.equippedSlot = serverCommunityWeaponNativeSlot(player, input.equippedSlot);
+    player.equippedSlot = resolvedNativeSlot;
+    player.equippedWeaponId = resolvedWeaponId;
     player.weaponState = input.weaponState;
     Debug::log(
         Debug::Category::Weapons,
@@ -167,6 +187,7 @@ bool applyEquipIntentFromInput(ServerPlayer& player,
         0,
         nlohmann::json{{"requested_slot", input.equippedSlot},
                        {"resolved_native_slot", player.equippedSlot},
+                       {"weapon_id", player.equippedWeaponId},
                        {"weapon_set", player.weaponSetId},
                        {"mode", serverGamemodeState().matchMode},
                        {"equip_serial", input.equipSerial}});
@@ -1404,8 +1425,14 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         return;
     const JoinRequestPacket* join = reinterpret_cast<const JoinRequestPacket*>(buffer);
 
-    // Check if server is full
-    if (players.size() >= MAX_PLAYERS)
+    // Apply the selected community mode's human capacity before the server-wide
+    // transport limit. NPC participants do not consume human connection slots.
+    const CommunityMode* communityMode = CommunityServerConfig::instance().modeById(
+        serverGamemodeState().communityMode);
+    const size_t playerLimit = communityMode && communityMode->maxPlayers > 0
+        ? std::min<size_t>(MAX_PLAYERS, (size_t)communityMode->maxPlayers)
+        : MAX_PLAYERS;
+    if (players.size() >= playerLimit)
     {
         JoinRejectPacket reject{};
         reject.header.type = PACKET_JOIN_REJECT;

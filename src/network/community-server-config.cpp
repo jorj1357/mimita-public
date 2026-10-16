@@ -68,6 +68,7 @@ bool CommunityServerConfig::loadModes(const std::string& path)
             mode.description = item.value("description", "");
             mode.teams = item.value("teams", 0);
             mode.scoreLimit = std::max(0, item.value("score_limit", 0));
+            mode.maxPlayers = std::max(0, item.value("max_players", 0));
             if (!mode.id.empty()) next.push_back(std::move(mode));
         }
         if (next.empty()) throw std::runtime_error("no valid modes");

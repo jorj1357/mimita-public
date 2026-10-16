@@ -363,6 +363,21 @@ Fast-moving body parts must not simply skip through walls or floors.
 
 This should follow the same generalized anti-tunneling rules used by moving physical objects.
 
+### Open issue: inconsistent limb/world contacts and long-avatar grabs
+
+User report: ragdoll parts sometimes pass through walls and sometimes collide;
+avatar limbs do not always appear to collide with the world. Long-arm avatars
+such as `chainsawboss` make the issue especially visible. Existing invariant
+`RAG-011` already forbids free tunneling, so this is a runtime/spec-acceptance
+gap, not a request to weaken that invariant.
+
+The user would ideally like triangle-versus-triangle contact for the surface
+used to grab objects. Treat that as a candidate representation to evaluate,
+not an established architecture choice: compare it with the current collider,
+sweep, caching, and fixed-tick requirements before choosing. Acceptance must
+cover fast arm extension, long limbs, thin walls, corners, floors, and
+networked ragdolls, and prove both no tunneling and stable physical grabbing.
+
 ---
 
 # 12. Normal movement disabled

@@ -469,3 +469,5 @@ Human acceptance (not provable by build):
 - `docs/workflows/runtime-scenario-validation.md`
 - `docs/architecture/json-configuration/json-configuration.md`
 - `config/animations/readmewhat.md` (original intent)
+- `docs/specs/animations/blender-animation-authoring.md` (Blender action export
+  proposal and unresolved format/rig decisions)

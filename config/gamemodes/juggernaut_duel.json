@@ -1,0 +1,25 @@
+{
+  "id": "juggernaut_duel",
+  "name": "Juggernaut Duel",
+  "description": "Two Juggernauts. First to 20 kills wins.",
+  "actor_preset": "juggernaut_arcade",
+  "weapon_set_id": 11,
+  "goal_value": 20,
+  "time_limit_seconds": 0,
+  "respawn_seconds": 0.01,
+  "kill_heals": false,
+  "friendly_fire": false,
+  "countdown_seconds": 3,
+  "go_seconds": 0.75,
+  "intermission_seconds": 3,
+  "results_seconds": 3,
+  "spawn_offset_radius": 5.0,
+  "spawn_strategy": "team_shared",
+  "win_condition": "first_to_score",
+  "teams": [
+    { "id": "jason", "display_name": "Jason", "capacity": 1, "role": "juggernaut_duel_jason" },
+    { "id": "clown", "display_name": "Clown", "capacity": 1, "role": "juggernaut_duel_clown" }
+  ],
+  "npc_spawn": { "policy": "team_roster", "max_count": 1 },
+  "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
+}

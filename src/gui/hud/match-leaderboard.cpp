@@ -34,6 +34,12 @@ void MatchLeaderboard::setMode(const std::string& mode, int goal)
     mGoal = goal;
 }
 
+void MatchLeaderboard::setWinner(const std::string& name, bool visible)
+{
+    mWinnerName = name;
+    mWinnerVisible = visible && !name.empty();
+}
+
 void MatchLeaderboard::clear()
 {
     mFFATop3.clear();
@@ -42,6 +48,8 @@ void MatchLeaderboard::clear()
     mRedKills = 0;
     mBlueKills = 0;
     mIsRedTeam = false;
+    mWinnerName.clear();
+    mWinnerVisible = false;
     mScoreGains.clear();
 }
 
@@ -108,7 +116,7 @@ void MatchLeaderboard::render()
         ? layout.get("leaderboardText")->fontSize : 0.30f;
 
     // FFA leaderboard: show top 3 horizontally
-    if (mMode == "ffa" && !mFFATop3.empty()) {
+    if (mMode != "tdm" && !mFFATop3.empty()) {
         float x = layout.get("ffaLeader1") ? layout.get("ffaLeader1")->x : 20.0f;
         const float y = layout.get("ffaLeader1") ? layout.get("ffaLeader1")->y : 20.0f;
 
@@ -127,6 +135,14 @@ void MatchLeaderboard::render()
             const float drawX = el ? el->x : x;
             const float drawY = el ? el->y : y;
 
+            if (el && el->text.find("{goal}") != std::string::npos) {
+                const std::string line = format(el->text, {
+                    {"{rank}", std::to_string(i + 1)}, {"{name}", entry.name},
+                    {"{score}", std::to_string(entry.score)}, {"{goal}", std::to_string(mGoal)}});
+                uiDrawText(line.c_str(), uiScaleX(drawX), uiScaleY(drawY), smallScale, color);
+                continue;
+            }
+
             VipNameDrawOptions nameOpts;
             nameOpts.scale = smallScale;
             nameOpts.alpha = 1.0f;
@@ -144,6 +160,18 @@ void MatchLeaderboard::render()
             float w = vipMeasureStyledName(entry.name, entry.vipAppearance, nameOpts)
                       + uiMeasureText(scoreBuf, smallScale);
             x += w + 40.0f;  // spacing between entries
+        }
+    }
+
+    if (mWinnerVisible) {
+        const GuiElement* winner = layout.get("winnerText");
+        if (winner) {
+            const std::string line = winner->text.empty()
+                ? "WINNER: " + mWinnerName
+                : format(winner->text, {{"{winner}", mWinnerName}});
+            uiDrawText(line.c_str(), uiScaleX(winner->x), uiScaleY(winner->y),
+                       winner->fontSize > 0.0f ? winner->fontSize : fontScale,
+                       winner->getTextColorVec());
         }
     }
 

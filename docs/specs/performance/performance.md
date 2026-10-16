@@ -54,6 +54,26 @@ You don't. Use `maxFrames` in the terminal or settings to cap FPS. If the frame 
 
 # Performance Rules
 
+## Device range and frame-time goals
+
+The engine should remain usable on low-power computers, including systems
+where the player cannot replace or upgrade hardware. Performance decisions
+must be based on measured frame-time and simulation costs on representative
+devices, not total CPU utilization alone.
+
+The fixed 60 Hz gameplay simulation remains authoritative regardless of render
+rate. A 240 FPS target corresponds to about 4.17 ms per rendered frame; 999 FPS
+is an aspirational headroom goal of about 1.00 ms per frame, not a universal
+support promise or a reason to change gameplay tick rate. Record the target
+hardware and whether the measurement is CPU, GPU, or frame-pacing limited.
+
+Before a multi-core redesign, profile per-thread CPU use and the critical path.
+Low total CPU use does not prove that only one core is used: one saturated
+thread can be a small fraction of total utilization on a many-core device, and
+GPU or frame-pacing limits can also constrain frame rate. Parallelize only
+work with independent ownership and deterministic inputs; preserve fixed-tick
+collision, damage, and physics ordering.
+
 Prefer:
 
 * predictable execution

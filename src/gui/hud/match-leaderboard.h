@@ -37,6 +37,7 @@ public:
     void updateFFA(const std::vector<MatchLeaderboardEntry>& top3);
     void updateTDM(int redKills, int blueKills, bool isRedTeam);
     void setMode(const std::string& mode, int goal);
+    void setWinner(const std::string& name, bool visible);
     void clear();
     void onConfirmedScoreGain();
     void onScoreGain(float x, float y);
@@ -50,5 +51,7 @@ private:
     int mRedKills = 0;
     int mBlueKills = 0;
     bool mIsRedTeam = false;
+    std::string mWinnerName;
+    bool mWinnerVisible = false;
     std::vector<ScoreGainAnim> mScoreGains;
 };

@@ -440,6 +440,138 @@ Ok so 7 18 2026 im noticing a issue that has to do with death and respawns. Go h
 
 Grenade works on first life, breaks secondlife. Something works first time u join, breaks next time. Acnt have that.
 
+#### Per-life equipped weapon agreement
+
+After each respawn, the server must preserve and reapply the previously
+equipped item when it remains owned and allowed by the new life/loadout. If it
+is no longer valid, the server selects the documented valid default and
+replicates that selection so the HUD and input mapping agree. The player must
+not need to re-equip a still-valid weapon manually. Client and server must
+agree on equipped item identity before an attack can be accepted; stale local
+selection from an earlier actor generation is discarded. A legal post-respawn
+attack must not be rejected because native slot state was lost. Validate
+repeated deaths and respawns without manual re-equip and record actor
+generation, resolved loadout, selected item ID, hotbar mapping, equip
+acknowledgement, and attack result.
+
+Journal evidence from `logs/2026-10-16/20261016_134002/events.jsonl`: the
+server emitted 26 `weapon.attack.weapon_not_equipped` rejections (21 for
+`force_punch`, 5 for `rocket_launcher`). The rocket-launcher rejects report
+`actor_weapon_set=1`, `client_slot_ignored=3`, server equipped native slot 0,
+and requested native slot 7. Rejections occur shortly after logged death
+events, followed by an accepted equip for logical slot 3/native slot 7. This
+matches the user's post-respawn report, but the rejection records do not
+include actor generation, so causation is not yet proven.
+
+#### Equip and attack identity contract
+
+This contract clarifies the generic `AttackRequest` and supersedes examples
+that treat a slot number as weapon identity. The server validates the stable
+weapon definition ID and, if inventory can contain duplicates, the owned item
+instance ID. It compares the requested item with authoritative equipped-item
+history at the validated attack tick and spawn generation. A hotbar index is
+only a client-facing selection position; it may map to different items in
+different weapon sets and must not decide attack authorization.
+
+An equip request identifies the owned item/instance. The server returns or
+replicates the accepted equipped identity and a monotonic equip revision tied
+to the actor's current spawn generation. The client may predict the visual
+switch, then reconciles to the accepted identity. On respawn, inventory and
+equipped identity are initialized by the authoritative loadout policy and
+published before attacks from that life are eligible. Delayed input or attack
+requests from an earlier spawn generation cannot equip or fire an item in the
+new life.
+
+Equip and attack diagnostics must connect player and actor generation,
+request ID, client and validated server tick, requested definition/instance
+ID, optional hotbar index, authoritative equipped definition/instance ID and
+equip revision, weapon-set/mode allowlist, and stable rejection reason.
+Accepted events carry the identity needed to join the sequence. Log state
+transitions and bounded summaries, not every input tick.
+
+Migration acceptance is in
+[`../weapons/weapons.md`](../weapons/weapons.md) under “Authoritative
+direction: data-defined items, components, and identity.” Wire-format changes
+must follow the router's multiplayer/networking route and
+[`../../workflows/runtime-scenario-validation.md`](../../workflows/runtime-scenario-validation.md),
+and preserve one deliberate compatibility boundary. Do not address
+disagreement by copying another magic slot number into more files.
+
+#### Reproducible scenario: equip, fire, die, respawn, fire again
+
+This is the canonical regression scenario for the reported weapon-slot and
+per-life equip failure. It exercises normal player input, weapon-set and
+inventory owners, authoritative server validation, death/respawn, replication,
+and the real dev-loop journal. It is a scenario specification, not a claim
+that the current runner evaluates its assertions.
+
+**Setup and preconditions**
+
+- Start one identified dev-loop run and dedicated server through the selected
+  launch mode/preset. Wait for server logger readiness, room registration,
+  client connection, matching map identity, and map/spawn readiness.
+- Use a test weapon set where the Rocket Launcher's hotbar position differs
+  from its definition's legacy native slot. Record the set ID and both
+  positions; do not edit slot numbers to make them match.
+- Spawn one deterministic NPC through the normal server-authoritative command
+  and profile path. The test profile declares its loadout, aim behavior, and
+  enough damage to kill the player through normal attacks.
+- Capture executable/build, run ID, client/server PIDs, session/map identity,
+  weapon-set ID/revision, and `EVENTS_JSONL_PATH`.
+
+**Steps**
+
+1. Snapshot actor generation, health, owned item IDs, equipped definition and
+   instance IDs, equip revision, and hotbar mapping.
+2. Equip Rocket Launcher using its hotbar position. Wait for server acceptance
+   and snapshot client prediction plus authoritative state.
+3. Aim at the test NPC and fire through `agent.shoot`. Wait for server
+   attack/projectile/damage result; muzzle flash, local ammo display, and
+   command return do not prove the shot was accepted.
+4. Let the NPC kill the player through its normal attack path. Wait for
+   authoritative death and the next spawn generation. Issue no equip command
+   during death or respawn.
+5. Before any manual input that could select a weapon, snapshot the new life's
+   inventory and equipped identity on both client and server.
+6. Aim and fire again with the retained/reapplied Rocket Launcher selection.
+   Wait for authoritative attack result and NPC health/result state.
+7. Repeat death/respawn/fire for at least three lives. Repeat with a second
+   set that places the same definition at a different hotbar position. Finally
+   submit one invalid/unowned identity and confirm a reasoned rejection.
+
+**Required event chain and assertions**
+
+Correlate scenario/request ID, client/server PID, actor ID and spawn
+generation, command receipt/resolution/completion, equip request and
+acknowledgement, equipped definition/instance IDs, equip revision, weapon-set
+ID/revision, hotbar position, attack request ID, validated attack tick, server
+result/rejection reason, authoritative ammo/cooldown, and result replication.
+A legal post-respawn shot must be accepted without manual re-equip. A
+stale-generation or unowned item must reject without mutating the new life.
+Every request must end in success, rejection, timeout, or cancellation; missing
+evidence fails the scenario. Log equip transitions, attack attempts/results,
+spawn-generation changes, and bounded state snapshots, not every tick.
+
+**Current runner gap:** `devscripts/dev-loop.py --scenario-file` queues a fixed
+command list for an already-ready client. It cannot yet start this lifecycle
+from a cold/unjoined state, wait for event predicates, control the NPC
+deterministically, or evaluate assertions. See section 17 of
+`docs/specs/dev-loop/dev-loop.md` for the runner contract.
+
+### Reusable networking scenario catalog
+
+Keep scenarios as versioned, repeatable entries linked from the owning
+networking specification. At minimum, the catalog should cover: (1) start,
+leave once, and rejoin the same registered server; (2) equip/fire across
+repeated death and respawn; (3) client/server map and spawn agreement; and
+(4) prediction/reconciliation under controlled latency, loss, and low render
+rate. Each scenario records its launch preset, seed, roles, map and config
+revisions, exact inputs, waits/assertions, expected event chain, timeout and
+failure interpretation. Share setup and event assertions where possible so
+each scenario exercises ordinary owners rather than a test-only gameplay
+path. A scenario command returning `queued` is not a pass; only the matching
+scenario verdict in the fresh journal is.
+
 
 ________________
 
@@ -3346,7 +3478,8 @@ ALL WE
 * We dont do localhost, juts call coordinator 
 * Like i knowwwwww its ugh 
 * But its fine
-* Coorndiator its like 0.000001 usd to make 1 room it dont matta 
+* Coorndiator its like 0.000001 usd to make 1 room it dont matta
+* 2026 10 16 0334 jorj update - idk what  i reallt truly meant by this? i meant like, dont do localhost as in, dont write/maintain code that only serves like a local purpose. like dont do localhost "server" and then say its online when  ppl across the world cant connect to me bc its just a local thing. this relates to greater move of, i want to make this entire project client/server, so there is not a single thing taht can even exist without being able to be sent back/froth across client/sevrer, bc really at the core of it its just sending packets and data etc over the internet so u can put whatever however in those 
 
 
 ________________
@@ -3820,6 +3953,98 @@ Writing server_map 2 means “I request this server’s map be changed to Chaino
 So all plauerrs are gonna change to be on the map Chainofjudgement
 ________________
 
+
+67.1 One-command local server preset start and rejoin
+
+A local server preset is a named setup of server settings such as map,
+gamemode, player limit, startup NPC policy, and whether the host client should
+join. A terminal alias may expand to that preset command. For example,
+`config/command-aliases.json` currently maps `ss` to
+`server_start_preset sandbox_1`.
+
+The short command is meant to perform the same setup as the GUI buttons for
+starting a server: apply the selected JSON preset's settings, launch the
+registered dedicated server, wait for its room code, then put the client into
+that game. It must not require menu navigation or manual room-code copying.
+The command is a shortcut through the GUI's server setup behavior, not a
+separate local-only server path. It must not require the player to repeat
+Leave to recover from stale state.
+
+After a player leaves, `server_leave` disconnects that player but leaves the
+server process running. The server is the clubhouse; the client is the player
+inside it. Leaving takes the player out, not the clubhouse down. `ss` must
+follow this contract:
+
+1. If the player is connected to any server, host or client, do nothing and
+   print a clear message such as `You're already in a game.`
+2. If the player is disconnected and the existing `ss` sandbox server is
+   healthy, registered, and has the expected identity, rejoin that server.
+3. If no suitable sandbox server exists, start one and wait until it is ready
+   and registered before joining.
+4. When starting a new server, use the same server setup and room-registration
+   flow as the GUI buttons, apply the selected preset settings, and wait for
+   the registered room code. When reusing a server, verify its existing room
+   and identity. Then join exactly once as a client through coordinator/ICE.
+   Do not use a hard-coded `127.0.0.1` gameplay address or loopback-only
+   server bind for this path. The server stays authoritative; player gameplay
+   commands travel from the client to it through the normal network protocol.
+5. If a server has the wrong identity or ownership is unclear, do not join,
+   disable identity checks, or stop that process. Explain the conflict.
+6. Report success only after the client is connected. If disconnect is still
+   completing, wait for it or explain that state; never ask the player to
+   leave a second time as a workaround.
+
+This is idempotent: each invocation either says the player is already in a
+game or ends with one client connected to one intended sandbox server. Leaving
+does not unregister or stop that server. Re-running `ss` after leaving should
+reuse it when it is still healthy and registered, so it remains joinable.
+
+### Shared start and existing-server reuse path
+
+Preset commands and GUI start buttons must share the same server settings,
+room-registration handshake, and client room-code connection. On a new server,
+wait for the server's registered room code before connecting the client. On
+reuse, verify the server is still running and matches the selected preset, then
+join its registered room code. In both cases, the client uses the normal
+room-code/coordinator/ICE flow; do not use a hard-coded localhost gameplay
+address.
+
+Implementation status (2026-10-16): `launchServerPresetAndJoin()` in
+`src/gui/gui-main.cpp` now queues the same room-code path used by the GUI.
+For a new external server, it leaves the connection pending while
+`pollPendingServerRoomCode()` waits for the room-file result; that GUI owner
+then queues the room-code join. For an existing external server, the helper
+checks that its process is alive and compares map, mode, server name, and port
+before reusing its published room code. The in-process listen-server fallback
+also joins with its room code. An active multiplayer connection is left alone
+and the terminal reports that the player is already in a game.
+
+This implementation does not yet prove live join/rejoin behavior. The reuse
+comparison is the currently available local preset identity; it does not
+independently verify coordinator health or a remote server identity before
+queueing the room code. Keep those checks as follow-up acceptance if a live
+rejoin shows the room is stale or mismatched. The user-visible `ss` sequence
+must still be exercised once in a real client and journal before claiming it
+works end to end.
+
+A localhost address means “this same computer.” It can connect a separate
+client process to a separate server process using the client/server packet
+protocol; it is not the old single-player architecture. But that route does
+not prove that another computer can reach the server. For `ss`, start the
+server through the same room-registration flow as the GUI, then join by room
+code through coordinator/ICE. A localhost-only test can still isolate local
+packet behavior, but it cannot count as online or multiplayer acceptance. This
+matches the intent clarified in section 48.4 and the regression
+`docs/regressions/2026-09-27/dev-loop-bypassed-room-code-REG.md`. Keep room
+lookup failure separate from a wrong run/build identity. The exact
+user-reported text “room identity not found” was not found as a literal in the
+inspected command/network owners; capture the exact text and journal event
+during reproduction.
+
+`docs/specs/dev-loop/dev-loop.md` section 19.7 records the reported failure
+and runtime evidence needed when this command is sent through the AI/dev-loop
+path. Section 22 there documents the dev-loop's own command-line options.
+________________
 
 68. Map changes
 The server owns map changes.

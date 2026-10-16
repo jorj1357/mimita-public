@@ -126,7 +126,7 @@
       ],
       "map": "atdm"  
     },
-     "12": {
+    "12": {
       "name": "zombie tower no npcs sandbox mode pure dont edit",
       "server_args": [
         "--no-npcs"
@@ -136,6 +136,20 @@
         "help"
       ],
       "map": "zombietower4"  
+    },
+    "13": {
+      "name": "juggernaut_duel",
+      "server_args": [
+        "--weapon-set",
+        "11",
+        "--mode",
+        "juggernaut_duel",
+        "--gamemode",
+        "juggernaut_duel",
+        "--no-npcs"
+      ],
+      "client_args": [],
+      "map": "dust2cyberiav4"
     }
   }
 }

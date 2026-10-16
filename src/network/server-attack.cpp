@@ -262,6 +262,28 @@ static void sendAttackResult(SOCKET sock, const ServerPlayer& player,
     result.weaponDefNetworkId = req->weaponDefNetworkId;
     result.hitVerdict = hitVerdict;
 
+    // One authoritative result record per attack request. This is the server
+    // accept/reject boundary the AI scenarios correlate against; it is bounded
+    // (one per request) and never logged per tick.
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons, StructuredLevel::Important,
+        "weapon.attack.result", std::to_string(player.id), "attack-authoritative-result",
+        tick,
+        nlohmann::json{{"request_id", req->requestId},
+                       {"spawn_generation", req->spawnGeneration},
+                       {"server_spawn_generation", player.spawnGeneration},
+                       {"weapon_def_network_id", req->weaponDefNetworkId},
+                       {"client_slot", req->equippedSlot},
+                       {"server_equipped_native_slot", player.equippedSlot},
+                       {"accepted", accepted},
+                       {"reason", reason},
+                       {"projectile_id", projectileId},
+                       {"magazine_ammo", magazineAmmo},
+                       {"reserve_ammo", reserveAmmo},
+                       {"next_allowed_fire_tick", nextAllowedFireTick},
+                       {"state_revision", stateRevision},
+                       {"hit_verdict", hitVerdict}});
+
     // Cache the result so retries are idempotent
     cacheAttackResult(player, req, accepted, reason, projectileId,
         magazineAmmo, reserveAmmo, nextAllowedFireTick, stateRevision, hitVerdict);
@@ -371,7 +393,7 @@ void handleAttackRequest(
         return;
     }
 
-    if (!serverCommunityWeaponAllowed(def->id))
+    if (!serverCommunityWeaponAllowed(shooter, def->id))
     {
         Debug::log(Debug::Category::Weapons,
             "[COMMUNITY WEAPON REJECT] playerId=%u requestId=%u weapon=%s reason=weapon-set\n",
@@ -379,6 +401,35 @@ void handleAttackRequest(
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                             shooter, req->requestId, "WEAPON SET DISABLED");
         sendAttackResult(sock, shooter, req, tick, false, 7, 0, -1, -1, 0, 0);
+        return;
+    }
+
+    // Attack identity comes from weaponDefNetworkId. Authorize against the
+    // authoritative stable equipped id when it is known; fall back to the
+    // derived native slot only for pre-identity state. The packet's slot is a
+    // client logical position and is never the deciding check.
+    const bool identityMatches = !shooter.equippedWeaponId.empty()
+        ? shooter.equippedWeaponId == def->id
+        : shooter.equippedSlot == def->slot;
+    if (!identityMatches)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "weapon.attack.weapon_not_equipped", std::to_string(shooter.id),
+            "attack-validation", tick,
+            nlohmann::json{{"request_id", req->requestId},
+                           {"weapon", def->id},
+                           {"requested_weapon_id", def->id},
+                           {"server_equipped_weapon_id", shooter.equippedWeaponId},
+                           {"client_slot_ignored", req->equippedSlot},
+                           {"weapon_native_slot", def->slot},
+                           {"server_equipped_native_slot", shooter.equippedSlot},
+                           {"actor_weapon_set", shooter.weaponSetId},
+                           {"spawn_generation", shooter.spawnGeneration},
+                           {"mode", serverGamemodeState().matchMode}});
+        emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
+                            shooter, req->requestId, "WEAPON NOT EQUIPPED");
+        sendAttackResult(sock, shooter, req, tick, false, 4, 0, -1, -1, 0, 0);
         return;
     }
 
@@ -441,41 +492,6 @@ void handleAttackRequest(
     }
 
     ServerPlayer::ServerWeaponRuntime& rt = rtIt->second;
-
-    // ── Validate or reconcile equipped slot ───────────────────────────
-    const int logicalSlot = serverCommunityWeaponLogicalSlot(shooter, def->id);
-    const int expectedSlot = logicalSlot > 0 ? logicalSlot : def->slot;
-    if (req->equippedSlot != expectedSlot)
-    {
-        Debug::log(Debug::Category::Weapons,
-                   "[ATTACK REJECT] playerId=%u requestId=%u request slot does not match weapon req=%d def=%d\n",
-                   shooter.id, req->requestId, req->equippedSlot, expectedSlot);
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Weapons, StructuredLevel::Important,
-            "weapon.attack.slot_mismatch", std::to_string(shooter.id), "attack-validation",
-            tick,
-            nlohmann::json{{"request_id", req->requestId},
-                           {"weapon", def->id},
-                           {"requested_slot", req->equippedSlot},
-                           {"expected_logical_slot", expectedSlot},
-                           {"weapon_native_slot", def->slot},
-                           {"actor_weapon_set", shooter.weaponSetId},
-                           {"mode_weapon_set", serverGamemodeState().communityWeaponSetId},
-                           {"mode", serverGamemodeState().matchMode}});
-        emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
-                            shooter, req->requestId, "SLOT MISMATCH");
-        sendAttackResult(sock, shooter, req, tick, false, 4, 0, -1, -1, 0, 0);
-        return;
-    }
-    const int nativeSlot = serverCommunityWeaponNativeSlot(shooter, req->equippedSlot);
-    if (nativeSlot != shooter.equippedSlot)
-    {
-        Debug::log(Debug::Category::Weapons,
-                   "[ATTACK EQUIP RECONCILE] playerId=%u requestId=%u oldSlot=%d newSlot=%d weapon=%s\n",
-                   shooter.id, req->requestId, shooter.equippedSlot,
-                   nativeSlot, def->id.c_str());
-        shooter.equippedSlot = nativeSlot;
-    }
 
     // ── Ammo is client-authoritative ──────────────────────────────────
     // The client owns its clip (decrement + local reload). The server no

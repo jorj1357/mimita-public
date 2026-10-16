@@ -312,6 +312,11 @@ struct ServerPlayer
     // episode, so it is sent exactly once (not every tick).
     bool connectionStateNotified = false;
     int equippedSlot = 0;
+    // Authoritative stable identity of the equipped item for this life. The
+    // native slot above is a derived, non-unique presentation/replication value
+    // and must never authorize equip or attack on its own. Preserved and
+    // reapplied across respawn when the item is still owned and allowed.
+    std::string equippedWeaponId;
     uint8_t weaponState = 0;
     int pingMs = 0;
     uint32_t lastShotSerial = 0;

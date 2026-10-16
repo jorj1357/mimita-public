@@ -11,6 +11,7 @@
 #include "input/input-state.h"
 #include "input/input-commands.h"
 #include "input/input-frame.h"
+#include "debug/structured-log.h"
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include "camera.h"
@@ -23,17 +24,32 @@ int gScheduledMoveTicks = 0;
 int gScheduledMoveTotal = 0;
 float gScheduledMoveX = 0.0f;
 float gScheduledMoveY = 0.0f;
+std::string gScheduledMoveRequestId;
+std::string gTerminalInputOverrideRequestId;
 }
 
-void scheduleTerminalMove(float moveX, float moveY, int durationTicks)
+void scheduleTerminalMove(float moveX, float moveY, int durationTicks,
+                          const std::string& requestId)
 {
     gScheduledMoveX = moveX;
     gScheduledMoveY = moveY;
     gScheduledMoveTicks = durationTicks > 0 ? durationTicks : 0;
     gScheduledMoveTotal = gScheduledMoveTicks;
+    gScheduledMoveRequestId = requestId;
 }
 
-bool consumeScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted)
+const std::string& scheduledTerminalMoveRequestId()
+{
+    return gScheduledMoveRequestId;
+}
+
+void noteTerminalInputOverrideRequestId(const std::string& requestId)
+{
+    gTerminalInputOverrideRequestId = requestId;
+}
+
+bool consumeScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted,
+                                  bool* justEnded)
 {
     if (gScheduledMoveTicks <= 0)
         return false;
@@ -42,6 +58,8 @@ bool consumeScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted)
     if (justStarted)
         *justStarted = (gScheduledMoveTicks == gScheduledMoveTotal);
     --gScheduledMoveTicks;
+    if (justEnded)
+        *justEnded = (gScheduledMoveTicks == 0);
     return true;
 }
 
@@ -264,6 +282,23 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     frame.fisterFistHeld = frame.extendLeftMouse;
     frame.fisterParryHeld = frame.extendRightMouse;
     frame.fisterGrabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
+
+    // agent.action evidence: prove the requested jump/dash edge reached the
+    // fixed-tick input frame, not merely that the command handler accepted it.
+    if (gTerminalInputOverride.jumpPressed || gTerminalInputOverride.dashPressed) {
+        nlohmann::json fields = {
+            {"request_id", gTerminalInputOverrideRequestId},
+            {"command", "agent.action"},
+            {"jump_pressed", gTerminalInputOverride.jumpPressed},
+            {"dash_pressed", gTerminalInputOverride.dashPressed}};
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "agent.action.applied",
+            gTerminalInputOverrideRequestId.empty()
+                ? "agent-command" : gTerminalInputOverrideRequestId,
+            "terminal input override merged into fixed-tick input frame", 0, fields,
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     consumeTerminalInputOverride();
     return frame;
