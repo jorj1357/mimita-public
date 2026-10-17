@@ -112,7 +112,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     // output feeds the InputPacket sent to the authoritative server, so the
     // wish must not be consumed by the local-prediction path first.
     const bool scheduledMove = consumeScheduledTerminalMove(
-        scheduledSide, scheduledForward, &scheduledJustStarted);
+        scheduledSide, scheduledForward, &scheduledJustStarted, nullptr);
 
     if (cmd.getState("walkforward").held) {
         wish.x += f.x;

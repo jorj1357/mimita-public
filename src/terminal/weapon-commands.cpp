@@ -451,24 +451,26 @@ void registerWeaponCommands()
     Terminal::instance().registerCommand({
         "equipslot", "Equip inventory slot by number (slot 0 selects Nothing)", "equipslot <slot>",
         [](const std::vector<std::string>& args) {
-            if (args.size() < 2) {
+            // The terminal dispatcher passes only the arguments (the command
+            // name is stripped), so the slot is args[0].
+            if (args.empty()) {
                 Terminal::instance().addLog("[INVENTORY] usage: equipslot <slot>");
                 return;
             }
             int slot;
             try {
                 size_t pos = 0;
-                slot = std::stoi(args[1], &pos);
-                if (pos != args[1].size()) {
-                    Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+                slot = std::stoi(args[0], &pos);
+                if (pos != args[0].size()) {
+                    Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[0]);
                     return;
                 }
             } catch (const std::exception&) {
-                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[0]);
                 return;
             }
             if (slot < 0) {
-                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[0]);
                 return;
             }
             Player& player = THE_PLAYER;
@@ -493,13 +495,14 @@ void registerWeaponCommands()
     Terminal::instance().registerCommand({
         "equip", "Equip weapon at slot number", "equip <slot>",
         [](const std::vector<std::string>& args) {
-            if (args.size() < 2) {
+            // Arguments exclude the command name; the slot is args[0].
+            if (args.empty()) {
                 Terminal::instance().addLog("[INVENTORY] usage: equip <slot>");
                 return;
             }
-            int slot = std::atoi(args[1].c_str());
+            int slot = std::atoi(args[0].c_str());
             if (slot < 0) {
-                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[1]);
+                Terminal::instance().addLog("[INVENTORY] invalid slot: " + args[0]);
                 return;
             }
             Player& player = THE_PLAYER;
@@ -524,7 +527,8 @@ void registerWeaponCommands()
     Terminal::instance().registerCommand({
         "equipweapon", "Equip a weapon by ID without changing hotbar slots", "equipweapon <weapon_id>",
         [](const std::vector<std::string>& args) {
-            if (args.size() < 2) {
+            // Arguments exclude the command name; the weapon id is args[0].
+            if (args.empty()) {
                 Terminal::instance().addLog("[INVENTORY] usage: equipweapon <weapon_id>");
                 logWeaponEquipCommand("weapon.equip.command_rejected",
                                       StructuredLevel::Errors,
@@ -532,7 +536,7 @@ void registerWeaponCommands()
                 return;
             }
 
-            const std::string& weaponId = args[1];
+            const std::string& weaponId = args[0];
             const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
             if (!def) {
                 Terminal::instance().addLog("[INVENTORY] unknown weapon: " + weaponId);

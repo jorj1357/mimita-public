@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "command_proof_smoke_v1",
+  "description": "Minimal one-command runner smoke: prove scenario lifecycle, command delivery, and one applied agent.* owner event from the live journal.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [
+    {"id": "start_snapshot", "command": "agent.snapshot", "args": ["smoke_start"]}
+  ],
+  "steps": [
+    {"id": "move_forward", "command": "agent.move", "args": [1, 0, 120], "delay_ms_after": 400},
+    {"id": "end_snapshot", "command": "agent.snapshot", "args": ["smoke_after_move"]}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "dev-loop.command.delivered"},
+    {"type": "event_present", "event": "agent.move.applied"}
+  ],
+  "timeout_seconds": 120
+}

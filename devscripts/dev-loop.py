@@ -52,6 +52,34 @@ SERVER_MARKER_PATH = DEV_ROOT / "server-owner.json"
 LOCK_PATH = DEV_ROOT / "dev-loop.lock"
 PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
 LAUNCH_MODE_PATH = ROOT / "devscripts" / "dev-launch-modes.json"
+# The canonical dev-loop entry/daemon script. Its hash is the daemon source
+# identity used by the always-on watcher (dev-loop-watch.py) to detect a stale
+# daemon and perform a controlled replacement.
+DEV_LOOP_SCRIPT = Path(__file__).resolve()
+WATCH_LOCK_PATH = DEV_ROOT / "dev-loop-watch.lock"
+WATCH_STATE_PATH = DEV_ROOT / "dev-loop-watch.json"
+WATCH_SCRIPT = ROOT / "devscripts" / "dev-loop-watch.py"
+WATCH_LOG_PATH = DEV_ROOT / "dev-loop-watch.log"
+DAEMON_LOG_PATH = DEV_ROOT / "dev-loop-console.log"
+DAEMON_READY_TIMEOUT_SECONDS = 60.0
+DASHBOARD_FRAME_SECONDS = 1.0
+ROLE_NAMES = {
+    "watchdog": "MiMITA Dev Loop Watchdog",
+    "daemon": "MiMITA Dev Loop Daemon",
+    "dashboard": "MiMITA Dev Loop Dashboard",
+}
+# Make the sibling terminal helper importable when this file is launched by path
+# (for example through the desktop shortcut's `.py` association).
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
+
+def script_sha256(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
 DEFAULT_MAP_POOL_PATH = ROOT / "config" / "gamemode-good-maps.json"
 
 # Snapshotting the watched source tree takes about 60 ms on this checkout.
@@ -61,6 +89,39 @@ POLL_SECONDS = 0.50
 DEBOUNCE_SECONDS = 0.30
 KEEP_BUILDS = 5
 RAINBOW_SECONDS = 5.0
+
+# ── Helper subprocess console hygiene (dev-loop spec section 10.1) ───────────
+# The daemon runs detached with no console. A plain subprocess.run of a console
+# helper (powershell, taskkill, ...) then allocates a NEW console window, so a
+# status render that queries process identity can flash windows several times a
+# second. Every short-lived helper must be created hidden. The game server and
+# client are launched separately with their own console policy (section 10).
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _hidden_startupinfo():
+    if os.name != "nt":
+        return None
+    info = subprocess.STARTUPINFO()
+    info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    info.wShowWindow = 0  # SW_HIDE
+    return info
+
+
+def run_hidden(args, **kwargs):
+    """subprocess.run with no visible console window for helper processes."""
+    kwargs.setdefault("creationflags", _CREATE_NO_WINDOW)
+    if os.name == "nt":
+        kwargs.setdefault("startupinfo", _hidden_startupinfo())
+        kwargs.setdefault("close_fds", True)
+    return subprocess.run(args, **kwargs)
+
+
+# Short-TTL cache so bursty status renders do not spawn a helper per render
+# (dev-loop spec section 5.1 process-identity polling cost). Negative results
+# are cached too, so a query for a dead PID is not repeated in the window.
+_PROCESS_IDENTITY_CACHE: dict[int, tuple[float, dict | None]] = {}
+_PROCESS_IDENTITY_TTL_SECONDS = 1.5
 RUNTIME_DLLS = (
     "libgcc_s_seh-1.dll",
     "libstdc++-6.dll",
@@ -383,7 +444,7 @@ def existing_dev_loop_pids() -> list[int]:
         return []
     script_text = str(Path(__file__).resolve()).replace("/", "\\").lower()
     try:
-        result = subprocess.run(
+        result = run_hidden(
             [
                 "powershell", "-NoProfile", "-Command",
                 "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" "
@@ -409,12 +470,21 @@ def existing_dev_loop_pids() -> list[int]:
     return pids
 
 
-def windows_process_identity(pid: int) -> dict | None:
-    """Read identity data for one Windows process without changing it."""
+def windows_process_identity(pid: int, fresh: bool = False) -> dict | None:
+    """Read identity data for one Windows process without changing it.
+
+    Results are cached for a short TTL so that bursty status renders do not spawn
+    a helper process per render (see the process-identity polling-cost contract).
+    Pass ``fresh=True`` to bypass the cache, for example right after a stop.
+    """
     if os.name != "nt" or not pid:
         return None
+    now = time.monotonic()
+    cached = None if fresh else _PROCESS_IDENTITY_CACHE.get(pid)
+    if cached is not None and now - cached[0] < _PROCESS_IDENTITY_TTL_SECONDS:
+        return cached[1]
     try:
-        result = subprocess.run(
+        result = run_hidden(
             [
                 "powershell", "-NoProfile", "-Command",
                 "$p = Get-CimInstance Win32_Process -Filter "
@@ -431,8 +501,10 @@ def windows_process_identity(pid: int) -> dict | None:
         )
         value = json.loads(result.stdout.strip()) if result.stdout.strip() else None
     except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError):
-        return None
-    return value if isinstance(value, dict) else None
+        value = None
+    identity = value if isinstance(value, dict) else None
+    _PROCESS_IDENTITY_CACHE[pid] = (now, identity)
+    return identity
 
 
 def acquire_dev_loop_lock() -> int:
@@ -689,6 +761,18 @@ class DevLoop:
         # whether a successful build or an exited child may launch the EXE.
         self.auto_restart = bool(auto_restart)
         self.manual_launch_requested = False
+        # One-shot map override for the next launch, set by a scenario launch
+        # request so a scenario can target a specific authoritative map.
+        self.override_map = ""
+        # Weapon-set override for scenario launches (server --weapon-set).
+        self.override_weapon_set = ""
+        # Daemon source identity, surfaced in the status record so a stale daemon
+        # (whose on-disk dev-loop.py hash changed) is detectable.
+        self.daemon_started_utc = utc_now()
+        # The last real build/lifecycle status written to the status record.
+        # Read-only status queries reuse it instead of reporting the literal
+        # query label as the build phase.
+        self.last_status_value = "idle"
         self.stop_event = threading.Event()
         self.change_event = threading.Event()
         self.lock = threading.Lock()
@@ -851,9 +935,12 @@ class DevLoop:
                 run_uptime = max(0.0, time.time() - started)
             except ValueError:
                 run_uptime = None
+        # Query server liveness once per state() and reuse it, so a single status
+        # render cannot trigger several identity helper processes (section 5.1).
+        server_alive = self.server_health()
         server_uptime = (
             max(0.0, (now_ms - self.server_launch_ms) / 1000.0)
-            if self.server_launch_ms and self.server_health() else None
+            if self.server_launch_ms and server_alive else None
         )
         client_alive = [p for p in self.processes if p.poll() is None]
         client_uptime = (
@@ -884,7 +971,7 @@ class DevLoop:
             "server_executable": self.server_exe,
             "server_adopted": self.server_adopted,
             "server_args": list(self.server_args),
-            "server_alive": self.server_health(),
+            "server_alive": server_alive,
             "server_uptime_seconds": server_uptime,
             "server_ready": self.server_ready,
             "client_pids": [p.pid for p in client_alive],
@@ -893,7 +980,7 @@ class DevLoop:
             "command_queue_path": self.command_queue_path,
             "client_ready": self.client_ready,
             "client_uptime_seconds": client_uptime,
-            "run_alive": bool(self.server_health() or client_alive),
+            "run_alive": bool(server_alive or client_alive),
             "run_uptime_seconds": run_uptime,
             "builds_match": bool(self.builds_match and identities_match),
             "build_mismatch_reason": mismatch_reason,
@@ -902,9 +989,13 @@ class DevLoop:
             "build_identity": self.latest_build_identity(),
             "launch_mode_name": self.launch_mode.get("name", "unnamed"),
             "launch_mode_config": str(LAUNCH_MODE_PATH),
+            "daemon_pid": os.getpid(),
+            "daemon_script_hash": script_sha256(DEV_LOOP_SCRIPT),
+            "daemon_started_utc": self.daemon_started_utc,
         }
 
     def save_state(self, status: str = "idle") -> None:
+        self.last_status_value = status
         snapshot = self.state(status)
         write_json(STATE_PATH, snapshot)
         write_json(CURRENT_RUN_PATH, snapshot)
@@ -1235,7 +1326,7 @@ class DevLoop:
                 if request.get("token") != self.control_token:
                     response = {"accepted": False, "error": "invalid control token"}
                 elif request.get("action") == "status":
-                    response = {"accepted": True, "state": self.state("status")}
+                    response = {"accepted": True, "state": self.state(self.last_status_value)}
                 else:
                     request["requested_by"] = "ai"
                     self.control_requests.put(request)
@@ -1278,6 +1369,8 @@ class DevLoop:
                         continue
                     self.launch_mode_id = str(requested_mode)
                     self.launch_mode = selected
+                self.override_map = str(request.get("map", "") or "").strip()
+                self.override_weapon_set = str(request.get("weapon_set", "") or "").strip()
                 self.manual_launch_requested = True
                 self.build_pending = True
                 self.change_event.clear()
@@ -1344,6 +1437,8 @@ class DevLoop:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            creationflags=_CREATE_NO_WINDOW,
+            **({"startupinfo": _hidden_startupinfo()} if os.name == "nt" else {}),
         )
         assert process.stdout is not None
         for line in process.stdout:
@@ -1439,7 +1534,7 @@ class DevLoop:
             "--map", map_name,
             "--mode", str(profile.get("mode", "sandbox")),
             "--max-players", str(max_players),
-            "--weapon-set", str(profile.get("weapon_set", 1)),
+            "--weapon-set", str(self.override_weapon_set or profile.get("weapon_set", 1)),
             "--map-rotation-minutes", str(rotation_minutes),
             "--password-protected", password_protected,
             "--password", str(profile.get("password", "")),
@@ -1494,13 +1589,18 @@ class DevLoop:
         )
         return True
 
-    def server_health(self) -> bool:
-        """True when the durable external server process is still alive."""
+    def server_health(self, fresh: bool = False) -> bool:
+        """True when the durable external server process is still alive.
+
+        ``fresh=True`` bypasses the short identity cache; use it right after a
+        stop attempt so a just-killed process is not reported alive from a
+        stale cached identity.
+        """
         process = self.server_process
         if process is not None:
             return process.poll() is None
         if self.server_adopted and self.server_pid:
-            identity = windows_process_identity(self.server_pid)
+            identity = windows_process_identity(self.server_pid, fresh=fresh)
             return bool(
                 identity
                 and os.path.normcase(str(identity.get("executable", "")))
@@ -1549,14 +1649,17 @@ class DevLoop:
                     f"refused to stop unverified server pid={self.server_pid}"
                 )
             else:
-                result = subprocess.run(
+                result = run_hidden(
                     ["taskkill", "/PID", str(self.server_pid), "/T", "/F"],
                     capture_output=True, text=True, timeout=5, check=False,
                 )
                 stopped = result.returncode == 0
+                # Drop the cached identity so the post-stop liveness check is
+                # not answered from the pre-kill cache entry.
+                _PROCESS_IDENTITY_CACHE.pop(self.server_pid, None)
         if process is not None and process.poll() is None:
             stopped = False
-        if stopped and self.server_pid and self.server_health():
+        if stopped and self.server_pid and self.server_health(fresh=True):
             stopped = False
         self.record_runtime_event(
             "dev-loop.process.stop_result",
@@ -1718,8 +1821,9 @@ class DevLoop:
         self.builds_match = False
         map_name = select_dev_map(
             self.profile,
-            str(self.launch_mode.get("map", "")),
+            self.override_map or str(self.launch_mode.get("map", "")),
         )
+        self.override_map = ""
         print(f"[DEV] selected allowed map: {map_name}")
         if not self.validate_firewall_policy():
             return
@@ -1807,7 +1911,7 @@ class DevLoop:
             self.save_state("launching_server")
             version_env = {**common_env, "MIMITA_PROCESS_ROLE": "preflight"}
             try:
-                version = subprocess.run(
+                version = run_hidden(
                     [str(exe), "--versioninfo"], cwd=ROOT, env=version_env,
                     capture_output=True, text=True, timeout=20, check=False,
                 )
@@ -2077,7 +2181,7 @@ class DevLoop:
         print("[DEV] Enter mode number (Q cancels): ", end="", flush=True)
 
     def print_status(self, force: bool = False) -> None:
-        snapshot = self.state()
+        snapshot = self.state(self.last_status_value)
         status_line = (
             snapshot.get("build_status"),
             self.running_build,
@@ -2147,8 +2251,20 @@ class DevLoop:
     def key_commands(self) -> None:
         if os.name != "nt":
             return
+        # A detached daemon (started by the watchdog or the entry point) has no
+        # interactive console; interactive controls are then driven through the
+        # control socket / dashboard instead. Reading the keyboard would either
+        # raise or consume input that belongs to the dashboard.
+        try:
+            if not sys.stdin.isatty():
+                return
+        except (ValueError, OSError):
+            return
         import msvcrt
-        if not msvcrt.kbhit():
+        try:
+            if not msvcrt.kbhit():
+                return
+        except OSError:
             return
         key = msvcrt.getwch()
         if self.mode_picker_open:
@@ -2286,40 +2402,903 @@ def read_current_run() -> dict | None:
     return value if isinstance(value, dict) else None
 
 
+def _scenario_load(path_text: str) -> dict:
+    path = Path(path_text).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    text = path.read_text(encoding="utf-8")
+    if "```json" in text:
+        text = text.split("```json", 1)[1].split("```", 1)[0]
+    value = json.loads(text.strip())
+    if not isinstance(value, dict) or not value.get("id"):
+        raise ValueError("scenario must be an object with a non-empty id")
+    return value
+
+
+def _journal_read_from(path: str, offset: int) -> tuple[list[dict], int]:
+    records: list[dict] = []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as journal:
+            journal.seek(offset)
+            for line in journal:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(value, dict):
+                    records.append(value)
+            offset = journal.tell()
+    except OSError:
+        pass
+    return records, offset
+
+
+def _append_journal_event(events_path: str, event: str, fields: dict, reason: str,
+                          request_id: str = "") -> None:
+    """Append one runner-side record to the same journal the game writes.
+
+    The dev-loop already owns journal appends for its own dev-loop.* records,
+    so scenario.* lifecycle records belong here as well. Guard against an
+    interleaved partial line by writing a single newline-terminated record.
+    """
+    if not events_path:
+        return
+    record = {
+        "category": "GENERAL",
+        "event": event,
+        "event_id": f"SCENARIO_{uuid.uuid4().hex[:12]}",
+        "fields": fields,
+        "level": "IMPORTANT",
+        "process": "dev-loop",
+        "process_role": "scenario-runner",
+        "request_id": request_id,
+        "reason": reason,
+        "wall_time": utc_now(),
+    }
+    try:
+        with open(events_path, "a", encoding="utf-8", newline="\n") as journal:
+            journal.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except OSError as error:
+        print(f"[DEV SCENARIO] unable to append journal record: {error}", file=sys.stderr)
+
+
+def _control_send(port: int, token: str, payload: dict, timeout: float = 10.0) -> dict:
+    with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout) as connection:
+        connection.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+        return json.loads(connection.recv(65536).decode("utf-8"))
+
+
+def _record_request_id(record: dict) -> str:
+    # The game writes the agent request id as correlation_id and inside fields;
+    # the runner writes it as a top-level request_id. Accept all three.
+    for key in ("request_id", "correlation_id"):
+        value = record.get(key)
+        if value:
+            return str(value)
+    fields = record.get("fields")
+    if isinstance(fields, dict) and fields.get("request_id"):
+        return str(fields["request_id"])
+    return ""
+
+
+def _field_path(record: dict, dotted: str):
+    value = record.get("fields", {}) if isinstance(record.get("fields"), dict) else {}
+    for part in dotted.split("."):
+        if isinstance(value, dict) and part in value:
+            value = value[part]
+        else:
+            return None
+    return value
+
+
+def _evaluate_assertions(assertions: list[dict], records: list[dict],
+                         scenario_id: str) -> tuple[bool, list[dict]]:
+    results = []
+    passed_all = True
+    for index, assertion in enumerate(assertions or []):
+        a_type = str(assertion.get("type", ""))
+        ok = False
+        expected = assertion
+        actual = None
+        if a_type == "event_present":
+            name = str(assertion.get("event", ""))
+            matches = [r for r in records if r.get("event") == name]
+            ok = len(matches) > 0
+            actual = {"count": len(matches)}
+        elif a_type == "event_absent":
+            name = str(assertion.get("event", ""))
+            matches = [r for r in records if r.get("event") == name]
+            ok = len(matches) == 0
+            actual = {"count": len(matches)}
+        elif a_type == "event_field_equals":
+            name = str(assertion.get("event", ""))
+            field = str(assertion.get("field", ""))
+            want = assertion.get("equals")
+            for record in records:
+                if record.get("event") == name:
+                    value = _field_path(record, field)
+                    if value == want:
+                        ok = True
+                        actual = {"value": value}
+                        break
+        elif a_type == "spawn_in_bounds":
+            bounds = None
+            for record in records:
+                if record.get("event") == "map.server-load-success":
+                    bounds = record.get("fields", {})
+            positions = [r for r in records if r.get("event") == "spawn.server-selected"]
+            if bounds and positions:
+                lo = bounds.get("bounds_min")
+                hi = bounds.get("bounds_max")
+                valid = 0
+                for record in positions:
+                    pos = _field_path(record, "position")
+                    if (isinstance(pos, list) and isinstance(lo, list)
+                            and isinstance(hi, list) and len(pos) == 3):
+                        if all(lo[i] <= pos[i] <= hi[i] for i in range(3)):
+                            valid += 1
+                ok = valid == len(positions) and valid > 0
+                actual = {"in_bounds": valid, "total": len(positions), "bounds": [lo, hi]}
+        elif a_type == "map_ids_agree":
+            server_map = client_required = client_loaded = None
+            for record in records:
+                event = record.get("event")
+                if event == "map.server-load-success":
+                    path = _field_path(record, "resolved_path") or _field_path(record, "requested_path")
+                    if path:
+                        server_map = str(path)
+                elif event == "network.map-required":
+                    value = _field_path(record, "required_map_id")
+                    if value:
+                        client_required = str(value)
+                elif event == "map.load-success" and record.get("process") == "client":
+                    path = _field_path(record, "resolved_path") or _field_path(record, "requested_path")
+                    if path:
+                        client_loaded = str(path)
+
+            def _base(value: str) -> str:
+                return value.replace("\\", "/").split("/")[-1].replace(".glb", "").lower()
+
+            ok = bool(server_map and client_required and client_loaded) and (
+                _base(server_map) == _base(client_required) == _base(client_loaded))
+            actual = {"server_map": server_map, "client_required": client_required,
+                      "client_loaded": client_loaded}
+        elif a_type == "event_count_at_least":
+            name = str(assertion.get("event", ""))
+            minimum = int(assertion.get("minimum", 1))
+            count = sum(1 for r in records if r.get("event") == name)
+            ok = count >= minimum
+            actual = {"count": count, "minimum": minimum}
+        elif a_type == "event_count_at_most":
+            name = str(assertion.get("event", ""))
+            maximum = int(assertion.get("maximum", 0))
+            count = sum(1 for r in records if r.get("event") == name)
+            ok = count <= maximum
+            actual = {"count": count, "maximum": maximum}
+        elif a_type == "event_field_count_at_least":
+            name = str(assertion.get("event", ""))
+            field = str(assertion.get("field", ""))
+            want = assertion.get("equals")
+            minimum = int(assertion.get("minimum", 1))
+            count = sum(1 for r in records
+                        if r.get("event") == name and _field_path(r, field) == want)
+            ok = count >= minimum
+            actual = {"count": count, "minimum": minimum, "field": field, "equals": want}
+        else:
+            ok = False
+            actual = {"error": f"unknown assertion type '{a_type}'"}
+        if not ok:
+            passed_all = False
+        results.append({
+            "type": a_type,
+            "passed": ok,
+            "expected": expected,
+            "actual": actual,
+        })
+    return passed_all, results
+
+
+def run_scenario_file(args: argparse.Namespace) -> int:
+    """Ensure a live run, execute steps in order (commands and event waits),
+    evaluate assertions from the live journal, and return a verdict."""
+    try:
+        scenario = _scenario_load(args.scenario_file)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"[DEV SCENARIO] invalid scenario: {error}", file=sys.stderr)
+        return 2
+
+    scenario_id = str(scenario["id"])
+    steps = list(scenario.get("setup", [])) + list(scenario.get("steps", []))
+    if not steps:
+        print("[DEV SCENARIO] scenario has no steps", file=sys.stderr)
+        return 2
+    timeout = float(scenario.get("timeout_seconds", 180) or 180)
+    request_id = f"scenario-{scenario_id}-{uuid.uuid4().hex[:8]}"
+
+    current = read_current_run() or {}
+    port = current.get("control_port")
+    token = current.get("control_token")
+    if not port or not token:
+        print("[DEV CONTROL] no running daemon control endpoint; start the dev loop once", file=sys.stderr)
+        return 2
+
+    # 1. Ensure a live, logger-ready client on the scenario's map/set. Reuse a
+    #    matching run when present; otherwise ask the daemon to launch one
+    #    (never kill unrelated processes).
+    launch_cfg = scenario.get("launch") if isinstance(scenario.get("launch"), dict) else {}
+    desired_map = str(launch_cfg.get("map", "") or "").strip()
+    desired_mode = launch_cfg.get("launch_mode")
+    desired_set = launch_cfg.get("weapon_set")
+    need_launch = not current.get("run_alive") or not current.get("events_path")
+    if desired_map and str(current.get("map", "")) != desired_map:
+        need_launch = True
+    # A weapon-set override cannot be verified from the status record, so a
+    # scenario that requests one always (re)launches to guarantee the set.
+    if desired_set is not None:
+        need_launch = True
+    if need_launch:
+        previous_run_id = str(current.get("run_id", ""))
+        payload = {"token": token, "action": "launch", "request_id": request_id + "-launch"}
+        if desired_mode is not None:
+            payload["launch_mode"] = desired_mode
+        if desired_map:
+            payload["map"] = desired_map
+        if desired_set is not None:
+            payload["weapon_set"] = str(desired_set)
+        try:
+            _control_send(port, token, payload)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            print(f"[DEV SCENARIO] unable to request launch: {error}", file=sys.stderr)
+            return 2
+        # Wait for the freshly launched run, not the still-live previous run
+        # (the daemon replaces the client asynchronously). Require a new run id
+        # so commands are queued against the relaunched client, not the old one.
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            current = read_current_run() or {}
+            new_run = str(current.get("run_id", "")) != previous_run_id or not previous_run_id
+            if (new_run and current.get("run_alive") and current.get("client_ready")
+                    and current.get("client_pids") and current.get("events_path")
+                    and (not desired_map or str(current.get("map", "")) == desired_map)):
+                break
+            time.sleep(0.5)
+        else:
+            print(f"[DEV SCENARIO] timed out waiting for a live run (map={desired_map or 'any'})",
+                  file=sys.stderr)
+            return 1
+
+    events_path = str(current.get("events_path") or "")
+    if not events_path:
+        print("[DEV SCENARIO] run has no journal path", file=sys.stderr)
+        return 1
+
+    # If the runner launched a fresh run, read its whole journal (server start,
+    # join, initial spawn). If it reused a live run, read only new records.
+    launched_fresh = need_launch
+    try:
+        start_offset = 0 if launched_fresh else Path(events_path).stat().st_size
+    except OSError:
+        start_offset = 0
+
+    _append_journal_event(events_path, "scenario.started", {
+        "scenario_id": scenario_id,
+        "request_id": request_id,
+        "step_count": len(steps),
+        "build": current.get("running_build"),
+        "client_pids": current.get("client_pids"),
+        "map": current.get("map"),
+        "weapon_set": desired_set,
+    }, "scenario started by control client", request_id)
+
+    records: list[dict] = []
+    offset = start_offset
+
+    def pump() -> None:
+        nonlocal offset
+        batch, new_offset = _journal_read_from(events_path, offset)
+        records.extend(batch)
+        offset = new_offset
+
+    def wait_for_event(spec: dict, deadline: float) -> tuple[bool, dict | None]:
+        name = str(spec.get("wait_for_event", ""))
+        where = spec.get("where") if isinstance(spec.get("where"), dict) else {}
+        start = len(records)
+        while time.time() < deadline:
+            pump()
+            for record in records[start:]:
+                if record.get("event") != name:
+                    continue
+                if all(_field_path(record, key) == value for key, value in where.items()):
+                    return True, record
+            time.sleep(0.25)
+        pump()
+        return False, None
+
+    def queue_command(command_text: str, rid: str, deadline: float) -> tuple[bool, str]:
+        try:
+            response = _control_send(port, token, {
+                "token": token, "action": "command",
+                "command": command_text, "request_id": rid,
+            })
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            return False, str(error)
+        if not response.get("accepted"):
+            return False, str(response.get("error", "rejected"))
+        while time.time() < deadline:
+            pump()
+            for record in records:
+                # The daemon appends its own per-entry index to the request id
+                # (for example "<rid>:0"), so match by prefix.
+                if (record.get("event") == "dev-loop.command.delivered" and
+                        _record_request_id(record).startswith(rid)):
+                    return True, ""
+            time.sleep(0.2)
+        return False, "delivery timeout"
+
+    step_failures: list[dict] = []
+    execution_ok = True
+    for index, step in enumerate(steps):
+        step_id = str(step.get("id", index))
+        if "wait_for_event" in step:
+            step_timeout = float(step.get("timeout_seconds", timeout) or timeout)
+            ok, record = wait_for_event(step, time.time() + step_timeout)
+            _append_journal_event(events_path, "scenario.step", {
+                "scenario_id": scenario_id, "step_id": step_id, "step_index": index,
+                "operation": "wait_for_event",
+                "event": str(step.get("wait_for_event", "")),
+                "where": step.get("where", {}),
+                "result": "waited" if ok else "timeout",
+                "observed": _field_path(record, "fields") if ok else None,
+            }, "scenario wait recorded", f"{request_id}:{index}")
+            if not ok:
+                execution_ok = False
+                step_failures.append({"step_id": step_id, "kind": "wait_timeout",
+                                      "event": str(step.get("wait_for_event", ""))})
+                break
+        elif "wait_seconds" in step:
+            seconds = float(step.get("wait_seconds", 0) or 0)
+            time.sleep(seconds)
+            _append_journal_event(events_path, "scenario.step", {
+                "scenario_id": scenario_id, "step_id": step_id, "step_index": index,
+                "operation": "wait_seconds", "seconds": seconds, "result": "waited",
+            }, "scenario pacing recorded", f"{request_id}:{index}")
+        elif step.get("command"):
+            command_text = " ".join(
+                [str(step["command"]), *(str(value) for value in step.get("args", []))]).strip()
+            rid = f"{request_id}:{index}"
+            ok, detail = queue_command(command_text, rid, time.time() + 15.0)
+            delay = float(step.get("delay_ms_after", 0) or 0) / 1000.0
+            if delay > 0:
+                time.sleep(delay)
+            _append_journal_event(events_path, "scenario.step", {
+                "scenario_id": scenario_id, "step_id": step_id, "step_index": index,
+                "operation": "command", "command": command_text,
+                "result": "executed" if ok else "failed", "detail": detail,
+            }, "scenario command recorded", rid)
+            if not ok:
+                execution_ok = False
+                step_failures.append({"step_id": step_id, "kind": "command_failed",
+                                      "command": command_text, "detail": detail})
+                break
+        else:
+            _append_journal_event(events_path, "scenario.step", {
+                "scenario_id": scenario_id, "step_id": step_id, "step_index": index,
+                "operation": "noop", "result": "skipped",
+            }, "scenario step recorded", f"{request_id}:{index}")
+
+    pump()
+    passed, results = _evaluate_assertions(scenario.get("assertions", []), records, scenario_id)
+    for assertion_result in results:
+        _append_journal_event(events_path, "scenario.assert", {
+            "scenario_id": scenario_id,
+            **assertion_result,
+        }, "scenario assertion evaluated", request_id)
+
+    final_passed = bool(passed and execution_ok and not step_failures)
+    first_assert_failure = next((r for r in results if not r["passed"]), None)
+    _append_journal_event(events_path, "scenario.finished", {
+        "scenario_id": scenario_id,
+        "request_id": request_id,
+        "passed": final_passed,
+        "execution_complete": execution_ok,
+        "assertions_evaluated": True,
+        "failure_kind": "" if final_passed else ("step" if step_failures else "assertion"),
+        "first_failed_step": step_failures[0] if step_failures else None,
+        "first_failed_assertion": first_assert_failure,
+        "assertion_count": len(results),
+        "events_path": events_path,
+    }, "scenario terminal verdict", request_id)
+
+    print(f"[DEV SCENARIO] id={scenario_id} passed={final_passed} "
+          f"execution_complete={execution_ok} assertions={len(results)}")
+    print(f"[DEV SCENARIO] events={_terminal_file_link(events_path)}")
+    if args.json:
+        print(json.dumps({"scenario_id": scenario_id, "request_id": request_id,
+                          "passed": final_passed, "results": results,
+                          "step_failures": step_failures, "events_path": events_path}, indent=2))
+    return 0 if final_passed else 1
+
+
+# ── Process identity, watchdog/daemon ensure, and the visible dashboard ───────
+
+
+def pid_alive(pid: int) -> bool:
+    """Cross-platform liveness that never signals the target process."""
+    if not pid or pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000 | 0x00100000, False, int(pid))
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return code.value == 259  # STILL_ACTIVE
+            return False
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _lock_pid(path: Path) -> int:
+    try:
+        return int(path.read_text(encoding="ascii").strip() or "0")
+    except (OSError, ValueError):
+        return 0
+
+
+def watcher_pid() -> int:
+    return _lock_pid(WATCH_LOCK_PATH)
+
+
+def daemon_lock_pid() -> int:
+    return _lock_pid(LOCK_PATH)
+
+
+def process_image_name() -> str:
+    return os.path.basename(sys.executable) or "python.exe"
+
+
+def read_watch_state() -> dict:
+    try:
+        value = read_json(WATCH_STATE_PATH)
+    except (OSError, json.JSONDecodeError):
+        value = None
+    return value if isinstance(value, dict) else {}
+
+
+def send_control_request(port, token: str, payload: dict, timeout: float = 5.0):
+    if not port or not token:
+        return None
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout) as connection:
+            connection.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+            data = connection.recv(65536)
+        return json.loads(data.decode("utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def request_daemon_status(current: dict, timeout: float = 2.0):
+    port = current.get("control_port")
+    token = current.get("control_token")
+    if not port or not token:
+        return None
+    response = send_control_request(port, token, {
+        "token": token,
+        "action": "status",
+        "request_id": f"status-{uuid.uuid4().hex[:8]}",
+    }, timeout=timeout)
+    if response and response.get("accepted") and isinstance(response.get("state"), dict):
+        return response["state"]
+    return None
+
+
+def _detached_flags() -> int:
+    if os.name != "nt":
+        return 0
+    return (getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+
+
+def _spawn_detached(args: list[str], log_path: Path) -> int:
+    DEV_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(log_path, "a", encoding="utf-8") as sink:
+            process = subprocess.Popen(
+                args, cwd=str(ROOT), stdout=sink, stderr=subprocess.STDOUT,
+                creationflags=_detached_flags(), close_fds=True)
+    except OSError:
+        return 0
+    return process.pid
+
+
+def start_watchdog_detached(profile: str, launch_mode, visibility: str) -> int:
+    args = [sys.executable, str(WATCH_SCRIPT), "--dev-loop-role=watchdog",
+            "--profile", str(profile)]
+    if launch_mode is not None:
+        args += ["--launch-mode", str(launch_mode)]
+    args.append("--headless" if visibility == "headless" else "--visible")
+    return _spawn_detached(args, WATCH_LOG_PATH)
+
+
+def start_daemon_detached(profile: str, launch_mode, visibility: str) -> int:
+    args = [sys.executable, str(DEV_LOOP_SCRIPT), "--daemon",
+            "--dev-loop-role=daemon", "--profile", str(profile)]
+    if launch_mode is not None:
+        args += ["--launch-mode", str(launch_mode)]
+    args.append("--headless" if visibility == "headless" else "--visible")
+    return _spawn_detached(args, DAEMON_LOG_PATH)
+
+
+def wait_for_daemon_ready(timeout: float):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        current = read_current_run() or {}
+        if request_daemon_status(current, timeout=2.0) is not None:
+            return current
+        time.sleep(0.5)
+    return None
+
+
+def ensure_running(profile: str, launch_mode, visibility: str):
+    """Ensure exactly one watchdog and one daemon, then return the ready state.
+
+    Duplicates are impossible: the watchdog and daemon each hold a lock, and
+    this only starts a process when the corresponding owner PID is absent.
+    """
+    events: list[dict] = []
+    wpid = watcher_pid()
+    if not (wpid and pid_alive(wpid)):
+        started = start_watchdog_detached(profile, launch_mode, visibility)
+        events.append({"action": "watchdog_start", "pid": started, "ok": bool(started)})
+    current = wait_for_daemon_ready(DAEMON_READY_TIMEOUT_SECONDS)
+    if current is None:
+        dpid = daemon_lock_pid()
+        if not (dpid and pid_alive(dpid)):
+            started = start_daemon_detached(profile, launch_mode, visibility)
+            events.append({"action": "daemon_start", "pid": started, "ok": bool(started)})
+        current = wait_for_daemon_ready(DAEMON_READY_TIMEOUT_SECONDS)
+    return current, events
+
+
+_COMMAND_DONE_EVENTS = (
+    "terminal.command.completed",
+    "terminal.command.unknown",
+    "dev-loop.command.invalid",
+    "scenario.step",
+)
+
+
+def wait_for_command_result(events_path: str, request_id: str, timeout: float,
+                            start_offset: int | None = None) -> dict:
+    """Wait for the client to execute a queued command; return a summary.
+
+    The caller should pass the journal offset captured *before* sending the
+    request: the daemon's control reply is built synchronously (including a
+    status snapshot) and can arrive after the client already executed the
+    command, so stat-ing the file after the reply can miss the events.
+    """
+    result = {"delivered": False, "completed": False, "event": "", "tick": None,
+              "reason": ""}
+    if not events_path or not request_id:
+        return result
+    if start_offset is None:
+        try:
+            start_offset = Path(events_path).stat().st_size
+        except OSError:
+            start_offset = 0
+    offset = start_offset
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        batch, offset = _journal_read_from(events_path, offset)
+        for record in batch:
+            if not _record_request_id(record).startswith(request_id):
+                continue
+            name = str(record.get("event", ""))
+            if name == "dev-loop.command.delivered":
+                result["delivered"] = True
+            if name in _COMMAND_DONE_EVENTS:
+                result["completed"] = True
+                result["event"] = name
+                result["tick"] = record.get("tick")
+            elif name == "dev-loop.control":
+                fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+                status = str(fields.get("status", ""))
+                if status in ("rejected", "queue_rejected", "scenario_rejected"):
+                    result["completed"] = True
+                    result["event"] = name
+                    result["reason"] = str(fields.get("message", ""))
+        if result["completed"]:
+            return result
+        time.sleep(0.2)
+    return result
+
+
+def _duration_text(seconds) -> str:
+    if seconds is None:
+        return "-"
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _build_label(executable) -> str:
+    """Show the published build number for a `.dev/builds/<n>/mimita.exe` path."""
+    if not executable:
+        return "-"
+    parts = Path(str(executable)).parts
+    if "builds" in parts:
+        index = parts.index("builds")
+        if index + 1 < len(parts):
+            return parts[index + 1]
+    return os.path.basename(str(executable)) or "-"
+
+
+def _recent_activity(events_path: str, limit: int = 3) -> list[str]:
+    if not events_path:
+        return []
+    try:
+        with open(events_path, "r", encoding="utf-8", errors="replace") as handle:
+            lines = handle.readlines()[-300:]
+    except OSError:
+        return []
+    found: list[str] = []
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        name = str(record.get("event", ""))
+        if not (name.startswith("dev-loop.") or name.startswith("scenario.")):
+            continue
+        fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+        reason = str(fields.get("reason") or fields.get("message") or "")
+        found.append(f"{record.get('wall_time', '')} {name} {reason}".strip()[:140])
+        if len(found) >= limit:
+            break
+    return list(reversed(found))
+
+
+def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str,
+                     recent: list[str]) -> list[str]:
+    client_pids = state.get("client_pids") or []
+    server_alive = state.get("server_alive")
+    run_id = state.get("run_id") or "-"
+    build_phase = str(state.get("build_status") or "-")
+    build_failed = any(
+        token in build_phase
+        for token in ("fail", "reject", "blocked", "missing", "invalid", "error")
+    )
+    lines = [
+        f"MiMITA Dev Loop Dashboard — {ROOT}",
+        f"Watchdog : {ROLE_NAMES['watchdog']}  pid={role_pids.get('watchdog') or '-'}  "
+        f"img={process_image_name()}  role=watchdog  restarts={watch.get('restarts', 0)}  {WATCH_SCRIPT}",
+        f"Daemon   : {ROLE_NAMES['daemon']}  pid={role_pids.get('daemon') or '-'}  "
+        f"img={process_image_name()}  role=daemon  {DEV_LOOP_SCRIPT}",
+        f"Dashboard: {ROLE_NAMES['dashboard']}  pid={os.getpid()}  img={process_image_name()}  role=dashboard",
+        f"Heartbeat: updated={state.get('updated_at') or '-'}",
+        f"Build    : phase={build_phase} {'FAIL' if build_failed else 'OK'}  "
+        f"running={state.get('running_build') or '-'}  latest={state.get('latest_successful_build') or '-'}  "
+        f"match={state.get('builds_match')}",
+        f"Server   : {'alive' if server_alive else 'dead'}  pid={state.get('server_pid') or '-'}  "
+        f"uptime={_duration_text(state.get('server_uptime_seconds'))}  "
+        f"build={_build_label(state.get('server_executable'))}",
+        f"Client   : {'alive' if client_pids else 'dead'}  pids={client_pids or '-'}  "
+        f"uptime={_duration_text(state.get('client_uptime_seconds'))}",
+        f"Run      : id={run_id}  mode={state.get('launch_mode')}({state.get('launch_mode_name') or '-'})  "
+        f"visibility={state.get('launch_visibility') or '-'}  map={state.get('map') or '-'}",
+        f"Last     : {state.get('message') or '-'}",
+        f"Journal  : {state.get('events_path') or '(none)'}",
+        f"View     : {view_status}",
+        "Recent   :",
+    ]
+    lines += [f"           {item}" for item in (recent or ["(no recent dev-loop activity)"])]
+    lines.append("Controls : [P] pause/freeze  [R] resume/refresh  [Q] quit dashboard (watchdog/daemon keep running)")
+    return lines
+
+
+def _read_dashboard_key():
+    if os.name == "nt":
+        try:
+            import msvcrt
+
+            if msvcrt.kbhit():
+                return msvcrt.getwch().lower()
+        except (ImportError, OSError):
+            return None
+        return None
+    try:
+        import select
+
+        ready, _, _ = select.select([sys.stdin], [], [], 0)
+        if ready:
+            return sys.stdin.read(1).lower()
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def run_dashboard(args: argparse.Namespace) -> int:
+    try:
+        import dev_loop_terminal as term
+    except ImportError:
+        term = None
+
+    title = f"MiMITA Dev Loop Dashboard — {ROOT.name}"
+    if term is not None and not args.no_terminal_relaunch:
+        if term.relaunch_in_windows_terminal(title):
+            return 0
+    if term is not None:
+        term.enable_virtual_terminal()
+        term.set_title(title)
+    ansi = bool(term is not None and term.supports_ansi())
+
+    current, ensure_events = ensure_running(
+        args.profile, args.launch_mode, args.launch_visibility or "visible")
+    role_pids = {"watchdog": watcher_pid(), "daemon": daemon_lock_pid(),
+                 "dashboard": os.getpid()}
+    events_path = str((current or {}).get("events_path") or "")
+    _append_journal_event(events_path, "dev-loop.dashboard.attach", {
+        "dashboard_pid": os.getpid(),
+        "watchdog_pid": role_pids["watchdog"],
+        "daemon_pid": role_pids["daemon"],
+        "ansi": ansi,
+        "ensure": ensure_events,
+    }, "dashboard attached to dev-loop daemon status", "dashboard")
+
+    frozen = False
+    frozen_since = "-"
+    view_status = "live"
+    prev_count = 0
+    frames = 0
+    last_plain_signature = None
+
+    def render(state: dict) -> None:
+        nonlocal prev_count, last_plain_signature
+        recent = _recent_activity(events_path)
+        lines = _dashboard_lines(state, read_watch_state(), role_pids, view_status, recent)
+        if ansi:
+            if prev_count:
+                sys.stdout.write(f"\x1b[{prev_count}A")
+            for line in lines:
+                sys.stdout.write("\x1b[2K" + line + "\n")
+            sys.stdout.flush()
+            prev_count = len(lines)
+        else:
+            signature = tuple(line.split(":", 1)[0] for line in lines)
+            if last_plain_signature is None:
+                for line in lines:
+                    sys.stdout.write(line + "\n")
+                sys.stdout.flush()
+            elif signature != last_plain_signature:
+                summary = next((l for l in lines if l.startswith("Run")), "")
+                sys.stdout.write(f"[update] {summary}\n")
+                sys.stdout.flush()
+            last_plain_signature = signature
+
+    try:
+        while True:
+            if not frozen:
+                state = request_daemon_status(current) if current else None
+                current = read_current_run() or current or {}
+                state = state or current
+                role_pids["watchdog"] = watcher_pid()
+                role_pids["daemon"] = daemon_lock_pid()
+                render(state)
+            key = _read_dashboard_key()
+            if key == "q":
+                break
+            if key == "p" and not frozen:
+                frozen = True
+                frozen_since = utc_now()
+                view_status = f"FROZEN since {frozen_since} — press R to resume"
+                state = request_daemon_status(current) if current else None
+                render(state or current)
+            elif key == "r" and frozen:
+                frozen = False
+                view_status = f"refreshed at {utc_now()} (resumed from freeze)"
+            frames += 1
+            if args.dashboard_frames and frames >= args.dashboard_frames:
+                break
+            time.sleep(DASHBOARD_FRAME_SECONDS)
+    finally:
+        _append_journal_event(events_path, "dev-loop.dashboard.detach", {
+            "dashboard_pid": os.getpid(),
+            "frames": frames,
+        }, "dashboard detached (watchdog/daemon left running)", "dashboard")
+    return 0
+
+
+def _print_read_only_status(current: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(current, indent=2))
+        return
+    print(f"[DEV STATUS] status={current.get('build_status')} run={current.get('run_id') or '(none)'}")
+    print(
+        f"[DEV STATUS] mode={current.get('launch_mode')} "
+        f"running_build={current.get('running_build')} "
+        f"latest_build={current.get('latest_successful_build')} "
+        f"stale={current.get('latest_build_stale')}"
+    )
+    print(
+        f"[DEV STATUS] run={'RUNNING' if current.get('run_alive') else 'NOT RUNNING'} "
+        f"uptime={DevLoop._duration_text(current.get('run_uptime_seconds'))} "
+        f"visibility={current.get('launch_visibility', 'unknown')}"
+    )
+    print(f"[DEV STATUS] events={_terminal_file_link(current.get('events_path'))}")
+    print(
+        f"[DEV STATUS] server pid={current.get('server_pid')} "
+        f"alive={current.get('server_alive')} "
+        f"uptime={DevLoop._duration_text(current.get('server_uptime_seconds'))}"
+    )
+    print(
+        f"[DEV STATUS] client pids={current.get('client_pids', [])} "
+        f"uptime={DevLoop._duration_text(current.get('client_uptime_seconds'))}"
+    )
+
+
+def _control_action(args: argparse.Namespace) -> str:
+    if args.command:
+        return "command"
+    if args.scenario_file:
+        return "scenario-file"
+    return args.request or "status"
+
+
 def run_control_client(args: argparse.Namespace) -> int:
+    action = _control_action(args)
+
+    # Preserve read-only status behavior: never start or wake the daemon for a
+    # pure status read. `--ensure-running` is explicitly not a read-only read.
+    if (action == "status" and not args.command and not args.scenario_file
+            and not args.request and not args.ensure_running):
+        current = read_current_run()
+        if current is None:
+            print(f"[DEV CONTROL] no current run state: {CURRENT_RUN_PATH}", file=sys.stderr)
+            return 2
+        _print_read_only_status(current, args.json)
+        return 0
+
+    visibility = args.launch_visibility or "visible"
     current = read_current_run()
+    # Mutating/command entry points ensure one watchdog and one daemon before
+    # sending work. Stop requests target whatever daemon already exists.
+    if action in ("command", "scenario-file", "launch") or args.ensure_running:
+        current, ensure_events = ensure_running(args.profile, args.launch_mode, visibility)
+        for event in ensure_events:
+            print(f"[DEV CONTROL] recovery action={event.get('action')} "
+                  f"pid={event.get('pid')} ok={event.get('ok')}")
+        if current is None:
+            print("[DEV CONTROL] daemon/watchdog recovery failed; no control endpoint",
+                  file=sys.stderr)
+            return 2
     if current is None:
         print(f"[DEV CONTROL] no current run state: {CURRENT_RUN_PATH}", file=sys.stderr)
         return 2
 
-    if args.status:
-        if args.json:
-            print(json.dumps(current, indent=2))
-        else:
-            print(f"[DEV STATUS] status={current.get('build_status')} run={current.get('run_id') or '(none)'}")
-            print(
-                f"[DEV STATUS] mode={current.get('launch_mode')} "
-                f"running_build={current.get('running_build')} "
-                f"latest_build={current.get('latest_successful_build')} "
-                f"stale={current.get('latest_build_stale')}"
-            )
-            print(
-                f"[DEV STATUS] run={'RUNNING' if current.get('run_alive') else 'NOT RUNNING'} "
-                f"uptime={DevLoop._duration_text(current.get('run_uptime_seconds'))} "
-                f"visibility={current.get('launch_visibility', 'unknown')}"
-            )
-            print(f"[DEV STATUS] events={_terminal_file_link(current.get('events_path'))}")
-            print(
-                f"[DEV STATUS] server pid={current.get('server_pid')} "
-                f"alive={current.get('server_alive')} "
-                f"uptime={DevLoop._duration_text(current.get('server_uptime_seconds'))}"
-            )
-            print(
-                f"[DEV STATUS] client pids={current.get('client_pids', [])} "
-                f"uptime={DevLoop._duration_text(current.get('client_uptime_seconds'))}"
-            )
-    if not args.request and not args.command and not args.scenario_file:
-            return 0
+    if action == "status" and args.ensure_running and not args.command \
+            and not args.scenario_file and not args.request:
+        print("[DEV CONTROL] watchdog and daemon are running")
+        _print_read_only_status(current, args.json)
+        return 0
+
+    if action == "scenario-file":
+        return run_scenario_file(args)
 
     port = current.get("control_port")
     token = current.get("control_token")
@@ -2327,11 +3306,6 @@ def run_control_client(args: argparse.Namespace) -> int:
         print("[DEV CONTROL] no running daemon control endpoint; start the dev loop once", file=sys.stderr)
         return 2
 
-    action = args.request
-    if args.command:
-        action = "command"
-    elif args.scenario_file:
-        action = "scenario-file"
     request = {
         "token": token,
         "action": action,
@@ -2340,22 +3314,39 @@ def run_control_client(args: argparse.Namespace) -> int:
     }
     if args.command:
         request["command"] = args.command
-    if args.scenario_file:
-        request["scenario_file"] = args.scenario_file
-    try:
-        with socket.create_connection(("127.0.0.1", int(port)), timeout=5.0) as connection:
-            connection.sendall((json.dumps(request) + "\n").encode("utf-8"))
-            response = json.loads(connection.recv(65536).decode("utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        print(f"[DEV CONTROL] unable to contact daemon: {error}", file=sys.stderr)
+    # Capture the journal offset before sending so a fast command execution is
+    # not missed while the daemon builds its synchronous control reply.
+    pre_offset = None
+    if action == "command":
+        try:
+            pre_offset = Path(str(current.get("events_path") or "")).stat().st_size
+        except OSError:
+            pre_offset = 0
+    response = send_control_request(port, token, request, timeout=5.0)
+    if response is None:
+        print("[DEV CONTROL] unable to contact daemon", file=sys.stderr)
         return 2
 
     if args.json:
         print(json.dumps(response, indent=2))
     else:
-        print(f"[DEV CONTROL] accepted={response.get('accepted')} queued={response.get('queued', False)} ")
+        print(f"[DEV CONTROL] action={action} accepted={response.get('accepted')} "
+              f"queued={response.get('queued', False)}")
         if response.get("error"):
             print(f"[DEV CONTROL] error={response['error']}", file=sys.stderr)
+
+    if action == "command" and response.get("accepted"):
+        events_path = str(current.get("events_path") or "")
+        result = wait_for_command_result(
+            events_path, request["request_id"], timeout=float(args.command_timeout),
+            start_offset=pre_offset)
+        print(f"[DEV CONTROL] command=\"{args.command}\" delivered={result['delivered']} "
+              f"completed={result['completed']} event={result['event'] or '-'} "
+              f"tick={result['tick'] if result['tick'] is not None else '-'}"
+              + (f" reason=\"{result['reason']}\"" if result["reason"] else ""))
+        print(f"[DEV CONTROL] events={_terminal_file_link(events_path)}")
+        return 0 if result["completed"] else 1
+
     return 0 if response.get("accepted") else 1
 
 
@@ -2384,30 +3375,52 @@ def main() -> int:
     )
     parser.add_argument("--status", action="store_true", help="read the current dev-loop status and exit")
     parser.add_argument("--json", action="store_true", help="print control/status responses as JSON")
-    parser.add_argument("--command", help="queue one terminal command in the running client")
+    parser.add_argument("--command", "--cmd", dest="command",
+                        help="send one terminal command to the running daemon, wait for the result, and exit")
     parser.add_argument("--scenario-file", help="queue a repository-local Markdown/JSON scenario in the running client")
     parser.add_argument(
         "--request",
         choices=("launch", "stop-client", "stop-server", "stop"),
         help="send a command to the already-running dev-loop daemon and exit",
     )
+    parser.add_argument("--ensure-running", action="store_true",
+                        help="ensure the watchdog and daemon exist and exit")
+    parser.add_argument("--daemon", action="store_true",
+                        help="run the dev-loop daemon in this process (used by the watchdog/entry point)")
+    parser.add_argument("--dashboard", action="store_true",
+                        help="open the visible dashboard view attached to the daemon")
+    parser.add_argument("--dev-loop-role", default="",
+                        choices=("", "watchdog", "daemon", "dashboard"),
+                        help="stable role marker recorded in the process command line")
+    parser.add_argument("--no-terminal-relaunch", action="store_true",
+                        help="do not prefer Windows Terminal; render in the current console")
+    parser.add_argument("--dashboard-frames", type=int, default=0,
+                        help="render this many dashboard frames then exit (0 = run until quit)")
+    parser.add_argument("--command-timeout", type=float, default=15.0,
+                        help="seconds to wait for a command result from the client")
     args = parser.parse_args()
 
-    if args.status or args.request or args.command or args.scenario_file:
+    control = bool(args.status or args.request or args.command or args.scenario_file)
+
+    if (args.daemon or args.dev_loop_role == "daemon") and not control:
+        owner_pid = acquire_dev_loop_lock()
+        profile = load_profile(args.profile)
+        try:
+            DevLoop(
+                profile,
+                args.auto_restart,
+                args.launch_mode,
+                args.launch_visibility,
+            ).run()
+        finally:
+            release_dev_loop_lock(owner_pid)
+        return 0
+
+    if control or args.ensure_running:
         return run_control_client(args)
 
-    owner_pid = acquire_dev_loop_lock()
-    profile = load_profile(args.profile)
-    try:
-        DevLoop(
-            profile,
-            args.auto_restart,
-            args.launch_mode,
-            args.launch_visibility,
-        ).run()
-    finally:
-        release_dev_loop_lock(owner_pid)
-    return 0
+    # Default entry (including the desktop shortcut): the visible dashboard.
+    return run_dashboard(args)
 
 
 if __name__ == "__main__":

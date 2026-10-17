@@ -44,6 +44,11 @@ constexpr int MAX_RUNTIME_BUILD_ID_BYTES = 96;
 constexpr int MAX_PLAYERS = 32;
 constexpr int MAX_SNAPSHOT_ENTITIES = 90;
 constexpr int MAX_NAME_BYTES = 32;
+// Map ids are content-defined GLB basenames (for example,
+// "mimita-aabb-only-interior-small-v4"). The old MAX_NAME_BYTES field silently
+// truncated versions, so the client was told to load a map that does not exist
+// and then reported ready on a stale world. Give map ids their own budget.
+constexpr int MAX_MAP_ID_BYTES = 64;
 // Avatar folder names are user/content-defined and can exceed the old 15-byte
 // snapshot field (for example, "abusivegirlheadless"). Keep replication from
 // silently truncating a valid avatar into a nonexistent folder name.
@@ -377,12 +382,12 @@ struct WelcomePacket
     float tickRate = 60.0f;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
-    char mapId[MAX_NAME_BYTES];
+    char mapId[MAX_MAP_ID_BYTES];
     char runtimeRunId[MAX_RUNTIME_RUN_ID_BYTES] = {};
     char runtimeBuildId[MAX_RUNTIME_BUILD_ID_BYTES] = {};
 };
 
-static_assert(sizeof(WelcomePacket) == 320, "WelcomePacket wire size changed");
+static_assert(sizeof(WelcomePacket) == 352, "WelcomePacket wire size changed");
 
 struct InputCommandRedundancySlot
 {
@@ -1156,7 +1161,7 @@ struct DuelStatePacket
     uint32_t winnerPlayerId = 0;
     char teamAName[32];
     char teamBName[32];
-    char mapId[MAX_NAME_BYTES];
+    char mapId[MAX_MAP_ID_BYTES];
     uint32_t spawnAnchorIndex = 0;
     float anchorX = 0.0f;
     float anchorY = 0.0f;
@@ -1271,7 +1276,7 @@ struct MapChangePacket
     uint32_t eventSessionId = 0;
     uint32_t duelId = 0;
     uint32_t mapVersion = 0;
-    char mapId[MAX_NAME_BYTES];
+    char mapId[MAX_MAP_ID_BYTES];
 };
 
 struct JoinRequestPacket
@@ -1295,12 +1300,12 @@ struct JoinAcceptPacket
     float tickRate = 60.0f;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
-    char mapId[MAX_NAME_BYTES];
+    char mapId[MAX_MAP_ID_BYTES];
     char runtimeRunId[MAX_RUNTIME_RUN_ID_BYTES] = {};
     char runtimeBuildId[MAX_RUNTIME_BUILD_ID_BYTES] = {};
 };
 
-static_assert(sizeof(JoinAcceptPacket) == 320, "JoinAcceptPacket wire size changed");
+static_assert(sizeof(JoinAcceptPacket) == 352, "JoinAcceptPacket wire size changed");
 
 struct JoinRejectPacket
 {
@@ -1343,10 +1348,10 @@ struct ClientMapReadyPacket
 {
     PacketHeader header;
     uint32_t assignedPlayerId = 0;
-    char mapId[MAX_NAME_BYTES];
+    char mapId[MAX_MAP_ID_BYTES];
 };
 
-static_assert(sizeof(ClientMapReadyPacket) == 56, "ClientMapReadyPacket wire size changed");
+static_assert(sizeof(ClientMapReadyPacket) == 88, "ClientMapReadyPacket wire size changed");
 
 struct DisagreementPacket
 {

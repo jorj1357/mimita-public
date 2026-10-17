@@ -933,27 +933,26 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
 
     if (!existingId)
     {
-        // Use map spawnpoints if available
+        // One authoritative safe-spawn policy for every entry path; it derives
+        // a validated position when the map has no authored spawn points.
         glm::vec3 spawnPos;
         float spawnYaw = 0.0f;
-        if (world && !world->spawnPoints.empty())
+        size_t idx = 0;
+        if (serverPickSafeSpawn(world, id, spawnPos, spawnYaw, &idx))
         {
-            size_t idx = 0;
-            serverPickSafeSpawn(world, id, spawnPos, spawnYaw, &idx);
             printf("%s [SERVER PLAYER SPAWN] reason=initial_join id=%u name=\"%s\" "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f\n",
                    serverTimestamp(), id, p.name.c_str(), idx,
                    spawnPos.x, spawnPos.y, spawnPos.z, glm::degrees(spawnYaw));
+            beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "initial_join");
         }
         else
         {
-            spawnPos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
-            printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) "
-                   "(no spawnpoints in map)\n",
-                   serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
-                   spawnPos.x, spawnPos.y, spawnPos.z);
+            // Refuse visibly; do not place the actor at an unvalidated position.
+            printf("%s [SERVER PLAYER SPAWN REFUSED] reason=initial_join id=%u "
+                   "name=\"%s\" cause=no-safe-spawn\n",
+                   serverTimestamp(), id, p.name.c_str());
         }
-        beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "initial_join");
         // resetPlayerForSpawn and inventory setup happen in completeAuthoritativeSpawn
         // when the client sends ClientMapReady and spawned becomes true.
         // Wait for ClientMapReady before including in snapshots.
@@ -1628,28 +1627,26 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
 
     if (!existingId)
     {
-        // Use map spawnpoints if available
+        // One authoritative safe-spawn policy for every entry path; it derives
+        // a validated position when the map has no authored spawn points.
         glm::vec3 spawnPos;
         float spawnYaw = 0.0f;
-        if (world && !world->spawnPoints.empty())
+        size_t idx = 0;
+        if (serverPickSafeSpawn(world, id, spawnPos, spawnYaw, &idx))
         {
-            size_t idx = 0;
-            serverPickSafeSpawn(world, id, spawnPos, spawnYaw, &idx);
             printf("%s [SERVER PLAYER SPAWN] reason=join_request id=%u name=\"%s\" "
                    "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f token=%s\n",
                    serverTimestamp(), id, p.name.c_str(), idx,
                    spawnPos.x, spawnPos.y, spawnPos.z, glm::degrees(spawnYaw),
                    p.reconnectToken.c_str());
+            beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "join_request");
         }
         else
         {
-            spawnPos = {1.0f + (float)(id - 1) * 1.5f, 5.0f, 30.0f};
-            printf("%s [SERVER JOIN] id=%u name=\"%s\" addr=%s spawn=(%.1f,%.1f,%.1f) "
-                   "(no spawnpoints) token=%s\n",
-                   serverTimestamp(), id, p.name.c_str(), addressToString(from).c_str(),
-                   spawnPos.x, spawnPos.y, spawnPos.z, p.reconnectToken.c_str());
+            printf("%s [SERVER PLAYER SPAWN REFUSED] reason=join_request id=%u "
+                   "name=\"%s\" cause=no-safe-spawn token=%s\n",
+                   serverTimestamp(), id, p.name.c_str(), p.reconnectToken.c_str());
         }
-        beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "join_request");
         // Player registered but not yet spawned — waits for ClientMapReady.
         // Server will simulate and include in snapshots only after spawned=true.
         p.spawned = false;

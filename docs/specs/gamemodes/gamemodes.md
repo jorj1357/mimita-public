@@ -136,6 +136,30 @@ revision, requested/resolved asset path, process role, load readiness, spawn
 source/candidate, validation result, actor ID/generation, and final
 authoritative transform.
 
+### 2026-10-17 resolution: map-id truncation and safe-spawn policy
+
+Root cause of the 2026-10-16 below-world report was identified and fixed. The
+`mapId` field in `WelcomePacket`, `JoinAcceptPacket`, `MapChangePacket`,
+`DuelStatePacket`, and `ClientMapReadyPacket` was `char[MAX_NAME_BYTES]`
+(32 bytes), which silently truncated the content id
+`mimita-aabb-only-interior-small-v4` (34 bytes) to
+`mimita-aabb-only-interior-small` (`src/network/packets.h`). The client then
+requested a nonexistent base map and still reported ready on its previous world.
+The map id now uses `MAX_MAP_ID_BYTES = 64`, the client only reports ready when
+its loaded world matches the required id, and `serverPickSafeSpawn`
+(`src/network/server-players.cpp`) is the single authoritative spawn owner:
+authored points are ground-snapped and validated, maps with no authored spawn
+points derive a validated standing position by probing collision geometry, and
+a genuinely unsafe world refuses with a visible `spawn.server-no-safe-spawn`.
+
+Live evidence: scenario `devscripts/scenarios/priority1_map_spawn_v1.json` on run
+`logs/2026-10-17/20261017_002823/events.jsonl` passed all 10 assertions on the
+reported map (server `spawn_points=0`; client received the full map id and
+loaded the same file; `spawn.server-selected source=derived-probe
+validated=true` in bounds). Human visual confirmation of the in-bounds spawn
+remains outstanding; see
+`docs/regressions/2026-10-17/map-id-truncation-stale-ready-REG.md`.
+
 ## General NPC intent contract (objective / focus / patrol)
 
 A gamemode does not own NPC artificial intelligence. It selects roles, presets,

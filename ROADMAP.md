@@ -1,4 +1,6 @@
-﻿2026 10 06 0952 roadmap general 
+﻿2026 10 17 1150 jojr todo make this better idk hwo to even bro 
+
+2026 10 06 0952 roadmap general 
 
 here is hte main google doc for it, idk as of 2026 10 06 0952 might be updated more mihgt be updated less? 
 

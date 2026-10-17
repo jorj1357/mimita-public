@@ -27,9 +27,11 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 
 namespace MimitaNet {
@@ -239,11 +241,95 @@ static bool serverCapsuleFits(const HeadlessWorld& world, const glm::vec3& pos)
     return true;
 }
 
-void serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
+// Resolves a candidate into a standable spot: raycast down to the nearest
+// surface and verify the ground-snapped standing capsule fits. Authored spawn
+// points are commonly placed at floor level, so the horizontal capsule check is
+// done at the snapped standing center, not at the raw point. Returns the
+// ground-snapped standing center in outStanding.
+static bool serverValidateStandingSpot(const HeadlessWorld& world, const glm::vec3& cand,
+                                       glm::vec3& outStanding)
+{
+    glm::vec3 hit, nrm;
+    const glm::vec3 origin = cand + glm::vec3(0.0f, 0.0f, 0.5f);
+    // Tall arenas (for example atdm) place spawns hundreds of units above the
+    // floor, so the drop distance must scale with the world, not stay fixed.
+    const float maxDist = std::max(200.0f, (world.boundsMax.z - world.boundsMin.z) + 64.0f);
+    if (!serverRaycastWorld(origin, glm::vec3(0.0f, 0.0f, -1.0f), maxDist, world, hit, nrm))
+        return false;  // no ground below (void)
+    // Lift by a hair so the capsule's bottom sample is not exactly on the floor
+    // plane (the shared capsule check rejects exact contact). Gravity settles
+    // the actor immediately afterward.
+    const glm::vec3 standing(cand.x, cand.y, hit.z + PLAYER_HEIGHT * 0.5f + 0.02f);
+    if (!serverCapsuleFits(world, standing))
+        return false;
+    outStanding = standing;
+    return true;
+}
+
+// Derives a validated standing spawn by probing the collision world on a grid
+// when the map has no authored spawn points (or none are safe). Returns the
+// probe nearest to `hint` in the horizontal plane.
+static bool serverProbeSafeStanding(const HeadlessWorld& world, const glm::vec3& hint,
+                                    glm::vec3& outPos, float& outYaw)
+{
+    const glm::vec3 mn = world.boundsMin;
+    const glm::vec3 mx = world.boundsMax;
+    if (!(mx.x > mn.x) || !(mx.y > mn.y) || !(mx.z > mn.z))
+        return false;
+
+    const float stepX = std::max(2.0f, (mx.x - mn.x) / 32.0f);
+    const float stepY = std::max(2.0f, (mx.y - mn.y) / 32.0f);
+    const float maxDrop = (mx.z - mn.z) + 16.0f;
+    float bestDistSq = std::numeric_limits<float>::max();
+    bool found = false;
+
+    for (float x = mn.x + stepX * 0.5f; x <= mx.x; x += stepX)
+    {
+        for (float y = mn.y + stepY * 0.5f; y <= mx.y; y += stepY)
+        {
+            const glm::vec3 origin(x, y, mx.z + 2.0f);
+            glm::vec3 hit, nrm;
+            if (!serverRaycastWorld(origin, glm::vec3(0.0f, 0.0f, -1.0f), maxDrop, world, hit, nrm))
+                continue;
+            const glm::vec3 cand(x, y, hit.z + PLAYER_HEIGHT * 0.5f);
+            glm::vec3 standing;
+            if (!serverValidateStandingSpot(world, cand, standing))
+                continue;
+            const float dx = standing.x - hint.x;
+            const float dy = standing.y - hint.y;
+            const float d = dx * dx + dy * dy;
+            if (d < bestDistSq)
+            {
+                bestDistSq = d;
+                outPos = standing;
+                outYaw = 0.0f;
+                found = true;
+            }
+        }
+    }
+    return found;
+}
+
+bool serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
                          glm::vec3& outPos, float& outYaw, size_t* outIndex)
 {
     if (outIndex)
         *outIndex = 0;
+
+    const std::string playerKey = std::to_string(playerId);
+    const auto emit = [&](const char* source, long idx, bool validated) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "spawn.server-selected", playerKey,
+            "authoritative spawn selection", 0,
+            {{"source", source},
+             {"spawn_index", idx},
+             {"position", {outPos.x, outPos.y, outPos.z}},
+             {"yaw_deg", glm::degrees(outYaw)},
+             {"spawn_points", (long)(world ? world->spawnPoints.size() : 0)},
+             {"validated", validated}},
+            __FILE__, __LINE__, __FUNCTION__);
+    };
 
     // Host spawn override: the host explicitly chose this spot — trust it.
     const ServerGameOverrides& ov = serverGameOverrides();
@@ -254,57 +340,94 @@ void serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
             outYaw = world->spawnPoints[(playerId - 1) % world->spawnPoints.size()].yaw;
         else
             outYaw = 0.0f;
-        return;
+        emit("host-override", -1, false);
+        return true;
     }
 
-    if (!world || world->spawnPoints.empty())
+    if (world && !world->spawnPoints.empty())
     {
-        outPos = {1.0f + (float)(playerId - 1) * 1.5f, 5.0f, 30.0f};
-        outYaw = 0.0f;
-        return;
-    }
+        const std::vector<ServerSpawnPoint>& points = world->spawnPoints;
+        const size_t defaultIdx = (playerId - 1) % points.size();
 
-    const std::vector<ServerSpawnPoint>& points = world->spawnPoints;
-    const size_t defaultIdx = (playerId - 1) % points.size();
+        for (size_t k = 0; k < points.size(); ++k)
+        {
+            const size_t idx = (defaultIdx + k) % points.size();
 
-    for (size_t k = 0; k < points.size(); ++k)
-    {
-        const size_t idx = (defaultIdx + k) % points.size();
-        const glm::vec3 cand = points[idx].position;
+            // The player must be able to STAND after spawning: snap to ground
+            // and verify the capsule fits there. This rejects spawns that drop
+            // the player into a narrow shaft/spire where the capsule cannot
+            // move (the "stuck at spawn" bug).
+            glm::vec3 standing;
+            if (!serverValidateStandingSpot(*world, points[idx].position, standing))
+                continue;
 
-        // The capsule must fit at the spawn point itself (embedded spawns).
-        if (!serverCapsuleFits(*world, cand))
-            continue;
-
-        // The player must be able to STAND after spawning: raycast down to the
-        // nearest surface and verify the standing capsule fits. This rejects
-        // spawns that drop the player into a narrow shaft/spire where the
-        // capsule cannot move horizontally (the reported "stuck at spawn" bug).
-        glm::vec3 hit, nrm;
-        const glm::vec3 origin = cand + glm::vec3(0.0f, 0.0f, 0.5f);
-        if (!serverRaycastWorld(origin, glm::vec3(0.0f, 0.0f, -1.0f), 200.0f,
-                                *world, hit, nrm))
-            continue;  // no ground below (void)
-        const glm::vec3 standing(cand.x, cand.y, hit.z + PLAYER_HEIGHT * 0.5f);
-        if (!serverCapsuleFits(*world, standing))
-            continue;
-
-        outPos = cand;
-        outYaw = points[idx].yaw;
+            outPos = standing;  // ground-snapped so the capsule is not embedded
+            outYaw = points[idx].yaw;
+            if (outIndex)
+                *outIndex = idx;
+            emit("authored", (long)idx, true);
+            return true;
+        }
+        // The map authored spawn points but none passed the standing check. The
+        // authored data is still the best available intent, so use the default
+        // authored point rather than refusing a map that does have spawns.
+        const ServerSpawnPoint& fb = points[defaultIdx];
+        outPos = fb.position;
+        outYaw = fb.yaw;
         if (outIndex)
-            *outIndex = idx;
-        return;
+            *outIndex = defaultIdx;
+        emit("authored-default", (long)defaultIdx, false);
+        return true;
     }
 
-    // No safe spawn found — fall back to today's behavior so maps never break.
-    const ServerSpawnPoint& fb = points[defaultIdx];
-    outPos = fb.position;
-    outYaw = fb.yaw;
-    if (outIndex)
-        *outIndex = defaultIdx;
-    Debug::warn(Debug::Category::Networking,
-        "[SPAWN SAFETY] playerId=%u all %zu spawn points unsafe — using default idx=%zu\n",
-        playerId, points.size(), defaultIdx);
+    // Derive a validated standing position from collision geometry. This covers
+    // maps authored with no spawn nodes and maps whose authored points are all
+    // embedded, so the policy still has a safe answer.
+    if (world)
+    {
+        const glm::vec3 hint = world->spawnPoints.empty()
+            ? glm::vec3((world->boundsMin.x + world->boundsMax.x) * 0.5f,
+                        (world->boundsMin.y + world->boundsMax.y) * 0.5f, 0.0f)
+            : world->spawnPoints[0].position;
+        glm::vec3 probePos;
+        float probeYaw = 0.0f;
+        if (serverProbeSafeStanding(*world, hint, probePos, probeYaw))
+        {
+            outPos = probePos;
+            outYaw = probeYaw;
+            if (outIndex)
+                *outIndex = (size_t)-1;  // derived, not an authored index
+            emit("derived-probe", -1, true);
+            return true;
+        }
+
+        // Last resort: the historical default, but only if it validates.
+        const glm::vec3 fallback(1.0f + (float)(playerId - 1) * 1.5f, 5.0f, 30.0f);
+        glm::vec3 standing;
+        if (serverValidateStandingSpot(*world, fallback, standing))
+        {
+            outPos = fallback;
+            outYaw = 0.0f;
+            if (outIndex)
+                *outIndex = 0;
+            emit("default-validated", -1, true);
+            return true;
+        }
+    }
+
+    // No safe spawn exists. Refuse visibly; the caller must not place the actor
+    // at a stale or out-of-world coordinate.
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Errors,
+        "spawn.server-no-safe-spawn", playerKey,
+        "no spawn point or derived standing position passed validation", 0,
+        {{"spawn_points", (long)(world ? world->spawnPoints.size() : 0)},
+         {"has_world", (bool)(world != nullptr)}},
+        __FILE__, __LINE__, __FUNCTION__);
+    Debug::error(Debug::Category::Networking,
+        "[SPAWN SAFETY] playerId=%u no safe spawn found (spawnPoints=%zu) — refusing spawn\n",
+        playerId, world ? world->spawnPoints.size() : 0);
+    return false;
 }
 
 // ═══ Player‑to‑player de‑penetration ═══════════════════════════════
@@ -733,13 +856,18 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 // Duel mode: fixed team spawn, full reset handled below.
                 respawnPos = p.duelSpawnPos;
             }
-            else if (!world.spawnPoints.empty())
+            else if (!serverPickSafeSpawn(&world, p.id, respawnPos, respawnYaw))
             {
-                serverPickSafeSpawn(&world, p.id, respawnPos, respawnYaw);
-            }
-            else
-            {
-                respawnPos = {1.0f + (float)(p.id - 1) * 1.5f, 5.0f, 30.0f};
+                // No safe spawn: keep the player waiting rather than placing
+                // them at an unvalidated coordinate; retry shortly.
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Errors,
+                    "spawn.server-refused", std::to_string(p.id),
+                    "respawn refused: no safe spawn", 0,
+                    {{"spawn_points", (long)world.spawnPoints.size()}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                p.respawnSeconds = 1.0f;
+                return;
             }
             // The spawn yaw is the actor's valid look direction for this new
             // life. Compute the impulse after choosing it, not from the old

@@ -1,3 +1,8 @@
+2026 10 17 1206 jorj todo database  make stotnger
+and vps storage
+do we have  database backups hmmmm not sure 
+but need dat 
+
 mimita website stuff
 
 it should look like  raw html, old newgrounds, slightly misplaced elements, slightly rotated, no rounded corners, etc

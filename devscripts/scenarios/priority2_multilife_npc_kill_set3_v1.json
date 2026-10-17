@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "id": "priority2_multilife_npc_kill_set3_v1",
+  "description": "Priority 2 full lifecycle with a second weapon set (set 3, Rocket Launcher hotbar position 1, native slot 7): the same weapon at a different hotbar position must still authorize across NPC-caused deaths/respawns. healthme 1 makes the next NPC hit lethal; each shot waits for a fresh respawn so it lands alive.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "dust2cyberiav4",
+    "weapon_set": 3,
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [
+    {"id": "lethal_hp", "command": "healthme", "args": ["1"], "delay_ms_after": 1000},
+    {"id": "spawn_npcs", "command": "npc_spawn", "args": ["2"], "delay_ms_after": 1500}
+  ],
+  "steps": [
+    {"id": "equip_rocket", "command": "equipweapon", "args": ["rocket_launcher"], "delay_ms_after": 1000},
+    {"id": "life1_ready", "wait_for_event": "weapon.spawn.equipped_applied", "where": {"weapon": "rocket_launcher"}, "timeout_seconds": 90},
+    {"id": "life1_shoot", "command": "agent.shoot", "args": [], "delay_ms_after": 300},
+    {"id": "life2_ready", "wait_for_event": "weapon.spawn.equipped_applied", "where": {"weapon": "rocket_launcher"}, "timeout_seconds": 90},
+    {"id": "life2_shoot", "command": "agent.shoot", "args": [], "delay_ms_after": 300},
+    {"id": "life3_ready", "wait_for_event": "weapon.spawn.equipped_applied", "where": {"weapon": "rocket_launcher"}, "timeout_seconds": 90},
+    {"id": "life3_shoot", "command": "agent.shoot", "args": [], "delay_ms_after": 300},
+    {"id": "life4_ready", "wait_for_event": "weapon.spawn.equipped_applied", "where": {"weapon": "rocket_launcher"}, "timeout_seconds": 90},
+    {"id": "life4_shoot", "command": "agent.shoot", "args": [], "delay_ms_after": 300},
+    {"id": "life5_ready", "wait_for_event": "weapon.spawn.equipped_applied", "where": {"weapon": "rocket_launcher"}, "timeout_seconds": 90},
+    {"id": "life5_shoot", "command": "agent.shoot", "args": [], "delay_ms_after": 300},
+    {"id": "life6_ready", "wait_for_event": "weapon.spawn.equipped_applied", "where": {"weapon": "rocket_launcher"}, "timeout_seconds": 90},
+    {"id": "life6_shoot", "command": "agent.shoot", "args": [], "delay_ms_after": 300},
+    {"id": "invalid_identity", "command": "equipweapon", "args": ["not_a_real_weapon"], "delay_ms_after": 300}
+  ],
+  "assertions": [
+    {"type": "event_field_count_at_least", "event": "weapon.attack.result", "field": "accepted", "equals": true, "minimum": 3},
+    {"type": "event_absent", "event": "weapon.attack.weapon_not_equipped"},
+    {"type": "event_count_at_least", "event": "server.death.transition", "minimum": 3},
+    {"type": "event_count_at_least", "event": "weapon.spawn.equipped_applied", "minimum": 3},
+    {"type": "event_present", "event": "weapon.equip.command_rejected"}
+  ],
+  "timeout_seconds": 600
+}

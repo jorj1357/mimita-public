@@ -596,6 +596,29 @@ void engineTickNet(Engine& engine, float dt)
                 {
                     printf("[CLIENT MAP ERROR] failed to load map=%s attempt=%u retryMs=500\n",
                            requiredPath.c_str(), mpContext.mapLoadAttempts);
+                    // Fail visibly instead of silently continuing on the stale
+                    // world: surface the missing asset to the player and stop
+                    // retrying once the missing-asset condition is certain.
+                    if (mpContext.mapLoadAttempts == 1 ||
+                        mpContext.mapLoadAttempts == 10 ||
+                        mpContext.mapLoadAttempts == 30)
+                    {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Network, StructuredLevel::Errors,
+                            "network.client-map-load-failed", "",
+                            "unable to load server-required map; not reporting ready",
+                            mpContext.tick,
+                            {{"required_map_id", mpContext.requiredMapId},
+                             {"required_path", requiredPath},
+                             {"load_attempts", mpContext.mapLoadAttempts}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
+                    if (mpContext.mapLoadAttempts >= 30)
+                    {
+                        mpContext.connectionStatus =
+                            "Map asset missing: " + mpContext.requiredMapId;
+                        mpContext.lastMapLoadAttemptMs = now + 30000;  // stop retrying
+                    }
                 }
                 GAME_STATE = GAME_PLAYING;
                 mpContext.waitingForMapLoad = false;

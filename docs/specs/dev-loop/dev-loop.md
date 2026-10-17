@@ -249,6 +249,13 @@ Current source has several distinct waits and costs:
   depends on changed files, compiler cache hits, and build state.
 - `publish_build()` validates and copies the executable and runtime DLLs into
   a numbered build directory after compilation.
+- process-identity/liveness helpers (`powershell Get-CimInstance`) are invoked
+  from the status render path. When the server is adopted (daemon restart while
+  a persistent server keeps running), this once spawned a helper process per
+  render, several per second (a visible PowerShell window flood; see 10.1). A
+  single `state()` must query server liveness once and reuse it, and
+  `windows_process_identity()` must cache its result for a short TTL. The
+  steady-state target is no helper process at all (10.1).
 
 These stages mean the code intentionally trades some edit-to-build delay for
 lower background polling during gameplay, safe build completion, artifact
@@ -431,6 +438,46 @@ during a bounded launch monitor it must record:
 The loop must never click an OS security prompt. If the required firewall rule
 is missing, the result is an actionable diagnostic or a controlled failure,
 not a false `RUNNING` success.
+
+### 10.1 Helper subprocess and console hygiene
+
+The dev loop spawns short-lived helper processes (process enumeration/identity,
+`taskkill`, `--versioninfo`, and the incremental build). When the daemon runs
+detached it has no console, so a console helper started with a plain
+`subprocess` call allocates a new console window. Because process identity was
+queried from the status render path, this produced a visible flood of PowerShell
+windows (several per second) during daemon start/restart.
+
+Contract:
+
+- Every short-lived helper subprocess must be created with no visible console:
+  `creationflags=CREATE_NO_WINDOW` and a `STARTUPINFO` with
+  `STARTF_USESHOWWINDOW`/`SW_HIDE` (plus `close_fds=True`).
+- A helper process must never allocate a visible window, steal focus, or become
+  the foreground window. This holds for headless, visible, and detached daemon
+  modes alike.
+- The console policy in this section applies to the loop's own helpers as well
+  as the game server/client; "child console hidden" is not limited to the game.
+- Process identity/liveness must not be a subprocess-per-status-render; see the
+  polling-cost rule in section 5.1.
+
+Target implementation (removes PowerShell entirely). The current helper uses
+`powershell -Command Get-CimInstance Win32_Process`. The intended steady-state
+implementation uses Win32 APIs directly through `ctypes` and spawns nothing:
+
+- liveness: `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)` and
+  `GetExitCodeProcess == STILL_ACTIVE` (the watcher already does this);
+- executable path: `QueryFullProcessImageNameW`;
+- enumeration for the checkout lock: `CreateToolhelp32Snapshot` +
+  `Process32FirstW`/`Process32NextW` filtered by the python executable;
+- command line (only needed to confirm a `--server` launch): read it once from
+  the persisted `server-owner.json` marker, or via
+  `NtQueryInformationProcess(ProcessCommandLineInformation)`. Do not re-query it
+  at render frequency.
+
+Until that migration, helpers must at minimum be spawned hidden and cached
+(section 5.1). The migration is complete only when no `powershell`, `wmic`, or
+`tasklist` process is created at steady state.
 
 ## 11. Structured runtime evidence
 
@@ -994,12 +1041,16 @@ acceptance claim.
 
 ## 19. Why the dev-loop sometimes closes or disappears
 
-The loop has two different lifetimes that must not be confused:
+The loop has several different lifetimes that must not be confused:
 
-1. The Python daemon owns the watcher, control socket, status file, build
-   worker, and dev-loop-launched client.
-2. The dedicated server has an independent lifetime and may remain after the
-   client or Python daemon stops.
+1. The visible dashboard is a reconnectable view; closing it does not stop the
+   dev-loop daemon.
+2. The Python dev-loop daemon owns the source watcher, control socket, status
+   file, build worker, and dev-loop-launched client.
+3. `devscripts/dev-loop-watch.py` is the process watchdog that restarts a dead
+   or safely replaceable daemon; it is not a second build/game controller.
+4. The dedicated server has an independent lifetime and may remain after the
+   client, dashboard, or Python daemon stops.
 
 The current implementation enters its shutdown path when the daemon receives
 `Q`, Ctrl-C/console termination, an unrecovered exception, or an external
@@ -1009,14 +1060,17 @@ control socket, writes a stopped status, and leaves the persistent server.
 still alive; it cannot revive a closed Python process. `--headless` hides the
 game client and consoles; it does not make the Python daemon persistent.
 
-The required design is one self-starting entry point, not a separate
-supervisor program. An AI call such as
+The required design is one self-starting user/AI entry point, not a second
+supervisor application that the user must manage. The existing
+`devscripts/dev-loop-watch.py` is the watchdog helper in this design. An AI call such as
 `python devscripts/dev-loop.py --command "agent.move 1 0 120"` is both the
-command interface and the recovery entry point:
+command interface and recovery entry point; opening the desktop shortcut is the
+visible dashboard entry point:
 
-- The entry point checks whether this checkout already has one healthy daemon
-  by checking its PID, authenticated control socket, heartbeat, run, and
-  source identity.
+- The entry point ensures the one watchdog and one healthy daemon for this
+  checkout, checking PID, authenticated control socket, heartbeat, run, and
+  source identity. The desktop entry also opens or reconnects the visible
+  dashboard; an AI command does not open a dashboard.
 - If the daemon is healthy, the entry point sends the request to it and exits
   with the request result.
 - If the daemon is absent, stale, or has a different script identity, the
@@ -1035,42 +1089,54 @@ command interface and the recovery entry point:
   `server_alive`.
 - A control request can explicitly stop the client, server, or whole daemon;
   normal client exit must not silently stop the server.
-- The script itself launches its background daemon in a durable process
-  session. Its stdout and stderr go to a durable log. Closing the short-lived
-  command window does not close the daemon.
+- The entry point starts the daemon in a durable process session and ensures
+  the watchdog is available. Daemon stdout/stderr go to a durable log. Closing
+  the short-lived AI command window or the dashboard does not close the daemon.
 - The loop refuses to start a competing daemon and reports the existing PID,
   status path, control port, journal path, and recovery instructions.
 
-This design keeps the loop running continuously during AI work without asking
-the user to keep a second supervisor application open. If Windows, a user, or
-an error still closes the daemon, the next `--command`, `--scenario-file`, or
-`--ensure-running` call must restore it before sending work. No software can
-promise that a process is literally impossible to close; the guarantee is that
-the normal AI entry point detects a dead loop, explains the last known reason,
-and brings up one healthy replacement before proceeding.
+This design keeps the loop available during AI work without asking the user to
+keep the dashboard open as a lifetime anchor or manage a second supervisor
+application. The watchdog keeps the daemon alive during the Windows session. If
+Windows, a user, or an error still closes the watchdog or daemon, the next
+`--command`, `--scenario-file`, or `--ensure-running` call must restore the
+watchdog/daemon before sending work. No software can promise that a process is
+literally impossible to close; the guarantee is that the normal AI entry point
+detects missing processes, explains the last known reason, and ensures exactly
+one healthy replacement before proceeding.
 
 ### 19.1 The exact process topology
 
-The implementation and every future investigation must treat these as three
-different processes with three different lifetimes:
+The implementation and every future investigation must distinguish the
+dashboard, one-shot command entry point, watchdog, daemon, game client, and
+dedicated server. The dashboard is presentation only; the watchdog owns daemon
+recovery; the daemon remains the only build/game/control authority:
 
 ```text
-AI/task runner repeatedly calls dev-loop.py
-  -> short-lived dev-loop.py command entry point
-       -> starts the same script in background daemon mode if needed
-       -> sends one request to the single Python dev-loop daemon
-            -> dev-loop-launched MiMITA client
-            -> dev-loop-launched dedicated server
+Desktop shortcut -> dev-loop.py dashboard entry
+  -> ensure dev-loop-watch.py watchdog
+  -> ensure one dev-loop.py daemon
+  -> attach visible terminal dashboard to daemon status
+
+AI/task runner -> short-lived dev-loop.py command entry point
+  -> ensure watchdog/daemon if absent; otherwise reuse them
+  -> send one request to the same Python dev-loop daemon
+       -> dev-loop-launched MiMITA client
+       -> dev-loop-launched dedicated server
+
+dev-loop-watch.py -> monitor/restart only the identified dev-loop daemon
 ```
 
 The responsibilities are deliberately separated:
 
-| Process | Owns | May restart | Must not silently restart or kill |
+| Process/role | Owns | May restart | Must not silently restart or kill |
 |---|---|---|---|
-| dev-loop.py command entry point | ensure one matching daemon, start it if absent, forward one command/scenario | the same script in background daemon mode | unrelated Python processes, unrelated game/server processes |
-| Python dev-loop daemon | file watcher, build worker, control socket, status, command queue, owned client lifecycle | its owned client when `--auto-restart` is enabled; itself only through one controlled replacement | an unverified server or duplicate command |
+| dev-loop.py dashboard entry | ensure watchdog/daemon and attach one visible view | the dashboard view only | unrelated Python processes, game/server processes |
+| dev-loop.py command entry | ensure one matching watchdog/daemon and forward one command/scenario | the same script in background daemon mode | unrelated Python processes, unrelated game/server processes |
+| dev-loop-watch.py | watchdog lock, daemon liveness/source identity, bounded daemon recovery | the identified dev-loop daemon only | a second daemon, unverified server, or healthy client/server pair |
+| Python dev-loop daemon | file watcher, build worker, control socket, status, command queue, owned client lifecycle | its owned client when `--auto-restart` is enabled; itself only through controlled replacement | an unverified server or duplicate command |
 | MiMITA client | gameplay, terminal registry, fixed-tick input, animation, snapshots | only through the daemon's controlled launch/recovery path | the Python daemon or dedicated server |
-| dedicated server | authoritative server state and server tick | only through explicit server replacement/stop policy | merely because the client or daemon exits |
+| dedicated server | authoritative server state and server tick | only through explicit server replacement/stop policy | merely because the client, dashboard, watchdog, or daemon exits |
 
 An implementation must never use “the EXE is open” as proof that the dev loop
 is available. The minimum availability check is:
@@ -1154,39 +1220,217 @@ controlled replacement. The important contract is that the old interpreter
 cannot continue presenting itself as the current daemon after its source
 identity changed.
 
-### 19.4 Visible dev-loop daemon versus visible game
+### 19.4 Visible terminal dashboard, daemon, and watchdog
 
-`launch_visibility=visible` applies to the MiMITA client window. It does not
-promise a separate dev-loop console window. The current client/server launch
-policy also uses `CREATE_NO_WINDOW` for child consoles, so a user may see the
-game while seeing no separate dev-loop item in the Windows taskbar.
+The intended desktop experience is: the user opens the existing shortcut to
+`devscripts/dev-loop.py`, sees a real terminal window with a live rainbow status
+display, and can leave that window open to watch builds and game runs. The
+display must show whether a build is running, the latest and active build IDs,
+whether the game client and server are alive, the selected mode, and the exact
+`events.jsonl` path. It must be a readable terminal, not a transparent or blank
+window. This is a separate window from the MiMITA game.
 
-If humans must watch the AI commands, the script needs a visibility option for
-its own background daemon window:
+The system has three distinct roles. Keep `devscripts/dev-loop.py` as the
+canonical entry point and the single owner of build/run/control state. Keep
+`devscripts/dev-loop-watch.py` as the detached watchdog that ensures the
+dev-loop daemon is running. Add a dashboard view that attaches to the daemon
+status; it may be a mode of the existing script or a small presentation helper,
+but it must not become a second build/game owner. Do not add a second watchdog
+or competing daemon architecture.
 
 ```text
-daemon_visibility     = visible | hidden
-client_visibility     = visible | headless
-server_console        = hidden | visible
+Desktop shortcut -> dev-loop.py entry point -> ensure watchdog + one daemon
+                 -> open/attach one visible terminal dashboard
+
+dev-loop-watch.py (background watchdog) -> restart one failed/stale daemon
+
+AI calls dev-loop.py --command / --scenario-file
+  -> connect to that same daemon; do not open another dashboard
+  -> daemon runs normal build/game/scenario owners
+  -> events.jsonl records correlated evidence
+  -> dashboard shows current status and recent output
 ```
 
-For `daemon_visibility=visible`:
+The desktop shortcut must not rely on Windows' `.py` file association or
+inherited stdout to decide whether a terminal appears. Its normal launch must
+explicitly open or attach to a supported Windows terminal/console host and
+connect the dashboard to the one daemon. Prefer Windows Terminal with a
+dedicated opaque profile; use a standard Windows console if that host is
+unavailable or cannot guarantee readable output. Do not use `pythonw.exe` or a
+transparent terminal profile for the visible dashboard. Enable
+virtual-terminal color/control support when available. If rainbow rendering is
+unsupported, show the same complete status in plain text. Refresh the status in
+place instead of printing the same status block on each poll. Give the window a
+stable title containing the checkout name and run ID.
 
-- launch the daemon from the entry point in its own durable Windows
-  console/process group;
-- keep stdout and stderr attached to a durable log as well as the console;
-- give the console a stable title containing the checkout and run ID;
-- do not use closing the console as the normal way to stop the daemon;
-- show the control port, daemon PID, client PID, server PID, build identity,
-  and journal path in the status display.
+Dashboard and game visibility are independent:
 
-For `daemon_visibility=hidden`, the same records must still exist in the
-durable log and status file. Hidden operation is not allowed to reduce the
-available evidence.
+```text
+dashboard_visibility = visible | hidden
+client_visibility    = visible | headless
+```
 
-The game being visible proves only that the client window exists. It does not
-prove that the Python command socket is alive or that the AI command reached
-the gameplay owner.
+The normal desktop shortcut defaults to `dashboard_visibility=visible`.
+`--headless` and the existing game visibility toggle affect only the game
+window. Hiding the game must leave the dashboard visible. AI command and
+scenario calls use the control socket and do not create a dashboard for each
+request.
+
+The daemon must remain available while the Windows user session and host are
+running, even if the dashboard is closed or restarted. Closing the dashboard
+detaches the view; it does not stop the daemon, client, or server. The existing
+watchdog is responsible for detecting a dead daemon, recording its exit reason,
+and restarting exactly one daemon with bounded recovery. It must preserve a
+healthy identified game/server pair and must not create duplicates. A dashboard
+reopen reconnects to the current daemon and fetches current state. The next
+shortcut or AI invocation must be able to start the watchdog/daemon if absent
+and adopt only a run whose identity is verified. Do not promise persistence
+across Windows shutdown, logoff, or power loss.
+
+Show at minimum: watchdog and daemon health/heartbeat, their role labels and
+PIDs, build phase and latest-versus-running build identity, client/server
+status and PIDs, game uptime, mode, game-window visibility, run ID, last
+error/recovery action, and journal path. For each Python process, show its
+script path as well as the PID so the user can match it to Task Manager. Use
+stable human-readable role names: `MiMITA Dev Loop Watchdog`, `MiMITA Dev Loop
+Daemon`, and `MiMITA Dev Loop Dashboard`.
+
+The status display is a fixed, non-scrolling dashboard. Keep each status field
+on a stable row and update that row in place; never append the full status block
+again just because uptime or another value changed. A compact layout should
+make it easy to select and copy the text. Provide a dashboard-only pause/freeze
+control so the user can select or copy a stable snapshot while the watchdog,
+daemon, game, and scenario continue running. Resuming the display must refresh
+from current state and mark when the view was refreshed; it must not present a
+frozen `RUNNING` value as current. Put meaningful new activity in a separate
+bounded output area, rather than mixing repeated status refreshes into the
+scrollback.
+
+On Windows, a Python process normally remains `python.exe` in Task Manager's
+Image Name column. Do not pretend that a script can rename that executable
+image. Pass a stable role marker in each managed process command line (for
+example, `--dev-loop-role=watchdog`, `--dev-loop-role=daemon`, or
+`--dev-loop-role=dashboard`). The dashboard must show the role label, PID,
+interpreter image name, role marker, and exact script path. In Task Manager, the
+Image Name may still be `python.exe`, but its Command Line column must
+unambiguously show the role marker and script. Keep the initial implementation
+Python-first and cross-platform; do not add a compiled per-role wrapper solely
+to change the Task Manager Image Name. If a distinct native process image later
+becomes a hard requirement, document and review that platform-specific tradeoff
+separately.
+
+If the daemon is unavailable, show that state and retry or provide an actionable
+error; never leave stale `RUNNING` status displayed as current. Keep the status
+file and durable logs usable when the dashboard is hidden or disconnected.
+
+#### Implementation status (2026-10-17)
+
+Implemented:
+
+- `devscripts/dev-loop.py` is one entry point with roles selected by flags:
+  `--daemon` runs the daemon, the default (and `--dashboard`) opens the visible
+  dashboard, and `--command`/`--scenario-file`/`--request launch`/`--ensure-running`
+  are one-shot control clients.
+- The entry point ensures exactly one `devscripts/dev-loop-watch.py` watchdog
+  (started detached with `--dev-loop-role=watchdog`) and one daemon (started by
+  the watchdog with `--daemon --dev-loop-role=daemon`), waits for the
+  authenticated control endpoint, and never starts duplicates (locks prevent
+  them). `--status` remains read-only.
+- `--command`/`--cmd` sends one command, waits for the correlated
+  `dev-loop.command.delivered`/`terminal.command.completed` (or a reasoned
+  rejection) from the exact live journal, prints the result, and opens no
+  dashboard.
+- The dashboard renders a fixed, non-scrolling status area refreshed in place,
+  shows watchdog/daemon/dashboard roles, PIDs, interpreter image name, script
+  paths, build phase and latest/running build, server/client state and uptime,
+  mode, run id, game-window visibility, last error/recovery message, the exact
+  `EVENTS_JSONL_PATH`, and a bounded recent-activity area. `P` freezes, `R`
+  resumes/refreshes, and `Q` quits only the view. The title names the checkout.
+- `devscripts/dev_loop_terminal.py` owns the platform terminal work: it enables
+  Windows virtual-terminal processing, sets the window title, and prefers to
+  relaunch the dashboard in an opaque Windows Terminal window, falling back to
+  the current Windows console when Windows Terminal is unavailable.
+- Dashboard attach/detach and watchdog/daemon start/recovery are recorded as
+  categorized `dev-loop.dashboard.*` / `dev-loop.watcher.*` events in the
+  canonical journal; no parallel gameplay log is created.
+
+Not yet exercised in this environment: the Windows Terminal relaunch path
+(`wt.exe` was not installed on the validating machine, so the standard-console
+fallback was used), and the human visual reading of the live window.
+
+#### Acceptance
+
+1. Opening the canonical shortcut produces one real visible terminal with live
+   status; it never substitutes a blank/transparent window. Rainbow colors are
+   used where supported, with complete plain-text fallback.
+2. The dashboard shows labeled watchdog/daemon/dashboard process identities and
+   PIDs, build-in-progress and build success/failure, running/latest build
+   identity, game status and uptime, server state, mode, and journal path. The
+   Task Manager Command Line column clearly distinguishes watchdog and daemon
+   roles even if both have `python.exe` as their Image Name.
+3. Status refresh changes fixed rows in place; it does not add repeated status
+   blocks or force old text to scroll away. The user can pause/freeze the view,
+   select/copy it, and resume without pausing game or scenario execution.
+4. Hiding the game leaves the dashboard visible; dashboard visibility does not
+   silently change game visibility.
+5. Closing/reopening the dashboard leaves the watchdog and daemon available,
+   reconnects to the one current daemon, and displays current rather than stale
+   status.
+6. Repeated shortcut launches and AI `--command`/`--scenario-file` calls reuse
+   exactly one watchdog and daemon and do not duplicate builds, clients,
+   servers, or scenario requests.
+7. A daemon crash produces a recorded exit/recovery chain. Watchdog recovery
+   restores the control endpoint or reports a clear failure. An explicit stop
+   remains stopped until a later explicit start/ensure request.
+8. Runtime acceptance names the exact executable/build, watchdog and daemon
+   identities, client/server PIDs, and `EVENTS_JSONL_PATH`. A visible dashboard
+   alone is not proof that a command reached the gameplay owner.
+
+### 19.4a AI restart authority for the dev loop (always allowed)
+
+An AI agent is always allowed to restart the dev-loop daemon and any
+dev-loop-owned game process whenever it wants or needs to, including to pick up
+edited `devscripts/dev-loop.py` code, to clear a stale daemon source identity
+(`DAEMON_SOURCE_MISMATCH`), to recover a wedged control socket, or before a live
+scenario. This is an explicit, standing authorization and does not require
+asking first.
+
+The two hard conditions on that authorization are:
+
+1. **Restart it after.** The agent must start a working dev-loop daemon before
+   finishing the step, and must never leave the dev loop dead or absent.
+2. **Keep it running.** After the restart, verify one healthy daemon owns the
+   checkout lock and reports a live control endpoint/status. If a restart
+   fails, keep trying or report the failure loudly; do not silently continue
+   with no loop.
+
+Do not restart processes that are not owned by this checkout. Preserve
+unrelated running processes, and preserve a healthy matching game pair unless
+the change or scenario explicitly requires relaunching it.
+
+**Always-on watcher (implemented 2026-10-17).** The supervisor is
+`devscripts/dev-loop-watch.py`. It:
+
+- detects the exit of the checkout-owned dev-loop daemon and promptly restarts
+  it from the current `devscripts/dev-loop.py`;
+- detects a daemon whose recorded `daemon_script_hash` (in
+  `.dev/current-run.json`) differs from the on-disk hash and performs the
+  controlled replacement in `19.3`; while a live run is present it defers the
+  replacement by default (`dev-loop.watcher.source-change-deferred`) so a
+  healthy game pair is not replaced, unless `--force-source-change` is set;
+- keeps exactly one daemon alive per checkout (its own lock plus the daemon
+  lock), never spawns a competing/duplicate loop, and clears a stale daemon
+  lock only after confirming its PID is dead;
+- records `dev-loop.watcher.started` / `dev-loop.watcher.restarted` with old/new
+  daemon PID and script hash in the active journal, and logs a visible error if
+  it cannot keep a daemon alive.
+
+Run it detached; it adopts the last-used profile/launch-mode/visibility from
+`.dev/current-run.json` unless overridden, and supports `--once` for a single
+check. The daemon now records `daemon_pid`, `daemon_script_hash`, and
+`daemon_started_utc` in its status/current-run record so a stale daemon is
+detectable (`DAEMON_SOURCE_MISMATCH`). The AI restart authority above remains the
+fallback if the watcher itself is not running.
 
 ### 19.5 Why a command can be visible but have no gameplay effect
 
@@ -1494,12 +1738,13 @@ gates. The game client then uses its regular networking path for server-owned
 actions. This separation lets AI request a command without typing into the
 visible game window.
 
-Current behavior and desired behavior differ: today `--command` connects to an
-already-running dev-loop and returns an error if it cannot find one. The spec's
-target is for that same entry point to start one daemon if needed, wait until
-its socket is ready, then send the command once. This is still one script and
-one persistent daemon, not a second supervisor app. `--status` stays
-read-only.
+Implemented (2026-10-17): `--command`/`--cmd` and `--scenario-file` now first
+ensure the watchdog and daemon exist, start them if absent, wait for the
+authenticated control endpoint, then send the request exactly once and (for
+`--command`) wait for the correlated client result. This is still one script and
+one persistent daemon, not a second supervisor app. `--status` stays read-only
+and never starts the daemon. The visible dashboard is the default entry for the
+desktop shortcut; AI command calls never open a dashboard.
 
 ## 20. Required implementation phases
 
@@ -1540,13 +1785,27 @@ or phase 6 is complete.
 The following remain distinct open requirements unless a fresh runtime record
 proves them:
 
-- the Python daemon does not hot-reload its own source;
-- work commands do not yet start or recover a missing daemon;
-- a visible dev-loop daemon console is not implied by client visibility;
+- the Python daemon does not hot-reload its own source (the watchdog replaces
+  it only on a source-hash change, per section 19.4a);
+- a visible dev-loop dashboard is not implied by client visibility; both are
+  independent;
 - a command response is not a gameplay assertion;
 - a published build is not the same as the running client build;
 - `scenario.finished` is not a pass unless assertions were actually evaluated
   and reported with expected/actual values.
+
+Implemented and runtime-verified on 2026-10-17 (see sections 19.4, 19.8, 22.1):
+
+- work commands (`--command`/`--cmd`) and `--scenario-file` now ensure one
+  watchdog and daemon, start them if absent, wait for the authenticated control
+  endpoint, and send the request exactly once;
+- repeated entry-point calls reuse the same watchdog/daemon PIDs (no
+  duplicates);
+- a stopped daemon is recovered once by the watchdog and the next command
+  returns a reasoned result instead of a stale success;
+- the visible dashboard render, freeze/resume, and close-without-stopping the
+  daemon were exercised. The Windows Terminal relaunch path and the human visual
+  reading of the live window remain unverified in this environment.
 
 ## 21. Proposed AI test workflow
 
@@ -1613,34 +1872,39 @@ client. The `ss` alias is a game-terminal alias defined in
 | `--profile NAME` | Selects a profile from `devscripts/dev-profiles/`. | Default is `npc-navigation`; used when starting the loop. |
 | `--auto-restart` | Enables recovery of the game client after it exits. | Does not restart the Python dev-loop daemon. |
 | `--launch-mode NUMBER` | Selects a numbered server/client launch configuration. | Modes are in `devscripts/dev-launch-modes.json`. |
-| `--headless` | Hides the game client window on its next launch. | Does not hide the dev-loop terminal that was started interactively. |
+| `--headless` | Hides the game client window on its next launch. | Affects only the game window; the visible dashboard is independent (section 19.4). |
 | `--visible` | Shows the game client window on its next launch. | Does not guarantee a separate daemon window or taskbar item. |
-| `--status` | Prints the last saved status. | Read-only; current status fields do not yet prove Python daemon liveness. |
+| `--status` | Prints the last saved status. | Read-only; it never starts or wakes the daemon. |
 | `--json` | Prints status or control response as JSON. | Useful with `--status`, `--request`, `--command`, or `--scenario-file`. |
-| `--command "GAME COMMAND"` | Queues one game-terminal command in the running client. | Today it requires a running dev-loop daemon and a ready client. Self-start recovery is specified in section 19 but is not implemented yet. |
-| `--scenario-file PATH` | Queues a repository-local Markdown/JSON scenario. | Today it also requires the daemon; see the self-start recovery requirement in section 19. |
+| `--command "GAME COMMAND"` / `--cmd "GAME COMMAND"` | Sends one game-terminal command to the daemon, waits for the correlated result, prints it, and exits. | Ensures one watchdog/daemon first; never opens a dashboard; sends the command once. `--cmd` is an alias. |
+| `--scenario-file PATH` | Runs a repository-local Markdown/JSON scenario and returns its verdict. | Ensures one watchdog/daemon first; opens no dashboard. |
+| `--ensure-running` | Ensures one watchdog and one daemon exist, prints status, and exits. | Idempotent; never starts a duplicate. |
 | `--request launch` | Requests a build if needed, then launches the selected mode. | May include `--launch-mode NUMBER`. |
 | `--request stop-client` | Stops the dev-loop-owned client. | Leaves a healthy dedicated server running. |
 | `--request stop-server` | Requests stop of the identified dev-loop server. | Refuses to stop an unverified process. |
 | `--request stop` | Requests shutdown of the Python dev-loop daemon. | The server has its own lifetime and may remain running. |
+| `--dashboard` (default with no control option) | Opens/attaches the visible dashboard view. | This is the desktop-shortcut path; it ensures the watchdog/daemon then renders status. |
+| `--daemon` | Runs the build/game/control daemon in this process. | Used by the watchdog and the entry point; open by the shortcut only via the dashboard. |
+| `--dev-loop-role {watchdog,daemon,dashboard}` | Records a stable role marker in the process command line. | Windows Task Manager still shows `python.exe` as the image name; the Command Line column carries the role. |
+| `--no-terminal-relaunch` | Renders the dashboard in the current console. | Suppresses the Windows Terminal preference. |
+| `--dashboard-frames N` | Renders `N` dashboard frames then exits. | Bounded self-test aid; `0` runs until `Q`. |
+| `--command-timeout S` | Seconds to wait for a command result. | Default 15. |
 
-Examples that work with the current implementation when the daemon is already
-running:
+Examples:
 
 ```text
 python devscripts/dev-loop.py --status --json
 python devscripts/dev-loop.py --request launch --launch-mode 1
-python devscripts/dev-loop.py --command "versioninfo"
+python devscripts/dev-loop.py --command "agent.snapshot start"
+python devscripts/dev-loop.py --cmd "agent.move 1 0 120"
 python devscripts/dev-loop.py --scenario-file C:\mimita-v9\devscripts\scenarios\readmewhat.md
+python devscripts/dev-loop.py --ensure-running
 python devscripts/dev-loop.py --request stop-client
-python devscripts/dev-loop.py --request stop-server
-python devscripts/dev-loop.py --request stop
 ```
 
-The planned behavior is that `--command` and `--scenario-file` first ensure
-the daemon is alive, start one if absent, wait for readiness, and then forward
-the request once. Until that behavior is implemented, do not read the examples
-above as proof that the command can launch a missing daemon.
+`--command`/`--cmd` and `--scenario-file` ensure the watchdog and daemon are
+alive, start one if absent, wait for the authenticated control endpoint and
+readiness, then forward the request exactly once. `--status` stays read-only.
 
 ### 22.2 Interactive controls shown by the running loop
 
@@ -1651,6 +1915,17 @@ above as proof that the command can launch a missing daemon.
 | `V` | Toggle the game client's visible/headless setting for the next launch. |
 | `A` | Toggle client auto-restart. This does not keep the Python daemon alive. |
 | `Q` | Shut down the dev-loop daemon through its normal shutdown path; the dedicated server may remain alive. |
+
+A detached daemon (started by the watchdog or the entry point) has no
+interactive console, so these build/launch keys are only live when the daemon
+itself owns a console. The visible dashboard is a separate view with its own
+controls:
+
+| Key | What it does |
+|---|---|
+| `P` | Pause/freeze the dashboard view so the text can be selected/copied; the watchdog, daemon, game, and scenarios keep running. |
+| `R` | Resume the frozen view, refresh from current state, and mark when the view was refreshed. |
+| `Q` | Quit the dashboard only; the watchdog, daemon, client, and server keep running. |
 
 ### 22.3 Where game-terminal commands and aliases live
 

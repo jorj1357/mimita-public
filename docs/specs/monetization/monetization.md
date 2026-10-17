@@ -1,3 +1,127 @@
+2026 10 17 1141 jorj todo explain  tix and 
+
+BC TIX GOT REMOVED FRMO TORLBOX
+WHYYY
+bc makes not enoug moen
+OK SO WHT
+U ALREADT MKAE A BUNCH OF BUX FROM BUIDLERS CLUB
+i 
+genuienly think
+i thiink 
+its doable to do waht roblox does
+with like
+1m  usd in proft
+in 1 uear
+like per uear
+like idk how mcuh taht is per month
+but thats like
+poeples salaries
+like imagine that 
+200k  a uear for like a bunch of poeple like 3 or 4
+moderation things
+platform handlign things
+its 
+it is SO doable 
+
+so ueah
+if we do tix
+or a thing thats like 
+sometihng that u get for logging in each day  BTW
+BTW
+BTW
+I DONT LIKE THAT BEACSUE IT SUCKS 
+things that are like Hey log in to get a reward :)
+IT SUCSK SSSSSSSS
+IM GONA LOG IN IF  ITS FUN NOT BECasue i ge a reward
+dude. 
+Dude.
+ ok so what
+ hmmmmmm
+idk
+
+if we do that
+we ar eognna it will NOT EVER be removed
+costco hotdog 1.50 
+awlas 1.50
+dont even care
+its alwas 1.50 
+
+also this taling to ai 2026 10 17 1145
+how is costco doing 1.50 hotdog  ? does that actuall make them lsoe moeny? how do they gain mney
+how come  ubisoft stock is down etc 
+what makes stock go up or down 
+
+how to do mimita like  
+i want to do that 
+2026  if we offer sometihng like a platform wide thing 
+decentralized also id liek to do liek a coin 
+dont even ahve to use usd becasue thatfeels like lame and not controllable
+using a coin 
+that should get like
+if u play or log in at least once every 24h then u get like 0.01 of the coin 
+or like 10 
+idk
+
+id like to see prices that are like 999,999,999  instead of like 12.22942
+it looks nicer 
+
+ then  we should do it liek that i really liek that stuf especially the 
+long standing numbers
+like ever since etc date, it has been this much 
+i wanan do somethign liek that for mimita but i dont know what 
+itd have to be somethignwith super value , cant be cosmetic cant be trend based 
+has to be liek work based
+like, 
+like a server being online costs X per hour online
+or
+data saving is X per send
+im not sure
+but a htodog value = i eat it and i dont starve
+instead of  to me cosmetic value = i get it and i look cool 
+not sure tho
+like crptocurrenc with  a unclear purpose
+aside from other ppl seeing value in it 
+
+id really like 
+contribution to be rewarded heavily
+and fair verified competiiton or practice
+or starting at like
+nto using bronze silver etc
+id like to use ranks liek F thru S
+like D- , A+ C-, C, B-, S+ 
+and S+ is like faceit level 10 , l ike SSL in rocket league etc 
+but something insttnly understadnabel
+
+like rank somehting, out of sometihng
+inherently inside of the rank
+like 
+top 78% top 0.02% top 0.01% 
+in mmr or something 
+id also like it to be like  mmr can just go up infinitely or 
+2.147blimit maybe
+
+so in the future hwen mmr is like
+cuz u can start at like 2000 mmr in mge, but people get like 3500 mmr
+i think it can just go up over and oevr 
+as time goes on 
+just have to be super good 
+
+i think should incentivize  creating contibutions etc out of the joy of  uour heart and the currency is a byproduct of the  love you  used to make ti 
+
+i did tht for music but i keep thinking like who is gonna just do that for no reason just make music or make smth for no reason nom oney
+
+if mimita made  0 usd i think i woul dstill be wroking on it tho 
+id still be plauing making music if made 0 usd 
+it took a long itme to make usd at all idk 
+
+so how to mkae inflation not happen?
+inflation is  a byporuduct, frmo what i unserstand
+
+inflation is emergent,  coin number is emergent from just sometihng u decide , 
+dont just incerase coin amount to make ppl richer, dont arbitrarily delete coins although makes sense? matbe?
+if coins not used i like that, so an account htats not being used or used to contribute  has coins decay over time
+and like , rich wealhty people are the ones who share the most and contribute the most or compete the most and practice or have improved the most 
+
 2026 10 08 1344 jorj todo explain better enshittification
 
 from wikipedia as of right now

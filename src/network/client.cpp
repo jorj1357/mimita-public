@@ -55,6 +55,14 @@ void copyName(char (&dst)[MAX_NAME_BYTES], const std::string& name)
     std::strncpy(dst, name.c_str(), sizeof(dst) - 1);
 }
 
+// Map ids use their own budget (content-defined GLB basenames can exceed
+// MAX_NAME_BYTES), so they need a matching-width copy helper.
+void copyMapId(char (&dst)[MAX_MAP_ID_BYTES], const std::string& mapId)
+{
+    std::memset(dst, 0, sizeof(dst));
+    std::strncpy(dst, mapId.c_str(), sizeof(dst) - 1);
+}
+
 } // namespace
 
 int runClient(const LaunchOptions& options)
@@ -206,7 +214,8 @@ int runClient(const LaunchOptions& options)
                 ready.header.playerId = localPlayerId;
                 ready.header.transformEpoch = transformEpoch;
                 ready.assignedPlayerId = localPlayerId;
-                copyName(ready.mapId, welcome->mapId[0] ? welcome->mapId : clientMap.c_str());
+                copyMapId(ready.mapId,
+                          welcome->mapId[0] ? std::string(welcome->mapId) : clientMap);
                 sendto(sock, (const char*)&ready, sizeof(ready), 0,
                        (sockaddr*)&serverAddr, sizeof(serverAddr));
                 ++packetsSent;

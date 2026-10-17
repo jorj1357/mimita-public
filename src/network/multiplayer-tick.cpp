@@ -1071,6 +1071,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySentForPlayerId = 0;
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.map-required", "",
+                "server-required map received", welcome->header.tick,
+                {{"source", "welcome"},
+                 {"required_map_id", std::string(welcome->mapId)},
+                 {"assigned_player_id", ctx.localPlayerId},
+                 {"server_build_id", std::string(welcome->runtimeBuildId)}},
+                __FILE__, __LINE__, __FUNCTION__);
             // Reset reconciliation state for new connection
             ctx.hasLocalServerPosition = false;
             ctx.localPlayerReconciled = false;
@@ -1136,6 +1145,14 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySentForPlayerId = 0;
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.map-required", "",
+                "server-required map received", accept->header.tick,
+                {{"source", "join_accept"},
+                 {"required_map_id", std::string(accept->mapId)},
+                 {"assigned_player_id", ctx.localPlayerId}},
+                __FILE__, __LINE__, __FUNCTION__);
             // Reset reconciliation state for new connection
             ctx.hasLocalServerPosition = false;
             ctx.localPlayerReconciled = false;
@@ -1570,6 +1587,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySentForPlayerId = 0;
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.map-required", "",
+                "server-required map changed", ctx.tick,
+                {{"source", "map_change"},
+                 {"required_map_id", std::string(mc->mapId)},
+                 {"duel_id", mc->duelId},
+                 {"map_version", mc->mapVersion}},
+                __FILE__, __LINE__, __FUNCTION__);
             DuelQueue::instance().onMapChange(mc->mapId, mc->duelId, mc->mapVersion);
         }
         else if (header->type == PACKET_KILL_EVENT &&

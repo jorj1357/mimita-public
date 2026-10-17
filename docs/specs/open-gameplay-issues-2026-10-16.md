@@ -1,3 +1,12 @@
+2026 10 17 1211 jorj todo add: the  blood and world imapct effects dont show if the npc hittin gme
+needs to be automatic all the itme
+and no like
+square issues or
+idk what the problem is 
+its like 
+the images ![alt text](image-5.png)
+the pngs are sqaure cut off nto good 
+
 # Open gameplay issue index — 2026-10-16
 
 This index collects user-reported issues and links to the behavior owner. The

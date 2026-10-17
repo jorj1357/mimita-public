@@ -552,11 +552,38 @@ Every request must end in success, rejection, timeout, or cancellation; missing
 evidence fails the scenario. Log equip transitions, attack attempts/results,
 spawn-generation changes, and bounded state snapshots, not every tick.
 
-**Current runner gap:** `devscripts/dev-loop.py --scenario-file` queues a fixed
-command list for an already-ready client. It cannot yet start this lifecycle
-from a cold/unjoined state, wait for event predicates, control the NPC
-deterministically, or evaluate assertions. See section 17 of
-`docs/specs/dev-loop/dev-loop.md` for the runner contract.
+**Runner status (2026-10-17):** `devscripts/dev-loop.py --scenario-file` now
+ensures a live run (reusing a matching run or launching with an optional
+per-scenario map), queues command steps through the daemon, waits for the game's
+execution-complete record, evaluates assertions from the live journal, appends
+`scenario.started`/`scenario.step`/`scenario.assert`/`scenario.finished`, and
+returns nonzero unless passed. See section 17 of
+`docs/specs/dev-loop/dev-loop.md`. Earlier "queues only" language is superseded.
+
+**2026-10-17 result:** with `equippedWeaponId` preserved across respawn and the
+attack validator authorizing on that stable id, the lifecycle passes with real
+runtime evidence:
+
+- reduced scenario `devscripts/scenarios/priority2_equip_respawn_v1.json`
+  (run `20261017_002823`): Rocket Launcher attacks accepted before/after
+  `respawn_all`, no manual re-equip.
+- full multi-life **NPC-kill** scenario on a known-good map
+  (`devscripts/scenarios/priority2_multilife_npc_kill_v1.json`, weapon set 5,
+  hotbar slot 3; run `logs/2026-10-17/20261017_010820/events.jsonl`):
+  27 NPC-caused deaths (`server.death.transition`, hitscan), 27
+  `weapon.spawn.equipped_applied` re-applies of `rocket_launcher`, 5/5 attacks
+  accepted (`accepted=true`, `weapon_def_network_id=8`, `client_slot=3`) without
+  any manual re-equip, `weapon.attack.weapon_not_equipped` = 0.
+- second weapon set (`devscripts/scenarios/priority2_multilife_npc_kill_set3_v1.json`,
+  set 3, hotbar slot 1; run `20261017_010704`): 25 NPC deaths, 6/6 attacks
+  accepted at `client_slot=1`, `weapon.attack.weapon_not_equipped` = 0.
+- each run ends with an invalid identity (`equipweapon not_a_real_weapon`) that
+  is rejected (`weapon.equip.command_rejected`).
+
+The player was made one-hit lethal with the self-only `healthme 1` command so the
+NPC's normal attack path produces the deaths. `npc_spawn` seeds hostile NPCs.
+Fast-death races can reject an individual shot as not-alive; the scenarios wait
+for a fresh respawn before each shot and require a majority of accepted shots.
 
 ### Reusable networking scenario catalog
 

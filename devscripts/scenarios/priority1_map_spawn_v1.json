@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "priority1_map_spawn_v1",
+  "description": "Priority 1: one canonical authoritative map on the reported map id, client load agreement, in-bounds spawn, plus NPC spawn and player respawn.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "mimita-aabb-only-interior-small-v4",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [
+    {"id": "npc_spawn", "command": "npc_spawn", "args": ["1"], "delay_ms_after": 1000},
+    {"id": "respawn_all", "command": "respawn_all", "args": [], "delay_ms_after": 1000},
+    {"id": "snapshot_end", "command": "agent.snapshot", "args": ["p1_end"]}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "map.server-load-success"},
+    {"type": "map_ids_agree"},
+    {"type": "event_present", "event": "network.map-required"},
+    {"type": "event_absent", "event": "network.client-map-not-ready"},
+    {"type": "event_absent", "event": "network.client-map-load-failed"},
+    {"type": "event_absent", "event": "map.load-failed"},
+    {"type": "event_present", "event": "spawn.server-selected"},
+    {"type": "spawn_in_bounds"},
+    {"type": "event_absent", "event": "spawn.server-no-safe-spawn"},
+    {"type": "event_absent", "event": "spawn.server-refused"}
+  ],
+  "timeout_seconds": 180
+}
