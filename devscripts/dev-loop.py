@@ -50,6 +50,11 @@ STATE_PATH = DEV_ROOT / "state.json"
 CURRENT_RUN_PATH = DEV_ROOT / "current-run.json"
 SERVER_MARKER_PATH = DEV_ROOT / "server-owner.json"
 LOCK_PATH = DEV_ROOT / "dev-loop.lock"
+# Written when a user/dashboard explicitly stops the dev-loop daemon (key Q or
+# --request stop). The watchdog honors it so an explicit shutdown is not
+# immediately undone; a later explicit start (dashboard open or --ensure-running)
+# clears it. See dev-loop spec sections 19.4 and 22.2.
+STOP_INTENT_PATH = DEV_ROOT / "dev-loop-stop-intent"
 PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
 LAUNCH_MODE_PATH = ROOT / "devscripts" / "dev-launch-modes.json"
 # The canonical dev-loop entry/daemon script. Its hash is the daemon source
@@ -143,6 +148,11 @@ WATCH_FILES = (
 
 
 def _rainbow_enabled() -> bool:
+    forced = os.environ.get("MIMITA_DASHBOARD_ANSI", "").strip().lower()
+    if forced in ("1", "true", "yes"):
+        return True
+    if forced in ("0", "false", "no"):
+        return False
     return bool(getattr(sys.stdout, "isatty", lambda: False)())
 
 
@@ -583,6 +593,30 @@ def load_launch_mode(mode_id: str) -> dict:
     return mode
 
 
+def launch_mode_table() -> list[tuple[str, str]]:
+    """Return `(id, name)` launch modes in display order for the dashboard picker."""
+    try:
+        config = read_json(LAUNCH_MODE_PATH)
+    except (OSError, json.JSONDecodeError):
+        return []
+    modes = config.get("modes") if isinstance(config, dict) else None
+    if not isinstance(modes, dict):
+        return []
+    ordered = sorted(
+        modes,
+        key=lambda value: (
+            not str(value).isdigit(),
+            int(str(value)) if str(value).isdigit() else str(value),
+        ),
+    )
+    table: list[tuple[str, str]] = []
+    for mode_id in ordered:
+        mode = modes[mode_id]
+        name = str(mode.get("name", "unnamed")) if isinstance(mode, dict) else "unnamed"
+        table.append((str(mode_id), name))
+    return table
+
+
 def next_build_number() -> int:
     numbers = []
     if BUILD_ROOT.is_dir():
@@ -755,8 +789,6 @@ class DevLoop:
                 f"[DEV] launch_visibility must be visible or headless, got {configured_visibility!r}"
             )
         self.launch_visibility = configured_visibility
-        self.mode_picker_open = False
-        self.mode_picker_input = ""
         # Builds always run while this loop is open. Auto-start only controls
         # whether a successful build or an exited child may launch the EXE.
         self.auto_restart = bool(auto_restart)
@@ -1328,7 +1360,7 @@ class DevLoop:
                 elif request.get("action") == "status":
                     response = {"accepted": True, "state": self.state(self.last_status_value)}
                 else:
-                    request["requested_by"] = "ai"
+                    request.setdefault("requested_by", "ai")
                     self.control_requests.put(request)
                     response = {
                         "accepted": True,
@@ -1377,6 +1409,54 @@ class DevLoop:
                 self.last_message = f"AI launch queued for mode {self.launch_mode_id}"
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("build_queued")
+            elif action == "build-or-launch":
+                # Dashboard key 1: build only when the latest artifact is stale
+                # or missing; otherwise launch the latest published build.
+                if self.latest_stale or self.latest_build is None:
+                    self.manual_launch_requested = True
+                    self.build_pending = True
+                    self.change_event.clear()
+                    self.last_message = "dashboard build/launch queued (stale or missing build)"
+                    self.record_control_event(request, "accepted", self.last_message)
+                    self.save_state("build_queued")
+                else:
+                    self.launch_latest()
+                    self.last_message = "dashboard launched latest build"
+                    self.record_control_event(request, "completed", self.last_message)
+                    self.save_state("launch_latest")
+            elif action == "set-launch-mode":
+                requested_mode = request.get("launch_mode")
+                try:
+                    selected = load_launch_mode(str(requested_mode))
+                except SystemExit as error:
+                    self.last_message = str(error)
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("request_rejected")
+                    continue
+                self.launch_mode_id = str(requested_mode)
+                self.launch_mode = selected
+                self.last_message = (
+                    f"launch mode {self.launch_mode_id} selected: "
+                    f"{selected.get('name', 'unnamed')}"
+                )
+                self.record_control_event(request, "accepted", self.last_message)
+                self.save_state("launch_mode_selected")
+            elif action == "toggle-visibility":
+                self.launch_visibility = (
+                    "headless" if self.launch_visibility == "visible" else "visible"
+                )
+                self.last_message = (
+                    f"launch visibility set to {self.launch_visibility}; applies to the next launch"
+                )
+                self.record_control_event(request, "accepted", self.last_message)
+                self.save_state("launch_visibility_toggled")
+            elif action == "toggle-auto-restart":
+                self.auto_restart = not self.auto_restart
+                self.last_message = (
+                    "auto-start enabled" if self.auto_restart else "auto-start disabled"
+                )
+                self.record_control_event(request, "accepted", self.last_message)
+                self.save_state("auto_start_toggled")
             elif action == "stop-client":
                 self.stop_processes()
                 self.record_control_event(request, "completed", "client stopped")
@@ -1390,6 +1470,11 @@ class DevLoop:
                 self.record_control_event(request, "completed", "server stop requested")
                 self.save_state("server_stopped")
             elif action == "stop":
+                # An explicit dashboard/CLI stop records intent so the watchdog
+                # does not immediately restart the daemon (spec section 19.4).
+                # The watchdog's own replacement stop omits explicit_stop.
+                if request.get("explicit_stop"):
+                    write_stop_intent(str(request.get("requested_by") or "explicit"))
                 self.stop_event.set()
                 self.last_message = "stop requested by AI"
                 self.record_control_event(request, "accepted", self.last_message)
@@ -2153,33 +2238,6 @@ class DevLoop:
         if clear_code:
             self.room_code = None
 
-    def show_launch_modes(self) -> None:
-        try:
-            config = read_json(LAUNCH_MODE_PATH)
-            modes = config.get("modes", {}) if isinstance(config, dict) else {}
-        except (OSError, json.JSONDecodeError) as error:
-            print(f"[DEV] could not read launch modes: {error}")
-            return
-        if not isinstance(modes, dict) or not modes:
-            print("[DEV] no launch modes are configured")
-            return
-        self.mode_picker_open = True
-        self.mode_picker_input = ""
-        print("[DEV] Choose a launch mode. Type the full number and press Enter:")
-        for mode_id in sorted(
-            modes,
-            key=lambda value: (
-                not str(value).isdigit(),
-                int(str(value)) if str(value).isdigit() else str(value),
-            ),
-        ):
-            mode = modes[mode_id]
-            name = mode.get("name", "unnamed") if isinstance(mode, dict) else "unnamed"
-            selected = " (selected)" if str(mode_id) == self.launch_mode_id else ""
-            print(f"[DEV]   {mode_id} = {name}{selected}")
-        print("[DEV] Mode selection changes the next server/client launch.")
-        print("[DEV] Enter mode number (Q cancels): ", end="", flush=True)
-
     def print_status(self, force: bool = False) -> None:
         snapshot = self.state(self.last_status_value)
         status_line = (
@@ -2248,109 +2306,6 @@ class DevLoop:
         if self.status_visible and _rainbow_enabled():
             self._render_status()
 
-    def key_commands(self) -> None:
-        if os.name != "nt":
-            return
-        # A detached daemon (started by the watchdog or the entry point) has no
-        # interactive console; interactive controls are then driven through the
-        # control socket / dashboard instead. Reading the keyboard would either
-        # raise or consume input that belongs to the dashboard.
-        try:
-            if not sys.stdin.isatty():
-                return
-        except (ValueError, OSError):
-            return
-        import msvcrt
-        try:
-            if not msvcrt.kbhit():
-                return
-        except OSError:
-            return
-        key = msvcrt.getwch()
-        if self.mode_picker_open:
-            lowered = key.lower()
-            if lowered == "q":
-                self.mode_picker_open = False
-                self.mode_picker_input = ""
-                print("\n[DEV] launch mode selection cancelled")
-                return
-            if key in ("\r", "\n"):
-                selected = None
-                if self.mode_picker_input:
-                    try:
-                        selected = load_launch_mode(self.mode_picker_input)
-                    except SystemExit:
-                        selected = None
-                if selected is not None:
-                    selected_id = self.mode_picker_input
-                    self.launch_mode_id = selected_id
-                    self.launch_mode = selected
-                    self.mode_picker_input = ""
-                    self.mode_picker_open = False
-                    self.last_message = (
-                        f"launch mode {selected_id} selected: {selected.get('name', 'unnamed')}"
-                    )
-                    self.save_state("launch_mode_selected")
-                    print(f"\n[DEV] selected launch mode {selected_id}: {selected.get('name', 'unnamed')}")
-                    self.print_status(force=True)
-                else:
-                    print(f"\n[DEV] unknown launch mode {self.mode_picker_input}; type a listed number and press Enter")
-                    self.mode_picker_input = ""
-                    print("[DEV] Enter mode number (Q cancels): ", end="", flush=True)
-                return
-            if key == "\b":
-                self.mode_picker_input = self.mode_picker_input[:-1]
-                print(
-                    f"\r[DEV] Enter mode number (Q cancels): {self.mode_picker_input}",
-                    end="",
-                    flush=True,
-                )
-                return
-            if key.isdigit():
-                self.mode_picker_input += key
-                print(
-                    f"\r[DEV] Enter mode number (Q cancels): {self.mode_picker_input}",
-                    end="",
-                    flush=True,
-                )
-                return
-            return
-        key = key.lower()
-        if key == "2":
-            self.show_launch_modes()
-            return
-        if key == "1":
-            if self.latest_stale or self.latest_build is None:
-                self.manual_launch_requested = True
-                self.build_pending = True
-                self.change_event.clear()
-                self.last_message = "manual build retry queued"
-                self.save_state("build_queued")
-                print("[DEV] [1] queued a build retry; stale builds will not be launched")
-            else:
-                self.launch_latest()
-            self.print_status()
-        elif key == "a":
-            self.auto_restart = not self.auto_restart
-            self.last_message = (
-                "auto-start enabled" if self.auto_restart else "auto-start disabled"
-            )
-            self.save_state("auto_start_toggled")
-            print(f"[DEV] auto-start {'ON' if self.auto_restart else 'OFF'}")
-            self.print_status(force=True)
-        elif key == "v":
-            self.launch_visibility = (
-                "headless" if self.launch_visibility == "visible" else "visible"
-            )
-            self.last_message = (
-                f"launch visibility set to {self.launch_visibility}; applies to the next launch"
-            )
-            self.save_state("launch_visibility_toggled")
-            print(f"[DEV] launch visibility {self.launch_visibility.upper()} (next launch)")
-            self.print_status(force=True)
-        elif key == "q":
-            self.stop_event.set()
-
     def run(self) -> None:
         global _status_clear_hook
         _status_clear_hook = self._invalidate_status
@@ -2367,7 +2322,6 @@ class DevLoop:
 
         try:
             while not self.stop_event.is_set():
-                self.key_commands()
                 self.process_control_requests()
                 self.maintain_process()
                 if self.build_pending:
@@ -2397,6 +2351,34 @@ class DevLoop:
 def read_current_run() -> dict | None:
     try:
         value = read_json(CURRENT_RUN_PATH)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def write_stop_intent(reason: str) -> None:
+    """Record that the dev-loop daemon was stopped on purpose."""
+    try:
+        DEV_ROOT.mkdir(parents=True, exist_ok=True)
+        STOP_INTENT_PATH.write_text(json.dumps({
+            "reason": reason,
+            "requested_at": utc_now(),
+            "pid": os.getpid(),
+        }), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_stop_intent() -> None:
+    try:
+        STOP_INTENT_PATH.unlink()
+    except OSError:
+        pass
+
+
+def read_stop_intent() -> dict | None:
+    try:
+        value = json.loads(STOP_INTENT_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
@@ -2956,8 +2938,12 @@ def ensure_running(profile: str, launch_mode, visibility: str):
 
     Duplicates are impossible: the watchdog and daemon each hold a lock, and
     this only starts a process when the corresponding owner PID is absent.
+
+    An explicit start also clears any prior explicit-shutdown intent so the
+    watchdog resumes keeping a daemon alive (spec section 19.4).
     """
     events: list[dict] = []
+    clear_stop_intent()
     wpid = watcher_pid()
     if not (wpid and pid_alive(wpid)):
         started = start_watchdog_detached(profile, launch_mode, visibility)
@@ -3074,8 +3060,14 @@ def _recent_activity(events_path: str, limit: int = 3) -> list[str]:
     return list(reversed(found))
 
 
+DASHBOARD_CONTROLS_LINE = (
+    "Controls : [1] build/launch  [2] launch mode  [V] client visible/headless  "
+    "[A] auto-restart  [Q] stop daemon  [X] close view  [P] freeze  [R] resume"
+)
+
+
 def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str,
-                     recent: list[str]) -> list[str]:
+                     recent: list[str], picker: dict | None = None) -> list[str]:
     client_pids = state.get("client_pids") or []
     server_alive = state.get("server_alive")
     run_id = state.get("run_id") or "-"
@@ -3084,6 +3076,7 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         token in build_phase
         for token in ("fail", "reject", "blocked", "missing", "invalid", "error")
     )
+    auto_restart = "ON" if state.get("auto_restart") else "OFF"
     lines = [
         f"MiMITA Dev Loop Dashboard — {ROOT}",
         f"Watchdog : {ROLE_NAMES['watchdog']}  pid={role_pids.get('watchdog') or '-'}  "
@@ -3091,6 +3084,8 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"Daemon   : {ROLE_NAMES['daemon']}  pid={role_pids.get('daemon') or '-'}  "
         f"img={process_image_name()}  role=daemon  {DEV_LOOP_SCRIPT}",
         f"Dashboard: {ROLE_NAMES['dashboard']}  pid={os.getpid()}  img={process_image_name()}  role=dashboard",
+        f"Settings : auto-restart={auto_restart}  next-launch={state.get('launch_visibility') or '-'}  "
+        f"mode={state.get('launch_mode') or '-'}({state.get('launch_mode_name') or '-'})",
         f"Heartbeat: updated={state.get('updated_at') or '-'}",
         f"Build    : phase={build_phase} {'FAIL' if build_failed else 'OK'}  "
         f"running={state.get('running_build') or '-'}  latest={state.get('latest_successful_build') or '-'}  "
@@ -3105,11 +3100,48 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"Last     : {state.get('message') or '-'}",
         f"Journal  : {state.get('events_path') or '(none)'}",
         f"View     : {view_status}",
+        DASHBOARD_CONTROLS_LINE,
         "Recent   :",
     ]
     lines += [f"           {item}" for item in (recent or ["(no recent dev-loop activity)"])]
-    lines.append("Controls : [P] pause/freeze  [R] resume/refresh  [Q] quit dashboard (watchdog/daemon keep running)")
+    if picker and picker.get("open"):
+        lines.append("Picker   : type a mode number, Enter selects, Esc cancels")
+        for mode_id, name in picker.get("modes", []):
+            selected = " (selected)" if mode_id == str(state.get("launch_mode")) else ""
+            lines.append(f"           {mode_id} = {name}{selected}")
+        lines.append(f"           input: {picker.get('input', '')}_")
     return lines
+
+
+def _plain_signature(lines: list[str]) -> tuple[str, ...]:
+    """Signature that ignores volatile uptime/heartbeat churn for the fallback."""
+    signature = []
+    for line in lines:
+        if line.startswith("Heartbeat"):
+            continue
+        parts = line.split("uptime=")
+        if len(parts) > 1:
+            tail = parts[1]
+            tail = tail.split(" ", 1)[1] if " " in tail else ""
+            line = parts[0] + "uptime=-" + ((" " + tail) if tail else "")
+        signature.append(line)
+    return tuple(signature)
+
+
+def _dashboard_control(current: dict, action: str, **fields):
+    """Send one authenticated dashboard control request to the daemon."""
+    port = current.get("control_port")
+    token = current.get("control_token")
+    if not port or not token:
+        return None
+    payload = {
+        "token": token,
+        "action": action,
+        "requested_by": "dashboard",
+        "request_id": f"dashboard-{uuid.uuid4().hex[:8]}",
+    }
+    payload.update(fields)
+    return send_control_request(port, token, payload, timeout=5.0)
 
 
 def _read_dashboard_key():
@@ -3167,51 +3199,111 @@ def run_dashboard(args: argparse.Namespace) -> int:
     prev_count = 0
     frames = 0
     last_plain_signature = None
+    picker = {"open": False, "input": "", "modes": []}
+    # Optional scripted key source for automated validation
+    # (MIMITA_DASHBOARD_KEYS="1,v,a,2,3,ENTER,q"). Each frame consumes one key
+    # through the same handler as a real keypress.
+    key_script = os.environ.get("MIMITA_DASHBOARD_KEYS", "")
+    scripted_keys: list[str] | None = None
+    if key_script:
+        scripted_keys = [
+            {"ENTER": "\r", "ESC": "\x1b", "BS": "\b"}.get(token.strip().upper(), token.strip())
+            for token in key_script.split(",") if token.strip()
+        ]
 
     def render(state: dict) -> None:
         nonlocal prev_count, last_plain_signature
         recent = _recent_activity(events_path)
-        lines = _dashboard_lines(state, read_watch_state(), role_pids, view_status, recent)
+        lines = _dashboard_lines(state, read_watch_state(), role_pids, view_status,
+                                 recent, picker)
         if ansi:
             if prev_count:
                 sys.stdout.write(f"\x1b[{prev_count}A")
             for line in lines:
-                sys.stdout.write("\x1b[2K" + line + "\n")
+                sys.stdout.write("\x1b[2K" + _rainbowize(line) + "\n")
             sys.stdout.flush()
             prev_count = len(lines)
         else:
-            signature = tuple(line.split(":", 1)[0] for line in lines)
-            if last_plain_signature is None:
+            signature = _plain_signature(lines)
+            if last_plain_signature is None or signature != last_plain_signature:
                 for line in lines:
                     sys.stdout.write(line + "\n")
                 sys.stdout.flush()
-            elif signature != last_plain_signature:
-                summary = next((l for l in lines if l.startswith("Run")), "")
-                sys.stdout.write(f"[update] {summary}\n")
-                sys.stdout.flush()
             last_plain_signature = signature
+
+    def next_key():
+        if scripted_keys is None:
+            return _read_dashboard_key(), False
+        if scripted_keys:
+            return scripted_keys.pop(0), False
+        return None, True
+
+    def control(state: dict, action: str, **fields) -> None:
+        nonlocal current
+        current = read_current_run() or current or {}
+        response = _dashboard_control(current, action, **fields)
+        ok = bool(response and response.get("accepted"))
+        if not ok:
+            problem = (response or {}).get("error") or "daemon unavailable"
+            view_status = f"{action} not accepted: {problem}"
+
+    def snapshot() -> dict:
+        return request_daemon_status(current) if current else None
 
     try:
         while True:
             if not frozen:
-                state = request_daemon_status(current) if current else None
-                current = read_current_run() or current or {}
-                state = state or current
                 role_pids["watchdog"] = watcher_pid()
                 role_pids["daemon"] = daemon_lock_pid()
-                render(state)
-            key = _read_dashboard_key()
-            if key == "q":
+                current = read_current_run() or current or {}
+                render(snapshot() or current)
+            key, exhausted = next_key()
+            if exhausted:
                 break
-            if key == "p" and not frozen:
-                frozen = True
-                frozen_since = utc_now()
-                view_status = f"FROZEN since {frozen_since} — press R to resume"
-                state = request_daemon_status(current) if current else None
-                render(state or current)
-            elif key == "r" and frozen:
-                frozen = False
-                view_status = f"refreshed at {utc_now()} (resumed from freeze)"
+            if key is not None:
+                if picker["open"]:
+                    if key in ("\r", "\n"):
+                        mode_id = picker["input"].strip()
+                        picker["open"] = False
+                        picker["input"] = ""
+                        if mode_id:
+                            control(current, "set-launch-mode", launch_mode=mode_id)
+                            view_status = f"launch mode {mode_id} requested"
+                    elif key == "\x1b":
+                        picker["open"] = False
+                        picker["input"] = ""
+                        view_status = "launch-mode picker cancelled"
+                    elif key in ("\b", "\x7f"):
+                        picker["input"] = picker["input"][:-1]
+                    elif key.isdigit():
+                        picker["input"] += key
+                elif key == "1":
+                    control(current, "build-or-launch")
+                    view_status = "build/launch requested"
+                elif key == "2":
+                    picker.update({"open": True, "input": "", "modes": launch_mode_table()})
+                    view_status = "launch-mode picker open"
+                elif key == "v":
+                    control(current, "toggle-visibility")
+                    view_status = "visibility toggle requested (next launch)"
+                elif key == "a":
+                    control(current, "toggle-auto-restart")
+                    view_status = "auto-restart toggle requested"
+                elif key == "q":
+                    control(current, "stop", explicit_stop=True)
+                    view_status = "explicit daemon stop requested; watchdog will not restart it"
+                    render(snapshot() or current)
+                    break
+                elif key == "x":
+                    break
+                elif key == "p" and not frozen:
+                    frozen = True
+                    frozen_since = utc_now()
+                    view_status = f"FROZEN since {frozen_since} — press R to resume"
+                    render(snapshot() or current)
+                elif key == "r" and frozen:
+                    frozen = False
+                    view_status = f"refreshed at {utc_now()} (resumed from freeze)"
             frames += 1
             if args.dashboard_frames and frames >= args.dashboard_frames:
                 break
@@ -3312,6 +3404,10 @@ def run_control_client(args: argparse.Namespace) -> int:
         "launch_mode": args.launch_mode,
         "request_id": f"{utc_now()}-{uuid.uuid4().hex[:8]}",
     }
+    if action == "stop":
+        # A CLI stop is an explicit shutdown; the watchdog must honor it.
+        request["explicit_stop"] = True
+        request["requested_by"] = "cli"
     if args.command:
         request["command"] = args.command
     # Capture the journal offset before sending so a fast command execution is

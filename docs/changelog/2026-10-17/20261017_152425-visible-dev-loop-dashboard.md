@@ -118,3 +118,166 @@ this specification describes.
   the human visual reading of the live window remain unverified.
 - The failed-recovery error branch was source-verified but not forcibly
   triggered at runtime to avoid disrupting the live loop.
+
+## Dashboard controls, settings rows, and rainbow status (same work stream)
+
+Added the dashboard key controls the user expects, made the status rainbow
+colored with a plain fallback, and made an explicit dashboard `Q` shutdown
+survive the watchdog. Followed `AGENTS.md`, `docs/ROUTER.md`,
+`docs/specs/dev-loop/dev-loop.md`, `docs/workflows/runtime-scenario-validation.md`,
+`docs/skills/spec-behavior-review-v1.md`, `docs/skills/logging-checker-v1.md`,
+and `docs/skills/documentation-checker-v1.md`. Pre-existing working-tree changes
+were preserved; only the dev-loop owner files and its spec were touched.
+
+### Changed files and key edits
+
+`devscripts/dev-loop.py`
+
+- `_rainbow_enabled()` (line ~150): now honors `MIMITA_DASHBOARD_ANSI`
+  (`1/true/yes` forces on, `0/false/no` forces off) so the rainbow and plain
+  paths are both reachable when stdout is not a real terminal; otherwise the
+  previous `sys.stdout.isatty()` check.
+- Added `launch_mode_table()` (line ~596): returns `(id, name)` launch modes in
+  display order for the picker, reusing the existing `dev-launch-modes.json`
+  owner.
+- Added daemon control actions in `process_control_requests` (line ~1412):
+  `build-or-launch` (key 1; builds only when `latest_stale` or no build,
+  otherwise `launch_latest()`), `set-launch-mode` (key 2; validates via
+  `load_launch_mode`), `toggle-visibility` (key V), `toggle-auto-restart`
+  (key A). Each records `dev-loop.control` and `save_state`.
+- `control_loop` (line ~1363): `request.setdefault("requested_by", "ai")` so the
+  dashboard can send `requested_by="dashboard"`.
+- `stop` action (line ~1476): an `explicit_stop` request writes the stop-intent
+  marker; the watchdog's own replacement stop does not.
+- Deleted the daemon's `key_commands()` and `show_launch_modes()` and their
+  `mode_picker_open`/`mode_picker_input` state, and removed the
+  `self.key_commands()` call from `run()`: the detached daemon no longer reads
+  the keyboard; the dashboard owns keys.
+- Added `write_stop_intent` / `clear_stop_intent` / `read_stop_intent`
+  (lines ~2359–2385). `ensure_running` calls `clear_stop_intent()` (line ~2946).
+- `run_control_client` (line ~3409): `--request stop` sends
+  `explicit_stop=True`, `requested_by="cli"`.
+- `_dashboard_lines` + `DASHBOARD_CONTROLS_LINE` (line ~3063): added a
+  `Settings` row (auto-restart, next-launch visibility, selected mode), the
+  full controls row, and an optional launch-mode picker area.
+- `_plain_signature` (line ~3116): signature that ignores heartbeat/uptime churn
+  so the non-ANSI fallback reprints the complete block only when a meaningful
+  field changes.
+- `_dashboard_control` (line ~3131): sends one authenticated
+  (`control_token`) control request with `requested_by="dashboard"`.
+- `run_dashboard` (line ~3168): the render loop now renders rainbow
+  (`_rainbowize`) in ANSI mode and a complete plain block otherwise; handles
+  `1`, `2` (picker with Enter select / Esc cancel), `V`, `A`, `Q`
+  (`stop` + `explicit_stop`), `X` (close view only), `P`, `R`. Added the
+  `MIMITA_DASHBOARD_KEYS` scripted-key test hook that feeds keys through the
+  same handler.
+
+`devscripts/dev-loop-watch.py`
+
+- Added `STOP_INTENT_PATH` (line 49) and `stop_intent()` (line 154). The watch
+  loop (line 354) now, when the daemon is not alive and a stop-intent is
+  present, records `dev-loop.watcher.stop-respected` and does not restart the
+  daemon; a later explicit start clears it.
+
+`devscripts/dev_loop_terminal.py`
+
+- `supports_ansi()` (line ~63) honors `MIMITA_DASHBOARD_ANSI` for the same
+  reason as `_rainbow_enabled()`.
+
+`docs/specs/dev-loop/dev-loop.md`
+
+- Section 19.4 now states the dashboard owns the keyboard, that `1/2/V/A` work
+  whenever the dashboard is open regardless of any daemon console, and links to
+  the canonical table (lines ~1336–1342). Implementation-status bullets updated
+  (lines ~1363–1382).
+- Section 22.2 replaced the two tables plus the conflicting
+  "keys are only live when the daemon itself owns a console" paragraph with a
+  single canonical "Dashboard controls" table, a `Settings`/controls note, the
+  keypress-to-daemon path, and the view-close (`X`) versus daemon-shutdown (`Q`)
+  distinction (lines ~1943–1986).
+
+### Before / after quotes
+
+Before (section 22.2):
+
+> A detached daemon (started by the watchdog or the entry point) has no
+> interactive console, so these build/launch keys are only live when the daemon
+> itself owns a console.
+
+After:
+
+> Because the keys are delivered over the control socket, they work whenever the
+> dashboard is open. They do not depend on the daemon owning an interactive
+> console, and the daemon must not consume keyboard input.
+
+Before (dashboard controls row):
+
+> Controls : [P] pause/freeze  [R] resume/refresh  [Q] quit dashboard (watchdog/daemon keep running)
+
+After:
+
+> Controls : [1] build/launch  [2] launch mode  [V] client visible/headless  [A] auto-restart  [Q] stop daemon  [X] close view  [P] freeze  [R] resume
+
+### Runtime / journal evidence
+
+- Restarted the daemon onto the new code through the loop's own path. The
+  pre-edit loop had died (stale watchdog/daemon locks, no live processes), so
+  `python devscripts/dev-loop.py --ensure-running` started watchdog
+  `pid=23708` and daemon `pid=9916`; the startup build published 2478, and
+  `--request launch` produced run `20261017_171635` (server 17636).
+- Dashboard keys exercised through `run_dashboard` with
+  `MIMITA_DASHBOARD_KEYS="2,3,ENTER,v,a,x"`. Journal
+  `logs/2026-10-17/20261017_171635/events.jsonl` recorded:
+  - `dev-loop.control action=set-launch-mode status=accepted requested_by=dashboard msg="launch mode 3 selected: crate_testing_funworld3"`
+  - `dev-loop.control action=toggle-visibility ... msg="launch visibility set to headless; applies to the next launch"`
+  - `dev-loop.control action=toggle-auto-restart ... msg="auto-start enabled"`
+  `--status --json` then reported `launch_mode=3`, `launch_visibility=headless`,
+  `auto_restart=True`.
+- Key `1` (`MIMITA_DASHBOARD_KEYS="1,x"`) produced
+  `dev-loop.control action=build-or-launch status=completed msg="dashboard launched latest build"`
+  (journal `logs/2026-10-17/20261017_171831/events.jsonl`) and launched run
+  `20261017_171831` in mode 3, headless.
+- Key `Q` (`MIMITA_DASHBOARD_KEYS="q"`) wrote
+  `.dev/dev-loop-stop-intent` (`{"reason":"dashboard",...}`), recorded
+  `dev-loop.control action=stop status=accepted`, the daemon lock emptied, and
+  the watchdog recorded `dev-loop.watcher.stop-respected reason=explicit-shutdown`
+  and left the daemon down (lock still empty after 13 s). A later
+  `--ensure-running` cleared the intent and started watchdog `23708` + daemon
+  `12644`; build 2480 succeeded.
+- Rainbow rendering: with `MIMITA_DASHBOARD_ANSI=1`, a rendered frame contained
+  per-character truecolor sequences (`\x1b[38;2;R;G;Bm`) and `\x1b[2K` clear
+  sequences on every row. Terminal capability reported separately below.
+- Plain fallback: with `MIMITA_DASHBOARD_ANSI=0` over three frames, the full
+  status block printed once (no uptime churn) and included the controls and
+  `Settings` rows.
+
+### Terminal-color support and human acceptance (separate claims)
+
+- Color support claim: the robot/CI shell is not a real TTY, so ANSI was
+  exercised through the `MIMITA_DASHBOARD_ANSI` capability override; the escape
+  sequences and plain fallback are both proven at the byte level.
+- Human visual acceptance: NOT performed. Watching the rainbow status refresh in
+  a real foreground terminal window is still required and is left to you.
+  (`wt.exe` is not installed on this machine, so the dashboard uses the
+  standard-console fallback.)
+
+### Limits
+
+- The keys were driven by the `MIMITA_DASHBOARD_KEYS` test hook that calls the
+  same `next_key`/handler path as a physical keypress; a literal keyboard press
+  in a live window was not observed by me.
+- The launch-mode picker `Esc`-cancel path was exercised through the same
+  handler but not visually confirmed.
+
+### Documentation todo scan
+
+The documentation-checker todo scan found only pre-existing markers; none were
+introduced by this change. Active-spec markers noted per `docs/ROUTER.md:117`
+(not edited):
+- `docs/specs/gamemodes/counterstrike.md:705` — crouch binding/behavior TODO;
+  suggest a concrete input-binding paragraph or an explicit "not scheduled".
+- `docs/specs/gamemodes/juggernaut-duel.md:226` — consistent weapon-set for
+  role-based score-limit modes; suggest one shared weapon-set table.
+- `docs/specs/networking/networking.md:1088` — server-disagree visual effect;
+  suggest moving to the HUD/GUI spec or marking it a proposal.
+Archive/changelog/jorj matches were treated as historical and ignored.

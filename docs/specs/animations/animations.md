@@ -1,3 +1,6 @@
+
+2026-10-17 user decision (clarifies the earlier note): animation files may author rotations as Euler XYZ degrees or as quaternions. Convert either encoding to one normalized quaternion representation for runtime use. Keep the format names and coordinate spaces explicit so authors and code do not confuse local part rotation with world position.
+
 // 2026-10-14T01:15:00Z
 /* purpose
 * define the desired behavior for authored, data-driven part animation
@@ -57,8 +60,8 @@ each mapping a stable part name to a GLB node and a **role**. The rig lives in
 avatar may ship an **`animations.json`** next to `avatar.json`; it can `include`
 clips from the **shared clip library** in `config/animations/`. A clip is a list
 of **keyframes** at integer **ticks**; each keyframe names parts and gives per
-part `translation`, `rotation` (Euler degrees), and `scale`, plus an
-interpolation mode. A small **state machine** selects the active clip from
+part `translation`, an explicitly named Euler-degree or WXYZ-quaternion
+rotation channel, and `scale`, plus an interpolation mode. A small **state machine** selects the active clip from
 actor state (grounded/airborne/flying/crawling, attacking, hurt, dead) and
 applies transitions with optional blend and one-shot semantics. The runtime
 evaluates the active clip once per fixed tick, writes each part's `localTransform`
@@ -182,7 +185,7 @@ flight integration (steering, altitude sticks, banking) iterates later.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "include": ["config/animations/library/base_idle.json"],
   "states": {
     "default": "idle",
@@ -197,9 +200,9 @@ flight integration (steering, altitude sticks, banking) iterates later.
       "loop": true,
       "speedBased": false,
       "keyframes": [
-        { "tick": 0,  "interp": "smooth", "parts": { "torso": { "translation": [0, 0, 0.02], "rotation": [0, 0, 0] } } },
-        { "tick": 30, "interp": "smooth", "parts": { "torso": { "translation": [0, 0, 0.05], "rotation": [0, 0, 2] } } },
-        { "tick": 60, "interp": "smooth", "parts": { "torso": { "translation": [0, 0, 0.02], "rotation": [0, 0, 0] } } }
+        { "tick": 0,  "interp": "smooth", "parts": { "torso": { "translation": [0, 0, 0.02], "rotationEulerDegrees": [0, 0, 0] } } },
+        { "tick": 30, "interp": "smooth", "parts": { "torso": { "translation": [0, 0, 0.05], "rotationEulerDegrees": [0, 0, 2] } } },
+        { "tick": 60, "interp": "smooth", "parts": { "torso": { "translation": [0, 0, 0.02], "rotationEulerDegrees": [0, 0, 0] } } }
       ]
     },
     "fly": {
@@ -207,12 +210,12 @@ flight integration (steering, altitude sticks, banking) iterates later.
       "loop": true,
       "speedBased": false,
       "keyframes": [
-        { "tick": 0,  "interp": "linear", "parts": { "leftWing":  { "rotation": [0, -45, 0] },
-                                                     "rightWing": { "rotation": [0,  45, 0] } } },
-        { "tick": 15, "interp": "linear", "parts": { "leftWing":  { "rotation": [0,  20, 0] },
-                                                     "rightWing": { "rotation": [0, -20, 0] } } },
-        { "tick": 30, "interp": "linear", "parts": { "leftWing":  { "rotation": [0, -45, 0] },
-                                                     "rightWing": { "rotation": [0,  45, 0] } } }
+        { "tick": 0,  "interp": "linear", "parts": { "leftWing":  { "rotationEulerDegrees": [0, -45, 0] },
+                                                     "rightWing": { "rotationEulerDegrees": [0,  45, 0] } } },
+        { "tick": 15, "interp": "linear", "parts": { "leftWing":  { "rotationEulerDegrees": [0,  20, 0] },
+                                                     "rightWing": { "rotationEulerDegrees": [0, -20, 0] } } },
+        { "tick": 30, "interp": "linear", "parts": { "leftWing":  { "rotationEulerDegrees": [0, -45, 0] },
+                                                     "rightWing": { "rotationEulerDegrees": [0,  45, 0] } } }
       ]
     }
   }
@@ -242,8 +245,49 @@ flight integration (steering, altitude sticks, banking) iterates later.
 | `interp` | string | Interpolation from this keyframe to the next: `linear`, `smooth`, `easein`, `easeout`, `easeinout`, `step`. Default `linear`. |
 | `parts` | object | Map of part name → channel values. |
 | part `translation` | `[x,y,z]` | Offset in the part's normalized rest frame (meters). |
-| part `rotation` | `[x,y,z]` | Euler degrees applied about the part's pivot. |
+| part `rotationEulerDegrees` | `[x,y,z]` | Euler angles in degrees in the part's local normalized rest frame, using the `Rz * Ry * Rx` XYZ order. |
+| part `rotationQuaternionWxyz` | `[w,x,y,z]` | Quaternion orientation in the part's local normalized rest frame. Must be finite and non-zero; the loader normalizes it. |
 | part `scale` | `[x,y,z]` | Multiplier on the part's mesh. Default `[1,1,1]`. |
+
+### Rotation encoding and conversion
+
+- New animation files use format `version: 2`. At a part keyframe, specify
+  exactly one of `rotationEulerDegrees` or `rotationQuaternionWxyz`. Never
+  provide both for the same part and keyframe. The explicit names identify
+  both the encoding and the quaternion component order.
+- Format `version: 1` remains readable for compatibility. Its legacy `rotation`
+  array means Euler XYZ degrees with the same `Rz * Ry * Rx` order. New or
+  edited files must use version 2 and the explicit field names.
+- All file encodings describe a local orientation around the part pivot,
+  relative to its normalized rest pose. They are not world positions,
+  world-space rotations, or accumulated transform deltas.
+- On load/import, convert Euler XYZ degrees to a quaternion using
+  `qz(z) * qy(y) * qx(x)` and normalize it. Normalize valid input quaternions
+  too. The animation runtime stores and evaluates only normalized quaternions;
+  it does not branch on whether the source was Euler or quaternion.
+- If a tool needs Euler output, convert from the canonical quaternion with the
+  same XYZ order, wrap each angle to `[-180, 180)`, and use one documented,
+  deterministic gimbal-lock rule. Euler output is for authoring/interchange;
+  never accumulate it frame to frame.
+- Reject zero-length or non-finite quaternions and non-finite Euler values at
+  load/validation; retain the last valid pose and emit the bounded animation
+  diagnostic. A quaternion and its negation represent the same orientation;
+  interpolation must choose the equivalent sign that gives the shortest arc.
+- Apply the keyframe easing to interpolation time, then use normalized
+  shortest-arc spherical interpolation (SLERP) between the canonical endpoint
+  quaternions. Euler values are converted before interpolation; do not lerp
+  Euler components. Legacy version-1 clips therefore load, but their between-
+  keyframe path can change from the old Euler-component interpolation and must
+  be visually reviewed during migration.
+
+Version-2 examples for the two supported authoring encodings:
+
+```json
+{ "tick": 0, "parts": {
+    "leftArm": { "rotationEulerDegrees": [0, 0, 90] },
+    "rightArm": { "rotationQuaternionWxyz": [0.7071068, 0, 0, 0.7071068] }
+} }
+```
 
 Parts not named in a keyframe hold their rest pose. A clip may name any rig
 part, plus the special key `plrOrigin` for whole-body root motion.
@@ -254,8 +298,9 @@ part, plus the special key `plrOrigin` for whole-body root motion.
 - `smooth`: smoothstep `t*t*(3-2t)`.
 - `easein` / `easeout` / `easeinout`: standard ease curves.
 - `step`: hold the previous keyframe until the next tick.
-- Rotations interpolate numerically in Euler degrees, consistent with the
-  existing runtime. Curves are per-keyframe, matching the request "define 4
+- Translation and scale use the selected interpolation curve component-wise.
+  Rotation uses the canonical quaternion conversion and shortest-arc SLERP
+  described above. Curves are per-keyframe, matching the request "define 4
   poses, each with its own smoothing mode".
 
 ### Shared library
@@ -422,8 +467,10 @@ Pure/model (no game required):
 
 - rig parse: canonical defaults, custom parts, suffix-tolerant node names,
   `physical` defaults;
-- clip parse: translation/rotation/scale, per-keyframe interp, loop/duration;
-- interpolation: linear/smooth/ease curves at known ticks;
+- clip parse: translation, both version-2 rotation encodings, legacy version-1
+  rotation, scale, per-keyframe interp, loop/duration;
+- interpolation: linear/smooth/ease curves at known ticks, Euler/quaternion
+  equivalence, shortest-arc SLERP, normalization, and invalid-value rejection;
 - include/merge precedence and override order;
 - state machine: transitions, one-shot completion, interruption at tick,
   missing-clip fallback.
@@ -448,7 +495,8 @@ Human acceptance (not provable by build):
 
 ## Implementation slices
 
-1. **Format + registry:** data types (scale, interp, priority), `rig` in
+1. **Format + registry:** version-2 explicit Euler/quaternion encodings,
+   version-1 compatibility, normalized quaternion runtime channels, `rig` in
    `avatar.json`, `AvatarAnimationRegistry` with shared-library includes and
    global fallback, generalized interpolation. *(in progress)*
 2. **Arbitrary-part rendering:** build and draw render-only rig parts.

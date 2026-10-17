@@ -61,6 +61,14 @@ def enable_virtual_terminal() -> bool:
 
 
 def supports_ansi() -> bool:
+    # MIMITA_DASHBOARD_ANSI can force the capability on/off so the rainbow and
+    # plain fallback paths are both reachable when stdout is not a real TTY
+    # (automated validation, redirected logging).
+    forced = os.environ.get("MIMITA_DASHBOARD_ANSI", "").strip().lower()
+    if forced in ("1", "true", "yes"):
+        return True
+    if forced in ("0", "false", "no"):
+        return False
     return _stdout_isatty()
 
 

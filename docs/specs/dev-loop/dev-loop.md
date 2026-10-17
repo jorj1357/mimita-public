@@ -1,3 +1,13 @@
+2026 10 17 1236 jorj todo make htis doc better
+like
+the way i did networking doc was like AI asks me like 50 questins
+then it turns it into like 100 sections of stuff 
+then i read it and edit like nooo i meant this with that, i meant  that with this 
+then its prett much good now start implement
+need to do that with this docuemnt bci think its a little messy
+but 
+then again im not sure it seems to be fine idk idk IDK IDK IDK 
+
 2026 10 13 1933 jorj:
 "explain  to me the 
 
@@ -1323,6 +1333,16 @@ If the daemon is unavailable, show that state and retry or provide an actionable
 error; never leave stale `RUNNING` status displayed as current. Keep the status
 file and durable logs usable when the dashboard is hidden or disconnected.
 
+The dashboard owns the keyboard. It captures `1`, `2`, `V`, `A`, `Q`, `X`, `P`,
+and `R` and forwards each action as an authenticated control request to the
+daemon over the local control socket; the detached daemon never reads the
+keyboard itself. Keys `1`, `2`, `V`, and `A` therefore work whenever the
+dashboard is open, regardless of whether any console is attached to the daemon.
+Section 22.2 is the single canonical table of dashboard controls; it also
+documents the current-setting rows, the keypress-to-daemon path, and the
+difference between closing the view (`X`) and intentionally shutting the daemon
+down (`Q`).
+
 #### Implementation status (2026-10-17)
 
 Implemented:
@@ -1342,10 +1362,24 @@ Implemented:
   dashboard.
 - The dashboard renders a fixed, non-scrolling status area refreshed in place,
   shows watchdog/daemon/dashboard roles, PIDs, interpreter image name, script
-  paths, build phase and latest/running build, server/client state and uptime,
-  mode, run id, game-window visibility, last error/recovery message, the exact
-  `EVENTS_JSONL_PATH`, and a bounded recent-activity area. `P` freezes, `R`
-  resumes/refreshes, and `Q` quits only the view. The title names the checkout.
+  paths, a `Settings` row (auto-restart, next-launch visibility, selected mode),
+  build phase and latest/running build, server/client state and uptime, mode,
+  run id, game-window visibility, last error/recovery message, the exact
+  `EVENTS_JSONL_PATH`, and a bounded recent-activity area. The title names the
+  checkout.
+- The dashboard owns the keyboard: `1` build/launch, `2` launch-mode picker
+  (Enter selects, Esc cancels), `V` toggle client visible/headless, `A` toggle
+  auto-restart, `Q` explicit daemon shutdown, `X` close the view only, `P`
+  freeze, `R` resume. Each control key is sent as an authenticated control
+  request to the daemon over the control socket; the detached daemon no longer
+  reads the keyboard. See section 22.2 for the canonical table.
+- Dashboard status is rendered in rainbow colors when the terminal supports
+  ANSI/VT, with a complete plain-text fallback otherwise; color never carries
+  error or state meaning by itself.
+- An explicit `Q`/`--request stop` writes a stop-intent marker that the watchdog
+  honors (`dev-loop.watcher.stop-respected`) instead of immediately restarting
+  the daemon. A later dashboard open or `--ensure-running` clears the marker and
+  starts the loop again.
 - `devscripts/dev_loop_terminal.py` owns the platform terminal work: it enables
   Windows virtual-terminal processing, sets the window title, and prefers to
   relaunch the dashboard in an opaque Windows Terminal window, falling back to
@@ -1887,7 +1921,7 @@ client. The `ss` alias is a game-terminal alias defined in
 | `--daemon` | Runs the build/game/control daemon in this process. | Used by the watchdog and the entry point; open by the shortcut only via the dashboard. |
 | `--dev-loop-role {watchdog,daemon,dashboard}` | Records a stable role marker in the process command line. | Windows Task Manager still shows `python.exe` as the image name; the Command Line column carries the role. |
 | `--no-terminal-relaunch` | Renders the dashboard in the current console. | Suppresses the Windows Terminal preference. |
-| `--dashboard-frames N` | Renders `N` dashboard frames then exits. | Bounded self-test aid; `0` runs until `Q`. |
+| `--dashboard-frames N` | Renders `N` dashboard frames then exits. | Bounded self-test aid; `0` runs until a control key closes the view (section 22.2). |
 | `--command-timeout S` | Seconds to wait for a command result. | Default 15. |
 
 Examples:
@@ -1906,26 +1940,51 @@ python devscripts/dev-loop.py --request stop-client
 alive, start one if absent, wait for the authenticated control endpoint and
 readiness, then forward the request exactly once. `--status` stays read-only.
 
-### 22.2 Interactive controls shown by the running loop
+### 22.2 Dashboard controls (canonical)
 
-| Key | What it does |
-|---|---|
-| `1` | Build if the latest artifact is stale/missing; otherwise launch the latest build. |
-| `2` | Open the launch-mode picker; type a mode number, press Enter, or press `Q` to cancel. |
-| `V` | Toggle the game client's visible/headless setting for the next launch. |
-| `A` | Toggle client auto-restart. This does not keep the Python daemon alive. |
-| `Q` | Shut down the dev-loop daemon through its normal shutdown path; the dedicated server may remain alive. |
+These are the visible-dashboard controls. The dashboard captures each keypress
+and forwards one authenticated control request to the single dev-loop daemon,
+which remains the only owner of build, launch, run, and control state. The
+detached daemon never reads the keyboard. Sections 19.4 and 22.1 link here
+rather than restating this table.
 
-A detached daemon (started by the watchdog or the entry point) has no
-interactive console, so these build/launch keys are only live when the daemon
-itself owns a console. The visible dashboard is a separate view with its own
-controls:
+| Key | What it does | Shown by |
+|---|---|---|
+| `1` | Build when the latest artifact is stale or missing; otherwise launch the latest published build. | `Build` and `Run` rows |
+| `2` | Open the launch-mode picker; type a mode number and press Enter to select it, or Esc to cancel. | `Settings ... mode=` |
+| `V` | Toggle the game client between visible and headless for the next launch. | `Settings ... next-launch=` |
+| `A` | Toggle client auto-restart. This does not keep the Python daemon alive. | `Settings ... auto-restart=` |
+| `Q` | Request a normal dev-loop daemon shutdown. The dedicated game server may remain alive. Records explicit-shutdown intent so the watchdog does not immediately restart the daemon. | `View` |
+| `X` | Close the dashboard view only; the watchdog, daemon, client, and server keep running. | `View` |
+| `P` | Pause/freeze the view so the text can be selected/copied; the watchdog, daemon, game, and scenarios keep running. | `View` |
+| `R` | Resume the frozen view, refresh from current state, and mark when the view was refreshed. | `View` |
 
-| Key | What it does |
-|---|---|
-| `P` | Pause/freeze the dashboard view so the text can be selected/copied; the watchdog, daemon, game, and scenarios keep running. |
-| `R` | Resume the frozen view, refresh from current state, and mark when the view was refreshed. |
-| `Q` | Quit the dashboard only; the watchdog, daemon, client, and server keep running. |
+The dashboard shows this control list and the current settings (`auto-restart`,
+`next-launch` visibility, selected launch mode) on fixed rows.
+
+How a keypress reaches the daemon:
+
+```text
+dashboard keypress (1 / 2 / V / A / Q)
+  -> authenticated control request on the local 127.0.0.1 control socket
+  -> daemon control queue
+  -> existing build / launch / run owners
+  -> events.jsonl records the correlated dev-loop.control event
+  -> dashboard shows the resulting state on its fixed rows
+```
+
+Because the keys are delivered over the control socket, they work whenever the
+dashboard is open. They do not depend on the daemon owning an interactive
+console, and the daemon must not consume keyboard input.
+
+Quitting the view is not shutting down the daemon. Closing the dashboard window,
+pressing `X`, or sending `Ctrl-C` detaches the view and leaves the watchdog,
+daemon, client, and server running; a later dashboard open reconnects to the
+current daemon. Pressing `Q` (or `--request stop`) is the explicit shutdown: it
+stops exactly one daemon and records explicit-shutdown intent, so the watchdog
+does not immediately undo it. A later explicit start -- reopening the dashboard
+or running `python devscripts/dev-loop.py --ensure-running` -- clears that intent
+and starts the loop again.
 
 ### 22.3 Where game-terminal commands and aliases live
 

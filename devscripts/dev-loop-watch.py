@@ -42,6 +42,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DEV_ROOT = ROOT / ".dev"
 DEV_LOOP_SCRIPT = ROOT / "devscripts" / "dev-loop.py"
 LOCK_PATH = DEV_ROOT / "dev-loop.lock"
+# Written when the user/dashboard explicitly stops the daemon (key Q or
+# --request stop). While present the watchdog must not restart the daemon, so an
+# explicit shutdown is honored; a later explicit start clears it. See dev-loop
+# spec sections 19.4 and 22.2.
+STOP_INTENT_PATH = DEV_ROOT / "dev-loop-stop-intent"
 CURRENT_RUN_PATH = DEV_ROOT / "current-run.json"
 WATCH_LOCK_PATH = DEV_ROOT / "dev-loop-watch.lock"
 WATCH_STATE_PATH = DEV_ROOT / "dev-loop-watch.json"
@@ -144,6 +149,11 @@ def append_journal_event(events_path: str, event: str, fields: dict, reason: str
 def current_events_path() -> str:
     run = read_json(CURRENT_RUN_PATH) or {}
     return str(run.get("events_path") or "")
+
+
+def stop_intent() -> dict | None:
+    value = read_json(STOP_INTENT_PATH)
+    return value if isinstance(value, dict) else None
 
 
 def start_daemon(profile: str, launch_mode: str, visibility: str) -> int:
@@ -332,6 +342,7 @@ def run_watch(args: argparse.Namespace) -> int:
         f"visibility={visibility}")
 
     deferred_hash = ""
+    respected_intent = ""
     try:
         while True:
             run = read_json(CURRENT_RUN_PATH) or {}
@@ -340,15 +351,31 @@ def run_watch(args: argparse.Namespace) -> int:
             running_hash = str(run.get("daemon_script_hash") or "")
             current_pid = lock_pid()
             daemon_alive = bool(current_pid and pid_alive(current_pid))
+            intent = stop_intent()
 
             if not daemon_alive:
-                if current_pid:
-                    log(f"daemon PID {current_pid} is not alive; restarting")
-                else:
-                    log("no dev-loop daemon lock present; starting one")
-                if do_restart(profile, launch_mode, visibility, "daemon-not-alive",
-                              current_pid, running_hash, force=True):
+                if intent is not None:
+                    # Explicit dashboard/CLI shutdown: do not undo it. A later
+                    # dashboard open or --ensure-running clears the intent and
+                    # starts the loop again.
+                    if respected_intent != intent.get("requested_at"):
+                        respected_intent = str(intent.get("requested_at") or "")
+                        append_journal_event(events_path, "dev-loop.watcher.stop-respected", {
+                            "reason": "explicit-shutdown",
+                            "intent_reason": intent.get("reason"),
+                            "requested_at": intent.get("requested_at"),
+                        }, "explicit dev-loop shutdown honored; watchdog will not restart")
+                        log("explicit dev-loop shutdown intent present; not restarting")
                     deferred_hash = ""
+                else:
+                    respected_intent = ""
+                    if current_pid:
+                        log(f"daemon PID {current_pid} is not alive; restarting")
+                    else:
+                        log("no dev-loop daemon lock present; starting one")
+                    if do_restart(profile, launch_mode, visibility, "daemon-not-alive",
+                                  current_pid, running_hash, force=True):
+                        deferred_hash = ""
             elif running_hash and disk_hash and running_hash != disk_hash:
                 if deferred_hash != disk_hash:
                     deferred_hash = disk_hash

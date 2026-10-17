@@ -7,6 +7,23 @@ its like
 the images ![alt text](image-5.png)
 the pngs are sqaure cut off nto good 
 
+2026 10 17 1317  npcs only the blood only spawns when i kill a npc
+not good
+need to be like 
+npc shoots me = blood happens every time 
+not just if i kill npc 
+also the aim in  arm , tweaking and jtitering around not good, needs to just be  astalbe aiming in arm, cant be moving around
+also, weapon is auto equipped when spawend in, liek starting gaem for first time, not good, need to be able to  jsut have the weapon eb weeuipped and have weapon ollisions actually happen bc right now its like i just spawn adn the weapon is equpped but then it doenst even have the pose or collisiosn enabled 
+
+ALSO TODO EVERY MAP NEEDS TO AHVE SPAWNPOINTS IN THE JSON AND I CAN SET WHATS ACTIVE/INACTIVE
+LIKE EACH SPAWNPOINT SO U DOTN HAVE TO  MKAE NEW SPAWNPOITNS IN BELNDER NEED DAT 
+USE SPAWNPOITNS NOT THE ONES MADE IN BLENDER OK ok im done 
+
+2026 10 17 1331 collisiosn or wepaons are not goodo liek i jsut got stuckinsidne a car in the map trainkinda, weaponcollisiosn overalll like even on maps like hospital5 i was getting stcuk in things, also  the juggernaut4 map? the smaller version i would get stuck in walls as juggernaut i wouldl get stuck ovtne, 
+also not sure when this happened but  heads for humanoid avatars are rolling much too far back, it looks wierd , heads need to just be consistnetnly like leaning in teh direction ur moving  
+
+2026 10 17 1335 NO EULER ROTATIONS FOR ANIMATIONS, WE NEED A SMOOTH EULER TO QUATERNION CONVERSION BC ITS LIKE XYZ TO WXYZ AND WE NEED LIEKA  NROMALIZATION FRMO BELNDER AND STUFF SO WE DONT GET CONFUSED DOING ANIMATIONS AND WORLD POSITIOSN ETC
+
 # Open gameplay issue index — 2026-10-16
 
 This index collects user-reported issues and links to the behavior owner. The
