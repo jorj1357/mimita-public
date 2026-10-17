@@ -184,6 +184,7 @@ void CommunityMatchClient::reset()
     mCameraFov = 0.0f;
     mForceFirstPerson = false;
     HealthbarConfig::instance().setModeVisibilityOverride(false);
+    HealthbarConfig::instance().setModePercentAboveHead(false);
     RagdollDeathConfig::instance().clearRuntimeOverride();
     ImpactDecalsConfig::instance().clearRuntimeBloodOverride();
     PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
@@ -320,6 +321,9 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         resetActorPreset();
     }
     HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
+    // Melee-style modes show each fighter's percent above the head instead of
+    // the ordinary healthbar (data-driven per mode).
+    HealthbarConfig::instance().setModePercentAboveHead(modeConfig.features.percentAboveHead);
     // Gamemode outline policy: a mode may force player outlines off. A missing
     // key means "no policy" and leaves the user's config untouched.
     if (modeConfig.presentation.hasPlayerOutlines)

@@ -2,6 +2,7 @@
 
 #include "weapon-data.h"
 #include "weapon-registry.h"
+#include "weapon-melee-config.h"
 #include "actor-preset-weapons.h"
 #include "gamemode/match-roles.h"
 #include "../debug/debug-log.h"
@@ -341,6 +342,16 @@ void applyWeaponRenderJson(WeaponDefinition& def, const json& root)
         weaponJsonVec3(root, "color", def.tint);
 }
 
+// Parses the optional data-driven Melee move-set component and publishes it in
+// the process-wide registry keyed by the definition id. A definition without
+// this component is unaffected.
+void applyWeaponMeleeJson(WeaponDefinition& def, const json& root)
+{
+    MeleeMoveSet moveSet;
+    if (parseMeleeMoveSet(def.id, root, moveSet))
+        MeleeMoveSetRegistry::instance().set(std::move(moveSet));
+}
+
 void applyWeaponJson(WeaponDefinition& def, const json& root)
 {
     if (!root.is_object())
@@ -355,6 +366,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
     applyWeaponKnockbackJson(def, root);
     applyWeaponProjectileImpactJson(def, root);
     applyWeaponRenderJson(def, root);
+    applyWeaponMeleeJson(def, root);
 
 }
 
@@ -397,6 +409,31 @@ void registerWeaponFromJson(WeaponDefinition def)
     WeaponRegistry::instance().registerWeapon(def);
     // Assign a stable network ID for the generic AttackRequest pipeline
     MimitaNet::registerWeaponDefNetworkId(def.id);
+}
+
+// Registers any config/weapons.json entry that no builtin constructor created.
+// This is the data-only path required by the weapon and Melee specifications:
+// adding a definition (for example captain_falcon_moveset) needs only JSON.
+// Builtin ids are skipped so their C++ constructor stays the base definition.
+void registerWeaponsFromJsonRoot()
+{
+    for (auto it = gWeaponConfigRoot.begin(); it != gWeaponConfigRoot.end(); ++it) {
+        if (!it.value().is_object())
+            continue;
+        std::string id = it.key();
+        if (it.value().contains("id") && it.value()["id"].is_string())
+            id = it.value()["id"].get<std::string>();
+        if (id.empty() || WeaponRegistry::instance().has(id))
+            continue;
+
+        WeaponDefinition def;
+        def.id = id;
+        def.displayName = id;
+        def.behaviorType = WeaponBehaviorType::Melee;
+        def.executionType = WeaponExecutionType::PhysicalContact;
+        def.hitscan = false;
+        registerWeaponFromJson(def);
+    }
 }
 
 bool reloadBuiltinWeaponsIfChanged()

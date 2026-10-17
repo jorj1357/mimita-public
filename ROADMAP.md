@@ -8,6 +8,15 @@ https://docs.google.com/document/d/1uTxOkciwKHtSzBm4rKxxMqMshNGttK9TOk8ju3uBu-E/
 
 but ok roadmap , todo make it better
 
+## 2026-10-17 goal: specification-first implementation handoffs
+
+I want to work through behavior with AI until the specification is accurate,
+understandable to me, and detailed enough for another contributor to implement
+without guessing. The spec-writing and review workflow is the goal; it does not
+change which game feature is the current priority. See the
+[specification-first workflow goal](docs/jorj-docs/20261017_200233-goal-specification-first.md)
+for the intended process and completion criteria.
+
 # stage 1: already done
 
 1. make initial game

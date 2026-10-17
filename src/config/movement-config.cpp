@@ -358,6 +358,26 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     readFloat("jump_velocity", config.jumpVerticalSpeed);
     readFloat("jump_buffer_time", config.jumpBufferSeconds);
     readFloat("coyote_time", config.coyoteSeconds);
+
+    // Melee-selectable jump input policy.
+    if (root.contains("jump_input_mode") && root["jump_input_mode"].is_string()) {
+        std::string mode = root["jump_input_mode"].get<std::string>();
+        std::transform(mode.begin(), mode.end(), mode.begin(),
+                       [](unsigned char c) { return (char)std::tolower(c); });
+        config.jumpInputMode =
+            (mode == "hold_scaled" || mode == "hold" || mode == "scaled")
+                ? MovementJumpInputMode::HoldScaled
+                : MovementJumpInputMode::Press;
+    }
+    readFloat("hold_jump_min_multiplier", config.holdJumpMinMultiplier);
+    config.holdJumpMinMultiplier = std::max(0.0f, config.holdJumpMinMultiplier);
+    readFloat("hold_jump_max_multiplier", config.holdJumpMaxMultiplier);
+    config.holdJumpMaxMultiplier =
+        std::max(config.holdJumpMinMultiplier, config.holdJumpMaxMultiplier);
+    if (root.contains("hold_jump_charge_ticks") &&
+        root["hold_jump_charge_ticks"].is_number_integer())
+        config.holdJumpChargeTicks =
+            std::clamp(root["hold_jump_charge_ticks"].get<int>(), 1, 60);
     readFloat("ground_friction", config.groundFrictionAmount);
     readFloat("air_friction", config.airFrictionAmount);
     readFloat("external_impulse_decay", config.externalImpulseDecay);

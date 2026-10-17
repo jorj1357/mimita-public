@@ -110,6 +110,8 @@ struct SnapshotTransform
     glm::vec3 velocity{0.0f};
     float yaw = 0.0f;
     int health = 100;
+    // Melee percent meter (0 in non-Melee modes).
+    float percent = 0.0f;
     bool onGround = false;
     int equippedSlot = 0;
     uint8_t weaponState = 0;
@@ -846,6 +848,9 @@ struct MpInput
     bool downDashPressed = false;
     bool attackPressed = false;
     bool freezeHeld = false;
+    // Melee: held shield (Q) and grab (E) intent, replicated in stateFlags.
+    bool shieldHeld = false;
+    bool grabHeld = false;
     bool flyUp = false;
     bool flyDown = false;
     int equippedSlot = 0;
@@ -907,7 +912,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     uint8_t attackVariant = 0,
     uint32_t claimedTargetId = 0,
     const glm::vec3& claimedHit = glm::vec3(0.0f),
-    uint8_t claimedBodyPart = 0);
+    uint8_t claimedBodyPart = 0,
+    uint16_t movesetRevision = 0);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,

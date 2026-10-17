@@ -368,6 +368,19 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             sendto(sock, (const char*)&res, sizeof(res), 0,
                    (sockaddr*)&from, sizeof(from));
         ++totalPacketsOut;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network,
+            StructuredLevel::Important,
+            "network.server-command.result-sent",
+            "player:" + std::to_string(it->second.id),
+            "server accepted or rejected a host command",
+            tick,
+            {{"command", commandStr},
+             {"accepted", accepted},
+             {"status", status},
+             {"player_id", it->second.id},
+             {"active_mode", serverGamemodeState().matchMode}},
+            __FILE__, __LINE__, __func__);
     };
 
     // Team commands are player actions, not host administration.  They must
@@ -532,6 +545,27 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             serverCommunityStartMatch(false, mode.id);
             ack(true, ("started at intermission: " + mode.id + " (" + mode.name + ")").c_str());
         }
+    }
+    else if (commandStr == "startmelee")
+    {
+        // Robust by-id shortcut so agents/hosts do not depend on the numeric
+        // index of `melee` in config/onlinemodes.json.
+        serverCommunityStartMatch(false, "melee");
+        ack(true, "started at intermission: melee");
+    }
+    else if (commandStr.rfind("meleeattack", 0) == 0)
+    {
+        // Host/dev hook to start a named Captain Falcon action. The move set,
+        // phases, hitbox, percent, knockback, and impulse all come from
+        // config/weapons.json via serverMeleeStartAction.
+        const size_t sp = commandStr.find(' ');
+        const std::string actionId =
+            sp == std::string::npos ? std::string("a_ground_punch")
+                                    : commandStr.substr(sp + 1);
+        const bool started = serverMeleeStartAction(
+            it->second, actionId, serverGamemodeState().currentServerTick);
+        ack(started, started ? ("melee action: " + actionId).c_str()
+                             : "rejected: no melee move set or unknown action");
     }
     else if (commandStr == "juggernaut_skip")
     {

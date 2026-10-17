@@ -597,6 +597,33 @@ A single tick must not execute the same restored resource more than once.
 AND FOR CLIENT INSTANT FEEL, HTE SAME FRAME CANT DO IT MORE THAN ONCE. 1 frame = 1 action. So u can do bunches of actions over and over with a super quick framereate but it only sends 1 time to the server 60hz rate 
 ________________
 
+## Melee-specific selectable jump input
+
+The Melee mode may select one of two jump-input policies in its movement
+profile, intended to be stored in `config/movement/movement-smash.json`:
+
+- `press`: the existing behavior; the jump starts immediately on a valid
+  Space press using the existing movement jump values.
+- `hold_scaled`: the jump still starts immediately on the valid Space press at
+  the configured minimum strength. While Space remains held, the fixed-tick
+  movement owner adds the configured upward boost, scaling from the 1-tick
+  minimum to the 10-tick maximum. Releasing Space stops further boost; holding
+  past 10 ticks adds no more. The min/max strength and charge duration are
+  movement-profile values, not Melee-only constants in C++.
+
+Both policies use existing jump availability, gravity, collision, and actor
+collider owners. Static-world ceiling contact restores the air-jump resource in
+Melee. The client predicts the local jump immediately and transmits held state
+through the normal input command at no more than the shared 60-Hz simulation
+rate; it does not send a packet for every render frame. This is a mode/profile
+input policy, not an input buffer or cooldown. Other modes keep their configured
+`press` behavior unless their own movement profile selects another policy.
+
+This is a desired configuration contract; the existing movement parser and
+runtime must be inspected before claiming that the named fields or selectable
+policy are implemented.
+
+________________
 
 10. Down dash
 Down dash is the active downward ability.

@@ -1773,6 +1773,51 @@ Melee maximum rewind should normally be lower than hitscan because deeply rewind
 Suggested initial maximum:
 100–150 milliseconds
 
+
+#### Melee prediction-first contact and referee validation
+
+**DECIDED Melee-specific policy:** Melee uses the shared movement model's
+client-trusting, immediate-prediction direction as a scoped exception to the
+general server-first contact flow above. The local client predicts the action,
+hit/grab contact, percent, and impulse immediately so the initiating player
+sees one coherent result without waiting for a round trip. It submits the
+candidate contact/result with its input sequence, mapped action tick, actor
+generation, move-set definition/revision, action ID/instance, target ID,
+contact data, and predicted impulse. Input commands preserve the order of
+button press edges within a tick so “most recently pressed modifier wins” is
+resolved identically by client and server; exactly simultaneous conflicts use
+the move-set's JSON tie-break.
+
+The server is the referee and shared-world publisher. It maps the requested
+tick using section 45.2, uses the existing bounded history in sections 45.3
+and 45.5, and rejects only when a documented plausibility check fails: the
+move/revision is not allowed, the actor generation or match is invalid, the
+hitbox did not overlap in the accepted historical active window, a shield or
+hit limit blocks the result, the request is duplicated/stale, or the claimed
+movement/contact/impulse exceeds the configured legal envelope. It must not
+re-test a valid historical contact only against the newer present-day pose.
+For an accepted candidate, the server records and replicates the same contact,
+percent, and impulse as the canonical outcome for every client; it does not
+substitute a second independently chosen hit result. This makes the server a
+plausibility referee, not the first source of the attack outcome. The general
+server-authoritative rules for inventory, match lifecycle, life loss, and
+other modes remain in force.
+
+On rejection or correction, send a reason and the authoritative state. Reuse
+the shared correction policy: smooth small position errors and snap large or
+lifecycle corrections. Show the existing server-disagreement effect for each
+actual reconciliation, scaled by its magnitude, and log predicted versus
+accepted/rejected target, tick, contact, percent, impulse, and the first
+divergence. Accepted predictions must not receive a second impulse when the
+replication arrives. The effect and diagnostics are evidence of correction,
+not a second gameplay hit.
+
+The policy remains bounded by the shared networking history and anti-abuse
+limits. It does not let clients request arbitrary history, target through walls,
+ignore shields, repeat a contact past the move's hit limit, or apply an
+unbounded impulse. Do not introduce a Melee-only rewind window; use the shared
+action-category policy. This is the desired contract, not a statement that the
+runtime currently implements it.
 ________________
 45.6 Fast projectiles
 Fast projectiles include projectiles that travel far during one network round trip.

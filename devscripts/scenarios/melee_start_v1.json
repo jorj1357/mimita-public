@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "melee_start_v1",
+  "description": "Switch the connected sandbox room to Melee, verify the match configures as melee, and do not add a second NPC on top of the launch profile's existing NPC.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "cramped",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [
+    {"id": "start_melee", "command": "startmelee", "args": [], "delay_ms_after": 2000},
+    {"id": "snapshot_end", "command": "agent.snapshot", "args": ["melee_end"]}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "win_condition", "equals": "last_actor_alive"},
+    {"type": "event_present", "event": "melee.spawn_protection"},
+    {"type": "event_field_equals", "event": "network.server-command.result", "field": "accepted", "equals": true},
+    {"type": "event_field_equals", "event": "network.client-snapshot-window", "field": "remote_npcs", "equals": 1}
+  ],
+  "timeout_seconds": 120
+}

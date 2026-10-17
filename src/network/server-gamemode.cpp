@@ -158,8 +158,75 @@ bool serverPlayerRespawnsEnabled(uint32_t playerId)
         return d.waveLivesRemaining > 0;
     if (d.persistentNpcSpawns)
         return true;
-    (void)playerId;
+    // Melee: a fighter respawns only while it still has stocks.
+    if (d.matchMode == "melee")
+        return serverMeleeActorHasStocks(playerId);
     return serverMatchRespawnsEnabled();
+}
+
+bool serverMeleeActorHasStocks(uint32_t actorId)
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    if (d.matchMode != "melee")
+        return true;
+    auto it = d.meleeStocks.find(actorId);
+    return it == d.meleeStocks.end() ? d.waveLives > 0 : it->second > 0;
+}
+
+bool serverMeleeActorProtected(uint32_t actorId)
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    if (d.matchMode != "melee")
+        return false;
+    auto it = d.meleeSpawnProtectionUntilTick.find(actorId);
+    return it != d.meleeSpawnProtectionUntilTick.end() &&
+           d.currentServerTick < it->second;
+}
+
+void serverMeleeNoteSpawn(uint32_t actorId, uint32_t protectionTicks)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (d.matchMode != "melee")
+        return;
+    if (d.meleeStocks.find(actorId) == d.meleeStocks.end())
+        d.meleeStocks[actorId] = std::max(1, d.waveLives);
+    d.meleeSpawnProtectionUntilTick[actorId] = d.currentServerTick + protectionTicks;
+    Debug::log(Debug::Category::Duel,
+        "[MELEE] actor=%u spawn protection until tick=%u stocks=%d\n",
+        actorId, d.meleeSpawnProtectionUntilTick[actorId], d.meleeStocks[actorId]);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "melee.spawn_protection", std::to_string(actorId),
+        "melee spawn protection granted",
+        d.currentServerTick,
+        nlohmann::json{{"actor", actorId},
+                       {"stocks", d.meleeStocks[actorId]},
+                       {"until_tick", d.meleeSpawnProtectionUntilTick[actorId]},
+                       {"protection_ticks", protectionTicks}});
+}
+
+bool serverMeleeConsumeStock(uint32_t actorId)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (d.matchMode != "melee")
+        return true;
+    int& stocks = d.meleeStocks[actorId];
+    if (stocks <= 0)
+        stocks = 0;
+    else
+        --stocks;
+    Debug::log(Debug::Category::Duel,
+        "[MELEE] actor=%u lost a stock; stocks=%d\n", actorId, stocks);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "melee.stock_lost", std::to_string(actorId),
+        stocks > 0 ? "melee stock lost; fighter respawns"
+                   : "melee stock lost; fighter eliminated",
+        d.currentServerTick,
+        nlohmann::json{{"actor", actorId},
+                       {"stocks_remaining", stocks},
+                       {"eliminated", stocks <= 0}});
+    return stocks > 0;
 }
 
 bool serverFriendlyFireEnabled()
@@ -660,6 +727,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
     // Set match mode from community mode id (used for routing and state machine)
     d.matchMode = resolvedGamemodeId;
+
     d.actorPresetOverrideId.clear();
     // DEPRECATED: the old ServerMode enum and short-form matchMode strings
     // are kept for backward compatibility with duel/FFA/TDM code paths.
@@ -668,6 +736,18 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
     // Load gamemode config using the resolved gamemode_id
     const Gamemode& gm = GamemodeRegistry::instance().get(resolvedGamemodeId);
+    // Durable match-configuration evidence: proves which mode/win condition
+    // started without needing the server console.
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "gamemode.match.configured", resolvedGamemodeId,
+        "gamemode match configuration resolved",
+        d.currentServerTick,
+        nlohmann::json{{"mode", resolvedGamemodeId},
+                       {"community_mode", d.communityMode},
+                       {"win_condition", gm.winCondition},
+                       {"lives", gm.lives},
+                       {"skip_intermission", skipIntermission}});
     d.goalValue = gm.goalValue;
     // An explicit GUI/runtime selection wins over the gamemode default.
     if (!d.communityWeaponSetExplicit && gm.weaponSetId > 0)
@@ -694,6 +774,10 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.waveNpcsPerWave = gm.waveNpcsPerWave;
     d.waveLives = std::max(1, gm.lives);
     d.waveLivesRemaining = d.waveLives;
+    // Melee resets every fighter's stocks from the mode `lives` value. The map
+    // is also lazily seeded per actor, so a late joiner still starts with stocks.
+    d.meleeStocks.clear();
+    d.meleeSpawnProtectionUntilTick.clear();
     d.waveHighest = 0;
     d.waveBannerSeconds = gm.waveBannerSeconds;
     d.waveStaggerEnabled = gm.waveStaggerEnabled;
@@ -2733,9 +2817,14 @@ void updateActorStates(ServerGamemodeState& d,
             before == ActorState::Alive && dead && d.waveLivesRemaining > 0)
             serverConsumeNpcWaveLife(kv.first);
 
+        // Melee: any fighter (human or NPC) that dies loses one stock.
+        if (d.matchMode == "melee" && before == ActorState::Alive && dead)
+            serverMeleeConsumeStock(kv.first);
+
         const bool respawns = desc.controller == ActorController::Human
             ? serverPlayerRespawnsEnabled(kv.first)
-            : serverMatchRespawnsEnabled();
+            : (d.matchMode == "melee" ? serverMeleeActorHasStocks(kv.first)
+                                      : serverMatchRespawnsEnabled());
 
         desc.state = nextActorState(before, dead, respawns);
 

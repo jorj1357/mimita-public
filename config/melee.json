@@ -1,0 +1,26 @@
+{
+  "format": "mimita-melee-rules",
+  "version": 1,
+  "stocks": 4,
+  "spawn_protection_ticks": 60,
+  "shield": {
+    "max_durability": 50.0,
+    "decay_ticks": 300,
+    "break_recovery_ticks": 120,
+    "release_recovery_ticks": 90,
+    "break_upward_impulse": 5.0
+  },
+  "grab": {
+    "radius": 1.0,
+    "pull_ticks": 30,
+    "anti_chain_ticks": 300,
+    "velocity_cap_by_percent": [[0.0, 20.0], [100.0, 40.0], [300.0, 80.0], [999.0, 120.0]]
+  },
+  "force": {
+    "speed_scale": 1.0,
+    "directness_scale": 1.0,
+    "min_percent": 0.0,
+    "max_percent": 60.0,
+    "max_impulse": 120.0
+  }
+}

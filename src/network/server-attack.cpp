@@ -16,6 +16,7 @@
 #include "combat/weapon-execution.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
+#include "combat/weapon-melee-config.h"
 #include "combat/weapon-fire.h"
 #include "combat/weapon-runtime.h"
 #include "config/networking-config.h"
@@ -1249,6 +1250,35 @@ void handleAttackRequest(
                 shooter.id, req->requestId,
                 shooter.quickHitState.activeTicksRemaining,
                 shooter.quickHitState.attackSequenceId);
+        }
+        else if (const WeaponData::MeleeMoveSet* meleeSet =
+                     WeaponData::MeleeMoveSetRegistry::instance().get(def->id))
+        {
+            // Referee: reject an illegal revision or action index before starting.
+            // The client and server must agree on the move-set revision.
+            const uint16_t clientRevision =
+                (uint16_t)(req->reservedAttack[0] | (req->reservedAttack[1] << 8));
+            const uint16_t serverRevision = (uint16_t)(meleeSet->revision & 0xffff);
+            if (clientRevision != 0 && clientRevision != serverRevision) {
+                emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
+                                    shooter, req->requestId,
+                                    "melee move-set revision mismatch");
+                return;
+            }
+            if (req->attackVariant >= meleeSet->actions.size()) {
+                emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
+                                    shooter, req->requestId,
+                                    "illegal melee action index");
+                return;
+            }
+            const std::string actionId =
+                meleeSet->actions[(size_t)req->attackVariant].id;
+            if (!serverMeleeStartAction(shooter, actionId, tick)) {
+                emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
+                                    shooter, req->requestId,
+                                    "melee action could not start");
+                return;
+            }
         }
         rt.stateRevision++;
         Debug::log(Debug::Category::Weapons,

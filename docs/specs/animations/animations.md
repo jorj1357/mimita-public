@@ -236,6 +236,85 @@ flight integration (steering, altitude sticks, banking) iterates later.
 | `blendInTicks` | int | 0 | Blend from the previous pose over this many ticks. |
 | `blendOutTicks` | int | 0 | Blend toward the next pose over this many ticks. |
 | `keyframes` | array | required | Ordered keyframes. |
+| `audio` | object | optional | Tick-addressed animation sounds; schema below. |
+
+### Animation sound events
+
+```json
+"audio": {
+  "onStartSoundId": "falcon_punch_start",
+  "onStartPitchMultiplier": 1.0,
+  "events": [
+    { "tick": 12, "soundId": "falcon_punch_swing", "pitchMultiplier": 1.0 },
+    { "tick": 18, "soundId": "falcon_punch_impact", "pitchMultiplier": 0.9 }
+  ]
+}
+```
+
+- `onStartSoundId` plays at clip-local tick 0 whenever a new clip instance
+  starts, including an interrupted/retriggered Melee move.
+- Each `events` entry plays once when playback reaches its integer clip tick.
+  Exported markers must be quantized to simulation ticks; render frame rate
+  cannot move a sound earlier or later.
+- `pitchMultiplier` is optional, defaults to `1.0`, and scales the pitch from
+  the resolved audio recipe for this event. Validate it as finite and within
+  the audio owner's configured safe range; do not duplicate sound asset or
+  device state inside the animation document.
+- `onStartPitchMultiplier` applies the same audio-recipe multiplier rule to
+  `onStartSoundId`; it defaults to `1.0`.
+- Melee move sound ownership is in the selected `config/weapons.json` move-set
+  definition, alongside input, phase ticks, hitboxes, percent, and knockback.
+  A Melee action must define a start sound and may define phase/tick markers
+  there; its clips must not duplicate those sound values. A new Melee action
+  immediately stops the prior sound on that actor's Melee-animation channel
+  and starts its tick-0 sound. Retriggering the same sound starts it from the
+  beginning. This intentionally allows fast cancels to cut off earlier sounds.
+  It does not interrupt music or unrelated world sounds.
+- This channel rule is per actor, as a first implementation contract; whether
+  the user intended one sound globally across the whole client remains open.
+- Sound is presentation only. It cannot confirm a hit or alter simulation.
+  Predicted and replicated events use a stable deduplication key composed of
+  actor generation, action/clip instance ID, clip tick, and event index. A
+  canceled clip emits no later markers; its replacement emits its tick-0 sound
+  immediately.
+- Sound IDs resolve through the existing audio/resource owner. Missing IDs
+  produce a bounded diagnostic and do not stop animation.
+
+### Retiming animation to configurable action phases
+
+Combat action data owns the server-tick duration of each phase. A Melee action
+references a separate animation clip or held pose for `windup`, `active`, and
+`recovery`; it does not rely on one fixed-total-duration clip whose hit frame
+becomes wrong when phase lengths change. A pose can be a one-pose clip. A phase
+clip is sampled by normalized progress:
+
+```text
+phaseProgress = phaseTicks <= 1
+              ? 0
+              : clamp(phaseTick / (phaseTicks - 1), 0, 1)
+clipSample    = phaseProgress * (clipDurationTicks - 1)
+```
+
+`phaseTick` is zero-based, so an `N`-tick phase evaluates samples `0` through
+`N-1`. A one-tick phase samples its start pose for that tick; longer phases
+reach their authored end pose on the final phase tick. Phase durations must be
+at least one tick.
+
+Sample the phase clip at `clipSample`, applying its normal easing and quaternion
+interpolation. Thus editing a phase's tick count speeds up or slows down that
+phase's animation while preserving its authored start and end poses. The next
+phase always begins at its own first pose on the exact action-state transition
+tick. Windup and recovery clips cannot enable a hitbox; only the action's active
+phase can. A move's hitbox follows the named body part's evaluated transform
+through the active phase, including when that phase is retimed. Root movement
+is separate, action-owned JSON data expressed in the captured camera-relative
+basis and simulated/collision-checked by the movement owner.
+
+The active clip interpolation is a presentation path, not a way to move hit
+windows. Server hit eligibility always comes from the action phase ticks. When
+retiming makes the active limb path faster or slower, validate hitbox sweep and
+visual readability for the new duration; do not stretch a hitbox using render
+frame time.
 
 ### Keyframe and part fields
 
@@ -245,7 +324,7 @@ flight integration (steering, altitude sticks, banking) iterates later.
 | `interp` | string | Interpolation from this keyframe to the next: `linear`, `smooth`, `easein`, `easeout`, `easeinout`, `step`. Default `linear`. |
 | `parts` | object | Map of part name → channel values. |
 | part `translation` | `[x,y,z]` | Offset in the part's normalized rest frame (meters). |
-| part `rotationEulerDegrees` | `[x,y,z]` | Euler angles in degrees in the part's local normalized rest frame, using the `Rz * Ry * Rx` XYZ order. |
+| part `rotationEulerDegrees` | `[x,y,z]` | Euler angles in degrees in the part's local normalized rest frame, composed as `Rx * Ry * Rz` (`qx(x) * qy(y) * qz(z)`). |
 | part `rotationQuaternionWxyz` | `[w,x,y,z]` | Quaternion orientation in the part's local normalized rest frame. Must be finite and non-zero; the loader normalizes it. |
 | part `scale` | `[x,y,z]` | Multiplier on the part's mesh. Default `[1,1,1]`. |
 
@@ -256,19 +335,22 @@ flight integration (steering, altitude sticks, banking) iterates later.
   provide both for the same part and keyframe. The explicit names identify
   both the encoding and the quaternion component order.
 - Format `version: 1` remains readable for compatibility. Its legacy `rotation`
-  array means Euler XYZ degrees with the same `Rz * Ry * Rx` order. New or
+  array means Euler XYZ degrees with the same `Rx * Ry * Rz` composition. New or
   edited files must use version 2 and the explicit field names.
 - All file encodings describe a local orientation around the part pivot,
   relative to its normalized rest pose. They are not world positions,
   world-space rotations, or accumulated transform deltas.
 - On load/import, convert Euler XYZ degrees to a quaternion using
-  `qz(z) * qy(y) * qx(x)` and normalize it. Normalize valid input quaternions
+  `qx(x) * qy(y) * qz(z)` and normalize it. Normalize valid input quaternions
   too. The animation runtime stores and evaluates only normalized quaternions;
   it does not branch on whether the source was Euler or quaternion.
 - If a tool needs Euler output, convert from the canonical quaternion with the
-  same XYZ order, wrap each angle to `[-180, 180)`, and use one documented,
-  deterministic gimbal-lock rule. Euler output is for authoring/interchange;
-  never accumulate it frame to frame.
+  same XYZ order and wrap each angle to `[-180, 180)`. For the rotation matrix
+  `R = Rx * Ry * Rz`, extract `y = asin(clamp(R02, -1, 1))`; when
+  `abs(cos(y)) > 1e-6`, extract `x = atan2(-R12, R22)` and
+  `z = atan2(-R01, R00)`. At gimbal
+  lock, set `z = 0` and extract `x = atan2(sign(sin(y)) * R10, R11)`. Euler
+  output is for authoring/interchange; never accumulate it frame to frame.
 - Reject zero-length or non-finite quaternions and non-finite Euler values at
   load/validation; retain the last valid pose and emit the bounded animation
   diagnostic. A quaternion and its negation represent the same orientation;
@@ -279,6 +361,63 @@ flight integration (steering, altitude sticks, banking) iterates later.
   Euler components. Legacy version-1 clips therefore load, but their between-
   keyframe path can change from the old Euler-component interpolation and must
   be visually reviewed during migration.
+- **Implementation alignment:** the current parser in
+  `src/entities/player-animation-config.cpp` reads only the legacy `rotation`
+  Euler array, and `src/entities/player-animation.cpp` interpolates Euler
+  vectors. The quaternion-only runtime described here is the desired contract,
+  not a claim about current implementation. The loader, pose storage,
+  interpolation, overlays, and renderer path must be migrated together; this
+  document edit does not change code.
+
+### Blender and file-to-runtime conversion pipeline
+
+Every importer/exporter follows this sequence. It must not branch the runtime
+based on whether Blender supplied Euler angles or a quaternion:
+
+1. **Sample a pose at a simulation tick.** Blender frame/curve evaluation is
+   converted to an integer 60 Hz tick by the exporter's declared sampling
+   rule. Evaluate the Blender object/bone transform at that sample; do not
+   treat a Blender frame number as a game tick unless the scene rate proves the
+   mapping is exactly 60 frames per second.
+2. **Extract the local part orientation.** Remove parent/world transforms and
+   express the pose relative to the part's normalized rest frame and pivot.
+   The exported pose is a local orientation, never a world-space quaternion.
+3. **Convert the authoring basis once.** Let `B` be the explicit orthogonal
+   basis conversion from Blender coordinates to the canonical game coordinates
+   (including any axis permutation or handedness policy). Convert a rotation
+   matrix `R_source` to `R_game = B * R_source * inverse(B)`, then convert that
+   matrix to a quaternion. Convert local translation offsets as
+   `t_game = B * t_source`. The exporter must write its selected `B` policy in
+   the export report; the runtime must not guess an axis correction from the
+   model or apply the basis change again. The exact Blender/game axis mapping
+   must be verified against the normalized avatar frame before an exporter is
+   accepted.
+4. **Normalize to the canonical runtime value.** For Euler input, interpret
+   version-2 `rotationEulerDegrees` as XYZ degrees composed exactly as
+   `Rx * Ry * Rz` (`qx * qy * qz`), then apply basis conversion and normalize.
+   For quaternion input, interpret version-2
+   `rotationQuaternionWxyz` as `[w,x,y,z]`, convert its orientation through the
+   same basis mapping, then normalize. Do not reorder quaternion fields
+   implicitly or apply the Euler conversion to a quaternion input.
+5. **Validate before install.** Reject non-finite values, zero-length
+   quaternions, duplicate encodings on one keyframe, missing part mappings,
+   and invalid basis metadata. Report source encoding, basis policy, tick,
+   part, and reason. Preserve the last valid animation set on failure.
+6. **Use one internal representation.** Runtime channels store only normalized
+   local quaternions. Interpolate them using shortest-arc SLERP after easing.
+   Rendering converts the resulting orientation to its matrix at the pose
+   boundary. Any Euler export is derived from that quaternion for display or
+   authoring; it is never accumulated from the previous tick.
+
+The two JSON encodings for the same pose must produce equivalent rotation
+matrices within a documented floating-point tolerance. A golden conversion
+fixture must cover identity, a single-axis quarter turn, a combined XYZ turn,
+near-gimbal Euler input, quaternion sign reversal (`q` versus `-q`), and a
+non-identity Blender-to-game basis. The exporter report and runtime diagnostics
+must make the chosen basis and source encoding inspectable. The actual `B`
+mapping is an implementation prerequisite; this specification deliberately
+does not invent an axis mapping before the model/export coordinate owners are
+verified.
 
 Version-2 examples for the two supported authoring encodings:
 
@@ -338,6 +477,12 @@ Transition rules (this is the tick-17 behavior the user asked for):
 5. If a state's clip is missing, fall back to `states.default`, then to the
    global fallback profile, then to the rest pose. Missing clips never crash and
    never produce NaNs.
+
+An owning action system may explicitly replace a clip regardless of animation
+priority. Melee uses this path: a newly accepted move cancels the current move
+clip at that tick and starts the replacement at clip tick 0. The animation
+system must not make the actor finish a long clip before honoring that action,
+and it must not queue the canceled clip's later sound markers.
 
 Triggers available to the state machine (produced by existing owners):
 
@@ -518,4 +663,5 @@ Human acceptance (not provable by build):
 - `docs/architecture/json-configuration/json-configuration.md`
 - `config/animations/readmewhat.md` (original intent)
 - `docs/specs/animations/blender-animation-authoring.md` (Blender action export
-  proposal and unresolved format/rig decisions)
+  proposal and unresolved exporter/rig decisions; rotation encoding is defined
+  in this file)

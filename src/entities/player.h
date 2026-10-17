@@ -195,7 +195,10 @@ enum class AnimInterp : uint8_t {
 
 struct AnimKeyframePart {
     glm::vec3 translation{0.0f};
-    glm::vec3 rotation{0.0f};        // Euler degrees about the part pivot
+    glm::vec3 rotation{0.0f};        // Euler degrees about the part pivot (derived)
+    // Canonical runtime orientation (normalized). The loader converts version-2
+    // Euler/quaternion fields and the legacy version-1 Euler array into this.
+    glm::quat rotationQuat{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 scale{1.0f};           // multiplier on the part's mesh
 };
 
@@ -474,6 +477,9 @@ public:
     MimitaVip::VipStyleDetail vipStyleDetail;
     int currentHp = 100;
     int maxHp = 100;
+    // Melee damage meter (percent). Melee mode displays this instead of the
+    // healthbar; it is not ordinary health. Reset to 0 on respawn.
+    float percent = 0.0f;
     bool inventoryOpen = false;
     int equippedSlot = 1;
     bool hasValidWeapon = false;
@@ -611,13 +617,28 @@ public:
     std::string lockedClip;
     float lockedClipTime = 0.0f;
     bool lockedClipLoop = false;
+    // Melee phase sampling: when lockedClipPhaseTicks > 0 the locked clip is
+    // evaluated at the phase-mapped sample rather than advancing by time, so
+    // changing a phase length resamples the pose instead of desynchronizing.
+    int lockedClipPhaseTick = 0;
+    int lockedClipPhaseTicks = 0;
     float hurtTimer = 0.0f;
     std::string mResolvedAnimAvatar;  // avatar name whose set is currently bound
 
     // Trigger a one-shot clip (attack/hurt/...) that owns the pose until done.
     // loop=true keeps it until cleared. Missing clips are ignored.
     void playOneShot(const std::string& clip, bool loop = false);
-    void clearOneShot() { lockedClip.clear(); lockedClipTime = 0.0f; }
+    // Play/advance a phase of a clip by normalized progress. The action owner
+    // drives this each phase tick; the clip is held (not auto-cleared) until
+    // clearOneShot or a replacement clip.
+    void playOneShotPhase(const std::string& clip, int phaseTick, int phaseTicks);
+    void clearOneShot()
+    {
+        lockedClip.clear();
+        lockedClipTime = 0.0f;
+        lockedClipPhaseTick = 0;
+        lockedClipPhaseTicks = 0;
+    }
 
     // -------- Construction --------
     Player();

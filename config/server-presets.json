@@ -40,6 +40,17 @@
       "discord_notification": false,
       "map_rotation": false,
       "join_host": true
+    },
+    "melee_1": {
+      "server_name": "Melee 1",
+      "map": "cramped",
+      "mode": "melee",
+      "max_players": 2,
+      "startup_npcs": true,
+      "npc_count": 1,
+      "discord_notification": false,
+      "map_rotation": false,
+      "join_host": true
     }
 
   }

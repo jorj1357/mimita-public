@@ -25,6 +25,7 @@
 #include "combat/death-system.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
+#include "combat/melee-client.h"
 #include "config/networking-config.h"
 #include "debug/structured-log.h"
 #include "effects/effect-part.h"
@@ -178,6 +179,9 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.dashPressed = cmd.isDashPressed();
         mpInput.downDashPressed = cmd.isDownDashPressed();
         mpInput.freezeHeld = cmd.isFreezeHeld();
+        // Melee: held shield intent (Q). The local Melee driver samples the key
+        // and publishes it; the server runs the authoritative shield.
+        mpInput.shieldHeld = MimitaMelee::shieldHeld();
         mpInput.flyUp = cmd.getState("freeze").held;
         mpInput.flyDown = cmd.getState("down_dash").held;
         mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&

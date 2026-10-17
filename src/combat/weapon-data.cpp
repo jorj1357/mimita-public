@@ -1039,6 +1039,9 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createBigShotgunDefinition());
     registerWeaponFromJson(createHeavyShotgunDefinition());
     registerWeaponFromJson(createLargeMachineGunDefinition());
+    // Data-only definitions (for example the Captain Falcon Melee move set)
+    // have no C++ constructor; register them straight from config/weapons.json.
+    registerWeaponsFromJsonRoot();
     Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons including frag, smoke, fire, darkbang, and bomb");
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are

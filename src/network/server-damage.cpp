@@ -113,6 +113,18 @@ static ServerDamageResult applyPlayerDamageLegacy(
         return result;
     }
 
+    // Melee 60-tick spawn protection: block damage/knockback immediately after
+    // a respawn, then end it on schedule (serverMeleeActorProtected reads the
+    // authoritative server tick).
+    if (serverMeleeActorProtected(target.id))
+    {
+        target.health = target.maxHealth > 0 ? target.maxHealth : serverMaxHp();
+        DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
+            "reason=melee-spawn-protection health=%d",
+            target.id, attackerPlayerId, damageSourceName(source), target.health);
+        return result;
+    }
+
     // Team-based friendly fire filtering: teammates cannot damage each other.
     // Use the gamemode roster as the authoritative fallback because a player
     // mirror can briefly have matchTeam == -1 while the roster already knows

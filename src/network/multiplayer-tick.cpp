@@ -2003,6 +2003,19 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 reinterpret_cast<const ServerCommandResultPacket*>(buffer);
             const std::string status(res->statusText,
                                      strnlen(res->statusText, sizeof(res->statusText)));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network,
+                StructuredLevel::Important,
+                "network.server-command.result",
+                "player:" + std::to_string(ctx.localPlayerId),
+                "server returned a host-command result",
+                ctx.tick,
+                {{"accepted", res->accepted != 0},
+                 {"status", status},
+                 {"room_code", ctx.roomCode},
+                 {"server_name", ctx.serverName},
+                 {"local_player_id", ctx.localPlayerId}},
+                __FILE__, __LINE__, __func__);
             if (res->accepted)
             {
                 Debug::warn(Debug::Category::Networking,
@@ -2248,6 +2261,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         if (input->downDashPressed) stateFlags |= NET_STATE_DOWN_DASHING;
         if (input->freezeHeld) stateFlags |= NET_STATE_FREEZING;
         if (input->attackPressed) stateFlags |= NET_STATE_ATTACKING;
+        if (input->shieldHeld) stateFlags |= NET_STATE_SHIELDING;
+        if (input->grabHeld) stateFlags |= NET_STATE_GRABBING;
 
         // Rate-limited walk send logging
         {

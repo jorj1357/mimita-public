@@ -555,7 +555,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     uint8_t attackVariant,
     uint32_t claimedTargetId,
     const glm::vec3& claimedHit,
-    uint8_t claimedBodyPart)
+    uint8_t claimedBodyPart,
+    uint16_t movesetRevision)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return 0;
@@ -601,6 +602,10 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     req.claimedHitY = claimedHit.y;
     req.claimedHitZ = claimedHit.z;
     req.claimedBodyPart = claimedBodyPart;
+    // Melee move-set revision for client/server alignment, carried in the
+    // two unused reserved bytes so the packet size does not change.
+    req.reservedAttack[0] = (uint8_t)(movesetRevision & 0xff);
+    req.reservedAttack[1] = (uint8_t)((movesetRevision >> 8) & 0xff);
 
     mpSendPacket(ctx, &req, sizeof(req));
 
@@ -1370,15 +1375,23 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
     // Keep the legacy connectionStatus string honest for existing HUD paths.
     ctx.connectionStatus = mpConnectionHealthText(ctx);
 
-    {
-        char msg[128];
-        std::snprintf(msg, sizeof(msg), "from=%d to=%d player=%u",
-                      (int)before, (int)next, ctx.localPlayerId);
-        ::logStructured(::StructuredCategory::Network, ::StructuredLevel::Important,
-                        "CONNECTION_STATE",
-                        "CONNECTION_" + std::to_string(ctx.localPlayerId),
-                        "connection state transition", msg);
-    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network,
+        StructuredLevel::Important,
+        "network.connection-state.changed",
+        "CONNECTION_" + std::to_string(ctx.localPlayerId),
+        "client connection state transition",
+        ctx.tick,
+        {{"from", connectionStateName(before)},
+         {"to", connectionStateName(next)},
+         {"active", ctx.active},
+         {"connected", ctx.connected},
+         {"room_code", ctx.roomCode},
+         {"server_name", ctx.serverName},
+         {"server_address", ctx.serverAddress},
+         {"local_player_id", ctx.localPlayerId},
+         {"required_map_id", ctx.requiredMapId}},
+        __FILE__, __LINE__, __func__);
 }
 
 void mpStartReconnect(MultiplayerContext& ctx)

@@ -27,6 +27,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "combat/weapon-rocket-launcher.h"
+#include "combat/melee-client.h"
 #include "combat/death-system.h"
 #include "network/multiplayer-context.h"
 #include "network/community-server-config.h"
@@ -247,7 +248,17 @@ void engineTickCombat(Engine& engine, float dt)
         Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] mouseClick=1 owner=game_end_ui consumed=1");
         Debug::log(Debug::Category::Duel, "[INPUT OWNERSHIP] weaponInputBlocked=1 reason=end_ui_visible");
     }
-    if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
+    // When a Captain Falcon move set is equipped, LMB/RMB/E drive Melee actions
+    // instead of ordinary weapon fire.
+    const bool meleeEquipped = MimitaMelee::hasEquippedMoveSet(player, weapons);
+    bool meleePrimaryPressed = false;
+    bool meleeSecondaryPressed = false;
+    if (meleeEquipped) {
+        if (!replayPlaybackActive && gameplayInputAllowed &&
+            InputCommandSystem::instance().isKeyboardEnabled() && mouseDown && !mousePrev &&
+            glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+            meleePrimaryPressed = true;
+    } else if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
         !bombTagEndVisible && !bombTagCountdown &&
         gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && mouseDown &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
@@ -269,7 +280,13 @@ void engineTickCombat(Engine& engine, float dt)
 
     static bool rightMousePrev = false;
     bool rightMouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-    if (!replayPlaybackActive && !duelCountdown &&
+    if (meleeEquipped) {
+        if (!replayPlaybackActive && gameplayInputAllowed &&
+            InputCommandSystem::instance().isKeyboardEnabled() &&
+            rightMouseDown && !rightMousePrev &&
+            glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+            meleeSecondaryPressed = true;
+    } else if (!replayPlaybackActive && !duelCountdown &&
         gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && rightMouseDown && !rightMousePrev &&
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
         if (!editorMode) {
@@ -296,6 +313,31 @@ void engineTickCombat(Engine& engine, float dt)
         }
     }
     rightMousePrev = rightMouseDown;
+
+    // Captain Falcon Melee: sample the Melee controls and drive the local
+    // action (animation + predicted self-impulses). The server is authoritative
+    // for the action result; the client predicts presentation immediately.
+    if (meleeEquipped && !replayPlaybackActive && gameplayInputAllowed &&
+        glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+        static bool grabPrev = false;
+        const bool grabDown =
+            glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS;
+        MimitaMelee::ClientInput meleeInput;
+        meleeInput.primaryPressed = meleePrimaryPressed;
+        meleeInput.secondaryPressed = meleeSecondaryPressed;
+        meleeInput.grabPressed = grabDown && !grabPrev;
+        meleeInput.shieldHeld =
+            glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS;
+        meleeInput.jumpHeld =
+            glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
+        meleeInput.crouchHeld =
+            glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
+        grabPrev = grabDown;
+        MimitaMelee::clientTick(player, camera, weapons, mpContext, meleeInput,
+                                g_clientSimulationTick);
+    } else {
+        MimitaMelee::reset();
+    }
 
     static bool slotPrev[10] = {};
     const auto& matchClient = MimitaNet::CommunityMatchClient::instance();

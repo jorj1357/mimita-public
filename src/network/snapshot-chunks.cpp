@@ -142,6 +142,7 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.aimY = entity.aimY;
     out.aimZ = entity.aimZ;
     out.health = entity.health;
+    out.meleePercent = (uint8_t)std::clamp((int)std::lround(entity.meleePercent * 0.25f), 0, 255);
     out.onGround = entity.onGround;
     out.equippedSlot = entity.equippedSlot;
     out.weaponState = entity.weaponState;
@@ -195,6 +196,7 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.aimY = entity.aimY;
     out.aimZ = entity.aimZ;
     out.health = entity.health;
+    out.meleePercent = (float)entity.meleePercent * 4.0f;
     out.onGround = entity.onGround;
     out.equippedSlot = entity.equippedSlot;
     out.weaponState = entity.weaponState;

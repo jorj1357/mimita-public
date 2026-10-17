@@ -1048,6 +1048,9 @@ void handleInputPacket(const char* buffer, int bytes,
         slot.command.dashPressed = (flags & NET_STATE_DASHING) != 0;
         slot.command.downDashPressed = (flags & NET_STATE_DOWN_DASHING) != 0;
         slot.command.freezeHeld = (flags & NET_STATE_FREEZING) != 0;
+        // Melee: held shield / grab intent carried in free stateFlags bits.
+        p.input.shieldHeld = (flags & NET_STATE_SHIELDING) != 0;
+        p.input.grabHeld = (flags & NET_STATE_GRABBING) != 0;
         slot.command.movementDirectionPressed =
             std::abs(wishX) > 0.001f || std::abs(wishY) > 0.001f;
         slot.valid = true;
@@ -1340,6 +1343,19 @@ void handleSpawnNpcRequest(const char* buffer, int bytes,
         reinterpret_cast<const SpawnNpcRequestPacket*>(buffer);
     if (players.find(request->header.playerId) == players.end())
         return;
+
+    // Melee is a one-human-versus-one-NPC mode: cap the total to one live NPC.
+    if (serverGamemodeState().matchMode == "melee") {
+        int liveNpcs = 0;
+        for (const auto& kv : npcs)
+            if (kv.second.health > 0)
+                ++liveNpcs;
+        if (liveNpcs >= 1) {
+            printf("%s [SERVER NPC SPAWN REJECT] reason=melee-one-npc live=%d\n",
+                   serverTimestamp(), liveNpcs);
+            return;
+        }
+    }
 
     ServerNpc npc;
     npc.entityId = nextEntityId++;

@@ -125,6 +125,18 @@
       "objective_permissions": [],
       "avatar": "jason",
       "avatar_forced": true
+    },
+    {
+      "id": "falcon",
+      "display_name": "Captain Falcon",
+      "team": -1,
+      "health": 100,
+      "movement_preset": "smash",
+      "weapon_set": "captain_falcon",
+      "starting_weapon": "captain_falcon_moveset",
+      "behavior_profile": "balanced",
+      "avatar": "captainfalcon",
+      "avatar_forced": true
     }
   ]
 }

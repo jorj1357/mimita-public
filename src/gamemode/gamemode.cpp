@@ -325,6 +325,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.features.bossHealthbar = optBool(f, "boss_healthbar", next.features.bossHealthbar);
             next.features.worldText = optBool(f, "world_text", next.features.worldText);
             next.features.timerAboveEntity = optBool(f, "timer_above_entity", next.features.timerAboveEntity);
+            next.features.percentAboveHead = optBool(f, "percent_above_head", next.features.percentAboveHead);
         }
 
         // ── Visual/settings overrides ───────────────────────────────

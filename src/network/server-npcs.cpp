@@ -404,6 +404,8 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     npc.body.externalImpulse = glm::vec3(0.0f);
     npc.body.dead = false;
     npc.body.respawnTimer = 0.0f;
+    // Melee: an NPC fighter receives 60 server ticks of spawn protection.
+    serverMeleeNoteSpawn(npc.id, 60);
     npc.body.syncLegacyStateToLayers();
     npc.body.updateModelWorldTransforms();
 }
@@ -1510,6 +1512,7 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     out.aimX = npc.aim.x; out.aimY = npc.aim.y; out.aimZ = npc.aim.z;
     out.yaw = npc.yaw;
     out.health = npc.health;
+    out.meleePercent = npc.meleePercent;
     out.onGround = npc.onGround ? 1 : 0;
     out.equippedSlot = npc.equippedSlot;
     out.weaponState = npc.weaponState;

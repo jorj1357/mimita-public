@@ -286,6 +286,134 @@ This is the desired architecture, not a claim about current implementation.
 The existing `createRevolverDefinition()`-style registrations and slot-based
 equip plumbing are migration debt and must be measured before removal.
 
+### Melee mode: one equipped move-set definition
+
+**DECIDED direction for Captain Falcon Melee:** represent the entire A/B move
+set as one stable item/definition ID, `captain_falcon_moveset`, with all attack
+actions as children of its reusable `melee` behavior component. Put each
+action's inputs, grounded/airborne conditions, tap count/window, windup/active/
+recovery tick counts, per-phase animation/pose IDs, animated-part hitboxes,
+percent, knockback, movement/root-motion settings, sound IDs, pitch and volume
+multipliers, sound offsets, and shield damage in that one
+`config/weapons.json` definition.
+The selected `config/weaponsets.json` loadout references this one definition;
+it must not duplicate its move data or list each attack as an equipable weapon.
+The fighter keeps this moveset active for the whole match and across respawns.
+The first playable Melee NPC receives that exact same weapon-set reference and
+equipped definition ID/revision as the human fighter. It uses the shared melee
+action system and may not inherit a generic NPC weapon inventory or fall back
+to revolver, shotgun, rocket launcher, or another conventional weapon. The
+role/loadout resolution must be reapplied on respawn, and runtime evidence
+must identify the effective equipped definition for both actors. A hotbar
+slot is not the identity of the moveset and must not be needed to restore it.
+
+The target data shape is conceptually:
+
+```json
+{
+  "id": "captain_falcon_moveset",
+  "display_name": "Captain Falcon Moveset",
+  "behavior_type": "melee",
+  "components": {
+    "melee": {
+      "actions": {
+        "a_ground_punch": {
+          "input": { "button": "primary", "actor_state": "grounded" },
+          "phases": {
+            "windup": { "ticks": 1, "clip_id": "falcon_punch_windup" },
+            "active": { "ticks": 1, "clip_id": "falcon_punch_active" },
+            "recovery": { "ticks": 1, "clip_id": "falcon_punch_recovery" }
+          },
+          "hitboxes": [
+            {
+              "id": "right_hand_hit",
+              "active_start_tick": 0,
+              "active_end_tick": 0,
+              "attached_part": "rightHand",
+              "shape": "capsule",
+              "size": [0.0, 0.0, 0.0],
+              "local_offset": [0.0, 0.0, 0.0]
+            }
+          ],
+          "damage": { "base_percent": 0.0, "shield_damage": 0.0 },
+          "knockback": { "base_impulse": 0.0 },
+          "audio": {
+            "on_start": {
+              "sound_id": "falcon_punch_start",
+              "pitch_multiplier": 1.0,
+              "volume_multiplier": 1.0,
+              "spatial_offset_m": [0.0, 0.0, 0.0]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 2,
+                "sound_id": "falcon_punch_impact",
+                "pitch_multiplier": 1.0,
+                "volume_multiplier": 1.0,
+                "spatial_offset_m": [0.0, 0.0, 0.0]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+This is an illustrative schema, not a current parser contract. The phase tick
+values are the valid one-tick minimum, while zero-sized hitbox and damage values
+are placeholders, not playable tuning values. Exact keys, defaults, validation,
+supported hitbox shapes, and field ownership must be finalized against the
+existing JSON loader and animation/audio interfaces before implementation.
+Each attack remains data, while shared C++ systems interpret known fields.
+`audio.on_start` plays at action tick 0; each additional audio event is keyed
+by phase and phase-local server tick. `pitch_multiplier` scales the pitch
+resolved by the shared audio recipe. The action definition is the sole sound
+owner for a Melee move; its referenced animation clips do not repeat that move's
+sound values.
+JSON cannot contain executable behavior. For example, the downward special's
+root movement is a configurable displacement in the captured attack basis
+(`forward`, `right`, `up`) applied over configured server ticks and collision
+checked by the movement owner. Melee attack hitboxes require swept overlap only;
+no separate visible-limb proximity test is used. Each action phase may have a
+configurable impulse event, including an air-attack impulse on the first active
+tick. For grab, the initial sphere radius is 1 meter and its size defines
+range; stronger movement and a closer contact point produce a stronger result.
+The user's `+5 m forward / -10 m up` describes an example only; do not hard-code
+it as a default.
+
+### Shared contact force and impulse input
+
+Collision owns contact geometry and contact direction; weapon/combat owns the
+resulting damage and impulse. This force rule applies to contact/impact moves
+such as Melee; hitscan and projectile weapons keep their authored damage rules
+unless they explicitly opt into it. The reusable combat input combines relative
+impact speed with approach angle/directness and any move-authored strength.
+Slow, shallow/glancing contact yields low force; fast, direct contact yields
+high force. That force scales both percent added and knockback magnitude, while
+the configured hitbox overlap determines whether a contact exists. The exact
+normalization curves, percent contribution, and caps remain JSON-configurable
+combat policy; do not put damage formulas in collision geometry code. Melee's
+open formula must be settled or given provisional tuning before final balance.
+
+Input resolution uses the authoritative action state at the input tick:
+grounded/airborne state, held buttons, press edges, and server-tick double-click
+window. The active action ID is replicated along with definition ID/revision
+and actor generation. Input press-edge ordering is part of the input command so
+conflicting modifiers resolve by the last press on both peers. The client
+immediately predicts the action and candidate contact/result; the server uses
+the Melee referee contract in `../networking/networking.md` to accept plausible
+history or reject an impossible result. Hotbar index is never attack identity.
+When a valid JSON revision is atomically activated during a match, new actions
+use it immediately from the next fixed tick; an action already in progress
+retains the revision it started with. Replicate the revision/hash to clients
+before accepting actions using it. Runtime JSON reload is available only after
+the generic loader supports arbitrary definitions and safely publishes
+matching client/server revisions; the current implementation audit below says
+that a new arbitrary ID alone is not yet registered.
+
 ### Current implementation audit — 2026-10-16
 
 The runtime is mixed, not yet the target architecture above:

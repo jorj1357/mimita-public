@@ -2709,16 +2709,28 @@ def run_scenario_file(args: argparse.Namespace) -> int:
             return False, str(error)
         if not response.get("accepted"):
             return False, str(response.get("error", "rejected"))
+        delivered = False
         while time.time() < deadline:
             pump()
             for record in records:
                 # The daemon appends its own per-entry index to the request id
                 # (for example "<rid>:0"), so match by prefix.
-                if (record.get("event") == "dev-loop.command.delivered" and
-                        _record_request_id(record).startswith(rid)):
-                    return True, ""
+                if not _record_request_id(record).startswith(rid):
+                    continue
+                event_name = str(record.get("event", ""))
+                fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+                if event_name == "dev-loop.command.delivered":
+                    delivered = True
+                elif event_name == "terminal.command.unknown":
+                    return False, f"unknown command: {fields.get('command', command_text)}"
+                elif event_name == "terminal.command.completed":
+                    if fields.get("success") is True:
+                        return True, ""
+                    return False, f"command handler failed: {fields.get('command', command_text)}"
             time.sleep(0.2)
-        return False, "delivery timeout"
+        if not delivered:
+            return False, "delivery timeout"
+        return False, "command delivered but no terminal.command.completed result was recorded"
 
     step_failures: list[dict] = []
     execution_ok = True

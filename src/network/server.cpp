@@ -645,6 +645,23 @@ int runServer(const LaunchOptions& options)
         serverCode = dedicatedIceState.serverCode;
         printf("%s [SERVER ICE] registered: code=%s\n",
                serverTimestamp(), serverCode.c_str());
+        std::vector<uint32_t> startupNpcIds;
+        startupNpcIds.reserve(npcs.size());
+        for (const auto& entry : npcs)
+            startupNpcIds.push_back(entry.first);
+        std::sort(startupNpcIds.begin(), startupNpcIds.end());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.room.registered", serverCode,
+            "dedicated server room registered with coordinator", 0,
+            nlohmann::json{{"room_code", serverCode},
+                           {"server_name", options.name},
+                           {"mode", options.gameMode},
+                           {"map", options.mapName},
+                           {"max_players", options.maxPlayers},
+                           {"startup_npc_count", startupNpcIds.size()},
+                           {"startup_npc_ids", startupNpcIds}},
+            __FILE__, __LINE__, __func__);
     }
 
     // ── Write room code to --room-file (after registration) ──
@@ -824,6 +841,7 @@ int runServer(const LaunchOptions& options)
             const auto contactWeaponStart = std::chrono::steady_clock::now();
             tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
             const uint64_t contactWeaponUs = elapsedMicroseconds(contactWeaponStart);
+            tickServerMeleeActions(sock, players, npcs, tick, totalPacketsOut);
 
             if (!options.proceduralMode.empty() &&
                 !automaticProceduralStartQueued &&
@@ -1373,6 +1391,9 @@ static void simulateOneServerTick(ListenServerState& state)
         tickServerPhysicalContactWeapons(state.sock, state.players, state.npcs,
                                          state.world, SERVER_DT, state.tick,
                                          state.totalPacketsOut);
+
+        tickServerMeleeActions(state.sock, state.players, state.npcs,
+                               state.tick, state.totalPacketsOut);
 
         // Skip ICE coordinator for local-only servers
         if (state.serverCode.find("LOCAL-") != 0)

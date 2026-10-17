@@ -66,6 +66,7 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.velocity = {entity.vx, entity.vy, entity.vz};
     transform.yaw = entity.yaw;
     transform.health = entity.health;
+    transform.percent = entity.meleePercent;
     transform.onGround = entity.onGround != 0;
     transform.equippedSlot = entity.equippedSlot;
     transform.weaponState = entity.weaponState;
@@ -1450,6 +1451,8 @@ void updateRenderedReplica(
     }
 
     player.currentHp = displayHealth;
+    // Melee percent meter for the nameplate (0 outside Melee).
+    player.percent = render.percent;
     // Server max HP (healthall override) isn't transmitted; derive it from the
     // highest server health seen so nameplates/NPC bars show 999/999 not 999/100.
     if (displayHealth > player.maxHp)

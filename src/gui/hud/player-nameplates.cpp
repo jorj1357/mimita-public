@@ -208,6 +208,21 @@ HealthbarRenderResult drawPlayerHealthbar(
         return result;
     }
 
+    // ── Melee percent display (per-mode, data-driven) ───────────
+    // When the active mode declares `percent_above_head`, show the fighter's
+    // percent above the head instead of the healthbar.
+    if (isLiveWorld && HealthbarConfig::instance().modePercentAboveHead())
+    {
+        char pct[32];
+        std::snprintf(pct, sizeof(pct), "%d%%", (int)std::lround(player.percent));
+        const float pctScale = 0.42f;
+        const float pctWidth = uiMeasureText(pct, pctScale);
+        uiDrawText(pct, result.screen.x - pctWidth * 0.5f, result.screen.y - 14.0f,
+                   pctScale, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        if (isLiveWorld) gTotalLiveWorldHealthbars++;
+        return result;
+    }
+
     // ── Aim mode detection ──────────────────────────────────────
     HealthbarAimState& aimState = getOrCreateAimState(player);
     // Disable aim mode for the local player — camera cannot "aim at" yourself.

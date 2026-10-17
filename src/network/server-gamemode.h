@@ -243,6 +243,12 @@ struct ServerGamemodeState
     int waveNpcsPerWave = 0;
     int waveLives = 3;
     int waveLivesRemaining = 3;
+    // Melee mode: per-fighter stocks (lives). A fighter respawns only while it
+    // still has stocks; the generic `last_actor_alive` win condition then ends
+    // the match when at most one fighter remains in play.
+    std::unordered_map<uint32_t, int> meleeStocks;
+    // Melee spawn protection: server tick until which the actor is protected.
+    std::unordered_map<uint32_t, uint32_t> meleeSpawnProtectionUntilTick;
     uint32_t waveHighest = 0;
     float waveBannerSeconds = 3.0f;
     bool waveStaggerEnabled = true;
@@ -353,6 +359,13 @@ bool serverFriendlyFireBlocks(
     const std::unordered_map<uint32_t, ServerNpc>& npcs,
     const char* path, uint32_t tick);
 void serverConsumeNpcWaveLife(uint32_t playerId);
+// Melee mode stock/spawn-protection policy (no-op in other modes). A fighter
+// respawns only while it has stocks; the generic last_actor_alive win condition
+// then ends the match when at most one fighter remains in play.
+bool serverMeleeActorProtected(uint32_t actorId);
+void serverMeleeNoteSpawn(uint32_t actorId, uint32_t protectionTicks);
+bool serverMeleeConsumeStock(uint32_t actorId);
+bool serverMeleeActorHasStocks(uint32_t actorId);
 // Effective respawn delay in seconds (unset falls back to the legacy 0.01s).
 float serverMatchRespawnSeconds();
 

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "melee_fight_v1",
+  "description": "Start Melee, wait for the Captain Falcon NPC to engage, and verify the NPC uses move-set actions.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "cramped",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [
+    {"id": "start_melee", "command": "modestart", "args": ["14"], "delay_ms_after": 2000},
+    {"id": "wait_for_fight", "command": "agent.snapshot", "args": ["fight_wait"], "delay_ms_after": 15000}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_field_count_at_least", "event": "melee.action.start", "field": "actor_is_npc", "equals": true, "minimum": 1}
+  ],
+  "timeout_seconds": 180
+}

@@ -519,6 +519,11 @@ persistent rewards
 return to lobby/intermission
 ```
 
+The normal starting party target is four players. This is a starting
+expectation, not a hard capacity: a run may start with fewer or more players,
+subject to the server's general player-capacity rules. Friendly NPC teammates
+may also join the party.
+
 ---
 
 # 10. Run duration
@@ -547,8 +552,11 @@ This may vary significantly according to:
 Approximate initial tower concept:
 
 ```text
-20+ floors
+at least 50 floors
 ```
+
+Fifty floors is the minimum target for the complete authored tower, not a
+promise that every floor has the same size or play time.
 
 with individual large areas potentially around:
 
@@ -686,30 +694,32 @@ The tower should ideally tolerate:
 - route experimentation;
 - speedrunning.
 
-BUT IF U 
-like
-ok 
-imagine u are so so goated at movement or the game gets so optimized
-theres a glitch right now 2026 10 08 1315  
-ragdoll mode 
-on teh ground
-then unragdoll
-= like 500 m/s upwarrd momdntum
-thats huge for this mode 
-so 
-like
-combo with rocket launcher
-u mihgt be able to skip like the entire tower
-if u do that, it should be like
-arena closer boss spawns for every floor that u skip
-it shoudl float and hover
-and go thru walls
-and touching/intersecting = bigknockback and big damage
-maybe like 66 damage per tick and scales with force adn stuff
-it has 100,000 hp so u CAN kill it
-but it should just mean like
-just u have to go thru the mode naturally 
-like each checkpoint kill all monsters etc 
+### Floor-clear gate and Arena Closer
+
+The normal way to unlock a floor's exit is to eliminate at least 75% of that
+floor's required monsters. Light sources such as torches should suggest the
+route upward without turning it into a fully guided path; finding the way
+should remain somewhat difficult. Players may use movement to reach a higher
+floor or checkpoint early. If they activate the next checkpoint before
+meeting the floor-clear threshold, an Arena Closer spawns to punish skipping
+the encounter. This is a fallback pressure mechanic, not a replacement for
+making each floor's monsters fun to find and fight. Monster placement and
+navigation should avoid sending players on frustrating searches for enemies
+that are hidden or stranded far off-route.
+
+The Arena Closer's initial target behavior is:
+
+- a black sphere with a face, 10 m radius, and 100,000 health;
+- pursues the nearest actor (player or NPC) at 20 m/s, updating its target and
+  movement every fixed gameplay tick;
+- passes through walls;
+- makes an audible repeating hum each tick so its approach is noticeable;
+- deals at least 66 damage for every tick it intersects an actor, with damage
+  increasing with impact force;
+- can be killed, but is intended to be extremely difficult to kill.
+
+The exact collision-force-to-damage formula and whether defeating the Closer
+clears the floor gate remain `NEEDS_SPEC_DECISION` before balancing.
 
 ---
 
@@ -750,12 +760,14 @@ Initial run intermission target:
 30 seconds
 ```
 
-The intermission may occur in a generalized shared lobby.
-in the lobby u can get like better weapons or upgrades etc idk
-liek 
-idk whate ven u could od 
-maybe spawn with 3 medkits or something
-some kinda perk 
+The run starts automatically when the 30-second intermission ends. Players do
+not wait for a host or party member to press a ready/start button.
+
+The lobby is a shared, playable hangout in the Zombie Tower visual style. It
+should feel like an old Roblox social space, with an obstacle course, physics
+toys, lore, and other light activities while the timer runs. A shop for weapons
+and upgrades is desired, but its currency and purchase rules still need a
+decision; see `NEEDS_SPEC_DECISION` below.
 
 The lobby should eventually be reusable by multiple game modes.
 
@@ -773,6 +785,10 @@ The generalized MiMITA lobby may allow:
 - practice;
 - interaction;
 - conversation.
+
+Zombie Tower's lobby should also include its themed obstacle course and
+physics-play areas, and the intermission timer should remain visible while
+players explore. The timer continues to zero and starts the run automatically.
 
 Zombie Tower should reuse this shared lobby architecture rather than inventing a special isolated waiting screen.
 
@@ -793,6 +809,10 @@ encounters activate
 ```
 
 Exact countdown presentation remains configurable.
+
+The run begins automatically after the lobby's 30-second intermission. The
+starting party target is four human players, while the mode itself must support
+any party size allowed by the server rather than requiring exactly four.
 
 ---
 
@@ -821,6 +841,11 @@ respawn party at highest checkpoint
 continue run
 ```
 
+Checkpoint recovery is all-or-nothing: the whole party resumes at the latest
+checkpoint reached by the team. Progress made after that checkpoint is lost;
+for example, reaching halfway from checkpoint 3 toward checkpoint 4 does not
+create a partial-progress respawn point.
+
 If no attempts remain:
 
 ```text
@@ -838,6 +863,12 @@ Initial concept:
 ```text
 3 attempts per run
 ```
+
+These are three attempts for the team as a whole, not three attempts per
+player. An attempt is spent only when the whole active team is wiped. A player
+who is dead should have a way to return as a zombie; the exact timing and
+whether that player joins the hostile monster roster or a separate zombie
+role is `NEEDS_SPEC_DECISION`.
 
 Example:
 
@@ -967,7 +998,13 @@ Initial player starting weapons:
 ```text
 Revolver
 Shotgun
+Melee weapon (Spy Knife / punch-style weapon)
 ```
+
+The tentative starting kit has plentiful but finite ammunition. Ammo pickups
+should be common enough to support the action without making ammunition
+effectively infinite. The exact starting ammo counts and whether the shop can
+replace or upgrade these starting weapons are `NEEDS_SPEC_DECISION`.
 
 Additional weapons can be acquired through:
 
@@ -1311,6 +1348,11 @@ drop table
 special abilities
 spawn properties
 ```
+
+Each v1 monster should have its own recognizable model, sound set, attack, and
+animation set. Monsters may share the underlying movement, damage, navigation,
+and attack code; the shared implementation must still produce distinct,
+memorable enemies rather than recolored copies.
 
 ---
 
@@ -2840,6 +2882,10 @@ party considered wiped
 The game does not require waiting the full down timers.
 
 Then run-attempt logic executes.
+
+When all three team attempts are exhausted, the run ends and returns to the
+lobby/intermission with a summary of that run's results. Gold and XP already
+earned during the run are retained.
 so if u have more attemtps left then use those, else, back to intermisison with that run's summary shown  like stats 
 
 ---
@@ -3617,6 +3663,17 @@ unlocks
 achievements
 ```
 
+Gold, XP, unlocks, and completion rewards are required from the first shipped
+version and persist when a player leaves and returns. Earned gold and XP are
+kept even when a run ends in a wipe. The lobby shop should let players spend
+earned progress on weapons or upgrades, but the currency model and exact shop
+inventory are still undecided:
+
+`NEEDS_SPEC_DECISION`: Should Zombie Tower have its own currency, use MiMITA's
+general currency, or support both? Should players buy new weapons, upgrade
+weapons they own, or both? The spec must also define whether the shop changes
+the starting kit or only grants optional alternatives.
+
 ---
 
 # 160. Persistence architecture warning
@@ -4022,27 +4079,6 @@ Possible reasons:
 
 Avoid obvious pop-out during active encounters.
 
-if u skip too many monsters then a  arena closer should spawn
-arena closer = like 100,000 hp
-moves as fast as a plaeyr
-goes thru walls
-a big like 20 meter radius sphere
-like almost totally silent except for a repeating hum taht u can hear from far away
-and then it should be  touch it = damage, each tick its intersecting u = 66 damage minimum,higher force = more damage 
-it can be killed but its jsut annoying
-and should be clear that, ok, not killing all monsters/a acceptable amount of monsterrs = a arena closer spawns = i die = more likely to restart , which i dotn wnat to do , therefore kill all mosnters 
-
-BUT THTA SUCSK THO
-CUZ IT SHOULD BE INHERENT LIKE inherently fun
-man i wish there was more moinsters i could kill
-arena closer feels liek a hack fix for now
-we should make it so  npcs dont get caught and u never ever ever have to go searching for monsetrs
-tahts what i wnana avoid
-like just  going thru the game and then missing 1 then u are dead bc u missed 1 becasue u cant even see where it is bc its off the map
-that sucks
-dont  do that 
-
-
 ---
 
 # 183. Boss spawning
@@ -4097,6 +4133,9 @@ base gold reward
 
 Bosses award substantially more.
 
+Players also earn gold from reaching higher checkpoints and completing the
+tower. These rewards persist, including gold earned before a failed run.
+
 ---
 
 # 186. XP rewards
@@ -4108,6 +4147,9 @@ base XP reward
 ```
 
 The server grants authoritative progression rewards.
+
+Monster kills, reaching higher checkpoints, and completing the tower award XP.
+XP earned during a run persists even if the team later wipes.
 
 ---
 
@@ -4849,7 +4891,8 @@ Zombie Tower v1 MUST contain:
 
 ```text
 one complete authored tower
-45–60 minute target run
+at least 50 floors
+45–60 minute target successful run (revisit this duration against the 50-floor goal)
 fast MiMITA movement
 checkpoints
 limited run attempts
@@ -4927,7 +4970,8 @@ Then expand toward full tower.
 Zombie Tower v1 is REAL when a player can:
 
 1. select Zombie Tower;
-2. enter the intermission/lobby;
+2. enter the playable themed lobby with a 30-second intermission that starts
+   automatically;
 3. start alone with NPC teammates or with human teammates;
 4. use fast unrestricted MiMITA movement;
 5. fight through the authored tower;
@@ -4956,6 +5000,16 @@ Zombie Tower v1 is REAL when a player can:
 28. return later;
 29. still possess saved progression;
 30. record/replay the run without fundamental state corruption.
+
+Each selected v1 monster also needs its own recognizable model, sound set,
+attack, and animations, while reusing shared implementation code where
+possible. The full run has to demonstrate the floor-clear rule: torch/light cues
+hint at the route, clearing at least 75% of a floor's required monsters opens
+the normal exit, and reaching the next checkpoint early spawns the Arena
+Closer. The test party targets four starting players but must work with other
+party sizes allowed by the server. Team wipes consume one of three shared
+attempts and restore the whole party to its latest checkpoint. A player may
+return as a zombie, pending the role details marked `NEEDS_SPEC_DECISION`.
 
 ---
 

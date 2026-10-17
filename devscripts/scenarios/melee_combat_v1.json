@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "melee_combat_v1",
+  "description": "Start Melee by numeric mode, equip the Captain Falcon move set, spawn an opponent, trigger actions, and verify the server action start and phase impulse events.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "badhouse",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [
+    {"id": "start_melee", "command": "modestart", "args": ["14"], "delay_ms_after": 1500},
+    {"id": "equip_moveset", "command": "equipslot", "args": ["1"], "delay_ms_after": 500},
+    {"id": "npc_spawn", "command": "npc_spawn", "args": ["1"], "delay_ms_after": 800},
+    {"id": "attack_air_kick", "command": "meleeattack", "args": ["a_air_kick"], "delay_ms_after": 800},
+    {"id": "attack_punch", "command": "meleeattack", "args": ["a_ground_punch"], "delay_ms_after": 800},
+    {"id": "snapshot_end", "command": "agent.snapshot", "args": ["melee_combat_end"]}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "melee.action.start"},
+    {"type": "event_present", "event": "melee.impulse"},
+    {"type": "event_absent", "event": "terminal.command.unknown"}
+  ],
+  "timeout_seconds": 150
+}

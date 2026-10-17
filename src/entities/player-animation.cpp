@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "animation-rotation.h"
 #include "combat/weapon-registry.h"
 #include "config.h"
 #include "entities/aimbody-config.h"
@@ -56,7 +57,8 @@ static glm::vec3 springVec3(SpringState& spring, const glm::vec3& target, float 
 }
 
 static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
-    const AnimClip& clip, float timeSeconds, float speedScale = 1.0f)
+    const AnimClip& clip, float timeSeconds, float speedScale = 1.0f,
+    float forcedLoopedTick = -1.0f)
 {
     std::unordered_map<std::string, AnimOverlayResult> result;
     if (clip.keyframes.empty()) return result;
@@ -65,8 +67,16 @@ static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
     float duration = (float)clip.durationTicks;
     if (duration <= 0.0f) duration = 1.0f;
 
-    float loopedTick = clip.loop ? std::fmod(tickTime, duration) : std::min(tickTime, duration - 1.0f);
-    if (loopedTick < 0.0f) loopedTick += duration;
+    float loopedTick;
+    if (forcedLoopedTick >= 0.0f) {
+        // Melee phase sampling: the action owner maps a phase tick to a
+        // normalized clip sample; do not advance by time or wrap.
+        loopedTick = std::clamp(forcedLoopedTick, 0.0f, duration - 1.0f);
+    } else {
+        loopedTick = clip.loop ? std::fmod(tickTime, duration)
+                               : std::min(tickTime, duration - 1.0f);
+        if (loopedTick < 0.0f) loopedTick += duration;
+    }
 
     const AnimKeyframe* prev = &clip.keyframes[0];
     const AnimKeyframe* next = &clip.keyframes[0];
@@ -110,13 +120,17 @@ static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
 
         glm::vec3 prevTrans = (prevIt != prev->parts.end()) ? prevIt->second.translation : glm::vec3(0.0f);
         glm::vec3 nextTrans = (nextIt != next->parts.end()) ? nextIt->second.translation : glm::vec3(0.0f);
-        glm::vec3 prevRot = (prevIt != prev->parts.end()) ? prevIt->second.rotation : glm::vec3(0.0f);
-        glm::vec3 nextRot = (nextIt != next->parts.end()) ? nextIt->second.rotation : glm::vec3(0.0f);
+        glm::quat prevRot = (prevIt != prev->parts.end())
+            ? prevIt->second.rotationQuat : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        glm::quat nextRot = (nextIt != next->parts.end())
+            ? nextIt->second.rotationQuat : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         glm::vec3 prevScale = (prevIt != prev->parts.end()) ? prevIt->second.scale : glm::vec3(1.0f);
         glm::vec3 nextScale = (nextIt != next->parts.end()) ? nextIt->second.scale : glm::vec3(1.0f);
 
         overlay.translation = glm::mix(prevTrans, nextTrans, t);
-        overlay.rotation = glm::mix(prevRot, nextRot, t);
+        // Canonical quaternion channels interpolate with shortest-arc SLERP.
+        overlay.rotation = AnimRotation::eulerXyzDegreesFromQuat(
+            AnimRotation::slerpShortest(prevRot, nextRot, t));
         overlay.scale = glm::mix(prevScale, nextScale, t);
         result[partName] = overlay;
     }
@@ -131,6 +145,21 @@ void Player::playOneShot(const std::string& clip, bool loop)
     lockedClip = clip;
     lockedClipTime = 0.0f;
     lockedClipLoop = loop;
+    lockedClipPhaseTick = 0;
+    lockedClipPhaseTicks = 0;
+}
+
+void Player::playOneShotPhase(const std::string& clip, int phaseTick, int phaseTicks)
+{
+    if (clip.empty() || phaseTicks <= 0)
+        return;
+    lockedClip = clip;
+    lockedClipTime = 0.0f;
+    // Phase clips are held until the action owner clears or replaces them; the
+    // pose is sampled from the phase progress, not from elapsed time.
+    lockedClipLoop = true;
+    lockedClipPhaseTick = std::max(0, phaseTick);
+    lockedClipPhaseTicks = phaseTicks;
 }
 
 static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
@@ -273,7 +302,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         const AnimClip* lc = findClip(lockedClip);
         if (!lc) {
             lockedClip.clear();
-        } else {
+            lockedClipPhaseTick = 0;
+            lockedClipPhaseTicks = 0;
+        } else if (lockedClipPhaseTicks <= 0) {
+            // Time-driven one-shot. Phase-driven clips are held by the action
+            // owner and are not auto-cleared by elapsed time.
             lockedClipTime += dt;
             if (!lockedClipLoop &&
                 lockedClipTime >= (float)lc->durationTicks / 60.0f) {
@@ -411,6 +444,16 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     // === COMPUTE JSON KEYFRAME ANIMATION ===
     const AnimClip* activeClip = findClip(activeAnim);
+    // Melee phase sampling: when the active clip is a phase-driven one-shot,
+    // evaluate it at the phase-mapped sample instead of advancing by time.
+    float animForcedSampleTick = -1.0f;
+    if (!lockedClip.empty() && activeAnim == lockedClip && lockedClipPhaseTicks > 0) {
+        const AnimClip* lc = findClip(lockedClip);
+        if (lc) {
+            animForcedSampleTick = AnimRotation::samplePhaseClipTick(
+                lockedClipPhaseTick, lockedClipPhaseTicks, lc->durationTicks);
+        }
+    }
     std::unordered_map<std::string, AnimOverlayResult> animOverlay;
     if (activeClip) {
         float animSpeedScale = 1.0f;
@@ -431,7 +474,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 animSpeedScale, move01, (int)nowMoving);
         }
 
-        animOverlay = interpolateAnimClip(*activeClip, animStateTime, animSpeedScale);
+        animOverlay = interpolateAnimClip(*activeClip, animStateTime, animSpeedScale,
+                                          animForcedSampleTick);
     }
 
     // Weapon state

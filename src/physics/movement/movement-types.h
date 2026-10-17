@@ -130,6 +130,13 @@ struct MovementJumpState {
     float coyoteTimerSeconds = 0.0f;
     bool didGroundJump = false;
     bool didAirJump = false;
+    // Hold-scaled jump input mode (Melee). While active the jump starts at the
+    // configured minimum and gains upward velocity for up to `holdJumpChargeTicks`
+    // server ticks while the button stays held; release or reaching the cap
+    // stops further boost.
+    bool holdJumpActive = false;
+    int holdJumpTicksHeld = 0;
+    float holdJumpBaseVelocity = 0.0f;
 };
 
 struct MovementDashState {
@@ -522,6 +529,13 @@ enum class MovementJumpMode : uint8_t {
     Additive = 1
 };
 
+// Melee-selectable Space input policy. Press = existing immediate jump.
+// HoldScaled = jump at minimum strength, then add upward boost while held.
+enum class MovementJumpInputMode : uint8_t {
+    Press = 0,
+    HoldScaled = 1
+};
+
 enum class MovementSpeedCapMode : uint8_t {
     None = 0,
     Hard = 1,
@@ -649,6 +663,16 @@ struct MovementConfig {
     float jumpBufferSeconds = 0.0f;
     float coyoteSeconds = 0.0f;
     int maximumAirJumps = 0;
+
+    // Melee-selectable jump-input policy. `Press` keeps the existing immediate
+    // behavior. `HoldScaled` starts the jump at `holdJumpMinMultiplier` strength
+    // and adds upward velocity for up to `holdJumpChargeTicks` held server ticks
+    // until `holdJumpMaxMultiplier`. This is a mode/profile policy, not a buffer
+    // or cooldown.
+    MovementJumpInputMode jumpInputMode = MovementJumpInputMode::Press;
+    float holdJumpMinMultiplier = 1.0f;
+    float holdJumpMaxMultiplier = 1.0f;
+    int holdJumpChargeTicks = 10;
 
     // Master toggles for dash, down-dash, and freeze. When false the ability
     // is unavailable and presses are ignored (no event, no velocity change).

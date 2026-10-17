@@ -39,6 +39,9 @@ public:
     // Temporary in-memory mode policy. It never writes config/healthbar.json.
     void setModeVisibilityOverride(bool hideWorldHealthbars);
     bool worldHealthbarsVisible() const { return !mHideWorldHealthbarsForMode; }
+    // Melee-style per-mode percent display (replaces the healthbar above head).
+    void setModePercentAboveHead(bool percentAboveHead) { mPercentAboveHeadForMode = percentAboveHead; }
+    bool modePercentAboveHead() const { return mPercentAboveHeadForMode; }
 
     const HealthbarConfigData& data() const { return mData; }
     HealthbarConfigData& edit();
@@ -50,4 +53,5 @@ private:
     std::string mPath = "config/healthbar.json";
     int64_t mLastModified = 0;
     bool mHideWorldHealthbarsForMode = false;
+    bool mPercentAboveHeadForMode = false;
 };

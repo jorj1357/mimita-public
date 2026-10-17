@@ -104,6 +104,14 @@
       "description": "Random weapons, one life. Last actor standing wins.",
       "teams": 0,
       "score_limit": 0
+    },
+    {
+      "id": "melee",
+      "gamemode_id": "melee",
+      "name": "Melee",
+      "description": "Captain Falcon stocks. Knock opponents into the void. Four lives each.",
+      "teams": 0,
+      "score_limit": 0
     }
   ]
 }

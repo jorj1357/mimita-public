@@ -2,6 +2,32 @@
 
 # Implementation plan: one canonical `events.jsonl` log path
 
+## Match launch and command evidence contract
+
+For terminal-driven server and gamemode actions, the canonical journal must
+make each stage distinguishable: command received and recognized (or unknown),
+local handler result, server command acceptance/rejection, server room
+registration, client connection-state transition, active server mode, and
+authoritative actor roster. Include the run/session identity and command
+request ID wherever the existing path has one. Do not claim that a command was
+applied because it was sent or because its local handler returned.
+
+Connection-state events should use structured fields for previous and next
+state, connected/active flags, room code, server name/address, local player ID,
+and required map ID. Gamemode configuration should include stable mode ID and
+match identity. Roster events should be emitted at spawn/despawn and match
+configuration boundaries, with actor ID, player/NPC kind, profile or role,
+alive state, and total counts; avoid per-frame roster dumps. Command result
+events should include the command, accepted flag, reason/status, and actor who
+requested it. If a protocol does not carry a request ID, say so in the event
+and correlate only with fields the protocol actually provides.
+
+`terminal.command.completed.success=true` means the client-side command handler
+returned; it does not prove a network request was accepted or a requested mode
+became active. A runtime scenario must wait for the handler result and then
+assert the authoritative server/client outcome separately. An unknown-command
+event is a failed scenario step, even if command delivery itself succeeded.
+
 Status: partial implementation. `StructuredLogger` now enforces a 100,000,000
 byte canonical file ceiling and a 1,000,000,000 byte `logs` tree ceiling,
 tracks concurrent processes with shared Windows coordination, prunes eligible

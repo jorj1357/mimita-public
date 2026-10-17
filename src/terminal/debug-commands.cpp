@@ -26,6 +26,9 @@
 #include "network/server.h"
 #include "network/server-gamemode.h"
 #include "network/community-server-config.h"
+#include "network/server-presets.h"
+#include "gui/gui-main.h"
+#include "auth/auth-system.h"
 #include "map/map-catalog.h"
 #include "gamemode/map-config.h"
 #include "gamemode/gamemode.h"
@@ -83,6 +86,60 @@ void registerDebugCommands()
                 Terminal::instance().addLog("[MODESTART] sent to server");
             } else {
                 Terminal::instance().addLog("[MODESTART] HOST ONLY");
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "startmelee", "Start and join a Melee room, or switch the connected room to Melee.", "startmelee",
+        [](const std::vector<std::string>&) {
+            if (MimitaNet::isServerHost()) {
+                MimitaNet::serverCommunitySetMode("melee");
+                MimitaNet::serverCommunityStartMatch(false, "melee");
+                Terminal::instance().addLog("[STARTMELEE] started melee");
+            } else if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "startmelee");
+                Terminal::instance().addLog("[STARTMELEE] requested Melee from the connected server; waiting for its authoritative result");
+            } else {
+                MimitaNet::ServerPreset preset;
+                std::string error;
+                if (!MimitaNet::loadServerPreset("melee_1", preset, error)) {
+                    Terminal::instance().addLog("[STARTMELEE] failed to load melee_1: " + error);
+                    return;
+                }
+
+                MimitaNet::ServerLaunchSettings settings;
+                settings.serverName = preset.serverName;
+                settings.mapName = preset.mapName;
+                settings.resolvedMapPath = "assets/maps/" + preset.mapName + ".glb";
+                settings.gameMode = preset.gameMode;
+                settings.maxPlayers = preset.maxPlayers;
+                settings.startupNpcsEnabled = preset.startupNpcsEnabled;
+                settings.startupNpcCount = preset.startupNpcCount;
+                settings.autoMapRotation = preset.autoMapRotation;
+                settings.mapRotationMinutes = preset.mapRotationMinutes;
+                settings.discordNotification = preset.discordNotification;
+                settings.startLocalServer = true;
+                settings.hostPlayerName = AuthSystem::instance().displayName();
+
+                if (!launchServerPresetAndJoin(settings)) {
+                    Terminal::instance().addLog("[STARTMELEE] failed to start and join preset melee_1; check the current server and client state");
+                    return;
+                }
+                Terminal::instance().addLog("[STARTMELEE] starting and joining Melee room: map=" +
+                    preset.mapName + " mode=" + preset.gameMode + " startup_npcs=" +
+                    std::to_string(preset.startupNpcsEnabled ? preset.startupNpcCount : 0));
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
+        "meleeattack", "Start a Captain Falcon Melee action by id; host only.", "meleeattack [actionId]",
+        [](const std::vector<std::string>& args) {
+            const std::string actionId = args.empty() ? std::string("a_ground_punch") : args[0];
+            if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "meleeattack " + actionId);
+                Terminal::instance().addLog("[MELEEATTACK] sent to server: " + actionId);
+            } else {
+                Terminal::instance().addLog("[MELEEATTACK] requires a server connection");
             }
         }
     });

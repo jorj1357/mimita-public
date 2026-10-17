@@ -479,6 +479,8 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     // Health and death. A self-only healthme override applies to this player
     // only; the host-wide healthall override remains the stronger global one.
     player.dead = false;
+    // Melee: reset the percent meter and any in-progress action on spawn.
+    serverMeleeResetForSpawn(player);
     const ActorSpawnProfile profile = serverResolveActorSpawnProfile(player.id);
     const int overrideHp = serverGameOverrides().maxHpOverride;
     const int maxHp = overrideHp > 0 ? overrideHp
@@ -880,6 +882,8 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             // resetPlayerForSpawn is called by completeAuthoritativeSpawn
             // which is triggered by justRespawned flag in the server pump.
             p.justRespawned = true;  // signal caller to send spawn sync
+            // Melee: grant 60 server ticks of spawn protection on respawn.
+            serverMeleeNoteSpawn(p.id, 60);
             p.input = {};
             p.attackQueued = false;
             p.dashAvailable = true;
@@ -1634,6 +1638,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     }
     out.yaw = player.yaw;
     out.health = player.health;
+    out.meleePercent = player.meleePercent;
     out.onGround = (serverSimBroadcast ? player.lastAcceptedClientOnGround : player.onGround) ? 1 : 0;
     out.equippedSlot = (int16_t)player.equippedSlot;
     out.weaponState = player.weaponState;

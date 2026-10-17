@@ -1,0 +1,289 @@
+{
+  "version": 2,
+  "states": {
+    "default": "idle"
+  },
+  "clips": {
+    "idle": {
+      "durationTicks": 60,
+      "loop": true,
+      "keyframes": [
+        { "tick": 0,  "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [0, 0, 0] } } },
+        { "tick": 30, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [1, 0, 0], "translation": [0, 0, 0.02] } } },
+        { "tick": 59, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_punch_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 10] }, "torso": { "rotationEulerDegrees": [0, 10, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 40] }, "torso": { "rotationEulerDegrees": [0, 15, 0] } } }
+      ]
+    },
+    "cf_punch_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -50] }, "torso": { "rotationEulerDegrees": [0, -5, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -95] }, "torso": { "rotationEulerDegrees": [5, -10, 0] } } }
+      ]
+    },
+    "cf_punch_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -60] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_punch2_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, -10] }, "torso": { "rotationEulerDegrees": [0, -10, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, -40] }, "torso": { "rotationEulerDegrees": [0, -15, 0] } } }
+      ]
+    },
+    "cf_punch2_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, 50] }, "torso": { "rotationEulerDegrees": [0, 5, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, 95] }, "torso": { "rotationEulerDegrees": [5, 10, 0] } } }
+      ]
+    },
+    "cf_punch2_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, 60] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_falconpunch_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 20] }, "torso": { "rotationEulerDegrees": [5, 20, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 65] }, "torso": { "rotationEulerDegrees": [10, 30, 0] } } }
+      ]
+    },
+    "cf_falconpunch_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -60] }, "torso": { "rotationEulerDegrees": [15, -10, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -105] }, "torso": { "rotationEulerDegrees": [20, -20, 0] } } }
+      ]
+    },
+    "cf_falconpunch_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -70] }, "torso": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 0] }, "torso": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_airkick_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [35, 0, 0] } } }
+      ]
+    },
+    "cf_airkick_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [-30, 0, 0] }, "torso": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [-80, 0, 0] }, "torso": { "rotationEulerDegrees": [15, 0, 0] } } }
+      ]
+    },
+    "cf_airkick_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [-40, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_fwdash_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 20] }, "torso": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 40] }, "torso": { "rotationEulerDegrees": [15, 0, 0] } } }
+      ]
+    },
+    "cf_fwdash_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -40] }, "torso": { "rotationEulerDegrees": [20, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -70] }, "torso": { "rotationEulerDegrees": [28, 0, 0] } } }
+      ]
+    },
+    "cf_fwdash_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -40] }, "torso": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 0] }, "torso": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_uptilt_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-45, 0, 0] } } }
+      ]
+    },
+    "cf_uptilt_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-70, 0, 0] }, "torso": { "rotationEulerDegrees": [-10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-120, 0, 0] }, "torso": { "rotationEulerDegrees": [-15, 0, 0] } } }
+      ]
+    },
+    "cf_uptilt_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-60, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_airup_kick_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [25, 0, 0] } } }
+      ]
+    },
+    "cf_airup_kick_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [-60, 0, 0] }, "torso": { "rotationEulerDegrees": [-15, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [-125, 0, 0] }, "torso": { "rotationEulerDegrees": [-20, 0, 0] } } }
+      ]
+    },
+    "cf_airup_kick_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [-50, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_airup_special_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-40, 0, 0] } } }
+      ]
+    },
+    "cf_airup_special_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-80, 0, 0] }, "torso": { "rotationEulerDegrees": [-15, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-150, 0, 0] }, "torso": { "rotationEulerDegrees": [-20, 0, 0] } } }
+      ]
+    },
+    "cf_airup_special_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [-70, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_sweep_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [15, 0, 0] }, "rightLeg": { "rotationEulerDegrees": [5, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [25, 0, 0] }, "rightLeg": { "rotationEulerDegrees": [-15, 0, 0] } } }
+      ]
+    },
+    "cf_sweep_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [30, 15, 0] }, "rightLeg": { "rotationEulerDegrees": [-50, 0, 15] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [35, 30, 0] }, "rightLeg": { "rotationEulerDegrees": [-70, 0, 25] } } }
+      ]
+    },
+    "cf_sweep_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [20, 10, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [0, 0, 0] }, "rightLeg": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_airdown_kick_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [30, 0, 0] } } }
+      ]
+    },
+    "cf_airdown_kick_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [50, 0, 0] }, "torso": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [95, 0, 0] }, "torso": { "rotationEulerDegrees": [15, 0, 0] } } }
+      ]
+    },
+    "cf_airdown_kick_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [40, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightLeg": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_airdown_strike_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [20, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [45, 0, 0] } } }
+      ]
+    },
+    "cf_airdown_strike_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [70, 0, 0] }, "torso": { "rotationEulerDegrees": [15, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [120, 0, 0] }, "torso": { "rotationEulerDegrees": [25, 0, 0] } } }
+      ]
+    },
+    "cf_airdown_strike_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [50, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_grab_windup": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 10] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 25] } } }
+      ]
+    },
+    "cf_grab_active": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -35] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -65] } } }
+      ]
+    },
+    "cf_grab_recovery": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, -30] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "rightArm": { "rotationEulerDegrees": [0, 0, 0] } } }
+      ]
+    },
+
+    "cf_shield": {
+      "durationTicks": 10, "loop": false,
+      "keyframes": [
+        { "tick": 0, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, 90] }, "rightArm": { "rotationEulerDegrees": [0, 0, -90] }, "torso": { "rotationEulerDegrees": [10, 0, 0] } } },
+        { "tick": 9, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, 95] }, "rightArm": { "rotationEulerDegrees": [0, 0, -95] }, "torso": { "rotationEulerDegrees": [12, 0, 0] } } }
+      ]
+    }
+  }
+}

@@ -103,6 +103,14 @@
       "description": "Heavy Juggernaut loadout: Heavy Shotgun, Large Machine Gun, Force Punch.",
       "role_only": true,
       "weapons": ["heavy_shotgun", "large_machine_gun", "force_punch", "nothing"]
+    },
+    {
+      "id": 12,
+      "key": "captain_falcon",
+      "name": "Captain Falcon (Melee role)",
+      "description": "Single always-active Captain Falcon move set; attacks are actions inside the moveset, not separate weapons.",
+      "role_only": true,
+      "weapons": ["captain_falcon_moveset", "nothing"]
     }
   ]
 }

@@ -172,6 +172,10 @@ struct ServerInput
     bool downDashPressed = false;
     bool attackPressed = false;
     bool freezeHeld = false;
+    // Melee: Q held shield and E grab held intent, carried in stateFlags bits
+    // that are otherwise free (see NetworkPlayerStateFlags).
+    bool shieldHeld = false;
+    bool grabHeld = false;
     bool flyUp = false;
     bool flyDown = false;
     uint32_t tick = 0;
@@ -397,6 +401,37 @@ struct ServerPlayer
     AttackTimeline physicalAttackTimeline;
     bool physicalAttackIsLunge = false;
     float meleeCooldownTimer = 0.0f;
+
+    // ── Melee action state (Captain Falcon move set) ───────────────────
+    // One active Melee action per fighter. The shared move-set data
+    // (config/weapons.json components.melee.actions) owns phase ticks,
+    // limb-attached hitboxes, percent, knockback, impulses, and audio; this
+    // struct only tracks the instance.
+    bool meleeActionActive = false;
+    std::string meleeActionId;
+    uint32_t meleeActionStartTick = 0;
+    int meleePhaseTick = 0;
+    // Captured camera-horizontal-forward at action start (never re-aimed).
+    glm::vec3 meleeActionForward{1.0f, 0.0f, 0.0f};
+    uint32_t meleeActionSerial = 0;
+    // Previous active-tick hitbox center, for a swept test between ticks.
+    glm::vec3 meleeLastHitboxCenter{0.0f};
+    // One hit per target per action instance.
+    std::unordered_set<uint32_t> meleeHitTargets;
+    // Melee percent meter (replaces ordinary health for this mode); reset on
+    // respawn. Only Melee reads/writes it.
+    float meleePercent = 0.0f;
+
+    // ── Melee shield (Q held) ──────────────────────────────────────────
+    // Durability 0..50; the remaining fraction before a hit scales that hit's
+    // percent and knockback by (1 - remainingFraction). Broken shields recover
+    // 0->full over a fixed tick count before reuse.
+    bool meleeShieldBroken = false;
+    float meleeShieldDurability = 50.0f;
+    // ── Melee grab ─────────────────────────────────────────────────────
+    uint32_t meleeGrabVictimId = 0;
+    int meleeGrabPullTicksLeft = 0;
+    uint32_t meleeGrabImmuneUntilTick = 0;
     std::deque<PositionHistoryEntry> posHistory;
 
     // ── Replicated limb / ragdoll pose (owner-authoritative) ───────────
@@ -614,6 +649,16 @@ struct ServerNpc
     float orbitAngle = 0.0f;
     ServerNpcState aiState = ServerNpcState::Chase;
     glm::vec3 knockbackImpulse{0.0f};
+    // ── Melee NPC action state (Captain Falcon move set) ──────────────
+    // Mirrors the ServerPlayer Melee fields so an NPC fighter uses the same
+    // move-set actions, percent, and knockback as a player.
+    bool meleeActionActive = false;
+    std::string meleeActionId;
+    uint32_t meleeActionStartTick = 0;
+    glm::vec3 meleeActionForward{1.0f, 0.0f, 0.0f};
+    std::unordered_set<uint32_t> meleeHitTargets;
+    float meleePercent = 0.0f;
+    uint32_t meleeNextAttackTick = 0;
     // Replicated weapon presentation: which slot the NPC holds and its
     // runtime state (firing / reloading / empty), mirroring player snapshots.
     int16_t equippedSlot = 0;
@@ -1059,6 +1104,23 @@ void tickServerPhysicalContactWeapons(SOCKET sock,
                                       const HeadlessWorld& world,
                                       float dt, uint32_t tick,
                                       uint64_t& totalPacketsOut);
+
+// ── Melee action runtime (Captain Falcon move set) ────────────────────
+// Advances every active Melee action, sweeps its limb-attached hitbox during
+// active ticks, and applies percent/knockback/impulses. Server-authoritative
+// first slice; client prediction/referee is added later.
+void tickServerMeleeActions(SOCKET sock,
+                            std::unordered_map<uint32_t, ServerPlayer>& players,
+                            std::unordered_map<uint32_t, ServerNpc>& npcs,
+                            uint32_t tick, uint64_t& totalPacketsOut);
+// Starts a named action for the attacker using the move set on its equipped
+// definition. Returns false when the attacker has no Melee move set or the
+// action id is unknown.
+bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
+                            uint32_t tick);
+// Melee percent meter accessors (0 in non-Melee contexts).
+float serverMeleePercentFor(const ServerPlayer& player);
+void serverMeleeResetForSpawn(ServerPlayer& player);
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
                          const void* data, size_t size);
 void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,

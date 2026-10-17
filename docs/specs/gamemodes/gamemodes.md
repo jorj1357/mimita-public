@@ -36,6 +36,12 @@ from that file. An explicit map selected in the GUI or an explicit `changemap`
 command may choose a map outside the configured pool; invalid or unloadable
 automatic candidates are skipped safely.
 
+When the GUI presents a map choice before starting a match, that choice is
+resolved and loaded before the match enters its intermission. Intermission is
+not a second map-picker phase. The chosen map remains the match map through
+countdown, active play, respawns, and results unless a documented mode/map
+rotation transition selects another map.
+
 The active lifecycle is `WAITING → INTERMISSION → COUNTDOWN 3 → COUNTDOWN 2 →
 COUNTDOWN 1 → GO → ACTIVE → RESULTS → INTERMISSION`. `PRE_MATCH` is not used by
 the active runtime.
@@ -45,6 +51,32 @@ switches to mode N through the results screen and then the new mode's default
 15-second intermission. `modestartnow N` starts or live-switches to mode N and
 enters its countdown after the five-second live-switch results screen. There is
 no `modepick` command.
+
+### `startmelee` command contract
+
+`startmelee` is a named Melee launch action, not a numeric alias for
+`modestart`. If the local player is already connected, it requests the
+authoritative server to switch that room to the stable gamemode ID `melee`.
+If disconnected, it starts the configured Melee server preset and joins only
+after the server has registered a room code. The disconnected path must never
+fall back to sandbox or report that the player joined before the connection is
+confirmed. Its initial map comes from the Melee preset; the normal GUI map
+picker remains the way to choose another map. Command receipt, handler result,
+server acceptance/rejection, room registration, connection transition, active
+mode, and actor roster are separate evidence; sending the command is not proof
+that the server applied it.
+
+The first playable Melee preset starts one human and exactly one Melee NPC.
+Both are assigned the `falcon` role and resolve the same `captain_falcon`
+weapon set and `captain_falcon_moveset` equipped definition. The NPC must not
+retain or fall back to ordinary guns. Do not add a second NPC in a launch
+scenario unless that scenario is explicitly testing rejection of an extra
+spawn. A mode change must reconcile generic startup NPCs to the mode's declared
+roster; while the first-version Melee roster is active, reject or prevent
+additional NPC spawns instead of silently adding unassigned, gun-equipped
+actors. Reapply and log the same effective loadout on respawn. The launch
+scenario must assert one human, one NPC, the active `melee` mode, and matching
+role, weapon-set, and equipped definition identity for both fighters.
 
 An explicit weapon set selected in the GUI or at runtime takes precedence over
 the `weapon_set_id` fallback in a gamemode JSON file.
@@ -86,7 +118,10 @@ Selection order for ordinary spawns:
 2. Select an enabled map-config spawnpoint eligible for the actor's active
    mode/team/role. A point with a configured tag must match the actor's
    configured spawn group; an untagged point is the generic candidate.
-3. If no eligible authored point exists, use the legacy map-GLB spawn list for
+3. If the active map JSON has a complete GLB-spawn override manifest, its
+   enabled resolved entries replace the raw GLB spawn list, including disabled
+   source points; never resurrect a disabled GLB point as a fallback. For a
+   legacy map without a complete manifest, use the raw map-GLB spawn list for
    compatibility.
 4. Validate the candidate with the server's existing safe-spawn checks. If no
    candidate is safe, use the existing documented safe fallback and emit a

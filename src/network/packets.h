@@ -34,7 +34,11 @@ enum NetworkPlayerStateFlags : uint16_t
     NET_STATE_FREEZING     = 1 << 4,
     NET_STATE_ON_GROUND    = 1 << 5,
     NET_STATE_ATTACKING    = 1 << 6,
-    NET_STATE_GODBALL_ACTIVE = 1 << 7
+    NET_STATE_GODBALL_ACTIVE = 1 << 7,
+    // Melee: held shield and grab intent. stateFlags is uint16_t so these do
+    // not change any packet size.
+    NET_STATE_SHIELDING    = 1 << 8,
+    NET_STATE_GRABBING     = 1 << 9
 };
 constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;
@@ -481,6 +485,8 @@ struct SnapshotEntity
     float vz = 0.0f;
     float yaw = 0.0f;
     int32_t health = 100;
+    // Melee percent meter (0 in non-Melee modes).
+    float meleePercent = 0.0f;
     uint8_t onGround = 0;
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
@@ -553,6 +559,9 @@ struct CompactEntityData
     float yaw = 0.0f;
     float aimX = 1.0f, aimY = 0.0f, aimZ = 0.0f;
     int32_t health = 100;
+    // Melee percent meter, quantized to 4% steps (0..1020) to fit the fixed
+    // CompactEntityData size and stay under the snapshot datagram limit.
+    uint8_t meleePercent = 0;
     uint8_t onGround = 0;
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
@@ -587,7 +596,7 @@ struct CompactEntityData
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 164, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 165, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -597,12 +606,12 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[7]; // 7 * 164 + header(32) = 1180 < 1200
+    CompactEntityData entities[7]; // 7 * 165 + header(32) = 1187 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1180, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1187, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {

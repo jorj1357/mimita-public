@@ -1,5 +1,7 @@
 #include "player-animation-config.h"
 
+#include "animation-rotation.h"
+
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -17,8 +19,36 @@ bool readAnimPart(const nlohmann::json& j, AnimKeyframePart& part)
         part.translation = glm::vec3(j["translation"][0], j["translation"][1], j["translation"][2]);
         read = true;
     }
-    if (j.contains("rotation") && j["rotation"].is_array() && j["rotation"].size() >= 3) {
-        part.rotation = glm::vec3(j["rotation"][0], j["rotation"][1], j["rotation"][2]);
+    // Version-2 explicit encodings. Exactly one of the two should be present.
+    const bool hasEuler =
+        j.contains("rotationEulerDegrees") && j["rotationEulerDegrees"].is_array() &&
+        j["rotationEulerDegrees"].size() >= 3;
+    const bool hasQuat =
+        j.contains("rotationQuaternionWxyz") && j["rotationQuaternionWxyz"].is_array() &&
+        j["rotationQuaternionWxyz"].size() >= 4;
+    if (hasEuler && hasQuat) {
+        printf("[ANIM WARNING] part keyframe has both rotationEulerDegrees and "
+               "rotationQuaternionWxyz; using the Euler field\n");
+    }
+    if (hasEuler) {
+        const glm::vec3 euler(j["rotationEulerDegrees"][0], j["rotationEulerDegrees"][1],
+                              j["rotationEulerDegrees"][2]);
+        part.rotation = euler;
+        part.rotationQuat = AnimRotation::eulerXyzDegreesToQuat(euler);
+        read = true;
+    } else if (hasQuat) {
+        const glm::quat q(j["rotationQuaternionWxyz"][0].get<float>(),
+                          j["rotationQuaternionWxyz"][1].get<float>(),
+                          j["rotationQuaternionWxyz"][2].get<float>(),
+                          j["rotationQuaternionWxyz"][3].get<float>());
+        part.rotationQuat = AnimRotation::safeNormalize(q);
+        part.rotation = AnimRotation::eulerXyzDegreesFromQuat(part.rotationQuat);
+        read = true;
+    } else if (j.contains("rotation") && j["rotation"].is_array() && j["rotation"].size() >= 3) {
+        // Legacy version-1 Euler XYZ degrees.
+        const glm::vec3 euler(j["rotation"][0], j["rotation"][1], j["rotation"][2]);
+        part.rotation = euler;
+        part.rotationQuat = AnimRotation::eulerXyzDegreesToQuat(euler);
         read = true;
     }
     if (j.contains("scale") && j["scale"].is_array() && j["scale"].size() >= 3) {

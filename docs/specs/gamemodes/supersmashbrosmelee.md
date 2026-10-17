@@ -37,7 +37,8 @@ soidk wew could do grabs but whatevre
 
 # Melee-inspired arena fighter: clarified proposal
 
-Status: `PROPOSAL — NEEDS_SPEC_DECISION` for the rules still listed below.
+Status: Historical proposal summary. Where it differs from the current
+decisions and requirements below, the numbered specification below is current.
 
 ## Purpose and boundaries
 
@@ -47,7 +48,7 @@ not intended to copy every Melee rule. The existing force-punch weapon is a
 possible movement/combat prototype, not proof that the full mode already
 exists. Weapon-specific contracts remain in the weapon specifications.
 
-## Proposed core rules
+## Historical proposal summary
 
 - Simulate gameplay on the shared fixed 60 Hz tick. An action has explicit
   windup, active, and recovery phases; the existing example of 10/5/15 ticks
@@ -77,18 +78,8 @@ exists. Weapon-specific contracts remain in the weapon specifications.
    unintended input lock.
 4. Force Punch remains independently usable outside this mode.
 
-## Decisions still needed
-
-- What exact movement behaviors are essential to the Melee feel, and which
-  existing movement systems should they reuse?
-- Is hitstun absent, very short, or replaced by a recoverable knockback state?
-- Are shields, grabs, dodges, cancels, ledge recovery, and aerial recovery in
-  the first version?
-- How do percent, knockback, ring-outs, stocks, and respawns work?
-
-Do not resolve these open questions by silently choosing implementation
-defaults. Keep this mode separate from generic Spy Knife, Godball, HAFS, and
-Swordsword damage contracts.
+The resolved choices and remaining questions are in sections 1–55 below. This
+historical summary is context only; it is not a second active decision register.
 
 # MiMITA 3D Melee-Inspired Arena Fighter
 
@@ -132,11 +123,11 @@ Swordsword damage contracts.
 
 ## 9. Instant attack restart and cancellation
 
-**DECIDED:** A new attack input can immediately override the currently playing attack, including before its active phase. The user's example: issuing another attack at tick 7 while a move is approaching active restarts into the newly selected move at its beginning. There is no attack-input buffer: the new input acts now or is rejected by a clearly defined rule; it is not queued for later. This restart behavior overrides any ordinary recovery lock for attack-to-attack transitions. **OPEN:** whether non-attack actions (shield, jump, dodge, grab, hit response) can interrupt every phase, and whether same-move re-input restarts or repeats under a separate rule.
+**DECIDED:** Any new legal move/action with an animation can interrupt the current move animation at any tick, including windup, active, or recovery. The new move starts at its own tick 0 immediately; no attack input is buffered. Example: if move A lasts 50 ticks and move B is pressed at A tick 7, A ends immediately, B starts at tick 0, and B's 5-tick example then returns to idle/locomotion. Movement input also remains available unless the current move's explicit movement policy restricts steering. A move does not trap the player until its animation finishes. Re-entering the same move also starts a fresh action instance. **OPEN:** which simultaneous inputs win if more than one new action is pressed on the same tick.
 
 ## 10. Animation versus action authority
 
-**DECIDED:** Animation must not be the authority that makes a player helpless. Action phase timing is simulation state; pose playback presents it. A new legal action can replace the prior pose and phase immediately. Any transition restriction must come from an explicit action rule, not an animation clip finishing.
+**DECIDED:** The selected move's animation drives the visible body-part path and therefore the attached hitbox path. The move/action state owns its tick clock, hit windows, and rules; the animation clip does not decide whether a hit is confirmed. A new legal move can replace the current clip immediately. When a clip completes without being interrupted, the shared state machine selects idle or locomotion.
 
 ## 11. Movement feel
 
@@ -156,51 +147,51 @@ Swordsword damage contracts.
 
 ## 15. Air movement and recovery
 
-**PROPOSED:** Include aerial control and recovery options that let a player attempt to return after a launch. In the prior discussion, one air jump and an up-special recovery were selected as a preferred direction, while an upper bound on repeated recovery success was described as a goal. **OPEN:** whether those are firm first-version requirements; exact number of jumps, recovery actions, resource/cooldown, and skill curve. The illustrative “about ten” repeated recoveries is not a firm cap.
+**DECIDED for the first version:** Melee's movement profile selects one of two Space input modes: `press` uses the existing immediate jump behavior; `hold_scaled` starts the jump immediately and increases its upward strength over up to 10 held server ticks, with release ending further boost. The mode/profile owns the selection in `config/movement/movement-smash.json`; both choices reuse the existing shared jump, gravity, and collider owners. Ceiling contact resets the available air jump in this mode. Left Ctrl uses existing grounded crouch and airborne downward-movement behavior. Do not add Melee-specific base jump, gravity, speed, or collider constants. The exact min/max boost tuning is open for playtesting; see section 55.
 
 ## 16. Per-move movement restrictions
 
-**DECIDED:** Each attack has its own movement restrictions; attacks should generally allow some movement instead of freezing the actor by default. **PROPOSED:** Make movement permission, steering, root displacement, and momentum effects explicit per move and per phase. **OPEN:** units, allowed ranges, and whether restrictions apply identically on ground and in air.
+**DECIDED:** Movement remains active during an attack unless that move explicitly suppresses new steering input. When a move suppresses steering, preserve the actor's velocity from immediately before the move and continue normal physics from that inherited momentum. A different legal move can still interrupt the attack at any tick and replaces its movement policy. Store steering permission and momentum handling per move/phase; exact tuning values remain open.
 
 ## 17. Camera and body orientation
 
-**DECIDED:** Physical positioning matters. A player should need to align the character and attack volume with the target; looking at a distant target must not make a punch home or hit it automatically. The user considered both camera-directed attacks and fixed forward-facing attacks, then emphasized physically positioning to connect. This specification resolves the tension by distinguishing aim intent from contact: camera input may orient a pose or select a direction, but confirmed hits still require the authored/simulated attack volume to overlap the target in world space. **OPEN:** whether camera pitch changes attack direction in the first version.
+**DECIDED for the first version:** At the attack input tick, capture the camera's horizontal forward vector as the attack direction and lock it for that move instance. A later camera turn does not rotate an attack already in progress. Camera pitch does not aim ordinary attacks vertically. The animation and attached hitbox follow the captured facing; contact still requires real world-space overlap. A later camera-unlocked mode may aim attacks along the direction the actor is moving; that is explicitly out of scope for this first version.
 
 ## 18. Directional attack choices
 
-**PROPOSED:** Resolve attack variants from move input and actor-relative direction (for example neutral, forward, back, up, down, and aerial variants), while keeping exact mapping configurable. The user wants WASD movement to influence attack selection, citing neutral/side/back/air attacks, and wants left click for normal attacks and right click for specials. **OPEN:** the precise mapping, whether direction is sampled on button-down or throughout windup, and how conflicting camera and movement directions are resolved.
+**DECIDED for the first version:** WASD changes movement only. Adding W/A/S/D to a left- or right-click does not choose another attack animation or change its direction; the move is selected by the attack button and faces the captured camera-forward vector. **LATER DIRECTION:** a camera-unlocked control mode may make attack direction follow movement direction. Its bindings and rules remain open and must not leak into this first version.
 
 ## 19. Mouse and camera aiming
 
-**OPEN:** The user discussed punches following camera pitch and limbs physically aiming with mouse/camera, but also expressed preference for fixed, forward-oriented attacks where spacing and alignment determine hits. A first implementation should not silently select unrestricted look-to-hit targeting. Decide whether to support: horizontal-only attack families, limited up/down variants, or continuous camera-directed pose/contact. Any option must retain physical range and collision checks.
+**DECIDED for the first version:** Attack direction is camera horizontal-forward captured at move start; it stays fixed until that move is interrupted or ends. Attack limbs do not aim continuously at the cursor or home toward targets. Vertical moves such as up-B get their direction from that move's authored animation and move data. Later camera-unlocked aiming is a separate future mode.
 
 ## 20. Inputs and controls
 
-**DECIDED:** Left mouse is the normal attack and right mouse is the special attack in the preferred PC control direction. **PROPOSED:** Movement plus attack chooses variants; Q was suggested as a possible shield binding and E as a possible grab binding, but neither is approved. Shift dash/sprint and double-tap dash are competing proposals. Publish a complete control map only after all required actions and conflicts are decided.
+**DECIDED for the first control proposal:** Left mouse = A/normal attack; right mouse = B/special attack; Space = the profile-selected `press` or `hold_scaled` jump mode; Left Ctrl = existing grounded crouch/airborne-down behavior; Q held = shield; E = grab. WASD is horizontal movement only and does not select attack variants. A new move/action can interrupt the current animation immediately. Conflicting modifiers use most-recent press order; same-tick ties use the move-set JSON priority. **OPEN:** controller/mobile mappings and accessibility settings.
 
 ## 21. Move definition data
 
-**PROPOSED:** Define each move as data with stable ID, input/variant mapping, phase lengths, animation references, movement policy, one or more attack shapes, per-tick shape transforms, damage/percent contribution, knockback parameters, and sound/effect references. Keep data declarative and validated; do not create arbitrary executable JSON scripting. Exact schema and hot-reload policy remain open.
+**PROPOSED:** Define each move as validated data with stable ID, input mapping, animation clip, tick windows, movement/steering policy, entry-momentum policy, one or more limb attachments, hitbox shape/size/offset, percent and force parameters, shield damage, knockback parameters, and sound/effect references. The hitbox is a separate move-owned volume attached to a named animated body part; it may extend beyond the visible limb so a short arm can reach farther, while its path still follows the animation. Keep data declarative; do not create arbitrary executable JSON scripting. **DECIDED:** validated move-set JSON hot reload takes effect immediately for newly started actions after atomic fixed-tick publication; in-progress actions retain their starting revision. Exact schema remains an implementation design detail.
 
 ## 22. Attack geometry
 
-**DECIDED:** Use shapes and sweeps over multiple active ticks, rather than a single one-tick sphere check for every attack. The current Force Punch sphere behavior was cited as a useful starting idea: a spatial volume can contact targets and contact location may matter. **PROPOSED:** Support move-authored capsules, spheres, boxes, or other already-supported collision shapes, sampled along the attack's tick timeline. **OPEN:** supported shape set and whether distance-to-center scales damage, knockback, or only hit location.
+**DECIDED:** Each attack has a JSON-configured, move-specific hitbox attached to an animated body part. The hitbox may extend beyond the visible limb and moves only with that part's animation; it cannot teleport to a target or point independently. A hit requires swept hitbox overlap with the victim during an active tick; there is no second visual-limb proximity test. Sweep every active tick to avoid tunneling. **PROPOSED:** Start with supported capsule/sphere/box shapes and per-move dimensions/offsets. **OPEN:** exact supported shape set and how contact location affects the force multiplier.
 
 ## 23. Active-window hit sweep
 
-**PROPOSED:** For each active tick, sweep the authored attack volume from its prior transform to its current transform, test against eligible target hurt volumes, and produce candidate contacts. This reduces tunneling and makes multi-tick active windows meaningful. Deduplicate repeated overlap according to an explicit per-move hit policy. **OPEN:** one-hit-per-activation versus multi-hit, per-target re-hit interval, and collision ordering when multiple targets overlap.
+**DECIDED:** For each active tick, sweep the move's hitbox from its prior limb-attached transform to its current animated transform and test it against eligible target hurt volumes. The client predicts contact; the server uses the referee/lag-compensation policy to accept a plausible overlap or reject an impossible one. Apply one accepted result per configured hit policy. **OPEN:** one-hit-per-activation versus multi-hit, per-target re-hit interval, and collision ordering when multiple targets overlap.
 
 ## 24. Contact and hit result
 
-**PROPOSED:** The client may predict visual contact immediately, but the authoritative simulation decides whether a hit is valid and applies gameplay results once. A contact result should identify attacker, target, move instance, attack tick, contact point/normal, and outcome sufficiently for reconciliation and debugging. Exact packet/event names and contact tolerances are unselected.
+**DECIDED:** The client immediately predicts contact and submits a candidate hit/grab result. The server applies the bounded referee checks in the networking spec, then accepts and publishes the same candidate result or rejects it with a reason. Include attacker, target, move instance/revision, actor generation, mapped tick, contact point/normal, percent, impulse, and result so all peers can reproduce it and diagnostics can show the first divergence. A hit requires the move's animated hitbox overlap, not a second limb-proximity check.
 
 ## 25. Percent meter
 
-**DECIDED:** Percent replaces ordinary health as the primary fighter damage display and contributes to knockback. The user proposed a linear relationship, describing 300 percent as about three times the knockback of 0 percent. **PROPOSED:** Keep percent as persistent match state and make each move's contribution distinct. **OPEN:** whether percent increments equal a move's damage value, and the precise formula, clamps, display precision, and reset conditions.
+**DECIDED:** Percent replaces ordinary health as the fighter damage display and contributes to knockback. Each move has JSON-configured base percent; a generic contact-force calculation combines impact speed and angle/approach directness. Low speed plus a shallow/glancing angle produces low force; high speed plus a direct angle produces high force. That force scales both percent added and knockback. Accumulated percent increases later force/knockback. Put the reusable force calculation with shared weapon/combat behavior in [`../weapons/weapons.md`](../weapons/weapons.md), not in collision geometry code. **OPEN:** exact force equation, angle/speed normalization, percent-to-knockback curve, caps, and display precision. Percent resets to 0 on respawn.
 
 ## 26. Knockback calculation
 
-**DECIDED:** Knockback should combine move-specific force, percent, and physical properties such as character heaviness; it should not be only a canned hitstun reaction. A heavier character may attack with greater knockback but may have slower attacks. The user explicitly prefers this hybrid physical/percent/move-specific direction. **OPEN:** formula, mass semantics, scaling curves, caps, and whether heavier characters trade speed for force by default or only when authored.
+**DECIDED:** A confirmed hit applies an immediate physical impulse. Its direction comes from the contact/attack direction plus any authored move bias; its magnitude uses move-configured base knockback, pre-hit percent, and the generic angle-and-speed contact-force result. Predict locally and use the shared networking correction policy. **OPEN:** exact equation, character mass/weight contribution, normalization/caps, and first playable tuning values.
 
 ## 27. No hitstun and immediate recovery
 
@@ -208,31 +199,33 @@ Swordsword damage contracts.
 
 ## 28. Hit reaction presentation
 
-**PROPOSED:** Play a brief readable reaction pose while preserving control, with animation interruption semantics matching Section 9. The pose may be blended or overridden by the chosen action. **OPEN:** whether the reaction uses impact direction, magnitude, body part, or hit tier, and whether it is an overlay or a replaceable clip. Presentation must never silently delay movement or attack acceptance.
+**DECIDED:** Knockback needs an immediate, readable visual reaction/effect that communicates the impact direction and strength while leaving movement and action control available. The reaction must be interruptible under Section 9 and cannot add hitstun. **OPEN:** exact effect assets, whether pose/effect is an overlay or replaceable clip, and how the visual strength maps to impulse magnitude.
 
 ## 29. Shields
 
-**PROPOSED:** Include a shield with durability and possible break behavior. The user wants shielding to remain an active choice rather than a passive wait state, and suggested that a few normal attacks might break it. **OPEN:** shield input, activation latency, mobility while shielding, durability, regeneration, break penalty, and whether shield damage is based on percent or a separate meter. “A couple hits” is qualitative intent, not a chosen number.
+**DECIDED for the first version:** Hold Q to shield. At activation the shield has 50 durability points; while held it decays linearly to zero over 300 server simulation ticks. Thus its remaining fraction is `clamp(1 - heldTicks / 300, 0, 1)`. When an attack hits the shield, the fighter's received percent and knockback multipliers are `1 - shieldRemainingFraction`, measured from the shield state immediately before that hit: a full-strength shield takes no percent/knockback, a half-strength shield applies a 0.5 multiplier, and a nearly depleted shield applies nearly 1.0. The hit's configured shield damage is subtracted from durability; a 25-point shield hit breaks a shield with 25 points remaining. All values and per-move shield damage are JSON-configurable; the starting values here are 50 points and 300 held ticks.
+
+When shield durability reaches zero from a hit or natural exhaustion after 300 held ticks, the shield breaks and plays its configured break effect/sound. Apply both the fixed 5 m/s upward impulse and the incoming attack's shield-scaled knockback. The hit's shield damage does not spill over into fighter percent. While shielded, move percent is used as shield damage unless that move explicitly configures a different `shield_damage` value. On natural exhaustion, play the same break effect and impulse. After break, recover from 0 to 50 durability over 120 server ticks and become usable when full. Releasing Q before break starts a JSON-configurable tick-based recovery; movement remains available. **OPEN:** the default release-recovery duration and whether releasing early resumes from remaining durability or restarts recovery from zero. All shield timers advance on server simulation ticks.
 
 ## 30. Grabs
 
-**PROPOSED, strongly qualified:** A short grab could exist, with an illustrative maximum around 60 ticks; earlier examples mention 60 or 66 ticks, so no duration is selected. One example proposed a 120-tick re-grab cooldown. The user dislikes helpless locks and wants escape through movement/momentum, such as looking or moving away from the grabber's direction. **OPEN:** whether grabs ship at all, their start/capture/escape/throw rules, cooldown, and maximum restraint. If implemented, grab must be escapable through active play and cannot contradict the no-helplessness requirement. Camera-swing throwing is PC-only proposal; console/mobile behavior is later unresolved work.
+**DECIDED for the first version:** E selects a configurable grab action. Its animated hand/limb-attached sphere hitbox defines its range; a valid grab requires only swept hitbox overlap. The initial radius target is 1 meter (2-meter diameter), measured in game meters; do not copy the legacy Force Punch value until its unit is verified. A shield blocks grabs at every shield strength. The defender remains fully controllable and can avoid the hit/pull through movement and actions; there is no held, frozen, or button-mash escape state. On a confirmed hit, pull the victim toward the animated grab anchor over the move's JSON-configured tick duration, resolving world collision and transferring configured attacker velocity. Grab strength scales with attacker movement speed and target distance from the sphere center: closer/faster contacts are stronger. The inherited-velocity limit starts at 20 m/s at 0 attacker percent, 40 m/s at 100 percent, and 80 m/s at 300 percent; define the curve and 999-percent limit in JSON. After a successful grab, that target cannot be grabbed again for 300 server ticks. **OPEN:** exact pull duration, the strength falloff/velocity-cap curve between and above those example points, the cap at 999 percent, and what the pull does when the victim's movement collides with a wall. The victim is never immobilized.
 
 ## 31. Ring-out and arena bounds
 
-**DECIDED for the first version:** A ring-out happens when knockback carries a fighter past the stage's lethal blast zone and they die in the void. This is the only way to lose a life. **PROPOSED:** Define the lethal blast-zone bounds in stage data and let the server decide when the fighter has crossed them. Hazards do not cause death in this version. **OPEN:** bounds, warning cues, and the time/recovery policy before crossing the lethal boundary.
+**DECIDED for the first version:** There are no Melee-specific rectangular or stage-authored blast-zone bounds. The existing world void-death rule is the only ring-out boundary and the only way to lose a life. Knockback can carry a fighter into the void; hazards and ordinary health damage cannot kill them. Reuse the current world void-death owner and settings rather than adding a second Melee death boundary. **OPEN:** whether this mode needs a warning cue before the existing void-death threshold; do not invent a new threshold as part of the first implementation.
 
 ## 32. Match scoring and respawn
 
-**DECIDED for the first version:** Each fighter starts with four lives. A fighter loses one life only by being knocked out of the stage and dying in the void beyond its blast zone. When lives remain, the fighter respawns; losing the fourth life eliminates them. Ordinary health damage, hazards, or another cause must not kill a fighter in this version. **OPEN:** respawn delay and location, spawn protection, and whether percent resets on respawn. Do not carry the earlier “first to 20 kills” idea into this first-version ruleset.
+**DECIDED for the first version:** Each fighter starts with four lives. A fighter loses one life only by being knocked into the void. When lives remain, respawn immediately at 0 percent using a random eligible enabled spawnpoint from the selected map's JSON list; if only one is enabled, use it. Spawn protection lasts exactly 60 server ticks, then ends immediately. Losing the fourth life eliminates the fighter. Ordinary health damage, hazards, or another cause cannot kill them. Do not carry the earlier “first to 20 kills” idea into this first-version ruleset. **OPEN:** whether protection blocks hit effects only or also shield drain, grabs, and all knockback; whether the spawn impulse is a physical push or a visual/effect cue (the protection itself is the 60-tick state).
 
 ## 33. Stage and hazards
 
-**PROPOSED:** Reuse existing arena maps where suitable; a large enclosed arena or a stage like the train map was called promising, and Final Destination was given as a shape/reference. These are examples, not map approvals. **OPEN:** first map, hazards, moving platforms, blast-zone dimensions, safe spawn points, and whether hazards are disabled in the initial mode.
+**DECIDED for the first version:** Use the normal game-mode GUI map picker before the match starts. The chosen map is fixed before the 15-second intermission begins; map selection is not part of intermission. Use that map's server-resolved editable spawnpoints for initial spawn and respawn; choose randomly among enabled eligible points, and use the one point directly when it is the only eligible point. The existing world void-death rule is the only ring-out boundary. Hazards may add percent or knockback but cannot kill fighters. See the shared spawnpoint rules in [`gamemodes.md`](gamemodes.md) and JSON override proposal in [`../entity-editor/entity-editor.md`](../entity-editor/entity-editor.md).
 
 ## 34. Player and NPC participation
 
-**DECIDED:** NPCs should use the same move-set capabilities and combat path as players. The user's desired abstraction is a reusable attack set that can work against an NPC or a player using another style of combat. **PROPOSED:** Distinguish only the decision/input producer (human controls versus NPC policy); share move resolution, animation, sweep, percent/knockback where the mode supports it, and authoritative contact handling. **OPEN:** how fighter percent and ring-out translate into ordinary modes that use health or different scoring.
+**DECIDED:** NPCs and players use the same move-set, animation, collision, prediction, hit confirmation, percent, and knockback path; only the input/decision producer differs. **First playable match:** exactly one human player versus exactly one NPC, both assigned the `falcon` role and both using the same `captain_falcon` profile, weapon-set ID 12 (`captain_falcon`), and equipped definition ID `captain_falcon_moveset`. The NPC starts with that moveset equipped and must not retain or fall back to revolver, shotgun, rocket launcher, or another ordinary weapon. The roster count includes every startup or runtime-spawned NPC: entering Melee must reconcile the room to one NPC, and further NPC-spawn requests while the first-version roster is active must be rejected or otherwise prevented from adding another fighter. Reapply the same role and moveset on every NPC and player respawn; neither fighter should need to re-equip it. The first playable scenario is exactly one human plus exactly one NPC. This is the first test scope, not a limit on later fighter selection. **OPEN:** NPC decision policy and how reusable moves map into non-Melee modes.
 
 ## 35. Cross-mode reuse contract
 
@@ -244,15 +237,15 @@ Swordsword damage contracts.
 
 ## 37. Blender authoring direction
 
-**DECIDED:** Blender is the intended authoring tool for attack and movement poses, with exported data used by the game. The user specifically favors authoring orientation as quaternions and evaluating arm/body rotations as quaternions in-game, avoiding accumulated Euler rotation. **OPEN:** Blender exporter, supported rig profile, action naming, channels, coordinate conversion, export validation, and whether curves are baked to fixed-tick samples or retain interpolation metadata.
+**DECIDED:** Blender is the intended authoring tool for attack and movement poses. Exported orientation may be Euler XYZ degrees or quaternion; the shared animation loader converts either to one normalized quaternion runtime representation, as specified in [`../animations/animations.md`](../animations/animations.md). The exported Blender basis conversion must be explicit and validated against the game rig; implementation must not guess axes. **OPEN:** supported rig profile, action naming, and whether curves are baked to fixed-tick samples or retain interpolation metadata.
 
 ## 38. Quaternion pose representation
 
-**PROPOSED:** Store local part orientation as a normalized quaternion relative to the normalized rest pose and part pivot; interpolate orientations with spherical interpolation, with deterministic normalization and a defined antipodal-sign rule. Preserve root origin and express part translation offsets relative to that origin/rest frame. This is a design recommendation, not an already-approved JSON format. The existing animation spec's Euler channel contract would need a versioned extension or migration; do not silently reinterpret old Euler data.
+**DECIDED:** Regardless of source encoding, runtime part orientation is a normalized quaternion relative to the normalized rest pose and part pivot; interpolate with shortest-arc SLERP. Version-2 JSON can explicitly use Euler XYZ degrees or WXYZ quaternion fields, and version-1 Euler data remains readable under the compatibility contract in `animations.md`. Blender's coordinate-basis conversion is still open and must be explicit and applied once at import, not guessed by the runtime.
 
 ## 39. Pose offsets and root motion
 
-**DECIDED:** The player-origin point should provide a stable reference, with animation using offsets from it rather than repeatedly accumulating transforms. The user also wants the approach to be general enough for weapons/tools and other animatable objects. **PROPOSED:** Keep gameplay root motion owned by movement/action simulation; treat authored part/object transforms as local offsets unless a move explicitly defines deterministic root displacement. **OPEN:** object attachment schema, pivot conventions, scale handling, and whether any attack uses authored root motion.
+**DECIDED:** The player-origin point should provide a stable reference, with animation using offsets from it rather than repeatedly accumulating transforms. The user also wants the approach to be general enough for weapons/tools and other animatable objects. Melee root motion and impulses are action-owned JSON applied by shared movement/collision systems; the first airborne specials use configured phase impulses rather than changing gravity. **OPEN:** object attachment schema, pivot conventions, scale handling, and exact impulse-event schema.
 
 ## 40. Animation phase alignment
 
@@ -260,27 +253,27 @@ Swordsword damage contracts.
 
 ## 41. Effects and audio
 
-**PROPOSED:** Trigger sounds and effects from deterministic move events or tick markers so predicted and authoritative playback can be reconciled and duplicate effects avoided. Existing Captain Falcon sounds are user-reported as present in the repo; inventory and rights are unverified. **OPEN:** per-move sound/effect mapping, predicted playback policy, cancellation behavior, and asset readiness. Cosmetic effects do not confirm a hit.
+**DECIDED:** Melee move sound events live in each `config/weapons.json` action alongside phase timing and animation references. Use Captain Falcon sounds from `assets/sound/entity/falcon/`: `yeeeaaaaughhh.wav`, `tuaahh.wav`, `showmeyamoves.wav`, `falconyes.wav`, `falcontuaahh3.wav`, `falcontuaahh2.wav`, `falconswing.wav`, `falconpawnchhh.wav`, `falconkick.wav`, `falconho.wav`, `falconhitquick.wav`, `falconhit2.wav`, `falconhit1.wav`, `falcongroanquick.wav`, `falcongroan2.wav`, `falcongroan1.wav`, `falconfalcon.wav`, `falcondeath2.wav`, `falcondeath1.wav`, and `falconcomeon.wav`. Start with pitch multiplier 1.0, volume multiplier 1.0, and spatial offset `[0,0,0]` meters; map sounds to action/phase events by their asset names and intent. Starting or retriggering a move immediately stops the previous Melee move sound on that actor and starts the new sound from tick 0; later markers from canceled actions do not play. This is one Melee-move sound channel per actor; music and unrelated sounds continue. Sound never confirms a hit. Deduplicate events by actor generation, action instance, phase/tick, and event index. The audio/resource owner resolves the asset IDs.
 
 ## 42. Authority and replication
 
-**DECIDED:** Combat state must be synchronized between client and server so players can fight remotely. The earlier proposal requires action identity/start tick and authoritative hit/result state to replicate; that remains the foundation. **PROPOSED:** Server owns confirmed percent, valid hit results, knockback state, ring-outs, and match score. Clients may predict movement, action animation, attack volumes, and tentative contacts. Exact ownership boundaries must be reconciled with current MiMITA networking contracts before implementation.
+**DECIDED:** Combat input and movement use the shared client-predicting/referee-validated policy. The attacker predicts the move animation, captured camera-forward vector, animated-limb hitbox, contact, percent, and impulse immediately. The server checks the candidate against the shared historical state and legal envelope; accepted results are the canonical result replicated to all peers. The server continues to own match lifecycle, inventory, stock decrement, elimination, and match result. A correction replaces the predicted state without applying the hit impulse twice. Replicate actor generation, move/action ID and revision, clip/action instance and start tick, captured attack-forward, button press order, per-move phase/tick, candidate/accepted hit result, percent, shield/grab state, impulse, and life result. Evaluate poses locally from shared clips rather than sending each limb every tick. Sound events use stable IDs. Packet details follow the shared networking spec.
 
 ## 43. Client prediction
 
-**DECIDED:** Attacks should be predicted locally with no perceptible wait for the server: on click, the local animation/action begins immediately at the client's current predicted tick. The user explicitly wants fully predicted attacks and low-latency-feeling contact. **PROPOSED:** Predict move selection, phase timing, local motion, and candidate hits; mark predicted outcomes provisional until authority confirms them. Prediction must not allow a client alone to award persistent percent or ring-outs.
+**DECIDED:** On an attack press, immediately start its animation at the client's predicted simulation tick and capture camera-horizontal-forward. Predict the hitbox sweep, contact, percent, grab pull, and knockback before a round trip. A historically plausible result is accepted by the referee and becomes the same replicated outcome for every peer; impossible outcomes are corrected. Stock decrement, elimination, and match result remain server-published. Reconcile positions and meters without duplicating an impulse; show the server-disagreement effect when a correction occurs.
 
 ## 44. Lag compensation and fairness
 
-**DECIDED:** User wants lag compensation and says a hit that appears valid on the attacker's screen should count, but rejects hits from implausible distances and wants little leeway. These are goals in tension, not a finalized policy. **OPEN:** which historical state is queried, maximum rewind, clock/tick validation, target movement reconstruction, and fairness under differing ping. The user's “100 ms behind” and “500 ms or more” examples describe concern/experiments, not approved latency thresholds. Do not implement unbounded client-truth hit acceptance.
+**DECIDED:** Use the shared networking lag-compensation and history policy. Reuse its mapped client/server tick, bounded history, and action-category rewind rules; do not invent a separate Melee rewind window. The attacker should see a plausible grab/hit become the shared result immediately, while the server rejects clearly impossible results. This is bounded prediction with referee validation, not unrestricted client authority.
 
 ## 45. Rollback and reconciliation
 
-**DECIDED:** Use prediction with rollback and replay after authoritative corrections (the user selected this direction in the prior question set). The user hopes reconciliation will be rare, but accepts the need. **PROPOSED:** Keep a bounded history of inputs and relevant combat state; on correction, restore an authoritative snapshot and replay. Define visible correction behavior for move choice, contact, percent, velocity, and ring-out separately. **OPEN:** history length, snapshot cadence, correction smoothing, and deterministic state coverage.
+**DECIDED:** Use shared networking correction and history owners. Smooth small position errors, snap large or lifecycle corrections, and display the server-disagreement effect whenever an actual correction occurs. Accepted candidate contacts do not receive a second impulse on replication. Keep action/move revision and contact IDs in history so replay and duplicate suppression are deterministic.
 
 ## 46. Network state contract
 
-**PROPOSED:** Replicate enough stable state to reconstruct actors: actor generation, authoritative simulation tick, action/move identity and start tick, phase, movement state, percent, knockback velocity/state, and confirmed result/score changes. Animation can be re-evaluated from the shared clip plus tick where deterministic; do not add per-bone packets by default. Validate avatar/move content revisions so clients do not interpret an action with different data. Packet shape and cadence remain open.
+**PROPOSED network state:** replicate actor generation, authoritative simulation tick, action/move identity and revision, action/clip instance ID and start tick, captured horizontal attack direction, phase, movement state/velocity, percent, shield meter/state, life count, and confirmed contact/knockback/ring-out result. Animation is re-evaluated locally from the shared clip and tick; do not send per-bone packets by default. Validate animation/move revisions so clients cannot interpret an action using different content. Sound event IDs are deduplicated by actor/action/tick/event. Exact packet shape and cadence remain owned by the networking spec.
 
 ## 47. Testing strategy
 
@@ -292,19 +285,19 @@ Swordsword damage contracts.
 
 ## 49. Open decision register
 
-**OPEN before a firm implementation contract:** movement owner and acceleration model; dash/double-tap bindings; wave-dash mechanics; W/A/S/D-to-move mapping; exact Captain Falcon move list and phase timings; sweep shapes and repeat-hit policy; percent formula and mass interaction; shield controls/durability/break; whether grabs ship and their escape rules; recovery and air-jump limits; blast-zone bounds; respawn delay/location, spawn protection, and percent reset; Blender export tool and validation; lag compensation rewind/fairness limits; and exact data, packet, and logging contracts. The first-version rules already decided are four lives, void ring-out as the only death cause, and camera-horizontal-forward attack orientation. Work may proceed on specified contracts without pretending these open details are settled.
+**OPEN:** The remaining tuning questions are collected in section 55. The first-version rules already decided include four lives, void-only deaths, 0 percent on immediate respawn, 60 ticks of spawn protection, map selected through the normal GUI before intermission, random eligible JSON spawnpoint selection, a 15-second intermission, configurable per-move phase ticks, 30-tick editable double-click window, 300 held-tick shield decay, 120-tick shield recovery after break, 300-tick grab immunity, shared movement/collider values, and the listed Captain Falcon input/move candidates.
 
 ## 50. Implementation and rollout gates
 
-**PROPOSED sequence:** (1) audit current movement, animation, collision, combat authority, and network owners; preserve evidence and unrelated behavior; (2) settle the remaining decisions for the minimal Captain Falcon move set; (3) define and validate tick-based move data and deterministic phase/cancel semantics; (4) implement the shared versioned Euler/quaternion import and quaternion runtime contract; (5) implement multi-tick animated-limb sweeps and authoritative contact; (6) add percent, knockback, responsive control, and the four-life void ring-out lifecycle; (7) add prediction, bounded lag compensation, rollback, and reconciliation; (8) run remote-player and NPC acceptance scenarios; (9) add shields/grabs only after their contracts are decided. No stage is claimed complete by this document.
+**PROPOSED sequence:** (1) audit current movement, animation, collision, combat authority, networking, and mode lifecycle owners; preserve evidence and unrelated behavior; (2) settle remaining move, shield/grab, map, spawn, and physics values; (3) implement Euler/quaternion import, explicit Blender basis conversion, tick-sampled animation, and sound markers; (4) implement Melee lifecycle/countdown, shared player/NPC body collision, tick-based move/cancel semantics, and animated-limb sweeps; (5) add percent, predicted knockback, server confirmation, four-life void ring-out, and 0-percent respawn; (6) run first-slice scenarios locally and across clients with live journal evidence; (7) tune from human play. No stage is claimed complete by this document.
 
 ---
 
 ## Source alignment notes
 
 - The initial conversation proposal establishes the 3D arena scope, fixed-tick phases, percent/knockback, responsive control, NPC participation, and separation from generic weapon contracts.
-- The user's later answers establish the preferred fast movement-tech feel, move-specific movement restrictions, immediate attack restart without buffering, multi-tick shape sweeps, hybrid physical/percent/move knockback, no hitstun, tentative shield/grab direction, prediction plus rollback, reusable NPC/cross-mode move sets, an always-active Melee move set, camera-forward attack orientation, and four lives with void ring-out as the only death cause in the first version.
-- The shared animation specification defines an existing *target contract* for shared rigid-part animation, fixed-tick evaluation, state transitions, and fallback behavior; it says Blender action import is outside its scope. This document's quaternion Blender path is therefore an extension/proposal, not a statement that importer or runtime support already exists.
+- The user's later answers establish the preferred fast movement-tech feel, move-specific movement restrictions, immediate attack restart without buffering, multi-tick hitbox sweeps, angle/speed-scaled contact force, no hitstun, a 50-point decaying shield, controllable pull grab, prediction-first referee validation, reusable NPC/cross-mode move sets, an always-active Captain Falcon move set, camera-forward attack orientation, and four lives with void-only death in the first version.
+- The shared animation specification defines the desired shared rigid-part animation contract, including explicit Euler/quaternion source encodings and normalized-quaternion runtime conversion. Blender export remains a separate proposal, and the current runtime has not yet been shown to implement this rotation contract.
 - A transcript expresses intent and decisions. It does not prove implementation or runtime acceptance.
 
 ## 51. First playable slice: Captain Falcon
@@ -322,47 +315,97 @@ attacks, exporter, or networking path already exists.
   animation clips, sounds/effects, and a `captain_falcon` move-set identifier.
   Later characters can select other move sets while reusing the same mode and
   combat pipeline.
-- The mode owns the allowed fighter/move-set combination. A player's move
-  inputs resolve to stable action IDs in that move set. A fighter does not
-  switch through ordinary inventory weapons during a match.
-- **DECIDED:** the selected move set is always active for the whole match; the
-  player never equips or re-equips it. If the current input/UI layer requires
-  a weapon slot, slot 1 may be a presentation/input binding only; it must not
-  be the server's identity or authorization for an attack. The
-  authoritative identity is the fighter profile, move-set ID/revision, and
-  action ID. This follows the networking spec's rule that a hotbar index is a
-  selection position, not weapon identity.
-- Keep fighter actions separate from ordinary weapons and their damage rules.
-  Reuse shared actor, animation, collision, and authoritative combat owners;
-  do not create one C++ weapon-definition function per fighter move.
+- **DECIDED:** The Captain Falcon move set is one equipped item/set containing
+  all A/B attacks. The fighter never equips or switches individual punches,
+  kicks, or specials. The set remains active across the whole match and after
+  respawn.
+- Store the Captain Falcon set and its attack definitions together in one
+  `config/weapons.json` definition, using the reusable `melee`/action
+  components from [`../weapons/weapons.md`](../weapons/weapons.md). Each attack
+  is a stable action ID inside that definition, not a separate weapon or
+  hotbar slot. `config/weaponsets.json` may reference that one definition as
+  the Melee loadout; it must not duplicate its attack values. The user wants
+  input bindings, phase lengths, phase animations, hitbox, sound/pitch, percent,
+  knockback, movement policy, and special movement all configurable there.
+- The network identity is the equipped definition ID/revision plus action ID
+  and actor generation. A hotbar index is presentation/input context only; it
+  cannot authorize the move. A legal move remains available after respawn
+  without re-equipping or changing a numeric slot.
+- The human and the one first-version Melee NPC resolve to the same role and
+  weapon-set reference, and equip the same `captain_falcon_moveset` definition
+  ID/revision. The NPC must not receive a generic NPC weapon set as fallback.
+  On mode entry and respawn, verify the effective equipped definition for both
+  actors; if either cannot resolve it, fail the Melee setup visibly rather
+  than silently starting a gun-equipped match. Log actor ID, controller,
+  role, weapon-set ID, equipped definition ID/revision, and spawn/respawn
+  result so the live scenario can prove both fighters received the same set.
+- Reuse shared item, animation, collision, prediction, and authoritative combat
+  owners. Do not create one C++ weapon-definition function or packet per attack.
 
 ### Initial input and move roster
 
-The following is a proposed first control map, not a final layout. An attack
-starts an authored move animation; the animation moves the fighter's parts and
-therefore moves the attached hit shapes. Mouse/key input chooses a move ID; it
-does not directly place or aim a hitbox. Directional input is sampled with the
-attack press at a simulation tick and cannot change that move instance later.
+The following is the first Captain Falcon A/B move list. All attacks have
+JSON-configured windup, active, and recovery tick counts; each phase length is
+independent and may be configured from 1 through 999 ticks. The quick-punch
+double-click window starts at 30 ticks and is JSON-editable. Each move has a
+phase animation or pose; a move-owned hitbox attached to an animated body part;
+percent and knockback; and sound/pitch/volume/offset data. WASD moves horizontally. Camera-horizontal
+forward is captured when the attack begins. Ordinary attacks do not auto-aim
+vertically: the authored limb/hitbox must reach the opponent, so fighters
+usually jump or fall to meet an opponent above or below. Explicit up/down moves
+use their authored hitbox and root-motion direction. The IDs below are
+illustrative stable IDs; timings and detailed tuning remain open.
 
-| Input | Proposed move | Required behavior |
+| State / input | Action ID | Required behavior |
 |---|---|---|
-| Left click, no direction modifier | `a_neutral` | Quick punch; short startup/recovery. |
-| Left click + W | `a_forward` | Forward punch, as the user's current example suggests. |
-| Left click + A/D | `a_side` variants | Side-directed punch; exact facing-relative mapping is open. |
-| Left click + S | `a_down` or `a_back` | **OPEN:** user has not chosen between down and backward. |
-| Right click, no direction modifier | `b_neutral` / Falcon Punch | Long windup and recovery; high knockback. |
-| Right click + direction | `b_up`, `b_side`, `b_down` | Up-B, side-B, and down-B candidates; exact mapping and move designs are open. |
-| Jump input | `jump` | Uses shared movement authority and the fighter's jump animation. |
+| Any state: WASD | `move_horizontal` | Horizontal movement only; never changes attack direction/variant. Reuse existing movement values. |
+| Space | `jump` | Uses the configured Melee jump input mode from `config/movement/movement-smash.json`; press mode jumps on key-down, hold-scaled mode jumps immediately with minimum strength and adds a tick-based upward boost while held for up to 10 ticks. |
+| Grounded: left click | `a_ground_punch` | Play punch animation. A second left-click within the default 30-tick, JSON-editable window selects a distinct double-punch animation. |
+| Grounded: right click | `b_falcon_punch` | Play Falcon Punch. Every new right-click starts the same animation again from tick 0. |
+| Airborne: left click | `a_air_kick` | Play the air-kick animation; another left-click may restart the same move. A configurable forward/up impulse may be applied on the first active tick. |
+| Airborne: right click | `b_air_forward_dash` | Play its configured windup/hold pose, then apply its JSON-configured forward/up impulse on the first active tick; do not change global gravity for one move. |
+| Grounded: Space + left click | `a_uptilt` + `jump` | Start the uptilt and jump in the same tick. This combination is explicitly allowed. |
+| Airborne: Space held + left click | `a_air_up_kick` | Upward kick using the authored animation and hitbox. |
+| Airborne: Space held + right click | `b_air_up_special` | Upward special with JSON-configured upward momentum and hitbox. |
+| Grounded: Ctrl held + left click | `a_ground_sweep` | Forward ground-sweep kick. |
+| Grounded: Ctrl held + right click | `b_falcon_punch` | Falcon Punch starts and exits the crouch pose. |
+| Airborne: Ctrl held + left click | `a_air_down_kick` | Downward kick. |
+| Airborne: Ctrl held + right click | `b_air_down_strike` | Strong downward special with configurable forward/downward impulse or displacement; example only: +5 m camera-forward and −10 m world-up-axis displacement. |
+| Q held | `shield` | Hold-based 50-point / 300-tick shield described in section 29. |
+| E | `grab` | Starts the configurable pull grab described in section 30; never freezes the victim. |
+| Left Ctrl without attack | `crouch_or_fast_fall` | Existing crouch/downward movement behavior on ground/air; the pose implementation is open. |
 
-Each move definition needs, at minimum, a stable ID, character/move-set ID,
-input mapping, animation clip ID, startup/active/recovery tick counts,
-movement permissions by phase, per-tick hit-window definition, limb-bound
-hit shape, percent/knockback parameters, cancel/interruption rules, and
-content revision. The current `10/5/15` tick example is a starting tuning
-value only; do not apply it to every move by default. A move's phase clock and
-clip start on the same authoritative action-start tick. Active ticks are
-inclusive/exclusive by one explicitly documented convention, so clients and
-server cannot disagree at phase boundaries.
+Every move definition in the single `weapons.json` move-set entry needs a
+stable action ID, input/chord and grounded/airborne condition, double-click
+window (default 30 ticks, editable), windup/active/recovery tick counts (each
+independently editable from 1 through 999), an animation clip or
+pose for each phase, phase playback/retiming policy, movement/steering and
+momentum policy, per-move root displacement/impulse, hitbox shape/dimensions/
+offset/animated-part attachment/active window, percent/knockback/shield-damage
+values, tick-addressed sound IDs, pitch, volume and spatial offset, and content revision. A shared
+parser/runtime owns the reusable behavior; the JSON selects and configures it.
+The 10/5/15 and 50-tick-canceled-at-tick-7 examples illustrate tick behavior,
+not fixed Captain Falcon timings. Each move's selected tick values are authored
+in JSON, not C++; phase intervals use one explicit
+inclusive/exclusive convention on clients and server.
+
+Grounded/airborne state and button edges are sampled on fixed simulation ticks.
+Space+grounded-left-click both jumps and starts uptilt. When held modifiers
+conflict, the most recently pressed modifier selects the attack variant; the
+input command must preserve press ordering so client and server choose the
+same action. If two conflicting modifiers are pressed in the same tick, use a
+JSON-configured tie-break priority. The 30-tick double-click window is a JSON
+value. A second grounded left-click inside it starts the distinct double-punch
+immediately; repeated grounded right-click restarts Falcon Punch at tick 0.
+
+Each move may configure one or more impulses at a phase-local tick in the
+captured attack basis: horizontal camera-forward, camera-right, and world-up
+(world +Z in this engine). For example, an air kick can apply a forward/up
+impulse on the first active tick. The downward special may instead author a
+bounded displacement path; `+5 m forward / -10 m up` is an example, not a
+hard-coded default. The action data owns impulse/displacement values and tick;
+the shared movement/collision system applies it. Hitbox overlap alone confirms
+contact; no separate visible-limb proximity test is required.
 
 ### Facing and third-person camera
 
@@ -372,10 +415,10 @@ horizontal direction as the move's facing basis and replicate it with the
 action state; the animation then drives the limb path and attached hit shape.
 The camera's vertical pitch does not directly tilt an ordinary punch hit
 shape. An authored move such as up-B may use its own animation and move data
-to travel vertically. Directional input may choose a move variant relative to
-the captured camera-forward basis, but the exact W/A/S/D mapping remains
-**OPEN**. Movement and body turning may use separate rules; only attack-forward
-is fixed by this camera rule.
+to travel vertically. **DECIDED:** W/A/S/D is movement-only and never selects
+an attack variant or changes attack direction in this version. Movement and
+body turning may use separate rules; only attack-forward is fixed by this
+camera rule.
 
 ### Animation and limb-bound hitboxes
 
@@ -386,13 +429,20 @@ is fixed by this camera rule.
   Falcon Punch, kick, knee, elbow, up-B, side-B, and down-B as the roster is
   finalized. Missing clips must use the shared fallback behavior, not a
   Melee-only animator.
-- Attack hit shapes attach to named rig parts such as `leftHand`, `rightHand`,
-  `leftFoot`, or `knee`. At each fixed tick, derive their world transforms
-  from the authoritative actor root and that tick's evaluated pose. Test
+- Every move supplies its own hitbox dimensions and local offset, attached to a
+  named rig part such as `leftHand`, `rightHand`, `leftFoot`, or `knee`. The
+  hitbox may extend beyond the visible limb so an attack can reach farther than
+  a short avatar arm, but remains attached to that limb. At each fixed tick,
+  derive its world transform from the authoritative actor root and animated
+  part pose. Test
   contact only during the move's active windows; use the specified multi-tick
-  swept-volume rule so fast limbs cannot tunnel between ticks. Apply the
-  existing rig rule that gameplay collision requires a declared physical part.
-  A visible pose alone is never proof of a hit.
+  swept-volume rule so fast limbs cannot tunnel between ticks. The hitbox is a
+  separate move-owned gameplay volume, not the limb mesh or actor body collider.
+  It may extend past the visible limb for reliable reach, while remaining
+  anchored to and moving with that limb; it cannot independently aim, teleport,
+  or scale with frame rate. The referenced rig part must provide a valid
+  animated transform; it need not itself be a physical collision mesh. A
+  visible pose alone is never proof of a hit.
 - Blender export must preserve stable part names, pivots, actor-root offsets,
   and the 60 Hz integer-tick mapping. Validate orientation and scale at import,
   reject invalid mappings, and keep render pose separate from authoritative
@@ -407,26 +457,27 @@ is fixed by this camera rule.
 
 Moves do not deal ordinary health damage. A confirmed hit adds percent and
 applies the move's knockback; accumulated percent contributes to later
-knockback according to a still-open formula. In this first version, the server
-detects when knockback carries a fighter beyond the stage's lethal
-`blast_zone`, then records one void death and removes one of the fighter's
-four lives. Respawn occurs while lives remain; no other event may kill the
-fighter. Blast-zone bounds, respawn delay/location, spawn protection, and
-percent reset remain open details.
+knockback according to a still-open formula. There are no Melee-specific stage
+blast-zone bounds. The server's existing world void-death rule is the only
+ring-out/death boundary: when knockback carries a fighter into the void, the
+server records one void death and removes one of the fighter's four lives.
+Respawn occurs immediately while lives remain, resets percent to 0, and grants
+60 server ticks of spawn protection; no other event may kill the fighter.
 
 ### Network and replay contract
 
-Follow [`../networking/networking.md`](../networking/networking.md): the client
-may immediately predict the selected move and its animation, but the server
-validates fighter/move-set/action identity, actor generation, match membership,
-and the mapped input at a validated tick. The server advances action phases
-and hit shapes on the fixed 60 Hz simulation, confirms each permitted contact
-once, and owns percent, knockback, ring-out, stock, and score results. Clients
-reconcile provisional visuals/results to authority. Do not send per-limb pose
-packets by default; replicate the action ID/revision, authoritative start tick,
-and the state needed to reproduce the shared clip and confirmed result. The
-networking spec's tick/history policy governs any lag compensation; do not let
-a client pose or client-reported hit award percent.
+Follow [`../networking/networking.md`](../networking/networking.md): capture
+input and simulate gameplay at fixed 60 Hz; use the shared tick mapping,
+history, lag-compensation window, and reconciliation policy. For Melee, the
+local client predicts a hit/grab/percent/impulse immediately and submits that
+candidate result. The server acts as referee: it checks action identity and
+revision, actor generation, historical overlap, shield state, match membership,
+hit limits, and movement/force plausibility. Plausible results are accepted as
+the canonical replicated outcome; clearly impossible results are rejected with
+a reason and visible server-disagreement correction. Replicate action ID and
+revision, action instance, start/phase tick, attack direction, input ordering,
+candidate/accepted target and contact, and accepted result. Do not send per-limb
+pose packets by default; both sides evaluate the shared animation locally.
 
 Required first-slice scenarios:
 
@@ -438,10 +489,198 @@ Required first-slice scenarios:
    previous-generation action is rejected with a reason.
 3. Sweep a limb through a target during an active tick, then repeat outside
    the active window; only the valid contact changes authoritative percent.
-4. Launch a fighter through the configured blast zone; the server records one
-   ring-out and applies the selected stock/respawn rule.
+4. Launch a fighter into the void; the server records one ring-out and applies
+   the selected stock/respawn rule. No separate stage blast-zone boundary is
+   introduced.
 5. Run the same move through a player and NPC and confirm both use the same
    move, animation, hit-confirmation, and result path.
 
 This is a specification target only. Acceptance still requires the runtime
 scenario and live journal evidence described by the router's workflows.
+
+## 52. First-version match lifecycle: `Melee`
+
+**DECIDED:** The selectable game mode is named `Melee`. Select the map in the
+normal game-mode GUI before starting the match, as for other modes. After the
+map has been selected and loaded, the Melee match enters its 15-second
+intermission (900 server simulation ticks). There is no map picker during
+intermission. The normal shared game-mode flow then shows `3`, `2`, `1`, and
+`GO!`; fighters cannot move, jump, attack, grab, or shield during 3/2/1. On the
+first simulation tick of `GO!`, the match becomes active and gameplay inputs
+are accepted. Use the shared gamemode's countdown timing and GUI rather than a
+Melee-only countdown implementation.
+
+At active-match start, each fighter has four lives and 0 percent. The first
+playable configuration has one human and one NPC, both using the
+`captain_falcon` profile and move set. A void death consumes one life; if lives
+remain, the server respawns the fighter immediately at 0 percent and applies
+60 server ticks of spawn protection. A fighter with no lives is eliminated.
+The match ends when one fighter remains. Protection does not disable movement;
+its exact blocked effects follow the open question in section 55. No other
+death cause is allowed.
+
+## 53. Shared actor collision and combat movement
+
+**DECIDED:** Keep the existing capsule side/bottom body collider and its
+dimensions/tuning. Add a flat standable support surface at the top for
+actor-on-actor landing; it is a support contact, not a replacement for the
+capsule collision shape. Players and NPCs share this owner, and several smaller
+actors may stand on one actor when their support areas fit. Standing on an
+actor does not itself cause damage. Reuse the same movement and collider
+values for Melee; do not invent Melee-only jump, gravity, speed, or collider
+constants. **OPEN:** exact top-support width/edge behavior and resolution order
+when multiple actors and stage surfaces contact together.
+
+All movement, support, overlap, and action timing uses the existing fixed-tick
+movement/collision owners. Contact geometry supplies hitbox overlap; shared
+weapon/combat logic converts relative speed and angle into force, percent, and
+impulse. For networked combat, the client predicts immediately and the server
+referees candidate outcomes according to [`../networking/networking.md`](../networking/networking.md).
+On a correction, do not apply the same impulse twice. The scenario records
+client candidate and server accepted/rejected state, both positions/velocities,
+contact tick, percent, impulse, correction type, disagreement effect, and first
+divergence. This is a desired contract, not a claim that current behavior is
+already proven.
+
+## 54. First-slice acceptance scenarios
+
+1. Choose a map through the normal GUI, start `Melee`, and verify that the
+   selected map is loaded before the 900-tick intermission begins. Confirm no
+   map picker appears during intermission. During 3/2/1, attempt gameplay
+   inputs and confirm actors remain frozen; on `GO!`, verify both release on
+   the same server tick.
+2. Start one human versus one NPC, both Captain Falcon. Use left click with and
+   without WASD and verify the same move starts facing the camera direction
+   captured at the attack tick; turning the camera afterward does not rotate
+   that move. WASD still moves the actor.
+3. Start a 50-tick move, interrupt it at tick 7 with a 5-tick move, and verify
+   the second clip begins at tick 0 immediately, completes, then returns to
+   idle/locomotion. Repeat while steering is suppressed and confirm the actor
+   retains pre-move momentum; confirm Falcon Punch can be canceled the same way.
+4. For each attack, compare animated limb transform, attached per-move hitbox,
+   and active swept contacts. Verify the hitbox may extend past a short limb,
+   still follows its animated attachment, and cannot hit outside its active
+   window.
+5. Verify both jump policies from the selected movement profile: `press` jumps
+   immediately on the press; `hold_scaled` jumps at minimum strength and adds
+   tick-based boost through at most 10 held ticks. Verify release stops further
+   boost, ceiling contact restores the air jump, and all other jump/gravity/
+   collider values come from existing shared movement owners.
+6. Test every listed grounded/airborne input and modifier chord, including
+   second-click punch, repeated Falcon Punch, simultaneous jump+uptilt, upward
+   kick/special, ground sweep, and both downward kicks. Confirm the last-pressed
+   modifier wins, same-tick input order/tie-break is identical on both peers,
+   and every action uses its own JSON definition.
+7. Hold Q for 0, 150, and 299 ticks and verify 50, 25, and near-zero shield
+   durability respectively. Apply known hits and compare the 0, 0.5, and near-1
+   received percent/knockback multipliers. Verify shield damage equals move
+   percent by default, excess does not spill into fighter percent, a breaking
+   hit applies both scaled hit knockback and 5 m/s upward impulse, natural
+   expiry gives the same break, and recovery completes over 120 server ticks.
+   Use E to test the 1 m radius grab sphere (2 m diameter), shield blocking,
+   movement-speed/center-distance strength, configured multi-tick pull, no
+   victim input lock, and 300-tick anti-chain-grab immunity.
+8. Confirm weak/glancing/slow and strong/direct/fast hits add proportional
+   percent and produce the configured knockback. Verify the response is
+   predicted immediately, a plausible historical result is accepted and
+   replicated identically, clearly impossible results are rejected, correction
+   does not double-apply force, and any reconciliation shows its disagreement
+   effect and logs the first mismatch.
+9. Ring out each fighter through the existing world void-death rule; confirm
+   exactly one life is removed and immediate respawn starts at 0 percent with
+   the same move set active. Confirm the 60-tick protection ends exactly on
+   time. The fourth death eliminates the fighter; no custom stage blast
+   boundary, health, hazard, or ordinary attack can kill it.
+10. Retrigger/cancel animation sounds rapidly. Confirm the new clip's tick-0
+   sound starts immediately, cuts off the prior Melee animation sound on that
+   actor, and later markers from the canceled clip do not play. Confirm
+   prediction and replicated events are deduplicated.
+11. Place a player on top of an NPC and an NPC on top of a player; verify the
+    shared flat-top body collision supports them and that downward attacks use
+    their own limb hitboxes.
+12. Change a move-set JSON value during a match. Verify the validated revision
+    activates at a fixed-tick boundary for new actions immediately, current
+    action instances retain their starting revision, and clients receive and
+    use the same revision before accepting those new actions.
+
+These scenarios are specification requirements for future automation/runtime
+proof. They are not implemented tests or observed results.
+
+## 55. Remaining review decisions
+
+The core behavior is now specified. These are the remaining product choices or
+initial tuning values; an implementing agent can build the editable fields and
+use clearly labeled provisional defaults where you prefer to tune in playtests.
+
+1. **Phase tuning:** Each move independently sets windup, active, and recovery
+   to 1–999 ticks; the double-click window starts at 30 ticks and is editable.
+   What first values should the Captain Falcon moves use, or should the agent
+   choose provisional values for you to tune in-game?
+2. **Input tie:** The most recently pressed conflicting modifier wins, and
+   Space+grounded-left-click both jumps and performs uptilt. If Space and Ctrl
+   have exactly the same press order/tick, which one should the default JSON
+   tie-break prefer?
+3. **Jump strengths:** The profile selects existing `press` jump or
+   `hold_scaled`; the latter launches immediately at its minimum, then adds
+   tick-based boost through 10 held ticks and stops boosting on release. What
+   minimum/maximum strength multipliers should `movement-smash.json` start with,
+   or should the agent set provisional values?
+4. **Move impulses:** Each move may author camera-relative impulses by phase;
+   air attack impulses happen on the first active tick, and gravity is not
+   changed for one move. What first forward/up impulse values should the air
+   attacks use, or should those be provisional JSON values?
+5. **Shield release:** How many ticks should a released, unbroken shield take
+   to recover? Should recovery continue from its remaining durability or
+   restart from zero? On spawn protection, should all damage, knockback, shield
+   drain, and grabs be blocked for 60 ticks, or only some of them? Is the
+   “spawn impulse” a physical push, a visual cue, or both?
+6. **Grab tuning:** I interpreted “2 meter sphere, center to edge 1 meter” as
+   radius 1 m / diameter 2 m. Confirm that interpretation. What pull duration
+   should be the starting value? The velocity-limit examples are 20 m/s at 0%,
+   40 m/s at 100%, and 80 m/s at 300%; should the agent use a straight-line
+   curve from these points, and what should the 999% limit be?
+7. **Force and damage curve:** The shared combat force combines relative speed
+   and contact directness; slow/glancing is weak, fast/direct is strong, and
+   force scales both percent and knockback. What starting curve/caps should be
+   used, or should the agent add JSON-editable provisional values for playtest?
+8. **Standable top:** Capsule sides/bottom remain the body collider; the top is
+   a separate flat support contact, and multiple actors may stand on one actor
+   when they fit. Should the implementing agent audit/derive its exact width and
+   resolution from the current collider, or do you want to set dimensions?
+9. **Held jump and auto-bhop:** If Space remains held through a landing in
+   `hold_scaled` mode, should the existing movement profile's auto-bhop start a
+   new minimum-strength jump immediately, or should the player release and
+   press Space again?
+10. **First NPC:** Should the Captain Falcon NPC use an existing profile or
+    should the implementing agent choose simple provisional attack/defense
+    behavior for the first human-versus-NPC slice?
+11. **Void warning:** Do you want any warning cue near the existing void-death
+    threshold, or should knockback and the void boundary speak for themselves?
+
+Implementation audit rather than product decision: confirm the actual movement
+and collider values, input event-order transport, current lag-compensation and
+correction owners, arbitrary weapon JSON loader, and hot-reload publication
+path before coding. The chosen map-before-intermission flow, random eligible
+spawn selection, hazard percent/knockback without hazard kills, per-action
+sound defaults/assets, shared lag-compensation policy, and immediate hot-reload
+activation are already decided above.
+
+## 56. Starting Melee from the terminal
+
+`startmelee` has two explicit paths. While connected to a room, it requests that
+room's server to switch to the stable `melee` ID and begins the usual mode
+intermission. While disconnected, it starts the configured `melee_1` server
+preset and joins the room after server registration supplies its room code. The
+preset provides a default map; choosing a different map remains part of the
+normal GUI map-picker flow. A failed preset load, server launch, room
+registration, or join must produce a visible failure and structured event; it
+must not silently start sandbox. A successful local command handler only means
+the request or launch handoff was accepted. Server mode configuration and the
+client's connected state are the proof that the requested match actually
+started.
+
+Acceptance requires one scenario for the connected mode-switch path and one for
+the disconnected start-and-join path. Both verify the server's active mode,
+room identity, client connection state, and a roster containing one human and
+one Captain Falcon NPC. The scenario must not add an NPC unless it is testing
+spawn behavior.

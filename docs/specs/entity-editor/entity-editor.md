@@ -234,13 +234,15 @@ Source review found three different paths today:
 
 The intended design is one server-owned spawn-selection policy, specified in
 [`gamemodes.md`](../gamemodes/gamemodes.md), used by initial player join,
-respawn/map changes, and NPC spawn commands. It should prefer enabled authored
-map-config spawnpoints that match the active mode/team/role rules, then use
-legacy GLB spawnpoints as a compatibility fallback, then the existing safe
-fallback. The server must validate the selected position and apply it through
-the existing authoritative player/NPC spawn lifecycle. Existing checkpoint,
-explicit teleport, and mode-specific placement rules keep their documented
-precedence.
+respawn/map changes, and NPC spawn commands. It selects from the map's resolved
+JSON spawnpoint list: imported GLB points with their JSON overrides plus
+map-JSON-authored points. For a complete GLB-spawn manifest, disabled imported
+points are excluded and the raw GLB list is not a fallback. Legacy maps without
+a complete manifest may use raw GLB points for compatibility, then the
+existing safe fallback. The server validates the selected position and applies
+it through the existing authoritative player/NPC spawn lifecycle. Existing
+checkpoint, explicit teleport, and mode-specific placement rules keep their
+documented precedence.
 
 `entity_add` / `entity_set_position` make the point available in the current
 authoring session; `entity_save` persists it. A newly placed point affects the
@@ -250,9 +252,77 @@ JSON cannot change a different machine's spawn registry.
 
 Acceptance must cover initial player join, player respawn, `npc_spawn`, NPC
 wave/role spawns, team-tag filtering, disabled points, map-config reload,
-legacy-GLB fallback, safe-position rejection, and a remote client/server edit.
+complete GLB-spawn manifest with disabled raw nodes excluded, legacy-GLB
+fallback for unsynchronized maps, safe-position rejection, and a remote
+client/server edit.
 This is a spec and implementation gap; runtime behavior was not reproduced in
 this review.
+
+## Desired feature: edit GLB spawn points through map JSON
+
+**DECIDED direction:** A map's spawn nodes may originate inside its GLB, but
+creators must be able to disable, move, or supplement those points through the
+map's JSON and Entity Editor without exporting a new GLB. The Entity Editor's
+map JSON is the editable override layer; the GLB remains the source geometry
+and initial spawn-node source.
+
+Provide an explicit import/synchronize action that reads every spawn node from
+the selected map GLB and writes a complete spawnpoint manifest into
+`config/maps/<active-map-id>.json`. This operation is explicit so loading a map
+does not silently rewrite creator data. Each imported point records its stable
+map-local ID, source GLB node identity, `enabled`, editable position and
+orientation, and existing team/role/tag fields. Newly authored points are
+marked as map-JSON points and have no GLB source identity. The manifest records
+the source map asset identity/revision and whether all GLB spawn nodes were
+successfully represented.
+
+Reconcile rules:
+
+1. On first import, create enabled JSON entries at the GLB spawn transforms.
+2. On later imports of the same GLB identity, preserve all JSON edits. Add new
+   GLB nodes with defaults; do not reset disabled flags or edited transforms.
+3. If a previously referenced GLB node disappears, keep its JSON entry and
+   mark it unresolved/orphaned with a diagnostic rather than deleting creator
+   data silently.
+4. A complete manifest is authoritative: the runtime selects only enabled,
+   safe resolved JSON entries. A disabled imported point must never reappear
+   through the raw-GLB fallback. Legacy maps without a complete manifest may
+   continue using raw GLB points until synchronized.
+5. `entity_set_position`, `entity_move_here`, enable/disable editing, save, and
+   live reload update the JSON override and affect future server-selected
+   spawns. They do not move actors already alive. The normal server-side safe
+   spawn validation still applies.
+6. To use one spawnpoint, disable the other entries; the standard selection
+   policy then has only that eligible candidate. Tags/groups may further limit
+   candidates by mode, team, or role.
+
+Source identity should use a stable ID authored in GLB node metadata when
+available. **OPEN:** the deterministic fallback for older GLBs without stable
+node IDs; whether the GUI exposes synchronization, the import is invoked from
+the asset pipeline, or both; and how a source-asset revision change is shown
+to the creator before accepting reconciliation. The system must not silently
+bind an old edit to a different spawn node because node ordering changed.
+
+Illustrative map JSON entry shape (field names are a schema proposal; the
+existing `MapConfigRegistry` parser must be inspected before implementation):
+
+```json
+{
+  "id": "funworld3_spawn_01",
+  "type": "spawnpoint",
+  "source": "map_glb",
+  "source_node_id": "spawn_01",
+  "enabled": false,
+  "position": [0.0, 0.0, 0.0],
+  "rotation": [0.0, 0.0, 0.0]
+}
+```
+
+Acceptance must show an imported eight-point GLB list in JSON, disable seven,
+move the remaining point live, save/reload it, restart and rejoin using that
+point, and verify the server does not fall back to any of the seven disabled
+raw GLB points. Also verify a new JSON-authored spawnpoint, an unresolved GLB
+source ID, map revision reconciliation, and remote server-authorized editing.
 
 ## Safe editing checklist
 

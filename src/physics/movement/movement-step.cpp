@@ -42,12 +42,48 @@ float shortestSignedAngleDegrees(float from, float to)
 void applyJumpVerticalVelocity(MovementState& state,
                                const MovementConfig& config)
 {
-    const float jumpVelocity =
+    const float baseVelocity =
         movementScaledJumpVelocity(config, state.sizeScale);
+    float jumpVelocity = baseVelocity;
+    if (config.jumpInputMode == MovementJumpInputMode::HoldScaled) {
+        // Start at minimum strength; the boost is added while Space stays held.
+        jumpVelocity = baseVelocity * std::max(0.0f, config.holdJumpMinMultiplier);
+        state.jump.holdJumpActive = true;
+        state.jump.holdJumpTicksHeld = 0;
+        state.jump.holdJumpBaseVelocity = baseVelocity;
+    }
     if (config.jumpMode == MovementJumpMode::Additive)
         state.baseVelocity.z += jumpVelocity;
     else
         state.baseVelocity.z = jumpVelocity;
+}
+
+// Adds the hold-scaled jump boost for held ticks within the charge window.
+// Runs every tick; does nothing unless a hold-scaled jump is active and held.
+void applyHoldScaledJumpBoost(MovementState& state,
+                              const MovementCommand& command,
+                              const MovementConfig& config)
+{
+    if (!state.jump.holdJumpActive)
+        return;
+    if (!command.jumpHeld) {
+        state.jump.holdJumpActive = false;
+        return;
+    }
+    const int chargeTicks = std::max(1, config.holdJumpChargeTicks);
+    if (state.jump.holdJumpTicksHeld >= chargeTicks) {
+        state.jump.holdJumpActive = false;
+        return;
+    }
+    const float minMultiplier = std::max(0.0f, config.holdJumpMinMultiplier);
+    const float maxMultiplier = std::max(minMultiplier, config.holdJumpMaxMultiplier);
+    const float perTick =
+        (maxMultiplier - minMultiplier) * state.jump.holdJumpBaseVelocity /
+        (float)chargeTicks;
+    state.baseVelocity.z += perTick;
+    ++state.jump.holdJumpTicksHeld;
+    if (state.jump.holdJumpTicksHeld >= chargeTicks)
+        state.jump.holdJumpActive = false;
 }
 
 float signedAngleDegrees(glm::vec2 a, glm::vec2 b)
@@ -1479,6 +1515,8 @@ void applyBasicJump(MovementState& state,
     }
 
     state.jump.jumpHeldPreviously = command.jumpHeld;
+
+    applyHoldScaledJumpBoost(state, command, config);
 
     const bool wantsJump = state.jump.jumpIntentTimerSeconds > 0.0f;
     if (!wantsJump)

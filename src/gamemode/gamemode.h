@@ -32,6 +32,9 @@ struct GamemodeFeatures {
     bool bossHealthbar = false;     // Render healthbar above a boss entity
     bool worldText = false;         // Render arbitrary text in world space
     bool timerAboveEntity = false;  // Render timer above any entity
+    // Melee-style: render each fighter's percent above its head instead of the
+    // ordinary healthbar (data-driven per mode).
+    bool percentAboveHead = false;
 };
 
 // One ordered team in a mode's roster. Team index (0-based) is the
