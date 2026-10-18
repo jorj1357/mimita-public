@@ -19,6 +19,7 @@ import argparse
 import builtins
 import colorsys
 import datetime
+from collections import deque
 import hashlib
 import json
 import os
@@ -139,8 +140,8 @@ WATCH_DIRECTORIES = (ROOT / "src", ROOT / "external" / "libjuice" / "src")
 WATCH_FILES = (
     ROOT / "mimita.rc",
     ROOT / "build.py",
-    ROOT / "build_agent.py",
     ROOT / "build_game_dll.py",
+    ROOT / "build_lock.py",
     ROOT / "build_toolchain.py",
     DEFAULT_MAP_POOL_PATH,
     LAUNCH_MODE_PATH,
@@ -799,7 +800,6 @@ class DevLoop:
         # Builds always run while this loop is open. Auto-start only controls
         # whether a successful build or an exited child may launch the EXE.
         self.auto_restart = bool(auto_restart)
-        self.manual_launch_requested = False
         # One-shot map override for the next launch, set by a scenario launch
         # request so a scenario can target a specific authoritative map.
         self.override_map = ""
@@ -840,6 +840,26 @@ class DevLoop:
         # must validate the current tree before the artifact can be launched.
         self.latest_stale = self.latest_build is not None
         self.build_pending = True
+        self.build_status = "pending"
+        self.active_build_generation: int | None = None
+        self.active_build_started_utc: str | None = None
+        self.active_build_started_monotonic: float | None = None
+        self.active_build_detail = "waiting for build worker"
+        self.build_output_tail: deque[str] = deque(maxlen=4)
+        self.build_last_progress_save = 0.0
+        self.build_worker: threading.Thread | None = None
+        self.build_completions: Queue[dict] = Queue()
+        self.pending_build_request_ids: list[str] = []
+        self.active_build_request_ids: list[str] = []
+        self.pending_build_request_modes: dict[str, str] = {}
+        self.active_build_mode = "debug"
+        self.pending_build_mode = "debug"
+        self.latest_build_mode = "unknown"
+        self.build_requests: dict[str, str] = {}
+        self.last_build_result = ""
+        self.last_build_duration_seconds: float | None = None
+        self.launch_after_build = False
+        self.shutting_down = False
         self.last_message = (
             f"restored published build {self.latest_build:04d}; validating current source"
             if self.latest_build is not None
@@ -947,23 +967,36 @@ class DevLoop:
     def state(self, status: str = "idle") -> dict:
         client_executable = self.client_args[0] if self.client_args else None
         latest_identity = self.latest_build_identity()
+        runtime_identity = dict(self.run_metadata.get("build_identity") or {})
+        with self.lock:
+            build_snapshot = {
+                "build_status": self.build_status,
+                "build_pending": self.build_pending,
+                "active_build_generation": self.active_build_generation,
+                "active_build_mode": self.active_build_mode,
+                "pending_build_mode": self.pending_build_mode,
+                "latest_build_mode": self.latest_build_mode,
+                "active_build_started_utc": self.active_build_started_utc,
+                "active_build_started_monotonic": self.active_build_started_monotonic,
+                "active_build_detail": self.active_build_detail,
+                "build_output_tail": list(self.build_output_tail),
+                "last_build_result": self.last_build_result,
+                "last_build_duration_seconds": self.last_build_duration_seconds,
+                "build_requests": dict(self.build_requests),
+            }
         identities_match = bool(
             self.server_exe and client_executable and
             os.path.normcase(self.server_exe) == os.path.normcase(client_executable) and
-            self.run_metadata.get("build_id") == (
-                f"{latest_identity.get('build_number')}:{latest_identity.get('sha256')}"
-                if latest_identity else ""
-            )
+            self.run_metadata.get("build_id") == self.run_metadata.get("client_build_id") and
+            self.run_metadata.get("build_id") == self.run_metadata.get("server_build_id") and
+            runtime_identity.get("valid")
         )
         mismatch_reason = self.build_mismatch_reason
-        if not mismatch_reason and self.server_exe and latest_identity:
-            if os.path.normcase(self.server_exe) != os.path.normcase(str(latest_identity.get("path", ""))):
-                mismatch_reason = "server_uses_older_published_build"
         if not mismatch_reason and self.server_exe and client_executable:
             if os.path.normcase(self.server_exe) != os.path.normcase(client_executable):
                 mismatch_reason = "server_client_executable_path"
-        if not mismatch_reason and self.latest_stale:
-            mismatch_reason = "latest_build_stale_after_source_change"
+            elif not identities_match:
+                mismatch_reason = "server_client_build_identity"
         now_ms = time.time() * 1000.0
         run_uptime = None
         if self.run_started_utc:
@@ -986,6 +1019,9 @@ class DevLoop:
             max(0.0, (now_ms - self.client_launch_ms) / 1000.0)
             if self.client_launch_ms and client_alive else None
         )
+        build_elapsed = (max(0.0, time.monotonic() - build_snapshot["active_build_started_monotonic"])
+                         if build_snapshot["active_build_started_monotonic"] is not None
+                         else build_snapshot["last_build_duration_seconds"])
         return {
             "profile": self.profile.get("name", "unnamed"),
             "launch_mode": self.launch_mode_id,
@@ -997,7 +1033,20 @@ class DevLoop:
             "auto_restart": self.auto_restart,
             "launch_visibility": self.launch_visibility,
             "headless": self.launch_visibility == "headless",
-            "build_status": status,
+            "status": status,
+            "build_status": build_snapshot["build_status"],
+            "build_pending": build_snapshot["build_pending"],
+            "active_build_generation": build_snapshot["active_build_generation"],
+            "active_build_mode": build_snapshot["active_build_mode"],
+            "pending_build_mode": build_snapshot["pending_build_mode"],
+            "latest_build_mode": build_snapshot["latest_build_mode"],
+            "active_build_started_utc": build_snapshot["active_build_started_utc"],
+            "active_build_elapsed_seconds": build_elapsed,
+            "active_build_detail": build_snapshot["active_build_detail"],
+            "build_output_tail": build_snapshot["build_output_tail"],
+            "last_build_result": build_snapshot["last_build_result"],
+            "last_build_duration_seconds": build_snapshot["last_build_duration_seconds"],
+            "build_requests": build_snapshot["build_requests"],
             "message": self.last_message,
             "updated_at": utc_now(),
             "run_id": self.run_id,
@@ -1322,6 +1371,12 @@ class DevLoop:
         info["source_current"] = not self.latest_stale
         return info
 
+    @staticmethod
+    def build_id(identity: dict | None) -> str:
+        if not identity:
+            return ""
+        return f"{identity.get('build_number', '')}:{identity.get('sha256', '')}"
+
     def start_control_server(self) -> None:
         if self.control_socket is not None:
             return
@@ -1387,6 +1442,38 @@ class DevLoop:
                 except OSError:
                     pass
 
+    def queue_build_request(self, request_id: str, mode: str = "debug") -> bool:
+        request_id = request_id or f"build-{uuid.uuid4().hex[:12]}"
+        mode = str(mode or "debug").strip().lower()
+        if mode not in ("debug", "release"):
+            return False
+        with self.lock:
+            if (self.active_build_generation is not None
+                    and self.active_build_generation == self.generation
+                    and self.active_build_mode == mode):
+                if request_id not in self.active_build_request_ids:
+                    self.active_build_request_ids.append(request_id)
+                self.build_requests[request_id] = "building"
+            else:
+                if request_id not in self.pending_build_request_ids:
+                    self.pending_build_request_ids.append(request_id)
+                self.pending_build_request_modes[request_id] = mode
+                self.pending_build_mode = mode
+                self.build_requests[request_id] = "queued"
+                self.build_pending = True
+                if self.active_build_generation is None:
+                    self.build_status = "pending"
+            self.build_requests = dict(list(self.build_requests.items())[-32:])
+        return True
+
+    def _queue_build_if_needed(self) -> None:
+        with self.lock:
+            if (self.active_build_generation is None
+                    or self.active_build_generation != self.generation):
+                self.build_pending = True
+                if self.active_build_generation is None:
+                    self.build_status = "pending"
+
     def process_control_requests(self) -> None:
         while True:
             try:
@@ -1410,27 +1497,50 @@ class DevLoop:
                     self.launch_mode = selected
                 self.override_map = str(request.get("map", "") or "").strip()
                 self.override_weapon_set = str(request.get("weapon_set", "") or "").strip()
-                self.manual_launch_requested = True
-                self.build_pending = True
-                self.change_event.clear()
-                self.last_message = f"AI launch queued for mode {self.launch_mode_id}"
+                if self.latest_build is None:
+                    self.launch_after_build = True
+                    self._queue_build_if_needed()
+                    self.last_message = f"AI launch waiting for first successful build, mode {self.launch_mode_id}"
+                    self.record_control_event(request, "accepted", self.last_message)
+                    self.save_state("launch_waiting_for_build")
+                else:
+                    launched = self.launch_latest()
+                    self.last_message = (
+                        f"AI launched last successful build {self.latest_build}"
+                        if launched else f"AI launch failed for last successful build {self.latest_build}"
+                    )
+                    self.record_control_event(
+                        request, "completed" if launched else "failed", self.last_message
+                    )
+                    self.save_state("launch_latest" if launched else "launch_failed")
+            elif action == "build":
+                mode = str(request.get("build_mode", "debug"))
+                if not self.queue_build_request(request_id, mode):
+                    self.last_message = f"unsupported build mode: {mode}"
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("request_rejected")
+                    continue
+                self.last_message = "build request queued through dev-loop"
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("build_queued")
             elif action == "build-or-launch":
-                # Dashboard key 1: build only when the latest artifact is stale
-                # or missing; otherwise launch the latest published build.
-                if self.latest_stale or self.latest_build is None:
-                    self.manual_launch_requested = True
-                    self.build_pending = True
-                    self.change_event.clear()
-                    self.last_message = "dashboard build/launch queued (stale or missing build)"
+                if self.latest_build is None:
+                    self.launch_after_build = True
+                    self._queue_build_if_needed()
+                    self.last_message = "dashboard launch waiting for first successful build"
                     self.record_control_event(request, "accepted", self.last_message)
-                    self.save_state("build_queued")
+                    self.save_state("launch_waiting_for_build")
                 else:
-                    self.launch_latest()
-                    self.last_message = "dashboard launched latest build"
-                    self.record_control_event(request, "completed", self.last_message)
-                    self.save_state("launch_latest")
+                    launched = self.launch_latest()
+                    self.last_message = (
+                        f"dashboard launched last successful build {self.latest_build}"
+                        + (" (stale while newer build runs)" if self.latest_stale else "")
+                        if launched else f"dashboard launch failed for build {self.latest_build}"
+                    )
+                    self.record_control_event(
+                        request, "completed" if launched else "failed", self.last_message
+                    )
+                    self.save_state("launch_latest" if launched else "launch_failed")
             elif action == "set-launch-mode":
                 requested_mode = request.get("launch_mode")
                 try:
@@ -1503,14 +1613,63 @@ class DevLoop:
                 self.change_event.set()
                 self.save_state("source_changed")
 
-    def run_build(self) -> bool:
+    def start_build_worker(self) -> None:
         with self.lock:
+            if self.active_build_generation is not None:
+                return
             requested_generation = self.generation
-            self.running_build = requested_generation
-            self.last_message = "building"
+            if self.pending_build_request_ids:
+                requested_mode = self.pending_build_request_modes.get(
+                    self.pending_build_request_ids[0], "debug")
+                request_ids = [request_id for request_id in self.pending_build_request_ids
+                               if self.pending_build_request_modes.get(request_id, "debug")
+                               == requested_mode]
+                self.pending_build_request_ids = [request_id for request_id in self.pending_build_request_ids
+                                                  if request_id not in request_ids]
+                for request_id in request_ids:
+                    self.pending_build_request_modes.pop(request_id, None)
+            else:
+                requested_mode = self.pending_build_mode
+            self.active_build_request_ids = request_ids
+            self.active_build_mode = requested_mode
+            self.active_build_generation = requested_generation
+            self.active_build_started_utc = utc_now()
+            self.active_build_started_monotonic = time.monotonic()
+            self.active_build_detail = "starting compiler"
+            self.build_output_tail.clear()
+            self.build_pending = False
+            self.build_status = "building"
+            self.last_message = f"building source generation {requested_generation}"
+            for request_id in request_ids:
+                self.build_requests[request_id] = "building"
         self.save_state("building")
+        self.build_worker = threading.Thread(
+            target=self.run_build,
+            args=(requested_generation, request_ids, requested_mode),
+            name=f"dev-loop-build-{requested_generation}",
+            daemon=False,
+        )
+        self.build_worker.start()
 
+    def _record_build_output(self, line: str) -> None:
+        detail = line.rstrip()[-240:]
+        now = time.monotonic()
+        with self.lock:
+            if detail:
+                self.build_output_tail.append(detail)
+                self.active_build_detail = detail
+                self.last_message = detail
+            save = now - self.build_last_progress_save >= 0.75
+            if save:
+                self.build_last_progress_save = now
+        if save:
+            self.save_state("building")
+
+    def run_build(self, requested_generation: int, request_ids: list[str], mode: str) -> None:
+        started = time.monotonic()
         command = [sys.executable, str(ROOT / "build.py"), "build-only"]
+        if mode == "release":
+            command.append("release")
         environment = os.environ.copy()
         ccache = find_ccache()
         if ccache:
@@ -1520,84 +1679,129 @@ class DevLoop:
             print("[DEV] ccache: not found; build will still work without it")
 
         print("[DEV] starting incremental build")
-        output = []
-        process = subprocess.Popen(
-            command,
-            cwd=ROOT,
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            creationflags=_CREATE_NO_WINDOW,
-            **({"startupinfo": _hidden_startupinfo()} if os.name == "nt" else {}),
-        )
-        assert process.stdout is not None
-        for line in process.stdout:
-            print(line, end="")
-            output.append(line)
-        result = process.wait()
+        output: list[str] = []
+        result = 2
+        destination: Path | None = None
+        build_number: int | None = None
+        error_message = ""
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                creationflags=_CREATE_NO_WINDOW,
+                **({"startupinfo": _hidden_startupinfo()} if os.name == "nt" else {}),
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                print(line, end="")
+                output.append(line)
+                self._record_build_output(line)
+            result = process.wait()
+        except OSError as error:
+            error_message = f"could not start canonical build: {error}"
+            self._record_build_output(error_message)
+
         successful = result == 0 and (
             "BUILD SUCCESS" in "".join(output)
             or "Nothing changed." in "".join(output)
         )
-
-        with self.lock:
-            self.running_build = None
-            current_generation = self.generation
-
         if successful:
-            number = next_build_number()
             try:
-                destination = publish_build(number)
+                build_number = next_build_number()
+                destination = publish_build(build_number)
             except Exception as error:
-                self.last_message = f"publish failed: {error}"
-                self.save_state("publish_failed")
-                print(f"[DEV] publish failed: {error}")
-                return False
-            with self.lock:
-                self.latest_build = number
-                self.latest_generation = requested_generation
-                self.latest_stale = current_generation != requested_generation
-                self.last_message = f"published build {number} at {destination}"
-                self.build_pending = self.latest_stale
-            print(f"[DEV] published build {number}: {destination}")
-            self.save_state("success")
-            # File-watcher builds are background compilation/publish only.
-            # Launching a new client is an explicit [1] action, so editing a
-            # C++ file never interrupts the currently running game.
-            should_launch = self.manual_launch_requested
-            if not self.latest_stale and should_launch:
-                self.manual_launch_requested = False
-                self.restart_latest()
-            else:
-                self.print_status()
-            return True
+                successful = False
+                error_message = f"publish failed: {error}"
+                self._record_build_output(error_message)
 
-        with self.lock:
-            self.last_message = f"build failed with exit code {result}"
-            # The previous artifact is intentionally retained for inspection,
-            # but it must never be presented as current or launched by [1] or
-            # automatic process recovery.
-            self.latest_stale = True
-            self.build_pending = False
-        self.save_state("failed")
-        print(f"[DEV] build failed with exit code {result}; current game was left running")
-        print("[DEV] compiler/build diagnostics (full build output was streamed above):")
-        diagnostics = [
-            line.rstrip()
-            for line in output
-            if any(marker in line.lower() for marker in (
-                "error:", "fatal error", "undefined reference", "collect2:",
-                "linker command failed", "build failed",
-            ))
-        ]
-        if diagnostics:
-            for line in diagnostics:
-                print(f"[DEV][BUILD ERROR] {line}")
-        else:
-            print("[DEV][BUILD ERROR] No filtered compiler diagnostic found; review the full output above.")
-        return False
+        self.build_completions.put({
+            "generation": requested_generation,
+            "mode": mode,
+            "request_ids": request_ids,
+            "success": successful,
+            "return_code": result,
+            "build_number": build_number,
+            "destination": str(destination) if destination else "",
+            "error": error_message,
+            "duration_seconds": max(0.0, time.monotonic() - started),
+            "output_tail": [line.rstrip()[-240:] for line in output[-4:]],
+        })
+
+    def drain_build_completions(self) -> None:
+        while True:
+            try:
+                result = self.build_completions.get_nowait()
+            except Empty:
+                return
+
+            with self.lock:
+                generation = int(result["generation"])
+                request_ids = list(dict.fromkeys(
+                    [*result.get("request_ids", []), *self.active_build_request_ids]
+                ))
+                success = bool(result.get("success"))
+                self.active_build_request_ids = []
+                self.active_build_generation = None
+                self.active_build_started_utc = None
+                self.active_build_started_monotonic = None
+                self.active_build_detail = ""
+                self.last_build_duration_seconds = float(result.get("duration_seconds", 0))
+                self.last_build_result = "success" if success else "failed"
+                if success:
+                    self.latest_build_mode = str(result.get("mode") or "debug")
+                for request_id in request_ids:
+                    self.build_requests[request_id] = self.last_build_result
+
+                if success:
+                    self.latest_build = int(result["build_number"])
+                    self.latest_generation = generation
+                    self.latest_stale = self.generation != generation
+                    self.last_message = (
+                        f"published build {self.latest_build} at {result['destination']}"
+                    )
+                    self.build_status = (
+                        "pending" if self.build_pending
+                        else "published_stale" if self.latest_stale
+                        else "published_current"
+                    )
+                else:
+                    self.last_message = str(result.get("error") or
+                                            f"build failed with exit code {result.get('return_code')}")
+                    self.build_status = "pending" if self.build_pending else "failed"
+                    if self.latest_build is None and self.launch_after_build:
+                        self.launch_after_build = False
+
+                self.build_requests = dict(list(self.build_requests.items())[-32:])
+                self.build_pending = self.build_pending or bool(self.pending_build_request_ids)
+                pending_launch = success and self.launch_after_build and not self.shutting_down
+                auto_replace = bool(
+                    success and not self.shutting_down and not pending_launch and self.auto_restart
+                    and any(process.poll() is None for process in self.processes)
+                    and not self.latest_stale
+                )
+                if pending_launch:
+                    self.launch_after_build = False
+
+            self.build_worker = None
+            self.save_state("build_succeeded" if success else "build_failed")
+            if success:
+                print(f"[DEV] published build {self.latest_build}: {result['destination']}")
+            else:
+                print(f"[DEV] {self.last_message}; the last successful build is retained")
+
+            if pending_launch or auto_replace:
+                self.last_message = (
+                    f"launching build {self.latest_build} after successful publication"
+                )
+                self.save_state("launch_after_build")
+                self.launch_latest()
+            else:
+                self.print_status(force=True)
 
     def build_server_args(self, exe: Path, map_name: str,
                           room_file_path: Path) -> list[str]:
@@ -1894,31 +2098,49 @@ class DevLoop:
         self.cleanup_room_file()
         self.save_state("server_exited")
 
-    def launch_latest(self) -> None:
-        if self.latest_build is None:
-            return
-        if self.latest_stale:
-            print("[DEV] refusing to launch stale build; press [1] to retry the build")
-            return
-        build_dir = BUILD_ROOT / f"{self.latest_build:04d}"
+    def launch_latest(self) -> bool:
+        selected_build = self.latest_build
+        if selected_build is None:
+            return False
+        build_dir = BUILD_ROOT / f"{selected_build:04d}"
         exe = build_dir / "mimita.exe"
+        identity = self.latest_build_identity()
+        if not identity or not identity.get("valid"):
+            self.last_message = f"last successful build {selected_build} failed artifact validation"
+            self.save_state("launch_artifact_invalid")
+            print(f"[DEV] {self.last_message}")
+            return False
         if not exe.is_file():
             print(f"[DEV] missing published executable: {exe}")
-            return
+            return False
 
-        # Stop the previous dev-loop client. A server from an older published
-        # build must never remain available to receive the new client.
+        map_override = self.override_map
+        weapon_override = self.override_weapon_set
+        map_name = select_dev_map(
+            self.profile,
+            map_override or str(self.launch_mode.get("map", "")),
+        )
+        self.override_map = ""
+        if (
+            not map_override and not weapon_override
+            and self.client_args and self.client_args[0] == str(exe)
+            and self.client_ready and self.builds_match
+            and self.server_health()
+            and self.server_matches_launch_configuration(exe, map_name)
+        ):
+            self.last_message = f"last successful build {selected_build} is already running"
+            self.save_state("launch_reused")
+            self.print_status()
+            return True
+
+        # Capture one immutable published artifact. A worker may publish a newer
+        # build concurrently, but this launch keeps one server/client identity.
         self.stop_processes()
         self.client_ready = False
         self.builds_match = False
-        map_name = select_dev_map(
-            self.profile,
-            self.override_map or str(self.launch_mode.get("map", "")),
-        )
-        self.override_map = ""
         print(f"[DEV] selected allowed map: {map_name}")
         if not self.validate_firewall_policy():
-            return
+            return False
         running_map = self.server_map_name()
         prelaunch_windows = self.observe_launch_windows("before_server_launch")
         if self.server_health() and not self.server_matches_launch_configuration(exe, map_name):
@@ -1937,7 +2159,7 @@ class DevLoop:
             )
             if not self.stop_server():
                 self.save_state("server_stop_failed")
-                return
+                return False
         if self.server_health() and bool(self.room_code):
             room_code = self.room_code
             print(
@@ -1976,14 +2198,16 @@ class DevLoop:
             self.server_ready = False
             self.client_ready = False
             self.builds_match = False
-            identity = self.latest_build_identity() or {}
-            build_id = f"{identity.get('build_number', self.latest_build)}:{identity.get('sha256', '')}"
+            build_id = self.build_id(identity)
             metadata = {
                 "run_id": self.run_id,
-                "build_number": self.latest_build,
+                "build_number": selected_build,
                 "build_id": build_id,
+                "server_build_id": build_id,
+                "client_build_id": build_id,
+                "build_identity": identity,
                 "source_generation": self.latest_generation,
-                "source_current": not self.latest_stale,
+                "source_current": self.latest_generation == self.generation,
                 "launch_mode": self.launch_mode_id,
                 "launch_mode_name": self.launch_mode.get("name", "unnamed"),
                 "map": map_name,
@@ -2016,8 +2240,8 @@ class DevLoop:
                 self.last_message = f"versioninfo failed: {error}"
                 self.save_state("versioninfo_failed")
                 print(f"[DEV] {self.last_message}")
-                return
-            print(f"[DEV] launching build {self.latest_build} server")
+                return False
+            print(f"[DEV] launching build {selected_build} server")
             print(f"[DEV] shared events file: {self.events_path}")
             self.record_runtime_event(
                 "dev-loop.launch.args",
@@ -2071,7 +2295,7 @@ class DevLoop:
                 self.save_state("server_logger_missing")
                 if not self.stop_server():
                     print(f"[DEV SERVER] {self.last_message}; server could not be stopped")
-                return
+                return False
             print(f"[DEV SERVER] launched pid={server.pid} args={' '.join(server_args[1:])}")
             self.write_server_marker()
 
@@ -2092,7 +2316,7 @@ class DevLoop:
                     self.server_pid = None
                     self.cleanup_room_file()
                     self.print_status()
-                    return
+                    return False
                 try:
                     room_code = self.room_file_path.read_text(encoding="utf-8").strip()
                 except OSError:
@@ -2109,7 +2333,7 @@ class DevLoop:
                 self.server_pid = None
                 self.cleanup_room_file()
                 self.print_status()
-                return
+                return False
 
             self.room_code = room_code
             # The server has consumed the room-file handshake. Remove the
@@ -2128,6 +2352,31 @@ class DevLoop:
         client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
         if not self.events_path:
             self.events_path = create_shared_events_path()
+        if not self.run_id:
+            self.run_id = Path(self.events_path).parent.name
+        build_id = self.build_id(identity)
+        if self.run_metadata.get("build_id") != build_id:
+            self.run_started_utc = self.run_started_utc or utc_now()
+            self.run_metadata = {
+                "run_id": self.run_id,
+                "build_number": selected_build,
+                "build_id": build_id,
+                "server_build_id": build_id,
+                "client_build_id": build_id,
+                "build_identity": identity,
+                "source_generation": self.latest_generation,
+                "source_current": self.latest_generation == self.generation,
+                "launch_mode": self.launch_mode_id,
+                "launch_mode_name": self.launch_mode.get("name", "unnamed"),
+                "map": map_name,
+                "events_path": self.events_path,
+                "executable": str(exe),
+                "started_utc": self.run_started_utc,
+            }
+        else:
+            self.run_metadata["server_build_id"] = build_id
+            self.run_metadata["client_build_id"] = build_id
+            self.run_metadata["build_identity"] = identity
         if not self.command_queue_path:
             run_key = self.run_id or Path(self.events_path).parent.name
             self.command_queue_path = str(DEV_ROOT / f"agent-command-{run_key}.jsonl")
@@ -2142,12 +2391,12 @@ class DevLoop:
             "MIMITA_DEV_LOOP_SERVER": "1",
             "MIMITA_RUN_ID": self.run_id or Path(self.events_path).parent.name,
             "MIMITA_EXPECTED_RUN_ID": self.run_id or Path(self.events_path).parent.name,
-            "MIMITA_EXPECTED_BUILD_ID": f"{(self.latest_build_identity() or {}).get('build_number', self.latest_build)}:{(self.latest_build_identity() or {}).get('sha256', '')}",
-            "MIMITA_BUILD_ID": f"{(self.latest_build_identity() or {}).get('build_number', self.latest_build)}:{(self.latest_build_identity() or {}).get('sha256', '')}",
+            "MIMITA_EXPECTED_BUILD_ID": build_id,
+            "MIMITA_BUILD_ID": build_id,
             "MIMITA_RUN_METADATA": json.dumps(self.run_metadata, separators=(",", ":")),
             "MIMITA_PROCESS_ROLE": "client",
         }
-        print(f"[DEV] launching build {self.latest_build} client")
+        print(f"[DEV] launching build {selected_build} client")
         print(f"[DEV] shared events file: {self.events_path}")
         self.record_runtime_event(
             "dev-loop.launch.args",
@@ -2170,12 +2419,13 @@ class DevLoop:
         self.processes.append(client)
         self.client_args = list(client_args)
         self.client_launch_ms = time.time() * 1000.0
-        self.running_build = self.latest_build
+        self.running_build = selected_build
+        self.run_metadata["client_build_id"] = build_id
         self.client_ready = self.wait_for_logger_started("client", client.pid)
         self.builds_match = bool(self.server_ready and self.client_ready and
                                  self.server_exe == str(exe) and
-                                 self.latest_build_identity() and
-                                 self.latest_build_identity().get("valid"))
+                                 identity.get("valid") and
+                                 self.run_metadata.get("server_build_id") == build_id)
         self.observe_launch_windows("client_ready" if self.client_ready else "client_logger_missing")
         if self.client_ready:
             self.apply_launch_visibility()
@@ -2183,9 +2433,7 @@ class DevLoop:
             self.monitor_launch_windows()
         self.save_state("running" if self.client_ready else "client_logger_missing")
         self.print_status()
-
-    def restart_latest(self) -> None:
-        self.launch_latest()
+        return bool(self.client_ready and self.builds_match)
 
     def stop_processes(self) -> None:
         for process in self.processes:
@@ -2278,11 +2526,13 @@ class DevLoop:
         client_pids = snapshot.get("client_pids", [])
         return [
             f"[DEV STATUS] MODE: {snapshot.get('launch_mode')} ({self.launch_mode.get('name', 'unnamed')})",
-            f"[DEV STATUS] BUILD: running={snapshot.get('running_build') or '-'} latest={snapshot.get('latest_successful_build') or '-'} match={snapshot.get('builds_match')}",
+            f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} active-source={snapshot.get('active_build_generation') or '-'} latest={snapshot.get('latest_successful_build') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
+            f"[DEV STATUS] BUILD DETAIL: {snapshot.get('active_build_detail') or snapshot.get('last_build_result') or '-'}",
+            f"[DEV STATUS] RUNTIME BUILD: {snapshot.get('running_build') or '-'} match={snapshot.get('builds_match')}",
             f"[DEV STATUS] RUN: {'RUNNING' if running else 'NOT RUNNING'} uptime={self._duration_text(snapshot.get('run_uptime_seconds'))} visibility={snapshot.get('launch_visibility')}",
             f"[DEV STATUS] PIDS: server={snapshot.get('server_pid') or '-'} client={client_pids or '-'}",
             f"[DEV STATUS] EVENTS: {_terminal_file_link(snapshot.get('events_path'))}",
-            "[DEV STATUS] CONTROLS: [1] build/launch  [2] mode  [V] visible/headless  [A] auto-start  [Q] quit",
+            "[DEV STATUS] CONTROLS: [1] launch latest  [2] mode  [V] visible/headless  [A] auto-start  [Q] quit",
         ]
 
     def _render_status(self, snapshot: dict | None = None) -> None:
@@ -2330,18 +2580,27 @@ class DevLoop:
         try:
             while not self.stop_event.is_set():
                 self.process_control_requests()
+                self.drain_build_completions()
                 self.maintain_process()
-                if self.build_pending:
+                if self.build_pending and self.active_build_generation is None:
                     self.change_event.clear()
                     time.sleep(DEBOUNCE_SECONDS)
-                    self.run_build()
+                    self.start_build_worker()
                     continue
                 if self.change_event.wait(0.20):
-                    self.build_pending = True
+                    with self.lock:
+                        self.build_pending = True
+                        if self.active_build_generation is None:
+                            self.build_status = "pending"
                 self.print_status()
                 self.refresh_status_animation()
         finally:
             self.stop_event.set()
+            self.shutting_down = True
+            if self.build_worker is not None and self.build_worker.is_alive():
+                print("[DEV] waiting for the active build to finish before daemon shutdown")
+                self.build_worker.join()
+            self.drain_build_completions()
             # Only daemon-owned clients are terminated. The external server is
             # never killed here; it keeps its own console/lifetime.
             self.stop_processes()
@@ -3080,7 +3339,7 @@ def _recent_activity(events_path: str, limit: int = 3) -> list[str]:
 
 
 DASHBOARD_CONTROLS_LINE = (
-    "Controls : [1] build/launch  [2] launch mode  [V] client visible/headless  "
+    "Controls : [1] launch latest  [2] launch mode  [V] client visible/headless  "
     "[A] auto-restart  [Q] stop daemon  [X] close view  [P] freeze  [R] resume"
 )
 
@@ -3106,9 +3365,15 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"Settings : auto-restart={auto_restart}  next-launch={state.get('launch_visibility') or '-'}  "
         f"mode={state.get('launch_mode') or '-'}({state.get('launch_mode_name') or '-'})",
         f"Heartbeat: updated={state.get('updated_at') or '-'}",
-        f"Build    : phase={build_phase} {'FAIL' if build_failed else 'OK'}  "
-        f"running={state.get('running_build') or '-'}  latest={state.get('latest_successful_build') or '-'}  "
-        f"match={state.get('builds_match')}",
+        f"Build    : phase={build_phase} {'FAIL' if build_failed else ''}  "
+        f"active-source={state.get('active_build_generation') if state.get('active_build_generation') is not None else '-'}  "
+        f"queued={'yes' if state.get('build_pending') else 'no'}  "
+        f"latest={state.get('latest_successful_build') or '-'}@{state.get('latest_successful_source_generation', '-')}  "
+        f"stale={state.get('latest_build_stale')}  "
+        f"elapsed={DevLoop._duration_text(state.get('active_build_elapsed_seconds'))}",
+        f"Build detail: {state.get('active_build_detail') or state.get('last_build_result') or '-'}",
+        *[f"Build output: {line}" for line in (state.get('build_output_tail') or [])[-2:]],
+        f"Runtime  : build={state.get('running_build') or '-'}  match={state.get('builds_match')}",
         f"Server   : {'alive' if server_alive else 'dead'}  pid={state.get('server_pid') or '-'}  "
         f"uptime={_duration_text(state.get('server_uptime_seconds'))}  "
         f"build={_build_label(state.get('server_executable'))}",
@@ -3339,12 +3604,15 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
     if as_json:
         print(json.dumps(current, indent=2))
         return
-    print(f"[DEV STATUS] status={current.get('build_status')} run={current.get('run_id') or '(none)'}")
+    print(f"[DEV STATUS] lifecycle={current.get('status')} build={current.get('build_status')} run={current.get('run_id') or '(none)'}")
     print(
         f"[DEV STATUS] mode={current.get('launch_mode')} "
-        f"running_build={current.get('running_build')} "
+        f"active_source={current.get('active_build_generation')} "
+        f"elapsed={DevLoop._duration_text(current.get('active_build_elapsed_seconds'))} "
+        f"runtime_build={current.get('running_build')} "
         f"latest_build={current.get('latest_successful_build')} "
-        f"stale={current.get('latest_build_stale')}"
+        f"latest_source={current.get('latest_successful_source_generation')} "
+        f"stale={current.get('latest_build_stale')} detail={current.get('active_build_detail') or current.get('last_build_result')}"
     )
     print(
         f"[DEV STATUS] run={'RUNNING' if current.get('run_alive') else 'NOT RUNNING'} "
@@ -3371,6 +3639,25 @@ def _control_action(args: argparse.Namespace) -> str:
     return args.request or "status"
 
 
+def wait_for_build_request(request_id: str, timeout: float) -> int:
+    deadline = time.monotonic() + max(1.0, timeout)
+    while time.monotonic() < deadline:
+        current = read_current_run() or {}
+        status = (current.get("build_requests") or {}).get(request_id)
+        if status == "success":
+            print(f"[DEV CONTROL] build request={request_id} result=success "
+                  f"build={current.get('latest_successful_build')}")
+            return 0
+        if status == "failed":
+            print(f"[DEV CONTROL] build request={request_id} result=failed "
+                  f"detail={current.get('message')}", file=sys.stderr)
+            return 1
+        time.sleep(0.5)
+    print(f"[DEV CONTROL] build request={request_id} timed out waiting for completion",
+          file=sys.stderr)
+    return 2
+
+
 def run_control_client(args: argparse.Namespace) -> int:
     action = _control_action(args)
 
@@ -3389,7 +3676,7 @@ def run_control_client(args: argparse.Namespace) -> int:
     current = read_current_run()
     # Mutating/command entry points ensure one watchdog and one daemon before
     # sending work. Stop requests target whatever daemon already exists.
-    if action in ("command", "scenario-file", "launch") or args.ensure_running:
+    if action in ("command", "scenario-file", "launch", "build") or args.ensure_running:
         current, ensure_events = ensure_running(args.profile, args.launch_mode, visibility)
         for event in ensure_events:
             print(f"[DEV CONTROL] recovery action={event.get('action')} "
@@ -3423,6 +3710,8 @@ def run_control_client(args: argparse.Namespace) -> int:
         "launch_mode": args.launch_mode,
         "request_id": f"{utc_now()}-{uuid.uuid4().hex[:8]}",
     }
+    if action == "build":
+        request["build_mode"] = args.build_mode
     if action == "stop":
         # A CLI stop is an explicit shutdown; the watchdog must honor it.
         request["explicit_stop"] = True
@@ -3462,6 +3751,11 @@ def run_control_client(args: argparse.Namespace) -> int:
         print(f"[DEV CONTROL] events={_terminal_file_link(events_path)}")
         return 0 if result["completed"] else 1
 
+    if action == "build" and response.get("accepted") and args.wait_for_build:
+        return wait_for_build_request(
+            request["request_id"], timeout=float(args.build_timeout)
+        )
+
     return 0 if response.get("accepted") else 1
 
 
@@ -3495,9 +3789,15 @@ def main() -> int:
     parser.add_argument("--scenario-file", help="queue a repository-local Markdown/JSON scenario in the running client")
     parser.add_argument(
         "--request",
-        choices=("launch", "stop-client", "stop-server", "stop"),
+        choices=("launch", "build", "stop-client", "stop-server", "stop"),
         help="send a command to the already-running dev-loop daemon and exit",
     )
+    parser.add_argument("--wait-for-build", action="store_true",
+                        help="with --request build, wait for this build request to finish")
+    parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
+                        help="configuration for --request build")
+    parser.add_argument("--build-timeout", type=float, default=36000.0,
+                        help="maximum seconds to wait with --wait-for-build")
     parser.add_argument("--ensure-running", action="store_true",
                         help="ensure the watchdog and daemon exist and exit")
     parser.add_argument("--daemon", action="store_true",

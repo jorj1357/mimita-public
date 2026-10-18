@@ -361,13 +361,12 @@ frame time.
   Euler components. Legacy version-1 clips therefore load, but their between-
   keyframe path can change from the old Euler-component interpolation and must
   be visually reviewed during migration.
-- **Implementation alignment:** the current parser in
-  `src/entities/player-animation-config.cpp` reads only the legacy `rotation`
-  Euler array, and `src/entities/player-animation.cpp` interpolates Euler
-  vectors. The quaternion-only runtime described here is the desired contract,
-  not a claim about current implementation. The loader, pose storage,
-  interpolation, overlays, and renderer path must be migrated together; this
-  document edit does not change code.
+- **Implementation alignment (source review, 2026-10-18):**
+  `src/entities/player-animation-config.cpp` reads the explicit Euler and WXYZ
+  quaternion fields into quaternion pose storage, and
+  `src/entities/player-animation.cpp` interpolates those rotations with
+  shortest-arc SLERP. This is source evidence; the conversion cases and visual
+  equivalence still need their focused validation.
 
 ### Blender and file-to-runtime conversion pipeline
 
@@ -531,9 +530,10 @@ emit a bounded diagnostic; never silently re-enable a suppressed overlay.
 The default policy remains the existing layered composition above. An
 exclusive policy is opt-in and scoped to the actor/profile context, so Melee can
 request it without changing other game modes or introducing a second animator.
-This is a desired runtime contract; the current player pose pipeline still
-applies several procedural overlays after avatar-clip sampling and does not yet
-provide this exclusive policy.
+The current Player runtime has an `authoredOnly` policy and uses it to suppress
+procedural, aimbody, weapon, dash, and freeze pose layers for Melee authored
+poses. This is source evidence; matching rendered limbs and hitbox attachments
+still needs runtime verification.
 
 ## Runtime contract
 
@@ -564,7 +564,31 @@ To make wings/stingers/tails visible, the loader and renderer generalize from
 
 ## Live editing
 
-- `animations.json` and the shared library are hot-reloaded by file mtime.
+- Saving an avatar's `animations.json` or any file it includes updates that
+  avatar's clips in the running game. It never requires rebuilding or
+  restarting the executable. This file is presentation data and its watcher is
+  independent of the general gameplay-config hot-reload switch.
+- The animation owner checks the avatar JSON, the selected animation file, and
+  every included file at least once every 100 ms while actors are updating.
+  After a successful save, the new set is installed at the next fixed
+  simulation-tick boundary; the expected save-to-visible-update delay is at
+  most 100 ms plus one 60 Hz tick, not counting a slow disk or editor save.
+- Parse and validate a complete candidate before installing it. Install the
+  complete set together so no actor can see a mixture of old and new clips.
+  If a file is missing, half-written, malformed, or contains no valid clips,
+  retain the last valid set and emit one bounded rejection event for that file
+  revision. A later valid save is detected and applied without a restart.
+- Existing players, NPCs, corpses, and remote replicas using that avatar all
+  observe the same updated set. Do not require an avatar swap, respawn, editor
+  button, or `anim.reload` after saving.
+- An animation edit during a running state or Melee action keeps the actor's
+  current state, action, and fixed-tick phase. The new clip data is sampled on
+  the next tick at that state's current tick or normalized phase progress. It
+  does not restart the action, replay sound markers, change hit windows, or
+  alter movement/combat authority. Newly accepted actions use the new set.
+- Saving an `avatar.json` rig change is different: re-import rig/model parts at
+  the existing lifecycle-safe avatar/model boundary. A clip-only edit must not
+  trigger model import or resource rebuilds.
 - The Avatar Editor gains an Animation panel: choose a clip, play/pause/scrub,
   edit keyframes, add/remove states, and save to the avatar's `animations.json`.
 - Editing an `avatar.json` `rig` re-imports parts at the lifecycle-safe
@@ -572,22 +596,43 @@ To make wings/stingers/tails visible, the loader and renderer generalize from
 - A terminal command `anim.play <clip>` and `anim.reload` provide the
   deterministic, no-GUI path used by the dev loop and evidence runs.
 
+### Live-edit acceptance
+
+With a game session already running, change one visible channel value in
+`assets/avatars/captainfalcon/animations.json` and save it. Confirm the journal
+records a higher `anim.set.reloaded` revision and the changed pose appears
+within 100 ms plus one fixed tick, with no rebuild, restart, avatar swap, or
+manual reload. Repeat while an action is active: its action and phase tick must
+continue, and its hit window and sound markers must not move or replay. Then
+save malformed JSON: the old pose must remain and one
+`anim.set.reload_rejected` record must appear. Save valid JSON again and confirm
+the next revision becomes visible. Human visual review confirms that the pose
+change is clear and the actor does not stutter.
+
 ## Hot reload and lifecycle
 
-1. Poll `animations.json`, its includes, and `avatar.json` for changes.
-2. Parse and validate off the active render state.
-3. Atomically swap the avatar's animation set on success.
-4. Preserve the previous set on failure and emit a validation record.
-5. Rebind animation on spawn, respawn, teleport, map change, model change, and
-   avatar change (same boundary as AimBody rebind).
+1. Poll `animations.json`, its includes, and the animation-file selection in
+   `avatar.json` for changes, at least every 100 ms while actors are updating.
+2. Parse and validate a complete candidate without modifying the active set.
+3. At the next fixed simulation tick, atomically replace the cached set in
+   place so actors already holding it see the new clips safely.
+4. Preserve the previous set on failure and emit one bounded
+   `anim.set.reload_rejected` event per rejected file revision.
+5. Emit `anim.set.reloaded` with avatar, included file paths, revision, clip
+   count, and activation tick when a changed set becomes active.
+6. A clip edit does not wait for spawn, respawn, teleport, map change, model
+   change, avatar change, manual reload, or editor interaction. Rig/model edits
+   still use their lifecycle-safe import boundary.
 
 ## Diagnostics
 
 All records use `StructuredLogger` and the canonical `events.jsonl`; no
 animation-specific file.
 
-- `anim.set.loaded`: avatar, source path(s), include count, clip names, state
-  map, result.
+- `anim.set.loaded` / `anim.set.reloaded`: avatar, source and included paths,
+  revision, clip count, activation tick, state map, result.
+- `anim.set.reload_rejected`: avatar, rejected source path, reason, and whether
+  the previous valid set was retained; emit once for each changed bad revision.
 - `anim.state.changed`: actor id/kind, from-state, to-state, clip, tick,
   trigger.
 - `anim.clip.missing`: requested state/clip, fallback used.

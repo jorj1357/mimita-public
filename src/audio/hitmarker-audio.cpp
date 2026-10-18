@@ -11,6 +11,14 @@
 #include "debug/debug-log.h"
 #include "devtools/terminal.h"
 
+/**
+ * 2026 10 18 1133 jorj todo dead code review
+ * where is htis  json
+ * likehow can we make this editable witha  json somewhere
+ * i woudl love love love a config/audio/sounds.json thing
+ * like per section 
+ * so not just all sounds in 1 file maybe multiple 
+ */
 struct HitmarkerAudioConfig {
     bool enabled = true;
     float volumeMin = 0.40f;

@@ -4,6 +4,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -80,11 +82,14 @@ void mergeClips(const nlohmann::json& root,
 }
 
 // Recurse into "include" entries: a .json file or a directory (trailing '/').
-void loadIncludes(const nlohmann::json& root, AvatarAnimationSet& set);
+void loadIncludes(const nlohmann::json& root, AvatarAnimationSet& set,
+                  std::unordered_map<std::string, std::uint64_t>& dependencyWrites);
 
-void loadIncludeEntry(const std::string& entry, AvatarAnimationSet& set)
+void loadIncludeEntry(const std::string& entry, AvatarAnimationSet& set,
+                      std::unordered_map<std::string, std::uint64_t>& dependencyWrites)
 {
     const std::string resolved = resolveAssetPath(entry);
+    dependencyWrites[resolved] = fileWriteStamp(resolved);
     std::error_code ec;
     if (entry.size() && entry.back() == '/' && std::filesystem::is_directory(resolved, ec)) {
         std::vector<std::string> files;
@@ -94,28 +99,30 @@ void loadIncludeEntry(const std::string& entry, AvatarAnimationSet& set)
         }
         std::sort(files.begin(), files.end());
         for (const auto& f : files) {
+            dependencyWrites[f] = fileWriteStamp(f);
             nlohmann::json j;
-            if (readJsonFile(f, j)) {
-                mergeClips(j, set);
-                loadIncludes(j, set);
-            }
+            if (!readJsonFile(f, j))
+                throw std::runtime_error("included animation file missing or invalid: " + f);
+            mergeClips(j, set);
+            loadIncludes(j, set, dependencyWrites);
         }
         return;
     }
     nlohmann::json j;
-    if (readJsonFile(resolved, j)) {
-        mergeClips(j, set);
-        loadIncludes(j, set);
-    }
+    if (!readJsonFile(resolved, j))
+        throw std::runtime_error("included animation file missing or invalid: " + resolved);
+    mergeClips(j, set);
+    loadIncludes(j, set, dependencyWrites);
 }
 
-void loadIncludes(const nlohmann::json& root, AvatarAnimationSet& set)
+void loadIncludes(const nlohmann::json& root, AvatarAnimationSet& set,
+                  std::unordered_map<std::string, std::uint64_t>& dependencyWrites)
 {
     if (!root.contains("include") || !root["include"].is_array())
         return;
     for (const auto& inc : root["include"]) {
         if (inc.is_string())
-            loadIncludeEntry(inc.get<std::string>(), set);
+            loadIncludeEntry(inc.get<std::string>(), set, dependencyWrites);
     }
 }
 
@@ -172,48 +179,87 @@ AvatarAnimationRegistry& AvatarAnimationRegistry::instance()
     return registry;
 }
 
-AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string& avatarName)
+AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string& avatarName,
+                                                               std::uint32_t activationTick)
 {
     Entry& entry = mEntries[avatarName];
     if (entry.loaded)
         return entry;
-    entry.loaded = true;
+
+    // Build a replacement separately. Actors keep pointers into this cache, so
+    // install into the existing Entry only after the complete JSON set parses.
+    Entry next;
+    next.loaded = true;
+    next.revision = entry.revision;
+    const bool hadValidSet = entry.set.valid;
 
     const std::string dir = resolveAssetPath(avatarDir(avatarName));
     const std::string avatarJson = dir + "/avatar.json";
-    entry.avatarWrite = fileWriteStamp(avatarJson);
+    next.avatarWrite = fileWriteStamp(avatarJson);
 
     std::string animFile = "animations.json";
     nlohmann::json avatarRoot;
     if (readJsonFile(avatarJson, avatarRoot)) {
-        parseAvatarRigJson(avatarRoot, entry.rig);
+        parseAvatarRigJson(avatarRoot, next.rig);
         if (avatarRoot.contains("animations") && avatarRoot["animations"].is_string())
             animFile = avatarRoot["animations"].get<std::string>();
     }
 
     const std::string animPath = dir + "/" + animFile;
-    entry.animWrite = fileWriteStamp(animPath);
+    next.animPath = animPath;
+    next.animWrite = fileWriteStamp(animPath);
     nlohmann::json animRoot;
-    if (!readJsonFile(animPath, animRoot)) {
-        entry.set.valid = false;
-        return entry;
+    bool valid = false;
+    try {
+        if (!readJsonFile(animPath, animRoot))
+            throw std::runtime_error("file missing or invalid JSON");
+
+        loadIncludes(animRoot, next.set, next.dependencyWrites);
+        mergeClips(animRoot, next.set);
+        parseStateMap(animRoot, next.set.states);
+        // Exclusive authored-pose policy opt-in (see docs/specs/animations/animations.md).
+        if (animRoot.contains("poseComposition") && animRoot["poseComposition"].is_string())
+            next.set.authoredOnly = animRoot["poseComposition"].get<std::string>() == "authored_only";
+        next.set.valid = !next.set.clips.empty();
+        valid = next.set.valid;
+        if (!valid)
+            throw std::runtime_error("no valid animation clips");
+    } catch (const std::exception& e) {
+        // Keep the last good set and rig, but remember this file revision so a
+        // half-written save is not reparsed every frame. The next save retries.
+        next.set = entry.set;
+        if (entry.set.valid || entry.rig.present)
+            next.rig = entry.rig;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Errors,
+            "anim.set.reload_rejected", avatarName,
+            "animation JSON rejected; previous valid set retained", 0,
+            nlohmann::json{{"avatar", avatarName}, {"anim_file", animPath},
+                           {"reason", e.what()}, {"retained_previous", entry.set.valid}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
-    entry.includeWrite = entry.animWrite;
-    loadIncludes(animRoot, entry.set);
-    mergeClips(animRoot, entry.set);
-    parseStateMap(animRoot, entry.set.states);
-    // Exclusive authored-pose policy opt-in (see docs/specs/animations/animations.md).
-    if (animRoot.contains("poseComposition") && animRoot["poseComposition"].is_string())
-        entry.set.authoredOnly = animRoot["poseComposition"].get<std::string>() == "authored_only";
-    entry.set.valid = !entry.set.clips.empty();
+    entry = std::move(next);
+    if (!valid)
+        return entry;
+
+    ++entry.revision;
 
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Avatar, StructuredLevel::Important,
-        "anim.set.loaded", avatarName,
-        "per-avatar animation set loaded", 0,
+        hadValidSet ? "anim.set.reloaded" : "anim.set.loaded", avatarName,
+        hadValidSet ? "per-avatar animation set reloaded" : "per-avatar animation set loaded",
+        activationTick,
         nlohmann::json{{"avatar", avatarName},
                        {"anim_file", animPath},
+                       {"revision", entry.revision},
+                       {"activation_tick", activationTick},
+                       {"include_paths", [&entry]() {
+                           nlohmann::json paths = nlohmann::json::array();
+                           for (const auto& dependency : entry.dependencyWrites)
+                               paths.push_back(dependency.first);
+                           return paths;
+                       }()},
                        {"clip_count", entry.set.clips.size()},
                        {"rig_parts", entry.rig.parts.size()},
                        {"movement_mode", entry.rig.movement.mode},
@@ -222,9 +268,10 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
     return entry;
 }
 
-const AvatarAnimationSet* AvatarAnimationRegistry::getAnimationSet(const std::string& avatarName)
+const AvatarAnimationSet* AvatarAnimationRegistry::getAnimationSet(
+    const std::string& avatarName, std::uint32_t activationTick)
 {
-    return &load(avatarName).set;
+    return &load(avatarName, activationTick).set;
 }
 
 const AvatarRig* AvatarAnimationRegistry::getRig(const std::string& avatarName)
@@ -234,27 +281,40 @@ const AvatarRig* AvatarAnimationRegistry::getRig(const std::string& avatarName)
 
 void AvatarAnimationRegistry::invalidate(const std::string& avatarName)
 {
-    if (avatarName.empty())
-        mEntries.clear();
-    else
-        mEntries.erase(avatarName);
+    // Do not erase cache nodes: live Player instances hold pointers to their
+    // AvatarAnimationSet. Mark in place so the next lookup can safely replace it.
+    if (avatarName.empty()) {
+        for (auto& [name, entry] : mEntries)
+            entry.loaded = false;
+    } else {
+        auto it = mEntries.find(avatarName);
+        if (it != mEntries.end())
+            it->second.loaded = false;
+    }
 }
 
-void AvatarAnimationRegistry::pollReload()
+void AvatarAnimationRegistry::pollReload(std::uint32_t activationTick)
 {
     const std::uint64_t now = (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (mLastPollMs != 0 && now - mLastPollMs < 250)
+    if (mLastPollMs != 0 && now - mLastPollMs < 100)
         return;
     mLastPollMs = now;
 
+    std::vector<std::string> changedAvatars;
     for (auto& [name, entry] : mEntries) {
-        if (!entry.loaded)
-            continue;
-        const std::string dir = resolveAssetPath(avatarDir(name));
-        if (fileWriteStamp(dir + "/avatar.json") != entry.avatarWrite ||
-            fileWriteStamp(dir + "/animations.json") != entry.animWrite) {
+        bool changed = !entry.loaded ||
+            fileWriteStamp(resolveAssetPath(avatarDir(name)) + "/avatar.json") != entry.avatarWrite ||
+            fileWriteStamp(entry.animPath) != entry.animWrite;
+        for (const auto& [path, stamp] : entry.dependencyWrites)
+            changed = changed || fileWriteStamp(path) != stamp;
+        if (changed) {
             entry.loaded = false;
+            changedAvatars.push_back(name);
         }
     }
+    // Reload before the tick updates any actors, so everyone using this avatar
+    // observes the same complete set for the whole tick.
+    for (const auto& name : changedAvatars)
+        load(name, activationTick);
 }

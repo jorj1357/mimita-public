@@ -11,6 +11,7 @@
 */
 
 #include <string>
+#include <cstdint>
 #include <unordered_map>
 
 #include <nlohmann/json.hpp>
@@ -28,7 +29,8 @@ public:
     // The animation set for an avatar name. Never returns null; when no
     // animations file exists the returned set has valid=false so callers fall
     // back to the global profile.
-    const AvatarAnimationSet* getAnimationSet(const std::string& avatarName);
+    const AvatarAnimationSet* getAnimationSet(const std::string& avatarName,
+                                              std::uint32_t activationTick = 0);
 
     // The rig for an avatar name. present=false when no rig is declared.
     const AvatarRig* getRig(const std::string& avatarName);
@@ -36,8 +38,8 @@ public:
     // Drop one entry (or all) so the next get() re-reads from disk.
     void invalidate(const std::string& avatarName = "");
 
-    // Re-read changed per-avatar files (client main loop, 250 ms throttle).
-    void pollReload();
+    // Re-read changed per-avatar files (live actor update path, 100 ms throttle).
+    void pollReload(std::uint32_t activationTick = 0);
 
 private:
     AvatarAnimationRegistry() = default;
@@ -48,10 +50,12 @@ private:
         bool loaded = false;
         std::uint64_t avatarWrite = 0;
         std::uint64_t animWrite = 0;
-        std::uint64_t includeWrite = 0;
+        std::uint64_t revision = 0;
+        std::string animPath;
+        std::unordered_map<std::string, std::uint64_t> dependencyWrites;
     };
 
-    Entry& load(const std::string& avatarName);
+    Entry& load(const std::string& avatarName, std::uint32_t activationTick = 0);
 
     std::unordered_map<std::string, Entry> mEntries;
     std::uint64_t mLastPollMs = 0;

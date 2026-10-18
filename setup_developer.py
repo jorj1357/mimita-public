@@ -158,9 +158,10 @@ def main():
     print(f"[READY] dependencies: {DEVELOPER.relative_to(ROOT)}", flush=True)
     print(f"[READY] compiler: {compiler.relative_to(ROOT)}", flush=True)
     print(f"[READY] GLFW: {glfw_root.relative_to(ROOT)}", flush=True)
-    print("[BUILD] launching buildv2.py (safe 99-hour runtime check)", flush=True)
+    print("[BUILD] submitting build request to the dev-loop daemon", flush=True)
     result = subprocess.run(
-        [sys.executable, "-u", "buildv2.py", "timeout", "356400"],
+        [sys.executable, "-u", "devscripts/dev-loop.py", "--request", "build",
+         "--wait-for-build", "--build-timeout", "356400"],
         cwd=ROOT,
         env=environment,
     )

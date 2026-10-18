@@ -210,6 +210,10 @@ struct Gamemode {
     // match falls back to the legacy team assignment and no roles.
     std::vector<std::pair<std::string, int>> roleCounts;
     std::string actorPresetId;
+    // Optional mode-forced movement profile. When set, every actor in the mode
+    // uses this movement preset regardless of role, and the client applies it
+    // for local prediction. Empty = movement comes from the role/actor preset.
+    std::string movementPreset;
     // Optional NPC-only combat profile used when an NPC has no role-specific
     // behavior profile. Humans are never affected by this setting.
     std::string npcBehaviorProfile;

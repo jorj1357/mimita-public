@@ -4,25 +4,27 @@
 
 This is a C++17 OpenGL game engine.
 
-## Current policy (2026-10-01)
+## Current build authority
 
-The no-cold-build rule is disabled as of 2026-10-01. Cold builds are fine for
-now, including while the game is running, when the user or active workflow
-explicitly needs a newly linked executable. This temporary policy supersedes
-the historical live-development invariant below.
+Submit builds through `python devscripts/dev-loop.py --request build
+--wait-for-build`. The persistent dev-loop owns request ordering, build status,
+artifact publication, and `[1]` launch selection. It runs the compiler pipeline
+on one worker while continuing to accept launch and status requests. Pressing
+`1` launches the latest successfully published artifact immediately, even if
+it is older than the source currently building; build completion publishes a
+new artifact but does not launch it automatically.
 
-## Historical live-development invariant (disabled 2026-10-01)
+`build_agent.py`, `buildv2.py`, and setup entry points are compatibility
+wrappers that submit to this same dev-loop. `build.py build-only` and
+`build_game_dll.py` are internal compiler steps. A checkout-wide OS lock makes
+an accidental direct/overlapping compiler invocation fail clearly instead of
+running a second build concurrently. Do not use `buildv3.py` or direct compiler
+scripts as a separate live build path.
 
-If `MiMITA.exe` is already running, it must remain running. Do not close,
-restart, relink, replace, or unlock a running executable. Live iteration edits
-hot sources (see `docs/architecture/live-development/live-development.md`) and
-uses `python devscripts/live-build.py`, which never writes an EXE.
-
-`python build_agent.py` (agents) and `python buildv3.py` (humans) are COLD BUILDS:
-they relink an executable. They never relink an executable that is currently
-running. `MIMITA_FORCE_COLD=1` is a loud, last-resort override for an intentional
-cold build that must overwrite a running target; it is not part of the normal
-loop. Never run `taskkill` on a running game process.
+The build never terminates a running game to publish an artifact. Build
+identity and process lifetime are separate: selecting a new artifact requires
+an explicit `[1]` request, and a healthy old run remains alive after a build
+failure.
 
 ## Repository Workflow
 
@@ -72,15 +74,15 @@ The name is generated per build, so:
 * Each executable is compiled from the same current source tree, just at a
   different time; a build is a snapshot of that moment.
 
-Build entries:
+Build entry:
 
-* Agents: `python build_agent.py`
-* Humans: `python buildv3.py`
+```
+python devscripts/dev-loop.py --request build --wait-for-build
+```
 
-Both share the same build lock and pipeline (`build.py build-only`) and differ
-only in who calls them. Optionally, set `MIMITA_EXE_NAME` to force a specific
-output name (for example a fixed name for a deliberate test); if unset, the
-timestamped name is used.
+Use `--build-mode release` when a release configuration is specifically
+needed. The build output remains timestamped unless `MIMITA_EXE_NAME` is set
+by an internal build workflow.
 
 The previous "single canonical `mimita.exe`" rule is replaced by this
 timestamped rule. Do not create feature-specific *test* executables (for example
@@ -117,16 +119,10 @@ exists) is the current one. If a build is expected to change code but reports
 
 ## Running a build
 
-Agents:
+All contributors:
 
 ```
-python build_agent.py
-```
-
-Humans:
-
-```
-python buildv3.py
+python devscripts/dev-loop.py --request build --wait-for-build
 ```
 
 Then launch the produced `mimita-<timestamp>.exe` from the project root so its

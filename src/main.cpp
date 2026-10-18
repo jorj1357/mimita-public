@@ -68,6 +68,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "debug/crash-handler.h"
 #include "debug/transform-debug.h"
 #include "debug/transform-debug-commands.h"
 #include "debug/debug-diag.h"
@@ -397,6 +398,9 @@ int main(int argc, char** argv)
 
     LocalProfileSystem::instance().init();
     MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
+    installCrashHandler();
+    if (launchOptions.server)
+        setCrashHandlerShowDialog(false);
     AuthSystem::instance().init(launchOptions.sessionToken);
     if (launchOptions.name.empty())
         launchOptions.name = AuthSystem::instance().displayName();

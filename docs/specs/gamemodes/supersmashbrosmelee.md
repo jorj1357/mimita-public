@@ -390,6 +390,10 @@ in JSON, not C++; phase intervals use one explicit
 inclusive/exclusive convention on clients and server.
 
 Grounded/airborne state and button edges are sampled on fixed simulation ticks.
+Melee move selection and authored locomotion/crouch pose selection use
+`stableOnGround`, so a brief missed ground-contact sample does not switch the
+move category or visible pose to airborne. The collision system still owns raw
+`onGround`; stable state only applies its existing short contact grace.
 Space+grounded-left-click both jumps and starts uptilt. When held modifiers
 conflict, the most recently pressed modifier selects the attack variant; the
 input command must preserve press ordering so client and server choose the
@@ -693,7 +697,9 @@ While a Melee authored pose is active, do not add ordinary idle sway, locomotion
 
 The shared animation owner must expose an explicit pose-composition policy so a mode can request this exclusive authored-pose behavior without a second animator. For Melee, the effective priority is: Melee action phase clip, then that actor profile's configured idle/locomotion fallback when no action clip is active. A missing Melee clip uses a configured Melee fallback and emits a bounded diagnostic; it must never silently fall through to ordinary aimbody or weapon poses. Euler XYZ and WXYZ quaternion input both convert once to the shared normalized quaternion representation. The exact Blender basis conversion/exporter remains governed by [`../animations/blender-animation-authoring.md`](../animations/blender-animation-authoring.md).
 
-**Implementation audit:** The current runtime does load per-avatar clips and samples them in `src/entities/player-animation.cpp`. However, it then composes weapon/reload and freeze/dash pose changes, adds idle motion, and applies `config/aimbody.json` after the clip. The shared animation spec also lists those layers as composition layers. Therefore the present behavior is explicitly not the exclusive authored-pose behavior above. The avatar JSON currently contains short two-keyframe examples, not a complete grounded/airborne/landing/shield/grab state set; a loader existing does not make the full Melee animation design implemented. Blender export is still marked proposal in the authoring spec.
+**Live animation edits:** Saving Captain Falcon's `animations.json` updates the already-running Melee actors automatically, without rebuilding or restarting. The shared animation owner checks for changes at least every 100 ms and installs a valid complete set before actors sample poses on a fixed tick. Current action/state and phase progress continue; the new clip values are sampled at that progress. A bad or half-written save keeps the previous valid set. See [`../animations/animations.md`](../animations/animations.md) and [`../../architecture/json-configuration/json-configuration.md`](../../architecture/json-configuration/json-configuration.md).
+
+**Implementation audit (source review, 2026-10-18):** The Player runtime now has the exclusive authored-pose path, and the animation registry now checks animation files and includes at fixed-tick boundaries, replaces the cached set in place, and preserves the prior valid set on a rejected save. Build evidence confirms the code compiles; live save-to-visible-update behavior still needs a fresh runtime run. The Captain Falcon JSON remains short of the complete grounded/airborne/landing/shield/grab state set. Blender export is still marked proposal in the authoring spec.
 
 **Status of raw session notes:** The notes previously pasted below this section were reports and investigation inputs, not requirements already implemented or proven. The authoritative requirements have been moved into the relevant numbered sections. Remaining reports are separated by owner:
 
@@ -768,3 +774,15 @@ Name  : true
 Count : 2
 
 idk what  happened but this just happened and then i have a issue sauing Reconnecting attempt # 3 15.21 like  it just crashed the server and now i get no  packet updates frmo the server 
+
+from gpt 6 luna: "The animation flips because it uses the raw grounded flag, which the movement code sets from that tick’s collision result. A separate stableOnGround flag has a grace period, but the Melee animation selector ignores it.
+In the journal, crouch starts at tick 3150 with vertical velocity 0; on the next tick the animation switches back to fall, with vertical velocity -0.667. That fall/crouch alternation repeats. The snapshot labeled crouch_check shows on_ground=false, stable_on_ground=true, and the active animation is fall."
+
+we should change it to  using stableonground flag 
+its cuz  in the game it swithces super quick back and forth from grounded to nto grounded liek thats been athing for idk liek 2 or 3 weeks but i just didnt   think it was a big deal 
+
+2026 10 18 1202 does  C:\mimita-v9\assets\avatars\captainfalcon\animations.json this update live?
+needs to udpate live
+cannot have it  be a rebuild 
+bc its animations and doing numbers to visuals its not so  like 
+it needs super quick feedbakc 

@@ -128,6 +128,32 @@ observed live (crouch needs a held key / stable ground; the synthetic
 likely the local driver's equip timing; hurt/death need a hitstun/death event
 that Melee intentionally does not produce).
 
+## Follow-up — exercised hurt/death/respawn live
+
+- `src/entities/player.h` — `Player::respawnAnimTimer`, `animPrevPercent`,
+  `animPrevDead`.
+- `src/entities/player-animation.cpp` — on a percent increase set a brief
+  `hurtTimer` (0.20s, presentation-only, interruptible); on a dead->alive
+  transition set `respawnAnimTimer` (0.30s); selection order is
+  `death → respawn → hurt → land → jump → fall → crouch → run/walk → idle`.
+- `src/sim/simulate-tick.cpp` — a dead Melee actor keeps running the authored
+  pose pipeline (pose only; movement/collision stay off), so the profile's
+  `death` and `respawn` clips present on the actual body while the existing
+  death path still owns the corpse/ragdoll presentation.
+- `src/main-systems.cpp` — `agent.hurt <percent>` test hook (adds Melee percent
+  to the local player, exercising the hurt pose).
+- `devscripts/scenarios/melee_lifecycle_v1.json` — starts Melee, adds percent
+  (hurt), kills the local player via the existing `explode` command (death), and
+  snapshots through respawn.
+
+Live verification (`logs/2026-10-18/20261018_155630/events.jsonl`, client
+`anim.state.changed`): states exercised — `hurt` (1), `death` (6), `respawn`
+(6), `land` (7), `jump` (404), `fall` (224), `run` (158), `walk` (111), `idle`
+(16); `anim.melee.clip_missing = 0`; both actors captainfalcon exclusive. Crouch
+was verified earlier (`logs/2026-10-18/20261018_152357`). The existing death
+presentation (corpse/ragdoll via `DeathSystem`) and the server-owned immediate
+0%-respawn lifecycle are reused unchanged.
+
 ## Open notes
 
 - The user reported the game "stopped"; the selected journal shows no crash,

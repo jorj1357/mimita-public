@@ -1,19 +1,16 @@
 # 08 20 2026, 00 00
 # purpose
-# MiMITA clean-relink build entry point.
-# Deletes the canonical executable before invoking the existing build system.
-# Keeps the established compiler, linker, and launch behavior in build.py.
-# Does NOT delete build objects, source files, configuration, or other binaries.
-# Does NOT change the build system's compiler or build mode.
+# Compatibility entry point for older setup scripts.
+# Routes build requests through the one dev-loop daemon and shared build lock.
+# Preserves fresh-clone dependency and submodule setup behavior.
+# Does NOT terminate running game/server processes or delete executables.
 
 import os
-import runpy
 import subprocess
-import time
+import sys
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-EXE_PATH = os.path.join(ROOT, "mimita.exe")
 
 
 def _first_existing_file(candidates):
@@ -82,20 +79,36 @@ def initialize_submodules():
         )
 
 
-initialize_submodules()
-configure_local_dependencies()
+def main():
+    initialize_submodules()
+    configure_local_dependencies()
 
-print("Closing any running mimita.exe process...")
-subprocess.run(
-    ["taskkill", "/F", "/T", "/IM", "mimita.exe"],
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
-    check=False,
-)
-if os.path.exists(EXE_PATH):
-    time.sleep(0.5)
-    print("Deleting existing mimita.exe...")
-    os.remove(EXE_PATH)
+    timeout = 36000
+    build_mode = "release" if any(arg.lower() == "release" for arg in sys.argv[1:]) else "debug"
+    if "timeout" in sys.argv:
+        index = sys.argv.index("timeout")
+        if index + 1 < len(sys.argv):
+            try:
+                timeout = max(1, int(sys.argv[index + 1]))
+            except ValueError:
+                print("[BUILD] invalid timeout value", file=sys.stderr)
+                return 2
 
-# build.py sees that the executable is missing, relinks it, and then runs it.
-runpy.run_path(os.path.join(ROOT, "build.py"), run_name="__main__")
+    print("[BUILD] routing compatibility request through the dev-loop daemon", flush=True)
+    return subprocess.run(
+        [
+            sys.executable,
+            os.path.join(ROOT, "devscripts", "dev-loop.py"),
+            "--request", "build",
+            "--build-mode", build_mode,
+            "--wait-for-build",
+            "--build-timeout", str(timeout),
+        ],
+        cwd=ROOT,
+        env=os.environ.copy(),
+        check=False,
+    ).returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

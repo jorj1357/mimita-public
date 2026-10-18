@@ -306,6 +306,7 @@ int runClient(const LaunchOptions& options)
                     p.vel = {entity.vx, entity.vy, entity.vz};
                     p.yaw = entity.yaw;
                     p.ground.onGround = entity.onGround != 0;
+                    p.ground.stableOnGround = p.ground.onGround;
                     p.currentHp = entity.health;
                     p.spawnGeneration = entity.spawnGeneration;
                     p.username = entity.displayName;

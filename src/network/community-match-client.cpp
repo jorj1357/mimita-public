@@ -134,6 +134,11 @@ void CommunityMatchClient::reset()
 {
     CamConfig::instance().clearHitFlinchOverride();
     resetActorPreset();
+    if (mModeMovementPresetApplied) {
+        MovementJsonConfig::instance().applyRuntimeConfig(
+            mModeMovementPrevious, mModeMovementPreviousName);
+        mModeMovementPresetApplied = false;
+    }
     // Restore backups if overrides were applied
     if (mOverridesApplied) {
         SettingsBackup::instance().restoreBackups();
@@ -319,6 +324,25 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         applyActorPreset(*actorPreset);
     } else if (!actorPreset && mActorPresetApplied && mActorPresetId == modeConfig.actorPresetId) {
         resetActorPreset();
+    }
+    // A mode may force one movement profile for every actor (e.g. Melee's
+    // "smash"). Apply it for local prediction so the client kernel matches the
+    // server-authoritative preset. An actor preset's own movement wins.
+    if (modeConfig.movementPreset.empty()) {
+        if (mModeMovementPresetApplied) {
+            MovementJsonConfig::instance().applyRuntimeConfig(mModeMovementPrevious, mModeMovementPreviousName);
+            mModeMovementPresetApplied = false;
+        }
+    } else if (!actorPreset || actorPreset->movementPreset != modeConfig.movementPreset) {
+        MovementConfig movement;
+        if (MovementJsonConfig::instance().loadPresetInto(modeConfig.movementPreset, movement)) {
+            if (!mModeMovementPresetApplied) {
+                mModeMovementPrevious = MovementJsonConfig::instance().config();
+                mModeMovementPreviousName = MovementJsonConfig::instance().activePresetName();
+            }
+            MovementJsonConfig::instance().applyRuntimeConfig(movement, modeConfig.movementPreset);
+            mModeMovementPresetApplied = true;
+        }
     }
     HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
     // Melee-style modes show each fighter's percent above the head instead of

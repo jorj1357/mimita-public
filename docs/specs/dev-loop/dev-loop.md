@@ -95,9 +95,11 @@ The desired developer experience is:
 
 1. A source edit is detected without requiring manual build commands.
 2. The current runtime is not interrupted merely because a file changed.
-3. A failed build is visible and prevents launch of an unverified artifact.
+3. A failed build is visible; the last successfully published artifact remains
+   available for an explicit launch, with its source age clearly shown.
 4. A successful build receives a unique build number and identity.
-5. An explicit launch request uses only that verified newest build.
+5. An explicit launch request immediately uses the last successfully published
+   verified build, even while a newer build is pending or running.
 6. A server and client never silently use different build identities.
 7. Stale dev-loop servers cannot remain the authoritative server for a newer
    client.
@@ -281,6 +283,61 @@ persistent daemon. Consider splitting the script only if measurements reveal a
 specific maintenance or timing boundary that benefits from separate modules;
 the single `dev-loop.py` entry point and one-daemon lifecycle must remain.
 
+### 5.2 One user-facing build path and script ownership
+
+`python devscripts/dev-loop.py` is the only supported user-facing entry point
+for requesting builds, checking build state, and launching MiMITA. Humans and AI
+tools must submit build/launch requests to the one dev-loop daemon; they must
+not start a second build process directly while that daemon owns the checkout.
+The daemon serializes builds: at most one compiler/linker job may be active, and
+source changes observed during that job coalesce into one subsequent build for
+the newest observed source generation.
+
+The dev loop is the coordinator, not the compiler implementation. These files
+remain internal build components while they have active responsibilities:
+
+- `build.py` performs incremental compilation/linking and reports its result;
+- `build_game_dll.py` builds the hot-code DLL as part of the build pipeline;
+- `build_toolchain.py` resolves compiler and toolchain locations for build
+  owners.
+
+Wrapper/legacy entry points are consolidation candidates, not build
+implementation to delete blindly:
+
+- `build_agent.py` is an alternate wrapper. Before removing it, migrate every
+  caller and documented workflow to dev-loop requests, then remove its separate
+  lock/status path or make it a thin forwarder to the daemon. Direct concurrent
+  builds must be impossible or explicitly rejected.
+- `buildv2.py` is a legacy entry point still used by `setup_developer.py`.
+  Migrate that setup flow before removal; do not leave setup invoking a second
+  build owner.
+
+The removal gate for any wrapper is repository-wide caller and documentation
+search, a single shared build-serialization contract, and confirmation that
+setup/dependency installation still reaches the canonical build pipeline.
+Until that migration is complete, retain the component and label it as a
+legacy/compatibility path. Do not delete compiler, DLL, or toolchain owners just
+to make the user-facing workflow look like one script.
+
+The intended implementation boundary is one daemon-owned build worker plus a
+responsive daemon control loop. The worker runs the canonical compiler/linker
+pipeline and streams bounded phase/output updates into daemon state; the daemon
+continues to accept `[1]`, status, and other control requests while that worker
+runs. A checkout-wide build lock at the canonical build boundary must reject
+or route any accidental second build request, including legacy entry points.
+The dashboard must distinguish the selected last-successful artifact from the
+active build's source generation and show pending/building/failed/published
+state, elapsed time, and a concise recent output/error summary. It must not
+invent a percentage when the compiler provides no reliable progress measure.
+
+“Build on edit” means the watcher detects saved inputs, applies the documented
+debounce, and starts one incremental build that compiles affected translation
+units and links/publishes a verified artifact. It does not mean a separate
+compiler process per file or a new build for every keystroke. The dashboard
+must keep reporting build phase and identity while the compiler runs, and the
+daemon must remain able to accept launch/status/control requests during that
+time.
+
 ## 6. Build and publish contract
 
 The loop invokes the canonical build-only command and captures its output and
@@ -299,10 +356,14 @@ published artifact must include:
 - source generation and source snapshot identity;
 - build result and timestamp.
 
-The loop must not select an older valid artifact merely because it is easier to
-launch. If the current build fails, it must report the failure and keep any
-existing runtime alive; it may not claim that the old runtime contains the new
-source.
+The last successfully published valid artifact remains selectable while a
+newer build is pending, running, or has failed. An explicit `[1]` request may
+launch that artifact immediately as specified in §7; the dashboard and run
+metadata must identify its build number and source generation and clearly mark
+it stale relative to the current source generation. This does not claim that
+the selected artifact contains the newer source. Automatic recovery must not
+silently roll a process back to an older build. A failed build must be reported
+and must leave any healthy runtime alive.
 
 Retention cleanup must not delete files needed by a live process. Before
 deleting an old published directory, the loop must prove that no owned server
@@ -311,21 +372,40 @@ and record the retention reason.
 
 ## 7. Meaning of `[1]` and launch selection
 
-`[1]` is the explicit “build/launch newest verified build” action.
+`[1]` means “launch the last successful build now.” It is not a request to wait
+for an in-progress build to finish.
 
-If no build exists or the latest build is stale, `[1]` queues a build. When
-that build succeeds, the loop may continue to launch it because the user made
-an explicit launch request.
+When at least one valid build has been successfully published, `[1]` must
+immediately select the highest-numbered successful artifact, even if it is
+stale relative to current source or a newer build is pending/running. The
+selected artifact's exact build number, executable identity, and source
+generation must be shown as stale/current in the dashboard, run metadata, and
+launch records. A healthy matching server/client pair must be reused; a
+different owned pair may be replaced only through the ownership, identity, and
+readiness checks in §§8–9. Never start duplicate clients or servers for the
+same requested run.
 
-If a current verified build already exists, `[1]` must not launch an older
-numbered build. It must:
+The build continues independently. The daemon must service the `[1]` request
+while building, launch/reuse the selected last-successful artifact without
+waiting for compilation or publication, and then resume reporting build
+progress. When the newer build finishes, it is published and marked current
+only if its source generation still matches. Completion alone must not replace
+the game the user just launched; another explicit `[1]` request selects the
+newly successful build. The only exception is an explicitly enabled
+auto-restart policy; that replacement must occur only after successful
+publication and must show the old and new build identities in status.
 
-1. select the highest-numbered valid current build;
-2. compute its exact identity;
-3. reconcile owned old processes and configuration;
-4. launch/reuse only a matching server;
-5. launch the client with the same identity;
-6. verify readiness and identity before reporting `RUNNING`.
+If no successful artifact exists yet, `[1]` must queue or join the one active
+build and launch the first valid successful artifact as soon as publication
+completes. If the build fails, report the failure and do not claim that a game
+was launched.
+
+Before reporting `RUNNING`, the selected artifact must pass validation, its
+exact identity must be recorded, owned processes/configuration must be
+reconciled, server/client readiness must be verified, and their identities
+must match. Launching a stale artifact is an explicit user action and must be
+visible as such; automatic restart/recovery must never select stale artifacts
+without a new explicit launch request.
 
 Automatic watcher builds publish only. They do not replace the running client
 or server unless an explicit auto-restart policy is enabled and the policy is
@@ -585,8 +665,11 @@ changes.
   build after debounce.
 - Background builds publish numbered artifacts but do not replace the running
   client or server unless an explicit launch request is pending.
-- [1] queues a build when the selected artifact is missing or stale; when a
-  current artifact exists, it launches the newest valid published build.
+- Current source behavior differs from the desired §7 behavior: [1] queues a
+  build when the artifact is missing or stale, and its synchronous build path
+  prevents the daemon from processing control requests until that build ends.
+  The desired behavior—launch the last successful artifact immediately while
+  a newer build continues—is not implemented yet.
 - The loop records `.dev/server-owner.json` after a newly launched server has
   written `logger.started`.
 - On Windows startup, the loop may adopt that server only when the marker's
@@ -1955,7 +2038,7 @@ rather than restating this table.
 
 | Key | What it does | Shown by |
 |---|---|---|
-| `1` | Build when the latest artifact is stale or missing; otherwise launch the latest published build. | `Build` and `Run` rows |
+| `1` | Immediately launch/reuse the last successful published build, even while a newer build is pending or running. Show its source generation and stale/current status. If no successful build exists, wait for the first successful build. | `Build` and `Run` rows |
 | `2` | Open the launch-mode picker; type a mode number and press Enter to select it, or Esc to cancel. | `Settings ... mode=` |
 | `V` | Toggle the game client between visible and headless for the next launch. | `Settings ... next-launch=` |
 | `A` | Toggle client auto-restart. This does not keep the Python daemon alive. | `Settings ... auto-restart=` |
@@ -2032,3 +2115,41 @@ writes to `.dev/state.json` while publishing builds. Their conflicting status
 snapshots make build/run identity unreliable. Neither process was terminated
 during this investigation. Before the next runtime acceptance, establish one
 dev-loop owner; do not launch another loop to work around the conflict.
+
+
+2026 10 18 1146 jorj todo problmes
+tje dev loop
+doesnt have like thet status
+of
+build 
+going on
+we need to i think remove honestl the build pthon scripts 
+"C:\mimita-v9\build.py"
+"C:\mimita-v9\build_agent.py"
+"C:\mimita-v9\build_game_dll.py"
+"C:\mimita-v9\build_toolchain.py"
+"C:\mimita-v9\buildv2.py"
+these, if we can
+and then run it all thru the developer loop thing
+also, is file size even a big deal? 
+C:\mimita-v9\devscripts\dev-loop.py  ths is like 3453 lines and like 120kb ish 
+is
+does that even matter
+cuz i was remmebering from working with AI when  code had more htan like 500 lines like months ago, matbe a uear ago
+if had morethan like 500 lines it was not realy able to be reasoned about
+so idk if thats even a limitation antmore
+but
+we 
+i want to remove build_agent and im not sure what to replace it with 
+other than the dev loop
+becasue the dev loop is supposed to auto build all the thtings like all the time, as soon as u edit a file, it should start buildiing that file
+and then so that means we do not have to wait for buidl_agent to finish
+bc that is super slow and sucks
+so 
+im not sure what to do  to replace it but 
+ueah
+the ideal is that  we just use the dev-loop.py script
+and also
+i press 1 in teh dev loop script
+and as of 2026 10 18 1148 like while its building with build_agent it wont  open the gam
+iw ant it to open the game even regardless like even if its building, bc its like it shouldnt eevn nee to be building it should just be built already so we dont need to do  a build_agent script run 

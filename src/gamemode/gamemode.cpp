@@ -354,6 +354,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         // ── Elimination / win rules (optional) ──────────────────────
         next.winCondition = optString(root, "win_condition", next.winCondition);
         next.actorPresetId = optString(root, "actor_preset", next.actorPresetId);
+        next.movementPreset = optString(root, "movement_preset", next.movementPreset);
         next.npcBehaviorProfile = optString(
             root, "npc_behavior_profile", next.npcBehaviorProfile);
 

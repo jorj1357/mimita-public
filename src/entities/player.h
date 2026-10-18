@@ -512,6 +512,9 @@ public:
     // Animation state inputs for optional per-state clips (crouch/jump/fall/land).
     bool crouching = false;
     float landAnimTimer = 0.0f;
+    float respawnAnimTimer = 0.0f;
+    float animPrevPercent = 0.0f;
+    bool animPrevDead = false;
     // Set when a reliable kill event already presented the death (anim + red
     // ellipsoid) for this life, so the snapshot health transition does not
     // play a second death. Cleared on respawn.

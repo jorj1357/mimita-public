@@ -212,6 +212,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                  {"uses_melee_authored", usesMeleeAuthoredPose()},
                  {"crouching", crouching},
                  {"on_ground", ground.onGround},
+                 {"stable_on_ground", ground.stableOnGround},
                  {"ragdoll_active", ragdollModeActive},
                  {"procedural_frozen", proceduralFrozen}});
         }
@@ -303,7 +304,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         rig = AvatarRig{};
         if (!mResolvedAnimAvatar.empty()) {
             animationSet = AvatarAnimationRegistry::instance()
-                               .getAnimationSet(mResolvedAnimAvatar);
+                               .getAnimationSet(mResolvedAnimAvatar,
+                                                (std::uint32_t)movementSimulationTick);
             const AvatarRig* r = AvatarAnimationRegistry::instance()
                                      .getRig(mResolvedAnimAvatar);
             if (r) rig = *r;
@@ -320,6 +322,12 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
              {"rig_parts", rig.parts.size()},
              {"movement_mode", rig.movement.mode}},
             __FILE__, __LINE__, __FUNCTION__);
+    } else if (!mResolvedAnimAvatar.empty()) {
+        // pollReload marks changed entries stale; asking again parses and swaps
+        // the set while keeping the cache address held by this Player valid.
+        animationSet = AvatarAnimationRegistry::instance()
+                           .getAnimationSet(mResolvedAnimAvatar,
+                                            (std::uint32_t)movementSimulationTick);
     }
 
     auto clipFromAvatar = [&](const std::string& name) -> bool {
@@ -397,17 +405,37 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     else
         landAnimTimer = std::max(0.0f, landAnimTimer - dt);
 
+    // Hit reaction: a brief, interruptible authored `hurt` pose on a percent
+    // increase (presentation only — Melee has no hitstun).
+    if (percent > animPrevPercent + 0.5f)
+        hurtTimer = 0.20f;
+    animPrevPercent = percent;
+    hurtTimer = std::max(0.0f, hurtTimer - dt);
+
+    // Respawn: play the `respawn` clip briefly on a dead->alive transition
+    // (reuses the existing respawn lifecycle; the client sees dead flip to false).
+    if (!dead && animPrevDead)
+        respawnAnimTimer = 0.30f;
+    else
+        respawnAnimTimer = std::max(0.0f, respawnAnimTimer - dt);
+    animPrevDead = dead;
+
     std::string activeAnim = currentAnimName;
     if (!lockedClip.empty()) {
         activeAnim = lockedClip;
     } else if (sm && meleeExclusivePose) {
         // Exclusive Melee: choose the authored state clip from the actor profile.
         // Missing optional states fall back within the same profile.
-        const bool airborne = !ground.onGround;
+        // Raw collision contact can flicker for a tick while the actor remains
+        // within the grounded grace window. Use the stable state for Melee's
+        // grounded/airborne pose choice so crouch does not flash into fall.
+        const bool airborne = !ground.stableOnGround;
         const bool rising = vel.z > 1.0f;
         const bool fast = speed > 12.0f;
         if (dead && !sm->death.empty())
             activeAnim = sm->death;
+        else if (respawnAnimTimer > 0.0f && !sm->respawn.empty())
+            activeAnim = sm->respawn;
         else if (hurtTimer > 0.0f && !sm->hurt.empty())
             activeAnim = sm->hurt;
         else if (landAnimTimer > 0.0f && !sm->land.empty())
@@ -468,6 +496,12 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
              {"from", prevAnim}, {"to", activeAnim},
              {"moving", nowMoving},
              {"movement_mode", rig.movement.mode},
+             {"animation_source", !lockedClip.empty() ? "locked_clip" :
+                                  (sm && meleeExclusivePose ? "melee_locomotion" : "locomotion")},
+             {"locked_clip", lockedClip},
+             {"on_ground", ground.onGround},
+             {"stable_on_ground", ground.stableOnGround},
+             {"crouching", crouching},
              {"move01", move01},
              {"velocity", {vel.x, vel.y, vel.z}}},
             __FILE__, __LINE__, __FUNCTION__);

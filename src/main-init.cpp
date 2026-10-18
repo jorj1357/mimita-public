@@ -51,7 +51,6 @@
 #include "debug/transform-debug-commands.h"
 #include "debug/debug-diag.h"
 #include "debug/log-manager.h"
-#include "debug/crash-handler.h"
 #include "utils/pak-file.h"
 #include "network/net_mode.h"
 #include "network/multiplayer-context.h"
@@ -176,7 +175,6 @@ extern bool gUnlockCursorOnLaunch;
 void gameInit(int argc, char** argv, Engine& engine)
 {
     printf("[MAIN] start\n");
-    installCrashHandler();
 
     
     StructuredLogger::instance().init();

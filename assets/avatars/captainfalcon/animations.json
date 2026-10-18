@@ -19,7 +19,7 @@
       "loop": true,
       "keyframes": [
         { "tick": 0,  "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [0, 0, 0] } } },
-        { "tick": 30, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [1, 0, 0], "translation": [0, 0, 0.2] } } },
+        { "tick": 30, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [1, 0, 0], "translation": [0, 0, -0.2] } } },
         { "tick": 59, "interp": "smooth", "parts": { "torso": { "rotationEulerDegrees": [0, 0, 0] } } }
       ]
     },
@@ -28,9 +28,9 @@
       "durationTicks": 30,
       "loop": true,
       "keyframes": [
-        { "tick": 0,  "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [30,0,0] }, "rightLeg": { "rotationEulerDegrees": [-30,0,0] }, "leftArm": { "rotationEulerDegrees": [-25,0,0] }, "rightArm": { "rotationEulerDegrees": [25,0,0] } } },
-        { "tick": 15, "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [-30,0,0] }, "rightLeg": { "rotationEulerDegrees": [30,0,0] }, "leftArm": { "rotationEulerDegrees": [25,0,0] }, "rightArm": { "rotationEulerDegrees": [-25,0,0] } } },
-        { "tick": 29, "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [30,0,0] }, "rightLeg": { "rotationEulerDegrees": [-30,0,0] }, "leftArm": { "rotationEulerDegrees": [-25,0,0] }, "rightArm": { "rotationEulerDegrees": [25,0,0] } } }
+        { "tick": 0,  "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [30,0,0] }, "rightLeg": { "rotationEulerDegrees": [-30,0,0] }, "leftArm": { "rotationEulerDegrees": [-25,0,0] }, "rightArm": { "rotationEulerDegrees": [0,0,25] } } },
+        { "tick": 15, "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [-30,0,0] }, "rightLeg": { "rotationEulerDegrees": [30,0,0] }, "leftArm": { "rotationEulerDegrees": [25,0,0] }, "rightArm": { "rotationEulerDegrees": [0,0,-25] } } },
+        { "tick": 29, "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [30,0,0] }, "rightLeg": { "rotationEulerDegrees": [-30,0,0] }, "leftArm": { "rotationEulerDegrees": [-25,0,0] }, "rightArm": { "rotationEulerDegrees": [0,0,25] } } }
       ]
     },
 

@@ -262,8 +262,20 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     // Melee first match: force both the human and the NPC onto the Captain
     // Falcon profile so the mode's exclusive authored poses and move clips apply
     // to every actor, regardless of role assignment or any random NPC avatar.
-    if (d.matchMode == "melee")
+    // Every Melee actor also uses the mode-forced movement profile
+    // (supersmashbrosmelee.md §12), so this is forced here — the single owner
+    // that already special-cases the Melee avatar.
+    if (d.matchMode == "melee") {
         out.avatarName = "captainfalcon";
+    }
+    // A mode may force one movement profile for every actor, independent of
+    // role. Forced before the matchActors lookup so actors without a roster
+    // entry (e.g. a client-requested Melee NPC) still receive it.
+    {
+        const Gamemode& modeCfg = GamemodeRegistry::instance().get(d.matchMode);
+        if (!modeCfg.movementPreset.empty())
+            out.movementPreset = modeCfg.movementPreset;
+    }
     auto it = d.matchActors.find(actorId);
     if (it == d.matchActors.end())
         return out;
@@ -330,9 +342,17 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
 
     // Melee first match: force both the human and the NPC onto the Captain
     // Falcon profile so the mode's exclusive authored poses and move clips apply
-    // to every actor, regardless of any random/assigned avatar.
-    if (d.matchMode == "melee")
+    // to every actor, regardless of any random/assigned avatar. The mode-forced
+    // movement profile is re-applied after the role block so a non-Falcon role
+    // cannot silently leave a Melee actor on default movement.
+    if (d.matchMode == "melee") {
         out.avatarName = "captainfalcon";
+    }
+    {
+        const Gamemode& modeCfg = GamemodeRegistry::instance().get(d.matchMode);
+        if (!modeCfg.movementPreset.empty())
+            out.movementPreset = modeCfg.movementPreset;
+    }
 
     if (!def->movementPreset.empty()) {
         // Validate once through the cache so an unknown preset is caught here

@@ -1,10 +1,10 @@
 # 08 16 2026, 01 35
 # purpose
-# MiMITA incremental build system normally invoked through build_agent.py.
+# MiMITA incremental build implementation invoked by the dev-loop worker.
 # Compiles only changed cpp files in parallel, uses a ccache wrapper and a
 # precompiled header (pch.h), then links mimita.exe.
 # Supports debug/release modes, clean, build-only, and auto-close flags.
-# Does NOT auto-run the game when given build-only; agents must use build_agent.py.
+# Does NOT coordinate launch/run state; user-facing requests go through dev-loop.
 # Does NOT rebuild translation units whose objects are up to date.
 # Does NOT modify source files.
 
@@ -22,6 +22,7 @@ import sys
 import subprocess
 import shutil
 import time
+import atexit
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_path
@@ -31,6 +32,14 @@ from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_pa
 # ============================================================
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+from build_lock import BuildLockBusy, acquire_checkout_build_lock
+
+try:
+    _BUILD_LOCK = acquire_checkout_build_lock(ROOT, "build.py")
+except BuildLockBusy as error:
+    print(f"[BUILD LOCK] {error}", file=sys.stderr, flush=True)
+    sys.exit(3)
+atexit.register(_BUILD_LOCK.release)
 
 def stage_runtime_dlls():
     """Place the shared runtime DLLs beside the executable for local runs."""
@@ -381,7 +390,12 @@ os.environ.setdefault("CCACHE_DIR", os.path.join(BUILD_DIR, "ccache"))
 os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
 os.environ.setdefault("CCACHE_MAXSIZE", "8G")
 
-game_dll_build = subprocess.run([sys.executable, os.path.join(ROOT, "build_game_dll.py")])
+dll_environment = os.environ.copy()
+dll_environment["MIMITA_BUILD_LOCK_PARENT_PID"] = str(os.getpid())
+game_dll_build = subprocess.run(
+    [sys.executable, os.path.join(ROOT, "build_game_dll.py")],
+    env=dll_environment,
+)
 if game_dll_build.returncode != 0:
     print("[HOT RELOAD] reload failed")
     sys.exit(game_dll_build.returncode)

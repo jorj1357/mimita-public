@@ -11,6 +11,7 @@
 // #pragma message("COMPILING physics-mini.cpp")
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include "input/input-commands.h"
 #include "perf/perf.h"
@@ -365,6 +366,8 @@ static void physicsMainUpdate_Internal(
     const CollisionVelocityOverride velocityOverride =
         applyEffectiveVelocityForCollision(p, movementState, movementConfig);
     const float preCollisionDownwardSpeed = std::max(0.0f, -movementState.baseVelocity.z);
+    const glm::vec3 positionBeforeCollision = p.pos;
+    const glm::vec3 velocityBeforeCollision = p.vel;
 
     for (int i = 0; i < steps; i++)
     {
@@ -397,6 +400,53 @@ static void physicsMainUpdate_Internal(
                                                dt,
                                                preCollisionEvents);
     applyMovementStateToPlayer(movementResult.state, p);
+
+    // Sample raw collision-ground changes while a Melee fighter is crouching.
+    // Keep the journal bounded while retaining the number of transitions
+    // suppressed between samples and the contact data that produced them.
+    if (p.usesMeleeAuthoredPose() && p.crouching &&
+        groundedThisFrame != prevOnGround)
+    {
+        static uint64_t lastGroundTransitionLogMs = 0;
+        static uint32_t suppressedGroundTransitions = 0;
+        const uint64_t now = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (lastGroundTransitionLogMs == 0 ||
+            now - lastGroundTransitionLogMs >= 250)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "movement.ground_transition", p.username,
+                "raw collision grounding changed while crouching",
+                (uint32_t)p.movementSimulationTick,
+                {{"previous_on_ground", prevOnGround},
+                 {"collision_on_ground", groundedThisFrame},
+                 {"resulting_on_ground", p.ground.onGround},
+                 {"stable_on_ground", p.ground.stableOnGround},
+                 {"crouching", p.crouching},
+                 {"world_contact", p.ground.hasWorldContact},
+                 {"real_world_contact", p.ground.realWorldContactThisFrame},
+                 {"contact_count", p.movementContacts.size()},
+                 {"suppressed_transitions", suppressedGroundTransitions},
+                 {"ground_lost_seconds", p.ground.groundLostTimer},
+                 {"position_before_collision", {positionBeforeCollision.x,
+                                                  positionBeforeCollision.y,
+                                                  positionBeforeCollision.z}},
+                 {"position_after", {p.pos.x, p.pos.y, p.pos.z}},
+                 {"velocity_before_collision", {velocityBeforeCollision.x,
+                                                  velocityBeforeCollision.y,
+                                                  velocityBeforeCollision.z}},
+                 {"velocity_after", {p.vel.x, p.vel.y, p.vel.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+            lastGroundTransitionLogMs = now;
+            suppressedGroundTransitions = 0;
+        }
+        else
+        {
+            ++suppressedGroundTransitions;
+        }
+    }
 
     // Floor-fall diagnostics
     if (DebugConfig::DEBUG_PHYSICS && !groundedThisFrame && p.vel.z < -5.0f)

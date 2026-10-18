@@ -12,6 +12,15 @@
 // music player never sits underneath incoming notifications.
 static constexpr float NOTIF_RESERVE = 380.0f;
 
+/** 2026 10 18 1134 jorj todo deaed code review
+ * is this 
+ * can we do this better
+ * not sure
+ * like no hardcoded numebrs maybe
+ * just like
+ * make a function that gets the screen size and hten scale things 
+ * from that function getting screen size maybe 
+ */
 void MusicManager::drawNowPlayingPopup()
 {
     if (!mTrackJustChanged) return;

@@ -343,6 +343,23 @@ void registerAgentCommands()
                 {{"command", "agent.crouch"}, {"crouch", on}, {"player", gpPlayer->username}});
         }, "2026-10-18", CommandCategory::Debug
     });
+
+    Terminal::instance().registerCommand({
+        "agent.hurt", "Add Melee percent to the local player for the hurt-pose test.",
+        "agent.hurt <percent>",
+        [](const std::vector<std::string>& args) {
+            float amount = 8.0f;
+            if (!args.empty()) {
+                try { amount = std::stof(args[0]); } catch (...) {}
+            }
+            if (gpPlayer)
+                gpPlayer->percent += amount;
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.hurt accepted",
+                {{"command", "agent.hurt"}, {"amount", amount},
+                 {"percent", gpPlayer ? gpPlayer->percent : 0.0f}, {"player", gpPlayer->username}});
+        }, "2026-10-18", CommandCategory::Debug
+    });
 }
 
 } // namespace

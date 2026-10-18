@@ -9,10 +9,24 @@
 import os
 import subprocess
 import sys
+import atexit
 
 from build_toolchain import compiler, ccache, glfw_include
+from build_lock import (
+    BuildLockBusy,
+    acquire_checkout_build_lock,
+    inherited_lock_parent_pid,
+)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+_BUILD_LOCK = None
+if inherited_lock_parent_pid() is None:
+    try:
+        _BUILD_LOCK = acquire_checkout_build_lock(ROOT, "build_game_dll.py")
+    except BuildLockBusy as error:
+        print(f"[BUILD LOCK] {error}", file=sys.stderr, flush=True)
+        sys.exit(3)
+    atexit.register(_BUILD_LOCK.release)
 
 try:
     COMPILER = compiler()

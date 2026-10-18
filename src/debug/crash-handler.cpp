@@ -27,6 +27,7 @@ namespace {
 
 // When enabled, the crash dialog is suppressed (for deterministic tests).
 bool g_testMode = false;
+bool g_showCrashDialog = true;
 // When enabled, force the TEMP fallback path (for deterministic tests).
 bool g_forceTempFallback = false;
 
@@ -217,11 +218,13 @@ void appendSymbolizedStack(char* out, DWORD size, CONTEXT* context)
 // MinGW/GCC raises C++ exceptions through SEH with this code
 // (_Unwind_RaiseException -> RaiseException). It is not a Windows SEH code.
 constexpr DWORD kStatusGccThrow = 0x20474343u;
+constexpr DWORD kStatusFatalAppExit = 0x40000015u;
 
 const char* exceptionCodeString(DWORD code)
 {
     switch (code) {
         case kStatusGccThrow:                    return "CXX_EXCEPTION_GCC";
+        case kStatusFatalAppExit:                return "STATUS_FATAL_APP_EXIT";
         case EXCEPTION_ACCESS_VIOLATION:         return "ACCESS_VIOLATION";
         case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:    return "ARRAY_BOUNDS_EXCEEDED";
         case EXCEPTION_BREAKPOINT:               return "BREAKPOINT";
@@ -566,7 +569,7 @@ void emitCrashReport(const char* prefix, const char* report, const char* summary
     OutputDebugStringA(msg);
     // Emergency final output channel that never depends on file paths.
     OutputDebugStringW(L"[CRASH] WriteTextReport/Buffers flushed; process terminating.\n");
-    if (!g_testMode)
+    if (!g_testMode && g_showCrashDialog)
         MessageBoxA(nullptr, msg, "Mimita Crash", MB_OK | MB_ICONERROR | MB_TASKMODAL);
 }
 
@@ -782,6 +785,11 @@ void installCrashHandler()
 void setCrashHandlerTestMode(bool enabled)
 {
     g_testMode = enabled;
+}
+
+void setCrashHandlerShowDialog(bool showDialog)
+{
+    g_showCrashDialog = showDialog;
 }
 
 void setCrashHandlerForceTempFallback(bool enabled)

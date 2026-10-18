@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "melee_lifecycle_v1",
+  "description": "Exercise Melee hurt/death/respawn state clips: fight the NPC, ring out into the void, and observe death/respawn poses.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "cramped",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [
+    {"id": "start_melee", "command": "modestart", "args": ["14"], "delay_ms_after": 5500},
+    {"id": "wait_for_hit", "command": "agent.snapshot", "args": ["wait_hit"], "delay_ms_after": 3000},
+    {"id": "hurt", "command": "agent.hurt", "args": ["12"], "delay_ms_after": 800},
+    {"id": "kill", "command": "explode", "args": [], "delay_ms_after": 300},
+    {"id": "after_void", "command": "agent.snapshot", "args": ["after_death"], "delay_ms_after": 2500},
+    {"id": "after_respawn", "command": "agent.snapshot", "args": ["after_respawn"], "delay_ms_after": 500}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_present", "event": "anim.melee.authored_pose"}
+  ],
+  "timeout_seconds": 180
+}

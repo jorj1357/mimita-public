@@ -19,6 +19,7 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "npc/npc.h"
 #include "entities/player.h"
+#include "entities/player-avatar-animations.h"
 #include "entities/aimbody-config.h"
 #include "world/world.h"
 #include "config.h"
@@ -89,6 +90,12 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     {
         return;
     }
+
+    // Install changed avatar animation JSON before any player or NPC samples a
+    // pose this tick. This presentation path remains live even when generic
+    // config hot reload is disabled.
+    AvatarAnimationRegistry::instance().pollReload(
+        (std::uint32_t)sim.player->movementSimulationTick);
 
     // One lifecycle reset path: any new authoritative life (spawn, respawn,
     // instant respawn, teleport, duel, map change, reconnect, or transform-epoch
@@ -183,6 +190,13 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 ragdoll.deactivateAim(*sim.player);
             }
         }
+    }
+    else if (sim.player->usesMeleeAuthoredPose()) {
+        // Dead Melee actor: movement/collision stay off (existing death path owns
+        // the corpse presentation), but keep the authored pose pipeline running
+        // so the profile's death/respawn state clips present on the body.
+        sim.player->updateProceduralAnimation(TICK_DT, THE_CAMERA.front,
+                                              THE_CAMERA.pos, false);
     }
 
     {

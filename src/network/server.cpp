@@ -372,6 +372,36 @@ int runServer(const LaunchOptions& options)
     setServerAudioMode(true);
 
     ::StructuredLogger::instance().init();
+    auto logServerExit = [&](int exitCode, const char* reason,
+                             const std::string& roomCode, uint32_t serverTick) {
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "server.process.exited", roomCode,
+            reason ? reason : "unspecified server exit", serverTick,
+            nlohmann::json{{"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+                           {"exit_code", exitCode},
+                           {"exit_reason", reason ? reason : "unspecified"},
+                           {"room_code", roomCode},
+                           {"mode", options.gameMode}, {"map", options.mapName},
+                           {"events_jsonl", ::StructuredLogger::instance().eventsPath()},
+                           {"run_id", ::StructuredLogger::instance().runId()}},
+            __FILE__, __LINE__, __func__);
+    };
+    ::StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "server.process.started", "server",
+        "dedicated server entered runServer", 0,
+        nlohmann::json{{"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+                       {"mode", options.gameMode}, {"map", options.mapName},
+                       {"timeout_seconds", options.timeoutSecs},
+                       {"events_jsonl", ::StructuredLogger::instance().eventsPath()},
+                       {"run_id", ::StructuredLogger::instance().runId()}},
+        __FILE__, __LINE__, __func__);
+    recordCrashBreadcrumb("server-start",
+        "pid=%lu mode=%s map=%s run=%s events=%s",
+        (unsigned long)GetCurrentProcessId(), options.gameMode.c_str(),
+        options.mapName.c_str(), ::StructuredLogger::instance().runId().c_str(),
+        ::StructuredLogger::instance().eventsPath().c_str());
 
     // Load the standard player body shape headlessly so the authoritative
     // server can reconstruct real body-part hitboxes (players + NPCs) for hit
@@ -474,6 +504,8 @@ int runServer(const LaunchOptions& options)
     if (!netStartup())
     {
         printf("%s [SERVER] FATAL: WSAStartup failed\n", serverTimestamp());
+        logServerExit(1, "winsock_startup_failed", "", 0);
+        ::StructuredLogger::instance().shutdown();
         return 1;
     }
 
@@ -481,7 +513,9 @@ int runServer(const LaunchOptions& options)
     if (sock == INVALID_SOCKET)
     {
         printf("%s [SERVER] FATAL: socket() failed error=%d\n", serverTimestamp(), WSAGetLastError());
+        logServerExit(1, "socket_creation_failed", "", 0);
         netShutdown();
+        ::StructuredLogger::instance().shutdown();
         return 1;
     }
     disableUdpConnReset(sock);
@@ -498,8 +532,10 @@ int runServer(const LaunchOptions& options)
     {
         printf("%s [SERVER] FATAL: invalid bind address requested=%s family=AF_INET\n",
                serverTimestamp(), requestedBind.c_str());
+        logServerExit(1, "invalid_bind_address", "", 0);
         closesocket(sock);
         netShutdown();
+        ::StructuredLogger::instance().shutdown();
         return 1;
     }
     if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
@@ -509,8 +545,10 @@ int runServer(const LaunchOptions& options)
         if (err == WSAEADDRINUSE)
             printf("%s [SERVER] HINT: Address %s is already in use. Is another server already running?\n",
                    serverTimestamp(), addressToString(bindAddr).c_str());
+        logServerExit(1, "socket_bind_failed", "", 0);
         closesocket(sock);
         netShutdown();
+        ::StructuredLogger::instance().shutdown();
         return 1;
     }
 
@@ -640,6 +678,8 @@ int runServer(const LaunchOptions& options)
         {
             printf("%s [SERVER ICE] init failed — aborting. Check STUN/TURN connectivity to %s:3478\n",
                    serverTimestamp(), getCoordinatorUrl().c_str());
+            logServerExit(1, "coordinator_ice_registration_failed", "", 0);
+            ::StructuredLogger::instance().shutdown();
             return 1;
         }
         serverCode = dedicatedIceState.serverCode;
@@ -681,10 +721,8 @@ int runServer(const LaunchOptions& options)
 
     uint64_t serverStartMs = nowMs();
 
-    // Server runs in-process — do NOT override the game's crash handler.
-    // The game's crash handler (installCrashHandler) writes minidumps and
-    // crash logs. Overriding it would suppress those diagnostics and
-    // change the exit code to STATUS_CONTROL_C_EXIT (0xC000013A).
+    // main() installs crash diagnostics before dispatching dedicated-server
+    // startup. Keep that process-wide handler in place for the server lifetime.
 
     // Accumulator-based fixed-step timing
     auto previousTime = std::chrono::steady_clock::now();
@@ -695,6 +733,8 @@ int runServer(const LaunchOptions& options)
     uint32_t lastPerfTick = 0;
     uint64_t lastPerfMs = nowMs();
     uint64_t lastTickTimingReportMs = nowMs();
+    uint64_t lastLifecycleHeartbeatMs = serverStartMs;
+    const char* serverExitReason = "server_loop_completed";
 
     PersistenceQueue::instance().beginSession(serverCode, AuthSystem::instance().user().sessionToken,
                                               AuthSystem::instance().user().id);
@@ -705,7 +745,30 @@ int runServer(const LaunchOptions& options)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
         {
             printf("%s [SERVER] timeout=%us reached, exiting\n", serverTimestamp(), options.timeoutSecs);
+            serverExitReason = "timeout_elapsed";
             break;
+        }
+
+        const uint64_t heartbeatNowMs = nowMs();
+        if (heartbeatNowMs - lastLifecycleHeartbeatMs >= 5000)
+        {
+            lastLifecycleHeartbeatMs = heartbeatNowMs;
+            ::StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.process.heartbeat", serverCode,
+                "dedicated server loop is alive", tick,
+                nlohmann::json{{"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+                               {"tick", tick}, {"room_code", serverCode},
+                               {"mode", options.gameMode}, {"map", options.mapName},
+                               {"players", players.size()}, {"npcs", npcs.size()},
+                               {"projectiles", projectiles.size()},
+                               {"uptime_ms", heartbeatNowMs - serverStartMs}},
+                __FILE__, __LINE__, __func__);
+            recordCrashBreadcrumb("server-loop",
+                "pid=%lu tick=%u room=%s players=%zu npcs=%zu projectiles=%zu uptimeMs=%llu",
+                (unsigned long)GetCurrentProcessId(), tick, serverCode.c_str(),
+                players.size(), npcs.size(), projectiles.size(),
+                (unsigned long long)(heartbeatNowMs - serverStartMs));
         }
 
         // Hot-reload networkingconfig.json so the hosted/dedicated server picks
@@ -1051,6 +1114,7 @@ int runServer(const LaunchOptions& options)
 
     PersistenceQueue::instance().flushBlocking();
     shutdownIceCoordinatorPoller();
+    logServerExit(0, serverExitReason, serverCode, tick);
     ::StructuredLogger::instance().shutdown();
     if (!serverCode.empty())
     {

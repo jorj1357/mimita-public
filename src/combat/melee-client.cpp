@@ -281,7 +281,7 @@ void clientTick(Player& player,
     // authored `crouch` state clip on the grounded fighter.
     player.crouching = input.crouchHeld || g_debugCrouch;
 
-    const MeleeActorState state = player.ground.onGround
+    const MeleeActorState state = player.ground.stableOnGround
         ? MeleeActorState::Grounded : MeleeActorState::Airborne;
     const MeleeModifier modifier = input.crouchHeld
         ? MeleeModifier::Crouch
@@ -336,7 +336,10 @@ void clientTick(Player& player,
                 StructuredCategory::Avatar, StructuredLevel::Important,
                 "melee.client.input", action->id, "melee input resolved", simTick,
                 {{"button", (int)button}, {"modifier", (int)modifier},
-                 {"grounded", player.ground.onGround}, {"action", action->id},
+                 {"grounded", player.ground.stableOnGround},
+                 {"on_ground", player.ground.onGround},
+                 {"stable_on_ground", player.ground.stableOnGround},
+                 {"action", action->id},
                  {"jump_held", input.jumpHeld}, {"crouch_held", input.crouchHeld},
                  {"shield_held", input.shieldHeld}});
             const WeaponDefinition* def = weapons.getCurrentDef(player);

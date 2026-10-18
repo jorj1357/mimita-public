@@ -4,6 +4,7 @@
 // a std::terminate handler for uncaught C++ exceptions, and a small
 // allocation-free breadcrumb ring printed into every crash report.
 void installCrashHandler();
+void setCrashHandlerShowDialog(bool showDialog);
 void setCrashHandlerTestMode(bool enabled);
 void setCrashHandlerForceTempFallback(bool enabled);
 

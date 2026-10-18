@@ -36,6 +36,13 @@ Every configuration file should have:
    or on the next connection;
 7. a terminal command that can reload, print, validate, or inspect it.
 
+Presentation JSON intended for live tuning must be polled while the owning
+runtime is active and must not depend on a rebuild, restart, avatar swap, or a
+global gameplay-config reload toggle. Validate a whole candidate first, then
+install it together at its documented safe boundary. If a save is incomplete
+or invalid, keep the last valid values and retry when the file changes again.
+The feature specification sets the required polling delay and exact boundary.
+
 Invalid JSON must not partially replace a working configuration. Match-critical
 values should be staged and applied at a safe boundary instead of changing
 halfway through a tick.
@@ -60,6 +67,7 @@ made hot-reloadable over time.
 | Video and lighting | `config/video-settings.json`, `config/shadows.json`, `config/lighting.json`, `config/postfx.json`, `config/skybox.json` | resolution, quality, shadows, lighting, post-processing, frame limits |
 | Audio | `config/audio/`, `config/notifications.json`, `config/tipsconfig.json` | volumes, routing, subtitles, notification behavior, music |
 | Avatars and actors | `config/bodyparts.json`, `config/player-procedural.json`, `config/npc-avatar.json`, `config/npc-difficulty.json`, `config/npcpresets/` | body layout, cosmetics, NPC difficulty, actor presentation, procedural values |
+| Authored animation | `assets/avatars/<avatar>/animations.json`, files included from `config/animations/` | clip keyframes, states, and authored pose data; live presentation tuning |
 | Replay | `config/replay/`, `config/replayexport.json` | recording, playback, export, camera, event and effect capture |
 | Debugging and testing | `config/debug/`, `config/debuglogger.json`, `config/hotreload.json`, `config/analytics.json` | debug categories, logging, profiling, reload diagnostics, test switches |
 
@@ -111,3 +119,8 @@ For every new or migrated JSON value, document the loader, owner, schema,
 default, reload trigger, application boundary, validation command, and expected
 diagnostic. A focused terminal test should prove the resulting state without
 requiring a visual test for every edit.
+
+For authored animation JSON, the owning feature contract is in
+`docs/specs/animations/animations.md`: poll while actors update, apply valid
+clip edits on the next fixed tick, preserve the last valid set on a bad save,
+and make already-running actors use the updated set without a rebuild.

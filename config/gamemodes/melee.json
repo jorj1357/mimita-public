@@ -13,6 +13,7 @@
   "rematch_seconds": 5,
   "spawn_offset_radius": 0.0,
   "spawn_strategy": "shared",
+  "movement_preset": "smash",
   "intermission_seconds": 15,
   "results_seconds": 5,
   "ragdoll_enabled": false,

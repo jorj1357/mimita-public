@@ -216,6 +216,11 @@ private:
     MovementConfig mActorPresetPreviousMovement;
     std::string mActorPresetPreviousMovementName;
     std::string mActorPresetId;
+    // Mode-forced movement profile (e.g. Melee "smash") applied for local
+    // prediction; saves the pre-mode preset so it can be restored.
+    bool mModeMovementPresetApplied = false;
+    MovementConfig mModeMovementPrevious;
+    std::string mModeMovementPreviousName;
     std::vector<ReplicatedActorIdentity> mActors;
     uint8_t mLastOutlineLocalTeam = 0xFF;
     uint8_t mLastOutlineParticipantCount = 0;

@@ -203,19 +203,21 @@
 
     // ── MiMITA dash extensions ────────────────────────────────────────────
     //
-    // These abilities are not vanilla Counter-Strike 1.6.
-    //
-    // They are intentionally ENABLED because this preset is now meant to use
-    // the same fast MiMITA movement tuning as the "source" preset.
+    // Melee-safe profile (supersmashbrosmelee.md §12 and §15):
+    //   - Freeze and the legacy down-dash are NOT part of Melee and are
+    //     disabled here. Left Ctrl is crouch/airborne-down, not down-dash.
+    //   - Shift dash is kept: quick direction changes / dash dancing are a
+    //     deliberate movement tool in the mode (dash binding is still OPEN in
+    //     §13 and revisited after playtesting).
 
     // Shift ground/air dash.
     "dash_enabled": true,
 
-    // Q down-dash / slam.
-    "down_dash_enabled": true,
+    // Q down-dash / slam — disabled for Melee (§12, §15).
+    "down_dash_enabled": false,
 
-    // MiMITA freeze ability.
-    "freeze_enabled": true,
+    // MiMITA freeze ability — disabled for Melee (§12, §15).
+    "freeze_enabled": false,
 
     // Time after a dash during which its boost is protected from ordinary
     // ground friction.

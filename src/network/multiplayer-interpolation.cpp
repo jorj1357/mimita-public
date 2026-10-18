@@ -1649,6 +1649,7 @@ void updateRenderedReplica(
     }
 
     player.ground.onGround = render.onGround;
+    player.ground.stableOnGround = player.ground.onGround;
     player.equippedSlot = render.equippedSlot;
     player.godballActive = render.godballActive;
     player.godballPosition = render.godballPosition;
@@ -1692,6 +1693,7 @@ void updateRenderedReplica(
     player.vipAppearance = render.vipAppearance;
     player.networkStateFlags = render.stateFlags;
     player.ground.onGround = render.onGround;
+    player.ground.stableOnGround = player.ground.onGround;
 
     // ── Freeze state ─────────────────────────────────────────────────
     // Set freezeActive for the freeze pose state machine in

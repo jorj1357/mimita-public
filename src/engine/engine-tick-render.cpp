@@ -233,6 +233,7 @@ static void renderReplayActors(
         actor->sizeScale = actorState.sizeScale;
         actor->vel = actorState.velocity;
         actor->ground.onGround = actorState.grounded;
+        actor->ground.stableOnGround = actor->ground.onGround;
         actor->equippedWeaponId = actorState.weaponName;
         {
             MIMITA_PERF_SCOPE("Rendering::ReplayActors::ApplyPose");
