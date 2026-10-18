@@ -3,7 +3,7 @@
 Time created: 2026-10-18T17:42:50Z
 Time last updated: 2026-10-18T17:42:50Z
 
-Status: ATTEMPTED FIX (1)
+Status: ATTEMPTED FIX (2)
 
 Related specifications:
 
@@ -50,6 +50,44 @@ existing exclusive authored-pose path already suppresses physical arm aiming.
 The server-versus-rendered limb-center mismatch remains open and is the next
 known accuracy issue. Do not claim full visible-hitbox/contact parity from the
 build alone.
+
+## Regression occurrence 2
+
+Time recorded: 2026-10-18T19:58:30Z
+
+### Expected behavior
+
+Captain Falcon Melee hitboxes are positioned by the authoritative sampled
+attacking limb transform, with `local_offset` transformed in limb-local space.
+Camera basis is not used to place punch or kick volumes.
+
+### Actual behavior
+
+The old server path estimated a named part from actor-root height and extended
+the point using captured camera-horizontal-forward. It did not sample the
+animation pose. The client preview already used the rendered part transform.
+
+### Fix attempt 2
+
+Added `animated_limb` attachment mode and selected it for all configured
+Captain Falcon melee hitboxes. The server now samples the action/phase clip,
+uses the normalized default-model rest transform (including
+`config/bodyparts.json` overrides), transforms the limb-local offset, and
+captures the actor model yaw at action start. A missing clip/limb/rest transform
+skips contact and emits `melee.hitbox.pose_unavailable`; it does not use the
+legacy camera-basis approximation. The legacy mode remains available only when
+explicitly selected. See
+[`20261018_195830-melee-limb-attachment.md`](../../changelog/2026-10-18/20261018_195830-melee-limb-attachment.md).
+
+### Evidence and limits
+
+The source change compiled and published as build 2607. The dev-loop was still
+running the older build 2603 client, and its managed server had exited; the
+active client was left untouched. Build 2607 passed `--versioninfo` with
+`EVENTS_JSONL_PATH=logs/10-18-2026/20261018_155827/events.jsonl`, and
+`config/weapons.json` parsed successfully. No live attack on build 2607 or
+visual limb-to-hitbox parity has been observed. Keep this regression attempt
+open for runtime and human confirmation.
 
 ### Evidence and limits
 

@@ -413,6 +413,7 @@ struct ServerPlayer
     int meleePhaseTick = 0;
     // Captured camera-horizontal-forward at action start (never re-aimed).
     glm::vec3 meleeActionForward{1.0f, 0.0f, 0.0f};
+    float meleeActionYaw = 0.0f; // actor model yaw captured at action start
     uint32_t meleeActionSerial = 0;
     // Previous active-tick hitbox center, for a swept test between ticks.
     glm::vec3 meleeLastHitboxCenter{0.0f};
@@ -606,8 +607,10 @@ struct ServerNpcBodyPartSample {
 // it to reconstruct PLAYER body-part hitboxes at the rewound pose — so player
 // hits are validated against real body parts, never an invisible capsule.
 struct ServerPlayerBodyPartTemplate {
+    std::string name;
     glm::vec3 offset{0.0f};
     glm::vec3 half{0.0f};
+    glm::mat4 restTransform{1.0f}; // node transform relative to the model root
     uint8_t bodyPart = 0; // WeaponExecution::HitBodyPart
     uint8_t pad[3] = {};
 };
@@ -656,6 +659,7 @@ struct ServerNpc
     std::string meleeActionId;
     uint32_t meleeActionStartTick = 0;
     glm::vec3 meleeActionForward{1.0f, 0.0f, 0.0f};
+    float meleeActionYaw = 0.0f;
     std::unordered_set<uint32_t> meleeHitTargets;
     float meleePercent = 0.0f;
     uint32_t meleeNextAttackTick = 0;

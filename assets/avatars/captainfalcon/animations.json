@@ -3,11 +3,11 @@
   "poseComposition": "authored_only",
   "states": {
     "default": "idle",
-    "locomotion": { "walk": "walk", "fly": "walk", "crawl": "walk", "swim": "walk" },
-    "run": "run",
+    "locomotion": { "walk": "captainfalcon_walk", "fly": "walk", "crawl": "walk", "swim": "walk" },
+    "run": "captainfalcon_walk",
     "jump": "jump",
     "fall": "fall",
-    "land": "land",
+    "land": "captainfalcon_land",
     "crouch": "crouch",
     "respawn": "respawn",
     "hurt": "hurt",
@@ -34,15 +34,6 @@
       ]
     },
 
-    "run": {
-      "durationTicks": 60,
-      "loop": true,
-      "keyframes": [
-        { "tick": 0,  "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [0,0,50] , "translation": [0, 0, 0]}, "rightLeg": { "rotationEulerDegrees": [0,0,-50] , "translation": [0, 0, 0]}, "leftArm": { "rotationEulerDegrees": [0,0,-45] , "translation": [0, 0, 0]}, "rightArm": { "rotationEulerDegrees": [0,0,45] , "translation": [0, 0, 0]}, "torso": { "rotationEulerDegrees": [0,0,8] , "translation": [0, 0, 0]} , "head": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }} },
-        { "tick": 30, "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [0,0,-50] , "translation": [0, 0, 0]}, "rightLeg": { "rotationEulerDegrees": [0,0,50] , "translation": [0, 0, 0]}, "leftArm": { "rotationEulerDegrees": [0,0,45] , "translation": [0, 0, 0]}, "rightArm": { "rotationEulerDegrees": [0,0,-45] , "translation": [0, 0, 0]}, "torso": { "rotationEulerDegrees": [0,0,8] , "translation": [0, 0, 0]} , "head": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }} },
-        { "tick": 59, "interp": "linear", "parts": { "leftLeg": { "rotationEulerDegrees": [0,0,50] , "translation": [0, 0, 0]}, "rightLeg": { "rotationEulerDegrees": [0,0,-50] , "translation": [0, 0, 0]}, "leftArm": { "rotationEulerDegrees": [0,0,-45] , "translation": [0, 0, 0]}, "rightArm": { "rotationEulerDegrees": [0,0,45] , "translation": [0, 0, 0]}, "torso": { "rotationEulerDegrees": [0,0,8] , "translation": [0, 0, 0]} , "head": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }} }
-      ]
-    },
     "jump": {
       "durationTicks": 60,
       "loop": false,
@@ -57,14 +48,6 @@
       "keyframes": [
         { "tick": 0, "interp": "smooth", "parts": {"head": { "rotationEulerDegrees": [0,0,-10], "translation": [0.1,0,0] },"torso": { "rotationEulerDegrees": [0,0,-10], "translation": [0.1,0,0] }, "leftArm": { "rotationEulerDegrees": [0,0,-45] , "translation": [0, 0, 0]}, "rightArm": { "rotationEulerDegrees": [0,0,45] , "translation": [0, 0, 0]}, "leftLeg": { "rotationEulerDegrees": [0,0,-15] , "translation": [0, 0, 0]}, "rightLeg": { "rotationEulerDegrees": [0,0,15] , "translation": [0, 0, 0]} } },
         { "tick": 59, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0,0,-80] , "translation": [0, 0, 0]}, "rightArm": { "rotationEulerDegrees": [0,0,80] , "translation": [0, 0, 0]}, "leftLeg": { "rotationEulerDegrees": [0,0,-30] , "translation": [0, 0, 0]}, "rightLeg": { "rotationEulerDegrees": [0,0,30] , "translation": [0, 0, 0]} , "head": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }, "torso": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }} }
-      ]
-    },
-    "land": {
-      "durationTicks": 60,
-      "loop": false,
-      "keyframes": [
-        { "tick": 0, "interp": "smooth", "parts": { "leftLeg": { "rotationEulerDegrees": [0,0,45] , "translation": [0, 0, 0]}, "rightLeg": { "rotationEulerDegrees": [0,0,45] , "translation": [0, 0, 0]}, "torso": { "translation": [0,0,-0.35], "rotationEulerDegrees": [0,0,20] }, "leftArm": { "rotationEulerDegrees": [0,0,40] , "translation": [0, 0, 0]}, "rightArm": { "rotationEulerDegrees": [0,0,40] , "translation": [0, 0, 0]} , "head": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }} },
-        { "tick": 59, "interp": "smooth", "parts": { "leftLeg": { "rotationEulerDegrees": [0,0,10] , "translation": [0, 0, 0]}, "rightLeg": { "rotationEulerDegrees": [0,0,10] , "translation": [0, 0, 0]}, "torso": { "translation": [0,0,-0.05], "rotationEulerDegrees": [0,0,5] }, "leftArm": { "rotationEulerDegrees": [0,0,10] , "translation": [0, 0, 0]}, "rightArm": { "rotationEulerDegrees": [0,0,10] , "translation": [0, 0, 0]} , "head": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }} }
       ]
     },
     "crouch": {
@@ -373,6 +356,12 @@
     }
   },
   "include": [
-    "config/animations/library/melee/captainfalcon/punch_a.json"
+    "config/animations/library/melee/captainfalcon/punch_a.json",
+    "config/animations/library/melee/captainfalcon/kick_a.json",
+    "config/animations/library/locomotion/captainfalcon/walk.json",
+    "config/animations/library/locomotion/captainfalcon/land.json",
+    "config/animations/library/melee/captainfalcon/uppunch_a.json",
+    "config/animations/library/melee/captainfalcon/downpunch_a.json",
+    "config/animations/library/melee/captainfalcon/downkick_a.json"
   ]
 }

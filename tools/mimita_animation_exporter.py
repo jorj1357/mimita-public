@@ -22,6 +22,7 @@ DEFAULT_BLENDER_EXE = r"C:\Program Files\Blender Foundation\Blender 5.0\blender.
 
 try:
     import bpy
+    from mathutils import Euler, Matrix, Quaternion, Vector
 except ModuleNotFoundError:
     print("MiMITA Animation Exporter needs Blender to evaluate the .blend animation.")
     blender = DEFAULT_BLENDER_EXE if os.path.isfile(DEFAULT_BLENDER_EXE) else ""
@@ -155,14 +156,23 @@ def finite_vec(vec):
     values = list(vec)
     if not all(math.isfinite(float(v)) for v in values):
         raise ValueError("A sampled transform contains NaN or infinity")
-    return [round(float(v), 8) for v in values]
+    # Keep exported files readable and prevent float residue (for example,
+    # 3e-08) from obscuring authored values. Runtime normalizes quaternions.
+    rounded = [round(float(v), 2) for v in values]
+    return [0.0 if value == 0.0 else value for value in rounded]
 
 
 def collect_markers(scene, start, end, duration, melee):
     markers = []
     for marker in scene.timeline_markers:
         if start <= marker.frame <= end + 1:
-            tick = marker_tick(marker.frame, start)
+            # Animators commonly place action.end on the last keyed frame.
+            # Treat that endpoint as exclusive, matching a marker one frame
+            # after the final sample (end + 1) and the clip duration.
+            if marker.name == "action.end" and marker.frame == end:
+                tick = duration
+            else:
+                tick = marker_tick(marker.frame, start)
             if 0 <= tick <= duration:
                 markers.append({"name": marker.name, "tick": tick})
     if melee:
@@ -197,23 +207,100 @@ def action_keyframes(actions, start, end):
     return sorted(frames)
 
 
+def action_curves(action, obj):
+    """Return the curves for this object's assigned Action slot only."""
+    if action is None:
+        return []
+    anim = obj.animation_data
+    slot = getattr(anim, "action_slot", None) if anim else None
+    if hasattr(action, "layers"):
+        curves = []
+        for layer in action.layers:
+            for strip in layer.strips:
+                bag = strip.channelbag(slot) if slot and hasattr(strip, "channelbag") else None
+                if bag:
+                    curves.extend(bag.fcurves)
+        return curves
+    return list(getattr(action, "fcurves", ()))
+
+
+def action_transform(obj, action, frame):
+    """Evaluate object transform channels directly; Blender 5 background depsgraph
+    can leave evaluated matrix_world stale for these imported Action slots."""
+    location = list(obj.location)
+    scale = list(obj.scale)
+    rotation_mode = obj.rotation_mode
+    if rotation_mode == "QUATERNION":
+        rotation = list(obj.rotation_quaternion)
+    else:
+        rotation = list(obj.rotation_euler)
+    channels = {"location": location, "scale": scale,
+                "rotation_quaternion": rotation if rotation_mode == "QUATERNION" else None,
+                "rotation_euler": rotation if rotation_mode != "QUATERNION" else None}
+    for curve in action_curves(action, obj):
+        values = channels.get(curve.data_path)
+        if values is not None and 0 <= curve.array_index < len(values):
+            values[curve.array_index] = curve.evaluate(frame)
+    if rotation_mode == "QUATERNION":
+        orient = Quaternion(rotation)
+    else:
+        orient = Euler(rotation, rotation_mode).to_quaternion()
+    return Matrix.LocRotScale(Vector(location), orient, Vector(scale))
+
+
 def sample_clip(scene, root, objects, rest_root, rest_parts, start, end, frames):
+    if any(obj.parent != root for obj in objects.values()):
+        raise ValueError("Supported rig requires all six parts to be direct children of plrOrigin")
+    if any(obj.constraints for obj in objects.values()):
+        raise ValueError("Constraints are not supported by the Action-channel exporter")
+    root_action = root.animation_data.action if root.animation_data else None
+    root_transform_curves = [
+        curve for curve in action_curves(root_action, root)
+        if curve.data_path in ("location", "rotation_euler", "rotation_quaternion", "scale")
+    ]
+    # Static keyed root placement is common in Blender-authored scenes and is
+    # not root motion. Ignore it, but reject any channel that changes during
+    # the sampled clip because runtime root motion is not supported.
+    for curve in root_transform_curves:
+        values = [float(curve.evaluate(frame)) for frame in range(start, end + 1)]
+        if values and max(values) - min(values) > 1e-5:
+            raise ValueError(
+                f"Animated plrOrigin/root motion is not supported: "
+                f"{curve.data_path}[{curve.array_index}] changes over the clip")
     duration = end - start + 1
     rest_root_inv = rest_root.matrix_world.inverted_safe()
     rest_local = {p: rest_root_inv @ rest_parts[p].matrix_world for p in PARTS}
+    # The default Blender rig stores its import-basis correction in the root
+    # quaternion field even when rotation_mode is Euler (whose active transform
+    # remains identity). Calibrate and read that field explicitly.
+    basis_rotation = root.rotation_quaternion.copy()
+    expected_basis = Quaternion((math.sqrt(0.5), -math.sqrt(0.5), 0.0, 0.0))
+    if min((basis_rotation - expected_basis).magnitude,
+           (basis_rotation + expected_basis).magnitude) > 1e-3:
+        raise ValueError("Rig root quaternion is not the calibrated default-player Blender-to-game basis (X -90 degrees)")
+    basis = basis_rotation.to_matrix().to_4x4()
+    basis_inv = basis.inverted_safe()
+    print("  Blender-to-game basis quaternion WXYZ: " +
+          ", ".join(f"{float(v):.2f}" for v in
+                    (basis_rotation.w, basis_rotation.x, basis_rotation.y, basis_rotation.z)))
+    selected_actions = {part: (obj.animation_data.action if obj.animation_data else None)
+                        for part, obj in objects.items()}
     frames_out = []
     for frame in frames:
         scene.frame_set(frame)
-        depsgraph = bpy.context.evaluated_depsgraph_get()
-        depsgraph.update()
-        eval_root = root.evaluated_get(depsgraph)
-        root_inv = eval_root.matrix_world.inverted_safe()
         part_data = {}
         for part in PARTS:
-            evaluated = objects[part].evaluated_get(depsgraph)
-            relative = root_inv @ evaluated.matrix_world
+            obj = objects[part]
+            action = selected_actions[part]
+            if action is None:
+                relative = rest_local[part]
+            else:
+                relative = obj.matrix_parent_inverse @ action_transform(obj, action, frame)
             # Runtime applies normalized rest * pose delta.
             delta = rest_local[part].inverted_safe() @ relative
+            # Convert the complete local delta once, so both pivot translation
+            # and orientation use the same Blender-to-game basis.
+            delta = basis @ delta @ basis_inv
             loc, quat, scale = delta.decompose()
             if any(abs(float(v) - 1.0) > 1e-4 for v in scale):
                 part_data[part] = {"translation": finite_vec(loc),
@@ -319,8 +406,9 @@ def main():
     default_root = active_root.name if active_root else ("plrOrigin" if "plrOrigin" in root_names else root_names[0])
     root_name = prompt_choice("Rig root", root_names, default_root,
                               "Choose the character's plrOrigin object. The active limb's parent is preselected when possible.",
-                              "For the screenshot rig, choose plrOrigin.027 (the parent of head.026).")
+                              "For downpunch20261018 choose plrOrigin.036; for downkick20261018 choose plrOrigin.037.")
     root = bpy.data.objects[root_name]
+    print(f"Selected rig root: {root.name}")
     objects = part_map(root)
     all_actions = sorted(bpy.data.actions, key=lambda action: action.name)
     if not all_actions:
@@ -403,6 +491,9 @@ def main():
         print(f"  Duration: {duration} ticks")
         print(f"  Poses: {len(keyframes)} ({sampling})")
         print(f"  Exported file: {output}")
+        print("  Numeric precision: 2 decimal places; near-zero values written as 0.0")
+        print("  Rotation check: evaluated Action channels; root-basis-converted rest-relative WXYZ deltas")
+        print("  Review: compare the exported pose with the selected avatar in-game before visual acceptance")
         if profile_changed:
             print(f"  Updated avatar profile: {resolved_profile}")
     finally:

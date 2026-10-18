@@ -15,12 +15,15 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
 #include "combat/weapon-execution.h"
+#include "entities/player-avatar-animations.h"
+#include "entities/animation-rotation.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "physics/movement/movement-step.h"
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <fstream>
 #include <string>
 
@@ -95,6 +98,8 @@ struct NpcMeleeState {
     std::string actionId;
     uint32_t startTick = 0;
     glm::vec3 forward{1.0f, 0.0f, 0.0f};
+    float modelYaw = 0.0f;
+    glm::vec3 lastHitboxCenter{0.0f};
     std::unordered_set<uint32_t> hitTargets;
     float percent = 0.0f;
     uint32_t nextAttackTick = 0;
@@ -121,35 +126,106 @@ static glm::vec3 horizontalForward(const glm::vec3& raw)
     return glm::normalize(forward);
 }
 
-// Approximate the world position of a hitbox anchored to a named rig part.
-// The server does not simulate the animated part transforms, so the part base
-// is approximated from the actor root plus a per-part shoulder/foot/hip offset,
-// then extended along the captured attack basis by the hitbox local offset.
-static glm::vec3 meleeHitboxCenter(const ServerPlayer& attacker,
-                                   const WeaponData::MeleeHitbox& hitbox)
+struct SampledPartPose {
+    glm::vec3 translation{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 scale{1.0f};
+};
+
+static float meleeEase(float t, AnimInterp interp)
 {
-    const glm::vec3 up(0.0f, 0.0f, 1.0f);
-    const glm::vec3 forward = attacker.meleeActionForward;
+    t = std::clamp(t, 0.0f, 1.0f);
+    switch (interp) {
+        case AnimInterp::Smooth: return t * t * (3.0f - 2.0f * t);
+        case AnimInterp::EaseIn: return t * t;
+        case AnimInterp::EaseOut: return 1.0f - (1.0f - t) * (1.0f - t);
+        case AnimInterp::EaseInOut: return t < 0.5f ? 2.0f * t * t : 1.0f - 2.0f * (1.0f - t) * (1.0f - t);
+        case AnimInterp::Step: return 0.0f;
+        default: return t;
+    }
+}
+
+static bool sampleClipPart(const AnimClip& clip, float tick, const std::string& partName,
+                           SampledPartPose& pose)
+{
+    if (clip.keyframes.empty()) return false;
+    tick = std::clamp(tick, 0.0f, (float)std::max(0, clip.durationTicks - 1));
+    const AnimKeyframe* prev = &clip.keyframes.front();
+    const AnimKeyframe* next = &clip.keyframes.front();
+    for (const AnimKeyframe& key : clip.keyframes) {
+        if ((float)key.tick <= tick) prev = &key;
+        if ((float)key.tick >= tick) { next = &key; break; }
+    }
+    const float range = (float)(next->tick - prev->tick);
+    const float t = meleeEase(range > 0.001f ? (tick - prev->tick) / range : 0.0f, prev->interp);
+    const auto a = prev->parts.find(partName);
+    const auto b = next->parts.find(partName);
+    if (a == prev->parts.end() && b == next->parts.end()) return false;
+    const AnimKeyframePart identity;
+    const AnimKeyframePart& pa = a == prev->parts.end() ? identity : a->second;
+    const AnimKeyframePart& pb = b == next->parts.end() ? identity : b->second;
+    pose.translation = glm::mix(pa.translation, pb.translation, t);
+    pose.rotation = AnimRotation::slerpShortest(pa.rotationQuat, pb.rotationQuat, t);
+    pose.scale = glm::mix(pa.scale, pb.scale, t);
+    return true;
+}
+
+static std::string actionClipForPhase(const WeaponData::MeleeAction& action,
+                                     const char* phase)
+{
+    if (!action.animationClipId.empty()) return action.animationClipId;
+    if (std::string(phase) == "windup") return action.windup.clipId;
+    if (std::string(phase) == "active") return action.active.clipId;
+    return action.recovery.clipId;
+}
+
+static std::optional<glm::vec3> animatedLimbHitboxCenter(
+    const std::string& avatarName, const glm::vec3& actorPosition, float actorYawDegrees,
+    const WeaponData::MeleeAction& action, const char* phase, int phaseTick, int elapsed,
+    const WeaponData::MeleeHitbox& hitbox)
+{
+    if (hitbox.attachmentMode != WeaponData::MeleeHitboxAttachmentMode::AnimatedLimb)
+        return std::nullopt;
+    const std::string clipId = actionClipForPhase(action, phase);
+    if (clipId.empty()) return std::nullopt;
+    const AvatarAnimationSet* set = AvatarAnimationRegistry::instance().getAnimationSet(avatarName);
+    if (!set || !set->valid) return std::nullopt;
+    const auto clipIt = set->clips.find(clipId);
+    if (clipIt == set->clips.end()) return std::nullopt;
+    float sampleTick = (float)elapsed;
+    if (action.animationClipId.empty()) {
+        const int phaseTicks = phase == std::string("windup") ? action.windup.ticks :
+                               phase == std::string("active") ? action.active.ticks : action.recovery.ticks;
+        sampleTick = AnimRotation::samplePhaseClipTick(phaseTick, phaseTicks,
+                                                        (float)clipIt->second.durationTicks);
+    }
+    SampledPartPose pose;
+    if (!sampleClipPart(clipIt->second, sampleTick, hitbox.attachedPart, pose))
+        return std::nullopt;
+    const auto part = std::find_if(gServerBodyTemplate.begin(), gServerBodyTemplate.end(),
+        [&](const ServerPlayerBodyPartTemplate& candidate) { return candidate.name == hitbox.attachedPart; });
+    if (part == gServerBodyTemplate.end()) return std::nullopt;
+
+    glm::mat4 poseMatrix = glm::translate(glm::mat4(1.0f), pose.translation) *
+        glm::mat4_cast(pose.rotation) * glm::scale(glm::mat4(1.0f), pose.scale);
+    const glm::mat4 actorRoot = glm::translate(glm::mat4(1.0f), actorPosition) *
+        glm::rotate(glm::mat4(1.0f), glm::radians(actorYawDegrees), glm::vec3(0, 0, 1));
+    const glm::mat4 limbWorld = actorRoot * part->restTransform * poseMatrix;
+    return glm::vec3(limbWorld * glm::vec4(hitbox.localOffset, 1.0f));
+}
+
+static glm::vec3 legacyCameraBasisHitboxCenter(const glm::vec3& position,
+    const glm::vec3& forward, const WeaponData::MeleeHitbox& hitbox)
+{
+    const glm::vec3 up(0, 0, 1);
     glm::vec3 right = glm::cross(forward, up);
-    if (glm::length(right) < 0.001f)
-        right = glm::vec3(0.0f, 1.0f, 0.0f);
+    if (glm::length(right) < 0.001f) right = {0, 1, 0};
     right = glm::normalize(right);
-
-    const std::string& part = hitbox.attachedPart;
-    glm::vec3 base = attacker.pos + up * 1.2f;  // default shoulder height
-    if (part == "leftLeg" || part == "rightLeg")
-        base = attacker.pos + up * 0.5f;
-    else if (part == "torso")
-        base = attacker.pos + up * 1.1f;
-    else if (part == "head")
-        base = attacker.pos + up * 1.7f;
-
-    // local_offset is expressed in the captured attack basis: x=right, z=forward,
-    // y=up (the authored Melee convention).
-    return base
-        + forward * (0.6f + hitbox.localOffset.z)
-        + right * hitbox.localOffset.x
-        + up * hitbox.localOffset.y;
+    glm::vec3 base = position + up * 1.2f;
+    if (hitbox.attachedPart == "leftLeg" || hitbox.attachedPart == "rightLeg") base = position + up * 0.5f;
+    else if (hitbox.attachedPart == "torso") base = position + up * 1.1f;
+    else if (hitbox.attachedPart == "head") base = position + up * 1.7f;
+    return base + forward * (0.6f + hitbox.localOffset.z) + right * hitbox.localOffset.x + up * hitbox.localOffset.y;
 }
 
 static void emitMeleeActionEvent(const ServerPlayer& attacker, const char* event,
@@ -562,6 +638,8 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
     st.actionId = action.id;
     st.startTick = tick;
     st.forward = forward;
+    st.modelYaw = glm::degrees(std::atan2(npc.aim.y, npc.aim.x));
+    st.lastHitboxCenter = glm::vec3(0.0f);
     st.hitTargets.clear();
     g_meleeActionSnapshots[npc.entityId] = action;
     const int total = action.totalTicks();
@@ -593,6 +671,7 @@ bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
     attacker.meleeActionStartTick = tick;
     attacker.meleePhaseTick = 0;
     attacker.meleeActionForward = horizontalForward(attacker.input.camForward);
+    attacker.meleeActionYaw = attacker.yaw;
     attacker.meleeLastHitboxCenter = glm::vec3(0.0f);
     attacker.meleeHitTargets.clear();
     if (attacker.meleeActionSerial == 0)
@@ -724,7 +803,32 @@ void tickServerMeleeActions(SOCKET sock,
             const WeaponData::MeleeHitbox hitbox =
                 WeaponData::resolveMeleeHitboxForTick(authoredHitbox, phaseTick);
 
-            const glm::vec3 center = meleeHitboxCenter(attacker, hitbox);
+            const auto sampledCenter = animatedLimbHitboxCenter(
+                attacker.avatarName, attacker.pos, attacker.meleeActionYaw,
+                *action, phase, phaseTick, (int)elapsed, hitbox);
+            if (hitbox.attachmentMode == WeaponData::MeleeHitboxAttachmentMode::AnimatedLimb && !sampledCenter) {
+                if (phaseTick == hitbox.activeStartTick)
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Duel, StructuredLevel::Errors,
+                        "melee.hitbox.pose_unavailable", std::to_string(attacker.id),
+                        "animated limb hitbox skipped because its authored pose could not be sampled", tick,
+                        nlohmann::json{{"actor", attacker.id}, {"action", action->id},
+                                       {"clip", actionClipForPhase(*action, phase)},
+                                       {"part", hitbox.attachedPart}, {"mode", "animated_limb"}});
+                continue;
+            }
+            const glm::vec3 center = sampledCenter ? *sampledCenter :
+                legacyCameraBasisHitboxCenter(attacker.pos, attacker.meleeActionForward, hitbox);
+            if (phaseTick == hitbox.activeStartTick)
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "melee.hitbox.transform", std::to_string(attacker.id),
+                    "authoritative hitbox center resolved", tick,
+                    nlohmann::json{{"actor", attacker.id}, {"action", action->id},
+                                   {"part", hitbox.attachedPart},
+                                   {"mode", sampledCenter ? "animated_limb" : "camera_basis"},
+                                   {"center", {center.x, center.y, center.z}},
+                                   {"camera_basis_used_for_position", !sampledCenter}});
             WeaponExecution::PhysicalContactShape shape;
             shape.kind = WeaponExecution::PhysicalShapeKind::Sphere;
             shape.radius = std::max(0.01f, hitbox.size.x);
@@ -875,14 +979,30 @@ void tickServerMeleeActions(SOCKET sock,
                                 continue;
                             const WeaponData::MeleeHitbox hitbox =
                                 WeaponData::resolveMeleeHitboxForTick(authoredHitbox, phaseTick);
-                            const glm::vec3 center = meleeNpcHitboxCenter(npc, st.forward, hitbox);
+                            const auto sampledCenter = animatedLimbHitboxCenter(
+                                npc.avatarName, npc.pos, st.modelYaw, *action, "active",
+                                phaseTick, (int)elapsed, hitbox);
+                            if (hitbox.attachmentMode == WeaponData::MeleeHitboxAttachmentMode::AnimatedLimb && !sampledCenter) {
+                                if (phaseTick == hitbox.activeStartTick)
+                                    StructuredLogger::instance().writeEvent(
+                                        StructuredCategory::Duel, StructuredLevel::Errors,
+                                        "melee.hitbox.pose_unavailable", std::to_string(npc.entityId),
+                                        "NPC animated limb hitbox skipped because its authored pose could not be sampled", tick,
+                                        nlohmann::json{{"actor", npc.entityId}, {"action", action->id},
+                                                       {"clip", actionClipForPhase(*action, "active")},
+                                                       {"part", hitbox.attachedPart}, {"mode", "animated_limb"}});
+                                continue;
+                            }
+                            const glm::vec3 center = sampledCenter ? *sampledCenter :
+                                legacyCameraBasisHitboxCenter(npc.pos, st.forward, hitbox);
                             WeaponExecution::PhysicalContactShape shape;
                             shape.kind = WeaponExecution::PhysicalShapeKind::Sphere;
                             shape.radius = std::max(0.01f, hitbox.size.x);
-                            shape.previousA = center;
+                            shape.previousA = st.lastHitboxCenter == glm::vec3(0.0f) ? center : st.lastHitboxCenter;
                             shape.previousB = center;
                             shape.currentA = center;
                             shape.currentB = center;
+                            st.lastHitboxCenter = center;
                             for (auto& pEntry : players) {
                                 ServerPlayer& target = pEntry.second;
                                 if (target.dead || target.spawnState != ServerPlayer::Active)

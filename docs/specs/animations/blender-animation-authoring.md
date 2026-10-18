@@ -1,9 +1,9 @@
 # Blender Animation Authoring and Import
 
-Status: **SPECIFICATION — standalone interactive exporter script exists;
-Blender execution and runtime acceptance are pending.** The exporter writes the
-shared version-2 clip shape. Server/client use of phase markers for gameplay
-timing is still unimplemented.
+Status: **SPECIFICATION — standalone interactive exporter and 60-tick
+Captain Falcon up/down attack exports are verified; runtime acceptance of these
+moves is pending.** Source code has a shared version-2 clip path and server/client
+marker-based Melee timing; this document describes the authoring contract.
 
 ## Goal and ownership
 
@@ -46,6 +46,47 @@ missing, the script asks for the executable path and shows an example. Every
 interactive prompt includes a short
 explanation and a concrete example. The selected current rig and part Actions
 are defaults when available.
+
+### Repeatable Windows export without AI
+
+Run this from a PowerShell terminal at the repository root whenever you want
+to export an animation yourself:
+
+```powershell
+Set-Location C:\mimita-v9
+py tools\mimita_animation_exporter.py
+```
+
+The script asks for the source `.blend` path and then opens Blender in
+background mode. For Captain Falcon actions in
+`C:\important\quiet\blender-projects\mimita sizing 6.blend`, choose the
+matching root and clip ID:
+
+| Blender action | Rig root | Clip ID |
+|---|---|---|
+| `uppunch20261018` | `plrOrigin.033` | `uppunch_a` |
+| `downpunch20261018` | `plrOrigin.036` | `downpunch_a` |
+| `downkick20261018` | `plrOrigin.037` | `downkick_a` |
+
+For each export, press Enter to keep the six current part Actions, choose
+`Melee`, keep the authored-keyframes and default rest-GLB/output options, then
+enter `C:\mimita-v9\assets\avatars\captainfalcon\animations.json` at the
+optional profile prompt. The exporter writes the matching file under
+`config/animations/library/melee/captainfalcon/` and adds it to the profile's
+`include` list. Run the script once per action. It does not save or modify the
+source `.blend`.
+
+The action's phase markers are exported with its poses. In this scene the
+markers become windup tick 0, active tick 20, recovery tick 40, and exclusive
+`action.end` tick 60. The last keyed frame is sampled at tick 59. To export a
+different clip, change the clip ID, verify the four marker names and order in
+Blender, and choose the desired output path. Use `Generic` for locomotion or
+other non-Melee clips; choose `Melee` only when the four action markers exist.
+
+An assigned `plrOrigin` Action with no transform curves or constant keyed
+placement is harmless and ignored. Any root location, rotation, or scale
+channel that changes during the sampled clip fails clearly because root motion
+is not supported by this exporter.
 
 The script accepts canonical part names and Blender's three-digit duplicate
 suffixes (for example `head.026`). `Authored keyframes` is the default: it writes
@@ -177,17 +218,72 @@ but it does not replace the GLB as the base pose. Export must stop if the
 reference asset or part mapping cannot be resolved. All samples use this same
 reference, so actor placement is not baked into animation offsets.
 
-Conceptually derive `root_relative_part = inverse(root_world) * part_world`,
-then derive the animated local delta against the normalized GLB rest transform.
-The canonical frame is Z-up/down, +X forward, and +Y lateral, as specified by
-the avatar contract. The first exporter computes `poseDelta =
-inverse(restRootRelative) * animatedRootRelative` and serializes translation and
-WXYZ rotation. This matches the runtime's `rest * pose` composition when the
-Blender rig's part origins correspond to the normalized GLB pivots. The script
-does not reproduce geometry-based avatar normalization; align mismatched rig
-pivots before export and compare poses in Blender and MiMITA before acceptance.
-Absolute transforms expressed directly in `plrOrigin` space are a possible
-future format, but are not the current export contract.
+### Exact transform contract and known limitation
+
+The game stores each clip channel as a **delta from the model's runtime rest
+transform**. The runtime applies `runtimeRestLocal * poseDelta`. Blender's
+`matrix_world` is not itself that channel: it includes the Blender scene,
+`plrOrigin`, parent transforms, and Blender's GLB-import coordinate handling.
+
+For each mapped part, the exporter must calculate matrices in one declared
+canonical game frame, using column-vector composition:
+
+```text
+restRootRelative     = inverse(restRootWorld) * restPartWorld
+animatedRootRelative = inverse(animatedRootWorld) * animatedPartWorld
+poseDelta            = inverse(restRootRelative) * animatedRootRelative
+runtimePartLocal     = runtimeRestLocal * poseDelta
+```
+
+`poseDelta` is serialized as local translation in meters and a normalized
+quaternion in `[w, x, y, z]` order. It is not an absolute world transform, and
+the animation root is not included in a part channel. This multiplication order
+is mandatory; changing it changes both the pivot and the resulting rotation.
+
+The game may canonicalize a player's GLB before playback. In the current
+player-canonical loader, the root is reset to identity and each named part node
+uses the runtime's canonical bind rotation while its source mesh correction is
+baked into the mesh. The exporter's rest matrix must therefore represent that
+same canonical runtime rest matrix for the selected avatar. Merely importing
+`mimita-char-no-animations-v4.glb` in Blender and calling it “normalized” does
+not prove equivalence. The selected GLB, importer axis conversion, root frame,
+part origins, runtime normalization policy, and parent hierarchy must all be
+accounted for. A matching part name alone does not establish a matching pivot.
+
+**Verified Blender 5 / default-player basis:** Blender's glTF importer expresses
+the default reference GLB's part transforms in the imported Blender basis. In
+the Captain Falcon authoring scene, `plrOrigin.027` stores the rotation that
+maps this basis to the runtime GLB basis in its quaternion field. The scene's
+active Euler transform is identity, so the exporter must read and validate that
+stored quaternion explicitly; using the evaluated root matrix would incorrectly
+choose identity. For this calibration, `B` is −90° around X (up to quaternion
+sign), with root translation and scale excluded. Convert each already-computed
+rest-relative delta once as `deltaGame = B * deltaBlender * inverse(B)`. This
+converts the local pivot translation and rotation together; do not add an extra
+Euler angle or apply the conversion in the runtime too. The exporter prints the
+basis quaternion and fails if it differs from the calibrated default-player
+basis. This calibration applies to the default Z-up player reference and the
+supported direct-child six-part rig; other rigs need their own verified mapping
+before export.
+
+**Blender 5 Action evaluation:** sample the selected Action's FCurves for its
+assigned object slot (`location`, `rotation_quaternion` or `rotation_euler`,
+and `scale`) at each requested frame. Do not use `evaluated.matrix_world` as
+the sampled pose: Blender 5 background evaluation may leave it at the imported
+frame-1 transform even though the Action curves evaluate correctly. Construct
+the object's transform from those evaluated channels, remove the parent and
+`plrOrigin` frame, and compare with the imported GLB rest part. A `Rest pose`
+selection emits an identity delta. Reject unsupported constraints, animated
+root transform channels, or non-direct part hierarchy rather than silently
+exporting a stale or partial pose. An assigned root Action with no transform
+channels is ignored.
+
+The game parser's WXYZ ordering, normalization, and shortest-arc interpolation
+are source-confirmed. The basis and channel fixes resolve the observed exporter
+errors, but live playback of `upkick_a` and human visual comparison against
+Blender are still required for visual acceptance. Absolute transforms in
+`plrOrigin` space remain
+a possible separate format, not this contract.
 
 ## Proposed Blender workflow
 
@@ -252,14 +348,22 @@ keyframe ticks `0` through `durationTicks - 1`. Marker frames use the same
 frame-to-tick convention; the final exclusive end marker may be at
 `durationTicks`.
 
-Blender transforms must become part-local offsets relative to the normalized
-rest pose and canonical runtime pivots. Both Blender and MiMITA use Z-up; the
-canonical game frame uses +X forward and +Y lateral. Apply the agreed
-normalization/pivot conversion once and report it; do not add a guessed root
-rotation. Euler XYZ and WXYZ quaternion are both allowed by the shared format;
-quaternions use explicit WXYZ order. The exact normalized matrix/pivot delta,
-unit handling, parent-transform extraction, and Euler conversion must be
-verified against an in-game reference pose before exporter acceptance.
+Blender transforms must become part-local offsets relative to the runtime's
+normalized rest pose and canonical pivots, using the equations above. Translation
+is in meters; rotation is a normalized WXYZ quaternion. Blender frame rate and
+transform units must be recorded in the export report. Any basis conversion is
+applied to matrices before delta extraction, exactly once. Rotation values are
+rounded to two decimal places in JSON, and negative or near-zero values serialize
+as `0.0`; runtime normalizes the rounded quaternion before interpolation. This
+formatting is for readable, editable files, not evidence that the basis/pivot is
+correct. The exact reference matrix, pivot, parent extraction, and transform
+parity must be verified against the avatar's runtime bind pose before acceptance.
+
+Two decimal places quantize translations to one-centimeter steps and quaternion
+components to 0.01 before runtime normalization. This precision is a deliberate
+readability choice; if visual review finds unacceptable rotation quantization,
+raise quaternion precision independently while keeping the no-scientific-noise
+rule. Never round matrices before deriving the delta.
 
 The actor root remains the authoritative movement origin. Limb animation does
 not silently move the actor root; gameplay root movement/impulses stay with the

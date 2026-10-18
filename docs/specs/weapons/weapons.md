@@ -329,7 +329,8 @@ The target data shape is conceptually:
               "attached_part": "rightHand",
               "shape": "capsule",
               "size": [0.0, 0.0, 0.0],
-              "local_offset": [0.0, 0.0, 0.0]
+              "local_offset": [0.0, 0.0, 0.0],
+              "attachment_mode": "animated_limb"
             }
           ],
           "damage": { "base_percent": 0.0, "shield_damage": 0.0 },
@@ -358,6 +359,18 @@ The target data shape is conceptually:
   }
 }
 ```
+
+`attachment_mode` is `animated_limb` or the migration-only `camera_basis`.
+`animated_limb` is the required default for newly authored Melee hitboxes:
+resolve the named part's sampled authored animation pose, apply
+`local_offset` in that part's local model frame, then apply the actor root
+position and captured model yaw. Camera direction or pitch must never enter
+this position transform. The server uses the same clip sample and model-rest
+transform as the client; if it cannot resolve the clip, named part, or rest
+transform, it skips that hitbox and emits a bounded diagnostic. It must not
+fall back to a camera-basis guess. `camera_basis` exists only to load legacy
+content and must be explicitly selected. This mode selects a transform owner;
+it does not retune shape size or limb-local offset.
 
 This is an illustrative schema, not a current parser contract. The referenced
 clip's `durationTicks` and phase markers in the animation asset are the only

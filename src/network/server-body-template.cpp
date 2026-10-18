@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -205,6 +206,38 @@ bool loadServerBodyTemplateFromGlb(const char* path,
                 parent[child] = (int)i;
     }
 
+    // The default player model uses the same legacy rest-pose overrides as
+    // Player::loadModel. Keep server-attached melee points in that exact frame.
+    std::ifstream bodypartsFile("config/bodyparts.json");
+    if (bodypartsFile.is_open()) {
+        try {
+            const nlohmann::json bodyparts = nlohmann::json::parse(bodypartsFile);
+            for (size_t i = 0; i < n; ++i) {
+                const std::string name = bodyPartBaseName(model.nodes[i].name);
+                if (!isBodyPartName(name) || !bodyparts.contains(name) ||
+                    !bodyparts[name].is_object())
+                    continue;
+                const auto& part = bodyparts[name];
+                glm::vec3 t(0.0f), r(0.0f), s(1.0f);
+                auto read3 = [](const nlohmann::json& obj, const char* key, glm::vec3& v) {
+                    if (!obj.contains(key) || !obj[key].is_array() || obj[key].size() < 3) return;
+                    v = {obj[key][0].get<float>(), obj[key][1].get<float>(), obj[key][2].get<float>()};
+                };
+                read3(part, "offset", t);
+                read3(part, "rotation", r);
+                read3(part, "scale", s);
+                glm::mat4 m = glm::translate(glm::mat4(1.0f), t);
+                if (r.z != 0.0f) m = glm::rotate(m, glm::radians(r.z), glm::vec3(0, 0, 1));
+                if (r.y != 0.0f) m = glm::rotate(m, glm::radians(r.y), glm::vec3(0, 1, 0));
+                if (r.x != 0.0f) m = glm::rotate(m, glm::radians(r.x), glm::vec3(1, 0, 0));
+                local[i] = m * glm::scale(glm::mat4(1.0f), s);
+            }
+        } catch (...) {
+            Debug::warn(Debug::Category::NpcCombat,
+                        "[BODY TEMPLATE] invalid config/bodyparts.json; using GLB rest transforms\n");
+        }
+    }
+
     // World transforms at the default pose (root-anchored at origin).
     std::vector<glm::mat4> world(n, glm::mat4(1.0f));
     for (size_t i = 0; i < n; ++i)
@@ -225,11 +258,13 @@ bool loadServerBodyTemplateFromGlb(const char* path,
 
     // Root position = world origin of the root node (model rooted at player.pos).
     glm::vec3 rootPos(0.0f);
+    glm::mat4 rootTransform(1.0f);
     for (size_t i = 0; i < n; ++i)
     {
         if (parent[i] < 0)
         {
             rootPos = glm::vec3(world[i] * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+            rootTransform = world[i];
             break;
         }
     }
@@ -249,7 +284,9 @@ bool loadServerBodyTemplateFromGlb(const char* path,
         const glm::vec3 worldCenter = glm::vec3(world[i] * glm::vec4(localCenter, 1.0f));
 
         ServerPlayerBodyPartTemplate t;
+        t.name = name;
         t.offset = worldCenter - rootPos;
+        t.restTransform = glm::inverse(rootTransform) * world[i];
         t.half = half;
         if (name == "head")
             t.bodyPart = 1;

@@ -246,13 +246,13 @@
     // Horizontal velocity impulse from a grounded dash.
     //
     // Matches the fast Source preset.
-    "ground_dash_impulse": 10.0,
+    "ground_dash_impulse": 25.0,
     // "ground_dash_impulse": 50.0,
 
     // Horizontal velocity impulse from an airborne dash.
     //
     // Matches the fast Source preset.
-    "air_dash_impulse": 10.0,
+    "air_dash_impulse": 25.0,
     // "air_dash_impulse": 50.0,
 
     // Vertical velocity assigned by down-dash.

@@ -365,16 +365,16 @@ illustrative stable IDs; timings and detailed tuning remain open.
 | Any state: WASD | `move_horizontal` | Horizontal movement only; never changes attack direction/variant. Reuse existing movement values. |
 | Space | `jump` | Uses the configured Melee jump input mode from `config/movement/movement-smash.json`; press mode jumps on key-down, hold-scaled mode jumps immediately with minimum strength and adds a tick-based upward boost while held for up to 10 ticks. |
 | Grounded: left click | `a_ground_punch` | Play punch animation. A second left-click within the default 30-tick, JSON-editable window selects a distinct double-punch animation. |
-| Grounded: right click | `b_falcon_punch` | Play Falcon Punch. Every new right-click starts the same animation again from tick 0. |
-| Airborne: left click | `a_air_kick` | Play the air-kick animation; another left-click may restart the same move. A configurable forward/up impulse may be applied on the first active tick. |
-| Airborne: right click | `b_air_forward_dash` | Play its configured windup/hold pose, then apply its JSON-configured forward/up impulse on the first active tick; do not change global gravity for one move. |
-| Grounded: Space + left click | `a_uptilt` + `jump` | Start the uptilt and jump in the same tick. This combination is explicitly allowed. |
-| Airborne: Space held + left click | `a_air_up_kick` | Upward kick using the authored animation and hitbox. |
-| Airborne: Space held + right click | `b_air_up_special` | Upward special with JSON-configured upward momentum and hitbox. |
-| Grounded: Ctrl held + left click | `a_ground_sweep` | Forward ground-sweep kick. |
-| Grounded: Ctrl held + right click | `b_falcon_punch` | Falcon Punch starts and exits the crouch pose. |
-| Airborne: Ctrl held + left click | `a_air_down_kick` | Downward kick. |
-| Airborne: Ctrl held + right click | `b_air_down_strike` | Strong downward special with configurable forward/downward impulse or displacement; example only: +5 m camera-forward and −10 m world-up-axis displacement. |
+| Grounded: right click | `b_falcon_punch` | Play the normal `punch_a` clip. Every new right-click starts the same animation again from tick 0. |
+| Airborne: left click | `a_air_kick` | Play the normal `kick_a` animation; another left-click may restart the same move. A configurable forward/up impulse may be applied on the first active tick. |
+| Airborne: right click | `b_air_forward_dash` | Play the normal `kick_a` animation with its configured forward/up impulse. |
+| Grounded: Space + left click | `a_uptilt` + `jump` | Start the `uppunch_a` animation and jump in the same tick. This combination is explicitly allowed. |
+| Airborne: Space held + left click | `a_air_up_kick` | Play the `uppunch_a` animation and upward hitbox/impulse. |
+| Airborne: Space held + right click | `b_air_up_special` | Play `uppunch_a` with the stronger JSON-configured upward momentum and hitbox. |
+| Grounded: Ctrl held + left click | `a_ground_sweep` | Play the authored `downpunch_a` animation. |
+| Grounded: Ctrl held + right click | `b_falcon_punch_crouch` | Play the same `downpunch_a` animation with the stronger B-move combat values. |
+| Airborne: Ctrl held + left click | `a_air_down_kick` | Play the authored `downkick_a` animation. |
+| Airborne: Ctrl held + right click | `b_air_down_strike` | Play the same `downkick_a` animation with the stronger B-move combat values and configured forward/downward impulse. |
 | Q held | `shield` | Hold-based 50-point / 300-tick shield described in section 29. |
 | E | `grab` | Starts the configurable pull grab described in section 30; never freezes the victim. |
 | Left Ctrl without attack | `crouch_or_fast_fall` | Existing crouch/downward movement behavior on ground/air; the pose implementation is open. |
@@ -714,6 +714,8 @@ The shared animation owner must expose an explicit pose-composition policy so a 
 
 At each fixed tick, derive the hitbox world transform from the attacker's authoritative actor root and sampled animated limb pose, then sweep the configured shape from its previous to current transform. Use the same resolved transform and shape for contact testing and visualization. During each active tick, render the attack volume as a translucent red shape with 0.5 alpha for player- and NPC-originated attacks on observing clients. The visual follows the same limb and tick-specific geometry used by the contact query; a separate visual-only approximation is not acceptable.
 
+**Attachment mode:** Melee hitboxes use `attachment_mode: "animated_limb"`. The server samples the action's animation clip at the same action/phase tick used by the actor pose, resolves the named limb from its normalized rest transform, transforms `local_offset` through that limb's full transform, then applies the actor root position and captured model yaw. This mode is camera-independent: camera position, pitch, and camera-forward vectors do not determine the hitbox center or orientation. The camera may still select action facing or movement impulses where those separate rules say so. A missing clip, part, or rest transform makes the hitbox unavailable for that tick and must produce a bounded diagnostic; do not substitute an estimated shoulder/foot point or camera-relative placement. `camera_basis` is an explicit migration-only mode for legacy definitions. Server contact and client visualization must use the same sampled clip tick, limb transform, and resolved per-tick geometry. The current implementation must be checked against the live runtime; the earlier implementation audit did not prove this contract.
+
 The shared contact result uses Force Punch's normalized contact-center proximity and movement-through-volume force inputs, together with Melee's already specified approach directness. Those inputs feed one shared force calculation for the move's percent and knockback. Melee's result policy adds percent and applies impulse to either player or NPC actors; it does not substitute ordinary health damage. Outside Melee, a reused contact result must still pass through the active mode's damage/result policy. Keep the exact combined force curve, normalization, and caps open as recorded in sections 25–26 until they are selected or explicitly made JSON-editable provisional tuning.
 
 Keep the existing hit-count decision open under section 23: adding per-active-tick geometry does not by itself decide whether one target can be confirmed once per activation or multiple times. All client prediction, server validation, actor generation, move revision, and accepted-result replication continue to follow sections 23–24 and the shared networking contract.
@@ -861,3 +863,5 @@ so like active ticks, sphere radius, offset, etc
   Leave the wall and collision issues for later investigation.
 
 2026 10 18 if the npc dies, then the servre crashes 
+
+2026 10 18 1515 - npc punches me and i dont have percentage incereases or antthing, also npc damgee doesnt  mkae a sound iw ant ot hear the sounds from the npcs as well and other plaeyrs as well 

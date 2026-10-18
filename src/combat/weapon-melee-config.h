@@ -42,6 +42,11 @@ enum class MeleeModifier {
     Crouch  // Ctrl (down)
 };
 
+enum class MeleeHitboxAttachmentMode : uint8_t {
+    CameraBasis = 0, // legacy compatibility
+    AnimatedLimb = 1
+};
+
 struct MeleePhase {
     int ticks = 1;          // 1..999
     std::string clipId;     // phase clip/pose reference (may be empty for fallback)
@@ -57,10 +62,12 @@ struct MeleeHitboxTick {
 
 struct MeleeHitbox {
     std::string id;
+    bool valid = true;
     std::string attachedPart;          // head|torso|leftArm|rightArm|leftLeg|rightLeg
     std::string shape = "sphere";      // sphere|capsule|box
     glm::vec3 size{0.5f};              // sphere: radius in x; capsule/box: extents
     glm::vec3 localOffset{0.0f};       // in the attached part's local frame (meters)
+    MeleeHitboxAttachmentMode attachmentMode = MeleeHitboxAttachmentMode::AnimatedLimb;
     // Active window is phase-local and validated to the active phase; both are
     // clamped so the window stays inside the action's active phase.
     int activeStartTick = 0;

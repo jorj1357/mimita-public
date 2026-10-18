@@ -413,11 +413,17 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     bool nowMoving = locoInputTriggered ? movementPressed : (move01 >= 0.01f);
     previousMove01 = move01;
 
-    // Brief landing pose timer for the optional `land` state clip.
-    if (ground.didLand)
-        landAnimTimer = 0.12f;
-    else
+    // Landing outranks locomotion and holds the whole authored one-shot. Keep
+    // the short legacy fallback only when this profile has no landing clip.
+    const AnimClip* landingClip = sm ? findClip(sm->land) : nullptr;
+    const float landingDuration = landingClip
+        ? (float)std::max(1, landingClip->durationTicks) / 60.0f
+        : 0.12f;
+    if (ground.didLand) {
+        landAnimTimer = landingDuration;
+    } else {
         landAnimTimer = std::max(0.0f, landAnimTimer - dt);
+    }
 
     // Hit reaction: a brief, interruptible authored `hurt` pose on a percent
     // increase (presentation only — Melee has no hitstun).
@@ -452,6 +458,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             activeAnim = sm->respawn;
         else if (hurtTimer > 0.0f && !sm->hurt.empty())
             activeAnim = sm->hurt;
+        // Landing holds over automatic movement states until its one-shot ends.
+        // Terminal states, hit reaction, and explicit locked actions still win.
         else if (landAnimTimer > 0.0f && !sm->land.empty())
             activeAnim = sm->land;
         else if (airborne && rising && !sm->jump.empty())
@@ -500,7 +508,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     if (activeAnim != currentAnimName) {
         const std::string prevAnim = currentAnimName;
         currentAnimName = activeAnim;
-        animStateTime = 0.0f;
+        const bool restartLanding = ground.didLand && lockedClip.empty() && sm &&
+                                    activeAnim == sm->land;
+        // The transition tick itself samples the first landing pose (tick 0).
+        animStateTime = restartLanding ? -dt : 0.0f;
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Avatar, StructuredLevel::Important,
             "anim.state.changed", avatarName().empty() ? username : avatarName(),
@@ -519,6 +530,12 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
              {"move01", move01},
              {"velocity", {vel.x, vel.y, vel.z}}},
             __FILE__, __LINE__, __FUNCTION__);
+    } else if (ground.didLand && lockedClip.empty() && sm &&
+               activeAnim == sm->land) {
+        // A second landing can occur before the prior landing clip changes
+        // state. Retrigger that same clip from tick 0 instead of leaving it
+        // clamped at its final pose.
+        animStateTime = -dt;
     }
 
     animStateTime += dt;

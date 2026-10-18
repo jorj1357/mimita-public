@@ -167,6 +167,13 @@ void parseHitbox(const json& j, MeleeHitbox& out)
         out.shape = normalizedToken(j["shape"].get<std::string>());
     jsonVec3(j, "size", out.size);
     jsonVec3(j, "local_offset", out.localOffset);
+    const std::string attachmentMode = j.value("attachment_mode", std::string("animated_limb"));
+    if (attachmentMode == "animated_limb")
+        out.attachmentMode = MeleeHitboxAttachmentMode::AnimatedLimb;
+    else if (attachmentMode == "camera_basis")
+        out.attachmentMode = MeleeHitboxAttachmentMode::CameraBasis;
+    else
+        out.valid = false;
     if (j.contains("per_tick") && j["per_tick"].is_array()) {
         for (const json& entry : j["per_tick"]) {
             if (!entry.is_object() || !entry.contains("tick") || !entry["tick"].is_number_integer())
@@ -313,13 +320,13 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
         for (const json& h : j["hitboxes"]) {
             MeleeHitbox hb;
             parseHitbox(h, hb);
-            if (!hb.attachedPart.empty())
+            if (hb.valid && !hb.attachedPart.empty())
                 out.hitboxes.push_back(hb);
         }
     } else if (j.contains("hitbox") && j["hitbox"].is_object()) {
         MeleeHitbox hb;
         parseHitbox(j["hitbox"], hb);
-        if (!hb.attachedPart.empty())
+        if (hb.valid && !hb.attachedPart.empty())
             out.hitboxes.push_back(hb);
     }
     // Clamp each hitbox window to the action's active phase.

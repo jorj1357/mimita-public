@@ -121,6 +121,34 @@ Rules:
   avatar. They are the generalized library for "any avatar".
 - Exactly one animation format version number at the top of every file.
 
+### Melee action clip availability
+
+**Current workflow — 2026-10-18 15:55 EDT (19:55 UTC):** A clip in
+`config/animations/library/` is not automatically part of an avatar's loaded
+animation set. Until automatic discovery is implemented, add each Melee action
+clip file to the active avatar's `animations.json` `include` list. Keep the
+move's `animation_clip_id` in `config/weapons.json` matched to the clip ID in
+that included file.
+
+When a Melee action has no visible animation in game, check these links in
+order:
+
+1. Find the active avatar's animation profile from `avatar.json` (or its
+   default `animations.json` path).
+2. Confirm that profile's `include` list contains the file that defines the
+   action's `animation_clip_id`.
+3. Confirm that included file defines that exact clip ID, with no duplicate
+   clip ID in the shared library.
+4. Confirm the Melee action in `config/weapons.json` references that same ID.
+5. Check the `anim.melee.clip_missing` diagnostic and profile fallback if the
+   clip still does not appear.
+
+**Future follow-up — OPEN:** Make shared Melee clips discoverable by the
+action's clip ID without manually adding every action clip to each avatar
+profile. Define how discovery remains deterministic when clip IDs collide and
+how actor-specific profiles restrict eligible clips before replacing the
+explicit-include workflow. Automatic discovery is not implemented yet.
+
 ## `avatar.json` rig contract
 
 The rig is additive to the existing avatar schema and does not change the six
@@ -439,9 +467,11 @@ based on whether Blender supplied Euler angles or a quaternion:
 
 1. **Sample a pose at a simulation tick.** Blender frame/curve evaluation is
    converted to an integer 60 Hz tick by the exporter's declared sampling
-   rule. Evaluate the Blender object/bone transform at that sample; do not
-   treat a Blender frame number as a game tick unless the scene rate proves the
-   mapping is exactly 60 frames per second.
+   rule. In Blender 5, evaluate the selected Action's assigned-slot FCurves and
+   construct the transform from its location, rotation, and scale channels;
+   do not rely on a potentially stale background `evaluated.matrix_world`.
+   Do not treat a Blender frame number as a game tick unless the scene rate
+   proves the mapping is exactly 60 frames per second.
 2. **Extract the local part orientation.** Remove parent/world transforms and
    express the pose relative to the part's normalized rest frame and pivot.
    The exported pose is a local orientation, never a world-space quaternion.
@@ -453,8 +483,13 @@ based on whether Blender supplied Euler angles or a quaternion:
    `R_game = B * R_source * inverse(B)`, then convert that matrix to a
    quaternion. Convert local translation offsets as `t_game = B * t_source`.
    The exporter reports the selected `B`; runtime must not guess another axis
-   correction or apply the conversion again. Validate `B` against the
-   normalized avatar frame before accepting an exporter.
+   correction or apply the conversion again. For the supported Blender 5
+   direct-child player rig and default player GLB, `B` is the selected rig
+   root's stored quaternion basis (the supported scene has an identity active
+   Euler transform and stores −90° around X in that quaternion), calibrated
+   against the reference asset. Root translation and scale are excluded. This
+   mapping applies only to that rig/reference pair; reject other rigs until
+   their basis and pivots are verified.
 4. **Normalize to the canonical runtime value.** For Euler input, interpret
    version-2 `rotationEulerDegrees` as XYZ degrees composed exactly as
    `Rx * Ry * Rz` (`qx * qy * qz`), then apply basis conversion and normalize.
@@ -507,6 +542,14 @@ must make the chosen basis and source encoding inspectable. The canonical axis
 convention is decided by `avatar-editor.md`; the exact normalized GLB-to-runtime
 matrix and pivot delta remain implementation prerequisites.
 
+Blender JSON output uses two decimal places for serialized transform values;
+negative zero and values that round to zero serialize as `0.0`, never scientific
+notation. The runtime normalizes rounded quaternion components before use. This
+is a readability/authoring precision rule, not a substitute for a correct basis
+or pivot conversion. If visual review finds quaternion quantization too coarse,
+quaternion precision may be increased independently while retaining zero
+cleanup and non-scientific output.
+
 Version-2 examples for the two supported authoring encodings:
 
 ```json
@@ -545,6 +588,15 @@ part, plus the special key `plrOrigin` for whole-body root motion.
 
 States are logical; clips are concrete. The machine is evaluated once per fixed
 tick after movement and combat have produced their flags.
+
+For the built-in actor-state selector, precedence from lowest to highest is
+`idle < crouch < walk < run < jump < fall < land < hurt < respawn < death`.
+An explicit locked action clip, hurt, respawn, or terminal state may replace the
+selected state clip. Landing starts at clip tick 0 on the landing tick
+(including a retrigger while the same clip is active) and remains selected over
+automatic jump, fall, crouch, locomotion, and idle states until its non-looping
+clip duration has elapsed. The latest automatic state resumes afterward. If the
+profile has no landing clip, the existing brief landing fallback remains.
 
 | State | Entered when | Default clip resolution | Loop | One-shot |
 |---|---|---|---|---|
