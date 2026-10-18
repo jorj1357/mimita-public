@@ -251,6 +251,22 @@ duration 45 with markers at 0, 10, 25, and 45 means windup `[0,10)`, active
 `[10,25)`, and recovery `[25,45)`. The last sampled pose is tick 44. A phase may
 not be empty; markers must be strictly increasing.
 
+`phase.windup` is the action's starting boundary and must be at tick 0. The
+`phase.active` marker is the first active tick; `phase.recovery` is the first
+recovery tick. To author a 10-tick windup, set `phase.active.tick` to 10; do
+not move `phase.windup` to 10. To author a 15-tick active phase after that,
+set `phase.recovery.tick` to 25. Recovery then continues up to, but not
+including, `action.end`.
+
+These marker values are editable in the exported clip JSON. That JSON is the
+runtime source for the move's duration and phase timing. `durationTicks` must
+equal the exclusive `action.end` tick. For example, markers at 0, 10, 25, and
+50 make the clip 50 ticks long: windup is 10 ticks, active is 15 ticks,
+recovery is 25 ticks, and the final sampled pose is tick 49. Changing
+`action.end` from 60 to 50 therefore also changes `durationTicks` from 60 to
+50. Pose keyframes remain independent; they do not need to be added for every
+marker unless a specific pose is desired at that boundary.
+
 ```json
 "markers": [
   { "name": "phase.windup", "tick": 0 },
@@ -339,6 +355,18 @@ windup, active, and recovery windows. Playback samples the clip directly at
 elapsed clip tick; there is no normalized phase retiming. Editing the clip's
 markers and keyframes together changes both the visible action and its active
 window without editing a second timing file.
+
+This is the required/default Melee runtime behavior for every action using
+`animation_clip_id`, not an optional playback mode. `config/weapons.json`
+supplies that clip ID and non-timing combat data such as hitboxes and damage;
+it may not also supply phase durations or separate phase clip IDs. The runtime
+resolves the ID from `config/animations/library`, validates the four markers,
+and derives duration and phase lengths from them. If the referenced clip or
+its required markers are missing, ambiguous, or invalid, that action is
+invalid; it never falls back to weapon-config timing. Existing actions with
+only the old `phases` object remain an explicit migration compatibility path
+until each is given a single clip and markers. That compatibility path does
+not apply when an `animation_clip_id` is present.
 
 Tick zero is the first action tick. For duration `N`, sample ticks `0` through
 `N-1`; `action.end` at tick `N` is exclusive and means the action is complete

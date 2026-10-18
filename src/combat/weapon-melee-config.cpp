@@ -14,14 +14,66 @@
 #include "../debug/structured-log.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <string>
+
+#include "../utils/path_utils.h"
 
 namespace WeaponData {
 
 namespace {
 
 using json = nlohmann::json;
+
+bool loadClipTimeline(const std::string& clipId, int& duration,
+                      int& windupEnd, int& activeEnd)
+{
+    const std::filesystem::path root(resolveAssetPath("config/animations/library"));
+    std::error_code ec;
+    if (!std::filesystem::is_directory(root, ec) || ec)
+        return false;
+
+    bool found = false;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
+        if (ec) return false;
+        if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+        std::ifstream file(entry.path());
+        if (!file.is_open()) continue;
+        json document;
+        try { file >> document; } catch (...) { continue; }
+        if (!document.contains("clips") || !document["clips"].is_object() ||
+            !document["clips"].contains(clipId)) continue;
+        if (found) return false; // ambiguous IDs are invalid, never pick by directory order
+        found = true;
+        const json& clip = document["clips"][clipId];
+        if (!clip.is_object() || !clip.contains("durationTicks") ||
+            !clip["durationTicks"].is_number_integer() ||
+            !clip.contains("markers") || !clip["markers"].is_array()) return false;
+        duration = clip["durationTicks"].get<int>();
+        int starts[4] = {-1, -1, -1, -1};
+        const char* names[4] = {"phase.windup", "phase.active", "phase.recovery", "action.end"};
+        for (const json& marker : clip["markers"]) {
+            if (!marker.is_object() || !marker.contains("name") ||
+                !marker["name"].is_string() || !marker.contains("tick") ||
+                !marker["tick"].is_number_integer()) continue;
+            const std::string name = marker["name"].get<std::string>();
+            for (int i = 0; i < 4; ++i) {
+                if (name == names[i]) {
+                    if (starts[i] >= 0) return false;
+                    starts[i] = marker["tick"].get<int>();
+                }
+            }
+        }
+        if (starts[0] != 0 || starts[1] <= starts[0] ||
+            starts[2] <= starts[1] || starts[3] <= starts[2] ||
+            starts[3] != duration) return false;
+        windupEnd = starts[1];
+        activeEnd = starts[2];
+    }
+    return found;
+}
 
 std::string normalizedToken(std::string value)
 {
@@ -230,7 +282,27 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
     if (j.contains("double_click_action") && j["double_click_action"].is_string())
         out.doubleClickAction = j["double_click_action"].get<std::string>();
 
-    if (j.contains("phases") && j["phases"].is_object()) {
+    if (j.contains("animation_clip_id") && !j["animation_clip_id"].is_string()) {
+        Debug::warn(Debug::Category::Weapons,
+            "[MELEE] action '%s' has a non-string animation_clip_id; skipped\n",
+            out.id.c_str());
+        return false;
+    }
+    if (j.contains("animation_clip_id") && j["animation_clip_id"].is_string()) {
+        out.animationClipId = j["animation_clip_id"].get<std::string>();
+        int duration = 0, activeStart = 0, recoveryStart = 0;
+        if (out.animationClipId.empty() ||
+            !loadClipTimeline(out.animationClipId, duration, activeStart, recoveryStart)) {
+            Debug::warn(Debug::Category::Weapons,
+                "[MELEE] action '%s' has missing, ambiguous, or invalid clip timeline '%s'; skipped\n",
+                out.id.c_str(), out.animationClipId.c_str());
+            return false;
+        }
+        out.windup.ticks = activeStart;
+        out.active.ticks = recoveryStart - activeStart;
+        out.recovery.ticks = duration - recoveryStart;
+    } else if (j.contains("phases") && j["phases"].is_object()) {
+        // Explicit compatibility for existing actions not migrated to one clip yet.
         const json& p = j["phases"];
         if (p.contains("windup")) parsePhase(p["windup"], out.windup);
         if (p.contains("active")) parsePhase(p["active"], out.active);

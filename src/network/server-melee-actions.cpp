@@ -564,7 +564,7 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
     st.forward = forward;
     st.hitTargets.clear();
     g_meleeActionSnapshots[npc.entityId] = action;
-    const int total = action.windup.ticks + action.active.ticks + action.recovery.ticks;
+    const int total = action.totalTicks();
     st.nextAttackTick = tick + (uint32_t)std::max(1, total) + 20u;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
@@ -606,6 +606,19 @@ bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
 
     emitMeleeActionEvent(attacker, "melee.action.start",
                          "melee action started", tick, action->id);
+    if (!action->animationClipId.empty()) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "melee.action.timeline", std::to_string(attacker.id),
+            "melee action uses its authored clip timeline", tick,
+            nlohmann::json{{"actor", attacker.id}, {"action", action->id},
+                           {"animation_clip_id", action->animationClipId},
+                           {"duration_ticks", action->totalTicks()},
+                           {"windup_ticks", action->windup.ticks},
+                           {"active_ticks", action->active.ticks},
+                           {"recovery_ticks", action->recovery.ticks},
+                           {"weapon_config_timing_used", false}});
+    }
     return true;
 }
 
@@ -673,7 +686,7 @@ void tickServerMeleeActions(SOCKET sock,
         const int windup = action->windup.ticks;
         const int active = action->active.ticks;
         const int recovery = action->recovery.ticks;
-        const int total = windup + active + recovery;
+        const int total = action->totalTicks();
 
         if ((int)elapsed >= total) {
             // action can point into g_meleeActionSnapshots. Copy its ID before
@@ -851,7 +864,7 @@ void tickServerMeleeActions(SOCKET sock,
                     const uint32_t elapsed = tick - st.startTick;
                     const int windup = action->windup.ticks;
                     const int active = action->active.ticks;
-                    const int total = windup + active + action->recovery.ticks;
+                    const int total = action->totalTicks();
                     if ((int)elapsed >= total || (int)elapsed < 0) {
                         st.active = false;
                         g_meleeActionSnapshots.erase(npc.entityId);

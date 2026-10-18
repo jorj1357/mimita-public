@@ -206,7 +206,11 @@ future format, but are not the current export contract.
    requires it.
 4. Add named Blender timeline markers for phase boundaries and events. A Melee
    action uses `phase.windup`, `phase.active`, `phase.recovery`, and
-   `action.end`. The script validates marker order and range before writing.
+   `action.end`. These are scene-timeline markers exported once for the whole
+   clip; they are not copied to each limb Action and do not create separate
+   phase animations. `phase.windup` starts at tick 0; the other markers set the
+   active start, recovery start, and exclusive end. The script validates marker
+   order and range before writing.
 5. Author on a 60 FPS timeline. The first sampled Action frame maps to game
    tick 0, so frames 1–60 map to ticks 0–59. Authored-keyframe mode writes the
    union of keyed integral frames; dense mode writes one evaluated pose per tick.
@@ -336,7 +340,10 @@ silently choose an unresolved basis or rest pose.
 
 The report is not a second source of truth. Timing and poses live in the
 animation JSON. `weapons.json` references the clip ID and stores non-timing
-combat data.
+combat data. After export, marker tick values can be edited directly in that
+clip JSON; `durationTicks` must match `action.end`. Re-exporting from Blender
+writes the scene's marker positions again, so mirror JSON timing edits in the
+Blender timeline before the next export.
 
 ### Validation and failure behavior
 

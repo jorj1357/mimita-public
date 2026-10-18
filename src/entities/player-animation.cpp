@@ -149,6 +149,7 @@ void Player::playOneShot(const std::string& clip, bool loop)
     lockedClipLoop = loop;
     lockedClipPhaseTick = 0;
     lockedClipPhaseTicks = 0;
+    lockedClipSampleTick = -1;
 }
 
 void Player::playOneShotPhase(const std::string& clip, int phaseTick, int phaseTicks)
@@ -162,6 +163,18 @@ void Player::playOneShotPhase(const std::string& clip, int phaseTick, int phaseT
     lockedClipLoop = true;
     lockedClipPhaseTick = std::max(0, phaseTick);
     lockedClipPhaseTicks = phaseTicks;
+    lockedClipSampleTick = -1;
+}
+
+void Player::playOneShotAtTick(const std::string& clip, int clipTick)
+{
+    if (clip.empty()) return;
+    if (lockedClip != clip) lockedClipTime = 0.0f;
+    lockedClip = clip;
+    lockedClipLoop = true; // The action owner clears it at the exclusive end marker.
+    lockedClipPhaseTick = 0;
+    lockedClipPhaseTicks = 0;
+    lockedClipSampleTick = std::max(0, clipTick);
 }
 
 bool Player::usesMeleeAuthoredPose() const
@@ -383,7 +396,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
             lockedClipPhaseTick = 0;
             lockedClipPhaseTicks = 0;
-        } else if (lockedClipPhaseTicks <= 0) {
+            lockedClipSampleTick = -1;
+        } else if (lockedClipPhaseTicks <= 0 && lockedClipSampleTick < 0) {
             // Time-driven one-shot. Phase-driven clips are held by the action
             // owner and are not auto-cleared by elapsed time.
             lockedClipTime += dt;
@@ -624,7 +638,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     // Melee phase sampling: when the active clip is a phase-driven one-shot,
     // evaluate it at the phase-mapped sample instead of advancing by time.
     float animForcedSampleTick = -1.0f;
-    if (!lockedClip.empty() && activeAnim == lockedClip && lockedClipPhaseTicks > 0) {
+    if (!lockedClip.empty() && activeAnim == lockedClip && lockedClipSampleTick >= 0) {
+        animForcedSampleTick = (float)lockedClipSampleTick;
+    } else if (!lockedClip.empty() && activeAnim == lockedClip && lockedClipPhaseTicks > 0) {
         const AnimClip* lc = findClip(lockedClip);
         if (lc) {
             animForcedSampleTick = AnimRotation::samplePhaseClipTick(

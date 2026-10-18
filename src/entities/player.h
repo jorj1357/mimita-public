@@ -640,6 +640,8 @@ public:
     // changing a phase length resamples the pose instead of desynchronizing.
     int lockedClipPhaseTick = 0;
     int lockedClipPhaseTicks = 0;
+    // Exact clip-local tick driven by the fixed-tick action owner; -1 is time-driven.
+    int lockedClipSampleTick = -1;
     float hurtTimer = 0.0f;
     std::string mResolvedAnimAvatar;  // avatar name whose set is currently bound
 
@@ -650,12 +652,14 @@ public:
     // drives this each phase tick; the clip is held (not auto-cleared) until
     // clearOneShot or a replacement clip.
     void playOneShotPhase(const std::string& clip, int phaseTick, int phaseTicks);
+    void playOneShotAtTick(const std::string& clip, int clipTick);
     void clearOneShot()
     {
         lockedClip.clear();
         lockedClipTime = 0.0f;
         lockedClipPhaseTick = 0;
         lockedClipPhaseTicks = 0;
+        lockedClipSampleTick = -1;
     }
 
     // -------- Construction --------

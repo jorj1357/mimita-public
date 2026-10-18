@@ -173,6 +173,24 @@
             }
           }
         }
+      ],
+      "markers": [
+        {
+          "name": "phase.windup",
+          "tick": 0
+        },
+        {
+          "name": "phase.active",
+          "tick": 20
+        },
+        {
+          "name": "phase.recovery",
+          "tick": 40
+        },
+        {
+          "name": "action.end",
+          "tick": 60
+        }
       ]
     }
   }

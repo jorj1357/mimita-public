@@ -413,7 +413,7 @@ void clientTick(Player& player,
     const int windup = action->windup.ticks;
     const int active = action->active.ticks;
     const int recovery = action->recovery.ticks;
-    const int total = windup + active + recovery;
+    const int total = action->totalTicks();
     const int elapsed = (int)(simTick - g_state.startSimTick);
     if (elapsed >= total) {
         endAction(player);
@@ -423,25 +423,28 @@ void clientTick(Player& player,
     int phaseIndex = 0;          // 0 windup, 1 active, 2 recovery
     int phaseTick = elapsed;
     int phaseTicks = windup;
-    std::string clip = action->windup.clipId;
+    std::string clip = action->animationClipId.empty()
+        ? action->windup.clipId : action->animationClipId;
     const char* phaseName = "windup";
     if (elapsed >= windup + active) {
         phaseIndex = 2;
         phaseTick = elapsed - windup - active;
         phaseTicks = recovery;
-        clip = action->recovery.clipId;
+        if (action->animationClipId.empty()) clip = action->recovery.clipId;
         phaseName = "recovery";
     } else if (elapsed >= windup) {
         phaseIndex = 1;
         phaseTick = elapsed - windup;
         phaseTicks = active;
-        clip = action->active.clipId;
+        if (action->animationClipId.empty()) clip = action->active.clipId;
         phaseName = "active";
     }
     g_state.currentPhaseIndex = phaseIndex;
     g_state.currentPhaseTick = phaseTick;
 
-    if (!clip.empty())
+    if (!action->animationClipId.empty())
+        player.playOneShotAtTick(action->animationClipId, elapsed);
+    else if (!clip.empty())
         player.playOneShotPhase(clip, phaseTick, phaseTicks);
 
     // Log each phase transition with the limb pose so animation motion and the

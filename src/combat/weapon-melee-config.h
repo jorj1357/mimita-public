@@ -116,6 +116,9 @@ struct MeleeAction {
     MeleePhase windup;
     MeleePhase active;
     MeleePhase recovery;
+    // New-format actions use one clip whose markers define these phase lengths.
+    // Empty means this action still uses the explicit legacy phases during migration.
+    std::string animationClipId;
 
     std::vector<MeleeHitbox> hitboxes;
 

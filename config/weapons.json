@@ -1694,15 +1694,11 @@
             "priority": 1,
             "double_click_window_ticks": 5,
             "double_click_action": "a_ground_punch2",
-            "phases": {
-              "windup":   {"ticks": 5, "clip_id": "cf_punch_windup"},
-              "active":   {"ticks": 15, "clip_id": "cf_punch_active"},
-              "recovery": {"ticks": 15, "clip_id": "cf_punch_recovery"}
-            },
+            "animation_clip_id": "punch_a",
             "hitboxes": [
               {"id": "fist", "attached_part": "rightArm", "shape": "sphere",
                "size": [0.7, 0.7, 0.7], "local_offset": [0.0, 0.7, 1.4],
-               "active_start_tick": 11, "active_end_tick": 22}
+               "active_start_tick": 11, "active_end_tick": 14}
             ],
             "damage": {"base_percent": 3.0},
             "knockback": {"base_impulse": 8.0, "vertical_fraction": 0.25, "force_scale": 1.0},
