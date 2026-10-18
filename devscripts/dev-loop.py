@@ -475,7 +475,14 @@ def existing_dev_loop_pids() -> list[int]:
             pid = int(pid_text.strip())
         except (ValueError, TypeError):
             continue
-        if pid != os.getpid() and script_text in command_line.replace("/", "\\").lower():
+        normalized_command = command_line.replace("/", "\\").lower()
+        is_daemon = (
+            "--daemon" in normalized_command
+            or "--dev-loop-role=daemon" in normalized_command
+            or "--dev-loop-role daemon" in normalized_command
+        )
+        if (pid != os.getpid() and script_text in normalized_command
+                and is_daemon):
             pids.append(pid)
     return pids
 
@@ -3250,14 +3257,17 @@ def run_dashboard(args: argparse.Namespace) -> int:
             return scripted_keys.pop(0), False
         return None, True
 
-    def control(state: dict, action: str, **fields) -> None:
-        nonlocal current
+    def control(state: dict, action: str, **fields) -> bool:
+        nonlocal current, view_status
         current = read_current_run() or current or {}
         response = _dashboard_control(current, action, **fields)
         ok = bool(response and response.get("accepted"))
         if not ok:
             problem = (response or {}).get("error") or "daemon unavailable"
             view_status = f"{action} not accepted: {problem}"
+        else:
+            view_status = f"{action} accepted"
+        return ok
 
     def snapshot() -> dict:
         return request_daemon_status(current) if current else None
@@ -3291,16 +3301,13 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         picker["input"] += key
                 elif key == "1":
                     control(current, "build-or-launch")
-                    view_status = "build/launch requested"
                 elif key == "2":
                     picker.update({"open": True, "input": "", "modes": launch_mode_table()})
                     view_status = "launch-mode picker open"
                 elif key == "v":
                     control(current, "toggle-visibility")
-                    view_status = "visibility toggle requested (next launch)"
                 elif key == "a":
                     control(current, "toggle-auto-restart")
-                    view_status = "auto-restart toggle requested"
                 elif key == "q":
                     control(current, "stop", explicit_stop=True)
                     view_status = "explicit daemon stop requested; watchdog will not restart it"

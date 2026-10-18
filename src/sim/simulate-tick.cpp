@@ -167,8 +167,11 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
 
             // Always-on physical aim body (aimbody.json mode == "physical" or
             // "hybrid"). Runs after normal movement/animation so it owns the
-            // rendered pose and the client hitboxes for this tick.
-            if (AimBodyConfig::instance().bodyPhysicsMode()) {
+            // rendered pose and the client hitboxes for this tick. Melee exclusive
+            // authored pose disables it so limb momentum/head tilt cannot alter
+            // the authored Captain Falcon pose.
+            if (AimBodyConfig::instance().bodyPhysicsMode() &&
+                !sim.player->usesMeleeAuthoredPose()) {
                 MIMITA_PERF_SCOPE("AimBodyUpdate");
                 if (!ragdoll.aimActive())
                     ragdoll.activateAim(*sim.player);

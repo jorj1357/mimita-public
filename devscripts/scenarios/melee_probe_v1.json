@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "melee_probe_v1",
+  "description": "Melee function probe: start mode, fire several Falcon actions, jump, and snapshot limb poses.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "cramped",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [
+    {"id": "start_melee", "command": "modestart", "args": ["14"], "delay_ms_after": 5500},
+    {"id": "crouch_on", "command": "agent.crouch", "args": ["1"], "delay_ms_after": 2500},
+    {"id": "crouch_check", "command": "agent.snapshot", "args": ["crouch_check"], "delay_ms_after": 500},
+    {"id": "crouch_off", "command": "agent.crouch", "args": ["0"], "delay_ms_after": 500},
+    {"id": "punch", "command": "agent.melee", "args": ["a_ground_punch"], "delay_ms_after": 1500},
+    {"id": "falcon_punch", "command": "agent.melee", "args": ["b_falcon_punch"], "delay_ms_after": 1500},
+    {"id": "air_kick", "command": "agent.melee", "args": ["a_air_kick"], "delay_ms_after": 1500},
+    {"id": "sweep", "command": "agent.melee", "args": ["a_ground_sweep"], "delay_ms_after": 1500},
+    {"id": "up_special", "command": "agent.melee", "args": ["b_air_up_special"], "delay_ms_after": 1500},
+    {"id": "jump", "command": "agent.action", "args": ["jump"], "delay_ms_after": 1500},
+    {"id": "snapshot_end", "command": "agent.snapshot", "args": ["melee_probe_end"], "delay_ms_after": 500}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_present", "event": "melee.client.action"},
+    {"type": "event_present", "event": "melee.client.limb"},
+    {"type": "event_field_count_at_least", "event": "melee.action.start", "field": "actor_is_npc", "equals": false, "minimum": 1}
+  ],
+  "timeout_seconds": 180
+}

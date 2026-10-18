@@ -6,6 +6,7 @@
 
 #include "animation-rotation.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-melee-config.h"
 #include "config.h"
 #include "entities/aimbody-config.h"
 #include "entities/player-avatar-animations.h"
@@ -13,6 +14,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "network/net_common.h"
+#include "network/community-match-client.h"
 using namespace MimitaNet;
 
 struct AnimOverlayResult {
@@ -162,6 +164,23 @@ void Player::playOneShotPhase(const std::string& clip, int phaseTick, int phaseT
     lockedClipPhaseTicks = phaseTicks;
 }
 
+bool Player::usesMeleeAuthoredPose() const
+{
+    // The Captain Falcon profile is the Melee fighter profile (forced role in
+    // config/gamemodes/melee.json), so this avatar identifies a Melee actor.
+    // The explicit mode/flag/runtime checks below are kept as intent markers.
+    if (avatarName() != "captainfalcon")
+        return false;
+    if (animationSet && animationSet->valid && animationSet->authoredOnly)
+        return true;
+    if (MimitaNet::CommunityMatchClient::instance().mode() == "melee")
+        return true;
+    for (const auto& kv : weaponRuntimes)
+        if (WeaponData::MeleeMoveSetRegistry::instance().get(kv.first) != nullptr)
+            return true;
+    return true;
+}
+
 static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
 {
     auto it = gPlayerProcedural.axisLocks.find(partName);
@@ -175,6 +194,36 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 {
     updatePlayerProceduralHotReload(dt);
     AimBodyConfig::instance().pollReload();
+
+    {
+        static uint64_t lastPoseProbeMs = 0;
+        const uint64_t nowP = nowMs();
+        if (nowP - lastPoseProbeMs >= 1000) {
+            lastPoseProbeMs = nowP;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "anim.melee.pose_probe", avatarName().empty() ? username : avatarName(),
+                "animation pose probe", (uint32_t)movementSimulationTick,
+                {{"actor", username}, {"avatar", avatarName()},
+                 {"mode", MimitaNet::CommunityMatchClient::instance().mode()},
+                 {"authored_only", animationSet ? animationSet->authoredOnly : false},
+                 {"set_valid", animationSet ? animationSet->valid : false},
+                 {"runtime_count", weaponRuntimes.size()},
+                 {"uses_melee_authored", usesMeleeAuthoredPose()},
+                 {"crouching", crouching},
+                 {"on_ground", ground.onGround},
+                 {"ragdoll_active", ragdollModeActive},
+                 {"procedural_frozen", proceduralFrozen}});
+        }
+    }
+
+    // Melee exclusive authored-pose policy: when the active mode is Melee and the
+    // actor uses the Captain Falcon profile, only that profile's sampled
+    // animations.json clips determine the visible rig pose. Procedural/aimbody/
+    // weapon/dash/freeze pose layers and ragdoll presentation are suppressed.
+    // See docs/specs/gamemodes/supersmashbrosmelee.md §57 and the "Exclusive
+    // authored-pose policy" in docs/specs/animations/animations.md.
+    const bool meleeExclusivePose = usesMeleeAuthoredPose();
 
     if (perfectPoseSkeleton.nodes.empty() ||
         perfectPoseSkeleton.restLocalTransforms.size() != perfectPoseSkeleton.nodes.size())
@@ -196,7 +245,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
         return;
     }
-    if (proceduralFrozen) {
+    if (proceduralFrozen && !meleeExclusivePose) {
         updateModelWorldTransforms();
         static uint64_t lastAnimEarlyFrozenLogMs = 0;
         uint64_t nowFrozen = nowMs();
@@ -211,7 +260,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
         return;
     }
-    if (ragdollModeActive) {
+    if (ragdollModeActive && !meleeExclusivePose) {
         updateModelWorldTransforms();
         return;
     }
@@ -281,6 +330,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         if (name.empty()) return nullptr;
         if (clipFromAvatar(name))
             return &animationSet->clips.find(name)->second;
+        // Melee exclusive: never fall through to the global profile or another
+        // animation set. A missing clip uses this profile's configured fallback
+        // (handled by the caller) instead.
+        if (meleeExclusivePose)
+            return nullptr;
         auto it = gPlayerProcedural.layers.animations.find(name);
         return it != gPlayerProcedural.layers.animations.end() ? &it->second : nullptr;
     };
@@ -301,7 +355,24 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     if (!lockedClip.empty()) {
         const AnimClip* lc = findClip(lockedClip);
         if (!lc) {
-            lockedClip.clear();
+            if (meleeExclusivePose) {
+                const std::string fallback = sm ? sm->def : "idle";
+                static uint64_t lastMeleeMissingClipMs = 0;
+                const uint64_t nowMissing = nowMs();
+                if (nowMissing - lastMeleeMissingClipMs >= 1000) {
+                    lastMeleeMissingClipMs = nowMissing;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Avatar, StructuredLevel::Errors,
+                        "anim.melee.clip_missing", avatarName(),
+                        "Melee clip missing; using profile fallback", 0,
+                        {{"avatar", avatarName()}, {"missing_clip", lockedClip},
+                         {"fallback_clip", fallback}, {"mode", "melee"}});
+                }
+                lockedClip = (fallback != lockedClip && clipFromAvatar(fallback))
+                    ? fallback : std::string();
+            } else {
+                lockedClip.clear();
+            }
             lockedClipPhaseTick = 0;
             lockedClipPhaseTicks = 0;
         } else if (lockedClipPhaseTicks <= 0) {
@@ -320,9 +391,37 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     bool nowMoving = locoInputTriggered ? movementPressed : (move01 >= 0.01f);
     previousMove01 = move01;
 
+    // Brief landing pose timer for the optional `land` state clip.
+    if (ground.didLand)
+        landAnimTimer = 0.12f;
+    else
+        landAnimTimer = std::max(0.0f, landAnimTimer - dt);
+
     std::string activeAnim = currentAnimName;
     if (!lockedClip.empty()) {
         activeAnim = lockedClip;
+    } else if (sm && meleeExclusivePose) {
+        // Exclusive Melee: choose the authored state clip from the actor profile.
+        // Missing optional states fall back within the same profile.
+        const bool airborne = !ground.onGround;
+        const bool rising = vel.z > 1.0f;
+        const bool fast = speed > 12.0f;
+        if (dead && !sm->death.empty())
+            activeAnim = sm->death;
+        else if (hurtTimer > 0.0f && !sm->hurt.empty())
+            activeAnim = sm->hurt;
+        else if (landAnimTimer > 0.0f && !sm->land.empty())
+            activeAnim = sm->land;
+        else if (airborne && rising && !sm->jump.empty())
+            activeAnim = sm->jump;
+        else if (airborne && !sm->fall.empty())
+            activeAnim = sm->fall;
+        else if (crouching && !sm->crouch.empty())
+            activeAnim = sm->crouch;
+        else if (nowMoving)
+            activeAnim = (fast && !sm->run.empty()) ? sm->run : locomotionClip();
+        else
+            activeAnim = defaultClip();
     } else if (nowMoving) {
         activeAnim = locomotionClip();
     } else if (currentAnimName != defaultClip()) {
@@ -375,6 +474,30 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     animStateTime += dt;
+
+    // Bounded evidence that the Melee exclusive authored-pose policy is active
+    // for this actor: identifies actor, mode, avatar, selected clip, and that
+    // the forbidden pose layers were suppressed.
+    if (meleeExclusivePose) {
+        static uint64_t lastMeleeAuthoredLogMs = 0;
+        const uint64_t nowAuthored = nowMs();
+        if (nowAuthored - lastMeleeAuthoredLogMs >= 1000) {
+            lastMeleeAuthoredLogMs = nowAuthored;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "anim.melee.authored_pose", avatarName(),
+                "Melee exclusive authored pose active", (uint32_t)movementSimulationTick,
+                {{"actor", username},
+                 {"mode", "melee"},
+                 {"avatar", avatarName()},
+                 {"clip", activeAnim},
+                 {"pose_policy", "authored_only"},
+                 {"suppressed_layers", {"aimbody", "weapon_pose", "reload_overlay",
+                                        "freeze_pose", "dash_pose", "idle_sway",
+                                        "ragdoll_presentation", "global_fallback"}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     // === DASH POSE TIMER ===
     if (dash.didDash && dashPoseTimer < 0.0f)
@@ -444,6 +567,26 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     // === COMPUTE JSON KEYFRAME ANIMATION ===
     const AnimClip* activeClip = findClip(activeAnim);
+    // Melee exclusive: a missing selected clip must not fall through to the rest
+    // pose, AimBody, ragdoll, or another profile. Use this profile's configured
+    // fallback (idle) and emit a bounded diagnostic.
+    if (meleeExclusivePose && !activeClip) {
+        const std::string fallback = sm ? sm->def : "idle";
+        if (const AnimClip* fbClip = findClip(fallback)) {
+            static uint64_t lastMeleeStateMissingMs = 0;
+            const uint64_t nowStateMissing = nowMs();
+            if (nowStateMissing - lastMeleeStateMissingMs >= 1000) {
+                lastMeleeStateMissingMs = nowStateMissing;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Errors,
+                    "anim.melee.clip_missing", avatarName(),
+                    "Melee state clip missing; using profile fallback", 0,
+                    {{"avatar", avatarName()}, {"missing_clip", activeAnim},
+                     {"fallback_clip", fallback}, {"mode", "melee"}});
+            }
+            activeClip = fbClip;
+        }
+    }
     // Melee phase sampling: when the active clip is a phase-driven one-shot,
     // evaluate it at the phase-mapped sample instead of advancing by time.
     float animForcedSampleTick = -1.0f;
@@ -564,6 +707,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
         }
 
+        // Melee exclusive authored-pose policy suppresses every non-authored
+        // pose source (weapon/reload, freeze, dash, axis locks, idle sway).
+        if (!meleeExclusivePose) {
         if (hasWeaponPose && weaponPoseCfg) {
             if (part.name == "leftArm") {
                 target.rotationEuler = weaponPoseCfg->leftArm.rotation;
@@ -652,15 +798,23 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 target.rotationEuler.x += std::sin(t * c.idleHeadSpeed) * c.idleHeadRotationDeg * str;
         }
 
+        }
+
         // Store the clean perfect pose (exact JSON target, no smoothing)
         part.perfectPose = target;
 
-        // Physical body follows perfect pose with spring smoothing
-        part.pose.translation =
-            springVec3(part.translationSpring, target.translation, 90.0f, 16.0f, dt);
-        part.pose.rotationEuler =
-            springVec3(part.rotationSpring, target.rotationEuler, 80.0f, 14.0f, dt);
-        part.pose.scale = target.scale;
+        if (meleeExclusivePose) {
+            // Exclusive authored pose: use the sampled authored transform exactly,
+            // with no spring smoothing that could lag or alter it.
+            part.pose = target;
+        } else {
+            // Physical body follows perfect pose with spring smoothing
+            part.pose.translation =
+                springVec3(part.translationSpring, target.translation, 90.0f, 16.0f, dt);
+            part.pose.rotationEuler =
+                springVec3(part.rotationSpring, target.rotationEuler, 80.0f, 14.0f, dt);
+            part.pose.scale = target.scale;
+        }
 
         // Apply to skeleton for rendering
         glm::mat4 restM = perfectPoseSkeleton.restLocalTransforms[part.nodeIndex];
@@ -673,9 +827,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // in the character frame regardless of stance/animation rotation —
             // pitching through the pose euler skews into roll for the
             // weapon-posed arms (~80deg rolls) and looks like tilting sideways.
+            // Melee exclusive authored pose suppresses aimbody entirely.
             const AimBodyConfig& ab = AimBodyConfig::instance();
             const LimbAim* limb = ab.limb(part.name);
-            if (ab.enabled() && limb &&
+            if (!meleeExclusivePose && ab.enabled() && limb &&
                 (limb->pitch != 0.0f || limb->yaw != 0.0f || limb->roll != 0.0f)) {
                 const float desiredLookPitch = glm::degrees(std::asin(
                     glm::clamp(camForward.z, -1.0f, 1.0f)));

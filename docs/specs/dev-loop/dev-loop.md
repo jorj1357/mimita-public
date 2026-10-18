@@ -1355,7 +1355,10 @@ Implemented:
   (started detached with `--dev-loop-role=watchdog`) and one daemon (started by
   the watchdog with `--daemon --dev-loop-role=daemon`), waits for the
   authenticated control endpoint, and never starts duplicates (locks prevent
-  them). `--status` remains read-only.
+  them). Daemon detection must identify the daemon role or verify the daemon
+  lock owner; a dashboard or one-shot command process running the same script
+  is not a daemon and must never block daemon startup. `--status` remains
+  read-only.
 - `--command`/`--cmd` sends one command, waits for the correlated
   `dev-loop.command.delivered`/`terminal.command.completed` (or a reasoned
   rejection) from the exact live journal, prints the result, and opens no
@@ -1372,7 +1375,9 @@ Implemented:
   auto-restart, `Q` explicit daemon shutdown, `X` close the view only, `P`
   freeze, `R` resume. Each control key is sent as an authenticated control
   request to the daemon over the control socket; the detached daemon no longer
-  reads the keyboard. See section 22.2 for the canonical table.
+  reads the keyboard. The dashboard must show whether each request was accepted
+  or why it failed; it must not display “requested” as if a failed request had
+  been sent. See section 22.2 for the canonical table.
 - Dashboard status is rendered in rainbow colors when the terminal supports
   ANSI/VT, with a complete plain-text fallback otherwise; color never carries
   error or state meaning by itself.

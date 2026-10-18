@@ -259,6 +259,11 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
 {
     ActorSpawnProfile out;
     const ServerGamemodeState& d = serverGamemodeState();
+    // Melee first match: force both the human and the NPC onto the Captain
+    // Falcon profile so the mode's exclusive authored poses and move clips apply
+    // to every actor, regardless of role assignment or any random NPC avatar.
+    if (d.matchMode == "melee")
+        out.avatarName = "captainfalcon";
     auto it = d.matchActors.find(actorId);
     if (it == d.matchActors.end())
         return out;
@@ -322,6 +327,12 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
             }
         }
     }
+
+    // Melee first match: force both the human and the NPC onto the Captain
+    // Falcon profile so the mode's exclusive authored poses and move clips apply
+    // to every actor, regardless of any random/assigned avatar.
+    if (d.matchMode == "melee")
+        out.avatarName = "captainfalcon";
 
     if (!def->movementPreset.empty()) {
         // Validate once through the cache so an unknown preset is caught here
@@ -1299,6 +1310,15 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
 glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
 {
     static std::mt19937 rng(std::random_device{}());
+    // A mode may declare a shared spawn strategy (e.g. a 1v1 brawl): every actor
+    // starts at the single map anchor so the fighters begin on the same level.
+    {
+        const Gamemode& spawnMode = GamemodeRegistry::instance().get(d.matchMode);
+        if (spawnMode.spawnStrategy == "shared") {
+            std::uniform_real_distribution<float> off(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+            return d.sharedAnchor + glm::vec3(off(rng), off(rng), 0.0f);
+        }
+    }
     // Prefer authored spawnpoint entities for the active map when present. An
     // entity with no tag matches any team; otherwise its tag must equal the
     // team's spawn_group, so an NPC never spawns on a human-only point.

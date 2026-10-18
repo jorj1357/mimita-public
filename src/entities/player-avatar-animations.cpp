@@ -61,6 +61,13 @@ void parseStateMap(const nlohmann::json& root, AvatarStateMap& states)
     states.attack = s.value("attack", states.attack);
     states.hurt = s.value("hurt", states.hurt);
     states.death = s.value("death", states.death);
+    // Optional per-state clips (absent keys leave the string empty = not provided).
+    states.run = s.value("run", states.run);
+    states.jump = s.value("jump", states.jump);
+    states.fall = s.value("fall", states.fall);
+    states.land = s.value("land", states.land);
+    states.crouch = s.value("crouch", states.crouch);
+    states.respawn = s.value("respawn", states.respawn);
 }
 
 void mergeClips(const nlohmann::json& root,
@@ -196,6 +203,9 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
     loadIncludes(animRoot, entry.set);
     mergeClips(animRoot, entry.set);
     parseStateMap(animRoot, entry.set.states);
+    // Exclusive authored-pose policy opt-in (see docs/specs/animations/animations.md).
+    if (animRoot.contains("poseComposition") && animRoot["poseComposition"].is_string())
+        entry.set.authoredOnly = animRoot["poseComposition"].get<std::string>() == "authored_only";
     entry.set.valid = !entry.set.clips.empty();
 
     StructuredLogger::instance().writeEvent(

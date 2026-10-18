@@ -9,6 +9,7 @@
 */
 
 #include "physics/movement/movement-step.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -51,6 +52,14 @@ void applyJumpVerticalVelocity(MovementState& state,
         state.jump.holdJumpActive = true;
         state.jump.holdJumpTicksHeld = 0;
         state.jump.holdJumpBaseVelocity = baseVelocity;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "movement.jump.hold_scaled_start", "local",
+            "hold-scaled jump started at minimum strength", 0,
+            {{"base_velocity", baseVelocity},
+             {"min_multiplier", config.holdJumpMinMultiplier},
+             {"start_velocity_z", jumpVelocity},
+             {"charge_ticks", config.holdJumpChargeTicks}});
     }
     if (config.jumpMode == MovementJumpMode::Additive)
         state.baseVelocity.z += jumpVelocity;
@@ -68,6 +77,12 @@ void applyHoldScaledJumpBoost(MovementState& state,
         return;
     if (!command.jumpHeld) {
         state.jump.holdJumpActive = false;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "movement.jump.hold_scaled_end", "local",
+            "hold-scaled jump boost ended on release", 0,
+            {{"ticks_held", state.jump.holdJumpTicksHeld},
+             {"velocity_z", state.baseVelocity.z}});
         return;
     }
     const int chargeTicks = std::max(1, config.holdJumpChargeTicks);
@@ -82,8 +97,16 @@ void applyHoldScaledJumpBoost(MovementState& state,
         (float)chargeTicks;
     state.baseVelocity.z += perTick;
     ++state.jump.holdJumpTicksHeld;
-    if (state.jump.holdJumpTicksHeld >= chargeTicks)
+    if (state.jump.holdJumpTicksHeld >= chargeTicks) {
         state.jump.holdJumpActive = false;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "movement.jump.hold_scaled_end", "local",
+            "hold-scaled jump boost reached maximum", 0,
+            {{"ticks_held", state.jump.holdJumpTicksHeld},
+             {"velocity_z", state.baseVelocity.z},
+             {"max_multiplier", maxMultiplier}});
+    }
 }
 
 float signedAngleDegrees(glm::vec2 a, glm::vec2 b)

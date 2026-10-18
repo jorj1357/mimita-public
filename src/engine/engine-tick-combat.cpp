@@ -314,31 +314,46 @@ void engineTickCombat(Engine& engine, float dt)
     }
     rightMousePrev = rightMouseDown;
 
+    // Publish crouch intent for Melee actors for the authored `crouch` state
+    // clip, independent of the driver's move-set equip gate.
+    if (player.usesMeleeAuthoredPose()) {
+        player.crouching =
+            (glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
+            MimitaMelee::debugCrouchHeld();
+    }
+
     // Captain Falcon Melee: sample the Melee controls and drive the local
     // action (animation + predicted self-impulses). The server is authoritative
     // for the action result; the client predicts presentation immediately.
-    if (meleeEquipped && !replayPlaybackActive && gameplayInputAllowed &&
-        glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
-        static bool grabPrev = false;
-        const bool grabDown =
-            glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS;
+    // The driver runs whenever the move set is equipped (even without a captured
+    // cursor) so agent.melee live tests can force actions.
+    if (meleeEquipped && !replayPlaybackActive && gameplayInputAllowed) {
         MimitaMelee::ClientInput meleeInput;
-        meleeInput.primaryPressed = meleePrimaryPressed;
-        meleeInput.secondaryPressed = meleeSecondaryPressed;
-        meleeInput.grabPressed = grabDown && !grabPrev;
-        meleeInput.shieldHeld =
-            glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS;
-        meleeInput.jumpHeld =
-            glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
-        meleeInput.crouchHeld =
-            glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
-        grabPrev = grabDown;
+        if (glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+            static bool grabPrev = false;
+            const bool grabDown =
+                glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS;
+            meleeInput.primaryPressed = meleePrimaryPressed;
+            meleeInput.secondaryPressed = meleeSecondaryPressed;
+            meleeInput.grabPressed = grabDown && !grabPrev;
+            meleeInput.shieldHeld =
+                glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS;
+            meleeInput.jumpHeld =
+                glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
+            meleeInput.crouchHeld =
+                glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
+            grabPrev = grabDown;
+        }
         MimitaMelee::clientTick(player, camera, weapons, mpContext, meleeInput,
                                 g_clientSimulationTick);
+        // Publish crouch intent for the authored `crouch` state clip, independent
+        // of the driver's move-set check and the cursor gate.
+        player.crouching =
+            (glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
+            MimitaMelee::debugCrouchHeld();
     } else {
         MimitaMelee::reset();
     }
-
     static bool slotPrev[10] = {};
     const auto& matchClient = MimitaNet::CommunityMatchClient::instance();
     const bool isJuggernautFighter =

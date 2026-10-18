@@ -228,6 +228,14 @@ struct AvatarStateMap {
     std::string fly = "fly";
     std::string crawl = "crawl";
     std::string swim = "swim";
+    // Optional per-state clips; empty means "not provided" and the legacy
+    // locomotion/default selection is used for that state.
+    std::string run;      // fast grounded locomotion
+    std::string jump;     // airborne and rising
+    std::string fall;     // airborne and falling
+    std::string land;     // brief landing pose
+    std::string crouch;   // grounded crouch
+    std::string respawn;  // brief spawn pose
     std::string attack;   // empty = off
     std::string hurt;     // empty = off
     std::string death;    // empty = off
@@ -235,6 +243,10 @@ struct AvatarStateMap {
 
 struct AvatarAnimationSet {
     bool valid = false;
+    // Opt-in exclusive authored-pose policy (animations.json `poseComposition`).
+    // When true, only this set's sampled clips determine the visible rig pose;
+    // procedural/aimbody/weapon/dash/freeze/ragdoll pose layers are suppressed.
+    bool authoredOnly = false;
     std::unordered_map<std::string, AnimClip> clips;
     AvatarStateMap states;
 };
@@ -497,6 +509,9 @@ public:
     int revolverReserve = 1337;
     bool dead = false;
     bool netPredictedDead = false;  // local client prediction; server confirm clears/rolls back
+    // Animation state inputs for optional per-state clips (crouch/jump/fall/land).
+    bool crouching = false;
+    float landAnimTimer = 0.0f;
     // Set when a reliable kill event already presented the death (anim + red
     // ellipsoid) for this life, so the snapshot health transition does not
     // play a second death. Cleared on respawn.
@@ -668,6 +683,12 @@ public:
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();
     void updateProceduralAnimation(float dt, const glm::vec3& camForward = glm::vec3(0,1,0), const glm::vec3& camPos = glm::vec3(0), bool movementPressed = false);
+
+    // True when this actor must use the exclusive authored-pose policy: Melee
+    // mode with the Captain Falcon profile. When true, only the profile's
+    // animations.json clips determine the visible rig pose; aimbody/ragdoll and
+    // procedural/weapon layers are suppressed.
+    bool usesMeleeAuthoredPose() const;
 
     // -------- Queries --------
     Capsule getCapsule() const;

@@ -13,10 +13,16 @@
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "audio/audio.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <unordered_map>
+
+#include <nlohmann/json.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace MimitaMelee {
 namespace {
@@ -26,6 +32,13 @@ using WeaponData::MeleeActorState;
 using WeaponData::MeleeButton;
 using WeaponData::MeleeModifier;
 using WeaponData::MeleeMoveSet;
+
+// Test/dev forced action (agent.* commands) and limb-pose tracking for logging.
+std::string g_forceActionId;
+bool g_debugCrouch = false;
+std::unordered_map<std::string, glm::vec3> g_lastPartPos;
+std::unordered_map<std::string, glm::vec3> g_lastPartTip;
+std::string g_lastPhaseKey;
 
 struct ClientActionState {
     bool active = false;
@@ -106,6 +119,47 @@ void playMeleeSound(uint32_t actorId, const std::string& name, float pitch, floa
     AudioManager::instance().play(event);
 }
 
+// Logs the world position of each hitbox-attached body part so limb motion is
+// measurable in events.jsonl (spec: hitbox follows the animated part).
+void logMeleeLimbPose(Player& player, const MeleeAction& action, const char* event,
+                      const char* phase, uint32_t simTick)
+{
+    nlohmann::json parts = nlohmann::json::array();
+    for (const WeaponData::MeleeHitbox& hb : action.hitboxes) {
+        for (const PhysicalBodyPart& p : player.physicalBody.parts) {
+            if (p.name != hb.attachedPart)
+                continue;
+            const glm::vec3 wp(p.worldTransform[3][0], p.worldTransform[3][1], p.worldTransform[3][2]);
+            // Limb tip vertex (collider max) in world space — moves under rotation.
+            const glm::vec3 localTip(
+                (p.collider.localMin.x + p.collider.localMax.x) * 0.5f,
+                (p.collider.localMin.y + p.collider.localMax.y) * 0.5f,
+                p.collider.localMax.z);
+            const glm::vec3 tip = glm::vec3(p.worldTransform * glm::vec4(localTip, 1.0f));
+            const glm::vec3 rotDeg = glm::degrees(glm::eulerAngles(glm::quat_cast(glm::mat3(p.worldTransform))));
+            auto it = g_lastPartPos.find(p.name);
+            const glm::vec3 prev = it != g_lastPartPos.end() ? it->second : wp;
+            const glm::vec3 delta = wp - prev;
+            auto tipIt = g_lastPartTip.find(p.name);
+            const glm::vec3 prevTip = tipIt != g_lastPartTip.end() ? tipIt->second : tip;
+            const glm::vec3 tipDelta = tip - prevTip;
+            g_lastPartPos[p.name] = wp;
+            g_lastPartTip[p.name] = tip;
+            parts.push_back({{"part", p.name},
+                             {"world", {wp.x, wp.y, wp.z}},
+                             {"pivot_delta", {delta.x, delta.y, delta.z}},
+                             {"tip_world", {tip.x, tip.y, tip.z}},
+                             {"tip_delta", {tipDelta.x, tipDelta.y, tipDelta.z}},
+                             {"tip_moved_m", glm::length(tipDelta)},
+                             {"world_rot_deg", {rotDeg.x, rotDeg.y, rotDeg.z}}});
+        }
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        event, action.id, "melee limb pose sample", simTick,
+        {{"action", action.id}, {"phase", phase}, {"parts", parts}});
+}
+
 void startAction(Player& player,
                  MimitaNet::MultiplayerContext& ctx,
                  const WeaponDefinition& def,
@@ -114,7 +168,8 @@ void startAction(Player& player,
                  const glm::vec3& cameraFront,
                  uint32_t simTick,
                  bool isPrimary,
-                 const std::string& basePrimaryId)
+                 const std::string& basePrimaryId,
+                 const char* source)
 {
     g_state.active = true;
     g_state.actionId = action.id;
@@ -125,10 +180,23 @@ void startAction(Player& player,
     g_state.hasLastAdvance = true;
     g_state.lastImpulsePhaseTick = -1;
     g_state.lastImpulsePhaseIndex = -1;
+    g_lastPartPos.clear();
+    g_lastPartTip.clear();
+    g_lastPhaseKey.clear();
     if (isPrimary) {
         g_state.lastPrimarySimTick = (int64_t)simTick;
         g_state.basePrimaryId = basePrimaryId;
     }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "melee.client.action", action.id, "melee action started locally", simTick,
+        {{"action", action.id}, {"index", actionIndex}, {"source", source},
+         {"forward", {g_state.forward.x, g_state.forward.y, g_state.forward.z}},
+         {"windup_ticks", action.windup.ticks},
+         {"active_ticks", action.active.ticks},
+         {"recovery_ticks", action.recovery.ticks}});
+    logMeleeLimbPose(player, action, "melee.client.limb", "start", simTick);
 
     // Send the intent to the server through the generic AttackRequest path. The
     // variant carries the action index; the reserved bytes carry the move-set
@@ -173,6 +241,25 @@ void reset()
 {
     g_state = ClientActionState{};
     g_shieldHeld = false;
+    g_forceActionId.clear();
+    g_lastPartPos.clear();
+    g_lastPartTip.clear();
+    g_lastPhaseKey.clear();
+}
+
+void debugRequestAction(const std::string& actionId)
+{
+    g_forceActionId = actionId;
+}
+
+void debugSetCrouch(bool crouch)
+{
+    g_debugCrouch = crouch;
+}
+
+bool debugCrouchHeld()
+{
+    return g_debugCrouch;
 }
 
 void clientTick(Player& player,
@@ -190,6 +277,9 @@ void clientTick(Player& player,
         return;
     }
     g_shieldHeld = input.shieldHeld;
+    // Publish crouch intent so the animation state machine can select the
+    // authored `crouch` state clip on the grounded fighter.
+    player.crouching = input.crouchHeld || g_debugCrouch;
 
     const MeleeActorState state = player.ground.onGround
         ? MeleeActorState::Grounded : MeleeActorState::Airborne;
@@ -200,6 +290,21 @@ void clientTick(Player& player,
     // A held shield suppresses attacks until released (Phase 5 owns the shield).
     const bool wantsAttack = !input.shieldHeld &&
         (input.primaryPressed || input.secondaryPressed || input.grabPressed);
+
+    // Test/dev forced action (agent.melee): start the named action directly.
+    if (!g_forceActionId.empty()) {
+        const std::string forcedId = g_forceActionId;
+        g_forceActionId.clear();
+        if (const MeleeAction* forced = moveSet->find(forcedId)) {
+            int index = 0;
+            for (size_t i = 0; i < moveSet->actions.size(); ++i)
+                if (moveSet->actions[i].id == forced->id) { index = (int)i; break; }
+            const WeaponDefinition* def = weapons.getCurrentDef(player);
+            if (def)
+                startAction(player, ctx, *def, *forced, index, camera.front, simTick,
+                            false, forcedId, "agent");
+        }
+    }
 
     if (wantsAttack) {
         MeleeButton button = MeleeButton::Primary;
@@ -227,10 +332,17 @@ void clientTick(Player& player,
             int index = 0;
             for (size_t i = 0; i < moveSet->actions.size(); ++i)
                 if (moveSet->actions[i].id == action->id) { index = (int)i; break; }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "melee.client.input", action->id, "melee input resolved", simTick,
+                {{"button", (int)button}, {"modifier", (int)modifier},
+                 {"grounded", player.ground.onGround}, {"action", action->id},
+                 {"jump_held", input.jumpHeld}, {"crouch_held", input.crouchHeld},
+                 {"shield_held", input.shieldHeld}});
             const WeaponDefinition* def = weapons.getCurrentDef(player);
             if (def)
                 startAction(player, ctx, *def, *action, index, camera.front, simTick,
-                            isPrimary, baseId);
+                            isPrimary, baseId, "input");
         }
     }
 
@@ -294,6 +406,23 @@ void clientTick(Player& player,
 
     if (!clip.empty())
         player.playOneShotPhase(clip, phaseTick, phaseTicks);
+
+    // Log each phase transition with the limb pose so animation motion and the
+    // attached hitbox path are verifiable in events.jsonl.
+    {
+        const std::string phaseKey =
+            action->id + ":" + std::to_string(phaseIndex);
+        if (phaseKey != g_lastPhaseKey) {
+            g_lastPhaseKey = phaseKey;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "melee.client.phase", action->id, "melee phase entered", simTick,
+                {{"action", action->id}, {"phase", phaseName},
+                 {"phase_index", phaseIndex}, {"phase_tick", phaseTick},
+                 {"phase_ticks", phaseTicks}, {"clip", clip}});
+            logMeleeLimbPose(player, *action, "melee.client.limb", phaseName, simTick);
+        }
+    }
 
     // Phase impulses: fire each authored event once, when its phase-local tick
     // is reached or passed.

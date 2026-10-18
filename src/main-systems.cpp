@@ -90,6 +90,7 @@
 #include "combat/weapon-hit.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
+#include "combat/melee-client.h"
 #include "combat/death-system.h"
 #include "ragdoll/ragdoll-commands.h"
 #include "config/spawn-velocity-config.h"
@@ -314,6 +315,33 @@ void registerAgentCommands()
             writeAgentCommandEvent("avatar.command.assert", "agent.snapshot captured", fields);
             Terminal::instance().addLog("[AGENT] snapshot captured: " + label);
         }, "2026-10-13", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.melee", "Force-start a Captain Falcon Melee action by id (move-set test).",
+        "agent.melee <actionId>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 1) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.melee <actionId>");
+                return;
+            }
+            MimitaMelee::debugRequestAction(args[0]);
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.melee accepted",
+                {{"command", "agent.melee"}, {"action", args[0]}, {"player", gpPlayer->username}});
+        }, "2026-10-17", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.crouch", "Hold/release the crouch input for the Melee pose test.",
+        "agent.crouch <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool on = !args.empty() && args[0] == "1";
+            MimitaMelee::debugSetCrouch(on);
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.crouch accepted",
+                {{"command", "agent.crouch"}, {"crouch", on}, {"player", gpPlayer->username}});
+        }, "2026-10-18", CommandCategory::Debug
     });
 }
 

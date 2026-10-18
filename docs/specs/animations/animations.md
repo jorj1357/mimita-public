@@ -216,7 +216,7 @@ flight integration (steering, altitude sticks, banking) iterates later.
                                                      "rightWing": { "rotationEulerDegrees": [0, -20, 0] } } },
         { "tick": 30, "interp": "linear", "parts": { "leftWing":  { "rotationEulerDegrees": [0, -45, 0] },
                                                      "rightWing": { "rotationEulerDegrees": [0,  45, 0] } } }
-      ]
+]
     }
   }
 }
@@ -507,6 +507,33 @@ Each layer is optional. A layer names parts and channel deltas; missing layers
 are skipped. The existing hard-coded dash/freeze/reload overlays become the
 default instance of these layers and are expressed for the rig's parts rather
 than six fixed names.
+
+### Exclusive authored-pose policy
+
+An actor profile may select `poseComposition: "authored_only"` for a mode or
+actor context that requires JSON keyframes to fully determine the visible rig
+pose. In this policy, sample the selected state/action clip and apply its part
+transforms relative to the normalized rest pose. Do not add locomotion sway,
+weapon/reload, aimbody, camera-follow, dash/freeze, or other procedural pose
+layers to those authored parts. State selection still chooses the appropriate
+authored clip; it does not bypass the state machine or change the fixed-tick
+clock.
+
+The actor root remains owned by shared movement/collision. Part-local animation
+does not move the authoritative root. Any root travel during an action must be
+expressed by the action/movement owner and simulated through normal collision.
+The selected clip's sampled part transforms are also the pose source for
+attachments such as move hitboxes; rendering and hit testing must not use
+different animation samples or apply a second procedural offset to only one of
+them. If a required clip is missing, use that profile's explicit fallback and
+emit a bounded diagnostic; never silently re-enable a suppressed overlay.
+
+The default policy remains the existing layered composition above. An
+exclusive policy is opt-in and scoped to the actor/profile context, so Melee can
+request it without changing other game modes or introducing a second animator.
+This is a desired runtime contract; the current player pose pipeline still
+applies several procedural overlays after avatar-clip sampling and does not yet
+provide this exclusive policy.
 
 ## Runtime contract
 

@@ -1,5 +1,6 @@
 {
     "enabled": true,
+    // "enabled": false,
     "toggle_key": "G",
     "gravity_scale": 2.0,
     "body_linear_damping": 0.01,

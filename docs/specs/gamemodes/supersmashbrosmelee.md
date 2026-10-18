@@ -135,7 +135,7 @@ historical summary is context only; it is not a second active decision register.
 
 ## 12. Movement model
 
-**OPEN:** Whether to reuse a current MiMITA movement preset, introduce a dedicated mode, or build a separate movement kernel. The user is uncertain whether Source-like movement will fit. Compare acceleration, immediate directional response, air control, momentum retention, and predictable rollback before selecting an owner. Do not silently set acceleration to an extreme value or claim input-to-velocity is instantaneous.
+**DECIDED:** Melee uses the dedicated `config/movement/movement-smash.json` profile through the shared movement and collider owners. It must not inherit the global `config/movement.json` preset by accident. For this mode, legacy freeze and down-dash abilities are disabled; they are not substitutes for Melee controls or animation states. The profile and its mode-specific input policy must be selected and observable on both client and server. Reuse current movement/collider code where it matches this contract; change the shared owner only where necessary to implement the selected profile. This does not claim the current config already matches: the file currently enables dash, down-dash, and freeze, so those settings need an explicit Melee-safe profile before implementation can satisfy this requirement.
 
 ## 13. Dash and dash dancing
 
@@ -147,7 +147,7 @@ historical summary is context only; it is not a second active decision register.
 
 ## 15. Air movement and recovery
 
-**DECIDED for the first version:** Melee's movement profile selects one of two Space input modes: `press` uses the existing immediate jump behavior; `hold_scaled` starts the jump immediately and increases its upward strength over up to 10 held server ticks, with release ending further boost. The mode/profile owns the selection in `config/movement/movement-smash.json`; both choices reuse the existing shared jump, gravity, and collider owners. Ceiling contact resets the available air jump in this mode. Left Ctrl uses existing grounded crouch and airborne downward-movement behavior. Do not add Melee-specific base jump, gravity, speed, or collider constants. The exact min/max boost tuning is open for playtesting; see section 55.
+**DECIDED for the first version:** Melee uses `hold_scaled` Space: jump begins on press and gains upward strength for up to 10 held simulation ticks; release stops further boost. This mode-specific policy belongs in `config/movement/movement-smash.json`; it must not silently inherit a different setting from `config/movement.json`. Reuse the shared jump, gravity, and collider owners. Ceiling contact resets the available air jump. Left Ctrl moves downward; it does not activate the legacy down-dash, and Melee does not use freeze. Do not add separate Melee base jump, gravity, speed, or collider constants. Exact minimum/maximum boost tuning remains open for playtesting; see section 55.
 
 ## 16. Per-move movement restrictions
 
@@ -684,3 +684,87 @@ the disconnected start-and-join path. Both verify the server's active mode,
 room identity, client connection state, and a roster containing one human and
 one Captain Falcon NPC. The scenario must not add an NPC unless it is testing
 spawn behavior.
+
+## 57. Authored pose policy and reported follow-up
+
+**DECIDED for first-version Melee:** An actor's selected Melee animation profile is authoritative for its visible rig pose. For the first match, both the human and NPC use the Captain Falcon avatar profile and its `assets/avatars/captainfalcon/animations.json`. The Melee action chooses phase clips from that profile. Each fixed tick, the runtime samples the selected clip and applies its authored part-local transform relative to the normalized rest pose. This exact sampled pose drives rendering and the corresponding move hitbox attachment.
+
+While a Melee authored pose is active, do not add ordinary idle sway, locomotion/procedural pose, weapon/reload pose, dash/freeze pose, camera/aimbody limb-follow, or other animation overlays to the authored parts. The actor root still moves through the shared movement and collision simulation; animation-local offsets do not silently move the network-authoritative root. Root movement during a move must come from that move's explicit movement/impulse data. A newly accepted action replaces the old clip immediately, and its phase clip starts at the corresponding phase sample. Outside Melee, existing animation composition continues unchanged.
+
+The shared animation owner must expose an explicit pose-composition policy so a mode can request this exclusive authored-pose behavior without a second animator. For Melee, the effective priority is: Melee action phase clip, then that actor profile's configured idle/locomotion fallback when no action clip is active. A missing Melee clip uses a configured Melee fallback and emits a bounded diagnostic; it must never silently fall through to ordinary aimbody or weapon poses. Euler XYZ and WXYZ quaternion input both convert once to the shared normalized quaternion representation. The exact Blender basis conversion/exporter remains governed by [`../animations/blender-animation-authoring.md`](../animations/blender-animation-authoring.md).
+
+**Implementation audit:** The current runtime does load per-avatar clips and samples them in `src/entities/player-animation.cpp`. However, it then composes weapon/reload and freeze/dash pose changes, adds idle motion, and applies `config/aimbody.json` after the clip. The shared animation spec also lists those layers as composition layers. Therefore the present behavior is explicitly not the exclusive authored-pose behavior above. The avatar JSON currently contains short two-keyframe examples, not a complete grounded/airborne/landing/shield/grab state set; a loader existing does not make the full Melee animation design implemented. Blender export is still marked proposal in the authoring spec.
+
+**Status of raw session notes:** The notes previously pasted below this section were reports and investigation inputs, not requirements already implemented or proven. The authoritative requirements have been moved into the relevant numbered sections. Remaining reports are separated by owner:
+
+- **Melee presentation to specify/implement:** visible shield sphere/effect; a debug view for configured attack hitboxes and their active windows; fuller Captain Falcon limb/leg clips and required idle, locomotion, jump/fall/land, attack, shield, grab, and respawn states.
+- **Runtime issues to reproduce:** animation looked too subtle; server reportedly exited and/or stopped advancing near tick 5516; reconnect/leave behavior was unreliable. These require a fresh run journal and process evidence before assigning a cause.
+- **Dev-loop issue to investigate separately:** the pasted dashboard snapshot for run `20261018_033521` (build `2518`; journal `logs/2026-10-18/20261018_033521/events.jsonl`) labels the run `mode=1(current)`, says the map is `cramped`, and reports server PID `26612` dead while client PID `21360` is alive. That text proves what the dashboard displayed at that timestamp, not the map actually rendered or the server's later state. See [`../dev-loop/dev-loop.md`](../dev-loop/dev-loop.md); do not treat this snapshot as proof that Melee selected the wrong map or that the server is currently dead.
+
+These reports do not authorize a broad refactor by themselves. First compare the existing owners with the explicit requirements above; make the narrowest owner-level change that closes a demonstrated gap, then use runtime journal and visible gameplay evidence to verify it.
+
+2026 10 18 1119 jojrtodo new issues
+
+stuttering with the  like idle animation its super super chopping back and forth super quick
+i want to see the hitboxes if me hitting the npc and npc hitting me
+npc wont hit me
+need to make sure that we are using the smash movement preset!!!!!!
+make an actor preset, and make it so all actors in smash mode are forced to use the smash movement preset
+hitboxes for each move arent showing, need to have them show
+npcs and players both need to use the smash  movement preset
+
+the ideal beahvior is like
+for the punch: like a red 0.5 alpha spehre is wleded to my arm/limb whatever limb is attacking, and it is visible for the time that its active
+and so i touch someone with it while its active and we reuse spyknife/force punhc logic so, if target is intersetcting that spehre then that means they are taking percentage knockback and  stuff, like, closer to center of spehre = more percentage knockback and damage, as wel as more dierct angle ,r resuing exisitng force logic
+
+npc need to use the smahs movement preset, and need to be able to edit it live and see the npc use it live
+C:\mimita-v9\config\npc-difficulty.json
+this json file i think is messing with things  like 
+i think we have too much things editing the state of npcs or  actors etc 
+just npcs actuallt
+but
+idk what even to do about it differnetly
+if i get hit as the captian falcon character nad i move like a little like i have the suttteringhappenign on me right now 2026 10 18 1122 
+test=2561  match=True
+Server   : alive  pid=27448  uptime=00:00:38  build=2561
+Client   : alive  pids=[14004]  uptime=00:00:35
+Run      : id=20261018_152210  mode=1(current)  visibility=visible  map=cramped
+Last     : published build 2561 at C:\mimita-v9\.dev\builds\2561
+Journal  : C:\mimita-v9\logs\2026-10-18\20261018_152210\events.jsonl
+View     : launch mode 1 requested
+Controls : [1] build/launch  [2] launch mode  [V] client visible/headless  [A] auto-restart  [Q] stop daemon  [X] close view  [P] freeze  [R] resumeop activity)
+not sure if the events.jsonl would even show tho
+butits like every frame back and froth almost 
+
+cant hva that , just need to make it like
+no input? e.g. no wasd no jump nonothing = idle
+idle animstate persists thru momenutm tho so u can move and stop moving/wishing to move and the idle animation is playing, i like that, animations that  show ur intent and animations that continue even if ur not doing it etc
+
+also in the smash movement mode, 
+q = shield
+e = grab
+left ctrl = go down/crouch
+space = go up, held space = more higher jump, tapped space e.g. onl pressing for 1 tick = minimum jump 
+right now that behavior doesnt work, we need to like  rebind the  keys
+maybe a binds system not sure ? 
+thatd benice tho 
+
+$ python build_agent.py 2>&1 | Select-Object -Last 3; python devscripts/dev-loop.py --request launch --json 2>&1 | Select-String -Pattern 'accepted' | Select-Object -First 1; Start-Sleep -Seconds 55; python devscripts/dev-loop.py --scenario-file C:\mimita-v9\devscripts\scenarios\melee_probe_v1.json 2>&1 | Select-Object -Last 1; $d=(Get-ChildItem 'C:\mimita-v9\logs\2026-10-18' | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName; $f="$d\events.jsonl"; echo "run: $f"; echo "crouch clip: $((Select-String -Path $f -Pattern 'melee.authored_pose.*\"clip\":\"crouch\"').Count)"; Select-String -Path $f -Pattern 'anim.melee.pose_probe' | Where-Object { $_.Line -match '"actor":"NPC Dev"' } | ForEach-Object { if ($_ -match '"crouching":(\w+)') { $matches[1] } } | Group-Object | Select-Object Name,Count
+
+
+None
+[BUILD LOCK] released
+
+  "accepted": true,
+[DEV SCENARIO] events=C:\mimita-v9\logs\2026-10-18\20261018_152357\events.jsonl
+run: C:\mimita-v9\logs\2026-10-18\20261018_152357\events.jsonl
+crouch clip: 2
+
+Name  : false
+Count : 15
+
+
+Name  : true
+Count : 2
+
+idk what  happened but this just happened and then i have a issue sauing Reconnecting attempt # 3 15.21 like  it just crashed the server and now i get no  packet updates frmo the server 

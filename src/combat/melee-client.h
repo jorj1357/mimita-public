@@ -54,4 +54,12 @@ void reset();
 // path so the server can run the Melee shield. False when no move set is active.
 bool shieldHeld();
 
+// Test/dev hook: force-start a named action on the next fixed tick, as if the
+// matching input chord were pressed. Used by agent.* live-test commands.
+void debugRequestAction(const std::string& actionId);
+
+// Test/dev hook: force the crouch input state (agent.crouch).
+void debugSetCrouch(bool crouch);
+bool debugCrouchHeld();
+
 } // namespace MimitaMelee
