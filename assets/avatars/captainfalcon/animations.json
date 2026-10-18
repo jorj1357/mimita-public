@@ -371,5 +371,8 @@
         { "tick": 59, "interp": "smooth", "parts": { "leftArm": { "rotationEulerDegrees": [0, 0, 95] , "translation": [0, 0, 0]}, "rightArm": { "rotationEulerDegrees": [0, 0, -95] , "translation": [0, 0, 0]}, "torso": { "rotationEulerDegrees": [0,0,12] , "translation": [0, 0, 0]} , "head": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }, "leftLeg": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }, "rightLeg": { "translation": [0, 0, 0], "rotationEulerDegrees": [0, 0, 0] }} }
       ]
     }
-  }
+  },
+  "include": [
+    "config/animations/library/melee/captainfalcon/punch_a.json"
+  ]
 }

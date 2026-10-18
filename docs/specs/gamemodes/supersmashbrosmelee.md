@@ -118,11 +118,11 @@ historical summary is context only; it is not a second active decision register.
 
 ## 7. Tick-counted action state
 
-**DECIDED:** Moves have explicit windup, active, and recovery phases with state lasting a known number of simulation ticks. The example **10 windup / 5 active / 15 recovery ticks** comes from the initial request and is a starting example, not a universal move duration. The later **8 / 10 / 17** example is also an illustration, not a selected punch definition.
+**DECIDED:** Moves have explicit windup, active, and recovery phases with state lasting a known number of simulation ticks. The selected action animation asset owns its total duration and phase boundaries; these values are authored together with its poses. The example **10 windup / 5 active / 15 recovery ticks** (30 total) comes from the initial request and is an illustration, not a universal move duration. The later **8 / 10 / 17** example is also illustrative, not a selected punch definition.
 
 ## 8. Attack phase model
 
-**PROPOSED:** Represent a move instance with move identity, actor generation, start tick, current phase/tick, and any move-specific movement and contact parameters. Define phase intervals unambiguously, for example as offsets from a start tick, so server and clients agree on the first active tick and the first recovery tick. The exact wire schema and interval convention remain open.
+**DECIDED:** Represent a move instance with move identity, actor generation, start tick, current phase/tick, selected animation clip ID, and the immutable content revision used for that instance. Derive phase intervals from the clip's ordered `phase.windup`, `phase.active`, `phase.recovery`, and exclusive `action.end` markers using half-open intervals `[start,end)`. The server and clients resolve the same revision; the server derives authoritative hit eligibility from elapsed fixed ticks and those markers. Exact packet field names remain open.
 
 ## 9. Instant attack restart and cancellation
 
@@ -130,7 +130,7 @@ historical summary is context only; it is not a second active decision register.
 
 ## 10. Animation versus action authority
 
-**DECIDED:** The selected move's animation drives the visible body-part path and therefore the attached hitbox path. The move/action state owns its tick clock, hit windows, and rules; the animation clip does not decide whether a hit is confirmed. A new legal move can replace the current clip immediately. When a clip completes without being interrupted, the shared state machine selects idle or locomotion.
+**DECIDED:** The selected move's animation drives the visible body-part path and attached hitbox path, and its duration/phase markers own the action clock and active hit window. The clip does not decide whether a hit is confirmed; the shared combat/referee rules do. A new legal move can replace the current clip immediately. When the clip reaches its exclusive end marker without interruption, the shared state machine selects idle or locomotion.
 
 ## 11. Movement feel
 
@@ -252,11 +252,11 @@ When shield durability reaches zero from a hit or natural exhaustion after 300 h
 
 ## 40. Animation phase alignment
 
-**PROPOSED:** Bind a move instance's start tick to its attack clip start tick. Author or map poses for windup, every active contact interval, and recovery. A cancel/restart begins the replacement clip at its defined initial pose on the same action-start tick. Animation duration need not equal action duration, but the relationship must be explicit and must not affect combat timing.
+**DECIDED:** Bind a move instance's start tick to the selected action clip's tick zero. The clip's `durationTicks` and `phase.*` markers define its total duration and windup/active/recovery windows with half-open intervals; for example, markers 0/10/25/45 define 10 windup, 15 active, and 20 recovery ticks. A cancel/restart begins the replacement clip at tick zero on that action-start tick. There is no separate action duration to tune in `weapons.json`.
 
 ## 41. Effects and audio
 
-**DECIDED:** Melee move sound events live in each `config/weapons.json` action alongside phase timing and animation references. Use Captain Falcon sounds from `assets/sound/entity/falcon/`: `yeeeaaaaughhh.wav`, `tuaahh.wav`, `showmeyamoves.wav`, `falconyes.wav`, `falcontuaahh3.wav`, `falcontuaahh2.wav`, `falconswing.wav`, `falconpawnchhh.wav`, `falconkick.wav`, `falconho.wav`, `falconhitquick.wav`, `falconhit2.wav`, `falconhit1.wav`, `falcongroanquick.wav`, `falcongroan2.wav`, `falcongroan1.wav`, `falconfalcon.wav`, `falcondeath2.wav`, `falcondeath1.wav`, and `falconcomeon.wav`. Start with pitch multiplier 1.0, volume multiplier 1.0, and spatial offset `[0,0,0]` meters; map sounds to action/phase events by their asset names and intent. Starting or retriggering a move immediately stops the previous Melee move sound on that actor and starts the new sound from tick 0; later markers from canceled actions do not play. This is one Melee-move sound channel per actor; music and unrelated sounds continue. Sound never confirms a hit. Deduplicate events by actor generation, action instance, phase/tick, and event index. The audio/resource owner resolves the asset IDs.
+**DECIDED:** Melee move sound events live in each `config/weapons.json` action alongside its animation reference and combat values; timing comes from the referenced animation asset. Use Captain Falcon sounds from `assets/sound/entity/falcon/`: `yeeeaaaaughhh.wav`, `tuaahh.wav`, `showmeyamoves.wav`, `falconyes.wav`, `falcontuaahh3.wav`, `falcontuaahh2.wav`, `falconswing.wav`, `falconpawnchhh.wav`, `falconkick.wav`, `falconho.wav`, `falconhitquick.wav`, `falconhit2.wav`, `falconhit1.wav`, `falcongroanquick.wav`, `falcongroan2.wav`, `falcongroan1.wav`, `falconfalcon.wav`, `falcondeath2.wav`, `falcondeath1.wav`, and `falconcomeon.wav`. Start with pitch multiplier 1.0, volume multiplier 1.0, and spatial offset `[0,0,0]` meters; map sounds to action/phase events by their asset names and intent. Starting or retriggering a move immediately stops the previous Melee move sound on that actor and starts the new sound from tick 0; later markers from canceled actions do not play. This is one Melee-move sound channel per actor; music and unrelated sounds continue. Sound never confirms a hit. Deduplicate events by actor generation, action instance, phase/tick, and event index. The audio/resource owner resolves the asset IDs.
 
 ## 42. Authority and replication
 
@@ -288,7 +288,7 @@ When shield durability reaches zero from a hit or natural exhaustion after 300 h
 
 ## 49. Open decision register
 
-**OPEN:** The remaining tuning questions are collected in section 55. The first-version rules already decided include four lives, void-only deaths, 0 percent on immediate respawn, 60 ticks of spawn protection, map selected through the normal GUI before intermission, random eligible JSON spawnpoint selection, a 15-second intermission, configurable per-move phase ticks, 30-tick editable double-click window, 300 held-tick shield decay, 120-tick shield recovery after break, 300-tick grab immunity, shared movement/collider values, and the listed Captain Falcon input/move candidates.
+**OPEN:** The remaining tuning questions are collected in section 55. The first-version rules already decided include four lives, void-only deaths, 0 percent on immediate respawn, 60 ticks of spawn protection, map selected through the normal GUI before intermission, random eligible JSON spawnpoint selection, a 15-second intermission, animation-authored per-move phase timing, 30-tick editable double-click window, 300 held-tick shield decay, 120-tick shield recovery after break, 300-tick grab immunity, shared movement/collider values, and the listed Captain Falcon input/move candidates.
 
 ## 50. Implementation and rollout gates
 
@@ -328,7 +328,7 @@ attacks, exporter, or networking path already exists.
   is a stable action ID inside that definition, not a separate weapon or
   hotbar slot. `config/weaponsets.json` may reference that one definition as
   the Melee loadout; it must not duplicate its attack values. The user wants
-  input bindings, phase lengths, phase animations, hitbox, sound/pitch, percent,
+  input bindings, one animation clip reference (whose markers define phase lengths), hitbox, sound/pitch, percent,
   knockback, movement policy, and special movement all configurable there.
 - The network identity is the equipped definition ID/revision plus action ID
   and actor generation. A hotbar index is presentation/input context only; it
@@ -347,11 +347,12 @@ attacks, exporter, or networking path already exists.
 
 ### Initial input and move roster
 
-The following is the first Captain Falcon A/B move list. All attacks have
-JSON-configured windup, active, and recovery tick counts; each phase length is
-independent and may be configured from 1 through 999 ticks. The quick-punch
-double-click window starts at 30 ticks and is JSON-editable. Each move has a
-phase animation or pose; a move-owned hitbox attached to an animated body part;
+The following is the first Captain Falcon A/B move list. Each attack references
+one animation clip whose duration and phase markers define windup, active, and
+recovery ticks. There is no independent 1–999 timing override in
+`weapons.json`. The quick-punch
+double-click window starts at 30 ticks and is JSON-editable. Each move has an
+authored full-action clip and a move-owned hitbox attached to an animated body part;
 percent and knockback; and sound/pitch/volume/offset data. WASD moves horizontally. Camera-horizontal
 forward is captured when the attack begins. Ordinary attacks do not auto-aim
 vertically: the authored limb/hitbox must reach the opponent, so fighters
@@ -380,17 +381,16 @@ illustrative stable IDs; timings and detailed tuning remain open.
 
 Every move definition in the single `weapons.json` move-set entry needs a
 stable action ID, input/chord and grounded/airborne condition, double-click
-window (default 30 ticks, editable), windup/active/recovery tick counts (each
-independently editable from 1 through 999), an animation clip or
-pose for each phase, phase playback/retiming policy, movement/steering and
+window (default 30 ticks, editable), one stable animation clip ID,
+movement/steering and
 momentum policy, per-move root displacement/impulse, hitbox shape/dimensions/
 offset/animated-part attachment/active window, percent/knockback/shield-damage
-values, tick-addressed sound IDs, pitch, volume and spatial offset, and content revision. A shared
+values, tick-addressed sound IDs, pitch, volume and spatial offset, and content revision. The referenced clip asset alone defines total duration and phase boundaries. A shared
 parser/runtime owns the reusable behavior; the JSON selects and configures it.
 The 10/5/15 and 50-tick-canceled-at-tick-7 examples illustrate tick behavior,
-not fixed Captain Falcon timings. Each move's selected tick values are authored
-in JSON, not C++; phase intervals use one explicit
-inclusive/exclusive convention on clients and server.
+not fixed Captain Falcon timings. Clip duration and ordered phase markers are
+authored with the animation; `weapons.json` has no timing override. Phase
+intervals use half-open `[start,end)` bounds on clients and server.
 
 Grounded/airborne state and button edges are sampled on fixed simulation ticks.
 Melee move selection and authored locomotion/crouch pose selection use
@@ -482,7 +482,8 @@ revision, actor generation, historical overlap, shield state, match membership,
 hit limits, and movement/force plausibility. Plausible results are accepted as
 the canonical replicated outcome; clearly impossible results are rejected with
 a reason and visible server-disagreement correction. Replicate action ID and
-revision, action instance, start/phase tick, attack direction, input ordering,
+revision, clip ID and immutable clip-content revision, action instance, start tick
+(and derived phase/tick for diagnostics if needed), attack direction, input ordering,
 candidate/accepted target and contact, and accepted result. Do not send per-limb
 pose packets by default; both sides evaluate the shared animation locally.
 
@@ -619,10 +620,11 @@ The core behavior is now specified. These are the remaining product choices or
 initial tuning values; an implementing agent can build the editable fields and
 use clearly labeled provisional defaults where you prefer to tune in playtests.
 
-1. **Phase tuning:** Each move independently sets windup, active, and recovery
-   to 1–999 ticks; the double-click window starts at 30 ticks and is editable.
-   What first values should the Captain Falcon moves use, or should the agent
-   choose provisional values for you to tune in-game?
+1. **Phase tuning:** Windup, active, recovery, and total action length are
+   authored in each animation clip and cannot be overridden by `weapons.json`.
+   Selecting concrete first-pass Captain Falcon poses and marker positions is
+   still an authoring task; the double-click window remains a separate editable
+   30-tick input rule.
 2. **Input tie:** The most recently pressed conflicting modifier wins, and
    Space+grounded-left-click both jumps and performs uptilt. If Space and Ctrl
    have exactly the same press order/tick, which one should the default JSON
@@ -694,13 +696,13 @@ spawn behavior.
 
 ## 57. Authored pose policy and reported follow-up
 
-**DECIDED for first-version Melee:** An actor's selected Melee animation profile is authoritative for its visible rig pose. For the first match, both the human and NPC use the Captain Falcon avatar profile and its `assets/avatars/captainfalcon/animations.json`. The Melee action chooses phase clips from that profile. Each fixed tick, the runtime samples the selected clip and applies its authored part-local transform relative to the normalized rest pose. This exact sampled pose drives rendering and the corresponding move hitbox attachment.
+**DECIDED for first-version Melee:** An actor's selected Melee animation clip is authoritative for its visible rig pose and action timeline. For the first match, both the human and NPC use the Captain Falcon animation profile, with action clips resolvable from the shared animation asset registry. Each fixed tick, the runtime samples the action clip at its elapsed tick, derives windup/active/recovery from its markers, and applies its authored part-local transform relative to the normalized rest pose. This exact sampled pose drives rendering and the corresponding move hitbox attachment.
 
-While a Melee authored pose is active, do not add ordinary idle sway, locomotion/procedural pose, weapon/reload pose, dash/freeze pose, camera/aimbody limb-follow, or other animation overlays to the authored parts. The actor root still moves through the shared movement and collision simulation; animation-local offsets do not silently move the network-authoritative root. Root movement during a move must come from that move's explicit movement/impulse data. A newly accepted action replaces the old clip immediately, and its phase clip starts at the corresponding phase sample. Outside Melee, existing animation composition continues unchanged.
+While a Melee authored pose is active, do not add ordinary idle sway, locomotion/procedural pose, weapon/reload pose, dash/freeze pose, camera/aimbody limb-follow, or other animation overlays to the authored parts. The actor root still moves through the shared movement and collision simulation; animation-local offsets do not silently move the network-authoritative root. Root movement during a move must come from that move's explicit movement/impulse data. A newly accepted action replaces the old clip immediately and starts the new clip at tick zero. Outside Melee, existing animation composition continues unchanged.
 
-The shared animation owner must expose an explicit pose-composition policy so a mode can request this exclusive authored-pose behavior without a second animator. For Melee, the effective priority is: Melee action phase clip, then that actor profile's configured idle/locomotion fallback when no action clip is active. A missing Melee clip uses a configured Melee fallback and emits a bounded diagnostic; it must never silently fall through to ordinary aimbody or weapon poses. Euler XYZ and WXYZ quaternion input both convert once to the shared normalized quaternion representation. The exact Blender basis conversion/exporter remains governed by [`../animations/blender-animation-authoring.md`](../animations/blender-animation-authoring.md).
+The shared animation owner must expose an explicit pose-composition policy so a mode can request this exclusive authored-pose behavior without a second animator. For Melee, the effective priority is: Melee action clip sampled by its elapsed clip tick, then that actor profile's configured idle/locomotion fallback when no action clip is active. A missing Melee clip uses a configured Melee fallback and emits a bounded diagnostic; it must never silently fall through to ordinary aimbody or weapon poses. Euler XYZ and WXYZ quaternion input both convert once to the shared normalized quaternion representation. The exact Blender basis conversion/exporter remains governed by [`../animations/blender-animation-authoring.md`](../animations/blender-animation-authoring.md).
 
-**Live animation edits:** Saving Captain Falcon's `animations.json` updates the already-running Melee actors automatically, without rebuilding or restarting. The shared animation owner checks for changes at least every 100 ms and installs a valid complete set before actors sample poses on a fixed tick. Current action/state and phase progress continue; the new clip values are sampled at that progress. A bad or half-written save keeps the previous valid set. See [`../animations/animations.md`](../animations/animations.md) and [`../../architecture/json-configuration/json-configuration.md`](../../architecture/json-configuration/json-configuration.md).
+**Live animation edits:** Saving an animation asset installs a valid complete set before actors sample poses on a fixed tick; a bad or half-written save keeps the previous valid set. New actions use the newly accepted clip revision. **OPEN:** whether an already-running action remains pinned to its starting revision (recommended for client/server timing agreement) or adopts the newly loaded timeline at a deterministic shared tick. The selected policy must preserve server/client agreement. See [`../animations/animations.md`](../animations/animations.md) and [`../../architecture/json-configuration/json-configuration.md`](../../architecture/json-configuration/json-configuration.md).
 
 **Implementation audit (source review, 2026-10-18):** The Player runtime now has the exclusive authored-pose path, and the animation registry now checks animation files and includes at fixed-tick boundaries, replaces the cached set in place, and preserves the prior valid set on a rejected save. Build evidence confirms the code compiles; live save-to-visible-update behavior still needs a fresh runtime run. The Captain Falcon JSON remains short of the complete grounded/airborne/landing/shield/grab state set. Blender export is still marked proposal in the authoring spec.
 

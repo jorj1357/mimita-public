@@ -235,8 +235,58 @@ flight integration (steering, altitude sticks, banking) iterates later.
 | `priority` | int | 0 | Higher-priority clips interrupt lower ones. |
 | `blendInTicks` | int | 0 | Blend from the previous pose over this many ticks. |
 | `blendOutTicks` | int | 0 | Blend toward the next pose over this many ticks. |
+| `markers` | array | [] | Optional named, clip-local timeline markers. Combat phase markers are authoritative for that action's phase boundaries; see below. |
 | `keyframes` | array | required | Ordered keyframes. |
 | `audio` | object | optional | Tick-addressed animation sounds; schema below. |
+
+### Clip markers and action timing
+
+An animation clip owns its fixed-tick duration and any semantic timeline
+markers used by its consumers. Markers are integer clip ticks. A melee action
+clip includes exactly one each of `phase.windup`, `phase.active`,
+`phase.recovery`, and `action.end`. The first three mark phase starts;
+`action.end` is an exclusive endpoint and must equal `durationTicks`.
+Therefore markers define half-open intervals `[start,end)`. For example,
+duration 45 with markers at 0, 10, 25, and 45 means windup `[0,10)`, active
+`[10,25)`, and recovery `[25,45)`. The last sampled pose is tick 44. A phase may
+not be empty; markers must be strictly increasing.
+
+```json
+"markers": [
+  { "name": "phase.windup", "tick": 0 },
+  { "name": "phase.active", "tick": 10 },
+  { "name": "phase.recovery", "tick": 25 },
+  { "name": "action.end", "tick": 45 }
+]
+```
+
+This keeps the total length and gameplay phase windows beside the authored
+poses in one animation asset. A weapon action references one `animation_clip_id`
+and may not repeat total duration, phase durations, or phase clip IDs. The
+animation controls when the server considers the move windup, active, and
+recovery; weapon data still owns hitbox geometry, damage, knockback, impulses,
+input rules, and sound recipe. Hitbox per-tick overrides use active-phase-local
+ticks, beginning at zero. A hitbox cannot be active outside the clip's active
+interval.
+
+Generic markers remain available for future consumers and events. Unknown
+marker names are preserved/ignored by consumers that do not own them. Marker
+ticks must be in `[0,durationTicks]`; only the exclusive `action.end` boundary
+may equal duration. Event markers such as sounds occur on sampled ticks within
+`[0,durationTicks)`.
+
+For an action instance, the server and clients resolve the same clip content
+revision and start tick. The server derives action phase and hit eligibility
+from elapsed fixed ticks and that revision's markers. Clients use the same
+timeline for pose and prediction; server authority/referee rules still decide
+accepted gameplay results. Replication must identify the action/clip instance,
+start tick, and content revision (or equivalent immutable timeline identity)
+so a peer cannot apply different phase boundaries.
+
+**OPEN:** whether a live edit changes the timeline of an already-running
+action or whether that action pins the validated revision captured at start.
+Whichever policy is selected must be consistent on server and clients; new
+actions must use the newly accepted revision.
 
 ### Animation sound events
 
@@ -263,9 +313,9 @@ flight integration (steering, altitude sticks, banking) iterates later.
 - `onStartPitchMultiplier` applies the same audio-recipe multiplier rule to
   `onStartSoundId`; it defaults to `1.0`.
 - Melee move sound ownership is in the selected `config/weapons.json` move-set
-  definition, alongside input, phase ticks, hitboxes, percent, and knockback.
-  A Melee action must define a start sound and may define phase/tick markers
-  there; its clips must not duplicate those sound values. A new Melee action
+  definition, alongside input, hitboxes, percent, and knockback. A Melee action
+  must define a start sound and may define phase-local sound events there; its
+  clip must not duplicate those sound values. A new Melee action
   immediately stops the prior sound on that actor's Melee-animation channel
   and starts its tick-0 sound. Retriggering the same sound starts it from the
   beginning. This intentionally allows fast cancels to cut off earlier sounds.
@@ -280,41 +330,27 @@ flight integration (steering, altitude sticks, banking) iterates later.
 - Sound IDs resolve through the existing audio/resource owner. Missing IDs
   produce a bounded diagnostic and do not stop animation.
 
-### Retiming animation to configurable action phases
+### Animation-authored action timeline
 
-Combat action data owns the server-tick duration of each phase. A Melee action
-references a separate animation clip or held pose for `windup`, `active`, and
-`recovery`; it does not rely on one fixed-total-duration clip whose hit frame
-becomes wrong when phase lengths change. A pose can be a one-pose clip. A phase
-clip is sampled by normalized progress:
+Melee no longer retimes phase clips from durations in `config/weapons.json`.
+One action references one authored clip. Its `durationTicks` and phase markers
+in that clip define the complete action duration and the exact server-tick
+windup, active, and recovery windows. Playback samples the clip directly at
+elapsed clip tick; there is no normalized phase retiming. Editing the clip's
+markers and keyframes together changes both the visible action and its active
+window without editing a second timing file.
 
-```text
-phaseProgress = phaseTicks <= 1
-              ? 0
-              : clamp(phaseTick / (phaseTicks - 1), 0, 1)
-clipSample    = phaseProgress * (clipDurationTicks - 1)
-```
+Tick zero is the first action tick. For duration `N`, sample ticks `0` through
+`N-1`; `action.end` at tick `N` is exclusive and means the action is complete
+before sampling another action tick. At each fixed tick, derive the phase from
+the half-open marker intervals. Only ticks in `phase.active` can evaluate the
+move hitbox. The hitbox follows its named body part's evaluated transform.
+Root movement remains separate, action-owned data expressed in the captured
+camera-relative basis and simulated/collision-checked by the movement owner.
 
-`phaseTick` is zero-based, so an `N`-tick phase evaluates samples `0` through
-`N-1`. A one-tick phase samples its start pose for that tick; longer phases
-reach their authored end pose on the final phase tick. Phase durations must be
-at least one tick.
-
-Sample the phase clip at `clipSample`, applying its normal easing and quaternion
-interpolation. Thus editing a phase's tick count speeds up or slows down that
-phase's animation while preserving its authored start and end poses. The next
-phase always begins at its own first pose on the exact action-state transition
-tick. Windup and recovery clips cannot enable a hitbox; only the action's active
-phase can. A move's hitbox follows the named body part's evaluated transform
-through the active phase, including when that phase is retimed. Root movement
-is separate, action-owned JSON data expressed in the captured camera-relative
-basis and simulated/collision-checked by the movement owner.
-
-The active clip interpolation is a presentation path, not a way to move hit
-windows. Server hit eligibility always comes from the action phase ticks. When
-retiming makes the active limb path faster or slower, validate hitbox sweep and
-visual readability for the new duration; do not stretch a hitbox using render
-frame time.
+The timeline controls eligibility, while the animation curve supplies the
+limb path. Swept hitbox queries must use the fixed-tick poses for each active
+tick; render frame time cannot stretch or shorten the active window.
 
 ### Keyframe and part fields
 
@@ -381,16 +417,16 @@ based on whether Blender supplied Euler angles or a quaternion:
 2. **Extract the local part orientation.** Remove parent/world transforms and
    express the pose relative to the part's normalized rest frame and pivot.
    The exported pose is a local orientation, never a world-space quaternion.
-3. **Convert the authoring basis once.** Let `B` be the explicit orthogonal
-   basis conversion from Blender coordinates to the canonical game coordinates
-   (including any axis permutation or handedness policy). Convert a rotation
-   matrix `R_source` to `R_game = B * R_source * inverse(B)`, then convert that
-   matrix to a quaternion. Convert local translation offsets as
-   `t_game = B * t_source`. The exporter must write its selected `B` policy in
-   the export report; the runtime must not guess an axis correction from the
-   model or apply the basis change again. The exact Blender/game axis mapping
-   must be verified against the normalized avatar frame before an exporter is
-   accepted.
+3. **Convert the authoring basis once.** Use the canonical avatar coordinate
+   contract: Blender and MiMITA are Z-up; game forward is +X and lateral is +Y.
+   Let `B` be the transform required to express the imported reference GLB and
+   evaluated Blender pose in that normalized game basis (identity when the
+   source already matches it). Convert a rotation matrix `R_source` to
+   `R_game = B * R_source * inverse(B)`, then convert that matrix to a
+   quaternion. Convert local translation offsets as `t_game = B * t_source`.
+   The exporter reports the selected `B`; runtime must not guess another axis
+   correction or apply the conversion again. Validate `B` against the
+   normalized avatar frame before accepting an exporter.
 4. **Normalize to the canonical runtime value.** For Euler input, interpret
    version-2 `rotationEulerDegrees` as XYZ degrees composed exactly as
    `Rx * Ry * Rz` (`qx * qy * qz`), then apply basis conversion and normalize.
@@ -408,15 +444,40 @@ based on whether Blender supplied Euler angles or a quaternion:
    boundary. Any Euler export is derived from that quaternion for display or
    authoring; it is never accumulated from the previous tick.
 
+### Blender export density and pose export modes
+
+The Blender exporter contract is defined in
+[`blender-animation-authoring.md`](blender-animation-authoring.md). The default
+`Authored keyframes` mode writes only the union of integral transform-key frames
+from the selected Actions. Each exported key contains a complete evaluated rig
+pose, and the runtime interpolates smoothly between keys. A 60-tick clip still
+has `durationTicks: 60`; for keys at Blender frames 1, 15, 30, and 60, JSON ticks
+are 0, 14, 29, and 59. The optional `Dense every tick` mode writes an evaluated
+pose for every fixed 60 Hz game tick.
+
+The standalone exporter offers two pose export modes:
+
+- `Authored keyframes` is the default. Blender evaluates all selected part
+  Actions at each integral authored transform-key frame; only those complete
+  poses are exported. The game interpolates the sparse keys using the shared
+  interpolation curve and shortest-arc quaternion SLERP.
+- `Dense every tick` is optional. Blender evaluates and exports the complete
+  pose for every game tick, making each tick's pose explicit in JSON.
+
+For the first exporter version, the Blender scene must run at 60 FPS. The first
+sampled Action frame maps to game tick 0 (so frames 1–60 map to ticks 0–59).
+The exclusive end marker maps to `durationTicks`. See the Blender authoring
+spec for the unanimated GLB reference pose, Z-up coordinate frame, marker
+convention, and export UI behavior.
+
 The two JSON encodings for the same pose must produce equivalent rotation
 matrices within a documented floating-point tolerance. A golden conversion
 fixture must cover identity, a single-axis quarter turn, a combined XYZ turn,
-near-gimbal Euler input, quaternion sign reversal (`q` versus `-q`), and a
-non-identity Blender-to-game basis. The exporter report and runtime diagnostics
-must make the chosen basis and source encoding inspectable. The actual `B`
-mapping is an implementation prerequisite; this specification deliberately
-does not invent an axis mapping before the model/export coordinate owners are
-verified.
+near-gimbal Euler input, quaternion sign reversal (`q` versus `-q`), and any
+non-identity normalization basis. The exporter report and runtime diagnostics
+must make the chosen basis and source encoding inspectable. The canonical axis
+convention is decided by `avatar-editor.md`; the exact normalized GLB-to-runtime
+matrix and pivot delta remain implementation prerequisites.
 
 Version-2 examples for the two supported authoring encodings:
 

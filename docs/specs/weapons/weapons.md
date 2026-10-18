@@ -291,11 +291,12 @@ equip plumbing are migration debt and must be measured before removal.
 **DECIDED direction for Captain Falcon Melee:** represent the entire A/B move
 set as one stable item/definition ID, `captain_falcon_moveset`, with all attack
 actions as children of its reusable `melee` behavior component. Put each
-action's inputs, grounded/airborne conditions, tap count/window, windup/active/
-recovery tick counts, per-phase animation/pose IDs, animated-part hitboxes,
-percent, knockback, movement/root-motion settings, sound IDs, pitch and volume
-multipliers, sound offsets, and shield damage in that one
-`config/weapons.json` definition.
+action's inputs, grounded/airborne conditions, tap count/window, one stable
+animation clip ID, animated-part hitboxes, percent, knockback,
+movement/root-motion settings, sound IDs, pitch and volume multipliers, sound
+offsets, and shield damage in that one `config/weapons.json` definition. The
+referenced animation asset owns total duration and windup/active/recovery
+boundaries; do not duplicate timing or per-phase clip references here.
 The selected `config/weaponsets.json` loadout references this one definition;
 it must not duplicate its move data or list each attack as an equipable weapon.
 The fighter keeps this moveset active for the whole match and across respawns.
@@ -319,11 +320,7 @@ The target data shape is conceptually:
       "actions": {
         "a_ground_punch": {
           "input": { "button": "primary", "actor_state": "grounded" },
-          "phases": {
-            "windup": { "ticks": 1, "clip_id": "falcon_punch_windup" },
-            "active": { "ticks": 1, "clip_id": "falcon_punch_active" },
-            "recovery": { "ticks": 1, "clip_id": "falcon_punch_recovery" }
-          },
+          "animation_clip_id": "punch_a",
           "hitboxes": [
             {
               "id": "right_hand_hit",
@@ -362,14 +359,17 @@ The target data shape is conceptually:
 }
 ```
 
-This is an illustrative schema, not a current parser contract. The phase tick
-values are the valid one-tick minimum, while zero-sized hitbox and damage values
-are placeholders, not playable tuning values. Exact keys, defaults, validation,
-supported hitbox shapes, and field ownership must be finalized against the
-existing JSON loader and animation/audio interfaces before implementation.
+This is an illustrative schema, not a current parser contract. The referenced
+clip's `durationTicks` and phase markers in the animation asset are the only
+timing source; phase lengths and phase-specific clip IDs are intentionally
+absent here. Zero-sized hitbox and damage values are placeholders, not playable
+tuning values. Exact keys, defaults, validation, supported hitbox shapes, and
+asset ID resolution must be finalized against the existing JSON loader and
+animation/audio interfaces before implementation.
 Each attack remains data, while shared C++ systems interpret known fields.
 `audio.on_start` plays at action tick 0; each additional audio event is keyed
-by phase and phase-local server tick. `pitch_multiplier` scales the pitch
+by phase and phase-local server tick, and must fall within the animation-owned
+phase interval. `pitch_multiplier` scales the pitch
 resolved by the shared audio recipe. The action definition is the sole sound
 owner for a Melee move; its referenced animation clips do not repeat that move's
 sound values.
