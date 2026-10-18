@@ -423,8 +423,20 @@ void registerWeaponsFromJsonRoot()
         std::string id = it.key();
         if (it.value().contains("id") && it.value()["id"].is_string())
             id = it.value()["id"].get<std::string>();
-        if (id.empty() || WeaponRegistry::instance().has(id))
+        if (id.empty())
             continue;
+
+        if (WeaponRegistry::instance().has(id)) {
+            // Builtin constructors own their base WeaponDefinition, but the
+            // JSON Melee component is still the live source of move behavior.
+            // Republish it on every config reload so existing data-only
+            // definitions (such as Captain Falcon's move set) can be edited
+            // without restarting the game.
+            WeaponData::MeleeMoveSet moveSet;
+            if (WeaponData::parseMeleeMoveSet(id, it.value(), moveSet))
+                WeaponData::MeleeMoveSetRegistry::instance().set(std::move(moveSet));
+            continue;
+        }
 
         WeaponDefinition def;
         def.id = id;

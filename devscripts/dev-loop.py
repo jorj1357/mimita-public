@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import builtins
 import colorsys
+import ctypes
 import datetime
 from collections import deque
 import hashlib
@@ -68,7 +69,8 @@ WATCH_SCRIPT = ROOT / "devscripts" / "dev-loop-watch.py"
 WATCH_LOG_PATH = DEV_ROOT / "dev-loop-watch.log"
 DAEMON_LOG_PATH = DEV_ROOT / "dev-loop-console.log"
 DAEMON_READY_TIMEOUT_SECONDS = 60.0
-DASHBOARD_FRAME_SECONDS = 1.0
+DASHBOARD_FRAME_SECONDS = 0.05
+DASHBOARD_STATUS_REFRESH_SECONDS = 1.0
 ROLE_NAMES = {
     "watchdog": "MiMITA Dev Loop Watchdog",
     "daemon": "MiMITA Dev Loop Daemon",
@@ -88,11 +90,11 @@ def script_sha256(path: Path) -> str:
         return ""
 DEFAULT_MAP_POOL_PATH = ROOT / "config" / "gamemode-good-maps.json"
 
-# Snapshotting the watched source tree takes about 60 ms on this checkout.
-# Polling at 150 ms consumed too much background CPU during client startup and
-# could briefly steal frame time from the newly launched game.
+# Directory notifications keep broad compiler-input coverage without walking
+# every source tree twice a second. The bounded poll also checks the small set
+# of standalone build/configuration inputs and is the non-Windows fallback.
 POLL_SECONDS = 0.50
-DEBOUNCE_SECONDS = 0.30
+DEBOUNCE_SECONDS = 0.20
 KEEP_BUILDS = 5
 RAINBOW_SECONDS = 5.0
 
@@ -135,14 +137,25 @@ RUNTIME_DLLS = (
     "glfw3.dll",
 )
 
-WATCH_EXTENSIONS = {".c", ".cc", ".cpp", ".h", ".hh", ".hpp", ".rc", ".py"}
-WATCH_DIRECTORIES = (ROOT / "src", ROOT / "external" / "libjuice" / "src")
+WATCH_EXTENSIONS = {
+    ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx",
+    ".inl", ".ipp", ".tcc", ".inc", ".rc", ".a", ".lib",
+}
+WATCH_DIRECTORIES = (
+    ROOT / "src",
+    ROOT / "include",
+    ROOT / "external" / "libjuice",
+    ROOT / "external" / "recastnavigation",
+    ROOT / "external" / "manifold-prebuilt",
+)
 WATCH_FILES = (
     ROOT / "mimita.rc",
+    ROOT / "CMakeLists.txt",
     ROOT / "build.py",
     ROOT / "build_game_dll.py",
     ROOT / "build_lock.py",
     ROOT / "build_toolchain.py",
+    ROOT / "tools" / "build_manifold.py",
     DEFAULT_MAP_POOL_PATH,
     LAUNCH_MODE_PATH,
 )
@@ -430,8 +443,17 @@ def file_signature(path: Path):
 
 def snapshot_inputs() -> dict[str, tuple[int, int] | None]:
     result = {}
-    for path in WATCH_FILES:
-        result[str(path)] = file_signature(path)
+    result.update(snapshot_watch_files())
+    result.update(snapshot_watch_directories())
+    return result
+
+
+def snapshot_watch_files() -> dict[str, tuple[int, int] | None]:
+    return {str(path): file_signature(path) for path in WATCH_FILES}
+
+
+def snapshot_watch_directories() -> dict[str, tuple[int, int] | None]:
+    result = {}
     for directory in WATCH_DIRECTORIES:
         if not directory.is_dir():
             continue
@@ -439,6 +461,87 @@ def snapshot_inputs() -> dict[str, tuple[int, int] | None]:
             if path.is_file() and path.suffix.lower() in WATCH_EXTENSIONS:
                 result[str(path)] = file_signature(path)
     return result
+
+
+class DirectoryChangeNotifications:
+    """Low-cost Windows subtree notifications for build-input directories."""
+
+    FILE_NOTIFY_CHANGE_FILE_NAME = 0x00000001
+    FILE_NOTIFY_CHANGE_DIR_NAME = 0x00000002
+    FILE_NOTIFY_CHANGE_SIZE = 0x00000008
+    FILE_NOTIFY_CHANGE_LAST_WRITE = 0x00000010
+    WAIT_OBJECT_0 = 0
+    WAIT_TIMEOUT = 258
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+    def __init__(self, directories: tuple[Path, ...]):
+        self.changed = threading.Event()
+        self.stop_event = threading.Event()
+        self.threads: list[threading.Thread] = []
+        self.available = os.name == "nt"
+        self.failed = threading.Event()
+        self.directories = directories
+
+    def start(self) -> None:
+        if not self.available:
+            return
+        try:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.FindFirstChangeNotificationW.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_int, ctypes.c_uint32]
+            kernel32.FindFirstChangeNotificationW.restype = ctypes.c_void_p
+            kernel32.FindNextChangeNotification.argtypes = [ctypes.c_void_p]
+            kernel32.FindNextChangeNotification.restype = ctypes.c_int
+            kernel32.FindCloseChangeNotification.argtypes = [ctypes.c_void_p]
+            kernel32.FindCloseChangeNotification.restype = ctypes.c_int
+            kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+            self.kernel32 = kernel32
+        except (AttributeError, OSError):
+            self.available = False
+            return
+
+        started = 0
+        for directory in self.directories:
+            if not directory.is_dir():
+                continue
+            thread = threading.Thread(
+                target=self._watch_directory,
+                args=(directory,),
+                name=f"dev-loop-watch-{directory.name}",
+                daemon=True,
+            )
+            thread.start()
+            self.threads.append(thread)
+            started += 1
+        self.available = started > 0
+
+    def _watch_directory(self, directory: Path) -> None:
+        flags = (self.FILE_NOTIFY_CHANGE_FILE_NAME | self.FILE_NOTIFY_CHANGE_DIR_NAME
+                 | self.FILE_NOTIFY_CHANGE_SIZE | self.FILE_NOTIFY_CHANGE_LAST_WRITE)
+        handle = self.kernel32.FindFirstChangeNotificationW(str(directory), 1, flags)
+        if not handle or handle == self.INVALID_HANDLE_VALUE:
+            self.failed.set()
+            return
+        try:
+            while not self.stop_event.is_set():
+                result = self.kernel32.WaitForSingleObject(handle, 500)
+                if result == self.WAIT_TIMEOUT:
+                    continue
+                if result != self.WAIT_OBJECT_0:
+                    self.failed.set()
+                    return
+                self.changed.set()
+                if not self.kernel32.FindNextChangeNotification(handle):
+                    self.failed.set()
+                    return
+        finally:
+            self.kernel32.FindCloseChangeNotification(handle)
+
+    def close(self) -> None:
+        self.stop_event.set()
+        for thread in self.threads:
+            thread.join(timeout=0.75)
 
 
 def find_ccache() -> str | None:
@@ -1602,22 +1705,60 @@ class DevLoop:
                 self.save_state("request_rejected")
 
     def watch(self) -> None:
-        while not self.stop_event.wait(POLL_SECONDS):
-            current = snapshot_inputs()
-            if current != self.last_snapshot:
+        notifications = DirectoryChangeNotifications(WATCH_DIRECTORIES)
+        notifications.start()
+
+        def record_source_change() -> None:
+            with self.lock:
+                self.generation += 1
+                self.latest_stale = self.latest_build is not None
+                self.last_message = f"source changed, generation {self.generation}"
+            self.change_event.set()
+            self.save_state("source_changed")
+
+        # Catch any input changed between daemon initialization and watcher start.
+        current = snapshot_inputs()
+        changed = current != self.last_snapshot
+        self.last_snapshot = current
+        if changed:
+            record_source_change()
+        while not self.stop_event.is_set():
+            if notifications.available and not notifications.failed.is_set():
+                directory_changed = notifications.changed.wait(POLL_SECONDS)
+                notifications.changed.clear()
+                explicit = snapshot_watch_files()
+                changed = any(self.last_snapshot.get(path) != signature
+                              for path, signature in explicit.items())
+                self.last_snapshot.update(explicit)
+                if directory_changed:
+                    directories = snapshot_watch_directories()
+                    previous = {path: signature for path, signature in self.last_snapshot.items()
+                                if any(path.startswith(str(root) + os.sep)
+                                       for root in WATCH_DIRECTORIES)}
+                    changed = changed or previous != directories
+                    for path in previous:
+                        self.last_snapshot.pop(path, None)
+                    self.last_snapshot.update(directories)
+            else:
+                if notifications.failed.is_set():
+                    notifications.available = False
+                if self.stop_event.wait(POLL_SECONDS):
+                    break
+                current = snapshot_inputs()
+                changed = current != self.last_snapshot
                 self.last_snapshot = current
-                with self.lock:
-                    self.generation += 1
-                    self.latest_stale = self.latest_build is not None
-                    self.last_message = f"source changed, generation {self.generation}"
-                self.change_event.set()
-                self.save_state("source_changed")
+
+            if changed:
+                record_source_change()
+                changed = False
+        notifications.close()
 
     def start_build_worker(self) -> None:
         with self.lock:
             if self.active_build_generation is not None:
                 return
             requested_generation = self.generation
+            request_ids: list[str] = []
             if self.pending_build_request_ids:
                 requested_mode = self.pending_build_request_modes.get(
                     self.pending_build_request_ids[0], "debug")
@@ -3226,7 +3367,10 @@ def ensure_running(profile: str, launch_mode, visibility: str):
     if not (wpid and pid_alive(wpid)):
         started = start_watchdog_detached(profile, launch_mode, visibility)
         events.append({"action": "watchdog_start", "pid": started, "ok": bool(started)})
-    current = wait_for_daemon_ready(DAEMON_READY_TIMEOUT_SECONDS)
+    # Give the watchdog a short chance to start the daemon, then use the
+    # daemon lock as the idempotency gate for a direct fallback start. If the
+    # watchdog races us, only one process can own that lock.
+    current = wait_for_daemon_ready(min(3.0, DAEMON_READY_TIMEOUT_SECONDS))
     if current is None:
         dpid = daemon_lock_pid()
         if not (dpid and pid_alive(dpid)):
@@ -3314,8 +3458,16 @@ def _recent_activity(events_path: str, limit: int = 3) -> list[str]:
     if not events_path:
         return []
     try:
-        with open(events_path, "r", encoding="utf-8", errors="replace") as handle:
-            lines = handle.readlines()[-300:]
+        with open(events_path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            tail_bytes = min(size, 64 * 1024)
+            handle.seek(size - tail_bytes)
+            tail = handle.read(tail_bytes).decode("utf-8", errors="replace")
+        lines = tail.splitlines()
+        if size > tail_bytes and lines:
+            lines = lines[1:]
+        lines = lines[-300:]
     except OSError:
         return []
     found: list[str] = []
@@ -3525,25 +3677,32 @@ def run_dashboard(args: argparse.Namespace) -> int:
     def control(state: dict, action: str, **fields) -> bool:
         nonlocal current, view_status
         current = read_current_run() or current or {}
+        view_status = f"{action} sending"
+        render(current)
         response = _dashboard_control(current, action, **fields)
         ok = bool(response and response.get("accepted"))
         if not ok:
             problem = (response or {}).get("error") or "daemon unavailable"
             view_status = f"{action} not accepted: {problem}"
         else:
+            if isinstance(response.get("state"), dict):
+                current = response["state"]
             view_status = f"{action} accepted"
         return ok
 
     def snapshot() -> dict:
-        return request_daemon_status(current) if current else None
+        return request_daemon_status(current, timeout=0.25) if current else None
 
     try:
+        last_status_refresh = 0.0
         while True:
-            if not frozen:
+            now = time.monotonic()
+            if not frozen and now - last_status_refresh >= DASHBOARD_STATUS_REFRESH_SECONDS:
                 role_pids["watchdog"] = watcher_pid()
                 role_pids["daemon"] = daemon_lock_pid()
                 current = read_current_run() or current or {}
                 render(snapshot() or current)
+                last_status_refresh = now
             key, exhausted = next_key()
             if exhausted:
                 break
@@ -3588,6 +3747,8 @@ def run_dashboard(args: argparse.Namespace) -> int:
                 elif key == "r" and frozen:
                     frozen = False
                     view_status = f"refreshed at {utc_now()} (resumed from freeze)"
+                if key not in ("x", "q"):
+                    render(current or {})
             frames += 1
             if args.dashboard_frames and frames >= args.dashboard_frames:
                 break

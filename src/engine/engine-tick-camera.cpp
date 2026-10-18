@@ -1051,7 +1051,7 @@ void engineTickCamera(Engine& engine, float dt)
         float duration = 0.5f;
         std::string easing = "ease_in_out";
         if (fovMode.aimFov.enabled) {
-            held = rmbHeld;  // mode override: raw RMB, independent of aim-body mode
+            held = fovMode.aimFov.input == "right_mouse" && rmbHeld;
             multiplier = fovMode.aimFov.multiplier;
             duration = fovMode.aimFov.duration;
             easing = fovMode.aimFov.easing;

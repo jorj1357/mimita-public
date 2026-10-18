@@ -1,4 +1,7 @@
-2026 10 08 1228 jorj todo explainbetter
+The opening informal notes below are historical context from early design
+discussion. The numbered sections that follow contain the current requirements;
+when a note and a numbered requirement differ, the numbered requirement is
+authoritative.
 
 captain failcon sounds are in the rerpo 
 cuz 
@@ -701,9 +704,27 @@ The shared animation owner must expose an explicit pose-composition policy so a 
 
 **Implementation audit (source review, 2026-10-18):** The Player runtime now has the exclusive authored-pose path, and the animation registry now checks animation files and includes at fixed-tick boundaries, replaces the cached set in place, and preserves the prior valid set on a rejected save. Build evidence confirms the code compiles; live save-to-visible-update behavior still needs a fresh runtime run. The Captain Falcon JSON remains short of the complete grounded/airborne/landing/shield/grab state set. Blender export is still marked proposal in the authoring spec.
 
+## 58. Shared Force Punch contact and active-hitbox presentation
+
+**DECIDED for Captain Falcon Melee:** Every attack in `captain_falcon_moveset` uses one shared, actor-neutral contact pipeline based on Force Punch's physical-contact behavior. Players and NPCs use the same move definition, active-tick contact query, hitbox visualization, contact-force inputs, and confirmed-result path whether they are attacking or being hit. Human input and NPC decision-making may choose actions differently; they do not select different hitbox, collision, or damage/knockback implementations.
+
+`config/weapons.json` remains the single editable source for the move set. For every move and each active simulation tick, its hitbox data must allow editing the attached named limb, supported shape, shape dimensions (including sphere radius where applicable), and limb-local offset. A hitbox may set base values and provide optional `per_tick` entries keyed by active-phase-local `tick`; an entry overrides only that tick's attached limb, shape, size, or `local_offset`, while omitted entries use the base values. Tick-specific values may change as the animated attack progresses. The move's active phase determines which tick records are evaluated. Do not add a parallel Melee hitbox configuration file or hard-code per-move geometry in C++.
+
+At each fixed tick, derive the hitbox world transform from the attacker's authoritative actor root and sampled animated limb pose, then sweep the configured shape from its previous to current transform. Use the same resolved transform and shape for contact testing and visualization. During each active tick, render the attack volume as a translucent red shape with 0.5 alpha for player- and NPC-originated attacks on observing clients. The visual follows the same limb and tick-specific geometry used by the contact query; a separate visual-only approximation is not acceptable.
+
+The shared contact result uses Force Punch's normalized contact-center proximity and movement-through-volume force inputs, together with Melee's already specified approach directness. Those inputs feed one shared force calculation for the move's percent and knockback. Melee's result policy adds percent and applies impulse to either player or NPC actors; it does not substitute ordinary health damage. Outside Melee, a reused contact result must still pass through the active mode's damage/result policy. Keep the exact combined force curve, normalization, and caps open as recorded in sections 25–26 until they are selected or explicitly made JSON-editable provisional tuning.
+
+Keep the existing hit-count decision open under section 23: adding per-active-tick geometry does not by itself decide whether one target can be confirmed once per activation or multiple times. All client prediction, server validation, actor generation, move revision, and accepted-result replication continue to follow sections 23–24 and the shared networking contract.
+
+## 59. Confirmed Melee hit feedback and aim policy
+
+**DECIDED:** When the server confirms a Melee contact, the attacker, target, and observing clients receive one restrained impact response at the confirmed contact point: the existing entity-impact sphere, a short directional hit burst, and a spatial hit sound. Reuse the existing reliable shot-impact presentation route; do not play gun muzzle, tracer, or gunshot effects for a punch or kick. This response is visual/audio feedback only and must not apply health damage or a second knockback. Keep hit response strength and sound volume modest and editable through the existing hit-effect/audio configuration. This applies to player- and NPC-originated hits and player/NPC targets.
+
+**DECIDED:** Captain Falcon Melee does not use RMB to zoom the camera or point the physical arm. The arm follows the exclusive Melee-authored pose in section 57. RMB remains available as the move-set's configured secondary attack input; disabling aim must not consume or remove that attack binding.
+
 **Status of raw session notes:** The notes previously pasted below this section were reports and investigation inputs, not requirements already implemented or proven. The authoritative requirements have been moved into the relevant numbered sections. Remaining reports are separated by owner:
 
-- **Melee presentation to specify/implement:** visible shield sphere/effect; a debug view for configured attack hitboxes and their active windows; fuller Captain Falcon limb/leg clips and required idle, locomotion, jump/fall/land, attack, shield, grab, and respawn states.
+- **Melee presentation to implement:** visible shield sphere/effect; the active-hitbox visualization specified in section 58; fuller Captain Falcon limb/leg clips and required idle, locomotion, jump/fall/land, attack, shield, grab, and respawn states.
 - **Runtime issues to reproduce:** animation looked too subtle; server reportedly exited and/or stopped advancing near tick 5516; reconnect/leave behavior was unreliable. These require a fresh run journal and process evidence before assigning a cause.
 - **Dev-loop issue to investigate separately:** the pasted dashboard snapshot for run `20261018_033521` (build `2518`; journal `logs/2026-10-18/20261018_033521/events.jsonl`) labels the run `mode=1(current)`, says the map is `cramped`, and reports server PID `26612` dead while client PID `21360` is alive. That text proves what the dashboard displayed at that timestamp, not the map actually rendered or the server's later state. See [`../dev-loop/dev-loop.md`](../dev-loop/dev-loop.md); do not treat this snapshot as proof that Melee selected the wrong map or that the server is currently dead.
 
@@ -786,3 +807,55 @@ needs to udpate live
 cannot have it  be a rebuild 
 bc its animations and doing numbers to visuals its not so  like 
 it needs super quick feedbakc 
+
+2026 10 18 1244 
+C:\mimita-v9\config\movement\movement-smash.json 
+this isnt  like
+idk 
+i dont htink this is being used 
+animatiosn started updateing live tho we fixed that i think 
+we also need to make it like
+per gamemode or per actor mode like 
+rmb down should not aim in  for melee mode
+like, we need to have that disabled in the gamemodeperset 
+C:\mimita-v9\config\gamemodes\melee.json
+like here put like
+aimbdoy.json fov enabled = false
+like rmb down does not haev a effect on ur fov 
+
+also crouching isnt working how its intended
+
+hitboxes dont show, weneed to shwo htiboxes for each move every singel moveneeds to have a hitbox like on the limb that is moving and needs to be editable its offset at each tick of the move being active, its position  its size etc all editable per tick
+so like tick 1 of a punch its like radius 0.5m and offset 0.5 meter from hand, then tick 2 its radius 0.7 offset 0.7 meter from hand, on adn on 
+
+2026 10 18 1255 how do we make it so all the attacks for smash the captain falcon weapon is using force punch logic for all of it 
+so like active ticks, sphere radius, offset, etc 
+
+### 2026-10-18 13:09 America/New_York — Jorj Melee issue report
+
+- Crouching does not work as intended. A server position error was also seen;
+  its cause is unknown.
+- Right mouse currently aims in during Melee. Desired behavior: disable aiming
+  for this mode so right mouse does not change the field of view or move the
+  right arm.
+- Shield and grab need visible effects comparable to the freeze effect. The
+  shield, grab, and every attack need a visible hitbox during their active
+  behavior.
+- Holding jump does not work reliably. The reported desired behavior is for
+  held-jump input to be handled on the client because the server feels too slow;
+  the implementation and authority details still need investigation.
+
+### 2026-10-18 13:17 America/New_York — Jorj live Melee report
+
+- During the current play session, attack hitboxes are visible while hitting an
+  NPC, but attacks that appear to connect produce no damage, percentage, or
+  knockback. The attack-result/contact path needs investigation so visible
+  contacts produce the intended Melee result.
+- Collision problems were also observed on `cramped`: getting caught in walls
+  and phasing through them. The map may make the issue more noticeable, and the
+  current collision behavior is no longer physical-mode collision. These are
+  observations only; the cause is unknown.
+- **Current priority:** focus on making attacks produce their intended results.
+  Leave the wall and collision issues for later investigation.
+
+2026 10 18 if the npc dies, then the servre crashes 

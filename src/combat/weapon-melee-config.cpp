@@ -115,6 +115,25 @@ void parseHitbox(const json& j, MeleeHitbox& out)
         out.shape = normalizedToken(j["shape"].get<std::string>());
     jsonVec3(j, "size", out.size);
     jsonVec3(j, "local_offset", out.localOffset);
+    if (j.contains("per_tick") && j["per_tick"].is_array()) {
+        for (const json& entry : j["per_tick"]) {
+            if (!entry.is_object() || !entry.contains("tick") || !entry["tick"].is_number_integer())
+                continue;
+            MeleeHitboxTick override;
+            override.tick = entry["tick"].get<int>();
+            override.attachedPart = out.attachedPart;
+            override.shape = out.shape;
+            override.size = out.size;
+            override.localOffset = out.localOffset;
+            if (entry.contains("attached_part") && entry["attached_part"].is_string())
+                override.attachedPart = entry["attached_part"].get<std::string>();
+            if (entry.contains("shape") && entry["shape"].is_string())
+                override.shape = normalizedToken(entry["shape"].get<std::string>());
+            jsonVec3(entry, "size", override.size);
+            jsonVec3(entry, "local_offset", override.localOffset);
+            out.perTick.push_back(std::move(override));
+        }
+    }
     if (j.contains("active_start_tick") && j["active_start_tick"].is_number())
         out.activeStartTick = j["active_start_tick"].get<int>();
     if (j.contains("active_end_tick") && j["active_end_tick"].is_number())

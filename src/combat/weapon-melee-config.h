@@ -47,6 +47,14 @@ struct MeleePhase {
     std::string clipId;     // phase clip/pose reference (may be empty for fallback)
 };
 
+struct MeleeHitboxTick {
+    int tick = 0;                       // active-phase-local tick
+    std::string attachedPart;
+    std::string shape = "sphere";
+    glm::vec3 size{0.5f};
+    glm::vec3 localOffset{0.0f};
+};
+
 struct MeleeHitbox {
     std::string id;
     std::string attachedPart;          // head|torso|leftArm|rightArm|leftLeg|rightLeg
@@ -57,7 +65,24 @@ struct MeleeHitbox {
     // clamped so the window stays inside the action's active phase.
     int activeStartTick = 0;
     int activeEndTick = 0;
+    std::vector<MeleeHitboxTick> perTick;
 };
+
+inline MeleeHitbox resolveMeleeHitboxForTick(const MeleeHitbox& hitbox, int tick)
+{
+    MeleeHitbox resolved = hitbox;
+    resolved.perTick.clear();
+    for (const MeleeHitboxTick& override : hitbox.perTick) {
+        if (override.tick != tick)
+            continue;
+        if (!override.attachedPart.empty()) resolved.attachedPart = override.attachedPart;
+        resolved.shape = override.shape;
+        resolved.size = override.size;
+        resolved.localOffset = override.localOffset;
+        break;
+    }
+    return resolved;
+}
 
 struct MeleeImpulse {
     std::string phase = "active";      // windup|active|recovery

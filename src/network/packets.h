@@ -294,7 +294,10 @@ enum ShotEffectFlags : uint16_t
     SHOT_EFFECT_ENTITY_IMPACT = 1 << 5,
     SHOT_EFFECT_BLOOD = 1 << 6,
     SHOT_EFFECT_HIT_SOUND = 1 << 7,
-    SHOT_EFFECT_WEAPON_TRIGGER = 1 << 8
+    SHOT_EFFECT_WEAPON_TRIGGER = 1 << 8,
+    // Confirmed Melee impact feedback may also be shown to its local attacker;
+    // unlike gun impacts it has no locally predicted contact effect.
+    SHOT_EFFECT_MELEE_CONFIRM = 1 << 9
 };
 
 #pragma pack(push, 1)

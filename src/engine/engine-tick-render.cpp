@@ -32,6 +32,7 @@
 #include "combat/weapon-system.h"
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-registry.h"
+#include "combat/melee-client.h"
 #include "combat/death-system.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "effects/effect-part.h"
@@ -523,6 +524,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
               throw;
           } }
         clientProceduralTeleportShieldRender(player, camera);
+        MimitaMelee::drawActiveHitbox(player, camera);
         // Draw the local weapon now while the shared viewmodel still contains
         // the local transform calculated during WeaponSystem::update().
         // This prevents renderRemoteWeapon (below) from overwriting the transform

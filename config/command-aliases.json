@@ -4,7 +4,7 @@
     "rt1": "server_start_preset juggernaut_1",
     "CT1": "server_start_preset counterstrike_1",
     "ss": "server_start_preset sandbox_1",
-    "sandbox": "server_start_preset sandbox_1",
+    "mm": "server_start_preset melee_1",
     "zt1": "server_start_preset zombie_tower_1",
     "melee": "modestart 14",
     "startmelee": "modestart 14",

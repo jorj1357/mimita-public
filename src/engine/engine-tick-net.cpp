@@ -21,6 +21,7 @@
 #include "input/input-poll.h"
 #include "input/input-commands.h"
 #include "audio/audio.h"
+#include "config/weapon-hitfx-config.h"
 #include "audio/hitmarker-audio.h"
 #include "combat/death-system.h"
 #include "combat/weapon-system.h"
@@ -751,7 +752,9 @@ void engineTickNet(Engine& engine, float dt)
                 }
             }
 
-            if (!localShooter)
+            const bool confirmedMeleeImpact =
+                (event.effectFlags & MimitaNet::SHOT_EFFECT_MELEE_CONFIRM) != 0;
+            if (!localShooter || confirmedMeleeImpact)
             {
                 // The bullet always comes out of the shooter's gun ON THE
                 // VIEWER'S SCREEN: compute the muzzle from the rendered body
@@ -793,7 +796,7 @@ void engineTickNet(Engine& engine, float dt)
                     }
                 }
 
-                {
+                if (!localShooter && !confirmedMeleeImpact) {
                     ReplayEffectEvent gunshotEvent;
                     gunshotEvent.type = "gunshot";
                     gunshotEvent.position = muzzle;
@@ -899,6 +902,7 @@ void engineTickNet(Engine& engine, float dt)
                     ev.attacker = shooterName;
                     ev.victim = targetName;
                     ev.weaponSource = "net_shot";
+                    ev.spawnDamageNumber = !confirmedMeleeImpact;
                     HitEffects::onHit(ev);
                 }
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_BLOOD)
@@ -912,20 +916,31 @@ void engineTickNet(Engine& engine, float dt)
                     ev.attacker = shooterName;
                     ev.victim = targetName;
                     ev.weaponSource = "net_shot";
+                    ev.spawnDamageNumber = !confirmedMeleeImpact;
                     HitEffects::onHit(ev);
                 }
                 if (event.effectFlags &
                     MimitaNet::SHOT_EFFECT_HIT_SOUND)
                 {
-                    float dist = glm::length(event.hit - audioListenerPosition());
-                    float vol, pit;
-                    computeImpactAudio(1.2f, dist, 0.5f, vol, pit);
-                    const char* hitEvent = event.impactType == MimitaNet::SHOT_IMPACT_WORLD
-                        ? "hitworld" : "player_hurt";
-                    playWorldSound(hitEvent, event.hit, vol, pit, 60.0f);
-                    Debug::log(Debug::Category::Audio, "[%s AUDIO] dist=%.1f pitch=%.2f volume=%.2f\n",
-                               event.impactType == MimitaNet::SHOT_IMPACT_WORLD ? "WORLD IMPACT" : "HIT",
-                               dist, pit, vol);
+                    const auto& meleeSound =
+                        WeaponHitFxConfig::instance().soundFor("captain_falcon_moveset");
+                    const auto& meleePresentation =
+                        WeaponHitFxConfig::instance().presentationFor("captain_falcon_moveset");
+                    if (!confirmedMeleeImpact ||
+                        (meleeSound.enabled && meleePresentation.enabled &&
+                         meleePresentation.hitSound)) {
+                        float dist = glm::length(event.hit - audioListenerPosition());
+                        float vol, pit;
+                        const float baseVolume = confirmedMeleeImpact
+                            ? meleeSound.baseVolume * 0.55f : 1.2f;
+                        computeImpactAudio(baseVolume, dist, 0.5f, vol, pit);
+                        const char* hitEvent = event.impactType == MimitaNet::SHOT_IMPACT_WORLD
+                            ? "hitworld" : "player_hurt";
+                        playWorldSound(hitEvent, event.hit, vol, pit, 60.0f);
+                        Debug::log(Debug::Category::Audio, "[%s AUDIO] dist=%.1f pitch=%.2f volume=%.2f\n",
+                                   event.impactType == MimitaNet::SHOT_IMPACT_WORLD ? "WORLD IMPACT" : "HIT",
+                                   dist, pit, vol);
+                    }
                 }
                 printf("[NET SHOT RECONSTRUCT] shooter=%u serial=%u "
                        "localShooter=0 impact=%u origin=(%.2f %.2f %.2f) "

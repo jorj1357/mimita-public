@@ -14,6 +14,13 @@
   "spawn_offset_radius": 0.0,
   "spawn_strategy": "shared",
   "movement_preset": "smash",
+  "camera": {
+    "aim_fov": {
+      "enabled": true,
+      "input": "none",
+      "multiplier": 1.0
+    }
+  },
   "intermission_seconds": 15,
   "results_seconds": 5,
   "ragdoll_enabled": false,
@@ -30,5 +37,5 @@
   "roles": {
     "falcon": 2
   },
-  "maps": ["atdm", "cramped", "funworld3"]
+  "maps": ["funworld3"]
 }

@@ -163,15 +163,19 @@ void mpProcessShotEventPacket(MultiplayerContext& ctx, const ShotEventPacket* ev
         return;
     }
 
-    uint32_t& lastSerial = ctx.lastReceivedShotSerial[event->shooterPlayerId];
-    if (lastSerial != 0 &&
-        (int32_t)(event->shotSerial - lastSerial) <= 0)
-    {
-        printf("[NET SHOT RECV] shooter=%u serial=%u skipped=duplicate last=%u\n",
-               event->shooterPlayerId, event->shotSerial, lastSerial);
-        return;
+    const bool confirmedMeleeImpact =
+        (event->effectFlags & SHOT_EFFECT_MELEE_CONFIRM) != 0;
+    if (!confirmedMeleeImpact) {
+        uint32_t& lastSerial = ctx.lastReceivedShotSerial[event->shooterPlayerId];
+        if (lastSerial != 0 &&
+            (int32_t)(event->shotSerial - lastSerial) <= 0)
+        {
+            printf("[NET SHOT RECV] shooter=%u serial=%u skipped=duplicate last=%u\n",
+                   event->shooterPlayerId, event->shotSerial, lastSerial);
+            return;
+        }
+        lastSerial = event->shotSerial;
     }
-    lastSerial = event->shotSerial;
 
     NetworkShotEvent out;
     out.shotSerial = event->shotSerial;

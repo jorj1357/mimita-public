@@ -72,9 +72,12 @@ or maybe like putting all the  moves u want to do in a .json smoewhere, so its j
 
 ## 1. Purpose and outcome
 
-The development loop reduces the time between a source/configuration change and
-an observed result in the real MiMITA executable. It is an orchestration tool,
-not a second game implementation.
+The development loop's **priority 1 job** is to reduce the time between a saved
+change and trying that change in MiMITA. It stays available, notices relevant
+saved inputs automatically, starts incremental work without waiting for a
+person to request a build, and keeps showing progress while the person or AI
+continues working. It is an orchestration tool, not a second game
+implementation.
 
 The loop owns this sequence:
 
@@ -194,8 +197,37 @@ server even if its executable build number is current.
 
 ## 5. Source watching and build state machine
 
-The loop watches the repository inputs defined by the implementation's watch
-inventory. On a change it must:
+The loop watches the complete build-input inventory below. A saved change to a
+watched build input must be noticed automatically and start the incremental
+build pipeline without a separate `build_agent.py` or manual build request.
+The watcher may use a short debounce so an editor's temporary write and quick
+follow-up saves become one build. It must not wait for the current build to
+finish before accepting changes, status requests, launch requests, or control
+commands. It serializes compiler/linker work, then queues one follow-up build
+for the newest source generation if inputs changed during the active build.
+
+The canonical build-input inventory is owned by `build.py`,
+`build_game_dll.py`, and `build_toolchain.py`. The dev loop must watch every
+repository file those owners use to compile, link, or publish the full game:
+
+- C/C++ source and header files under `src/` and `include/`;
+- the vendored source and header trees under `external/libjuice/` and
+  `external/recastnavigation/`;
+- generated Manifold headers and library under `external/manifold-prebuilt/`,
+  plus `tools/build_manifold.py` which produces them;
+- build inputs and build-owner scripts, including `mimita.rc`,
+  `CMakeLists.txt`, `build.py`, `build_game_dll.py`, `build_lock.py`, and
+  `build_toolchain.py`.
+
+Keep the inventory aligned whenever a build owner adds or removes an input
+directory, file type, generated dependency, or build script. Do not watch build
+outputs, logs, caches, the dev-loop's own status files, or unrelated website
+files as build inputs. Runtime JSON, maps, models, textures, and audio are data
+inputs rather than compiler inputs: their owning runtime/configuration system
+must reload them according to its own contract, without forcing a C++ build
+unless a build owner actually consumes them.
+
+On detecting a watched input change, the loop must:
 
 1. increment the source generation;
 2. mark the current published build stale;
@@ -241,22 +273,24 @@ The loop must expose enough status to distinguish at least:
 - ownership or port conflict;
 - stopped with persistent server retained.
 
-### 5.1 Lower-priority update-speed and script-structure investigation
+### 5.1 Priority 1: shortest edit-to-test time
 
-The user reports that updates can feel slow, but says the dev loop currently
-works and this is not a high-priority problem. Treat this as a future
-investigation, not an immediate rewrite or a reason to risk the always-running
-loop. The question of splitting `dev-loop.py` into smaller files is open; do
-not split it just because the file is large.
+Reducing edit-to-test time is the loop's primary purpose, not a lower-priority
+future investigation. Preserve the always-available daemon and the running
+game, while removing measured avoidable delay from change detection, build
+queueing, compilation, linking, and artifact publication. The question of
+splitting `dev-loop.py` into smaller files is separate; do not split it just
+because the file is large.
 
 Current source has several distinct waits and costs:
 
-- `POLL_SECONDS = 0.50`: the watcher checks for file changes twice per second.
-- `snapshot_inputs()` recursively walks the watched source trees for each
-  watcher pass. The script comment estimates about 60 ms for a snapshot on
-  this checkout; that is a source comment, not a fresh measurement.
-- `DEBOUNCE_SECONDS = 0.30`: after a change is queued, the loop waits before
-  starting the build.
+- On Windows, recursive directory notifications watch compiler-input trees;
+  standalone build/configuration inputs are checked every 0.50 seconds. If
+  notifications are unavailable, the loop falls back to a full input snapshot
+  every 0.50 seconds. A 0.20 second debounce groups editor writes before a
+  build starts.
+- change-detection and snapshot cost when notifications are unavailable;
+- debounce time after the latest save;
 - `run_build()` invokes `build.py build-only`; actual C++ compile/link time
   depends on changed files, compiler cache hits, and build state.
 - `publish_build()` validates and copies the executable and runtime DLLs into
@@ -269,19 +303,24 @@ Current source has several distinct waits and costs:
   `windows_process_identity()` must cache its result for a short TTL. The
   steady-state target is no helper process at all (10.1).
 
-These stages mean the code intentionally trades some edit-to-build delay for
-lower background polling during gameplay, safe build completion, artifact
-validation, and build identity. Do not remove the delay, cache checks, copy
-validation, or identity guards by guessing.
+The dashboard and control endpoint must remain responsive throughout every
+stage. Build progress must show the active source generation, current phase,
+elapsed time, and recent compiler output/error. A reliable percentage must not
+be invented. The last successful artifact stays launchable while the next one
+builds; pressing `1` must not wait for an in-progress build when a valid prior
+artifact exists. Once a newer artifact is published, it becomes the launch
+choice, but the running game changes only through the documented launch or hot
+reload path.
 
-If the user asks to prioritize speed later, first record timestamps for edit
-observed, debounce complete, build start/end, publish complete, and any second
-build queued. Measure a no-op edit, a small C++ edit, and a broad/header edit.
-Then tune only the measured bottleneck while preserving one build at a time,
-correct source-generation identity, a running client's stability, and the
-persistent daemon. Consider splitting the script only if measurements reveal a
-specific maintenance or timing boundary that benefits from separate modules;
-the single `dev-loop.py` entry point and one-daemon lifecycle must remain.
+Record timestamps for save/change observed, build start, first useful compiler
+output, build end, publication complete, and any follow-up generation queued.
+Use these measurements to find the slow stage and improve it. Compare a no-op
+save, a small source edit, and a broad/header edit. Keep one compiler/linker
+job active at a time because concurrent jobs can corrupt or invalidate shared
+outputs. Changes during that job must be accepted immediately and coalesced to
+the newest generation; do not start one competing compiler per file or save.
+Retain source-generation identity, artifact validation, running-client
+stability, and the persistent daemon while improving speed.
 
 ### 5.2 One user-facing build path and script ownership
 
@@ -2035,6 +2074,34 @@ and forwards one authenticated control request to the single dev-loop daemon,
 which remains the only owner of build, launch, run, and control state. The
 detached daemon never reads the keyboard. Sections 19.4 and 22.1 link here
 rather than restating this table.
+
+#### One launch and automatic availability check
+
+The user launches only the dev-loop entry point (or its desktop shortcut). On
+opening the dashboard, the entry point checks the checkout-owned watchdog and
+daemon using their role locks and the daemon's authenticated status endpoint.
+It starts whichever required process is absent, then waits until the daemon is
+ready before attaching the view. Concurrent launches must reuse the same
+watchdog and daemon; their locks are the singleton guard. A dashboard process
+is never mistaken for a daemon. A stale lock may be cleared only after its
+recorded owner PID is confirmed dead.
+
+If readiness is temporarily unavailable, the dashboard shows that state and
+the watchdog continues recovery; it must not show a dead run as healthy or
+start a duplicate daemon. Reopening the dashboard or invoking the entry point
+again repeats the idempotent availability check. Opening the dashboard starts
+the development infrastructure; launching the game remains an explicit `1`
+action.
+
+#### Immediate key feedback
+
+Keyboard polling and rainbow/status animation have separate timing. The
+dashboard polls for keys at least 20 times per second (50 ms interval), displays
+immediate “sending” feedback as soon as a key is recognized, and redraws the
+status/animation on its normal one-second cadence. A keypress-triggered status
+change is redrawn immediately; it never waits for the next rainbow frame. Slow
+daemon responses may update the accepted/error result later, but may not delay
+the initial key feedback.
 
 | Key | What it does | Shown by |
 |---|---|---|

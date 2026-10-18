@@ -1692,17 +1692,17 @@
           "a_ground_punch": {
             "input": {"button": "primary", "actor_state": "grounded"},
             "priority": 1,
-            "double_click_window_ticks": 30,
+            "double_click_window_ticks": 5,
             "double_click_action": "a_ground_punch2",
             "phases": {
-              "windup":   {"ticks": 4, "clip_id": "cf_punch_windup"},
-              "active":   {"ticks": 3, "clip_id": "cf_punch_active"},
-              "recovery": {"ticks": 7, "clip_id": "cf_punch_recovery"}
+              "windup":   {"ticks": 5, "clip_id": "cf_punch_windup"},
+              "active":   {"ticks": 15, "clip_id": "cf_punch_active"},
+              "recovery": {"ticks": 15, "clip_id": "cf_punch_recovery"}
             },
             "hitboxes": [
               {"id": "fist", "attached_part": "rightArm", "shape": "sphere",
                "size": [0.7, 0.7, 0.7], "local_offset": [0.0, 0.7, 1.4],
-               "active_start_tick": 0, "active_end_tick": 2}
+               "active_start_tick": 11, "active_end_tick": 22}
             ],
             "damage": {"base_percent": 3.0},
             "knockback": {"base_impulse": 8.0, "vertical_fraction": 0.25, "force_scale": 1.0},
@@ -1745,7 +1745,7 @@
             "hitboxes": [
               {"id": "falcon_fist", "attached_part": "rightArm", "shape": "sphere",
                "size": [0.9, 0.9, 0.9], "local_offset": [0.0, 0.8, 1.4],
-               "active_start_tick": 0, "active_end_tick": 3}
+               "active_start_tick": 0, "active_end_tick": 30}
             ],
             "damage": {"base_percent": 12.0, "shield_damage": 18.0},
             "knockback": {"base_impulse": 24.0, "vertical_fraction": 0.35, "force_scale": 1.2},
@@ -1759,14 +1759,14 @@
           "a_air_kick": {
             "input": {"button": "primary", "actor_state": "airborne"},
             "phases": {
-              "windup":   {"ticks": 3, "clip_id": "cf_airkick_windup"},
-              "active":   {"ticks": 4, "clip_id": "cf_airkick_active"},
-              "recovery": {"ticks": 6, "clip_id": "cf_airkick_recovery"}
+              "windup":   {"ticks": 10, "clip_id": "cf_airkick_windup"},
+              "active":   {"ticks": 10, "clip_id": "cf_airkick_active"},
+              "recovery": {"ticks": 30, "clip_id": "cf_airkick_recovery"}
             },
             "hitboxes": [
               {"id": "foot", "attached_part": "rightLeg", "shape": "sphere",
-               "size": [0.7, 0.7, 0.7], "local_offset": [0.0, -0.5, 1.3],
-               "active_start_tick": 0, "active_end_tick": 3}
+               "size": [2.7, 2.7, 2.7], "local_offset": [0.0, -0.5, 1.3],
+               "active_start_tick": 0, "active_end_tick": 10}
             ],
             "damage": {"base_percent": 6.0},
             "knockback": {"base_impulse": 10.0, "vertical_fraction": 0.15, "force_scale": 1.0},

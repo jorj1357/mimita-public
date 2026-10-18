@@ -50,6 +50,10 @@ void clientTick(Player& player,
 // Clear the local action (spawn/death/mode change).
 void reset();
 
+// Render the local attack's configured hitbox while its active window is open.
+// This is presentation only; the server remains the contact authority.
+void drawActiveHitbox(const Player& player, const Camera& camera);
+
 // Current held-shield intent for the local player (Q). Read by the input/report
 // path so the server can run the Melee shield. False when no move set is active.
 bool shieldHeld();

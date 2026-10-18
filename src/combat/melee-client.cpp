@@ -14,6 +14,7 @@
 #include "network/network-weapons.h"
 #include "audio/audio.h"
 #include "debug/structured-log.h"
+#include "debug/debug-visuals.h"
 
 #include <algorithm>
 #include <cmath>
@@ -52,6 +53,8 @@ struct ClientActionState {
     // Per-tick impulse guard: the last phase tick processed.
     int lastImpulsePhaseTick = -1;
     int lastImpulsePhaseIndex = -1; // 0=windup 1=active 2=recovery
+    int currentPhaseIndex = -1;
+    int currentPhaseTick = -1;
     // Snapshot of the action data at start (retains the starting revision).
     WeaponData::MeleeAction actionSnapshot;
 };
@@ -247,6 +250,35 @@ void reset()
     g_lastPhaseKey.clear();
 }
 
+void drawActiveHitbox(const Player& player, const Camera& camera)
+{
+    if (!g_state.active || g_state.currentPhaseIndex != 1 ||
+        g_state.currentPhaseTick < 0)
+        return;
+
+    const MeleeAction& action = g_state.actionSnapshot;
+    for (const WeaponData::MeleeHitbox& authoredHitbox : action.hitboxes) {
+        if (g_state.currentPhaseTick < authoredHitbox.activeStartTick ||
+            g_state.currentPhaseTick > authoredHitbox.activeEndTick)
+            continue;
+        const WeaponData::MeleeHitbox hitbox =
+            WeaponData::resolveMeleeHitboxForTick(authoredHitbox, g_state.currentPhaseTick);
+        if (hitbox.shape != "sphere") continue;
+
+        for (const PhysicalBodyPart& part : player.physicalBody.parts) {
+            if (part.name != hitbox.attachedPart)
+                continue;
+            const glm::vec3 center = glm::vec3(
+                part.worldTransform * glm::vec4(hitbox.localOffset, 1.0f));
+            const float radius = std::max(0.01f, hitbox.size.x);
+            const glm::vec4 color{1.0f, 0.0f, 0.0f, 0.5f};
+            DebugVis::drawFilledSphere(camera, center, radius, color);
+            DebugVis::drawWireSphere(camera, center, radius, {1.0f, 0.0f, 0.0f, 0.9f});
+            break;
+        }
+    }
+}
+
 void debugRequestAction(const std::string& actionId)
 {
     g_forceActionId = actionId;
@@ -406,6 +438,8 @@ void clientTick(Player& player,
         clip = action->active.clipId;
         phaseName = "active";
     }
+    g_state.currentPhaseIndex = phaseIndex;
+    g_state.currentPhaseTick = phaseTick;
 
     if (!clip.empty())
         player.playOneShotPhase(clip, phaseTick, phaseTicks);

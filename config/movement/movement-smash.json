@@ -1,3 +1,14 @@
+// 08 15 2026, 16 12
+/* purpose
+* Defines the default MiMITA movement preset and its hot-reloadable tuning.
+* Preserves the legacy instant horizontal control used by existing gameplay.
+* Keeps Source-only tuning inert unless movement_mode explicitly selects source.
+* Does NOT implement movement formulas, poll input, or select itself globally.
+* Does NOT modify collision, networking, rendering, or player persistence.
+* Does NOT opt players into Source movement.
+*/
+// Merged from the active profile and the dated reference copy.
+// Values already in the active profile are kept; Source-value comments are retained as reference notes.
 // 2026 10 17 1522 jorj todo make this into the smash brothers melee movement set
 // so like wasd = the move direction, instnat accel and kinda low friciton
 // binds are gona be different and stuff todo figure that out 
@@ -26,10 +37,11 @@
 * This file is parsed with JSON comments enabled.
 */
 {
-    "name": "smash",
+    "name": "default",
+    "comment": "Current MiMITA behavior. WASD overrides horizontal velocity instantly. Source-only tuning below remains inert in mimita mode.",
 
     // Uses MiMITA's Source/GoldSrc-style movement kernel.
-    "movement_mode": "source",
+    "movement_mode": "mimita",
 
     // Scale/reference value.
     // 1 MiMITA unit = 20 Source / GoldSrc units.
@@ -53,13 +65,13 @@
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 20.0,
+    "ground_acceleration": 1.0,
 
     // Ground friction from the fast Source preset.
     //
     // Higher values remove ground velocity more aggressively when movement
     // input is released.
-    "friction": 3.25,
+    "friction": 5.25,
 
     // Very small stop-speed threshold from the fast preset.
     //
@@ -74,7 +86,7 @@
     // 0 = no air speed gain.
     // 1 = normal implementation gain.
     // 2 = current MiMITA fast preset.
-    "air_speed_gain_multiplier": 2.0,
+    "air_speed_gain_multiplier": 1.0,
 
     //  the experimental MiMITA directional/input blend.
     //  9 5 2026 its not working super good its supposed t
@@ -100,7 +112,7 @@
     // Air acceleration strength.
     //
     // Matches the fast Source preset.
-    "air_acceleration": 12.0,
+    "air_acceleration": 22.0,
 
     // Projection cap for Source-style air acceleration.
     //
@@ -110,7 +122,7 @@
     // building total speed.
     //
     // Matches the fast Source preset.
-    "air_max_wishspeed": 2.0,
+    "air_max_wishspeed": 0.0,
 
     // Historical Valve-style AirAccelerate behavior.
     //
@@ -125,12 +137,12 @@
     // Downward acceleration.
     //
     // Matches the fast Source preset.
-    "gravity": -40.0,
+    "gravity": -68.0,
 
     // Upward velocity applied when jumping.
     //
     // Matches the fast Source preset.
-    "jump_velocity": 15.1,
+    "jump_velocity": 18.0,
     // "jump_velocity": 10.0,
 
     // Add the jump impulse to the current vertical velocity. This preserves
@@ -142,7 +154,7 @@
     // Maximum downward falling speed.
     //
     // Matches the fast Source preset.
-    "max_fall_speed": 175.0,
+    "max_fall_speed": 400.0,
 
     // ── Jump behavior ─────────────────────────────────────────────────────
 
@@ -150,19 +162,20 @@
     //
     // This is a MiMITA convenience extension rather than strict vanilla CS
     // input behavior.
-    "auto_bhop_enabled": true,
-    // "auto_bhop_enabled": false,
+    // "auto_bhop_enabled": true,
+    "auto_bhop_enabled": false,
 
     // Remember jump input for this long before landing.
     //
     // Matches the fast Source preset.
     // "jump_buffer_time": 0.1,
-    "jump_buffer_time": 0.2,
+    "jump_buffer_time": 0.12,
+    // "jump_buffer_time": 0.01,
 
     // No coyote-time forgiveness.
     //
     // 0 keeps ledge behavior closer to old Source/GoldSrc movement.
-    "coyote_time": 0.0,
+    "coyote_time": 0.001,
 
     // MiMITA's current fast preset allows one extra air jump.
     //
@@ -176,7 +189,7 @@
     // on release. This is a mode/profile input policy, not a buffer or cooldown.
     "jump_input_mode": "hold_scaled",
     "hold_jump_min_multiplier": 1.0,
-    "hold_jump_max_multiplier": 1.6,
+    "hold_jump_max_multiplier": 22.6,
     "hold_jump_charge_ticks": 10,
 
     // ── Ground snap ───────────────────────────────────────────────────────
@@ -245,7 +258,7 @@
     // Vertical velocity assigned by down-dash.
     //
     // Negative = downward.
-    "down_dash_speed": -50.0,
+    "down_dash_speed": -100.0,
     // "down_dash_speed": -250.0,
 
     // ── External impulse / knockback ─────────────────────────────────────
@@ -261,12 +274,12 @@
     //
     // In a true "source" impulse mode this may be ignored, but the fast preset
     // currently uses exponential mode.
-    "external_impulse_decay": 99.0,
+    "external_impulse_decay": 0.6,
 
     // Maximum allowed horizontal external impulse speed.
     //
     // 9999 is intentionally effectively unlimited for normal gameplay.
-    "max_external_impulse_speed": 9999.0,
+    "max_external_impulse_speed": 120.0,
     "external_impulse_resistance_multiplier": 1.0,
     // "external_impulse_resistance_multiplier": 99.0,
 
@@ -304,8 +317,8 @@
     // The numeric values remain defined so this can be enabled live without
     // requiring another schema/config change.
 
+    // "speed_limit_enabled": false,
     "speed_limit_enabled": false,
-    // "speed_limit_enabled": true,
 
     // Only used if speed_limit_enabled is true.
     "speed_limit": 50.0,
@@ -316,7 +329,39 @@
     // Irrelevant while speed_limit_enabled is false.
     "speed_limit_mode": "fixed",
 
+    // ── Additional MiMITA profile fields retained from the active file ──
+    "preserve_straight_speed": true,
+    "preserve_speed_when_not_strafing": true,
+    "diagonal_input_normalization": true,
+    "minimum_strafe_angle": 0.0,
+    "maximum_acceleration_per_tick": 0.0,
+    "maximum_speed_gain_per_tick": 0.0,
+    "speed_cap_enabled": false,
+    "maximum_bhop_speed": 0.0,
+    "speed_cap": 0.0,
+    "maximum_bhop_speed_mode": "none",
+    "acceleration_falloff_near_cap": 0.0,
+    "landing_speed_retention": 0.0,
+    "require_active_wish_rotation": true,
+    "stationary_camera_input_mode": "strict",
+    "air_steering_response": 1.0,
+    "maximum_steering_degrees_per_second": 0.0,
+    "minimum_camera_yaw_delta_degrees": 1110.25,
+    "minimum_wish_rotation_degrees": 0.25,
+    "strafe_angular_tolerance_degrees": 60.0,
+    "soft_cap_start": 0.0,
+    "air_speed": 20.0,
+    "ground_deceleration": 0.0,
+    "ground_direction_change_response": 0.0,
+    "air_speed_gain_acceleration": 22.0,
+    "air_wish_speed": 0.0,
+    "air_control": 0.0,
+    "stopspeed": 1.0,
+    "jump_strength": 18.0,
+    "ground_friction": 1.0,
+    "air_friction": 0.0,
+
     "tuning_notes": {
-        "comment": "Source/GoldSrc-family movement equations with the fast MiMITA source preset values. Ground: max_speed=20, acceleration=999.5, friction=5.25, stopspeed=0.01. Air: gain=2, airaccelerate=12, projection cap=1.1, Valve bug compatibility enabled. Jump=15.1, gravity=-40, auto-bhop enabled. Dash=100 ground / 50 air, down-dash=-100. Global 50-unit speed limit disabled so it does not artificially suppress the faster Source preset behavior."
+        "comment": "Merged movement profile. Existing active-file values are kept where fields overlap; missing Source-style fields and comments are carried over from the dated reference. movement_mode is mimita, so Source-only movement formulas remain inactive unless that mode is selected."
     }
 }
