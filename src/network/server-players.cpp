@@ -20,6 +20,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
+#include "combat/melee-rules-config.h"
 #include "entities/aimbody-config.h"
 #include "entities/player-avatar-animations.h"
 #include "config/networking-config.h"
@@ -57,7 +58,8 @@ void syncServerMovementRuntime(ServerPlayer& player, bool movementEnabled)
     player.movement.yaw = player.yaw;
     player.movement.sizeScale = safeServerSizeScale(player.sizeScale);
     player.movement.ground.onGround = player.onGround;
-    player.movement.ground.stableOnGround = player.onGround;
+    player.movement.ground.stableOnGround = player.onGround ||
+        player.movement.ground.stableOnGround;
     player.movement.ground.hasWorldContact = player.onGround;
     player.movement.dash.dashAvailable = player.dashAvailable;
 }
@@ -1639,6 +1641,13 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.yaw = player.yaw;
     out.health = player.health;
     out.meleePercent = player.meleePercent;
+    {
+        const auto& rules = MimitaMeleeRules::Config::instance().rules();
+        const float remaining = std::clamp(
+            player.meleeShieldDurability / std::max(1.0f, rules.shieldDurability),
+            0.0f, 1.0f);
+        out.meleeShield = (uint8_t)std::clamp((int)std::lround(remaining * 255.0f), 0, 255);
+    }
     out.onGround = (serverSimBroadcast ? player.lastAcceptedClientOnGround : player.onGround) ? 1 : 0;
     out.equippedSlot = (int16_t)player.equippedSlot;
     out.weaponState = player.weaponState;
@@ -1671,7 +1680,9 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
         constexpr uint16_t CLIENT_VISUAL_FLAGS =
             NET_STATE_WALKING | NET_STATE_JUMPING |
             NET_STATE_DASHING | NET_STATE_DOWN_DASHING |
-            NET_STATE_FREEZING | NET_STATE_ATTACKING;
+            NET_STATE_FREEZING | NET_STATE_ATTACKING |
+            NET_STATE_SHIELDING | NET_STATE_GRABBING |
+            NET_STATE_CROUCHING;
 
         uint16_t flags = player.inputStateFlags & CLIENT_VISUAL_FLAGS;
 

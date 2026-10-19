@@ -97,6 +97,9 @@ struct MovementCommand {
     bool groundReturnPressed = false;
     bool freezeHeld = false;
     bool freezePressed = false;
+    // Melee: held crouch/down input. Airborne it requests faster descent; on
+    // the ground it selects the crouch pose without activating legacy down-dash.
+    bool crouchHeld = false;
 
     bool movementDirectionPressed = false;
     bool movementDirectionFreshPressed = false;
@@ -519,7 +522,10 @@ struct MovementState {
 enum class MovementWalkMode : uint8_t {
     Override = 0,
     Accel = 1,
-    Source = 2
+    Source = 2,
+    // Instant WASD steering that never clears or folds the external impulse.
+    // Melee uses this so knockback remains composable with player control.
+    Compose = 3
 };
 
 enum class MovementJumpMode : uint8_t {
@@ -713,6 +719,10 @@ struct MovementConfig {
     float stableGroundGraceSeconds = 0.08f;
     float landingMinimumAirborneSeconds = 0.08f;
     float landingCooldownResetSeconds = 0.3f;
+    // Melee-style held-down fast fall. Disabled outside profiles that opt in.
+    bool fastFallEnabled = false;
+    float fastFallAcceleration = 120.0f;
+    float fastFallMaxSpeed = 90.0f;
 };
 
 enum class MovementExternalEventType : uint8_t {

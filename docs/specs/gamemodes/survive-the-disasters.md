@@ -71,3 +71,21 @@ survive 4 dimensional monsters!!!!
 or 
 escape the mandelbrot fractal!!!!
 stuff liek taht 
+
+2026 10 19 1707 jorj more xplaintion hmmm
+ its like
+
+intermission 30 sec
+then
+disaster name + 3 2 1 go countdown shows
+like
+
+disaster: jeff the killer
+3... 2... 1... go!!!
+when "go!!!" is on screeen
+then, disaster is like 30 sec 60 sec idk 
+per disasetr
+and hten jeff the killer Ahhhh jeff killing me 
+im so scared
+thats so  cool
+we need sckateboards

@@ -49,6 +49,25 @@ static float applyAnimEase(float t, AnimInterp interp)
     }
 }
 
+static float mapRuntimeTickToAuthoredTick(const AnimClip& clip, float runtimeTick)
+{
+    if (!clip.hasMeleePhaseTimeline)
+        return runtimeTick;
+
+    for (std::size_t phase = 0; phase < 3; ++phase) {
+        const float runtimeStart = (float)clip.phaseTicks[phase];
+        const float runtimeEnd = (float)clip.phaseTicks[phase + 1];
+        if (runtimeTick < runtimeEnd || phase == 2) {
+            const float sourceStart = (float)clip.phaseSourceTicks[phase];
+            const float sourceEnd = (float)clip.phaseSourceTicks[phase + 1];
+            const float amount = std::clamp(
+                (runtimeTick - runtimeStart) / (runtimeEnd - runtimeStart), 0.0f, 1.0f);
+            return sourceStart + (sourceEnd - sourceStart) * amount;
+        }
+    }
+    return runtimeTick;
+}
+
 static glm::vec3 springVec3(SpringState& spring, const glm::vec3& target, float stiffness, float damping, float dt)
 {
     float safeDt = std::min(dt, 0.05f);
@@ -60,13 +79,14 @@ static glm::vec3 springVec3(SpringState& spring, const glm::vec3& target, float 
 
 static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
     const AnimClip& clip, float timeSeconds, float speedScale = 1.0f,
-    float forcedLoopedTick = -1.0f)
+    float forcedLoopedTick = -1.0f, float forcedSampleDurationTicks = -1.0f)
 {
     std::unordered_map<std::string, AnimOverlayResult> result;
     if (clip.keyframes.empty()) return result;
 
     float tickTime = timeSeconds * 60.0f * speedScale;
-    float duration = (float)clip.durationTicks;
+    float duration = forcedLoopedTick >= 0.0f && forcedSampleDurationTicks > 0.0f
+        ? forcedSampleDurationTicks : (float)clip.durationTicks;
     if (duration <= 0.0f) duration = 1.0f;
 
     float loopedTick;
@@ -655,8 +675,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     // Melee phase sampling: when the active clip is a phase-driven one-shot,
     // evaluate it at the phase-mapped sample instead of advancing by time.
     float animForcedSampleTick = -1.0f;
+    float animForcedSampleDurationTicks = -1.0f;
     if (!lockedClip.empty() && activeAnim == lockedClip && lockedClipSampleTick >= 0) {
-        animForcedSampleTick = (float)lockedClipSampleTick;
+        const AnimClip* lc = findClip(lockedClip);
+        const float runtimeTick = (float)lockedClipSampleTick;
+        animForcedSampleTick = lc
+            ? mapRuntimeTickToAuthoredTick(*lc, runtimeTick) : runtimeTick;
+        if (lc && lc->hasMeleePhaseTimeline)
+            animForcedSampleDurationTicks = (float)lc->phaseSourceTicks[3];
     } else if (!lockedClip.empty() && activeAnim == lockedClip && lockedClipPhaseTicks > 0) {
         const AnimClip* lc = findClip(lockedClip);
         if (lc) {
@@ -685,7 +711,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
 
         animOverlay = interpolateAnimClip(*activeClip, animStateTime, animSpeedScale,
-                                          animForcedSampleTick);
+                                          animForcedSampleTick,
+                                          animForcedSampleDurationTicks);
     }
 
     // Weapon state

@@ -183,6 +183,7 @@ void engineTickNet(Engine& engine, float dt)
         // Melee: held shield intent (Q). The local Melee driver samples the key
         // and publishes it; the server runs the authoritative shield.
         mpInput.shieldHeld = MimitaMelee::shieldHeld();
+        mpInput.crouchHeld = cmd.isCrouchHeld();
         mpInput.flyUp = cmd.getState("freeze").held;
         mpInput.flyDown = cmd.getState("down_dash").held;
         mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&

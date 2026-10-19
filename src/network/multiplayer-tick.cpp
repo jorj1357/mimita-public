@@ -255,6 +255,9 @@ static void processSnapshotEntities(
             ctx.localServerOnGround = entity.onGround != 0;
             ctx.hasLocalServerPosition = true;
             ctx.localServerHealth = entity.health;
+            ctx.localServerMeleePercent = entity.meleePercent;
+            ctx.localServerMeleeShield = (float)entity.meleeShield / 255.0f;
+            ctx.localServerStateFlags = entity.stateFlags;
             ctx.localServerEpoch = entity.transformEpoch;
             ctx.localPingMs = entity.pingMs;
             ctx.latestLocalSnapshotTick = serverTick;
@@ -2263,6 +2266,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         if (input->attackPressed) stateFlags |= NET_STATE_ATTACKING;
         if (input->shieldHeld) stateFlags |= NET_STATE_SHIELDING;
         if (input->grabHeld) stateFlags |= NET_STATE_GRABBING;
+        if (input->crouchHeld) stateFlags |= NET_STATE_CROUCHING;
 
         // Rate-limited walk send logging
         {

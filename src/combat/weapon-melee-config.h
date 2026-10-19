@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -126,6 +127,8 @@ struct MeleeAction {
     // New-format actions use one clip whose markers define these phase lengths.
     // Empty means this action still uses the explicit legacy phases during migration.
     std::string animationClipId;
+    // Blender-authored boundaries used to report the phase retiming mapping.
+    std::array<int, 4> animationSourceTicks{{0, 0, 0, 0}};
 
     std::vector<MeleeHitbox> hitboxes;
 

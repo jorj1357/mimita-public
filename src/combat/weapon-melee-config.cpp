@@ -14,6 +14,7 @@
 #include "../debug/structured-log.h"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -28,7 +29,8 @@ namespace {
 using json = nlohmann::json;
 
 bool loadClipTimeline(const std::string& clipId, int& duration,
-                      int& windupEnd, int& activeEnd)
+                      int& windupEnd, int& activeEnd,
+                      std::array<int, 4>* sourceTicksOut = nullptr)
 {
     const std::filesystem::path root(resolveAssetPath("config/animations/library"));
     std::error_code ec;
@@ -53,22 +55,36 @@ bool loadClipTimeline(const std::string& clipId, int& duration,
             !clip.contains("markers") || !clip["markers"].is_array()) return false;
         duration = clip["durationTicks"].get<int>();
         int starts[4] = {-1, -1, -1, -1};
+        int sourceTicks[4] = {-1, -1, -1, -1};
+        int sourceCount = 0;
         const char* names[4] = {"phase.windup", "phase.active", "phase.recovery", "action.end"};
         for (const json& marker : clip["markers"]) {
             if (!marker.is_object() || !marker.contains("name") ||
-                !marker["name"].is_string() || !marker.contains("tick") ||
-                !marker["tick"].is_number_integer()) continue;
+                !marker["name"].is_string()) continue;
             const std::string name = marker["name"].get<std::string>();
             for (int i = 0; i < 4; ++i) {
                 if (name == names[i]) {
                     if (starts[i] >= 0) return false;
+                    if (!marker.contains("tick") || !marker["tick"].is_number_integer())
+                        return false;
                     starts[i] = marker["tick"].get<int>();
+                    sourceTicks[i] = starts[i];
+                    if (marker.contains("sourceTick")) {
+                        if (!marker["sourceTick"].is_number_integer()) return false;
+                        sourceTicks[i] = marker["sourceTick"].get<int>();
+                        ++sourceCount;
+                    }
                 }
             }
         }
         if (starts[0] != 0 || starts[1] <= starts[0] ||
             starts[2] <= starts[1] || starts[3] <= starts[2] ||
             starts[3] != duration) return false;
+        if ((sourceCount != 0 && sourceCount != 4) || sourceTicks[0] != 0 ||
+            sourceTicks[1] <= sourceTicks[0] || sourceTicks[2] <= sourceTicks[1] ||
+            sourceTicks[3] <= sourceTicks[2]) return false;
+        if (sourceTicksOut)
+            for (int i = 0; i < 4; ++i) (*sourceTicksOut)[i] = sourceTicks[i];
         windupEnd = starts[1];
         activeEnd = starts[2];
     }
@@ -298,8 +314,10 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
     if (j.contains("animation_clip_id") && j["animation_clip_id"].is_string()) {
         out.animationClipId = j["animation_clip_id"].get<std::string>();
         int duration = 0, activeStart = 0, recoveryStart = 0;
+        std::array<int, 4> sourceTicks{{0, 0, 0, 0}};
         if (out.animationClipId.empty() ||
-            !loadClipTimeline(out.animationClipId, duration, activeStart, recoveryStart)) {
+            !loadClipTimeline(out.animationClipId, duration, activeStart, recoveryStart,
+                              &sourceTicks)) {
             Debug::warn(Debug::Category::Weapons,
                 "[MELEE] action '%s' has missing, ambiguous, or invalid clip timeline '%s'; skipped\n",
                 out.id.c_str(), out.animationClipId.c_str());
@@ -308,6 +326,7 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
         out.windup.ticks = activeStart;
         out.active.ticks = recoveryStart - activeStart;
         out.recovery.ticks = duration - recoveryStart;
+        out.animationSourceTicks = sourceTicks;
     } else if (j.contains("phases") && j["phases"].is_object()) {
         // Explicit compatibility for existing actions not migrated to one clip yet.
         const json& p = j["phases"];

@@ -305,8 +305,9 @@ a possible separate format, not this contract.
    `action.end`. These are scene-timeline markers exported once for the whole
    clip; they are not copied to each limb Action and do not create separate
    phase animations. `phase.windup` starts at tick 0; the other markers set the
-   active start, recovery start, and exclusive end. The script validates marker
-   order and range before writing.
+   active start, recovery start, and exclusive end. Export each marker with
+   `tick` and `sourceTick` initially equal to its Blender tick. The script
+   validates marker order and range before writing.
 5. Author on a 60 FPS timeline. The first sampled Action frame maps to game
    tick 0, so frames 1–60 map to ticks 0–59. Authored-keyframe mode writes the
    union of keyed integral frames; dense mode writes one evaluated pose per tick.
@@ -382,10 +383,10 @@ The following is illustrative version-2 data, not a finalized parser contract:
       "durationTicks": 45,
       "loop": false,
       "markers": [
-        { "name": "phase.windup", "tick": 0 },
-        { "name": "phase.active", "tick": 10 },
-        { "name": "phase.recovery", "tick": 25 },
-        { "name": "action.end", "tick": 45 }
+        { "name": "phase.windup", "tick": 0, "sourceTick": 0 },
+        { "name": "phase.active", "tick": 10, "sourceTick": 10 },
+        { "name": "phase.recovery", "tick": 25, "sourceTick": 25 },
+        { "name": "action.end", "tick": 45, "sourceTick": 45 }
       ],
       "keyframes": [
         { "tick": 0, "interp": "linear", "parts": {
@@ -444,10 +445,14 @@ silently choose an unresolved basis or rest pose.
 
 The report is not a second source of truth. Timing and poses live in the
 animation JSON. `weapons.json` references the clip ID and stores non-timing
-combat data. After export, marker tick values can be edited directly in that
-clip JSON; `durationTicks` must match `action.end`. Re-exporting from Blender
-writes the scene's marker positions again, so mirror JSON timing edits in the
-Blender timeline before the next export.
+combat data. After export, edit a marker's `tick` in the clip JSON to change
+when that boundary plays; leave `sourceTick` unchanged. The runtime linearly
+retimes the poses between those source and playback boundaries. The runtime
+`durationTicks` must match `action.end.tick`. When re-exporting an existing clip,
+the exporter must refresh `sourceTick` from Blender while preserving the
+existing playback `tick` values by marker name; an explicit reset option restores
+all playback ticks to their source ticks. Its preview/report must show both
+values so timing edits are visible before the file is replaced.
 
 ### Validation and failure behavior
 

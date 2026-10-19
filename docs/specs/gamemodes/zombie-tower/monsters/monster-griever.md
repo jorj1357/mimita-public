@@ -1,3 +1,20 @@
+2026 10 19 1724 jorj  i did this bc doing the imeplemtnation for this
+this was the resaon we  started doing like 
+first write spec fully
+then 
+ONLY Then
+AI does wokr
+bc unless u do it liek that then u end up  sauing
+"no thats not right"
+Here's the fix: erugedof.cpp:928 has a missing vairable
+"no it borke again"
+Here's the fix: wruhfer9idndiu.cpp:1914 has 2 functions in 1 line 
+etc etc
+just 
+write all int eh spsec 
+the spec fofr it 
+and get it  to be usper good and work with AI so AI will edit the sepc  so u can write and it will make it mroe organized and fill in teh gaps  bc sometimes u cant jut come up with  the pro archtioecture all ato nce instnatly so  LALALlalala ok im done 
+
 relaets to C:\mimita-v9\docs\specs\gamemodes\zombie-tower.md
 and C:\mimita-v9\docs\specs\avatar\avatar-editor.md 
 

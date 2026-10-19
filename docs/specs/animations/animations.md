@@ -286,23 +286,92 @@ not move `phase.windup` to 10. To author a 15-tick active phase after that,
 set `phase.recovery.tick` to 25. Recovery then continues up to, but not
 including, `action.end`.
 
-These marker values are editable in the exported clip JSON. That JSON is the
-runtime source for the move's duration and phase timing. `durationTicks` must
-equal the exclusive `action.end` tick. For example, markers at 0, 10, 25, and
-50 make the clip 50 ticks long: windup is 10 ticks, active is 15 ticks,
-recovery is 25 ticks, and the final sampled pose is tick 49. Changing
-`action.end` from 60 to 50 therefore also changes `durationTicks` from 60 to
-50. Pose keyframes remain independent; they do not need to be added for every
-marker unless a specific pose is desired at that boundary.
+These marker values are editable in the exported clip JSON. Each required
+Melee marker has two tick values: `sourceTick` is the Blender-authored pose
+boundary, and `tick` is where that boundary plays in the engine. A fresh export
+sets both values to the Blender marker's tick. To retime a clip, edit `tick`
+and leave `sourceTick` unchanged. This preserves the authored pose boundary
+while moving its playback time. New exports must write both values. Before
+retiming an older clip that has no `sourceTick`, copy each current marker's
+`tick` into `sourceTick` once; clips without `sourceTick` retain legacy direct
+playback until migrated.
+
+`durationTicks` equals the runtime `action.end.tick`, which is exclusive. For
+example, runtime markers at 0, 10, 25, and 50 make the clip 50 ticks long:
+windup is 10 ticks, active is 15 ticks, recovery is 25 ticks, and the final
+sampled pose is tick 49. Changing the runtime end from 60 to 50 therefore also
+changes `durationTicks` from 60 to 50. The source `action.end.sourceTick` remains
+the authored end of the Blender pose timeline.
+
+During playback, each interval between adjacent phase markers is mapped
+linearly from its runtime `[tick]` interval to its authored `[sourceTick]`
+interval. The engine samples the existing keyframe curve at that mapped source
+position, including fractional source ticks; the normal keyframe interpolation
+then supplies the pose. Thus shortening a phase speeds up its authored motion,
+and lengthening a phase slows it down, without moving or re-exporting the pose
+keyframes. A phase's speed ratio is its authored tick span divided by its
+runtime tick span. For example, an authored active span of 20 ticks played in
+5 ticks is 4x speed. Changing only `phase.active.tick` from 20 to 2 while
+leaving recovery at 40 makes the windup 10x faster, but stretches the active
+motion from 20 authored ticks across 38 runtime ticks; to make the active
+motion faster too, move `phase.recovery.tick` closer as well.
+
+#### Simple editing guide
+
+Think of `sourceTick` as the page in Blender's flipbook where a pose was drawn.
+Think of `tick` as when the game should show that page. To change the speed in
+the game, edit `tick` and leave `sourceTick` alone. The engine slides through the
+poses between the two marker lines; it does not move or redraw the Blender poses.
+
+For example, Captain Falcon's `kick_a` starts with these marker values:
 
 ```json
 "markers": [
-  { "name": "phase.windup", "tick": 0 },
-  { "name": "phase.active", "tick": 10 },
-  { "name": "phase.recovery", "tick": 25 },
-  { "name": "action.end", "tick": 45 }
+  { "name": "phase.windup", "tick": 0, "sourceTick": 0 },
+  { "name": "phase.active", "tick": 2, "sourceTick": 20 },
+  { "name": "phase.recovery", "tick": 40, "sourceTick": 40 },
+  { "name": "action.end", "tick": 59, "sourceTick": 59 }
 ]
 ```
+
+Here is how to edit it:
+
+1. Open `config/animations/library/melee/captainfalcon/kick_a.json` and find
+   its `markers` list.
+2. Change the playback `tick` numbers. Leave every `sourceTick` number alone.
+   Keep the playback numbers in order: windup, active, recovery, end.
+3. Keep `durationTicks` equal to the `action.end.tick` value. Save the file;
+   the game reloads it, and new actions use the new timing.
+4. If you export this clip again from Blender, choose **Preserve playback tick
+   edits** in the exporter to keep your game timing. Choose **Reset playback
+   ticks to Blender** only when you want Blender's marker positions back.
+
+In the example, `phase.active.tick` is 2 but its Blender pose boundary is 20.
+The windup therefore runs through 20 Blender ticks in 2 game ticks (10x faster).
+Because recovery still begins at game tick 40, the active poses from Blender
+ticks 20 to 40 are spread over 38 game ticks (about half speed). If you want
+that active part faster too, move `phase.recovery.tick` closer, for example to
+15. This makes active run from game tick 2 to 15; it also makes recovery start
+earlier, so choose the number that gives you the timing you want.
+
+Changing these playback markers changes both the visible pose timing and the
+gameplay phase timing. For example, moving `phase.active.tick` also moves the
+first tick when the move can hit. Keep the markers increasing and do not change
+`sourceTick` when you are only tuning game speed.
+
+```json
+"markers": [
+  { "name": "phase.windup", "tick": 0, "sourceTick": 0 },
+  { "name": "phase.active", "tick": 10, "sourceTick": 20 },
+  { "name": "phase.recovery", "tick": 15, "sourceTick": 40 },
+  { "name": "action.end", "tick": 60, "sourceTick": 60 }
+]
+```
+
+In this example, the active pose motion authored over 20 ticks plays over 5
+runtime ticks, so it is 4x faster. `sourceTick` values must remain strictly
+increasing and within the authored pose timeline. Runtime `tick` values must
+remain strictly increasing and satisfy the existing phase and duration rules.
 
 This keeps the total length and gameplay phase windows beside the authored
 poses in one animation asset. A weapon action references one `animation_clip_id`
@@ -377,12 +446,15 @@ actions must use the newly accepted revision.
 ### Animation-authored action timeline
 
 Melee no longer retimes phase clips from durations in `config/weapons.json`.
-One action references one authored clip. Its `durationTicks` and phase markers
-in that clip define the complete action duration and the exact server-tick
-windup, active, and recovery windows. Playback samples the clip directly at
-elapsed clip tick; there is no normalized phase retiming. Editing the clip's
-markers and keyframes together changes both the visible action and its active
-window without editing a second timing file.
+One action references one authored clip. Its runtime `durationTicks` and phase
+marker `tick` values define the complete action duration and exact server-tick
+windup, active, and recovery windows. The same markers' `sourceTick` values
+anchor those phase boundaries in the Blender-authored pose timeline. Playback
+maps each runtime phase interval linearly onto its source interval, then
+samples the existing keyframes there. Moving a marker's runtime `tick` therefore
+changes both gameplay timing and the visible phase speed; no second timing file
+or keyframe edits are required. This is the required/default Melee playback
+behavior, not an optional mode.
 
 This is the required/default Melee runtime behavior for every action using
 `animation_clip_id`, not an optional playback mode. `config/weapons.json`
@@ -404,9 +476,11 @@ move hitbox. The hitbox follows its named body part's evaluated transform.
 Root movement remains separate, action-owned data expressed in the captured
 camera-relative basis and simulated/collision-checked by the movement owner.
 
-The timeline controls eligibility, while the animation curve supplies the
-limb path. Swept hitbox queries must use the fixed-tick poses for each active
-tick; render frame time cannot stretch or shorten the active window.
+The retimed animation curve supplies the limb path, and the runtime timeline
+controls hit eligibility. Swept hitbox queries must use the retimed fixed-tick
+poses for each active tick; render frame time cannot stretch or shorten the
+active window. Server and clients must use the same validated clip revision and
+the same piecewise-linear source-tick mapping.
 
 ### Keyframe and part fields
 
@@ -764,6 +838,10 @@ change is clear and the actor does not stutter.
 6. A clip edit does not wait for spawn, respawn, teleport, map change, model
    change, avatar change, manual reload, or editor interaction. Rig/model edits
    still use their lifecycle-safe import boundary.
+7. When a Melee library clip changes, reload the move-set data that reads its
+   marker `tick` values. New actions use the edited phase boundaries and the
+   matching piecewise pose map together; actions already in progress keep their
+   captured timing until they finish.
 
 ## Diagnostics
 

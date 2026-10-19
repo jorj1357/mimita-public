@@ -78,7 +78,10 @@ uint16_t validClientVisualStateFlags(uint16_t flags)
         NET_STATE_DASHING |
         NET_STATE_DOWN_DASHING |
         NET_STATE_FREEZING |
-        NET_STATE_ATTACKING;
+        NET_STATE_ATTACKING |
+        NET_STATE_SHIELDING |
+        NET_STATE_GRABBING |
+        NET_STATE_CROUCHING;
     return flags & kValid;
 }
 
@@ -1051,6 +1054,8 @@ void handleInputPacket(const char* buffer, int bytes,
         // Melee: held shield / grab intent carried in free stateFlags bits.
         p.input.shieldHeld = (flags & NET_STATE_SHIELDING) != 0;
         p.input.grabHeld = (flags & NET_STATE_GRABBING) != 0;
+        p.input.crouchHeld = (flags & NET_STATE_CROUCHING) != 0;
+        slot.command.crouchHeld = p.input.crouchHeld;
         slot.command.movementDirectionPressed =
             std::abs(wishX) > 0.001f || std::abs(wishY) > 0.001f;
         slot.valid = true;

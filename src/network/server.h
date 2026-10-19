@@ -176,6 +176,7 @@ struct ServerInput
     // that are otherwise free (see NetworkPlayerStateFlags).
     bool shieldHeld = false;
     bool grabHeld = false;
+    bool crouchHeld = false;
     bool flyUp = false;
     bool flyDown = false;
     uint32_t tick = 0;

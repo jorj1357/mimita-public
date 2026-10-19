@@ -8,7 +8,18 @@
     "decay_ticks": 300,
     "break_recovery_ticks": 120,
     "release_recovery_ticks": 90,
-    "break_upward_impulse": 5.0
+    "break_upward_impulse": 5.0,
+    "min_damage_multiplier": 0.01,
+    "max_damage_multiplier": 0.99,
+    "visual": {
+      "enabled": true,
+      "center_offset_m": [0.0, 0.0, 1.0],
+      "size_m": [1.0, 1.0, 2.0],
+      "full_color": [0.0, 1.0, 1.0],
+      "empty_color": [0.0, 0.25, 0.35],
+      "full_alpha": 0.5,
+      "empty_alpha": 0.1
+    }
   },
   "grab": {
     "radius": 1.0,
@@ -21,6 +32,14 @@
     "directness_scale": 1.0,
     "min_percent": 0.0,
     "max_percent": 60.0,
-    "max_impulse": 120.0
+    "min_impulse": 1.0,
+    "max_impulse": 120.0,
+    "reference_base_impulse": 30.0,
+    "reference_seconds": 1.0,
+    "knockback_curve": [
+      { "target_percent": 0.0, "distance_m": 0.5 },
+      { "target_percent": 100.0, "distance_m": 10.0 },
+      { "target_percent": 200.0, "distance_m": 50.0 }
+    ]
   }
 }

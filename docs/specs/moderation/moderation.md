@@ -175,3 +175,51 @@ Ok
 * Omg i hate whwen this guy talks so muhc
 * +17 other results like that
 * Ok i will work on dat
+
+2026 10 19 1709 jorj more 
+
+ok so 
+we need like
+a vote kick bc i currrnet believe that the thing that 
+ur not reallt gonna stop peope frmo cheating
+but 
+what u can do  is jut vote kick 
+ro report
+AND
+REPORT BUTTONS
+ok 
+
+a report button here
+is going to have 
+TRACEABLE
+NUMBRS
+not like
+We are investigating it :)
+
+no
+its
+
+like
+your rerport number is 92859804242
+your  incident thing is  this and that 
+its like 
+if u ahve a issue then u canbring it up with moderation and then they actuallt will do somethign about it 
+AND EVEN BETTER
+DONT BRING 
+IT UP WITH MODERATION
+ughhhhhh
+
+WHAT WE WWANNA DO is 
+u are the mod
+everuone is the mod
+what that mean hmm well
+
+like
+if soeone is just doing slurs over and over and over
+u can just 
+open menu
+or click on them
+and click  mute
+or click block
+on the website or in the .exe whenits more stable
+u can see all things peopel u blocked 

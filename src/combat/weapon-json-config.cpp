@@ -7,6 +7,7 @@
 #include "gamemode/match-roles.h"
 #include "../debug/debug-log.h"
 #include "../network/network-weapons.h"
+#include "../utils/path_utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -66,6 +67,49 @@ json gWeaponConfigRoot = json::object();
 std::filesystem::file_time_type gWeaponConfigLastWrite{};
 std::chrono::steady_clock::time_point gWeaponConfigLastCheck{};
 bool gWeaponConfigHasWriteTime = false;
+using AnimationFileState = std::pair<std::string, std::filesystem::file_time_type>;
+std::vector<AnimationFileState> gAnimationLibraryFiles;
+bool gAnimationLibraryStateInitialized = false;
+
+bool readAnimationLibraryState(std::vector<AnimationFileState>& state)
+{
+    state.clear();
+    const std::filesystem::path root(resolveAssetPath("config/animations/library"));
+    std::error_code ec;
+    if (!std::filesystem::is_directory(root, ec))
+        return !ec;
+    for (std::filesystem::recursive_directory_iterator it(root, ec), end;
+         it != end; it.increment(ec)) {
+        if (ec) return false;
+        if (!it->is_regular_file(ec) || ec) {
+            if (ec) return false;
+            continue;
+        }
+        if (it->path().extension() != ".json") continue;
+        const auto writeTime = it->last_write_time(ec);
+        if (ec) return false;
+        state.emplace_back(it->path().generic_string(), writeTime);
+    }
+    if (ec) return false;
+    std::sort(state.begin(), state.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
+    });
+    return true;
+}
+
+bool animationLibraryChanged()
+{
+    std::vector<AnimationFileState> current;
+    if (!readAnimationLibraryState(current)) return false;
+    if (!gAnimationLibraryStateInitialized) {
+        gAnimationLibraryFiles = std::move(current);
+        gAnimationLibraryStateInitialized = true;
+        return false;
+    }
+    if (current == gAnimationLibraryFiles) return false;
+    gAnimationLibraryFiles = std::move(current);
+    return true;
+}
 
 std::string normalizedToken(std::string value)
 {
@@ -394,6 +438,11 @@ void loadWeaponJsonConfig()
             gWeaponConfigLastWrite = std::filesystem::last_write_time(weaponConfigPath(), ec);
             gWeaponConfigHasWriteTime = !ec;
         }
+        std::vector<AnimationFileState> animationFiles;
+        if (readAnimationLibraryState(animationFiles)) {
+            gAnimationLibraryFiles = std::move(animationFiles);
+            gAnimationLibraryStateInitialized = true;
+        }
     } catch (const std::exception& e) {
         Debug::log(Debug::Category::Weapons, "[WEAPON] config parse failed: %s", e.what());
         gWeaponConfigRoot = json::object();
@@ -460,7 +509,12 @@ bool reloadBuiltinWeaponsIfChanged()
     if (!std::filesystem::exists(weaponConfigPath(), ec) || ec)
         return false;
     const auto writeTime = std::filesystem::last_write_time(weaponConfigPath(), ec);
-    if (ec || (gWeaponConfigHasWriteTime && writeTime == gWeaponConfigLastWrite))
+    if (ec)
+        return false;
+    const bool weaponConfigChanged = !gWeaponConfigHasWriteTime ||
+                                     writeTime != gWeaponConfigLastWrite;
+    const bool animationLibraryWasChanged = animationLibraryChanged();
+    if (!weaponConfigChanged && !animationLibraryWasChanged)
         return false;
 
     gWeaponConfigLastWrite = writeTime;
@@ -473,7 +527,9 @@ bool reloadBuiltinWeaponsIfChanged()
             ActorPresetWeapons::apply(*preset);
         }
     }
-    Debug::log(Debug::Category::Weapons, "[WEAPON] hot reloaded %s", weaponConfigPath().c_str());
+    Debug::log(Debug::Category::Weapons,
+        "[WEAPON] hot reloaded %s%s", weaponConfigPath().c_str(),
+        animationLibraryWasChanged ? " after animation library edit" : "");
     return true;
 }
 

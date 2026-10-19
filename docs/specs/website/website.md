@@ -33,3 +33,21 @@ Requires:
 a generalized way to 1. Get what data we already send, adn 2. Just add more data onto that currenlty working data send. For ingame and on website 
 Track how mant people join and fmro what source and how much people join per dau also
 In admin dashboard 
+
+
+2026 10 19 1712 
+like what to do about 
+ithink matbe this has vps
+VPS vultr stuff in it? 
+cuz 
+whats the  deal hmm
+saving
+200 accounts data
+seems fine
+
+savings 200m account data
+seems more difficult
+so we nee more storage
+and stuf as time goes on 
+guhhhhughughughg 
+AND FORUms C:\mimita-v9\docs\specs\website\website-forums.md

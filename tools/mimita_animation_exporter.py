@@ -39,6 +39,7 @@ except ModuleNotFoundError:
 
 PARTS = ("head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg")
 DEFAULT_REFERENCE = "assets/entity/player/default/mimita-char-no-animations-v4.glb"
+MELEE_MARKERS = ("phase.windup", "phase.active", "phase.recovery", "action.end")
 
 
 def repo_root():
@@ -165,6 +166,8 @@ def finite_vec(vec):
 def collect_markers(scene, start, end, duration, melee):
     markers = []
     for marker in scene.timeline_markers:
+        if not melee and marker.name in MELEE_MARKERS:
+            continue
         if start <= marker.frame <= end + 1:
             # Animators commonly place action.end on the last keyed frame.
             # Treat that endpoint as exclusive, matching a marker one frame
@@ -174,10 +177,13 @@ def collect_markers(scene, start, end, duration, melee):
             else:
                 tick = marker_tick(marker.frame, start)
             if 0 <= tick <= duration:
-                markers.append({"name": marker.name, "tick": tick})
+                entry = {"name": marker.name, "tick": tick}
+                if marker.name in MELEE_MARKERS:
+                    entry["sourceTick"] = tick
+                markers.append(entry)
     if melee:
         by_name = {m["name"]: m["tick"] for m in markers}
-        needed = ("phase.windup", "phase.active", "phase.recovery", "action.end")
+        needed = MELEE_MARKERS
         absent = [name for name in needed if name not in by_name]
         if absent:
             raise ValueError("Melee export requires markers: " + ", ".join(absent))
@@ -185,6 +191,41 @@ def collect_markers(scene, start, end, duration, melee):
         if ticks[0] != 0 or ticks[-1] != duration or not all(a < b for a, b in zip(ticks, ticks[1:])):
             raise ValueError("Melee markers must be ordered, nonempty, begin at tick 0, and end at durationTicks")
     return sorted(markers, key=lambda m: (m["tick"], m["name"]))
+
+
+def preserve_playback_markers(markers, output_path, clip_id, preserve):
+    """Keep edited runtime ticks while refreshing authored sourceTick anchors."""
+    if not preserve or not os.path.isfile(output_path):
+        return
+    try:
+        with open(output_path, "r", encoding="utf-8") as stream:
+            existing = json.load(stream)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("Existing output JSON is invalid; fix it or choose another output path: " + str(exc)) from exc
+
+    clip = existing.get("clips", {}).get(clip_id) if isinstance(existing, dict) else None
+    if not isinstance(clip, dict) or not isinstance(clip.get("markers"), list):
+        return
+
+    old_ticks = {}
+    for marker in clip["markers"]:
+        if not isinstance(marker, dict) or not isinstance(marker.get("name"), str):
+            continue
+        if isinstance(marker.get("tick"), int) and not isinstance(marker.get("tick"), bool):
+            old_ticks[marker["name"]] = marker["tick"]
+    for marker in markers:
+        if marker["name"] in old_ticks:
+            marker["tick"] = old_ticks[marker["name"]]
+
+    if all(name in old_ticks for name in MELEE_MARKERS):
+        runtime = [next(m["tick"] for m in markers if m["name"] == name)
+                   for name in MELEE_MARKERS]
+        source = [next(m["sourceTick"] for m in markers if m["name"] == name)
+                  for name in MELEE_MARKERS]
+        if runtime[0] != 0 or runtime[-1] <= 0 or not all(a < b for a, b in zip(runtime, runtime[1:])):
+            raise ValueError("Preserved playback markers are out of order; choose reset or fix the existing clip.")
+        if source[0] != 0 or not all(a < b for a, b in zip(source, source[1:])):
+            raise ValueError("Blender source markers are out of order; fix the timeline before exporting.")
 
 
 def action_keyframes(actions, start, end):
@@ -449,6 +490,23 @@ def main():
     output_path = prompt_text("Output JSON path", output_default,
                               "MiMITA reads shared clips from config/animations/library; the default is ready for the shared library.",
                               rf"C:\mimita-v9\config\animations\library\{clip_id}.json")
+    output = resolve_repo_path(output_path)
+    preserve_playback_ticks = False
+    if clip_type == "Melee" and os.path.isfile(output):
+        try:
+            with open(output, "r", encoding="utf-8") as stream:
+                existing_output = json.load(stream)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("Existing output JSON is invalid; fix it or choose another output path: " + str(exc)) from exc
+        existing_clip = existing_output.get("clips", {}).get(clip_id) if isinstance(existing_output, dict) else None
+        if isinstance(existing_clip, dict) and isinstance(existing_clip.get("markers"), list):
+            choice = prompt_choice(
+                "Existing clip timing",
+                ["Preserve playback tick edits", "Reset playback ticks to Blender"],
+                "Preserve playback tick edits",
+                "The exporter will always refresh sourceTick from Blender. Preserve keeps the existing runtime tick values.",
+                "Choose Reset when you intentionally want the Blender marker positions to become playback positions again.")
+            preserve_playback_ticks = choice == "Preserve playback tick edits"
     profile_path = prompt_text("Optional avatar animations.json (blank to skip)", "",
                                "Choose an avatar profile only if you want this avatar to load the shared clip automatically.",
                                r"C:\mimita-v9\assets\avatars\captainfalcon\animations.json")
@@ -470,12 +528,14 @@ def main():
         sample_frames = list(range(start, end + 1)) if sampling == "Dense every tick" else action_keyframes(actions, start, end)
         duration, keyframes = sample_clip(scene, root, objects, ref_root, ref_parts, start, end, sample_frames)
         markers = collect_markers(scene, start, end, duration, clip_type == "Melee")
+        preserve_playback_markers(markers, output, clip_id, preserve_playback_ticks)
         if not re.fullmatch(r"[A-Za-z0-9_-]+", clip_id):
             raise ValueError("Clip ID may contain only letters, numbers, underscore, and hyphen")
         clip = {"durationTicks": duration, "loop": False, "keyframes": keyframes}
         if markers:
             clip["markers"] = markers
-        output = resolve_repo_path(output_path)
+        if clip_type == "Melee":
+            clip["durationTicks"] = next(m["tick"] for m in markers if m["name"] == "action.end")
 
         profile_changed = False
         if profile_path:
@@ -488,8 +548,13 @@ def main():
             profile_changed = add_profile_include(resolved_profile, relative_clip_path)
         print("\nExport complete")
         print(f"  Clip: {clip_id}")
-        print(f"  Duration: {duration} ticks")
+        print(f"  Runtime duration: {clip['durationTicks']} ticks")
+        if clip_type == "Melee":
+            print(f"  Blender-authored source span: {duration} ticks")
         print(f"  Poses: {len(keyframes)} ({sampling})")
+        for marker in markers:
+            if "sourceTick" in marker:
+                print(f"  Marker {marker['name']}: playback tick {marker['tick']}, Blender source tick {marker['sourceTick']}")
         print(f"  Exported file: {output}")
         print("  Numeric precision: 2 decimal places; near-zero values written as 0.0")
         print("  Rotation check: evaluated Action channels; root-basis-converted rest-relative WXYZ deltas")

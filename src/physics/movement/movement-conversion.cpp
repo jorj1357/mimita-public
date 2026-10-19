@@ -66,6 +66,7 @@ MovementCommand movementCommandFromInput(const InputFrame& frame,
     command.groundReturnPressed = input.groundReturnPressed || frame.groundReturnPressed;
     command.freezeHeld = input.freezeHeld || frame.freezeHeld;
     command.freezePressed = input.freezePressed || frame.freezePressed;
+    command.crouchHeld = input.crouchHeld || frame.crouchHeld;
 
     command.movementDirectionPressed =
         input.movementPressed || frame.movementPressed ||
@@ -95,6 +96,7 @@ MovementCommand movementCommandFromServerInput(const MimitaNet::ServerInput& inp
     command.dashPressed = input.dashPressed;
     command.downDashPressed = input.downDashPressed;
     command.freezeHeld = input.freezeHeld;
+    command.crouchHeld = input.crouchHeld;
     command.movementDirectionPressed =
         command.moveAxes.x != 0.0f || command.moveAxes.y != 0.0f;
     return command;
@@ -137,6 +139,9 @@ MovementState movementStateFromPlayer(const Player& player,
     state.jump.coyoteTimerSeconds = player.jump.coyoteTimer;
     state.jump.didGroundJump = player.jump.didGroundJump;
     state.jump.didAirJump = player.jump.didAirJump;
+    state.jump.holdJumpActive = player.jump.holdJumpActive;
+    state.jump.holdJumpTicksHeld = player.jump.holdJumpTicksHeld;
+    state.jump.holdJumpBaseVelocity = player.jump.holdJumpBaseVelocity;
 
     state.dash.dashAvailable = player.dash.dashAvailable;
     state.dash.dashHeldPreviously = player.dash.dashHeldPrev;
@@ -205,6 +210,9 @@ void applyMovementStateToPlayer(const MovementState& state, Player& player)
     player.jump.coyoteTimer = state.jump.coyoteTimerSeconds;
     player.jump.didGroundJump = state.jump.didGroundJump;
     player.jump.didAirJump = state.jump.didAirJump;
+    player.jump.holdJumpActive = state.jump.holdJumpActive;
+    player.jump.holdJumpTicksHeld = state.jump.holdJumpTicksHeld;
+    player.jump.holdJumpBaseVelocity = state.jump.holdJumpBaseVelocity;
 
     player.dash.dashAvailable = state.dash.dashAvailable;
     player.dash.dashHeldPrev = state.dash.dashHeldPreviously;
@@ -261,7 +269,11 @@ MovementState movementStateFromServerPlayer(const MimitaNet::ServerPlayer& playe
     state.yaw = player.yaw;
     state.sizeScale = player.sizeScale;
     state.ground.onGround = player.onGround;
-    state.ground.stableOnGround = player.onGround;
+    // Keep the temporal stable-ground grace. Replacing it with raw contact each
+    // tick made the server alternate grounded/airborne while a resting body
+    // bounced a few centimetres, which also flipped Melee poses.
+    state.ground.stableOnGround = player.onGround ||
+        player.movement.ground.stableOnGround;
     state.ground.hasWorldContact = player.onGround;
     state.dash.dashAvailable = player.dashAvailable;
     state.downDash.available = player.movement.downDash.available;

@@ -2,9 +2,11 @@
 
 #include "animation-rotation.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 
 namespace {
@@ -184,8 +186,61 @@ AnimClip parseAnimClipJson(const nlohmann::json& j)
     clip.priority = j.value("priority", 0);
     clip.blendInTicks = j.value("blendInTicks", 0);
     clip.blendOutTicks = j.value("blendOutTicks", 0);
-    if (!j.contains("keyframes") || !j["keyframes"].is_array())
+
+    if (j.contains("markers") && j["markers"].is_array()) {
+        static const char* phaseNames[4] = {
+            "phase.windup", "phase.active", "phase.recovery", "action.end"};
+        std::array<int, 4> seen{{0, 0, 0, 0}};
+        int sourceCount = 0;
+        for (const auto& marker : j["markers"]) {
+            if (!marker.is_object() || !marker.contains("name") ||
+                !marker["name"].is_string())
+                continue;
+            const std::string name = marker["name"].get<std::string>();
+            int index = -1;
+            for (int i = 0; i < 4; ++i)
+                if (name == phaseNames[i]) { index = i; break; }
+            if (index < 0)
+                continue;
+
+            clip.hasMeleePhaseTimeline = true;
+            if (!marker.contains("tick") || !marker["tick"].is_number_integer())
+                throw std::runtime_error("Melee marker '" + name + "' needs an integer tick");
+            if (++seen[index] != 1)
+                throw std::runtime_error("duplicate Melee marker '" + name + "'");
+            clip.phaseTicks[index] = marker["tick"].get<int>();
+            clip.phaseSourceTicks[index] = clip.phaseTicks[index];
+
+            if (marker.contains("sourceTick")) {
+                if (!marker["sourceTick"].is_number_integer())
+                    throw std::runtime_error("Melee marker '" + name + "' has a non-integer sourceTick");
+                clip.phaseSourceTicks[index] = marker["sourceTick"].get<int>();
+                ++sourceCount;
+            }
+        }
+
+        if (clip.hasMeleePhaseTimeline) {
+            if (seen != std::array<int, 4>{{1, 1, 1, 1}})
+                throw std::runtime_error("Melee clip must contain exactly one of each required phase marker");
+            if (sourceCount != 0 && sourceCount != 4)
+                throw std::runtime_error("Melee clip must provide sourceTick on all phase markers or none");
+            if (clip.phaseTicks[0] != 0 || clip.phaseTicks[3] != clip.durationTicks ||
+                clip.durationTicks <= 0 ||
+                !std::is_sorted(clip.phaseTicks.begin(), clip.phaseTicks.end()) ||
+                std::adjacent_find(clip.phaseTicks.begin(), clip.phaseTicks.end()) != clip.phaseTicks.end())
+                throw std::runtime_error("Melee runtime markers must increase from tick 0 through durationTicks");
+            if (clip.phaseSourceTicks[0] != 0 ||
+                !std::is_sorted(clip.phaseSourceTicks.begin(), clip.phaseSourceTicks.end()) ||
+                std::adjacent_find(clip.phaseSourceTicks.begin(), clip.phaseSourceTicks.end()) != clip.phaseSourceTicks.end())
+                throw std::runtime_error("Melee sourceTick markers must increase from tick 0");
+        }
+    }
+
+    if (!j.contains("keyframes") || !j["keyframes"].is_array()) {
+        if (clip.hasMeleePhaseTimeline)
+            throw std::runtime_error("Melee clip needs a keyframes array");
         return clip;
+    }
 
     for (const auto& kf : j["keyframes"]) {
         AnimKeyframe keyframe;
@@ -200,6 +255,13 @@ AnimClip parseAnimClipJson(const nlohmann::json& j)
             }
         }
         clip.keyframes.push_back(keyframe);
+    }
+    if (clip.hasMeleePhaseTimeline && !clip.keyframes.empty()) {
+        const int lastAuthoredTick = std::max_element(
+            clip.keyframes.begin(), clip.keyframes.end(),
+            [](const AnimKeyframe& a, const AnimKeyframe& b) { return a.tick < b.tick; })->tick;
+        if (clip.phaseSourceTicks[3] <= lastAuthoredTick)
+            throw std::runtime_error("Melee action.end.sourceTick must follow the last authored pose tick");
     }
     return clip;
 }

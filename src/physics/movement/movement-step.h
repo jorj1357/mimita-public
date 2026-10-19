@@ -45,6 +45,13 @@ float movementApplyGravityZ(float velocityZ,
                             float maximumFallSpeed,
                             float dt);
 
+// Converts a calibration travel distance over `referenceSeconds` into an
+// initial external-impulse speed using the same exponential decay the movement
+// keeper applies. Meters are a distance target, never a velocity.
+float movementReferenceImpulseForDistance(float distanceMeters,
+                                          float decayPerSecond,
+                                          float referenceSeconds);
+
 glm::vec2 movementWalkVelocityXY(glm::vec2 currentVelocity,
                                  glm::vec2 wishMoveXY,
                                  bool onGround,

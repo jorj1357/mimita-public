@@ -55,6 +55,10 @@ bool parseWalkMode(const json& value, MovementWalkMode& out)
         out = MovementWalkMode::Source;
         return true;
     }
+    if (mode == "smash" || mode == "compose") {
+        out = MovementWalkMode::Compose;
+        return true;
+    }
     return false;
 }
 
@@ -244,7 +248,7 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
     if (root.contains("movement_mode") &&
         !parseWalkMode(root["movement_mode"], config.walkMode)) {
         Debug::error(Debug::Category::Physics,
-            "[MOVEMENT CONFIG] Invalid movement_mode; expected \"mimita\", \"accel\", or \"source\".\n");
+            "[MOVEMENT CONFIG] Invalid movement_mode; expected \"mimita\", \"accel\", \"source\", or \"smash\".\n");
     }
 
     if (root.contains("jump_mode") &&
@@ -380,6 +384,14 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
             std::clamp(root["hold_jump_charge_ticks"].get<int>(), 1, 60);
     readFloat("ground_friction", config.groundFrictionAmount);
     readFloat("air_friction", config.airFrictionAmount);
+    readFloat("stable_ground_grace_seconds", config.stableGroundGraceSeconds);
+    config.stableGroundGraceSeconds =
+        std::clamp(config.stableGroundGraceSeconds, 0.0f, 1.0f);
+    readBool("fast_fall_enabled", config.fastFallEnabled);
+    readFloat("fast_fall_acceleration", config.fastFallAcceleration);
+    config.fastFallAcceleration = std::max(0.0f, config.fastFallAcceleration);
+    readFloat("fast_fall_max_speed", config.fastFallMaxSpeed);
+    config.fastFallMaxSpeed = std::max(0.0f, config.fastFallMaxSpeed);
     readFloat("external_impulse_decay", config.externalImpulseDecay);
     readFloat("max_external_impulse_speed", config.maximumExternalImpulseSpeed);
     readFloat("external_impulse_max_speed", config.maximumExternalImpulseSpeed);
@@ -544,7 +556,8 @@ bool MovementJsonConfig::loadPresetFile(const std::string& path,
         "[MOVEMENT CONFIG] Active preset: %s (%s) mode=%s air_strafing=%d bhop=%d\n",
         mActivePreset.c_str(), fileNameOf(path).c_str(),
         mConfig.walkMode == MovementWalkMode::Accel ? "accel" :
-        mConfig.walkMode == MovementWalkMode::Source ? "source" : "mimita",
+        mConfig.walkMode == MovementWalkMode::Source ? "source" :
+        mConfig.walkMode == MovementWalkMode::Compose ? "smash" : "mimita",
         (int)mConfig.airControlEnabled, (int)mConfig.bunnyHopEnabled);
     Debug::warn(Debug::Category::Physics,
         "[MOVEMENT CONFIG] ground_speed=%.1f air_speed=%.1f ground_accel=%.1f air_accel=%.1f "

@@ -424,6 +424,13 @@ struct MultiplayerContext
     uint64_t postGapResyncDeadlineMs = 0;
     int localServerHealth = 100;
     int lastSeenServerHealth = 100;
+    // Authoritative Melee meters from the local actor's own snapshot.
+    float localServerMeleePercent = 0.0f;
+    float localServerMeleeShield = 0.0f;
+    uint8_t localServerStateFlags = 0;
+    // Highest accepted Melee impulse event already applied locally. Reliable
+    // events are ordered; this is a second guard against duplicate delivery.
+    uint32_t lastAppliedMeleeImpulseEventId = 0;
 
     // Predicted kill-heal: killing restores the shooter to full HP. The heal is
     // applied instantly on a predicted kill, then reconciled on the server
@@ -851,6 +858,7 @@ struct MpInput
     // Melee: held shield (Q) and grab (E) intent, replicated in stateFlags.
     bool shieldHeld = false;
     bool grabHeld = false;
+    bool crouchHeld = false;
     bool flyUp = false;
     bool flyDown = false;
     int equippedSlot = 0;

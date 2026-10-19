@@ -1,3 +1,33 @@
+2026 10 19 1714 jorj  the rank system i mthinkinggggg
+like
+
+F, D, C, B, A, S
+
+with plus or minus 
+
+and the intiial was like 1 mmr = lowest 9999 mmr = highest
+i watn to do smth like MGE where
+its like
+team A mmr , team B mmr
+get the closest MMR match u can get 
+then 
+like find the average between them both 
+then the amt that u sbutract from the higehr one  to get to the average = the amt u lose if u lose, and amt u gain if u win
+
+so like
+
+team A = 2700 , team B = 2550
+2700 - 2550 = 150
+150/2 = 75 
+why div by 2 idk 
+
+but then 
+even if 1 person on team A thats still cool bc then we can expand later for more in 1 team
+then 
+team A loses = 2700 - 75 = new mmr = 2625
+team B wins = 2550 + 75 = 2625?
+idk need more work ehre 
+
 2026 10 17 1158 jorj todo explain
 
 ok competiive

@@ -586,6 +586,18 @@ float movementApplyGravityZ(float velocityZ,
     return std::max(nextZ, -maximumFallSpeed);
 }
 
+float movementReferenceImpulseForDistance(float distanceMeters,
+                                          float decayPerSecond,
+                                          float referenceSeconds)
+{
+    const float seconds = std::max(0.0001f, referenceSeconds);
+    const float decay = std::max(0.0f, decayPerSecond);
+    const float travelFactor = decay > 0.0001f
+        ? (1.0f - std::exp(-decay * seconds)) / decay
+        : seconds;
+    return std::max(0.0f, distanceMeters) / std::max(0.0001f, travelFactor);
+}
+
 glm::vec2 movementWalkVelocityXY(glm::vec2 currentVelocity,
                                  glm::vec2 wishMoveXY,
                                  bool onGround,
@@ -1135,6 +1147,22 @@ void applyBasicGravity(MovementState& state,
         state.baseVelocity.z, config.gravityZ, config.maximumFallSpeed, dt);
 }
 
+// Melee held-down fast fall: extra downward acceleration while airborne. It
+// never touches external knockback and never creates an input lock.
+static void applyBasicFastFall(MovementState& state,
+                               const MovementCommand& command,
+                               const MovementConfig& config,
+                               float fixedDt)
+{
+    if (!config.fastFallEnabled || !command.crouchHeld)
+        return;
+    if (state.ground.stableOnGround || state.ground.onGround)
+        return;
+    const float dt = std::max(movementClampStepDelta(fixedDt, config), 0.0001f);
+    const float next = state.baseVelocity.z - config.fastFallAcceleration * dt;
+    state.baseVelocity.z = std::max(next, -config.fastFallMaxSpeed);
+}
+
 void applyBasicExternalImpulseControl(MovementState& state,
                                       const MovementCommand& command)
 {
@@ -1632,33 +1660,37 @@ void applyPreCollisionBasicMovement(MovementState& state,
     // TO REVERT: delete this block and external impulse goes back to the old
     // separate-tank decay behavior (impulse_friction_mode / external_impulse_decay
     // / impulse_carry_seconds in the movement preset), restoring the old tests.
-    const float impulseResistance = std::max(
-        0.0001f, config.externalImpulseResistanceMultiplier);
-    // The stored impulse remains authoritative and is consumed once here.
-    // The preset controls how strongly it becomes movement velocity:
-    // 1.0 = unchanged, 10.0 = 10x less, 0.1 = 10x more.
-    const glm::vec3 pendingImpulse = state.externalImpulse / impulseResistance;
-    if (glm::length(pendingImpulse) > 0.0001f)
+    if (config.walkMode != MovementWalkMode::Compose)
     {
-        glm::vec2 impulseXY(pendingImpulse.x, pendingImpulse.y);
-        if (config.maximumExternalImpulseSpeed > 0.0f)
+        const float impulseResistance = std::max(
+            0.0001f, config.externalImpulseResistanceMultiplier);
+        // The stored impulse remains authoritative and is consumed once here.
+        // The preset controls how strongly it becomes movement velocity:
+        // 1.0 = unchanged, 10.0 = 10x less, 0.1 = 10x more.
+        const glm::vec3 pendingImpulse = state.externalImpulse / impulseResistance;
+        if (glm::length(pendingImpulse) > 0.0001f)
         {
-            const float impulseSpeed = glm::length(impulseXY);
-            if (impulseSpeed > config.maximumExternalImpulseSpeed && impulseSpeed > 0.0f)
-                impulseXY *= config.maximumExternalImpulseSpeed / impulseSpeed;
+            glm::vec2 impulseXY(pendingImpulse.x, pendingImpulse.y);
+            if (config.maximumExternalImpulseSpeed > 0.0f)
+            {
+                const float impulseSpeed = glm::length(impulseXY);
+                if (impulseSpeed > config.maximumExternalImpulseSpeed && impulseSpeed > 0.0f)
+                    impulseXY *= config.maximumExternalImpulseSpeed / impulseSpeed;
+            }
+            state.baseVelocity.x += impulseXY.x;
+            state.baseVelocity.y += impulseXY.y;
+            state.baseVelocity.z += pendingImpulse.z;
         }
-        state.baseVelocity.x += impulseXY.x;
-        state.baseVelocity.y += impulseXY.y;
-        state.baseVelocity.z += pendingImpulse.z;
+        state.externalImpulse = glm::vec3(0.0f);
+        state.externalImpulseCarryTimerSeconds = 0.0f;
+        state.externalImpulseMagnitude = 0.0f;
     }
-    state.externalImpulse = glm::vec3(0.0f);
-    state.externalImpulseCarryTimerSeconds = 0.0f;
-    state.externalImpulseMagnitude = 0.0f;
 
     state.previousMoveAxes = state.lastInputMoveAxes;
     state.lastInputMoveAxes = movementClampUnitOrZero(command.moveAxes);
     resetBasicOneTickState(state);
     applyBasicGravity(state, config, fixedDt);
+    applyBasicFastFall(state, command, config, fixedDt);
 }
 
 void applySpecialMovementPreCollision(MovementState& state,

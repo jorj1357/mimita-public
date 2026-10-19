@@ -10,6 +10,7 @@
 
 #pragma once
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <glm/glm.hpp>
@@ -218,6 +219,12 @@ struct AnimClip {
     int priority = 0;               // higher interrupts lower
     int blendInTicks = 0;           // blend from previous pose over N ticks
     int blendOutTicks = 0;          // reserved: blend toward next pose over N ticks
+    // Melee phase timeline. `phaseTicks` are engine/playback boundaries;
+    // `phaseSourceTicks` are the corresponding authored keyframe boundaries.
+    // Clips without these markers keep their existing direct-tick behavior.
+    std::array<int, 4> phaseTicks{{0, 0, 0, 0}};
+    std::array<int, 4> phaseSourceTicks{{0, 0, 0, 0}};
+    bool hasMeleePhaseTimeline = false;
     std::vector<AnimKeyframe> keyframes;
 };
 
@@ -386,6 +393,12 @@ struct JumpState {
     bool didGroundJump = false;
     bool didAirJump = false;
     float jumpSoundTimer = 0.0f;
+    // Hold-scaled jump charge survives fixed ticks. Without these fields the
+    // local Player conversion rebuilt MovementState with the charge inactive
+    // every tick, so held Space only ever produced the minimum jump.
+    bool holdJumpActive = false;
+    int holdJumpTicksHeld = 0;
+    float holdJumpBaseVelocity = 0.0f;
 };
 
 struct DashState {
@@ -492,6 +505,10 @@ public:
     // Melee damage meter (percent). Melee mode displays this instead of the
     // healthbar; it is not ordinary health. Reset to 0 on respawn.
     float percent = 0.0f;
+    // Replicated Melee shield presentation state. The authoritative durability
+    // stays on the server; clients only receive the remaining fraction.
+    bool meleeShieldActive = false;
+    float meleeShieldFraction = 1.0f;
     bool inventoryOpen = false;
     int equippedSlot = 1;
     bool hasValidWeapon = false;

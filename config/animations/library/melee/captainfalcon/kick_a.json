@@ -454,19 +454,23 @@
       "markers": [
         {
           "name": "phase.windup",
-          "tick": 0
+          "tick": 0,
+          "sourceTick": 0
         },
         {
           "name": "phase.active",
-          "tick": 2
+          "tick": 3,
+          "sourceTick": 20
         },
         {
           "name": "phase.recovery",
-          "tick": 40
+          "tick": 40,
+          "sourceTick": 40
         },
         {
           "name": "action.end",
-          "tick": 59
+          "tick": 59,
+          "sourceTick": 59
         }
       ]
     }

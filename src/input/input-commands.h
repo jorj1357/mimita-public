@@ -66,6 +66,7 @@ public:
     bool isGroundReturnPressed() const;
     bool isDownDashPressed() const;
     bool isFreezeHeld() const;
+    bool isCrouchHeld() const;
 
     // Buffered action queries — return true if action was pressed within buffer window
     bool consumeBufferedJump();

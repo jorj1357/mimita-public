@@ -1,3 +1,20 @@
+2026 10 19 1721 - jorj todo we also need
+lke 
+a grab tool
+or like a gravitt gun
+or like ragdoll mode how u acn idk
+maybe its a grab tool idk
+but that means it 
+dikkkkk idk idk idk
+but  i wnat to be able to pick people up
+adn crates up
+ALSO
+DO THE CODE
+SO
+IF 2 PEOPLE PICK EACH OTHER UP
+BOTH ARE PICKING UP THE OTHER AND RAISING THE OTHER AND SO BOTH END UP FLYING
+ BC THAT IS SO SICK AND I LOVE IT AN DOK DO THAT ko im done 
+
 9 7 2026 1706 jorj todo - explain moving phsical objects, connects to  the implementation goal of like
 
 ragdoll works like retrograd, shootuing guns is  phsical aim mode the gun shotos where it is aimed, realistic ish  world and harsh realsiitc etc, realsitic blood etc whatever

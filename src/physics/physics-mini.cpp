@@ -82,6 +82,7 @@ static MovementCommand buildMovementCommandFromPhysicsInputs(
     const glm::vec3& camForward,
     bool freezeHeld,
     bool freezePressed,
+    bool crouchHeld,
     float inputMovementHeldDuration)
 {
     MovementCommand command;
@@ -98,6 +99,7 @@ static MovementCommand buildMovementCommandFromPhysicsInputs(
     command.downDashPressed = downDashPressed;
     command.freezeHeld = freezeHeld;
     command.freezePressed = freezePressed || (freezeHeld && !p.freeze.freezeHeldPrev);
+    command.crouchHeld = crouchHeld;
     command.movementHeldDurationSeconds = inputMovementHeldDuration;
 
     const MovementDirectionTransition transition =
@@ -184,6 +186,7 @@ static void physicsMainUpdate_Internal(
     const Camera* debugCamera,
     bool freezeHeld,
     bool freezePressed,
+    bool crouchHeld,
     int subSteps,
     float inputMovementHeldDuration = 0.0f,
     const MovementConfig* overrideConfig = nullptr
@@ -323,6 +326,7 @@ static void physicsMainUpdate_Internal(
         camForward,
         freezeHeld,
         freezePressed,
+        crouchHeld,
         inputMovementHeldDuration);
     command.clientSimulationTick = p.movementSimulationTick;
 
@@ -551,6 +555,7 @@ void physicsMainUpdate(
         nullptr,
         input.freezeHeld,
         input.freezePressed,
+        input.crouchHeld,
         subSteps,
         input.movementHeldDuration,
         overrideConfig

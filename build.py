@@ -282,6 +282,17 @@ def source_changed(src):
     if not os.path.exists(obj) or not os.path.exists(dep):
         return True
 
+    # Zero-byte object/dependency files are stale artifacts from aborted or
+    # interrupted builds. A zero-byte .d file lists no headers, so trusting it
+    # silently keeps an object compiled against an old struct layout forever.
+    # Treat both as changed and retry this translation unit.
+    if os.path.getsize(dep) == 0:
+        try:
+            os.remove(dep)
+        except PermissionError:
+            pass
+        return True
+
     # zero-byte object file — stale artifact from aborted parallel build
     if os.path.getsize(obj) == 0:
         try:

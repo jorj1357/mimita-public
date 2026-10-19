@@ -387,10 +387,17 @@ void clientTick(Player& player,
         if (g_state.active)
             endAction(player);
         if (const MeleeAction* shieldAction = moveSet->find("shield")) {
-            const std::string& clip = !shieldAction->windup.clipId.empty()
-                ? shieldAction->windup.clipId : shieldAction->active.clipId;
-            if (!clip.empty())
-                player.playOneShotPhase(clip, 0, 1);
+            if (!shieldAction->animationClipId.empty()) {
+                // A held shield stays on the clip's authored active pose for as
+                // long as Q is held; its timeline still owns the boundary.
+                player.playOneShotAtTick(shieldAction->animationClipId,
+                                         shieldAction->windup.ticks);
+            } else {
+                const std::string& clip = !shieldAction->windup.clipId.empty()
+                    ? shieldAction->windup.clipId : shieldAction->active.clipId;
+                if (!clip.empty())
+                    player.playOneShotPhase(clip, 0, 1);
+            }
         }
         return;
     }
@@ -454,12 +461,24 @@ void clientTick(Player& player,
             action->id + ":" + std::to_string(phaseIndex);
         if (phaseKey != g_lastPhaseKey) {
             g_lastPhaseKey = phaseKey;
+            nlohmann::json phaseData = {
+                {"action", action->id}, {"phase", phaseName},
+                {"phase_index", phaseIndex}, {"phase_tick", phaseTick},
+                {"phase_ticks", phaseTicks}, {"clip", clip}};
+            if (!action->animationClipId.empty()) {
+                const int sourceStart = action->animationSourceTicks[phaseIndex];
+                const int sourceEnd = action->animationSourceTicks[phaseIndex + 1];
+                phaseData["runtime_clip_start_tick"] = elapsed - phaseTick;
+                phaseData["source_clip_start_tick"] = sourceStart;
+                phaseData["source_clip_end_tick"] = sourceEnd;
+                phaseData["source_clip_span_ticks"] = sourceEnd - sourceStart;
+                phaseData["phase_speed_ratio"] = phaseTicks > 0
+                    ? (float)(sourceEnd - sourceStart) / (float)phaseTicks : 0.0f;
+            }
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Avatar, StructuredLevel::Important,
                 "melee.client.phase", action->id, "melee phase entered", simTick,
-                {{"action", action->id}, {"phase", phaseName},
-                 {"phase_index", phaseIndex}, {"phase_tick", phaseTick},
-                 {"phase_ticks", phaseTicks}, {"clip", clip}});
+                phaseData);
             logMeleeLimbPose(player, *action, "melee.client.limb", phaseName, simTick);
         }
     }

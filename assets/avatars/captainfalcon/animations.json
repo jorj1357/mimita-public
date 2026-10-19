@@ -4,7 +4,7 @@
   "states": {
     "default": "idle",
     "locomotion": { "walk": "captainfalcon_walk", "fly": "walk", "crawl": "walk", "swim": "walk" },
-    "run": "captainfalcon_walk",
+    "run": "captainfalcon_run",
     "jump": "jump",
     "fall": "fall",
     "land": "captainfalcon_land",
@@ -362,6 +362,10 @@
     "config/animations/library/locomotion/captainfalcon/land.json",
     "config/animations/library/melee/captainfalcon/uppunch_a.json",
     "config/animations/library/melee/captainfalcon/downpunch_a.json",
-    "config/animations/library/melee/captainfalcon/downkick_a.json"
+    "config/animations/library/melee/captainfalcon/downkick_a.json",
+    "config/animations/library/melee/captainfalcon/upkick_a.json",
+    "config/animations/library/melee/captainfalcon/grab.json",
+    "config/animations/library/locomotion/captainfalcon/run.json",
+    "config/animations/library/melee/captainfalcon/shield.json"
   ]
 }

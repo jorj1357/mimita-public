@@ -259,6 +259,13 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     }
     ctx.lastSeenServerHealth = ctx.localServerHealth;
 
+    // Melee meters are absolute values from the local actor's snapshot. They
+    // never accumulate here, so a repeated snapshot cannot add percent twice.
+    player.percent = ctx.localServerMeleePercent;
+    player.meleeShieldFraction = std::clamp(ctx.localServerMeleeShield, 0.0f, 1.0f);
+    player.meleeShieldActive =
+        (ctx.localServerStateFlags & NET_STATE_SHIELDING) != 0;
+
     if (!player.dead)
     {
         const Capsule localCapsule = player.getCapsule();

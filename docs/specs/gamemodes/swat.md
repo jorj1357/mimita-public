@@ -1,3 +1,58 @@
+2026 10 19 1720 jorj  more ideas
+
+like
+a school for example
+and so
+this game is on roblox iddont have the link but this  i tihnk is literallt real 
+buttttttt
+
+idk 
+i want all poeple to have guns
+so not like hiding in school but thats not super accurate
+THIS RELATES TO PHSICAL OBJECT SPEC
+HOLLLTTT CRAP
+phsical object 
++ 
+destructible objects
++ 
+vehciles 
++ 
+explosions and stuff all work and all replacites across network
+this mod gets MUCH more ridonkulous 
+
+ but i envision mannn idk
+ relate to  C:\mimita-v9\docs\specs\gamemodes\bodycam.md as well
+
+like
+corner cehcking
+do this ULTRA ULTRA realistic
+sounds
+visuals
+well
+nto super duper realsisic
+but u are listneing SO hard
+for sounds
+where is the enemy at
+where is the hostages etc
+but its like
+25 swat
+and hten like 5 terrorist
+and then the eterrorist are supposed to oooo idk
+idk what even gonna do 
+
+i feeeeeeeel like its not 
+relly
+good
+to do liek na actual school shooter mode
+like  i 
+or public shooter mode
+although i do see how that wouldl be fun i dont know it feels like kinda  i idk
+even this 
+liek a school setting idk 
+but
+a mall or liek movei theater or idk 
+stuff 
+
 2026 10 07 1316 jorj todo eplain better but - 
 
 ihad an idea of 

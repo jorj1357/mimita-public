@@ -1754,10 +1754,10 @@
             "hitboxes": [
               {"id": "foot", "attached_part": "rightLeg", "shape": "sphere", "attachment_mode": "animated_limb",
                "size": [2.7, 2.7, 2.7], "local_offset": [1.0, -3.0, 0.5],
-               "active_start_tick": 15, "active_end_tick": 25}
+               "active_start_tick": 5, "active_end_tick": 15}
             ],
-            "damage": {"base_percent": 6.0},
-            "knockback": {"base_impulse": 10.0, "vertical_fraction": 0.15, "force_scale": 1.0},
+            "damage": {"base_percent": 20.0},
+            "knockback": {"base_impulse": 30.0, "vertical_fraction": 0.15, "force_scale": 1.0},
             "impulses": [
               {"phase": "active", "tick": 0, "forward": 2.0, "right": 0.0, "up": 1.0}
             ],
@@ -1793,8 +1793,8 @@
             "animation_clip_id": "uppunch_a",
             "hitboxes": [
               {"id": "up_fist", "attached_part": "rightArm", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [0.55, 0.55, 0.55], "local_offset": [0.0, 0.9, 0.15],
-               "active_start_tick": 0, "active_end_tick": 2}
+               "size": [2.0, 2.0, 2.0], "local_offset": [0.0, 0.9, 0.15],
+               "active_start_tick": 1, "active_end_tick": 10}
             ],
             "damage": {"base_percent": 5.0},
             "knockback": {"base_impulse": 12.0, "vertical_fraction": 0.6, "force_scale": 1.0},
@@ -1810,7 +1810,7 @@
             "animation_clip_id": "uppunch_a",
             "hitboxes": [
               {"id": "up_fist", "attached_part": "rightArm", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [0.6, 0.6, 0.6], "local_offset": [0.0, 0.4, 0.2],
+               "size": [2.0, 2.0, 2.0], "local_offset": [0.0, -4.0, 0.0],
                "active_start_tick": 0, "active_end_tick": 3}
             ],
             "damage": {"base_percent": 6.0},
@@ -1921,11 +1921,7 @@
           },
           "grab": {
             "input": {"button": "grab", "actor_state": "any"},
-            "phases": {
-              "windup":   {"ticks": 3, "clip_id": "cf_grab_windup"},
-              "active":   {"ticks": 3, "clip_id": "cf_grab_active"},
-              "recovery": {"ticks": 8, "clip_id": "cf_grab_recovery"}
-            },
+            "animation_clip_id": "grab",
             "hitboxes": [
               {"id": "grab_sphere", "attached_part": "rightArm", "shape": "sphere", "attachment_mode": "animated_limb",
                "size": [1.0, 1.0, 1.0], "local_offset": [0.0, 0.6, 0.6],
@@ -1940,11 +1936,7 @@
           },
           "shield": {
             "input": {"button": "shield", "actor_state": "any"},
-            "phases": {
-              "windup":   {"ticks": 1, "clip_id": "cf_shield"},
-              "active":   {"ticks": 1, "clip_id": "cf_shield"},
-              "recovery": {"ticks": 1, "clip_id": "cf_shield"}
-            },
+            "animation_clip_id": "shield",
             "damage": {"base_percent": 0.0},
             "knockback": {"base_impulse": 0.0, "vertical_fraction": 0.0, "force_scale": 0.0},
             "audio": {

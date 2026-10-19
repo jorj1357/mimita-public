@@ -41,7 +41,9 @@
     "comment": "Current MiMITA behavior. WASD overrides horizontal velocity instantly. Source-only tuning below remains inert in mimita mode.",
 
     // Uses MiMITA's Source/GoldSrc-style movement kernel.
-    "movement_mode": "mimita",
+    // Melee: instant WASD steering, but external knockback is composable motion
+    // and is never folded into or cleared by movement input.
+    "movement_mode": "smash",
 
     // Scale/reference value.
     // 1 MiMITA unit = 20 Source / GoldSrc units.
@@ -189,7 +191,9 @@
     // on release. This is a mode/profile input policy, not a buffer or cooldown.
     "jump_input_mode": "hold_scaled",
     "hold_jump_min_multiplier": 1.0,
-    "hold_jump_max_multiplier": 22.6,
+    // Provisional Melee value: 1 tick = minimum, 10 held ticks = 1.5x.
+    // The previous 22.6x produced roughly 400 m/s vertical launch.
+    "hold_jump_max_multiplier": 1.5,
     "hold_jump_charge_ticks": 10,
 
     // ── Ground snap ───────────────────────────────────────────────────────
@@ -202,6 +206,16 @@
     //
     // Matches the fast Source preset.
     "velocity_clip_epsilon": 1.01,
+
+    // Melee grounded-pose grace. The collision floor bounce can briefly report
+    // no contact while the body is still resting; keep the stable grounded state
+    // long enough that crouch/idle does not flash into fall.
+    "stable_ground_grace_seconds": 0.15,
+
+    // Melee held-down fast fall (Left Ctrl while airborne).
+    "fast_fall_enabled": true,
+    "fast_fall_acceleration": 120.0,
+    "fast_fall_max_speed": 90.0,
 
     // Normal surface friction multiplier.
     "surface_friction": 1.0,

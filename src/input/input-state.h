@@ -22,6 +22,8 @@ struct InputState {
     bool downDashPressed = false;
     bool freezeHeld = false;
     bool freezePressed = false;
+    // Melee: Left Ctrl held — crouch on the ground, faster descent in the air.
+    bool crouchHeld = false;
     float movementHeldDuration = 0.0f;
     glm::vec3 camForward{0,0,1};
 

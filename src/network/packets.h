@@ -22,7 +22,7 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 39: Replicated NPC avatars and match actor identities use expanded fields.
 // 41: WelcomePacket carries the dev-loop run/build identity so a new client
 //      cannot silently attach to an older persistent server.
-constexpr uint16_t PROTOCOL_VERSION = 41;
+constexpr uint16_t PROTOCOL_VERSION = 42;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -38,7 +38,8 @@ enum NetworkPlayerStateFlags : uint16_t
     // Melee: held shield and grab intent. stateFlags is uint16_t so these do
     // not change any packet size.
     NET_STATE_SHIELDING    = 1 << 8,
-    NET_STATE_GRABBING     = 1 << 9
+    NET_STATE_GRABBING     = 1 << 9,
+    NET_STATE_CROUCHING    = 1 << 10
 };
 constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;
@@ -490,6 +491,8 @@ struct SnapshotEntity
     int32_t health = 100;
     // Melee percent meter (0 in non-Melee modes).
     float meleePercent = 0.0f;
+    // Melee shield remaining fraction, quantized to 0..255.
+    uint8_t meleeShield = 0;
     uint8_t onGround = 0;
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
@@ -565,6 +568,8 @@ struct CompactEntityData
     // Melee percent meter, quantized to 4% steps (0..1020) to fit the fixed
     // CompactEntityData size and stay under the snapshot datagram limit.
     uint8_t meleePercent = 0;
+    // Melee shield remaining fraction, 0..255.
+    uint8_t meleeShield = 0;
     uint8_t onGround = 0;
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
@@ -599,7 +604,7 @@ struct CompactEntityData
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 165, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 166, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -609,12 +614,12 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[7]; // 7 * 165 + header(32) = 1187 < 1200
+    CompactEntityData entities[7]; // 7 * 166 + header(32) = 1194 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1187, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1194, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {

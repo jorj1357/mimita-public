@@ -15,6 +15,9 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
 #include "combat/weapon-execution.h"
+#include "combat/melee-rules-config.h"
+#include "config/movement-config.h"
+#include "gamemode/match-roles.h"
 #include "entities/player-avatar-animations.h"
 #include "entities/animation-rotation.h"
 #include "debug/debug-log.h"
@@ -32,58 +35,105 @@
 namespace MimitaNet {
 namespace {
 
-// Provisional, JSON-editable Melee rules from config/melee.json (shield, grab,
-// contact force caps). Loaded once; a missing/invalid file keeps the defaults.
-struct MeleeRules {
-    float shieldDurability = 50.0f;
-    float shieldDecayTicks = 300.0f;
-    float shieldBreakRecoveryTicks = 120.0f;
-    float shieldReleaseRecoveryTicks = 90.0f;
-    float shieldBreakUpImpulse = 5.0f;
-    float grabRadius = 1.0f;
-    int grabPullTicks = 30;
-    uint32_t grabAntiChainTicks = 300;
-    float forceMaxImpulse = 120.0f;
-};
+using MeleeRules = MimitaMeleeRules::Rules;
 
-MeleeRules loadMeleeRules()
+static const MeleeRules& meleeRules()
 {
-    MeleeRules r;
-    std::ifstream file("config/melee.json");
-    if (!file.is_open())
-        return r;
-    try {
-        nlohmann::json j;
-        file >> j;
-        if (j.contains("shield") && j["shield"].is_object()) {
-            const auto& s = j["shield"];
-            r.shieldDurability = s.value("max_durability", r.shieldDurability);
-            r.shieldDecayTicks = s.value("decay_ticks", r.shieldDecayTicks);
-            r.shieldBreakRecoveryTicks = s.value("break_recovery_ticks", r.shieldBreakRecoveryTicks);
-            r.shieldReleaseRecoveryTicks = s.value("release_recovery_ticks", r.shieldReleaseRecoveryTicks);
-            r.shieldBreakUpImpulse = s.value("break_upward_impulse", r.shieldBreakUpImpulse);
-        }
-        if (j.contains("grab") && j["grab"].is_object()) {
-            const auto& g = j["grab"];
-            r.grabRadius = g.value("radius", r.grabRadius);
-            r.grabPullTicks = std::max(1, g.value("pull_ticks", r.grabPullTicks));
-            r.grabAntiChainTicks = (uint32_t)std::max(0, g.value("anti_chain_ticks", (int)r.grabAntiChainTicks));
-        }
-        if (j.contains("force") && j["force"].is_object())
-            r.forceMaxImpulse = j["force"].value("max_impulse", r.forceMaxImpulse);
-    } catch (...) {
-        // keep defaults
-    }
-    return r;
-}
-
-const MeleeRules& meleeRules()
-{
-    static const MeleeRules r = loadMeleeRules();
-    return r;
+    return MimitaMeleeRules::Config::instance().rules();
 }
 
 static constexpr float kMeleeReferenceSpeed = 20.0f;
+
+static float targetExternalImpulseDecay(const ServerPlayer& target)
+{
+    if (const MovementConfig* movement =
+            RoleMovementCache::instance().get(target.movementProfileId))
+        return movement->externalImpulseDecay;
+    return MovementJsonConfig::instance().config().externalImpulseDecay;
+}
+
+static float targetExternalImpulseDecay(const ServerNpc& target)
+{
+    if (const MovementConfig* movement =
+            RoleMovementCache::instance().get(target.movementProfileId))
+        return movement->externalImpulseDecay;
+    return MovementJsonConfig::instance().config().externalImpulseDecay;
+}
+
+struct MeleeAttackerView {
+    uint32_t id = 0;
+    bool isNpc = false;
+    glm::vec3 position{0.0f};
+    glm::vec3 velocity{0.0f};
+    glm::vec3 forward{1.0f, 0.0f, 0.0f};
+};
+
+struct MeleeContactResult {
+    float prePercent = 0.0f;
+    float percentAdded = 0.0f;
+    float shieldMultiplier = 1.0f;
+    float force = 1.0f;
+    float curveDistance = 0.0f;
+    float knockbackMagnitude = 0.0f;
+    glm::vec3 impulse{0.0f};
+    bool shielded = false;
+    float shieldDamage = 0.0f;
+    bool breaksShield = false;
+};
+
+// One calculation for every attacker/target pairing. Percent uses only the
+// authored base_percent and shield protection. Contact force and the pre-hit
+// target percent scale knockback only.
+static MeleeContactResult computeMeleeContact(
+    const MeleeAttackerView& attacker, const glm::vec3& targetPosition,
+    float preHitPercent, const WeaponData::MeleeAction& action,
+    float targetExternalDecay, bool shielded, float shieldRemainingFraction)
+{
+    const MeleeRules& rules = meleeRules();
+    MeleeContactResult result;
+    result.prePercent = std::max(0.0f, preHitPercent);
+    result.shielded = shielded;
+    result.shieldMultiplier = shielded
+        ? MimitaMeleeRules::Config::instance().shieldReceivedMultiplier(
+              shieldRemainingFraction)
+        : 1.0f;
+    result.percentAdded = std::max(0.0f, action.basePercent) * result.shieldMultiplier;
+
+    glm::vec3 dir = targetPosition - attacker.position;
+    dir.z = 0.0f;
+    if (glm::length(dir) < 0.001f)
+        dir = attacker.forward;
+    if (glm::length(dir) < 0.001f)
+        dir = glm::vec3(1.0f, 0.0f, 0.0f);
+    dir = glm::normalize(dir);
+
+    const float speed = glm::length(glm::vec3(
+        attacker.velocity.x, attacker.velocity.y, 0.0f));
+    const float speedFactor = std::clamp(speed / kMeleeReferenceSpeed, 0.0f, 1.0f);
+    const float directness = std::clamp(glm::dot(dir, attacker.forward), 0.0f, 1.0f);
+    result.force = std::clamp(
+        0.35f + 0.65f * directness * (0.5f + 0.5f * speedFactor),
+        0.0f, 1.5f);
+    result.force *= std::max(0.0f, rules.forceSpeedScale);
+    result.force *= std::max(0.0f, rules.forceDirectnessScale);
+
+    result.curveDistance =
+        MimitaMeleeRules::Config::instance().curveDistance(result.prePercent);
+    const float referenceImpulse = movementReferenceImpulseForDistance(
+        result.curveDistance, targetExternalDecay, rules.referenceSeconds);
+    const float moveScale = action.baseKnockback /
+        std::max(0.001f, rules.referenceBaseImpulse);
+    float magnitude = referenceImpulse * moveScale * result.force *
+        action.knockbackForceScale * result.shieldMultiplier;
+    magnitude = std::max(rules.forceMinImpulse,
+                         std::min(magnitude, rules.forceMaxImpulse));
+    result.knockbackMagnitude = magnitude;
+    result.impulse = dir * magnitude +
+        glm::vec3(0.0f, 0.0f, magnitude * action.knockbackVerticalFraction);
+    result.shieldDamage = action.hasShieldDamage
+        ? action.shieldDamage : action.basePercent;
+    return result;
+}
 
 // In-progress action snapshots keyed by actor id. A Melee action keeps the
 // move-set revision it started with even if config/weapons.json hot-reloads
@@ -274,7 +324,17 @@ static void applyActionImpulses(ServerPlayer& attacker,
     }
 }
 
-static void updateMeleeShield(ServerPlayer& p, uint32_t tick)
+static void emitMeleeHitFeedback(
+    SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint64_t& totalPacketsOut, uint32_t tick, uint32_t attackerId,
+    uint32_t targetId, const glm::vec3& hitPosition,
+    const glm::vec3& direction, const glm::vec3& normal,
+    float percentAdded, const glm::vec3& impulse, bool shieldBreak);
+
+static void updateMeleeShield(
+    ServerPlayer& p, uint32_t tick, SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint64_t& totalPacketsOut)
 {
     const MeleeRules& rules = meleeRules();
     if (p.meleeShieldBroken) {
@@ -301,6 +361,10 @@ static void updateMeleeShield(ServerPlayer& p, uint32_t tick)
                 "melee.shield_break", std::to_string(p.id),
                 "shield broke from natural depletion", tick,
                 nlohmann::json{{"actor", p.id}});
+            // Natural expiry has no attacker hit; still publish the configured
+            // break impulse and the existing impact/sound presentation once.
+            emitMeleeHitFeedback(sock, players, totalPacketsOut, tick, p.id,
+                                 p.id, p.pos, up, up, 0.0f, breakImpulse, true);
         }
     } else if (p.meleeShieldDurability < rules.shieldDurability) {
         // Released before break: recover over the configured window.
@@ -390,7 +454,8 @@ static void emitMeleeHitFeedback(
     SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& players,
     uint64_t& totalPacketsOut, uint32_t tick, uint32_t attackerId,
     uint32_t targetId, const glm::vec3& hitPosition,
-    const glm::vec3& direction, const glm::vec3& normal, float percentAdded)
+    const glm::vec3& direction, const glm::vec3& normal,
+    float percentAdded, const glm::vec3& impulse, bool shieldBreak = false)
 {
     const uint32_t eventId = nextReliableGameplayEventId();
     ShotEventPacket event{};
@@ -402,8 +467,8 @@ static void emitMeleeHitFeedback(
     event.shotSerial = eventId;
     event.shooterPlayerId = attackerId;
     event.targetPlayerId = targetId;
-    // The common impact renderer uses this as visual intensity only. Melee
-    // percent remains authoritative in actor snapshots and never changes HP.
+    // Visual intensity only. Melee percent is authoritative in snapshots and
+    // the accepted result event; this never changes HP.
     event.damage = std::clamp((int)std::lround(percentAdded), 1, 6);
     event.power = percentAdded;
     event.effectFlags = SHOT_EFFECT_ENTITY_IMPACT | SHOT_EFFECT_HIT_SOUND |
@@ -423,6 +488,9 @@ static void emitMeleeHitFeedback(
     event.normalX = normal.x;
     event.normalY = normal.y;
     event.normalZ = normal.z;
+    event.knockX = impulse.x;
+    event.knockY = impulse.y;
+    event.knockZ = impulse.z;
 
     const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToAll(
         sock, players, &event, sizeof(event), eventId,
@@ -430,68 +498,55 @@ static void emitMeleeHitFeedback(
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
         "melee.feedback.queued", std::to_string(eventId),
-        "confirmed Melee impact feedback queued", tick,
+        shieldBreak ? "confirmed Melee shield break feedback queued"
+                    : "confirmed Melee impact feedback queued", tick,
         nlohmann::json{{"attacker", attackerId}, {"target", targetId},
                        {"percent_added", percentAdded},
+                       {"impulse", {impulse.x, impulse.y, impulse.z}},
+                       {"shield_break", shieldBreak},
                        {"result", (int)result}});
 }
 
-static void applyMeleeHit(ServerPlayer& attacker, ServerPlayer& target,
-                          const WeaponData::MeleeAction& action,
-                          uint32_t tick, SOCKET sock,
-                          std::unordered_map<uint32_t, ServerPlayer>& players,
-                          uint64_t& totalPacketsOut,
-                          const WeaponExecution::PhysicalContactHit& contact)
+static bool meleeShieldActive(const ServerPlayer& target)
+{
+    return target.input.shieldHeld && !target.meleeShieldBroken &&
+           target.meleeShieldDurability > 0.0f;
+}
+
+static void applyMeleeContactToPlayer(
+    const MeleeAttackerView& attacker, ServerPlayer& target,
+    const WeaponData::MeleeAction& action, uint32_t tick, SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint64_t& totalPacketsOut,
+    const WeaponExecution::PhysicalContactHit& contact)
 {
     const MeleeRules& rules = meleeRules();
     const glm::vec3 up(0.0f, 0.0f, 1.0f);
-    const glm::vec3 forward = attacker.meleeActionForward;
+    const bool shielded = meleeShieldActive(target);
+    const float remaining = shielded
+        ? std::clamp(target.meleeShieldDurability /
+                         std::max(1.0f, rules.shieldDurability), 0.0f, 1.0f)
+        : 1.0f;
+    MeleeContactResult result = computeMeleeContact(
+        attacker, target.pos, target.meleePercent, action,
+        targetExternalImpulseDecay(target), shielded, remaining);
 
-    glm::vec3 dir = target.pos - attacker.pos;
-    dir.z = 0.0f;
-    if (glm::length(dir) < 0.001f)
-        dir = forward;
-    dir = glm::normalize(dir);
+    target.meleePercent += result.percentAdded;
+    target.vel += result.impulse;
+    recordServerMovementExternalImpulse(target, result.impulse);
 
-    const float speed = glm::length(glm::vec3(attacker.vel.x, attacker.vel.y, 0.0f));
-    const float speedFactor = std::clamp(speed / kMeleeReferenceSpeed, 0.0f, 1.0f);
-    const float directness = std::clamp(glm::dot(dir, forward), 0.0f, 1.0f);
-    // Slow/glancing -> weak; fast/direct -> strong.
-    const float force = std::clamp(0.35f + 0.65f * directness * (0.5f + 0.5f * speedFactor),
-                                   0.0f, 1.5f);
-    const float percentScale = 1.0f + std::max(0.0f, target.meleePercent) / 100.0f;
-
-    // Melee shield: a held, unbroken shield scales received percent/knockback by
-    // (1 - remainingFraction) measured before this hit, and absorbs the move's
-    // shield damage. Excess shield damage does not spill into fighter percent.
-    const bool shielded = target.input.shieldHeld && !target.meleeShieldBroken &&
-                          target.meleeShieldDurability > 0.0f;
-    float multiplier = 1.0f;
+    glm::vec3 presentationImpulse = result.impulse;
+    bool brokeShield = false;
     if (shielded) {
-        const float remaining = std::clamp(
-            target.meleeShieldDurability / std::max(1.0f, rules.shieldDurability), 0.0f, 1.0f);
-        multiplier = 1.0f - remaining;
-    }
-
-    const float percentAdd = action.basePercent * force * percentScale * multiplier;
-    float kbMagnitude = action.baseKnockback * action.knockbackForceScale * force * percentScale * multiplier;
-    kbMagnitude = std::min(kbMagnitude, rules.forceMaxImpulse);
-    glm::vec3 impulse = dir * kbMagnitude +
-        up * (kbMagnitude * action.knockbackVerticalFraction);
-
-    target.meleePercent += percentAdd;
-    target.vel += impulse;
-    recordServerMovementExternalImpulse(target, impulse);
-
-    if (shielded) {
-        const float shieldDamage = action.hasShieldDamage ? action.shieldDamage : action.basePercent;
-        target.meleeShieldDurability -= shieldDamage;
+        target.meleeShieldDurability -= result.shieldDamage;
         if (target.meleeShieldDurability <= 0.0f) {
+            brokeShield = true;
             target.meleeShieldDurability = 0.0f;
             target.meleeShieldBroken = true;
             const glm::vec3 breakImpulse = up * rules.shieldBreakUpImpulse;
             target.vel += breakImpulse;
             recordServerMovementExternalImpulse(target, breakImpulse);
+            presentationImpulse += breakImpulse;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
                 "melee.shield_break", std::to_string(target.id),
@@ -499,7 +554,7 @@ static void applyMeleeHit(ServerPlayer& attacker, ServerPlayer& target,
                 nlohmann::json{{"attacker", attacker.id},
                                {"target_actor", target.id},
                                {"action", action.id},
-                               {"shield_damage", shieldDamage}});
+                               {"shield_damage", result.shieldDamage}});
         } else {
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
@@ -508,126 +563,82 @@ static void applyMeleeHit(ServerPlayer& attacker, ServerPlayer& target,
                 nlohmann::json{{"attacker", attacker.id},
                                {"target_actor", target.id},
                                {"action", action.id},
-                               {"multiplier", multiplier},
-                               {"shield_damage", shieldDamage},
+                               {"multiplier", result.shieldMultiplier},
+                               {"shield_damage", result.shieldDamage},
                                {"shield_remaining", target.meleeShieldDurability}});
         }
     }
 
+    const float percentBefore = target.meleePercent - result.percentAdded;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
         "melee.hit", std::to_string(attacker.id),
-        "melee action confirmed a swept hitbox contact", tick,
+        attacker.isNpc
+            ? "npc melee action confirmed a swept hitbox contact"
+            : "melee action confirmed a swept hitbox contact", tick,
         nlohmann::json{{"attacker", attacker.id},
+                       {"attacker_is_npc", attacker.isNpc},
                        {"target_actor", target.id},
+                       {"target_is_npc", false},
                        {"action", action.id},
-                       {"percent_added", percentAdd},
+                       {"percent_before", percentBefore},
+                       {"percent_added", result.percentAdded},
                        {"percent_after", target.meleePercent},
-                       {"impulse", {impulse.x, impulse.y, impulse.z}},
-                       {"speed", speed},
-                       {"directness", directness},
-                       {"force", force},
+                       {"curve_distance_m", result.curveDistance},
+                       {"impulse", {result.impulse.x, result.impulse.y, result.impulse.z}},
+                       {"force", result.force},
                        {"shielded", shielded},
+                       {"shield_multiplier", result.shieldMultiplier},
+                       {"shield_break", brokeShield},
                        {"spawn_generation", target.spawnGeneration}});
     emitMeleeHitFeedback(sock, players, totalPacketsOut, tick, attacker.id,
-                         target.id, contact.hitPosition, dir, contact.normal,
-                         percentAdd);
+                         target.id, contact.hitPosition, attacker.forward,
+                         contact.normal, result.percentAdded,
+                         presentationImpulse, brokeShield);
     Debug::log(Debug::Category::Duel,
         "[MELEE HIT] attacker=%u target=%u action=%s percent=%.1f->%.1f kb=%.2f shield=%d\n",
         attacker.id, target.id, action.id.c_str(),
-        target.meleePercent - percentAdd, target.meleePercent, kbMagnitude, (int)shielded);
+        percentBefore, target.meleePercent, result.knockbackMagnitude,
+        (int)shielded);
 }
 
-// ── NPC Melee fighter helpers ─────────────────────────────────────────
-static glm::vec3 meleeNpcHitboxCenter(const ServerNpc& npc, const glm::vec3& forward,
-                                      const WeaponData::MeleeHitbox& hitbox)
+static void applyMeleeContactToNpc(
+    const MeleeAttackerView& attacker, ServerNpc& target,
+    NpcMeleeState& targetState, const WeaponData::MeleeAction& action,
+    uint32_t tick, SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint64_t& totalPacketsOut,
+    const WeaponExecution::PhysicalContactHit& contact)
 {
-    const glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 right = glm::cross(forward, up);
-    if (glm::length(right) < 0.001f)
-        right = glm::vec3(0.0f, 1.0f, 0.0f);
-    right = glm::normalize(right);
-    const std::string& part = hitbox.attachedPart;
-    glm::vec3 base = npc.pos + up * 1.2f;
-    if (part == "leftLeg" || part == "rightLeg")
-        base = npc.pos + up * 0.5f;
-    else if (part == "torso")
-        base = npc.pos + up * 1.1f;
-    else if (part == "head")
-        base = npc.pos + up * 1.7f;
-    return base + forward * (0.6f + hitbox.localOffset.z) +
-           right * hitbox.localOffset.x + up * hitbox.localOffset.y;
-}
+    const float prePercent = targetState.percent;
+    // NPCs do not own a shield in this first slice; every hit is unshielded.
+    MeleeContactResult result = computeMeleeContact(
+        attacker, target.pos, prePercent, action,
+        targetExternalImpulseDecay(target), false, 1.0f);
 
-static void applyMeleeNpcHit(ServerNpc& attacker, const glm::vec3& forward, ServerPlayer& target,
-                             const WeaponData::MeleeAction& action, uint32_t tick,
-                             SOCKET sock,
-                             std::unordered_map<uint32_t, ServerPlayer>& players,
-                             uint64_t& totalPacketsOut,
-                             const WeaponExecution::PhysicalContactHit& contact)
-{
-    const MeleeRules& rules = meleeRules();
-    const glm::vec3 up(0.0f, 0.0f, 1.0f);
-    glm::vec3 dir = target.pos - attacker.pos;
-    dir.z = 0.0f;
-    if (glm::length(dir) < 0.001f)
-        dir = forward;
-    dir = glm::normalize(dir);
-
-    const float speed = glm::length(glm::vec3(attacker.vel.x, attacker.vel.y, 0.0f));
-    const float speedFactor = std::clamp(speed / kMeleeReferenceSpeed, 0.0f, 1.0f);
-    const float directness = std::clamp(glm::dot(dir, forward), 0.0f, 1.0f);
-    const float force = std::clamp(0.35f + 0.65f * directness * (0.5f + 0.5f * speedFactor),
-                                   0.0f, 1.5f);
-    const float percentScale = 1.0f + std::max(0.0f, target.meleePercent) / 100.0f;
-
-    const bool shielded = target.input.shieldHeld && !target.meleeShieldBroken &&
-                          target.meleeShieldDurability > 0.0f;
-    float multiplier = 1.0f;
-    if (shielded) {
-        const float remaining = std::clamp(
-            target.meleeShieldDurability / std::max(1.0f, rules.shieldDurability), 0.0f, 1.0f);
-        multiplier = 1.0f - remaining;
-    }
-
-    const float percentAdd = action.basePercent * force * percentScale * multiplier;
-    float kbMagnitude = action.baseKnockback * action.knockbackForceScale * force * percentScale * multiplier;
-    kbMagnitude = std::min(kbMagnitude, rules.forceMaxImpulse);
-    const glm::vec3 impulse = dir * kbMagnitude +
-        up * (kbMagnitude * action.knockbackVerticalFraction);
-
-    target.meleePercent += percentAdd;
-    target.vel += impulse;
-    recordServerMovementExternalImpulse(target, impulse);
-
-    if (shielded) {
-        const float shieldDamage = action.hasShieldDamage ? action.shieldDamage : action.basePercent;
-        target.meleeShieldDurability -= shieldDamage;
-        if (target.meleeShieldDurability <= 0.0f) {
-            target.meleeShieldDurability = 0.0f;
-            target.meleeShieldBroken = true;
-            const glm::vec3 breakImpulse = up * rules.shieldBreakUpImpulse;
-            target.vel += breakImpulse;
-            recordServerMovementExternalImpulse(target, breakImpulse);
-        }
-    }
+    targetState.percent += result.percentAdded;
+    target.meleePercent = targetState.percent;
+    target.knockbackImpulse += result.impulse;
 
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
-        "melee.hit", std::to_string(attacker.entityId),
-        "npc melee action confirmed a swept hitbox contact", tick,
-        nlohmann::json{{"attacker", attacker.entityId},
-                       {"attacker_is_npc", true},
-                       {"target_actor", target.id},
+        "melee.hit", std::to_string(attacker.id),
+        "melee action confirmed a swept hitbox contact (npc)", tick,
+        nlohmann::json{{"attacker", attacker.id},
+                       {"attacker_is_npc", attacker.isNpc},
+                       {"target_actor", target.entityId},
+                       {"target_is_npc", true},
                        {"action", action.id},
-                       {"percent_added", percentAdd},
+                       {"percent_before", prePercent},
+                       {"percent_added", result.percentAdded},
                        {"percent_after", target.meleePercent},
-                       {"impulse", {impulse.x, impulse.y, impulse.z}},
-                       {"force", force},
-                       {"shielded", shielded}});
-    emitMeleeHitFeedback(sock, players, totalPacketsOut, tick, attacker.entityId,
-                         target.id, contact.hitPosition, dir, contact.normal,
-                         percentAdd);
+                       {"curve_distance_m", result.curveDistance},
+                       {"impulse", {result.impulse.x, result.impulse.y, result.impulse.z}},
+                       {"force", result.force},
+                       {"shielded", false}});
+    emitMeleeHitFeedback(sock, players, totalPacketsOut, tick, attacker.id,
+                         target.entityId, contact.hitPosition, attacker.forward,
+                         contact.normal, result.percentAdded, result.impulse);
 }
 
 static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
@@ -727,6 +738,7 @@ void tickServerMeleeActions(SOCKET sock,
                             std::unordered_map<uint32_t, ServerNpc>& npcs,
                             uint32_t tick, uint64_t& totalPacketsOut)
 {
+    MimitaMeleeRules::Config::instance().pollReload();
     for (auto& entry : players)
     {
         ServerPlayer& attacker = entry.second;
@@ -740,7 +752,7 @@ void tickServerMeleeActions(SOCKET sock,
 
         // Shield decay/recovery and the grab pull run every Melee tick, whether
         // or not an attack action is currently active.
-        updateMeleeShield(attacker, tick);
+        updateMeleeShield(attacker, tick, sock, players, totalPacketsOut);
         tickMeleeGrabPull(attacker, players);
 
         if (!attacker.meleeActionActive)
@@ -863,9 +875,13 @@ void tickServerMeleeActions(SOCKET sock,
                 attacker.meleeHitTargets.insert(target.id);
                 if (action->isGrab)
                     applyMeleeGrab(attacker, target, *action, tick);
-                else
-                    applyMeleeHit(attacker, target, *action, tick, sock, players,
-                                  totalPacketsOut, hit);
+                else {
+                    const MeleeAttackerView view{
+                        attacker.id, false, attacker.pos, attacker.vel,
+                        attacker.meleeActionForward};
+                    applyMeleeContactToPlayer(view, target, *action, tick, sock,
+                                              players, totalPacketsOut, hit);
+                }
             }
 
             for (auto& targetEntry : npcs) {
@@ -889,43 +905,14 @@ void tickServerMeleeActions(SOCKET sock,
                 if (!WeaponExecution::testPhysicalContact(shape, desc, hit))
                     continue;
                 attacker.meleeHitTargets.insert(target.entityId);
-                // NPCs use the same Melee percent and knockback result policy
-                // as player targets. NPC decision-making is the only actor-kind
-                // difference; confirmed contact has one result path.
-                const glm::vec3 forward = attacker.meleeActionForward;
-                glm::vec3 dir = target.pos - attacker.pos;
-                dir.z = 0.0f;
-                if (glm::length(dir) < 0.001f) dir = forward;
-                dir = glm::normalize(dir);
-                const float speed = glm::length(glm::vec3(attacker.vel.x, attacker.vel.y, 0.0f));
-                const float speedFactor = std::clamp(speed / kMeleeReferenceSpeed, 0.0f, 1.0f);
-                const float directness = std::clamp(glm::dot(dir, forward), 0.0f, 1.0f);
-                const float force = std::clamp(0.35f + 0.65f * directness * (0.5f + 0.5f * speedFactor),
-                                               0.0f, 1.5f);
                 // NpcMeleeState owns the persistent value; ServerNpc mirrors it
                 // for snapshots and presentation later in this tick.
                 NpcMeleeState& targetState = g_npcMelee[target.entityId];
-                const float percentScale = 1.0f + std::max(0.0f, targetState.percent) / 100.0f;
-                const float percentAdd = action->basePercent * force * percentScale;
-                const float kb = action->baseKnockback * action->knockbackForceScale * force * percentScale;
-                targetState.percent += percentAdd;
-                target.meleePercent = targetState.percent;
-                target.knockbackImpulse += dir * kb + glm::vec3(0.0f, 0.0f, kb * action->knockbackVerticalFraction);
-                emitMeleeHitFeedback(sock, players, totalPacketsOut, tick,
-                                     attacker.id, target.entityId,
-                                     hit.hitPosition, dir, hit.normal, percentAdd);
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Duel, StructuredLevel::Important,
-                    "melee.hit", std::to_string(attacker.id),
-                    "melee action confirmed a swept hitbox contact (npc)", tick,
-                    nlohmann::json{{"attacker", attacker.id},
-                                   {"target_actor", target.entityId},
-                                   {"action", action->id},
-                                   {"target_is_npc", true},
-                                   {"percent_added", percentAdd},
-                                   {"percent_after", target.meleePercent},
-                                   {"impulse", {dir.x * kb, dir.y * kb, kb * action->knockbackVerticalFraction}},
-                                   {"force", force}});
+                const MeleeAttackerView view{
+                    attacker.id, false, attacker.pos, attacker.vel,
+                    attacker.meleeActionForward};
+                applyMeleeContactToNpc(view, target, targetState, *action, tick,
+                                       sock, players, totalPacketsOut, hit);
             }
         }
     }
@@ -1037,10 +1024,15 @@ void tickServerMeleeActions(SOCKET sock,
                                 if (!contactHits)
                                     continue;
                                 st.hitTargets.insert(target.id);
-                                if (!action->isGrab)
-                                    applyMeleeNpcHit(npc, st.forward, target, *action,
-                                                     tick, sock, players,
-                                                     totalPacketsOut, hit);
+                                if (!action->isGrab) {
+                                    const MeleeAttackerView view{
+                                        npc.entityId, true, npc.pos, npc.vel,
+                                        st.forward};
+                                    applyMeleeContactToPlayer(view, target,
+                                                              *action, tick, sock,
+                                                              players,
+                                                              totalPacketsOut, hit);
+                                }
                             }
                         }
                     }

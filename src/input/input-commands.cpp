@@ -140,6 +140,7 @@ void InputCommandSystem::setupDefaultBinds() {
     bindAction("dash", GLFW_KEY_LEFT_SHIFT);
     bindAction("down_dash", GLFW_KEY_Q);
     bindAction("freeze", GLFW_KEY_E);
+    bindAction("crouch", GLFW_KEY_LEFT_CONTROL);
     bindAction("reload", GLFW_KEY_R);
 
     mActionStates["walkforward"] = {};
@@ -150,6 +151,7 @@ void InputCommandSystem::setupDefaultBinds() {
     mActionStates["dash"] = {};
     mActionStates["down_dash"] = {};
     mActionStates["freeze"] = {};
+    mActionStates["crouch"] = {};
     mActionStates["reload"] = {};
 }
 
@@ -322,6 +324,10 @@ bool InputCommandSystem::isDownDashPressed() const {
 
 bool InputCommandSystem::isFreezeHeld() const {
     return getState("freeze").held;
+}
+
+bool InputCommandSystem::isCrouchHeld() const {
+    return getState("crouch").held;
 }
 
 void InputCommandSystem::drawInputDebug()
