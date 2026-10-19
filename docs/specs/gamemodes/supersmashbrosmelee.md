@@ -889,3 +889,6 @@ so like active ticks, sphere radius, offset, etc
 2026 10 19 1635 - ctrl down should  be like go down faster , smae as in smash, also, as of right now the  hold space = higerh jump isnt working
 also crouch
 crouch doesnt work it just snaps back and forht between standing not stnaindg etc 
+
+
+2026 10 19 1837 - frmo deepseek v4.1 flash "Distinct knee, elbow, up-B, side-B, and down-B clips are still missing"

@@ -27,6 +27,7 @@ public:
     static NotificationSystem& instance();
 
     enum class ActionType { None, OpenUrl, Callback };
+    enum class Accent { Default, Critical, Important, HostCommand };
 
     struct Action {
         ActionType type = ActionType::None;
@@ -43,8 +44,7 @@ public:
         uint64_t revealTicks = 0;   // ticks over which the message types out; 0 = instant
         Action action;
         UIScrollState scroll;       // vertical scroll state for the message box
-        bool critical = false;      // red accent (title + message) for urgent notices
-        bool important = false;     // yellow accent for successful, time-sensitive notices
+        Accent accent = Accent::Default;
     };
 
     // In-memory log of pushed notifications (title, message, tick).
@@ -73,6 +73,9 @@ public:
     // critical, time-sensitive events. Same tip UI, red accent.
     void pushCritical(const std::string& title, const std::string& message,
                       uint64_t durationTicks = 0);
+    // Host-command results use a dedicated light-purple title and message accent.
+    void pushHostCommand(const std::string& title, const std::string& message,
+                         uint64_t durationTicks = 0);
     void pushImportant(const std::string& title, const std::string& message,
                        uint64_t durationTicks = 0);
     void pushBuildNotice();
@@ -127,6 +130,8 @@ private:
                      bool mouseUnlocked, float cursorX, float cursorY);
 
     void saveConfig();
+    void pushWithAccent(const std::string& title, const std::string& message,
+                        uint64_t durationTicks, const Action& action, Accent accent);
     void saveTipsConfig();
     void pruneExpired();
     void recordHistory(const Notification& n);

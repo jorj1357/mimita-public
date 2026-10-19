@@ -61,3 +61,14 @@ The crash report and journal prove the failing process and first failing owner.
 The source fix is confirmed but the rebuilt executable still must reproduce the
 same NPC void death in a fresh dev-loop run and keep the server alive. A
 successful build alone does not prove the crash is fixed.
+
+## Runtime occurrence 1 (post-fix partial proof)
+
+Run `logs/2026-10-19/20261019_223206/events.jsonl` (build 2657) used the
+`melee_npc_death_v1` runtime scenario. The scenario forced the NPC's lethal
+state, recorded `melee.stock_lost` for actor 1000 with 3 stocks remaining, and
+the server stayed alive with no new crash report and no `server.process.exited`
+event. The GUI process remained connected. This exercises the Melee NPC death /
+stock path with the rebuilt object; it does not prove every respawn-loop branch
+under all maps. The runtime scenario is
+`devscripts/scenarios/melee_npc_death_v1.json`.

@@ -61,6 +61,7 @@ struct ClientActionState {
 
 ClientActionState g_state;
 bool g_shieldHeld = false;
+bool g_debugShield = false;
 
 glm::vec3 horizontalForward(const glm::vec3& raw)
 {
@@ -244,6 +245,7 @@ void reset()
 {
     g_state = ClientActionState{};
     g_shieldHeld = false;
+    g_debugShield = false;
     g_forceActionId.clear();
     g_lastPartPos.clear();
     g_lastPartTip.clear();
@@ -294,6 +296,16 @@ bool debugCrouchHeld()
     return g_debugCrouch;
 }
 
+void debugSetShield(bool shield)
+{
+    g_debugShield = shield;
+}
+
+bool debugShieldHeld()
+{
+    return g_debugShield;
+}
+
 void clientTick(Player& player,
                 const Camera& camera,
                 WeaponSystem& weapons,
@@ -308,7 +320,7 @@ void clientTick(Player& player,
         g_shieldHeld = false;
         return;
     }
-    g_shieldHeld = input.shieldHeld;
+    g_shieldHeld = input.shieldHeld || g_debugShield;
     // Publish crouch intent so the animation state machine can select the
     // authored `crouch` state clip on the grounded fighter.
     player.crouching = input.crouchHeld || g_debugCrouch;
@@ -320,7 +332,7 @@ void clientTick(Player& player,
         : (input.jumpHeld ? MeleeModifier::Jump : MeleeModifier::None);
 
     // A held shield suppresses attacks until released (Phase 5 owns the shield).
-    const bool wantsAttack = !input.shieldHeld &&
+    const bool wantsAttack = !g_shieldHeld &&
         (input.primaryPressed || input.secondaryPressed || input.grabPressed);
 
     // Test/dev forced action (agent.melee): start the named action directly.
@@ -373,7 +385,7 @@ void clientTick(Player& player,
                  {"stable_on_ground", player.ground.stableOnGround},
                  {"action", action->id},
                  {"jump_held", input.jumpHeld}, {"crouch_held", input.crouchHeld},
-                 {"shield_held", input.shieldHeld}});
+                 {"shield_held", g_shieldHeld}});
             const WeaponDefinition* def = weapons.getCurrentDef(player);
             if (def)
                 startAction(player, ctx, *def, *action, index, camera.front, simTick,
@@ -383,7 +395,7 @@ void clientTick(Player& player,
 
     // Held shield: cancel any attack, hold the shield pose (Phase 5 server owns
     // the durability/decay/break; the client only predicts the pose).
-    if (input.shieldHeld) {
+    if (g_shieldHeld) {
         if (g_state.active)
             endAction(player);
         if (const MeleeAction* shieldAction = moveSet->find("shield")) {

@@ -1,3 +1,9 @@
+2026 10 19 1814 jorj  
+- "
+npcs need to have a new like allied mode, follow me/follow each other/go more nad more thru to the checkpoints 
+then when someone is attacking then attack that attacker 
+and stuff " C:\mimita-v9\docs\specs\gamemodes\zombie-tower\zombie-tower.md writing abt this right now 
+
 <!--
 Purpose: Define desired combat and reusable movement behavior for NPCs.
 Audience: Designers and developers authoring NPC roles, profiles, moves, and

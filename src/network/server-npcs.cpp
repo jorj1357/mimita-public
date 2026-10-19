@@ -14,6 +14,7 @@
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
 #include "gamemode/gamemode.h"
+#include "void-death/void-death.h"
 
 #include "npc/npc.h"
 #include "npc/npc-internal.h"

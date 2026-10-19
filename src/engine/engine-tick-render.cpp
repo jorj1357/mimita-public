@@ -33,6 +33,7 @@
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-registry.h"
 #include "combat/melee-client.h"
+#include "combat/melee-rules-config.h"
 #include "combat/death-system.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "effects/effect-part.h"
@@ -125,6 +126,26 @@ static void renderObjectivePulse(const Camera& camera)
         color = glm::vec4(1.0f, 0.15f, 0.05f, std::min(1.0f, visual->alpha + 0.2f));
 
     DebugVis::drawFilledSphere(camera, obj.position, radius, color);
+}
+
+// Melee shield presentation: a cyan ellipsoid whose color and alpha track the
+// replicated remaining-durability fraction. It is presentation only and never
+// changes the body collider or gameplay state.
+static void renderMeleeShield(const Player& player, const Camera& camera,
+                              bool active, float fraction)
+{
+    const auto& visual = MimitaMeleeRules::Config::instance().rules().shieldVisual;
+    if (!visual.enabled || !active || player.dead)
+        return;
+    const auto& rules = MimitaMeleeRules::Config::instance();
+    const glm::vec3 center = player.pos + visual.centerOffset;
+    const float radius = 0.5f;
+    const glm::vec3 scale(
+        std::max(0.01f, visual.size.x),
+        std::max(0.01f, visual.size.y),
+        std::max(0.01f, visual.size.z));
+    const glm::vec4 color = rules.shieldColor(std::clamp(fraction, 0.0f, 1.0f));
+    DebugVis::drawFilledSphere(camera, center, radius, color, scale);
 }
 
 // Renders the replay scene's actors (and cinematic kill-impact overlay) into the
@@ -354,6 +375,9 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     auto& replayWeaponModels = REPLAY_WEAPON_MODELS;
     auto& mpContext = MP_CONTEXT;
     auto& gReplayPlayer = REPLAY_PLAYER;
+    MimitaMeleeRules::Config::instance().pollReload();
+    const bool meleePresentation =
+        MimitaNet::CommunityMatchClient::instance().mode() == "melee";
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
     const bool isExporting = getReplayExportJob().state == ReplayExportJob::Capturing;
@@ -525,6 +549,11 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
           } }
         clientProceduralTeleportShieldRender(player, camera);
         MimitaMelee::drawActiveHitbox(player, camera);
+        if (meleePresentation) {
+            renderMeleeShield(player, camera,
+                              MimitaMelee::shieldHeld() || player.meleeShieldActive,
+                              player.meleeShieldFraction);
+        }
         // Draw the local weapon now while the shared viewmodel still contains
         // the local transform calculated during WeaponSystem::update().
         // This prevents renderRemoteWeapon (below) from overwriting the transform
@@ -554,6 +583,10 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 try {
                     renderNetworkPlayer(kv.second, camera, kv.first, false,
                                         localOutlineTeam, remoteTeam);
+                    if (meleePresentation)
+                        renderMeleeShield(kv.second, camera,
+                                          kv.second.meleeShieldActive,
+                                          kv.second.meleeShieldFraction);
                     weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
                 } catch (const std::exception& ex) {
                     recordCrashBreadcrumb("render-remote-player",

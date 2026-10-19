@@ -1502,10 +1502,13 @@ void applyBasicWalk(MovementState& state,
     if (config.walkMode != MovementWalkMode::Accel) {
         if (!movementHasMoveInput(wish))
             return;
+        const bool groundedForWalk =
+            config.walkMode == MovementWalkMode::Compose
+                ? state.ground.stableOnGround : state.ground.onGround;
         const glm::vec2 next =
             movementWalkVelocityXY(glm::vec2(state.baseVelocity),
                                    wish,
-                                   state.ground.onGround,
+                                   groundedForWalk,
                                    state.sizeScale,
                                    config);
         state.baseVelocity.x = next.x;

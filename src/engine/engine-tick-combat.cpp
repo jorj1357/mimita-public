@@ -318,7 +318,7 @@ void engineTickCombat(Engine& engine, float dt)
     // clip, independent of the driver's move-set equip gate.
     if (player.usesMeleeAuthoredPose()) {
         player.crouching =
-            (glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
+            InputCommandSystem::instance().isCrouchHeld() ||
             MimitaMelee::debugCrouchHeld();
     }
 
@@ -341,7 +341,8 @@ void engineTickCombat(Engine& engine, float dt)
             meleeInput.jumpHeld =
                 glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
             meleeInput.crouchHeld =
-                glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
+                InputCommandSystem::instance().isCrouchHeld() ||
+                MimitaMelee::debugCrouchHeld();
             grabPrev = grabDown;
         }
         MimitaMelee::clientTick(player, camera, weapons, mpContext, meleeInput,
@@ -349,7 +350,7 @@ void engineTickCombat(Engine& engine, float dt)
         // Publish crouch intent for the authored `crouch` state clip, independent
         // of the driver's move-set check and the cursor gate.
         player.crouching =
-            (glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
+            InputCommandSystem::instance().isCrouchHeld() ||
             MimitaMelee::debugCrouchHeld();
     } else {
         MimitaMelee::reset();

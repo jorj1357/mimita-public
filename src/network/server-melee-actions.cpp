@@ -17,6 +17,7 @@
 #include "combat/weapon-execution.h"
 #include "combat/melee-rules-config.h"
 #include "config/movement-config.h"
+#include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
 #include "entities/player-avatar-animations.h"
 #include "entities/animation-rotation.h"
@@ -52,11 +53,18 @@ static float targetExternalImpulseDecay(const ServerPlayer& target)
     return MovementJsonConfig::instance().config().externalImpulseDecay;
 }
 
-static float targetExternalImpulseDecay(const ServerNpc& target)
+static float targetExternalImpulseDecay(const ServerNpc&)
 {
-    if (const MovementConfig* movement =
-            RoleMovementCache::instance().get(target.movementProfileId))
-        return movement->externalImpulseDecay;
+    // ServerNpc mirrors the simulated body but does not carry a movement
+    // profile id. Resolve the active mode's movement preset so Melee NPC
+    // targets use the same smash decay as player targets.
+    const Gamemode& mode =
+        GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
+    if (!mode.movementPreset.empty()) {
+        if (const MovementConfig* movement =
+                RoleMovementCache::instance().get(mode.movementPreset))
+            return movement->externalImpulseDecay;
+    }
     return MovementJsonConfig::instance().config().externalImpulseDecay;
 }
 
@@ -349,6 +357,20 @@ static void updateMeleeShield(
     }
     if (p.input.shieldHeld) {
         p.meleeShieldDurability -= rules.shieldDurability / std::max(1.0f, rules.shieldDecayTicks);
+        if ((tick % 30u) == 0u) {
+            const float remaining = std::clamp(
+                p.meleeShieldDurability / std::max(1.0f, rules.shieldDurability),
+                0.0f, 1.0f);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "melee.shield_state", std::to_string(p.id),
+                "held Melee shield durability sample", tick,
+                nlohmann::json{{"actor", p.id},
+                               {"durability", p.meleeShieldDurability},
+                               {"remaining_fraction", remaining},
+                               {"visual_alpha", MimitaMeleeRules::Config::instance().shieldAlpha(remaining)},
+                               {"broken", p.meleeShieldBroken}});
+        }
         if (p.meleeShieldDurability <= 0.0f) {
             p.meleeShieldDurability = 0.0f;
             p.meleeShieldBroken = true;

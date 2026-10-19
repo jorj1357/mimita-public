@@ -315,6 +315,14 @@ void NotificationSystem::scheduleNextTip()
 void NotificationSystem::push(const std::string& title, const std::string& message,
                               uint64_t durationTicks, const Action& action)
 {
+    pushWithAccent(title, message, durationTicks, action, Accent::Default);
+}
+
+void NotificationSystem::pushWithAccent(const std::string& title,
+                                        const std::string& message,
+                                        uint64_t durationTicks,
+                                        const Action& action, Accent accent)
+{
     if (!mEnabled || tempMuted()) return;
     pruneExpired();
 
@@ -324,6 +332,7 @@ void NotificationSystem::push(const std::string& title, const std::string& messa
     n.startTick = nowTick();
     n.durationTicks = durationTicks > 0 ? durationTicks : mDefaultDurationTicks;
     n.action = action;
+    n.accent = accent;
 
     // Typewriter: reveal the message over revealTicks and start the lifetime
     // timer AFTER typing finishes so the full text stays visible for the
@@ -348,54 +357,21 @@ void NotificationSystem::pushCritical(const std::string& title,
                                       const std::string& message,
                                       uint64_t durationTicks)
 {
-    if (!mEnabled || tempMuted()) return;
-    pruneExpired();
+    pushWithAccent(title, message, durationTicks, {}, Accent::Critical);
+}
 
-    Notification n;
-    n.title = title;
-    n.message = message;
-    n.startTick = nowTick();
-    n.durationTicks = durationTicks > 0 ? durationTicks : mDefaultDurationTicks;
-    n.critical = true;
-
-    // Critical notices type out faster than tips so the state lands quickly.
-    n.revealTicks = 0;
-    if (mTypewriterEnabled && !n.message.empty()) {
-        uint64_t typeTicks =
-            (uint64_t)((n.message.size() + mCharsPerTick - 1) / mCharsPerTick) +
-            mTypewriterDelayTicks;
-        n.revealTicks = typeTicks;
-        n.durationTicks += typeTicks;
-    }
-
-    mNotifications.push_back(n);
-    recordHistory(n);
-
-    if ((int)mNotifications.size() > mMaxCount)
-        mNotifications.erase(mNotifications.begin());
+void NotificationSystem::pushHostCommand(const std::string& title,
+                                         const std::string& message,
+                                         uint64_t durationTicks)
+{
+    pushWithAccent(title, message, durationTicks, {}, Accent::HostCommand);
 }
 
 void NotificationSystem::pushImportant(const std::string& title,
                                        const std::string& message,
                                        uint64_t durationTicks)
 {
-    if (!mEnabled || tempMuted()) return;
-    pruneExpired();
-    Notification n;
-    n.title = title;
-    n.message = message;
-    n.startTick = nowTick();
-    n.durationTicks = durationTicks > 0 ? durationTicks : mDefaultDurationTicks;
-    n.important = true;
-    if (mTypewriterEnabled && !n.message.empty()) {
-        n.revealTicks = (uint64_t)((n.message.size() + mCharsPerTick - 1) / mCharsPerTick) +
-                        mTypewriterDelayTicks;
-        n.durationTicks += n.revealTicks;
-    }
-    mNotifications.push_back(n);
-    recordHistory(n);
-    if ((int)mNotifications.size() > mMaxCount)
-        mNotifications.erase(mNotifications.begin());
+    pushWithAccent(title, message, durationTicks, {}, Accent::Important);
 }
 
 void NotificationSystem::pushBuildNotice()
@@ -626,17 +602,23 @@ void NotificationSystem::drawMessage(size_t index, const UIRect& box,
 
     glm::vec4 color = textEl->getTextColorVec();
     color.a *= L.alpha;
-    if (notif.critical)
+    if (notif.accent == Accent::Critical)
     {
         color.r = 1.0f;
         color.g = 0.30f;
         color.b = 0.25f;
     }
-    else if (notif.important)
+    else if (notif.accent == Accent::Important)
     {
         color.r = 1.0f;
         color.g = 0.86f;
         color.b = 0.15f;
+    }
+    else if (notif.accent == Accent::HostCommand)
+    {
+        color.r = 0.78f;
+        color.g = 0.62f;
+        color.b = 1.0f;
     }
     float yPx = sy + vShift - sc.scrollY;
     for (const std::string& ln : L.lines) {
@@ -768,14 +750,18 @@ void NotificationSystem::render(bool inGameplay)
             tmp.text = notif.title;
             if (tmp.textColor.size() >= 4) {
                 tmp.textColor[3] = L.alpha;
-                if (notif.critical) {
+                if (notif.accent == Accent::Critical) {
                     tmp.textColor[0] = 1.0f;
                     tmp.textColor[1] = 0.30f;
                     tmp.textColor[2] = 0.25f;
-                } else if (notif.important) {
+                } else if (notif.accent == Accent::Important) {
                     tmp.textColor[0] = 1.0f;
                     tmp.textColor[1] = 0.86f;
                     tmp.textColor[2] = 0.15f;
+                } else if (notif.accent == Accent::HostCommand) {
+                    tmp.textColor[0] = 0.78f;
+                    tmp.textColor[1] = 0.62f;
+                    tmp.textColor[2] = 1.0f;
                 }
             }
             UIRect r = {box.x + padX, box.y + padY,

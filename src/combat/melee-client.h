@@ -66,4 +66,8 @@ void debugRequestAction(const std::string& actionId);
 void debugSetCrouch(bool crouch);
 bool debugCrouchHeld();
 
+// Test/dev hook: hold/release the shield input state (agent.shield).
+void debugSetShield(bool shield);
+bool debugShieldHeld();
+
 } // namespace MimitaMelee

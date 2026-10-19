@@ -67,6 +67,7 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.yaw = entity.yaw;
     transform.health = entity.health;
     transform.percent = entity.meleePercent;
+    transform.meleeShieldFraction = (float)entity.meleeShield / 255.0f;
     transform.onGround = entity.onGround != 0;
     transform.equippedSlot = entity.equippedSlot;
     transform.weaponState = entity.weaponState;
@@ -1453,6 +1454,11 @@ void updateRenderedReplica(
     player.currentHp = displayHealth;
     // Melee percent meter for the nameplate (0 outside Melee).
     player.percent = render.percent;
+    player.meleeShieldFraction =
+        std::clamp(render.meleeShieldFraction, 0.0f, 1.0f);
+    player.meleeShieldActive =
+        (render.stateFlags & NET_STATE_SHIELDING) != 0;
+    player.crouching = (render.stateFlags & NET_STATE_CROUCHING) != 0;
     // Server max HP (healthall override) isn't transmitted; derive it from the
     // highest server health seen so nameplates/NPC bars show 999/999 not 999/100.
     if (displayHealth > player.maxHp)

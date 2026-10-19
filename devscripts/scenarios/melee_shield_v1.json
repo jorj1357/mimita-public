@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "melee_shield_v1",
+  "description": "Start Melee and hold/release the local shield through the real input path so the live journal records durability, replication, and visual state.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "cramped",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [
+    {"id": "start_melee", "command": "startmelee", "args": [], "delay_ms_after": 20000},
+    {"id": "shield_on", "command": "agent.shield", "args": ["1"], "delay_ms_after": 1000},
+    {"id": "shield_mid", "command": "agent.snapshot", "args": ["shield_mid"], "delay_ms_after": 1500},
+    {"id": "shield_late", "command": "agent.snapshot", "args": ["shield_late"], "delay_ms_after": 1500},
+    {"id": "shield_off", "command": "agent.shield", "args": ["0"], "delay_ms_after": 500},
+    {"id": "shield_released", "command": "agent.snapshot", "args": ["shield_released"]}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_present", "event": "melee.spawn_protection"}
+  ],
+  "timeout_seconds": 120
+}

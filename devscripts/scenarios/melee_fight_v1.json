@@ -5,7 +5,7 @@
   "launch": {
     "profile": "npc-navigation",
     "launch_mode": "1",
-    "map": "cramped",
+    "map": "xxity2",
     "visibility": "visible",
     "reuse_matching_run": true
   },

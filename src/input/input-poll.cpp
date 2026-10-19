@@ -11,6 +11,7 @@
 #include "input/input-state.h"
 #include "input/input-commands.h"
 #include "input/input-frame.h"
+#include "combat/melee-client.h"
 #include "debug/structured-log.h"
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -172,7 +173,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.downDashPressed = cmd.isDownDashPressed();
     in.freezeHeld = cmd.isFreezeHeld();
     in.freezePressed = cmd.getState("freeze").pressed;
-    in.crouchHeld = cmd.isCrouchHeld();
+    in.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
 
     if (in.dashPressed)
         printf("[INPUT] Dash pressed\n");
@@ -261,7 +262,8 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     frame.downDashPressed = cmd.isDownDashPressed() || gTerminalInputOverride.downDashPressed;
     frame.freezeHeld = cmd.isFreezeHeld() || gTerminalInputOverride.freezeHeld;
     frame.freezePressed = cmd.getState("freeze").pressed || gTerminalInputOverride.freezePressed;
-    frame.crouchHeld = cmd.isCrouchHeld() || gTerminalInputOverride.crouchHeld;
+    frame.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld() ||
+        gTerminalInputOverride.crouchHeld;
 
     if (gTerminalInputOverride.moveX != 0.0f || gTerminalInputOverride.moveY != 0.0f) {
         frame.moveX = gTerminalInputOverride.moveX;

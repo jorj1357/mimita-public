@@ -652,6 +652,34 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         ++match.stateVersion;
         ack(true, "applied: npc_delete_all");
     }
+    else if (commandStr == "npc_void")
+    {
+        // Runtime test hook: drop every NPC below the existing world void
+        // threshold. The normal void-death, stock, death, and respawn owners
+        // still perform the actual death.
+        const float voidZ = getVoidDeathConfig().killZ - 5.0f;
+        size_t moved = 0;
+        for (auto& npcEntry : npcs)
+        {
+            npcEntry.second.pos.z = voidZ;
+            npcEntry.second.vel = glm::vec3(0.0f);
+            npcEntry.second.health = 0;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "npc_void.applied", std::to_string(npcEntry.first),
+                "runtime test forced lethal NPC void state", tick,
+                nlohmann::json{{"npc", npcEntry.first},
+                               {"kill_z", getVoidDeathConfig().killZ},
+                               {"health_after", npcEntry.second.health}});
+            ++moved;
+        }
+        printf("%s [SERVER COMMAND] npc_void by playerId=%u count=%zu z=%.1f\n",
+               serverTimestamp(), it->second.id, moved, voidZ);
+        char ackMessage[96];
+        std::snprintf(ackMessage, sizeof(ackMessage),
+                      "applied: npc_void count=%zu", moved);
+        ack(true, ackMessage);
+    }
     else if (commandStr == "respawn_all")
     {
         serverRespawnAllActors(sock, players, npcs, tick, totalPacketsOut);

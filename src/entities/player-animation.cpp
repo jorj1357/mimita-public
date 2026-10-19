@@ -550,6 +550,38 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
              {"move01", move01},
              {"velocity", {vel.x, vel.y, vel.z}}},
             __FILE__, __LINE__, __FUNCTION__);
+
+        if (meleeExclusivePose && lockedClip.empty()) {
+            struct FlapWindow {
+                uint64_t lastMs = 0;
+                uint32_t changes = 0;
+                std::string pair;
+            };
+            static std::unordered_map<std::string, FlapWindow> windows;
+            const std::string& key = username.empty() ? avatarName() : username;
+            FlapWindow& window = windows[key];
+            const uint64_t nowFlap = nowMs();
+            const std::string pair = prevAnim + "->" + activeAnim;
+            if (nowFlap - window.lastMs <= 500 && window.pair == pair)
+                ++window.changes;
+            else
+                window.changes = 1;
+            window.lastMs = nowFlap;
+            window.pair = pair;
+            if (window.changes == 4) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Errors,
+                    "anim.melee.state_flap", avatarName(),
+                    "Melee animation state changed repeatedly within 500ms",
+                    (uint32_t)movementSimulationTick,
+                    {{"actor", username}, {"from", prevAnim}, {"to", activeAnim},
+                     {"changes_in_window", window.changes},
+                     {"on_ground", ground.onGround},
+                     {"stable_on_ground", ground.stableOnGround},
+                     {"crouching", crouching},
+                     {"velocity", {vel.x, vel.y, vel.z}}});
+            }
+        }
     } else if (ground.didLand && lockedClip.empty() && sm &&
                activeAnim == sm->land) {
         // A second landing can occur before the prior landing clip changes

@@ -76,6 +76,8 @@ systems first. Use this default order:
 | Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md` |
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |
 | NPC behavior, combat profiles, or authored NPC movement | `docs/specs/npc-behavior/npc-behavior.md`, `docs/architecture/player-npc-systems/npc-movement.md` |
+| Actor presets, `roles.json`, actor loadouts, or mode team rosters | `docs/specs/actor-presets/actor-presets.md`, `docs/specs/gamemodes/gamemodes.md` |
+| Zombie Tower phases, encounters, checkpoints, or monster roles | `docs/specs/gamemodes/zombie-tower/zombie-tower.md`, `docs/specs/actor-presets/actor-presets.md`, `docs/specs/npc-behavior/npc-behavior.md` |
 | Animation, rigs, monster/NPC clips, arbitrary body parts, flying/crawling actors | `docs/specs/animations/animations.md`, `docs/specs/avatar/avatar-editor.md`, `docs/skills/spec-behavior-review-v1.md` |
 | Multiplayer or server behavior | `docs/specs/networking/networking.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Logging or diagnostics | `docs/specs/debug-logging/debug-logging.md`, `docs/skills/logging-checker-v1.md` |

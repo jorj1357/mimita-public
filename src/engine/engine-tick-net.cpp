@@ -183,7 +183,8 @@ void engineTickNet(Engine& engine, float dt)
         // Melee: held shield intent (Q). The local Melee driver samples the key
         // and publishes it; the server runs the authoritative shield.
         mpInput.shieldHeld = MimitaMelee::shieldHeld();
-        mpInput.crouchHeld = cmd.isCrouchHeld();
+        mpInput.crouchHeld =
+            cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
         mpInput.flyUp = cmd.getState("freeze").held;
         mpInput.flyDown = cmd.getState("down_dash").held;
         mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&
@@ -740,21 +741,43 @@ void engineTickNet(Engine& engine, float dt)
                     "[Knockback] ignored old-life shot target=%u eventEpoch=%u\n",
                     event.targetPlayerId, event.targetTransformEpoch);
 
-            if (!localShooter && !staleKnockback && glm::length(event.knockback) > 0.001f)
+            const bool confirmedMeleeImpact =
+                (event.effectFlags & MimitaNet::SHOT_EFFECT_MELEE_CONFIRM) != 0;
+            if ((!localShooter ||
+                 (confirmedMeleeImpact && localTarget)) &&
+                !staleKnockback &&
+                glm::length(event.knockback) > 0.001f)
             {
-                if (localTarget)
-                    player.externalImpulse += event.knockback;
-                else
-                {
+                if (localTarget) {
+                    // The accepted Melee result is applied once for the local
+                    // victim. Remote victims are corrected by snapshots; never
+                    // add the same impulse to their local replica here.
+                    if (!confirmedMeleeImpact ||
+                        event.shotSerial > mpContext.lastAppliedMeleeImpulseEventId) {
+                        player.externalImpulse += event.knockback;
+                        if (confirmedMeleeImpact) {
+                            mpContext.lastAppliedMeleeImpulseEventId = event.shotSerial;
+                            StructuredLogger::instance().writeEvent(
+                                StructuredCategory::Duel, StructuredLevel::Important,
+                                "melee.client.impulse_applied",
+                                std::to_string(event.shotSerial),
+                                "accepted Melee impulse applied to local victim once",
+                                event.eventServerTick,
+                                nlohmann::json{{"event_id", event.shotSerial},
+                                               {"attacker", event.shooterPlayerId},
+                                               {"target", event.targetPlayerId},
+                                               {"impulse", {event.knockback.x,
+                                                            event.knockback.y,
+                                                            event.knockback.z}}});
+                        }
+                    }
+                } else if (!confirmedMeleeImpact) {
                     auto remote = mpContext.remotePlayers.find(
                         event.targetPlayerId);
                     if (remote != mpContext.remotePlayers.end())
                         remote->second.externalImpulse += event.knockback;
                 }
             }
-
-            const bool confirmedMeleeImpact =
-                (event.effectFlags & MimitaNet::SHOT_EFFECT_MELEE_CONFIRM) != 0;
             if (!localShooter || confirmedMeleeImpact)
             {
                 // The bullet always comes out of the shooter's gun ON THE
@@ -903,7 +926,12 @@ void engineTickNet(Engine& engine, float dt)
                     ev.attacker = shooterName;
                     ev.victim = targetName;
                     ev.weaponSource = "net_shot";
-                    ev.spawnDamageNumber = !confirmedMeleeImpact;
+                    ev.spawnDamageNumber = !confirmedMeleeImpact ||
+                        event.power > 0.5f;
+                    if (confirmedMeleeImpact) {
+                        ev.percentDisplay = true;
+                        ev.percentAmount = event.power;
+                    }
                     HitEffects::onHit(ev);
                 }
                 if (event.effectFlags & MimitaNet::SHOT_EFFECT_BLOOD)
@@ -917,7 +945,12 @@ void engineTickNet(Engine& engine, float dt)
                     ev.attacker = shooterName;
                     ev.victim = targetName;
                     ev.weaponSource = "net_shot";
-                    ev.spawnDamageNumber = !confirmedMeleeImpact;
+                    ev.spawnDamageNumber = !confirmedMeleeImpact ||
+                        event.power > 0.5f;
+                    if (confirmedMeleeImpact) {
+                        ev.percentDisplay = true;
+                        ev.percentAmount = event.power;
+                    }
                     HitEffects::onHit(ev);
                 }
                 if (event.effectFlags &

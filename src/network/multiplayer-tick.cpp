@@ -2023,14 +2023,14 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             {
                 Debug::warn(Debug::Category::Networking,
                     "[HOST COMMAND APPLIED] %s\n", status.c_str());
-                NotificationSystem::instance().pushCritical(
+                NotificationSystem::instance().pushHostCommand(
                     "Host command applied", status, 0);
             }
             else
             {
                 Debug::warn(Debug::Category::Networking,
                     "[HOST COMMAND REJECTED] %s\n", status.c_str());
-                NotificationSystem::instance().pushCritical(
+                NotificationSystem::instance().pushHostCommand(
                     "Host command rejected", status, 0);
             }
         }

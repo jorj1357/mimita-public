@@ -410,13 +410,13 @@
         },
         {
           "name": "phase.active",
-          "tick": 20,
+          "tick": 7,
           "sourceTick": 20
         },
         {
           "name": "phase.recovery",
           "tick": 40,
-          "sourceTick": 40
+          "sourceTick": 30
         },
         {
           "name": "action.end",

@@ -1700,8 +1700,8 @@
                "size": [2.0, 2.0, 2.0], "local_offset": [1.0, -2.0, 0.0],
                "active_start_tick": 1, "active_end_tick": 14}
             ],
-            "damage": {"base_percent": 3.0},
-            "knockback": {"base_impulse": 8.0, "vertical_fraction": 0.25, "force_scale": 1.0},
+            "damage": {"base_percent": 6.0},
+            "knockback": {"base_impulse": 14.0, "vertical_fraction": 0.25, "force_scale": 1.0},
             "audio": {
               "on_start": {"sound_id": "entity/falcon/falconswing", "pitch": 1.0, "volume": 1.0, "offset": [0, 0, 0]},
               "events": [
@@ -1723,7 +1723,7 @@
                "active_start_tick": 0, "active_end_tick": 2}
             ],
             "damage": {"base_percent": 5.0},
-            "knockback": {"base_impulse": 12.0, "vertical_fraction": 0.3, "force_scale": 1.0},
+            "knockback": {"base_impulse": 20.0, "vertical_fraction": 0.3, "force_scale": 1.0},
             "audio": {
               "on_start": {"sound_id": "entity/falcon/falconswing", "pitch": 1.05, "volume": 1.0, "offset": [0, 0, 0]},
               "events": [
@@ -1753,8 +1753,8 @@
             "animation_clip_id": "kick_a",
             "hitboxes": [
               {"id": "foot", "attached_part": "rightLeg", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [2.7, 2.7, 2.7], "local_offset": [1.0, -3.0, 0.5],
-               "active_start_tick": 5, "active_end_tick": 15}
+               "size": [3.2, 3.2, 3.2], "local_offset": [1.0, -3.0, 0.5],
+               "active_start_tick": 5, "active_end_tick": 35}
             ],
             "damage": {"base_percent": 20.0},
             "knockback": {"base_impulse": 30.0, "vertical_fraction": 0.15, "force_scale": 1.0},
@@ -1770,14 +1770,14 @@
           },
           "b_air_forward_dash": {
             "input": {"button": "secondary", "actor_state": "airborne"},
-            "animation_clip_id": "kick_a",
+            "animation_clip_id": "b_air_forward_dash",
             "hitboxes": [
               {"id": "dash_foot", "attached_part": "rightLeg", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [0.7, 0.7, 0.7], "local_offset": [1.0, -3.0, 0.5],
-               "active_start_tick": 0, "active_end_tick": 2}
+               "size": [3.0, 3.0, 3.0], "local_offset": [1.0, 3.0, 0.5],
+               "active_start_tick": 0, "active_end_tick": 40}
             ],
-            "damage": {"base_percent": 5.0},
-            "knockback": {"base_impulse": 9.0, "vertical_fraction": 0.1, "force_scale": 1.0},
+            "damage": {"base_percent": 20.0},
+            "knockback": {"base_impulse": 45.0, "vertical_fraction": 0.1, "force_scale": 1.0},
             "impulses": [
               {"phase": "active", "tick": 0, "forward": 12.0, "right": 0.0, "up": 3.0}
             ],
@@ -1793,11 +1793,11 @@
             "animation_clip_id": "uppunch_a",
             "hitboxes": [
               {"id": "up_fist", "attached_part": "rightArm", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [2.0, 2.0, 2.0], "local_offset": [0.0, 0.9, 0.15],
+               "size": [2.0, 2.0, 2.0], "local_offset": [2.0, 0.0, 0.15],
                "active_start_tick": 1, "active_end_tick": 10}
             ],
             "damage": {"base_percent": 5.0},
-            "knockback": {"base_impulse": 12.0, "vertical_fraction": 0.6, "force_scale": 1.0},
+            "knockback": {"base_impulse": 20.0, "vertical_fraction": 0.6, "force_scale": 1.0},
             "audio": {
               "on_start": {"sound_id": "entity/falcon/falconswing", "pitch": 1.1, "volume": 1.0, "offset": [0, 0, 0]},
               "events": [
@@ -1810,11 +1810,11 @@
             "animation_clip_id": "uppunch_a",
             "hitboxes": [
               {"id": "up_fist", "attached_part": "rightArm", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [2.0, 2.0, 2.0], "local_offset": [0.0, -4.0, 0.0],
-               "active_start_tick": 0, "active_end_tick": 3}
+               "size": [3.0, 3.0, 3.0], "local_offset": [0.0, -4.0, 0.0],
+               "active_start_tick": 0, "active_end_tick": 20}
             ],
-            "damage": {"base_percent": 6.0},
-            "knockback": {"base_impulse": 12.0, "vertical_fraction": 0.55, "force_scale": 1.0},
+            "damage": {"base_percent": 15.0},
+            "knockback": {"base_impulse": 30.0, "vertical_fraction": 0.55, "force_scale": 1.0},
             "impulses": [
               {"phase": "active", "tick": 0, "forward": 0.0, "right": 0.0, "up": 6.0}
             ],
@@ -1850,11 +1850,11 @@
             "animation_clip_id": "downpunch_a",
             "hitboxes": [
               {"id": "down_fist", "attached_part": "rightArm", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [0.6, 0.6, 0.6], "local_offset": [0.0, -0.8, 0.5],
-               "active_start_tick": 0, "active_end_tick": 2}
+               "size": [3.0, 3.0, 3.0], "local_offset": [1.0, -3.5, 0.0],
+               "active_start_tick": 0, "active_end_tick": 30}
             ],
-            "damage": {"base_percent": 4.0},
-            "knockback": {"base_impulse": 10.0, "vertical_fraction": 0.1, "force_scale": 1.0},
+            "damage": {"base_percent": 7.0},
+            "knockback": {"base_impulse": 15.0, "vertical_fraction": 0.1, "force_scale": 1.0},
             "audio": {
               "on_start": {"sound_id": "entity/falcon/falconswing", "pitch": 0.9, "volume": 1.0, "offset": [0, 0, 0]},
               "events": [
@@ -1884,11 +1884,11 @@
             "animation_clip_id": "downkick_a",
             "hitboxes": [
               {"id": "down_foot", "attached_part": "rightLeg", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [0.6, 0.6, 0.6], "local_offset": [0.0, -0.9, 0.1],
-               "active_start_tick": 0, "active_end_tick": 3}
+               "size": [3.0, 3.0, 3.0], "local_offset": [1.0, -2.9, 0.1],
+               "active_start_tick": 1, "active_end_tick": 25}
             ],
-            "damage": {"base_percent": 7.0},
-            "knockback": {"base_impulse": 10.0, "vertical_fraction": -0.6, "force_scale": 1.0},
+            "damage": {"base_percent": 25.0},
+            "knockback": {"base_impulse": 50.0, "vertical_fraction": -0.6, "force_scale": 1.0},
             "impulses": [
               {"phase": "active", "tick": 0, "forward": 0.0, "right": 0.0, "up": -8.0}
             ],
@@ -1907,8 +1907,8 @@
                "size": [0.7, 0.7, 0.7], "local_offset": [0.0, -0.5, 0.3],
                "active_start_tick": 0, "active_end_tick": 3}
             ],
-            "damage": {"base_percent": 9.0, "shield_damage": 14.0},
-            "knockback": {"base_impulse": 16.0, "vertical_fraction": -0.5, "force_scale": 1.1},
+            "damage": {"base_percent": 18.0, "shield_damage": 14.0},
+            "knockback": {"base_impulse": 35.0, "vertical_fraction": -0.5, "force_scale": 1.1},
             "impulses": [
               {"phase": "active", "tick": 0, "forward": 5.0, "right": 0.0, "up": -10.0}
             ],
@@ -1924,12 +1924,12 @@
             "animation_clip_id": "grab",
             "hitboxes": [
               {"id": "grab_sphere", "attached_part": "rightArm", "shape": "sphere", "attachment_mode": "animated_limb",
-               "size": [1.0, 1.0, 1.0], "local_offset": [0.0, 0.6, 0.6],
-               "active_start_tick": 0, "active_end_tick": 2}
+               "size": [4.0, 4.0, 4.0], "local_offset": [0.0, 0.6, 0.6],
+               "active_start_tick": 0, "active_end_tick": 20}
             ],
             "damage": {"base_percent": 0.0},
-            "knockback": {"base_impulse": 0.0, "vertical_fraction": 0.0, "force_scale": 0.0},
-            "grab": {"enabled": true, "radius": 1.0, "pull_ticks": 30},
+            "knockback": {"base_impulse": 1.0, "vertical_fraction": 0.0, "force_scale": 0.0},
+            "grab": {"enabled": true, "radius": 1.0, "pull_ticks": 50},
             "audio": {
               "on_start": {"sound_id": "entity/falcon/falconho", "pitch": 1.0, "volume": 1.0, "offset": [0, 0, 0]}
             }
@@ -1938,7 +1938,7 @@
             "input": {"button": "shield", "actor_state": "any"},
             "animation_clip_id": "shield",
             "damage": {"base_percent": 0.0},
-            "knockback": {"base_impulse": 0.0, "vertical_fraction": 0.0, "force_scale": 0.0},
+            "knockback": {"base_impulse": 1.0, "vertical_fraction": 0.0, "force_scale": 0.0},
             "audio": {
               "on_start": {"sound_id": "entity/falcon/falconcomeon", "pitch": 1.0, "volume": 1.0, "offset": [0, 0, 0]}
             }

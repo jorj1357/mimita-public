@@ -345,6 +345,18 @@ void registerAgentCommands()
     });
 
     Terminal::instance().registerCommand({
+        "agent.shield", "Hold/release the Melee shield input for a runtime test.",
+        "agent.shield <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool on = !args.empty() && args[0] == "1";
+            MimitaMelee::debugSetShield(on);
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.shield accepted",
+                {{"command", "agent.shield"}, {"shield", on}, {"player", gpPlayer->username}});
+        }, "2026-10-19", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
         "agent.hurt", "Add Melee percent to the local player for the hurt-pose test.",
         "agent.hurt <percent>",
         [](const std::vector<std::string>& args) {

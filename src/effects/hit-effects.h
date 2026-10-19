@@ -372,6 +372,10 @@ struct HitEvent {
     float knockbackForce = 0.0f;
     float hitDistance = -1.0f;
     bool spawnDamageNumber = true;
+    // Melee: render the accepted percent delta as "+N%" through the same
+    // world-space damage-number renderer instead of ordinary health damage.
+    bool percentDisplay = false;
+    float percentAmount = 0.0f;
 };
 
 enum class BurstType {

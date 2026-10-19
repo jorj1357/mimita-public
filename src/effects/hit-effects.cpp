@@ -108,7 +108,10 @@ void HitEffects::onHit(const HitEvent& event)
     // 6. Damage number - only for entity hits (not world geometry)
     if (event.hitEntity && event.spawnDamageNumber && damageNumbers && presetDamageNumbers) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->damageNumberMs : nullptr);
-        EffectPartSystem::instance().spawnDamage(event.position, event.victim, event.damage);
+        const int amount = event.percentDisplay
+            ? (int)std::lround(event.percentAmount) : event.damage;
+        EffectPartSystem::instance().spawnDamage(
+            event.position, event.victim, amount, event.percentDisplay);
     }
 
     // 6b. Red impact sphere at hit position

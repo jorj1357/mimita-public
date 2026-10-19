@@ -2,7 +2,7 @@
   "name": "npc-navigation",
   "launch_mode": 1,
   "launch_visibility": "visible",
-  "map": "cramped",
+  "map": "xxity2",
   "map_selection": "configured",
   "allowed_maps_file": "config/gamemode-good-maps.json",
   "mode": "melee",

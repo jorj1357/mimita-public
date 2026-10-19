@@ -75,6 +75,17 @@ void registerNpcCommands()
         }
     });
     Terminal::instance().registerCommand({
+        "npc_void", "Runtime test: drop every NPC into the existing world void.", "npc_void",
+        [](const std::vector<std::string>&) {
+            if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "npc_void");
+                Terminal::instance().addLog("[NPC COMMAND] npc_void sent to server");
+            } else {
+                Terminal::instance().addLog("[NPC COMMAND] npc_void requires a connected room");
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
         "npc_delete_all", "Delete every NPC", "npc_delete_all",
         [](const std::vector<std::string>&) {
             if (!MimitaNet::isServerHost()) {

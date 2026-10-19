@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "melee_npc_death_v1",
+  "description": "Run Melee long enough on cramped for the NPC to reach the void, then confirm the server survives the stock-loss/respawn path and keeps advancing.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "cramped",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [],
+  "steps": [
+    {"id": "start_melee", "command": "startmelee", "args": [], "delay_ms_after": 20000},
+    {"id": "npc_void", "command": "npc_void", "args": [], "delay_ms_after": 8000},
+    {"id": "after_npc_death", "command": "agent.snapshot", "args": ["after_npc_death"], "delay_ms_after": 3000}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_present", "event": "melee.stock_lost"},
+    {"type": "event_present", "event": "melee.spawn_protection"}
+  ],
+  "timeout_seconds": 180
+}

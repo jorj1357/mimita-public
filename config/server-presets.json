@@ -43,7 +43,7 @@
     },
     "melee_1": {
       "server_name": "Melee 1",
-      "map": "cramped",
+      "map": "xxity2",
       "mode": "funworld3",
       "max_players": 2,
       "startup_npcs": true,

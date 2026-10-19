@@ -112,6 +112,7 @@ struct SnapshotTransform
     int health = 100;
     // Melee percent meter (0 in non-Melee modes).
     float percent = 0.0f;
+    float meleeShieldFraction = 0.0f;
     bool onGround = false;
     int equippedSlot = 0;
     uint8_t weaponState = 0;

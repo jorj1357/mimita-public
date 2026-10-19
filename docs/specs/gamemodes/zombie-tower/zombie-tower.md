@@ -1,3 +1,177 @@
+## First playable version — implementation contract
+
+**Status:** Core first-playable behavior is agreed. The implementation-readiness section below separates work that can begin now from authored map data and remaining edge cases.
+
+This section defines the first playable Zombie Tower run. It takes priority over conflicting tentative notes below. The larger vision remains in the rest of this document; features explicitly listed here are part of this first version.
+
+### Run phases
+
+The server runs this loop indefinitely. A wipe with attempts remaining is handled inside the active run: show a five-second attempt-result overlay, restore the team at its nearest previously activated checkpoint, then run the 3/2/1/GO countdown and resume. It does not return to the lobby between attempts. When the attempt count reaches zero, enter Phase 4 for the final run results, show them for five seconds, then return to Phase 1 and start the 30-second lobby intermission.
+
+```text
+LOBBY / INTERMISSION (30 seconds)
+    → COUNTDOWN (3, 2, 1, GO)
+    → ACTIVE RUN
+        ↳ team wipe, attempts remain → ATTEMPT RESULT (5 seconds)
+            → CHECKPOINT COUNTDOWN (3, 2, 1, GO) → ACTIVE RUN
+    → PHASE 4: FINAL RESULTS (5 seconds, when the run ends)
+    → LOBBY / INTERMISSION
+```
+
+- **Lobby / intermission:** The lobby is a walled, playable section of the `zombietower` map with its own spawn point. The server enters this phase immediately on startup, and the 30-second timer runs while the tower loads. If the map is not ready when the timer expires, remain in the lobby and start the countdown as soon as it is ready. The next 30-second intermission starts after results.
+- **Countdown:** When the intermission ends, human-team players are moved directly from the lobby to the tower introduction spawn area; there is no separate queue or ready-up step. The server fills any open human-team actor slots with allied NPCs during this transition. Show `3`, `2`, and `1` as separate one-second countdown beats. Human-team actors wait frozen near the intro spawn. `GO!` releases them to move into the tower. Monster spawn volumes do not spawn their encounter groups until activated by a nearby human-team player.
+- **Active run:** The team traverses the authored tower, activates encounter volumes, clears required encounters, reaches the end, and defeats the final boss. Checkpoints and three shared team attempts are part of this version.
+- **Phase 4 — final results:** Show whether the run was won or lost, elapsed run time, most damage, most healing, and top speed with the actor's name. Display final results for five seconds, then return players to the lobby and begin the next 30-second intermission. The five-second attempt-result overlay for a retry is not Phase 4.
+
+### Human team and party NPCs
+
+- The default human-team target is **four actors total**, counting both humans and allied NPCs. One human therefore starts with three allied NPC teammates. Two humans start with two allied NPCs, and so on.
+- Human players occupy team slots before NPCs. When a human takes a slot previously filled by a party NPC, remove that NPC so the team does not exceed its configured target.
+- The default human-team player cap is four. A server may configure a higher human-team cap; when it does, the team target can be higher than four. Players choose a team with the provisional console command `zt_team <humans|zombie|spectator>`. A player can request the human team during an active run; spawn them at the last checkpoint reached by the human team and remove one party NPC so the team stays within its target. A full human team cannot accept another human unless its configured cap is raised.
+- A player who selects `zombie` plays as the Normal Zombie. Respawn them immediately at the nearest checkpoint the human team has not reached yet, ahead of the team's highest progress point. For example, if the highest reached checkpoint is 5, spawn the zombie at checkpoint 6 so they move down from higher floors toward the humans. Spectators and players waiting outside the active human team remain in the lobby or spectator state.
+- Party NPCs follow the human team and one another toward the same goal, fight nearby monsters, respond to attackers, and can revive downed teammates. Their behavior uses the shared actor/NPC systems.
+- Every human-team actor starts with the same loadout and ammunition: Revolver (6 loaded, 120 reserve), Shotgun (2 loaded, 80 reserve), Rocket Launcher (4 loaded, 16 reserve), and Force Punch (unlimited melee use).
+
+### Encounter volumes
+
+- A volume activates when a human-team player enters its configured activation distance. Monsters are not spawned before activation, to avoid spending runtime resources on distant encounters.
+- Activation spawns that volume's configured, finite group of monsters. The encounter is cleared when every monster in that group is defeated.
+- Each volume is one-shot by default. A volume may be configured to reactivate; reactivation delay is per-volume, and a reactivating volume shows the remaining delay above it while inactive.
+- The map data must distinguish required encounters from optional encounters so the final clear rule can be applied consistently.
+
+### Attempts, downing, and checkpoints
+
+- A run starts with three shared team attempts.
+- A downed actor can be revived; a dead actor cannot. An attempt ends when every human-team actor, including allied NPCs, is either downed or dead, so no teammate remains able to revive the others.
+- Checkpoints are enabled in this version. When an attempt ends and attempts remain, the team resumes from its nearest previously activated checkpoint, retaining the run's progress and remaining-attempt count. Show the five-second attempt-result overlay, then the checkpoint countdown described above.
+- When the last attempt is exhausted, the run ends as a loss and enters Results. A successful run ends after all required encounters are cleared, the team reaches the tower end, and the final boss is defeated.
+
+### Final boss and presentation requirements
+
+- The first playable version uses the Chainsaw Boss as a placeholder boss encounter with twice the base Chainsaw Boss health. It is explicitly not the intended final boss. The Chainsaw Boss actor preset must be defined before this placeholder encounter is implemented; the real final boss is future design work.
+- During an active boss encounter, every client in that encounter sees the boss's name and an authoritative health bar that represents its real remaining health. Show the bar only while the encounter is active. Follow sections 116, 117, and 156 below; the current specification defines the required information and visibility, but not a detailed visual layout or styling.
+- Zombie Tower must include mode-specific music, fog, rain, dynamic torch lighting, and forced first-person view. The mode's JSON configuration selects music tracks; this first version uses repository-relative asset paths as shown below.
+- Provide the developer console command `zt_effects <on|off>`. It disables or enables fog, rain, and dynamic torch lighting together. It does not change gameplay or forced first-person view.
+- Most healing credits actual healing delivered: healing another actor with a medkit, self-healing, and healing delivered while reviving count; merely picking up or dropping a medkit does not count. Damage and healing are credited to the actor who delivered them. Top speed is the highest speed recorded for an actor during the run.
+
+### Implementation readiness
+
+The specification is detailed enough to begin the first implementation slice: the phase loop, human-team roster and NPC replacement, team-choice command, attempt/retry rules, checkpoint rules, encounter activation contract, results fields, boss placeholder, and soundtrack behavior are decided. This is a target contract, not evidence that the current mode already works.
+
+To make the first run playable end to end, the implementation still needs the authored Zombie Tower map data (lobby and tower spawns, checkpoints, encounter volumes, groups, and boss placement) and the referenced actor/monster presets, roles, and supported attack definitions. Those are content and implementation tasks, not unanswered mode-flow decisions. The spec does not yet define the detailed visual layout of the results screen or boss bar.
+
+### Remaining edge case
+
+- **Checkpoint fallback:** Specify where a joining zombie spawns if the humans have reached every checkpoint, leaving no checkpoint ahead of them. The map's full required/optional encounter manifest and boss placement must also be authored; existing full-v1 scope below calls for at least 50 floors.
+
+### Zombie Tower music configuration
+
+The Zombie Tower mode JSON owns its soundtrack choices so a designer can replace the intro song or random pool without changing code. This first version uses asset paths relative to the repository root. At `GO!`, when human-team actors are unfrozen, start the configured `on_go_track`. When it finishes, select a random entry from `random_pool`; select another random entry from that pool whenever the current song ends. Clients in the same run hear the same current track.
+
+First-version configuration target for `config/gamemodes/zombie_tower.json`:
+
+```json
+{
+  "music": {
+    "on_go_track": "assets/music/ingame/Roblox Music - Gothic - Zero Project.opus",
+    "random_pool": [
+      "assets/music/ingame/ROBLOX - Winds Of Fjords.opus",
+      "assets/music/ingame/ROBLOX Music - 8-Bit Weapon - M.U.L.E (Bitblaster Mix).opus",
+      "assets/music/ingame/ROBLOX Music - Alice Deejay - Better Off Alone (Glejs Remix).opus",
+      "assets/music/ingame/Roblox Music - Nezzera.opus",
+      "assets/music/ingame/The Great Strategy (2005) Roblox Theme 2006.opus",
+      "assets/music/ingame/U quiet phonk.wav - old roblox phonk.opus",
+      "assets/music/ingame/U stage 7 need for madness.wav - edit part.opus",
+      "assets/music/ingame/U the boiled one funk.wav - house remix actuall 132 bpm.opus",
+      "assets/music/ingame/UE edit file for listening to music v9.wav -  cult member three -400.opus",
+      "assets/music/ingame/UN Owen Was Her- Full version.opus",
+      "assets/music/ingame/UW MiMITA motif.wav - how did you survive.opus"
+    ]
+  }
+}
+```
+
+This is a desired mode-JSON contract; the current Zombie Tower JSON does not yet load these music fields.
+
+---
+
+### Historical raw design notes (retained for context)
+
+2026 10 19 1752 jorj  im gona do juts like a little
+ok todo what we need to doo for zombie tower to be good 
+i lowk wanna use all teh new things like
+destrcut world, phsicasl objects
+custom animations for monsters i loev love that 
+
+but 
+without all that for now
+we can just
+
+make the zombie tower like an actual thing like lobby and stuff 
+then,
+
+phase 1 = intermission, 30 sec
+team A = humnas team B = monsters and erxtra team is spectator
+phase 2 = countdown, 3,2,1,go!!!
+"3" "2" "1" eachindividually on screen, all humans are hanging in te air near the tower intro spawn area 
+"go!!!!" this si when all humans are unfrozen and u can go forward super quick into the tower and go slay monsters
+
+for now, just go thru the tower and spawn a bunch of monster spawn volumes like so u just walk near it and then it kills the mosntersr
+just to test and see what its like 
+
+then 
+checkpoints? do that now? ehhh not sure prorb not
+todo later hceckpoints means arena closer needs to  exist ALSO 
+
+spawn monsters and ueah
+jus make the gamemode like actually a gamemode bc right now theres no phases 
+
+these are the win/state change conditons
+from like
+1 = intermission
+2 = countdown
+3 = active playing 
+4 = results/end
+back to phase 1 , indefinite
+
+to go from phase 3 active shooting  to phase 4 
+need to do this:
+need to 
+kill at least like 80% of monsters on each floor or each monster idk
+maybe even all monsters
+maybe evn none
+but for now 80% sound good , but just bc todo  not sure how to get npcs to not suck and be dead in a corner 
+get to ALL checkpints
+kill the final boss
+as soon as final boss is dead 
+"YOU WIN!!!!!!!!!"
+"TIME: HH:mm:ss:miliseconds"
+"MOST DAMAGE: (name of actor)"
+"MOST HEALING: (name of actor)" 
+"TOP SPEED: (number) BY (name of actor)"
+
+"BACK TO LOBBY IN (time before swithcing back to phase 1)..."
+update like milseconds like
+4.98, 3.11, 2.56, 1.47
+quick update
+
+most healing is like
+pickup a medkit and u drop it and someone uses it = u got 100 healing 
+u reviving someone = healing for all the tickcs u healing them 
+u doing medkit to urself = healing 
+
+and then now we have this , we can jsut expand over time 
+
+extras on top:
+1. music , need per gamemode music, implement it with zombie tower, like, each gamemode has like, not sure how to automaticallt do this? but defined in json like what songs area llowe dfor waht gamemode, but idk jut dont wanna ahrdcode names and stuff 
+2. visuals!!!!! we need working fog, that needs tweaking, and we need rain, and we need like dynamic lighting torches, thats what w need
+3. force first person
+4. u can make it so u have  aconsole comamnd where u dont have the extra special effects and stuff so u can just  do the devloper version of it too , like, disable lighting effects in console probably 
+
+npcs need to have a new like allied mode, follow me/follow each other/go more nad more thru to the checkpoints 
+then when someone is attacking then attack that attacker 
+and stuff 
+
 2026 10 15 2002 jorj explain
 heres all the mosnters for v1
 
