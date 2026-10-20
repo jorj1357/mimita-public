@@ -80,6 +80,7 @@ bool AimBodyConfig::load(const std::string& path)
         mRightArmPointingFovDuration = 0.5f;
         mRightArmPointingFovEasing = "ease_in_out";
         mSmoothingFactor = 1.0f;
+        mNormalMovementArmAimResponseMultiplier = 1.5f;
         mLimbs.clear();
         Debug::warn(Debug::Category::Animation,
             "[AIMBODY] missing %s; defaults active (enabled=1, pitch-only)\n", path.c_str());
@@ -97,6 +98,7 @@ bool AimBodyConfig::load(const std::string& path)
         mEnabled = true;
         mMode = "default";
         mSmoothingFactor = 1.0f;
+        mNormalMovementArmAimResponseMultiplier = 1.5f;
         mLimbs.clear();
         if (j.contains("enabled"))
             mEnabled = j.value("enabled", true);
@@ -182,6 +184,10 @@ bool AimBodyConfig::load(const std::string& path)
         const float factor = j.value("smoothingFactor", 1.0f);
         mSmoothingFactor = std::isfinite(factor) && factor > 0.0f
             ? factor : 1.0f;
+        const float armAimResponse = j.value(
+            "normal_movement_arm_aim_response_multiplier", 1.5f);
+        mNormalMovementArmAimResponseMultiplier = std::isfinite(armAimResponse)
+            ? std::clamp(armAimResponse, 1.0f, 10.0f) : 1.5f;
         if (j.contains("limbs") && j["limbs"].is_object()) {
             for (auto it = j["limbs"].begin(); it != j["limbs"].end(); ++it) {
                 LimbAim limb;
@@ -232,6 +238,8 @@ bool AimBodyConfig::save()
         }}
     };
     j["smoothingFactor"] = mSmoothingFactor;
+    j["normal_movement_arm_aim_response_multiplier"] =
+        mNormalMovementArmAimResponseMultiplier;
     json limbs = json::object();
     for (const auto& [name, limb] : mLimbs) {
         limbs[name] = {

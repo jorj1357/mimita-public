@@ -1130,8 +1130,33 @@ void handleInputPacket(const char* buffer, int bytes,
 
     MovementValidationResult result =
         validateClientMovementReport(p, report, validationContext, validationConfig);
+    if (result.decision == MovementValidationDecision::Correct)
+        p.positionCorrectionPending = true;
+    else if (result.decision == MovementValidationDecision::Accept)
+        p.positionCorrectionPending = false;
     applyMovementValidationCounters(p.movementValidation, result, report);
     logMovementValidation(p, report, result);
+    if (result.decision == MovementValidationDecision::Correct &&
+        glm::length(result.acceptedState.position - report.position) > 0.001f)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "movement.server-position-corrected", std::to_string(p.id),
+            movementValidationReasonName(result.reason),
+            (uint32_t)report.clientSimulationTick,
+            {{"player_id", p.id},
+             {"movement_sequence", report.movementSequence},
+             {"reason", movementValidationReasonName(result.reason)},
+             {"reported_position", {report.position.x, report.position.y,
+                                    report.position.z}},
+             {"accepted_position", {result.acceptedState.position.x,
+                                    result.acceptedState.position.y,
+                                    result.acceptedState.position.z}},
+             {"correction_distance_m", glm::length(
+                 result.acceptedState.position - report.position)},
+             {"server_tick", serverTick}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     if (connectionId)
     {
         static uint64_t sLastMovementDecisionLogMs = 0;
@@ -1231,16 +1256,15 @@ void handleInputPacket(const char* buffer, int bytes,
     }
 
     // Server corrected the client's claimed movement (out of bounds, geometry
-    // block). Broadcast a disagreement so clients can show the correction.
+    // block). Every actual correction gets its own disagreement event; ordinary
+    // movement drift keeps its separate configurable hard-snap threshold.
     if (result.decision == MovementValidationDecision::Correct &&
         !transformHandoffPending &&
         retransmitState && totalPacketsOut && sock != INVALID_SOCKET)
     {
         const glm::vec3 correction =
             result.acceptedState.position - report.position;
-        if (glm::length(correction) > 0.001f &&
-            shouldEmitDisagreement(retransmitState->rateLimit, serverTick,
-                                   disagreementMinTicks()))
+        if (glm::length(correction) > 0.001f)
         {
             const uint32_t eventId = retransmitState->nextEventId++;
             sendDisagreementToAll(sock, players, DISAGREEMENT_POSITION_CORRECTION,
@@ -2246,6 +2270,9 @@ void beginAuthoritativeTransform(ServerPlayer& player,
     player.pos = position;
     player.vel = velocity;
     player.yaw = yaw;
+    player.actorCollisionPreviousPos = position;
+    player.hasActorCollisionPreviousPos = true;
+    player.actorCollisionChanged = false;
     ++player.transformEpoch;
     player.awaitingAuthoritativeTransformAck = true;
     player.authoritativeTransformPosition = position;

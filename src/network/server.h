@@ -289,6 +289,19 @@ struct ServerPlayer
     int weaponSetId = 0;
     // Role movement preset resolved for this life; empty = legacy/global.
     std::string movementProfileId;
+    // Actor preset that owns this life's collision profile. Resolved at spawn
+    // from the same role/preset identity used by movement and behavior.
+    std::string actorPresetId;
+    // Sweep start for the shared actor-pair collision tick.
+    glm::vec3 actorCollisionPreviousPos{0.0f};
+    bool hasActorCollisionPreviousPos = false;
+    // Actor-pair support is separate from physical-entity support.
+    uint64_t actorCollisionSupportKey = 0;
+    glm::vec3 actorCollisionSupportVelocity{0.0f};
+    bool actorCollisionChanged = false;
+    // Remains set until a subsequent client movement report is accepted, so a
+    // snapshot can reliably tell the owning client to apply a correction.
+    bool positionCorrectionPending = false;
     // Per-avatar movement capability resolved from the avatar rig (e.g. mode
     // "roll" drives the force-based physical body). Re-resolved whenever the
     // avatar identity changes, not only at spawn.
@@ -886,7 +899,6 @@ glm::vec3 closestPointTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 
 
 // Collision
 void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world);
-void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players);
 
 // Player simulation
 void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn);
@@ -958,6 +970,7 @@ void simulateSharedNpcs(SOCKET sock,
                         std::unordered_map<uint32_t, ServerPlayer>& players,
                         std::unordered_map<uint32_t, ServerNpc>& npcs,
                         NpcSystem& npcSystem,
+                        const HeadlessWorld& playerWorld,
                         World& world,
                         Player& mirrorPlayer,
                         std::unordered_set<uint32_t>& npcIdsAlive,

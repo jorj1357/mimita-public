@@ -9,7 +9,8 @@
 //
 // Exposes:
 //   doCollisions(...)
-//   resolveCapsuleVsCapsule(...)
+//   world capsule/contact helpers
+// Actor-vs-actor capsules live in actor-pair-collision.h.
 
 // purpose:
 // declaration for solid world collision resolution
@@ -118,16 +119,6 @@ bool collisionSubGridSelfTest(std::string* outSummary = nullptr);
 // Deterministic check that the canonical contact adapters preserve producer
 // metadata and that the new canonical fields do not change contact identity.
 bool canonicalContactSelfTest(std::string* outSummary = nullptr);
-
-// Resolve collision between two capsules (e.g., player vs NPC)
-// - Mutates positions of both capsules
-// - Returns true if collision was resolved
-bool resolveCapsuleVsCapsule(
-    Player& a,
-    Player& b,
-    bool& groundedA,
-    bool& groundedB
-);
 
 // Gather candidate world triangles within an AABB. The primary path queries the
 // persistent world collision tree (every static triangle, including very large

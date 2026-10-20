@@ -17,6 +17,8 @@
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/actor-pair-collision.h"
+#include "config/actor-collision-config.h"
 #include "npc/npc.h"
 #include "entities/player.h"
 #include "entities/player-avatar-animations.h"
@@ -32,10 +34,13 @@
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
 #include "network/multiplayer-context.h"
+#include "network/community-match-client.h"
 #include "terminal/terminal-state.h"
 
 #include <cmath>
 #include <algorithm>
+#include <string>
+#include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -96,6 +101,13 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // config hot reload is disabled.
     AvatarAnimationRegistry::instance().pollReload(
         (std::uint32_t)sim.player->movementSimulationTick);
+    ActorCollisionConfig::instance().pollHotReload();
+
+    // Sweep start for this fixed tick. Reconciliation/teleports have already
+    // installed the authoritative position, so a discontinuity does not create
+    // a false swept contact across the old pose.
+    sim.player->actorCollisionPreviousPos = sim.player->pos;
+    sim.player->hasActorCollisionPreviousPos = true;
 
     // One lifecycle reset path: any new authoritative life (spawn, respawn,
     // instant respawn, teleport, duel, map change, reconnect, or transform-epoch
@@ -204,17 +216,185 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         sim.npcSystem->update(*sim.world, *sim.player, TICK_DT, frame);
     }
 
-    // Resolve NPC vs Player collisions
+    // One shared actor-pair path for the local player, local NPCs/monsters, and
+    // remote replicas. Remote replicas are solid prediction shapes but are not
+    // mutated here; the server remains authoritative for their final state.
     {
-        MIMITA_PERF_SCOPE("NpcVsPlayerCollision");
-        if (!sim.player->ragdollModeActive) {
-            for (auto& npc : sim.npcSystem->all())
+        MIMITA_PERF_SCOPE("ActorPairCollision");
+        static thread_local std::vector<ActorPairCollisionActor> collisionActors;
+        static thread_local std::vector<ActorPairCollisionOutput> collisionOutputs;
+        static thread_local std::vector<Npc*> collisionNpcs;
+        collisionActors.clear();
+        collisionNpcs.clear();
+
+        const ActorCollisionConfig& collisionConfig =
+            ActorCollisionConfig::instance();
+        const ActorCollisionData& collisionData = collisionConfig.data();
+        const bool localRagdollStatic =
+            sim.player->ragdollModeActive || sim.player->dead;
+
+        const std::string localPreset =
+            MimitaNet::CommunityMatchClient::instance().active()
+                ? MimitaNet::CommunityMatchClient::instance().actorPresetId()
+                : std::string();
+
+        ActorPairCollisionActor localActor;
+        localActor.id = mpContext.active ? mpContext.localPlayerId : 0u;
+        localActor.kind = ActorPairKind::Player;
+        localActor.pos = sim.player->pos;
+        localActor.prevPos = sim.player->hasActorCollisionPreviousPos
+            ? sim.player->actorCollisionPreviousPos : sim.player->pos;
+        localActor.vel = sim.player->vel;
+        localActor.externalImpulse = sim.player->externalImpulse;
+        localActor.yaw = sim.player->yaw;
+        localActor.sizeScale = sim.player->sizeScale;
+        localActor.dead = sim.player->dead;
+        localActor.staticCollider = localRagdollStatic;
+        localActor.onGround = sim.player->ground.onGround;
+        localActor.stableOnGround = sim.player->ground.stableOnGround;
+        localActor.profile = &collisionConfig.profileFor(localPreset);
+        localActor.previousSupportKey = sim.player->collision.supportActorKey;
+        localActor.previousSupportVelocity =
+            sim.player->collision.supportActorVelocity;
+        collisionActors.push_back(localActor);
+
+        for (Npc& npc : sim.npcSystem->all())
+        {
+            const bool dead = npc.body.dead || npc.body.currentHp <= 0;
+            ActorPairCollisionActor actor;
+            actor.id = npc.id;
+            actor.kind = ActorPairKind::Npc;
+            actor.pos = npc.body.pos;
+            actor.prevPos = dead ? npc.body.pos : npc.previousPosition;
+            actor.vel = npc.body.vel;
+            actor.externalImpulse = npc.body.externalImpulse;
+            actor.yaw = npc.body.yaw;
+            actor.sizeScale = npc.body.sizeScale;
+            actor.dead = dead;
+            actor.staticCollider = dead;
+            actor.onGround = npc.body.ground.onGround;
+            actor.stableOnGround = npc.body.ground.stableOnGround;
+            actor.profile = &collisionConfig.profileFor(npc.actorPresetId);
+            actor.previousSupportKey = npc.body.collision.supportActorKey;
+            actor.previousSupportVelocity = npc.body.collision.supportActorVelocity;
+            collisionActors.push_back(actor);
+            collisionNpcs.push_back(&npc);
+        }
+
+        const std::size_t localNpcActorCount = collisionNpcs.size();
+        if (mpContext.active)
+        {
+            for (const auto& entry : mpContext.remotePlayers)
             {
-                bool groundedPlayer = false;
-                bool groundedNpc = false;
-                if (!sim.player->dead && !npc.body.dead)
-                    resolveCapsuleVsCapsule(*sim.player, npc.body, groundedPlayer, groundedNpc);
+                const Player& remote = entry.second;
+                ActorPairCollisionActor actor;
+                actor.id = entry.first;
+                actor.kind = ActorPairKind::Player;
+                actor.pos = remote.pos;
+                actor.prevPos = remote.pos;
+                actor.vel = remote.vel;
+                actor.yaw = remote.yaw;
+                actor.sizeScale = remote.sizeScale;
+                actor.dead = remote.dead;
+                actor.staticCollider = true;
+                actor.onGround = remote.ground.onGround;
+                actor.stableOnGround = remote.ground.stableOnGround;
+                actor.profile = &collisionConfig.profileFor(std::string());
+                collisionActors.push_back(actor);
             }
+            for (const auto& entry : mpContext.remoteNpcs)
+            {
+                const Player& remote = entry.second;
+                ActorPairCollisionActor actor;
+                actor.id = entry.first;
+                actor.kind = ActorPairKind::Npc;
+                actor.pos = remote.pos;
+                actor.prevPos = remote.pos;
+                actor.vel = remote.vel;
+                actor.yaw = remote.yaw;
+                actor.sizeScale = remote.sizeScale;
+                actor.dead = remote.dead;
+                actor.staticCollider = true;
+                actor.onGround = remote.ground.onGround;
+                actor.stableOnGround = remote.ground.stableOnGround;
+                actor.profile = &collisionConfig.profileFor(std::string());
+                collisionActors.push_back(actor);
+            }
+        }
+
+        collisionOutputs.assign(collisionActors.size(), ActorPairCollisionOutput{});
+        ActorPairCollisionStats collisionStats;
+        resolveActorPairCollisions(collisionActors.data(), collisionActors.size(),
+                                   TICK_DT, collisionData,
+                                   collisionOutputs.data(), &collisionStats);
+
+        Perf::state().current.collisionPairs =
+            static_cast<int>(collisionStats.candidatePairs);
+        Perf::state().current.charVsChar += collisionStats.totalMs;
+
+        if (!localRagdollStatic)
+        {
+            const ActorPairCollisionOutput& out = collisionOutputs[0];
+            sim.player->pos = out.pos;
+            sim.player->vel = out.vel;
+            sim.player->externalImpulse = out.externalImpulse;
+            sim.player->ground.onGround = out.onGround;
+            sim.player->ground.stableOnGround = out.stableOnGround;
+            sim.player->collision.supportActorKey = out.supportKey;
+            sim.player->collision.supportActorVelocity = out.supportVelocity;
+            if (out.corrected && out.supportKey == 0)
+            {
+                bool grounded = false;
+                doCollisions(*sim.player, *sim.world, grounded, TICK_DT);
+            }
+            sim.player->updateModelWorldTransforms();
+        }
+
+        for (std::size_t i = 0; i < localNpcActorCount; ++i)
+        {
+            Npc& npc = *collisionNpcs[i];
+            const bool dead = npc.body.dead || npc.body.currentHp <= 0;
+            if (dead)
+                continue;
+            const ActorPairCollisionOutput& out = collisionOutputs[i + 1];
+            npc.body.pos = out.pos;
+            npc.body.vel = out.vel;
+            npc.body.externalImpulse = out.externalImpulse;
+            npc.body.ground.onGround = out.onGround;
+            npc.body.ground.stableOnGround = out.stableOnGround;
+            npc.body.collision.supportActorKey = out.supportKey;
+            npc.body.collision.supportActorVelocity = out.supportVelocity;
+            if (out.corrected && out.supportKey == 0)
+            {
+                bool grounded = false;
+                doCollisions(npc.body, *sim.world, grounded, TICK_DT);
+            }
+            npc.body.updateModelWorldTransforms();
+        }
+
+        static uint32_t lastCollisionProfileTick = 0;
+        if (sim.tick - lastCollisionProfileTick >= 60)
+        {
+            lastCollisionProfileTick = sim.tick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "actor.collision.profile", "client",
+                collisionStats.truncated ? "candidate_cap_reached" : "tick_profile",
+                sim.tick,
+                nlohmann::json{
+                    {"source", "client"},
+                    {"actors", collisionStats.actorCount},
+                    {"cell_entries", collisionStats.cellEntries},
+                    {"candidate_pairs", collisionStats.candidatePairs},
+                    {"narrow_pairs", collisionStats.narrowPairs},
+                    {"contacts", collisionStats.contacts},
+                    {"supports", collisionStats.supports},
+                    {"pushes", collisionStats.pushes},
+                    {"broadphase_ms", collisionStats.broadphaseMs},
+                    {"collision_ms", collisionStats.totalMs},
+                    {"frame_ms", Perf::state().lastFrameTimeMs},
+                    {"config_revision", collisionData.revision}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 

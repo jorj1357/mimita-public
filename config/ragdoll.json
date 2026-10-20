@@ -135,9 +135,9 @@
             //   1 = limbs also follow their animated position. 
             //   All values are stable at any magnitude.",
             // "follow_force": 10.0,
-            // "follow_force": 20.0,
+            "follow_force": 20.0,
             // "follow_force": 50.0,
-            "follow_force": 25.0,
+            // "follow_force": 25.0,
             // "follow_force": 35.0,
             // "follow_force": 15.0,
             // "follow_force": 5.0,
@@ -147,9 +147,9 @@
             // "follow_force": 999999.0,
             // "base_rate": 50.0,
             // "base_rate": 100.0,
-            // "base_rate": 20.0,
+            "base_rate": 20.0,
             // "base_rate": 999.0,
-            "base_rate": 10.0,
+            // "base_rate": 10.0,
             // "base_rate": 1.0,
             // "base_rate": 3.0,
             // "base_rate": 5.0,
@@ -161,21 +161,21 @@
             // Arms-only post-physics sway correction rate (1/s). 0 = fully
             // physical sway; higher values keep the arm closer to its centered
             // aimbody/animation pose relative to the torso.
-            // "arms_follow_force": 1.0
+            "arms_follow_force": 1.0,
             // "arms_follow_force": 5.0
             // "arms_follow_force": 10.0,
             // "arms_follow_force": 25.0
             // "arms_follow_force": 50.0,
-            "arms_follow_force": 0.0,
+            // "arms_follow_force": 0.0,
             // 1.0 = current hybrid arm behavior. 10.0 = movement affects the
             // arms 10x less and the arms are 90% closer to their default
             // aimbody/animation pose. Weapon attachment offsets stay weapon-owned.
-            "arms_camera_follow": 1.0
+            // "arms_camera_follow": 1.0
             // "arms_camera_follow": 0.1
             // "arms_camera_follow": 10.0
             // "arms_camera_follow": 100.0
             // "arms_camera_follow": 2.0
-            // "arms_camera_follow": 5.0
+            "arms_camera_follow": 5.0
         }
     },
     "exit": {

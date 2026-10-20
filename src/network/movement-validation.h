@@ -236,7 +236,8 @@ bool movementSnapshotLifecycleFresh(uint32_t incomingSpawnGeneration,
 bool crossesBlockingGeometry(const HeadlessWorld* world,
                              glm::vec3 from,
                              glm::vec3 to,
-                             float tolerance);
+                             float tolerance,
+                             glm::vec3* outBlockingNormal = nullptr);
 
 MovementValidationResult validateClientMovementReport(
     const ServerPlayer& player,

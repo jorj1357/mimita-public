@@ -154,7 +154,8 @@ bool rayTriangle(const glm::vec3& origin,
 bool crossesBlockingGeometry(const HeadlessWorld* world,
                              glm::vec3 from,
                              glm::vec3 to,
-                             float tolerance)
+                             float tolerance,
+                             glm::vec3* outBlockingNormal)
 {
     if (!world || world->triangles.empty())
         return false;
@@ -166,17 +167,54 @@ bool crossesBlockingGeometry(const HeadlessWorld* world,
 
     const glm::vec3 direction = delta / distance;
     const float maxDistance = distance + tolerance;
-
-    for (const CollisionTriangle& tri : world->triangles)
+    AABB queryBounds;
+    queryBounds.min = glm::min(from, to);
+    queryBounds.max = glm::max(from, to);
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
+    const bool broadphaseWouldTruncate =
+        world->collisionChunkSize > 0.001f &&
+        (queryBounds.max.x - queryBounds.min.x > world->collisionChunkSize * 98.0f ||
+         queryBounds.max.y - queryBounds.min.y > world->collisionChunkSize * 98.0f ||
+         queryBounds.max.z - queryBounds.min.z > world->collisionChunkSize * 98.0f);
+    if (broadphaseWouldTruncate)
     {
+        // The chunk gatherer intentionally caps each axis at 100 cells. A
+        // server validation sweep can be longer than that during high speed
+        // movement, so fall back to a complete linear scan rather than silently
+        // omitting geometry beyond the cap.
+        candidates.reserve(world->triangles.size());
+        for (int i = 0; i < static_cast<int>(world->triangles.size()); ++i)
+            candidates.push_back(i);
+    }
+    else
+        gatherHeadlessTrianglesForAABB(*world, queryBounds, tolerance, candidates);
+
+    float nearestHit = maxDistance;
+    glm::vec3 nearestNormal(0.0f);
+    for (int triangleIndex : candidates)
+    {
+        if (triangleIndex < 0 || triangleIndex >= static_cast<int>(world->triangles.size()))
+            continue;
+        const CollisionTriangle& tri = world->triangles[triangleIndex];
         if (std::abs(tri.normal.z) > 0.85f)
             continue;
         float hitDistance = 0.0f;
-        if (rayTriangle(from, direction, tri, maxDistance, hitDistance))
-            return true;
-    }
+        if (!rayTriangle(from, direction, tri, maxDistance, hitDistance) ||
+            hitDistance >= nearestHit)
+            continue;
 
-    return false;
+        nearestHit = hitDistance;
+        nearestNormal = glm::length(tri.normal) > 1e-5f
+            ? glm::normalize(tri.normal) : -direction;
+        if (glm::dot(nearestNormal, direction) > 0.0f)
+            nearestNormal = -nearestNormal;
+    }
+    if (nearestHit >= maxDistance)
+        return false;
+    if (outBlockingNormal)
+        *outBlockingNormal = nearestNormal;
+    return true;
 }
 
 namespace {
@@ -649,10 +687,12 @@ MovementValidationResult validateClientMovementReport(
         return result;
     }
 
+    glm::vec3 blockingNormal(0.0f);
     if (crossesBlockingGeometry(context.world,
                                 previousPosition,
                                 report.position,
-                                config.wallSweepTolerance))
+                                config.wallSweepTolerance,
+                                &blockingNormal))
     {
         // Skip the correction when the player is falling into the void below
         // the map. Void death handles the fall; snapping back up would
@@ -662,8 +702,16 @@ MovementValidationResult validateClientMovementReport(
             result.decision = MovementValidationDecision::Correct;
             result.reason = MovementValidationReason::BlockingGeometry;
             result.acceptedState.position = previousPosition;
-            result.acceptedState.baseVelocity = glm::vec3(0.0f);
-            result.acceptedState.externalImpulse = glm::vec3(0.0f);
+            const auto removeIntoWall = [&](glm::vec3 velocity) {
+                const float intoWall = glm::dot(velocity, blockingNormal);
+                if (intoWall < 0.0f)
+                    velocity -= blockingNormal * intoWall;
+                return velocity;
+            };
+            result.acceptedState.baseVelocity =
+                removeIntoWall(result.acceptedState.baseVelocity);
+            result.acceptedState.externalImpulse =
+                removeIntoWall(result.acceptedState.externalImpulse);
             result.metrics.positionError = glm::length(report.position - previousPosition);
             return result;
         }

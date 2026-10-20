@@ -428,7 +428,11 @@ struct MultiplayerContext
     // Authoritative Melee meters from the local actor's own snapshot.
     float localServerMeleePercent = 0.0f;
     float localServerMeleeShield = 0.0f;
-    uint8_t localServerStateFlags = 0;
+    uint16_t localServerStateFlags = 0;
+    // A movement-correction event can arrive before its snapshot. Keep its
+    // authoritative destination until the fixed-tick reconciler applies it.
+    bool hasPendingServerPositionCorrection = false;
+    glm::vec3 pendingServerPositionCorrection{0.0f};
     // Highest accepted Melee impulse event already applied locally. Reliable
     // events are ordered; this is a second guard against duplicate delivery.
     uint32_t lastAppliedMeleeImpulseEventId = 0;
@@ -544,6 +548,7 @@ struct MultiplayerContext
     // ── Migration: disagreement events from server ────────────────────
     std::vector<DisagreementEvent> disagreementEvents;
     std::unordered_set<uint32_t> processedDisagreementIds;
+    std::deque<uint32_t> processedDisagreementOrder;
     uint32_t reliableEventSessionId = 0;
     std::unordered_set<uint64_t> processedReliableEventIds;
     std::deque<uint64_t> processedReliableEventOrder;

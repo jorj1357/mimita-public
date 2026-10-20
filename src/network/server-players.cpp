@@ -432,17 +432,6 @@ bool serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
     return false;
 }
 
-// ═══ Player‑to‑player de‑penetration ═══════════════════════════════
-// TEMPORARY: active client‑controlled players use validated client‑transform
-// authority.  Direct server positional pushes conflict with that model
-// because the clients have not applied the same push.
-// This function is preserved for future NPC or server‑controlled entities.
-void resolvePlayerCollision(std::unordered_map<uint32_t, ServerPlayer>& players)
-{
-    // Client-transform authority: do not silently shift accepted player positions.
-    (void)players;
-}
-
 // ── Initial inventory ────────────────────────────────────────────────
 // Community servers derive the inventory from the effective weapon set. The
 // role's weapon_set (resolved by the caller) wins; otherwise the gamemode's
@@ -500,6 +489,12 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     }
     // Role movement identity persists for this life; used by the shared kernel.
     player.movementProfileId = profile.movementPreset;
+    player.actorPresetId = profile.actorPresetId;
+    player.actorCollisionPreviousPos = player.pos;
+    player.hasActorCollisionPreviousPos = true;
+    player.actorCollisionSupportKey = 0;
+    player.actorCollisionSupportVelocity = glm::vec3(0.0f);
+    player.actorCollisionChanged = false;
 
     // Increment spawn generation (never decremented, never reset)
     ++player.spawnGeneration;
@@ -799,6 +794,10 @@ void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uin
 
 void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
 {
+    p.actorCollisionPreviousPos = p.pos;
+    p.hasActorCollisionPreviousPos = true;
+    p.actorCollisionChanged = false;
+
     if (p.teleportInvulnerabilityTicks > 0)
         --p.teleportInvulnerabilityTicks;
 
@@ -901,6 +900,8 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 ? SpawnVelocityConfig::instance().computeSpawnImpulse(respawnYaw)
                 : glm::vec3(0.0f);
             beginAuthoritativeTransform(p, respawnPos, spawnVel, respawnYaw, "respawn");
+            p.actorCollisionPreviousPos = p.pos;
+            p.hasActorCollisionPreviousPos = true;
             // resetPlayerForSpawn is called by completeAuthoritativeSpawn
             // which is triggered by justRespawned flag in the server pump.
             p.justRespawned = true;  // signal caller to send spawn sync
@@ -1716,6 +1717,10 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
         else
             flags &= ~NET_STATE_ON_GROUND;
 
+        if (player.positionCorrectionPending)
+            flags |= NET_STATE_POSITION_CORRECTED;
+        if (player.actorCollisionChanged)
+            flags |= NET_STATE_ACTOR_COLLISION;
         out.stateFlags = flags;
 
         static uint64_t lastWalkBuildLogMs = 0;

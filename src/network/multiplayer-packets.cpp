@@ -292,6 +292,8 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.pendingPelletBlastEvents.clear();
     ctx.disagreementEvents.clear();
     ctx.processedDisagreementIds.clear();
+    ctx.processedDisagreementOrder.clear();
+    ctx.hasPendingServerPositionCorrection = false;
     ctx.reliableEventSessionId = 0;
     ctx.processedReliableEventIds.clear();
     ctx.processedReliableEventOrder.clear();
@@ -1184,6 +1186,8 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.lastDisconnectLogMs = 0;
     ctx.disagreementEvents.clear();
     ctx.processedDisagreementIds.clear();
+    ctx.processedDisagreementOrder.clear();
+    ctx.hasPendingServerPositionCorrection = false;
     ctx.currentRoomCode = status.roomCode;
 }
 
@@ -1207,7 +1211,10 @@ void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPack
         return;
     }
 
-    // Deduplicate: skip already-processed event IDs
+    // Deduplicate: skip already-processed event IDs while retaining a bounded
+    // sliding window. Clearing the whole set would let retransmissions of
+    // recent corrections spawn duplicate effects every time the window filled.
+    bool duplicate = false;
     if (packet->eventId != 0)
     {
         if (ctx.processedDisagreementIds.count(packet->eventId))
@@ -1216,13 +1223,15 @@ void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPack
             return;
         }
         ctx.processedDisagreementIds.insert(packet->eventId);
+        ctx.processedDisagreementOrder.push_back(packet->eventId);
 
-        // Bounded dedup set: remove old entries if it grows too large
-        if (ctx.processedDisagreementIds.size() > 128)
-            ctx.processedDisagreementIds.clear();
+        constexpr size_t kDisagreementDedupWindow = 128;
+        while (ctx.processedDisagreementOrder.size() > kDisagreementDedupWindow)
+        {
+            ctx.processedDisagreementIds.erase(ctx.processedDisagreementOrder.front());
+            ctx.processedDisagreementOrder.pop_front();
+        }
     }
-
-    bool duplicate = ctx.processedDisagreementIds.count(packet->eventId) > 0;
 
     DisagreementEvent event;
     event.timeMs = nowMs();
@@ -1233,6 +1242,12 @@ void mpProcessDisagreementPacket(MultiplayerContext& ctx, const DisagreementPack
     event.targetPlayerId = packet->targetPlayerId;
     event.position = {packet->posX, packet->posY, packet->posZ};
     event.correction = {packet->correctionX, packet->correctionY, packet->correctionZ};
+    if (event.reason == DISAGREEMENT_POSITION_CORRECTION &&
+        event.sourcePlayerId == ctx.localPlayerId)
+    {
+        ctx.pendingServerPositionCorrection = event.position + event.correction;
+        ctx.hasPendingServerPositionCorrection = true;
+    }
     // Safely copy description with bounded length (packet may not be null-terminated)
     {
         char buf[sizeof(packet->description) + 1];

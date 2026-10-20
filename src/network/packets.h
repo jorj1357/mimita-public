@@ -40,7 +40,14 @@ enum NetworkPlayerStateFlags : uint16_t
     NET_STATE_SHIELDING    = 1 << 8,
     NET_STATE_GRABBING     = 1 << 9,
     NET_STATE_CROUCHING    = 1 << 10,
-    NET_STATE_REVIVING     = 1 << 11
+    NET_STATE_REVIVING     = 1 << 11,
+    // The server changed this actor's authoritative transform through the
+    // actor-pair collision pass on this tick. Clients apply the authoritative
+    // transform instead of treating the push as ordinary prediction drift.
+    NET_STATE_ACTOR_COLLISION = 1 << 12,
+    // The server corrected a movement report. The owning client must apply
+    // that authoritative transform regardless of the ordinary drift threshold.
+    NET_STATE_POSITION_CORRECTED = 1 << 13
 };
 constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;

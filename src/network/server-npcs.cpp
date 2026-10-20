@@ -33,7 +33,10 @@
 #include "map/map-loader-collision.h"
 #include "config/collision-lod-config.h"
 #include "config/spawn-velocity-config.h"
+#include "config/actor-collision-config.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/physics-collision.h"
+#include "physics/movement/actor-pair-collision.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "network/network-weapons.h"
@@ -990,10 +993,193 @@ bool getNpcPoseAtTick(const ServerNpc& npc, uint32_t targetTick,
     return true;
 }
 
+// One authoritative actor-pair pass for every server actor. Players and NPCs
+// use the same capsules, broadphase, support, and push response as clients; the
+// server result is what snapshots and reconciliation carry.
+static void resolveServerActorPairCollisions(
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    NpcSystem& npcSystem,
+    const HeadlessWorld& playerWorld,
+    World& npcWorld,
+    uint32_t tick)
+{
+    static thread_local std::vector<ActorPairCollisionActor> actors;
+    static thread_local std::vector<ActorPairCollisionOutput> outputs;
+    static thread_local std::vector<ServerPlayer*> playerPointers;
+    static thread_local std::vector<Npc*> npcPointers;
+
+    actors.clear();
+    playerPointers.clear();
+    npcPointers.clear();
+
+    const ActorCollisionConfig& collisionConfig =
+        ActorCollisionConfig::instance();
+    const ActorCollisionData& data = collisionConfig.data();
+
+    for (auto& entry : players)
+    {
+        ServerPlayer& player = entry.second;
+        if (player.spawnState != ServerPlayer::Active)
+            continue;
+
+        ActorPairCollisionActor actor;
+        actor.id = player.id;
+        actor.kind = ActorPairKind::Player;
+        actor.pos = player.pos;
+        actor.prevPos = player.hasActorCollisionPreviousPos
+            ? player.actorCollisionPreviousPos : player.pos;
+        actor.vel = player.vel;
+        actor.externalImpulse = player.movement.externalImpulse;
+        actor.yaw = player.yaw;
+        actor.sizeScale = player.sizeScale;
+        actor.dead = player.dead;
+        actor.staticCollider = player.dead;
+        actor.onGround = player.onGround;
+        actor.stableOnGround = player.movement.ground.stableOnGround ||
+                               player.onGround;
+        actor.profile = &collisionConfig.profileFor(player.actorPresetId);
+        actor.previousSupportKey = player.actorCollisionSupportKey;
+        actor.previousSupportVelocity = player.actorCollisionSupportVelocity;
+        actors.push_back(actor);
+        playerPointers.push_back(&player);
+    }
+
+    const std::size_t playerActorCount = playerPointers.size();
+
+    for (Npc& npc : npcSystem.all())
+    {
+        const bool dead = npc.body.dead || npc.body.currentHp <= 0;
+        ActorPairCollisionActor actor;
+        actor.id = npc.id;
+        actor.kind = ActorPairKind::Npc;
+        actor.pos = npc.body.pos;
+        actor.prevPos = dead ? npc.body.pos : npc.previousPosition;
+        actor.vel = npc.body.vel;
+        actor.externalImpulse = npc.body.externalImpulse;
+        actor.yaw = npc.body.yaw;
+        actor.sizeScale = npc.body.sizeScale;
+        actor.dead = dead;
+        actor.staticCollider = dead;
+        actor.onGround = npc.body.ground.onGround;
+        actor.stableOnGround = npc.body.ground.stableOnGround;
+        actor.profile = &collisionConfig.profileFor(npc.actorPresetId);
+        actor.previousSupportKey = npc.body.collision.supportActorKey;
+        actor.previousSupportVelocity = npc.body.collision.supportActorVelocity;
+        actors.push_back(actor);
+        npcPointers.push_back(&npc);
+    }
+
+    if (actors.empty())
+        return;
+
+    outputs.assign(actors.size(), ActorPairCollisionOutput{});
+    ActorPairCollisionStats stats;
+    resolveActorPairCollisions(actors.data(), actors.size(), SERVER_DT,
+                               data, outputs.data(), &stats);
+
+    Perf::state().current.collisionPairs =
+        static_cast<int>(stats.candidatePairs);
+    Perf::state().current.charVsChar += stats.totalMs;
+
+    for (std::size_t i = 0; i < playerActorCount; ++i)
+    {
+        ServerPlayer& player = *playerPointers[i];
+        const ActorPairCollisionActor& actor = actors[i];
+        const ActorPairCollisionOutput& out = outputs[i];
+        if (player.dead)
+            continue;
+        if (!out.corrected && !out.pushed &&
+            out.supportKey == actor.previousSupportKey)
+            continue;
+
+        const glm::vec3 addedImpulse =
+            out.externalImpulse - actor.externalImpulse;
+        player.pos = out.pos;
+        player.vel = out.vel + addedImpulse;
+        player.movement.externalImpulse = out.externalImpulse;
+        player.onGround = out.onGround;
+        player.movement.ground.onGround = out.onGround;
+        player.movement.ground.stableOnGround = out.stableOnGround;
+        player.movement.ground.hasWorldContact =
+            player.movement.ground.hasWorldContact || out.onGround;
+        player.actorCollisionSupportKey = out.supportKey;
+        player.actorCollisionSupportVelocity = out.supportVelocity;
+        player.actorCollisionChanged = out.corrected || out.pushed;
+
+        if (out.corrected && out.supportKey == 0)
+            resolveWorldCollision(player, playerWorld);
+        player.movement.ground.onGround = player.onGround;
+        player.movement.ground.stableOnGround =
+            player.onGround || player.movement.ground.stableOnGround;
+
+        player.lastAcceptedClientPosition = player.pos;
+        player.lastAcceptedClientVelocity = player.vel;
+        player.simBroadcastPos = player.pos;
+        player.hasSimBroadcastPos = true;
+    }
+
+    for (std::size_t i = 0; i < npcPointers.size(); ++i)
+    {
+        Npc& npc = *npcPointers[i];
+        const bool dead = npc.body.dead || npc.body.currentHp <= 0;
+        if (dead)
+            continue;
+        const std::size_t actorIndex = playerActorCount + i;
+        const ActorPairCollisionActor& actor = actors[actorIndex];
+        const ActorPairCollisionOutput& out = outputs[actorIndex];
+        if (!out.corrected && !out.pushed &&
+            out.supportKey == actor.previousSupportKey)
+            continue;
+
+        npc.body.pos = out.pos;
+        npc.body.vel = out.vel;
+        npc.body.externalImpulse = out.externalImpulse;
+        npc.body.ground.onGround = out.onGround;
+        npc.body.ground.stableOnGround = out.stableOnGround;
+        npc.body.ground.hasWorldContact =
+            npc.body.ground.hasWorldContact || out.onGround;
+        npc.body.collision.supportActorKey = out.supportKey;
+        npc.body.collision.supportActorVelocity = out.supportVelocity;
+
+        if (out.corrected && out.supportKey == 0)
+        {
+            bool grounded = false;
+            doCollisions(npc.body, npcWorld, grounded, SERVER_DT);
+        }
+        npc.body.updateModelWorldTransforms();
+    }
+
+    static uint32_t lastProfileTick = 0;
+    if (tick - lastProfileTick >= 60)
+    {
+        lastProfileTick = tick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Important,
+            "actor.collision.profile", "server",
+            stats.truncated ? "candidate_cap_reached" : "tick_profile",
+            tick,
+            nlohmann::json{
+                {"source", "server"},
+                {"actors", stats.actorCount},
+                {"cell_entries", stats.cellEntries},
+                {"candidate_pairs", stats.candidatePairs},
+                {"narrow_pairs", stats.narrowPairs},
+                {"contacts", stats.contacts},
+                {"supports", stats.supports},
+                {"pushes", stats.pushes},
+                {"broadphase_ms", stats.broadphaseMs},
+                {"collision_ms", stats.totalMs},
+                {"frame_ms", Perf::state().lastFrameTimeMs},
+                {"config_revision", data.revision}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
+
 void simulateSharedNpcs(SOCKET sock,
                         std::unordered_map<uint32_t, ServerPlayer>& players,
                         std::unordered_map<uint32_t, ServerNpc>& npcs,
                         NpcSystem& npcSystem,
+                        const HeadlessWorld& playerWorld,
                         World& world,
                         Player& mirrorPlayer,
                         std::unordered_set<uint32_t>& npcIdsAlive,
@@ -1003,6 +1189,7 @@ void simulateSharedNpcs(SOCKET sock,
                         uint64_t& totalPacketsOut)
 {
     Perf::ScopedTimer npcSimulationTimer("Server::NpcSimulation");
+    ActorCollisionConfig::instance().pollHotReload();
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
 
@@ -1348,9 +1535,17 @@ void simulateSharedNpcs(SOCKET sock,
 
             if (nearestPlayer)
             {
-                ServerDamageResult result = applyServerDamage(
-                    players, *nearestPlayer, 0, damage, knockback,
-                    ServerDamageSource::Hitscan);
+                ServerActorDamageRequest damageRequest;
+                damageRequest.attacker = {
+                    n.id, ServerActorKind::Npc, nullptr, nullptr};
+                damageRequest.victim = {
+                    nearestPlayer->id, ServerActorKind::Player, nullptr, nullptr};
+                damageRequest.damage = damage;
+                damageRequest.knockback = knockback;
+                damageRequest.source = ServerDamageSource::Hitscan;
+                damageRequest.serverTick = tick;
+                ServerDamageResult result = applyActorDamage(
+                    players, npcs, damageRequest);
                 // Track NPC damage for kill attribution: if this NPC's damage
                 // brings the player to 0 HP on the next tick (or the player dies
                 // from self-damage shortly after), attribute the kill to this NPC.
@@ -1429,6 +1624,11 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
     }
+
+    // Authoritative actor-pair collision runs after all player/NPC movement
+    // and damage for this tick, before dead bodies are rebuilt into the
+    // broadcast map. Players and NPCs share this one pass.
+    resolveServerActorPairCollisions(players, npcSystem, playerWorld, world, tick);
 
     // Respawn killed NPCs (updateOneNpc freezes dead bodies; this loop drives
     // their countdown and resets them so rebuildServerNpcMap re-admits them).

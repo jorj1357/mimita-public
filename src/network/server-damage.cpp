@@ -72,6 +72,8 @@ static ServerDamageResult applyPlayerDamageLegacy(
     std::unordered_map<uint32_t, ServerPlayer>& players,
     ServerPlayer& target,
     uint32_t attackerPlayerId,
+    int attackerTeamOverride,
+    bool attackerIsNpc,
     int damage,
     const glm::vec3& knockback,
     ServerDamageSource source)
@@ -79,6 +81,27 @@ static ServerDamageResult applyPlayerDamageLegacy(
     ServerDamageResult result;
     result.healthBefore = target.health;
     result.healthAfter = target.health;
+
+    int attackerTeam = attackerTeamOverride;
+    if (attackerTeam < 0)
+    {
+        const ServerGamemodeState& mode = serverGamemodeState();
+        auto attackerIt = players.find(attackerPlayerId);
+        attackerTeam = attackerIt != players.end()
+            ? attackerIt->second.matchTeam : -1;
+        if (attackerTeam < 0)
+        {
+            auto rosterIt = mode.matchTeams.find(attackerPlayerId);
+            if (rosterIt != mode.matchTeams.end()) attackerTeam = rosterIt->second;
+        }
+    }
+    const ServerGamemodeState& mode = serverGamemodeState();
+    int targetTeam = target.matchTeam;
+    if (targetTeam < 0)
+    {
+        auto rosterIt = mode.matchTeams.find(target.id);
+        if (rosterIt != mode.matchTeams.end()) targetTeam = rosterIt->second;
+    }
 
     if (target.dead || target.downed || damage <= 0)
     {
@@ -131,21 +154,6 @@ static ServerDamageResult applyPlayerDamageLegacy(
     // the assignment. Self-damage remains allowed for rocket jumping.
     if (!serverFriendlyFireEnabled() && attackerPlayerId != target.id)
     {
-        const ServerGamemodeState& mode = serverGamemodeState();
-        auto attackerIt = players.find(attackerPlayerId);
-        int attackerTeam = attackerIt != players.end()
-            ? attackerIt->second.matchTeam : -1;
-        if (attackerTeam < 0)
-        {
-            auto rosterIt = mode.matchTeams.find(attackerPlayerId);
-            if (rosterIt != mode.matchTeams.end()) attackerTeam = rosterIt->second;
-        }
-        int targetTeam = target.matchTeam;
-        if (targetTeam < 0)
-        {
-            auto rosterIt = mode.matchTeams.find(target.id);
-            if (rosterIt != mode.matchTeams.end()) targetTeam = rosterIt->second;
-        }
         if (attackerTeam >= 0 && targetTeam >= 0 && attackerTeam == targetTeam)
         {
             DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
@@ -157,7 +165,9 @@ static ServerDamageResult applyPlayerDamageLegacy(
                 "server.damage.rejected", std::to_string(target.id),
                 "same-team damage blocked", 0,
                 {{"attacker_id", attackerPlayerId},
+                 {"attacker_type", attackerIsNpc ? "npc" : (attackerPlayerId == 0 ? "world" : "player")},
                  {"target_actor_id", target.id},
+                 {"target_actor_type", "player"},
                  {"attacker_team", attackerTeam},
                  {"target_team", targetTeam},
                  {"source", damageSourceName(source)},
@@ -176,7 +186,7 @@ static ServerDamageResult applyPlayerDamageLegacy(
     result.healthAfter = target.health;
     {
         ServerGamemodeState& mode = serverGamemodeState();
-        if (mode.zombieTower && attackerPlayerId != target.id) {
+        if (mode.zombieTower && !attackerIsNpc && attackerPlayerId != target.id) {
             auto& stats = mode.ztStats[attackerPlayerId];
             stats.damageDealt += (uint64_t)clampedDamage;
             if (stats.name.empty()) {
@@ -190,8 +200,11 @@ static ServerDamageResult applyPlayerDamageLegacy(
         StructuredCategory::Network, StructuredLevel::Important,
         "server.damage.applied", std::to_string(target.id),
         "authoritative server damage changed health", 0,
-        { {"attacker_id", attackerPlayerId}, {"target_actor_id", target.id},
-          {"target_name", target.name}, {"target_team", target.matchTeam},
+        { {"attacker_id", attackerPlayerId},
+          {"attacker_type", attackerIsNpc ? "npc" : (attackerPlayerId == 0 ? "world" : "player")},
+          {"attacker_team", attackerTeam}, {"target_actor_id", target.id},
+          {"target_actor_type", "player"}, {"target_name", target.name},
+          {"target_team", targetTeam},
           {"damage_requested", damage}, {"damage_applied", clampedDamage},
           {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
           {"dead_before", false}, {"dead_after", target.health <= 0},
@@ -295,18 +308,10 @@ ServerDamageResult applyActorDamage(
         return result;
     }
 
-    if (request.attacker.kind != ServerActorKind::Player) {
-        result.rejectionReason = "phase1-player-attacker-required";
-        Debug::log(Debug::Category::Networking,
-            "[ACTOR_DAMAGE_REJECTED] attacker=%u kind=%u reason=%s event=%u\n",
-            request.attacker.id, (unsigned)request.attacker.kind,
-            result.rejectionReason.c_str(), request.eventId);
-        return result;
-    }
-
     const ServerActorRef attacker = findServerActor(
         request.attacker.id, request.attacker.kind, players, npcs);
-    if (!attacker.player) {
+    if ((request.attacker.kind == ServerActorKind::Player && !attacker.player) ||
+        (request.attacker.kind == ServerActorKind::Npc && !attacker.npc)) {
         result.rejectionReason = "attacker-not-found";
         Debug::log(Debug::Category::Networking,
             "[ACTOR_DAMAGE_REJECTED] attacker=%u kind=%u reason=%s event=%u\n",
@@ -319,8 +324,18 @@ ServerDamageResult applyActorDamage(
         "[ACTOR_DAMAGE_BEGIN] attacker=%u victim=%u damage=%d event=%u tick=%u\n",
         request.attacker.id, request.victim.id, request.damage,
         request.eventId, request.serverTick);
+    int attackerTeam = attacker.player ? attacker.player->matchTeam
+        : attacker.npc->matchTeam;
+    if (attackerTeam < 0)
+    {
+        const auto teamIt = serverGamemodeState().matchTeams.find(attacker.id);
+        if (teamIt != serverGamemodeState().matchTeams.end())
+            attackerTeam = teamIt->second;
+    }
     result = applyPlayerDamageLegacy(players, *victim.player,
-                                     attacker.id, request.damage,
+                                     attacker.id, attackerTeam,
+                                     attacker.kind == ServerActorKind::Npc,
+                                     request.damage,
                                      request.knockback, request.source);
     result.eventId = request.eventId;
     result.correlationId = request.correlationId;
@@ -352,7 +367,7 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
         request.source = source;
         return applyActorDamage(players, noNpcs, request);
     }
-    return applyPlayerDamageLegacy(players, target, attackerPlayerId,
+    return applyPlayerDamageLegacy(players, target, attackerPlayerId, -1, false,
                                    damage, knockback, source);
 }
 

@@ -312,8 +312,12 @@ static void logAimLiveSnapshot(const Player& player, const RagdollBody& body,
                 quatJson(glm::normalize(glm::quat_cast(glm::mat3(part.meshLocal))))},
             {"mesh_local_basis_determinant", glm::determinant(glm::mat3(part.meshLocal))},
             {"limb_config", limbConfig},
-            {"right_arm_pointing_target_wxyz", quatJson(part.rightArmPointingTarget)},
-            {"has_right_arm_pointing_target", part.hasRightArmPointingTarget}
+            {"normal_arm_aim_target_wxyz", quatJson(part.normalArmAimTarget)},
+            {"has_normal_arm_aim_target", part.hasNormalArmAimTarget},
+            {"normal_arm_aim_error_deg", part.hasNormalArmAimTarget
+                ? quatAngleDegrees(glm::normalize(
+                    glm::inverse(part.body.orientation) * part.normalArmAimTarget))
+                : 0.0f}
         };
         parts.push_back(std::move(partFields));
     }
@@ -324,6 +328,10 @@ static void logAimLiveSnapshot(const Player& player, const RagdollBody& body,
         {"arms_mode", aimConfig.armsMode()},
         {"hybrid_enabled", hybrid},
         {"right_mouse_held", rightMouseHeld},
+        {"normal_movement_arm_aim_active", rightMouseHeld &&
+            aimConfig.rightArmPointingRmb()},
+        {"normal_movement_arm_aim_response_multiplier",
+            aimConfig.normalMovementArmAimResponseMultiplier()},
         {"camera_position", vec3Json(camPosition)},
         {"camera_forward", vec3Json(camForward)},
         {"camera_look_pitch_deg", lookPitchDegrees},
@@ -636,7 +644,7 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
                                                 float dt)
 {
     if (b.rightArmIndex >= 0 && b.rightArmIndex < (int)b.parts.size())
-        b.parts[b.rightArmIndex].hasRightArmPointingTarget = false;
+        b.parts[b.rightArmIndex].hasNormalArmAimTarget = false;
     if (b.rightArmPointingBlend <= 1e-4f || b.rightArmIndex < 0 ||
         b.rightArmIndex >= (int)b.parts.size())
         return;
@@ -723,8 +731,8 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
     // physical arm solver instead of being overwritten by an animation pose.
     target = glm::normalize(target * glm::quat(glm::radians(
         player.weaponRecoilArmRotation)));
-    part.rightArmPointingTarget = target;
-    part.hasRightArmPointingTarget = true;
+    part.normalArmAimTarget = target;
+    part.hasNormalArmAimTarget = true;
 
     // Reuse the same physical aim controller as ragdoll/head aiming. Rotation
     // and position are both physical; no transform is snapped. Aim strength
@@ -734,6 +742,9 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
     pointingAim.maxAngularSpeed = std::min(
         pointingAim.maxAngularSpeed,
         aimConfig.rightArmPointingMaxFollowSpeed());
+    if (!aimConfig.hybridMode())
+        pointingAim.maxAngularSpeed /=
+            aimConfig.normalMovementArmAimResponseMultiplier();
     if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
         // Keep the PD target/caps unchanged so a larger strength cannot create
         // a different effective range of motion. It only increases the rate
@@ -759,9 +770,51 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
         body.maxAngularSpeed,
         cfg.physicalAim.maxAngularSpeed,
         aimConfig.rightArmPointingMaxFollowSpeed()});
+    const float responseCap = aimConfig.hybridMode() ? cap : cap /
+        aimConfig.normalMovementArmAimResponseMultiplier();
     const float speed = glm::length(body.angularVelocity);
-    if (cap > 0.0f && speed > cap)
-        body.angularVelocity *= cap / speed;
+    if (responseCap > 0.0f && speed > responseCap)
+        body.angularVelocity *= responseCap / speed;
+}
+
+void RagdollModeSystem::applyLeftArmPointMotor(RagdollBody& b,
+                                               const glm::vec3& camForward,
+                                               float dt)
+{
+    if (b.leftArmIndex < 0 || b.leftArmIndex >= (int)b.parts.size()) return;
+    RagdollModePart& part = b.parts[b.leftArmIndex];
+    part.hasNormalArmAimTarget = false;
+    const float blend = glm::clamp(b.rightArmPointingBlend, 0.0f, 1.0f);
+    if (blend <= 1e-4f || glm::length(camForward) < 1e-5f) return;
+
+    const auto& cfg = RagdollModeConfig::instance().data();
+    const AimBodyConfig& aimConfig = AimBodyConfig::instance();
+    const glm::vec3 forward = glm::normalize(camForward);
+    glm::vec3 up(0.0f, 0.0f, 1.0f);
+    if (glm::length(glm::cross(forward, up)) < 0.05f)
+        up = glm::vec3(0.0f, 1.0f, 0.0f);
+    const glm::quat target = glm::normalize(
+        aimLookRotation(forward, up) * part.aimOffset);
+    part.normalArmAimTarget = target;
+    part.hasNormalArmAimTarget = true;
+
+    PhysicalAimConfig pointingAim = cfg.physicalAim;
+    const float response = aimConfig.normalMovementArmAimResponseMultiplier();
+    if (!aimConfig.hybridMode()) pointingAim.maxAngularSpeed /= response;
+    if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
+        part.body.angularVelocity += computeAimTorque(
+            part.body.orientation, target, part.body.angularVelocity,
+            pointingAim, blend) * dt;
+    } else {
+        const glm::vec3 desired = aimDesiredAngularVelocity(
+            part.body.orientation, target, pointingAim, blend);
+        const float alpha = glm::clamp(dt * cfg.physicalAim.lookDamping, 0.0f, 1.0f);
+        part.body.angularVelocity += (desired - part.body.angularVelocity) * alpha;
+    }
+    float cap = std::min(part.body.maxAngularSpeed, cfg.physicalAim.maxAngularSpeed);
+    if (!aimConfig.hybridMode()) cap /= response;
+    const float speed = glm::length(part.body.angularVelocity);
+    if (cap > 0.0f && speed > cap) part.body.angularVelocity *= cap / speed;
 }
 
 // Capture the procedural animation pose (world transform per part) before
@@ -841,11 +894,10 @@ void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b,
 
     for (auto& part : b.parts) {
         if (part.name != "leftArm" && part.name != "rightArm") continue;
-        const float pointingBlend = (part.name == "rightArm")
+        const float pointingBlend = (part.name == "rightArm" || part.name == "leftArm")
             ? glm::clamp(b.rightArmPointingBlend, 0.0f, 1.0f) : 0.0f;
-        const bool activelyPointing =
-            part.name == "rightArm" && pointingBlend > 1e-4f &&
-            part.hasRightArmPointingTarget;
+        const bool activelyPointing = pointingBlend > 1e-4f &&
+            part.hasNormalArmAimTarget;
 
         const glm::quat armRelativeToTargetTorso = glm::normalize(
             glm::inverse(targetTorso) * part.aimTargetOrientation);
@@ -862,9 +914,10 @@ void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b,
             // RMB-only precision assist. Use the exact target generated by
             // the physical weapon/camera motor so extra stability cannot pull
             // the gun away from the camera-forward aim line.
-            target = part.rightArmPointingTarget;
+            target = part.normalArmAimTarget;
             const float aimRate = std::max(1.0f, pc.hybridBaseRate) *
-                                  aimStabilityMultiplier * pointingBlend;
+                                  aimStabilityMultiplier * pointingBlend /
+                aimConfig.normalMovementArmAimResponseMultiplier();
             alpha = glm::clamp(
                 1.0f - std::exp(-aimRate * dt), 0.0f, 1.0f);
         } else if (armsDefaultMode || cameraFollow > 1.0f) {
@@ -1081,6 +1134,7 @@ void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player
     applyAimMotor(b, aimForward, dt);
     if (hybrid) applyHybridSprings(b, dt);
     applyRightArmPointMotor(b, player, aimForward, aimPosition, dt);
+    applyLeftArmPointMotor(b, aimForward, dt);
 
     glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
     for (auto& part : b.parts) integrate(part.body, gravity, dt);

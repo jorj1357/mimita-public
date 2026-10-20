@@ -156,9 +156,24 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         ctx.localPlayerReconciled &&
         ctx.localServerEpoch != ctx.lastAppliedEpoch &&
         ctx.localServerEpoch != 0;
+    const bool serverActorCollision =
+        authoritativeEpochReady &&
+        ctx.localPlayerReconciled &&
+        !ctx.awaitingTeleportAck &&
+        !player.dead &&
+        (ctx.localServerStateFlags & NET_STATE_ACTOR_COLLISION) != 0 &&
+        error > 0.02f;
+    const bool serverPositionCorrection =
+        ((ctx.hasPendingServerPositionCorrection && ctx.localPlayerReconciled) ||
+         (authoritativeEpochReady && ctx.localPlayerReconciled &&
+          (ctx.localServerStateFlags & NET_STATE_POSITION_CORRECTED) != 0)) &&
+        !ctx.awaitingTeleportAck &&
+        !player.dead &&
+        (ctx.hasPendingServerPositionCorrection || error > 0.001f);
     const bool applyPosition =
         initialSpawn || serverRespawnedPlayer || catastrophicDivergence ||
-        postGapResyncActive || teleportCompletionResync || epochChanged;
+        postGapResyncActive || teleportCompletionResync || epochChanged ||
+        serverActorCollision || serverPositionCorrection;
 
     if (applyPosition)
     {
@@ -169,8 +184,20 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     if (applyPosition)
     {
         const glm::vec3 predictedPosition = player.pos;
-        mpApplyAuthoritativeTransform(ctx, player);
-        ctx.lastAppliedEpoch = ctx.localServerEpoch;
+        const bool applyEventCorrection =
+            serverPositionCorrection && ctx.hasPendingServerPositionCorrection;
+        if (applyEventCorrection)
+        {
+            player.pos = ctx.pendingServerPositionCorrection;
+            player.lastValidWorldCollisionPosition = player.pos;
+            player.hasLastValidWorldCollisionPosition = true;
+            player.updateModelWorldTransforms();
+            ctx.hasPendingServerPositionCorrection = false;
+        }
+        else
+            mpApplyAuthoritativeTransform(ctx, player);
+        if (authoritativeEpochReady)
+            ctx.lastAppliedEpoch = ctx.localServerEpoch;
 
         // Local-only correction indicator for the corrected player.
         // Catastrophic divergence is the one applyPosition case that is a real
@@ -184,6 +211,42 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
             event.correction = ctx.localServerPosition - predictedPosition;
             event.description = "catastrophic divergence";
             spawnLocalDisagreementIndicator(event);
+        }
+        if (serverActorCollision)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "actor.collision.reconcile", "local_player",
+                "applied_authoritative_actor_collision",
+                ctx.latestLocalSnapshotTick,
+                nlohmann::json{
+                    {"source", "client"},
+                    {"error_m", error},
+                    {"predicted", {predictedPosition.x, predictedPosition.y,
+                                   predictedPosition.z}},
+                    {"authoritative", {player.pos.x, player.pos.y,
+                                       player.pos.z}},
+                    {"server_tick", ctx.latestLocalSnapshotTick},
+                    {"transform_epoch", (uint32_t)ctx.localServerEpoch}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        if (serverPositionCorrection)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "movement.position-correction.applied", "local_player",
+                "applied server collision or movement correction independent of drift threshold",
+                ctx.latestLocalSnapshotTick,
+                nlohmann::json{
+                    {"error_m", error},
+                    {"predicted", {predictedPosition.x, predictedPosition.y,
+                                   predictedPosition.z}},
+                    {"authoritative", {ctx.localServerPosition.x,
+                                       ctx.localServerPosition.y,
+                                       ctx.localServerPosition.z}},
+                    {"server_tick", ctx.latestLocalSnapshotTick},
+                    {"transform_epoch", (uint32_t)ctx.localServerEpoch}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 
@@ -266,57 +329,9 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     player.meleeShieldActive =
         (ctx.localServerStateFlags & NET_STATE_SHIELDING) != 0;
 
-    if (!player.dead)
-    {
-        const Capsule localCapsule = player.getCapsule();
-        for (const auto& entry : ctx.remotePlayers)
-        {
-            const Player& remote = entry.second;
-            if (remote.dead)
-                continue;
-
-            const Capsule remoteCapsule = remote.getCapsule();
-            const float localBottom = localCapsule.a.z - localCapsule.r;
-            const float localTop = localCapsule.b.z + localCapsule.r;
-            const float remoteBottom = remoteCapsule.a.z - remoteCapsule.r;
-            const float remoteTop = remoteCapsule.b.z + remoteCapsule.r;
-            if (localTop <= remoteBottom || remoteTop <= localBottom)
-                continue;
-
-            glm::vec2 delta(player.pos.x - remote.pos.x, player.pos.y - remote.pos.y);
-            float distance = glm::length(delta);
-            const float minimumDistance = localCapsule.r + remoteCapsule.r;
-            if (distance >= minimumDistance)
-                continue;
-
-            glm::vec2 normal(1.0f, 0.0f);
-            if (distance > 0.0001f)
-                normal = delta / distance;
-            const float penetration = minimumDistance - distance;
-            player.pos += glm::vec3(normal * penetration, 0.0f);
-
-            glm::vec2 planarVelocity(player.vel.x, player.vel.y);
-            const float intoRemote = glm::dot(planarVelocity, normal);
-            if (intoRemote < 0.0f)
-            {
-                planarVelocity -= normal * intoRemote;
-                player.vel.x = planarVelocity.x;
-                player.vel.y = planarVelocity.y;
-            }
-
-            static uint64_t lastCollisionLogMs = 0;
-            const uint64_t collisionNowMs = nowMs();
-            if (collisionNowMs - lastCollisionLogMs >= 250)
-            {
-                printf("[CLIENT PLAYER COLLISION] localId=%u remoteId=%u penetration=%.3f "
-                       "localPos=(%.2f,%.2f,%.2f) remotePos=(%.2f,%.2f,%.2f)\n",
-                       ctx.localPlayerId, entry.first, penetration,
-                       player.pos.x, player.pos.y, player.pos.z,
-                       remote.pos.x, remote.pos.y, remote.pos.z);
-                lastCollisionLogMs = collisionNowMs;
-            }
-        }
-    }
+    // Actor-pair prediction and push live in the shared fixed-tick solver
+    // (src/physics/movement/actor-pair-collision.cpp). This reconciler only
+    // applies the authoritative result selected by the server collision flag.
 
     const bool logCorrection =
         initialSpawn || applyPosition || error >= CORRECTION_LOG_DISTANCE;
@@ -339,6 +354,8 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
                 serverRespawnedPlayer ? "server-respawn" :
                 catastrophicDivergence ? "catastrophic-divergence" :
                 epochChanged ? "epoch-changed" :
+                serverPositionCorrection ? "server-position-correction" :
+                serverActorCollision ? "actor-collision" :
                 serverKilledPlayer ? "server-death" : "within-tolerance",
                ctx.transformEpoch,
                (uint32_t)ctx.localServerEpoch,

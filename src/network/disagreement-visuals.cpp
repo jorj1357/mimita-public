@@ -343,7 +343,8 @@ static const char* reasonLabel(DisagreementReason reason)
 
 void spawnDisagreementEffect(const DisagreementEvent& event)
 {
-    if (!NetworkingConfig::instance().data().disagreement.enabled)
+    if (!NetworkingConfig::instance().data().disagreement.enabled &&
+        event.reason != DISAGREEMENT_POSITION_CORRECTION)
         return;
     const auto& cfg = gDisagreeConfig;
     // Uniform presentation: every disagreement uses the same small size,

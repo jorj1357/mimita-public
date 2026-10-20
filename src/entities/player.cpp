@@ -87,6 +87,8 @@ void Player::reset()
     movementSimulationTick = 0;
     movementContacts.clear();
     movementContactHistory.clear();
+    lastValidWorldCollisionPosition = pos;
+    hasLastValidWorldCollisionPosition = false;
 
     jump.jumpHeldPrev = false;
     dash.moveHeldPrev = false;

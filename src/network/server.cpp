@@ -880,7 +880,6 @@ int runServer(const LaunchOptions& options)
                     continue;
                 simulatePlayer(kv.second, world);
                 updateServerBroadcastInterp(kv.second, tick);
-                pushPositionHistory(kv.second, tick);
                 if (kv.second.justRespawned)
                 {
                     kv.second.justRespawned = false;
@@ -889,16 +888,20 @@ int runServer(const LaunchOptions& options)
             }
             tickWeaponRuntimes(players, tick);
 
-            resolvePlayerCollision(players);
             checkVoidDeath(players, npcs);
 
             // Simulate all NPCs once per tick. simulateSharedNpcs already walks
             // the entire NpcSystem; looping over npcs here would advance every
             // NPC once per NPC and make them move N× faster.
             const auto npcStart = std::chrono::steady_clock::now();
-            simulateSharedNpcs(sock, players, npcs, npcSystem, npcWorld,
+            simulateSharedNpcs(sock, players, npcs, npcSystem, world, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
+            // Record the post-collision player pose so hit rewind reads exactly
+            // what the snapshot will broadcast after the actor-pair pass.
+            for (auto& kv : players)
+                if (!kv.second.connectionStale)
+                    pushPositionHistory(kv.second, tick);
             const uint64_t npcUs = elapsedMicroseconds(npcStart);
             const auto projectileStart = std::chrono::steady_clock::now();
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
@@ -1436,7 +1439,6 @@ static void simulateOneServerTick(ListenServerState& state)
                 continue;
             simulatePlayer(kv.second, state.world);
             updateServerBroadcastInterp(kv.second, state.tick);
-            pushPositionHistory(kv.second, state.tick);
             if (kv.second.justRespawned)
             {
                 kv.second.justRespawned = false;
@@ -1444,12 +1446,15 @@ static void simulateOneServerTick(ListenServerState& state)
             }
         }
         tickWeaponRuntimes(state.players, state.tick);
-        resolvePlayerCollision(state.players);
         checkVoidDeath(state.players, state.npcs);
         simulateSharedNpcs(state.sock, state.players, state.npcs,
-                           *state.npcSystem, *state.npcWorld, *state.mirrorPlayer,
-                           state.npcIdsAlive, state.projectiles, state.nextProjectileId,
+                           *state.npcSystem, state.world, *state.npcWorld,
+                           *state.mirrorPlayer, state.npcIdsAlive,
+                           state.projectiles, state.nextProjectileId,
                            state.tick, state.totalPacketsOut);
+        for (auto& kv : state.players)
+            if (!kv.second.connectionStale)
+                pushPositionHistory(kv.second, state.tick);
         tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);

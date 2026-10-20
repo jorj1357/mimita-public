@@ -1,4 +1,71 @@
-﻿2026 10 08 1311 jorj todo - like some kinda 
+﻿2026 10 20 1800
+SERVE DISAGREEMENT ISSUES THE THING WHERE ITS LIKE IT CHDKCS IF THER IS SMTH BETERWEN UR CURRENT POS AND THE  NEW POS UR AT AND THEN IT DOESNT LET U 
+ITS LIKE
+OMG idk how to explain
+
+but ther
+i am in a totall valid spot
+but it sas serve disagreement
+isssue
+not good
+that is not good
+
+it should be 
+jsut snap b  me back
+idk what is the issieu 
+
+Journal  : C:\mimita-v9\logs\2026-10-20\20261020_215351\events.jsonl
+
+if ur inside of geometry just  go to the last valid position
+number one dont go into geormtr in the frist place do like  sweep colisions
+ifur gonan go intoit then dont do it 
+but
+if u are inside ofit
+also dont do substeps we should change to not be substeps
+butttttttt
+we should do it like just check no matter the length
+did u cross into somethign or
+idk 
+
+like position correction
+if i go into someihntg
+1. dont even allow that 
+even if im going super fast
+but 2.
+if i am
+just  g
+like
+switch back 
+be at the last valid posiiton just do that 
+
+## Geometry collision and server correction contract — 2026-10-20
+
+Ordinary movement remains immediate and client-predicted, with gameplay
+collision resolved on the shared fixed 60 Hz tick. Sweep the complete movement
+for that tick regardless of distance; do not subdivide it into extra movement
+ticks based on speed. At a blocking surface, remove only the movement and
+velocity components directed into the surface. Preserve tangential movement
+and velocity so the actor slides along the surface during the same tick.
+
+Keep the most recent root position that the world collision solver verified
+clear. If bounded collision recovery still leaves more than 0.1 m of unresolved
+penetration, restore that position. The 0.1 m value is a fallback threshold;
+it is not permission to move through geometry or a cap on movement distance.
+
+When server world validation detects that a reported path crossed blocking
+geometry, restore the last server-accepted position and replicate that correction
+to the owning client regardless of correction distance. This collision path is
+separate from `local_player_reconciliation.hard_snap_distance`, which remains
+the policy for ordinary prediction drift during fast but otherwise valid
+movement. Preserve velocity along the surface and remove only velocity directed
+into the blocking surface.
+
+Emit one server-disagreement event for every actual server position correction.
+The owning client applies the authoritative corrected position even when the
+ordinary hard-snap threshold is configured high. Duplicate transport delivery
+of the same correction must not create duplicate effects.
+
+2026 10 08 1311 jorj todo - like some kinda 
 milestone tracker? idk how?
 i have a goal of  being able to ahve 100,000+ human plauers in 1 single server
 all can talk to each other, voice caht, etc
@@ -1017,7 +1084,9 @@ Example:
 Action:
 smoothly blend the visible model toward corrected state
 Do not visibly snap.
-Possible: todo maybe show server disagree effect? Maybe not? This too small 
+This is for ordinary prediction drift only. If the server actually corrects a
+movement report, apply that correction immediately at any distance and show
+the server-disagreement effect for that correction.
 ________________
 
 
@@ -1046,7 +1115,9 @@ client fell far outside the valid map
 clear invalid prediction
 snap or very rapidly correct
 The gameplay collision state must be corrected immediately even when the visible model is smoothed.
-Absoltuelt show  server disagree effect
+Show the server-disagreement effect for every actual server correction, even
+when the corrected distance is small. The effect size and sound may scale with
+the correction amount.
 This is for like, deaths taht didnt happen
 Shots taht didnt actuallt damage u, 
 Positions that are greater than liek 100m in correction required 
@@ -4247,7 +4318,9 @@ ________________
 
 
 74. Server disagreement feedback
-Corrections should be measurable and optionally visible.
+Corrections should be measurable. Every actual server correction is visible
+once; ordinary prediction smoothing that the server did not correct remains
+quiet.
 A disagreement event contains:
 struct DisagreementEvent
 {
@@ -4286,8 +4359,8 @@ duplicate_request
 * Console log.
 * Prediction error magnitude.
 * Request and entity IDs.
-Normal small corrections should not spam the player.
-Use large presentation only for meaningful disagreements or explicit debug mode.
+Do not rate-limit distinct server correction events. Deduplicate retransmission
+of the same event ID so one correction creates one visible effect.
 
 
 These should be cool like interesting effects to help players learn the flow of the game and report bugs easier.
@@ -4703,7 +4776,18 @@ The client predicts immediately.
 
 
 The server owns the final result.
-
-
 Snapshots correct simulation; they do not replace simulation.
+
+### Actor identity in authoritative damage
+
+Every player or NPC attack must reach the shared authoritative damage owner
+with the attacker's real actor ID, actor kind, and team. NPC-to-player damage
+must not be sent through a player-only path with attacker ID `0`; the server
+must use the real NPC team for friendly-fire checks. With friendly fire off,
+block damage only when both actor teams are known and equal. An NPC on the
+opposing team can damage a player, and a same-team NPC remains blocked.
+
+The `server.damage.applied` and `server.damage.rejected` journal events must
+carry attacker ID/type/team and target ID/team so a rejected hit can be traced
+to the responsible actor and policy decision.
 

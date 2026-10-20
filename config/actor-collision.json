@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "comment": "Actor-pair capsule sizes and push/support tuning. Profiles are keyed by the existing actor preset id; an unknown/empty preset uses 'default'. Units are metres, metres/second, and seconds. Reload is validated as a whole and applied at the next fixed tick; an invalid save keeps the last valid values.",
+  "comment_push": "knockback_speed = max(weak_hit_distance_m / weak_hit_motion_seconds, max_knockback_speed_mps * pow(u, impact_speed_curve_exponent)) * angle_scale, where u = clamp((impact_speed - min_impact_speed_mps) / (max_impact_speed_mps - min_impact_speed_mps), 0, 1) and angle_scale interpolates by contact directness. The result enters the shared external-impulse path; collision position correction is depenetration only.",
+  "broadphase": {
+    "cell_size_m": 4.0,
+    "max_candidate_pairs": 8192
+  },
+  "profiles": {
+    "default": {
+      "capsule_radius_m": 1.3,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6,
+      "push": {
+        "weak_hit_distance_m": 0.1,
+        "weak_hit_motion_seconds": 0.1,
+        "min_impact_speed_mps": 0.5,
+        "max_impact_speed_mps": 100.0,
+        "max_knockback_speed_mps": 5.0,
+        "impact_speed_curve_exponent": 1.0,
+        "impact_angle_min_scale": 0.15,
+        "impact_angle_curve_exponent": 1.0,
+        "support_max_impact_speed_mps": 6.0,
+        "support_top_tolerance_m": 0.08,
+        "support_snap_max_m": 0.35
+      }
+    },
+    "juggernaut_fighter": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "juggernaut_arcade": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "counter_strike": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_human": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_companion": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_normal_zombie": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_crawler": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_brute": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_stabber": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_charger": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_boomer": {
+      "capsule_radius_m": 0.7,
+      "capsule_height_m": 3.6,
+      "dead_capsule_length_m": 2.6
+    },
+    "zombie_tower_chainsaw_boss": {
+      "capsule_radius_m": 2.0,
+      "capsule_height_m": 6.6,
+      "dead_capsule_length_m": 2.6
+    }
+  }
+}

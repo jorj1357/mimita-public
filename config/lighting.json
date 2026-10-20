@@ -3,7 +3,7 @@
         "r": 0.35,
         "g": 0.35,
         "b": 0.40,
-        "intensity": 0.9
+        "intensity": 1.0
     },
     "light": {
         "dir": { "x": -0.35, "y": -0.1, "z": -1.0 },
@@ -24,12 +24,13 @@
         "brightness": 1.0
     },
     "fog": {
-        // "enabled": true,
-        "enabled": false,
+        "enabled": true,
+        // "enabled": false,
         // "density": 0.002,
         // "density": 1.5,
         // "density": 0.005,
         "density": 0.05,
+        // "density": 0.5,
         "r": 0.1,
         "g": 0.01,
         "b": 0.01

@@ -791,6 +791,8 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
 void mpApplyAuthoritativeTransform(MultiplayerContext& ctx, Player& player)
 {
     player.pos = ctx.localServerPosition;
+    player.lastValidWorldCollisionPosition = ctx.localServerPosition;
+    player.hasLastValidWorldCollisionPosition = true;
     player.vel = ctx.localServerVelocity;
     player.yaw = ctx.localServerYaw;
     player.ground.onGround = ctx.localServerOnGround;

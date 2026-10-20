@@ -153,42 +153,6 @@ bool capsuleVsBlock(
     return false;
 }
 
-// Capsule vs Capsule collision - for NPC vs Player
-static bool capsuleVsCapsule(
-    const Capsule& capA,
-    const Capsule& capB,
-    glm::vec3& correction,
-    bool& groundedA
-)
-{
-    float aMinZ = std::min(capA.a.z, capA.b.z) - capA.r;
-    float aMaxZ = std::max(capA.a.z, capA.b.z) + capA.r;
-    float bMinZ = std::min(capB.a.z, capB.b.z) - capB.r;
-    float bMaxZ = std::max(capB.a.z, capB.b.z) + capB.r;
-    if (aMaxZ <= bMinZ || bMaxZ <= aMinZ)
-        return false;
-
-    glm::vec2 centerA = glm::vec2(capA.a.x + capA.b.x, capA.a.y + capA.b.y) * 0.5f;
-    glm::vec2 centerB = glm::vec2(capB.a.x + capB.b.x, capB.a.y + capB.b.y) * 0.5f;
-    glm::vec2 delta = centerA - centerB;
-    float dist = glm::length(delta);
-    float combinedR = capA.r + capB.r;
-    if (dist >= combinedR)
-        return false;
-
-    glm::vec2 planarNormal =
-        dist > 0.00001f
-        ? delta / dist
-        : glm::vec2(1.0f, 0.0f);
-
-    constexpr float PUSH_OUT_MARGIN = 0.002f;
-    float penetration = combinedR - dist;
-    correction = glm::vec3(planarNormal * (penetration + PUSH_OUT_MARGIN), 0.0f);
-    groundedA = false;
-
-    return true;
-}
-
 static bool sphereAABBContact(
     glm::vec3 center,
     float radius,
@@ -399,81 +363,5 @@ bool findBlockFallbackEscape(
         return false;
 
     outCorrection = best;
-    return true;
-}
-
-// Resolve collision between two capsules (e.g., player vs NPC)
-bool resolveCapsuleVsCapsule(
-    Player& a,
-    Player& b,
-    bool& groundedA,
-    bool& groundedB
-)
-{
-    Capsule capA = a.getCapsule();
-    Capsule capB = b.getCapsule();
-
-    // Flat standable top: an actor landing on another actor's flat top is
-    // supported instead of horizontally pushed out. Players and NPCs share this
-    // owner; several actors may stand on one actor when their footprints fit.
-    // The capsule sides/bottom remain the body collider (unchanged).
-    {
-        const float aMinZ = std::min(capA.a.z, capA.b.z) - capA.r;
-        const float aMaxZ = std::max(capA.a.z, capA.b.z) + capA.r;
-        const float bMinZ = std::min(capB.a.z, capB.b.z) - capB.r;
-        const float bMaxZ = std::max(capB.a.z, capB.b.z) + capB.r;
-        const glm::vec2 centerA = glm::vec2(capA.a.x + capA.b.x, capA.a.y + capA.b.y) * 0.5f;
-        const glm::vec2 centerB = glm::vec2(capB.a.x + capB.b.x, capB.a.y + capB.b.y) * 0.5f;
-        const float dist = glm::length(centerA - centerB);
-        const float combinedR = capA.r + capB.r;
-        constexpr float kTopTolerance = 0.08f;  // contact band around the top face
-        constexpr float kMaxSnap = 0.35f;       // max lift to rest on the top
-        if (dist < combinedR) {
-            // A resting on B's top.
-            if (!a.ground.onGround && a.vel.z <= 0.05f &&
-                aMinZ >= bMaxZ - kTopTolerance && aMinZ <= bMaxZ + kMaxSnap) {
-                a.pos.z += (bMaxZ - aMinZ);
-                a.vel.z = std::max(a.vel.z, 0.0f) + std::max(b.vel.z, 0.0f);
-                a.ground.onGround = true;
-                a.ground.stableOnGround = true;
-                a.collision.supportVelocity = glm::vec3(0.0f, 0.0f, b.vel.z);
-                groundedA = true;
-                return true;
-            }
-            // B resting on A's top.
-            if (!b.ground.onGround && b.vel.z <= 0.05f &&
-                bMinZ >= aMaxZ - kTopTolerance && bMinZ <= aMaxZ + kMaxSnap) {
-                b.pos.z += (aMaxZ - bMinZ);
-                b.vel.z = std::max(b.vel.z, 0.0f) + std::max(a.vel.z, 0.0f);
-                b.ground.onGround = true;
-                b.ground.stableOnGround = true;
-                b.collision.supportVelocity = glm::vec3(0.0f, 0.0f, a.vel.z);
-                groundedB = true;
-                return true;
-            }
-        }
-    }
-
-    glm::vec3 correctionA;
-    bool capsuleHit = false;
-    if (!capsuleVsCapsule(capA, capB, correctionA, capsuleHit))
-        return false;
-
-    // Split correction between both bodies (mass-based or 50/50)
-    // For now, push each away from each other equally
-    glm::vec3 correctionB = -correctionA;
-
-    constexpr float SPLIT_RATIO = 0.5f;
-    a.pos += correctionA * SPLIT_RATIO;
-    b.pos += correctionB * SPLIT_RATIO;
-
-    groundedA = capsuleHit;
-    groundedB = capsuleHit;
-
-    // Clamp velocities against collision normal
-    glm::vec3 normal = glm::normalize(correctionA);
-    clampVelocityAgainstNormal(a, normal);
-    clampVelocityAgainstNormal(b, -normal);
-
     return true;
 }

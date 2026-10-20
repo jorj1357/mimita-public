@@ -51,14 +51,19 @@
     "fov": {
       // "enabled": true,
       "enabled": false,
-      "multiplier": 0.5,
-      // "multiplier": 1.0,
+      // "multiplier": 0.5,
+      "multiplier": 1.0,
       "duration": 0.5,
       "easing": "ease_in_out"
     }
   },
   // "mode": "physical",
   "smoothingFactor": 1.0,
+  // Normal-movement arm response: 1.0 keeps the current rate; larger is slower.
+  // "normal_movement_arm_aim_response_multiplier": 12.5,
+  // "normal_movement_arm_aim_response_multiplier": 0.1,
+  "normal_movement_arm_aim_response_multiplier": 1.0,
+  // "normal_movement_arm_aim_response_multiplier": 999.0,
   // does this do antthing 2026 09 29 1132 jorj 
   // "smoothingFactor": 0.01,
   // "limbs": {

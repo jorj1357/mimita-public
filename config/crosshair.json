@@ -1,9 +1,11 @@
 {
   // "alpha": 255,
   "alpha": 200,
+  // "alpha": 100,
   "blue": 255,
-  // "blue": 0,
+  // "blue": 1,
   "dot": false,
+  // "dot": true,
   "dynamic": false,
   // "dynamic": true,
   "enabled": true,
@@ -20,11 +22,16 @@
   // "outlineThickness": 2.0,
   "red": 255,
   "showBottom": true,
+  // "showBottom": false,
   "showLeft": true,
+  // "showLeft": false,
   "showRight": true,
+  // "showRight": false,
   "showTop": true,
-  // "size": 8,
-  "size": 4,
-  // "thickness": 2
-  "thickness": 1
+  // "showTop": false,
+  "size": 8,
+  // "size": 4,
+  "thickness": 2
+  // "thickness": 20
+  // "thickness": 1
 }

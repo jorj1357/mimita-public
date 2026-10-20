@@ -480,6 +480,11 @@ struct CollisionState {
     uint32_t supportEntityId = 0;
     glm::vec3 supportVelocity{0.0f};
 
+    // Actor-pair support is separate from physical-entity support so the two
+    // id spaces cannot alias. Key = (ActorPairKind << 32) | actor id.
+    uint64_t supportActorKey = 0;
+    glm::vec3 supportActorVelocity{0.0f};
+
     // Diagnostics: track values that should never grow unbounded
     int diagPrevCandidates = 0;
     int diagCandidateGrowthFrames = 0;
@@ -556,6 +561,15 @@ public:
     uint32_t spawnGeneration = 0;
     uint16_t networkTransformEpoch = 0;
     uint64_t movementSimulationTick = 0;
+    // Sweep start for the shared actor-pair collision tick. Updated once before
+    // normal movement so fast actors cannot tunnel through another actor.
+    glm::vec3 actorCollisionPreviousPos{0.0f};
+    bool hasActorCollisionPreviousPos = false;
+    // Last root position the actor-triangle world solver finished with no
+    // unresolved penetration. Used only as a bounded fallback if recovery
+    // leaves the actor embedded after its fixed correction iterations.
+    glm::vec3 lastValidWorldCollisionPosition{0.0f};
+    bool hasLastValidWorldCollisionPosition = false;
     uint64_t bodySparkTick = 0;
     MovementContactSet movementContacts;
     MovementContactHistory movementContactHistory;

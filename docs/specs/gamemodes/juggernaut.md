@@ -1,3 +1,32 @@
+2026 10 20 1800 
+ C:\mimita-v9\config\gamemodes\juggernaut.json 
+presentation isnt being followed
+
+damamge nubmers dont show
+dont show  dmg nubemrs dont show like
+idk
+
+also the plr outlines
+frinedly outlines shoudl be disabeld, enemy shoudl be anebled
+also need collisiosn to be scaled liek how big ur aacatar is
+big avatar = bigger collision capsule
+smaller = smaller colisin capsule
+how to fit into small spots? idk 
+
+2026 10 20 1755
+
+todo make it so some av
+make a allowed avatars list
+or
+allowed bod parts avatars
+so later when pl make their own avatars
+idk
+auto convert it to be like 
+one specific avatar or 
+IDKKKKK IDK IDK IDK 
+idk
+preserve plauer expression while also making  some avatars not happening bc too big ro small or  etc 
+
 2026 10 20 1731 jorj todo: the issue is 
 like
 friendly people need to not have outlines
@@ -27,6 +56,21 @@ make it client sided i tihnk tahts good
 bc its just ur reload time or cooldown dont make it so u have ot wait for npcs to render o rosmething thats boring n  and sucks 
 juggernaut hsooting at me and is invisible and doenst do damage ot me at all and so i dotn die and it snot fair not good win to a juggernaut round 
 what do we   do abt avatars being bigger/smaller for npcs and mkae i tso  the collisions work and limbs dont go into the floor? 
+
+2026 10 20 1749 
+can u look at specs like  C:\mimita-v9\docs\specs\gamemodes\juggernaut.md  here or other related
+
+is there enoguh spec  to figure out how come juggernauts  are invisible someitmes? 
+likeim getting shot b juggernauts in the mode right now 
+
+ map=zombietower4
+Last     : AI launched last successful build 2680
+Journal  : C:\mimita-v9\logs\2026-10-20\20261020_202850\events.jsonl
+View     : live
+Controls : [1] launch latest  [2] launch mode  [V] client visible/headless  [A
+
+need to put stuff in the live journal to see like how come juggernaut is invisible 
+do we ahve enough info tho or is thislike  understandable 
 
 2026 10 11 1737  we  can do 
 like
@@ -566,3 +610,27 @@ runtime-loaded configuration must be verified before edits.
 - `docs/specs/performance/performance.md`
 - `docs/skills/spec-behavior-review-v1.md`
 - `docs/features/gamemodes/counterstrike.md`
+
+## Confirmed damage-attribution bug — 2026-10-20
+
+Juggernauts must damage Fighters through the shared authoritative actor-damage
+path. The server must preserve the attacking NPC's actor ID, actor kind, and
+team through friendly-fire checks. Friendly fire stays disabled: reject a hit
+only when both known teams match; an enemy Juggernaut must damage a Fighter.
+
+In journal `logs/2026-10-20/20261020_221119/events.jsonl`, the server rejected
+a Juggernaut hitscan hit on player 1 as same-team damage. The record reports
+`attacker_id=0`, `attacker_team=0`, and `target_team=0`, even though the NPC
+damage path separately knows the Juggernaut ID and team. This explains the
+observed “shot but no health loss” symptom for that hit.
+
+This does not yet explain every invisible avatar or missing shot effect. The
+same run logged actor 130 binding to a fallback while its avatar load was
+pending, but that alone does not prove the rendered actor was invisible. Shot
+send/receive/render evidence is also not sufficiently correlated to locate a
+missing visual. Keep those as separate open investigations.
+
+Acceptance for this fix: an enemy Juggernaut hit reduces Fighter health and
+replicates confirmed damage with the NPC identity; a same-team NPC hit remains
+blocked. The live journal must show attacker ID, actor kind, attacker team,
+victim team, and applied/rejected result.

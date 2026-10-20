@@ -202,34 +202,106 @@ weapon use, and movement profile before adjusting difficulty.
 
 ### Actor-to-actor collision scope
 
-For the first collision slice, every live actor pair uses the same root
-capsule-vs-capsule solver: NPC-vs-NPC, player-vs-NPC, and player-vs-player.
-Add a flat, standable-top support rule so actors can stand on one another; the
-main collision shape remains a capsule. This is the first step, not the final
-body-accurate shape. It does not replace the existing actor-vs-world collision
-rules.
+**Desired behavior:** players, NPCs, and monsters are all actors. There is no
+special “local player” collision rule. Every actor uses the same actor-pair
+collision path and can collide with every other actor:
 
-Later, actor body parts should have their own collision shapes that follow
-their animated or physical limbs. That work should follow the shared actor
-collision architecture after the root-capsule path works for all three pair
-types.
+| First actor | Second actor | Required collision |
+| --- | --- | --- |
+| Player | Player | Capsule pair |
+| Player | NPC or monster | Capsule pair |
+| NPC or monster | NPC or monster | Capsule pair |
 
-TODO: decide the JSON owner and mapping for actor collision settings. Existing
-avatar manifests have capsule dimensions, and `config/collision.json` owns
-global collision settings. The actor-collision architecture draft proposes
-`config/actor-collision.json` plus actor-preset overrides, but neither is a
-confirmed active owner for actor-pair collision yet. Trace whether NPCs use
-avatar capsule dimensions before choosing. Add a new profile/file only if the
-current owners cannot express per-actor shape choices. Keep NPCs and players
-on the same resolved collision contract. Do not treat `npc-difficulty.json`
-as the owner for collision shape or solver rules.
+Actors must not pass through one another. The capsule is the first, simple body
+shape; add a flat, standable-top support rule so any actor can stand on any
+other actor. A supported actor must move along with its moving support. This
+does not replace actor-vs-world collision.
 
-First-slice acceptance: each of the three pair types blocks and separates
-correctly, either actor can land on and stand on the other, and moving support
-does not leave the supported actor behind. The server produces the agreed
-result at the fixed tick and clients reconcile to it. Detailed per-limb
-collisions are not required in this first slice.
+The dedicated server owns the final collision result for every actor pair.
+Resolve collisions in the authoritative fixed 60 Hz simulation and send the
+resulting actor state so clients converge to it. Client prediction may help
+nearby contact feel responsive, but it must reconcile to the server; a
+client-only collision path is not sufficient. Keep pair ordering stable so
+the same server tick produces repeatable results.
 
+**Performance for the first version:** do not compare every actor with every
+other actor. Use a simple spatial grid or reuse an existing suitable spatial
+broadphase to find nearby capsule pairs. Only nearby candidate pairs receive
+the more expensive capsule check. Include each actor's movement for the
+current tick when finding candidates, so fast movement or a grid-cell edge
+cannot make actors pass through one another. Process each pair once, avoid
+per-pair heap allocations, and keep collision work on the fixed tick rather
+than the render loop. Start with this bounded simple approach; profile the
+70-actor Juggernaut scenario before adding more complex optimization.
+
+**Dead actors:** death does not remove actor collision. The ragdoll keeps one
+capsule, moved to the actor's ground-level origin and laid lengthwise along
+the ground to represent the body. Other actors can collide with it. This is
+still one root capsule, not separate arm, leg, or torso colliders.
+
+**Later:** body parts may get their own collision shapes that follow animated
+or physical limbs. That is out of scope until the shared root-capsule path
+works for all actor pair types.
+
+**Collision data and live tuning:** use `config/actor-collision.json` as the
+source of truth for actor-pair capsule sizes and push-response tuning. Store
+capsule dimensions per actor/collision profile so a large monster can differ
+from a player while both use the same solver. Resolve each actor's profile
+through its actor preset or another existing stable actor identity; inspect
+current loaders first and avoid a duplicate owner. The file must validate as a
+whole, keep the last valid settings if a reload is invalid, and apply a valid
+reload at a fixed-tick boundary so designers can tune values during a live
+session without changing half a collision step. This file is proposed new work;
+it is not claimed to exist or load today.
+It must own, at minimum:
+
+- per-actor capsule radius and standing height;
+- the ground-level ragdoll capsule length; and
+- push tuning for weak-hit distance, minimum and maximum impact speed,
+  maximum knockback speed, impact-angle scaling, and the hard-hit-versus-
+  landing support cutoff.
+
+Put units in each field name. Reuse existing actor-preset identity for profile
+lookup when the loader can support it; do not create a second identity map.
+Read existing capsule values before assigning initial profile dimensions. Do
+not put these settings in `npc-difficulty.json`.
+
+**Push response:** actors push one another according to impact speed and
+contact angle. The push points away from the actor that hit: a hit from the
+left pushes to the right; a hard hit from above can push downward. Stronger and
+more direct impacts push more, using a continuous response rather than a binary
+“push/no-push” rule. Keep the response curve and limits in
+`config/actor-collision.json` for live tuning. Initial tuning targets, not
+locked balance values: a weak hit moves the target about 0.1 m total; a direct
+impact around 100 m/s or above can reach a maximum knockback speed around
+5 m/s. Glancing impacts push less than direct impacts at the same speed. Use
+the existing physics impulse/velocity path to produce the movement; do not
+teleport actors to meet the distance target. The implementation should record
+how its configurable response curve maps these targets to the current physics
+units, so the designer can tune it in-game.
+
+**Support versus top impacts:** a gentle landing on another actor registers
+support, and the actor on top remains standing and is carried if the support
+moves. A hard downward impact pushes the lower actor down instead of treating
+the impact as a gentle landing. Put the soft-landing versus hard-impact cutoff
+and response in `config/actor-collision.json` so it can be tuned live. Do not
+let an actor fall through a stable support.
+
+**First-slice acceptance:**
+
+- All three pairings in the table block passage using the same capsule-pair
+  owner.
+- Any actor can stand on any other actor; moving support carries the actor on
+  top. The server's result is visible and clients reconcile to it.
+- A dead actor remains a solid, ground-level, lengthwise capsule and cannot be
+  walked through.
+- Fast actors do not tunnel through actors, including across spatial-grid
+  cells. Each candidate pair is resolved no more than once per tick.
+- A real 70-actor Juggernaut run records actor count, candidate pairs checked,
+  collision time, and render frame time. Confirm the server still simulates at
+  60 Hz and compare rendering with the existing 240 FPS goal on the same
+  machine. Report measurements; do not claim the goal is met without them.
+- No limb-specific collision is required for this first slice.
 - With a revolver/shotgun/other-weapon loadout and the sustained-fire profile,
   the NPC produces six accepted revolver attacks, switches on the next fixed
   tick, produces two accepted shotgun attacks at normal shotgun intervals,
@@ -249,9 +321,10 @@ collisions are not required in this first slice.
 
 ## 6. Current implementation status
 
-Source audit (2026-10-20): the local simulation calls
-`resolveCapsuleVsCapsule` for the local player against each live NPC, including
-a special flat-top support check. It does not resolve NPC-vs-NPC pairs. The
+Current source audit (2026-10-20; observed implementation only, not the
+desired rule): the existing client simulation calls
+`resolveCapsuleVsCapsule` for its
+controlled player against each live NPC, including a special flat-top support check. It does not resolve NPC-vs-NPC pairs. The
 dedicated server's `resolvePlayerCollision` is currently a no-op, and the
 server NPC update does not add an actor-pair collision pass. Therefore this
 local path does not prove authoritative player-vs-NPC, player-vs-player, or

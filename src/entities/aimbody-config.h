@@ -76,6 +76,9 @@ public:
     bool bodyPhysicsMode() const { return physicalMode() || hybridMode(); }
     const std::string& mode() const { return mMode; }
     float smoothingFactor() const { return mSmoothingFactor; }
+    float normalMovementArmAimResponseMultiplier() const {
+        return mNormalMovementArmAimResponseMultiplier;
+    }
 
     float smoothAngle(float current, float desired, float dt) const;
     float smoothValue(float current, float desired, float dt) const;
@@ -117,6 +120,7 @@ private:
     std::string mRightArmPointingFovEasing = "ease_in_out";
     float mRightArmPointingFovBlend = 0.0f;
     float mSmoothingFactor = 1.0f;
+    float mNormalMovementArmAimResponseMultiplier = 1.5f;
     std::unordered_map<std::string, LimbAim> mLimbs;
     std::string mPath = "config/aimbody.json";
     int64_t mLastModified = 0;

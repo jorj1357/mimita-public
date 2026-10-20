@@ -40,6 +40,7 @@
 namespace {
 
 constexpr float kSlop = 0.01f;
+constexpr float kLastValidRollbackPenetration = 0.1f;
 constexpr float kMaxCorrection = 2.0f;
 constexpr int kMaxIterations = 4;
 constexpr float kTouchingFaceSeamDistance = 0.015f;
@@ -547,7 +548,7 @@ bool solveActorTriangleCollision(
 
     glm::vec3 accumulated(0.0f);
 
-    for (int iter = 0; iter < kMaxIterations &&
+    for (int iter = 0; iter <= kMaxIterations &&
                        (!candidates.empty() || hasEntities); ++iter)
     {
         // Shift the whole capture (safe + desired) by the accumulated
@@ -593,7 +594,10 @@ bool solveActorTriangleCollision(
         }
 
         if (s_contacts.empty())
+        {
+            result.maxPenetration = 0.0f;
             break;
+        }
 
         result.iterations = iter + 1;
         result.anyImpact = true;
@@ -607,7 +611,9 @@ bool solveActorTriangleCollision(
 
         s_allContacts.insert(s_allContacts.end(), s_contacts.begin(), s_contacts.end());
 
-        if (iterMaxPen <= kSlop)
+        // The fifth pass (iter == kMaxIterations) verifies the final pose
+        // after the four permitted corrections without applying another one.
+        if (iterMaxPen <= kSlop || iter == kMaxIterations)
             break;
 
         glm::vec3 correction = solveBatchedCorrection(
@@ -898,6 +904,8 @@ bool runActorTriangleCollisionStep(
         return false;
 
     const auto stepStart = std::chrono::steady_clock::now();
+    const GroundState groundBeforeSolve = player.ground;
+    const bool groundedBeforeSolve = groundedThisFrame;
     glm::vec3 totalMove = (player.vel + player.externalImpulse) * dt;
     const float maxZStep = PLAYER_RADIUS;
     if (totalMove.z < -maxZStep)
@@ -921,6 +929,50 @@ bool runActorTriangleCollisionStep(
     const std::vector<PhysicalEntity>& entities =
         PhysicalEntitySystem::instance().entities();
     solveActorTriangleCollision(player, world, totalMove, result, &entities, dt);
+
+    // The swept solve normally stops at the first contact and preserves
+    // tangential movement. If its bounded correction iterations still leave a
+    // deep overlap, restore the most recent pose that this same world solver
+    // verified clear. The fallback does not zero sideways velocity; contact
+    // response above already removes only the component directed into a wall.
+    if (result.maxPenetration <= kSlop)
+    {
+        player.lastValidWorldCollisionPosition = player.pos;
+        player.hasLastValidWorldCollisionPosition = true;
+    }
+    else if (result.maxPenetration > kLastValidRollbackPenetration &&
+             player.hasLastValidWorldCollisionPosition)
+    {
+        const glm::vec3 rejectedPosition = player.pos;
+        player.pos = player.lastValidWorldCollisionPosition;
+        player.updateModelWorldTransforms();
+        // Discard contact-derived state from the rejected pose so it cannot
+        // ground the restored actor, carry it on a false support, or push an
+        // entity from a collision that did not survive rollback.
+        player.ground = groundBeforeSolve;
+        groundedThisFrame = groundedBeforeSolve;
+        result.grounded = false;
+        result.contacts.clear();
+        result.anyImpact = false;
+
+        static auto lastRollbackLog = std::chrono::steady_clock::time_point{};
+        const auto rollbackNow = std::chrono::steady_clock::now();
+        if (rollbackNow - lastRollbackLog >= std::chrono::milliseconds(250))
+        {
+            lastRollbackLog = rollbackNow;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.last_valid.rollback", "actor-triangle-solver",
+                "restored last collision-validated position after unresolved overlap",
+                static_cast<uint32_t>(player.movementSimulationTick),
+                {{"rejected_position", vec3Json(rejectedPosition)},
+                 {"restored_position", vec3Json(player.pos)},
+                 {"residual_penetration_m", result.maxPenetration},
+                 {"fallback_threshold_m", kLastValidRollbackPenetration},
+                 {"preserved_velocity", vec3Json(player.vel)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     if (result.grounded)
         groundedThisFrame = true;
