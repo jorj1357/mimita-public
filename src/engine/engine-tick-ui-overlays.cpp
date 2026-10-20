@@ -37,6 +37,8 @@
 #include "gui/gui-editor.h"
 #include "competitive/competitive-match.h"
 #include "competitive/competitive-ui.h"
+#include "audio/music-manager.h"
+#include "network/multiplayer-context.h"
 #include "gui/gui-main.h"
 #include "game/game-state.h"
 #include "notifications/notifications.h"
@@ -788,6 +790,88 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                         ? (countdownElement && !countdownElement->goText.empty() ? countdownElement->goText : "GO!!!")
                         : textTemplate("countdownText", {{"{countdown}", std::to_string(number)}});
                     drawCentered("countdownText", countdownText);
+                }
+
+                if (match.mode() == "zombie_tower") {
+                    if (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE ||
+                        match.phase() == MimitaNet::DUEL_PHASE_COUNTDOWN ||
+                        match.goVisible() || match.ztAttemptResult() || match.ztFinalResult()) {
+                        drawCentered("ztAttemptsText", textTemplate("ztAttemptsText", {
+                            {"{attempts}", std::to_string(match.ztAttemptsRemaining())}}));
+                    }
+                    if (!match.ztCheckpointName().empty() && !match.ztAttemptResult() &&
+                        !match.ztFinalResult()) {
+                        drawCentered("ztCheckpointText", textTemplate("ztCheckpointText", {
+                            {"{checkpoint}", match.ztCheckpointName()}}));
+                    }
+                    if (match.ztAttemptResult()) {
+                        drawCentered("ztAttemptResultText",
+                            textTemplate("ztAttemptResultText", {}));
+                    }
+                    if (match.ztFinalResult()) {
+                        drawCentered("ztResultTitleText", textTemplate("ztResultTitleText", {
+                            {"{result}", match.ztRunWon() ? "ZOMBIE TOWER COMPLETE" : "RUN FAILED"}}));
+                        const uint32_t seconds = match.ztRunElapsedTicks() / 60;
+                        char timeText[32];
+                        std::snprintf(timeText, sizeof(timeText), "%02u:%02u:%02u",
+                            seconds / 3600, (seconds / 60) % 60, seconds % 60);
+                        drawCentered("ztResultTimeText", textTemplate("ztResultTimeText", {
+                            {"{time}", timeText}}));
+                        drawCentered("ztResultDamageText", textTemplate("ztResultDamageText", {
+                            {"{name}", match.ztMostDamageName().empty() ? "NONE" : match.ztMostDamageName()},
+                            {"{value}", std::to_string(match.ztMostDamage())}}));
+                        drawCentered("ztResultHealingText", textTemplate("ztResultHealingText", {
+                            {"{name}", match.ztMostHealingName().empty() ? "NONE" : match.ztMostHealingName()},
+                            {"{value}", std::to_string(match.ztMostHealing())}}));
+                        char speedText[32];
+                        std::snprintf(speedText, sizeof(speedText), "%.1f", match.ztTopSpeed());
+                        drawCentered("ztResultSpeedText", textTemplate("ztResultSpeedText", {
+                            {"{name}", match.ztTopSpeedName().empty() ? "NONE" : match.ztTopSpeedName()},
+                            {"{value}", speedText}}));
+                    }
+                    if (match.ztBossActive()) {
+                        drawCentered("ztBossNameText", textTemplate("ztBossNameText", {
+                            {"{boss}", match.ztBossName()}}));
+                        drawCentered("ztBossHpText", textTemplate("ztBossHpText", {
+                            {"{hp}", std::to_string(match.ztBossHp())},
+                            {"{max}", std::to_string(match.ztBossMaxHp())}}));
+                        const GuiElement* bg = matchLayout.get("ztBossBarBg");
+                        const GuiElement* fill = matchLayout.get("ztBossBarFill");
+                        if (bg && fill && bg->visible && match.ztBossMaxHp() > 0) {
+                            uiDrawRect({uiScaleX(bg->x), uiScaleY(bg->y),
+                                        uiScaleX(bg->w), uiScaleY(bg->h)},
+                                       bg->getBackgroundColorVec(),
+                                       "zt-boss-bg");
+                            const float ratio = std::clamp(
+                                (float)match.ztBossHp() / (float)match.ztBossMaxHp(),
+                                0.0f, 1.0f);
+                            if (ratio > 0.0f) {
+                                uiDrawRect({uiScaleX(fill->x), uiScaleY(fill->y),
+                                            uiScaleX(fill->w) * ratio, uiScaleY(fill->h)},
+                                           fill->getBackgroundColorVec(),
+                                           "zt-boss-fill");
+                            }
+                        }
+                    }
+                    if (match.localActorState(mpContext.localPlayerId) == 4) {
+                        drawCentered("ztDownedText", textTemplate("ztDownedText", {}));
+                    }
+                    static uint32_t lastZtMusicSerial = 0;
+                    static std::string lastZtMusicTrack;
+                    if (match.ztMusicSerial() != lastZtMusicSerial) {
+                        lastZtMusicSerial = match.ztMusicSerial();
+                        lastZtMusicTrack = match.ztMusicTrack();
+                        if (match.ztMusicPlaying() && !lastZtMusicTrack.empty())
+                            MusicManager::instance().playModeTrack(lastZtMusicTrack);
+                        else
+                            MusicManager::instance().stopModeTrack();
+                    }
+                    if (MusicManager::instance().trackEnded()) {
+                        MusicManager::instance().consumeTrackEnded();
+                        if (mpContext.active)
+                            MimitaNet::mpSendServerCommand(mpContext,
+                                "zt_music_ended " + std::to_string(match.ztMusicSerial()));
+                    }
                 }
 
                 if (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE && match.timeLimitSeconds() > 0) {

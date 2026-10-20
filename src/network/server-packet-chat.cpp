@@ -21,15 +21,18 @@
 #include "debug/structured-log.h"
 #include "map/map-catalog.h"
 #include "network/community-server-config.h"
+#include "gamemode/gamemode.h"
 #include "npc/npc-difficulty-config.h"
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <random>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -406,6 +409,76 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             ack(accepted, message.c_str());
         } catch (...) {
             ack(false, "rejected: usage team_pick <number>");
+        }
+        return;
+    }
+
+    // Zombie Tower provisional team choice. Names map to the ordered teams in
+    // the mode JSON; the server remains authoritative for capacity and spawn.
+    if (commandStr.rfind("zt_team ", 0) == 0)
+    {
+        const ServerGamemodeState& mode = serverGamemodeState();
+        if (!mode.zombieTower) {
+            ack(false, "rejected: not a Zombie Tower run");
+            return;
+        }
+        std::string name = commandStr.substr(8);
+        for (char& c : name)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        int team = -1;
+        if (name == "humans" || name == "human") team = 0;
+        else if (name == "zombie" || name == "zombies") team = 1;
+        else if (name == "spectator" || name == "spec") team = 2;
+        if (team < 0) {
+            ack(false, "rejected: usage zt_team <humans|zombie|spectator>");
+            return;
+        }
+        std::string message;
+        const bool accepted = serverRequestTeamChange(
+            it->second.id, team, sock, players, npcs, tick, totalPacketsOut, message);
+        ack(accepted, message.c_str());
+        return;
+    }
+
+    // Client reports that its current shared track ended. The server owns the
+    // next selection so every client in the run stays on the same song.
+    if (commandStr.rfind("zt_music_ended ", 0) == 0)
+    {
+        ServerGamemodeState& mode = serverGamemodeState();
+        if (!mode.zombieTower || !mode.ztMusicPlaying) {
+            ack(false, "rejected: no Zombie Tower music");
+            return;
+        }
+        try {
+            const uint32_t serial = (uint32_t)std::stoul(commandStr.substr(15));
+            if (serial != mode.ztMusicSerial) {
+                ack(false, "rejected: stale music serial");
+                return;
+            }
+            if (tick < mode.ztMusicStartedTick + 300) {
+                ack(false, "rejected: track ended too early");
+                return;
+            }
+            const Gamemode& gm = GamemodeRegistry::instance().get(mode.matchMode);
+            if (gm.musicRandomPool.empty()) {
+                mode.ztMusicPlaying = false;
+                ++mode.ztMusicSerial;
+                mode.stateBroadcastPending = true;
+                ack(true, "music pool exhausted");
+                return;
+            }
+            static std::mt19937 rng(std::random_device{}());
+            std::uniform_int_distribution<size_t> pick(0, gm.musicRandomPool.size() - 1);
+            std::string next = gm.musicRandomPool[pick(rng)];
+            if (gm.musicRandomPool.size() > 1 && next == mode.ztMusicTrack)
+                next = gm.musicRandomPool[(pick(rng) + 1) % gm.musicRandomPool.size()];
+            mode.ztMusicTrack = next;
+            mode.ztMusicStartedTick = tick;
+            ++mode.ztMusicSerial;
+            mode.stateBroadcastPending = true;
+            ack(true, "next track selected");
+        } catch (...) {
+            ack(false, "rejected: usage zt_music_ended <serial>");
         }
         return;
     }

@@ -1946,5 +1946,54 @@
         }
       }
     }
+  },
+  "zombie_claw": {
+    "id": "zombie_claw",
+    "display_name": "Zombie Claw",
+    "slot": 12,
+    "damage": 1.0,
+    "behavior_type": "spyknife",
+    "fire_mode": "semi_auto",
+    "magazine_size": 0,
+    "fire_delay": 0.0,
+    "sound": {
+      "shoot": "entity/falcon/falconswing",
+      "hit": "player_hurt"
+    },
+    "custom_params": {
+      "networkBatchIntervalTicks": 10.0,
+      "networkBatchMaxContacts": 6.0,
+      "hitboxHalfX": 0.5,
+      "hitboxHalfY": 0.5,
+      "hitboxHalfZ": 3.8,
+      "hitboxOffsetX": 0.0,
+      "hitboxOffsetY": 0.0,
+      "hitboxOffsetZ": 0.0,
+      "hitboxRotX": 0.0,
+      "hitboxRotY": 0.0,
+      "hitboxRotZ": 0.0,
+      "hitboxAlpha": 0.1,
+      "hitboxVisible": 0,
+      "serverContactRadius": 4.0,
+      "serverTargetBodyRadius": 3.25,
+      "baseDamage": 1.0,
+      "minDamage": 9.0,
+      "maxDamage": 35.0,
+      "speedDamageScale": 0.35,
+      "forceDamageScale": 0.65,
+      "angleDamageExponent": 1.0,
+      "impactDamageScale": 1.0,
+      "impactDamageExponent": 1.35,
+      "maxImpactSpeed": 99999.0,
+      "maxImpactForce": 99999.0,
+      "baseKnockback": 10.0,
+      "speedKnockbackFactor": 1.1,
+      "angleKnockbackFactor": 1.01,
+      "maxKnockback": 10.0,
+      "swingDurationTicks": 111.0,
+      "altPoseState": 1.0,
+      "altPoseDurationTicks": 1.0,
+      "damageTickInterval": 0.166
+    }
   }
 }

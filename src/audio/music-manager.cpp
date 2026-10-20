@@ -295,7 +295,9 @@ void MusicManager::update(float dt)
     mWidgetDt = dt;
 
     if (mCurrentSound && ma_sound_at_end(mCurrentSound)) {
-        if (mMode == Mode::Ingame) {
+        if (mModeTrackMode) {
+            mTrackEnded = true;
+        } else if (mMode == Mode::Ingame) {
             if (!mPlaylist.empty())
                 playNextIngame();
         } else if (mMode == Mode::Menu) {
@@ -333,6 +335,8 @@ void MusicManager::enterMenuMode()
     if (mMode == Mode::Menu) return;
 
     mMode = Mode::Menu;
+    mModeTrackMode = false;
+    mTrackEnded = false;
 
     if (!mMenuTracks.empty()) {
         pickMenuTrack();
@@ -347,6 +351,8 @@ void MusicManager::enterGameMode()
     if (mMode == Mode::Ingame) return;
 
     mMode = Mode::Ingame;
+    mModeTrackMode = false;
+    mTrackEnded = false;
     uninitSound();
 
     if (mIngameTracks.empty()) return;
@@ -362,6 +368,32 @@ void MusicManager::enterGameMode()
         playNextIngame();
 
     Debug::log(Debug::Category::Audio, "[MUSIC] mode=ingame playlist=%zu\n", mPlaylist.size());
+}
+
+bool MusicManager::playModeTrack(const std::string& path)
+{
+    if (!mInitialized) return false;
+    if (path.empty()) {
+        stopModeTrack();
+        return false;
+    }
+    mMode = Mode::Ingame;
+    mModeTrackMode = true;
+    mTrackEnded = false;
+    if (!startTrack(path)) {
+        Debug::log(Debug::Category::Audio,
+            "[MUSIC] mode track unavailable: %s\n", path.c_str());
+        return false;
+    }
+    return true;
+}
+
+void MusicManager::stopModeTrack()
+{
+    mModeTrackMode = false;
+    mTrackEnded = false;
+    uninitSound();
+    mMode = Mode::None;
 }
 
 void MusicManager::pause()
@@ -403,6 +435,8 @@ void MusicManager::stop()
 {
     uninitSound();
     mMode = Mode::None;
+    mModeTrackMode = false;
+    mTrackEnded = false;
 }
 
 void MusicManager::reload()

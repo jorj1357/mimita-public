@@ -539,6 +539,12 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
         ServerPlayer::ServerWeaponRuntime rt;
         rt.magazineAmmo = def->magazineSize;
         rt.reserveAmmo = initialReserveAmmoForDefinition(*def);
+        // Role-owned starting ammo overrides (Zombie Tower loadout contract).
+        auto ammoIt = profile.weaponAmmo.find(wepId);
+        if (ammoIt != profile.weaponAmmo.end()) {
+            if (ammoIt->second.first >= 0) rt.magazineAmmo = ammoIt->second.first;
+            if (ammoIt->second.second >= 0) rt.reserveAmmo = ammoIt->second.second;
+        }
         rt.nextAllowedFireTick = 0;  // cooldown cleared — new life may fire immediately
         rt.reloading = false;
         rt.reloadCompleteTick = 0;
@@ -824,6 +830,20 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         p.input.jumpHeld = false;
         p.input.dashPressed = false;
         p.input.downDashPressed = false;
+    }
+
+    // Downed actors cannot move or attack; they wait for a teammate revive.
+    if (p.downed)
+    {
+        p.input.wish = glm::vec2(0.0f);
+        p.input.jumpHeld = false;
+        p.input.dashPressed = false;
+        p.input.downDashPressed = false;
+        p.input.attackPressed = false;
+        p.vel = glm::vec3(0.0f);
+        p.movement.externalImpulse = glm::vec3(0.0f);
+        syncServerMovementRuntime(p, false);
+        return;
     }
 
     if (p.dead)
@@ -1682,7 +1702,7 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
             NET_STATE_DASHING | NET_STATE_DOWN_DASHING |
             NET_STATE_FREEZING | NET_STATE_ATTACKING |
             NET_STATE_SHIELDING | NET_STATE_GRABBING |
-            NET_STATE_CROUCHING;
+            NET_STATE_CROUCHING | NET_STATE_REVIVING;
 
         uint16_t flags = player.inputStateFlags & CLIENT_VISUAL_FLAGS;
 

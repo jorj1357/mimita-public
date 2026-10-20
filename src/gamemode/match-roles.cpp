@@ -105,6 +105,17 @@ void readRole(const json& j, const std::string& fallbackId, MatchRoleDefinition&
         for (const auto& item : j["objective_permissions"])
             if (item.is_string()) out.objectivePermissions.push_back(item.get<std::string>());
     }
+    if (j.contains("weapon_ammo") && j["weapon_ammo"].is_object()) {
+        for (auto it = j["weapon_ammo"].begin(); it != j["weapon_ammo"].end(); ++it) {
+            if (!it.value().is_object()) continue;
+            RoleWeaponAmmo ammo;
+            if (it.value().contains("magazine") && it.value()["magazine"].is_number_integer())
+                ammo.magazine = std::max(0, it.value()["magazine"].get<int>());
+            if (it.value().contains("reserve") && it.value()["reserve"].is_number_integer())
+                ammo.reserve = std::max(0, it.value()["reserve"].get<int>());
+            out.weaponAmmo[it.key()] = ammo;
+        }
+    }
 }
 
 template <typename T>

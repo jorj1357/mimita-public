@@ -1,0 +1,14 @@
+{
+  "schema": 2,
+  "id": "zombie_tower_companion",
+  "display_name": "Zombie Tower Companion",
+  "movement_preset": "source",
+  "movement_executor": "sandbox_shared",
+  "weapon_set": "zombie_tower_humans",
+  "starting_weapon": "revolver",
+  "behavior_profile": "zombie_tower_companion",
+  "health": {
+    "max": 100,
+    "spawn": 100
+  }
+}

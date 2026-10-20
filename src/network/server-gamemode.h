@@ -281,9 +281,41 @@ struct ServerGamemodeState
     std::unordered_map<std::string, uint32_t> damageVolumeNextTick;
     bool bossEncounterActive = false;
     std::string activeBossId;
+    std::string activeBossName;
+    int activeBossCurrentHp = 0;
+    int activeBossMaxHp = 0;
     uint32_t activeBossNpcId = 0;
     bool progressionLocked = false;
     bool partyWipePending = false;
+
+    // ── Zombie Tower first-playable run state ────────────────────────
+    bool zombieTower = false;
+    bool ztAttemptResult = false;      // 5s attempt overlay (not final)
+    bool ztFinalResult = false;        // 5s final win/loss overlay
+    bool ztRunWon = false;
+    bool ztResumingFromCheckpoint = false;
+    bool ztTowerEndReached = false;
+    bool ztBossDefeated = false;
+    bool ztHadBossTrigger = false;
+    uint32_t ztRunStartTick = 0;
+    uint32_t ztRunElapsedTicks = 0;
+    uint32_t ztCheckpointSerial = 0;
+    std::string ztCheckpointName;
+    uint32_t ztMusicSerial = 0;
+    uint32_t ztMusicStartedTick = 0;
+    std::string ztMusicTrack;
+    bool ztMusicPlaying = false;
+    bool ztFog = false;
+    bool ztRain = false;
+    bool ztTorchLighting = false;
+    struct ZtActorStats
+    {
+        uint64_t damageDealt = 0;
+        uint64_t healingDone = 0;
+        float topSpeed = 0.0f;
+        std::string name;
+    };
+    std::unordered_map<uint32_t, ZtActorStats> ztStats;
 
     // Match event counter for KillEvent IDs
     uint32_t killEventCounter = 0;
@@ -385,6 +417,7 @@ struct ActorSpawnProfile
     std::string movementPreset;           // resolved/validated role movement preset
     std::string behaviorProfileId;        // resolved/validated role behavior profile
     std::string actorPresetId;            // resolved actor preset owning the movement policy
+    std::unordered_map<std::string, std::pair<int, int>> weaponAmmo; // magazine, reserve
 };
 ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId);
 bool serverActivateActorPreset(const std::string& presetId);

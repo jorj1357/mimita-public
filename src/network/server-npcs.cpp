@@ -237,6 +237,8 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
 
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)
 // into the real NpcSystem so they get full AI simulation.
+static void applyRoleStartingAmmo(Npc& npc, const ActorSpawnProfile& profile);
+
 static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& npcs,
                                NpcSystem& npcSystem,
                                std::unordered_set<uint32_t>& npcIdsAlive)
@@ -303,6 +305,7 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                     n.tuning.aggression = n.behavior.aggression;
                 if (!profile.weapons.empty())
                     npcApplyLoadout(n, profile.weapons, profile.startingWeapon);
+                applyRoleStartingAmmo(n, profile);
                 // A declared disaster owns the NPC loadout for this life. Pure
                 // data lookup from replicated state; never a mode-name branch.
                 if (const std::string* disasterWeapon =
@@ -312,6 +315,16 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                 finalizeServerNpcSpawn(n, ActorSpawnReason::NpcCreate);
             }
         }
+    }
+}
+
+static void applyRoleStartingAmmo(Npc& npc, const ActorSpawnProfile& profile)
+{
+    for (auto& entry : npc.body.weaponRuntimes) {
+        const auto it = profile.weaponAmmo.find(entry.first);
+        if (it == profile.weaponAmmo.end()) continue;
+        if (it->second.first >= 0) entry.second.currentAmmo = it->second.first;
+        if (it->second.second >= 0) entry.second.reserveAmmo = it->second.second;
     }
 }
 
@@ -384,7 +397,7 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     // spawn delay. This is the owner that catches NPCs whose real bodies are
     // adopted AFTER beginObjectiveRound armed the already-existing bodies.
     const ServerGamemodeState& d = serverGamemodeState();
-    if (d.enabled && d.objectiveRounds && d.roundCountdownFreeze && !d.warmup)
+    if (d.enabled && (d.objectiveRounds || d.zombieTower) && d.roundCountdownFreeze && !d.warmup)
     {
         const float remaining = d.matchStartTick > d.currentServerTick
             ? (float)(d.matchStartTick - d.currentServerTick) / 60.0f : 0.0f;
@@ -480,6 +493,7 @@ static void respawnServerNpc(Npc& npc)
     npc.body.spawnFlashTimer = 10.0f;
     npc.attackCooldown = npcSpawnFireDelaySeconds(npc);
     resetAllWeaponRuntimesForSpawn(npc.body, "server-npc-respawn");
+    applyRoleStartingAmmo(npc, profile);
     finalizeServerNpcSpawn(npc, ActorSpawnReason::Respawn);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::NpcCombat, StructuredLevel::Important,
@@ -1096,7 +1110,7 @@ void simulateSharedNpcs(SOCKET sock,
             if (considerPlayers) for (auto& kv : players)
             {
                 ServerPlayer& p = kv.second;
-                if (p.dead || p.connectionStale) continue;
+                if (p.dead || p.downed || p.connectionStale) continue;
                 // Team gate: never target a same-team human. Applies in every
                 // target mode, including "player" mode.
                 if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
@@ -1153,7 +1167,7 @@ void simulateSharedNpcs(SOCKET sock,
             if (considerPlayers) for (auto& kv : players)
             {
                 ServerPlayer& p = kv.second;
-                if (p.dead || p.connectionStale) continue;
+                if (p.dead || p.downed || p.connectionStale) continue;
                 if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
                 float s = scoreCandidate(p.pos, p.health, std::max(1, p.maxHealth), 0.5f);
                 const bool isCurrent = (p.id == n.serverTargetId);
@@ -1208,7 +1222,7 @@ void simulateSharedNpcs(SOCKET sock,
             if (considerPlayers) for (auto& kv : players)
             {
                 ServerPlayer& p = kv.second;
-                if (p.dead || p.connectionStale) continue;
+                if (p.dead || p.downed || p.connectionStale) continue;
                 if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
                 const glm::vec3 d = p.pos - n.body.pos;
                 const float d2 = glm::dot(d, d);

@@ -652,6 +652,15 @@
       "pursue_last_known_position": true,
       "pursuit_search_ticks": 600,
       "after_reaching_last_known": "look_around"
+    },
+    {
+      "id": "zombie_tower_companion",
+      "focus_enabled": true,
+      "focus_mode": "hostile_team",
+      "swarm": false,
+      "cohesion": 0.6,
+      "rally_distance_meters": 6.0,
+      "approach_style": "direct"
     }
   ]
 }

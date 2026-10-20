@@ -174,6 +174,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.freezeHeld = cmd.isFreezeHeld();
     in.freezePressed = cmd.getState("freeze").pressed;
     in.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
+    in.reviveHeld = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS;
 
     if (in.dashPressed)
         printf("[INPUT] Dash pressed\n");

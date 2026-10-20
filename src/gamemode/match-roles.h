@@ -75,6 +75,14 @@ struct ActorPresetWeaponOverride
     ActorPresetPresentation presentation;
 };
 
+// Per-role starting ammunition. Weapon sets only list weapon IDs; this owns the
+// optional magazine/reserve override used at spawn.
+struct RoleWeaponAmmo
+{
+    int magazine = -1;
+    int reserve = -1;
+};
+
 struct MatchRoleDefinition
 {
     std::string id;
@@ -104,6 +112,8 @@ struct MatchRoleDefinition
     bool forceFirstPerson = false;
     ActorPresetPresentation presentation;
     std::unordered_map<std::string, ActorPresetWeaponOverride> weaponOverrides;
+    // Optional per-weapon starting ammo overrides for this role.
+    std::unordered_map<std::string, RoleWeaponAmmo> weaponAmmo;
     // Generic movement/decision policy parsed from the preset's "npc_behavior".
     // Absent (configured=false) means the legacy NPC brain runs unchanged.
     NpcMovementPolicy movementPolicy;

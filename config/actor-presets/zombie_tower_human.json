@@ -1,0 +1,13 @@
+{
+  "schema": 2,
+  "id": "zombie_tower_human",
+  "display_name": "Zombie Tower Human",
+  "movement_preset": "source",
+  "movement_executor": "sandbox_shared",
+  "weapon_set": "zombie_tower_humans",
+  "starting_weapon": "revolver",
+  "health": {
+    "max": 100,
+    "spawn": 100
+  }
+}

@@ -18,6 +18,12 @@ public:
 
     void enterMenuMode();
     void enterGameMode();
+    // Mode-owned track playback. The server selects the track; the client only
+    // plays it and reports the end so every client stays on the same song.
+    bool playModeTrack(const std::string& path);
+    void stopModeTrack();
+    bool trackEnded() const { return mTrackEnded; }
+    void consumeTrackEnded() { mTrackEnded = false; }
 
     void pause();
     void resume();
@@ -94,6 +100,8 @@ private:
     std::string mCurrentTitle;
 
     bool mTrackJustChanged = false;
+    bool mTrackEnded = false;
+    bool mModeTrackMode = false;
     float mTimeSinceTrackChange = 0.0f;
     float mPopupAlpha = 0.0f;
     float mPopupSlide = 0.0f;

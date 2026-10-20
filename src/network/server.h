@@ -177,6 +177,7 @@ struct ServerInput
     bool shieldHeld = false;
     bool grabHeld = false;
     bool crouchHeld = false;
+    bool reviveHeld = false;
     bool flyUp = false;
     bool flyDown = false;
     uint32_t tick = 0;
@@ -297,6 +298,12 @@ struct ServerPlayer
     bool dashAvailable = true;
     bool attackQueued = false;
     bool dead = false;
+    // Zombie Tower downed state. A downed human is not dead yet: the team can
+    // revive the actor by holding the revive input nearby.
+    bool downed = false;
+    float downedHealth = 0.0f;
+    float reviveProgress = 0.0f;
+    uint32_t ztSpawnResendTick = 0;
     float respawnSeconds = 0.0f;
     // Duel mode: fixed team spawn this player returns to on every respawn.
     // Empty/unset (hasDuelSpawnPos=false) = normal random safe spawn.

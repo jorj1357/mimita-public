@@ -16,6 +16,7 @@
 #include "world/world.h"
 #include "render/lighting-config.h"
 #include "render/dynamic-light.h"
+#include "effects/zombie-tower-effects.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
 #include "debug/debug-diag.h"
@@ -166,6 +167,15 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
     setFloat(shader, "uAOContrast", cfg.aoContrast());
     setFloat(shader, "uTextureContrast", cfg.textureContrast());
     setFloat(shader, "uTextureBrightness", cfg.textureBrightness());
+
+    const bool fogEnabled = ZombieTowerEffects::instance().enabled() &&
+        ZombieTowerEffects::instance().fogEnabled() && cfg.fogEnabled();
+    setInt(shader, "uFogEnabled", fogEnabled ? 1 : 0);
+    if (fogEnabled) {
+        setVec3(shader, "uFogColor", cfg.fogColor());
+        setFloat(shader, "uFogDensity", cfg.fogDensity());
+        setVec3(shader, "uCameraPos", cameraPos);
+    }
 
     // Reset avatar-only uniforms leaked from previous frame's player/cosmetic rendering.
     // These are neutral defaults that have no effect on world appearance.

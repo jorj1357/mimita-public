@@ -1,0 +1,15 @@
+{
+  "schema": 2,
+  "id": "zombie_tower_crawler",
+  "display_name": "Crawler",
+  "movement_preset": "source",
+  "movement_executor": "sandbox_shared",
+  "weapon_set": "zombie_unarmed",
+  "starting_weapon": "nothing",
+  "behavior_profile": "aggressive",
+  "avatar": {
+    "forced": true,
+    "name": "monstercrawler",
+    "allowed": ["monstercrawler"]
+  }
+}

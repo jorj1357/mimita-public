@@ -1,37 +1,83 @@
 {
   "id": "zombie_tower",
   "name": "Zombie Tower",
-  "description": "Open-ended shooting against a persistent stream of NPCs.",
+  "description": "Cooperative tower survival: reach checkpoints, clear encounters, and defeat the placeholder Chainsaw Boss.",
+  "maps": ["zombietower4"],
   "teams": [
     {
       "id": "humans",
       "display_name": "Humans",
-      "capacity": 0,
+      "capacity": 4,
+      "role": "zombie_tower_human",
+      "npc_role": "zombie_tower_companion",
       "spawn_group": "human_spawn",
-      "spawn_tag_excludes": "npc"
+      "spawn_tag_excludes": "npc",
+      "players": true,
+      "prefer_humans": true
     },
     {
-      "id": "npcs",
-      "display_name": "NPCs",
+      "id": "zombies",
+      "display_name": "Zombies",
+      "capacity": 64,
+      "role": "zombie_tower_zombie",
+      "spawn_group": "zombie_spawn",
+      "spawn_tag_contains": "npc",
+      "npcs": true
+    },
+    {
+      "id": "spec",
+      "display_name": "Spectator",
       "capacity": 0,
-      "spawn_group": "npc_spawn",
-      "spawn_tag_contains": "npc"
+      "role": "spectator"
     }
   ],
   "goal_value": 0,
   "time_limit_seconds": 0,
   "respawn_seconds": 0,
   "kill_heals": true,
+  "friendly_fire": false,
   "countdown_seconds": 3.0,
-  "go_seconds": 0.75,
-  "intermission_seconds": 5,
-  "results_seconds": 0,
+  "go_seconds": 1.0,
+  "intermission_seconds": 30,
+  "results_seconds": 5,
+  "run_attempts": 3,
+  "run_mode": true,
+  "allow_midrun_team_change": true,
+  "force_first_person": true,
   "weapon_set_id": 1,
   "win_condition": "persistent_npc_spawns",
   "lives": 999,
+  "npc_targeting": {
+    "mode": "opposite_team",
+    "include_players": true,
+    "include_npcs": true
+  },
+  "features": {
+    "fog": true,
+    "rain": true,
+    "torch_lighting": true,
+    "freeze_during_countdown": true,
+    "boss_healthbar": true
+  },
+  "music": {
+    "on_go_track": "assets/music/ingame/Roblox Music - Gothic - Zero Project.opus",
+    "random_pool": [
+      "assets/music/ingame/ROBLOX - Winds Of Fjords.opus",
+      "assets/music/ingame/ROBLOX Music - 8-Bit Weapon - M.U.L.E (Bitblaster Mix).opus",
+      "assets/music/ingame/ROBLOX Music - Alice Deejay - Better Off Alone (Glejs Remix).opus",
+      "assets/music/ingame/Roblox Music - Nezzera.opus",
+      "assets/music/ingame/The Great Strategy (2005) Roblox Theme 2006.opus",
+      "assets/music/ingame/U quiet phonk.wav - old roblox phonk.opus",
+      "assets/music/ingame/U stage 7 need for madness.wav - edit part.opus",
+      "assets/music/ingame/U the boiled one funk.wav - house remix actuall 132 bpm.opus",
+      "assets/music/ingame/UE edit file for listening to music v9.wav -  cult member three -400.opus",
+      "assets/music/ingame/UN Owen Was Her- Full version.opus",
+      "assets/music/ingame/UW MiMITA motif.wav - how did you survive.opus"
+    ]
+  },
   "npc_spawn": {
     "policy": "persistent",
-    "max_count": 1,
+    "max_count": 0,
     "interval_ticks": 60,
     "per_interval": 1
   }

@@ -175,6 +175,15 @@ bool MapConfigRegistry::load(const std::string& mapId)
                 entity.damageIntervalTicks = std::max(1, item.value("damageIntervalTicks", item.value("damage_interval_ticks", entity.damageIntervalTicks)));
                 entity.spawnCooldownTicks = std::max(1, item.value("spawnCooldownTicks", item.value("spawn_cooldown_ticks", entity.spawnCooldownTicks)));
                 entity.checkpointRequirement = std::max(0, item.value("checkpointRequirement", item.value("checkpoint_requirement", entity.checkpointRequirement)));
+                entity.order = std::max(0, item.value("order", entity.order));
+                entity.required = item.value("required", entity.required);
+                entity.activationRadius = std::max(0.0f, item.value("activationRadius", item.value("activation_radius", entity.activationRadius)));
+                entity.healthMultiplier = std::max(0.0f, item.value("healthMultiplier", item.value("health_multiplier", entity.healthMultiplier)));
+                // Zombie Tower encounter volumes are one-shot unless explicitly
+                // authored as repeatable.
+                if (entity.type == "monster_zone" &&
+                    !item.contains("oneShot") && !item.contains("one_shot"))
+                    entity.oneShot = true;
                 next.entities.push_back(std::move(entity));
             }
         }
@@ -219,6 +228,17 @@ bool MapConfigRegistry::pollReload()
     Debug::warn(Debug::Category::Duel,
         "[MAP CONFIG] detected change: %s\n", mPath.c_str());
     return load(mCurrent.mapId);
+}
+
+void MapConfigRegistry::resetRuntimeState()
+{
+    for (auto& entity : mCurrent.entities) {
+        entity.runtimeSpawned = 0;
+        entity.runtimeCleared = false;
+        entity.runtimeActivated = false;
+        entity.runtimePlayerActivated = false;
+        entity.lastActivationTick = 0;
+    }
 }
 
 const MapEntity* MapConfigRegistry::findEntity(const std::string& id) const
@@ -371,7 +391,10 @@ bool MapConfigRegistry::save()
             {"spawnCount", entity.spawnCount}, {"maxAlive", entity.maxAlive}, {"damage", entity.damage},
             {"damageIntervalTicks", entity.damageIntervalTicks},
             {"spawnCooldownTicks", entity.spawnCooldownTicks},
-            {"checkpointRequirement", entity.checkpointRequirement}
+            {"checkpointRequirement", entity.checkpointRequirement},
+            {"order", entity.order}, {"required", entity.required},
+            {"activationRadius", entity.activationRadius},
+            {"healthMultiplier", entity.healthMultiplier}
         });
     }
 

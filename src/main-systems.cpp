@@ -107,6 +107,7 @@
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "gamemode/monster-pools.h"
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "avatar/avatar.h"
@@ -504,6 +505,7 @@ void gameInitSubsystems(Engine& engine)
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
     MatchRoleRegistry::instance().load("config/roles.json");
     MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+    MonsterPoolRegistry::instance().load("config/monster-pools.json");
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
     MovementJsonConfig::instance().load("config/movement.json");

@@ -38,6 +38,10 @@
 #include "ragdoll/ragdoll-mode.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "effects/rain-system.h"
+#include "effects/zombie-tower-effects.h"
+#include "render/dynamic-light.h"
+#include "map/map_loader.h"
 #include "physics/physical-entity.h"
 #include "procedural/procedural-world-client.h"
 
@@ -790,6 +794,30 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
       renderObjectivePulse(camera); }
     { MIMITA_PERF_SCOPE("Rendering::Debug::Visuals");
     drawPhysicalEntities(camera);
+    const auto& match = MimitaNet::CommunityMatchClient::instance();
+    ZombieTowerEffects& fx = ZombieTowerEffects::instance();
+    const bool ztMode = match.active() && match.mode() == "zombie_tower";
+    fx.setFogEnabled(ztMode && match.ztFog());
+    fx.setRainEnabled(ztMode && match.ztRain());
+    fx.setTorchEnabled(ztMode && match.ztTorchLighting());
+    RainSystem::instance().setEnabled(
+        fx.enabled() && fx.rainEnabled());
+    RainSystem::instance().updateAndRender(camera, dt);
+    if (fx.enabled() && fx.torchEnabled()) {
+        const float flicker = 0.85f + 0.15f * std::sin((float)glfwGetTime() * 9.0f);
+        for (const auto& light : gGLBDebug.lights) {
+            if (light.type != "point" && light.type != "spot") continue;
+            const glm::vec3 pos((float)light.position[0], (float)light.position[1],
+                                (float)light.position[2]);
+            if (glm::distance(pos, camera.pos) > 90.0f) continue;
+            DynamicLightManager::instance().spawn(
+                pos,
+                glm::vec3((float)light.color[0], (float)light.color[1], (float)light.color[2]),
+                std::min(8.0f, std::max(0.5f, (float)light.intensity * 0.01f)) * flicker,
+                light.range > 0.0 ? (float)light.range : 9.0f,
+                0.25f, 0.05f, 0.05f);
+        }
+    }
     DebugVis::flushTris(camera);
     DebugVis::flushWeaponLines(camera);
     }

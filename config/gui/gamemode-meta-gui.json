@@ -157,6 +157,28 @@
         "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 100, "fontSize": 2.5, "textColor": [1, 1, 1, 1] },
         "winnerText": { "type": "text", "text": "WINNER: {winner}", "x": 960, "y": 430, "fontSize": 0.9, "textColor": [1, 0.85, 0.25, 1] }
       }
+    },
+    "zombie_tower": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "modeTitle": { "type": "text", "text": "ZOMBIE TOWER", "x": 960, "y": 18, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "intermissionText": { "type": "text", "text": "INTERMISSION {seconds}", "x": 960, "y": 400, "fontSize": 0.6, "textColor": [1, 1, 1, 0.9] },
+        "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!", "x": 960, "y": 100, "fontSize": 2.5, "textColor": [1, 1, 1, 1] },
+        "ztAttemptsText": { "type": "text", "text": "ATTEMPTS {attempts}", "x": 960, "y": 50, "fontSize": 0.38, "textColor": [1, 0.85, 0.3, 1] },
+        "ztCheckpointText": { "type": "text", "text": "CHECKPOINT {checkpoint}", "x": 960, "y": 78, "fontSize": 0.32, "textColor": [0.7, 1, 0.7, 0.9] },
+        "ztAttemptResultText": { "type": "text", "text": "ATTEMPT ENDED - RETRYING FROM CHECKPOINT", "x": 960, "y": 400, "fontSize": 0.62, "textColor": [1, 0.85, 0.25, 1] },
+        "ztResultTitleText": { "type": "text", "text": "{result}", "x": 960, "y": 320, "fontSize": 1.0, "textColor": [1, 1, 1, 1] },
+        "ztResultTimeText": { "type": "text", "text": "TIME {time}", "x": 960, "y": 375, "fontSize": 0.45, "textColor": [1, 1, 1, 0.9] },
+        "ztResultDamageText": { "type": "text", "text": "MOST DAMAGE {name} ({value})", "x": 960, "y": 410, "fontSize": 0.42, "textColor": [1, 0.85, 0.4, 1] },
+        "ztResultHealingText": { "type": "text", "text": "MOST HEALING {name} ({value})", "x": 960, "y": 440, "fontSize": 0.42, "textColor": [0.6, 1, 0.7, 1] },
+        "ztResultSpeedText": { "type": "text", "text": "TOP SPEED {value} BY {name}", "x": 960, "y": 470, "fontSize": 0.42, "textColor": [0.7, 0.85, 1, 1] },
+        "ztBossNameText": { "type": "text", "text": "{boss}", "x": 960, "y": 145, "fontSize": 0.52, "textColor": [1, 0.3, 0.25, 1] },
+        "ztBossHpText": { "type": "text", "text": "{hp} / {max}", "x": 960, "y": 175, "fontSize": 0.3, "textColor": [1, 1, 1, 0.9] },
+        "ztBossBarBg": { "type": "panel", "x": 660, "y": 160, "w": 600, "h": 14, "color": [0.08, 0.03, 0.03, 0.9] },
+        "ztBossBarFill": { "type": "panel", "x": 662, "y": 162, "w": 596, "h": 10, "color": [0.8, 0.15, 0.1, 1] },
+        "ztDownedText": { "type": "text", "text": "DOWNED - HOLD F NEAR A TEAMMATE", "x": 960, "y": 300, "fontSize": 0.52, "textColor": [1, 0.35, 0.3, 1] }
+      }
     }
   }
 }

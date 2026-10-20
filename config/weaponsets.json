@@ -111,6 +111,30 @@
       "description": "Single always-active Captain Falcon move set; attacks are actions inside the moveset, not separate weapons.",
       "role_only": true,
       "weapons": ["captain_falcon_moveset", "nothing"]
+    },
+    {
+      "id": 13,
+      "key": "zombie_tower_humans",
+      "name": "Zombie Tower Humans",
+      "description": "Zombie Tower starting kit: Revolver, Shotgun, Rocket Launcher, Force Punch.",
+      "role_only": true,
+      "weapons": ["revolver", "shotgun", "rocket_launcher", "force_punch", "nothing"]
+    },
+    {
+      "id": 14,
+      "key": "zombie_tower_zombie",
+      "name": "Zombie Tower Zombie",
+      "description": "Normal Zombie contact claw placeholder.",
+      "role_only": true,
+      "weapons": ["zombie_claw", "nothing"]
+    },
+    {
+      "id": 15,
+      "key": "zombie_unarmed",
+      "name": "Zombie Unarmed",
+      "description": "Data-ready monster role with no attack until its attack definition is authored.",
+      "role_only": true,
+      "weapons": ["nothing"]
     }
   ]
 }

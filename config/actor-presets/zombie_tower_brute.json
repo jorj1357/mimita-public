@@ -1,0 +1,15 @@
+{
+  "schema": 2,
+  "id": "zombie_tower_brute",
+  "display_name": "Brute",
+  "movement_preset": "source",
+  "movement_executor": "sandbox_shared",
+  "weapon_set": "zombie_unarmed",
+  "starting_weapon": "nothing",
+  "behavior_profile": "aggressive",
+  "avatar": {
+    "forced": true,
+    "name": "monsterbrute",
+    "allowed": ["monsterbrute"]
+  }
+}

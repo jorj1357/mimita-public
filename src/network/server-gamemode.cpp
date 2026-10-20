@@ -11,6 +11,7 @@
 #include "network/server-gamemode.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <random>
@@ -32,6 +33,7 @@
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
 #include "gamemode/map-config.h"
+#include "gamemode/monster-pools.h"
 #include "gamemode/mode-pack-registry.h"
 #include "gamemode/deterministic-rng.h"
 #include "persistence/persistence-queue.h"
@@ -278,7 +280,35 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     }
     auto it = d.matchActors.find(actorId);
     if (it == d.matchActors.end())
+    {
+        // Zombie Tower initial join happens before the roster is assigned.
+        // Give the human the first team's role immediately so the first spawn
+        // already has the configured loadout/ammo instead of a stale GUI set.
+        if (d.zombieTower) {
+            const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+            if (!gm.teams.empty() && !gm.teams[0].role.empty()) {
+                if (const MatchRoleDefinition* def =
+                        MatchRoleRegistry::instance().get(gm.teams[0].role)) {
+                    out.hasRole = true;
+                    out.roleId = def->id;
+                    out.health = def->health;
+                    out.startingWeapon = def->startingWeapon;
+                    out.avatarName = def->avatarName;
+                    out.movementPreset = def->movementPreset;
+                    out.actorPresetId = def->actorPresetId;
+                    if (const CommunityWeaponSet* set =
+                            CommunityServerConfig::instance().weaponSetByKey(def->weaponSet)) {
+                        out.weaponSetId = set->id;
+                        out.weapons = set->weapons;
+                    }
+                    for (const auto& entry : def->weaponAmmo)
+                        out.weaponAmmo[entry.first] = {entry.second.magazine, entry.second.reserve};
+                    return out;
+                }
+            }
+        }
         return out;
+    }
 
     // Precedence for NPC combat profiles: an explicit per-actor descriptor
     // override wins, then the gamemode NPC profile, then the role profile,
@@ -385,6 +415,9 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                 def->id.c_str(), def->weaponSet.c_str());
         }
     }
+    out.weaponAmmo.clear();
+    for (const auto& entry : def->weaponAmmo)
+        out.weaponAmmo[entry.first] = {entry.second.magazine, entry.second.reserve};
 
     std::string roleProfile;
     if (!def->behaviorProfile.empty()) {
@@ -778,6 +811,9 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
                        {"community_mode", d.communityMode},
                        {"win_condition", gm.winCondition},
                        {"lives", gm.lives},
+                       {"teams", gm.teams.size()},
+                       {"run_mode", gm.runMode},
+                       {"music_pool", gm.musicRandomPool.size()},
                        {"skip_intermission", skipIntermission}});
     d.goalValue = gm.goalValue;
     // An explicit GUI/runtime selection wins over the gamemode default.
@@ -795,6 +831,26 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
         nlohmann::json{{"mode", resolvedGamemodeId},
                        {"friendly_fire", d.friendlyFireEnabled}});
     d.winCondition = gm.winCondition;
+    d.zombieTower = gm.runMode;
+    d.ztAttemptResult = false;
+    d.ztFinalResult = false;
+    d.ztRunWon = false;
+    d.ztResumingFromCheckpoint = false;
+    d.ztTowerEndReached = false;
+    d.ztBossDefeated = false;
+    d.ztHadBossTrigger = false;
+    d.ztMusicStartedTick = 0;
+    d.ztRunStartTick = 0;
+    d.ztRunElapsedTicks = 0;
+    d.ztCheckpointSerial = 0;
+    d.ztCheckpointName.clear();
+    d.ztMusicSerial = 0;
+    d.ztMusicTrack.clear();
+    d.ztMusicPlaying = false;
+    d.ztFog = gm.features.fog;
+    d.ztRain = gm.features.rain;
+    d.ztTorchLighting = gm.features.torchLighting;
+    d.ztStats.clear();
     d.npcWaves = gm.winCondition == "npc_waves";
     // The persistent lifecycle is enabled by the policy alone. The spawn cap is
     // a separate concern: a cap of 0 means "run the mode, spawn no NPCs" (useful
@@ -1155,6 +1211,57 @@ void broadcastDuelState(SOCKET sock,
     std::snprintf(pkt.procedural.modeId, sizeof(pkt.procedural.modeId), "%s",
                   d.procedural.modeId.c_str());
 
+    // ── Zombie Tower run presentation ───────────────────────────────
+    pkt.ztAttemptResult = d.ztAttemptResult ? 1 : 0;
+    pkt.ztFinalResult = d.ztFinalResult ? 1 : 0;
+    pkt.ztRunWon = d.ztRunWon ? 1 : 0;
+    pkt.ztBossActive = d.bossEncounterActive ? 1 : 0;
+    pkt.ztMusicPlaying = d.ztMusicPlaying ? 1 : 0;
+    pkt.ztFog = d.ztFog ? 1 : 0;
+    pkt.ztRain = d.ztRain ? 1 : 0;
+    pkt.ztTorchLighting = d.ztTorchLighting ? 1 : 0;
+    pkt.ztAttemptsRemaining = d.runAttemptsRemaining;
+    pkt.ztRunElapsedTicks = d.ztRunElapsedTicks;
+    std::snprintf(pkt.ztBossName, sizeof(pkt.ztBossName), "%s", d.activeBossName.c_str());
+    pkt.ztBossHp = d.activeBossCurrentHp;
+    pkt.ztBossMaxHp = d.activeBossMaxHp;
+    uint32_t bestDamageId = 0;
+    uint32_t bestHealingId = 0;
+    uint32_t bestSpeedId = 0;
+    for (const auto& entry : d.ztStats) {
+        const auto& stats = entry.second;
+        if (stats.damageDealt > (bestDamageId ? d.ztStats.at(bestDamageId).damageDealt : 0))
+            bestDamageId = entry.first;
+        if (stats.healingDone > (bestHealingId ? d.ztStats.at(bestHealingId).healingDone : 0))
+            bestHealingId = entry.first;
+        if (stats.topSpeed > (bestSpeedId ? d.ztStats.at(bestSpeedId).topSpeed : 0.0f))
+            bestSpeedId = entry.first;
+    }
+    if (bestDamageId) {
+        const auto& stats = d.ztStats.at(bestDamageId);
+        pkt.ztMostDamage = (uint32_t)stats.damageDealt;
+        std::snprintf(pkt.ztMostDamageName, sizeof(pkt.ztMostDamageName), "%s",
+                      stats.name.empty() ? "NONE" : stats.name.c_str());
+    }
+    if (bestHealingId) {
+        const auto& stats = d.ztStats.at(bestHealingId);
+        pkt.ztMostHealing = (uint32_t)stats.healingDone;
+        std::snprintf(pkt.ztMostHealingName, sizeof(pkt.ztMostHealingName), "%s",
+                      stats.name.empty() ? "NONE" : stats.name.c_str());
+    }
+    if (bestSpeedId) {
+        const auto& stats = d.ztStats.at(bestSpeedId);
+        pkt.ztTopSpeed = stats.topSpeed;
+        std::snprintf(pkt.ztTopSpeedName, sizeof(pkt.ztTopSpeedName), "%s",
+                      stats.name.empty() ? "NONE" : stats.name.c_str());
+    }
+    pkt.ztCheckpointSerial = d.ztCheckpointSerial;
+    std::snprintf(pkt.ztCheckpointName, sizeof(pkt.ztCheckpointName), "%s",
+                  d.ztCheckpointName.c_str());
+    pkt.ztMusicSerial = d.ztMusicSerial;
+    std::snprintf(pkt.ztMusicTrack, sizeof(pkt.ztMusicTrack), "%s",
+                  d.ztMusicTrack.c_str());
+
     // FFA and generic first-to-score top-3 leaderboard.
     if (d.matchMode == "ffa" || d.winCondition == "first_to_score") {
         // Sort players by kills descending
@@ -1324,6 +1431,103 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
         d.spawnA.x, d.spawnA.y, d.spawnA.z, world.spawnPoints.size());
 }
 
+// ── Zombie Tower authored run helpers ──────────────────────────────────
+glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team);
+
+static bool isZombieTowerRun(const ServerGamemodeState& d)
+{
+    return d.enabled && d.zombieTower;
+}
+
+static std::string lowerAscii(std::string value)
+{
+    for (char& c : value)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return value;
+}
+
+static const MapEntity* findSpawnEntityByTag(const std::string& tag)
+{
+    const std::string wanted = lowerAscii(tag);
+    for (const auto& e : MapConfigRegistry::instance().current().entities) {
+        if (e.type != "spawnpoint" || !e.enabled) continue;
+        if (lowerAscii(e.tag) == wanted) return &e;
+    }
+    return nullptr;
+}
+
+static const MapEntity* findCheckpointByOrder(int order)
+{
+    const MapEntity* best = nullptr;
+    for (const auto& e : MapConfigRegistry::instance().current().entities) {
+        if (e.type != "checkpoint" || !e.enabled || e.order != order) continue;
+        if (!best || e.order < best->order) best = &e;
+    }
+    return best;
+}
+
+static int highestReachedCheckpointOrder(const ServerGamemodeState& d)
+{
+    int highest = 0;
+    for (const auto& id : d.activatedCheckpoints) {
+        const MapEntity* e = MapConfigRegistry::instance().findEntity(id);
+        if (e) highest = std::max(highest, e->order);
+    }
+    return highest;
+}
+
+// Spawn selection for the ZT run. Team 0 uses the lobby during intermission,
+// the intro spawn during countdown, and the last checkpoint during a run.
+// Team 1 (zombie players) enters at the next checkpoint the humans have not
+// reached, or falls back safely when every checkbox is already behind them.
+static glm::vec3 zombieTowerSpawnPointForActor(
+    const ServerGamemodeState& d, int team, uint32_t actorId, const char* reason)
+{
+    static std::mt19937 rng(std::random_device{}());
+    auto offset = [&](const glm::vec3& base) {
+        std::uniform_real_distribution<float> off(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+        return base + glm::vec3(off(rng), off(rng), 0.0f);
+    };
+
+    if (team == 1) {
+        const int highest = highestReachedCheckpointOrder(d);
+        const MapEntity* next = nullptr;
+        for (const auto& e : MapConfigRegistry::instance().current().entities) {
+            if (e.type != "checkpoint" || !e.enabled) continue;
+            if (e.order <= highest) continue;
+            if (!next || e.order < next->order) next = &e;
+        }
+        if (next) return offset(next->position);
+        if (d.hasCheckpointSpawn) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "zombie_tower.zombie-spawn-no-ahead-checkpoint", std::to_string(actorId),
+                "all checkpoints reached; using highest reached checkpoint", d.currentServerTick,
+                nlohmann::json{{"actor", actorId}, {"reason", reason},
+                               {"checkpoint_id", d.currentCheckpointId}});
+            return offset(d.currentCheckpointPos);
+        }
+        if (const MapEntity* intro = findSpawnEntityByTag("tower_intro"))
+            return offset(intro->position);
+    }
+
+    if (team == 0) {
+        if (d.hasCheckpointSpawn && d.ztResumingFromCheckpoint)
+            return offset(d.currentCheckpointPos);
+        if ((d.phase == DUEL_PHASE_ACTIVE || d.phase == DUEL_PHASE_GO) &&
+            d.hasCheckpointSpawn)
+            return offset(d.currentCheckpointPos);
+        if (d.phase == DUEL_PHASE_COUNTDOWN || d.phase == DUEL_PHASE_GO) {
+            if (const MapEntity* intro = findSpawnEntityByTag("tower_intro"))
+                return offset(intro->position);
+        }
+        if (const MapEntity* lobby = findSpawnEntityByTag("lobby"))
+            return offset(lobby->position);
+    }
+
+    return gamemodeSpawnPoint(d, team);
+}
+
 // Team-aware spawn point: uses the team's tagged spawn cluster when resolved,
 // otherwise falls back to the shared anchor. The random XY offset spreads
 // squadmates around their spawn so they are not stacked.
@@ -1432,6 +1636,10 @@ glm::vec3 gamemodeSpawnPointForActor(
     const std::unordered_map<uint32_t, ServerNpc>& npcs,
     const char* reason)
 {
+    const int spawnTeam = actorTeamOf(d, actorId, players, npcs);
+    if (isZombieTowerRun(d))
+        return zombieTowerSpawnPointForActor(d, spawnTeam, actorId, reason);
+
     // A checkpointed run respawns players at the latest authored checkpoint.
     if (d.hasCheckpointSpawn && players.find(actorId) != players.end()) {
         static std::mt19937 crng(std::random_device{}());
@@ -2560,7 +2768,7 @@ void assignMatchParticipants(ServerGamemodeState& d,
         }
     }
 
-    if (npcs) {
+    if (npcs && !d.zombieTower) {
         for (const auto& kv : *npcs) {
             if (kv.second.health <= 0) continue;
             d.participants.push_back(kv.first);
@@ -2593,6 +2801,17 @@ void assignMatchParticipants(ServerGamemodeState& d,
     const bool hasExplicitTeamRoles = std::any_of(
         gm.teams.begin(), gm.teams.end(),
         [](const GamemodeTeam& team) { return !team.role.empty(); });
+    if (d.zombieTower) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "zombie_tower.roster-assigned", d.matchMode,
+            "Zombie Tower roster resolved", d.currentServerTick,
+            nlohmann::json{{"mode", d.matchMode},
+                           {"teams", gm.teams.size()},
+                           {"participants", d.participants.size()},
+                           {"explicit_team_roles", hasExplicitTeamRoles},
+                           {"run_mode", gm.runMode}});
+    }
     struct RoleSlot { std::string id; int cap; int assigned; };
     std::vector<RoleSlot> roles;
     int totalSlots = 0;
@@ -2665,10 +2884,23 @@ void assignMatchParticipants(ServerGamemodeState& d,
         int team = desc.teamId;
         if (d.npcWaves)
             team = players.find(id) != players.end() ? 0 : 1;
-        else if (team < 0 && (d.matchMode == "tdm" ||
-                         d.winCondition == "last_team_standing" ||
-                         !gm.actorPresetId.empty()))
-            team = (int)(i % 2);
+        else if (team < 0) {
+            // Data-driven default assignment. A team declares whether human
+            // players or NPCs belong there; modes that do not declare it keep
+            // the legacy behavior below.
+            const bool isPlayer = players.find(id) != players.end();
+            for (size_t t = 0; t < gm.teams.size(); ++t) {
+                const GamemodeTeam& candidate = gm.teams[t];
+                if ((isPlayer && candidate.players) || (!isPlayer && candidate.npcs)) {
+                    team = (int)t;
+                    break;
+                }
+            }
+            if (team < 0 && (d.matchMode == "tdm" ||
+                             d.winCondition == "last_team_standing" ||
+                             !gm.actorPresetId.empty()))
+                team = (int)(i % 2);
+        }
         desc.teamId = team;
         if (team >= 0)
             d.matchTeams[id] = team;
@@ -2691,7 +2923,11 @@ void assignMatchParticipants(ServerGamemodeState& d,
         for (uint32_t id : d.participants) {
             ActorMatchDescriptor& desc = d.matchActors[id];
             if (desc.teamId < 0) continue;
-            const std::string roleId = roundTeamRoleId(gm, desc.teamId);
+            std::string roleId = roundTeamRoleId(gm, desc.teamId);
+            if (desc.controller == ActorController::Npc &&
+                desc.teamId < (int)gm.teams.size() &&
+                !gm.teams[(size_t)desc.teamId].npcRole.empty())
+                roleId = gm.teams[(size_t)desc.teamId].npcRole;
             const MatchRoleDefinition* def = roleId.empty()
                 ? nullptr : MatchRoleRegistry::instance().get(roleId);
             if (def) {
@@ -2733,6 +2969,17 @@ void assignMatchParticipants(ServerGamemodeState& d,
     // Mirrors the "actorlist" console command for headless/server testing.
     for (uint32_t id : d.participants) {
         const ActorMatchDescriptor& a = d.matchActors[id];
+        if (d.zombieTower) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "zombie_tower.roster-actor", std::to_string(id),
+                "Zombie Tower actor identity", d.currentServerTick,
+                nlohmann::json{{"actor", id}, {"controller", a.controller == ActorController::Npc ? "npc" : "human"},
+                               {"role", a.roleId}, {"team", a.teamId},
+                               {"behavior", a.behaviorProfileId},
+                               {"movement", a.movementProfileId},
+                               {"weapon", a.weaponProfileId}});
+        }
         Debug::log(Debug::Category::Duel,
             "[MATCH ACTOR] id=%u controller=%s role=%s team=%d state=%s "
             "movement=%s weapon=%s behavior=%s\n",
@@ -2839,10 +3086,12 @@ void updateActorStates(ServerGamemodeState& d,
         const ActorState before = desc.state;
 
         bool dead = false;
+        bool downed = false;
         bool found = false;
         auto pIt = players.find(kv.first);
         if (pIt != players.end()) {
             dead = pIt->second.dead;
+            downed = pIt->second.downed;
             found = true;
         } else {
             auto nIt = npcs.find(kv.first);
@@ -2866,7 +3115,8 @@ void updateActorStates(ServerGamemodeState& d,
             : (d.matchMode == "melee" ? serverMeleeActorHasStocks(kv.first)
                                       : serverMatchRespawnsEnabled());
 
-        desc.state = nextActorState(before, dead, respawns);
+        desc.state = downed ? ActorState::Downed
+                            : nextActorState(before, dead, respawns);
 
         // In a one-life round, Spectating is an actor STATE, not a replacement
         // TEAM. Keep matchTeams and desc.teamId on the original CT/T team so
@@ -2880,6 +3130,7 @@ void updateActorStates(ServerGamemodeState& d,
                     case ActorState::Dead:       return "dead";
                     case ActorState::Respawning: return "respawning";
                     case ActorState::Spectating: return "spectating";
+                    case ActorState::Downed:     return "downed";
                 }
                 return "unknown";
             };
@@ -2986,6 +3237,12 @@ void resetGamemodeActorsAtMapSpawn(
                     }
                 }
             }
+            for (auto& weapon : npc.body.weaponRuntimes) {
+                const auto ammoIt = profile.weaponAmmo.find(weapon.first);
+                if (ammoIt == profile.weaponAmmo.end()) continue;
+                if (ammoIt->second.first >= 0) weapon.second.currentAmmo = ammoIt->second.first;
+                if (ammoIt->second.second >= 0) weapon.second.reserveAmmo = ammoIt->second.second;
+            }
             finalizeServerNpcSpawn(npc, ActorSpawnReason::GamemodeStart);
             npc.body.syncLegacyStateToLayers();
             npc.body.updateModelWorldTransforms();
@@ -3020,6 +3277,11 @@ void resetMatchScores(ServerGamemodeState& d)
     }
 }
 
+static void reconcileZombieTowerParty(
+    ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs);
+
 void beginMatchCountdown(ServerGamemodeState& d,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -3041,6 +3303,15 @@ void beginMatchCountdown(ServerGamemodeState& d,
     resetMatchScores(d);
     d.phase = DUEL_PHASE_COUNTDOWN;
     resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
+    if (d.zombieTower) {
+        const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+        if (gm.features.freezeDuringCountdown) d.roundCountdownFreeze = true;
+        reconcileZombieTowerParty(d, players, npcs);
+        for (Npc& npc : npcSystem.all()) {
+            if (npc.body.matchTeam == 0)
+                npc.wakeupTimer = std::max(npc.wakeupTimer, d.countdownSeconds);
+        }
+    }
     Debug::log(Debug::Category::Duel,
         "[ServerMatch] countdown started mode=%s duelId=%u matchStartTick=%u timeLimitTick=%u participants=%zu\n",
         d.matchMode.c_str(), d.duelId, d.matchStartTick, d.matchTimeLimitTick, d.participants.size());
@@ -3072,6 +3343,96 @@ void addNpcWaveParticipant(ServerGamemodeState& d, ServerNpc& npc)
     d.matchActors[npc.entityId] = std::move(desc);
     d.matchTeams[npc.entityId] = 1;
     npc.matchTeam = 1;
+}
+
+// ── Zombie Tower party roster ──────────────────────────────────────────
+static void addZombieTowerTeamNpc(ServerGamemodeState& d, ServerNpc& npc,
+                                  int team, const std::string& roleId)
+{
+    d.participants.push_back(npc.entityId);
+    d.participantNames[npc.entityId] = npc.name;
+    d.ffaKills[npc.entityId] = 0;
+    d.ffaDeaths[npc.entityId] = 0;
+    ActorMatchDescriptor desc;
+    desc.controller = ActorController::Npc;
+    desc.state = ActorState::Alive;
+    desc.teamId = team;
+    desc.roleId = roleId;
+    if (const MatchRoleDefinition* role = MatchRoleRegistry::instance().get(roleId)) {
+        desc.movementProfileId = role->movementPreset;
+        desc.weaponProfileId = role->weaponSet;
+        desc.behaviorProfileId = role->behaviorProfile;
+    }
+    d.matchActors[npc.entityId] = std::move(desc);
+    d.matchTeams[npc.entityId] = team;
+    npc.matchTeam = team;
+}
+
+static void removeZombieTowerNpc(ServerGamemodeState& d,
+                                 std::unordered_map<uint32_t, ServerNpc>& npcs,
+                                 uint32_t id)
+{
+    npcs.erase(id);
+    d.participants.erase(std::remove(d.participants.begin(), d.participants.end(), id),
+                         d.participants.end());
+    d.participantNames.erase(id);
+    d.matchTeams.erase(id);
+    d.matchActors.erase(id);
+    d.ffaKills.erase(id);
+    d.ffaDeaths.erase(id);
+    d.ztStats.erase(id);
+}
+
+static void reconcileZombieTowerParty(
+    ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    if (!d.zombieTower || d.matchMode.empty()) return;
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    if (gm.teams.empty()) return;
+
+    size_t humans = 0;
+    for (const auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active) continue;
+        if (kv.second.matchTeam == 0) ++humans;
+    }
+    if (humans == 0) return;
+
+    const int configuredTarget = gm.teams[0].capacity > 0
+        ? std::max(4, gm.teams[0].capacity) : 4;
+    const size_t target = (size_t)configuredTarget;
+    std::string companionRole = gm.teams[0].npcRole;
+    if (companionRole.empty()) companionRole = gm.teams[0].role;
+
+    std::vector<uint32_t> companions;
+    for (const auto& kv : npcs) {
+        if (kv.second.matchTeam != 0) continue;
+        const auto actorIt = d.matchActors.find(kv.first);
+        if (actorIt != d.matchActors.end() && actorIt->second.controller == ActorController::Npc)
+            companions.push_back(kv.first);
+    }
+
+    while (humans + companions.size() < target && !companionRole.empty()) {
+        uint32_t id = d.waveNextNpcId++;
+        while (npcs.find(id) != npcs.end()) id = d.waveNextNpcId++;
+        ServerNpc npc;
+        npc.entityId = id;
+        npc.name = "Companion " + std::to_string(++d.npcSpawnSequence);
+        npc.pos = zombieTowerSpawnPointForActor(d, 0, id, "party-fill");
+        npc.yaw = 0.0f;
+        npc.difficulty = 1.0f;
+        npc.spawnZoneId = "zt_party";
+        addZombieTowerTeamNpc(d, npc, 0, companionRole);
+        npcs.emplace(id, std::move(npc));
+        companions.push_back(id);
+    }
+
+    while (humans + companions.size() > target && !companions.empty()) {
+        const uint32_t victim = companions.back();
+        companions.pop_back();
+        removeZombieTowerNpc(d, npcs, victim);
+    }
 }
 
 void spawnNpcWaveBatch(ServerGamemodeState& d,
@@ -3115,51 +3476,131 @@ void spawnPersistentNpcBatchIfDue(ServerGamemodeState& d,
                                   std::unordered_map<uint32_t, ServerNpc>& npcs,
                                   uint32_t tick)
 {
-    if (!d.persistentNpcSpawns || d.npcSpawnMax <= 0 || tick < d.npcSpawnNextTick)
+    if (!d.persistentNpcSpawns) return;
+    if (!d.zombieTower && (d.npcSpawnMax <= 0 || tick < d.npcSpawnNextTick))
         return;
 
     auto& mapConfig = MapConfigRegistry::instance();
+    auto hasHumanTeamPlayer = [&](const MapEntity& zone) {
+        for (const auto& player : players) {
+            if (player.second.dead || player.second.spawnState != ServerPlayer::Active)
+                continue;
+            if (player.second.matchTeam != 0) continue;
+            const glm::vec3 delta = player.second.pos - zone.position;
+            const float radius = zone.activationRadius > 0.0f
+                ? zone.activationRadius : zone.radius;
+            if (glm::dot(delta, delta) <= radius * radius) return true;
+        }
+        return false;
+    };
+
     bool activatedZone = false;
     for (auto& zone : mapConfig.entitiesMutable()) {
-        if (zone.type != "monster_zone" || !zone.enabled || zone.runtimeActivated) continue;
-        bool inRange = false;
-        for (const auto& player : players) {
-            if (player.second.dead) continue;
-            const glm::vec3 delta = player.second.pos - zone.position;
-            if (glm::dot(delta, delta) <= zone.radius * zone.radius) { inRange = true; break; }
-        }
-        if (!inRange) continue;
+        if (zone.type != "monster_zone" || !zone.enabled) continue;
+        if (zone.checkpointRequirement > 0 &&
+            (int)d.runCheckpointCount < zone.checkpointRequirement)
+            continue;
+
         size_t zoneLiving = 0;
         for (const auto& npc : npcs)
             if (npc.second.health > 0 && npc.second.spawnZoneId == zone.id) ++zoneLiving;
-        if (tick < zone.lastActivationTick + (uint32_t)std::max(1, zone.spawnCooldownTicks) ||
-            zoneLiving >= (size_t)std::max(1, zone.maxAlive)) continue;
+
+        if (zone.runtimeCleared && !zone.oneShot &&
+            tick >= zone.lastActivationTick + (uint32_t)std::max(1, zone.spawnCooldownTicks)) {
+            zone.runtimeCleared = false;
+            zone.runtimeActivated = false;
+            zone.runtimeSpawned = 0;
+        }
+        if (zone.runtimeActivated && zone.oneShot) {
+            if (zone.runtimeSpawned >= zone.spawnCount && zoneLiving == 0)
+                zone.runtimeCleared = true;
+            continue;
+        }
+        if (zone.runtimeSpawned >= zone.spawnCount) {
+            if (zoneLiving == 0) {
+                if (!zone.runtimeCleared) {
+                    zone.runtimeCleared = true;
+                    zone.lastActivationTick = tick;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::World, StructuredLevel::Important,
+                        "monster-zone.cleared", zone.id, "encounter group defeated", tick,
+                        nlohmann::json{{"map", d.mapId}, {"entity_id", zone.id},
+                                       {"required", zone.required}});
+                }
+                zone.runtimeActivated = zone.oneShot;
+            }
+            continue;
+        }
+        if (!hasHumanTeamPlayer(zone)) continue;
+        if (tick < zone.lastActivationTick + (uint32_t)std::max(1, zone.spawnCooldownTicks))
+            continue;
+        if (zoneLiving >= (size_t)std::max(1, zone.maxAlive)) continue;
+
+        if (!zone.runtimePlayerActivated) {
+            zone.runtimePlayerActivated = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "monster.spawn-zone-activated", zone.id,
+                "human-team player entered activation radius", tick,
+                nlohmann::json{{"map", d.mapId}, {"entity_id", zone.id},
+                               {"monster_pool", zone.monsterPool},
+                               {"spawn_count", zone.spawnCount},
+                               {"required", zone.required}});
+        }
+
+        const auto* pool = MonsterPoolRegistry::instance().get(zone.monsterPool);
+        std::vector<std::string> roles;
+        if (pool) {
+            for (const auto& entry : *pool)
+                for (int i = 0; i < entry.count; ++i)
+                    roles.push_back(entry.role);
+        }
+        if (roles.empty())
+            roles.push_back("zombie_tower_normal_zombie_npc");
+
         const size_t room = (size_t)std::max(1, zone.maxAlive) - zoneLiving;
-        const size_t batch = std::min(room, (size_t)std::max(1, zone.spawnCount));
+        const size_t remaining = (size_t)zone.spawnCount - (size_t)zone.runtimeSpawned;
+        const size_t batch = std::min(room, remaining);
         for (size_t i = 0; i < batch; ++i) {
             while (npcs.find(d.waveNextNpcId) != npcs.end()) ++d.waveNextNpcId;
+            const std::string& roleId = roles[(zone.runtimeSpawned + i) % roles.size()];
             ServerNpc npc;
             npc.entityId = d.waveNextNpcId++;
-            npc.name = zone.monsterPool + " " + std::to_string(++d.npcSpawnSequence);
-            npc.pos = zone.position;
+            const MatchRoleDefinition* role = MatchRoleRegistry::instance().get(roleId);
+            npc.name = role && !role->displayName.empty()
+                ? role->displayName : roleId;
+            const bool useBox = zone.size.x > 1.001f || zone.size.y > 1.001f ||
+                                zone.size.z > 1.001f;
+            static std::mt19937 spawnRng(std::random_device{}());
+            if (useBox) {
+                std::uniform_real_distribution<float> rx(-zone.size.x * 0.5f, zone.size.x * 0.5f);
+                std::uniform_real_distribution<float> ry(-zone.size.y * 0.5f, zone.size.y * 0.5f);
+                std::uniform_real_distribution<float> rz(-zone.size.z * 0.5f, zone.size.z * 0.5f);
+                npc.pos = zone.position + glm::vec3(rx(spawnRng), ry(spawnRng), rz(spawnRng));
+            } else {
+                std::uniform_real_distribution<float> r(-zone.radius, zone.radius);
+                npc.pos = zone.position + glm::vec3(r(spawnRng), r(spawnRng), 0.0f);
+            }
             npc.yaw = 0.0f;
             npc.difficulty = 1.0f;
             npc.spawnZoneId = zone.id;
-            addNpcWaveParticipant(d, npc);
+            addZombieTowerTeamNpc(d, npc, 1, roleId);
+            d.ztStats[npc.entityId].name = npc.name;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "monster.spawned", std::to_string(npc.entityId),
+                "monster encounter spawn", tick,
+                nlohmann::json{{"map", d.mapId}, {"zone", zone.id},
+                               {"role", roleId},
+                               {"position", {npc.pos.x, npc.pos.y, npc.pos.z}}});
             npcs.emplace(npc.entityId, std::move(npc));
         }
+        zone.runtimeSpawned += (int)batch;
         zone.lastActivationTick = tick;
-        zone.runtimeActivated = zone.oneShot;
+        zone.runtimeActivated = true;
         activatedZone = true;
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::World, StructuredLevel::Important,
-            "monster-zone.activated", zone.id, "player entered activation radius", tick,
-            nlohmann::json{{"map", d.mapId}, {"entity_id", zone.id}, {"entity_type", zone.type},
-                           {"monster_pool", zone.monsterPool}, {"spawn_count", batch},
-                           {"position", {zone.position.x, zone.position.y, zone.position.z}}},
-            __FILE__, __LINE__, __FUNCTION__);
     }
-    if (activatedZone) return;
+    if (d.zombieTower || activatedZone) return;
 
     const size_t living = livingNpcCount(npcs);
     if (living >= (size_t)d.npcSpawnMax)
@@ -3196,6 +3637,17 @@ static bool mapEntityHasLivePlayer(const MapEntity& e,
     return false;
 }
 
+static bool mapEntityHasLiveHumanTeamPlayer(const MapEntity& e,
+    const std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    for (const auto& kv : players) {
+        if (kv.second.dead || kv.second.spawnState != ServerPlayer::Active) continue;
+        if (kv.second.matchTeam != 0) continue;
+        if (mapEntityContainsPoint(e, kv.second.pos)) return true;
+    }
+    return false;
+}
+
 static void placeActorAtRunSpawn(ServerGamemodeState& d, ServerPlayer& p,
     const glm::vec3& spawn)
 {
@@ -3210,46 +3662,187 @@ static void placeActorAtRunSpawn(ServerGamemodeState& d, ServerPlayer& p,
     p.justRespawned = true;
 }
 
+// Admit players who joined while a Zombie Tower run was already in progress.
+// Humans take the first human-team slot; a full human team makes the joiner a
+// spectator. The spawn follows the authored lobby/intro/checkpoint data.
+static void admitZombieTowerPlayers(
+    ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs)
+{
+    if (!d.zombieTower) return;
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    if (gm.teams.empty()) return;
+
+    int humanCount = 0;
+    for (const auto& kv : d.matchTeams)
+        if (kv.second == 0) ++humanCount;
+    const int humanCapacity = gm.teams[0].capacity;
+
+    for (auto& kv : players) {
+        ServerPlayer& p = kv.second;
+        if (p.spawnState != ServerPlayer::Active) continue;
+        const auto actorIt = d.matchActors.find(p.id);
+        const bool needsIdentity = p.matchTeam < 0 || actorIt == d.matchActors.end() ||
+            actorIt->second.roleId.empty();
+        if (!needsIdentity) continue;
+
+        int team = 0;
+        if (humanCapacity > 0 && humanCount >= humanCapacity) {
+            team = 2;
+        } else {
+            ++humanCount;
+        }
+        const std::string roleId = team < (int)gm.teams.size()
+            ? gm.teams[(size_t)team].role : std::string{};
+        const MatchRoleDefinition* role = roleId.empty()
+            ? nullptr : MatchRoleRegistry::instance().get(roleId);
+
+        ActorMatchDescriptor desc;
+        desc.controller = ActorController::Human;
+        desc.state = team == 2 ? ActorState::Spectating : ActorState::Alive;
+        desc.teamId = team;
+        desc.roleId = roleId;
+        if (role) {
+            desc.movementProfileId = role->movementPreset;
+            desc.weaponProfileId = role->weaponSet;
+            desc.behaviorProfileId.clear();
+        }
+        d.matchActors[p.id] = std::move(desc);
+        d.matchTeams[p.id] = team;
+        p.matchTeam = team;
+        if (std::find(d.participants.begin(), d.participants.end(), p.id) == d.participants.end())
+            d.participants.push_back(p.id);
+        d.participantNames[p.id] = p.name;
+
+        if (team < 2) {
+            const glm::vec3 spawn = zombieTowerSpawnPointForActor(
+                d, team, p.id, "late-join");
+            placeActorAtRunSpawn(d, p, spawn);
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "actor.team-assigned", std::to_string(d.duelId), "zt-late-join",
+            d.currentServerTick,
+            nlohmann::json{{"player", p.id}, {"team", team},
+                           {"role", roleId}, {"late_join", true}});
+    }
+    if (d.phase != DUEL_PHASE_INTERMISSION && d.phase != DUEL_PHASE_RESULTS)
+        reconcileZombieTowerParty(d, players, npcs);
+}
+
 // Party wipe: when every active human is dead, spend an attempt and respawn the
 // party at the latest checkpoint; when none remain, end the run and restart.
+static void zombieTowerDownedTick(
+    ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint32_t tick)
+{
+    if (!d.zombieTower || d.phase != DUEL_PHASE_ACTIVE) return;
+    for (auto& kv : players) {
+        ServerPlayer& p = kv.second;
+        if (p.spawnState != ServerPlayer::Active) continue;
+        auto& stats = d.ztStats[p.id];
+        if (stats.name.empty()) stats.name = p.name;
+        stats.topSpeed = std::max(stats.topSpeed, glm::length(p.vel));
+    }
+    for (auto& kv : players) {
+        ServerPlayer& target = kv.second;
+        if (!target.downed || target.dead) continue;
+        ServerPlayer* reviver = nullptr;
+        float bestDist = 4.0f;
+        for (auto& otherKv : players) {
+            ServerPlayer& other = otherKv.second;
+            if (other.id == target.id || other.dead || other.downed) continue;
+            if (other.matchTeam != 0 || !other.input.reviveHeld) continue;
+            if (other.spawnState != ServerPlayer::Active) continue;
+            const float dist = glm::distance(other.pos, target.pos);
+            if (dist <= bestDist) {
+                bestDist = dist;
+                reviver = &other;
+            }
+        }
+        if (reviver) {
+            target.downedHealth = std::min(100.0f, target.downedHealth + 20.0f * SERVER_DT);
+            target.reviveProgress = target.downedHealth / 100.0f;
+            d.ztStats[reviver->id].healingDone += (uint64_t)std::max(0.0f, 20.0f * SERVER_DT);
+            if (d.ztStats[reviver->id].name.empty())
+                d.ztStats[reviver->id].name = reviver->name;
+            if (target.downedHealth >= 100.0f) {
+                target.downed = false;
+                target.downedHealth = 0.0f;
+                target.reviveProgress = 0.0f;
+                target.health = std::max(100, target.maxHealth);
+                target.maxHealth = std::max(100, target.maxHealth);
+                target.respawnSeconds = 0.0f;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "zombie_tower.actor-revived", std::to_string(target.id),
+                    "teammate completed revival", tick,
+                    nlohmann::json{{"actor", target.id}, {"reviver", reviver->id},
+                                   {"health", target.health}});
+            }
+        } else {
+            target.downedHealth = std::max(0.0f, target.downedHealth - (100.0f / 30.0f) * SERVER_DT);
+            target.reviveProgress = target.downedHealth / 100.0f;
+            if (target.downedHealth <= 0.0f) {
+                target.downed = false;
+                target.reviveProgress = 0.0f;
+                target.dead = true;
+                target.respawnSeconds = -1.0f;
+                target.deaths += 1;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "zombie_tower.actor-died-downed", std::to_string(target.id),
+                    "downed timer expired", tick,
+                    nlohmann::json{{"actor", target.id}});
+            }
+        }
+    }
+}
+
 static void zombieTowerPartyWipeTick(
     ServerGamemodeState& d, SOCKET sock,
     std::unordered_map<uint32_t, ServerPlayer>& players,
     std::unordered_map<uint32_t, ServerNpc>& npcs,
     uint32_t tick, uint64_t& totalPacketsOut)
 {
-    size_t activeHumans = 0, deadHumans = 0;
+    if (d.ztAttemptResult || d.ztFinalResult) return;
+
+    size_t teamActors = 0;
+    size_t ableActors = 0;
     for (const auto& kv : players) {
         if (kv.second.spawnState != ServerPlayer::Active) continue;
-        ++activeHumans;
-        if (kv.second.dead) ++deadHumans;
+        if (kv.second.matchTeam != 0) continue;
+        ++teamActors;
+        if (!kv.second.dead && !kv.second.downed) ++ableActors;
     }
-    if (activeHumans == 0 || deadHumans < activeHumans) return;
+    for (const auto& kv : npcs) {
+        if (kv.second.matchTeam != 0) continue;
+        ++teamActors;
+        if (kv.second.health > 0) ++ableActors;
+    }
+    if (teamActors == 0 || ableActors > 0) return;
 
     const bool retry = d.runAttemptsRemaining > 1;
     if (retry) --d.runAttemptsRemaining;
-
-    const glm::vec3 checkpointSpawn = d.hasCheckpointSpawn ? d.currentCheckpointPos : glm::vec3(0.0f);
-    for (auto& kv : players) {
-        ServerPlayer& p = kv.second;
-        if (p.spawnState != ServerPlayer::Active) continue;
-        const glm::vec3 spawn = retry
-            ? (d.hasCheckpointSpawn ? checkpointSpawn
-                                    : gamemodeSpawnPointForActor(d, p.id, players, npcs, "party-wipe"))
-            : gamemodeSpawnPointForActor(d, p.id, players, npcs, "run-failed");
-        placeActorAtRunSpawn(d, p, spawn);
-    }
+    d.ztRunElapsedTicks = tick > d.ztRunStartTick ? tick - d.ztRunStartTick : 0;
+    d.ztFinalResult = !retry;
+    d.ztAttemptResult = retry;
+    d.phase = DUEL_PHASE_RESULTS;
+    d.phaseTimer = std::max(1.0f, d.resultsSeconds);
+    ++d.stateVersion;
 
     if (retry) {
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Duel, StructuredLevel::Important,
             "zombie_tower.attempt-started", d.mapId,
-            "party wipe; retrying from checkpoint", tick,
+            "party wipe; attempt result shown before checkpoint countdown", tick,
             nlohmann::json{{"map", d.mapId},
                            {"attempts_remaining", d.runAttemptsRemaining},
                            {"checkpoint_id", d.currentCheckpointId}});
         Debug::warn(Debug::Category::Duel,
-            "[ZOMBIE TOWER] party wipe -> retry attempts_left=%d checkpoint=%s tick=%u\n",
+            "[ZOMBIE TOWER] party wipe -> attempt result attempts_left=%d checkpoint=%s tick=%u\n",
             d.runAttemptsRemaining, d.currentCheckpointId.c_str(), tick);
     } else {
         StructuredLogger::instance().writeEvent(
@@ -3257,19 +3850,139 @@ static void zombieTowerPartyWipeTick(
             "zombie_tower.run-failed", d.mapId, "no attempts remain", tick,
             nlohmann::json{{"map", d.mapId}, {"checkpoint_id", d.currentCheckpointId}});
         Debug::warn(Debug::Category::Duel,
-            "[ZOMBIE TOWER] run failed; resetting attempts=%d tick=%u\n",
-            d.runAttemptsTotal, tick);
-        d.runAttemptsRemaining = d.runAttemptsTotal;
-        d.runCheckpointCount = 0;
-        d.currentCheckpointId.clear();
-        d.hasCheckpointSpawn = false;
-        d.activatedCheckpoints.clear();
-        d.activatedBossTriggers.clear();
-        d.bossEncounterActive = false;
-        d.progressionLocked = false;
-        d.activeBossNpcId = 0;
+            "[ZOMBIE TOWER] run failed; final results pending tick=%u\n", tick);
     }
+    broadcastDuelState(sock, d, players, totalPacketsOut);
+}
+
+static void zombieTowerRespawnAttempt(
+    ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    NpcSystem& npcSystem,
+    uint32_t tick)
+{
+    std::vector<uint32_t> companions;
+    for (const auto& kv : npcs) {
+        if (kv.second.matchTeam != 0) continue;
+        const auto actorIt = d.matchActors.find(kv.first);
+        if (actorIt != d.matchActors.end() &&
+            actorIt->second.controller == ActorController::Npc)
+            companions.push_back(kv.first);
+    }
+    for (uint32_t id : companions)
+        removeZombieTowerNpc(d, npcs, id);
+    for (auto& kv : players) {
+        kv.second.downed = false;
+        kv.second.downedHealth = 0.0f;
+        kv.second.reviveProgress = 0.0f;
+    }
+    d.ztAttemptResult = false;
+    d.ztFinalResult = false;
+    d.ztResumingFromCheckpoint = d.hasCheckpointSpawn;
+    beginMatchCountdown(d, players, npcs, npcSystem, tick);
+    d.ztResumingFromCheckpoint = false;
     ++d.stateVersion;
+}
+
+static void zombieTowerReturnToLobby(
+    ServerGamemodeState& d, SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    NpcSystem& npcSystem,
+    uint32_t tick, uint64_t& totalPacketsOut)
+{
+    npcs.clear();
+    npcSystem.destroyAll();
+    d.runAttemptsRemaining = d.runAttemptsTotal;
+    d.runCheckpointCount = 0;
+    d.currentCheckpointId.clear();
+    d.hasCheckpointSpawn = false;
+    d.activatedCheckpoints.clear();
+    d.activatedBossTriggers.clear();
+    d.damageVolumeNextTick.clear();
+    d.bossEncounterActive = false;
+    d.activeBossId.clear();
+    d.activeBossNpcId = 0;
+    d.progressionLocked = false;
+    d.ztTowerEndReached = false;
+    d.ztBossDefeated = false;
+    d.ztHadBossTrigger = false;
+    d.ztRunStartTick = 0;
+    d.ztRunElapsedTicks = 0;
+    d.ztAttemptResult = false;
+    d.ztFinalResult = false;
+    d.ztRunWon = false;
+    d.ztMusicTrack.clear();
+    d.ztMusicPlaying = false;
+    ++d.ztMusicSerial;
+    d.ztStats.clear();
+    MapConfigRegistry::instance().resetRuntimeState();
+
+    const MapEntity* lobby = findSpawnEntityByTag("lobby");
+    const glm::vec3 spawn = lobby ? lobby->position : gamemodeSpawnPoint(d, 0);
+    for (auto& kv : players) {
+        ServerPlayer& p = kv.second;
+        if (p.spawnState != ServerPlayer::Active) continue;
+        p.downed = false;
+        p.downedHealth = 0.0f;
+        p.reviveProgress = 0.0f;
+        placeActorAtRunSpawn(d, p, spawn);
+    }
+    assignMatchParticipants(d, players, nullptr);
+    d.phase = DUEL_PHASE_INTERMISSION;
+    d.phaseTimer = std::max(1.0f, d.intermissionSeconds);
+    ++d.stateVersion;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "zombie_tower.returned-to-lobby", d.mapId,
+        "final results complete; lobby intermission started", tick,
+        nlohmann::json{{"map", d.mapId},
+                       {"intermission_seconds", d.intermissionSeconds}});
+    broadcastDuelState(sock, d, players, totalPacketsOut);
+}
+
+static void zombieTowerCheckWin(
+    ServerGamemodeState& d, SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    uint32_t tick, uint64_t& totalPacketsOut)
+{
+    if (!d.zombieTower || d.phase != DUEL_PHASE_ACTIVE) return;
+    if (d.ztAttemptResult || d.ztFinalResult) return;
+    if (d.bossEncounterActive) return;
+
+    bool hasWinContent = false;
+    bool hasBossTrigger = false;
+    bool hasTowerEnd = false;
+    for (const auto& e : MapConfigRegistry::instance().current().entities) {
+        if (!e.enabled) continue;
+        if (e.type == "tower_end") hasTowerEnd = true;
+        if (e.type == "boss_trigger") hasBossTrigger = true;
+        if ((e.type == "tower_end" || e.type == "boss_trigger" ||
+             (e.type == "monster_zone" && e.required)))
+            hasWinContent = true;
+        if (e.type == "monster_zone" && e.required && !e.runtimeCleared)
+            return;
+    }
+    if (!hasWinContent) return;
+    if (hasBossTrigger && !d.ztBossDefeated) return;
+    if (hasTowerEnd && !d.ztTowerEndReached) return;
+
+    d.ztFinalResult = true;
+    d.ztAttemptResult = false;
+    d.ztRunWon = true;
+    d.phase = DUEL_PHASE_RESULTS;
+    d.phaseTimer = std::max(1.0f, d.resultsSeconds);
+    d.ztRunElapsedTicks = tick > d.ztRunStartTick ? tick - d.ztRunStartTick : 0;
+    ++d.stateVersion;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "zombie_tower.completed", d.mapId,
+        "required encounters and boss cleared", tick,
+        nlohmann::json{{"map", d.mapId},
+                       {"elapsed_ticks", d.ztRunElapsedTicks},
+                       {"tower_end", d.ztTowerEndReached}});
     broadcastDuelState(sock, d, players, totalPacketsOut);
 }
 
@@ -3286,11 +3999,16 @@ static void mapEntityRuntimeTick(ServerGamemodeState& d, SOCKET sock,
         if (!e.enabled) continue;
 
         if (e.type == "checkpoint" && d.activatedCheckpoints.count(e.id) == 0) {
-            if (!mapEntityHasLivePlayer(e, players)) continue;
+            if (!mapEntityHasLiveHumanTeamPlayer(e, players)) continue;
             d.activatedCheckpoints.insert(e.id);
-            d.currentCheckpointId = e.id;
-            d.currentCheckpointPos = e.position;
-            d.hasCheckpointSpawn = true;
+            const MapEntity* previous = mapConfig.findEntity(d.currentCheckpointId);
+            if (!previous || e.order >= previous->order) {
+                d.currentCheckpointId = e.id;
+                d.currentCheckpointPos = e.position;
+                d.hasCheckpointSpawn = true;
+                d.ztCheckpointName = e.id;
+                ++d.ztCheckpointSerial;
+            }
             ++d.runCheckpointCount;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
@@ -3351,9 +4069,13 @@ static void mapEntityRuntimeTick(ServerGamemodeState& d, SOCKET sock,
                                    {"players_killed", killedPlayers}});
             }
         } else if (e.type == "boss_trigger" && d.activatedBossTriggers.count(e.id) == 0) {
-            if (!mapEntityHasLivePlayer(e, players)) continue;
+            if (e.checkpointRequirement > 0 &&
+                (int)d.runCheckpointCount < e.checkpointRequirement)
+                continue;
+            if (!mapEntityHasLiveHumanTeamPlayer(e, players)) continue;
             d.activatedBossTriggers.insert(e.id);
             d.bossEncounterActive = true;
+            d.ztHadBossTrigger = true;
             d.activeBossId = e.bossId;
             d.progressionLocked = true;
             StructuredLogger::instance().writeEvent(
@@ -3366,12 +4088,19 @@ static void mapEntityRuntimeTick(ServerGamemodeState& d, SOCKET sock,
                 while (npcs.find(d.waveNextNpcId) != npcs.end()) ++d.waveNextNpcId;
                 ServerNpc npc;
                 npc.entityId = d.waveNextNpcId++;
-                npc.name = e.bossId + " " + std::to_string(++d.npcSpawnSequence);
+                const MatchRoleDefinition* bossRole = MatchRoleRegistry::instance().get(e.bossId);
+                npc.name = bossRole && !bossRole->displayName.empty()
+                    ? bossRole->displayName : e.bossId;
                 npc.pos = e.position;
                 npc.yaw = 0.0f;
                 npc.difficulty = 1.5f;
                 npc.spawnZoneId = e.id;
-                addNpcWaveParticipant(d, npc);
+                addZombieTowerTeamNpc(d, npc, 1, e.bossId);
+                d.ztStats[npc.entityId].name = npc.name;
+                d.activeBossName = npc.name;
+                d.activeBossMaxHp = bossRole && bossRole->health > 0
+                    ? bossRole->health : 100;
+                d.activeBossCurrentHp = d.activeBossMaxHp;
                 d.activeBossNpcId = npc.entityId;
                 npcs.emplace(npc.entityId, std::move(npc));
                 StructuredLogger::instance().writeEvent(
@@ -3380,6 +4109,16 @@ static void mapEntityRuntimeTick(ServerGamemodeState& d, SOCKET sock,
                     nlohmann::json{{"map", d.mapId}, {"boss_id", e.bossId},
                                    {"npc_id", d.activeBossNpcId},
                                    {"position", {e.position.x, e.position.y, e.position.z}}});
+            }
+        } else if (e.type == "tower_end") {
+            if (!mapEntityHasLiveHumanTeamPlayer(e, players)) continue;
+            if (!d.ztTowerEndReached) {
+                d.ztTowerEndReached = true;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "zombie_tower.tower-end-reached", e.id,
+                    "human team reached the authored tower end", tick,
+                    nlohmann::json{{"map", d.mapId}, {"entity_id", e.id}});
             }
         }
     }
@@ -3395,9 +4134,14 @@ static void mapEntityRuntimeTick(ServerGamemodeState& d, SOCKET sock,
                                {"npc_id", d.activeBossNpcId}});
             d.bossEncounterActive = false;
             d.progressionLocked = false;
+            d.ztBossDefeated = true;
+            d.activeBossCurrentHp = 0;
             d.activeBossNpcId = 0;
             ++d.stateVersion;
             broadcastDuelState(sock, d, players, totalPacketsOut);
+        } else {
+            d.activeBossCurrentHp = it->second.health;
+            d.activeBossMaxHp = std::max(d.activeBossMaxHp, it->second.health);
         }
     }
 
@@ -4818,8 +5562,49 @@ void serverGamemodeTick(SOCKET sock,
             broadcastDuelState(sock, d, players, totalPacketsOut);
             d.stateBroadcastPending = false;
         }
-        switch (d.phase)
-        {
+    if (d.zombieTower) {
+        static uint32_t lastZtStateLog = 0;
+        if (d.currentServerTick > lastZtStateLog + 120) {
+            lastZtStateLog = d.currentServerTick;
+            size_t active = 0;
+            size_t awaiting = 0;
+            for (const auto& kv : players) {
+                if (kv.second.spawnState == ServerPlayer::Active) ++active;
+                else if (kv.second.spawnState == ServerPlayer::AwaitingSpawnAck) ++awaiting;
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "zombie_tower.tick-state", d.mapId, "periodic run state", tick,
+                nlohmann::json{{"phase", (int)d.phase}, {"phase_timer", d.phaseTimer},
+                               {"active_players", active}, {"awaiting_ack", awaiting},
+                               {"participants", d.participants.size()},
+                               {"attempts", d.runAttemptsRemaining}});
+        }
+        admitZombieTowerPlayers(d, players, npcs);
+        // If a spawn sync was lost before the client acknowledged it, resend a
+        // fresh authoritative spawn at the phase-appropriate point.
+        for (auto& kv : players) {
+            ServerPlayer& p = kv.second;
+            if (p.spawnState != ServerPlayer::AwaitingSpawnAck) continue;
+            if (tick < p.ztSpawnResendTick) continue;
+            p.ztSpawnResendTick = tick + 120;
+            const int team = p.matchTeam >= 0 ? p.matchTeam : 0;
+            const glm::vec3 spawn = zombieTowerSpawnPointForActor(
+                d, team, p.id, "spawn-resend");
+            p.pos = spawn;
+            p.duelSpawnPos = spawn;
+            p.hasDuelSpawnPos = true;
+            completeAuthoritativeSpawn(sock, p, false);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "zombie_tower.spawn-resend", std::to_string(p.id),
+                "client had not acknowledged the initial spawn", tick,
+                nlohmann::json{{"actor", p.id}, {"team", team},
+                               {"spawn_generation", p.spawnGeneration}});
+        }
+    }
+    switch (d.phase)
+    {
         case DUEL_PHASE_WAITING:
             if (((d.npcWaves || d.persistentNpcSpawns || d.winCondition == "first_to_score") &&
                  countActivePlayers(players) >= 1) ||
@@ -4870,6 +5655,20 @@ void serverGamemodeTick(SOCKET sock,
                     ? tick + (uint32_t)std::ceil(d.waveBannerSeconds * 60.0f) : 0;
                 if (d.npcWaves)
                     spawnNpcWaveBatch(d, npcs);
+                if (d.zombieTower) {
+                    d.roundCountdownFreeze = false;
+                    if (d.ztRunStartTick == 0) d.ztRunStartTick = tick;
+                    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+                    d.ztMusicTrack = gm.musicOnGoTrack;
+                    d.ztMusicPlaying = !d.ztMusicTrack.empty();
+                    d.ztMusicStartedTick = tick;
+                    ++d.ztMusicSerial;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Audio, StructuredLevel::Important,
+                        "music.on-go", d.mapId, "Zombie Tower GO track selected", tick,
+                        nlohmann::json{{"track", d.ztMusicTrack},
+                                       {"serial", d.ztMusicSerial}});
+                }
                 ++d.stateVersion;
                 d.lastBroadcastTick = tick;
                 Debug::log(Debug::Category::Duel,
@@ -4951,7 +5750,13 @@ void serverGamemodeTick(SOCKET sock,
                 break;
             }
             if (d.persistentNpcSpawns) {
+                if (d.zombieTower) {
+                    zombieTowerDownedTick(d, players, tick);
+                    reconcileZombieTowerParty(d, players, npcs);
+                }
                 spawnPersistentNpcBatchIfDue(d, players, npcs, tick);
+                if (d.zombieTower)
+                    zombieTowerCheckWin(d, sock, players, npcs, tick, totalPacketsOut);
                 if (tick - d.lastBroadcastTick >= 15) {
                     d.lastBroadcastTick = tick;
                     broadcastDuelState(sock, d, players, totalPacketsOut);
@@ -5092,6 +5897,14 @@ void serverGamemodeTick(SOCKET sock,
                         "[MATCH] empty lobby returned to waiting mode=%s\n", d.matchMode.c_str());
                     break;
                 }
+                if (d.zombieTower && countActivePlayers(players) == 0) {
+                    // Do not start an empty run; the 30s intermission restarts
+                    // once a human is actually in the lobby.
+                    d.phaseTimer = std::max(1.0f, d.intermissionSeconds);
+                    ++d.stateVersion;
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    break;
+                }
                 // Rotate map if configured
                 if (d.rotateMaps && d.mapPool.size() > 1)
                     rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
@@ -5131,8 +5944,8 @@ void serverGamemodeTick(SOCKET sock,
     }
 
     // ── Original duel 1v1 state machine ─────────────────────────────
-    switch (d.phase)
-    {
+        switch (d.phase)
+        {
     case DUEL_PHASE_WAITING:
         if (countActivePlayers(players) >= 2)
         {
@@ -5459,9 +6272,10 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
     const std::string id = cm ? cm->gamemodeId : d.communityMode;
     const Gamemode& gm = GamemodeRegistry::instance().get(id);
     const bool hostOverride = playerIt->second.isHost;
+    const bool allowMidrun = d.zombieTower && gm.allowMidrunTeamChange;
     // Team selection is a pre-round decision. The host may override this lock
     // because the host is also responsible for resolving a full target team.
-    if (!hostOverride && d.phase != DUEL_PHASE_WAITING &&
+    if (!hostOverride && !allowMidrun && d.phase != DUEL_PHASE_WAITING &&
         d.phase != DUEL_PHASE_INTERMISSION && d.phase != DUEL_PHASE_RESULTS) {
         message = "team selection locked";
         return false;
@@ -5473,13 +6287,15 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
     }
     // Enforce ordered-team capacity when the mode declares it.
     if (requestedTeam < static_cast<int>(gm.teams.size())) {
-        const int capacity = gm.teams[static_cast<size_t>(requestedTeam)].capacity;
+        const GamemodeTeam& requestedTeamDef = gm.teams[static_cast<size_t>(requestedTeam)];
+        const int capacity = requestedTeamDef.capacity;
+        const bool preferHumans = requestedTeamDef.preferHumans;
         if (capacity > 0 && playerIt->second.matchTeam != requestedTeam) {
             int count = 0;
             for (const auto& entry : d.matchTeams)
                 if (entry.second == requestedTeam) ++count;
             if (count >= capacity) {
-                if (!hostOverride) {
+                if (!hostOverride && !preferHumans) {
                     message = "team is full";
                     return false;
                 }
@@ -5490,6 +6306,10 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
                     if (entry.first == playerId || entry.second != requestedTeam) continue;
                     if (npcs.find(entry.first) != npcs.end()) npcVictims.push_back(entry.first);
                     else if (players.find(entry.first) != players.end()) humanVictims.push_back(entry.first);
+                }
+                if (preferHumans && npcVictims.empty()) {
+                    message = "team is full";
+                    return false;
                 }
                 uint32_t victimId = 0;
                 if (!npcVictims.empty()) {
@@ -5539,10 +6359,21 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
         actor.movementProfileId = role->movementPreset;
         actor.weaponProfileId = role->weaponSet;
     }
+    if (d.zombieTower)
+        actor.state = requestedTeam == 2 ? ActorState::Spectating : ActorState::Alive;
     // Team selection changes the human's role-owned loadout immediately. The
     // next spawn/round still re-resolves the same role from the roster.
-    if (role && requestedTeam < 2)
-        completeAuthoritativeSpawn(sock, playerIt->second, false);
+    if (role && requestedTeam < 2) {
+        if (d.zombieTower) {
+            const glm::vec3 spawn = zombieTowerSpawnPointForActor(
+                d, requestedTeam, playerId, "team-change");
+            placeActorAtRunSpawn(d, playerIt->second, spawn);
+        } else {
+            completeAuthoritativeSpawn(sock, playerIt->second, false);
+        }
+    }
+    if (d.zombieTower)
+        reconcileZombieTowerParty(d, players, npcs);
     message = "switched to " + roundTeamName(gm, requestedTeam);
     if (hostOverride) message += " (host override)";
     broadcastServerChatMessage(sock, players, tick, totalPacketsOut,
@@ -6160,6 +6991,18 @@ void serverBombTagTick(SOCKET sock,
     case DUEL_PHASE_RESULTS:
         d.phaseTimer -= SERVER_DT;
         if (d.phaseTimer <= 0.0f) {
+            if (d.zombieTower) {
+                if (d.ztAttemptResult) {
+                    zombieTowerRespawnAttempt(d, players, npcs, npcSystem, tick);
+                    broadcastDuelState(sock, d, players, totalPacketsOut);
+                    break;
+                }
+                if (d.ztFinalResult) {
+                    zombieTowerReturnToLobby(
+                        d, sock, players, npcs, npcSystem, tick, totalPacketsOut);
+                    break;
+                }
+            }
             if (d.pendingModeSwitch && !d.pendingGamemodeId.empty()) {
                 const std::string nextMode = d.pendingGamemodeId;
                 const bool directCountdown = d.pendingModeSwitchCountdown;

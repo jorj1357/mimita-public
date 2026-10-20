@@ -188,6 +188,10 @@ void registerMapEntityCommands()
                 else if (property == "damage") entity->damage = std::stoi(args[2]);
                 else if (property == "damageIntervalTicks") entity->damageIntervalTicks = std::stoi(args[2]);
                 else if (property == "checkpointRequirement") entity->checkpointRequirement = std::stoi(args[2]);
+                else if (property == "order") entity->order = std::stoi(args[2]);
+                else if (property == "required") entity->required = args[2] != "0" && args[2] != "false";
+                else if (property == "activationRadius") entity->activationRadius = std::stof(args[2]);
+                else if (property == "healthMultiplier") entity->healthMultiplier = std::stof(args[2]);
                 else if (property == "oneShot") entity->oneShot = args[2] != "0" && args[2] != "false";
                 else if (property == "enabled") entity->enabled = args[2] != "0" && args[2] != "false";
                 else if (property == "visible") entity->visible = args[2] != "0" && args[2] != "false";

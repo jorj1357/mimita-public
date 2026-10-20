@@ -188,6 +188,10 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 team.defendersPerSite = std::max(0, optInt(t, "defenders_per_site", 0));
                 if (t.contains("one_rotator") && t["one_rotator"].is_boolean())
                     team.oneRotator = t["one_rotator"].get<bool>() ? 1 : 0;
+                team.npcRole = optString(t, "npc_role", "");
+                team.players = optBool(t, "players", team.players);
+                team.npcs = optBool(t, "npcs", team.npcs);
+                team.preferHumans = optBool(t, "prefer_humans", team.preferHumans);
                 if (team.id.empty() && team.displayName.empty()) continue;
                 if (team.displayName.empty()) team.displayName = team.id;
                 next.teams.push_back(std::move(team));
@@ -326,6 +330,11 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.features.worldText = optBool(f, "world_text", next.features.worldText);
             next.features.timerAboveEntity = optBool(f, "timer_above_entity", next.features.timerAboveEntity);
             next.features.percentAboveHead = optBool(f, "percent_above_head", next.features.percentAboveHead);
+            next.features.fog = optBool(f, "fog", next.features.fog);
+            next.features.rain = optBool(f, "rain", next.features.rain);
+            next.features.torchLighting = optBool(f, "torch_lighting", next.features.torchLighting);
+            next.features.freezeDuringCountdown =
+                optBool(f, "freeze_during_countdown", next.features.freezeDuringCountdown);
         }
 
         // ── Visual/settings overrides ───────────────────────────────
@@ -409,6 +418,14 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.waveStaggerEnabled = optBool(root, "wave_stagger_enabled", next.waveStaggerEnabled);
         next.waveNpcsPerTick = std::max(1, optInt(root, "wave_npcs_per_tick", next.waveNpcsPerTick));
         next.runAttempts = std::max(1, optInt(root, "run_attempts", next.runAttempts));
+        next.allowMidrunTeamChange =
+            optBool(root, "allow_midrun_team_change", next.allowMidrunTeamChange);
+        next.runMode = optBool(root, "run_mode", next.runMode);
+        if (root.contains("music") && root["music"].is_object()) {
+            const auto& music = root["music"];
+            next.musicOnGoTrack = optString(music, "on_go_track", next.musicOnGoTrack);
+            next.musicRandomPool = optStringArray(music, "random_pool");
+        }
         if (root.contains("npc_spawn") && root["npc_spawn"].is_object()) {
             const auto& s = root["npc_spawn"];
             next.npcSpawnPolicy = optString(s, "policy", next.npcSpawnPolicy);

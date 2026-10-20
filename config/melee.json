@@ -31,15 +31,15 @@
     "speed_scale": 1.0,
     "directness_scale": 1.0,
     "min_percent": 0.0,
-    "max_percent": 60.0,
+    "max_percent": 999.0,
     "min_impulse": 1.0,
-    "max_impulse": 120.0,
+    "max_impulse": 999999.0,
     "reference_base_impulse": 30.0,
     "reference_seconds": 1.0,
     "knockback_curve": [
       { "target_percent": 0.0, "distance_m": 0.5 },
-      { "target_percent": 100.0, "distance_m": 30.0 },
-      { "target_percent": 999.0, "distance_m": 999.0 }
+      { "target_percent": 100.0, "distance_m": 10.0 },
+      { "target_percent": 999.0, "distance_m": 300.0 }
     ]
   }
 }

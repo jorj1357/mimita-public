@@ -98,6 +98,12 @@ uniform vec3 uDynamicLightColor[8];
 uniform float uDynamicLightRadius[8];
 uniform float uDynamicLightIntensity[8];
 
+// Mode-gated distance fog (Zombie Tower). Disabled by default.
+uniform int uFogEnabled;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+uniform vec3 uCameraPos;
+
 in vec4 vShadowCoord;
 
 float breatheHash(vec2 p)
@@ -258,6 +264,12 @@ void main()
     }
 
     vec3 lit = texColor * light * edgeShade * aoShade + dynamicContrib * texColor;
+
+    if (uFogEnabled != 0) {
+        float fogDistance = length(vWorldPos - uCameraPos);
+        float fogAmount = 1.0 - exp(-max(uFogDensity, 0.0) * fogDistance);
+        lit = mix(lit, uFogColor, clamp(fogAmount, 0.0, 1.0));
+    }
 
     // Shadow
     float shadow = 0.0;

@@ -370,6 +370,7 @@ int runClient(const LaunchOptions& options)
                 if (input.dashPressed) sf |= NET_STATE_DASHING;
                 if (input.downDashPressed) sf |= NET_STATE_DOWN_DASHING;
                 if (input.freezeHeld) sf |= NET_STATE_FREEZING;
+                if (input.reviveHeld) sf |= NET_STATE_REVIVING;
                 in.stateFlags = sf;
             }
             in.movementSequence = movementSequence++;

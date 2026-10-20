@@ -126,6 +126,31 @@ public:
     static const char* fighterWeaponId(int choice);
     static const char* fighterWeaponName(int choice);
 
+    // ── ZT run presentation (server-authoritative) ──────────────────
+    bool ztAttemptResult() const { return mZtAttemptResult; }
+    bool ztFinalResult() const { return mZtFinalResult; }
+    bool ztRunWon() const { return mZtRunWon; }
+    int ztAttemptsRemaining() const { return mZtAttemptsRemaining; }
+    uint32_t ztRunElapsedTicks() const { return mZtRunElapsedTicks; }
+    bool ztBossActive() const { return mZtBossActive; }
+    const std::string& ztBossName() const { return mZtBossName; }
+    int ztBossHp() const { return mZtBossHp; }
+    int ztBossMaxHp() const { return mZtBossMaxHp; }
+    const std::string& ztMostDamageName() const { return mZtMostDamageName; }
+    uint32_t ztMostDamage() const { return mZtMostDamage; }
+    const std::string& ztMostHealingName() const { return mZtMostHealingName; }
+    uint32_t ztMostHealing() const { return mZtMostHealing; }
+    const std::string& ztTopSpeedName() const { return mZtTopSpeedName; }
+    float ztTopSpeed() const { return mZtTopSpeed; }
+    uint32_t ztCheckpointSerial() const { return mZtCheckpointSerial; }
+    const std::string& ztCheckpointName() const { return mZtCheckpointName; }
+    uint32_t ztMusicSerial() const { return mZtMusicSerial; }
+    const std::string& ztMusicTrack() const { return mZtMusicTrack; }
+    bool ztMusicPlaying() const { return mZtMusicPlaying; }
+    bool ztFog() const { return mZtFog; }
+    bool ztRain() const { return mZtRain; }
+    bool ztTorchLighting() const { return mZtTorchLighting; }
+
     // ── Disaster state (replicated mode-pack disaster) ───────────────
     // Server-authoritative identity, seed, window, and resolved winner. The
     // client only displays this; it never decides disaster outcomes.
@@ -179,6 +204,31 @@ private:
     float mRoundSeconds = 0.0f;
     float mRoundTimerLeft = 0.0f;
     ReplicatedObjective mObjective;
+
+    // ── ZT run presentation ─────────────────────────────────────────
+    bool mZtAttemptResult = false;
+    bool mZtFinalResult = false;
+    bool mZtRunWon = false;
+    int mZtAttemptsRemaining = 0;
+    uint32_t mZtRunElapsedTicks = 0;
+    bool mZtBossActive = false;
+    std::string mZtBossName;
+    int mZtBossHp = 0;
+    int mZtBossMaxHp = 0;
+    std::string mZtMostDamageName;
+    uint32_t mZtMostDamage = 0;
+    std::string mZtMostHealingName;
+    uint32_t mZtMostHealing = 0;
+    std::string mZtTopSpeedName;
+    float mZtTopSpeed = 0.0f;
+    uint32_t mZtCheckpointSerial = 0;
+    std::string mZtCheckpointName;
+    uint32_t mZtMusicSerial = 0;
+    std::string mZtMusicTrack;
+    bool mZtMusicPlaying = false;
+    bool mZtFog = false;
+    bool mZtRain = false;
+    bool mZtTorchLighting = false;
 
     // ── Bomb Tag replicated state ────────────────────────────────────
     uint8_t mBombOwnerType = 0;        // 0=none, 1=player, 2=npc

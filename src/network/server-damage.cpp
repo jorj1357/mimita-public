@@ -80,7 +80,7 @@ static ServerDamageResult applyPlayerDamageLegacy(
     result.healthBefore = target.health;
     result.healthAfter = target.health;
 
-    if (target.dead || damage <= 0)
+    if (target.dead || target.downed || damage <= 0)
     {
         DBG(Network, "SERVER DAMAGE target=%u attacker=%u source=%s accepted=0 "
             "reason=%s damage=%d health=%d",
@@ -174,6 +174,17 @@ static ServerDamageResult applyPlayerDamageLegacy(
     recordServerMovementExternalImpulse(target, knockback);
     result.applied = true;
     result.healthAfter = target.health;
+    {
+        ServerGamemodeState& mode = serverGamemodeState();
+        if (mode.zombieTower && attackerPlayerId != target.id) {
+            auto& stats = mode.ztStats[attackerPlayerId];
+            stats.damageDealt += (uint64_t)clampedDamage;
+            if (stats.name.empty()) {
+                auto attackerIt = players.find(attackerPlayerId);
+                if (attackerIt != players.end()) stats.name = attackerIt->second.name;
+            }
+        }
+    }
 
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
@@ -192,6 +203,35 @@ static ServerDamageResult applyPlayerDamageLegacy(
 
     if (target.health == 0)
     {
+        ServerGamemodeState& mode = serverGamemodeState();
+        int targetTeam = target.matchTeam;
+        if (targetTeam < 0) {
+            auto it = mode.matchTeams.find(target.id);
+            if (it != mode.matchTeams.end()) targetTeam = it->second;
+        }
+        if (mode.zombieTower && targetTeam == 0 && !target.downed)
+        {
+            target.downed = true;
+            target.downedHealth = 100.0f;
+            target.reviveProgress = 0.0f;
+            target.health = 0;
+            target.respawnSeconds = -1.0f;
+            target.vel = glm::vec3(0.0f);
+            target.movement.movementEnabled = false;
+            target.movement.baseVelocity = glm::vec3(0.0f);
+            target.movement.externalImpulse = glm::vec3(0.0f);
+            target.attackQueued = false;
+            result.killed = false;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "zombie_tower.actor-downed", std::to_string(target.id),
+                "human-team actor entered downed state", 0,
+                {{"attacker_id", attackerPlayerId}, {"target_actor_id", target.id},
+                 {"target_name", target.name}, {"target_team", targetTeam},
+                 {"health_before", result.healthBefore}, {"source", damageSourceName(source)}},
+                __FILE__, __LINE__, __FUNCTION__);
+            return result;
+        }
         target.dead = true;
         serverConsumeNpcWaveLife(target.id);
         // Honor the active gamemode's respawn rule. One-life modes set a

@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "id": "zombie_tower_chainsaw_boss",
+  "display_name": "Chainsaw Boss",
+  "movement_preset": "source",
+  "movement_executor": "sandbox_shared",
+  "weapon_set": "zombie_tower_zombie",
+  "starting_weapon": "zombie_claw",
+  "behavior_profile": "aggressive",
+  "avatar": {
+    "forced": true,
+    "name": "monsterchainsawboss",
+    "allowed": ["monsterchainsawboss"]
+  },
+  "health": {
+    "max": 5000,
+    "spawn": 5000
+  }
+}

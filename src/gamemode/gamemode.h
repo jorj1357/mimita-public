@@ -35,6 +35,11 @@ struct GamemodeFeatures {
     // Melee-style: render each fighter's percent above its head instead of the
     // ordinary healthbar (data-driven per mode).
     bool percentAboveHead = false;
+    // Zombie Tower first-slice presentation/run flags.
+    bool fog = false;
+    bool rain = false;
+    bool torchLighting = false;
+    bool freezeDuringCountdown = false;
 };
 
 // One ordered team in a mode's roster. Team index (0-based) is the
@@ -55,6 +60,15 @@ struct GamemodeTeam {
     int attackersPerSite = 0;
     int defendersPerSite = 0;
     int oneRotator = -1;  // -1 = unset, 0 = no rotator, 1 = one rotator
+    // Optional NPC-only role for this team (Zombie Tower companions). Empty
+    // means the team role is used for both humans and NPCs.
+    std::string npcRole;
+    // Data-driven default assignment for actors that have no explicit team.
+    // Only modes that declare this opt in; other modes keep legacy behavior.
+    bool players = false;
+    bool npcs = false;
+    // When true, a human may take a slot occupied by an NPC on this team.
+    bool preferHumans = false;
 };
 
 // A named set of spawn positions for one team. Positions are optional; when
@@ -239,6 +253,14 @@ struct Gamemode {
     // Authored-map PvE run attempts (checkpointed modes such as Zombie Tower).
     // Consumed by the map-entity run runtime; 3 is the documented default.
     int runAttempts = 3;
+    // Allow a player to change teams while the run is active (Zombie Tower).
+    bool allowMidrunTeamChange = false;
+    // Enables the authored-map run lifecycle (lobby, attempts, checkpoints,
+    // encounter volumes, boss). Generic flag; the mode supplies the map data.
+    bool runMode = false;
+    // Mode-owned soundtrack. Empty on_go_track means ordinary ingame music.
+    std::string musicOnGoTrack;
+    std::vector<std::string> musicRandomPool;
 };
 
 class GamemodeRegistry {

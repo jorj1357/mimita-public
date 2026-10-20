@@ -25,7 +25,8 @@ enum class ActorState : uint8_t
     Alive = 0,
     Dead = 1,
     Respawning = 2,
-    Spectating = 3
+    Spectating = 3,
+    Downed = 4
 };
 
 // The single server-owned identity for one match participant. Profile fields

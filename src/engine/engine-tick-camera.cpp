@@ -10,6 +10,7 @@
 #include "entities/aimbody-config.h"
 #include "entities/aim-fov.h"
 #include "gamemode/gamemode.h"
+#include "network/community-match-client.h"
 #include "npc/npc.h"
 #include "physics/physics-debug-movement.h"
 #include "audio/audio.h"
@@ -232,6 +233,8 @@ void engineTickCamera(Engine& engine, float dt)
         applyDebugMovement(player, engine.window(), camera, dt);
 
     const auto& camCfg = CamConfig::instance().data();
+    if (MimitaNet::CommunityMatchClient::instance().forceFirstPerson())
+        camera.thirdPerson = false;
     camera.decayPunch(dt);
     const WeaponDefinition* recoilDef = weapons.getCurrentDef(player);
     camera.decayWeaponRecoil(

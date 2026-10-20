@@ -20,6 +20,7 @@
 #include "physics/movement/physics-collision.h"
 #include "config/player-settings.h"
 #include "audio/audio.h"
+#include "effects/zombie-tower-effects.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/gui-bindings.h"
@@ -213,6 +214,37 @@ void registerDebugCommands()
             else if (MimitaNet::isServerHost())
                 Terminal::instance().addLog("[TEAM_PICK] host must be connected to its server session");
             else Terminal::instance().addLog("[TEAM_PICK] not connected");
+        },
+        "", CommandCategory::Duel
+    });
+    Terminal::instance().registerCommand({
+        "zt_effects", "Toggle Zombie Tower fog, rain and torch lighting", "zt_effects <on|off>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    std::string("[ZT_EFFECTS] ") +
+                    (ZombieTowerEffects::instance().enabled() ? "on" : "off"));
+                return;
+            }
+            const bool on = args[0] == "on" || args[0] == "1" || args[0] == "true";
+            ZombieTowerEffects::instance().setEnabled(on);
+            Terminal::instance().addLog(std::string("[ZT_EFFECTS] ") + (on ? "on" : "off"));
+        },
+        "", CommandCategory::Editor
+    });
+    Terminal::instance().registerCommand({
+        "zt_team", "Request a Zombie Tower team", "zt_team <humans|zombie|spectator>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ZT_TEAM] Usage: zt_team <humans|zombie|spectator>");
+                return;
+            }
+            const std::string command = "zt_team " + args[0];
+            if (::gpMpContext && ::gpMpContext->active)
+                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            else if (MimitaNet::isServerHost())
+                Terminal::instance().addLog("[ZT_TEAM] host must be connected to its server session");
+            else Terminal::instance().addLog("[ZT_TEAM] not connected");
         },
         "", CommandCategory::Duel
     });

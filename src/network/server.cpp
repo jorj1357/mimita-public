@@ -14,6 +14,7 @@
 #include "procedural/procedural-world.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
+#include "gamemode/monster-pools.h"
 #include "gamemode/mode-pack-registry.h"
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
@@ -430,6 +431,7 @@ int runServer(const LaunchOptions& options)
     }
     MatchRoleRegistry::instance().load("config/roles.json");
     MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
+    MonsterPoolRegistry::instance().load("config/monster-pools.json");
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
 

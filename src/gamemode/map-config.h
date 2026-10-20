@@ -45,7 +45,19 @@ struct MapEntity
     int damageIntervalTicks = 60;
     int spawnCooldownTicks = 60;
     int checkpointRequirement = 0;
+    // Zombie Tower run data. `order` is the checkpoint progression index;
+    // `required` marks an encounter that must be cleared before the run can win.
+    int order = 0;
+    bool required = false;
+    // 0 = use `radius` for monster-zone activation.
+    float activationRadius = 0.0f;
+    // Boss placeholder health multiplier (1 = role base health).
+    float healthMultiplier = 1.0f;
+    // Runtime-only activation state, never serialized.
+    int runtimeSpawned = 0;
+    bool runtimeCleared = false;
     bool runtimeActivated = false;
+    bool runtimePlayerActivated = false;
     uint32_t lastActivationTick = 0;
 };
 
@@ -100,6 +112,8 @@ public:
     void setEntityVisibility(bool visible);
     bool entityVisibility() const { return mEntityVisibility; }
     void setEntityVisibilityFor(const std::string& id, bool visible);
+    // Clear runtime activation state for a new run without reloading the file.
+    void resetRuntimeState();
     const std::string& configPath() const { return mPath; }
 
     // Resolve the config path for a map id under config/maps/.

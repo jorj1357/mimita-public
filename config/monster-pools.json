@@ -1,0 +1,7 @@
+{
+  "pools": {
+    "default": [
+      { "role": "zombie_tower_normal_zombie_npc", "count": 1 }
+    ]
+  }
+}

@@ -39,7 +39,8 @@ enum NetworkPlayerStateFlags : uint16_t
     // not change any packet size.
     NET_STATE_SHIELDING    = 1 << 8,
     NET_STATE_GRABBING     = 1 << 9,
-    NET_STATE_CROUCHING    = 1 << 10
+    NET_STATE_CROUCHING    = 1 << 10,
+    NET_STATE_REVIVING     = 1 << 11
 };
 constexpr int MAX_RECONNECT_TOKEN_BYTES = 64;
 constexpr int MAX_JOIN_TOKEN_BYTES = 64;
@@ -1259,6 +1260,30 @@ struct DuelStatePacket
     // ── Procedural world (Infinite Dungeon Slayer) ──────────────────
     // Appended section: server-owned room state. All-zero means disabled.
     ProceduralWorldNetworkState procedural = {};
+    // ── Zombie Tower first-playable run state ───────────────────────
+    uint8_t ztAttemptResult = 0;
+    uint8_t ztFinalResult = 0;
+    uint8_t ztRunWon = 0;
+    uint8_t ztBossActive = 0;
+    uint8_t ztMusicPlaying = 0;
+    uint8_t ztFog = 0;
+    uint8_t ztRain = 0;
+    uint8_t ztTorchLighting = 0;
+    int32_t ztAttemptsRemaining = 0;
+    uint32_t ztRunElapsedTicks = 0;
+    char ztBossName[64] = {};
+    int32_t ztBossHp = 0;
+    int32_t ztBossMaxHp = 0;
+    char ztMostDamageName[64] = {};
+    uint32_t ztMostDamage = 0;
+    char ztMostHealingName[64] = {};
+    uint32_t ztMostHealing = 0;
+    char ztTopSpeedName[64] = {};
+    float ztTopSpeed = 0.0f;
+    uint32_t ztCheckpointSerial = 0;
+    char ztCheckpointName[64] = {};
+    uint32_t ztMusicSerial = 0;
+    char ztMusicTrack[260] = {};
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a
