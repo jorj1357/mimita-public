@@ -2,6 +2,23 @@
   "pools": {
     "default": [
       { "role": "zombie_tower_normal_zombie_npc", "count": 1 }
+    ],
+    "ground_mixed": [
+      { "role": "zombie_tower_normal_zombie_npc", "count": 2 },
+      { "role": "zombie_tower_boomer_npc", "count": 1 },
+      { "role": "zombie_tower_stabber_npc", "count": 1 },
+      { "role": "zombie_tower_crawler_npc", "count": 1 },
+      { "role": "zombie_tower_brute_npc", "count": 1 },
+      { "role": "zombie_tower_charger_npc", "count": 1 }
+    ],
+    "floor_01_main": [
+      { "role": "zombie_tower_stabber_npc", "count": 2 },
+      { "role": "zombie_tower_crawler_npc", "count": 2 },
+      { "role": "zombie_tower_boomer_npc", "count": 1 }
+    ],
+    "floor_01_heavy": [
+      { "role": "zombie_tower_brute_npc", "count": 1 },
+      { "role": "zombie_tower_charger_npc", "count": 2 }
     ]
   }
 }

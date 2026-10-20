@@ -2,11 +2,15 @@
   "schema": 2,
   "id": "zombie_tower_charger",
   "display_name": "Charger",
-  "movement_preset": "source",
+  "movement_preset": "retrograd_fast",
   "movement_executor": "sandbox_shared",
-  "weapon_set": "zombie_unarmed",
-  "starting_weapon": "nothing",
+  "weapon_set": "zombie_tower_charger",
+  "starting_weapon": "zombie_charger_claw",
   "behavior_profile": "aggressive",
+  "health": {
+    "max": 140,
+    "spawn": 140
+  },
   "avatar": {
     "forced": true,
     "name": "monstercharger",

@@ -1,4 +1,17 @@
-﻿2026 10 07 1039 jorj todo  we do not
+﻿2026 10 20 1655 jorj todo explain 
+why is revovler
+sucking so much dickckkkkkk
+15 damaeg OR 45
+like noo inbetweeen
+we need more editable in weapons.json
+and make it so each weapon gets its own .json
+like
+
+config/weapons/revovler/revovler.json
+so u can add other stuff in the foder later if we want?
+idk 
+
+2026 10 07 1039 jorj todo  we do not
 
 like
 this 
@@ -245,8 +258,9 @@ content must not require growing a packet per weapon.
 
 Acceptance before calling this architecture complete:
 
-1. Add a test weapon through validated data and asset references only, with no
-   per-weapon C++ constructor or packet.
+1. Add a test weapon through
+   `config/weapons/<weapon-id>/<weapon-id>.json` and referenced assets only,
+   with no per-weapon C++ constructor or packet.
 2. Put that weapon in two sets at different hotbar positions; both must equip,
    predict, attack, and replicate the same stable identity.
 3. Reorder a set without changing definitions; no wrong-weapon rejection or
@@ -261,12 +275,26 @@ Acceptance before calling this architecture complete:
 ### Data-only additions and live reload boundary
 
 When all needed component implementations already exist, adding a weapon must
-require only a validated `config/weapons.json` entry and referenced assets;
-it must not require a C++ edit or rebuild. The generic loader constructs the
-definition, resolves its component IDs, validates cross-references, and
-registers it by stable ID. A new mechanic or component implementation still
-requires one shared C++ implementation; JSON chooses and configures existing
-capabilities and is not arbitrary executable code.
+require only a validated per-weapon JSON file and referenced assets; it must
+not require a C++ edit or rebuild. The canonical path is
+`config/weapons/<weapon-id>/<weapon-id>.json`. The generic loader discovers
+those files, constructs definitions, resolves component IDs, validates
+cross-references, and publishes one registry snapshot by stable ID. Do not
+keep a second editable copy of the same definition in a growing aggregate
+`config/weapons.json`.
+
+Migration from the current aggregate file happens gradually. Each weapon has
+one canonical definition at a time: the loader may read the old aggregate as a
+temporary compatibility source until that weapon is migrated, then the
+per-weapon file becomes its source of truth. If both files contain that
+weapon, the per-weapon file wins and the duplicate aggregate entry is ignored.
+Record the migration state and remove the compatibility read only after all
+required weapons have moved. The per-weapon folder can also hold related
+weapon-specific metadata and asset references without enlarging one central
+file.
+A new mechanic or component implementation still requires one shared C++
+implementation; JSON chooses and configures existing capabilities and is not
+arbitrary executable code.
 
 Weapon definition reload is atomic at a fixed-tick boundary. The loader parses
 and validates a candidate snapshot first. On failure it keeps the last valid
@@ -286,6 +314,28 @@ This is the desired architecture, not a claim about current implementation.
 The existing `createRevolverDefinition()`-style registrations and slot-based
 equip plumbing are migration debt and must be measured before removal.
 
+### Linear impact falloff: revolver first (2026-10-20)
+
+The revolver's hit damage must vary linearly between a minimum of 15 and a
+maximum of 45, rather than choosing only one of those values. Use one
+normalized impact factor derived from hit distance and impact angle:
+
+```text
+damage = 15 + impactFactor * (45 - 15)
+```
+
+Close, direct hits approach 45 damage. Far, shallow/glancing hits approach 15.
+Use this same shared rule for the revolver and other weapons with impact
+falloff; each weapon's JSON defines its own minimum/maximum damage. The same
+impact factor should scale knockback linearly:
+close, direct hits push harder; far, shallow hits push less. Exact distance
+range, angle normalization, and per-weapon knockback bounds remain TODOs; do
+not invent them here.
+
+This is the first damage-falloff behavior to implement for the revolver and
+other weapons. The note that the behavior is already working is user-reported
+as of 2026-10-20; it is not a runtime verification in this specification edit.
+
 ### Melee mode: one equipped move-set definition
 
 **DECIDED direction for Captain Falcon Melee:** represent the entire A/B move
@@ -294,7 +344,7 @@ actions as children of its reusable `melee` behavior component. Put each
 action's inputs, grounded/airborne conditions, tap count/window, one stable
 animation clip ID, animated-part hitboxes, percent, knockback,
 movement/root-motion settings, sound IDs, pitch and volume multipliers, sound
-offsets, and shield damage in that one `config/weapons.json` definition. The
+offsets, and shield damage in that one per-weapon JSON definition. The
 referenced animation asset owns total duration and windup/active/recovery
 boundaries; do not duplicate timing or per-phase clip references here.
 The selected `config/weaponsets.json` loadout references this one definition;

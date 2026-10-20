@@ -27,7 +27,7 @@
   "hitReactionDurationScale": 1.0,
   "hitReactionEnabled": false,
   "jukeFrequency": 0.0,
-  "jumpCooldownSeconds": 0.45,
+  "jumpCooldownSeconds": 1.45,
   "lowObstacleHighOffset": 1.0,
   "lowObstacleJumpEnabled": true,
   "lowObstacleLowOffset": -1.0,

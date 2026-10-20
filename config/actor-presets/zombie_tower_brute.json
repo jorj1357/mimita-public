@@ -2,11 +2,15 @@
   "schema": 2,
   "id": "zombie_tower_brute",
   "display_name": "Brute",
-  "movement_preset": "source",
+  "movement_preset": "heavy",
   "movement_executor": "sandbox_shared",
-  "weapon_set": "zombie_unarmed",
-  "starting_weapon": "nothing",
+  "weapon_set": "zombie_tower_brute",
+  "starting_weapon": "zombie_brute_claw",
   "behavior_profile": "aggressive",
+  "health": {
+    "max": 300,
+    "spawn": 300
+  },
   "avatar": {
     "forced": true,
     "name": "monsterbrute",

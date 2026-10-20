@@ -1,3 +1,5 @@
+
+
 2026 10 17 1211 jorj todo add: the  blood and world imapct effects dont show if the npc hittin gme
 needs to be automatic all the itme
 and no like

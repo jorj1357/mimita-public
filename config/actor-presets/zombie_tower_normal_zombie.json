@@ -2,7 +2,7 @@
   "schema": 2,
   "id": "zombie_tower_normal_zombie",
   "display_name": "Normal Zombie",
-  "movement_preset": "source",
+  "movement_preset": "source-monster",
   "movement_executor": "sandbox_shared",
   "weapon_set": "zombie_tower_zombie",
   "starting_weapon": "zombie_claw",

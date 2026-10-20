@@ -231,9 +231,9 @@
 - The player must author the real lobby/tower spawn points, ordered checkpoints,
   monster pools/volumes, boss trigger, and optional tower end in
   `config/maps/zombietower4.json`. See the plan document for the exact schema.
-- Boomer, Stabber, Crawler, Brute, and Charger remain unarmed data-ready roles
-  until health/speed/damage/cadence/attack definitions and animation clips are
-  decided.
+- Boomer, Stabber, Crawler, Brute, and Charger now have placeholder health,
+  movement, contact attacks, and Captain Falcon animation clips. Their numeric
+  values are intentionally provisional and should be replaced with authored data.
 - The Chainsaw Boss uses the existing avatar and shared contact attack; its unique
   movement/attack animation and low-friction tuning are not invented.
 - Allied NPC revive is deferred; human down/revive is implemented.
@@ -256,3 +256,68 @@
 - `docs/specs/graphics/graphics-lighting.md:1` and
   `docs/specs/music/music.md:1` are informal notes to expand later.
 - `docs/doc-review-09-03-2026.md` is absent in this checkout.
+
+## Follow-up 2026-10-20: placeholder monster loadouts
+
+Scope decision: use the existing Captain Falcon clips temporarily and invent
+placeholder numeric stats/attacks for Boomer, Stabber, Crawler, Brute, and
+Charger. These values are explicitly provisional; replace them with authored
+monster data later. No new attack behavior type was added.
+
+### Changed files
+
+- `config/weapons.json` (`1999`, `2026`, `2053`, `2080`, `2107`): added
+  `zombie_boomer_claw`, `zombie_stabber_claw`, `zombie_crawler_claw`,
+  `zombie_brute_claw`, and `zombie_charger_claw`, each with placeholder
+  spyknife damage/knockback/cadence values. Before: only `zombie_claw` existed.
+  Example: before `"damageTickInterval": 0.166 } } }`; after
+  `"zombie_boomer_claw": { ... "damageTickInterval": 0.2 }`.
+- `config/weaponsets.json` (`140-179`): added role-only weapon sets 16-20.
+  Before: `"id": 15, "key": "zombie_unarmed"` was the final set. After:
+  `"id": 20, "key": "zombie_tower_charger"`.
+- `config/roles.json` (`221-289`): assigned placeholder health, movement,
+  weapon set, and starting weapon to each `_npc` role. Before:
+  `"weapon_set": "zombie_unarmed", "starting_weapon": "nothing"`. After:
+  e.g. Boomer `"health": 120`, `"movement_preset": "heavy"`,
+  `"weapon_set": "zombie_tower_boomer"`, `"starting_weapon": "zombie_boomer_claw"`.
+- `config/actor-presets/zombie_tower_boomer.json` (`5-14`), `..._stabber.json`
+  (`5-14`), `..._crawler.json` (`7-14`), `..._brute.json` (`5-14`), and
+  `..._charger.json` (`5-14`): same placeholder stats/loadouts. Before:
+  `"movement_preset": "source", "weapon_set": "zombie_unarmed",
+  "starting_weapon": "nothing"`. After: e.g. Brute `"max": 300`,
+  `"movement_preset": "heavy"`, `"starting_weapon": "zombie_brute_claw"`.
+- `config/monster-pools.json` (`6`, `14`, `19`): added `ground_mixed`,
+  `floor_01_main`, and `floor_01_heavy` pools. Before: only `default`. After:
+  `"floor_01_heavy": [{ "role": "zombie_tower_brute_npc", "count": 1 }, ...]`.
+- `assets/avatars/monstertest1/animations.json`,
+  `assets/avatars/monsterstabber/animations.json`,
+  `assets/avatars/monstercrawler/animations.json`,
+  `assets/avatars/monsterbrute/animations.json`, and
+  `assets/avatars/monstercharger/animations.json` (new): verbatim copies of
+  `assets/avatars/captainfalcon/animations.json`. Before: no `animations.json`
+  in these avatar directories, so authored melee clips were unavailable.
+
+### Validation evidence
+
+- Build: dev-loop build `2680`, status `SUCCESS`.
+- Runtime: mode 10, `zombietower4`, runs `20261020_202019` and `20261020_202400`.
+- `monster.spawn-zone-activated` reported `"monster_pool":"ground_mixed",
+  "spawn_count":6` and `"spawn_count":8` in the two runs.
+- `monster.spawned` reported every new role across the runs, including
+  `zombie_tower_boomer_npc`, `zombie_tower_stabber_npc`,
+  `zombie_tower_crawler_npc`, `zombie_tower_brute_npc`, and
+  `zombie_tower_charger_npc`.
+- `npc.grenade-availability` reported each new weapon as
+  `"definition_found":true`, `"runtime_exists":true`, `behavior` 10, and team 1;
+  for example `"equipped":"zombie_charger_claw"` on actor `100009`.
+- `anim.state.changed` reported `"avatar":"monstertest1"`,
+  `"avatar":"monsterstabber"`, `"avatar":"monstercrawler"`,
+  `"avatar":"monsterbrute"`, and `"avatar":"monstercharger"` entering
+  `"to":"captainfalcon_walk"`.
+- `anim.melee.pose_probe` reported `"set_valid":true` and
+  `"authored_only":true` for the monster avatars.
+- NPC state logs showed the new roles entering `ATTACK` against human-team NPCs.
+- Temporary test map changes were restored; the map file hash matches the backup
+  and `git diff -- config/maps/zombietower4.json` is clean.
+- Not verified: actual damage numbers/feel, unique attacks, death/ragdoll tuning,
+  and visual acceptance. Placeholder values are for testing only.

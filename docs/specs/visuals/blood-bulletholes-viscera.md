@@ -1,22 +1,45 @@
+2026 10 29 1650
+ jorj todo explain 
+
+we need like
+tf2
+like 
+e
+no
+like retrograd do it like retrograd
+omg  the freakin g like copier andy
+
+make it so
+shooting someone int he face = 
+shoot a hole in them
+enough damage = explode their limb
+like
+it explodes how it does in retrograd
+
+BLOOD needs some big and some smasll  -  C:\mimita-v9\docs\specs\gamemodes\zombie-tower\zombie-tower.md line 5825 right now  2026 10 20 1656 
+
 9 7 2026 1658 est jorj - this should be the big implementation for the alreadt existing but  bad performance   of blood spray when shooting otherrs, bullet holes on the world, cracks on the world, bombs exploding leave a big mark onteh ground. and relates to like camera sway and stuff for realism, like bobm exploding near u in realistic mode = u can 
 
 # Generalized Effects, Blood, Gore, and Persistent Visual Consequences
 
 Created: 2026-09-07T16:58:00-04:00  
-Last updated: 2026-09-09  
+Last updated: 2026-10-20
 Status: design / implementation specification
 
 ## 1. Purpose
 
 This document defines the generalized effects system used for blood, gore, bullet impacts, world marks, debris, smoke, sparks, cracks, explosion visuals, camera reactions, audio reactions, and other visual or physical consequences.
 
-The primary immediate goal is to preserve or improve the existing visual quality of blood spray, blood impacts, bullet holes, and related effects while radically reducing their frame-time cost.
+As of 2026-10-20, the user reports that blood presentation has looked good for
+about a month and that the initial V1 blood-effects work is already in place.
+This is a user-reported status, not a runtime audit in this document update.
+The 2026-09-07 note below records the earlier performance complaint, not the
+current reported state.
 
-The current problem is not that the desired visuals are wrong.
-
-The current problem is:
-
-> the desired output is known, but the current representation and implementation are too expensive.
+Current work expands that baseline with location-based part damage, stronger
+blood and viscera presentation, limb destruction, and large explosion marks,
+while keeping performance high. The renderer and simulator must preserve the
+desired visible result while reducing unnecessary work.
 
 Optimization may change representation, batching, scheduling, simulation frequency, LOD, storage, networking, and rendering implementation.
 
@@ -245,6 +268,39 @@ V1 does not require:
 
 Those can be V2+.
 
+## Current work: part health, gore, and viscera (2026-10-20)
+
+The existing V1 blood presentation is the baseline and is reported as already
+working. Full gore and limb destruction are current work; do not defer them to
+V2+.
+
+Each visible body part has hidden part health. Start with 100 health per part;
+the value must eventually be configurable in JSON. The exact schema and owning
+configuration file are still a TODO. For example, a torso at 100 part health
+hit by a revolver attack that applies 15 damage has 85 part health remaining.
+
+Blood comes from the actual hit location and body part. Its direction and
+amount respond to the hit and its force. Part health reaching zero causes that
+part to explode, play a sound, and produce small red pieces. The pieces become
+movable shapes and receive force based on the impact damage/force, so stronger
+hits throw them farther or faster. The exact sound or sound set and the GLB
+assets for organ, meat, and bone shapes are TODOs to choose.
+
+Blood should spill onto the ground and form both small puddles and large pools.
+At extreme damage, use a visibly large, fast, high-volume spray. As an initial
+art target, a 5000-damage impact against a part with 100 health should put about
+95% of the spray in the large-radius/large-spray class. Tune the exact particle
+and puddle values in the owning configuration; do not treat this example as a
+finished balance formula.
+
+An exploding bomb should leave a very large black ground decal. This mark is
+visual presentation; a physical hole or deformation remains owned by the
+destructible-world system.
+
+Maintain at least 240 FPS as the performance target while these effects are
+visible. The benchmark hardware and measurement scenario are still TODOs; do
+not meet the target by silently removing the requested visible blood or gore.
+
 ---
 
 # 7. Blood V2+
@@ -259,11 +315,6 @@ Future versions may expand the same generalized system to support:
 - blood on moving objects,
 - blood interacting with explosions,
 - blood responding to wind or forces,
-- body parts,
-- organs,
-- viscera,
-- tissue destruction,
-- detached geometry,
 - fluid-like material behavior.
 
 This should still emerge from generalized materials, collision, destruction, physics, and effects systems.
@@ -1763,9 +1814,10 @@ The objective is:
 
 ---
 
-# 55. V1 Scope
+# 55. Existing V1 Baseline and Current Work
 
-The first implementation should focus on:
+The initial V1 blood-effects baseline is reported by the user as already
+implemented and working as of 2026-10-20. Its scope was:
 
 1. expanding the existing effect system rather than replacing it with isolated systems,
 2. performant blood spray,
@@ -1783,6 +1835,11 @@ The first implementation should focus on:
 14. integration with existing bullet/destruction events,
 15. preserving existing desirable blood appearance.
 
+The current work extends this baseline with part health, hit-location blood,
+gore/viscera pieces, limb destruction, mixed-size ground pools, and large black
+bomb decals as defined in §6. Keep the 240 FPS target in view while preserving
+the visible result.
+
 ---
 
 # 56. V1 Explicit Non-Goals
@@ -1797,7 +1854,6 @@ realistic organ simulation
 distributed persistence
 permanent cross-restart worlds
 complete deterministic whole-server replay compression
-full gore destruction
 complex chemical/material interactions
 ```
 
@@ -1874,7 +1930,9 @@ Offscreen cosmetic work consumes effectively no rendering cost.
 
 Static blood becomes progressively cheaper through merging/batching.
 
-The player can leave the area and return much later and see the resulting stains.
+The player can leave the area and return later in the same running game/server
+and see the resulting stains. Persistence across a server restart is not
+required for this V1 behavior.
 
 If the same area receives thousands of impacts, logical history may be compressed into equivalent current world/surface state rather than thousands of expensive independent objects.
 

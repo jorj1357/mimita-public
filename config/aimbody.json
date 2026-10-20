@@ -13,7 +13,7 @@
   // Y=lateral, Z=up. Change Y for left/right and Z for height.
   "right_arm_pointing": {
     "mode": "rmb",
-    "center_offset": [2.0, 0.5, 2.5],
+    "center_offset": [2.0, 0.5, 2.3],
     // Arm-local goal correction in degrees: [pitch, yaw, roll].
     // Use this to correct an avatar whose centered arm points down/up.
     "rotation_degrees": [90.0, -90.0, 0.0],
@@ -34,8 +34,9 @@
     "aim_strength": 10.0,
     // "aim_strength": 7.0,
     // Higher values make the arm catch up more calmly instead of whipping.
-    "follow_damping": 1.0,
-    // "follow_damping": 10.0,
+    // "follow_damping": 1.0,
+    // "follow_damping": 2.0,
+    "follow_damping": 10.0,
     // "follow_damping": 99.0,
     // "follow_damping": 999.0,
     // "follow_damping": 100.0,

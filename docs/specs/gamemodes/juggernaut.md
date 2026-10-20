@@ -1,3 +1,33 @@
+2026 10 20 1731 jorj todo: the issue is 
+like
+friendly people need to not have outlines
+right now, friendlies  can ahve like green outline or red outline,not good, onl the enemy should have red outline. actuallt better is to just have it be like ez to see whos on ur team or not
+
+also a bug is  the heavy shotgun doenst have  its own sound
+nede to have the heav shotgun sound when juggernaut shoots it 
+
+instead of just  like idk normal shotgun thts not good 
+
+also 2026 10 20 1735 the juggernaut i think oen of themis just invisible? cant see them and the wont do damaeg to me
+we nede to make it so  bigger avatar has actual collisions and doesnt just  sink into the ground and then make it so juggernaut team is forced to have an avatar 
+
+also rocket launcher 
+the inviisble juggernaut bug also the are n to doing dmg to me, i get blood effects but i dont take damage no view punch etc
+avatar edits brkoe it?
+idk
+
+ROCKET LAUCNHER COOLDOWN NOT GOOD 
+dont do 
+cooldown issues bc the server is waitng and cant figuer out the cooldown
+dont even 
+idk
+make the cooldown on the server like
+idk
+make it client sided i tihnk tahts good 
+bc its just ur reload time or cooldown dont make it so u have ot wait for npcs to render o rosmething thats boring n  and sucks 
+juggernaut hsooting at me and is invisible and doenst do damage ot me at all and so i dotn die and it snot fair not good win to a juggernaut round 
+what do we   do abt avatars being bigger/smaller for npcs and mkae i tso  the collisions work and limbs dont go into the floor? 
+
 2026 10 11 1737  we  can do 
 like
 super aewsome 

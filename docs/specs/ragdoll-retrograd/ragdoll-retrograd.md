@@ -1,3 +1,38 @@
+2026 10 20 1723 todo also we need to make i tso  ragdoll like
+arm moving up and down left/right
+has like
+a smoothing toward it 
+like prob do in  C:\mimita-v9\config\aimbody.json here 
+butttttt
+like editable
+so
+lookinga round super quick doenst snap u isntalt
+AND 
+DO THAT FOR UP/DOWN
+its too snappy right now
+and left right
+up/down/left/right aiming with the ragdoll mvoement arms mode , needs to ahve some smoothing s
+
+2026 10 20 1649 
+todo: write currentebhavior of how it works right now
+in this spec
+bc it works and has been working BUT
+ALSO
+ON DEATH
+IF IM GETTING SHOT FROM THE FRONT = MOMENTUM GOES BACK = DEATH RAGDOLL GOES BAKWARD!!!!
+DONT INHERIT THE EXISTING VELOCITT ok so i acn 
+i shoot in the face = i go backward
+ot
+i get shot frmo theback = i get pushed forward when i die
+the ragodll
+shot from the left = pushed to the right when i die
+etc
+shot from below = pushed above
+
+WE ALSO NEED GIBS BLOOD ETC S C:\mimita-v9\docs\specs\visuals\blood-bulletholes-viscera.md defined here
+
+TODO: WHY AIMING IN WITH THE RAGDOLL ARM  IS JITTERING THE CORSSHAIR WONT SIT STILLLLLL ARGHHHH 
+
 9 8 2026 1010 est jorj - todo explain ragdoll like retrograd, relates to countnee strike and  source mode style things 
 
 a/d = grab with left, right arm
@@ -15,6 +50,7 @@ ragdoll body mass editable as well , in ajson
 
 **Created:** 2026-09-08 10:10 EST  
 **Expanded:** 2026-09-09  
+**Updated:** 2026-10-20
 **Status:** Behavioral specification / implementation target
 
 Related:
@@ -22,6 +58,82 @@ Related:
 - `C:\mimita-priv-v8\docs\specs\moving-physical-objects\moving-physical-objects.md`
 - `C:\mimita-priv-v8\config\ragdoll.json`
 - `C:\mimita-priv-v8\config\aimbody.json`
+
+---
+
+## Current decisions and reported issues (2026-10-20)
+
+The user reports that the initial ragdoll mode has been working for about a
+month. This is a user-reported status, not a runtime audit from this document
+update.
+
+Death ragdoll and the alive `G` toggle have different momentum rules:
+
+- **Death:** discard the player's old movement velocity. Start the death
+  ragdoll from the impact that caused death. A hit from the front pushes the
+  body backward; a hit from behind pushes it forward; side and below hits push
+  away from their incoming direction. Stronger hits create a stronger push.
+- **Alive toggle:** preserve the player's current velocity when entering or
+  exiting ragdoll, as required by §39.
+
+Minimum and maximum death push values and their configuration owner remain a
+TODO. The impact direction and strength must come from the lethal hit, not from
+the player's velocity before death.
+
+While the player holds RMB to aim, show one stable crosshair. It must not jump
+or appear doubled. During normal movement, the crosshair follows the smoothed
+physical arm/weapon aim described below, rather than snapping immediately with
+the camera. Here, “stable” means one coherent reticle without jitter or
+doubling. `C:\mimita-v9\config\aimbody.json` owns the aim/body configuration
+for this behavior. The cause of the previously reported jitter remains a
+separate debugging TODO.
+
+### RMB arm stability tuning (2026-10-20)
+
+The user reports that changing
+`config/aimbody.json` → `right_arm_pointing.follow_damping` from `1.0` to
+`10.0` seems to have fixed much of the RMB arm jitter: the arm jitters less.
+The working copy currently contains `10.0`. Keep this as a helpful tuning
+result, not the final solution. TODO: find a better long-term aiming solution
+so the physical arm and weapon settle reliably without depending on a high
+damping value. The improvement is user-observed; this note does not claim
+separate runtime verification.
+
+### Normal-movement arm-aim smoothing (2026-10-20)
+
+This behavior applies while the player is in normal movement mode. It does not
+change arm aiming or controls while the player is ragdolled.
+
+Both arms share one desired aim direction: the camera's full forward direction,
+including both yaw (left/right) and pitch (up/down). The camera view responds to
+mouse input immediately. The physical arms and weapon smoothly turn toward that
+shared direction instead of snapping to it.
+
+The crosshair is derived from the physical arm/weapon aim. It therefore follows
+the arms' smoothed aim and may briefly lag behind the immediately responsive
+camera while the arms catch up. When the camera stops moving, the arms, weapon,
+and crosshair converge on the camera-forward direction.
+
+A dedicated, editable normal-movement arm-aim response-time multiplier belongs
+in `config/aimbody.json`, separate from other aimbody and camera smoothing
+controls. A value of `1.0` preserves the current normal-movement aiming response.
+Larger values make the physical arms take proportionally longer to reach the
+desired direction: `10.0` means about ten times the baseline response time. The
+initial desired value is around `1.5`, with roughly 50 ms to settle as an
+approximate tuning target. The 50 ms figure is approximate; tune it against the
+actual baseline response during runtime review.
+
+Acceptance scenarios: make a quick left/right camera turn and a quick up/down
+look during normal movement. Neither arm should snap; both should smoothly
+track the same camera-forward direction, and the crosshair should follow their
+physical aim. After the camera stops, all three should settle on that direction.
+Repeat with multiplier `1.0` and `1.5` to confirm the setting changes response
+time. Confirm ragdoll-mode aiming remains unchanged.
+
+Full hit-caused gore and limb destruction are current work, not a future ragdoll
+version. Part health, blood, viscera, and destruction presentation are specified
+in `docs/specs/visuals/blood-bulletholes-viscera.md`; this ragdoll document owns
+the resulting body's physical response.
 
 ---
 
@@ -806,10 +918,13 @@ Later versions may add:
 - break force,
 - stamina,
 - joint damage,
-- dismemberment,
 - hand failure.
 
 Not v1.
+
+Hit-caused part health and dismemberment are current work in the blood/gore
+spec. This section only says that grab failure or grip strain does not cause
+dismemberment in v1.
 
 ---
 
@@ -1050,25 +1165,24 @@ The body should not simply:
 
 # 36. Arcade body strength
 
-In v1, body constraints are effectively impossibly strong.
-
-Stretching does not cause:
+In v1, body constraints are effectively impossibly strong. Stretching alone
+does not cause:
 
 - damage,
 - broken limbs,
-- dismemberment,
 - blood,
 - death.
 
-Future versions may connect extreme strain into:
+Hit-caused part health, gore, and dismemberment are current work in the linked
+blood/gore specification. They require a damage event; body stretching alone
+still does not cause them. Future versions may connect extreme strain into:
 
 - body-part damage,
 - tearing,
 - blood effects,
-- dismemberment,
 - weakened constraints.
 
-That is explicitly outside v1.
+Damage caused by stretching remains outside v1.
 
 ---
 
@@ -1121,13 +1235,14 @@ Exact values must be hot-reloadable.
 
 ---
 
-# 39. Momentum preservation
+# 39. Momentum preservation for alive G toggles
 
-Ragdoll mode preserves actual player momentum.
+When a living player presses `G` to enter ragdoll, preserve their actual
+movement velocity. Entering ragdoll by this toggle should not arbitrarily zero
+velocity. Pressing `G` to exit also preserves the ragdoll's current velocity.
 
-Entering ragdoll should not arbitrarily zero velocity.
-
-Exiting ragdoll should also preserve velocity.
+This rule does not apply to death. Death uses the lethal-hit impulse and
+overwrites prior movement velocity, as defined in §3.2.
 
 Example:
 
@@ -1712,7 +1827,7 @@ The following are not required for v1:
 - finite grip strength,
 - broken bones,
 - limb damage from stretching,
-- dismemberment,
+- dismemberment from grab failure or stretching alone,
 - blood from joint strain,
 - realistic muscle simulation,
 - stand-up animation,
@@ -1734,10 +1849,10 @@ Pressing `G` while normally moving enters ragdoll mode.
 Pressing `G` while ragdolled exits ragdoll mode.
 
 ### RAG-003
-Ragdoll entry preserves current velocity.
+Pressing `G` while alive to enter ragdoll preserves current velocity.
 
 ### RAG-004
-Ragdoll exit preserves current velocity.
+Pressing `G` while alive to exit ragdoll preserves current velocity.
 
 ### RAG-005
 Exit attempts to place the player upright and out of the ground.
@@ -1861,6 +1976,18 @@ Ragdoll should reuse moving-physical-object primitives rather than duplicate the
 
 ### RAG-045
 Stable, reproducible, fun physics jank is allowed to become gameplay.
+
+### RAG-046
+On death, the ragdoll uses the lethal hit's impulse and does not inherit the
+player's prior movement velocity. Alive ragdoll toggles continue to preserve
+velocity under RAG-003 and RAG-004.
+
+### RAG-047
+A stronger lethal hit produces a stronger death-ragdoll push, within the
+eventual minimum and maximum push values once they are decided.
+
+### RAG-048
+While RMB aim is held, the player sees exactly one stable crosshair.
 
 ---
 

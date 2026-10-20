@@ -1,3 +1,32 @@
+2026 10 20 1733 jorj  todo the avatrs need better coliiosnssssss
+like big avatars just have ehtier arms and stuff go int ehground that cant happen
+npc avatars need like 
+idk
+matbe like a bounding box around them
+or something
+idk how tod o it we need betterplanning for it 
+
+2026 10 20 1635 jorj todo : NPCS NEED COLISIONS 
+npc = monsters
+actor 
+its shouldbe actor vs actor collisions
+right now, monsters can just walk thru me 
+not good
+npc need to colide with each other
+npc vs npc 
+plr vs npc
+plr vs plr
+and for now, jsut do capsuels vs capsule 
+and flat top, so u can stand on them, anyone can stand on anyone 
+
+C:\mimita-v9\config\npc-difficulty.json - also we need to make this like
+generalized? per actor?
+the jump is a issue 
+like jump cooldown , make that a jump cooldown max vs min not just 1 number 
+
+we also need npc collisions, and zombie tower need the npcs to actual attack me, like, monsters just use like 
+the force punch maybe? not sure 
+
 2026 10 19 1814 jorj  
 - "
 npcs need to have a new like allied mode, follow me/follow each other/go more nad more thru to the checkpoints 
@@ -171,12 +200,35 @@ repeatable playtests; this is an aspiration, not a locked balance target.
 Record player skill assumptions, mode, map, duration, kills, confirmed hits,
 weapon use, and movement profile before adjusting difficulty.
 
-NPC physical collision must follow the selected avatar/role's authored body
-shape where that shape is supported. A different rendered avatar must not
-silently keep an unrelated generic body collision. Collision ownership,
-broadphase behavior, and safe fallback shapes remain governed by the collision
-and avatar specifications; this requirement does not imply that detailed
-per-limb collision is always appropriate.
+### Actor-to-actor collision scope
+
+For the first collision slice, every live actor pair uses the same root
+capsule-vs-capsule solver: NPC-vs-NPC, player-vs-NPC, and player-vs-player.
+Add a flat, standable-top support rule so actors can stand on one another; the
+main collision shape remains a capsule. This is the first step, not the final
+body-accurate shape. It does not replace the existing actor-vs-world collision
+rules.
+
+Later, actor body parts should have their own collision shapes that follow
+their animated or physical limbs. That work should follow the shared actor
+collision architecture after the root-capsule path works for all three pair
+types.
+
+TODO: decide the JSON owner and mapping for actor collision settings. Existing
+avatar manifests have capsule dimensions, and `config/collision.json` owns
+global collision settings. The actor-collision architecture draft proposes
+`config/actor-collision.json` plus actor-preset overrides, but neither is a
+confirmed active owner for actor-pair collision yet. Trace whether NPCs use
+avatar capsule dimensions before choosing. Add a new profile/file only if the
+current owners cannot express per-actor shape choices. Keep NPCs and players
+on the same resolved collision contract. Do not treat `npc-difficulty.json`
+as the owner for collision shape or solver rules.
+
+First-slice acceptance: each of the three pair types blocks and separates
+correctly, either actor can land on and stand on the other, and moving support
+does not leave the supported actor behind. The server produces the agreed
+result at the fixed tick and clients reconcile to it. Detailed per-limb
+collisions are not required in this first slice.
 
 - With a revolver/shotgun/other-weapon loadout and the sustained-fire profile,
   the NPC produces six accepted revolver attacks, switches on the next fixed
@@ -196,6 +248,15 @@ per-limb collision is always appropriate.
   move sequence for deterministic reproduction.
 
 ## 6. Current implementation status
+
+Source audit (2026-10-20): the local simulation calls
+`resolveCapsuleVsCapsule` for the local player against each live NPC, including
+a special flat-top support check. It does not resolve NPC-vs-NPC pairs. The
+dedicated server's `resolvePlayerCollision` is currently a no-op, and the
+server NPC update does not add an actor-pair collision pass. Therefore this
+local path does not prove authoritative player-vs-NPC, player-vs-player, or
+NPC-vs-NPC collision in multiplayer. Runtime multiplayer acceptance remains
+open.
 
 The repository already has pieces that can be used immediately:
 

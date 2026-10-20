@@ -1,3 +1,12 @@
+2026 10 20 1712 todo make it so 
+spawn volumes
+mosner spawn voluems hav ae max
+also
+a specific set of monsters that the spawn
+todo define those paths? not sure whe or where or how right now but hmmm
+ueah 
+so that a spawn volume is done and then it doenst spawn antthing else just spawns the amount it spawns then thats done 
+
 // 2026-10-08
 /* purpose
 * document the current Map Entity Editor v0 command surface

@@ -2,11 +2,15 @@
   "schema": 2,
   "id": "zombie_tower_stabber",
   "display_name": "Stabber",
-  "movement_preset": "source",
+  "movement_preset": "retrograd_fast",
   "movement_executor": "sandbox_shared",
-  "weapon_set": "zombie_unarmed",
-  "starting_weapon": "nothing",
+  "weapon_set": "zombie_tower_stabber",
+  "starting_weapon": "zombie_stabber_claw",
   "behavior_profile": "aggressive",
+  "health": {
+    "max": 80,
+    "spawn": 80
+  },
   "avatar": {
     "forced": true,
     "name": "monsterstabber",

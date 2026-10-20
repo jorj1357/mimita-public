@@ -4,9 +4,13 @@
   "display_name": "Crawler",
   "movement_preset": "source",
   "movement_executor": "sandbox_shared",
-  "weapon_set": "zombie_unarmed",
-  "starting_weapon": "nothing",
+  "weapon_set": "zombie_tower_crawler",
+  "starting_weapon": "zombie_crawler_claw",
   "behavior_profile": "aggressive",
+  "health": {
+    "max": 60,
+    "spawn": 60
+  },
   "avatar": {
     "forced": true,
     "name": "monstercrawler",

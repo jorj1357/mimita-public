@@ -135,6 +135,46 @@
       "description": "Data-ready monster role with no attack until its attack definition is authored.",
       "role_only": true,
       "weapons": ["nothing"]
+    },
+    {
+      "id": 16,
+      "key": "zombie_tower_boomer",
+      "name": "Boomer (placeholder)",
+      "description": "Placeholder Boomer contact attack.",
+      "role_only": true,
+      "weapons": ["zombie_boomer_claw", "nothing"]
+    },
+    {
+      "id": 17,
+      "key": "zombie_tower_stabber",
+      "name": "Stabber (placeholder)",
+      "description": "Placeholder Stabber contact attack.",
+      "role_only": true,
+      "weapons": ["zombie_stabber_claw", "nothing"]
+    },
+    {
+      "id": 18,
+      "key": "zombie_tower_crawler",
+      "name": "Crawler (placeholder)",
+      "description": "Placeholder Crawler contact attack.",
+      "role_only": true,
+      "weapons": ["zombie_crawler_claw", "nothing"]
+    },
+    {
+      "id": 19,
+      "key": "zombie_tower_brute",
+      "name": "Brute (placeholder)",
+      "description": "Placeholder Brute contact attack.",
+      "role_only": true,
+      "weapons": ["zombie_brute_claw", "nothing"]
+    },
+    {
+      "id": 20,
+      "key": "zombie_tower_charger",
+      "name": "Charger (placeholder)",
+      "description": "Placeholder Charger contact attack.",
+      "role_only": true,
+      "weapons": ["zombie_charger_claw", "nothing"]
     }
   ]
 }
