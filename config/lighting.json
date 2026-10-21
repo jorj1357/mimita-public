@@ -7,20 +7,20 @@
     },
     "light": {
         "dir": { "x": -0.35, "y": -0.1, "z": -1.0 },
-        "diffuseStrength": 0.15
+        "diffuseStrength": 1.0
     },
     "edge": {
-        "darkness": 0.1,
-        "width": 1.2
+        "darkness": 0.51,
+        "width": 1.02
     },
     "ao": {
         "enabled": true,
-        "darkness": 0.1,
-        "contrast": 0.8,
+        "darkness": 0.5,
+        "contrast": 1.1,
         "strength": 1.0
     },
     "texture": {
-        "contrast": 1.02,
+        "contrast": 1.0,
         "brightness": 1.0
     },
     "fog": {

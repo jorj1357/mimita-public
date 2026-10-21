@@ -23,7 +23,7 @@
             "endRadius": 1.0,
             "colorStart": [1.0, 1.0, 1.0],
             "colorEnd": [1.0, 1.0, 1.0],
-            "alphaStart": 1.0,
+            "alphaStart": 0.0,
             "alphaEnd": 0.0,
             "brightnessStart": 33.0,
             "brightnessEnd": 0.5
@@ -332,9 +332,9 @@
     },
 
     "footstep": {
-        "color": [0.7, 0.7, 0.7],
-        "lifetime": 0.25,
-        "startRadius": 0.5,
+        "color": [0.5, 0.5, 0.5],
+        "lifetime": 0.05,
+        "startRadius": 0.3,
         "endRadius": 0.0
     },
 

@@ -24,11 +24,11 @@
     "world_impact_decals": true,
     "hit_markers": false,
     "blood": true,
-    "blood_scale": 0.1,
+    "blood_scale": 1.0,
     "blood_lifetime_scale": 0.1,
     "world_impact_decal_scale": 1.0,
     "world_impact_decal_lifetime_scale": 0.1,
-    "world_impact_decal_alpha_scale": 0.1,
+    "world_impact_decal_alpha_scale": 1.0,
     "world_hit_effect_scale": 1.0,
     "world_hit_effect_lifetime_scale": 1.0
   },

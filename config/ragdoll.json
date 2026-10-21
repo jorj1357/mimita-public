@@ -14,7 +14,7 @@
         "lifetime_seconds": 20.0,
         "fade_seconds": 4.0,
         "death_impulse_multiplier": 1.5,
-        "spawn_velocity_multiplier": 0.6,
+        "spawn_velocity_multiplier": 2.01,
         "blood_interval_seconds": 0.06,
         "blood_enabled": true
     },
@@ -171,8 +171,8 @@
             // arms 10x less and the arms are 90% closer to their default
             // aimbody/animation pose. Weapon attachment offsets stay weapon-owned.
             // "arms_camera_follow": 1.0
-            // "arms_camera_follow": 0.1
-            "arms_camera_follow": 10.0
+            "arms_camera_follow": 0.1
+            // "arms_camera_follow": 10.0
             // "arms_camera_follow": 100.0
             // "arms_camera_follow": 2.0
             // "arms_camera_follow": 5.0
