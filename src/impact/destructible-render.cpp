@@ -96,8 +96,8 @@ bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
         glm::mat4_cast(glm::normalize(glm::slerp(previousOrientation, entity.orientation, alpha)));
 
     const glm::mat4 view = camera.getView();
-    const glm::mat4 proj = camera.getProj((float)gRenderer->width,
-                                          (float)gRenderer->height);
+    const glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth,
+                                          (float)gRenderer->sceneHeight);
     glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"),
                        1, GL_FALSE, &renderTransform[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"),

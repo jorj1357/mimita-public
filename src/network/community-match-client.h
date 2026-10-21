@@ -37,9 +37,12 @@ public:
     const std::string& mode() const { return mMode; }
     uint8_t phase() const { return mPhase; }
     float phaseTimer() const { return mPhaseTimer; }
+    float countdownSecondsLeft() const;
+    bool countdownElapsed() const;
     uint32_t matchStartTick() const { return mMatchStartTick; }
     // Last authoritative server tick seen, extrapolated forward at the fixed
-    // 60 Hz simulation rate so the HUD keeps advancing between state packets.
+    // 60 Hz simulation rate for tick-based match values. Countdown presentation
+    // uses its separate monotonic wall-clock deadline.
     uint32_t serverTick() const;
     // True while the GO! overlay should be visible. It stays true for the
     // server-sent GO window even if the ACTIVE packet arrives before render.
@@ -177,7 +180,9 @@ private:
     uint32_t mMatchStartTick = 0;
     uint32_t mServerTick = 0;
     uint64_t mServerTickAnchorMs = 0;  // client steady-clock ms when mServerTick was received
-    uint32_t mGoVisibleUntilTick = 0;  // server tick at which the GO! window ends
+    uint64_t mCountdownDeadlineMs = 0; // local projection of the server wall-clock countdown
+    float mCountdownSecondsLeftSnapshot = 0.0f;
+    uint64_t mGoVisibleUntilMs = 0;   // local wall deadline for the GO! overlay
     bool mSawGoThisMatch = false;      // true once a GO-phase packet was applied
     bool mWaveBannerVisible = false;
     uint32_t mWaveNumber = 0;

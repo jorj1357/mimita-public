@@ -38,7 +38,7 @@ bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& 
         return false;
 
     glm::mat4 view = camera.getView();
-    glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
     glm::vec4 clip = proj * view * glm::vec4(worldPos, 1.0f);
     if (clip.w <= 0.001f)
         return false;
@@ -47,8 +47,12 @@ bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& 
     if (ndc.x < -1.2f || ndc.x > 1.2f || ndc.y < -1.2f || ndc.y > 1.2f)
         return false;
 
-    x = (ndc.x * 0.5f + 0.5f) * (float)gRenderer->width;
-    y = (1.0f - (ndc.y * 0.5f + 0.5f)) * (float)gRenderer->height;
+    const float screenWidth = (float)(gRenderer->stretchesWholeFrame()
+        ? gRenderer->sceneWidth : gRenderer->width);
+    const float screenHeight = (float)(gRenderer->stretchesWholeFrame()
+        ? gRenderer->sceneHeight : gRenderer->height);
+    x = (ndc.x * 0.5f + 0.5f) * screenWidth;
+    y = (1.0f - (ndc.y * 0.5f + 0.5f)) * screenHeight;
     return true;
 }
 

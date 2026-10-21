@@ -1,3 +1,21 @@
+2026 10 20 1924 sadnbox  trying to maek it so 
+like
+in dansbox u can namke it so the actor rpeset
+has movement presets 
+so 
+u change it to nervosubad and it has mvoemetn preset
+we shoudl put that in here  C:\mimita-v9\config\behavior-profiles.json 
+like what movemnt profile that role uses
+or like 
+idk how it works need to note hwo it works in this spec 
+
+2026 10 20 1958
+ in the sandbox game right now the npcstill is m oving super fast, needs to be the juggernuat movement mod 
+
+C:\mimita-v9\config\npc-difficulty.json
+
+when u set it in this file it wokrs, but, need it to not just work there, needs to work  per actor role 
+
 <!--
 Purpose: Define reusable actor presets and how roles and game modes select them.
 Audience: Designers and developers authoring actors, teams, and mode rosters.
@@ -6,6 +24,58 @@ gamemode specifications; those own their respective data and runtime behavior.
 -->
 
 # Actor Presets, Roles, and Game Modes
+
+## Movement presets and NPC behavior profiles are different
+
+`behavior_profile` in `config/roles.json` and a mode's
+`npc_behavior_profile` select NPC decision/combat tuning from
+`config/behavior-profiles.json`. They control choices such as target selection,
+reaction, and attack cadence; they do not select physical movement speed.
+
+`movement_preset` selects the physical movement configuration from
+`config/movement/`. For example, the `juggernaut` movement preset supplies the
+slow movement values. The role is the current runtime owner of this selection:
+set `movement_preset` on the NPC role, then assign that role to the NPC team.
+The actor preset may also declare a movement preset as its reusable baseline,
+but current role resolution does not yet merge every actor-preset field into a
+referencing role. Until that merge is implemented, repeat the movement preset
+on the role when it must take effect.
+
+For an NPC-only Sandbox assignment, the gamemode team can set `players` to
+`false`, `npcs` to `true`, and name an NPC role. A speed-focused role can look
+like this:
+
+```json
+// config/roles.json
+{
+  "id": "sandbox_juggernaut_npc",
+  "display_name": "Sandbox Juggernaut NPC",
+  "team": 0,
+  "team_id": "sandbox_npcs",
+  "actor_preset": "juggernaut_arcade",
+  "movement_preset": "juggernaut"
+}
+```
+
+```json
+// inside config/gamemodes/sandbox.json
+"teams": [
+  {
+    "id": "sandbox_npcs",
+    "display_name": "NPCs",
+    "capacity": 0,
+    "role": "sandbox_juggernaut_npc",
+    "players": false,
+    "npcs": true
+  }
+]
+```
+
+This keeps the mode's NPC assignment separate from human actors. Reusing a
+full Juggernaut gameplay role also applies that role's health, weapons, and
+other settings; create a narrower role when only the movement/presentation
+preset should change. `behavior-profiles.json` should not gain a
+`movement_preset` field because it has a separate responsibility.
 
 - Status: Target specification. The repository has a partial, transitional implementation; current behavior is identified separately below.
 - Scope: Explain which JSON owns an actor's reusable setup, how a role applies it, and how a game mode assigns that role to humans and NPCs.

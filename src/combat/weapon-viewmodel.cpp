@@ -525,7 +525,7 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
 
     const unsigned int shader = gRenderer->shaderProgram;
     glm::mat4 view = camera.getView();
-    glm::mat4 projection = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glm::mat4 projection = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
     glUseProgram(shader);
     glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);

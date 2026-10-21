@@ -59,7 +59,7 @@ void setLineState(const Camera& camera, glm::vec4 color)
     glUseProgram(gRenderer->shaderProgram);
     glm::mat4 model(1.0f);
     glm::mat4 view = camera.getView();
-    glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
     glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"), 1, GL_FALSE, &view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"), 1, GL_FALSE, &proj[0][0]);
@@ -92,8 +92,8 @@ void flushDebugLines(const Camera& camera)
     glm::mat4 model(1.0f);
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj(
-        (float)gRenderer->width,
-        (float)gRenderer->height
+        (float)gRenderer->sceneWidth,
+        (float)gRenderer->sceneHeight
     );
 
     glUniformMatrix4fv(
@@ -582,8 +582,8 @@ void flushWeaponLines(const Camera& camera)
     glm::mat4 model(1.0f);
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj(
-        (float)gRenderer->width,
-        (float)gRenderer->height
+        (float)gRenderer->sceneWidth,
+        (float)gRenderer->sceneHeight
     );
 
     glUniformMatrix4fv(

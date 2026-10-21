@@ -14,6 +14,7 @@
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/match-roles.h"
 #include "void-death/void-death.h"
 
 #include "npc/npc.h"
@@ -248,29 +249,62 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
 {
     for (const auto& kv : npcs)
     {
-        if (npcIdsAlive.find(kv.first) != npcIdsAlive.end())
-            continue;
         bool alreadySimulated = false;
         for (const Npc& n : npcSystem.all())
         {
             if (n.id == kv.first) { alreadySimulated = true; break; }
         }
+        const bool alreadyTracked = npcIdsAlive.find(kv.first) != npcIdsAlive.end();
+        if (alreadyTracked && !alreadySimulated)
+            continue;
         npcIdsAlive.insert(kv.first);
-        if (alreadySimulated) continue;
-        npcSystem.spawnNpc(kv.first, kv.second.difficulty, kv.second.pos);
+        if (!alreadySimulated)
+            npcSystem.spawnNpc(kv.first, kv.second.difficulty, kv.second.pos);
+        // Map-mode startup NPCs can exist before the managed match roster is
+        // built. Give them the configured NPC team role before resolving their
+        // spawn profile, so role movement presets apply in Sandbox too.
+        ServerGamemodeState& modeState = serverGamemodeState();
+        bool assignedModeRole = false;
+        if (modeState.matchActors.find(kv.first) == modeState.matchActors.end()) {
+            const Gamemode& mode = GamemodeRegistry::instance().get(modeState.matchMode);
+            for (size_t teamIndex = 0; teamIndex < mode.teams.size(); ++teamIndex) {
+                const GamemodeTeam& team = mode.teams[teamIndex];
+                if (!team.npcs) continue;
+                const std::string& roleId = team.npcRole.empty() ? team.role : team.npcRole;
+                const MatchRoleDefinition* role = roleId.empty()
+                    ? nullptr : MatchRoleRegistry::instance().get(roleId);
+                if (!role) continue;
+
+                ActorMatchDescriptor descriptor;
+                descriptor.controller = ActorController::Npc;
+                descriptor.state = ActorState::Alive;
+                descriptor.teamId = static_cast<int>(teamIndex);
+                descriptor.roleId = role->id;
+                descriptor.movementProfileId = role->movementPreset;
+                descriptor.weaponProfileId = role->weaponSet;
+                modeState.matchActors[kv.first] = std::move(descriptor);
+                modeState.matchTeams[kv.first] = static_cast<int>(teamIndex);
+                assignedModeRole = true;
+                break;
+            }
+        }
+        if (alreadySimulated && !assignedModeRole)
+            continue;
         // Apply the role profile (health, movement, avatar, behavior, loadout)
         // so a roster NPC gets its intended first life. Shared with the
         // gamemode spawn-reset path; no CS-only branch.
         const ActorSpawnProfile profile = serverResolveActorSpawnProfile(kv.first);
-        const ServerGamemodeState& modeState = serverGamemodeState();
         const Gamemode& mode = GamemodeRegistry::instance().get(modeState.matchMode);
+        const auto actorProfile = modeState.matchActors.find(kv.first);
+        const int resolvedTeam = actorProfile != modeState.matchActors.end()
+            ? actorProfile->second.teamId : kv.second.matchTeam;
         StructuredLogger::instance().writeEvent(
             StructuredCategory::NpcCombat, StructuredLevel::Important,
             "npc.roster-profile-resolved", std::to_string(kv.first),
             "npc-adopt", modeState.currentServerTick,
             nlohmann::json{
                 {"actor", kv.first},
-                {"team", kv.second.matchTeam},
+                {"team", resolvedTeam},
                 {"role", profile.roleId},
                 {"profile", profile.behaviorProfileId},
                 {"movement_preset", profile.movementPreset},
@@ -286,7 +320,7 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
             {
                 // Authoritative team lives on the real body too, so the
                 // per-tick mirror rebuild and the local brain both see it.
-                n.body.matchTeam = kv.second.matchTeam;
+                n.body.matchTeam = resolvedTeam;
                 if (serverGameOverrides().maxHpOverride > 0)
                 {
                     n.body.maxHp = serverGameOverrides().maxHpOverride;
@@ -297,8 +331,7 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                     n.body.maxHp = profile.health;
                     n.body.currentHp = n.body.maxHp;
                 }
-                if (!profile.movementPreset.empty())
-                    n.movementProfileId = profile.movementPreset;
+                n.movementProfileId = profile.movementPreset;
                 n.actorPresetId = profile.actorPresetId;
                 if (!profile.avatarName.empty())
                     n.avatarName = profile.avatarName;
@@ -395,17 +428,6 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     npc.wakeupTimer = static_cast<float>(
         NpcDifficultyConfig::instance().settings().spawnActionDelayTicks) / 60.0f;
 
-    // Round-countdown hold: freshly adopted roster NPCs must stay frozen for the
-    // whole 3-2-1 (plus the post-GO freeze) instead of waking on the 1-tick
-    // spawn delay. This is the owner that catches NPCs whose real bodies are
-    // adopted AFTER beginObjectiveRound armed the already-existing bodies.
-    const ServerGamemodeState& d = serverGamemodeState();
-    if (d.enabled && (d.objectiveRounds || d.zombieTower) && d.roundCountdownFreeze && !d.warmup)
-    {
-        const float remaining = d.matchStartTick > d.currentServerTick
-            ? (float)(d.matchStartTick - d.currentServerTick) / 60.0f : 0.0f;
-        npc.wakeupTimer = std::max(npc.wakeupTimer, remaining);
-    }
     ActorSpawnEvent lifecycleEvent;
     lifecycleEvent.entityId = npc.id;
     lifecycleEvent.actorKind = ActorKind::Npc;
@@ -1167,6 +1189,12 @@ static void resolveServerActorPairCollisions(
                 {"contacts", stats.contacts},
                 {"supports", stats.supports},
                 {"pushes", stats.pushes},
+                {"player_player_candidates", stats.playerPlayerCandidates},
+                {"player_npc_candidates", stats.playerNpcCandidates},
+                {"npc_npc_candidates", stats.npcNpcCandidates},
+                {"player_player_contacts", stats.playerPlayerContacts},
+                {"player_npc_contacts", stats.playerNpcContacts},
+                {"npc_npc_contacts", stats.npcNpcContacts},
                 {"broadphase_ms", stats.broadphaseMs},
                 {"collision_ms", stats.totalMs},
                 {"frame_ms", Perf::state().lastFrameTimeMs},
@@ -1192,6 +1220,47 @@ void simulateSharedNpcs(SOCKET sock,
     ActorCollisionConfig::instance().pollHotReload();
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
+
+    // Keep the authoritative roster and health mirrors synchronized, but skip
+    // all NPC decision, movement, physics, and actor-pair work until ACTIVE.
+    const ServerGamemodeState& matchState = serverGamemodeState();
+    const bool pauseNpcSimulation =
+        matchState.phase == DUEL_PHASE_COUNTDOWN ||
+        matchState.phase == DUEL_PHASE_GO;
+    static bool npcSimulationPaused = false;
+    static uint64_t npcSimulationPauseStartedMs = 0;
+    if (pauseNpcSimulation)
+    {
+        if (!npcSimulationPaused)
+        {
+            npcSimulationPaused = true;
+            npcSimulationPauseStartedMs = nowMs();
+            size_t livingNpcs = 0;
+            for (const Npc& npc : npcSystem.all())
+                if (!npc.body.dead && npc.body.currentHp > 0) ++livingNpcs;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.simulation.paused", matchState.matchMode,
+                "match_countdown", tick,
+                nlohmann::json{{"phase", matchState.phase},
+                               {"npc_count", npcSystem.all().size()},
+                               {"living_npc_count", livingNpcs}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        return;
+    }
+    if (npcSimulationPaused)
+    {
+        npcSimulationPaused = false;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.simulation.resumed", matchState.matchMode,
+            "countdown_complete", tick,
+            nlohmann::json{{"paused_ms", nowMs() - npcSimulationPauseStartedMs},
+                           {"phase", matchState.phase},
+                           {"npc_count", npcSystem.all().size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     // Mode-level NPC profiles are the fallback for unassigned NPCs (Sandbox
     // today). Re-resolve them here so editing the active gamemode JSON changes
@@ -1273,18 +1342,11 @@ void simulateSharedNpcs(SOCKET sock,
     const bool freezeWaveBanner = serverGamemodeState().npcWaves
         && serverGamemodeState().waveBannerVisible
         && npcDifficulty.freezeDuringWaveBanner;
-    // Round countdown/freeze: no targeting during the 3-2-1 or the post-GO
-    // freeze, so no squad can shoot before the round is truly live. The NPC
-    // body is also held by wakeupTimer; this is the explicit targeting gate.
-    const bool freezeRoundCountdown = serverGamemodeState().objectiveRounds
-        && serverGamemodeState().roundCountdownFreeze
-        && !serverGamemodeState().warmup;
-
     for (Npc& n : npcSystem.all())
     {
         if (n.body.dead || n.body.currentHp <= 0)
             continue;
-        if (freezeWaveBanner || freezeRoundCountdown)
+        if (freezeWaveBanner)
             continue;
 
         const uint32_t prevTarget = n.serverTargetId;

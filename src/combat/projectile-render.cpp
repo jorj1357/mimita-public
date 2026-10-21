@@ -250,7 +250,7 @@ static void bindShaderAndMesh(
 
     unsigned int shader = gRenderer->shaderProgram;
     glm::mat4 view = camera.getView();
-    glm::mat4 proj = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
 
     glUseProgram(shader);
     glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);

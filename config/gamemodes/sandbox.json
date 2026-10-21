@@ -6,11 +6,20 @@
   // config/behavior-profiles.json, such as "balanced", "aggressive", or
   // "nervous". Humans are not affected. Hot-reloadable. 
   // "npc_behavior_profile": "balanced", 
-  // "npc_behavior_profile": "sandboxhard",
-  "npc_behavior_profile": "juggernaut_swarm",
-  // "npc_behavior_profile": "nervousbad",
+  // "npc_behavior_profile": "sandbqoxhard",
+  // "npc_behavior_profile": "juggernaut_swarm",
+  "npc_behavior_profile": "nervousbad",
   // "npc_behavior_profile": "juggernaut_limited",
-  "team_names": [],
+  "teams": [
+    {
+      "id": "sandbox_npcs",
+      "display_name": "NPCs",
+      "capacity": 0,
+      "role": "sandbox_juggernaut_npc",
+      "players": false,
+      "npcs": true
+    }
+  ],
   "goal_value": 0,
   "weapon_set_id": 5,
   "time_limit_seconds": 0,

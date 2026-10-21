@@ -7,12 +7,15 @@
 #endif
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include "video/video-mode.h"
 
 struct Renderer {
     GLFWwindow* window = nullptr;
     GLFWcursor* customCursor = nullptr;
     int width = 0;
     int height = 0;
+    int sceneWidth = 0;
+    int sceneHeight = 0;
 
     // mar 6 2026 maibe fix? 
     GLuint shaderProgram = 0; 
@@ -24,7 +27,8 @@ struct Renderer {
     void endFrame();
     bool shouldClose();
     void shutdown();
-    void applyVideoMode(int w, int h, bool fullscreen);
+    FullscreenMode applyVideoMode(int gameWidth, int gameHeight, FullscreenMode mode);
+    bool stretchesWholeFrame() const { return fullscreenModeStretchesWholeFrame(mAppliedVideoMode); }
     void setVSync(bool on);
     bool vsync() const { return mVSync; }
 
@@ -34,4 +38,11 @@ struct Renderer {
 
 private:
     bool mVSync = false;
+    FullscreenMode mAppliedVideoMode = FullscreenMode::Windowed;
+    int mWindowedX = 100;
+    int mWindowedY = 100;
+    bool mHasWindowedPosition = false;
+    int mDesktopWidth = 0;
+    int mDesktopHeight = 0;
+    int mDesktopRefreshRate = GLFW_DONT_CARE;
 };

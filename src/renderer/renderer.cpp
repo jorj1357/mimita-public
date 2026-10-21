@@ -12,6 +12,7 @@
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <fstream>
+#include <algorithm>
 #include <limits>
 
 extern bool gAiLaunchMode;
@@ -144,6 +145,8 @@ static bool dimensionsAreValidForCursor(int width, int height)
 Renderer::Renderer(int w, int h, const char* title) {
     width = w;
     height = h;
+    sceneWidth = w;
+    sceneHeight = h;
 
     if (!glfwInit()) {
         printf("GLFW init failed\n");
@@ -163,6 +166,9 @@ Renderer::Renderer(int w, int h, const char* title) {
         glfwTerminate();
         return;
     }
+
+    glfwGetWindowPos(window, &mWindowedX, &mWindowedY);
+    mHasWindowedPosition = true;
 
     // Keep AI/dev launches from taking over the user's desktop. The window is
     // created hidden, then shown minimized so it remains restorable/playable.
@@ -327,8 +333,14 @@ float Renderer::beginFrame() {
     if (dt > 0.1f) dt = 0.1f;
 
     glfwGetFramebufferSize(window, &width, &height);
+    const bool framebufferValid = width > 0 && height > 0;
     if (width <= 0) width = 1;
     if (height <= 0) height = 1;
+    if (framebufferValid &&
+        !fullscreenModeIsStretched(mAppliedVideoMode)) {
+        sceneWidth = width;
+        sceneHeight = height;
+    }
     MIMITA_GL_CLEAR_STAGE("Renderer::beginFrame");
     MIMITA_GL_CALL(glViewport(0, 0, width, height));
     MIMITA_GL_CALL(glClearColor(0.1f, 0.1f, 0.12f, 1.0f));
@@ -363,43 +375,115 @@ void Renderer::shutdown() {
     glfwTerminate();
 }
 
-void Renderer::applyVideoMode(int w, int h, bool fullscreen)
+FullscreenMode Renderer::applyVideoMode(int gameWidth, int gameHeight, FullscreenMode mode)
 {
-    if (!window) return;
+    if (!window) return mAppliedVideoMode;
 
-    if (fullscreen) {
-        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-        if (!monitor) {
-            printf("[RENDERER] No primary monitor, falling back to windowed\n");
-            fullscreen = false;
-        } else {
-            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-            glfwSetWindowMonitor(window, monitor, 0, 0, w, h,
-                                 mode ? mode->refreshRate : GLFW_DONT_CARE);
-        }
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* desktopMode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+    if (monitor && desktopMode && mAppliedVideoMode == FullscreenMode::Windowed) {
+        mDesktopWidth = desktopMode->width;
+        mDesktopHeight = desktopMode->height;
+        mDesktopRefreshRate = desktopMode->refreshRate;
+    }
+    const int desktopWidth = mDesktopWidth > 0
+        ? mDesktopWidth : (desktopMode ? desktopMode->width : 0);
+    const int desktopHeight = mDesktopHeight > 0
+        ? mDesktopHeight : (desktopMode ? desktopMode->height : 0);
+    const int desktopRefreshRate = mDesktopRefreshRate != GLFW_DONT_CARE
+        ? mDesktopRefreshRate : (desktopMode ? desktopMode->refreshRate : GLFW_DONT_CARE);
+    if (mode != FullscreenMode::Windowed &&
+        (!monitor || desktopWidth <= 0 || desktopHeight <= 0)) {
+        printf("[RENDERER] No primary monitor mode; falling back to windowed\n");
+        mode = FullscreenMode::Windowed;
     }
 
-    if (!fullscreen) {
-        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-        int wx = 100, wy = 100;
-        if (monitor) {
-            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-            if (mode) {
-                wx = (mode->width - w) / 2;
-                wy = (mode->height - h) / 2;
+    if (mAppliedVideoMode == FullscreenMode::Windowed &&
+        mode != FullscreenMode::Windowed) {
+        glfwGetWindowPos(window, &mWindowedX, &mWindowedY);
+        mHasWindowedPosition = true;
+    }
+
+    int monitorX = 0;
+    int monitorY = 0;
+    if (monitor)
+        glfwGetMonitorPos(monitor, &monitorX, &monitorY);
+
+    int outputWidth = gameWidth;
+    int outputHeight = gameHeight;
+    const bool stretched = fullscreenModeIsStretched(mode);
+    const bool fullFrameStretched = fullscreenModeStretchesWholeFrame(mode);
+    const int sceneGameWidth = fullFrameStretched ? 1024 : gameWidth;
+    const int sceneGameHeight = fullFrameStretched ? 768 : gameHeight;
+
+    switch (mode) {
+        case FullscreenMode::Windowed: {
+            glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_TRUE);
+            int x = mHasWindowedPosition ? mWindowedX : monitorX + 100;
+            int y = mHasWindowedPosition ? mWindowedY : monitorY + 100;
+            if (desktopWidth > 0 && desktopHeight > 0) {
+                x = std::clamp(x, monitorX, monitorX + std::max(0, desktopWidth - gameWidth));
+                y = std::clamp(y, monitorY, monitorY + std::max(0, desktopHeight - gameHeight));
             }
+            glfwSetWindowMonitor(window, nullptr, x, y, gameWidth, gameHeight, GLFW_DONT_CARE);
+            sceneWidth = gameWidth;
+            sceneHeight = gameHeight;
+            break;
         }
-        glfwSetWindowMonitor(window, nullptr, wx, wy, w, h, GLFW_DONT_CARE);
+        case FullscreenMode::Exclusive: {
+            glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_TRUE);
+            outputWidth = gameWidth;
+            outputHeight = gameHeight;
+            glfwSetWindowMonitor(window, monitor, monitorX, monitorY,
+                                 outputWidth, outputHeight, GLFW_DONT_CARE);
+            sceneWidth = gameWidth;
+            sceneHeight = gameHeight;
+            break;
+        }
+        case FullscreenMode::ExclusiveStretched:
+        case FullscreenMode::ExclusiveFullFrameStretched: {
+            glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_TRUE);
+            outputWidth = desktopWidth;
+            outputHeight = desktopHeight;
+            glfwSetWindowMonitor(window, monitor, monitorX, monitorY,
+                                 outputWidth, outputHeight, desktopRefreshRate);
+            sceneWidth = sceneGameWidth;
+            sceneHeight = sceneGameHeight;
+            break;
+        }
+        case FullscreenMode::Borderless:
+        case FullscreenMode::BorderlessStretched:
+        case FullscreenMode::BorderlessFullFrameStretched: {
+            glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_FALSE);
+            outputWidth = desktopWidth;
+            outputHeight = desktopHeight;
+            glfwSetWindowMonitor(window, nullptr, monitorX, monitorY,
+                                 outputWidth, outputHeight, GLFW_DONT_CARE);
+            sceneWidth = stretched ? sceneGameWidth : outputWidth;
+            sceneHeight = stretched ? sceneGameHeight : outputHeight;
+            break;
+        }
     }
 
-    width = w;
-    height = h;
-    printf("[RENDERER] Video mode applied: %dx%d fullscreen=%d\n", w, h, (int)fullscreen);
+    glfwGetFramebufferSize(window, &width, &height);
+    if (width <= 0) width = outputWidth;
+    if (height <= 0) height = outputHeight;
+    if (!stretched) {
+        sceneWidth = width;
+        sceneHeight = height;
+    }
+    sceneWidth = std::max(sceneWidth, 1);
+    sceneHeight = std::max(sceneHeight, 1);
+    mAppliedVideoMode = mode;
+    printf("[RENDERER] Video mode applied: mode=%d (%s) scene=%dx%d output=%dx%d\n",
+           static_cast<int>(mode), fullscreenModeName(mode), sceneWidth,
+           sceneHeight, width, height);
 
     // Some GLFW/driver paths reset the swap interval when the window monitor
     // changes (fullscreen/windowed switch). Always force OFF.
     glfwSwapInterval(0);
     mVSync = false;
+    return mode;
 }
 
 void Renderer::setVSync(bool on)

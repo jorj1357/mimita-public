@@ -46,6 +46,13 @@ The active lifecycle is `WAITING → INTERMISSION → COUNTDOWN 3 → COUNTDOWN 
 COUNTDOWN 1 → GO → ACTIVE → RESULTS → INTERMISSION`. `PRE_MATCH` is not used by
 the active runtime.
 
+The configured countdown duration (three seconds for standard matches) uses
+monotonic wall time, even if server simulation stalls. Each match or round
+shows one forward-only `3 → 2 → 1 → GO` sequence. Pause simulation for all
+world NPCs during COUNTDOWN and GO while the server continues networking and
+phase processing; resume NPC simulation at ACTIVE. The server enters GO on the
+first available simulation tick after the wall-clock deadline.
+
 `modelist` lists modes and their numeric IDs only. `modestart N` starts or live-
 switches to mode N through the results screen and then the new mode's default
 15-second intermission. `modestartnow N` starts or live-switches to mode N and

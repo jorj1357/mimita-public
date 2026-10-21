@@ -1,5 +1,6 @@
 #include "skybox.h"
 #include "camera.h"
+#include "renderer/renderer.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -16,6 +17,7 @@
 #include <nlohmann/json.hpp>
 
 Skybox gSkybox;
+extern Renderer* gRenderer;
 
 // ── Printf-based debug (always visible in console) ──────────
 #define SKYDBG(...) do { printf("[SKYBOX] " __VA_ARGS__); fflush(stdout); } while(0)
@@ -412,8 +414,11 @@ void Skybox::render(const Camera& camera) {
     glBindTexture(GL_TEXTURE_CUBE_MAP, mCubemapTex);
 
     glm::mat4 view = camera.getView();
-    glm::mat4 proj = camera.getProj(
-        (float)glm::max(1, 1280), (float)glm::max(1, 720));
+    const float projectionWidth = gRenderer
+        ? (float)gRenderer->sceneWidth : 1280.0f;
+    const float projectionHeight = gRenderer
+        ? (float)gRenderer->sceneHeight : 720.0f;
+    glm::mat4 proj = camera.getProj(projectionWidth, projectionHeight);
     glUniformMatrix4fv(glGetUniformLocation(mShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(glGetUniformLocation(mShader, "projection"), 1, GL_FALSE, glm::value_ptr(proj));
 

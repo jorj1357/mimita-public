@@ -1244,8 +1244,8 @@ void drawTexturedPhysicalBox(const Camera& camera, const PhysicalEntity& e)
     }
     glUseProgram(gRenderer->shaderProgram);
     const glm::mat4 view = camera.getView();
-    const glm::mat4 proj = camera.getProj((float)gRenderer->width,
-                                          (float)gRenderer->height);
+    const glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth,
+                                          (float)gRenderer->sceneHeight);
     glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"),
                        1, GL_FALSE, [&]() {
                            static glm::mat4 renderTransform(1.0f);

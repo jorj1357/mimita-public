@@ -240,6 +240,8 @@ void DuelQueue::stopQueue()
     mInDuel = false;
     mMatchOver = false;
     mCountdownActive = false;
+    mCountdownDeadlineMs = 0;
+    mGoVisibleUntilMs = 0;
     mTracerActive = false;
 }
 
@@ -654,6 +656,7 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     {
         mDuelPhase = DUEL_PHASE_WAITING;
         mCountdownActive = false;
+        mGoVisibleUntilMs = 0;
         return;
     }
 
@@ -731,6 +734,15 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     switch (static_cast<DuelStatePhase>(pkt.phase))
     {
     case DUEL_PHASE_COUNTDOWN:
+        {
+        const uint64_t now = nowMs();
+        const uint64_t incomingDeadline = now +
+            (uint64_t)(std::max(0.0f, pkt.countdownLeft) * 1000.0f);
+        if (!mCountdownActive || mCountdownDeadlineMs == 0)
+            mCountdownDeadlineMs = incomingDeadline;
+        else
+            mCountdownDeadlineMs = std::min(mCountdownDeadlineMs, incomingDeadline);
+        mGoVisibleUntilMs = 0;
         mCountdownActive = true;
         mCountdownLeft = pkt.countdownLeft;
         if (mState == DuelQueueState::MatchEnd)
@@ -744,8 +756,14 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
         }
         mState = DuelQueueState::InDuel;
         break;
+        }
 
     case DUEL_PHASE_ACTIVE:
+        if (mCountdownActive) {
+            const uint64_t goMs = pkt.goSeconds > 0.0f
+                ? (uint64_t)(pkt.goSeconds * 1000.0f) : 750u;
+            mGoVisibleUntilMs = nowMs() + goMs;
+        }
         mCountdownActive = false;
         mMatchOver = false;
         if (mState == DuelQueueState::MatchEnd)
@@ -755,6 +773,7 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
 
     case DUEL_PHASE_MATCH_END:
         mCountdownActive = false;
+        mGoVisibleUntilMs = 0;
         mMatchOver = true;
         mWon = (mWinnerId != 0 && mWinnerId == mMyPlayerId);
         mRematchLeft = pkt.rematchLeft;
@@ -766,6 +785,23 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     default:
         break;
     }
+}
+
+float DuelQueue::countdownLeft() const
+{
+    if (!mCountdownActive)
+        return 0.0f;
+    if (mCountdownDeadlineMs == 0)
+        return mCountdownLeft;
+    const uint64_t now = nowMs();
+    return mCountdownDeadlineMs > now
+        ? (float)(mCountdownDeadlineMs - now) / 1000.0f
+        : 0.0f;
+}
+
+bool DuelQueue::countdownActive() const
+{
+    return mCountdownActive || nowMs() < mGoVisibleUntilMs;
 }
 
 void DuelQueue::onDuelEnemySpawn(const DuelEnemySpawnPacket& pkt)

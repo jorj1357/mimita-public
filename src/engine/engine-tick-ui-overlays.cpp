@@ -778,15 +778,12 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                     (match.phase() == MimitaNet::DUEL_PHASE_COUNTDOWN ||
                      match.goVisible())) {
                     const GuiElement* countdownElement = matchLayout.get("countdownText");
-                    const uint32_t ticksLeft = match.matchStartTick() > match.serverTick()
-                        ? match.matchStartTick() - match.serverTick() : 0;
-                    // Clamp to 1: the extrapolated client tick may reach the
-                    // start before the GO packet arrives, and the countdown
-                    // should never flash "0" — it is replaced by GO.
-                    const int number = std::max(1, (int)std::ceil((float)ticksLeft / 60.0f));
-                    // goVisible() keeps GO! up for the server-sent window even
-                    // if the ACTIVE packet arrived first.
-                    const std::string countdownText = match.goVisible()
+                    const float secondsLeft = match.countdownSecondsLeft();
+                    const int number = std::max(1, (int)std::ceil(secondsLeft));
+                    // The client wall-clock deadline can show GO at the exact
+                    // end of the countdown even if the server is stalled.
+                    const std::string countdownText =
+                        (match.goVisible() || match.countdownElapsed())
                         ? (countdownElement && !countdownElement->goText.empty() ? countdownElement->goText : "GO!!!")
                         : textTemplate("countdownText", {{"{countdown}", std::to_string(number)}});
                     drawCentered("countdownText", countdownText);

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <glad/glad.h>
+#include "renderer/renderer.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "debug/gl-debug.h"
@@ -49,6 +50,8 @@ bool gOwnsHoverInput = false;
 std::vector<UIVertex> gBatchVertices;
 }
 
+extern Renderer* gRenderer;
+
 using namespace UISys;
 
 bool uiCanPlayUISound() {
@@ -72,6 +75,10 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
     gWindow = win;
     gOwnsHoverInput = ownsHoverInput;
     glfwGetFramebufferSize(win, &gFbW, &gFbH);
+    if (gRenderer && gRenderer->stretchesWholeFrame()) {
+        gFbW = gRenderer->sceneWidth;
+        gFbH = gRenderer->sceneHeight;
+    }
     if (gFbW <= 0) gFbW = 1;
     if (gFbH <= 0) gFbH = 1;
 

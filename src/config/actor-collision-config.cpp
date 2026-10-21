@@ -11,11 +11,13 @@
 #include <exception>
 #include <fstream>
 #include <stdexcept>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
 #include "utils/json-comments.h"
+#include "utils/path_utils.h"
 
 using json = nlohmann::json;
 
@@ -25,6 +27,33 @@ std::filesystem::file_time_type lastWriteOf(const std::string& path)
 {
     std::error_code ec;
     return std::filesystem::last_write_time(path, ec);
+}
+
+std::string resolveConfigPath(const std::string& requested)
+{
+    std::error_code ec;
+    if (std::filesystem::exists(requested, ec))
+        return requested;
+
+    std::vector<std::filesystem::path> candidates;
+    const std::filesystem::path exeDir(getExecutableDirectory());
+    std::filesystem::path cursor = exeDir;
+    for (int level = 0; level < 7 && !cursor.empty(); ++level)
+    {
+        candidates.push_back(cursor / requested);
+        const auto parent = cursor.parent_path();
+        if (parent == cursor)
+            break;
+        cursor = parent;
+    }
+
+    for (const auto& candidate : candidates)
+    {
+        std::error_code candidateEc;
+        if (std::filesystem::exists(candidate, candidateEc))
+            return candidate.string();
+    }
+    return requested;
 }
 
 bool finitePositive(float value)
@@ -110,6 +139,9 @@ ActorCollisionConfig& ActorCollisionConfig::instance()
 
 ActorCollisionConfig::ActorCollisionConfig()
 {
+    // A failed first parse must keep usable built-in defaults instead of an
+    // empty profile map.
+    mData = defaults();
     load();
 }
 
@@ -185,9 +217,10 @@ bool ActorCollisionConfig::validate(ActorCollisionData& candidate, std::string& 
 
 bool ActorCollisionConfig::load(const std::string& path)
 {
-    if (mPath != path)
+    const std::string resolvedPath = resolveConfigPath(path);
+    if (mPath != resolvedPath)
     {
-        mPath = path;
+        mPath = resolvedPath;
         mWatchLogged = false;
     }
 
@@ -197,6 +230,8 @@ bool ActorCollisionConfig::load(const std::string& path)
     {
         mData = defaults();
         mLastWrite = writeTime;
+        printf("[ACTOR COLLISION CONFIG] missing path=%s cwd-resolved=%s; using built-in defaults\n",
+               path.c_str(), mPath.c_str());
         if (!mWatchLogged)
         {
             Debug::warn(Debug::Category::Collision,
@@ -227,7 +262,9 @@ bool ActorCollisionConfig::load(const std::string& path)
 
         // Read the default override first, then inherit it for every explicit
         // profile so a profile only needs to state the fields it changes.
-        ActorCollisionProfile base = next.profiles.at("default");
+        auto baseIt = next.profiles.find("default");
+        ActorCollisionProfile base = baseIt != next.profiles.end()
+            ? baseIt->second : ActorCollisionProfile{};
         if (root.contains("profiles") && root["profiles"].is_object())
         {
             const json& profiles = root["profiles"];
@@ -270,6 +307,9 @@ bool ActorCollisionConfig::load(const std::string& path)
         mData = std::move(next);
         mLastWrite = writeTime;
         mLastCheck = std::chrono::steady_clock::now();
+        printf("[ACTOR COLLISION CONFIG] loaded path=%s revision=%llu profiles=%zu\n",
+               mPath.c_str(), (unsigned long long)mData.revision,
+               mData.profiles.size());
         if (!mWatchLogged)
         {
             Debug::log(Debug::Category::Collision,
@@ -287,6 +327,8 @@ bool ActorCollisionConfig::load(const std::string& path)
         Debug::error(Debug::Category::Collision,
             "[ACTOR COLLISION CONFIG ERROR] %s: %s; keeping previous valid settings.\n",
             mPath.c_str(), e.what());
+        printf("[ACTOR COLLISION CONFIG] error path=%s: %s; keeping previous valid settings\n",
+               mPath.c_str(), e.what());
         return false;
     }
 }
@@ -298,6 +340,14 @@ bool ActorCollisionConfig::pollHotReload()
         now - mLastCheck < std::chrono::milliseconds(250))
         return false;
     mLastCheck = now;
+
+    const std::string resolvedPath = resolveConfigPath(mPath);
+    if (resolvedPath != mPath)
+    {
+        mPath = resolvedPath;
+        mWatchLogged = false;
+        return load(mPath);
+    }
 
     std::error_code ec;
     if (!std::filesystem::exists(mPath, ec) || ec)
@@ -318,5 +368,17 @@ const ActorCollisionProfile& ActorCollisionConfig::profileFor(
         if (it != mData.profiles.end())
             return it->second;
     }
-    return mData.profiles.at("default");
+    auto defaultIt = mData.profiles.find("default");
+    if (defaultIt != mData.profiles.end())
+        return defaultIt->second;
+
+    // Defensive fallback: a partially loaded/corrupted runtime cannot make
+    // actor collision throw inside a fixed tick.
+    static const ActorCollisionProfile builtInDefault = []
+    {
+        ActorCollisionProfile profile;
+        profile.id = "default";
+        return profile;
+    }();
+    return builtInDefault;
 }

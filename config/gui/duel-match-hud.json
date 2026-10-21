@@ -28,7 +28,8 @@
       "type": "text",
       "x": 940, "y": 380, "width": 80, "height": 80,
       "fontSize": 1.7,
-      "textColor": [1, 1, 1, 1]
+      "textColor": [1, 1, 1, 1],
+      "goText": "GO!"
     },
     {
       "id": "endOverlay",

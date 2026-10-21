@@ -81,8 +81,8 @@ public:
     int myScore() const { return mMyScore; }
     int oppScore() const { return mOppScore; }
     int goal() const { return mGoal; }
-    bool countdownActive() const { return mCountdownActive; }
-    float countdownLeft() const { return mCountdownLeft; }
+    bool countdownActive() const;
+    float countdownLeft() const;
     uint8_t matchPhase() const { return mDuelPhase; }
     std::string matchMode() const { return mMatchMode; }
     float phaseTimer() const { return mPhaseTimer; }
@@ -199,6 +199,8 @@ private:
     uint32_t mStateVersion = 0;
     bool mCountdownActive = false;
     float mCountdownLeft = 0.0f;
+    uint64_t mCountdownDeadlineMs = 0;
+    uint64_t mGoVisibleUntilMs = 0;
     std::string mMatchMode = "duel";
     float mPhaseTimer = 0.0f;
     int mTimeLimitSeconds = 0;

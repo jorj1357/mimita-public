@@ -72,6 +72,12 @@ struct ActorPairCollisionStats
     std::uint32_t contacts = 0;
     std::uint32_t supports = 0;
     std::uint32_t pushes = 0;
+    std::uint32_t playerPlayerCandidates = 0;
+    std::uint32_t playerNpcCandidates = 0;
+    std::uint32_t npcNpcCandidates = 0;
+    std::uint32_t playerPlayerContacts = 0;
+    std::uint32_t playerNpcContacts = 0;
+    std::uint32_t npcNpcContacts = 0;
     bool truncated = false;
     float broadphaseMs = 0.0f;
     float narrowphaseMs = 0.0f;

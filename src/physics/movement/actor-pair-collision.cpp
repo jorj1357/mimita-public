@@ -372,6 +372,14 @@ void resolvePair(std::uint32_t rankA, std::uint32_t rankB,
         return;
 
     ++stats.contacts;
+    const bool aPlayer = actorA.kind == ActorPairKind::Player;
+    const bool bPlayer = actorB.kind == ActorPairKind::Player;
+    if (aPlayer && bPlayer)
+        ++stats.playerPlayerContacts;
+    else if (!aPlayer && !bPlayer)
+        ++stats.npcNpcContacts;
+    else
+        ++stats.playerNpcContacts;
 
     glm::vec3 contactPosA = actorA.prevPos + endMoveA * t;
     glm::vec3 contactPosB = actorB.prevPos + endMoveB * t;
@@ -573,6 +581,17 @@ void resolveActorPairCollisions(
             return a.a == b.a && a.b == b.b;
         }), s.pairs.end());
     stats.candidatePairs = static_cast<std::uint32_t>(s.pairs.size());
+    for (const PairEntry& pair : s.pairs)
+    {
+        const bool aPlayer = actors[s.order[pair.a]].kind == ActorPairKind::Player;
+        const bool bPlayer = actors[s.order[pair.b]].kind == ActorPairKind::Player;
+        if (aPlayer && bPlayer)
+            ++stats.playerPlayerCandidates;
+        else if (!aPlayer && !bPlayer)
+            ++stats.npcNpcCandidates;
+        else
+            ++stats.playerNpcCandidates;
+    }
 
     const auto broadphaseEnd = std::chrono::steady_clock::now();
     stats.broadphaseMs = std::chrono::duration<float, std::milli>(

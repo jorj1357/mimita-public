@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <charconv>
 #include <string>
 #include <vector>
 #include "devtools/terminal.h"
@@ -8,8 +9,10 @@
 #include "video/video-settings.h"
 #include "renderer/renderer.h"
 #include "config/player-settings.h"
+#include "debug/structured-log.h"
 
 extern FramePacer gFramePacer;
+extern Renderer* gRenderer;
 
 void registerVideoCommands()
 {
@@ -37,18 +40,52 @@ void registerVideoCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "fullscreen", "Toggle fullscreen mode", "fullscreen <0|1> (0=windowed 1=fullscreen)",
+        "fullscreen", "Set fullscreen mode", "fullscreen <0-6> (0=windowed 1=exclusive 2=borderless 3=exclusive world-stretched 4=borderless world-stretched 5=exclusive full-frame 1024x768 stretched 6=borderless full-frame 1024x768 stretched)",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
-                Terminal::instance().addLog("[VIDEO] Fullscreen: " +
-                    std::string(VideoSettings::instance().fullscreen() ? "ON" : "OFF"));
-                Terminal::instance().addLog("[VIDEO] Usage: fullscreen <0|1>");
+                const auto mode = VideoSettings::instance().fullscreenMode();
+                Terminal::instance().addLog("[VIDEO] Fullscreen mode: " +
+                    std::to_string(static_cast<int>(mode)) + " (" + fullscreenModeName(mode) + ")");
+                Terminal::instance().addLog("[VIDEO] Usage: fullscreen <0-6>");
+                Terminal::instance().addLog("[VIDEO] 0=windowed 1=exclusive 2=borderless 3=exclusive world-stretched 4=borderless world-stretched 5=exclusive full-frame 1024x768 stretched 6=borderless full-frame 1024x768 stretched");
                 return;
             }
-            bool on = args[0] == "1";
-            VideoSettings::instance().setFullscreen(on);
-            Terminal::instance().addLog("[VIDEO] Fullscreen: " +
-                std::string(on ? "ON" : "OFF"));
+            if (args.size() != 1) {
+                Terminal::instance().addLog("[VIDEO] Usage: fullscreen <0-6>");
+                return;
+            }
+            int mode = -1;
+            const std::string& value = args[0];
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), mode);
+            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() ||
+                mode < 0 || mode > 6) {
+                Terminal::instance().addLog("[VIDEO] Invalid mode. Use fullscreen <0-6>.");
+                return;
+            }
+            if (VideoSettings::instance().setFullscreenMode(mode)) {
+                const auto applied = VideoSettings::instance().fullscreenMode();
+                Terminal::instance().addLog("[VIDEO] Fullscreen mode: " +
+                    std::to_string(static_cast<int>(applied)) + " (" + fullscreenModeName(applied) + ")");
+                const std::string requestId = Terminal::instance().currentRequestId();
+                const bool stretched = fullscreenModeIsStretched(applied);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::General, StructuredLevel::Important,
+                    "video.fullscreen.mode_applied",
+                    requestId.empty() ? "fullscreen-command" : requestId,
+                    applied == static_cast<FullscreenMode>(mode)
+                        ? "requested mode applied" : "requested mode fell back",
+                    0,
+                    {{"requested_mode", mode},
+                     {"applied_mode", static_cast<int>(applied)},
+                     {"mode_name", fullscreenModeName(applied)},
+                     {"stretched", stretched},
+                     {"whole_frame_stretched", fullscreenModeStretchesWholeFrame(applied)},
+                     {"scene_width", gRenderer ? gRenderer->sceneWidth : 0},
+                     {"scene_height", gRenderer ? gRenderer->sceneHeight : 0},
+                     {"output_width", gRenderer ? gRenderer->width : 0},
+                     {"output_height", gRenderer ? gRenderer->height : 0}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
         }
     });
     Terminal::instance().registerCommand({
@@ -59,8 +96,14 @@ void registerVideoCommands()
             snprintf(buf, sizeof(buf), "Resolution: %dx%d  (index %d)",
                      vs.width(), vs.height(), vs.resolutionIndex());
             Terminal::instance().addLog(std::string("[VIDEO] ") + buf);
-            Terminal::instance().addLog(std::string("[VIDEO] Fullscreen: ") +
-                (vs.fullscreen() ? "ON" : "OFF"));
+            const auto mode = vs.fullscreenMode();
+            Terminal::instance().addLog(std::string("[VIDEO] Fullscreen mode: ") +
+                std::to_string(static_cast<int>(mode)) + " (" + fullscreenModeName(mode) + ")");
+            if (gRenderer) {
+                Terminal::instance().addLog("[VIDEO] Scene/output: " +
+                    std::to_string(gRenderer->sceneWidth) + "x" + std::to_string(gRenderer->sceneHeight) +
+                    " / " + std::to_string(gRenderer->width) + "x" + std::to_string(gRenderer->height));
+            }
             Terminal::instance().addLog("[VIDEO] Resizable: OFF");
             Terminal::instance().addLog("[VIDEO] maxFrames=" +
                 std::to_string(vs.maxFrames()));

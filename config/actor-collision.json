@@ -8,7 +8,7 @@
   },
   "profiles": {
     "default": {
-      "capsule_radius_m": 1.3,
+      "capsule_radius_m": 0.7,
       "capsule_height_m": 3.6,
       "dead_capsule_length_m": 2.6,
       "push": {
@@ -83,7 +83,7 @@
     "zombie_tower_chainsaw_boss": {
       "capsule_radius_m": 2.0,
       "capsule_height_m": 6.6,
-      "dead_capsule_length_m": 2.6
+      "dead_capsule_length_m": 4.6
     }
   }
 }

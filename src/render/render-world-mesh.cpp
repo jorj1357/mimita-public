@@ -279,7 +279,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
 
     glm::mat4 model(1.0f);
     glm::mat4 view = cam.getView();
-    glm::mat4 proj = cam.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glm::mat4 proj = cam.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
     const glm::mat4 viewProjection = proj * view;
 
     setMat4(shader, "model", model);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include "video/video-mode.h"
 
 // Single owner of resolution and fullscreen settings.
 // Every system (terminal commands, settings menu) routes through this API.
@@ -25,7 +26,10 @@ public:
     // Set resolution by index (1–4). Calls apply() internally.
     void setResolution(int index);
 
-    // Set fullscreen mode. Calls apply() internally.
+    // Set fullscreen mode (0-6). Calls apply() internally.
+    bool setFullscreenMode(int mode);
+
+    // Compatibility entry point for existing on/off controls.
     void setFullscreen(bool enabled);
 
     // Apply current settings to the GLFW window.
@@ -34,7 +38,8 @@ public:
 
     // Query
     int resolutionIndex() const { return mIndex; }
-    bool fullscreen() const { return mFullscreen; }
+    bool fullscreen() const { return mFullscreenMode != FullscreenMode::Windowed; }
+    FullscreenMode fullscreenMode() const { return mFullscreenMode; }
     int width() const;
     int height() const;
 
@@ -52,7 +57,7 @@ private:
     VideoSettings() = default;
 
     int mIndex = RES_800x600;
-    bool mFullscreen = false;
+    FullscreenMode mFullscreenMode = FullscreenMode::Windowed;
     int mMaxFrames = 999;
     bool mVSync = false;
 };

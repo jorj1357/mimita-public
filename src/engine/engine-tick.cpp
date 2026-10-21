@@ -14,6 +14,7 @@
 #include <shellapi.h>
 #include <windows.h>
 #include "engine/engine.h"
+#include "render/post-fx.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
 #include "gui/hud/chat-window.h"
@@ -31,6 +32,7 @@
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
 #include "perf/perf-frame.h"
+#include "perf/perf-gpu.h"
 #include "video/frame-pacer.h"
 #include "replay/replay-editor.h"
 #include "replay/replay-export.h"
@@ -129,6 +131,8 @@ void engineTick(Engine& engine)
     float dt;
     bool worldPassRan;
     { MIMITA_PERF_SCOPE("Setup"); engineTickSetup(engine, dt, worldPassRan); }
+    if (engine.renderer && engine.renderer->stretchesWholeFrame())
+        PostFX::instance().bindFBO();
     { MIMITA_PERF_SCOPE("Audio"); engineTickAudio(dt); }
     // Always tick listen server if hosting (receives packets, sends snapshots)
     {
@@ -327,6 +331,14 @@ void engineTick(Engine& engine)
     HEARTBEAT("before terminal");
     { MIMITA_PERF_SCOPE("Terminal"); Terminal::instance().render(); }
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
+
+    if (engine.renderer && engine.renderer->stretchesWholeFrame()) {
+        PostFX::instance().unbindFBO();
+        { Perf::ScopedTimer _pfx("PostFX");
+          PerfGpu::beginRegion("GPU::PostFX");
+          PostFX::instance().render();
+          PerfGpu::endRegion(); }
+    }
 
     HEARTBEAT("end frame");
     { MIMITA_PERF_SCOPE("Swap");

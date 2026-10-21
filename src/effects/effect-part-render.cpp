@@ -59,7 +59,7 @@ void drawTexturedHitParticles(const Camera& camera,
     const GLuint shader = gRenderer->shaderProgram;
     const glm::mat4 model(1.0f);
     const glm::mat4 view = camera.getView();
-    const glm::mat4 projection = camera.getProj((float)gRenderer->width, (float)gRenderer->height);
+    const glm::mat4 projection = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
     const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
 
     glEnable(GL_DEPTH_TEST);

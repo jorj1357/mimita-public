@@ -1,6 +1,14 @@
 {
   "roles": [
     {
+      "id": "sandbox_juggernaut_npc",
+      "display_name": "Sandbox Juggernaut NPC",
+      "team": 0,
+      "team_id": "sandbox_npcs",
+      "actor_preset": "juggernaut_arcade",
+      "movement_preset": "juggernaut"
+    },
+    {
       "id": "hunter",
       "team": 0,
       "health": 100,

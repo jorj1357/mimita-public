@@ -1,4 +1,29 @@
-﻿2026 10 20 1800
+﻿2026 10 20 1932
+
+countdown
+need to be lik epeioritt
+and reliabel
+dont simualte the  other npcs  bc its making the countdown lag 
+
+i want to over time  fix this
+bc a lot of npcs simulating make sthe countdown go fomr like 3, 2,  3, ... 2.... 1... 2... 1... go!.... go!!!... then it works
+like it should jsut b e 3 2 1 go no reversal like need tomake it relaible idk how
+
+## Countdown reliability contract — 2026-10-20
+
+Every new match or round displays one monotonic `3 → 2 → 1 → GO` countdown.
+The configured countdown duration (three seconds for standard matches) uses a
+monotonic wall-clock deadline, so a server simulation stall does not lengthen
+it. The server changes to GO on its first
+available simulation tick after the deadline; clients advance the displayed
+countdown from the authoritative remaining duration and never move it backward
+when a delayed state packet arrives.
+
+Pause simulation for every NPC in the world from COUNTDOWN through GO. Keep the
+server network and match lifecycle running, and resume NPC simulation when the
+match enters ACTIVE.
+
+2026 10 20 1800
 SERVE DISAGREEMENT ISSUES THE THING WHERE ITS LIKE IT CHDKCS IF THER IS SMTH BETERWEN UR CURRENT POS AND THE  NEW POS UR AT AND THEN IT DOESNT LET U 
 ITS LIKE
 OMG idk how to explain

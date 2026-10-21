@@ -321,15 +321,29 @@ let an actor fall through a stable support.
 
 ## 6. Current implementation status
 
-Current source audit (2026-10-20; observed implementation only, not the
-desired rule): the existing client simulation calls
-`resolveCapsuleVsCapsule` for its
-controlled player against each live NPC, including a special flat-top support check. It does not resolve NPC-vs-NPC pairs. The
-dedicated server's `resolvePlayerCollision` is currently a no-op, and the
-server NPC update does not add an actor-pair collision pass. Therefore this
-local path does not prove authoritative player-vs-NPC, player-vs-player, or
-NPC-vs-NPC collision in multiplayer. Runtime multiplayer acceptance remains
-open.
+Current source audit (2026-10-20/21): the first actor-pair capsule slice is
+implemented in one shared owner,
+`src/physics/movement/actor-pair-collision.cpp`, with
+`config/actor-collision.json` as the validated, fixed-tick-hot-reloadable
+capsule/push/support source. Players, NPCs, and monsters are all actors in the
+same pass. The pass uses a swept spatial grid, resolves each candidate pair
+once, supports dead actors as ground-level lengthwise capsules, applies
+flat-top support/carry, and applies an impact-angle/speed external impulse.
+The dedicated and listen servers run the authoritative pass in
+`simulateSharedNpcs`; clients run the same solver for local prediction and
+apply the server's `NET_STATE_ACTOR_COLLISION` result through local-player
+reconciliation. The old client-only `resolveCapsuleVsCapsule` and the server
+`resolvePlayerCollision` no-op are removed.
+
+Runtime evidence from a one-client 68-actor Juggernaut run recorded 67-68
+actors, roughly 24-139 unique candidate pairs per second, 0.02-0.09 ms
+collision time, NPC-vs-NPC contacts/pushes, and support contacts. The server
+remained near 60 Hz with 4-9 ms tick cost during that run. Two-client
+player-vs-player runtime acceptance remains open because a manually launched
+second client hit an unrelated ICE transport crash; the player-player pair is
+covered by the same solver and pair-kind counters, but has not been accepted
+visually in a clean two-client session. Per-limb/ragdoll-limb collision
+remains later work.
 
 The repository already has pieces that can be used immediately:
 

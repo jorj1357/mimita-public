@@ -579,6 +579,7 @@ void serverStartMode(const ServerGamemodeState& rules)
     // ── FFA/TDM fields ─────────────────────────────────────────────
     d.matchMode = rules.matchMode;
     d.countdownStartTick = 0;
+    d.countdownDeadlineMs = 0;
     d.matchStartTick = 0;
     d.matchTimeLimitTick = 0;
     d.phaseTimer = 0.0f;
@@ -1065,6 +1066,51 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
 namespace {
 
+float countdownWallSecondsRemaining(const ServerGamemodeState& d)
+{
+    if (d.countdownDeadlineMs == 0)
+        return std::max(0.0f, d.countdown);
+    const uint64_t now = nowMs();
+    return d.countdownDeadlineMs > now
+        ? (float)(d.countdownDeadlineMs - now) / 1000.0f
+        : 0.0f;
+}
+
+bool countdownWallDeadlineReached(const ServerGamemodeState& d)
+{
+    return d.countdownDeadlineMs != 0
+        ? nowMs() >= d.countdownDeadlineMs
+        : d.countdown <= 0.0f;
+}
+
+void startCountdownWallClock(ServerGamemodeState& d)
+{
+    d.countdownDeadlineMs = nowMs() +
+        (uint64_t)std::ceil(std::max(0.0f, d.countdownSeconds) * 1000.0f);
+    d.countdown = d.countdownSeconds;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "match.countdown.start", std::to_string(d.duelId), "countdown_start",
+        d.currentServerTick,
+        nlohmann::json{{"mode", d.matchMode},
+                       {"countdown_seconds", d.countdownSeconds},
+                       {"deadline_steady_ms", d.countdownDeadlineMs}});
+}
+
+void logCountdownCompletion(ServerGamemodeState& d, uint32_t tick)
+{
+    const uint64_t now = nowMs();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "match.countdown.complete", std::to_string(d.duelId), "countdown_complete",
+        tick,
+        nlohmann::json{{"mode", d.matchMode},
+                       {"next_phase", (int)d.phase},
+                       {"deadline_steady_ms", d.countdownDeadlineMs},
+                       {"late_by_ms", now > d.countdownDeadlineMs
+                           ? now - d.countdownDeadlineMs : 0}});
+}
+
 // Defined below; called from the round state machine.
 void serverObjectiveTick(ServerGamemodeState& d,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1121,7 +1167,9 @@ void broadcastDuelState(SOCKET sock,
     pkt.scoreA = d.scoreA;
     pkt.scoreB = d.scoreB;
     pkt.goalValue = d.goalValue;
-    pkt.countdownLeft = d.countdown;
+    pkt.countdownLeft = d.phase == DUEL_PHASE_COUNTDOWN
+        ? countdownWallSecondsRemaining(d)
+        : d.countdown;
     pkt.phaseTimer = d.phaseTimer;
     pkt.rematchLeft = d.rematchLeft;
     pkt.playerAId = d.playerAId;
@@ -1727,7 +1775,7 @@ void beginGamemodeCountdown(ServerGamemodeState& d,
     d.scoreB = 0;
     d.winnerPlayerId = 0;
     d.phase = DUEL_PHASE_COUNTDOWN;
-    d.countdown = d.countdownSeconds;
+    startCountdownWallClock(d);
     Debug::log(Debug::Category::Duel,
         "[ServerGamemode] selected authoritative map=%s duelId=%u stateVersion=%u\n",
         d.mapId.c_str(), d.duelId, d.stateVersion);
@@ -2294,7 +2342,7 @@ void beginObjectiveRound(ServerGamemodeState& d,
     d.countdownStartTick = currentTick;
     d.countdownSeconds = d.countdownSeconds > 0.0f ? d.countdownSeconds : 3.0f;
     d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
-    d.countdown = d.countdownSeconds;
+    startCountdownWallClock(d);
     d.matchTimeLimitTick = 0;
     d.roundEndTick = 0;
     d.lastBroadcastTick = currentTick;
@@ -2302,10 +2350,8 @@ void beginObjectiveRound(ServerGamemodeState& d,
     d.phase = DUEL_PHASE_COUNTDOWN;
     // Freeze the whole countdown: human input lock + NPC hold, released exactly
     // at GO. Newly adopted roster bodies get the same hold in
-    // finalizeServerNpcSpawn (they do not exist yet at this point).
+    // the server NPC phase gate (the gate now pauses all NPC updates).
     d.roundCountdownFreeze = true;
-    for (Npc& npc : npcSystem.all())
-        npc.wakeupTimer = std::max(npc.wakeupTimer, d.countdownSeconds);
     resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
     assignObjectiveCarrier(d, players, npcs);
     Debug::warn(Debug::Category::Duel,
@@ -3297,7 +3343,7 @@ void beginMatchCountdown(ServerGamemodeState& d,
     d.victoryType = 0;
     d.countdownStartTick = currentTick;
     d.matchStartTick = currentTick + (uint32_t)(d.countdownSeconds * 60.0f);
-    d.countdown = d.countdownSeconds;
+    startCountdownWallClock(d);
     d.matchTimeLimitTick = 0;
     d.lastBroadcastTick = currentTick;
     resetMatchScores(d);
@@ -3307,10 +3353,6 @@ void beginMatchCountdown(ServerGamemodeState& d,
         const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
         if (gm.features.freezeDuringCountdown) d.roundCountdownFreeze = true;
         reconcileZombieTowerParty(d, players, npcs);
-        for (Npc& npc : npcSystem.all()) {
-            if (npc.body.matchTeam == 0)
-                npc.wakeupTimer = std::max(npc.wakeupTimer, d.countdownSeconds);
-        }
     }
     Debug::log(Debug::Category::Duel,
         "[ServerMatch] countdown started mode=%s duelId=%u matchStartTick=%u timeLimitTick=%u participants=%zu\n",
@@ -4885,8 +4927,10 @@ void serverGamemodeTick(SOCKET sock,
     updateActorStates(d, players, npcs);
     // Generic area effects tick at fixed 60 Hz in every managed mode.
     serverAreaEffectTick(d, sock, players, npcs, tick, totalPacketsOut);
-    // Team-level tactical brains: assignments + objective context for NPCs.
-    serverTeamBrainTick(d, players, npcs, npcSystem, npcWorld, tick);
+    // Team assignments and objective context are NPC decision inputs. Keep
+    // them frozen with movement/AI until the countdown and GO phase finish.
+    if (d.phase != DUEL_PHASE_COUNTDOWN && d.phase != DUEL_PHASE_GO)
+        serverTeamBrainTick(d, players, npcs, npcSystem, npcWorld, tick);
     if (!d.mapOnly && d.appliedCommunityWeaponSetId != d.communityWeaponSetId)
     {
         resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
@@ -5441,9 +5485,10 @@ void serverGamemodeTick(SOCKET sock,
         }
 
         case DUEL_PHASE_COUNTDOWN:
-            if (tick >= d.matchStartTick)
+            if (countdownWallDeadlineReached(d))
             {
                 d.phase = DUEL_PHASE_GO;
+                logCountdownCompletion(d, tick);
                 d.phaseTimer = d.goSeconds > 0.0f ? d.goSeconds : 0.75f;
                 d.roundEndTick = d.roundSeconds > 0.0f
                     ? tick + (uint32_t)(d.roundSeconds * 60.0f) : 0;
@@ -5646,9 +5691,10 @@ void serverGamemodeTick(SOCKET sock,
             break;
 
         case DUEL_PHASE_COUNTDOWN:
-            if (tick >= d.matchStartTick)
+            if (countdownWallDeadlineReached(d))
             {
                 d.phase = DUEL_PHASE_GO;
+                logCountdownCompletion(d, tick);
                 d.phaseTimer = d.npcWaves ? d.waveBannerSeconds : d.goSeconds;
                 d.waveBannerVisible = d.npcWaves;
                 d.waveBannerUntilTick = d.npcWaves
@@ -5973,10 +6019,11 @@ void serverGamemodeTick(SOCKET sock,
             d.stateSent = false;
             break;
         }
-        d.countdown -= SERVER_DT;
-        if (d.countdown <= 0.0f)
+        d.countdown = countdownWallSecondsRemaining(d);
+        if (countdownWallDeadlineReached(d))
         {
             d.phase = DUEL_PHASE_ACTIVE;
+            logCountdownCompletion(d, tick);
             d.stateSent = false;
             ++d.stateVersion;
             Debug::log(Debug::Category::Duel,
@@ -6826,8 +6873,9 @@ void serverBombTagTick(SOCKET sock,
         break;
 
     case DUEL_PHASE_COUNTDOWN:
-        if (tick >= d.matchStartTick) {
+        if (countdownWallDeadlineReached(d)) {
             d.phase = DUEL_PHASE_GO;
+            logCountdownCompletion(d, tick);
             d.phaseTimer = d.goSeconds;
             ++d.stateVersion;
             d.lastBroadcastTick = tick;

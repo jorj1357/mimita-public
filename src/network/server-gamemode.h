@@ -145,6 +145,9 @@ struct ServerGamemodeState
 
     // Authoritative tick references for countdown/start/end
     uint32_t countdownStartTick = 0;
+    // Monotonic wall-clock deadline for the visible countdown. Server tick
+    // stalls must not extend the requested countdown duration.
+    uint64_t countdownDeadlineMs = 0;
     uint32_t matchStartTick = 0;
     uint32_t matchTimeLimitTick = 0;  // matchStartTick + timeLimitTicks
     uint32_t currentServerTick = 0;

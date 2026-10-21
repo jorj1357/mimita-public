@@ -287,14 +287,24 @@ bool PostFX::initFBO(int width, int height)
 
 void PostFX::bindFBO()
 {
-    if (mBypass) {
+    const bool outputScaleRequired = gRenderer &&
+        (gRenderer->sceneWidth != gRenderer->width ||
+         gRenderer->sceneHeight != gRenderer->height);
+    if (mBypass && !outputScaleRequired) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         return;
     }
-    if (!mFbo && gRenderer)
-        initFBO(gRenderer->width, gRenderer->height);
-    if (!mFbo) return;
+    if (gRenderer && (!mFbo ||
+        mFboW != gRenderer->sceneWidth || mFboH != gRenderer->sceneHeight))
+        initFBO(gRenderer->sceneWidth, gRenderer->sceneHeight);
+    if (!mFbo) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (gRenderer)
+            glViewport(0, 0, gRenderer->width, gRenderer->height);
+        return;
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
+    glViewport(0, 0, mFboW, mFboH);
     // Clear the FBO's color and depth buffers.
     // Renderer::beginFrame() only clears the default framebuffer, not the FBO.
     // Without this, the FBO retains the previous frame's depth buffer,
@@ -403,16 +413,27 @@ bool PostFX::isActive() const
 
 void PostFX::render()
 {
-    if (mBypass) return;
-    if (!mPostShader || !mFbo || !mQuadVao) return;
+    const bool outputScaleRequired = gRenderer &&
+        (gRenderer->sceneWidth != gRenderer->width ||
+         gRenderer->sceneHeight != gRenderer->height);
+    if (mBypass && !outputScaleRequired) return;
+    if (!mPostShader || !mFbo || !mQuadVao) {
+        if (gRenderer)
+            glViewport(0, 0, gRenderer->width, gRenderer->height);
+        return;
+    }
 
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (gRenderer)
+        glViewport(0, 0, gRenderer->width, gRenderer->height);
     glDisable(GL_DEPTH_TEST);
 
     // --- Pass 1: full scene post-process ---
     glUseProgram(mPostShader);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mColorTex);
-    setUniforms(mPostShader, mData, "");
+    const PostFXData identity;
+    setUniforms(mPostShader, mBypass ? identity : mData, "");
 
     renderQuad(mQuadVao);
 

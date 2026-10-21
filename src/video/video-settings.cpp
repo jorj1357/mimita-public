@@ -52,12 +52,27 @@ void VideoSettings::setResolution(int index)
     save();
 }
 
-void VideoSettings::setFullscreen(bool enabled)
+bool VideoSettings::setFullscreenMode(int mode)
 {
-    mFullscreen = enabled;
-    printf("[VIDEO] Fullscreen: %s\n", enabled ? "ON" : "OFF");
+    if (mode < static_cast<int>(FullscreenMode::Windowed) ||
+        mode > static_cast<int>(FullscreenMode::BorderlessFullFrameStretched)) {
+        printf("[VIDEO] Invalid fullscreen mode: %d (must be 0-6)\n", mode);
+        return false;
+    }
+
+    mFullscreenMode = static_cast<FullscreenMode>(mode);
     apply();
     save();
+    printf("[VIDEO] Fullscreen mode=%d (%s)\n",
+           static_cast<int>(mFullscreenMode), fullscreenModeName(mFullscreenMode));
+    return true;
+}
+
+void VideoSettings::setFullscreen(bool enabled)
+{
+    setFullscreenMode(enabled
+        ? static_cast<int>(FullscreenMode::Exclusive)
+        : static_cast<int>(FullscreenMode::Windowed));
 }
 
 void VideoSettings::setMaxFrames(int fps)
@@ -85,10 +100,10 @@ void VideoSettings::apply()
         printf("[VIDEO] Cannot apply: no window\n");
         return;
     }
-    gRenderer->applyVideoMode(width(), height(), mFullscreen);
+    mFullscreenMode = gRenderer->applyVideoMode(width(), height(), mFullscreenMode);
     // applyVideoMode may reset the driver swap interval; restore the config.
     gRenderer->setVSync(mVSync);
-    PostFX::instance().initFBO(gRenderer->width, gRenderer->height);
+    PostFX::instance().initFBO(gRenderer->sceneWidth, gRenderer->sceneHeight);
 }
 
 void VideoSettings::load()
@@ -108,8 +123,29 @@ void VideoSettings::load()
 
         if (j.contains("resolution_index"))
             mIndex = std::clamp(j["resolution_index"].get<int>(), 1, NUM_RESOLUTIONS);
-        if (j.contains("fullscreen"))
-            mFullscreen = j["fullscreen"].get<bool>();
+        if (j.contains("fullscreen")) {
+            const json& fullscreen = j["fullscreen"];
+            if (fullscreen.is_boolean()) {
+                // Accept legacy true/false settings written before modes 0-4.
+                mFullscreenMode = fullscreen.get<bool>()
+                    ? FullscreenMode::Exclusive
+                    : FullscreenMode::Windowed;
+            } else if (fullscreen.is_number_integer()) {
+                const int mode = fullscreen.get<int>();
+                if (mode >= static_cast<int>(FullscreenMode::Windowed) &&
+                    mode <= static_cast<int>(FullscreenMode::BorderlessFullFrameStretched)) {
+                    mFullscreenMode = static_cast<FullscreenMode>(mode);
+                } else {
+                    printf("[VIDEO] Invalid fullscreen mode in %s: %d; using mode 0\n",
+                           path.c_str(), mode);
+                    mFullscreenMode = FullscreenMode::Windowed;
+                }
+            } else {
+                printf("[VIDEO] Invalid fullscreen value in %s; using mode 0\n",
+                       path.c_str());
+                mFullscreenMode = FullscreenMode::Windowed;
+            }
+        }
         if (j.contains("maxFrames"))
             mMaxFrames = std::clamp(j["maxFrames"].get<int>(), 10, 999);
         if (j.contains("vsync") && j["vsync"].get<bool>()) {
@@ -117,8 +153,9 @@ void VideoSettings::load()
         }
         mVSync = false;
 
-        printf("[VIDEO] Loaded: resolution=%d (%dx%d) fullscreen=%d maxFrames=%d vsync=%d\n",
-               mIndex, width(), height(), (int)mFullscreen, mMaxFrames, (int)mVSync);
+        printf("[VIDEO] Loaded: resolution=%d (%dx%d) fullscreen=%d (%s) maxFrames=%d vsync=%d\n",
+               mIndex, width(), height(), static_cast<int>(mFullscreenMode),
+               fullscreenModeName(mFullscreenMode), mMaxFrames, (int)mVSync);
     }
     catch (const std::exception& e)
     {
@@ -137,7 +174,7 @@ void VideoSettings::save()
 
     json j;
     j["resolution_index"] = mIndex;
-    j["fullscreen"] = mFullscreen;
+    j["fullscreen"] = static_cast<int>(mFullscreenMode);
     j["maxFrames"] = mMaxFrames;
     j["vsync"] = false;
     j["width"] = width();
@@ -150,6 +187,7 @@ void VideoSettings::save()
         return;
     }
     file << j.dump(2);
-    printf("[VIDEO] Saved: resolution=%d (%dx%d) fullscreen=%d\n",
-           mIndex, width(), height(), (int)mFullscreen);
+    printf("[VIDEO] Saved: resolution=%d (%dx%d) fullscreen=%d (%s)\n",
+           mIndex, width(), height(), static_cast<int>(mFullscreenMode),
+           fullscreenModeName(mFullscreenMode));
 }

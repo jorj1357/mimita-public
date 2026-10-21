@@ -194,7 +194,14 @@ void renderDuelMatchHud(GLFWwindow* win, float dt)
     if (dq.countdownActive())
     {
         char num[8];
-        snprintf(num, sizeof(num), "%.0f", std::ceil(std::max(0.0f, dq.countdownLeft())));
+        const float secondsLeft = dq.countdownLeft();
+        const GuiElement* countdownElement = layout.get("countdownNum");
+        if (secondsLeft <= 0.0f && countdownElement && !countdownElement->goText.empty())
+            snprintf(num, sizeof(num), "%s", countdownElement->goText.c_str());
+        else if (secondsLeft <= 0.0f)
+            snprintf(num, sizeof(num), "GO!");
+        else
+            snprintf(num, sizeof(num), "%.0f", std::ceil(secondsLeft));
         hudText(layout, "countdownNum", num);
         drawDowntime(layout, dq, false);
         return;

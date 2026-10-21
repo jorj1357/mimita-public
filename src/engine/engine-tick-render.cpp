@@ -470,8 +470,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 gReplayPlayer.currentSceneFrame()) {
             const glm::mat4 replayView = camera.getView();
             const glm::mat4 replayProj = camera.getProj(
-                (float)engine.renderer->width,
-                (float)engine.renderer->height);
+                (float)engine.renderer->sceneWidth,
+                (float)engine.renderer->sceneHeight);
             { MIMITA_PERF_SCOPE("Rendering::ReplayActors");
               renderReplayActors(
                   *replayFrame, camera, replayView, replayProj,
@@ -824,15 +824,22 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     diagRenderStage(5);
     } // MIMITA_PERF_SCOPE Rendering
 
-    PostFX::instance().unbindFBO();
-    diagRenderStage(6);
     PostFX::instance().advanceTime(dt);
-    // PostFX hot-reload gated by master hot-reload config
-    { Perf::ScopedTimer _pfx("PostFX");
-      PerfGpu::beginRegion("GPU::PostFX");
-      PostFX::instance().render();
-      PerfGpu::endRegion(); }
-    renderShadowMapOverlay(engine.renderer->width, engine.renderer->height);
+    const bool fullFrameStretched = engine.renderer->stretchesWholeFrame();
+    if (!fullFrameStretched) {
+        PostFX::instance().unbindFBO();
+        diagRenderStage(6);
+        // PostFX hot-reload gated by master hot-reload config
+        { Perf::ScopedTimer _pfx("PostFX");
+          PerfGpu::beginRegion("GPU::PostFX");
+          PostFX::instance().render();
+          PerfGpu::endRegion(); }
+    }
+    renderShadowMapOverlay(
+        fullFrameStretched ? engine.renderer->sceneWidth : engine.renderer->width,
+        fullFrameStretched ? engine.renderer->sceneHeight : engine.renderer->height);
+    if (fullFrameStretched)
+        diagRenderStage(6);
     diagRenderStage(7);
 
     if (gReplayExportVerbose && isExporting)

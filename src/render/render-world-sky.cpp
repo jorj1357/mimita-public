@@ -82,7 +82,7 @@ void renderSky(const World& world, const Camera& cam)
     glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &model[0][0]);
 
     glm::mat4 view = cam.getView();
-    glm::mat4 proj = cam.getProj((float)gRenderer->width, (float)gRenderer->height);
+    glm::mat4 proj = cam.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
     glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &proj[0][0]);
 
