@@ -1672,6 +1672,8 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.onGround = (serverSimBroadcast ? player.lastAcceptedClientOnGround : player.onGround) ? 1 : 0;
     out.equippedSlot = (int16_t)player.equippedSlot;
     out.weaponState = player.weaponState;
+    serverWriteWeaponActionSnapshot(player.equippedWeaponId, player.meleeActionActive,
+        player.meleeActionId, player.meleeActionStartTick, out);
     out.transformEpoch = player.transformEpoch;
     out.aimX = player.input.camForward.x;
     out.aimY = player.input.camForward.y;

@@ -658,6 +658,7 @@ struct ServerNpc
     glm::vec3 vel{0.0f};
     glm::vec3 aim{1.0f, 0.0f, 0.0f};  // planar facing (n.currentFacing) replicated so clients orient the NPC muzzle like players
     float yaw = 0.0f;
+    float sizeScale = 1.0f;
     // Lifecycle counter mirrored from the simulated Npc body so the snapshot
     // can carry it to clients (they hard-snap the body + reset death state on
     // a change). Starts at 1, bumped once per respawn, never 0.
@@ -687,6 +688,7 @@ struct ServerNpc
     // Replicated weapon presentation: which slot the NPC holds and its
     // runtime state (firing / reloading / empty), mirroring player snapshots.
     int16_t equippedSlot = 0;
+    std::string equippedWeaponId;
     uint8_t weaponState = 0;
     // Client-side presentation events. The dedicated server never plays
     // audio; these serials tell clients which one-shot movement sounds to
@@ -769,6 +771,14 @@ struct ServerDamageResult
     std::string rejectionReason;
     uint32_t eventId = 0;
     uint64_t correlationId = 0;
+};
+
+struct ServerPhysicalContactResult {
+    ServerActorDamageRequest request;
+    ServerDamageResult result;
+    glm::vec3 hit{0};
+    float force = 0;
+    bool presentImpact = false;
 };
 
 struct ServerProjectile
@@ -995,7 +1005,9 @@ void broadcastNpcDamageEvent(
     const glm::vec3& hit,
     const glm::vec3& dir,
     const glm::vec3& normal,
-    uint8_t weapon);
+    uint8_t weapon,
+    uint8_t attackerEntityType = ENTITY_PLAYER,
+    float contactForce = -1.0f);
 
 // Raycast
 bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
@@ -1129,6 +1141,12 @@ void tickServerPhysicalContactWeapons(SOCKET sock,
                                       const HeadlessWorld& world,
                                       float dt, uint32_t tick,
                                       uint64_t& totalPacketsOut);
+void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs, uint32_t tick, uint64_t& totalPacketsOut,
+    std::vector<ServerPhysicalContactResult>* localResults = nullptr);
+void tickServerWeaponAnimationActions(std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs, uint32_t tick);
 
 // ── Melee action runtime (Captain Falcon move set) ────────────────────
 // Advances every active Melee action, sweeps its limb-attached hitbox during
@@ -1143,6 +1161,8 @@ void tickServerMeleeActions(SOCKET sock,
 // action id is unknown.
 bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
                             uint32_t tick);
+void serverWriteWeaponActionSnapshot(const std::string& definitionId, bool active,
+    const std::string& actionId, uint32_t startTick, SnapshotEntity& out);
 // Melee percent meter accessors (0 in non-Melee contexts).
 float serverMeleePercentFor(const ServerPlayer& player);
 void serverMeleeResetForSpawn(ServerPlayer& player);
@@ -1325,8 +1345,7 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
                                      const glm::vec3& knockback,
                                      ServerDamageSource source);
 
-// Shared actor damage boundary. Phase 1 supports the existing player target
-// implementation; NPC callers migrate into this boundary in later phases.
+// Shared typed damage boundary for both player and NPC attackers/victims.
 ServerDamageResult applyActorDamage(
     std::unordered_map<uint32_t, ServerPlayer>& players,
     std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -1355,7 +1374,8 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     uint32_t causeSerial = 0,
     uint32_t projectileId = 0,
     uint32_t attackerNpcId = 0,
-    const std::string& weaponDefId = "");
+    const std::string& weaponDefId = "",
+    float contactForce = -1.0f);
 
 // ─── HostedRoomSession — single canonical room for one host action ─────────
 

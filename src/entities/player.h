@@ -526,6 +526,10 @@ public:
     uint16_t networkLastDirectionChangeSerial = 0;
     uint16_t networkLastFreezeSerial = 0;
     uint16_t networkLastEquipSerial = 0;
+    uint32_t networkMeleeAudioStartTick = 0;
+    uint32_t networkMeleeAudioLastElapsed = 0;
+    uint8_t networkMeleeAudioActionIndex = 255;
+    bool networkMeleeAudioInitialized = false;
     uint16_t networkStateFlags = 0;
     int revolverCylinder = 6;
     int revolverReserve = 1337;

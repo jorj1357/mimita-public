@@ -1,3 +1,4 @@
+#include "combat/melee-client.h"
 // 07 21 2026, 21 30
 /* purpose
 * Registers terminal commands for weapon firing, reload, equip, debug, and inspection controls.
@@ -210,6 +211,12 @@ void registerWeaponCommands()
                     reason, mpContext.tick, extra,
                     __FILE__, __LINE__, __FUNCTION__);
             };
+            if (MimitaMelee::hasEquippedMoveSet(player, weapons)) {
+                MimitaMelee::requestButton(false, true);
+                MimitaMelee::requestButton(false, false);
+                emitLocalAttack("weapon_action_queued", {{"weapon", player.equippedWeaponId}});
+                return;
+            }
             RevolverShotResult shot = weapons.fire(
                 camera, player, npcSystem, world, remotePlayers, remoteNpcs);
 

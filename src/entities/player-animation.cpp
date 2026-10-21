@@ -199,19 +199,11 @@ void Player::playOneShotAtTick(const std::string& clip, int clipTick)
 
 bool Player::usesMeleeAuthoredPose() const
 {
-    // The Captain Falcon profile is the Melee fighter profile (forced role in
-    // config/gamemodes/melee.json), so this avatar identifies a Melee actor.
-    // The explicit mode/flag/runtime checks below are kept as intent markers.
-    if (avatarName() != "captainfalcon")
-        return false;
-    if (animationSet && animationSet->valid && animationSet->authoredOnly)
-        return true;
-    if (MimitaNet::CommunityMatchClient::instance().mode() == "melee")
-        return true;
-    for (const auto& kv : weaponRuntimes)
-        if (WeaponData::MeleeMoveSetRegistry::instance().get(kv.first) != nullptr)
-            return true;
-    return true;
+    const WeaponDefinition* def = hasValidWeapon
+        ? WeaponRegistry::instance().get(equippedWeaponId) : nullptr;
+    if (dead && def && def->behaviorType != WeaponBehaviorType::Melee) return false;
+    return def && (!def->animationProfile.empty() ||
+        WeaponData::MeleeMoveSetRegistry::instance().get(def->id) != nullptr);
 }
 
 static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
@@ -363,13 +355,26 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                                             (std::uint32_t)movementSimulationTick);
     }
 
+    const WeaponDefinition* animationWeapon = hasValidWeapon
+        ? WeaponRegistry::instance().get(equippedWeaponId) : nullptr;
+    const AvatarAnimationSet* weaponAnimationSet = animationWeapon &&
+        !animationWeapon->animationProfile.empty()
+        ? AvatarAnimationRegistry::instance().getAnimationSet(
+            "profile:" + animationWeapon->animationProfile, (uint32_t)movementSimulationTick)
+        : nullptr;
     auto clipFromAvatar = [&](const std::string& name) -> bool {
+        if (weaponAnimationSet && weaponAnimationSet->valid &&
+            weaponAnimationSet->clips.count(name)) return true;
         return animationSet && animationSet->valid &&
                animationSet->clips.find(name) != animationSet->clips.end();
     };
     auto findClip = [&](const std::string& name) -> const AnimClip* {
         if (name.empty()) return nullptr;
-        if (clipFromAvatar(name))
+        if (weaponAnimationSet && weaponAnimationSet->valid) {
+            auto it = weaponAnimationSet->clips.find(name);
+            if (it != weaponAnimationSet->clips.end()) return &it->second;
+        }
+        if (animationSet && animationSet->valid && animationSet->clips.count(name))
             return &animationSet->clips.find(name)->second;
         // Melee exclusive: never fall through to the global profile or another
         // animation set. A missing clip uses this profile's configured fallback
@@ -380,7 +385,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         return it != gPlayerProcedural.layers.animations.end() ? &it->second : nullptr;
     };
 
-    const AvatarStateMap* sm = (animationSet && animationSet->valid)
+    const AvatarStateMap* sm = weaponAnimationSet && weaponAnimationSet->valid
+        ? &weaponAnimationSet->states : (animationSet && animationSet->valid)
         ? &animationSet->states : nullptr;
     auto locomotionClip = [&]() -> std::string {
         if (!sm) return "walk";

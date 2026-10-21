@@ -1,3 +1,6 @@
+// 2026 10 20 2032 jorj todo 
+// the radius heihgt for capusel size not updating live 
+
 {
   "schema": 1,
   "comment": "Actor-pair capsule sizes and push/support tuning. Profiles are keyed by the existing actor preset id; an unknown/empty preset uses 'default'. Units are metres, metres/second, and seconds. Reload is validated as a whole and applied at the next fixed tick; an invalid save keeps the last valid values.",
@@ -8,20 +11,20 @@
   },
   "profiles": {
     "default": {
-      "capsule_radius_m": 0.7,
+      "capsule_radius_m": 1.7,
       "capsule_height_m": 3.6,
-      "dead_capsule_length_m": 2.6,
+      "dead_capsule_length_m": 0.0,
       "push": {
-        "weak_hit_distance_m": 0.1,
+        "weak_hit_distance_m": 1.0,
         "weak_hit_motion_seconds": 0.1,
-        "min_impact_speed_mps": 0.5,
+        "min_impact_speed_mps": 1.0,
         "max_impact_speed_mps": 100.0,
         "max_knockback_speed_mps": 5.0,
         "impact_speed_curve_exponent": 1.0,
         "impact_angle_min_scale": 0.15,
         "impact_angle_curve_exponent": 1.0,
         "support_max_impact_speed_mps": 6.0,
-        "support_top_tolerance_m": 0.08,
+        "support_top_tolerance_m": 0.2,
         "support_snap_max_m": 0.35
       }
     },

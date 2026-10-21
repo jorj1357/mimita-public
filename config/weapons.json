@@ -1381,7 +1381,7 @@
     "reserve_ammo": 9999,
     "spread": 0.0,
     "pellet_count": 1,
-    "recoil": 120.0,
+    "recoil": 10.0,
     "recoil_definition": {
       "enabled": true,
       "pitch_per_shot": 1.0,
@@ -1397,7 +1397,7 @@
       "viewmodel_back_per_shot": 0.2,
       "viewmodel_pitch_per_shot": 3.0,
       "viewmodel_yaw_per_shot": 0.5,
-      "viewmodel_roll_per_shot": 0.5,
+      "viewmodel_roll_per_shot": 1.5,
       "viewmodel_recovery_rate": 80.0,
       "viewmodel_ads_scale": 0.8,
       "arm_pitch_per_shot": -0.5,
@@ -1928,7 +1928,7 @@
                "active_start_tick": 0, "active_end_tick": 20}
             ],
             "damage": {"base_percent": 0.0},
-            "knockback": {"base_impulse": 1.0, "vertical_fraction": 0.0, "force_scale": 0.0},
+            "knockback": {"base_impulse": 1.0, "vertical_fraction": 0.0, "force_scale": 10.0},
             "grab": {"enabled": true, "radius": 1.0, "pull_ticks": 50},
             "audio": {
               "on_start": {"sound_id": "entity/falcon/falconho", "pitch": 1.0, "volume": 1.0, "offset": [0, 0, 0]}

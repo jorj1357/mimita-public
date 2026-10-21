@@ -1210,7 +1210,8 @@ void handleAttackRequest(
 
     if (def->executionType == WeaponExecutionType::PhysicalContact)
     {
-        if (def->behaviorType == WeaponBehaviorType::Swordsword)
+        if (def->behaviorType == WeaponBehaviorType::Swordsword &&
+            !WeaponData::MeleeMoveSetRegistry::instance().get(def->id))
         {
             if (shooter.meleeCooldownTimer > 0.0f)
             {
@@ -1263,6 +1264,14 @@ void handleAttackRequest(
                 emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                                     shooter, req->requestId,
                                     "melee move-set revision mismatch");
+                return;
+            }
+            if (meleeSet->animationOnly && req->attackVariant == 255) {
+                shooter.meleeActionActive = false;
+                shooter.meleeActionId.clear();
+                rt.stateRevision++;
+                sendAttackResult(sock, shooter, req, tick, true, 0, 0,
+                    rt.magazineAmmo, rt.reserveAmmo, rt.nextAllowedFireTick, rt.stateRevision);
                 return;
             }
             if (req->attackVariant >= meleeSet->actions.size()) {

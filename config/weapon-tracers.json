@@ -52,7 +52,7 @@
     "enabled": true,
     "thickness": 0.3,
     "end_thickness": 0.3,
-    "lifetime": 0.34,
+    "lifetime": 0.14,
     "scale": 0.3,
     "end_scale": 0.05,
     "start_alpha": 0.9,

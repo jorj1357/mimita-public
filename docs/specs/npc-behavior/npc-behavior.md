@@ -206,16 +206,35 @@ weapon use, and movement profile before adjusting difficulty.
 special “local player” collision rule. Every actor uses the same actor-pair
 collision path and can collide with every other actor:
 
+The table describes pairs of living actors. Dead-body contacts follow the
+corpse rule below.
+
 | First actor | Second actor | Required collision |
 | --- | --- | --- |
 | Player | Player | Capsule pair |
 | Player | NPC or monster | Capsule pair |
 | NPC or monster | NPC or monster | Capsule pair |
 
-Actors must not pass through one another. The capsule is the first, simple body
-shape; add a flat, standable-top support rule so any actor can stand on any
-other actor. A supported actor must move along with its moving support. This
-does not replace actor-vs-world collision.
+Living actors must not pass through one another. The capsule is the first,
+simple body shape; add a flat, standable-top support rule so any actor can
+stand on any other actor. A supported actor must move along with its moving
+support. This does not replace actor-vs-world collision.
+
+### No-pinning movement rule
+
+In plain language: touching an NPC or another player may push the actors apart,
+but it must not glue either actor in place. When a moving actor reaches another
+capsule, remove only the part of the remaining movement that points into the
+contact surface. Use the rest of that same fixed tick to move along the surface,
+and keep velocity along it. Do not discard the whole remainder of the tick or
+zero all horizontal movement because of one actor contact. The client and server
+must use the same rule so prediction does not repeatedly push the player back
+into a collision that the server resolves differently.
+
+Repeated actor contacts must not keep an actor stationary when it has a clear
+sideways route. NPC navigation may steer around living actors, while the shared
+collision solver remains the final contact owner. Collision response must not
+add movement substeps or run outside the fixed 60 Hz gameplay tick.
 
 The dedicated server owns the final collision result for every actor pair.
 Resolve collisions in the authoritative fixed 60 Hz simulation and send the
@@ -234,10 +253,19 @@ per-pair heap allocations, and keep collision work on the fixed tick rather
 than the render loop. Start with this bounded simple approach; profile the
 70-actor Juggernaut scenario before adding more complex optimization.
 
-**Dead actors:** death does not remove actor collision. The ragdoll keeps one
-capsule, moved to the actor's ground-level origin and laid lengthwise along
-the ground to represent the body. Other actors can collide with it. This is
-still one root capsule, not separate arm, leg, or torso colliders.
+**Dead actors:** a corpse may keep one ground-level capsule for contact and
+support, but it must not become a horizontal wall that traps a living actor or
+blocks an NPC route. A living actor may move past a corpse; a valid top contact
+may still support an actor standing on it. The corpse remains a visual/ragdoll
+body and does not gain separate arm, leg, or torso movement blockers from this
+rule. Weapon hit detection remains owned by the weapon collision path.
+
+**Collision diagnosis:** when an actor contact changes movement, bounded
+structured events should name both actors and their kinds, whether either actor
+is dead or static, the contact direction and time within the tick, incoming and
+outgoing movement/velocity, and the response (slide, support, corpse pass-through,
+or push). NPC stuck records should include the movement intent and current
+velocity so a repeated actor contact can be correlated with a stuck episode.
 
 **Later:** body parts may get their own collision shapes that follow animated
 or physical limbs. That is out of scope until the shared root-capsule path

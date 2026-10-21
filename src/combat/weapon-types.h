@@ -183,6 +183,7 @@ struct WeaponDefinition {
     std::string soundDryFire;
     std::string soundEquip;
     std::string poseId;  // which weapon pose config to use (empty = use own id)
+    std::string animationProfile; // shared clip profile selected by equipped identity
 
     float soundPitchVariation = 0.05f;   // ±5% pitch randomization per shot
     float soundVolumeVariation = 0.05f;  // ±5% volume randomization per shot

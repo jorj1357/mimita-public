@@ -120,6 +120,8 @@ struct MeleeAction {
     // `doubleClickAction` (when non-empty). 30 is the spec default.
     int doubleClickWindowTicks = 30;
     std::string doubleClickAction;
+    int tapCount = 1;
+    bool holdWhileButton = false;
 
     MeleePhase windup;
     MeleePhase active;
@@ -156,6 +158,7 @@ struct MeleeAction {
 
 struct MeleeMoveSet {
     std::string definitionId;
+    bool animationOnly = false; // continuous-contact weapons reuse actions for presentation
     uint32_t revision = 0;
     uint32_t hash = 0;
     std::vector<MeleeAction> actions;

@@ -22,7 +22,8 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 39: Replicated NPC avatars and match actor identities use expanded fields.
 // 41: WelcomePacket carries the dev-loop run/build identity so a new client
 //      cannot silently attach to an older persistent server.
-constexpr uint16_t PROTOCOL_VERSION = 42;
+// 43: snapshots carry stable equipped identity and generic weapon action state.
+constexpr uint16_t PROTOCOL_VERSION = 43;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -71,6 +72,7 @@ constexpr int MAX_AVATAR_NAME_BYTES = 24;
 // Accounts for IP header (20), UDP header (8), ICE/STUN overhead (~32),
 // and leaves ~1140 bytes for game payload.
 constexpr int MAX_GAME_DATAGRAM_BYTES = 1200;
+constexpr int MAX_RECEIVE_PACKET_BYTES = 32768; // includes legacy assembled snapshots
 
 enum PacketType : uint8_t
 {
@@ -505,6 +507,9 @@ struct SnapshotEntity
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
     float aimX = 1.0f;
+    uint16_t equippedWeaponDefNetworkId = 0;
+    uint8_t weaponActionIndex = 255;
+    uint32_t weaponActionStartTick = 0;
     float aimY = 0.0f;
     float aimZ = 0.0f;
     int32_t pingMs = 0;
@@ -582,6 +587,9 @@ struct CompactEntityData
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
     int32_t pingMs = 0;
+    uint16_t equippedWeaponDefNetworkId = 0;
+    uint8_t weaponActionIndex = 255;
+    uint32_t weaponActionStartTick = 0;
     float sizeScale = 1.0f;
     uint16_t dashSerial = 0;
     uint16_t groundJumpSerial = 0;
@@ -612,7 +620,7 @@ struct CompactEntityData
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 166, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 173, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -622,12 +630,12 @@ struct SnapshotChunkPacket
     uint16_t chunkCount = 1;
     uint16_t entityCount = 0;
     uint16_t payloadBytes = 0;
-    CompactEntityData entities[7]; // 7 * 166 + header(32) = 1194 < 1200
+    CompactEntityData entities[6]; // 6 * 173 + header(32) = 1070 < 1200
 };
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1194, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1070, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {
@@ -880,6 +888,7 @@ struct DamageConfirmedEventPacket
     float knockX = 0.0f;
     float knockY = 0.0f;
     float knockZ = 0.0f;
+    float contactForce = -1.0f; // shared physical-impact feedback
 };
 
 struct MeleeHitRequestPacket
@@ -1045,7 +1054,7 @@ struct NpcDamageEventPacket
     int32_t damage = 0;
     int32_t npcHealth = 0;
     uint8_t killed = 0;
-    uint8_t reserved0 = 0;
+    uint8_t attackerEntityType = ENTITY_PLAYER;
     uint8_t reserved1 = 0;
     uint8_t reserved2 = 0;
     float originX = 0.0f;
@@ -1063,6 +1072,7 @@ struct NpcDamageEventPacket
     uint16_t effectFlags = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t impactType = SHOT_IMPACT_ENTITY;
+    float contactForce = -1.0f;
 };
 
 // Server → all clients: one authoritative kill. The reliable envelope encodes
@@ -1825,7 +1835,7 @@ struct BombTagPassEventPacket
     uint8_t reserved[3] = {};
 };
 
-static_assert(sizeof(SnapshotPacket) < 16384, "SnapshotPacket exceeds client receive buffer");
+static_assert(sizeof(SnapshotPacket) < MAX_RECEIVE_PACKET_BYTES, "SnapshotPacket exceeds client receive buffer");
 static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
 static_assert(sizeof(ShotEventPacket) <= 160, "ShotEventPacket is too large");
 static_assert(sizeof(ProjectileFireRequestPacket) <= 80, "ProjectileFireRequestPacket is too large");

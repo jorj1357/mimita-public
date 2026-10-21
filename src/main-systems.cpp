@@ -319,7 +319,7 @@ void registerAgentCommands()
     });
 
     Terminal::instance().registerCommand({
-        "agent.melee", "Force-start a Captain Falcon Melee action by id (move-set test).",
+        "agent.melee", "Start an equipped weapon action by ID through its shared action driver.",
         "agent.melee <actionId>",
         [](const std::vector<std::string>& args) {
             if (args.size() != 1) {
@@ -331,6 +331,21 @@ void registerAgentCommands()
                 "avatar.command.dispatch", "agent.melee accepted",
                 {{"command", "agent.melee"}, {"action", args[0]}, {"player", gpPlayer->username}});
         }, "2026-10-17", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.weaponbutton", "Press/release a shared weapon-action input.",
+        "agent.weaponbutton <primary|secondary> <0|1>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 2 || (args[0] != "primary" && args[0] != "secondary") ||
+                (args[1] != "0" && args[1] != "1")) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.weaponbutton <primary|secondary> <0|1>");
+                return;
+            }
+            MimitaMelee::requestButton(args[0] == "secondary", args[1] == "1");
+            writeAgentCommandEvent("weapon.input", "shared weapon input accepted",
+                {{"button", args[0]}, {"held", args[1] == "1"}});
+        }, "2026-10-21", CommandCategory::Debug
     });
 
     Terminal::instance().registerCommand({

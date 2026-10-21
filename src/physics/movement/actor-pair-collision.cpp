@@ -8,12 +8,17 @@
 #include "physics/movement/actor-pair-collision.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
+
+#include "debug/structured-log.h"
 
 namespace {
 
@@ -32,6 +37,54 @@ struct PairEntry
     std::uint32_t a = 0;
     std::uint32_t b = 0;
 };
+
+struct ContactLogThrottleEntry
+{
+    std::uint64_t actorA = 0;
+    std::uint64_t actorB = 0;
+    std::chrono::steady_clock::time_point lastLogged{};
+    bool occupied = false;
+};
+
+bool shouldLogActorPairContact(const ActorPairCollisionActor& a,
+                               const ActorPairCollisionActor& b)
+{
+    static thread_local std::array<ContactLogThrottleEntry, 128> entries{};
+    static thread_local std::size_t nextEntry = 0;
+    static thread_local auto lastAnyContactLog =
+        std::chrono::steady_clock::time_point::min();
+    const auto now = std::chrono::steady_clock::now();
+    std::uint64_t keyA = actorPairKey(a.kind, a.id);
+    std::uint64_t keyB = actorPairKey(b.kind, b.id);
+    if (keyB < keyA)
+        std::swap(keyA, keyB);
+
+    ContactLogThrottleEntry* matching = nullptr;
+    for (ContactLogThrottleEntry& entry : entries)
+    {
+        if (entry.occupied && entry.actorA == keyA && entry.actorB == keyB)
+        {
+            matching = &entry;
+            break;
+        }
+    }
+    if (matching && now - matching->lastLogged < std::chrono::seconds(1))
+        return false;
+    if (lastAnyContactLog != std::chrono::steady_clock::time_point::min() &&
+        now - lastAnyContactLog < std::chrono::milliseconds(100))
+        return false;
+
+    ContactLogThrottleEntry& slot = matching
+        ? *matching : entries[nextEntry++ % entries.size()];
+    slot = {keyA, keyB, now, true};
+    lastAnyContactLog = now;
+    return true;
+}
+
+const char* actorKindName(ActorPairKind kind)
+{
+    return kind == ActorPairKind::Player ? "player" : "npc";
+}
 
 struct Scratch
 {
@@ -349,7 +402,9 @@ void resolvePair(std::uint32_t rankA, std::uint32_t rankB,
                  const ActorPairCollisionActor* actors,
                  const std::vector<std::uint32_t>& order,
                  ActorPairCollisionOutput* outputs,
-                 ActorPairCollisionStats& stats)
+                 ActorPairCollisionStats& stats,
+                 const char* source,
+                 std::uint32_t tick)
 {
     const std::uint32_t indexA = order[rankA];
     const std::uint32_t indexB = order[rankB];
@@ -364,6 +419,8 @@ void resolvePair(std::uint32_t rankA, std::uint32_t rankB,
     const Capsule startB = makeActorCapsule(actorB, actorB.prevPos);
     const glm::vec3 endMoveA = outputs[indexA].pos - actorA.prevPos;
     const glm::vec3 endMoveB = outputs[indexB].pos - actorB.prevPos;
+    const glm::vec3 requestedEndA = outputs[indexA].pos;
+    const glm::vec3 requestedEndB = outputs[indexB].pos;
     const glm::vec3 relativeMove = endMoveA - endMoveB;
     const float combinedRadius = startA.r + startB.r;
 
@@ -388,16 +445,89 @@ void resolvePair(std::uint32_t rankA, std::uint32_t rankB,
     outputs[indexA].pos = contactPosA;
     outputs[indexB].pos = contactPosB;
 
+    const glm::vec3 diagnosticNormal = fallbackNormal(capA, capB, relativeMove);
+    const auto logContact = [&](const char* response,
+                                const glm::vec3& normal,
+                                float penetration,
+                                const glm::vec3& tangentMoveA,
+                                const glm::vec3& tangentMoveB) {
+        if (!shouldLogActorPairContact(actorA, actorB))
+            return;
+        const std::string pairId = std::string(actorKindName(actorA.kind)) + ":" +
+            std::to_string(actorA.id) + "|" + actorKindName(actorB.kind) + ":" +
+            std::to_string(actorB.id);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Important,
+            "actor.collision.contact", pairId, response, tick,
+            nlohmann::json{
+                {"source", source ? source : "unknown"},
+                {"response", response},
+                {"actor_a_id", actorA.id},
+                {"actor_a_kind", actorKindName(actorA.kind)},
+                {"actor_a_dead", actorA.dead},
+                {"actor_a_static", actorA.staticCollider},
+                {"actor_b_id", actorB.id},
+                {"actor_b_kind", actorKindName(actorB.kind)},
+                {"actor_b_dead", actorB.dead},
+                {"actor_b_static", actorB.staticCollider},
+                {"contact_fraction", t},
+                {"penetration_m", penetration},
+                {"normal_a_from_b", {normal.x, normal.y, normal.z}},
+                {"relative_move", {relativeMove.x, relativeMove.y, relativeMove.z}},
+                {"requested_end_a", {requestedEndA.x, requestedEndA.y, requestedEndA.z}},
+                {"requested_end_b", {requestedEndB.x, requestedEndB.y, requestedEndB.z}},
+                {"tangent_remainder_a", {tangentMoveA.x, tangentMoveA.y, tangentMoveA.z}},
+                {"tangent_remainder_b", {tangentMoveB.x, tangentMoveB.y, tangentMoveB.z}},
+                {"result_position_a", {outputs[indexA].pos.x, outputs[indexA].pos.y,
+                                         outputs[indexA].pos.z}},
+                {"result_position_b", {outputs[indexB].pos.x, outputs[indexB].pos.y,
+                                         outputs[indexB].pos.z}},
+                {"velocity_a_before", {actorA.vel.x, actorA.vel.y, actorA.vel.z}},
+                {"velocity_b_before", {actorB.vel.x, actorB.vel.y, actorB.vel.z}},
+                {"velocity_a_after", {outputs[indexA].vel.x, outputs[indexA].vel.y,
+                                        outputs[indexA].vel.z}},
+                {"velocity_b_after", {outputs[indexB].vel.x, outputs[indexB].vel.y,
+                                        outputs[indexB].vel.z}},
+                {"pushed_a", outputs[indexA].pushed},
+                {"pushed_b", outputs[indexB].pushed},
+                {"supported_a", outputs[indexA].supportKey != 0},
+                {"supported_b", outputs[indexB].supportKey != 0}},
+            __FILE__, __LINE__, __FUNCTION__);
+    };
+
     if (trySetSupport(rankA, rankB, capA, capB, actorA, actorB,
                       outputs[indexA], outputs[indexB]))
     {
         ++stats.supports;
+        glm::vec3 upperRemainder = requestedEndA - contactPosA;
+        upperRemainder.z = std::max(0.0f, upperRemainder.z);
+        outputs[indexA].pos += upperRemainder;
+        outputs[indexB].pos = requestedEndB;
+        logContact("support", diagnosticNormal, 0.0f, upperRemainder,
+                   requestedEndB - contactPosB);
         return;
     }
     if (trySetSupport(rankB, rankA, capB, capA, actorB, actorA,
                       outputs[indexB], outputs[indexA]))
     {
         ++stats.supports;
+        glm::vec3 upperRemainder = requestedEndB - contactPosB;
+        upperRemainder.z = std::max(0.0f, upperRemainder.z);
+        outputs[indexB].pos += upperRemainder;
+        outputs[indexA].pos = requestedEndA;
+        logContact("support", diagnosticNormal, 0.0f,
+                   requestedEndA - contactPosA, upperRemainder);
+        return;
+    }
+
+    // A corpse may support an actor from above, but it must not act as a fixed
+    // horizontal wall. Keep the requested movement and let actors pass it.
+    if (actorA.dead || actorB.dead)
+    {
+        outputs[indexA].pos = requestedEndA;
+        outputs[indexB].pos = requestedEndB;
+        logContact("corpse_pass_through", diagnosticNormal, 0.0f,
+                   requestedEndA - contactPosA, requestedEndB - contactPosB);
         return;
     }
 
@@ -409,8 +539,6 @@ void resolvePair(std::uint32_t rankA, std::uint32_t rankB,
         : fallbackNormal(capA, capB, relativeMove);
 
     const float penetration = std::max(0.0f, combinedRadius - distance);
-    if (penetration <= kVelocityEpsilon && t <= 0.0f)
-        return;
 
     const glm::vec3 velocityA = outputs[indexA].vel;
     const glm::vec3 velocityB = outputs[indexB].vel;
@@ -420,9 +548,51 @@ void resolvePair(std::uint32_t rankA, std::uint32_t rankB,
     const bool mutableB = !actorB.staticCollider;
     const float shareA = mutableA ? (mutableB ? 0.5f : 1.0f) : 0.0f;
     const float shareB = mutableB ? (mutableA ? 0.5f : 1.0f) : 0.0f;
+
+    // Keep the unused part of this tick, but remove only motion into the
+    // contact plane. The old response stopped both actors at contact time and
+    // discarded their entire remaining movement, which made actor capsules
+    // feel like sticky walls.
+    glm::vec3 tangentMoveA = requestedEndA - contactPosA;
+    glm::vec3 tangentMoveB = requestedEndB - contactPosB;
+    if (mutableA)
+    {
+        const float into = glm::dot(tangentMoveA, normal);
+        if (into < 0.0f)
+            tangentMoveA -= normal * into;
+    }
+    if (mutableB)
+    {
+        const float into = glm::dot(tangentMoveB, -normal);
+        if (into < 0.0f)
+            tangentMoveB += normal * into;
+    }
+    outputs[indexA].pos = contactPosA + tangentMoveA;
+    outputs[indexB].pos = contactPosB + tangentMoveB;
+
     const float correction = penetration + kContactMargin;
     outputs[indexA].pos += normal * (correction * shareA);
     outputs[indexB].pos -= normal * (correction * shareB);
+
+    // Sliding around a rounded capsule can create a small new overlap at the
+    // end of the projected remainder. Resolve that final pose once along its
+    // actual contact normal; no extra movement tick or substep is introduced.
+    const Capsule finalA = makeActorCapsule(actorA, outputs[indexA].pos);
+    const Capsule finalB = makeActorCapsule(actorB, outputs[indexB].pos);
+    glm::vec3 finalClosestA;
+    glm::vec3 finalClosestB;
+    const float finalDistance = capsuleDistance(finalA, finalB,
+                                                &finalClosestA, &finalClosestB);
+    const float finalPenetration = std::max(0.0f, combinedRadius - finalDistance);
+    if (finalPenetration > kContactMargin && finalDistance > kVelocityEpsilon)
+    {
+        const glm::vec3 finalNormal = (finalClosestA - finalClosestB) / finalDistance;
+        const float finalCorrection = finalPenetration + kContactMargin;
+        outputs[indexA].pos += finalNormal * (finalCorrection * shareA);
+        outputs[indexB].pos -= finalNormal * (finalCorrection * shareB);
+        normal = finalNormal;
+    }
+
     outputs[indexA].corrected = outputs[indexA].corrected || shareA > 0.0f;
     outputs[indexB].corrected = outputs[indexB].corrected || shareB > 0.0f;
 
@@ -442,18 +612,25 @@ void resolvePair(std::uint32_t rankA, std::uint32_t rankB,
     const float normalSpeedA = std::max(0.0f, -glm::dot(relativeVelocity, normal));
     const float normalSpeedB = std::max(0.0f, glm::dot(relativeVelocity, normal));
     const float impactSpeed = glm::length(relativeVelocity);
-    if (impactSpeed <= kVelocityEpsilon)
-        return;
+    if (impactSpeed > kVelocityEpsilon)
+    {
+        const float directnessA = glm::clamp(normalSpeedA / impactSpeed, 0.0f, 1.0f);
+        const float directnessB = glm::clamp(normalSpeedB / impactSpeed, 0.0f, 1.0f);
 
-    const float directnessA = glm::clamp(normalSpeedA / impactSpeed, 0.0f, 1.0f);
-    const float directnessB = glm::clamp(normalSpeedB / impactSpeed, 0.0f, 1.0f);
+        if (normalSpeedA > 0.0f &&
+            addPush(outputs[indexB], actorB, -normal, impactSpeed, directnessA))
+            ++stats.pushes;
+        if (normalSpeedB > 0.0f &&
+            addPush(outputs[indexA], actorA, normal, impactSpeed, directnessB))
+            ++stats.pushes;
+    }
 
-    if (normalSpeedA > 0.0f &&
-        addPush(outputs[indexB], actorB, -normal, impactSpeed, directnessA))
-        ++stats.pushes;
-    if (normalSpeedB > 0.0f &&
-        addPush(outputs[indexA], actorA, normal, impactSpeed, directnessB))
-        ++stats.pushes;
+    const float tangentDistanceA = glm::length(tangentMoveA);
+    const float tangentDistanceB = glm::length(tangentMoveB);
+    const char* response = (tangentDistanceA > 0.001f || tangentDistanceB > 0.001f)
+        ? "slide" : "normal_block";
+    logContact(response, normal, std::max(penetration, finalPenetration),
+               tangentMoveA, tangentMoveB);
 }
 
 } // namespace
@@ -464,7 +641,9 @@ void resolveActorPairCollisions(
     float dt,
     const ActorCollisionData& data,
     ActorPairCollisionOutput* outputs,
-    ActorPairCollisionStats* outStats)
+    ActorPairCollisionStats* outStats,
+    const char* source,
+    std::uint32_t tick)
 {
     (void)dt;
     ActorPairCollisionStats stats;
@@ -598,7 +777,8 @@ void resolveActorPairCollisions(
         broadphaseEnd - startTime).count();
 
     for (const PairEntry& pair : s.pairs)
-        resolvePair(pair.a, pair.b, actors, s.order, outputs, stats);
+        resolvePair(pair.a, pair.b, actors, s.order, outputs, stats,
+                    source, tick);
 
     // Carry supported actors by the actual displacement of their support this
     // tick. This is additive to their own movement and does not add the support

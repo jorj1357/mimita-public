@@ -7,15 +7,15 @@
   // "nervous". Humans are not affected. Hot-reloadable. 
   // "npc_behavior_profile": "balanced", 
   // "npc_behavior_profile": "sandbqoxhard",
-  // "npc_behavior_profile": "juggernaut_swarm",
-  "npc_behavior_profile": "nervousbad",
+  "npc_behavior_profile": "juggernaut_swarm",
+  // "npc_behavior_profile": "nervousbad",
   // "npc_behavior_profile": "juggernaut_limited",
   "teams": [
     {
       "id": "sandbox_npcs",
       "display_name": "NPCs",
       "capacity": 0,
-      "role": "sandbox_juggernaut_npc",
+      "role": "juggernaut_fighter",
       "players": false,
       "npcs": true
     }

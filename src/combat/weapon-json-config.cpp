@@ -258,6 +258,7 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonFloat(root, "beam_world_thickness", def.beamWorldThickness);
     weaponJsonBool(root, "uses_physics_projectile", def.usesPhysicsProjectile);
     weaponJsonString(root, "pose_id", def.poseId);
+    weaponJsonString(root, "animation_profile", def.animationProfile);
 }
 
 void applyWeaponRecoilJson(WeaponDefinition& def, const json& root)

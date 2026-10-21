@@ -291,6 +291,7 @@
     // "external_impulse_decay": 0.6,
     // "external_impulse_decay": 5.0,
     "external_impulse_decay": 2.0,
+    // "external_impulse_decay": 0.5,
 
     // Maximum allowed horizontal external impulse speed.
     //

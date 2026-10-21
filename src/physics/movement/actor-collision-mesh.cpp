@@ -14,6 +14,7 @@
 #include <cstring>
 #include <limits>
 #include <unordered_map>
+#include <mutex>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -302,6 +303,8 @@ bool loadActorBodyMeshParts(const char* glbPath,
 bool loadActorWeaponTriangles(const char* glbPath,
                               std::vector<CollisionTriangle>& out)
 {
+    static std::mutex cacheMutex;
+    const std::lock_guard<std::mutex> cacheLock(cacheMutex);
     out.clear();
     if (!glbPath || !*glbPath)
         return false;

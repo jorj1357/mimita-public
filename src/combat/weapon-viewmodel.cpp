@@ -1,4 +1,5 @@
 #include "weapon-viewmodel.h"
+#include "combat/weapon-attachment.h"
 #include "weapon-types.h"
 #include "weapon-config.h"
 #include "combat/weapon-model-cache.h"
@@ -488,6 +489,18 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             player.weaponGripLocal = colGrip;
             player.weaponMuzzleLocal = colMuzzle;
             player.weaponRadiusLocal = colRadius;
+        }
+        if (def && !def->animationProfile.empty()) {
+            WeaponAttachmentPose attachment;
+            if (resolveWeaponAttachment(*def, part, player.sizeScale, attachment)) {
+                weaponTransform = attachment.world;
+                muzzle = attachment.bladeTip;
+                forward = glm::normalize(attachment.bladeTip - attachment.bladeBase);
+                if (world) {
+                    player.weaponModelTransform = attachment.world;
+                    player.weaponLocalToArm = attachment.localToArm;
+                }
+            }
         }
         break;
     }

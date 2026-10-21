@@ -12,6 +12,7 @@
 #include "combat/weapon-melee-config.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
+#include "network/community-server-config.h"
 #include "audio/audio.h"
 #include "debug/structured-log.h"
 #include "debug/debug-visuals.h"
@@ -43,10 +44,13 @@ std::string g_lastPhaseKey;
 
 struct ClientActionState {
     bool active = false;
+    std::string definitionId;
     std::string actionId;         // current action id (may be the double-click upgrade)
     std::string basePrimaryId;    // base primary action id for the double-click window
     uint32_t startSimTick = 0;
     int64_t lastPrimarySimTick = -1000000;
+    int64_t lastSecondarySimTick = -1000000;
+    std::string baseSecondaryId;
     glm::vec3 forward{1.0f, 0.0f, 0.0f};
     uint32_t lastAdvanceSimTick = 0;
     bool hasLastAdvance = false;
@@ -62,6 +66,19 @@ struct ClientActionState {
 ClientActionState g_state;
 bool g_shieldHeld = false;
 bool g_debugShield = false;
+ClientInput g_pendingInput;
+bool g_primaryHeld = false, g_secondaryHeld = false;
+
+int actionRequestSlot(const WeaponDefinition& def, const MimitaNet::MultiplayerContext& ctx)
+{
+    if (ctx.communityWeaponSetId > 0) {
+        auto& config = MimitaNet::CommunityServerConfig::instance();
+        if (config.weaponSets().empty()) config.load();
+        const int logical = config.slotForWeapon(ctx.communityWeaponSetId, def.id);
+        if (logical > 0) return logical;
+    }
+    return def.slot;
+}
 
 glm::vec3 horizontalForward(const glm::vec3& raw)
 {
@@ -87,6 +104,7 @@ const MeleeAction* resolveAction(const MeleeMoveSet& moveSet,
 {
     const MeleeAction* best = nullptr;
     for (const MeleeAction& a : moveSet.actions) {
+        if (a.tapCount != 1) continue;
         if (a.button != button)
             continue;
         if (a.actorState != MeleeActorState::Any && a.actorState != state)
@@ -176,6 +194,7 @@ void startAction(Player& player,
                  const char* source)
 {
     g_state.active = true;
+    g_state.definitionId = def.id;
     g_state.actionId = action.id;
     g_state.actionSnapshot = action;
     g_state.startSimTick = simTick;
@@ -188,14 +207,18 @@ void startAction(Player& player,
     g_lastPartTip.clear();
     g_lastPhaseKey.clear();
     if (isPrimary) {
-        g_state.lastPrimarySimTick = (int64_t)simTick;
+        g_state.lastPrimarySimTick = action.tapCount == 2 ? -1000000 : (int64_t)simTick;
         g_state.basePrimaryId = basePrimaryId;
+    } else if (action.button == MeleeButton::Secondary) {
+        g_state.lastSecondarySimTick = action.tapCount == 2 ? -1000000 : (int64_t)simTick;
+        g_state.baseSecondaryId = basePrimaryId;
     }
 
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Avatar, StructuredLevel::Important,
         "melee.client.action", action.id, "melee action started locally", simTick,
         {{"action", action.id}, {"index", actionIndex}, {"source", source},
+         {"weapon", def.id}, {"actor", ctx.localPlayerId}, {"actor_type", "player"},
          {"forward", {g_state.forward.x, g_state.forward.y, g_state.forward.z}},
          {"windup_ticks", action.windup.ticks},
          {"active_ticks", action.active.ticks},
@@ -211,7 +234,7 @@ void startAction(Player& player,
         revision = (uint16_t)(ms->revision & 0xffff);
     if (netId != 0) {
         MimitaNet::mpSendAttackRequest(
-            ctx, netId, (int16_t)player.equippedSlot,
+            ctx, netId, (int16_t)actionRequestSlot(def, ctx),
             player.pos, g_state.forward, player.pos,
             (uint8_t)std::clamp(actionIndex, 0, 255),
             0u, glm::vec3(0.0f), 0, revision);
@@ -247,6 +270,8 @@ void reset()
     g_shieldHeld = false;
     g_debugShield = false;
     g_forceActionId.clear();
+    g_pendingInput = ClientInput{};
+    g_primaryHeld = g_secondaryHeld = false;
     g_lastPartPos.clear();
     g_lastPartTip.clear();
     g_lastPhaseKey.clear();
@@ -306,28 +331,48 @@ bool debugShieldHeld()
     return g_debugShield;
 }
 
+void requestButton(bool secondary, bool held)
+{
+    bool& previous = secondary ? g_secondaryHeld : g_primaryHeld;
+    if (held && !previous) {
+        if (secondary) g_pendingInput.secondaryPressed = true;
+        else g_pendingInput.primaryPressed = true;
+    }
+    previous = held;
+}
+
 void clientTick(Player& player,
                 const Camera& camera,
                 WeaponSystem& weapons,
                 MimitaNet::MultiplayerContext& ctx,
-                const ClientInput& input,
+                const ClientInput& rawInput,
                 uint32_t simTick)
 {
+    ClientInput input = rawInput;
+    input.primaryPressed = input.primaryPressed || g_pendingInput.primaryPressed;
+    input.secondaryPressed = input.secondaryPressed || g_pendingInput.secondaryPressed;
+    input.secondaryHeld = input.secondaryHeld || g_secondaryHeld;
+    g_pendingInput = ClientInput{};
     const MeleeMoveSet* moveSet = equippedMoveSet(player, weapons);
     if (!moveSet || player.dead) {
         if (g_state.active)
             endAction(player);
         g_shieldHeld = false;
+        g_state = ClientActionState{};
         return;
     }
-    g_shieldHeld = input.shieldHeld || g_debugShield;
+    if (!g_state.definitionId.empty() && g_state.definitionId != moveSet->definitionId) {
+        endAction(player);
+        g_state = ClientActionState{};
+    }
+    g_shieldHeld = !moveSet->animationOnly && (input.shieldHeld || g_debugShield);
     // Publish crouch intent so the animation state machine can select the
     // authored `crouch` state clip on the grounded fighter.
     player.crouching = input.crouchHeld || g_debugCrouch;
 
     const MeleeActorState state = player.ground.stableOnGround
         ? MeleeActorState::Grounded : MeleeActorState::Airborne;
-    const MeleeModifier modifier = input.crouchHeld
+    const MeleeModifier modifier = moveSet->animationOnly ? MeleeModifier::None : input.crouchHeld
         ? MeleeModifier::Crouch
         : (input.jumpHeld ? MeleeModifier::Jump : MeleeModifier::None);
 
@@ -363,11 +408,12 @@ void clientTick(Player& player,
         const MeleeAction* action = resolveAction(*moveSet, button, state, modifier);
         std::string baseId = action ? action->id : std::string();
 
-        // Grounded primary double-click upgrades to the distinct double action.
-        if (isPrimary && action && !action->doubleClickAction.empty() &&
-            g_state.lastPrimarySimTick >= 0 &&
-            (int64_t)simTick - g_state.lastPrimarySimTick <= action->doubleClickWindowTicks &&
-            !g_state.basePrimaryId.empty()) {
+        // Both buttons use this shared fixed-tick double-click resolver.
+        const int64_t lastPress = isPrimary ? g_state.lastPrimarySimTick : g_state.lastSecondarySimTick;
+        const std::string& previousBase = isPrimary ? g_state.basePrimaryId : g_state.baseSecondaryId;
+        if (action && !action->doubleClickAction.empty() && lastPress >= 0 &&
+            (int64_t)simTick - lastPress <= action->doubleClickWindowTicks &&
+            previousBase == baseId) {
             if (const MeleeAction* dbl = moveSet->find(action->doubleClickAction))
                 action = dbl;
         }
@@ -384,6 +430,8 @@ void clientTick(Player& player,
                  {"on_ground", player.ground.onGround},
                  {"stable_on_ground", player.ground.stableOnGround},
                  {"action", action->id},
+                 {"tap_count", action->tapCount}, {"secondary_held", input.secondaryHeld},
+                 {"animation_only", moveSet->animationOnly},
                  {"jump_held", input.jumpHeld}, {"crouch_held", input.crouchHeld},
                  {"shield_held", g_shieldHeld}});
             const WeaponDefinition* def = weapons.getCurrentDef(player);
@@ -420,6 +468,19 @@ void clientTick(Player& player,
     // Use the snapshot taken at start so a mid-action hot reload does not change
     // this action's phases.
     const MeleeAction* action = &g_state.actionSnapshot;
+    if (action->holdWhileButton && action->button == MeleeButton::Secondary &&
+        !input.secondaryHeld && g_forceActionId.empty()) {
+        StructuredLogger::instance().writeEvent(StructuredCategory::Weapons, StructuredLevel::Important,
+            "weapon.action.release", action->id, "held weapon pose released", simTick,
+            {{"weapon", moveSet->definitionId}, {"action", action->id}, {"blocking", false}});
+        const WeaponDefinition* def = weapons.getCurrentDef(player);
+        if (def && moveSet->animationOnly && ctx.active && ctx.gameplayActive)
+            MimitaNet::mpSendAttackRequest(ctx, MimitaNet::weaponDefNetworkIdFor(def->id),
+                (int16_t)actionRequestSlot(*def, ctx), player.pos, camera.front, player.pos,
+                255, 0u, glm::vec3(0), 0, (uint16_t)(moveSet->revision & 0xffff));
+        endAction(player);
+        return;
+    }
 
     // Advance the phase machine only on a new fixed tick.
     if (g_state.hasLastAdvance && simTick == g_state.lastAdvanceSimTick) {
@@ -433,7 +494,9 @@ void clientTick(Player& player,
     const int active = action->active.ticks;
     const int recovery = action->recovery.ticks;
     const int total = action->totalTicks();
-    const int elapsed = (int)(simTick - g_state.startSimTick);
+    const int elapsed = action->holdWhileButton
+        ? std::min((int)(simTick - g_state.startSimTick), total - 1)
+        : (int)(simTick - g_state.startSimTick);
     if (elapsed >= total) {
         endAction(player);
         return;
@@ -497,7 +560,7 @@ void clientTick(Player& player,
 
     // Phase impulses: fire each authored event once, when its phase-local tick
     // is reached or passed.
-    for (const WeaponData::MeleeImpulse& imp : action->impulses) {
+    if (!moveSet->animationOnly) for (const WeaponData::MeleeImpulse& imp : action->impulses) {
         if (imp.phase != phaseName)
             continue;
         if (imp.tick > phaseTick)

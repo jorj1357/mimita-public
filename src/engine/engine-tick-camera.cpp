@@ -1064,6 +1064,7 @@ void engineTickCamera(Engine& engine, float dt)
             duration = AimBodyConfig::instance().rightArmPointingFovDuration();
             easing = AimBodyConfig::instance().rightArmPointingFovEasing();
         }
+        if (player.usesMeleeAuthoredPose()) held = false;
         aimFovBlend = updateAimFovBlend(aimFovBlend, held, dt, duration);
         camera.fov = applyAimFov(CamConfig::instance().data().fov, multiplier,
                                  aimFovEase(easing, aimFovBlend));

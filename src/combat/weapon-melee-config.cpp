@@ -300,6 +300,9 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
 
     if (j.contains("priority") && j["priority"].is_number())
         out.priority = j["priority"].get<int>();
+    if (j.contains("input") && j["input"].is_object())
+        out.tapCount = std::clamp(j["input"].value("tap_count", 1), 1, 2);
+    out.holdWhileButton = j.value("hold_while_button", false);
     if (j.contains("double_click_window_ticks") && j["double_click_window_ticks"].is_number())
         out.doubleClickWindowTicks = std::max(0, j["double_click_window_ticks"].get<int>());
     if (j.contains("double_click_action") && j["double_click_action"].is_string())
@@ -482,6 +485,7 @@ bool parseMeleeMoveSet(const std::string& definitionId,
 
     MeleeMoveSet parsed;
     parsed.definitionId = definitionId;
+    parsed.animationOnly = melee.value("animation_only", false);
 
     const json& actions = melee["actions"];
     if (actions.is_object()) {

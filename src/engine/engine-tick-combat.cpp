@@ -335,6 +335,7 @@ void engineTickCombat(Engine& engine, float dt)
                 glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS;
             meleeInput.primaryPressed = meleePrimaryPressed;
             meleeInput.secondaryPressed = meleeSecondaryPressed;
+            meleeInput.secondaryHeld = rightMouseDown;
             meleeInput.grabPressed = grabDown && !grabPrev;
             meleeInput.shieldHeld =
                 glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS;

@@ -193,19 +193,21 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
     next.revision = entry.revision;
     const bool hadValidSet = entry.set.valid;
 
-    const std::string dir = resolveAssetPath(avatarDir(avatarName));
-    const std::string avatarJson = dir + "/avatar.json";
+    const bool sharedProfile = avatarName.rfind("profile:", 0) == 0;
+    const std::string dir = sharedProfile ? "" : resolveAssetPath(avatarDir(avatarName));
+    const std::string avatarJson = sharedProfile ? "" : dir + "/avatar.json";
     next.avatarWrite = fileWriteStamp(avatarJson);
 
     std::string animFile = "animations.json";
     nlohmann::json avatarRoot;
-    if (readJsonFile(avatarJson, avatarRoot)) {
+    if (!sharedProfile && readJsonFile(avatarJson, avatarRoot)) {
         parseAvatarRigJson(avatarRoot, next.rig);
         if (avatarRoot.contains("animations") && avatarRoot["animations"].is_string())
             animFile = avatarRoot["animations"].get<std::string>();
     }
 
-    const std::string animPath = dir + "/" + animFile;
+    const std::string animPath = sharedProfile
+        ? resolveAssetPath(avatarName.substr(8)) : dir + "/" + animFile;
     next.animPath = animPath;
     next.animWrite = fileWriteStamp(animPath);
     nlohmann::json animRoot;
@@ -304,7 +306,8 @@ void AvatarAnimationRegistry::pollReload(std::uint32_t activationTick)
     std::vector<std::string> changedAvatars;
     for (auto& [name, entry] : mEntries) {
         bool changed = !entry.loaded ||
-            fileWriteStamp(resolveAssetPath(avatarDir(name)) + "/avatar.json") != entry.avatarWrite ||
+            (name.rfind("profile:", 0) != 0 &&
+             fileWriteStamp(resolveAssetPath(avatarDir(name)) + "/avatar.json") != entry.avatarWrite) ||
             fileWriteStamp(entry.animPath) != entry.animWrite;
         for (const auto& [path, stamp] : entry.dependencyWrites)
             changed = changed || fileWriteStamp(path) != stamp;

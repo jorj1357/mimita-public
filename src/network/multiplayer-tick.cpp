@@ -1013,7 +1013,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     // ── Receive loop ──
     // Polls either the ICE transport or raw UDP socket for incoming packets.
     // Processes each packet through the shared dispatch chain.
-    char buffer[16384];
+    char buffer[MAX_RECEIVE_PACKET_BYTES];
 
     // Lambda to process a single validated packet from buffer[0..bytes)
     auto processPacket = [&](int bytes) {

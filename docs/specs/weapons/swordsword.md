@@ -9,6 +9,13 @@ Define how Swordsword looks, animates, contacts actors, deals damage, and works
 for both players and NPCs. Swordsword is an ordinary health-and-damage weapon;
 it is not the Captain Falcon Melee-mode percent/knockback ruleset.
 
+**Audience:** gameplay and networking implementers, animation authors, and
+reviewers validating Swordsword behavior.
+
+**This document does not define** the generic collision solver, network packet
+formats, animation file schema, or the general damage/team policy. It defines
+how Swordsword uses those shared systems.
+
 This document owns Swordsword-specific behavior. Reusable physical-contact and
 authoritative damage rules remain in [`weapons.md`](weapons.md) and
 [`networking.md`](../networking/networking.md). Shared animation asset and
@@ -37,6 +44,10 @@ Players and NPCs use the same animation selection and playback path. A player
 button press and an NPC's equivalent AI action resolve to the same Swordsword
 animation state. The visible pose and sword transform must be available to the
 same actor simulation that supplies the blade contact shape.
+
+Avatar rigs may use a retarget map to fit a shared weapon clip to their body,
+but avatar identity does not choose a different weapon move set or prevent a
+compatible actor from using Swordsword animations.
 
 | Input | Swordsword animation |
 |---|---|

@@ -257,12 +257,17 @@ Juggernaut gamemode
 - Health and life baseline.
 - Movement preset.
 - Camera/FOV policy.
-- Avatar and presentation policy.
+- Avatar and role-specific presentation defaults.
 - Weapon restrictions or in-memory weapon overlays.
 
-The Juggernaut mode must not duplicate health, movement, FOV, or presentation
+The Juggernaut mode must not duplicate health, movement, or role-specific FOV
 ownership in several JSON files. The mode selects the role; the role resolves
-the actor preset; the actor preset supplies the actor configuration.
+the actor preset; the actor preset supplies that role's actor configuration.
+Match-wide gameplay feedback switches belong to the gamemode's `presentation`
+object as specified in
+[`../graphics/graphics-presentation.md`](../graphics/graphics-presentation.md).
+An explicit mode value overrides the actor preset's default for that shared
+feedback option; an omitted value inherits the role default.
 
 ### Behavior presets own
 

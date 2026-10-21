@@ -77,7 +77,9 @@ void broadcastNpcDamageEvent(
     const glm::vec3& hit,
     const glm::vec3& dir,
     const glm::vec3& normal,
-    uint8_t weapon)
+    uint8_t weapon,
+    uint8_t attackerEntityType,
+    float contactForce)
 {
     NpcDamageEventPacket ev{};
     ev.header.type = PACKET_NPC_DAMAGE_EVENT;
@@ -87,6 +89,8 @@ void broadcastNpcDamageEvent(
     ev.eventSessionId = serverReliableEventSessionId();
     ev.npcEntityId = npc.entityId;
     ev.shooterPlayerId = shooterPlayerId;
+    ev.attackerEntityType = attackerEntityType;
+    ev.contactForce = contactForce;
     ev.damage = damage;
     ev.npcHealth = npc.health;
     ev.killed = killed ? 1 : 0;
@@ -827,6 +831,7 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
             ? glm::normalize(n.currentFacing)
             : glm::vec3(1.0f, 0.0f, 0.0f);
         sn.yaw = n.body.yaw;
+        sn.sizeScale = n.body.sizeScale;
         sn.health = n.body.currentHp;
         // Preserve the authoritative team. This map is rebuilt from scratch
         // every tick, so the team must be carried over from the previous
@@ -836,6 +841,7 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         sn.onGround = n.body.ground.hasWorldContact;
         sn.difficulty = n.difficulty;
         sn.equippedSlot = n.body.equippedSlot;
+        sn.equippedWeaponId = n.body.equippedWeaponId;
         sn.weaponState = 0;
         auto oldIt = npcs.find(sn.entityId);
         if (oldIt != npcs.end())
@@ -872,6 +878,13 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         if (oldIt != npcs.end())
         {
             sn.posHistory = std::move(oldIt->second.posHistory);
+            if (oldIt->second.transformEpoch == sn.transformEpoch &&
+                oldIt->second.equippedWeaponId == sn.equippedWeaponId) {
+                sn.meleeActionActive = oldIt->second.meleeActionActive;
+                sn.meleeActionId = oldIt->second.meleeActionId;
+                sn.meleeActionStartTick = oldIt->second.meleeActionStartTick;
+                sn.meleeNextAttackTick = oldIt->second.meleeNextAttackTick;
+            }
             // Procedural room membership belongs to the authoritative
             // ServerNpc record. Preserve it when rebuilding the broadcast
             // map, otherwise a dungeon NPC becomes room 0 on the next tick
@@ -1097,7 +1110,7 @@ static void resolveServerActorPairCollisions(
     outputs.assign(actors.size(), ActorPairCollisionOutput{});
     ActorPairCollisionStats stats;
     resolveActorPairCollisions(actors.data(), actors.size(), SERVER_DT,
-                               data, outputs.data(), &stats);
+                               data, outputs.data(), &stats, "server", tick);
 
     Perf::state().current.collisionPairs =
         static_cast<int>(stats.candidatePairs);
@@ -1788,17 +1801,20 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     out.vx = npc.vel.x; out.vy = npc.vel.y; out.vz = npc.vel.z;
     out.aimX = npc.aim.x; out.aimY = npc.aim.y; out.aimZ = npc.aim.z;
     out.yaw = npc.yaw;
+    out.sizeScale = npc.sizeScale;
     out.health = npc.health;
     out.meleePercent = npc.meleePercent;
     out.onGround = npc.onGround ? 1 : 0;
     out.equippedSlot = npc.equippedSlot;
     out.weaponState = npc.weaponState;
+    serverWriteWeaponActionSnapshot(npc.equippedWeaponId, npc.meleeActionActive,
+        npc.meleeActionId, npc.meleeActionStartTick, out);
     out.dashSerial = npc.dashSerial;
     out.groundJumpSerial = npc.groundJumpSerial;
     out.airJumpSerial = npc.airJumpSerial;
     out.downDashSerial = npc.downDashSerial;
     out.freezeSerial = npc.freezeSerial;
-    out.sizeScale = 1.0f;
+    out.sizeScale = npc.sizeScale;
     out.stateFlags = 0;
     if (npc.onGround)
         out.stateFlags |= NET_STATE_ON_GROUND;

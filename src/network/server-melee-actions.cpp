@@ -12,6 +12,8 @@
 
 #include "network/server.h"
 #include "network/server-gamemode.h"
+#include "npc/npc-behavior.h"
+#include "network/network-weapons.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
 #include "combat/weapon-execution.h"
@@ -28,6 +30,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <limits>
 #include <fstream>
 #include <string>
 
@@ -166,13 +169,9 @@ std::unordered_map<uint32_t, NpcMeleeState> g_npcMelee;
 
 static const WeaponData::MeleeMoveSet* equippedMeleeMoveSet(const ServerPlayer& player)
 {
-    for (const std::string& id : player.ownedWeaponIds)
-    {
-        const WeaponDefinition* def = WeaponRegistry::instance().get(id);
-        if (def && def->slot == player.equippedSlot && serverCommunityWeaponAllowed(player, def->id))
-            return WeaponData::MeleeMoveSetRegistry::instance().get(def->id);
-    }
-    return nullptr;
+    const WeaponDefinition* def = WeaponRegistry::instance().get(player.equippedWeaponId);
+    return def && serverCommunityWeaponAllowed(player, def->id)
+        ? WeaponData::MeleeMoveSetRegistry::instance().get(def->id) : nullptr;
 }
 
 static glm::vec3 horizontalForward(const glm::vec3& raw)
@@ -665,7 +664,10 @@ static void applyMeleeContactToNpc(
 
 static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
                                 const WeaponData::MeleeAction& action,
-                                const glm::vec3& forward, uint32_t tick)
+                                const glm::vec3& forward, uint32_t tick,
+                                const std::string& behaviorProfileId,
+                                float targetDistance, float attackRange,
+                                int attackGapTicks, float moveWeight)
 {
     st.active = true;
     st.actionId = action.id;
@@ -676,7 +678,7 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
     st.hitTargets.clear();
     g_meleeActionSnapshots[npc.entityId] = action;
     const int total = action.totalTicks();
-    st.nextAttackTick = tick + (uint32_t)std::max(1, total) + 20u;
+    st.nextAttackTick = tick + (uint32_t)std::max(1, total) + 1u;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
         "melee.action.start", std::to_string(npc.entityId),
@@ -684,6 +686,11 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
         nlohmann::json{{"actor", npc.entityId},
                        {"actor_is_npc", true},
                        {"action", action.id},
+                       {"behavior_profile", behaviorProfileId},
+                       {"target_distance_meters", targetDistance},
+                       {"attack_range_meters", attackRange},
+                       {"attack_gap_ticks", attackGapTicks},
+                       {"move_weight", moveWeight},
                        {"position", {npc.pos.x, npc.pos.y, npc.pos.z}}});
 }
 
@@ -734,6 +741,18 @@ bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
     return true;
 }
 
+void serverWriteWeaponActionSnapshot(const std::string& definitionId, bool active,
+    const std::string& actionId, uint32_t startTick, SnapshotEntity& out)
+{
+    out.equippedWeaponDefNetworkId = weaponDefNetworkIdFor(definitionId);
+    out.weaponActionIndex = 255;
+    out.weaponActionStartTick = startTick;
+    const auto* set = WeaponData::MeleeMoveSetRegistry::instance().get(definitionId);
+    if (!active || !set) return;
+    for (size_t i = 0; i < set->actions.size() && i < 255; ++i)
+        if (set->actions[i].id == actionId) { out.weaponActionIndex = (uint8_t)i; break; }
+}
+
 float serverMeleePercentFor(const ServerPlayer& player)
 {
     return player.meleePercent;
@@ -755,6 +774,52 @@ void serverMeleeResetForSpawn(ServerPlayer& player)
     g_meleeActionSnapshots.erase(player.id);
 }
 
+void tickServerWeaponAnimationActions(std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs, uint32_t tick)
+{
+    // Equipped continuous-contact weapons reuse the same action data and clip
+    // timeline. AI supplies action intent; these actions never add percent,
+    // shields, attack hitboxes, or self movement.
+    for (auto& entry : npcs) {
+        ServerNpc& npc = entry.second;
+        const auto* set = WeaponData::MeleeMoveSetRegistry::instance().get(npc.equippedWeaponId);
+        if (!set || !set->animationOnly) continue;
+        const WeaponDefinition* def = WeaponRegistry::instance().get(npc.equippedWeaponId);
+        if (!def || npc.health <= 0) { npc.meleeActionActive = false; continue; }
+        float nearest = std::numeric_limits<float>::max();
+        auto consider = [&](bool self, int team, bool alive, const glm::vec3& position) {
+            if (!alive || self) return;
+            if (!serverFriendlyFireEnabled() && team >= 0 && npc.matchTeam >= 0 && team == npc.matchTeam) return;
+            nearest = std::min(nearest, glm::length(position - npc.pos));
+        };
+        for (const auto& p : players) consider(false, p.second.matchTeam,
+            !p.second.dead && p.second.spawnState == ServerPlayer::Active, p.second.pos);
+        for (const auto& n : npcs) consider(n.first == npc.entityId, n.second.matchTeam, n.second.health > 0, n.second.pos);
+        const float range = WeaponExecution::paramOr(*def, "lungeRange", 6.0f);
+        const auto* action = set->find(npc.meleeActionId);
+        if (npc.meleeActionActive && (!action ||
+            (!action->holdWhileButton && tick - npc.meleeActionStartTick >= (uint32_t)action->totalTicks()) ||
+            (action->holdWhileButton && (nearest > range || tick - npc.meleeActionStartTick >=
+                (uint32_t)WeaponExecution::paramOr(*def, "npcGuardTicks", 60.0f))))) {
+            npc.meleeActionActive = false;
+            npc.meleeActionId.clear();
+        }
+        if (!npc.meleeActionActive && nearest <= range && tick >= npc.meleeNextAttackTick && !set->actions.empty()) {
+            const auto& selected = set->actions[(npc.entityId + tick / 30u) % set->actions.size()];
+            npc.meleeActionActive = true;
+            npc.meleeActionId = selected.id;
+            npc.meleeActionStartTick = tick;
+            npc.meleeNextAttackTick = tick + selected.totalTicks() + 20u;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "weapon.action.start", std::to_string(npc.entityId), "NPC selected equipped weapon action", tick,
+                {{"actor", npc.entityId}, {"actor_type", "npc"}, {"weapon", def->id},
+                 {"action", selected.id}, {"clip", selected.animationClipId}, {"animation_only", true}});
+        }
+    }
+
+}
+
 void tickServerMeleeActions(SOCKET sock,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -769,18 +834,26 @@ void tickServerMeleeActions(SOCKET sock,
             g_meleeActionSnapshots.erase(attacker.id);
             continue;
         }
-        if (serverGamemodeState().matchMode != "melee")
+        const WeaponData::MeleeMoveSet* moveSet = equippedMeleeMoveSet(attacker);
+        if (attacker.meleeActionActive && (!moveSet || !moveSet->find(attacker.meleeActionId))) {
+            attacker.meleeActionActive = false;
+            attacker.meleeActionId.clear();
+            g_meleeActionSnapshots.erase(attacker.id);
+        }
+        const bool animationOnly = moveSet && moveSet->animationOnly;
+        if (!animationOnly && serverGamemodeState().matchMode != "melee")
             continue;
 
         // Shield decay/recovery and the grab pull run every Melee tick, whether
         // or not an attack action is currently active.
-        updateMeleeShield(attacker, tick, sock, players, totalPacketsOut);
-        tickMeleeGrabPull(attacker, players);
+        if (!animationOnly) {
+            updateMeleeShield(attacker, tick, sock, players, totalPacketsOut);
+            tickMeleeGrabPull(attacker, players);
+        }
 
         if (!attacker.meleeActionActive)
             continue;
 
-        const WeaponData::MeleeMoveSet* moveSet = equippedMeleeMoveSet(attacker);
         // Prefer the action snapshot taken at start (retains the starting
         // revision); fall back to the live move set.
         const WeaponData::MeleeAction* action = nullptr;
@@ -801,7 +874,7 @@ void tickServerMeleeActions(SOCKET sock,
         const int recovery = action->recovery.ticks;
         const int total = action->totalTicks();
 
-        if ((int)elapsed >= total) {
+        if ((int)elapsed >= total && !(animationOnly && action->holdWhileButton)) {
             // action can point into g_meleeActionSnapshots. Copy its ID before
             // erasing that snapshot so the end event never reads a dangling
             // string reference.
@@ -825,6 +898,7 @@ void tickServerMeleeActions(SOCKET sock,
         attacker.meleePhaseTick = phaseTick;
 
         // Per-action impulses fire on their authored phase/tick.
+        if (animationOnly) continue;
         applyActionImpulses(attacker, *action, phase, phaseTick, tick);
 
         if (std::string(phase) != "active")
@@ -942,6 +1016,8 @@ void tickServerMeleeActions(SOCKET sock,
     // ── Melee NPC fighters ──────────────────────────────────────────────
     // An NPC whose equipped weapon is a Melee move set fights with the same
     // data-driven actions, percent, and knockback as a player.
+    tickServerWeaponAnimationActions(players, npcs, tick);
+
     if (serverGamemodeState().matchMode == "melee") {
         for (auto& nEntry : npcs) {
             ServerNpc& npc = nEntry.second;
@@ -1072,12 +1148,49 @@ void tickServerMeleeActions(SOCKET sock,
                     const float d = glm::length(glm::vec2(p.pos.x - npc.pos.x, p.pos.y - npc.pos.y));
                     if (d < best) { best = d; target = &p; }
                 }
-                if (target && best < 4.5f) {
+                const ActorSpawnProfile actorProfile = serverResolveActorSpawnProfile(npc.entityId);
+                const BehaviorProfileDefinition* behavior =
+                    BehaviorProfileRegistry::instance().get(actorProfile.behaviorProfileId);
+                const float attackRange = behavior && behavior->meleeAttackRangeMeters >= 0.0f
+                    ? behavior->meleeAttackRangeMeters : 4.5f;
+                const int attackGapTicks = behavior && behavior->meleeAttackGapTicks >= 0
+                    ? behavior->meleeAttackGapTicks : 20;
+                if (target && best <= attackRange) {
                     const bool grounded = npc.onGround;
-                    std::string actionId = grounded ? "a_ground_punch" : "a_air_kick";
-                    if (((npc.entityId + tick / 30u) % 5u) == 0u)
-                        actionId = grounded ? "b_falcon_punch" : "b_air_forward_dash";
+                    const std::string fallback = grounded ? "a_ground_punch" : "a_air_kick";
+                    std::string actionId = fallback;
+                    float selectedWeight = 0.0f;
+                    if (behavior && !behavior->meleeMoveWeights.empty()) {
+                        float totalWeight = 0.0f;
+                        auto eligible = [&](const std::string& id) {
+                            const auto* candidate = ms->find(id);
+                            return candidate && (candidate->actorState == WeaponData::MeleeActorState::Any ||
+                                (grounded && candidate->actorState == WeaponData::MeleeActorState::Grounded) ||
+                                (!grounded && candidate->actorState == WeaponData::MeleeActorState::Airborne));
+                        };
+                        for (const auto& move : behavior->meleeMoveWeights)
+                            if (eligible(move.first)) totalWeight += move.second;
+                        if (totalWeight > 0.0f) {
+                            const uint32_t bucket = (npc.entityId * 2654435761u + tick * 2246822519u)
+                                % 100000u;
+                            float choice = totalWeight * (float)bucket / 100000.0f;
+                            for (const auto& move : behavior->meleeMoveWeights) {
+                                if (!eligible(move.first)) continue;
+                                choice -= move.second;
+                                if (choice < 0.0f) {
+                                    actionId = move.first;
+                                    selectedWeight = move.second;
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     if (const WeaponData::MeleeAction* action = ms->find(actionId)) {
+                        if (selectedWeight <= 0.0f && behavior) {
+                            const auto weight = behavior->meleeMoveWeights.find(actionId);
+                            if (weight != behavior->meleeMoveWeights.end())
+                                selectedWeight = weight->second;
+                        }
                         glm::vec3 f = target->pos - npc.pos;
                         f.z = 0.0f;
                         if (glm::length(f) < 0.001f) {
@@ -1085,7 +1198,11 @@ void tickServerMeleeActions(SOCKET sock,
                         }
                         if (glm::length(f) < 0.001f)
                             f = glm::vec3(1.0f, 0.0f, 0.0f);
-                        startNpcMeleeAction(npc, st, *action, glm::normalize(f), tick);
+                        startNpcMeleeAction(npc, st, *action, glm::normalize(f), tick,
+                            actorProfile.behaviorProfileId, best, attackRange,
+                            attackGapTicks, selectedWeight);
+                        st.nextAttackTick = tick + (uint32_t)std::max(1, action->totalTicks())
+                            + (uint32_t)attackGapTicks;
                     }
                 }
             }

@@ -37,6 +37,10 @@ struct BehaviorProfileDefinition
     float weaponDamageBias = -1.0f;      // preference for high damage
     float weaponSafetyBias = -1.0f;      // preference for safer/ranged weapons
     float weaponSwitchThreshold = -1.0f; // required score margin to switch
+    // Melee NPC decision tuning. Negative values preserve legacy defaults.
+    int meleeAttackGapTicks = -1;
+    float meleeAttackRangeMeters = -1.0f;
+    std::unordered_map<std::string, float> meleeMoveWeights;
     // Pursuit after line of sight is lost. String values are documented in JSON.
     std::string pursuitMode = "last_known_position";
     bool continueThroughCover = true;

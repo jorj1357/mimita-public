@@ -6,7 +6,8 @@
       "team": 0,
       "team_id": "sandbox_npcs",
       "actor_preset": "juggernaut_arcade",
-      "movement_preset": "juggernaut"
+      // "movement_preset": "juggernaut"
+      "movement_preset": "source"
     },
     {
       "id": "hunter",
@@ -142,7 +143,7 @@
       "movement_preset": "smash",
       "weapon_set": "captain_falcon",
       "starting_weapon": "captain_falcon_moveset",
-      "behavior_profile": "balanced",
+      "behavior_profile": "melee_aggressive",
       "avatar": "captainfalcon",
       "avatar_forced": true
     },

@@ -21,6 +21,8 @@
 #include "combat/death-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
+#include "combat/weapon-melee-config.h"
+#include "network/network-weapons.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "audio/audio.h"
@@ -71,6 +73,9 @@ SnapshotTransform transformFromEntity(const SnapshotEntity& entity)
     transform.onGround = entity.onGround != 0;
     transform.equippedSlot = entity.equippedSlot;
     transform.weaponState = entity.weaponState;
+    transform.equippedWeaponDefNetworkId = entity.equippedWeaponDefNetworkId;
+    transform.weaponActionIndex = entity.weaponActionIndex;
+    transform.weaponActionStartTick = entity.weaponActionStartTick;
     transform.aimDirection = {entity.aimX, entity.aimY, entity.aimZ};
     transform.pingMs = entity.pingMs;
     transform.vipAppearance = MimitaVip::appearanceFromBytes(
@@ -1700,6 +1705,45 @@ void updateRenderedReplica(
     player.networkStateFlags = render.stateFlags;
     player.ground.onGround = render.onGround;
     player.ground.stableOnGround = player.ground.onGround;
+
+    if (const std::string* id = weaponIdForDefNetworkId(render.equippedWeaponDefNetworkId)) {
+        player.equippedWeaponId = *id;
+        player.hasValidWeapon = true;
+    }
+    if (const auto* set = WeaponData::MeleeMoveSetRegistry::instance().get(player.equippedWeaponId)) {
+        if (remotePresentationAlive && render.weaponActionIndex < set->actions.size()) {
+            const auto& action = set->actions[render.weaponActionIndex];
+            const int elapsed = render.serverTick >= render.weaponActionStartTick
+                ? (int)(render.serverTick - render.weaponActionStartTick) : 0;
+            const bool newAction = !player.networkMeleeAudioInitialized ||
+                player.networkMeleeAudioStartTick != render.weaponActionStartTick ||
+                player.networkMeleeAudioActionIndex != render.weaponActionIndex;
+            if (newAction) {
+                player.networkMeleeAudioInitialized = true;
+                player.networkMeleeAudioStartTick = render.weaponActionStartTick;
+                player.networkMeleeAudioActionIndex = render.weaponActionIndex;
+                player.networkMeleeAudioLastElapsed = 0xffffffffu;
+                if (!action.onStartSound.empty())
+                    playWorldSound(action.onStartSound, player.pos + action.onStartOffset,
+                        action.onStartVolume, action.onStartPitch, 36.0f);
+            }
+            const int previousElapsed = player.networkMeleeAudioLastElapsed == 0xffffffffu
+                ? -1 : (int)player.networkMeleeAudioLastElapsed;
+            for (const auto& sound : action.audioEvents) {
+                const int eventTick = sound.phase == "windup" ? sound.tick
+                    : sound.phase == "recovery"
+                        ? action.windup.ticks + action.active.ticks + sound.tick
+                        : action.windup.ticks + sound.tick;
+                if (eventTick > previousElapsed && eventTick <= elapsed && !sound.soundId.empty())
+                    playWorldSound(sound.soundId, player.pos + sound.offset,
+                        sound.volume, sound.pitch, 36.0f);
+            }
+            player.networkMeleeAudioLastElapsed = (uint32_t)std::max(0, elapsed);
+            if (!action.animationClipId.empty())
+                player.playOneShotAtTick(action.animationClipId,
+                    std::min(elapsed, std::max(0, action.totalTicks() - 1)));
+        } else if (set->animationOnly) player.clearOneShot();
+    }
 
     // ── Freeze state ─────────────────────────────────────────────────
     // Set freezeActive for the freeze pose state machine in

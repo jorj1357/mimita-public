@@ -661,6 +661,20 @@
       "cohesion": 0.6,
       "rally_distance_meters": 6.0,
       "approach_style": "direct"
+    },
+    {
+      // Fast Melee sparring: edit these values during a running match.
+      "id": "melee_aggressive",
+      "melee_attack_gap_ticks": 1,
+      "melee_attack_range_meters": 4.5,
+      "melee_move_weights": {
+        "a_ground_punch": 10.0,
+        "a_air_kick": 10.0,
+        "a_uptilt": 6.0,
+        "a_air_up_kick": 6.0,
+        "b_falcon_punch": 1.0,
+        "b_air_forward_dash": 1.0
+      }
     }
   ]
 }

@@ -152,7 +152,7 @@ static ServerDamageResult applyPlayerDamageLegacy(
     // Use the gamemode roster as the authoritative fallback because a player
     // mirror can briefly have matchTeam == -1 while the roster already knows
     // the assignment. Self-damage remains allowed for rocket jumping.
-    if (!serverFriendlyFireEnabled() && attackerPlayerId != target.id)
+    if (!serverFriendlyFireEnabled() && (attackerIsNpc || attackerPlayerId != target.id))
     {
         if (attackerTeam >= 0 && targetTeam >= 0 && attackerTeam == targetTeam)
         {
@@ -299,8 +299,9 @@ ServerDamageResult applyActorDamage(
 
     const ServerActorRef victim = findServerActor(
         request.victim.id, request.victim.kind, players, npcs);
-    if (!victim.player || victim.kind != ServerActorKind::Player) {
-        result.rejectionReason = "phase1-player-victim-required";
+    if ((victim.kind == ServerActorKind::Player && !victim.player) ||
+        (victim.kind == ServerActorKind::Npc && !victim.npc)) {
+        result.rejectionReason = "victim-not-found";
         Debug::log(Debug::Category::Networking,
             "[ACTOR_DAMAGE_REJECTED] victim=%u kind=%u reason=%s event=%u\n",
             request.victim.id, (unsigned)request.victim.kind,
@@ -332,11 +333,77 @@ ServerDamageResult applyActorDamage(
         if (teamIt != serverGamemodeState().matchTeams.end())
             attackerTeam = teamIt->second;
     }
+
+    if (victim.kind == ServerActorKind::Npc)
+    {
+        ServerNpc& target = *victim.npc;
+        result.healthBefore = target.health;
+        result.healthAfter = target.health;
+        if (target.health <= 0 || request.damage <= 0)
+        {
+            result.rejectionReason = target.health <= 0 ? "target-dead" : "non-positive-damage";
+            return result;
+        }
+
+        int targetTeam = target.matchTeam;
+        if (targetTeam < 0)
+        {
+            const auto teamIt = serverGamemodeState().matchTeams.find(target.entityId);
+            if (teamIt != serverGamemodeState().matchTeams.end())
+                targetTeam = teamIt->second;
+        }
+        if (!serverFriendlyFireEnabled() &&
+            (attacker.kind != ServerActorKind::Npc || attacker.id != target.entityId) &&
+            attackerTeam >= 0 && targetTeam >= 0 && attackerTeam == targetTeam)
+        {
+            result.rejectionReason = "friendly-fire";
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.damage.rejected", std::to_string(target.entityId),
+                "same-team actor damage blocked", request.serverTick,
+                {{"attacker_id", attacker.id},
+                 {"attacker_type", attacker.kind == ServerActorKind::Npc ? "npc" : "player"},
+                 {"attacker_team", attackerTeam}, {"target_actor_id", target.entityId},
+                 {"target_actor_type", "npc"}, {"target_team", targetTeam},
+                 {"source", damageSourceName(request.source)},
+                 {"damage_requested", request.damage}, {"friendly_fire", false}},
+                __FILE__, __LINE__, __FUNCTION__);
+            return result;
+        }
+
+        const int appliedDamage = std::clamp(request.damage, 1, 500);
+        target.health = std::max(0, target.health - appliedDamage);
+        target.knockbackImpulse += request.knockback;
+        result.applied = true;
+        result.healthAfter = target.health;
+        result.killed = target.health == 0;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "server.damage.applied", std::to_string(target.entityId),
+            "authoritative actor damage changed NPC health", request.serverTick,
+            {{"attacker_id", attacker.id},
+             {"attacker_type", attacker.kind == ServerActorKind::Npc ? "npc" : "player"},
+             {"attacker_team", attackerTeam}, {"target_actor_id", target.entityId},
+             {"target_actor_type", "npc"}, {"target_team", targetTeam},
+             {"damage_requested", request.damage}, {"damage_applied", appliedDamage},
+             {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
+             {"killed", result.killed}, {"source", damageSourceName(request.source)},
+             {"knockback", {request.knockback.x, request.knockback.y, request.knockback.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+        result.eventId = request.eventId;
+        result.correlationId = request.correlationId;
+        return result;
+    }
+
     result = applyPlayerDamageLegacy(players, *victim.player,
                                      attacker.id, attackerTeam,
                                      attacker.kind == ServerActorKind::Npc,
                                      request.damage,
                                      request.knockback, request.source);
+    if (result.applied && !result.killed && attacker.kind == ServerActorKind::Npc) {
+        victim.player->lastNpcDamageSourceId = attacker.id;
+        victim.player->lastNpcDamageTick = request.serverTick;
+    }
     result.eventId = request.eventId;
     result.correlationId = request.correlationId;
     Debug::log(Debug::Category::Networking,
@@ -388,7 +455,8 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     uint32_t causeSerial,
     uint32_t projectileId,
     uint32_t attackerNpcId,
-    const std::string& weaponDefId)
+    const std::string& weaponDefId,
+    float contactForce)
 {
     if (!result.applied)
         return ReliableGameplayEventQueueResult::Queued;
@@ -413,6 +481,7 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     event.healthAfter = result.healthAfter;
     event.source = damageConfirmedSource(source);
     event.weapon = weapon;
+    event.contactForce = contactForce;
     event.weaponDefNetworkId = weaponDefId.empty() ? 0 : weaponDefNetworkIdFor(weaponDefId);
     event.killed = result.killed ? 1 : 0;
     event.hitX = hit.x;

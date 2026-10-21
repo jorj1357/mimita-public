@@ -26,6 +26,7 @@ namespace MimitaMelee {
 struct ClientInput {
     bool primaryPressed = false;   // LMB edge this frame
     bool secondaryPressed = false; // RMB edge this frame
+    bool secondaryHeld = false;
     bool grabPressed = false;      // E edge this frame
     bool shieldHeld = false;       // Q held
     bool jumpHeld = false;         // Space held
@@ -69,5 +70,7 @@ bool debugCrouchHeld();
 // Test/dev hook: hold/release the shield input state (agent.shield).
 void debugSetShield(bool shield);
 bool debugShieldHeld();
+// Press/release through the same fixed-tick button resolver as mouse input.
+void requestButton(bool secondary, bool held);
 
 } // namespace MimitaMelee

@@ -29,6 +29,7 @@
 #include "debug/structured-log.h"
 #include "combat/weapon-hit.h"
 #include "combat/death-system.h"
+#include "combat/weapon-contact-local.h"
 #include "effects/hit-effects.h"
 #include "void-death/void-death.h"
 #include "ragdoll/ragdoll-mode.h"
@@ -326,7 +327,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         ActorPairCollisionStats collisionStats;
         resolveActorPairCollisions(collisionActors.data(), collisionActors.size(),
                                    TICK_DT, collisionData,
-                                   collisionOutputs.data(), &collisionStats);
+                                   collisionOutputs.data(), &collisionStats,
+                                   "client", sim.tick);
 
         Perf::state().current.collisionPairs =
             static_cast<int>(collisionStats.candidatePairs);
@@ -406,6 +408,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
 
     {
         MIMITA_PERF_SCOPE("DeathSystemUpdate");
+        if (!mpContext.active)
+            tickLocalPhysicalContactWeapons(*sim.player, *sim.npcSystem, (uint32_t)sim.tick);
         DeathSystem::instance().update(
             *sim.world, *sim.player, *sim.npcSystem, frame.jumpPressed, TICK_DT);
     }

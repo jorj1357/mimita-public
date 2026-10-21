@@ -172,10 +172,10 @@
             // aimbody/animation pose. Weapon attachment offsets stay weapon-owned.
             // "arms_camera_follow": 1.0
             // "arms_camera_follow": 0.1
-            // "arms_camera_follow": 10.0
+            "arms_camera_follow": 10.0
             // "arms_camera_follow": 100.0
             // "arms_camera_follow": 2.0
-            "arms_camera_follow": 5.0
+            // "arms_camera_follow": 5.0
         }
     },
     "exit": {

@@ -455,8 +455,11 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
                    npc.id, def->id.c_str(), aimDir.x, aimDir.y, aimDir.z);
         break;
     }
-    case WeaponBehaviorType::Melee:
     case WeaponBehaviorType::Swordsword:
+        // Continuous blade contact and animation actions are server-owned;
+        // firing a close-range ray here would apply a second, unrelated hit.
+        break;
+    case WeaponBehaviorType::Melee:
     {
         // Melee: use hitscan at close range for now (future: full melee AI)
         RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);

@@ -436,17 +436,9 @@ void startSlash(SwordswordState& state, const WeaponDefinition& def, Player& own
     state.hitCooldowns.clear();
     state.debugHits.clear();
 
-    // Half dash power forward, horizontal only
-    glm::vec2 dir2D = glm::normalize(glm::vec2(owner.aimDirection.x, owner.aimDirection.y));
-    float slashImpulse = DASH_IMPULSE * 0.5f;
-    owner.vel.x += dir2D.x * slashImpulse;
-    owner.vel.y += dir2D.y * slashImpulse;
-
     playWorldSound("weapon/hafs/hafsswing", owner.pos, 0.8f, 1.0f, 30.0f);
     Debug::log(Debug::Category::Weapons, "[SWORD ANIM LOCAL] attacker=%s action=slash-start\n",
                owner.username.c_str());
-    Debug::log(Debug::Category::Weapons, "[SWORDSWORD] slash start impulse=%.1f dir=(%.2f %.2f)\n",
-               slashImpulse, dir2D.x, dir2D.y);
 }
 
 void startLunge(SwordswordState& state, const WeaponDefinition& def, Player& owner) {
@@ -456,17 +448,9 @@ void startLunge(SwordswordState& state, const WeaponDefinition& def, Player& own
     state.hitCooldowns.clear();
     state.debugHits.clear();
 
-    // Full dash power forward, horizontal only
-    glm::vec2 dir2D = glm::normalize(glm::vec2(owner.aimDirection.x, owner.aimDirection.y));
-    float lungeImpulse = DASH_IMPULSE * 1.0f;
-    owner.vel.x += dir2D.x * lungeImpulse;
-    owner.vel.y += dir2D.y * lungeImpulse;
-
     playWorldSound("weapon/hafs/hafslunge", owner.pos, 0.8f, 1.0f, 30.0f);
     Debug::log(Debug::Category::Weapons, "[SWORD ANIM LOCAL] attacker=%s action=lunge-start\n",
                owner.username.c_str());
-    Debug::log(Debug::Category::Weapons, "[SWORDSWORD] lunge start impulse=%.1f dir=(%.2f %.2f)\n",
-               lungeImpulse, dir2D.x, dir2D.y);
 }
 
 // ── Per-frame update ─────────────────────────────────────────
@@ -476,6 +460,9 @@ void update(SwordswordState& state, const WeaponDefinition& def,
             NpcSystem& npcs, const Camera& camera, const World& world, float dt) {
     MIMITA_PERF_SCOPE("Swordsword::Update");
     (void)camera;
+    // Shared action clips own presentation and the fixed-tick authoritative
+    // contact owner owns damage. Never run the legacy movement-sphere attacks.
+    if (!def.animationProfile.empty()) return;
 
     dt = std::min(dt, 0.05f);
 
@@ -619,10 +606,6 @@ void update(SwordswordState& state, const WeaponDefinition& def,
 
         if (state.worldHitCooldown <= 0.0f)
             checkWorldCollision(state, def, owner, world);
-
-        float lungeDrag = cp(def, "lungeDrag", 3.0f);
-        if (lungeDrag > 0.0f)
-            owner.vel *= (1.0f - lungeDrag * dt);
 
         if (state.stateTimer >= lungeActive) {
             state.state = SwordswordState::AttackState::LungeRecover;

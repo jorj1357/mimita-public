@@ -91,4 +91,6 @@ void resolveActorPairCollisions(
     float dt,
     const ActorCollisionData& data,
     ActorPairCollisionOutput* outputs,
-    ActorPairCollisionStats* outStats = nullptr);
+    ActorPairCollisionStats* outStats = nullptr,
+    const char* source = "unknown",
+    std::uint32_t tick = 0);

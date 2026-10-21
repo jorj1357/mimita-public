@@ -63,6 +63,9 @@ CompactEntityData makeTestEntity(uint32_t id)
     e.onGround = 1;
     e.equippedSlot = (int16_t)(1 + (id % 6));
     e.weaponState = (uint8_t)(id % 8);
+    e.equippedWeaponDefNetworkId = (uint16_t)(100 + id);
+    e.weaponActionIndex = (uint8_t)(id % 4);
+    e.weaponActionStartTick = 2000 + id * 3;
     e.pingMs = (int32_t)(30 + id * 7);
     e.sizeScale = 0.8f + (float)(id % 5) * 0.15f;
     e.dashSerial = (uint16_t)(id * 2);
@@ -147,6 +150,9 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.onGround = entity.onGround;
     out.equippedSlot = entity.equippedSlot;
     out.weaponState = entity.weaponState;
+    out.equippedWeaponDefNetworkId = entity.equippedWeaponDefNetworkId;
+    out.weaponActionIndex = entity.weaponActionIndex;
+    out.weaponActionStartTick = entity.weaponActionStartTick;
     out.pingMs = entity.pingMs;
     out.sizeScale = entity.sizeScale;
     out.dashSerial = entity.dashSerial;
@@ -202,6 +208,9 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.onGround = entity.onGround;
     out.equippedSlot = entity.equippedSlot;
     out.weaponState = entity.weaponState;
+    out.equippedWeaponDefNetworkId = entity.equippedWeaponDefNetworkId;
+    out.weaponActionIndex = entity.weaponActionIndex;
+    out.weaponActionStartTick = entity.weaponActionStartTick;
     out.pingMs = entity.pingMs;
     out.sizeScale = entity.sizeScale;
     out.dashSerial = entity.dashSerial;
@@ -548,6 +557,14 @@ bool runSnapshotChunkSelfTest(std::string* report)
         }
         for (size_t i = 0; i < source.size(); ++i)
         {
+            const SnapshotEntity decoded = snapshotEntityFromCompact(reassembled[i]);
+            const CompactEntityData roundTrip = compactEntityFromSnapshot(decoded);
+            if (roundTrip.equippedWeaponDefNetworkId != source[i].equippedWeaponDefNetworkId ||
+                roundTrip.weaponActionIndex != source[i].weaponActionIndex ||
+                roundTrip.weaponActionStartTick != source[i].weaponActionStartTick) {
+                out << "[SNAPSHOT CHUNK SELFTEST] weapon action/identity round-trip mismatch\n";
+                ok = false;
+            }
             if (!sameCompactFields(source[i], reassembled[i]))
             {
                 out << "[SNAPSHOT CHUNK SELFTEST] field mismatch count=" << count

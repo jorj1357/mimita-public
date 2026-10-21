@@ -117,6 +117,9 @@ struct SnapshotTransform
     int equippedSlot = 0;
     uint8_t weaponState = 0;
     glm::vec3 aimDirection{1.0f, 0.0f, 0.0f};
+    uint16_t equippedWeaponDefNetworkId = 0;
+    uint8_t weaponActionIndex = 255;
+    uint32_t weaponActionStartTick = 0;
     int pingMs = 0;
     uint32_t serverTick = 0;
     uint64_t receivedMs = 0;

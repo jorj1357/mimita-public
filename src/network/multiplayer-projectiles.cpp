@@ -1,3 +1,4 @@
+#include "combat/weapon-audio.h"
 // 08 31 2026, 17 24
 /* purpose
 * Owns client-side network projectile prediction, adoption, correction, and rendering.
@@ -1257,6 +1258,13 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         printf("[NET DAMAGE CONFIRMED] eventId=%u target=%u accepted=0 reason=duplicate-or-stale\n",
                event->eventId, event->targetPlayerId);
         return;
+    }
+
+    if (event->contactForce >= 0.0f) {
+        const std::string* id = weaponIdForDefNetworkId(event->weaponDefNetworkId);
+        const auto* definition = WeaponRegistry::instance().get(id ? *id : networkWeaponTypeName(event->weapon));
+        if (definition) WeaponAudio::playContactSound(*definition,
+            glm::vec3(event->hitX, event->hitY, event->hitZ), event->contactForce);
     }
 
     if (event->killed != 0 || event->healthAfter <= 0)

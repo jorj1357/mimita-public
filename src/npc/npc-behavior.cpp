@@ -72,6 +72,22 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.weaponDamageBias = j.value("weapon_damage_bias", out.weaponDamageBias);
     out.weaponSafetyBias = j.value("weapon_safety_bias", out.weaponSafetyBias);
     out.weaponSwitchThreshold = j.value("weapon_switch_threshold", out.weaponSwitchThreshold);
+    if (j.contains("melee_attack_gap_ticks") && j["melee_attack_gap_ticks"].is_number_integer()) {
+        out.meleeAttackGapTicks = std::clamp(
+            j["melee_attack_gap_ticks"].get<int>(), 0, 3600);
+    }
+    out.meleeAttackRangeMeters = clampWarn(
+        j, "melee_attack_range_meters", 0.5f, 30.0f,
+        out.meleeAttackRangeMeters, out.id);
+    if (j.contains("melee_move_weights") && j["melee_move_weights"].is_object()) {
+        out.meleeMoveWeights.clear();
+        for (auto it = j["melee_move_weights"].begin();
+             it != j["melee_move_weights"].end(); ++it) {
+            if (!it.value().is_number()) continue;
+            const float weight = std::clamp(it.value().get<float>(), 0.0f, 1000.0f);
+            if (weight > 0.0f) out.meleeMoveWeights[it.key()] = weight;
+        }
+    }
     out.pursuitMode = j.value("pursuit_mode", out.pursuitMode);
     out.continueThroughCover = j.value("continue_through_cover", out.continueThroughCover);
     out.pursueLastKnownPosition = j.value("pursue_last_known_position", out.pursueLastKnownPosition);

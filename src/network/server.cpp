@@ -907,9 +907,9 @@ int runServer(const LaunchOptions& options)
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             const uint64_t projectileUs = elapsedMicroseconds(projectileStart);
             const auto contactWeaponStart = std::chrono::steady_clock::now();
+            tickServerMeleeActions(sock, players, npcs, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
             const uint64_t contactWeaponUs = elapsedMicroseconds(contactWeaponStart);
-            tickServerMeleeActions(sock, players, npcs, tick, totalPacketsOut);
 
             if (!options.proceduralMode.empty() &&
                 !automaticProceduralStartQueued &&
@@ -1459,12 +1459,13 @@ static void simulateOneServerTick(ListenServerState& state)
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);
 
+        tickServerMeleeActions(state.sock, state.players, state.npcs,
+                               state.tick, state.totalPacketsOut);
+
         tickServerPhysicalContactWeapons(state.sock, state.players, state.npcs,
                                          state.world, SERVER_DT, state.tick,
                                          state.totalPacketsOut);
 
-        tickServerMeleeActions(state.sock, state.players, state.npcs,
-                               state.tick, state.totalPacketsOut);
 
         // Skip ICE coordinator for local-only servers
         if (state.serverCode.find("LOCAL-") != 0)

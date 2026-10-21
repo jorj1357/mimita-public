@@ -1,5 +1,6 @@
 #include "weapon-audio.h"
 #include "weapon-types.h"
+#include "combat/weapon-execution.h"
 #include "audio/audio.h"
 #include "config/size-scaling-config.h"
 #include "network/multiplayer-context.h"
@@ -10,6 +11,17 @@
 extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace WeaponAudio {
+
+void playContactSound(const WeaponDefinition& def, const glm::vec3& position, float force)
+{
+    if (def.soundHit.empty()) return;
+    const float strength = std::clamp(force, 0.0f, 1.0f);
+    const float volume = glm::mix(WeaponExecution::paramOr(def, "contactMinVolume", 0.1f),
+        WeaponExecution::paramOr(def, "contactMaxVolume", 1.0f), strength);
+    const float pitch = glm::mix(WeaponExecution::paramOr(def, "contactMaxPitch", 1.4f),
+        WeaponExecution::paramOr(def, "contactMinPitch", 0.5f), strength);
+    playWorldSound(def.soundHit, position, volume, pitch, 35.0f);
+}
 
 void playShootSound(const WeaponDefinition& def, const glm::vec3& position,
                     float sizeScale, unsigned int actorId) {

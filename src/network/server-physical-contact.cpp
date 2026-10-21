@@ -88,8 +88,13 @@ static bool buildPhysicalShape(ServerPlayer& attacker,
         // The owner's hit claims are authoritative.
         return false;
     }
-    else if (def.behaviorType == WeaponBehaviorType::Swordsword ||
-             def.behaviorType == WeaponBehaviorType::Melee ||
+    else if (def.behaviorType == WeaponBehaviorType::Swordsword)
+    {
+        // The configured shared actor path owns the actual animated blade.
+        // Missing profile data must not become a root-relative guessed shape.
+        return false;
+    }
+    else if (def.behaviorType == WeaponBehaviorType::Melee ||
              def.behaviorType == WeaponBehaviorType::Hafs)
     {
         if (!attacker.physicalAttackTimeline.isCommitted())
@@ -264,10 +269,22 @@ static void applyPhysicalContactNpcHit(
 
     const int damage = physicalContactDamage(def, shape, hit, swordLunge, dt);
     const glm::vec3 knockback = physicalContactKnockback(def, shape, hit, damage, swordLunge);
-    const int healthBefore = target.health;
-    target.health = std::max(0, target.health - damage);
-    target.knockbackImpulse += knockback;
-    const bool killed = target.health == 0;
+    ServerActorDamageRequest damageRequest;
+    damageRequest.attacker = {attacker.id, ServerActorKind::Player, &attacker, nullptr};
+    damageRequest.victim = {target.entityId, ServerActorKind::Npc, nullptr, &target};
+    damageRequest.damage = damage;
+    damageRequest.knockback = knockback;
+    damageRequest.source = ServerDamageSource::PhysicalContact;
+    damageRequest.weaponId = def.id;
+    damageRequest.weaponDisplayName = def.displayName;
+    damageRequest.eventId = episode.contactSerial;
+    damageRequest.correlationId = episode.contactSerial;
+    damageRequest.serverTick = tick;
+    const ServerDamageResult damageResult = applyActorDamage(players, npcs, damageRequest);
+    if (!damageResult.applied)
+        return;
+    const int healthBefore = damageResult.healthBefore;
+    const bool killed = damageResult.killed;
 
     const glm::vec3 normal = glm::length(hit.normal) > 0.001f
         ? glm::normalize(hit.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
@@ -279,7 +296,7 @@ static void applyPhysicalContactNpcHit(
         "[PHYSICAL CONTACT NPC DAMAGE] attacker=%u target=%u weapon=%s "
         "radius=%.2f damage=%d health=%d->%d killed=%d\n",
         attacker.id, target.entityId, def.id.c_str(), shape.radius, damage,
-        healthBefore, target.health, (int)killed);
+        healthBefore, damageResult.healthAfter, (int)killed);
     broadcastNpcDamageEvent(sock, players, tick, totalPacketsOut,
                             attacker.id, target, damage, killed,
                             attacker.pos, hit.hitPosition, direction, normal,
@@ -515,11 +532,13 @@ void tickServerPhysicalContactWeapons(SOCKET sock,
 {
     (void)world;
 
+    tickServerAnimatedPhysicalContactWeapons(sock, players, npcs, tick, totalPacketsOut);
+
     for (auto& attackerEntry : players)
     {
         ServerPlayer& attacker = attackerEntry.second;
         const WeaponDefinition* def = equippedWeaponDefinition(attacker);
-        if (!def || def->executionType != WeaponExecutionType::PhysicalContact ||
+        if (!def || !def->animationProfile.empty() || def->executionType != WeaponExecutionType::PhysicalContact ||
             attacker.dead || attacker.spawnState != ServerPlayer::Active)
         {
             const WeaponDefinition* flushDef =

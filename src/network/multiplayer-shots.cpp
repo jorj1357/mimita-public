@@ -1,3 +1,4 @@
+#include "combat/weapon-audio.h"
 // 07 31 2026, 14 50
 /* purpose
 * Sends and receives shot and pellet-blast packets, and reconstructs shot visuals.
@@ -238,7 +239,14 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         return;
     }
 
-    const bool isLocalShooter = event->shooterPlayerId == ctx.localPlayerId;
+    if (event->contactForce >= 0.0f) {
+        const auto* definition = WeaponRegistry::instance().get(networkWeaponTypeName(event->weapon));
+        if (definition) WeaponAudio::playContactSound(*definition,
+            glm::vec3(event->hitX, event->hitY, event->hitZ), event->contactForce);
+    }
+
+    const bool isLocalShooter = event->attackerEntityType == ENTITY_PLAYER &&
+        event->shooterPlayerId == ctx.localPlayerId;
 
     // How long a locally predicted NPC hit keeps suppressing the server-confirm
     // duplicate hitmarker/killfeed. Covers one round trip plus rapid fire.

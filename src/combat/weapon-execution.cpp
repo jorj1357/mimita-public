@@ -79,6 +79,43 @@ static bool sweptPointSphere(const glm::vec3& previous,
                              const PlayerTarget& target,
                              PhysicalContactHit& outHit)
 {
+    if (!target.bodyParts.empty()) {
+        bool found = false;
+        float bestDistance = std::numeric_limits<float>::max();
+        for (const auto& part : target.bodyParts) {
+            const glm::vec3 low = part.center - part.half, high = part.center + part.half;
+            const glm::vec3 motion = current - previous;
+            if (glm::any(glm::greaterThan(glm::min(previous, current), high + glm::vec3(radius))) ||
+                glm::any(glm::lessThan(glm::max(previous, current), low - glm::vec3(radius)))) continue;
+            auto distanceSquared = [&](float t) {
+                const glm::vec3 point = previous + motion * t;
+                const glm::vec3 delta = glm::clamp(point, low, high) - point;
+                return glm::dot(delta, delta);
+            };
+            // Squared distance to a convex box along a segment is convex.
+            // Bounded minimization handles rounded edges as well as faces.
+            float left = 0, right = 1;
+            for (int iteration = 0; iteration < 24 && glm::dot(motion, motion) > 1e-12f; ++iteration) {
+                const float a = (2 * left + right) / 3, b = (left + 2 * right) / 3;
+                if (distanceSquared(a) <= distanceSquared(b)) right = b; else left = a;
+            }
+            const float t = (left + right) * 0.5f;
+            const glm::vec3 point = previous + motion * t;
+            const glm::vec3 closest = glm::clamp(point, low, high);
+            const float distance = glm::length(closest - point);
+            if (distance > radius || distance >= bestDistance) continue;
+            found = true;
+            bestDistance = distance;
+            outHit.hit = true;
+            outHit.targetPlayerId = target.playerId;
+            outHit.targetSpawnGeneration = target.spawnGeneration;
+            outHit.distance = distance;
+            outHit.normal = distance > 0.00001f ? (closest - point) / distance
+                : safeNormalize(part.center - point, glm::vec3(0,0,1));
+            outHit.hitPosition = closest;
+        }
+        return found;
+    }
     const glm::vec3 targetCenter = target.position;
     const float targetRadius = std::max(target.radius, 0.01f);
     const float sumRadius = radius + targetRadius;
@@ -332,13 +369,19 @@ bool testPhysicalContact(const PhysicalContactShape& shape,
     PhysicalContactHit best;
     best.distance = std::numeric_limits<float>::max();
     bool hit = false;
-    for (int i = 0; i <= 4; ++i)
+    const float bladeLength = std::max(glm::length(shape.currentB - shape.currentA),
+        glm::length(shape.previousB - shape.previousA));
+    const int steps = target.bodyParts.empty() ? 4 : std::clamp(
+        (int)std::ceil(bladeLength / std::max(shape.radius * 0.5f, 0.005f)), 1, 256);
+    const float sampleRadius = target.bodyParts.empty() ? shape.radius :
+        std::sqrt(shape.radius * shape.radius + std::pow(bladeLength / steps * 0.5f, 2.0f));
+    for (int i = 0; i <= steps; ++i)
     {
-        const float t = (float)i / 4.0f;
+        const float t = (float)i / (float)steps;
         const glm::vec3 prev = shape.previousA + (shape.previousB - shape.previousA) * t;
         const glm::vec3 cur = shape.currentA + (shape.currentB - shape.currentA) * t;
         PhysicalContactHit sample;
-        if (!sweptPointSphere(prev, cur, shape.radius, target, sample))
+        if (!sweptPointSphere(prev, cur, sampleRadius, target, sample))
             continue;
         if (sample.distance < best.distance)
             best = sample;
