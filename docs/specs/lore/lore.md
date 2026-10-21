@@ -1,3 +1,17 @@
+2026 10 21 1537
+
+big gross clown wthat t takls with OTT compressed voice
+and whispers
+but its much louder than people yelling
+and big grabby hands
+weird 
+gross 
+clown  
+
+also rag
+need to use 
+and can animate now 
+
 2026 10 13 1140 jorj todo  explain - 
 
 lore like a story

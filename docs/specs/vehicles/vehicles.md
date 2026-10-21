@@ -20,3 +20,11 @@ LIKE JETS
 HELICOPTERS
 
 SKATEBOARDDS    
+
+2026 10 21 1520
+this si huge
+liek
+payload map
+witha  drivable paload
+caravan mode matbe even 
+idk 

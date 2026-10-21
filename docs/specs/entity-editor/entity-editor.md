@@ -1,3 +1,33 @@
+2026 10 21 1602 
+"Cart area: The cart gets a tiny origin point, and its push/block area is placed using settings measured from that point. Your starting size works out to about 3 m × 2.25 m × 1.5 m. If a defender overlaps that area, the cart stops. The exact shape and how it attaches to the origin are still open choices." - https://chatgpt.com/s/cx_6ad91a78bd7081918412eda904a64348  jorj convo  i was lik etop 1% or top 0.1% chat gpt users in  2025 i think  tht is crazy 
+
+2026 10 21 1551 jorj todo o make it so funworld3 has  the spawns defined in the entitt enditor, not in the .glb  
+dotn need to edit the.glb to make the map diffrnt
+
+also we nede to make a map eidotr!!!!!!!!!!!!!!
+so we 
+
+can make it so like
+
+psuedeo: 
+
+maps\funworld3\funworld3.json
+map.glb
+
+the .json has like
+what .glb or other files is used here
+where are they 
+what is rotation
+is it destructbiel or not
+
+so u can edit this sutff live too like
+add remvove blocks
+etc
+
+but 
+for now just make it so spawn works like in the json  eidting 
+so i can override the spawn ebhaivor right now 
+
 2026 10 20 1712 todo make it so 
 spawn volumes
 mosner spawn voluems hav ae max

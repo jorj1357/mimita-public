@@ -1,3 +1,9 @@
+2026 10 21 1534
+how to auto clean old unused terminal commands
+and auto keep a wiki updated?
+prob a big json libreary that the  website can read from 
+idk 
+
 // 09 06 2026, 00 00
 /* purpose
 * define terminal commands as a complete control and validation surface

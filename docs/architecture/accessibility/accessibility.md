@@ -1,3 +1,11 @@
+2026 10 21 1533
+accessibiltiy  ummm developer too
+editing json dont need editing 5 difrent files
+just make a cmd like
+config_preset_list
+config_preset_load N
+
+
 // 09 06 2026, 00 00
 /* purpose
 * define accessibility and portability goals for MiMITA

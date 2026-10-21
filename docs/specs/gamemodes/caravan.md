@@ -1,3 +1,10 @@
+2026 10 21 1520 jorj 
+combos with payload  C:\mimita-v9\docs\specs\gamemodes\payload.md
+here
+
+bc paload is like v1 of caravan 
+
+
 2026 10 06 1655 jorj todo explain 
 
 well idk how to really
