@@ -328,9 +328,57 @@ For example, one human joins a 24-actor match and the remaining 23 actors are NP
 
 These are desired goals, not proof that the current NPC code performs them in Payload.
 
-NPCs should navigate irregular maps, not only flat rectangular spaces.
+### Navigation and stuck recovery requirements
 
-They should be capable of jumping, using ramps and traversing freeform triangle geometry.
+Payload NPCs must navigate the actual walkable 3D map, including long shallow ramps, vertical changes, narrow passages, corners, irregular triangle geometry, and routes around cover. “A path exists” is not enough: an NPC must be able to follow it using the movement abilities allowed by its role and the same collision and fixed-tick movement rules as other actors. A route that requires an unavailable jump, dash, or traversal ability is not a usable route for that actor.
+
+Keep these jobs distinct when investigating a stuck NPC:
+
+1. **Goal:** Did behavior choose the right cart, defense, or combat goal?
+2. **Route:** Did navigation return a route that is reachable for this role?
+3. **Steering:** Did local avoidance choose movement toward the next useful waypoint?
+4. **Action:** Did combat, waiting, or another higher-priority behavior intentionally override travel?
+5. **Physics:** Did shared movement and collision produce the requested movement?
+6. **Progress:** Did the NPC make useful progress toward its current goal over time?
+
+An NPC is not stuck just because it pauses for one tick or makes little progress while intentionally defending, fighting, waiting for the cart, or moving sideways to dodge. Treat it as stuck only when it has an active travel goal, is not intentionally waiting or fighting in place, and its net progress toward that goal stays below a configured threshold for a configured time window. Measure progress toward the goal, not only raw movement: circling, moving into a wall, or moving sideways forever is not success.
+
+Desired bounded recovery outline (pseudocode, not a claim about current behavior):
+
+```text
+each server simulation tick:
+    goal = current authoritative NPC behavior goal
+    if goal is absent or NPC is intentionally waiting/fighting:
+        clear or pause this goal's no-progress timer
+        continue
+
+    record progress toward goal over the configured observation window
+    if progress is sufficient:
+        clear stuck episode and continue following the route
+        continue
+
+    if no-progress duration is below stuck threshold:
+        continue
+
+    mark one stuck episode and try the next bounded recovery step:
+        1. adjust local steering around the immediate obstacle
+        2. try a different nearby direction or valid traversal action
+        3. invalidate the failed route and request a new route
+        4. choose a different reachable approach to the same goal
+        5. if all attempts fail, report route failure and wait for a
+           meaningful change before retrying
+
+    never teleport, pass through solid geometry, repeat the same failed
+    route/traversal forever, or silently discard the team objective
+```
+
+Recovery attempts must be bounded and observable. Record the actor, active goal, position, route/waypoint, role movement abilities, chosen recovery step, and whether useful progress resumed. If recovery fails, keep the objective available so behavior can choose another task or retry after the map, goal, or obstruction changes. A persistent failure should be diagnosable as goal selection, route construction, local steering, traversal, collision, actor crowding, or networking/state replication rather than appearing as an unexplained frozen NPC.
+
+### Map-authored navigation hints — open design choice
+
+Generic navigation should handle ordinary map geometry without requiring a designer to place escape points everywhere. A map-authored “go out this way” hint or recovery volume may help with a known trap, one-way route, or intentional choke, but it is not yet an established Entity Editor feature. **NEEDS_SPEC_DECISION:** decide whether the editor should support named navigation hints, what their volume and exit target mean, which NPC roles may use them, and how they are validated. If adopted, hints should guide route choice only when relevant; they must not teleport actors or replace normal collision and route validation. Keep this question linked to the Entity Editor and NPC movement specifications.
+
+The map must be played with NPCs on routes that include ramps, narrow spaces, corners, dead ends, and the cart approach. Acceptance requires that NPCs reach the objective when a valid route exists, recover from a temporary obstruction without looping, and stop retrying/report a bounded failure when no valid route exists. Include cases where combat interrupts travel and the NPC resumes its previous objective afterward.
 
 ## 13. Team selection and spectators
 
@@ -365,6 +413,8 @@ The authoritative server handles:
 - Session statistics.
 
 The server decides cart movement and all match results. Clients may ask to push, but the server checks the actor's team, collision body, and overlap with the configured interaction area before changing the cart.
+
+This client/server rule also applies when one person plays alone on one computer: the game client still sends normal gameplay requests to a local server process, and that server still owns NPC decisions, navigation, movement, cart state, collision, and match results. There must not be a separate offline-only gameplay implementation whose rules differ from multiplayer. Clients may predict presentation where the general networking design permits it, but the server's accepted state is authoritative and is what clients render or reconcile to. See `../networking/networking.md` for the shared connection and authority contract.
 
 ### Host handoff and session statistics
 
