@@ -314,6 +314,44 @@
       "spawn_group": "zombie_spawn",
       "avatar": "monsternormal",
       "avatar_forced": true
+    },
+    {
+      "id": "duel_red",
+      "display_name": "Duel RED",
+      "team": 0,
+      "team_id": "red",
+      "actor_preset": "duel_standard",
+      "health": 100,
+      "movement_preset": "source"
+    },
+    {
+      "id": "duel_blue",
+      "display_name": "Duel BLUE",
+      "team": 1,
+      "team_id": "blue",
+      "actor_preset": "duel_standard",
+      "health": 100,
+      "movement_preset": "source"
+    },
+    {
+      "id": "duel_red_npc",
+      "display_name": "Duel RED Opponent",
+      "team": 0,
+      "team_id": "red",
+      "actor_preset": "duel_standard",
+      "health": 100,
+      "movement_preset": "source",
+      "behavior_profile": "balanced"
+    },
+    {
+      "id": "duel_blue_npc",
+      "display_name": "Duel BLUE Opponent",
+      "team": 1,
+      "team_id": "blue",
+      "actor_preset": "duel_standard",
+      "health": 100,
+      "movement_preset": "source",
+      "behavior_profile": "balanced"
     }
   ]
 }

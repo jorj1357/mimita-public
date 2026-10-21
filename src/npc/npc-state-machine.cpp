@@ -37,6 +37,15 @@ float scoreState(NpcState s, const Npc& npc, float d01)
     float rangeMatch = 1.0f - std::fabs(dist - idealDist) / std::max(wepRange, 20.0f);
     rangeMatch = clamp01(rangeMatch);
 
+    // Close-combat profiles should approach and attack rather than orbit or
+    // retreat like ranged fighters. The profile selects this with a short
+    // preferred range; other NPC profiles keep the normal state scoring.
+    const bool closeCombatProfile = npc.behavior.active &&
+        npc.behavior.preferredRange > 0.0f && npc.behavior.preferredRange <= 2.0f;
+    if (closeCombatProfile &&
+        (s == NpcState::Circle || s == NpcState::Strafe || s == NpcState::Retreat))
+        return 0.0f;
+
     switch (s)
     {
         case NpcState::Idle:

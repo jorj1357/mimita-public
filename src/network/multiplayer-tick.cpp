@@ -1537,12 +1537,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 duel->playerAId, duel->playerBId);
             if (!mpAcceptReliableEventOnce(ctx, duel->eventId, duel->eventSessionId))
                 return;
-            // All community match modes (FFA, TDM, Bomb Tag, and any future mode)
-            // go to CommunityMatchClient. Only the original 1v1 duel goes to DuelQueue.
+            // Shared mode policy (including JSON presentation) is applied by
+            // CommunityMatchClient for every community match. The legacy
+            // DuelQueue also needs the same packet for its queue-specific UI.
+            CommunityMatchClient::instance().onState(*duel);
             if (std::string(duel->matchMode) == "duel")
                 DuelQueue::instance().onDuelState(*duel);
-            else
-                CommunityMatchClient::instance().onState(*duel);
         }
         else if (header->type == PACKET_BOMB_TAG_STATE &&
                  bytes >= (int)sizeof(BombTagStatePacket))

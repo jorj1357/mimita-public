@@ -25,6 +25,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 extern Renderer* gRenderer;
@@ -581,6 +582,11 @@ void EffectPartSystem::render(const Camera& camera) const {
     int bloodParticleCulled = 0;
     int bloodDecalVisible = 0;
     int bloodDecalCulled = 0;
+    int worldCrackStampVisible = 0;
+    float bloodSpriteAspectMin = std::numeric_limits<float>::max();
+    float bloodSpriteAspectMax = 0.0f;
+    float worldCrackStampAspectMin = std::numeric_limits<float>::max();
+    float worldCrackStampAspectMax = 0.0f;
 
     for (const BloodParticle& particle : mBloodParticles) {
         const float dist = glm::length(particle.position - camera.pos);
@@ -597,6 +603,10 @@ void EffectPartSystem::render(const Camera& camera) const {
             continue;
         }
         ++bloodParticleVisible;
+        const float spriteAspect = particle.size /
+            std::max(0.001f, particle.size * particle.stretch);
+        bloodSpriteAspectMin = std::min(bloodSpriteAspectMin, spriteAspect);
+        bloodSpriteAspectMax = std::max(bloodSpriteAspectMax, spriteAspect);
         const glm::vec4 color{particle.color.x, particle.color.y, particle.color.z, alpha};
         if (bloodTexture.empty()) {
             DebugVis::drawFilledBillboard(camera, particle.position, particle.size,
@@ -653,15 +663,17 @@ void EffectPartSystem::render(const Camera& camera) const {
         glm::vec3 tangent, bitangent;
         decalInPlaneBasis(n, decal.axis, glm::vec3(0.0f, 0.0f, 1.0f), tangent, bitangent);
 
-        glm::vec3 right, up;
+        // Current blood, bullet-hole, and world-crack PNGs are square. Keep
+        // their surface quads equal-sided; the UV range samples the whole PNG.
+        const float half = std::max(0.001f, decal.radius * texScale);
+        const glm::vec3 right = tangent * half;
+        const glm::vec3 up = bitangent * half;
         if (decal.kind == SurfaceDecalKind::Crack) {
-            // Crack segments are long thin strips along decal.axis.
-            right = tangent * (std::max(0.001f, decal.height) * 0.5f);
-            up = bitangent * (std::max(0.001f, decal.radius) * texScale);
-        } else {
-            const float half = std::max(0.001f, decal.radius * texScale);
-            right = tangent * half;
-            up = bitangent * half;
+            ++worldCrackStampVisible;
+            const float aspect = glm::length(right) /
+                std::max(0.001f, glm::length(up));
+            worldCrackStampAspectMin = std::min(worldCrackStampAspectMin, aspect);
+            worldCrackStampAspectMax = std::max(worldCrackStampAspectMax, aspect);
         }
 
         if (texture.empty()) {
@@ -706,6 +718,11 @@ void EffectPartSystem::render(const Camera& camera) const {
                     {"blood_particle_culled", bloodParticleCulled},
                     {"blood_decal_visible", bloodDecalVisible},
                     {"blood_decal_culled", bloodDecalCulled},
+                    {"blood_sprite_aspect_min", bloodParticleVisible ? bloodSpriteAspectMin : 1.0f},
+                    {"blood_sprite_aspect_max", bloodParticleVisible ? bloodSpriteAspectMax : 1.0f},
+                    {"world_crack_stamp_visible", worldCrackStampVisible},
+                    {"world_crack_stamp_aspect_min", worldCrackStampVisible ? worldCrackStampAspectMin : 1.0f},
+                    {"world_crack_stamp_aspect_max", worldCrackStampVisible ? worldCrackStampAspectMax : 1.0f},
                     {"blood_render_distance", bloodRenderDistance},
                     {"blood_fade_start", bloodRenderFadeStart},
                     {"blood_fade_end", bloodRenderFadeEnd},

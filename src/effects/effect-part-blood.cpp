@@ -5,6 +5,8 @@
 * Does NOT own hit detection, damage authority, or decal rendering.
 */
 #include "effect-part.h"
+#include "combat/actor-preset-weapons.h"
+#include "gamemode/gamemode.h"
 #include "world/world.h"
 #include "audio/audio.h"
 #include "effects/hit-effects.h"
@@ -222,13 +224,22 @@ void EffectPartSystem::spawnBloodEffect(
     const std::string& sourceActorId,
     const std::string& targetActorId,
     float directness,
-    float hitDistance)
+    float hitDistance,
+    float amountScale,
+    float lifetimeScale)
 {
     MIMITA_PERF_SCOPE("EffectPart::SpawnBloodEffect");
     if (!mEffectsEnabled) return;
+    if (!ActorPresetWeapons::bloodEffectsEnabled()) return;
     const auto& cfg = ImpactDecalsConfig::instance().data();
     const auto& bloodCfg = cfg.blood;
     if (!cfg.enabled || !bloodCfg.enabled) return;
+    if (const auto mode = ActorPresetWeapons::modePresentationSettings()) {
+        amountScale *= mode->bloodScale;
+        lifetimeScale *= mode->bloodLifetimeScale;
+    }
+    amountScale = std::clamp(amountScale, 0.0f, 4.0f);
+    lifetimeScale = std::clamp(lifetimeScale, 0.0f, 4.0f);
     damage = std::max(0.0f, damage);
     directness = std::clamp(directness, 0.0f, 1.0f);
 
@@ -261,6 +272,7 @@ void EffectPartSystem::spawnBloodEffect(
     int particleCount = spray.enabled
         ? (int)std::round(spray.minCount + (spray.maxCount - spray.minCount) * force)
         : 0;
+    particleCount = (int)std::round(particleCount * amountScale);
     particleCount = std::clamp(particleCount, 0, 200);
 
     const float coneDegrees = spray.coneDegreesMin +
@@ -326,11 +338,14 @@ void EffectPartSystem::spawnBloodEffect(
             std::clamp(bloodCfg.color.y * jg, 0.0f, 1.0f),
             std::clamp(bloodCfg.color.z * jb, 0.0f, 1.0f));
         particle.size = std::max(0.01f, size);
-        particle.lifetime = baseLifetime + (float)(rand() % 1001) / 1000.0f;
+        particle.lifetime = (baseLifetime + (float)(rand() % 1001) / 1000.0f) * lifetimeScale;
         particle.alpha = spray.alphaMin +
             (spray.alphaMax - spray.alphaMin) * force;
         particle.rotation = (float)(rand() % 6284) / 1000.0f;
-        particle.stretch = 0.7f + (float)(rand() % 601) / 1000.0f;
+        // The configured blood PNGs are square stamps. Keep both billboard
+        // axes equal so random particle variation cannot distort the authored
+        // texture; rotation and uniform size still provide visual variety.
+        particle.stretch = 1.0f;
         mBloodParticles.push_back(particle);
     }
 
@@ -394,7 +409,7 @@ void EffectPartSystem::spawnBloodEffect(
     captureReplayEffect(emitter);
 
     spawnBloodSurfaceDecals(hitPoint, forward, tangent, bitangent, damageScale, force,
-                            sourceActorId, targetActorId);
+                            sourceActorId, targetActorId, amountScale, lifetimeScale);
 }
 
 void EffectPartSystem::spawnClientBloodFeedback(int damage, float force)
@@ -456,7 +471,9 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
     float damageScale,
     float force,
     const std::string& sourceActorId,
-    const std::string& targetActorId)
+    const std::string& targetActorId,
+    float amountScale,
+    float lifetimeScale)
 {
     if (!mDecalsEnabled) return;
     // Blood surface splats: deferred ray-tracing approach.
@@ -467,8 +484,9 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
     if (!cfg.enabled || !bloodCfg.enabled || !mWorld)
         return;
 
-    const int decalCount = std::max(1, (int)std::round(
-        bloodCfg.minCount + (bloodCfg.count - bloodCfg.minCount) * force));
+    const int decalCount = (int)std::round(std::max(1, (int)std::round(
+        bloodCfg.minCount + (bloodCfg.count - bloodCfg.minCount) * force)) *
+        std::clamp(amountScale, 0.0f, 4.0f));
     const float decalRadius = bloodCfg.minRadius +
         (bloodCfg.radius - bloodCfg.minRadius) * force;
     const float coneDist = std::max(0.5f, bloodCfg.coneDistance);
@@ -492,6 +510,7 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
         req.bitangent = bitangent;
         req.damageScale = damageScale;
         req.force = force;
+        req.lifetimeScale = lifetimeScale;
         req.sourceActorId = sourceActorId;
         req.targetActorId = targetActorId;
 
@@ -588,8 +607,8 @@ void EffectPartSystem::processDeferredBloodDecals()
         decal.kind = SurfaceDecalKind::Blood;
         decal.radius = std::max(0.005f, decalRadius);
         decal.height = std::max(0.005f, bloodCfg.height);
-        decal.lifetime = bloodCfg.lifetime;
-        decal.fadeTime = bloodCfg.fadeTime;
+        decal.lifetime = bloodCfg.lifetime * req.lifetimeScale;
+        decal.fadeTime = bloodCfg.fadeTime * req.lifetimeScale;
         decal.alpha = bloodCfg.alpha;
         decal.baseAlpha = bloodCfg.alpha;
         decal.darkenOverLifetime = bloodCfg.colorOverLifetime.enabled;

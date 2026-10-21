@@ -447,6 +447,7 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     npc.body.externalImpulse = glm::vec3(0.0f);
     npc.body.dead = false;
     npc.body.respawnTimer = 0.0f;
+    serverMeleeResetNpcForSpawn(npc.id);
     // Melee: an NPC fighter receives 60 server ticks of spawn protection.
     serverMeleeNoteSpawn(npc.id, 60);
     npc.body.syncLegacyStateToLayers();

@@ -186,6 +186,7 @@ void renderPlayerInternal(
     );
 
     const PlayerVisualsData& visuals = PlayerVisualsConfig::instance().data();
+    const PlayerVisualsConfig& visualsConfig = PlayerVisualsConfig::instance();
     const PlayerOutlineSettings* outline = &visuals.self;
     const PlayerCapsuleSettings* capsule = &visuals.selfCapsule;
     const PlayerWireframeSettings* wireframe = &visuals.selfWireframe;
@@ -194,7 +195,10 @@ void renderPlayerInternal(
     std::string mode = PlayerVisualsConfig::instance().effectiveMode(visuals.selfMode);
     if (!isLocal)
     {
-        resolvedActorTeam = actorTeam >= 0 ? actorTeam : player.matchTeam;
+        const bool modeOwnsTeamIdentity =
+            visualsConfig.hasPlayerOutlinesOverride();
+        resolvedActorTeam = actorTeam >= 0 ? actorTeam
+            : (modeOwnsTeamIdentity ? -1 : player.matchTeam);
         teammate = localTeam >= 0 && resolvedActorTeam >= 0 && localTeam == resolvedActorTeam;
         outline = teammate ? &visuals.teammate : &visuals.enemy;
         capsule = teammate ? &visuals.teammateCapsule : &visuals.enemyCapsule;
@@ -202,7 +206,28 @@ void renderPlayerInternal(
         mode = PlayerVisualsConfig::instance().effectiveMode(
             teammate ? visuals.teammateMode : visuals.enemyMode);
     }
-    if (mode == "outline" && outline->enabled && outline->thickness > 0.0f && outline->alpha != 0.0f &&
+    const bool teamIdentityKnown = isLocal ||
+        (localTeam >= 0 && resolvedActorTeam >= 0);
+    const bool modeForcesTeamOutline = !isLocal && teamIdentityKnown &&
+        visualsConfig.hasPlayerOutlinesOverride() &&
+        visualsConfig.playerOutlinesEnabled();
+    if (visualsConfig.hasPlayerOutlinesOverride() && !visualsConfig.playerOutlinesEnabled()) {
+        mode = "none";
+    } else if (isLocal && visualsConfig.hasPlayerOutlinesOverride() &&
+        visualsConfig.playerOutlinesEnabled()) {
+        mode = visualsConfig.friendlyOutlinesEnabled() ? mode : "none";
+    } else if (!isLocal && visualsConfig.hasPlayerOutlinesOverride() &&
+        visualsConfig.playerOutlinesEnabled()) {
+        // Do not guess an unknown actor is hostile. Wait until the authoritative
+        // roster supplies both teams, then apply the configured team color.
+        mode = teamIdentityKnown && (!teammate || visualsConfig.friendlyOutlinesEnabled())
+            ? "outline" : "none";
+    }
+    const bool outlineEnabled = modeForcesTeamOutline || outline->enabled;
+    const bool friendlyActor = isLocal || teammate;
+    const float outlineAlpha = !friendlyActor && visualsConfig.hasEnemyOutlineAlphaOverride()
+        ? visualsConfig.effectiveEnemyOutlineAlpha(outline->alpha) : outline->alpha;
+    if (mode == "outline" && outlineEnabled && outline->thickness > 0.0f && outlineAlpha != 0.0f &&
         !(player.dead && outline->disappearOnDeath)) {
         const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
         const GLboolean blendWas = glIsEnabled(GL_BLEND);
@@ -214,9 +239,9 @@ void renderPlayerInternal(
         glDepthMask(GL_FALSE);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glLineWidth(outline->thickness);
-        const glm::vec3 outlineRgb = PlayerVisualsConfig::instance().effectiveOutlineColor(teammate, outline->color);
+        const glm::vec3 outlineRgb = PlayerVisualsConfig::instance().effectiveOutlineColor(friendlyActor, outline->color);
         const glm::vec4 color(outlineRgb.r / 255.0f, outlineRgb.g / 255.0f,
-                              outlineRgb.b / 255.0f, outline->alpha);
+                              outlineRgb.b / 255.0f, outlineAlpha);
         player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
                                  true, 0.0f, color);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);

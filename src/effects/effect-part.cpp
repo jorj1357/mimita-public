@@ -141,7 +141,7 @@ EffectPart* EffectPartSystem::spawnEntityImpact(
     return spawn(effect);
 }
 
-EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale, glm::vec3 direction) {
+EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale, glm::vec3 direction, float lifetimeScale) {
     if (!ActorPresetWeapons::worldImpactEffectsEnabled()) return nullptr;
     const auto& wcfg = HitEffects::config().worldImpact;
     if (!wcfg.enabled || !HitEffects::config().core.worldImpact) return nullptr;
@@ -158,7 +158,7 @@ EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 nor
     e.endPosition = position + direction;
     e.replayType = "impact_world";
     e.color = wcfg.color;
-    e.maxLifetime = wcfg.lifetime;
+    e.maxLifetime = wcfg.lifetime * std::clamp(lifetimeScale, 0.0f, 4.0f);
     e.scale = wcfg.startRadius * sfx;
     e.endScale = wcfg.endRadius * sfx;
     e.alpha = wcfg.alpha;
@@ -320,8 +320,7 @@ EffectPart* EffectPartSystem::spawnDeathEllipsoid(glm::vec3 position, glm::vec3 
     return spawn(e);
 }
 
-EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale) {
-    (void)sizeScale;
+EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale, float lifetimeScale, float alphaScale) {
     const auto& cfg = ImpactDecalsConfig::instance().data();
     if (!HitEffects::config().core.bulletImpact) return nullptr;
     if (!cfg.enabled || !cfg.bulletHoles.enabled) return nullptr;
@@ -336,19 +335,19 @@ EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, glm::vec3 no
     }
     decal.color = b.color;
     decal.kind = SurfaceDecalKind::BulletHole;
-    decal.radius = b.radius;
+    decal.radius = b.radius * std::clamp(sizeScale, 0.0f, 4.0f);
     decal.height = b.height;
-    decal.lifetime = b.lifetime;
-    decal.fadeTime = b.fadeTime;
-    decal.alpha = b.alpha;
-    decal.baseAlpha = b.alpha;
+    decal.lifetime = b.lifetime * std::clamp(lifetimeScale, 0.0f, 4.0f);
+    decal.fadeTime = b.fadeTime * std::clamp(lifetimeScale, 0.0f, 4.0f);
+    decal.alpha = b.alpha * std::clamp(alphaScale, 0.0f, 1.0f);
+    decal.baseAlpha = decal.alpha;
     pushSurfaceDecal(decal, b.maxCount);
     return nullptr;
 }
 
 void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
-                                        const glm::vec3& direction, float sizeScale) {
-    (void)sizeScale;
+                                        const glm::vec3& direction, float sizeScale,
+                                        float lifetimeScale, float alphaScale) {
     const auto& cfg = ImpactDecalsConfig::instance().data();
     if (!cfg.enabled || !cfg.worldCracks.enabled) return;
     const auto& c = cfg.worldCracks;
@@ -357,64 +356,35 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
         std::fabs(n.z) < 0.9f
             ? glm::cross(n, glm::vec3(0.0f, 0.0f, 1.0f))
             : glm::cross(n, glm::vec3(0.0f, 1.0f, 0.0f)));
-    glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
-    // Preferred axis: shot direction projected onto the surface plane so cracks
-    // lie flat along the surface on any surface. Falls back to a random tangent
-    // when the shot hits the surface head-on (projection is degenerate).
-    glm::vec3 preferred(0.0f);
+    // Use the complete square crack PNG as one stamp. Its authored alpha mask
+    // already contains the branching crack shape; splitting it into thin quads
+    // stretches the full image onto each segment and creates bars/shards.
+    glm::vec3 axis = tangent;
     if (glm::length(direction) > 0.001f) {
         const glm::vec3 d = glm::normalize(direction);
-        preferred = d - n * glm::dot(d, n);
-        if (glm::length(preferred) < 0.1f)
-            preferred = glm::vec3(0.0f);
-        else
-            preferred = glm::normalize(preferred);
+        const glm::vec3 preferred = d - n * glm::dot(d, n);
+        if (glm::length(preferred) >= 0.1f)
+            axis = glm::normalize(preferred);
     }
-    const int armCount = std::clamp(c.crackArms.baseCount, 1, c.crackArms.maxCount);
-    for (int i = 0; i < armCount; ++i) {
-        const float angle = (float)(rand() % 6284) / 1000.0f;
-        const float offset = ((float)(rand() % 1001) / 1000.0f) * 0.03f;
-        glm::vec3 axis;
-        if (glm::length(preferred) > 0.001f) {
-            // Mostly along the projected shot, with a small random spread.
-            const float spread = 0.3f;
-            const glm::vec3 jitter = glm::normalize(
-                tangent * std::cos(angle) + bitangent * std::sin(angle));
-            axis = glm::normalize(preferred + jitter * spread);
-        } else {
-            axis = glm::normalize(tangent * std::cos(angle) + bitangent * std::sin(angle));
-        }
-        const int minSegments = std::max(1, c.crackChain.minSegments);
-        const int maxSegments = std::max(minSegments, c.crackChain.maxSegments);
-        const int segmentCount = minSegments + (rand() % (maxSegments - minSegments + 1));
-        glm::vec3 cursor = position + n * 0.005f + axis * offset;
-        for (int segment = 0; segment < segmentCount; ++segment) {
-            const float u = segmentCount > 1 ? (float)segment / (float)(segmentCount - 1) : 0.0f;
-            const float minLength = std::max(0.001f, c.crackChain.segmentLengthMin);
-            const float maxLength = std::max(minLength, c.crackChain.segmentLengthMax);
-            const float length = minLength + (maxLength - minLength) * ((float)(rand() % 1001) / 1000.0f);
-            SurfaceDecal decal;
-            decal.position = cursor + axis * (length * 0.5f);
-            decal.normal = n;
-            decal.axis = axis;
-            decal.color = c.color;
-            decal.kind = SurfaceDecalKind::Crack;
-            decal.radius = glm::mix(c.crackCenterThickness, c.crackOuterThickness, u);
-            decal.height = length;
-            decal.lifetime = c.lifetime;
-            decal.fadeTime = c.fadeTime;
-            decal.alpha = c.alpha;
-            decal.baseAlpha = c.alpha;
-            pushSurfaceDecal(decal, c.maxCount);
-            cursor += axis * length;
+    const float rotationRange = glm::radians(std::clamp(c.randomRotationDegrees, 0.0f, 360.0f));
+    const float rotation = rotationRange * ((float)(rand() % 1001) / 1000.0f - 0.5f);
+    const glm::vec3 perpendicular = glm::normalize(glm::cross(n, axis));
+    axis = glm::normalize(axis * std::cos(rotation) +
+                          perpendicular * std::sin(rotation));
 
-            const float turnRange = c.crackChain.turnDegreesMax - c.crackChain.turnDegreesMin;
-            const float turn = c.crackChain.turnDegreesMin + turnRange * ((float)(rand() % 1001) / 1000.0f);
-            const glm::vec3 perpendicular = glm::normalize(glm::cross(n, axis));
-            axis = glm::normalize(axis * std::cos(glm::radians(turn)) +
-                                  perpendicular * std::sin(glm::radians(turn)));
-        }
-    }
+    SurfaceDecal decal;
+    decal.position = position + n * 0.005f;
+    decal.normal = n;
+    decal.axis = axis;
+    decal.color = c.color;
+    decal.kind = SurfaceDecalKind::Crack;
+    decal.radius = std::max(0.01f, c.length * 0.5f) * std::clamp(sizeScale, 0.0f, 4.0f);
+    decal.height = decal.radius * 2.0f;
+    decal.lifetime = c.lifetime * std::clamp(lifetimeScale, 0.0f, 4.0f);
+    decal.fadeTime = c.fadeTime * std::clamp(lifetimeScale, 0.0f, 4.0f);
+    decal.alpha = c.alpha * std::clamp(alphaScale, 0.0f, 1.0f);
+    decal.baseAlpha = decal.alpha;
+    pushSurfaceDecal(decal, c.maxCount);
 }
 
 void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount) {

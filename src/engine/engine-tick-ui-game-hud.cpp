@@ -21,6 +21,7 @@
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "network/multiplayer-context.h"
+#include "network/community-match-client.h"
 #include "procedural/procedural-world-client.h"
 #include "network/community-server-config.h"
 #include "combat/death-system.h"
@@ -73,6 +74,13 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 {
     clientProceduralTeleportShieldRenderUi();
     Player& player = THE_PLAYER;
+    auto& communityMatch = MimitaNet::CommunityMatchClient::instance();
+    const auto enemyHealthbarForActor = [&](uint32_t actorId) {
+        if (!communityMatch.active()) return false;
+        const uint8_t localTeam = communityMatch.localTeam(MP_CONTEXT.localPlayerId);
+        const uint8_t actorTeam = communityMatch.teamForActor(actorId);
+        return localTeam == 0xFF || actorTeam == 0xFF || localTeam != actorTeam;
+    };
     Camera& camera = THE_CAMERA;
     World& world = THE_WORLD;
     NpcSystem& npcSystem = THE_NPC_SYSTEM;
@@ -438,7 +446,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         if (npc.body.dead) {
             continue;
         }
-        drawPlayerHealthbar(npc.body, camera, "npc-hp", "live_world");
+        drawPlayerHealthbar(npc.body, camera, "npc-hp", "live_world",
+                            enemyHealthbarForActor(npc.id));
     }
 
     if (!gReplayExportRenderMode || ReplayExportUI::showChatBubbles()) {
@@ -481,7 +490,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         {
             const HealthbarRenderResult result =
                 drawPlayerHealthbar(
-                    kv.second, camera, "network-player-hp", "live_world");
+                    kv.second, camera, "network-player-hp", "live_world",
+                    enemyHealthbarForActor(kv.first));
             if (logHealthbars)
             {
                 printf(
@@ -504,7 +514,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         for (const auto& kv : mpContext.remoteNpcs)
         {
             if (kv.second.dead || kv.second.currentHp <= 0) continue;
-            drawPlayerHealthbar(kv.second, camera, "network-npc-hp", "live_world");
+            drawPlayerHealthbar(kv.second, camera, "network-npc-hp", "live_world",
+                                enemyHealthbarForActor(kv.first));
         }
 
         if (logHealthbars)

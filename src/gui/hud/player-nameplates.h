@@ -33,7 +33,8 @@ HealthbarRenderResult drawPlayerHealthbar(
     const Player& player,
     const Camera& camera,
     const char* debugPrefix,
-    const char* sourceTag = "live_world");
+    const char* sourceTag = "live_world",
+    bool isEnemy = false);
 
 const char* healthbarCullReasonName(HealthbarCullReason reason);
 void resetHealthbarCounters();

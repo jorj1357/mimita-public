@@ -132,6 +132,7 @@ std::string CommunityMatchClient::teamName(int team) const
 
 void CommunityMatchClient::reset()
 {
+    ActorPresetWeapons::clearModePresentationOverride();
     CamConfig::instance().clearHitFlinchOverride();
     resetActorPreset();
     if (mModeMovementPresetApplied) {
@@ -211,14 +212,18 @@ void CommunityMatchClient::reset()
     mBombPos = glm::vec3(0.0f);
     mLastOutlineLocalTeam = 0xFF;
     mLastOutlineParticipantCount = 0;
+    mPresentationFingerprint.clear();
     mCameraFov = 0.0f;
     mForceFirstPerson = false;
     HealthbarConfig::instance().setModeVisibilityOverride(false);
+    HealthbarConfig::instance().clearModeEnemyVisibilityOverride();
     HealthbarConfig::instance().setModePercentAboveHead(false);
     RagdollDeathConfig::instance().clearRuntimeOverride();
     ImpactDecalsConfig::instance().clearRuntimeBloodOverride();
     PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
     PlayerVisualsConfig::instance().clearTeamOutlineColorsOverride();
+    PlayerVisualsConfig::instance().clearEnemyOutlineAlphaOverride();
+    KillfeedManager::instance().clearModeEnabledOverride();
     if (mFirstPersonApplied) {
         THE_CAMERA.thirdPerson = mPreviousThirdPerson;
         mFirstPersonApplied = false;
@@ -266,8 +271,21 @@ bool CommunityMatchClient::applyActorPreset(const MatchRoleDefinition& preset)
     }
     if (preset.forceFirstPerson)
         THE_CAMERA.thirdPerson = false;
+    else if (preset.forceThirdPerson)
+        THE_CAMERA.thirdPerson = true;
     if (preset.avatarForced && !preset.avatarName.empty())
         GetPlayerSettings().avatarName = preset.avatarName;
+    else if (!preset.allowedAvatars.empty() || !preset.deniedAvatars.empty()) {
+        const std::string& currentAvatar = GetPlayerSettings().avatarName;
+        if (!isAvatarAllowedByPolicy(currentAvatar, preset.allowedAvatars, preset.deniedAvatars)) {
+            const std::string fallback = preset.avatarName;
+            if (!fallback.empty() && isAvatarAllowedByPolicy(
+                    fallback, preset.allowedAvatars, preset.deniedAvatars))
+                GetPlayerSettings().avatarName = fallback;
+            else if (!preset.allowedAvatars.empty())
+                GetPlayerSettings().avatarName = preset.allowedAvatars.front();
+        }
+    }
     if (!preset.movementPreset.empty()) {
         MovementConfig movement;
         if (MovementJsonConfig::instance().loadPresetInto(preset.movementPreset, movement))
@@ -277,9 +295,9 @@ bool CommunityMatchClient::applyActorPreset(const MatchRoleDefinition& preset)
     ActorPresetWeapons::apply(preset);
 
     Debug::log(Debug::Category::General,
-        "[ACTOR PRESET] applied id=%s fov=%.0f forcedFov=%d firstPerson=%d avatar=%s movement=%s weaponSet=%s\n",
+        "[ACTOR PRESET] applied id=%s fov=%.0f forcedFov=%d firstPerson=%d thirdPerson=%d avatar=%s movement=%s weaponSet=%s\n",
         preset.id.c_str(), preset.cameraFov, (int)preset.forceFov,
-        (int)preset.forceFirstPerson,
+        (int)preset.forceFirstPerson, (int)preset.forceThirdPerson,
         preset.avatarName.empty() ? "none" : preset.avatarName.c_str(),
         preset.movementPreset.empty() ? "none" : preset.movementPreset.c_str(),
         preset.weaponSet.empty() ? "none" : preset.weaponSet.c_str());
@@ -386,15 +404,19 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         }
     }
     HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
+    if (modeConfig.presentation.hasEnemyHealthbars)
+        HealthbarConfig::instance().setModeEnemyVisibilityOverride(
+            modeConfig.presentation.enemyHealthbars);
+    else
+        HealthbarConfig::instance().clearModeEnemyVisibilityOverride();
     // Melee-style modes show each fighter's percent above the head instead of
     // the ordinary healthbar (data-driven per mode).
     HealthbarConfig::instance().setModePercentAboveHead(modeConfig.features.percentAboveHead);
-    // Gamemode outline policy: a mode may force player outlines off. A missing
-    // key means "no policy" and leaves the user's config untouched.
-    if (modeConfig.presentation.hasPlayerOutlines)
-        PlayerVisualsConfig::instance().setPlayerOutlinesEnabled(modeConfig.presentation.playerOutlines);
-    else
-        PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
+    // During a community match, outlines require explicit permission in mode JSON.
+    PlayerVisualsConfig::instance().setPlayerOutlinesEnabled(
+        modeConfig.presentation.hasPlayerOutlines && modeConfig.presentation.playerOutlines);
+    PlayerVisualsConfig::instance().setFriendlyOutlinesEnabled(
+        modeConfig.presentation.hasFriendlyOutlines && modeConfig.presentation.friendlyOutlines);
     if (modeConfig.presentation.hasHitFlinch)
         CamConfig::instance().setHitFlinchOverride(modeConfig.presentation.hitFlinch);
     else
@@ -405,6 +427,10 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             modeConfig.presentation.enemyOutlineColor);
     else
         PlayerVisualsConfig::instance().clearTeamOutlineColorsOverride();
+    if (modeConfig.presentation.hasEnemyOutlineAlpha)
+        PlayerVisualsConfig::instance().setEnemyOutlineAlpha(modeConfig.presentation.enemyOutlineAlpha);
+    else
+        PlayerVisualsConfig::instance().clearEnemyOutlineAlphaOverride();
     if (mForceFirstPerson && !mFirstPersonApplied) {
         mPreviousThirdPerson = THE_CAMERA.thirdPerson;
         THE_CAMERA.thirdPerson = false;
@@ -534,7 +560,8 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 
     MatchLeaderboard& hud = MatchLeaderboard::instance();
     hud.setMode(mMode, mGoal);
-    if (mMode != "tdm") hud.updateFFA(leaders);
+    if (mMode == "melee") hud.updateFFA({});
+    else if (mMode != "tdm") hud.updateFFA(leaders);
     else if (mMode == "tdm") {
         bool isRed = false;
         for (uint8_t i = 0; i < packet.participantCount; ++i)
@@ -552,8 +579,13 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             }
         }
     }
+    if (winnerName.empty() && packet.matchOver &&
+        packet.phase == DUEL_PHASE_RESULTS && packet.winnerPlayerId == 0 &&
+        packet.victoryType == 1 && modeConfig.timeLimitOutcome == "stalemate")
+        winnerName = "STALEMATE";
     hud.setWinner(winnerName,
-        packet.matchOver != 0 && packet.phase == DUEL_PHASE_RESULTS);
+        packet.matchOver != 0 && packet.phase == DUEL_PHASE_RESULTS,
+        packet.winnerPlayerId != 0);
     if (newLocalScore > mLocalScore) hud.onConfirmedScoreGain();
     mLocalScore = newLocalScore;
 
@@ -620,6 +652,54 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         }
     }
 
+    // Match-wide presentation must be applied after local role selection,
+    // because applying a role rebuilds the active weapon presentation.
+    ActorPresetWeapons::setModePresentationOverride(modeConfig.presentation);
+    if (modeConfig.presentation.hasKillfeed)
+        KillfeedManager::instance().setModeEnabledOverride(modeConfig.presentation.killfeed);
+    else
+        KillfeedManager::instance().clearModeEnabledOverride();
+
+    const auto& p = modeConfig.presentation;
+    const std::string presentationFingerprint = nlohmann::json{
+        {"mode", mMode},
+        {"hide_healthbars", modeConfig.hideHealthbars},
+        {"ragdoll_enabled", modeConfig.ragdollExplicit ? nlohmann::json(modeConfig.ragdollEnabled) : nlohmann::json(nullptr)},
+        {"blood_enabled", modeConfig.bloodExplicit ? nlohmann::json(modeConfig.bloodEnabled) : nlohmann::json(nullptr)},
+        {"damage_numbers", p.hasDamageNumbers ? nlohmann::json(p.damageNumbers) : nlohmann::json(nullptr)},
+        {"hit_effects", p.hasHitEffects ? nlohmann::json(p.hitEffects) : nlohmann::json(nullptr)},
+        {"world_impact_effects", p.hasWorldImpactEffects ? nlohmann::json(p.worldImpactEffects) : nlohmann::json(nullptr)},
+        {"world_impact_decals", p.hasWorldImpactDecals ? nlohmann::json(p.worldImpactDecals) : nlohmann::json(nullptr)},
+        {"world_hit_effects", p.hasWorldHitEffects ? nlohmann::json(p.worldHitEffects) : nlohmann::json(nullptr)},
+        {"hit_markers", p.hasHitMarkers ? nlohmann::json(p.hitMarkers) : nlohmann::json(nullptr)},
+        {"hit_sounds", p.hasHitSounds ? nlohmann::json(p.hitSounds) : nlohmann::json(nullptr)},
+        {"hit_flinch", p.hasHitFlinch ? nlohmann::json(p.hitFlinch) : nlohmann::json(nullptr)},
+        {"blood", p.hasBlood ? nlohmann::json(p.blood) : nlohmann::json(nullptr)},
+        {"blood_scale", p.bloodScale},
+        {"blood_lifetime_scale", p.bloodLifetimeScale},
+        {"world_impact_decal_scale", p.worldImpactDecalScale},
+        {"world_impact_decal_lifetime_scale", p.worldImpactDecalLifetimeScale},
+        {"world_impact_decal_alpha_scale", p.worldImpactDecalAlphaScale},
+        {"world_hit_effect_scale", p.worldHitEffectScale},
+        {"world_hit_effect_lifetime_scale", p.worldHitEffectLifetimeScale},
+        {"killfeed", p.hasKillfeed ? nlohmann::json(p.killfeed) : nlohmann::json(nullptr)},
+        {"ragdolls", p.hasRagdolls ? nlohmann::json(p.ragdolls) : nlohmann::json(nullptr)},
+        {"enemy_healthbars", p.hasEnemyHealthbars ? nlohmann::json(p.enemyHealthbars) : nlohmann::json(nullptr)},
+        {"player_outlines", p.hasPlayerOutlines ? nlohmann::json(p.playerOutlines) : nlohmann::json(nullptr)},
+        {"friendly_outlines", p.hasFriendlyOutlines ? nlohmann::json(p.friendlyOutlines) : nlohmann::json(nullptr)},
+        {"enemy_outline_alpha", p.hasEnemyOutlineAlpha ? nlohmann::json(p.enemyOutlineAlpha) : nlohmann::json(nullptr)},
+        {"friendly_outline_color", p.hasTeamOutlineColors ? nlohmann::json::array({p.friendlyOutlineColor.x, p.friendlyOutlineColor.y, p.friendlyOutlineColor.z}) : nlohmann::json(nullptr)},
+        {"enemy_outline_color", p.hasTeamOutlineColors ? nlohmann::json::array({p.enemyOutlineColor.x, p.enemyOutlineColor.y, p.enemyOutlineColor.z}) : nlohmann::json(nullptr)}
+    }.dump();
+    if (presentationFingerprint != mPresentationFingerprint) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "client.gamemode.presentation.applied", mMode,
+            "mode_profile_resolved", packet.serverTick,
+            nlohmann::json::parse(presentationFingerprint), __FILE__, __LINE__, __FUNCTION__);
+        mPresentationFingerprint = presentationFingerprint;
+    }
+
     // The shared mode packet carries the arcade presentation preset for every
     // client. In Juggernaut mode, the resolved local team preset owns the
     // camera policy, so Fighters can undo the Juggernaut first-person policy.
@@ -664,6 +744,8 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             Debug::log(Debug::Category::General,
                 "[GAMEMODE OVERRIDE] Ragdoll death runtime value=%s\n",
                 desiredEnabled ? "enabled" : "disabled");
+        } else {
+            RagdollDeathConfig::instance().clearRuntimeOverride();
         }
 
         // Apply blood override
@@ -673,6 +755,8 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             Debug::log(Debug::Category::General,
                 "[GAMEMODE OVERRIDE] Blood visuals runtime value=%s\n",
                 desiredEnabled ? "enabled" : "disabled");
+        } else {
+            ImpactDecalsConfig::instance().clearRuntimeBloodOverride();
         }
 
         mCameraFov = newFov;

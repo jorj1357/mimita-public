@@ -108,6 +108,15 @@ identity, scores, results, Bomb Tag state, killfeed, and leaderboard state. A
 new server session has a new generation, so packets from a stopped server
 cannot revive its countdown or presentation state.
 
+## Generic match timeout outcomes
+
+`time_limit_outcome` optionally selects the result when the active time limit
+expires before the configured score goal. Supported values are `high_score`
+(the default, preserving existing behavior) and `stalemate` (no winner). The
+shared score-limit check runs before the timeout check, so reaching the goal on
+the timeout tick wins. This setting belongs to mode data and must not require a
+mode-ID-specific code path.
+
 ## Authored map spawnpoint consumption
 
 `MapConfigRegistry` owns authored map entities. The Entity Editor owns how a

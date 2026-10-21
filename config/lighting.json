@@ -35,13 +35,7 @@
         "g": 0.01,
         "b": 0.01
     },
-    "post": {
-        "brightness": 1.0,
-        "contrast": 12.0,
-        "saturation": 1.0,
-        "gamma": 2.2,
-        "hueShift": 0.0
-    },
+   
     "sky": {},
     "sun": {},
     "bloom": {},

@@ -1,3 +1,80 @@
+2026 210 20 2313  need to make it so  juggernauts are not inisilbe and also  have limimted avatars
+
+like both teams have speicifc avatars u can use  but others not allowed
+or
+like body part ruels etc
+
+2026 10 20 2308 like u shoudl bea ble to do it all thru the  C:\mimita-v9\config\gamemodes\juggernaut.json this 
+
+C:\mimita-v9\docs\specs\gamemodes\juggernaut.md  at the top  but i wnana focus on  jugernaut presnetation how come friendl actors have outlines, like  red or green its liek doenst even matter, red suposed to be enemt team, green suppsed ot  be friednly, but i want friendlt team to have 0  and enemt team to ahve faint red outline  
+
+shoudtn need to go to  oher config files just  controleld thru this
+right now plr outlines not wokring not being followedcorrect either 
+## Gameplay and presentation addendum (2026-10-20)
+
+This section turns the latest player-experience notes into design targets. It
+does not claim that the current mode configuration or runtime already provides
+them. Firm targets, proposals, and decisions still needed are kept separate.
+
+### Design targets
+
+- **Role-appropriate avatars:** Both roles use the editable `avatar.allowed`
+  lists in their actor-preset JSON. The first list permits the named normal
+  boy/girl body avatars and excludes monster and oversized variants. Players
+  may choose any listed avatar; future list changes remain data-only.
+- **Readable teams:** `presentation.player_outlines` is the mode-owned master
+  switch. Missing or false means no actor outline, regardless of local visual
+  preferences. When true, unknown-team actors remain unoutlined, friendly
+  outlines follow `friendly_outlines` (false by default), and hostile outlines
+  use the configured enemy color and alpha. Juggernaut uses faint red at 25%.
+- **Combat feedback:** Hide damage numbers. Retain blood and bullet-hole
+  impacts. The notes also ask to suppress other extra combat presentation, but
+  do not identify every effect or HUD element that should be disabled.
+- **Avatar scale and physical fit:** A large avatar must not sink into the
+  floor or have a collision body that is visibly unrelated to its model. The
+  same avatar must remain visible and able to deal and receive authoritative
+  damage. Collision and placement must be consistent for player and NPC actors.
+- **Heavy shotgun audio:** Firing the Juggernaut heavy shotgun should use its
+  own authored firing sound rather than silently falling back to the ordinary
+  shotgun sound.
+- **Responsive weapon feedback:** A Juggernaut should see firing/reload and
+  cooldown feedback immediately; it must not wait for an NPC to render before
+  local feedback updates. Server-side attack timing, hit validation, damage,
+  and round outcomes remain authoritative under the shared weapon system.
+
+### Proposals
+
+- Add role-level avatar compatibility groups or an allowlist using the
+  existing avatar and role owners. Define how creator-made avatars are
+  classified and validated; do not add a second avatar registry to this mode.
+- Derive or validate collision dimensions and ground placement from the
+  selected avatar's authored physical bounds using the shared collision/spawn
+  owners. Keep collision server-authoritative and fixed-tick. Do not choose a
+  scale formula or per-avatar exception here without checking those owners.
+- Predict local weapon presentation immediately while retaining server
+  validation. This addresses perceived delay without making cooldown or damage
+  client-authoritative.
+
+### `NEEDS_SPEC_DECISION`
+
+- Should each role have a different subset of the current human avatar
+  allowlist? The initial list is editable in role actor-preset JSON.
+- How should a large avatar pass through narrow spaces: scale its capsule,
+  constrain its usable avatar bounds, or use another shared collision policy?
+  Define safe spawn, floor placement, and navigation behavior with that choice.
+- Which combat feedback switches are off beyond damage numbers and friendly
+  outlines? Should hit markers, hit sounds, hit flinch, muzzle flashes, and
+  world impacts remain off while blood and bullet holes remain visible? The
+  existing presentation contract has no separate bullet-hole switch.
+- What specific heavy-shotgun sound asset should be used?
+
+The report of an invisible Juggernaut and blood effects without health loss is
+not resolved by this presentation section. Avatar visibility, attack-event
+delivery, authoritative damage, and visible feedback are separate steps; use
+the existing runtime journal and the confirmed damage-attribution finding
+below when investigating them. A spec edit, successful build, or configuration
+parse is not proof of visible or multiplayer acceptance.
+
 2026 10 20 1800 
  C:\mimita-v9\config\gamemodes\juggernaut.json 
 presentation isnt being followed

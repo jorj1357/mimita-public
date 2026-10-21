@@ -95,6 +95,8 @@ public:
     // Killfeed mode: "hud" or "chat"
     void setMode(const std::string& mode) { mMode = mode; }
     const std::string& mode() const { return mMode; }
+    void setModeEnabledOverride(bool enabled) { mModeEnabledOverride = true; mModeEnabled = enabled; if (!enabled) mEntries.clear(); }
+    void clearModeEnabledOverride() { mModeEnabledOverride = false; mModeEnabled = true; }
 
 private:
     void appendChatMessage(const KillfeedEntry& entry) const;
@@ -111,4 +113,6 @@ private:
     std::vector<KillfeedEntry> mEntries;
     std::unordered_set<uint64_t> mPresentedEventKeys;
     std::string mMode = "chat";  // "hud" or "chat"
+    bool mModeEnabledOverride = false;
+    bool mModeEnabled = true;
 };

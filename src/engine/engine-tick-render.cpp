@@ -572,8 +572,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             if (MimitaNet::CommunityMatchClient::instance().active()) {
                 const uint8_t replicatedTeam =
                     MimitaNet::CommunityMatchClient::instance().localTeam(mpContext.localPlayerId);
-                if (replicatedTeam != 0xFF)
-                    localOutlineTeam = static_cast<int>(replicatedTeam);
+                localOutlineTeam = replicatedTeam == 0xFF
+                    ? -1 : static_cast<int>(replicatedTeam);
             }
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
@@ -581,8 +581,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 if (MimitaNet::CommunityMatchClient::instance().active()) {
                     const uint8_t replicatedTeam =
                         MimitaNet::CommunityMatchClient::instance().teamForActor(kv.first);
-                    if (replicatedTeam != 0xFF)
-                        remoteTeam = static_cast<int>(replicatedTeam);
+                    remoteTeam = replicatedTeam == 0xFF
+                        ? -1 : static_cast<int>(replicatedTeam);
                 }
                 try {
                     renderNetworkPlayer(kv.second, camera, kv.first, false,

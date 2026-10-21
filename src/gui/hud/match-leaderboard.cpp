@@ -34,10 +34,11 @@ void MatchLeaderboard::setMode(const std::string& mode, int goal)
     mGoal = goal;
 }
 
-void MatchLeaderboard::setWinner(const std::string& name, bool visible)
+void MatchLeaderboard::setWinner(const std::string& name, bool visible, bool hasWinner)
 {
     mWinnerName = name;
     mWinnerVisible = visible && !name.empty();
+    mResultHasWinner = hasWinner;
 }
 
 void MatchLeaderboard::clear()
@@ -50,6 +51,7 @@ void MatchLeaderboard::clear()
     mIsRedTeam = false;
     mWinnerName.clear();
     mWinnerVisible = false;
+    mResultHasWinner = true;
     mScoreGains.clear();
 }
 
@@ -166,9 +168,11 @@ void MatchLeaderboard::render()
     if (mWinnerVisible) {
         const GuiElement* winner = layout.get("winnerText");
         if (winner) {
-            const std::string line = winner->text.empty()
-                ? "WINNER: " + mWinnerName
-                : format(winner->text, {{"{winner}", mWinnerName}});
+            const std::string line = !mResultHasWinner
+                ? mWinnerName
+                : winner->text.empty()
+                    ? "WINNER: " + mWinnerName
+                    : format(winner->text, {{"{winner}", mWinnerName}});
             uiDrawText(line.c_str(), uiScaleX(winner->x), uiScaleY(winner->y),
                        winner->fontSize > 0.0f ? winner->fontSize : fontScale,
                        winner->getTextColorVec());

@@ -120,22 +120,6 @@ struct ImpactDecalGroupConfig {
         float darkenStartSeconds = 1.0f;
         float darkenEndSeconds = 12.0f;
     } colorOverLifetime;
-    struct CrackArmsConfig {
-        int baseCount = 3;
-        float weaponForceMultiplier = 0.08f;
-        int maxCount = 12;
-    } crackArms;
-    struct CrackChainConfig {
-        int minSegments = 1;
-        int maxSegments = 5;
-        float segmentLengthMin = 0.05f;
-        float segmentLengthMax = 0.22f;
-        float turnDegreesMin = -45.0f;
-        float turnDegreesMax = 45.0f;
-        float jaggedness = 0.35f;
-    } crackChain;
-    float crackCenterThickness = 0.035f;
-    float crackOuterThickness = 0.006f;
     ImpactDecalSprayConfig spray;
     ImpactClientBloodFeedbackConfig clientFeedback;
     ImpactForceConfig force;

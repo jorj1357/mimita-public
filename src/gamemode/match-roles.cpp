@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <functional>
 
 #include <nlohmann/json.hpp>
 
@@ -41,6 +42,23 @@ bool isJsonFile(const std::filesystem::path& path)
     std::transform(extension.begin(), extension.end(), extension.begin(),
         [](unsigned char c) { return (char)std::tolower(c); });
     return extension == ".json";
+}
+
+bool wildcardMatch(const std::string& pattern, const std::string& value)
+{
+    size_t p = 0, v = 0, star = std::string::npos, retry = 0;
+    auto lower = [](unsigned char c) { return (char)std::tolower(c); };
+    while (v < value.size()) {
+        if (p < pattern.size() && (pattern[p] == '*' || lower((unsigned char)pattern[p]) == lower((unsigned char)value[v]))) {
+            if (pattern[p] == '*') { star = p++; retry = v; }
+            else { ++p; ++v; }
+        } else if (star != std::string::npos) {
+            p = star + 1;
+            v = ++retry;
+        } else return false;
+    }
+    while (p < pattern.size() && pattern[p] == '*') ++p;
+    return p == pattern.size();
 }
 
 std::filesystem::path resolveActorPresetDirectory(const std::string& directory)
@@ -236,6 +254,9 @@ bool readActorPreset(const json& j, const std::string& fallbackId,
         out.forceFirstPerson = camera.value("force_perspective",
             camera.value("forcePerspective", out.forceFirstPerson))
             && perspective == "first_person";
+        out.forceThirdPerson = camera.value("force_perspective",
+            camera.value("forcePerspective", false))
+            && perspective == "third_person";
     }
 
     if (j.contains("presentation") && j["presentation"].is_object())
@@ -262,6 +283,10 @@ bool readActorPreset(const json& j, const std::string& fallbackId,
             if (out.avatarName.empty() && out.avatarForced && !out.allowedAvatars.empty())
                 out.avatarName = out.allowedAvatars.front();
         }
+        if (avatar.contains("denied") && avatar["denied"].is_array()) {
+            for (const auto& item : avatar["denied"])
+                if (item.is_string()) out.deniedAvatars.push_back(item.get<std::string>());
+        }
     }
     if (j.contains("team") && j["team"].is_object() &&
         j["team"].contains("allowed") && j["team"]["allowed"].is_array()) {
@@ -269,6 +294,19 @@ bool readActorPreset(const json& j, const std::string& fallbackId,
             if (item.is_number_integer()) out.allowedTeams.push_back(item.get<int>());
     }
     return true;
+}
+
+bool avatarAllowedInternal(const std::string& avatar,
+                           const std::vector<std::string>& allowed,
+                           const std::vector<std::string>& denied)
+{
+    if (avatar.empty()) return false;
+    for (const auto& pattern : denied)
+        if (wildcardMatch(pattern, avatar)) return false;
+    if (allowed.empty()) return true;
+    for (const auto& pattern : allowed)
+        if (wildcardMatch(pattern, avatar)) return true;
+    return false;
 }
 
 // Log one line per configured navigation block so a reload is visible once.
@@ -297,6 +335,13 @@ void logMovementPolicy(const MatchRoleDefinition& def, uint64_t revision)
 }
 
 } // namespace
+
+bool isAvatarAllowedByPolicy(const std::string& avatar,
+                             const std::vector<std::string>& allowed,
+                             const std::vector<std::string>& denied)
+{
+    return avatarAllowedInternal(avatar, allowed, denied);
+}
 
 MatchRoleRegistry& MatchRoleRegistry::instance()
 {

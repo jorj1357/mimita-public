@@ -121,6 +121,7 @@ static void finalizeServerNpcMirrorSpawn(ServerNpc& npc,
                                          ActorSpawnReason reason,
                                          uint32_t serverTick)
 {
+    serverMeleeResetNpcForSpawn(npc);
     ActorSpawnEvent event;
     event.entityId = npc.entityId;
     event.actorKind = ActorKind::Npc;
@@ -356,6 +357,15 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     out.health = def->health;
     out.startingWeapon = def->startingWeapon;
     out.avatarName = def->avatarName;
+    out.allowedAvatars = def->allowedAvatars;
+    out.deniedAvatars = def->deniedAvatars;
+    if (!def->actorPresetId.empty()) {
+        if (const MatchRoleDefinition* preset = MatchRoleRegistry::instance().getActorPreset(def->actorPresetId)) {
+            out.allowedAvatars = preset->allowedAvatars;
+            out.deniedAvatars = preset->deniedAvatars;
+            if (out.avatarName.empty()) out.avatarName = preset->avatarName;
+        }
+    }
 
     // A team role may carry its own forced avatar (e.g. CT/T). Prefer it over
     // the shared actor preset so teams look distinct while still sharing the
@@ -367,6 +377,8 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                 out.avatarName = teamRole->avatarName;
                 if (teamRole->health > 0) out.health = teamRole->health;
             }
+            if (!teamRole->allowedAvatars.empty()) out.allowedAvatars = teamRole->allowedAvatars;
+            if (!teamRole->deniedAvatars.empty()) out.deniedAvatars = teamRole->deniedAvatars;
         }
     }
 
@@ -1328,6 +1340,19 @@ void broadcastDuelState(SOCKET sock,
                 std::snprintf(pkt.ffaLeaderNames[i], sizeof(pkt.ffaLeaderNames[i]),
                               "NPC-%u", sorted[i].first);
         }
+    }
+    // Reuse the existing replicated name slot for Melee's result banner. The
+    // Melee HUD consumes this only as a winner label, not as an FFA leaderboard.
+    if (d.matchMode == "melee" && d.matchOver &&
+        d.phase == DUEL_PHASE_RESULTS && d.winnerPlayerId != 0) {
+        pkt.ffaLeaderIds[0] = d.winnerPlayerId;
+        auto winnerNameIt = d.participantNames.find(d.winnerPlayerId);
+        if (winnerNameIt != d.participantNames.end())
+            std::strncpy(pkt.ffaLeaderNames[0], winnerNameIt->second.c_str(),
+                         sizeof(pkt.ffaLeaderNames[0]) - 1);
+        else
+            std::snprintf(pkt.ffaLeaderNames[0], sizeof(pkt.ffaLeaderNames[0]),
+                          "Fighter %u", d.winnerPlayerId);
     }
 
     // Participant IDs and teams
@@ -3123,9 +3148,10 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
 //   !dead                     -> Alive
 //   dead + respawns enabled   -> Dead (one tick) -> Respawning -> Alive
 //   dead + no respawn enabled -> Dead (one tick) -> Spectating (terminal)
-void updateActorStates(ServerGamemodeState& d,
-                       const std::unordered_map<uint32_t, ServerPlayer>& players,
-                       const std::unordered_map<uint32_t, ServerNpc>& npcs)
+void updateActorStates(ServerGamemodeState& d, SOCKET sock,
+                       std::unordered_map<uint32_t, ServerPlayer>& players,
+                       std::unordered_map<uint32_t, ServerNpc>& npcs,
+                       uint32_t tick, uint64_t& totalPacketsOut)
 {
     for (auto& kv : d.matchActors) {
         ActorMatchDescriptor& desc = kv.second;
@@ -3152,9 +3178,46 @@ void updateActorStates(ServerGamemodeState& d,
             before == ActorState::Alive && dead && d.waveLivesRemaining > 0)
             serverConsumeNpcWaveLife(kv.first);
 
-        // Melee: any fighter (human or NPC) that dies loses one stock.
-        if (d.matchMode == "melee" && before == ActorState::Alive && dead)
+        // Melee: any fighter (human or NPC) that dies loses one stock. Publish
+        // the stock count in chat so the event is visible to everyone, not
+        // only present in the server journal.
+        if (d.matchMode == "melee" && before == ActorState::Alive && dead) {
             serverMeleeConsumeStock(kv.first);
+            const auto stockIt = d.meleeStocks.find(kv.first);
+            const int stocksLeft = stockIt == d.meleeStocks.end()
+                ? 0 : std::max(0, stockIt->second);
+            const auto nameIt = d.participantNames.find(kv.first);
+            const std::string fighterName = nameIt != d.participantNames.end()
+                ? nameIt->second : "A fighter";
+            std::string message = fighterName + " lost a stock. " +
+                std::to_string(stocksLeft) +
+                (stocksLeft == 1 ? " stock left." : " stocks left.");
+
+            if (stocksLeft == 0) {
+                uint32_t winnerId = 0;
+                for (uint32_t participantId : d.participants) {
+                    if (participantId == kv.first) continue;
+                    const auto otherIt = d.matchActors.find(participantId);
+                    if (otherIt == d.matchActors.end() ||
+                        (otherIt->second.state != ActorState::Alive &&
+                         otherIt->second.state != ActorState::Respawning))
+                        continue;
+                    const auto otherPlayer = players.find(participantId);
+                    if (otherPlayer != players.end() && otherPlayer->second.dead)
+                        continue;
+                    const auto otherNpc = npcs.find(participantId);
+                    if (otherNpc != npcs.end() && otherNpc->second.health <= 0)
+                        continue;
+                    winnerId = participantId;
+                    break;
+                }
+                const auto winnerNameIt = d.participantNames.find(winnerId);
+                if (winnerId != 0 && winnerNameIt != d.participantNames.end())
+                    message += " " + winnerNameIt->second + " wins the round!";
+            }
+            broadcastServerChatMessage(sock, players, tick, totalPacketsOut,
+                                       message.c_str());
+        }
 
         const bool respawns = desc.controller == ActorController::Human
             ? serverPlayerRespawnsEnabled(kv.first)
@@ -4451,7 +4514,19 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
         d.phase = DUEL_PHASE_RESULTS;
         d.victoryType = 1;  // TimeLimit
         d.phaseTimer = d.resultsSeconds;
-        if (d.matchMode == "ffa" || d.winCondition == "first_to_score") {
+        if (d.winCondition == "first_to_score" &&
+            GamemodeRegistry::instance().get(d.matchMode).timeLimitOutcome == "stalemate") {
+            d.winnerPlayerId = 0;
+            d.winnerTeam = -1;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "gamemode.match.stalemate", d.matchMode,
+                "time-limit-before-score-goal", tick,
+                nlohmann::json{{"mode", d.matchMode}, {"goal", d.goalValue},
+                               {"time_limit_seconds", d.timeLimitSeconds}},
+                __FILE__, __LINE__, __FUNCTION__);
+            emitGamemodeMatchPersistence(d, tick, players);
+        } else if (d.matchMode == "ffa" || d.winCondition == "first_to_score") {
             int best = -1;
             for (const auto& kv : d.ffaKills) {
                 if (kv.second > best) {
@@ -4924,7 +4999,7 @@ void serverGamemodeTick(SOCKET sock,
             d.resultsSeconds = (float)live.resultsSeconds;
         }
     }
-    updateActorStates(d, players, npcs);
+    updateActorStates(d, sock, players, npcs, tick, totalPacketsOut);
     // Generic area effects tick at fixed 60 Hz in every managed mode.
     serverAreaEffectTick(d, sock, players, npcs, tick, totalPacketsOut);
     // Team assignments and objective context are NPC decision inputs. Keep
@@ -5316,7 +5391,7 @@ void serverGamemodeTick(SOCKET sock,
         if (d.phase == DUEL_PHASE_ACTIVE && !d.matchOver && killerId != victimId)
         {
             // Duel 1v1 scoring (original behavior)
-            if (d.matchMode == "duel") {
+            if (d.matchMode == "duel" && d.winCondition != "first_to_score") {
                 if (killerId == d.playerAId)
                     ++d.scoreA;
                 else if (killerId == d.playerBId)
@@ -5783,7 +5858,7 @@ void serverGamemodeTick(SOCKET sock,
             if (d.npcWaves) {
                 if (d.waveNpcSpawned < d.waveNpcTarget)
                     spawnNpcWaveBatch(d, npcs);
-                updateActorStates(d, players, npcs);
+                updateActorStates(d, sock, players, npcs, tick, totalPacketsOut);
                 checkNpcWaveConditions(d, tick);
                 if (d.phase != DUEL_PHASE_ACTIVE) {
                     broadcastDuelState(sock, d, players, totalPacketsOut);

@@ -13,6 +13,7 @@
 #include <cmath>
 #include <nlohmann/json.hpp>
 #include <sstream>
+#include <algorithm>
 
 namespace {
 using json = nlohmann::json;
@@ -146,6 +147,15 @@ void PlayerVisualsConfig::clearTeamOutlineColorsOverride() {
 glm::vec3 PlayerVisualsConfig::effectiveOutlineColor(bool teammate, const glm::vec3& configured) const {
     if (!mTeamOutlineColorsOverride) return configured;
     return teammate ? mFriendlyOutlineColor : mEnemyOutlineColor;
+}
+void PlayerVisualsConfig::setFriendlyOutlinesEnabled(bool enabled) { mFriendlyOutlinesEnabled = enabled; }
+void PlayerVisualsConfig::setEnemyOutlineAlpha(float alpha) {
+    mEnemyOutlineAlphaOverride = true;
+    mEnemyOutlineAlpha = std::clamp(alpha, 0.0f, 1.0f);
+}
+void PlayerVisualsConfig::clearEnemyOutlineAlphaOverride() { mEnemyOutlineAlphaOverride = false; }
+float PlayerVisualsConfig::effectiveEnemyOutlineAlpha(float configured) const {
+    return mEnemyOutlineAlphaOverride ? mEnemyOutlineAlpha : configured;
 }
 std::string PlayerVisualsConfig::effectiveMode(const std::string& configuredMode) const {
     if (mPlayerOutlinesOverride && !mPlayerOutlinesEnabled) return "none";

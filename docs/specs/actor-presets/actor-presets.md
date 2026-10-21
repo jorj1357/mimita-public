@@ -155,6 +155,11 @@ An actor preset may select or tune only settings with an existing owner. Its reu
 - **Health:** spawn and maximum health, where the spawn lifecycle supports them.
 - **Movement:** a named `movement_preset` and supported movement/navigation policy. Movement formulas and physical values stay in the movement system/configuration.
 - **Avatar and camera:** selected avatar, whether it is forced, field of view, and perspective policy.
+- **Avatar policy:** optional `avatar.allowed` and `avatar.denied` pattern lists.
+  Patterns are case-insensitive and support `*`; deny patterns take precedence.
+  An empty allow list permits any avatar not denied. Mode clients fall back to
+  the preset's safe `avatar.name` when the selected avatar is disallowed, and
+  the server rejects disallowed avatar manifests for the active role.
 - **Loadout and weapon tuning:** a named weapon set plus per-preset weapon overrides for fields supported by `ActorPresetWeapons`. Base weapon definitions remain in `weapons.json`.
 - **Presentation:** damage numbers, hit feedback, muzzle flashes, blood, and other supported visual/audio gates.
 - **NPC policy:** supported movement-executor, navigation, and movement-decision settings. The role or mode may separately select an NPC combat `behavior_profile`.

@@ -290,14 +290,17 @@
     // currently uses exponential mode.
     // "external_impulse_decay": 0.6,
     // "external_impulse_decay": 5.0,
-    "external_impulse_decay": 2.0,
+    "external_impulse_decay": 1.0,
+    // "external_impulse_decay": 2.0,
     // "external_impulse_decay": 0.5,
 
     // Maximum allowed horizontal external impulse speed.
     //
     // 9999 is intentionally effectively unlimited for normal gameplay.
     "max_external_impulse_speed": 9999.0,
-    "external_impulse_resistance_multiplier": 1.0,
+    // "external_impulse_resistance_multiplier": 1.0,
+    // "external_impulse_resistance_multiplier": 10.0,
+    "external_impulse_resistance_multiplier": 50.0,
     // "external_impulse_resistance_multiplier": 99.0,
 
     // Match the current fast Source preset's knockback behavior.

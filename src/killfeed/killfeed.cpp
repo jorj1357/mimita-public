@@ -67,6 +67,8 @@ void KillfeedManager::onKillStyled(const std::string& killerName,
                                    uint32_t eventTick,
                                    uint64_t eventKey)
 {
+    if (mModeEnabledOverride && !mModeEnabled && !fromReplay)
+        return;
     if (eventKey != 0 && !mPresentedEventKeys.insert(eventKey).second)
         return;
     const auto& cfg = KillfeedConfig::instance().data();
@@ -134,6 +136,8 @@ void KillfeedManager::onKillStructured(const std::string& killerName,
                                        uint32_t eventTick,
                                        uint64_t eventKey)
 {
+    if (mModeEnabledOverride && !mModeEnabled)
+        return;
     if (eventKey != 0 && !mPresentedEventKeys.insert(eventKey).second)
         return;
     const auto& cfg = KillfeedConfig::instance().data();
@@ -206,6 +210,9 @@ void KillfeedManager::update(float dt)
 
 void KillfeedManager::render()
 {
+    if (mModeEnabledOverride && !mModeEnabled &&
+        !(gpReplayPlayer && gpReplayPlayer->isPlaying()))
+        return;
     if (mEntries.empty())
         return;
 

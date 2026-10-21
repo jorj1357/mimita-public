@@ -11,6 +11,16 @@
     "force_perspective": true
   },
   "movement_preset": "source",
+  "avatar": {
+    "forced": false,
+    "allowed": [
+      "abusiveboy", "abusivegirl", "abusivegirl2", "abusivegirl3",
+      "abusivegirlheadless", "abusivegirlheadless2", "abusivegirlheadless3",
+      "abusivegirlheadless4", "boiledboy", "headless", "headlessgirl",
+      "headlessgirl2", "headlessgirl3", "headlessredux", "headlessredux2",
+      "jason", "jasonheadless"
+    ]
+  },
   "presentation": {
     "damage_numbers": true,
     "hit_effects": true,

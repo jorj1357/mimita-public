@@ -38,8 +38,8 @@
     "reference_seconds": 1.0,
     "knockback_curve": [
       { "target_percent": 0.0, "distance_m": 0.5 },
-      { "target_percent": 100.0, "distance_m": 10.0 },
-      { "target_percent": 999.0, "distance_m": 300.0 }
+      { "target_percent": 100.0, "distance_m": 5.0 },
+      { "target_percent": 999.0, "distance_m": 50.0 }
     ]
   }
 }

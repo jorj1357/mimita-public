@@ -102,7 +102,7 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 1.0,
+    "beam_thickness": 2.0,
     "beam_world_thickness": 0.0,
     "uses_physics_projectile": false,
     "sound": {
@@ -273,7 +273,7 @@
     "fire_mode": "semi_auto",
     "behavior_type": "hitscan",
     "hitscan": true,
-    "beam_thickness": 1.0,
+    "beam_thickness": 2.0,
     "beam_world_thickness": 0.0,
     "uses_physics_projectile": false,
     "sound": {
@@ -350,7 +350,7 @@
     },
     "damage": 35.0,
     "headshot_multiplier": 1.5,
-    "fire_delay": 0.03,
+    "fire_delay": 0.0,
     "reload_time": 0.0,
     "magazine_size": 0,
     "pellet_count": 1,
@@ -363,11 +363,12 @@
     "behavior_type": "swordsword",
     "hitscan": false,
     "uses_physics_projectile": false,
-    "pose_id": "hafs",
+    "pose_id": "swordsword",
+    "animation_profile": "config/animations/library/weapons/swordsword.json",
     "sound": {
       "shoot": "",
       "reload": "",
-      "hit": "",
+      "hit": "swordswordhit1",
       "dry_fire": "",
       "equip": ""
     },
@@ -386,7 +387,55 @@
       "lungeCooldown": 0.5,
       "bladeLength": 4.5,
       "shootPoseTime": 0.18,
-      "equipPoseTime": 0.2
+      "equipPoseTime": 0.2,
+      "contactMinDamage": 1.0,
+      "contactMaxDamage": 35.0,
+      "contactMinKnockback": 0.5,
+      "contactMaxKnockback": 40.0,
+      "contactMaxForceSpeed": 22.0,
+      "contactBladeRadius": 0.08,
+      "contactMinVolume": 0.1,
+      "contactMaxVolume": 1.0,
+      "contactMinPitch": 0.5,
+      "contactMaxPitch": 1.4,
+      "damageTickInterval": 0.0,
+      "npcGuardTicks": 60.0
+    },
+    "components": {
+      "melee": {
+        "animation_only": true,
+        "actions": {
+          "slash_one": {
+            "input": {"button": "primary", "tap_count": 1},
+            "double_click_window_ticks": 5,
+            "double_click_action": "slash_two",
+            "animation_clip_id": "punch_a",
+            "hitboxes": [],
+            "impulses": []
+          },
+          "slash_two": {
+            "input": {"button": "primary", "tap_count": 2},
+            "animation_clip_id": "uppunch_a",
+            "hitboxes": [],
+            "impulses": []
+          },
+          "right_attack": {
+            "input": {"button": "secondary", "tap_count": 1},
+            "double_click_window_ticks": 5,
+            "double_click_action": "defensive",
+            "animation_clip_id": "downpunch_a",
+            "hitboxes": [],
+            "impulses": []
+          },
+          "defensive": {
+            "input": {"button": "secondary", "tap_count": 2},
+            "hold_while_button": true,
+            "animation_clip_id": "swordsword_defensive",
+            "hitboxes": [],
+            "impulses": []
+          }
+        }
+      }
     }
   },
   "op_revolver": {
@@ -1776,8 +1825,8 @@
                "size": [3.0, 3.0, 3.0], "local_offset": [1.0, 3.0, 0.5],
                "active_start_tick": 0, "active_end_tick": 40}
             ],
-            "damage": {"base_percent": 20.0},
-            "knockback": {"base_impulse": 45.0, "vertical_fraction": 0.1, "force_scale": 1.0},
+            "damage": {"base_percent": 35.0},
+            "knockback": {"base_impulse": 95.0, "vertical_fraction": 0.1, "force_scale": 1.0},
             "impulses": [
               {"phase": "active", "tick": 0, "forward": 12.0, "right": 0.0, "up": 3.0}
             ],

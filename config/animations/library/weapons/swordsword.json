@@ -1,20 +1,10 @@
 {
   "version": 2,
-  "poseComposition": "authored_only",
-  "states": {
-    "default": "swordsword_idle",
-    "locomotion": {
-      "walk": "swordsword_idle",
-      "fly": "swordsword_idle",
-      "crawl": "swordsword_idle",
-      "swim": "swordsword_idle"
-    },
-    "run": "swordsword_idle",
-    "jump": "swordsword_idle",
-    "fall": "swordsword_idle",
-    "land": "swordsword_idle",
-    "crouch": "swordsword_idle"
-  },
+  "include": [
+    "config/animations/library/melee/captainfalcon/punch_a.json",
+    "config/animations/library/melee/captainfalcon/uppunch_a.json",
+    "config/animations/library/melee/captainfalcon/downpunch_a.json"
+  ],
   "clips": {
     "swordsword_idle": {
       "durationTicks": 60,

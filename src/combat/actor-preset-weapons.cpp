@@ -3,9 +3,11 @@
 #include "combat/actor-preset-weapons.h"
 
 #include "combat/weapon-registry.h"
+#include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
 
 #include <algorithm>
+#include <optional>
 #include <utility>
 
 namespace ActorPresetWeapons {
@@ -18,6 +20,96 @@ bool gBloodEffectsEnabled = true;
 bool gMuzzleFlashEnabled = true;
 bool gHitMarkersEnabled = true;
 bool gHitSoundsEnabled = true;
+std::optional<GamemodePresentation> gModePresentation;
+
+bool sameModePresentation(const GamemodePresentation& a,
+                          const GamemodePresentation& b)
+{
+    return a.hasDamageNumbers == b.hasDamageNumbers && a.damageNumbers == b.damageNumbers &&
+        a.hasHitEffects == b.hasHitEffects && a.hitEffects == b.hitEffects &&
+        a.hasWorldImpactEffects == b.hasWorldImpactEffects && a.worldImpactEffects == b.worldImpactEffects &&
+        a.hasWorldImpactDecals == b.hasWorldImpactDecals && a.worldImpactDecals == b.worldImpactDecals &&
+        a.hasWorldHitEffects == b.hasWorldHitEffects && a.worldHitEffects == b.worldHitEffects &&
+        a.hasHitMarkers == b.hasHitMarkers && a.hitMarkers == b.hitMarkers &&
+        a.hasHitSounds == b.hasHitSounds && a.hitSounds == b.hitSounds &&
+        a.hasHitFlinch == b.hasHitFlinch && a.hitFlinch == b.hitFlinch &&
+        a.hasBlood == b.hasBlood && a.blood == b.blood &&
+        a.hasKillfeed == b.hasKillfeed && a.killfeed == b.killfeed &&
+        a.hasRagdolls == b.hasRagdolls && a.ragdolls == b.ragdolls &&
+        a.hasEnemyHealthbars == b.hasEnemyHealthbars && a.enemyHealthbars == b.enemyHealthbars &&
+        a.hasPlayerOutlines == b.hasPlayerOutlines && a.playerOutlines == b.playerOutlines &&
+        a.hasFriendlyOutlines == b.hasFriendlyOutlines && a.friendlyOutlines == b.friendlyOutlines &&
+        a.hasEnemyOutlineAlpha == b.hasEnemyOutlineAlpha && a.enemyOutlineAlpha == b.enemyOutlineAlpha &&
+        a.hasTeamOutlineColors == b.hasTeamOutlineColors &&
+        a.bloodScale == b.bloodScale && a.bloodLifetimeScale == b.bloodLifetimeScale &&
+        a.worldImpactDecalScale == b.worldImpactDecalScale &&
+        a.worldImpactDecalLifetimeScale == b.worldImpactDecalLifetimeScale &&
+        a.worldImpactDecalAlphaScale == b.worldImpactDecalAlphaScale &&
+        a.worldHitEffectScale == b.worldHitEffectScale &&
+        a.worldHitEffectLifetimeScale == b.worldHitEffectLifetimeScale &&
+        a.friendlyOutlineColor.x == b.friendlyOutlineColor.x &&
+        a.friendlyOutlineColor.y == b.friendlyOutlineColor.y &&
+        a.friendlyOutlineColor.z == b.friendlyOutlineColor.z &&
+        a.enemyOutlineColor.x == b.enemyOutlineColor.x &&
+        a.enemyOutlineColor.y == b.enemyOutlineColor.y &&
+        a.enemyOutlineColor.z == b.enemyOutlineColor.z;
+}
+
+std::optional<bool> modeFlag(PresentationFlag flag)
+{
+    if (!gModePresentation) return std::nullopt;
+    const auto& p = *gModePresentation;
+    switch (flag) {
+    case PresentationFlag::DamageNumbers:
+        if (p.hasDamageNumbers) return p.damageNumbers;
+        break;
+    case PresentationFlag::HitEffects:
+        if (p.hasHitEffects) return p.hitEffects;
+        break;
+    case PresentationFlag::WorldImpactEffects:
+        if (p.hasWorldImpactEffects) return p.worldImpactEffects;
+        break;
+    case PresentationFlag::Blood:
+        if (p.hasBlood) return p.blood;
+        break;
+    case PresentationFlag::HitMarkers:
+        if (p.hasHitMarkers) return p.hitMarkers;
+        break;
+    case PresentationFlag::HitSounds:
+        if (p.hasHitSounds) return p.hitSounds;
+        break;
+    }
+    return std::nullopt;
+}
+
+void applyModePresentation(WeaponDefinition& weapon)
+{
+    if (!gModePresentation) return;
+    const auto& p = *gModePresentation;
+    if (p.hasDamageNumbers) weapon.damageNumbersEnabled = p.damageNumbers;
+    if (p.hasHitEffects) weapon.hitEffectsEnabled = p.hitEffects;
+    if (p.hasWorldImpactEffects) weapon.worldImpactEffectsEnabled = p.worldImpactEffects;
+    if (p.hasBlood) weapon.bloodEffectsEnabled = p.blood;
+}
+
+void applyModePresentationToRegistry()
+{
+    auto effective = WeaponRegistry::instance().all();
+    for (auto& entry : effective) applyModePresentation(entry.second);
+    WeaponRegistry::instance().setActiveDefinitions(std::move(effective));
+}
+
+void applyModeGlobalFlags()
+{
+    if (!gModePresentation) return;
+    const auto& p = *gModePresentation;
+    if (p.hasDamageNumbers) gDamageNumbersEnabled = p.damageNumbers;
+    if (p.hasHitEffects) gHitEffectsEnabled = p.hitEffects;
+    if (p.hasWorldImpactEffects) gWorldImpactEffectsEnabled = p.worldImpactEffects;
+    if (p.hasBlood) gBloodEffectsEnabled = p.blood;
+    if (p.hasHitMarkers) gHitMarkersEnabled = p.hitMarkers;
+    if (p.hasHitSounds) gHitSoundsEnabled = p.hitSounds;
+}
 
 void applyPresentation(WeaponDefinition& weapon,
                        const ActorPresetPresentation& p)
@@ -81,6 +173,24 @@ bool apply(const MatchRoleDefinition& preset)
         applyOverride(it->second, entry.second);
     }
 
+    // Explicit match-wide values take precedence over actor and weapon preset
+    // presentation after their regular overlays have been resolved.
+    for (auto& entry : effective) applyModePresentation(entry.second);
+
+    gDamageNumbersEnabled = true;
+    gHitEffectsEnabled = true;
+    gWorldImpactEffectsEnabled = true;
+    gBloodEffectsEnabled = true;
+    gHitMarkersEnabled = true;
+    gHitSoundsEnabled = true;
+    if (preset.presentation.hasDamageNumbers) gDamageNumbersEnabled = preset.presentation.damageNumbers;
+    if (preset.presentation.hasHitEffects) gHitEffectsEnabled = preset.presentation.hitEffects;
+    if (preset.presentation.hasWorldImpactEffects) gWorldImpactEffectsEnabled = preset.presentation.worldImpactEffects;
+    if (preset.presentation.hasBloodEffects) gBloodEffectsEnabled = preset.presentation.bloodEffects;
+    if (preset.presentation.hasHitMarkers) gHitMarkersEnabled = preset.presentation.hitMarkers;
+    if (preset.presentation.hasHitSounds) gHitSoundsEnabled = preset.presentation.hitSounds;
+    applyModeGlobalFlags();
+
     WeaponRegistry::instance().setActiveDefinitions(std::move(effective));
     gActivePreset = preset.id;
     return true;
@@ -96,7 +206,6 @@ bool refresh()
 
 void clear()
 {
-    WeaponRegistry::instance().clearActiveDefinitions();
     gActivePreset.clear();
     gDamageNumbersEnabled = true;
     gHitEffectsEnabled = true;
@@ -105,11 +214,71 @@ void clear()
     gMuzzleFlashEnabled = true;
     gHitMarkersEnabled = true;
     gHitSoundsEnabled = true;
+    if (gModePresentation) {
+        applyModeGlobalFlags();
+        applyModePresentationToRegistry();
+    } else {
+        WeaponRegistry::instance().clearActiveDefinitions();
+    }
+}
+
+void setModePresentationOverride(const GamemodePresentation& presentation)
+{
+    if (gModePresentation && sameModePresentation(*gModePresentation, presentation))
+        return;
+    gModePresentation = presentation;
+    if (!gActivePreset.empty()) {
+        refresh();
+        return;
+    }
+    gDamageNumbersEnabled = true;
+    gHitEffectsEnabled = true;
+    gWorldImpactEffectsEnabled = true;
+    gBloodEffectsEnabled = true;
+    gHitMarkersEnabled = true;
+    gHitSoundsEnabled = true;
+    applyModeGlobalFlags();
+    applyModePresentationToRegistry();
+}
+
+void clearModePresentationOverride()
+{
+    gModePresentation.reset();
+    if (!gActivePreset.empty()) {
+        refresh();
+        return;
+    }
+    WeaponRegistry::instance().clearActiveDefinitions();
+    gDamageNumbersEnabled = true;
+    gHitEffectsEnabled = true;
+    gWorldImpactEffectsEnabled = true;
+    gBloodEffectsEnabled = true;
+    gHitMarkersEnabled = true;
+    gHitSoundsEnabled = true;
+}
+
+std::optional<bool> modePresentationOverride(PresentationFlag flag)
+{
+    return modeFlag(flag);
+}
+
+std::optional<GamemodePresentation> modePresentationSettings()
+{
+    return gModePresentation;
 }
 
 const std::string& activePresetId()
 {
     return gActivePreset;
+}
+
+bool avatarAllowedForActivePreset(const std::string& avatar)
+{
+    if (gActivePreset.empty()) return true;
+    const MatchRoleDefinition* preset =
+        MatchRoleRegistry::instance().getActorPreset(gActivePreset);
+    return !preset || isAvatarAllowedByPolicy(
+        avatar, preset->allowedAvatars, preset->deniedAvatars);
 }
 
 bool damageNumbersEnabled() { return gDamageNumbersEnabled; }

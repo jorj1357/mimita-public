@@ -1,7 +1,7 @@
 {
   "id": "juggernaut",
   "name": "Juggernaut",
-  "description": "Sixteen fast, fragile Fighters versus two slow, powerful Juggernauts. One life per round.",
+  "description": " fast, fragile Fighters versus  slow, powerful Juggernauts. One life per round!!!!!!!.",
   "actor_preset": "juggernaut_arcade",
   "respawn_seconds": 0,
   "kill_heals": false,
@@ -62,15 +62,16 @@
     "damage_numbers": false,
     "hit_effects": false,
     "world_impact_effects": false,
-    "hit_markers": true,
-    "hit_sounds": true,
+    "hit_markers": false,
+    "hit_sounds": false,
     "blood": true,
     "killfeed": true,
     "ragdolls": true,
     "enemy_healthbars": false,
-    "player_outlines": true,
-    "friendly_outline_color": [0, 255, 0],
-    "enemy_outline_color": [255, 0, 0]
+    "player_outlines": false,
+    "friendly_outlines": false,
+    "enemy_outline_color": [255, 0, 0],
+    "enemy_outline_alpha": 0.25
   },
   "maps": ["dust2cyberiav4", "atdm", "mimita-duels-map-v3", "funworld"]
 }

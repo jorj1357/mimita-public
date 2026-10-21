@@ -5,6 +5,7 @@
 * DOES NOT draw any editor panel or own avatar data.
 */
 #include "avatar-editor-helpers.h"
+#include "combat/actor-preset-weapons.h"
 #include "avatar-editor.h"
 #include "avatar.h"
 #include "cosmetic-system.h"
@@ -12,6 +13,7 @@
 #include "config/player-settings.h"
 #include "gui/menus/menu-avatar-preview.h"
 #include "gui/ui-text-input.h"
+#include "devtools/terminal.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -231,6 +233,10 @@ void avatarEditorApplyCosmeticsToPlayer()
 
 void avatarEditorLoadOutfit(const std::string& name)
 {
+    if (!ActorPresetWeapons::avatarAllowedForActivePreset(name)) {
+        Terminal::instance().addLog("[AVATAR] This avatar is not allowed in the active mode.");
+        return;
+    }
     AvatarSystem& av = AvatarSystem::instance();
     if (!av.loadAvatar(name))
         return;

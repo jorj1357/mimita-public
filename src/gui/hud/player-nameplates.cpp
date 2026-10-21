@@ -134,7 +134,8 @@ HealthbarRenderResult drawPlayerHealthbar(
     const Player& player,
     const Camera& camera,
     const char* debugPrefix,
-    const char* sourceTag)
+    const char* sourceTag,
+    bool isEnemy)
 {
     HealthbarRenderResult result;
     result.anchor = playerHealthbarAnchor(
@@ -179,6 +180,14 @@ HealthbarRenderResult drawPlayerHealthbar(
         result.cullReason = HealthbarCullReason::Disabled;
         Debug::log(Debug::Category::Gui,
             "[HEALTHBAR] SKIPPED entity=%s reason=ModeOverride\n",
+            player.username.c_str());
+        return result;
+    }
+    if (isLiveWorld && isEnemy && !HealthbarConfig::instance().enemyHealthbarsVisible())
+    {
+        result.cullReason = HealthbarCullReason::Disabled;
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] SKIPPED entity=%s reason=ModeEnemyHealthbarsDisabled\n",
             player.username.c_str());
         return result;
     }

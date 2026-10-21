@@ -10,6 +10,8 @@
 
 #include "network/server.h"
 #include "network/avatar-transfer.h"
+#include "network/server-gamemode.h"
+#include "gamemode/match-roles.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -159,6 +161,20 @@ void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
         if (!name.empty() && name.size() <= 32 &&
             name != owner->second.avatarName)
         {
+            const ActorSpawnProfile profile = serverResolveActorSpawnProfile(owner->first);
+            if (profile.hasRole && !isAvatarAllowedByPolicy(
+                    name, profile.allowedAvatars, profile.deniedAvatars)) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "griever.avatar.policy_rejected", name,
+                    "server rejected avatar outside the active mode policy",
+                    (uint32_t)owner->second.spawnGeneration,
+                    {{"avatar", name}, {"player_id", owner->first},
+                     {"role", profile.roleId}, {"fallback", profile.avatarName}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                owner->second.avatarManifestChunks.erase(key);
+                return;
+            }
             const std::string previous = owner->second.avatarName;
             owner->second.avatarName = name;
             StructuredLogger::instance().writeEvent(

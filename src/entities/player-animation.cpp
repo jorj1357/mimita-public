@@ -202,8 +202,13 @@ bool Player::usesMeleeAuthoredPose() const
     const WeaponDefinition* def = hasValidWeapon
         ? WeaponRegistry::instance().get(equippedWeaponId) : nullptr;
     if (dead && def && def->behaviorType != WeaponBehaviorType::Melee) return false;
-    return def && (!def->animationProfile.empty() ||
-        WeaponData::MeleeMoveSetRegistry::instance().get(def->id) != nullptr);
+    if (!def) return false;
+    if (!def->animationProfile.empty()) {
+        const AvatarAnimationSet* profile = AvatarAnimationRegistry::instance().getAnimationSet(
+            "profile:" + def->animationProfile, (uint32_t)movementSimulationTick);
+        return profile && profile->valid && profile->authoredOnly;
+    }
+    return WeaponData::MeleeMoveSetRegistry::instance().get(def->id) != nullptr;
 }
 
 static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
@@ -243,10 +248,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
-    // Melee exclusive authored-pose policy: when the active mode is Melee and the
-    // actor uses the Captain Falcon profile, only that profile's sampled
-    // animations.json clips determine the visible rig pose. Procedural/aimbody/
-    // weapon/dash/freeze pose layers and ragdoll presentation are suppressed.
+    // Explicitly authored-only profiles suppress procedural and hybrid-body
+    // pose layers. Shared weapon clips can instead layer over avatar movement.
     // See docs/specs/gamemodes/supersmashbrosmelee.md §57 and the "Exclusive
     // authored-pose policy" in docs/specs/animations/animations.md.
     const bool meleeExclusivePose = usesMeleeAuthoredPose();
@@ -385,9 +388,12 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         return it != gPlayerProcedural.layers.animations.end() ? &it->second : nullptr;
     };
 
-    const AvatarStateMap* sm = weaponAnimationSet && weaponAnimationSet->valid
-        ? &weaponAnimationSet->states : (animationSet && animationSet->valid)
-        ? &animationSet->states : nullptr;
+    // Weapon profiles supply attack clips. Avatar profiles remain the owner of
+    // locomotion, landing, and other movement states unless no avatar profile
+    // is available.
+    const AvatarStateMap* sm = animationSet && animationSet->valid
+        ? &animationSet->states : (weaponAnimationSet && weaponAnimationSet->valid)
+        ? &weaponAnimationSet->states : nullptr;
     auto locomotionClip = [&]() -> std::string {
         if (!sm) return "walk";
         const std::string& mode = rig.movement.mode;

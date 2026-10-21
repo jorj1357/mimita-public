@@ -1,4 +1,7 @@
-
+2026 10 21 0355 jorj  updateed this to just be  open gamepla issues bc its sick to have just 1 doc to  spawm all the ideas
+C:\mimita-v9\docs\jorj-docs\misc-bugs.md
+it was this but no not this dont use this  
+use the open gamepla issues doc  that we are in right now 
 
 2026 10 17 1211 jorj todo add: the  blood and world imapct effects dont show if the npc hittin gme
 needs to be automatic all the itme
@@ -26,15 +29,72 @@ also not sure when this happened but  heads for humanoid avatars are rolling muc
 
 2026 10 17 1335 NO EULER ROTATIONS FOR ANIMATIONS, WE NEED A SMOOTH EULER TO QUATERNION CONVERSION BC ITS LIKE XYZ TO WXYZ AND WE NEED LIEKA  NROMALIZATION FRMO BELNDER AND STUFF SO WE DONT GET CONFUSED DOING ANIMATIONS AND WORLD POSITIOSN ETC
 
-# Open gameplay issue index — 2026-10-16
+# Open gameplay issue inbox — started 2026-10-16
 
-This index collects user-reported issues and links to the behavior owner. The
-reports have not all been reproduced. An entry is not proof of root cause or a
-claim that a fix is implemented. Keep requirements and future evidence in the
-owner document, then update this index when an issue is reproduced or resolved.
+This living inbox collects gameplay observations from any task or play session
+and routes them to the relevant behavior owner. Reports have not all been
+reproduced. An entry is not proof of root cause or a claim that a fix is
+implemented. Keep settled requirements and investigation evidence in the owner
+document, then update this inbox when an issue is reproduced or resolved.
 
 This document does not replace the linked specifications, confirm a bug, or
 authorize implementation choices that are still marked open.
+
+## First priority — decide what gameplay presentation should do
+
+The player wants presentation to be the first design conversation, starting
+with Duel. The open question is how the game should make important information
+and feedback understandable at a glance, especially during fast fights and for
+spectators. This is a discussion starter, not a decided HUD design.
+
+**Possible Duel starting point:** keep the two competitors visually balanced
+on screen, with each side showing team color, actor name/avatar, kills out of
+20, and progress toward the win. Put the current phase and remaining time
+somewhere easy to find; make the winner or stalemate unmistakable during
+RESULTS. Decide what stays visible during active play versus what can appear
+on a scoreboard or spectator view. Check the existing graphics-presentation,
+GUI, and Duel owners before turning this sketch into a requirement.
+
+Questions to settle in that discussion: What must a player understand in one
+glance while aiming? What extra context does a spectator need? Which combat
+effects build confidence that a hit counted, and which only add clutter? What
+visual hierarchy makes the current objective obvious without covering the
+fight?
+
+## New intake — 2026-10-21
+
+These are player reports from a play session. They are recorded as observed or
+requested behavior, not as confirmed causes. The six attached screenshots
+(`codex-clipboard-63358e38-80a0-4b99-aa7e-97e1d38bbb0c.png`,
+`codex-clipboard-b16badb8-8ceb-493a-978f-d3f90dc1c125.png`,
+`codex-clipboard-9d0cc63b-bd0d-47fb-8adb-63f1f399f40b.png`,
+`codex-clipboard-5204e8e3-66ee-4680-bcac-3f8335af5b04.png`,
+`codex-clipboard-1d93ad7b-2665-4f18-8c7b-420e912524e6.png`, and
+`codex-clipboard-cec704f2-58e0-454c-9d53-8cb2415c12e9.png`) show blood and
+world-impact marks appearing as clipped, blocky bars, stretched shapes, or
+shards with heavy overlap. The original shape defects were traced to randomized blood-sprite stretching and crack chains that mapped the full PNG onto every narrow segment. The fix is implemented and built as 2741: blood spray uses equal axes, and each world crack draws the complete square PNG once with uniform size and in-plane rotation. The render summary now reports visible blood and crack aspect ratios. The PNG alpha path remains enabled. This does not identify every large red/transparent shape visible in the screenshots; non-textured hit effects and tracers also have separate render paths. The active Duel session remains on build 2733, so gameplay visual acceptance is pending.
+
+| Area | Player report / desired result | Status and open detail | Owner / route |
+|---|---|---|---|
+| **Presentation — first priority** | Make the game's presentation clearer overall. For Duel, spectators should see both sides, team and actor names, each side's kills, kills remaining to win, and who is ahead. | Design conversation requested. The possible layout above is only a starting sketch; active-player and spectator information priorities still need agreement. | [`graphics/graphics-presentation.md`](graphics/graphics-presentation.md), [`gui/guiv2.md`](gui/guiv2.md), [`gamemodes/duel.md`](gamemodes/duel.md) |
+| NPC combat | NPCs should use both shotgun and revolver, change weapons much faster, and begin shooting promptly after spawning. NPCs should normally deal more damage, move more visibly, and have fewer barriers to reaching or hitting an opponent. NPCs should be able to use melee. | User-reported; not reproduced. Exact damage, switching cadence, movement style, and allowed obstacles need owner-level decisions and evidence. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`weapons/melee-weapons.md`](weapons/melee-weapons.md) |
+| Shot and cooldown reliability | Some shots seem to be rejected or lost because of a cooldown; firing does not always count. | User-reported; not reproduced. Trace input, cooldown, and authoritative shot result before naming the failing step. | [`weapons/weapons.md`](weapons/weapons.md), [`networking/networking.md`](networking/networking.md) |
+| Blood and world-impact marks | Effects should appear consistently when any actor hits another actor, including NPC-to-player hits. Blood, bullet holes, and world cracks should preserve the complete authored PNG shape and alpha, with only uniform size changes and in-plane rotation. | Shape fix implemented and built as 2741: blood spray has equal billboard axes, and a world crack renders once as the complete square PNG (configured diameter 2 world units), with uniform sizing and in-plane rotation. The render summary records visible blood/crack aspect ratios. Gameplay visual acceptance remains pending because the active Duel session is still build 2733. Large red/transparent geometry in the screenshots is a separate unidentified artifact. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md), [`weapons/weapons.md`](weapons/weapons.md); code owners: `src/effects/hit-effects.cpp::HitEffects::onHit()`, `src/effects/effect-part-blood.cpp::EffectPartSystem::spawnBloodEffect()`, `src/ragdoll/ragdoll-mode.cpp::RagdollModeSystem::sprayCorpseBlood()`, `src/effects/effect-part.cpp::EffectPartSystem::spawnWorldCracks()`, `src/effects/effect-part-render.cpp` crack decal batching |
+| Shotgun pellet direction | Each pellet from an NPC shotgun shot should travel along its own shot direction; the player reports pellets appearing aligned to world axes. | User-reported; not reproduced. | [`weapons/weapons.md`](weapons/weapons.md), [`networking/networking.md`](networking/networking.md) |
+| Performance / frame pacing | Play felt somewhat choppy; turning OBS off seemed to help, but the player is unsure whether the difference was real. | Unconfirmed impression; no measured frame-time or controlled comparison yet. Do not treat OBS as the cause without measurement. | [`performance/performance.md`](performance/performance.md) |
+| Rocket Launcher presentation | The rocket needs a more complete explosion animation and presentation. | Desired improvement; exact animation/effect and timing are open. | [`weapons/weapons.md`](weapons/weapons.md), [`visuals/visuals.md`](visuals/visuals.md) |
+| World-hit sound | World-hit sounds should scale with impact force and choose from multiple sounds instead of always using one. The player pointed to `assets/sound/hitworld2.mp3` and said ricochet already has a related precedent. | User-reported desired behavior. Current ricochet behavior and how force should affect loudness, pitch, or sample choice were not verified or specified. | [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md), [`weapons/weapons.md`](weapons/weapons.md), `config/audio-recipes.json` |
+| Sound asset organization | Make sound files easier to find using meaningful folders and short event names, for example `assets/sound/entity/general/death1.wav`, instead of loose, long descriptive filenames. | Organization proposal; confirm naming, variant numbering, and how recipes refer to files before migrating assets. | [`../operations/asset-management/asset-management.md`](../operations/asset-management/asset-management.md), [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md) |
+| Replay export | Replay export reportedly broke after the fullscreen modes were added. | User-reported regression; not reproduced here. | [`replay/replay.md`](replay/replay.md) |
+| Spy Knife | The equipped Spy Knife model is not visible. Hits can appear client-side without changing the target's authoritative health. | User-reported; not reproduced. Trace model presentation and authoritative damage as separate paths. | [`weapons/melee-weapons.md`](weapons/melee-weapons.md), [`networking/networking.md`](networking/networking.md) |
+| Duel avatars | Duel needs an avatar limit. | Need a product decision describing which avatars are allowed or how the limit is chosen. | [`gamemodes/duel.md`](gamemodes/duel.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md) |
+| Legacy Duel cleanup | Remove old offline/local Duel gameplay paths. Duel and other gameplay modes must be client/server; there is no supported or maintained offline gameplay implementation. Keep the current networked mode path and remove obsolete local Duel code after tracing its callers. | Requested for future cleanup; exact legacy owners and safe deletion boundary need a repository-wide call-site audit. | [`gamemodes/duel.md`](gamemodes/duel.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`networking/networking.md`](networking/networking.md) |
+| Juggernaut avatars and outlines | Limit both Juggernaut roles to the JSON allowlist of normal boy/girl body avatars; exclude oversized and monster avatars. Friendly outlines are off. Enemy outlines are faint red. | Requirements now recorded in the mode and role JSON; runtime behavior still needs live Juggernaut verification. | [`gamemodes/juggernaut.md`](gamemodes/juggernaut.md), `config/gamemodes/juggernaut.json`, `config/actor-presets/juggernaut_fighter.json`, `config/actor-presets/juggernaut_arcade.json` |
+| Invisible avatars | Avatars sometimes become invisible again; the exact affected actor and session are unclear. Trace identity selection, asset/model loading, replication, entity binding, and render submission separately. | **Source/journal trace (2026-10-21), likely network identity failure found; visual cause not confirmed:** live Duel run `20261021_084608` recorded 62 avatar-load queue rejections (`worker_queue_full`, queue depth 3 / limit 2), all marked retryable; 58 NPC rebinds later reported an avatar instance and loaded model. More importantly, remote avatar cache folders use `remote_` plus 24 hash characters (31 characters total), but snapshot avatar fields are 24 bytes including the terminator (23 usable characters). The server copies names into that field with `strncpy(..., sizeof(field)-1)`, so a 31-character remote ID is truncated on the wire. The journal contains a failed lookup for `remote_568d80ddb4e934de` (23 characters) because its `avatar.json` was missing or invalid, matching that truncation shape. Failed cache entries also count as `isAvatarLoadPending`, preventing the render-side retry path from reapplying the failed identity. This is a strong mechanism for a remote avatar to remain on fallback presentation, but the journal does not identify it as the avatar the player saw disappear, and normal live-actor render submission is not recorded. Next reproduction should capture mode/map, actor kind/name/avatar ID and exact first failing event. | [`avatar/avatar-editor.md`](avatar/avatar-editor.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`networking/networking.md`](networking/networking.md), `src/avatar/avatar-atlas.cpp`, `src/network/avatar-network-client.cpp`, `src/network/server-players.cpp`, `src/network/multiplayer-tick.cpp`, `src/render/render-player.cpp`; journal: `logs/2026-10-21/20261021_084608/events.jsonl` |
+| Aim feel and shot confidence | Crosshair aim in `gameplay.json` feels more reliable but less fun. Physical gun aiming feels more immersive, but the player is unsure shots line up with what they saw. | Open feel report; no aim-mode change requested or decided. Compare visible aim, shot direction, and hit result before choosing. | [`weapons/weapons.md`](weapons/weapons.md), [`gui/gui-general.md`](gui/gui-general.md) |
+| Avatar head movement | Avatar heads seem to lean too far backward while moving forward. The player remembers them behaving more normally before ragdoll edits, possibly about a week earlier, but is unsure when the change began or what the intended motion was. | User-reported and uncertain; no cause or prior behavior established. | [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md) |
+
+## Issue index
 
 | Issue | Current status | Owner / details |
 |---|---|---|

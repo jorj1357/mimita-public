@@ -665,13 +665,15 @@
     {
       // Fast Melee sparring: edit these values during a running match.
       "id": "melee_aggressive",
-      "melee_attack_gap_ticks": 1,
+      "preferred_range": 1.5,
+      "melee_attack_gap_min_ticks": 2,
+      "melee_attack_gap_max_ticks": 30,
       "melee_attack_range_meters": 4.5,
       "melee_move_weights": {
-        "a_ground_punch": 10.0,
-        "a_air_kick": 10.0,
-        "a_uptilt": 6.0,
-        "a_air_up_kick": 6.0,
+        "a_ground_punch": 1.0,
+        "a_air_kick": 1.0,
+        "a_uptilt": 1.0,
+        "a_air_up_kick": 1.0,
         "b_falcon_punch": 1.0,
         "b_air_forward_dash": 1.0
       }

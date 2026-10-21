@@ -1,17 +1,69 @@
 {
   "id": "duel",
   "name": "Duel",
-  "description": "First to 20... max action... no downtime... like MGE",
+  "description": "Competitive 1v1. First to 20 kills or a three-minute stalemate.",
+  "actor_preset": "duel_standard",
   "team_names": ["RED", "BLUE"],
   "goal_value": 20,
   "weapon_set_id": 1,
-  "time_limit_seconds": 0,
-  "respawn_seconds": 0,
+  "time_limit_seconds": 180,
+  "time_limit_outcome": "stalemate",
+  "respawn_seconds": 0.01,
   "kill_heals": true,
+  "friendly_fire": false,
   "countdown_seconds": 3,
-  "rematch_seconds": 5,
-  "spawn_tracer_seconds": 1.5,
-  "allow_rematch": true,
+  "intermission_seconds": 15,
+  "results_seconds": 5,
   "spawn_offset_radius": 5,
-  "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
+  "spawn_strategy": "shared",
+  "presentation": {
+    "damage_numbers": false,
+    "hit_effects": false,
+    "world_impact_effects": true,
+    "world_hit_effects": true,
+    "world_impact_decals": true,
+    "hit_markers": false,
+    "blood": true,
+    "blood_scale": 0.1,
+    "blood_lifetime_scale": 0.1,
+    "world_impact_decal_scale": 1.0,
+    "world_impact_decal_lifetime_scale": 0.1,
+    "world_impact_decal_alpha_scale": 0.1,
+    "world_hit_effect_scale": 1.0,
+    "world_hit_effect_lifetime_scale": 1.0
+  },
+  "win_condition": "first_to_score",
+  "roles": {
+    "duel_red": 1,
+    "duel_blue": 1
+  },
+  "teams": [
+    {
+      "id": "red",
+      "display_name": "RED",
+      "capacity": 1,
+      "role": "duel_red",
+      "npc_role": "duel_red_npc",
+      "players": true,
+      "npcs": true
+    },
+    {
+      "id": "blue",
+      "display_name": "BLUE",
+      "capacity": 1,
+      "role": "duel_blue",
+      "npc_role": "duel_blue_npc",
+      "players": true,
+      "npcs": true
+    }
+  ],
+  "npc_targeting": {
+    "mode": "opposite_team",
+    "include_players": true,
+    "include_npcs": true
+  },
+  "npc_spawn": {
+    "policy": "team_roster",
+    "max_count": 1
+  }
 }

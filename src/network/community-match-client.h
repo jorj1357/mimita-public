@@ -279,6 +279,7 @@ private:
     std::vector<ReplicatedActorIdentity> mActors;
     uint8_t mLastOutlineLocalTeam = 0xFF;
     uint8_t mLastOutlineParticipantCount = 0;
+    std::string mPresentationFingerprint;
     ProceduralWorldNetworkState mProcedural;
 };
 

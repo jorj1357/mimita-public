@@ -74,8 +74,23 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.weaponSwitchThreshold = j.value("weapon_switch_threshold", out.weaponSwitchThreshold);
     if (j.contains("melee_attack_gap_ticks") && j["melee_attack_gap_ticks"].is_number_integer()) {
         out.meleeAttackGapTicks = std::clamp(
-            j["melee_attack_gap_ticks"].get<int>(), 0, 3600);
+            j["melee_attack_gap_ticks"].get<int>(), 1, 30);
     }
+    const int legacyGap = out.meleeAttackGapTicks >= 1 ? out.meleeAttackGapTicks : -1;
+    auto readAttackGap = [&](const char* key, int fallback) {
+        if (!j.contains(key) || !j[key].is_number_integer()) return fallback;
+        return std::clamp(j[key].get<int>(), 1, 30);
+    };
+    out.meleeAttackGapMinTicks = readAttackGap(
+        "melee_attack_gap_min_ticks", legacyGap);
+    out.meleeAttackGapMaxTicks = readAttackGap(
+        "melee_attack_gap_max_ticks", legacyGap);
+    if (out.meleeAttackGapMinTicks >= 1 && out.meleeAttackGapMaxTicks < 1)
+        out.meleeAttackGapMaxTicks = out.meleeAttackGapMinTicks;
+    if (out.meleeAttackGapMaxTicks >= 1 && out.meleeAttackGapMinTicks < 1)
+        out.meleeAttackGapMinTicks = out.meleeAttackGapMaxTicks;
+    if (out.meleeAttackGapMinTicks > out.meleeAttackGapMaxTicks)
+        out.meleeAttackGapMaxTicks = out.meleeAttackGapMinTicks;
     out.meleeAttackRangeMeters = clampWarn(
         j, "melee_attack_range_meters", 0.5f, 30.0f,
         out.meleeAttackRangeMeters, out.id);

@@ -669,6 +669,9 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
                                 float targetDistance, float attackRange,
                                 int attackGapTicks, float moveWeight)
 {
+    const bool interrupted = st.active;
+    const std::string interruptedActionId = interrupted ? st.actionId : std::string{};
+    const uint32_t interruptedElapsedTicks = interrupted ? tick - st.startTick : 0;
     st.active = true;
     st.actionId = action.id;
     st.startTick = tick;
@@ -677,8 +680,15 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
     st.lastHitboxCenter = glm::vec3(0.0f);
     st.hitTargets.clear();
     g_meleeActionSnapshots[npc.entityId] = action;
-    const int total = action.totalTicks();
-    st.nextAttackTick = tick + (uint32_t)std::max(1, total) + 1u;
+    const int attackIntervalTicks = std::clamp(attackGapTicks, 1, 30);
+    st.nextAttackTick = tick + (uint32_t)attackIntervalTicks;
+
+    // Snapshot action state drives the shared remote animation and audio
+    // presentation path. Replacing these fields immediately interrupts the
+    // previous clip on clients when the new action snapshot arrives.
+    npc.meleeActionActive = true;
+    npc.meleeActionId = action.id;
+    npc.meleeActionStartTick = tick;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
         "melee.action.start", std::to_string(npc.entityId),
@@ -689,7 +699,11 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
                        {"behavior_profile", behaviorProfileId},
                        {"target_distance_meters", targetDistance},
                        {"attack_range_meters", attackRange},
-                       {"attack_gap_ticks", attackGapTicks},
+                       {"attack_gap_ticks", attackIntervalTicks},
+                       {"attack_interval_ticks", attackIntervalTicks},
+                       {"interrupted_previous_action", interrupted},
+                       {"interrupted_action", interruptedActionId},
+                       {"interrupted_elapsed_ticks", interruptedElapsedTicks},
                        {"move_weight", moveWeight},
                        {"position", {npc.pos.x, npc.pos.y, npc.pos.z}}});
 }
@@ -772,6 +786,25 @@ void serverMeleeResetForSpawn(ServerPlayer& player)
     player.meleeGrabPullTicksLeft = 0;
     player.meleeGrabImmuneUntilTick = 0;
     g_meleeActionSnapshots.erase(player.id);
+}
+
+void serverMeleeResetNpcForSpawn(uint32_t npcId)
+{
+    g_npcMelee.erase(npcId);
+    g_meleeActionSnapshots.erase(npcId);
+}
+
+void serverMeleeResetNpcForSpawn(ServerNpc& npc)
+{
+    serverMeleeResetNpcForSpawn(npc.entityId);
+    npc.meleePercent = 0.0f;
+    npc.meleeActionActive = false;
+    npc.meleeActionId.clear();
+    npc.meleeActionStartTick = 0;
+    npc.meleeActionForward = glm::vec3(1.0f, 0.0f, 0.0f);
+    npc.meleeActionYaw = 0.0f;
+    npc.meleeHitTargets.clear();
+    npc.meleeNextAttackTick = 0;
 }
 
 void tickServerWeaponAnimationActions(std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1024,6 +1057,8 @@ void tickServerMeleeActions(SOCKET sock,
             NpcMeleeState& st = g_npcMelee[npc.entityId];
             if (npc.health <= 0) {
                 st.active = false;
+                npc.meleeActionActive = false;
+                npc.meleeActionId.clear();
                 g_meleeActionSnapshots.erase(npc.entityId);
                 g_npcMelee.erase(npc.entityId);
                 continue;
@@ -1048,6 +1083,8 @@ void tickServerMeleeActions(SOCKET sock,
                     action = ms->find(st.actionId);
                 if (!action) {
                     st.active = false;
+                    npc.meleeActionActive = false;
+                    npc.meleeActionId.clear();
                     g_meleeActionSnapshots.erase(npc.entityId);
                 } else {
                     const uint32_t elapsed = tick - st.startTick;
@@ -1056,6 +1093,8 @@ void tickServerMeleeActions(SOCKET sock,
                     const int total = action->totalTicks();
                     if ((int)elapsed >= total || (int)elapsed < 0) {
                         st.active = false;
+                        npc.meleeActionActive = false;
+                        npc.meleeActionId.clear();
                         g_meleeActionSnapshots.erase(npc.entityId);
                     } else if ((int)elapsed >= windup && (int)elapsed < windup + active) {
                         const int phaseTick = (int)elapsed - windup;
@@ -1137,8 +1176,10 @@ void tickServerMeleeActions(SOCKET sock,
                 }
             }
 
-            // Decide a new action when idle: chase the nearest player and swing.
-            if (ms && !st.active && tick >= st.nextAttackTick) {
+            // The configured cadence is start-to-start. If the previous move
+            // is still running when the next decision is due, starting the new
+            // action below replaces its snapshot and interrupts its animation.
+            if (ms && tick >= st.nextAttackTick) {
                 const ServerPlayer* target = nullptr;
                 float best = 1e9f;
                 for (const auto& pEntry : players) {
@@ -1153,8 +1194,10 @@ void tickServerMeleeActions(SOCKET sock,
                     BehaviorProfileRegistry::instance().get(actorProfile.behaviorProfileId);
                 const float attackRange = behavior && behavior->meleeAttackRangeMeters >= 0.0f
                     ? behavior->meleeAttackRangeMeters : 4.5f;
-                const int attackGapTicks = behavior && behavior->meleeAttackGapTicks >= 0
-                    ? behavior->meleeAttackGapTicks : 20;
+                const int attackGapMinTicks = behavior && behavior->meleeAttackGapMinTicks >= 1
+                    ? behavior->meleeAttackGapMinTicks : 20;
+                const int attackGapMaxTicks = behavior && behavior->meleeAttackGapMaxTicks >= 1
+                    ? behavior->meleeAttackGapMaxTicks : attackGapMinTicks;
                 if (target && best <= attackRange) {
                     const bool grounded = npc.onGround;
                     const std::string fallback = grounded ? "a_ground_punch" : "a_air_kick";
@@ -1198,11 +1241,15 @@ void tickServerMeleeActions(SOCKET sock,
                         }
                         if (glm::length(f) < 0.001f)
                             f = glm::vec3(1.0f, 0.0f, 0.0f);
+                        const uint32_t gapSpan = static_cast<uint32_t>(
+                            attackGapMaxTicks - attackGapMinTicks + 1);
+                        const uint32_t gapHash = npc.entityId * 2654435761u
+                            + tick * 2246822519u;
+                        const int attackGapTicks = attackGapMinTicks
+                            + static_cast<int>(gapHash % gapSpan);
                         startNpcMeleeAction(npc, st, *action, glm::normalize(f), tick,
                             actorProfile.behaviorProfileId, best, attackRange,
                             attackGapTicks, selectedWeight);
-                        st.nextAttackTick = tick + (uint32_t)std::max(1, action->totalTicks())
-                            + (uint32_t)attackGapTicks;
                     }
                 }
             }

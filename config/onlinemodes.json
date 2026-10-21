@@ -25,6 +25,15 @@
       "score_limit": 30
     },
     {
+      "id": "duel",
+      "gamemode_id": "duel",
+      "name": "Duel",
+      "description": "1v1. First to 20 kills; a three-minute timeout is a stalemate.",
+      "teams": 2,
+      "score_limit": 20,
+      "max_players": 2
+    },
+    {
       "id": "bomb_tag",
       "gamemode_id": "bombtag",
       "name": "Bomb Tag",

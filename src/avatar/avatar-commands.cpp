@@ -1,4 +1,5 @@
 #include "avatar-commands.h"
+#include "combat/actor-preset-weapons.h"
 #include "avatar.h"
 #include "character-registry.h"
 
@@ -55,6 +56,10 @@ void registerAvatarCommands(Player& player) {
         [&player](const std::vector<std::string>& args) {
             if (args.empty()) {
                 Terminal::instance().addLog("[ERROR] Usage: avatar.load <name>");
+                return;
+            }
+            if (!ActorPresetWeapons::avatarAllowedForActivePreset(args[0])) {
+                Terminal::instance().addLog("[AVATAR] This avatar is not allowed in the active mode.");
                 return;
             }
             if (AvatarSystem::instance().loadAvatar(args[0])) {
@@ -167,6 +172,10 @@ void registerAvatarCommands(Player& player) {
             const std::string name = GetPlayerSettings().avatarName;
             if (name.empty()) {
                 Terminal::instance().addLog("[AVATAR] No avatar saved. Use avatar.load <name>");
+                return;
+            }
+            if (!ActorPresetWeapons::avatarAllowedForActivePreset(name)) {
+                Terminal::instance().addLog("[AVATAR] This avatar is not allowed in the active mode.");
                 return;
             }
             if (av.loadAvatar(name)) {

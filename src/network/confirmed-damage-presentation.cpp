@@ -94,7 +94,13 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
 
     const char* weaponId = networkWeaponTypeName(event.weapon);
     const auto& presentation = WeaponHitFxConfig::instance().presentationFor(weaponId);
-    if (!presentation.enabled)
+    const auto modeHitmarkers = ActorPresetWeapons::modePresentationOverride(
+        ActorPresetWeapons::PresentationFlag::HitMarkers);
+    const auto modeHitSounds = ActorPresetWeapons::modePresentationOverride(
+        ActorPresetWeapons::PresentationFlag::HitSounds);
+    const auto modeDamageNumbers = ActorPresetWeapons::modePresentationOverride(
+        ActorPresetWeapons::PresentationFlag::DamageNumbers);
+    if (!presentation.enabled && !modeHitmarkers && !modeHitSounds && !modeDamageNumbers)
         return false;
     if (event.attackerPlayerId == event.targetPlayerId && !presentation.selfDamageFeedback)
         return false;
@@ -121,21 +127,22 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
 
     // In server-authoritative mode, always show confirmed feedback.
     // In prediction-only mode, only show if the individual flags are set.
-    if (presentation.hitmarker && ActorPresetWeapons::hitMarkersEnabled())
+    if (modeHitmarkers.value_or(presentation.hitmarker && ActorPresetWeapons::hitMarkersEnabled()))
     {
         if (sink && sink->showHitmarker)
             sink->showHitmarker(event.damage, sink->user);
         else if (authMode)
             hitmarkerVisualOnly(event.damage);
     }
-    if (presentation.hitSound && ActorPresetWeapons::hitSoundsEnabled())
+    if (modeHitSounds.value_or(presentation.hitSound && ActorPresetWeapons::hitSoundsEnabled()))
     {
         if (sink && sink->playHitSound)
             sink->playHitSound(event.damage, sink->user);
         else if (authMode)
             playHitmarkerSound(event.damage);
     }
-    if (presentation.damageNumber)
+    if (modeDamageNumbers.value_or(presentation.damageNumber &&
+                                   ActorPresetWeapons::damageNumbersEnabled()))
     {
         if (sink && sink->showDamageNumber)
             sink->showDamageNumber(hit, sink->user);

@@ -1166,6 +1166,8 @@ void serverWriteWeaponActionSnapshot(const std::string& definitionId, bool activ
 // Melee percent meter accessors (0 in non-Melee contexts).
 float serverMeleePercentFor(const ServerPlayer& player);
 void serverMeleeResetForSpawn(ServerPlayer& player);
+void serverMeleeResetNpcForSpawn(uint32_t npcId);
+void serverMeleeResetNpcForSpawn(ServerNpc& npc);
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
                          const void* data, size_t size);
 void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,

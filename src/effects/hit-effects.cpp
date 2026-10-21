@@ -14,6 +14,7 @@
 #include "combat/shot-profiler.h"
 #include "combat/actor-preset-weapons.h"
 #include "combat/weapon-registry.h"
+#include "gamemode/gamemode.h"
 #include "effects/effect-part.h"
 #include "config/impact-decals-config.h"
 #include "debug/debug-visuals.h"
@@ -45,11 +46,30 @@ void HitEffects::onHit(const HitEvent& event)
 
     const WeaponDefinition* weapon = event.weaponId.empty()
         ? nullptr : WeaponRegistry::instance().get(event.weaponId);
-    const bool damageNumbers = (!weapon || weapon->damageNumbersEnabled) &&
-        gConfig.core.damageNumbers;
-    const bool hitEffects = !weapon || weapon->hitEffectsEnabled;
-    const bool worldImpactEffects = !weapon || weapon->worldImpactEffectsEnabled;
-    const bool bloodEffects = !weapon || weapon->bloodEffectsEnabled;
+    const auto modeDamageNumbers = ActorPresetWeapons::modePresentationOverride(
+        ActorPresetWeapons::PresentationFlag::DamageNumbers);
+    const auto modeHitEffects = ActorPresetWeapons::modePresentationOverride(
+        ActorPresetWeapons::PresentationFlag::HitEffects);
+    const auto modeWorldImpacts = ActorPresetWeapons::modePresentationOverride(
+        ActorPresetWeapons::PresentationFlag::WorldImpactEffects);
+    const auto modeBlood = ActorPresetWeapons::modePresentationOverride(
+        ActorPresetWeapons::PresentationFlag::Blood);
+    const auto modePresentation = ActorPresetWeapons::modePresentationSettings();
+    const GamemodePresentation presentation = modePresentation.value_or(GamemodePresentation{});
+    const bool damageNumbers = modeDamageNumbers.value_or(
+        (!weapon || weapon->damageNumbersEnabled) && gConfig.core.damageNumbers &&
+        ActorPresetWeapons::damageNumbersEnabled());
+    const bool hitEffects = modeHitEffects.value_or(
+        (!weapon || weapon->hitEffectsEnabled) && ActorPresetWeapons::hitEffectsEnabled());
+    const bool worldImpactEffects = modeWorldImpacts.value_or(
+        (!weapon || weapon->worldImpactEffectsEnabled) &&
+        ActorPresetWeapons::worldImpactEffectsEnabled());
+    const bool worldHitEffects = presentation.hasWorldHitEffects
+        ? presentation.worldHitEffects : worldImpactEffects;
+    const bool worldImpactDecals = presentation.hasWorldImpactDecals
+        ? presentation.worldImpactDecals : worldImpactEffects;
+    const bool bloodEffects = modeBlood.value_or(
+        (!weapon || weapon->bloodEffectsEnabled) && ActorPresetWeapons::bloodEffectsEnabled());
     const bool presetDamageNumbers = ActorPresetWeapons::damageNumbersEnabled();
     const bool presetHitEffects = ActorPresetWeapons::hitEffectsEnabled();
     const bool presetWorldImpactEffects = ActorPresetWeapons::worldImpactEffectsEnabled();
@@ -77,19 +97,27 @@ void HitEffects::onHit(const HitEvent& event)
     }
 
     // 3. World impact sphere (gray)
-    if (event.hitWorld && gConfig.core.worldImpact && worldImpactEffects && presetWorldImpactEffects) {
+    if (event.hitWorld && gConfig.core.worldImpact && worldHitEffects && presetWorldImpactEffects) {
         auto ts = ShotProfiler::Scope(gShotProfiler ? &gShotProfiler->impactSphereMs : nullptr);
-        EffectPartSystem::instance().spawnWorldImpact(event.position, event.normal, 1.0f, event.direction);
+        EffectPartSystem::instance().spawnWorldImpact(event.position, event.normal,
+            presentation.worldHitEffectScale, event.direction,
+            presentation.worldHitEffectLifetimeScale);
     }
 
     // 3b. World cracks along the surface at the hit point
-    if (event.hitWorld && gConfig.core.worldImpact && worldImpactEffects && presetWorldImpactEffects) {
-        EffectPartSystem::instance().spawnWorldCracks(event.position, event.normal, event.direction);
+    if (event.hitWorld && gConfig.core.worldImpact && worldImpactDecals && presetWorldImpactEffects) {
+        EffectPartSystem::instance().spawnWorldCracks(event.position, event.normal,
+            event.direction, presentation.worldImpactDecalScale,
+            presentation.worldImpactDecalLifetimeScale,
+            presentation.worldImpactDecalAlphaScale);
     }
 
     // 4. Bullet impact hole
-    if (event.hitWorld && gConfig.core.bulletImpact && worldImpactEffects && presetWorldImpactEffects) {
-        EffectPartSystem::instance().spawnBulletImpact(event.position, event.normal);
+    if (event.hitWorld && gConfig.core.bulletImpact && worldImpactDecals && presetWorldImpactEffects) {
+        EffectPartSystem::instance().spawnBulletImpact(event.position, event.normal,
+            presentation.worldImpactDecalScale,
+            presentation.worldImpactDecalLifetimeScale,
+            presentation.worldImpactDecalAlphaScale);
     }
 
     // 5. Blood effect (gate: impact_decals.json blood.enabled is the single switch)

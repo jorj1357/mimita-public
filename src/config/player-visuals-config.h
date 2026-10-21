@@ -77,6 +77,12 @@ public:
     void setTeamOutlineColors(const glm::vec3& friendly, const glm::vec3& enemy);
     void clearTeamOutlineColorsOverride();
     glm::vec3 effectiveOutlineColor(bool teammate, const glm::vec3& configured) const;
+    void setFriendlyOutlinesEnabled(bool enabled);
+    bool friendlyOutlinesEnabled() const { return mFriendlyOutlinesEnabled; }
+    void setEnemyOutlineAlpha(float alpha);
+    void clearEnemyOutlineAlphaOverride();
+    float effectiveEnemyOutlineAlpha(float configured) const;
+    bool hasEnemyOutlineAlphaOverride() const { return mEnemyOutlineAlphaOverride; }
     bool hasPlayerOutlinesOverride() const { return mPlayerOutlinesOverride; }
     bool playerOutlinesEnabled() const { return mPlayerOutlinesEnabled; }
     // Configured layer mode, or "none" while the gamemode disables outlines.
@@ -94,4 +100,7 @@ private:
     bool mTeamOutlineColorsOverride = false;
     glm::vec3 mFriendlyOutlineColor{0.0f, 255.0f, 0.0f};
     glm::vec3 mEnemyOutlineColor{255.0f, 0.0f, 0.0f};
+    bool mFriendlyOutlinesEnabled = false;
+    bool mEnemyOutlineAlphaOverride = false;
+    float mEnemyOutlineAlpha = 0.25f;
 };

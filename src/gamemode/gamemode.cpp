@@ -156,6 +156,7 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.goalValue = std::max(1, optInt(root, "goal_value", next.goalValue));
         next.weaponSetId = std::max(1, optInt(root, "weapon_set_id", next.weaponSetId));
         next.timeLimitSeconds = std::max(0, optInt(root, "time_limit_seconds", next.timeLimitSeconds));
+        next.timeLimitOutcome = optString(root, "time_limit_outcome", next.timeLimitOutcome);
         next.respawnSeconds = std::max(0.0f, optFloat(root, "respawn_seconds", next.respawnSeconds));
         next.killHeals = optBool(root, "kill_heals", next.killHeals);
         next.friendlyFire = optBool(root, "friendly_fire", next.friendlyFire);
@@ -288,6 +289,8 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("damage_numbers", next.presentation.hasDamageNumbers, next.presentation.damageNumbers);
             readFlag("hit_effects", next.presentation.hasHitEffects, next.presentation.hitEffects);
             readFlag("world_impact_effects", next.presentation.hasWorldImpactEffects, next.presentation.worldImpactEffects);
+            readFlag("world_impact_decals", next.presentation.hasWorldImpactDecals, next.presentation.worldImpactDecals);
+            readFlag("world_hit_effects", next.presentation.hasWorldHitEffects, next.presentation.worldHitEffects);
             readFlag("hit_markers", next.presentation.hasHitMarkers, next.presentation.hitMarkers);
             readFlag("hit_sounds", next.presentation.hasHitSounds, next.presentation.hitSounds);
             readFlag("hit_flinch", next.presentation.hasHitFlinch, next.presentation.hitFlinch);
@@ -296,6 +299,22 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("ragdolls", next.presentation.hasRagdolls, next.presentation.ragdolls);
             readFlag("enemy_healthbars", next.presentation.hasEnemyHealthbars, next.presentation.enemyHealthbars);
             readFlag("player_outlines", next.presentation.hasPlayerOutlines, next.presentation.playerOutlines);
+            readFlag("friendly_outlines", next.presentation.hasFriendlyOutlines, next.presentation.friendlyOutlines);
+            if (p.contains("enemy_outline_alpha") && p["enemy_outline_alpha"].is_number()) {
+                next.presentation.enemyOutlineAlpha = std::clamp(p["enemy_outline_alpha"].get<float>(), 0.0f, 1.0f);
+                next.presentation.hasEnemyOutlineAlpha = true;
+            }
+            auto readScale = [&p](const char* key, float& value) {
+                if (p.contains(key) && p[key].is_number())
+                    value = std::clamp(p[key].get<float>(), 0.0f, 4.0f);
+            };
+            readScale("blood_scale", next.presentation.bloodScale);
+            readScale("blood_lifetime_scale", next.presentation.bloodLifetimeScale);
+            readScale("world_impact_decal_scale", next.presentation.worldImpactDecalScale);
+            readScale("world_impact_decal_lifetime_scale", next.presentation.worldImpactDecalLifetimeScale);
+            readScale("world_impact_decal_alpha_scale", next.presentation.worldImpactDecalAlphaScale);
+            readScale("world_hit_effect_scale", next.presentation.worldHitEffectScale);
+            readScale("world_hit_effect_lifetime_scale", next.presentation.worldHitEffectLifetimeScale);
             if (p.contains("friendly_outline_color") && p["friendly_outline_color"].is_array() && p["friendly_outline_color"].size() >= 3) {
                 next.presentation.friendlyOutlineColor = {
                     p["friendly_outline_color"][0].get<float>(),
@@ -348,6 +367,17 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         if (root.contains("blood_enabled")) {
             next.bloodExplicit = true;
             next.bloodEnabled = root["blood_enabled"].get<bool>();
+        }
+        // Nested presentation keys are the canonical mode policy. The legacy
+        // root aliases remain supported, with an explicit nested value taking
+        // precedence when both are present.
+        if (next.presentation.hasRagdolls) {
+            next.ragdollExplicit = true;
+            next.ragdollEnabled = next.presentation.ragdolls;
+        }
+        if (next.presentation.hasBlood) {
+            next.bloodExplicit = true;
+            next.bloodEnabled = next.presentation.blood;
         }
 
         // ── Match role counts (optional) ────────────────────────────

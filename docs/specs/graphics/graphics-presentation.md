@@ -26,9 +26,10 @@ the effect, HUD, camera, or renderer that produces the visible result.
 ## Presentation settings
 
 Mode presentation policy belongs in the mode's existing `presentation`
-object. A mode may omit any setting to inherit the normal actor or user
-configuration. An explicit value must override that inherited value for the
-scope described below.
+object. Most settings may be omitted to inherit normal actor or user
+configuration. `player_outlines` is an opt-in exception for community matches:
+outlines are off unless the active mode explicitly sets it to `true`. An
+explicit value overrides inherited behavior for the scope described below.
 
 The shared mode-level presentation contract covers these independently
 controllable choices:
@@ -46,7 +47,9 @@ controllable choices:
 | `ragdolls` | Show ragdoll presentation. |
 | `enemy_healthbars` | Show health bars for hostile actors. |
 | `player_outlines` | Show player team/enemy outlines. |
+| `friendly_outlines` | Show outlines for known teammates; defaults to false when the mode enables outlines. |
 | `friendly_outline_color`, `enemy_outline_color` | Set the respective outline colors when outlines are enabled. |
+| `enemy_outline_alpha` | Set hostile outline opacity from 0.0 (transparent) to 1.0 (opaque). |
 
 Each switch is independent: turning one off must not silently disable another.
 For example, disabling damage numbers must not disable hit effects, and
@@ -126,15 +129,27 @@ presentation consumer receives the new values together or expose an effective
 profile generation.
 
 The mode parser in `src/gamemode/gamemode.cpp` reads the presentation switches
-listed above, but the client currently applies only a subset of those mode
-values directly. `src/network/community-match-client.cpp` applies mode-level
-player-outline and hit-flinch overrides. Damage numbers, actor hit effects,
-world impact effects, blood, hit markers, and hit sounds are also controlled by
-actor-preset application in `src/combat/actor-preset-weapons.cpp`; their
-mode-level parsed values do not currently all flow to those consumers. The
-current Juggernaut JSON sets `damage_numbers`, `hit_effects`,
-`world_impact_effects`, and `hit_markers`, but this source path does not prove
-that each of those values controls the corresponding visible effect.
+listed above. The client now applies explicit mode values after role and weapon
+preset overlays, and routes them into damage numbers, hit effects, world
+impacts, blood, hit markers, hit sounds, killfeed, ragdoll, and healthbar
+consumers. Player outline mode and team colors are also routed through the
+renderer; unknown team identity is withheld instead of guessed from stale
+player data. The client emits a rate-limited-by-profile-change
+`client.gamemode.presentation.applied` journal event. Build 2731 compiled the
+current source and launched a live Duel run; the journal confirms Duel mode,
+its NPC roster, the 15-second intermission, and countdown completion. The
+presentation controls and camera have not yet been visually accepted in-game,
+and this Duel run does not validate the Juggernaut profile.
+
+## 2026-10-21 outline policy correction
+
+In a community match, `player_outlines` must be explicitly true before the
+renderer may draw any actor outline; missing and false both suppress outlines
+even if local `playervisuals.json` enables them. When enabled, unknown-team
+actors remain unoutlined. Teammates remain unoutlined unless
+`friendly_outlines` is explicitly true. `enemy_outline_alpha` optionally
+overrides hostile opacity. These settings are applied from the active mode
+profile; leaving the match restores the local visual preferences.
 
 Camera FOV is split across actor presets and gamemode camera policy. The
 Juggernaut actor presets set different forced FOV values for Fighters and
@@ -144,12 +159,9 @@ settings are loaded by `src/render/dynamic-light-config.cpp` from the global
 `config/lighting.json` owner. There is no demonstrated Juggernaut-specific
 dynamic-light amount override in the current consumer path.
 
-These are source-level findings, not live-runtime verification. The required
-implementation work is to route each supported mode value through its existing
-consumer, resolve mode/actor/user precedence, and make the effective profile
-inspectable. Counter-Strike's current JSON is a useful comparison case, but its
-presence or successful parsing does not prove that all modes or all options
-work.
+The source paths are implemented, but runtime acceptance remains open.
+Counter-Strike's current JSON is a useful comparison case, but its presence or
+successful parsing does not prove that all modes or all options work.
 
 ## Validation and acceptance
 
@@ -157,6 +169,13 @@ Source and configuration checks must show that:
 
 - every documented field has one parser, one owner, a default/inheritance
   rule, validation, an application boundary, and a visible consumer;
+- mode-owned `blood_scale`, `blood_lifetime_scale`, `world_impact_decal_scale`,
+  `world_impact_decal_lifetime_scale`, `world_impact_decal_alpha_scale`,
+  `world_hit_effect_scale`, and `world_hit_effect_lifetime_scale` are optional
+  multipliers clamped to 0..4 (alpha is additionally clamped to 0..1 at use);
+- `world_impact_decals` controls persistent bullet-hole/crack decals separately
+  from transient `world_hit_effects`; older `world_impact_effects` remains the
+  inherited fallback when either new switch is absent;
 - each mode can independently turn every documented feedback option on and
   off, and numeric controls stay inside documented bounds;
 - saving multiple valid edits to one mode profile changes all corresponding

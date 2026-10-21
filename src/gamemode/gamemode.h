@@ -119,13 +119,15 @@ struct GamemodeRounds {
     float resultsSeconds = 0.0f;
 };
 
-// Mode-level presentation policy. Missing keys mean "no policy" so the
-// runtime preserves ordinary behavior. Actor-preset presentation refines
-// these where both exist.
+// Mode-level presentation policy. Most missing keys mean "no policy";
+// player_outlines is opt-in during community matches. Actor-preset
+// presentation refines other settings where both exist.
 struct GamemodePresentation {
     bool hasDamageNumbers = false;       bool damageNumbers = true;
     bool hasHitEffects = false;          bool hitEffects = true;
     bool hasWorldImpactEffects = false;  bool worldImpactEffects = true;
+    bool hasWorldImpactDecals = false;   bool worldImpactDecals = true;
+    bool hasWorldHitEffects = false;     bool worldHitEffects = true;
     bool hasHitMarkers = false;          bool hitMarkers = true;
     bool hasHitSounds = false;           bool hitSounds = true;
     bool hasHitFlinch = false;            bool hitFlinch = true;
@@ -134,6 +136,15 @@ struct GamemodePresentation {
     bool hasRagdolls = false;            bool ragdolls = true;
     bool hasEnemyHealthbars = false;     bool enemyHealthbars = true;
     bool hasPlayerOutlines = false;      bool playerOutlines = true;
+    bool hasFriendlyOutlines = false;     bool friendlyOutlines = false;
+    bool hasEnemyOutlineAlpha = false;   float enemyOutlineAlpha = 0.25f;
+    float bloodScale = 1.0f;
+    float bloodLifetimeScale = 1.0f;
+    float worldImpactDecalScale = 1.0f;
+    float worldImpactDecalLifetimeScale = 1.0f;
+    float worldImpactDecalAlphaScale = 1.0f;
+    float worldHitEffectScale = 1.0f;
+    float worldHitEffectLifetimeScale = 1.0f;
     bool hasTeamOutlineColors = false;
     glm::vec3 friendlyOutlineColor{0.0f, 255.0f, 0.0f};
     glm::vec3 enemyOutlineColor{255.0f, 0.0f, 0.0f};
@@ -177,6 +188,9 @@ struct Gamemode {
     int goalValue = 20;
     int weaponSetId = 1;
     int timeLimitSeconds = 0;
+    // Outcome when a timed match expires before its score goal is reached.
+    // "high_score" preserves the shared default; "stalemate" leaves no winner.
+    std::string timeLimitOutcome = "high_score";
     float respawnSeconds = 0.0f;
     bool killHeals = true;
     // Team members are protected from one another unless a mode explicitly

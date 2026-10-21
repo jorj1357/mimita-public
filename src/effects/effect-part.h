@@ -129,18 +129,20 @@ public:
     EffectPart* spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim);
     void spawnBloodEffect(glm::vec3 hitPoint, glm::vec3 sprayDirection, float damage,
                           const std::string& sourceActorId, const std::string& targetActorId,
-                          float directness = 1.0f, float hitDistance = -1.0f);
+                          float directness = 1.0f, float hitDistance = -1.0f,
+                          float amountScale = 1.0f, float lifetimeScale = 1.0f);
     void spawnClientBloodFeedback(int damage, float force);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
                                   const std::string& sourceActorId, const std::string& targetActorId,
                                   float sizeScale = 1.0f);
-    EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f, glm::vec3 direction = {});
+    EffectPart* spawnWorldImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f, glm::vec3 direction = {}, float lifetimeScale = 1.0f);
     EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {}, bool spawnVisual = true, bool spawnLighting = true);
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {});
-    EffectPart* spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
+    EffectPart* spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f, float lifetimeScale = 1.0f, float alphaScale = 1.0f);
     void spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
                           const glm::vec3& direction = glm::vec3(0.0f),
-                          float sizeScale = 1.0f);
+                          float sizeScale = 1.0f, float lifetimeScale = 1.0f,
+                          float alphaScale = 1.0f);
     EffectPart* spawnImpactSphereTick(glm::vec3 position, glm::vec3 color, float radius = 0.15f);
     // Spawn an impact tick using the configured color/radius from hitfx.json.
     EffectPart* spawnImpactSphereTickCfg(glm::vec3 position);
@@ -200,7 +202,9 @@ private:
                                  float damageScale,
                                  float force,
                                  const std::string& sourceActorId,
-                                 const std::string& targetActorId);
+                                 const std::string& targetActorId,
+                                 float amountScale = 1.0f,
+                                 float lifetimeScale = 1.0f);
 
     static constexpr unsigned int POOL_SIZE = 4096;
     static constexpr unsigned int MAX_BLOOD_PARTICLES = 2048;
@@ -246,6 +250,7 @@ private:
         glm::vec3 bitangent{0.0f};
         float damageScale = 1.0f;
         float force = 1.0f;
+        float lifetimeScale = 1.0f;
         std::string sourceActorId;
         std::string targetActorId;
     };

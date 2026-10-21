@@ -136,6 +136,18 @@ void HealthbarConfig::setModeVisibilityOverride(bool hideWorldHealthbars)
     mHideWorldHealthbarsForMode = hideWorldHealthbars;
 }
 
+void HealthbarConfig::setModeEnemyVisibilityOverride(bool enabled)
+{
+    mHasEnemyHealthbarsOverride = true;
+    mEnemyHealthbarsEnabled = enabled;
+}
+
+void HealthbarConfig::clearModeEnemyVisibilityOverride()
+{
+    mHasEnemyHealthbarsOverride = false;
+    mEnemyHealthbarsEnabled = true;
+}
+
 HealthbarConfigData& HealthbarConfig::edit()
 {
     return mData;

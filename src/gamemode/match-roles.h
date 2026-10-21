@@ -106,10 +106,12 @@ struct MatchRoleDefinition
     std::string avatarName;
     bool avatarForced = false;
     std::vector<std::string> allowedAvatars;
+    std::vector<std::string> deniedAvatars;
     std::vector<int> allowedTeams;
     float cameraFov = 0.0f;
     bool forceFov = false;
     bool forceFirstPerson = false;
+    bool forceThirdPerson = false;
     ActorPresetPresentation presentation;
     std::unordered_map<std::string, ActorPresetWeaponOverride> weaponOverrides;
     // Optional per-weapon starting ammo overrides for this role.
@@ -121,6 +123,12 @@ struct MatchRoleDefinition
     // "navigation". Absent (configured=false) means shared navigator defaults.
     NpcNavigationSettings navigationSettings;
 };
+
+// Case-insensitive avatar policy matcher. Patterns support '*' as a wildcard;
+// an empty allowed list means any avatar not matched by the denied list.
+bool isAvatarAllowedByPolicy(const std::string& avatar,
+                             const std::vector<std::string>& allowed,
+                             const std::vector<std::string>& denied);
 
 class MatchRoleRegistry
 {

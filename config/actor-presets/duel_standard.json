@@ -1,0 +1,18 @@
+{
+  "schema": 2,
+  "id": "duel_standard",
+  "display_name": "Standard Duel",
+  "camera": {
+    "fov": 100,
+    "force_fov": true,
+    "perspective": "third_person",
+    "force_perspective": true
+  },
+  "avatar": {
+    "forced": false,
+    "name": "jason",
+    "allowed": [],
+    "denied": ["monster*"]
+  },
+  "movement_preset": "source"
+}

@@ -150,6 +150,19 @@
       ],
       "client_args": [],
       "map": "dust2cyberiav4"
+    },
+    "14": {
+      "name": "duel_presentation",
+      "server_args": [
+        "--weapon-set",
+        "1",
+        "--mode",
+        "duel",
+        "--gamemode",
+        "duel"
+      ],
+      "client_args": [],
+      "map": "xxity2"
     }
   }
 }
