@@ -79,7 +79,8 @@ public:
     // Render the equipped weapon on a remote player's hand.
     // Uses the same viewmodel mesh and attachment logic as the local player,
     // but does not modify the remote player's arm poses.
-    void renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera, float dt);
+    void renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera, float dt,
+                            bool updateAnimation = true);
 
     const GodballPhysics& godballPhysics() const { return mGodballPhys; }
     GodballPhysics& godballPhysics() { return mGodballPhys; }

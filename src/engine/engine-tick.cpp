@@ -59,8 +59,7 @@ extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
 
 // Heartbeat: logs at most once per 0.5s, used to identify where the frame loop stops.
-#define HEARTBEAT(MSG) \
-    Debug::logThrottled(Debug::Category::General, "heartbeat", 0.5f, "[HB] " MSG "\n")
+#define HEARTBEAT(MSG) do { } while (0)
 
 // Spike detection: warns if a stage takes too long.
 #define CHECK_SPIKE(NAME, MS, THRESHOLD) \
@@ -133,8 +132,9 @@ void engineTick(Engine& engine)
     HEARTBEAT("FRAME START");
 
     { MIMITA_PERF_SCOPE("Setup"); engineTickSetup(engine, dt, worldPassRan); }
-    if (engine.renderer && engine.renderer->stretchesWholeFrame())
-        PostFX::instance().bindFBO();
+    { MIMITA_PERF_SCOPE("PostFX::FrameBind");
+      if (engine.renderer && engine.renderer->stretchesWholeFrame())
+          PostFX::instance().bindFBO(); }
     { MIMITA_PERF_SCOPE("Audio"); engineTickAudio(dt); }
     // Always tick listen server if hosting (receives packets, sends snapshots)
     {
@@ -158,9 +158,9 @@ void engineTick(Engine& engine)
             { MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
             { MIMITA_PERF_SCOPE("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
             {
-                // Rendering was only a spike-scope; feed it into PerfTimes so the
-                // overlay "Rendering" line and the numeric frame event are real.
-                Perf::ScopedTimer rendering("Rendering");
+                // Capture render prep (skybox/replay selection) together with
+                // the render pass so the scope tree has one Rendering owner.
+                MIMITA_PERF_SCOPE("Rendering");
                 engineTickRender(engine, dt, worldPassRan);
             } HEARTBEAT("after render");
             { MIMITA_PERF_SCOPE("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
@@ -339,7 +339,7 @@ void engineTick(Engine& engine)
 
     if (engine.renderer && engine.renderer->stretchesWholeFrame()) {
         { MIMITA_PERF_SCOPE("PostFX::Unbind"); PostFX::instance().unbindFBO(); }
-        { Perf::ScopedTimer _pfx("PostFX");
+        { MIMITA_PERF_SCOPE("PostFX");
           PerfGpu::beginRegion("GPU::PostFX");
           PostFX::instance().render();
           PerfGpu::endRegion(); }

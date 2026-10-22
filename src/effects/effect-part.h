@@ -234,7 +234,7 @@ private:
     static constexpr int DEFAULT_SPAWN_CAP = 64;
     static constexpr int DEFAULT_SOUND_CAP = 8;
     static constexpr int DEFAULT_DECAL_CAP = 128;
-    static constexpr int DEFAULT_PARTICLE_CAP = 256;
+    static constexpr int DEFAULT_PARTICLE_CAP = 128;
 
     struct BloodDebugSegment {
         glm::vec3 from{0.0f};

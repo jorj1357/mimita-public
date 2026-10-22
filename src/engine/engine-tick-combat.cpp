@@ -12,6 +12,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/chat-window.h"
+#include <algorithm>
 #include <cstdio>
 #include <unordered_map>
 #include <GLFW/glfw3.h>
@@ -220,12 +221,22 @@ void engineTickCombat(Engine& engine, float dt)
         gReplayPlayer.resume();
     }
 
-    // Update effect parts
-    { MIMITA_PERF_SCOPE("Combat::EffectSpawn");
-    EffectPartSystem::instance().update(dt);
-    }
-    { MIMITA_PERF_SCOPE("Combat::DecalTrace");
-    HitEffects::updateHitBursts(dt);
+    // Effects and hit bursts are presentation on the fixed 60 Hz gameplay
+    // clock. Advance them in bounded fixed steps rather than once per render
+    // frame, so a 240 FPS renderer does not pay four times the update cost.
+    {
+        static double effectAccumulator = 0.0;
+        constexpr double kEffectDt = 1.0 / 60.0;
+        effectAccumulator = std::min(effectAccumulator + (double)dt, 0.2);
+        int steps = 0;
+        { MIMITA_PERF_SCOPE("Combat::EffectSpawn");
+          while (effectAccumulator >= kEffectDt && steps < 4) {
+              EffectPartSystem::instance().update((float)kEffectDt);
+              HitEffects::updateHitBursts((float)kEffectDt);
+              effectAccumulator -= kEffectDt;
+              ++steps;
+          }
+        }
     }
 
     updateChatBubbles(player.chatState);

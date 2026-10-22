@@ -34,6 +34,7 @@
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
+#include "gui/hud/healthbar-config.h"
 #include "gui/hud/chat-bubble.h"
 #include "gui/hud/chat-window.h"
 #include "gui/gui-editor.h"
@@ -44,6 +45,7 @@
 #include "devtools/dev-npc-selection.h"
 #include "devtools/dev-overlay.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 #include "video/frame-pacer.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
@@ -113,12 +115,13 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     // Draw all panel elements from hud.json (backgrounds, containers, etc.)
     // This makes JSON-edited panels visible, matching the server browser pattern.
+    { MIMITA_PERF_SCOPE("HUD::Panels");
     for (const auto& id : hudLayout.elementIds())
     {
         const GuiElement* el = hudLayout.get(id);
         if (el && el->type == "panel" && el->visible && id != "deathOverlay")
             drawGuiElement(engine.window(), *el);
-    }
+    } }
 
     auto hudText = [&](const std::string& id, const std::string& text,
                        float alpha = 1.0f) {
@@ -353,7 +356,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // ── Hotbar from JSON config ────────────────────────────────────
-    {
+    { MIMITA_PERF_SCOPE("HUD::Hotbar");
         auto readVal = [&](const char* id, float defaultVal) -> float {
             const GuiElement* el = hudLayout.get(id);
             return el ? el->x : defaultVal;
@@ -456,6 +459,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // ── Self-healthbar (world-space, reuses NPC healthbar style) ──
+    { MIMITA_PERF_SCOPE("HUD::WorldOverlays");
     const bool worldHealthbarsVisible =
         HealthbarConfig::instance().worldHealthbarsVisible();
     if (worldHealthbarsVisible) {
@@ -548,6 +552,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         if (logHealthbars)
             lastHealthbarLogMs = healthbarNowMs;
     }
+    } // HUD::WorldOverlays
     {
         static float hpLogTimer = 0.0f; hpLogTimer -= 0.016f;
         if (hpLogTimer <= 0.0f && !npcSystem.all().empty()) {

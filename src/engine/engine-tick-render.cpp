@@ -381,7 +381,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     auto& replayWeaponModels = REPLAY_WEAPON_MODELS;
     auto& mpContext = MP_CONTEXT;
     auto& gReplayPlayer = REPLAY_PLAYER;
-    MimitaMeleeRules::Config::instance().pollReload();
+    { MIMITA_PERF_SCOPE("Rendering::Prepare::MeleeRules");
+      MimitaMeleeRules::Config::instance().pollReload(); }
     const bool meleePresentation =
         MimitaNet::CommunityMatchClient::instance().mode() == "melee";
 
@@ -394,6 +395,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     }
 
     // During replay export: detect kills and apply cinematic impact frame
+    { MIMITA_PERF_SCOPE("Rendering::Prepare::ReplayState");
     if (isExporting && replayRenderActive) {
         if (gKillImpactFrame.active) {
             gKillImpactFrame.remainingTicks--;
@@ -420,12 +422,13 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         gReplayActorPrevDead.clear();
         gReplayActorAvatarNames.clear();
     }
+    } // Rendering::Prepare::ReplayState
 
     // Update skybox animations and check for hot-reload
     { MIMITA_PERF_SCOPE("Rendering::Skybox::Reload"); gSkybox.pollReload(); }
     { MIMITA_PERF_SCOPE("Rendering::Skybox::Update"); gSkybox.update(dt); }
 
-    { MIMITA_PERF_SCOPE("Rendering");
+    {
     diagRenderFrameBegin(dt);
     { MIMITA_PERF_SCOPE("Rendering::Shadows");
       // Shadow depth is reused from the previous frame on alternating frames.
@@ -496,6 +499,9 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         { MIMITA_PERF_SCOPE("Rendering::Actors");
         PerfGpu::beginRegion("GPU::Actors");
         beginPlayerTrailBatch();
+        static uint32_t remoteWeaponFrameCounter = 0;
+        const bool updateRemoteWeaponAnimation =
+            (remoteWeaponFrameCounter++ & 1u) == 0u;
         if (player.spawnFlashTimer > 0.0f) {
             static GLuint spawnFlashVao = 0, spawnFlashVbo = 0;
             if (!spawnFlashVao) {
@@ -601,7 +607,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                         renderMeleeShield(kv.second, camera,
                                           kv.second.meleeShieldActive,
                                           kv.second.meleeShieldFraction);
-                    weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
+                    weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt, updateRemoteWeaponAnimation);
                 } catch (const std::exception& ex) {
                     recordCrashBreadcrumb("render-remote-player",
                         "entity=%u exception=%s", kv.first, ex.what());
@@ -624,7 +630,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 try {
                     renderNetworkPlayer(kv.second, camera, kv.first, false,
                                         localOutlineTeam, remoteTeam);
-                    weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt);
+                    weapons.renderRemoteWeapon(kv.first, kv.second, camera, dt, updateRemoteWeaponAnimation);
                 } catch (const std::exception& ex) {
                     recordCrashBreadcrumb("render-remote-npc",
                         "entity=%u exception=%s", kv.first, ex.what());
@@ -683,13 +689,14 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             for (const Npc& npc : npcSystem.all()) {
                 if (npc.body.dead || npc.body.currentHp <= 0)
                     continue;
-                weapons.renderRemoteWeapon(npc.id, npc.body, camera, dt);
+                weapons.renderRemoteWeapon(npc.id, npc.body, camera, dt, updateRemoteWeaponAnimation);
             }
         }
         { MIMITA_PERF_SCOPE("Rendering::Actors::Trails"); drawPlayerTrailBatch(camera); }
         PerfGpu::endRegion();
         } // Rendering::Actors
     }
+    { MIMITA_PERF_SCOPE("Rendering::PostActors");
     diagRenderStage(3);
     {   static float rlogTimer = 0.0f; rlogTimer -= dt;
         if (rlogTimer <= 0.0f && replayPlaybackActive) {
@@ -820,6 +827,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             drawEntityLine("NPC", kv.first, kv.second,
                 kv.second.dead ? glm::vec4(1,0.3f,0,1) : glm::vec4(0.2f,0.8f,1,1));
     }
+    } // Rendering::PostActors
 
     { MIMITA_PERF_SCOPE("Rendering::Effects::EffectParts");
       Perf::state().renderPerf.effectParts =

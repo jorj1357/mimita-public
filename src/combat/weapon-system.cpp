@@ -1326,13 +1326,15 @@ void WeaponSystem::addKillLine(const std::string& line) {
         mKillfeed.erase(mKillfeed.begin());
 }
 
-void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera, float dt) {
+void WeaponSystem::renderRemoteWeapon(uint32_t entityId, const Player& player, const Camera& camera, float dt,
+                                      bool updateAnimation) {
     if (player.dead) return;
     const WeaponDefinition* def = getCurrentDef(player);
     if (!def) return;
     const std::string key = std::to_string(entityId) + ":" + def->id;
     WeaponViewModel& vm = mRemoteViewModels[key];
-    vm.update(camera, const_cast<Player&>(player), dt, def, true);
+    if (updateAnimation)
+        vm.update(camera, const_cast<Player&>(player), dt, def, true);
     if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
         printf("[WEAPON VISUAL INSTANCE] entityId=%u weaponId=%s resourcePtr=%p "
                "instancePtr=%p runtimePtr=%p isReloading=%d fireCooldown=%.2f "
