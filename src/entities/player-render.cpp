@@ -23,6 +23,7 @@ extern int capsuleVertCount;
 void initCapsuleMesh();
 void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& modelKey);
 GLuint uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey);
+bool drawCombinedBodyParts(const Player& player, unsigned int shader);
 
 void Player::render(unsigned int shader,
                     const glm::mat4& view,
@@ -269,6 +270,20 @@ void Player::renderCurrentPose(unsigned int shader,
         }
 
         glActiveTexture(GL_TEXTURE0);
+        bool combinedDrawn = false;
+        if (!hideHead && !outlinePass && !whiteOverride && !DebugConfig::DEBUG_CULL) {
+            bool validPartSet = true;
+            for (const PhysicalBodyPart& part : physicalBody.parts) {
+                if (part.nodeIndex >= 0 &&
+                    part.nodeIndex < static_cast<int>(perfectPoseSkeleton.nodes.size()))
+                    continue;
+                validPartSet = false;
+                break;
+            }
+            if (validPartSet)
+                combinedDrawn = drawCombinedBodyParts(*this, shader);
+        }
+        if (!combinedDrawn) {
         for (size_t i = 0; i < physicalBody.parts.size(); ++i)
         {
             const PhysicalBodyPart& part = physicalBody.parts[i];
@@ -410,6 +425,7 @@ void Player::renderCurrentPose(unsigned int shader,
                 diagRenderCountPlayerDraw();
             }
         }
+        } // !combinedDrawn
 
         // Restore culling state
         if (cullWas) {

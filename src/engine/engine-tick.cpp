@@ -138,6 +138,7 @@ void engineTick(Engine& engine)
     { MIMITA_PERF_SCOPE("Audio"); engineTickAudio(dt); }
     // Always tick listen server if hosting (receives packets, sends snapshots)
     {
+        MIMITA_PERF_SCOPE("ListenServer");
         MimitaNet::ListenServerState* ls = getListenServerState();
         if (ls && ls->active)
             MimitaNet::tickListenServer(*ls, dt);
@@ -179,6 +180,7 @@ void engineTick(Engine& engine)
     }
     }
 
+    { MIMITA_PERF_SCOPE("InputKeys");
     static bool escapePrev = false;
     bool escapeDown = glfwGetKey(engine.window(), GLFW_KEY_ESCAPE) == GLFW_PRESS;
     if (escapeDown && !escapePrev)
@@ -317,6 +319,7 @@ void engineTick(Engine& engine)
         Terminal::instance().addLog("[MAINMENU] triggered via F12 key");
     }
     f12Prev = f12Down;
+    } // InputKeys
 
     if (GAME_STATE == GAME_MENU && gDuelManager.phase() != DuelPhase::Off) {
         Debug::log(Debug::Category::Duel, "[DUEL FAILSAFE] gameState=MENU but duel phase=%d — forcing cleanup", (int)gDuelManager.phase());
@@ -335,7 +338,7 @@ void engineTick(Engine& engine)
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
 
     if (engine.renderer && engine.renderer->stretchesWholeFrame()) {
-        PostFX::instance().unbindFBO();
+        { MIMITA_PERF_SCOPE("PostFX::Unbind"); PostFX::instance().unbindFBO(); }
         { Perf::ScopedTimer _pfx("PostFX");
           PerfGpu::beginRegion("GPU::PostFX");
           PostFX::instance().render();

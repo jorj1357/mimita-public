@@ -38,6 +38,7 @@
 #include "devtools/terminal.h"
 #include "devtools/dev-overlay.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 #include "video/frame-pacer.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
@@ -89,14 +90,15 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
     { Perf::ScopedTimer _ui("UI");
-    uiBeginFrame(engine.window(), "game-debug-overlay", true);
+    { MIMITA_PERF_SCOPE("UI::Begin"); uiBeginFrame(engine.window(), "game-debug-overlay", true); }
 
-    EffectPartSystem::instance().renderText(camera);
+    { MIMITA_PERF_SCOPE("UI::Text"); EffectPartSystem::instance().renderText(camera); }
 
-    engineTickUIHUD(engine, dt);
+    { MIMITA_PERF_SCOPE("UI::HUD"); engineTickUIHUD(engine, dt); }
 
+    { MIMITA_PERF_SCOPE("UI::Overlays");
     if (player.spawnFlashTimer <= 0.0f)
-        engineTickUIOverlays(engine, dt, worldPassRan);
+        engineTickUIOverlays(engine, dt, worldPassRan); }
 
     if (gReplayPlayer.totalTicks() > 0) {
         const ReplaySceneFrame* cleanupFrame = gReplayPlayer.currentSceneFrame();
@@ -139,8 +141,9 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     }
     // The pause modal is deliberately last in the gameplay UI pass: it must
     // cover the HUD and world without relying on depth ordering.
-    PauseMenu::render(engine.window());
-    uiEndFrame();
+    { MIMITA_PERF_SCOPE("UI::End");
+      PauseMenu::render(engine.window());
+      uiEndFrame(); }
 
     if (GuiEditor::instance().isEnabled()) {
         GuiEditor::instance().setActiveLayout("config/gui/hud.json");

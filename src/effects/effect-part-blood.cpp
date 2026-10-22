@@ -285,9 +285,14 @@ void EffectPartSystem::spawnBloodEffect(
     const float baseLifetime = spray.lifetimeMin +
         (spray.lifetimeMax - spray.lifetimeMin) * force;
 
-    if (mBloodParticles.size() + (size_t)particleCount > MAX_BLOOD_PARTICLES) {
+    const size_t bloodCap = (std::min)(
+        static_cast<size_t>(MAX_BLOOD_PARTICLES),
+        static_cast<size_t>(std::max(0, mParticleCap)));
+    if (bloodCap == 0)
+        particleCount = 0;
+    if (bloodCap > 0 && mBloodParticles.size() + (size_t)particleCount > bloodCap) {
         const size_t removeCount =
-            mBloodParticles.size() + (size_t)particleCount - MAX_BLOOD_PARTICLES;
+            mBloodParticles.size() + (size_t)particleCount - bloodCap;
         mBloodParticles.erase(
             mBloodParticles.begin(),
             mBloodParticles.begin() + (std::min)(removeCount, mBloodParticles.size()));

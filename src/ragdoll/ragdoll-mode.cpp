@@ -2482,7 +2482,7 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
     // the full solver per tick so a busy match cannot turn render-frame
     // catch-up into a multi-tick corpse cost. Older corpses keep aging,
     // fading, and rendering from their last simulated pose.
-    static constexpr size_t kMaxCorpseStepsPerTick = 12;
+    static constexpr size_t kMaxCorpseStepsPerTick = 6;
     size_t simulatedCorpseStart = mCorpses.size() > kMaxCorpseStepsPerTick
         ? mCorpses.size() - kMaxCorpseStepsPerTick : 0;
     size_t corpseIndex = 0;

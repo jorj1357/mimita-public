@@ -31,7 +31,7 @@ Payload is an asymmetric team-based mode.
 - Both teams respawn instantly throughout active gameplay.
 - No halftime or mandatory side switching.
 - After each match, the game automatically begins another round.
-- The server should track statistics during the match session, including team victories and actor kills. Whether those statistics survive a host leaving, a server closing, or a restart is still open; do not describe them as safely persistent until that behavior is checked and specified.
+- The server keeps round/session statistics, including team victories and actor kills, in memory for this server process only. If the server process closes, these statistics are discarded. They are not saved across server restarts. Host migration is a later feature; do not promise that statistics or a match survive a host/server shutdown in v1.
 
 The cart is physically present in the world and provides cover, healing, and a central combat objective.
 
@@ -62,7 +62,7 @@ The cart is physically present in the world and provides cover, healing, and a c
 - Players and NPCs fight continuously.
 - Death causes immediate respawn.
 - Checkpoints can add time to the clock.
-- If the timer reaches zero, overtime may keep the round running.
+- If the active round timer reaches zero, the exact overtime rules in Section 4 decide whether the round continues.
 - The round ends with Team A's successful delivery or Team B's successful defense.
 
 ### Phase 4 — Results
@@ -95,26 +95,30 @@ Match length is not a fixed target. A match may be short or long depending on ho
 
 There is no automatic loss just because the timer hits zero while Team A is actively fighting for the payload.
 
-Proposed rule:
+V1 rule:
 
-- Once the clock reaches zero, enter overtime.
-- If the cart was recently pushed or touched by Team A within a configurable window, keep the match alive.
-- Suggested initial window: 10 seconds, measured using authoritative server ticks.
-- Every qualifying offensive interaction can refresh the overtime window.
+- When the active round clock reaches zero, enter overtime using the tick rules below.
+- A living Team A actor intersecting the server-owned cart interaction box refreshes overtime once per server tick, as defined below.
 - If the window expires, Team B wins.
 - If the cart reaches the final destination, Team A wins.
 
-Exactly which interactions refresh overtime requires a precise definition.
+Overtime behavior for v1:
+
+- When the active round timer reaches zero, enter overtime and start the configured overtime window. The starting value is **10 seconds**, or **600 server ticks** at 60 Hz.
+- On every overtime server tick, check the server-authoritative cart interaction box for living Team A actors.
+- If at least one living Team A actor overlaps the box on that tick, refresh the overtime countdown to its configured full duration. This happens on every qualifying tick, even if a defender is contesting the box and preventing movement. Cart movement and overtime presence are separate checks: an attacker can keep overtime alive while defenders hold the cart still.
+- If no Team A actor overlaps the box on a tick, decrease the remaining overtime by one tick. If it reaches zero before the cart reaches the finish, Team B wins.
+- If the cart reaches the finish, Team A wins immediately.
+
 
 ## 5. Payload movement
 
 The initial system is inspired by TF2's automatic proximity-based pushing.
 
 - Team A actors whose collision body overlaps the configured cart interaction area can push it forward.
-- More nearby attackers produce greater speed.
-- Approximately six attackers are required for maximum speed.
-- Maximum intended speed: approximately 1 meter per second.
-- One attacker pushes much more slowly.
+- Each nearby Team A actor adds **0.2 meters per second** of cart speed.
+- Six or more nearby attackers produce the maximum speed of **1.2 meters per second**; additional attackers do not increase it.
+- One attacker therefore moves the cart at 0.2 m/s; two at 0.4 m/s; three at 0.6 m/s; four at 0.8 m/s; five at 1.0 m/s; and six or more at 1.2 m/s.
 - Movement acceleration and participant counts should be JSON-configurable.
 - Team B actors whose collision body overlaps that same area contest it and prevent forward progress. One qualifying Team B actor is enough to block forward progress.
 - An unattended cart eventually begins rolling backward.
@@ -124,30 +128,45 @@ The initial system is inspired by TF2's automatic proximity-based pushing.
 
 **For v1:** The cart follows a predefined route rather than being freely driven.
 
-### Cart origin and interaction area
+### Cart origin and server-authoritative interaction box
 
 The cart needs a small, exact 3D origin point: three world coordinates that mark its anchor. The cart model can have any visual size. Its route, collision, and interaction area should be positioned from the cart's origin, with editable offsets, rather than assuming the visible model's center is always the right point.
 
-The interaction area is editable map/game-mode data. Its position and rotation are offsets from the cart origin. The first size estimate uses a cart about 2 m long, 1.5 m wide, and 1 m tall; making the interaction area 150% of those dimensions gives about 3 m × 2.25 m × 1.5 m. If an actor's collision body touches or enters the area, the actor counts as being near the cart.
+The interaction area is a **box**, owned and checked by the authoritative server. Its position and rotation are configured offsets from the cart origin, so the box follows the cart's transform instead of depending on the GLB's size or pivot. The first size estimate uses a cart about 2 m long, 1.5 m wide, and 1 m tall; making the interaction box 150% of those dimensions gives about 3 m × 2.25 m × 1.5 m. These are starting dimensions and remain JSON-configurable. An actor counts as inside when its collision body intersects the transformed box; checking only the actor's origin point is not sufficient.
 
-The area should use the existing collision configuration approach where practical, including the same clear ideas of a shape, dimensions, and local offset used for weapon collision configuration. This does not mean a weapon hitbox should decide payload behavior. The payload still needs one clear interaction-area owner and a confirmed configuration loader. Whether the area is a box or another shape, how rotation affects it, and whether its anchor is the authored origin or a center-of-mass point remain open choices. The actual GLB size must not silently change the gameplay area.
+Use existing collision math and map-entity data/loading where their contracts fit, but do not use weapon hitboxes to decide payload behavior. The payload still needs one clear interaction-area owner and a confirmed configuration loader. Exact JSON owner/key names and final box dimensions need to be confirmed during implementation planning. The actual GLB size must not silently change the gameplay area.
 
 ```text
 each server gameplay tick:
     cartWorldOrigin = cart transform's authored origin
-    interactionShape = configured shape placed at:
+    interactionBox = configured box placed at:
         cartWorldOrigin + rotated(configured local offset)
-    nearbyActors = actors whose collision bodies overlap interactionShape
+    nearbyActors = living actors whose collision bodies intersect interactionBox
     attackers = nearby Team A actors
     defenders = nearby Team B actors
 
     if defenders is not empty:
-        block forward cart movement
+        cartSpeed = 0
     else if attackers is not empty:
-        advance cart along its configured route
+        pushCount = min(count(attackers), 6)
+        speedMetersPerSecond = min(pushCount * 0.2, 1.2)
+        distanceThisTickMeters = speedMetersPerSecond / 60
+        advance cart along its configured route by distanceThisTickMeters
     else:
         apply the configured unattended-cart rule
+
+    if overtime is active:
+        if attackers is not empty:
+            overtimeTicksRemaining = configuredOvertimeSeconds * 60
+        else:
+            overtimeTicksRemaining -= 1
+            if overtimeTicksRemaining <= 0 and cart is not at finish:
+                Team B wins
 ```
+
+`configuredOvertimeSeconds` starts at 10 seconds (600 ticks) and is JSON-configurable. `pushCount` is capped at six for speed calculation. A defender in the box makes cart speed zero, but does not stop a living Team A actor in the box from refreshing overtime.
+
+At 60 ticks per second, one attacker moves the cart about **0.0033 m per tick**; five attackers move it about **0.0167 m per tick**; six or more move it **0.02 m per tick**. The server stores overtime as an integer tick count; the HUD presents the remaining time in seconds.
 
 This is a behavior sketch, not a claim that the current game already has a Payload cart, loader, or overlap query.
 
@@ -420,7 +439,7 @@ This client/server rule also applies when one person plays alone on one computer
 
 The networking specification describes host migration as future work, not a working feature. Choosing the player with the lowest ping is not enough: the replacement host needs the server's current match state, including the tick, random state, actors, NPCs, game-mode state, score, timers, and pending events. The networking spec describes checkpoints and a possible handoff flow, but the current Payload spec must not promise that a match survives when its host closes the server.
 
-Before implementation, check whether any reusable host-migration code exists and what state it can actually move. Then decide whether the first version ends the match when the server closes, or whether a separate host-migration project is required. Also decide what “session statistics” means: only while this server process is alive, saved across reconnects, or saved across server restarts. These are different promises.
+Host migration is future work and is not a v1 requirement. If the server process closes, the match and its in-memory session statistics end and are discarded. Do not save Payload's round/session statistics through the generic persistent match-result path. If host migration is added later, deciding which match state and statistics transfer is part of that separate feature.
 
 ## 15. HUD and player information
 
@@ -562,6 +581,29 @@ The router mentions `docs/specs/gui/gui.md`, but that exact file is not present 
 | `src/npc/npc.cpp`, `src/npc/npc-state-machine.cpp`, `src/npc/npc-states.cpp`, and `src/npc/npc-combat.cpp` | Builds NPC senses, selects actions, and uses the shared combat rules. | How should objective work pause for danger and resume afterward? |
 | `src/npc/npc-targeting.cpp`, `src/npc/npc-navigation.cpp`, `src/npc/npc-navigator.cpp`, `src/npc/npc-nav-request.cpp`, `src/npc/recast-navigation.cpp`, and `src/npc/npc-traversal.cpp` | Finds targets and routes, avoids obstacles, and performs traversal. | Can NPCs reach the cart across the tower's ramps and alternate paths? |
 | `src/physics/movement/actor-pair-collision.cpp` and the shared actor movement code | Resolves physical contact between actors and their movement. | Which existing collision query can test cart-area overlap without making a duplicate hot-loop system? |
+
+### Current-code reuse audit (source inspection, 2026-10-22)
+
+This is a source-level ownership audit, not proof of live Payload behavior. The references below show current code paths and reusable pieces; runtime integration and gameplay still need verification.
+
+| Existing owner | Reusable foundation | Current gap and work Payload needs |
+|---|---|---|
+| `src/network/server-gamemode.cpp` (`serverGamemodeTick`, `serverGamemodeState`) and `src/network/server-gamemode.h` | The server already owns the fixed-tick game-mode lifecycle, phases, round state, and team statistics. Use this authoritative lifecycle and its existing state owner. | Generic match-time expiry currently transitions to results. Payload needs its own overtime decision, route/checkpoint progress, contest and push calculation, and finish result, integrated through the shared mode owner. Do not create a second independent match loop. |
+| `src/gamemode/gamemode.cpp`, `src/gamemode/gamemode.h`, and `src/game/objective-state.*` | Game-mode JSON already loads shared time and objective definitions; the generic objective state and replication envelope can inform a Payload extension. | The objective kind parser currently recognizes Bomb only, and the objective self-test expects `payload` to resolve to None. The generic objective does not contain route progress, push/block state, checkpoints, or Payload overtime. Add a deliberate shared objective contract before extending packets or adding a Payload-specific state path. |
+| `src/gamemode/map-config.*` | `MapConfigRegistry` loads, saves, and reloads map JSON. Map entities already have positions and sizes. Reuse this established map-data owner if cart placement and route belong to map data. | `mapEntityContainsPoint` checks a point against an axis-aligned box or radius; it does not check an actor collision body against a rotated box. The current map entity shape has no cart origin/route/interaction offset contract. Add the needed schema and a suitable overlap query, or select another single owner. |
+| `src/physics/physical-entity.h`, `src/physics/physical-entity.cpp`, `src/network/physical-entity-replication.cpp`, and `src/network/multiplayer-physical-entities.cpp` | `PhysicalEntitySystem` supports kinematic entities, collision geometry, and moving them. Existing moving-entity behavior includes actor support/carrying, and physical-entity replication already exists. This is the strongest candidate for the cart's physical body and server-authored movement. | It is not yet wired to Payload route/configuration, objective phase/results, or cart interaction rules. Verify dedicated/listen-server creation and replication ownership before using it as the cart implementation. Its source self-test is not live-game proof. |
+| `src/npc/team-brain.*`, `src/network/server-gamemode.cpp`, and `src/npc/npc-*` | TeamBrain shares team information and supports coordinated objective/focus choices; NPC behavior and navigation already have separate owners. Reuse those decision and movement systems. | Current game-mode context supplies bomb/site information, not a moving cart target or push/contest roles. Provide a moving cart objective to the shared planner, define attacker/defender priorities, and ensure NPCs resume their objective after combat. Route following over real tower geometry needs map playtesting. |
+| `src/network/server-gamemode.cpp` and `src/persistence/persistence-queue.cpp` | Current team/kill session values live in server game-mode state, which matches Payload's v1 process-only statistics. | Generic match completion also emits a persistent match result and queues a persistence save. Payload's temporary round/session counters must not be sent through that path. On server process shutdown, v1 state is discarded; host migration remains future work. |
+| `src/network/packets.h` and `src/network/server-gamemode.cpp` objective replication | Existing objective state already carries a position and basic status, which may be enough to avoid inventing a wholly separate cart presentation protocol. | It has no confirmed Payload contract for route progress, checkpoint, overtime, contested state, or display data. First list the client-visible fields required by the HUD and interpolation, then inspect packet size limits and serialization before changing packet layouts. |
+
+### Payload-specific implementation work identified by the audit
+
+1. Add Payload configuration through the confirmed game-mode or map-data loader, with one owner for cart origin, route/checkpoints, interaction-box dimensions/offset/rotation, push rate, cap, overtime duration, and unattended-cart behavior.
+2. Advance the cart only on the server's fixed 60 Hz tick. Count living Team A and Team B actor collision bodies intersecting the transformed box. One defender sets cart speed to zero. Otherwise, attackers produce `min(attackerCount, 6) * 0.2 m/s`, capped at `1.2 m/s`; convert that speed to distance per tick by dividing by 60.
+3. Keep overtime presence separate from motion: each tick with at least one living Team A actor in the box resets the configured countdown, even while a defender contests. With no Team A actor in the box, decrement by one tick. Finish wins for Team A; expiry wins for Team B.
+4. Decide and document the replicated cart state needed by clients, then reuse or extend the existing objective/physical-entity replication after packet size and receive/apply paths are traced.
+5. Feed the current cart position and team-specific jobs to NPC planning. Keep behavior choices in NPC behavior and route following/traversal in NPC movement/navigation; do not duplicate navigation in Payload code.
+6. Keep v1 statistics in server process memory and keep them out of the persistent match-result path. A server shutdown ends the match and discards those values.
 
 `config/gamemodes/payload.json` does not exist in the current configuration list. It is a possible future data file, not a decided path. Confirm the game-mode loader and ownership first. The same rule applies to any new cart or map JSON file.
 

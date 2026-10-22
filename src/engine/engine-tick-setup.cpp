@@ -85,8 +85,12 @@ static void loadHotReloadConfig()
 void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
 {
     { MIMITA_PERF_SCOPE("Setup::HotReloadDLL");
-      if (sHotReloadEnabled)
-          HotReloadSystem::instance().reloadGameDLLIfChanged(); }
+      static auto nextDllPoll = std::chrono::steady_clock::now();
+      const auto dllNow = std::chrono::steady_clock::now();
+      if (sHotReloadEnabled && dllNow >= nextDllPoll) {
+          nextDllPoll = dllNow + HOT_RELOAD_POLL_INTERVAL;
+          HotReloadSystem::instance().reloadGameDLLIfChanged();
+      } }
     // gFramePacer.beginFrame() and Perf::beginFrame() are now called in
     // engineTick() BEFORE the first MIMITA_PERF_SCOPE so the scope stack
     // is empty when perfResetScopes() runs.
@@ -111,81 +115,106 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     // to how many frames the machine can render.
     const auto hotReloadNow = std::chrono::steady_clock::now();
     static auto nextHotReloadPoll = hotReloadNow;
-    const bool shouldPoll = sHotReloadEnabled && hotReloadNow >= nextHotReloadPoll;
-    if (shouldPoll)
+    static int pendingPollGroups = 0;
+    static int nextPollGroup = 0;
+    const bool shouldPoll = sHotReloadEnabled && pendingPollGroups == 0 &&
+        hotReloadNow >= nextHotReloadPoll;
+    if (shouldPoll) {
         nextHotReloadPoll = hotReloadNow + HOT_RELOAD_POLL_INTERVAL;
+        nextPollGroup = 0;
+        pendingPollGroups = 5;
+    }
 
     { MIMITA_PERF_SCOPE("Setup::ConfigPolling");
-    if (shouldPoll) {
-        GameplayConfig::instance().pollReload();
-        MovementJsonConfig::instance().pollReload();
-        CrosshairConfig::instance().pollReload();
-        pollWorldCrosshairConfig();
-        pollCoolShotLineConfig();
-        WeaponTracersConfig::instance().pollReload();
-        HealthbarConfig::instance().pollReload();
-        HitEffects::pollReload();
-        MuzzleFlashConfig::instance().pollReload();
-        DynamicLightConfig::instance().pollReload();
-        MimitaNet::pollDisagreementReload();
-        CamConfig::instance().pollReload();
-        SizeScalingConfig::instance().pollReload();
-        AvatarSystem::instance().pollHotReload();
-        RagdollModeConfig::instance().pollReload();
-        RagdollDeathConfig::instance().pollReload();
-        SpawnVelocityConfig::instance().pollReload();
-        if (NpcDifficultyConfig::instance().pollReload())
-        {
-            static uint64_t lastNpcDifficultyRevision = 0;
-            if (lastNpcDifficultyRevision != NpcDifficultyConfig::instance().revision())
+    if (pendingPollGroups > 0) {
+        const int group = nextPollGroup++;
+        --pendingPollGroups;
+        switch (group) {
+        case 0:
+            GameplayConfig::instance().pollReload();
+            MovementJsonConfig::instance().pollReload();
+            CrosshairConfig::instance().pollReload();
+            pollWorldCrosshairConfig();
+            pollCoolShotLineConfig();
+            WeaponTracersConfig::instance().pollReload();
+            HealthbarConfig::instance().pollReload();
+            HitEffects::pollReload();
+            MuzzleFlashConfig::instance().pollReload();
+            DynamicLightConfig::instance().pollReload();
+            break;
+        case 1:
+            MimitaNet::pollDisagreementReload();
+            CamConfig::instance().pollReload();
+            SizeScalingConfig::instance().pollReload();
+            AvatarSystem::instance().pollHotReload();
+            RagdollModeConfig::instance().pollReload();
+            RagdollDeathConfig::instance().pollReload();
+            SpawnVelocityConfig::instance().pollReload();
+            break;
+        case 2:
+            if (NpcDifficultyConfig::instance().pollReload())
             {
-                THE_NPC_SYSTEM.refreshDifficultyTuning();
-                lastNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
+                static uint64_t lastNpcDifficultyRevision = 0;
+                if (lastNpcDifficultyRevision != NpcDifficultyConfig::instance().revision())
+                {
+                    THE_NPC_SYSTEM.refreshDifficultyTuning();
+                    lastNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
+                }
             }
+            GamemodeRegistry::instance().pollReload();
+            if (MatchRoleRegistry::instance().pollReload()) {
+                MimitaNet::CommunityMatchClient::instance().refreshActorPreset();
+                ActorPresetWeapons::refresh();
+            }
+            BehaviorProfileRegistry::instance().pollReload();
+            RoleMovementCache::instance().pollReload();
+            GamemodeMapPool::instance().pollReload();
+            break;
+        case 3:
+            if (gpActiveMapPath && !gpActiveMapPath->empty()) {
+                const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
+                if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)
+                    MapConfigRegistry::instance().load(mapId);
+                else
+                    MapConfigRegistry::instance().pollReload();
+            }
+            WeaponHitFxConfig::instance().pollReload();
+            ImpactDecalsConfig::instance().pollReload();
+            NotificationSystem::instance().pollReload();
+            GuiLayoutManager::instance().pollReload();
+            NetworkingConfig::instance().pollReload();
+            PlayerVisualsConfig::instance().pollReload();
+            PostFX::instance().pollReload();
+            {
+                const auto& cameraConfig = CamConfig::instance().data();
+                int edgeMode = 4; // circle
+                if (cameraConfig.lensDistortionEdgeMode == "black") edgeMode = 0;
+                else if (cameraConfig.lensDistortionEdgeMode == "vignette") edgeMode = 1;
+                else if (cameraConfig.lensDistortionEdgeMode == "clamp") edgeMode = 2;
+                else if (cameraConfig.lensDistortionEdgeMode == "repeat") edgeMode = 3;
+                PostFX::instance().setCameraLensDistortion(
+                    cameraConfig.lensDistortion, cameraConfig.lensDistortionCurve,
+                    cameraConfig.lensDistortionZoom, edgeMode,
+                    cameraConfig.lensDistortionEdgeRadius,
+                    cameraConfig.lensDistortionEdgeSoftness,
+                    cameraConfig.lensDistortionEdgeDarkness,
+                    cameraConfig.lensDistortionPeripheralBlur);
+            }
+            break;
+        case 4:
+            if (CollisionLodConfig::instance().pollHotReload())
+                redecimateCollision(THE_WORLD);
+            CollisionConfig::instance().pollHotReload();
+            MimitaImpact::MaterialConfig::instance().pollReload();
+            MimitaImpact::DestructibleWorldConfig::instance().pollReload();
+            RewardPopupConfig::instance().pollReload();
+            if (KillfeedConfig::instance().pollReload())
+                KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
+            break;
+        default:
+            pendingPollGroups = 0;
+            break;
         }
-        GamemodeRegistry::instance().pollReload();
-        if (MatchRoleRegistry::instance().pollReload()) {
-            MimitaNet::CommunityMatchClient::instance().refreshActorPreset();
-            ActorPresetWeapons::refresh();
-        }
-        BehaviorProfileRegistry::instance().pollReload();
-        RoleMovementCache::instance().pollReload();
-        GamemodeMapPool::instance().pollReload();
-        if (gpActiveMapPath && !gpActiveMapPath->empty()) {
-            const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
-            if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)
-                MapConfigRegistry::instance().load(mapId);
-            else
-                MapConfigRegistry::instance().pollReload();
-        }
-        WeaponHitFxConfig::instance().pollReload();
-        ImpactDecalsConfig::instance().pollReload();
-        NotificationSystem::instance().pollReload();
-        GuiLayoutManager::instance().pollReload();
-        NetworkingConfig::instance().pollReload();
-        PlayerVisualsConfig::instance().pollReload();
-        PostFX::instance().pollReload();
-        const auto& cameraConfig = CamConfig::instance().data();
-        int edgeMode = 4; // circle
-        if (cameraConfig.lensDistortionEdgeMode == "black") edgeMode = 0;
-        else if (cameraConfig.lensDistortionEdgeMode == "vignette") edgeMode = 1;
-        else if (cameraConfig.lensDistortionEdgeMode == "clamp") edgeMode = 2;
-        else if (cameraConfig.lensDistortionEdgeMode == "repeat") edgeMode = 3;
-        PostFX::instance().setCameraLensDistortion(
-            cameraConfig.lensDistortion, cameraConfig.lensDistortionCurve,
-            cameraConfig.lensDistortionZoom, edgeMode,
-            cameraConfig.lensDistortionEdgeRadius,
-            cameraConfig.lensDistortionEdgeSoftness,
-            cameraConfig.lensDistortionEdgeDarkness,
-            cameraConfig.lensDistortionPeripheralBlur);
-        if (CollisionLodConfig::instance().pollHotReload())
-            redecimateCollision(THE_WORLD);
-        CollisionConfig::instance().pollHotReload();
-        MimitaImpact::MaterialConfig::instance().pollReload();
-        MimitaImpact::DestructibleWorldConfig::instance().pollReload();
-        RewardPopupConfig::instance().pollReload();
-        if (KillfeedConfig::instance().pollReload())
-            KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
     }
     }
 

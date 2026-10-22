@@ -31,6 +31,7 @@
 #include "devtools/dev-npc-selection.h"
 #include "devtools/dev-overlay.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 #include "video/frame-pacer.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
@@ -56,8 +57,8 @@ extern bool gReplayCinematicMode;
 
 void engineTickUIHUD(Engine& engine, float dt)
 {
-    engineTickUIReplayHUD(engine, dt);
-    engineTickUIGameHUD(engine, dt);
+    { MIMITA_PERF_SCOPE("HUD::Replay"); engineTickUIReplayHUD(engine, dt); }
+    { MIMITA_PERF_SCOPE("HUD::Game"); engineTickUIGameHUD(engine, dt); }
 
     KillfeedManager& kf = KillfeedManager::instance();
 
@@ -75,18 +76,21 @@ void engineTickUIHUD(Engine& engine, float dt)
         killEvents.clear();
     }
 
+    { MIMITA_PERF_SCOPE("HUD::Killfeed");
     kf.update(dt);
     if (kf.mode() == "hud")
-        kf.render();
+        kf.render(); }
 
     // Online match HUD: leaderboard + timer
+    { MIMITA_PERF_SCOPE("HUD::Leaderboard");
     MatchLeaderboard::instance().update(dt);
-    MatchLeaderboard::instance().render();
+    MatchLeaderboard::instance().render(); }
+    { MIMITA_PERF_SCOPE("HUD::Timer");
     MatchTimer::instance().update(dt);
     if (MatchTimer::instance().isActive()) {
         std::string timer = MatchTimer::instance().formatElapsed();
         float timerW = uiMeasureText(timer.c_str(), 0.40f);
         uiDrawText(timer.c_str(), uiScreenW() * 0.5f - timerW * 0.5f, 18.0f, 0.40f,
                   {1.0f, 1.0f, 1.0f, 1.0f});
-    }
+    } }
 }

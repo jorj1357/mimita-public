@@ -30,6 +30,15 @@ Keep gameplay rules, configuration, input actions, rendering policy, and
 platform adapters separated so the same game behavior can travel across
 devices.
 
+Resource efficiency is a core accessibility requirement. Use the lowest
+practical CPU, GPU, memory, storage, and network resources for the behavior a
+feature needs; avoid unnecessary work, allocations, retained data, and
+transmitted data. Do not assume a player has a powerful GPU or CPU, abundant
+RAM, a new device, or a fast and reliable internet connection. MiMITA should
+remain responsive and useful on low-power devices and poor or unstable
+connections, while scaling up on stronger systems. Optional detail and
+nonessential work should yield before core gameplay and essential information.
+
 ## Input access
 
 All important actions should use an abstract action layer rather than directly
@@ -79,6 +88,13 @@ gameplay-critical event.
 Use capability detection and configuration rather than assuming desktop GPU,
 resolution, refresh rate, filesystem, input, or window behavior. Keep gameplay
 simulation deterministic and separate from rendering frame rate.
+
+Choose designs and implementations for minimal practical resource use across
+the supported device range. Measure CPU, GPU, memory, storage, and network
+costs on representative low-power and high-power systems. Treat large or
+unbounded resource growth, including during retries and reconnection, as an
+accessibility and performance issue to investigate; do not assume high memory
+or network capacity will hide it.
 
 Settings should allow users to reduce or disable expensive features such as
 shadows, post-processing, particles, lighting, animation detail, audio effects,

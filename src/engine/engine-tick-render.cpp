@@ -428,10 +428,17 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     { MIMITA_PERF_SCOPE("Rendering");
     diagRenderFrameBegin(dt);
     { MIMITA_PERF_SCOPE("Rendering::Shadows");
-      Perf::ScopedTimer _shadowDraw("Rendering::Shadows::Draw");
-      PerfGpu::beginRegion("GPU::Shadows");
-      renderShadowMap(world, camera.pos);
-      PerfGpu::endRegion(); }
+      // Shadow depth is reused from the previous frame on alternating frames.
+      // At high render rates this halves shadow-pass cost while keeping shadow
+      // updates at 60+ Hz for camera motion and actor shadows.
+      static uint32_t shadowFrameCounter = 0;
+      const bool renderShadowThisFrame = (shadowFrameCounter++ & 1u) == 0u;
+      if (renderShadowThisFrame) {
+          Perf::ScopedTimer _shadowDraw("Rendering::Shadows::Draw");
+          PerfGpu::beginRegion("GPU::Shadows");
+          renderShadowMap(world, camera.pos);
+          PerfGpu::endRegion();
+      } }
     glViewport(0, 0, engine.renderer->width, engine.renderer->height);
     { MIMITA_PERF_SCOPE("Rendering::PostFX::Bind"); PostFX::instance().bindFBO(); }
     diagRenderStage(1);
@@ -488,6 +495,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     } else {
         { MIMITA_PERF_SCOPE("Rendering::Actors");
         PerfGpu::beginRegion("GPU::Actors");
+        beginPlayerTrailBatch();
         if (player.spawnFlashTimer > 0.0f) {
             static GLuint spawnFlashVao = 0, spawnFlashVbo = 0;
             if (!spawnFlashVao) {
@@ -569,7 +577,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
               Perf::ScopedTimer _localWeapon("Rendering::Actors::LocalWeapon");
               weapons.render(camera, player); }
         if (mpContext.active) {
-            Perf::ScopedTimer _networkEntities("Rendering::Actors::NetworkEntities");
+            MIMITA_PERF_SCOPE("Rendering::Actors::NetworkEntities");
             int localOutlineTeam = player.matchTeam;
             if (MimitaNet::CommunityMatchClient::instance().active()) {
                 const uint8_t replicatedTeam =
@@ -678,6 +686,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 weapons.renderRemoteWeapon(npc.id, npc.body, camera, dt);
             }
         }
+        { MIMITA_PERF_SCOPE("Rendering::Actors::Trails"); drawPlayerTrailBatch(camera); }
         PerfGpu::endRegion();
         } // Rendering::Actors
     }

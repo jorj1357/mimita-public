@@ -1666,8 +1666,7 @@ void updateRenderedReplica(
     player.godballPosition = render.godballPosition;
     player.godballVelocity = render.godballVelocity;
     {
-        player.equippedWeaponId.clear();
-        player.hasValidWeapon = false;
+        const std::string* desiredId = nullptr;
         if (player.equippedSlot >= 1) {
             static uint64_t cachedRegistryRevision = ~0ull;
             static std::unordered_map<int, const std::string*> slotToId;
@@ -1679,10 +1678,19 @@ void updateRenderedReplica(
                     slotToId.emplace(w.second.slot, &w.first);
             }
             const auto bySlot = slotToId.find(player.equippedSlot);
-            if (bySlot != slotToId.end()) {
-                player.equippedWeaponId = *bySlot->second;
-                player.hasValidWeapon = true;
+            if (bySlot != slotToId.end())
+                desiredId = bySlot->second;
+        }
+        if (!desiredId) {
+            if (player.hasValidWeapon || !player.equippedWeaponId.empty()) {
+                player.equippedWeaponId.clear();
+                player.hasValidWeapon = false;
             }
+        } else if (player.equippedWeaponId != *desiredId) {
+            player.equippedWeaponId = *desiredId;
+            player.hasValidWeapon = true;
+        } else {
+            player.hasValidWeapon = true;
         }
     }
 
@@ -1706,14 +1714,16 @@ void updateRenderedReplica(
         player.networkWeaponState |= 1u;
     player.sizeScale = render.sizeScale;
     player.spawnGeneration = render.spawnGeneration;
-    player.username = interpolation.displayName;
+    if (player.username != interpolation.displayName)
+        player.username = interpolation.displayName;
     player.vipAppearance = render.vipAppearance;
     player.networkStateFlags = render.stateFlags;
     player.ground.onGround = render.onGround;
     player.ground.stableOnGround = player.ground.onGround;
 
     if (const std::string* id = weaponIdForDefNetworkId(render.equippedWeaponDefNetworkId)) {
-        player.equippedWeaponId = *id;
+        if (player.equippedWeaponId != *id)
+            player.equippedWeaponId = *id;
         player.hasValidWeapon = true;
     }
     if (const auto* set = WeaponData::MeleeMoveSetRegistry::instance().get(player.equippedWeaponId)) {
@@ -1899,7 +1909,12 @@ void updateRenderedReplica(
     }
 
     // ── Procedural animation ───────────────────────────────────────
-    if (remotePresentationAlive)
+    // Animation is authored on the fixed 60 Hz server tick. Updating every
+    // render frame multiplies the skeleton/pose cost at high FPS without adding
+    // authored information, so advance it once per new render tick.
+    const bool animationTickChanged =
+        interpolation.lastAnimationServerTick != render.serverTick;
+    if (remotePresentationAlive && animationTickChanged)
     {
         player.updateProceduralAnimation(
             dt,
@@ -1907,8 +1922,9 @@ void updateRenderedReplica(
             player.pos,
             remoteWalking
         );
+        interpolation.lastAnimationServerTick = render.serverTick;
     }
-    else
+    else if (!remotePresentationAlive)
     {
         // Advance serial cursors without presenting stale one-shot events if
         // an old snapshot crosses the network after the actor died.

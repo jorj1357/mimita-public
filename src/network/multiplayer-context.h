@@ -326,6 +326,7 @@ struct EntityInterpolationState
     glm::vec3 renderSpringTargetVel{0.0f};
     uint64_t lastSnapshotArrivalMs = 0;
     uint32_t lastRenderedServerTick = 0;
+    uint32_t lastAnimationServerTick = 0;
     uint32_t staleSnapshotCount = 0;
     uint32_t duplicateSnapshotCount = 0;
     uint32_t outOfOrderSnapshotCount = 0;

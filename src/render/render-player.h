@@ -17,6 +17,8 @@ struct Player;
 class Camera;
 
 void renderPlayer(const Player& player, const Camera& cam);
+void beginPlayerTrailBatch();
+void drawPlayerTrailBatch(const Camera& cam);
 void renderNetworkPlayer(
     const Player& player,
     const Camera& cam,

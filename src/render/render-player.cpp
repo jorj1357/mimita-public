@@ -46,24 +46,32 @@ struct PlayerTrailHistory {
     std::chrono::steady_clock::time_point lastSeen{};
 };
 
-void renderPlayerTrail(const Player& player, const Camera& cam, uint32_t entityId,
+struct TrailVertex {
+    glm::vec3 position;
+    glm::vec4 color;
+};
+
+std::unordered_map<uint32_t, PlayerTrailHistory> gTrailHistories;
+std::vector<TrailVertex> gTrailBatch;
+
+void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityId,
                        const PlayerTrailSettings& settings)
 {
     if (entityId == 0) return;
     using Clock = std::chrono::steady_clock;
-    static std::unordered_map<uint32_t, PlayerTrailHistory> histories;
     if (!settings.enabled || player.dead) {
-        histories.erase(entityId);
+        gTrailHistories.erase(entityId);
         return;
     }
     const auto now = Clock::now();
-    if (histories.find(entityId) == histories.end() && histories.size() >= 128) {
-        auto oldest = histories.begin();
-        for (auto it = histories.begin(); it != histories.end(); ++it)
+    if (gTrailHistories.find(entityId) == gTrailHistories.end() &&
+        gTrailHistories.size() >= 128) {
+        auto oldest = gTrailHistories.begin();
+        for (auto it = gTrailHistories.begin(); it != gTrailHistories.end(); ++it)
             if (it->second.lastSeen < oldest->second.lastSeen) oldest = it;
-        histories.erase(oldest);
+        gTrailHistories.erase(oldest);
     }
-    auto& history = histories[entityId];
+    auto& history = gTrailHistories[entityId];
     history.lastSeen = now;
     const glm::vec3 trailPosition = player.pos + glm::vec3(0.0f, 0.0f,
         std::max(0.25f, player.sizeScale * 0.9f));
@@ -86,96 +94,42 @@ void renderPlayerTrail(const Player& player, const Camera& cam, uint32_t entityI
     while (history.points.size() > static_cast<size_t>(settings.maxSamples))
         history.points.pop_front();
 
-    if (history.points.size() >= 2 && gRenderer && gRenderer->shaderProgram) {
-        struct Vertex { glm::vec3 position; glm::vec4 color; };
-        static thread_local std::vector<Vertex> vertices;
-        vertices.clear();
-        vertices.reserve((history.points.size() - 1) * 6);
-        const glm::vec3 rgb = settings.color / 255.0f;
-        const float halfWidth = settings.width * std::max(0.25f, player.sizeScale) * 0.5f;
-        for (size_t i = 1; i < history.points.size(); ++i) {
-            const float age = std::chrono::duration<float>(now - history.points[i].time).count();
-            const float alpha = settings.alpha * std::clamp(1.0f - age / settings.lifetimeSeconds, 0.0f, 1.0f);
-            if (alpha <= 0.01f) continue;
-            const glm::vec4 color(rgb, alpha);
-            const glm::vec3 start = history.points[i - 1].position;
-            const glm::vec3 end = history.points[i].position;
-            const glm::vec3 segment = end - start;
-            if (glm::dot(segment, segment) <= 0.000001f) continue;
-            const glm::vec3 direction = glm::normalize(segment);
-            glm::vec3 side = glm::cross(direction, cam.front);
-            if (glm::dot(side, side) <= 0.000001f) side = glm::cross(direction, cam.up);
-            if (glm::dot(side, side) <= 0.000001f) side = cam.right;
-            side = glm::normalize(side) * halfWidth;
-            const glm::vec3 startLeft = start - side;
-            const glm::vec3 startRight = start + side;
-            const glm::vec3 endLeft = end - side;
-            const glm::vec3 endRight = end + side;
-            vertices.push_back({startLeft, color});
-            vertices.push_back({startRight, color});
-            vertices.push_back({endRight, color});
-            vertices.push_back({startLeft, color});
-            vertices.push_back({endRight, color});
-            vertices.push_back({endLeft, color});
-        }
-        if (!vertices.empty()) {
-            static GLuint vao = 0, vbo = 0;
-            if (!vao) { glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo); }
-            GLint oldVao = 0, oldBuffer = 0, oldProgram = 0;
-            GLint oldUseColor = 0;
-            GLint oldBlendSrcRgb = GL_ONE, oldBlendDstRgb = GL_ZERO;
-            GLint oldBlendSrcAlpha = GL_ONE, oldBlendDstAlpha = GL_ZERO;
-            GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST), blendWas = glIsEnabled(GL_BLEND);
-            GLboolean depthWriteWas = GL_TRUE;
-            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &oldVao);
-            glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &oldBuffer);
-            glGetIntegerv(GL_CURRENT_PROGRAM, &oldProgram);
-            glGetIntegerv(GL_BLEND_SRC_RGB, &oldBlendSrcRgb);
-            glGetIntegerv(GL_BLEND_DST_RGB, &oldBlendDstRgb);
-            glGetIntegerv(GL_BLEND_SRC_ALPHA, &oldBlendSrcAlpha);
-            glGetIntegerv(GL_BLEND_DST_ALPHA, &oldBlendDstAlpha);
-            const GLint useColorLoc = glGetUniformLocation(gRenderer->shaderProgram, "uUseColor");
-            if (useColorLoc >= 0) glGetUniformiv(gRenderer->shaderProgram, useColorLoc, &oldUseColor);
-            glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteWas);
-            glUseProgram(gRenderer->shaderProgram);
-            const glm::mat4 model(1.0f), view = cam.getView();
-            const glm::mat4 proj = cam.getProj((float)gRenderer->sceneWidth,
-                                               (float)gRenderer->sceneHeight);
-            glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"), 1, GL_FALSE, &view[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"), 1, GL_FALSE, &proj[0][0]);
-            glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 2);
-            glEnable(GL_DEPTH_TEST);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glDepthMask(GL_FALSE);
-            glBindVertexArray(vao);
-            glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STREAM_DRAW);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
-            glEnableVertexAttribArray(0);
-            glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-            glEnableVertexAttribArray(3);
-            glDisableVertexAttribArray(1);
-            glDisableVertexAttribArray(2);
-            glDrawArrays(GL_TRIANGLES, 0, (GLsizei)vertices.size());
-            glBindVertexArray((GLuint)oldVao);
-            glBindBuffer(GL_ARRAY_BUFFER, (GLuint)oldBuffer);
-            if (useColorLoc >= 0) glUniform1i(useColorLoc, oldUseColor);
-            glBlendFuncSeparate((GLenum)oldBlendSrcRgb, (GLenum)oldBlendDstRgb,
-                                (GLenum)oldBlendSrcAlpha, (GLenum)oldBlendDstAlpha);
-            glDepthMask(depthWriteWas);
-            if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-            if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-            glUseProgram((GLuint)oldProgram);
-        }
+    if (history.points.size() < 2)
+        return;
+
+    const glm::vec3 rgb = settings.color / 255.0f;
+    const float halfWidth = settings.width * std::max(0.25f, player.sizeScale) * 0.5f;
+    for (size_t i = 1; i < history.points.size(); ++i) {
+        const float age = std::chrono::duration<float>(now - history.points[i].time).count();
+        const float alpha = settings.alpha * std::clamp(1.0f - age / settings.lifetimeSeconds, 0.0f, 1.0f);
+        if (alpha <= 0.01f) continue;
+        const glm::vec4 color(rgb, alpha);
+        const glm::vec3 start = history.points[i - 1].position;
+        const glm::vec3 end = history.points[i].position;
+        const glm::vec3 segment = end - start;
+        if (glm::dot(segment, segment) <= 0.000001f) continue;
+        const glm::vec3 direction = glm::normalize(segment);
+        glm::vec3 side = glm::cross(direction, cam.front);
+        if (glm::dot(side, side) <= 0.000001f) side = glm::cross(direction, cam.up);
+        if (glm::dot(side, side) <= 0.000001f) side = cam.right;
+        side = glm::normalize(side) * halfWidth;
+        const glm::vec3 startLeft = start - side;
+        const glm::vec3 startRight = start + side;
+        const glm::vec3 endLeft = end - side;
+        const glm::vec3 endRight = end + side;
+        gTrailBatch.push_back({startLeft, color});
+        gTrailBatch.push_back({startRight, color});
+        gTrailBatch.push_back({endRight, color});
+        gTrailBatch.push_back({startLeft, color});
+        gTrailBatch.push_back({endRight, color});
+        gTrailBatch.push_back({endLeft, color});
     }
 
     static auto lastPrune = Clock::now();
     if (now - lastPrune >= std::chrono::seconds(1)) {
         lastPrune = now;
-        for (auto it = histories.begin(); it != histories.end();) {
-            if (now - it->second.lastSeen > std::chrono::seconds(5)) it = histories.erase(it);
+        for (auto it = gTrailHistories.begin(); it != gTrailHistories.end();) {
+            if (now - it->second.lastSeen > std::chrono::seconds(5)) it = gTrailHistories.erase(it);
             else ++it;
         }
     }
@@ -419,7 +373,7 @@ void renderPlayerInternal(
     { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerBody");
       player.render(gRenderer->shaderProgram, view, proj, hideHead, playerTint); }
     auto drawTrail = [&]() {
-        if (trail && !isLocal) renderPlayerTrail(player, cam, networkEntityId, *trail);
+        if (trail && !isLocal) appendPlayerTrail(player, cam, networkEntityId, *trail);
     };
 
     const bool outlineEnabled = modeForcesTeamOutline || outline->enabled;
@@ -534,6 +488,70 @@ void renderPlayerInternal(
 }
 
 } // namespace
+
+void beginPlayerTrailBatch()
+{
+    gTrailBatch.clear();
+    if (gTrailBatch.capacity() < 6000)
+        gTrailBatch.reserve(6000);
+}
+
+void drawPlayerTrailBatch(const Camera& cam)
+{
+    if (gTrailBatch.empty() || !gRenderer || !gRenderer->shaderProgram)
+        return;
+
+    static GLuint vao = 0, vbo = 0;
+    if (!vao) { glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo); }
+    GLint oldVao = 0, oldBuffer = 0, oldProgram = 0;
+    GLint oldUseColor = 0;
+    GLint oldBlendSrcRgb = GL_ONE, oldBlendDstRgb = GL_ZERO;
+    GLint oldBlendSrcAlpha = GL_ONE, oldBlendDstAlpha = GL_ZERO;
+    GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST), blendWas = glIsEnabled(GL_BLEND);
+    GLboolean depthWriteWas = GL_TRUE;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &oldVao);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &oldBuffer);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &oldProgram);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &oldBlendSrcRgb);
+    glGetIntegerv(GL_BLEND_DST_RGB, &oldBlendDstRgb);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &oldBlendSrcAlpha);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &oldBlendDstAlpha);
+    const GLint useColorLoc = glGetUniformLocation(gRenderer->shaderProgram, "uUseColor");
+    if (useColorLoc >= 0) glGetUniformiv(gRenderer->shaderProgram, useColorLoc, &oldUseColor);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteWas);
+    glUseProgram(gRenderer->shaderProgram);
+    const glm::mat4 model(1.0f), view = cam.getView();
+    const glm::mat4 proj = cam.getProj((float)gRenderer->sceneWidth,
+                                       (float)gRenderer->sceneHeight);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"), 1, GL_FALSE, &proj[0][0]);
+    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 2);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, gTrailBatch.size() * sizeof(TrailVertex),
+                 gTrailBatch.data(), GL_STREAM_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TrailVertex), (void*)offsetof(TrailVertex, position));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(TrailVertex), (void*)offsetof(TrailVertex, color));
+    glEnableVertexAttribArray(3);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gTrailBatch.size());
+    glBindVertexArray((GLuint)oldVao);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)oldBuffer);
+    if (useColorLoc >= 0) glUniform1i(useColorLoc, oldUseColor);
+    glBlendFuncSeparate((GLenum)oldBlendSrcRgb, (GLenum)oldBlendDstRgb,
+                        (GLenum)oldBlendSrcAlpha, (GLenum)oldBlendDstAlpha);
+    glDepthMask(depthWriteWas);
+    if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    glUseProgram((GLuint)oldProgram);
+}
 
 void renderPlayer(const Player& player, const Camera& cam)
 {

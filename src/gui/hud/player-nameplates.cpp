@@ -138,16 +138,13 @@ HealthbarRenderResult drawPlayerHealthbar(
     bool isEnemy)
 {
     HealthbarRenderResult result;
-    result.anchor = playerHealthbarAnchor(
-        player, &result.usedHeadTransform);
-
     bool isLiveWorld = (std::strcmp(sourceTag, "live_world") == 0);
     const bool isLocalPlayer = (&player == &THE_PLAYER);
 
     Debug::log(Debug::Category::Gui,
-        "[HEALTHBAR] entity=%s hp=%d/%d anchor=(%.2f %.2f %.2f) isLocal=%d\n",
+        "[HEALTHBAR] entity=%s hp=%d/%d pos=(%.2f %.2f %.2f) isLocal=%d\n",
         player.username.c_str(), player.currentHp, player.maxHp,
-        result.anchor.x, result.anchor.y, result.anchor.z,
+        player.pos.x, player.pos.y, player.pos.z,
         (int)isLocalPlayer);
 
     if (player.dead || player.currentHp <= 0)
@@ -156,7 +153,7 @@ HealthbarRenderResult drawPlayerHealthbar(
             RPLXDEBUG("[HEALTHBAR] frame=? tick=? entity=%d name=%s source=%s hp=%d/%d dead=1 pos=(%.2f %.2f %.2f) rendered=NO reason=dead actor\n",
                       (int)(uintptr_t)&player, player.username.c_str(), sourceTag,
                       player.currentHp, player.maxHp,
-                      result.anchor.x, result.anchor.y, result.anchor.z);
+                      player.pos.x, player.pos.y, player.pos.z);
         Debug::log(Debug::Category::Gui,
             "[HEALTHBAR] SKIPPED entity=%s reason=Dead\n",
             player.username.c_str());
@@ -191,6 +188,10 @@ HealthbarRenderResult drawPlayerHealthbar(
             player.username.c_str());
         return result;
     }
+    // Resolve the head/bone anchor only after the disabled gates, so hidden
+    // healthbars do not pay for skeleton searches and attachment transforms.
+    result.anchor = playerHealthbarAnchor(
+        player, &result.usedHeadTransform);
     result.distance = glm::length(camera.pos - result.anchor);
     Debug::log(Debug::Category::Gui,
         "[HEALTHBAR] entity=%s distance=%.1f maxDistance=%.1f isLocal=%d\n",

@@ -373,33 +373,58 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         struct HotbarEntry {
             int logicalSlot = 0;
             const WeaponDefinition* definition = nullptr;
+            std::string label;
+            std::string shortName;
         };
-        std::vector<HotbarEntry> entries;
+        static std::vector<HotbarEntry> cachedEntries;
+        static int cachedWeaponSetId = -1;
+        static uint64_t cachedRegistryRevision = ~0ull;
+        static int cachedConfiguredSlotCount = -1;
+        static size_t cachedWeaponCount = 0;
         int configuredSlotCount = (int)readVal("hotbarSlotCount", 10.0f);
         auto& cfg = MimitaNet::CommunityServerConfig::instance();
         if (cfg.weaponSets().empty()) cfg.load();
         const int weaponSetId = MP_CONTEXT.communityWeaponSetId > 0
             ? MP_CONTEXT.communityWeaponSetId : 1;
         const auto* set = cfg.weaponSetById(weaponSetId);
-        if (set && !(set->weapons.size() == 1 && set->weapons.front() == "*")) {
-            for (int logicalSlot = 1; logicalSlot <= static_cast<int>(set->weapons.size()); ++logicalSlot) {
-                const auto* id = cfg.weaponForSlot(weaponSetId, logicalSlot);
-                const WeaponDefinition* def = id ? WeaponRegistry::instance().get(*id) : nullptr;
-                if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None)
-                    entries.push_back({logicalSlot, def});
-            }
-        }
-        if (entries.empty()) {
-            for (int nativeSlot = 1; nativeSlot <= configuredSlotCount; ++nativeSlot) {
-                const WeaponDefinition* def = nullptr;
-                for (const auto& pair : WeaponRegistry::instance().all()) {
-                    if (pair.second.slot == nativeSlot) {
-                        def = &pair.second;
-                        break;
-                    }
+        const uint64_t registryRevision = WeaponRegistry::instance().revision();
+        const size_t weaponCount = set ? set->weapons.size() : 0;
+        if (cachedWeaponSetId != weaponSetId ||
+            cachedRegistryRevision != registryRevision ||
+            cachedConfiguredSlotCount != configuredSlotCount ||
+            cachedWeaponCount != weaponCount) {
+            cachedWeaponSetId = weaponSetId;
+            cachedRegistryRevision = registryRevision;
+            cachedConfiguredSlotCount = configuredSlotCount;
+            cachedWeaponCount = weaponCount;
+            cachedEntries.clear();
+            if (set && !(set->weapons.size() == 1 && set->weapons.front() == "*")) {
+                for (int logicalSlot = 1; logicalSlot <= static_cast<int>(set->weapons.size()); ++logicalSlot) {
+                    const auto* id = cfg.weaponForSlot(weaponSetId, logicalSlot);
+                    const WeaponDefinition* def = id ? WeaponRegistry::instance().get(*id) : nullptr;
+                    if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None)
+                        cachedEntries.push_back({logicalSlot, def,
+                            logicalSlot == 10 ? "0" : std::to_string(logicalSlot), {}});
                 }
-                if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None)
-                    entries.push_back({nativeSlot, def});
+            }
+            if (cachedEntries.empty()) {
+                for (int nativeSlot = 1; nativeSlot <= configuredSlotCount; ++nativeSlot) {
+                    const WeaponDefinition* def = nullptr;
+                    for (const auto& pair : WeaponRegistry::instance().all()) {
+                        if (pair.second.slot == nativeSlot) {
+                            def = &pair.second;
+                            break;
+                        }
+                    }
+                    if (def && def->id != "nothing" && def->behaviorType != WeaponBehaviorType::None)
+                        cachedEntries.push_back({nativeSlot, def,
+                            nativeSlot == 10 ? "0" : std::to_string(nativeSlot), {}});
+                }
+            }
+            for (HotbarEntry& entry : cachedEntries) {
+                entry.shortName = entry.definition->id.substr(0, 3);
+                std::transform(entry.shortName.begin(), entry.shortName.end(),
+                               entry.shortName.begin(), ::toupper);
             }
         }
         glm::vec4 bgEq = readCol("hotbarBgEquipped", {0.32f,0.32f,0.36f,0.95f});
@@ -409,13 +434,12 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         glm::vec4 wepCol = readTextCol("hotbarWeaponColor", {0.55f,0.55f,0.58f,1});
         glm::vec4 wepColEq = readTextCol("hotbarWeaponColorEquipped", {1.0f,0.85f,0.35f,1});
 
-        const int slotCount = static_cast<int>(entries.size());
+        const int slotCount = static_cast<int>(cachedEntries.size());
         if (slotCount > 0) {
             float totalWidth = slotSize * slotCount + gap * (slotCount - 1);
             float x = uiScreenW() * 0.5f - totalWidth * 0.5f;
             float y = uiScreenH() - yOffset;
-            for (const HotbarEntry& entry : entries) {
-                const int logicalSlot = entry.logicalSlot;
+            for (const HotbarEntry& entry : cachedEntries) {
                 const WeaponDefinition* slotDef = entry.definition;
                 bool equipped = player.equippedSlot == slotDef->slot;
                 float size = equipped ? slotSize * 1.2f : slotSize;
@@ -423,11 +447,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 UIRect rect{x - offset, y - offset, size, size};
                 uiDrawRect(rect, equipped ? bgEq : bgNorm, "hotbar-slot");
                 uiDrawRectOutline(rect, equipped ? borderEq : borderNorm, "hotbar-border");
-                std::string label = logicalSlot == 10 ? "0" : std::to_string(logicalSlot);
-                uiDrawText(label.c_str(), rect.x + 5, rect.y + 16, 0.30f, {1,1,1,1});
-                std::string shortName = slotDef->id.substr(0, 3);
-                std::transform(shortName.begin(), shortName.end(), shortName.begin(), ::toupper);
-                uiDrawText(shortName.c_str(), rect.x + 13, rect.y + 34, 0.20f,
+                uiDrawText(entry.label.c_str(), rect.x + 5, rect.y + 16, 0.30f, {1,1,1,1});
+                uiDrawText(entry.shortName.c_str(), rect.x + 13, rect.y + 34, 0.20f,
                            equipped ? wepColEq : wepCol);
                 x += slotSize + gap;
             }
@@ -435,19 +456,23 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // ── Self-healthbar (world-space, reuses NPC healthbar style) ──
-    if (!dead && !replayPlaybackActive) {
-        Debug::log(Debug::Category::Gui,
-            "[HEALTHBAR SELF] calling drawPlayerHealthbar hp=%d/%d pos=(%.2f %.2f %.2f)\n",
-            player.currentHp, player.maxHp,
-            player.pos.x, player.pos.y, player.pos.z);
-        drawPlayerHealthbar(player, camera, "self-hp", "live_world");
-    }
-    for (const Npc& npc : npcSystem.all()) {
-        if (npc.body.dead) {
-            continue;
+    const bool worldHealthbarsVisible =
+        HealthbarConfig::instance().worldHealthbarsVisible();
+    if (worldHealthbarsVisible) {
+        if (!dead && !replayPlaybackActive) {
+            Debug::log(Debug::Category::Gui,
+                "[HEALTHBAR SELF] calling drawPlayerHealthbar hp=%d/%d pos=(%.2f %.2f %.2f)\n",
+                player.currentHp, player.maxHp,
+                player.pos.x, player.pos.y, player.pos.z);
+            drawPlayerHealthbar(player, camera, "self-hp", "live_world");
         }
-        drawPlayerHealthbar(npc.body, camera, "npc-hp", "live_world",
-                            enemyHealthbarForActor(npc.id));
+        for (const Npc& npc : npcSystem.all()) {
+            if (npc.body.dead) {
+                continue;
+            }
+            drawPlayerHealthbar(npc.body, camera, "npc-hp", "live_world",
+                                enemyHealthbarForActor(npc.id));
+        }
     }
 
     if (!gReplayExportRenderMode || ReplayExportUI::showChatBubbles()) {
@@ -486,6 +511,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             mpContext.showDebugOverlay &&
             healthbarNowMs - lastHealthbarLogMs >= 1000;
 
+        if (worldHealthbarsVisible) {
         for (const auto& kv : mpContext.remotePlayers)
         {
             const HealthbarRenderResult result =
@@ -517,6 +543,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             drawPlayerHealthbar(kv.second, camera, "network-npc-hp", "live_world",
                                 enemyHealthbarForActor(kv.first));
         }
+        } // worldHealthbarsVisible
 
         if (logHealthbars)
             lastHealthbarLogMs = healthbarNowMs;
