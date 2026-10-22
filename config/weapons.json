@@ -1444,7 +1444,7 @@
       "camera_ads_scale": 0.85,
       "camera_recovery_rate": 40.0,
       "viewmodel_back_per_shot": 0.2,
-      "viewmodel_pitch_per_shot": 3.0,
+      "viewmodel_pitch_per_shot": 1.0,
       "viewmodel_yaw_per_shot": 0.5,
       "viewmodel_roll_per_shot": 1.5,
       "viewmodel_recovery_rate": 80.0,
@@ -1452,7 +1452,7 @@
       "arm_pitch_per_shot": -0.5,
       "arm_yaw_per_shot": -3.0,
       "arm_roll_per_shot": -0.1,
-      "arm_recovery_rate": 45.0,
+      "arm_recovery_rate": 65.0,
       "arm_ads_scale": 0.85
     },
     "behavior_type": "hitscan",
@@ -1483,7 +1483,7 @@
     "custom_params": {
       "reserveAmmo": 9999.0,
       "distanceFalloffStart": 250.0,
-      "minDamageFraction": 0.7142857,
+      "minDamageFraction": 0.8,
       "falloffExponent": 1.0,
       "limbDamageMultiplier": 0.75,
       "range": 1200.0,

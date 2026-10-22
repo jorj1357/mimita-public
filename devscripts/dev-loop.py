@@ -20,6 +20,7 @@ import builtins
 import colorsys
 import ctypes
 import datetime
+import errno
 from collections import deque
 import hashlib
 import json
@@ -69,6 +70,7 @@ WATCH_SCRIPT = ROOT / "devscripts" / "dev-loop-watch.py"
 WATCH_LOG_PATH = DEV_ROOT / "dev-loop-watch.log"
 DAEMON_LOG_PATH = DEV_ROOT / "dev-loop-console.log"
 DAEMON_READY_TIMEOUT_SECONDS = 60.0
+DAEMON_READY_STATUS_TIMEOUT_SECONDS = 8.0
 DASHBOARD_FRAME_SECONDS = 0.05
 DASHBOARD_STATUS_REFRESH_SECONDS = 1.0
 ROLE_NAMES = {
@@ -346,11 +348,45 @@ def _set_process_windows_visible(pid: int, visible: bool) -> list[dict]:
 print = dev_print
 
 
+_JSON_WRITE_LOCK = threading.Lock()
+_JSON_REPLACE_RETRIES = 8
+
+
 def write_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    payload = json.dumps(value, indent=2) + "\n"
+    temporary = None
+    with _JSON_WRITE_LOCK:
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="\n",
+                dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary = Path(handle.name)
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            for attempt in range(_JSON_REPLACE_RETRIES):
+                try:
+                    os.replace(temporary, path)
+                    temporary = None
+                    break
+                except PermissionError as error:
+                    winerror = getattr(error, "winerror", None)
+                    retryable = winerror in (5, 32, 33) or error.errno in (
+                        errno.EACCES, errno.EBUSY, errno.EPERM,
+                    )
+                    if not retryable or attempt + 1 == _JSON_REPLACE_RETRIES:
+                        raise
+                    time.sleep(0.025 * (attempt + 1))
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
 
 
 def read_json(path: Path) -> dict:
@@ -3346,7 +3382,8 @@ def wait_for_daemon_ready(timeout: float):
     deadline = time.time() + timeout
     while time.time() < deadline:
         current = read_current_run() or {}
-        if request_daemon_status(current, timeout=2.0) is not None:
+        if request_daemon_status(
+                current, timeout=DAEMON_READY_STATUS_TIMEOUT_SECONDS) is not None:
             return current
         time.sleep(0.5)
     return None

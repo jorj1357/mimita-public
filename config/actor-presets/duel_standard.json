@@ -9,10 +9,10 @@
     "force_perspective": true
   },
   "avatar": {
-    "forced": false,
-    "name": "jason",
-    "allowed": [],
-    "denied": ["monster*"]
+    "forced": true,
+    "name": "monstertest1",
+    "allowed": ["monstertest1"],
+    "denied": []
   },
   "movement_preset": "source"
 }

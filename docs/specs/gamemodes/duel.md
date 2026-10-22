@@ -22,9 +22,9 @@ setup, and the decisions that remain open after the initial implementation.
   may join. With one human, one NPC fills the other team. When two humans are
   active, no mode NPC remains.
 - Standard Duel is the first variant to author. Both competitors use the
-  `duel_standard` actor preset, a third-person camera, and the existing `source`
-  movement preset. Human avatars remain user-selected; the NPC uses the
-  standard NPC avatar.
+  `duel_standard` actor preset, a third-person camera, the existing `source`
+  movement preset, and the forced `monstertest1` avatar. RED and BLUE player
+  roles and NPC roles each preserve their team's identity.
 - The active map supplies the Duel spawn location. Both competitors use the
   same selected per-map Duel spawnpoint; they must not be assigned separate
   RED and BLUE spawnpoints. Keep the existing five-unit random XY offset around
@@ -55,11 +55,9 @@ setup, and the decisions that remain open after the initial implementation.
   with 10% alpha and lifetime. World hit spheres remain enabled at their full
   configured size and lifetime so they can be evaluated in play; their toggle
   and scales are editable in the mode JSON.
-- Duel avatars may use any avatar except IDs matching `monster*`. The preset
-  carries both `allowed` and `denied` lists in JSON; an empty allowed list means
-  all IDs pass unless a denied pattern matches. If the current avatar is denied,
-  the client falls back to the preset's safe avatar (`jason`). The server rejects
-  denied avatar manifests for the active role.
+- Duel forces every player and NPC to use `monstertest1`. The preset allow list
+  permits that avatar and has no denied patterns; each team role marks the
+  avatar forced so personal avatar selection cannot replace it.
 
 ## Round phases
 
@@ -98,12 +96,13 @@ movement identity. Use the existing actor-preset and movement systems; do not
 put movement values in `behavior-profiles.json` or create a Duel-only physics
 path.
 
-The standard preset is `duel_standard`, shared by the RED and BLUE human roles
-and the NPC opponent role. It forces third-person perspective and selects the
-existing `source` movement preset. The gamemode's `weapon_set_id: 1` supplies
-the Stable weapons set because the roles do not override it. The human's avatar
-remains user-selected; the NPC uses the standard NPC avatar selection. Standard
-Duel must not depend on the proposed rocket-only tuning in
+The standard preset is `duel_standard`, shared by the RED and BLUE player roles
+and the RED and BLUE NPC roles. Those roles are `duel_monster_test_red`,
+`duel_monster_test_blue`, `duel_monster_test_red_npc`, and
+`duel_monster_test_blue_npc`; all force `monstertest1`. The preset forces
+third-person perspective and selects the existing `source` movement preset.
+The gamemode's `weapon_set_id: 1` supplies the Stable weapons set because the
+roles do not override it. Standard Duel must not depend on the proposed rocket-only tuning in
 `movement-source-rocket.json`.
 
 ## Implementation owner map
@@ -116,7 +115,7 @@ Duel must not depend on the proposed rocket-only tuning in
 | Attacks, kills, score, and immediate respawn | Shared authoritative attack, damage, scoring, and spawn lifecycle | Generic score lifecycle is wired; real confirmed kills and respawns still need runtime validation. |
 | Rocket-only Duel (future variant) | `config/movement/movement-source-rocket.json` and a future variant preset | Tune and validate separately; it is not part of standard Duel. |
 | Duel camera and visual effects | `config/actor-presets/duel_standard.json`, `config/gamemodes/duel.json`, `GamemodePresentation`, and `EffectPartSystem` | JSON controls are wired; live visual review still needed to tune them. |
-| Duel avatar restrictions | `config/actor-presets/duel_standard.json`, `MatchRoleRegistry`, and server avatar-manifest owner | JSON allow/deny policy is enforced client-side and server-side; validate with human avatar selection. |
+| Forced Duel avatar | `config/roles.json`, `config/actor-presets/duel_standard.json`, `MatchRoleRegistry`, and server avatar-manifest owner | Each RED/BLUE player and NPC role forces `monstertest1`; validate roster application in a live Duel. |
 
 ## Open decisions
 
@@ -152,8 +151,8 @@ runtime that:
    hit effects, scales blood amount/lifetime to 0.1, and scales world impact
    decal alpha/lifetime to 0.1. The independent world-hit sphere switch and
    scales can be changed in JSON and take effect through the client mode profile.
-8. A human may select any non-`monster*` avatar; a denied ID is replaced locally
-   by `jason` and cannot become the server's active avatar.
+8. Every human and NPC role forces `monstertest1`; the preset allows that avatar
+   and the server accepts its manifest for the active roles.
 
 The 2026-10-21 dev-loop run `20261021_082355` used matching build 2731 server
 and client executables. Its journal confirms Duel mode, `weapon_set: 1`, a

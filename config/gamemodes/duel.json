@@ -34,16 +34,16 @@
   },
   "win_condition": "first_to_score",
   "roles": {
-    "duel_red": 1,
-    "duel_blue": 1
+    "duel_monster_test_red": 1,
+    "duel_monster_test_blue": 1
   },
   "teams": [
     {
       "id": "red",
       "display_name": "RED",
       "capacity": 1,
-      "role": "duel_red",
-      "npc_role": "duel_red_npc",
+      "role": "duel_monster_test_red",
+      "npc_role": "duel_monster_test_red_npc",
       "players": true,
       "npcs": true
     },
@@ -51,8 +51,8 @@
       "id": "blue",
       "display_name": "BLUE",
       "capacity": 1,
-      "role": "duel_blue",
-      "npc_role": "duel_blue_npc",
+      "role": "duel_monster_test_blue",
+      "npc_role": "duel_monster_test_blue_npc",
       "players": true,
       "npcs": true
     }

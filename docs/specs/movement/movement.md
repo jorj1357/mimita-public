@@ -1,4 +1,13 @@
-﻿MiMITA Player Movement Specification
+﻿2026 10 21 1651 jorj todo 
+inv
+idk
+explain this super well
+how can we expand to be even bette rlike
+
+matbe even 4d moves 
+would be fun 
+
+MiMITA Player Movement Specification
 Date: July 21, 2026
 Status: Target default movement behavior and migration reference
 Scope: Player-controlled movement, collision, touch resets, knockback interaction, prediction, validation, and replication

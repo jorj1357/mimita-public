@@ -8,6 +8,7 @@
   "closeSwitchDist": 8.0,
   "damageMultiplier": 1.0,
   "damageOtherNpcs": false,
+  // "damageOtherNpcs": true,
   "dashChance": 1.0,
   "difficultyErrorScale": 0.5,
   "downDashChance": 0.009999999776482582,
