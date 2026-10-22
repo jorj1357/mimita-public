@@ -1669,13 +1669,19 @@ void updateRenderedReplica(
         player.equippedWeaponId.clear();
         player.hasValidWeapon = false;
         if (player.equippedSlot >= 1) {
-            auto reg = WeaponRegistry::instance().all();
-            for (const auto& w : reg) {
-                if (w.second.slot == player.equippedSlot) {
-                    player.equippedWeaponId = w.first;
-                    player.hasValidWeapon = true;
-                    break;
-                }
+            static uint64_t cachedRegistryRevision = ~0ull;
+            static std::unordered_map<int, const std::string*> slotToId;
+            const WeaponRegistry& registry = WeaponRegistry::instance();
+            if (cachedRegistryRevision != registry.revision()) {
+                cachedRegistryRevision = registry.revision();
+                slotToId.clear();
+                for (const auto& w : registry.all())
+                    slotToId.emplace(w.second.slot, &w.first);
+            }
+            const auto bySlot = slotToId.find(player.equippedSlot);
+            if (bySlot != slotToId.end()) {
+                player.equippedWeaponId = *bySlot->second;
+                player.hasValidWeapon = true;
             }
         }
     }

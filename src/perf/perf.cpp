@@ -139,6 +139,12 @@ void Perf::logDetailedSubsystemStats()
 
 void Perf::beginFrame()
 {
+    static bool budgetConfigLoaded = false;
+    if (!budgetConfigLoaded) {
+        perfLoadBudgetConfig();
+        budgetConfigLoaded = true;
+    }
+
     PerfState& s = gState;
     s.allocationsThisFrame = 0;
     s.assetLoadsThisFrame = 0;
@@ -1137,7 +1143,9 @@ void perfLoadBudgetConfig()
         std::string contents((std::istreambuf_iterator<char>(f)),
                               std::istreambuf_iterator<char>());
 
-        auto perfPos = contents.find("\"performance\"");
+        // The same key also appears under "categories"; use the root-level
+        // performance budget section rather than the logger category entry.
+        auto perfPos = contents.rfind("\"performance\"");
         if (perfPos == std::string::npos) return;
 
         auto braceOpen = contents.find('{', perfPos);
@@ -1185,6 +1193,13 @@ void perfLoadBudgetConfig()
 
     Debug::log(Debug::Category::General, "[PERF] Budget config: target=%dfps spike=%.1fms\n",
                gPerfBudget.targetFps, gPerfBudget.spikeThresholdMs);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Important,
+        "performance.budget-config-loaded", "performance",
+        "performance target and spike thresholds loaded from config/debuglogger.json",
+        0, {{"target_fps", gPerfBudget.targetFps},
+            {"spike_threshold_ms", gPerfBudget.spikeThresholdMs}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 // ── Top exclusive printing ──────────────────────────────────

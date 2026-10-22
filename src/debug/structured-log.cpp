@@ -965,6 +965,15 @@ void StructuredLogger::shutdown() {
 void StructuredLogger::pollConfig() {
     if (!mConfig.hotReload) return;
 
+    // Hot reload does not need a filesystem stat every rendered frame. At high
+    // render rates that stat becomes measurable frame-interval work, so poll at
+    // most twice per second while keeping live tuning responsive.
+    static double lastPollSeconds = -1.0;
+    const double now = nowSeconds();
+    if (lastPollSeconds >= 0.0 && now - lastPollSeconds < 0.5)
+        return;
+    lastPollSeconds = now;
+
     const std::string configPath = "config/debuglogger.json";
     std::error_code ec;
     auto wt = std::filesystem::last_write_time(configPath, ec);

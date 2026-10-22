@@ -726,7 +726,28 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
         sock, player, &spawnSync, sizeof(spawnSync),
         spawnSync.eventId, reliableGameplayEventSessionForPlayer(player),
         gSpawnSyncTotalPacketsOut);
-    (void)qr;
+    const char* queueResult = qr == ReliableGameplayEventQueueResult::Queued
+        ? "queued"
+        : (qr == ReliableGameplayEventQueueResult::ConnectionUnavailable
+            ? "connection_unavailable" : "backlog_saturated");
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "server.actor.spawn_published", std::to_string(player.id),
+        "authoritative player spawn packet queued for client",
+        serverGamemodeState().currentServerTick,
+        nlohmann::json{{"actor_id", player.id},
+                       {"initial_spawn", isInitialSpawn},
+                       {"spawn_generation", player.spawnGeneration},
+                       {"transform_epoch", player.transformEpoch},
+                       {"reliable_event_id", spawnSync.eventId},
+                       {"queue_result", queueResult},
+                       {"health", player.health},
+                       {"dead", player.dead},
+                       {"spawn_state", static_cast<int>(player.spawnState)},
+                       {"avatar", player.avatarName},
+                       {"position", {player.pos.x, player.pos.y, player.pos.z}},
+                       {"velocity", {player.vel.x, player.vel.y, player.vel.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
 
     DBG(Network, "SPAWN TX CREATE id=%u spawnGen=%u epoch=%u reason=%s health=%d ownedWeapons=%zu",
         player.id, player.spawnGeneration, player.transformEpoch,
@@ -865,10 +886,11 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         if (p.instantRespawnRequested)
         {
             p.instantRespawnRequested = false;
-            p.respawnSeconds = 0.0f;
+            p.respawnSeconds = serverMatchRespawnSeconds();
             printf("%s [SERVER RESPAWN INSTANT] playerId=%u trigger=instantRespawnRequested\n",
                    serverTimestamp(), p.id);
         }
+        const float respawnSecondsBeforeTick = p.respawnSeconds;
         p.respawnSeconds -= SERVER_DT;
         if (p.respawnSeconds <= 0.0f)
         {
@@ -892,6 +914,20 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 p.respawnSeconds = 1.0f;
                 return;
             }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.actor.respawn_timer_expired", std::to_string(p.id),
+                "respawn delay elapsed; server selected a safe spawn",
+                serverGamemodeState().currentServerTick,
+                nlohmann::json{{"actor_id", p.id},
+                               {"spawn_generation", p.spawnGeneration},
+                               {"respawn_timer_before_tick", respawnSecondsBeforeTick},
+                               {"simulation_dt_seconds", SERVER_DT},
+                               {"wave_mode", serverGamemodeState().npcWaves},
+                               {"wave_lives_remaining", serverGamemodeState().waveLivesRemaining},
+                               {"position", {respawnPos.x, respawnPos.y, respawnPos.z}},
+                               {"yaw_degrees", respawnYaw}},
+                __FILE__, __LINE__, __FUNCTION__);
             // The spawn yaw is the actor's valid look direction for this new
             // life. Compute the impulse after choosing it, not from the old
             // yaw left over from the previous life.

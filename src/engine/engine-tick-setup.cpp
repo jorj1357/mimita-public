@@ -63,8 +63,7 @@ extern FramePacer gFramePacer;
 // zero config files are polled for changes (no filesystem overhead).
 // When enabled=true, polling is throttled to every N frames.
 static bool sHotReloadEnabled = true;
-static int sHotReloadFrameCounter = 0;
-static constexpr int HOT_RELOAD_THROTTLE_FRAMES = 10; // check every 10 frames (~6x/sec at 60fps)
+static constexpr auto HOT_RELOAD_POLL_INTERVAL = std::chrono::milliseconds(167);
 
 static void loadHotReloadConfig()
 {
@@ -107,9 +106,14 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         sFirstFrame = false;
     }
 
-    // When hot-reload is disabled, skip all config polling (zero overhead).
-    // When enabled, throttle to every N frames.
-    const bool shouldPoll = sHotReloadEnabled && (++sHotReloadFrameCounter % HOT_RELOAD_THROTTLE_FRAMES == 0);
+    // Poll on wall time so high render rates do not multiply filesystem checks.
+    // Six checks per second keeps live tuning responsive without tying the cost
+    // to how many frames the machine can render.
+    const auto hotReloadNow = std::chrono::steady_clock::now();
+    static auto nextHotReloadPoll = hotReloadNow;
+    const bool shouldPoll = sHotReloadEnabled && hotReloadNow >= nextHotReloadPoll;
+    if (shouldPoll)
+        nextHotReloadPoll = hotReloadNow + HOT_RELOAD_POLL_INTERVAL;
 
     { MIMITA_PERF_SCOPE("Setup::ConfigPolling");
     if (shouldPoll) {

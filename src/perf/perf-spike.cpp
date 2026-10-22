@@ -5,8 +5,7 @@
 #include "debug/crash-handler.h"
 #include "config.h"
 #include <algorithm>
-
-#include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -45,31 +44,54 @@ uint64_t PerfScopeGuard::readCycles()
 PerfScopeGuard::PerfScopeGuard(
     const char* file, int line, const char* func, const char* label)
 {
-    if (gPerfScopeCount >= MAX_SCOPES_PER_FRAME)
-        return;
+    const int parentIndex = gPerfScopeStackDepth > 0
+        ? gPerfScopeStack[gPerfScopeStackDepth - 1] : -1;
+    mScopeIndex = -1;
 
-    mScopeIndex = gPerfScopeCount++;
-    PerfScopeCapture& cap = gPerfScopes[mScopeIndex];
-    cap.file = file;
-    cap.line = line;
-    cap.func = func;
-    cap.label = label;
-    cap.active = true;
+    // Keep one record for each call site under its parent for this frame.
+    // The profiler consumes a fixed-size buffer; capturing every repeated NPC
+    // invocation filled it before late-frame stages such as rendering and
+    // pacing could be recorded.
+    for (int i = 0; i < gPerfScopeCount; ++i) {
+        const PerfScopeCapture& existing = gPerfScopes[i];
+        if (existing.file != file || existing.line != line ||
+            existing.func != func || existing.label != label ||
+            existing.parentIndex != parentIndex)
+            continue;
 
-    // Copy correlation ID from stack
-    if (gPerfCorrelationDepth > 0) {
-        std::strncpy(cap.correlationId, gPerfCorrelationStack[gPerfCorrelationDepth - 1], sizeof(cap.correlationId) - 1);
+        bool alreadyOnStack = false;
+        for (int stackIndex = 0; stackIndex < gPerfScopeStackDepth; ++stackIndex) {
+            if (gPerfScopeStack[stackIndex] == i) {
+                alreadyOnStack = true;
+                break;
+            }
+        }
+        if (!alreadyOnStack) {
+            mScopeIndex = i;
+            break;
+        }
     }
 
-    // Record frame/tick at scope creation
-    cap.beginFrameId = gPerfCurrentFrameId;
-    cap.beginTickId = 0;
+    if (mScopeIndex < 0) {
+        if (gPerfScopeCount >= MAX_SCOPES_PER_FRAME)
+            return;
+        mScopeIndex = gPerfScopeCount++;
+        PerfScopeCapture& fresh = gPerfScopes[mScopeIndex];
+        fresh.file = file;
+        fresh.line = line;
+        fresh.func = func;
+        fresh.label = label;
+        fresh.active = true;
+        fresh.parentIndex = parentIndex;
 
-    // Determine parent from stack
-    if (gPerfScopeStackDepth > 0) {
-        cap.parentIndex = gPerfScopeStack[gPerfScopeStackDepth - 1];
-    } else {
-        cap.parentIndex = -1;
+        // Copy correlation ID from stack
+        if (gPerfCorrelationDepth > 0) {
+            std::strncpy(fresh.correlationId, gPerfCorrelationStack[gPerfCorrelationDepth - 1], sizeof(fresh.correlationId) - 1);
+        }
+
+        // Record frame/tick at scope creation
+        fresh.beginFrameId = gPerfCurrentFrameId;
+        fresh.beginTickId = 0;
     }
 
     // Push to stack
@@ -196,8 +218,13 @@ void perfAggregateScopes(double totalFrameMs, double budgetMs, int frameNumber)
 
     bool isSpike = totalFrameMs >= gPerfBudget.spikeThresholdMs;
 
-    // Write spike report for frames exceeding threshold
-    if (isSpike) {
+    // Count every budget miss in the frame summary, but keep the expensive
+    // per-scope text report bounded when many consecutive frames miss.
+    static auto lastSpikeReport = std::chrono::steady_clock::time_point{};
+    const auto spikeNow = std::chrono::steady_clock::now();
+    if (isSpike && (lastSpikeReport == std::chrono::steady_clock::time_point{} ||
+                    spikeNow - lastSpikeReport >= std::chrono::seconds(1))) {
+        lastSpikeReport = spikeNow;
         perfWriteSpikeReport(totalFrameMs, budgetMs, frameNumber);
     }
 

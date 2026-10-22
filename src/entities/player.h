@@ -163,6 +163,7 @@ struct PendingPlayerModel {
     std::atomic<bool> ready{false};
     std::string path;
     std::string resolvedPath;
+    std::string renderModelKey;
     std::string glbDir;
     bool loadOk = false;
 
@@ -720,7 +721,8 @@ public:
                            bool hideHead = false,
                            bool outlinePass = false,
                            float outlineThickness = 0.0f,
-                           const glm::vec4& outlineColor = glm::vec4(1.0f)) const;
+                           const glm::vec4& outlineColor = glm::vec4(1.0f),
+                           const glm::vec3& playerTint = glm::vec3(1.0f)) const;
     void syncLegacyStateToLayers();
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();
@@ -741,6 +743,17 @@ public:
     const std::string& characterName() const { return mCharacterName; }
     const std::string& avatarName() const { return mAvatarName; }
     void setAvatarName(const std::string& name) { mAvatarName = name; }
+    // Stable identity for the immutable body-part geometry shared by actors
+    // using the same model/avatar. Render upload caches key on this so one
+    // actor's part upload is reused by every replica instead of re-uploading
+    // each actor's private mesh copy every frame.
+    const std::string& renderModelKey() const { return mRenderModelKey; }
+    void setRenderModelKeyFromPath(const std::string& resolvedPath)
+    {
+        // Key by immutable model geometry only. Per-actor avatar names and
+        // outfit textures must not split the shared body-part upload cache.
+        mRenderModelKey = resolvedPath;
+    }
     void ensureCharacterLoaded();
     bool mLazyLoadRequested = false;
     void requestModelLoad(const std::string& filepath);
@@ -752,7 +765,8 @@ public:
     void render(unsigned int shader,
                 const glm::mat4& view,
                 const glm::mat4& proj,
-                bool hideHead = false) const;
+                bool hideHead = false,
+                const glm::vec3& playerTint = glm::vec3(1.0f)) const;
     void renderDepth(unsigned int shadowShader,
                      const glm::mat4& lightViewProj) const;
 
@@ -771,6 +785,7 @@ public:
     std::string equippedWeaponId;
     std::string mCharacterName = "DefaultGuy";
     std::string mAvatarName;
+    std::string mRenderModelKey;
     struct AvatarInstance* avatarInstance = nullptr;
     std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
 

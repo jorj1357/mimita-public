@@ -19,21 +19,22 @@ extern TextureStore gTextures;
 
 extern GLuint capsuleVAO;
 extern int capsuleVertCount;
-extern GLuint playerVAO;
 
 void initCapsuleMesh();
-void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex);
-void uploadPlayerMeshIfNeeded(const Mesh& mesh);
+void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& modelKey);
+GLuint uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey);
 
 void Player::render(unsigned int shader,
                     const glm::mat4& view,
                     const glm::mat4& proj,
-                    bool hideHead) const
+                    bool hideHead,
+                    const glm::vec3& playerTint) const
 {
     const_cast<Player*>(this)->finalizeModelIfReady();
     const_cast<Player*>(this)->updateModelWorldTransforms();
     bool flash = spawnFlashTimer > 0.0f;
-    renderCurrentPose(shader, view, proj, flash, hideHead);
+    renderCurrentPose(shader, view, proj, flash, hideHead, false, 0.0f,
+                      glm::vec4(1.0f), playerTint);
 }
 
 void Player::applyReplayPose(
@@ -111,7 +112,8 @@ void Player::renderCurrentPose(unsigned int shader,
                                bool hideHead,
                                bool outlinePass,
                                float outlineThickness,
-                               const glm::vec4& outlineColor) const
+                               const glm::vec4& outlineColor,
+                               const glm::vec3& playerTint) const
 {
     auto logRagdollPath = [&](uint32_t stage, const char* event,
                               const char* reason, const nlohmann::json& fields) {
@@ -200,7 +202,7 @@ void Player::renderCurrentPose(unsigned int shader,
         glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
         glUniform1i(uTexLoc, 0);
         if (uTintLoc >= 0)
-            glUniform3f(uTintLoc, 1.0f, 1.0f, 1.0f);
+            glUniform3f(uTintLoc, playerTint.r, playerTint.g, playerTint.b);
         if (uCosmeticTextureEnabledLoc >= 0)
             glUniform1i(uCosmeticTextureEnabledLoc, 0);
         if (uCosmeticUvOffsetLoc >= 0)
@@ -280,7 +282,7 @@ void Player::renderCurrentPose(unsigned int shader,
             drawableBatches += mesh.batches.size();
             drawableVertices += mesh.verts.size();
 
-            uploadBodyPartMeshPart(mesh, (int)i);
+            uploadBodyPartMeshPart(mesh, (int)i, renderModelKey());
 
             const glm::mat4& model = part.worldTransform;
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
@@ -369,7 +371,7 @@ void Player::renderCurrentPose(unsigned int shader,
             drawableBatches += mesh.batches.size();
             drawableVertices += mesh.verts.size();
 
-            uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i));
+            uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i), renderModelKey());
 
             const glm::mat4& model = part.worldTransform;
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
@@ -430,25 +432,28 @@ void Player::renderCurrentPose(unsigned int shader,
         if (uCosmeticTextureEnabledLoc >= 0) glUniform1i(uCosmeticTextureEnabledLoc, 0);
         if (uCosmeticBrightnessLoc >= 0) glUniform1f(uCosmeticBrightnessLoc, 1.0f);
         if (uCosmeticOpacityLoc >= 0) glUniform1f(uCosmeticOpacityLoc, 1.0f);
+        if (uTintLoc >= 0) glUniform3f(uTintLoc, 1.0f, 1.0f, 1.0f);
 
-        logRagdollPath(
-            1u, "ragdoll.render.path", "physical body mesh path completed",
-            {{"actor_id", username}, {"path", "physical_body"},
-             {"drawable_parts", drawableParts}, {"drawable_batches", drawableBatches},
-             {"drawable_vertices", drawableVertices}, {"shader_program", shader},
-             {"position", {pos.x, pos.y, pos.z}}});
+        if (dead && ragdollModeActive)
+            logRagdollPath(
+                1u, "ragdoll.render.path", "physical body mesh path completed",
+                {{"actor_id", username}, {"path", "physical_body"},
+                 {"drawable_parts", drawableParts}, {"drawable_batches", drawableBatches},
+                 {"drawable_vertices", drawableVertices}, {"shader_program", shader},
+                 {"position", {pos.x, pos.y, pos.z}}});
 
         return;
     }
 
     if (modelLoaded && !renderMesh.verts.empty())
     {
-        logRagdollPath(
-            2u, "ragdoll.render.path", "fallback render mesh path selected",
-            {{"actor_id", username}, {"path", "render_mesh"},
-             {"vertices", renderMesh.verts.size()}, {"batches", renderMesh.batches.size()},
-             {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
-        uploadPlayerMeshIfNeeded(renderMesh);
+        if (dead && ragdollModeActive)
+            logRagdollPath(
+                2u, "ragdoll.render.path", "fallback render mesh path selected",
+                {{"actor_id", username}, {"path", "render_mesh"},
+                 {"vertices", renderMesh.verts.size()}, {"batches", renderMesh.batches.size()},
+                 {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
+        const GLuint meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderModelKey());
 
         glm::mat4 model =
             glm::translate(glm::mat4(1.0f), pos) *
@@ -463,23 +468,26 @@ void Player::renderCurrentPose(unsigned int shader,
         if (whiteOverride)
             glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
         glUniform1i(glGetUniformLocation(shader,"uTex"),0);
-        glUniform3f(glGetUniformLocation(shader,"uTint"), 1.0f, 1.0f, 1.0f);
+        const GLint tintLoc = glGetUniformLocation(shader, "uTint");
+        glUniform3f(tintLoc, playerTint.r, playerTint.g, playerTint.b);
 
         MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
-        MIMITA_GL_CALL(glBindVertexArray(playerVAO));
+        MIMITA_GL_CALL(glBindVertexArray(meshVao));
         for (const Mesh::Batch& batch : renderMesh.batches)
         {
             MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
             MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
             diagRenderCountPlayerDraw();
         }
+        glUniform3f(tintLoc, 1.0f, 1.0f, 1.0f);
         return;
     }
 
-    logRagdollPath(
-        4u, "ragdoll.render.path", "fallback capsule path selected",
-        {{"actor_id", username}, {"path", "capsule"},
-         {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
+    if (dead && ragdollModeActive)
+        logRagdollPath(
+            4u, "ragdoll.render.path", "fallback capsule path selected",
+            {{"actor_id", username}, {"path", "capsule"},
+             {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
 
     initCapsuleMesh();
 
@@ -494,13 +502,14 @@ void Player::renderCurrentPose(unsigned int shader,
     if (whiteOverride)
         glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
     glUniform1i(glGetUniformLocation(shader,"uTex"),0);
-    glUniform3f(glGetUniformLocation(shader,"uTint"), 1.0f, 1.0f, 1.0f);
+    glUniform3f(glGetUniformLocation(shader,"uTint"), playerTint.r, playerTint.g, playerTint.b);
 
     MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
     MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gTextures.get("greenwirev1")));
 
     MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
     MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount));
+    glUniform3f(glGetUniformLocation(shader, "uTint"), 1.0f, 1.0f, 1.0f);
     diagRenderCountPlayerDraw();
 }
 
@@ -527,7 +536,7 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
             if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
                 continue;
 
-            uploadBodyPartMeshPart(mesh, (int)i);
+            uploadBodyPartMeshPart(mesh, (int)i, renderModelKey());
 
             const glm::mat4& model = part.worldTransform;
             glm::mat4 mvp = lightViewProj * model;
@@ -543,7 +552,7 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
 
     if (modelLoaded && !renderMesh.verts.empty())
     {
-        uploadPlayerMeshIfNeeded(renderMesh);
+        const GLuint meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderModelKey());
 
         glm::mat4 modelMat =
             glm::translate(glm::mat4(1.0f), pos) *
@@ -553,7 +562,7 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
         if (loc >= 0)
             glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
 
-        glBindVertexArray(playerVAO);
+        glBindVertexArray(meshVao);
         for (const Mesh::Batch& batch : renderMesh.batches)
             glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
 

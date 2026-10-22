@@ -24,6 +24,7 @@
 #include "website/api-client.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "perf/perf-spike.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-window.h"
@@ -180,6 +181,7 @@ static void processSnapshotEntities(
     float dt,
     const char* sourceName)
 {
+    MIMITA_PERF_SCOPE("Network::SnapshotApply");
     // ── Authoritative membership ordering gate ──────────────────────────
     // A snapshot older than the newest already-applied membership snapshot
     // must NOT create, destroy, remove, or revive remote entities. It may
@@ -720,6 +722,7 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
 {
     ctx.communityWeaponSetId = spawn->communityWeaponSetId;
     uint32_t oldGen = ctx.lastKnownSpawnGeneration;
+    const int previousServerHealth = ctx.localServerHealth;
     ctx.lastKnownSpawnGeneration = spawn->spawnGeneration;
     // A duel teleport can reuse the same spawn generation while advancing the
     // transform epoch. Seed the complete authoritative transform here so the
@@ -727,10 +730,26 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
     ctx.localServerPosition = {spawn->posX, spawn->posY, spawn->posZ};
     ctx.localServerVelocity = {spawn->velX, spawn->velY, spawn->velZ};
     ctx.localServerEpoch = spawn->transformEpoch;
+    ctx.localServerHealth = spawn->health;
     ctx.transformEpoch = spawn->transformEpoch;
     ctx.lastAppliedEpoch = 0;
     ctx.hasLocalServerPosition = true;
     ctx.localPlayerReconciled = false;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "client.actor.spawn_packet_applied", std::to_string(ctx.localPlayerId),
+        "accepted authoritative spawn packet and installed new life state",
+        ctx.latestLocalSnapshotTick,
+        nlohmann::json{{"actor_id", ctx.localPlayerId},
+                       {"old_spawn_generation", oldGen},
+                       {"new_spawn_generation", spawn->spawnGeneration},
+                       {"transform_epoch", spawn->transformEpoch},
+                       {"previous_snapshot_health", previousServerHealth},
+                       {"spawn_health", spawn->health},
+                       {"position", {spawn->posX, spawn->posY, spawn->posZ}},
+                       {"velocity", {spawn->velX, spawn->velY, spawn->velZ}},
+                       {"reliable_event_id", spawn->eventId}},
+        __FILE__, __LINE__, __FUNCTION__);
     Debug::log(Debug::Category::Duel,
         "[DuelSpawnApply] player=%u generation=%u epoch=%u position=(%.3f,%.3f,%.3f) transformGate=reset\n",
         ctx.localPlayerId, spawn->spawnGeneration, spawn->transformEpoch,
@@ -835,6 +854,7 @@ bool mpLocalGameplaySimulationReady(const MultiplayerContext& ctx,
 
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const World& world)
 {
+    MIMITA_PERF_SCOPE("Network::MpTick");
     // Network gameplay prediction advances on the same fixed 60 Hz clock as
     // server collision/damage. Render FPS and a bad connection must not change
     // how many projectile collision steps are simulated.
@@ -1017,6 +1037,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
     // Lambda to process a single validated packet from buffer[0..bytes)
     auto processPacket = [&](int bytes) {
+        MIMITA_PERF_SCOPE("Network::PacketDispatch");
         PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
         if (bytes < (int)sizeof(PacketHeader) ||
             header->magic != PROTOCOL_MAGIC ||
@@ -1431,26 +1452,32 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                                     (uint32_t)snapshotEntities.size(),
                                     chunk.header.tick, dt, "chunk");
 
-            uint32_t npcCount = 0;
-            uint32_t npcEmptyAvatarCount = 0;
-            for (const SnapshotEntity& entity : snapshotEntities)
+            static uint64_t lastNpcAvatarSnapshotLogMs = 0;
+            const uint64_t avatarLogNow = nowMs();
+            if (avatarLogNow - lastNpcAvatarSnapshotLogMs >= 1000)
             {
-                if (entity.entityType != ENTITY_NPC)
-                    continue;
-                ++npcCount;
-                if (entity.avatarName[0] == '\0')
-                    ++npcEmptyAvatarCount;
+                uint32_t npcCount = 0;
+                uint32_t npcEmptyAvatarCount = 0;
+                for (const SnapshotEntity& entity : snapshotEntities)
+                {
+                    if (entity.entityType != ENTITY_NPC)
+                        continue;
+                    ++npcCount;
+                    if (entity.avatarName[0] == '\0')
+                        ++npcEmptyAvatarCount;
+                }
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "client.npc-avatar.snapshot-reassembled", "client-npc-avatar",
+                    "complete snapshot reassembled before NPC avatar binding", chunk.header.tick,
+                    {{"snapshot_tick", chunk.header.tick},
+                     {"chunk_count", chunk.chunkCount},
+                     {"entity_count", snapshotEntities.size()},
+                     {"npc_count", npcCount},
+                     {"npc_empty_avatar_count", npcEmptyAvatarCount}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                lastNpcAvatarSnapshotLogMs = avatarLogNow;
             }
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Avatar, StructuredLevel::Important,
-                "client.npc-avatar.snapshot-reassembled", "client-npc-avatar",
-                "complete snapshot reassembled before NPC avatar binding", chunk.header.tick,
-                {{"snapshot_tick", chunk.header.tick},
-                 {"chunk_count", chunk.chunkCount},
-                 {"entity_count", snapshotEntities.size()},
-                 {"npc_count", npcCount},
-                 {"npc_empty_avatar_count", npcEmptyAvatarCount}},
-                __FILE__, __LINE__, __FUNCTION__);
 
             logClientSnapshotDiagnostics(ctx, chunk.header.tick,
                                          priorSnapshotTick == 0 || chunk.header.tick <= priorSnapshotTick
@@ -2078,6 +2105,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     };
 
     // ── Poll ICE transport (if available) ──
+    {
+    MIMITA_PERF_SCOPE("Network::ReceivePoll");
     if (ctx.transport)
     {
         std::vector<ReceivedPacket> pkts;
@@ -2145,8 +2174,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             processPacket((int)rp.bytes.size());
         }
     }
+    }
 
     // Retry chat requests until the server's reliable event confirms them.
+    {
+    MIMITA_PERF_SCOPE("Network::PostReceive");
     {
         const uint64_t now = nowMs();
         const uint64_t retryMs = (uint64_t)NetworkingConfig::instance().data().reliableEvents.retryMs;
@@ -2616,11 +2648,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         }
     }
 
-    mpUpdateRemoteEntities(ctx, dt);
-    mpAvatarNetworkTick(ctx);
-    mpReleaseTimelineEvents(ctx);
-    mpUpdateRemoteSwordStates(ctx, dt);
-    mpUpdateNetworkProjectiles(ctx, dt, world);
+    { MIMITA_PERF_SCOPE("Network::RemoteEntities"); mpUpdateRemoteEntities(ctx, dt); }
+    { MIMITA_PERF_SCOPE("Network::AvatarTick"); mpAvatarNetworkTick(ctx); }
+    { MIMITA_PERF_SCOPE("Network::TimelineEvents"); mpReleaseTimelineEvents(ctx); }
+    { MIMITA_PERF_SCOPE("Network::RemoteSwordStates"); mpUpdateRemoteSwordStates(ctx, dt); }
+    { MIMITA_PERF_SCOPE("Network::Projectiles"); mpUpdateNetworkProjectiles(ctx, dt, world); }
 
     if (ctx.connected &&
         currentMs - ctx.lastPingSentMs >=
@@ -2637,6 +2669,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     }
 
     ++ctx.tick;
+    }
 }
 
 } // namespace MimitaNet

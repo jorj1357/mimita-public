@@ -102,15 +102,18 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     // ── Authoritative lifecycle detection ─────────────────────────────
     // A new life is detected when the server epoch advances past our
     // pending respawn start epoch AND the server reports health > 0.
+    const uint32_t previousLocalSpawnGeneration = player.spawnGeneration;
+    const bool spawnGenerationAdvanced = ctx.lastKnownSpawnGeneration != 0 &&
+        ctx.lastKnownSpawnGeneration > previousLocalSpawnGeneration;
     const uint32_t prevEpoch = (uint32_t)ctx.lastAppliedEpoch;
     const uint32_t newEpoch = (uint32_t)ctx.localServerEpoch;
     const bool epochAdvanced = newEpoch != 0 && newEpoch > prevEpoch;
-    const bool authoritativeNewLife =
-        ctx.pendingRespawnSerial != 0 &&
-        epochAdvanced &&
-        ctx.localServerHealth > 0 &&
-        (ctx.pendingRespawnStartEpoch == 0 || newEpoch > (uint32_t)ctx.pendingRespawnStartEpoch) &&
-        ctx.lastAppliedEpoch == ctx.localServerEpoch;
+    const bool authoritativeNewLife = ctx.localServerHealth > 0 &&
+        (spawnGenerationAdvanced ||
+         (ctx.pendingRespawnSerial != 0 && epochAdvanced &&
+          (ctx.pendingRespawnStartEpoch == 0 ||
+           newEpoch > (uint32_t)ctx.pendingRespawnStartEpoch) &&
+          ctx.lastAppliedEpoch == ctx.localServerEpoch));
 
     const bool serverKilledPlayer = ctx.localServerHealth <= 0 && !player.dead;
     // Legacy health-transition based detection (still useful for non-respawn deaths)
@@ -253,15 +256,39 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     // ── Lifecycle-aware health reconciliation ─────────────────────────
     if (authoritativeNewLife || serverRespawnedPlayer)
     {
+        const bool wasDead = player.dead;
         ctx.pendingVictimHealth.clear();
         player.currentHp = ctx.localServerHealth;
         player.maxHp = ctx.localServerHealth;
         player.dead = false;
+        player.netPredictedDead = false;
+        player.networkDeathPresented = false;
         player.proceduralFrozen = false;
         player.deathAnim = Player::DeathAnimState{};
         player.respawnTimer = 0.0f;
         player.killedBy.clear();
+        player.spawnGeneration = ctx.lastKnownSpawnGeneration;
         resetAllWeaponRuntimesForSpawn(player, "multiplayer-reconcile spawn");
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "client.local.spawn_reconciled", std::to_string(ctx.localPlayerId),
+            spawnGenerationAdvanced
+                ? "authoritative spawn generation cleared the local dead render gate"
+                : "authoritative health transition cleared the local dead render gate",
+            ctx.latestLocalSnapshotTick,
+            nlohmann::json{{"actor_id", ctx.localPlayerId},
+                           {"respawn_detection", spawnGenerationAdvanced
+                                ? "spawn_generation" : "health_transition_or_request"},
+                           {"spawn_generation_before", previousLocalSpawnGeneration},
+                           {"spawn_generation_after", player.spawnGeneration},
+                           {"pending_respawn_serial", ctx.pendingRespawnSerial},
+                           {"transform_epoch", (uint32_t)ctx.localServerEpoch},
+                           {"health", player.currentHp},
+                           {"dead_before", wasDead},
+                           {"dead_after", player.dead},
+                           {"snapshot_tick", ctx.latestLocalSnapshotTick},
+                           {"position", {player.pos.x, player.pos.y, player.pos.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
         printf("[CLIENT RESPAWN CONFIRMED] playerId=%u requestSerial=%u "
                "epoch=%u snapshotTick=%u position=(%.2f,%.2f,%.2f) "
                "health=%d pendingMs=%llu\n",

@@ -28,6 +28,7 @@ DynamicLight* DynamicLightManager::spawn(const glm::vec3& position,
     for (auto& light : mLights) {
         if (light.active) continue;
         light.id = mNextId++;
+        light.playerVisualOwner = 0;
         light.position = position;
         light.color = color;
         light.intensity = intensity;
@@ -45,6 +46,46 @@ DynamicLight* DynamicLightManager::spawn(const glm::vec3& position,
     Debug::logThrottled(Debug::Category::Render, "dlight-pool-full", 2.0f,
         "[DYNAMIC LIGHT] pool full (max=%d)\n", (int)MAX_LIGHTS);
     return nullptr;
+}
+
+void DynamicLightManager::updatePlayerVisualLight(uint32_t actorId, bool enabled,
+    const glm::vec3& position, const glm::vec3& color, float intensity, float radius)
+{
+    if (actorId == 0) return;
+    DynamicLight* owned = nullptr;
+    DynamicLight* available = nullptr;
+    for (auto& light : mLights) {
+        if (light.active && light.playerVisualOwner == actorId) {
+            owned = &light;
+            break;
+        }
+        if (!light.active && !available) available = &light;
+    }
+    if (!enabled) {
+        if (owned) owned->active = false;
+        return;
+    }
+    if (!owned) {
+        if (!available) {
+            Debug::logThrottled(Debug::Category::Render, "player-visual-light-pool-full", 2.0f,
+                "[PLAYER VISUALS] point light skipped actor=%u reason=dynamic light pool full", actorId);
+            return;
+        }
+        owned = available;
+        owned->id = mNextId++;
+        owned->playerVisualOwner = actorId;
+        owned->active = true;
+    }
+    owned->position = position;
+    owned->color = color;
+    owned->intensity = intensity;
+    owned->radius = radius;
+    // The owning player renderer refreshes this before it expires. This also
+    // removes lights for actors that disappear from the rendered roster.
+    owned->lifetime = 0.5f;
+    owned->age = 0.0f;
+    owned->fadeIn = 0.0f;
+    owned->fadeOut = 0.0f;
 }
 
 void DynamicLightManager::update(float dt)

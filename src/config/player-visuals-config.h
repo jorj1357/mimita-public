@@ -21,7 +21,6 @@ struct PlayerOutlineSettings {
     glm::vec3 color{255.0f, 255.0f, 255.0f};
     bool visibleThroughWalls = false;
     bool disappearOnDeath = true;
-    int renderOrder = 100;
 };
 
 struct PlayerCapsuleSettings {
@@ -35,7 +34,6 @@ struct PlayerCapsuleSettings {
     bool depthWrite = false;
     bool visibleThroughWalls = false;
     float scale = 1.05f;
-    int renderOrder = 80;
 };
 
 struct PlayerWireframeSettings {
@@ -45,17 +43,44 @@ struct PlayerWireframeSettings {
     float lineWidth = 1.0f;
     bool visibleThroughWalls = false;
     bool disappearOnDeath = true;
-    int renderOrder = 120;
+};
+
+struct PlayerTrailSettings {
+    bool enabled = false;
+    float minSpeed = 35.0f;
+    float sampleIntervalSeconds = 0.035f;
+    float lifetimeSeconds = 0.22f;
+    int maxSamples = 12;
+    float alpha = 0.65f;
+    float width = 3.0f;
+    glm::vec3 color{255.0f, 80.0f, 40.0f};
+};
+
+struct PlayerPointLightSettings {
+    bool enabled = false;
+    float intensity = 1.5f;
+    float radius = 8.0f;
+    float heightOffset = 1.0f;
+    glm::vec3 color{255.0f, 110.0f, 45.0f};
+};
+
+struct PlayerContrastSettings {
+    bool enabled = false;
+    float brightness = 1.0f;
+    glm::vec3 tint{255.0f};
+    float tintStrength = 0.0f;
 };
 
 struct PlayerVisualsData {
-    std::vector<std::string> renderOrder{"capsule", "outline", "wireframe"};
+    std::vector<std::string> renderOrder{"trail", "capsule", "outline", "wireframe"};
     PlayerOutlineSettings self;
     PlayerOutlineSettings enemy;
     PlayerOutlineSettings teammate;
-    std::string selfMode = "none", enemyMode = "outline", teammateMode = "none";
     PlayerCapsuleSettings selfCapsule, enemyCapsule, teammateCapsule;
     PlayerWireframeSettings selfWireframe, enemyWireframe, teammateWireframe;
+    PlayerTrailSettings enemyTrail, teammateTrail;
+    PlayerPointLightSettings enemyPointLight, teammatePointLight;
+    PlayerContrastSettings selfContrast, enemyContrast, teammateContrast;
 };
 
 class PlayerVisualsConfig {
@@ -70,8 +95,8 @@ public:
 
     // Temporary in-memory gamemode policy. It never writes
     // config/playervisuals.json. While disabled, every configured player layer
-    // (outline/capsule/wireframe) resolves to "none"; the configured modes are
-    // preserved so removing the policy restores them.
+    // (outline/capsule/wireframe) is suppressed; configured enabled switches
+    // remain intact so clearing the policy restores the local presentation.
     void setPlayerOutlinesEnabled(bool enabled);
     void clearPlayerOutlinesOverride();
     void setTeamOutlineColors(const glm::vec3& friendly, const glm::vec3& enemy);
@@ -85,14 +110,13 @@ public:
     bool hasEnemyOutlineAlphaOverride() const { return mEnemyOutlineAlphaOverride; }
     bool hasPlayerOutlinesOverride() const { return mPlayerOutlinesOverride; }
     bool playerOutlinesEnabled() const { return mPlayerOutlinesEnabled; }
-    // Configured layer mode, or "none" while the gamemode disables outlines.
-    std::string effectiveMode(const std::string& configuredMode) const;
 
 private:
     PlayerVisualsConfig();
     bool parseAndValidate(const std::string& text, PlayerVisualsData& out);
     std::filesystem::path mPath{"config/playervisuals.json"};
     std::filesystem::file_time_type mLastWrite{};
+    std::filesystem::file_time_type mLastAttemptedWrite{};
     PlayerVisualsData mData;
     std::string mLastError;
     bool mPlayerOutlinesOverride = false;

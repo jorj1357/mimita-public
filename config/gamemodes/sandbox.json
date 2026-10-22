@@ -2,20 +2,24 @@
   "id": "sandbox",
   "name": "Sandbox",
   "description": "Free building and testing. No scoring, no timer.",
+  // Friendly fire: keep one option active to switch Sandbox's team-damage rule.
+  // "friendly_fire": false,
+  "friendly_fire": true,
   // NPC-only combat profile. Possible values are the ids in
   // config/behavior-profiles.json, such as "balanced", "aggressive", or
   // "nervous". Humans are not affected. Hot-reloadable. 
   // "npc_behavior_profile": "balanced", 
   // "npc_behavior_profile": "sandbqoxhard",
-  "npc_behavior_profile": "juggernaut_swarm",
-  // "npc_behavior_profile": "nervousbad",
+  // "npc_behavior_profile": "juggernaut_swarm",
+  "npc_behavior_profile": "nervousbad",
   // "npc_behavior_profile": "juggernaut_limited",
   "teams": [
     {
       "id": "sandbox_npcs",
       "display_name": "NPCs",
       "capacity": 0,
-      "role": "juggernaut_fighter",
+      // Role IDs come from config/roles.json; nervousbad is a behavior profile.
+      "role": "sandbox_juggernaut_npc",
       "players": false,
       "npcs": true
     }

@@ -20,7 +20,7 @@
   ],
   "goal_value": 0,
   "time_limit_seconds": 0,
-  "respawn_seconds": 0,
+  "respawn_seconds": 0.01,
   "kill_heals": true,
   "countdown_seconds": 0.01,
   "go_seconds": 0.01,

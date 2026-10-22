@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cmath>
+#include <chrono>
 #include <memory>
 #include <GLFW/glfw3.h>
 #include "camera.h"
@@ -49,6 +50,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/crash-handler.h"
 #include "debug/transform-debug.h"
 #include "network/badconn/badconn.h"
@@ -624,6 +626,42 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                         "entity=%u unknown exception", kv.first);
                     throw;
                 }
+            }
+            // Bounded viewport evidence for actor-count performance runs.
+            static auto lastNpcViewportLog = std::chrono::steady_clock::time_point{};
+            const auto viewportNow = std::chrono::steady_clock::now();
+            if (lastNpcViewportLog == std::chrono::steady_clock::time_point{} ||
+                viewportNow - lastNpcViewportLog >= std::chrono::seconds(1)) {
+                lastNpcViewportLog = viewportNow;
+                const glm::mat4 viewProjection =
+                    camera.getProj(static_cast<float>(engine.renderer->sceneWidth),
+                                   static_cast<float>(engine.renderer->sceneHeight)) * camera.getView();
+                uint32_t inView = 0;
+                uint32_t inViewMoving = 0;
+                uint32_t alive = 0;
+                uint32_t modelLoaded = 0;
+                for (const auto& kv : mpContext.remoteNpcs) {
+                    const Player& npc = kv.second;
+                    if (!npc.dead) ++alive;
+                    if (npc.modelLoaded) ++modelLoaded;
+                    const glm::vec4 clip = viewProjection *
+                        glm::vec4(npc.pos + glm::vec3(0.0f, 0.0f, 1.0f), 1.0f);
+                    if (clip.w <= 0.0f || std::abs(clip.x) > clip.w ||
+                        std::abs(clip.y) > clip.w || std::abs(clip.z) > clip.w)
+                        continue;
+                    ++inView;
+                    if (glm::dot(npc.vel, npc.vel) > 0.25f)
+                        ++inViewMoving;
+                }
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Performance, StructuredLevel::Important,
+                    "client.npc.viewport-window", "juggernaut-performance",
+                    "remote NPC centers inside camera projection",
+                    static_cast<uint32_t>(mpContext.tick),
+                    {{"remote_npcs", mpContext.remoteNpcs.size()},
+                     {"alive", alive}, {"model_loaded", modelLoaded},
+                     {"in_view", inView}, {"in_view_moving", inViewMoving}},
+                    __FILE__, __LINE__, __FUNCTION__);
             }
             { Perf::ScopedTimer _networkProjectiles("Rendering::Actors::NetworkProjectiles");
               MimitaNet::mpRenderNetworkProjectiles(mpContext, camera); }

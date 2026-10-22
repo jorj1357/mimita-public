@@ -1,30 +1,32 @@
 {
   "comment_file": "Player readability presentation. Save while the game runs; valid changes hot reload.",
-  "comment_modes": {
-    "none": "No additional layer.",
-    "outline": "Edge-only silhouette outline.",
-    "capsule": "Transparent collision/custom capsule; front-face culling can show its inside/back surface.",
-    "wireframe": "Wireframe rendering of player body-part meshes."
-  },
+  "comment_layers": "Each layer's enabled switch works independently; mode is not used. Save valid JSON and each active player's appearance updates live.",
   "comment_colors": "RGB colors use 0-255. Alpha uses 0.0 invisible through 1.0 opaque.",
+  "comment_trail": "An enemy movement path appears above minSpeed. Its camera-facing ribbon width is measured in world units and hot reloads independently of config/hotreload.json.",
+  "comment_contrast": "brightness multiplies the player's texture color. tint blends a chosen RGB color into the texture by tintStrength.",
+  "comment_pointLight": "A local unshadowed dynamic light follows the enemy's replicated player position and lights nearby surfaces and the player mesh. It adds no marker; nearby walls may also brighten.",
   "comment_visibility": "visibleThroughWalls controls whether the selected layer ignores world depth.",
-  "renderOrder": ["capsule", "outline", "wireframe"],
+  "renderOrder": ["trail", "capsule", "outline", "wireframe"],
   "self": {
-    "mode": "none",
-    "outline": { "enabled": false, "thickness": 2.0, "alpha": 1.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 },
-    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05, "renderOrder": 80 },
-    "wireframe": { "enabled": false, "alpha": 0.9, "color": [255, 255, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 120 }
+    "contrast": { "enabled": false, "brightness": 1.0, "tint": [255, 255, 255], "tintStrength": 0.0 },
+    "outline": { "enabled": false, "thickness": 2.0, "alpha": 1.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true },
+    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05 },
+    "wireframe": { "enabled": false, "alpha": 0.9, "color": [255, 255, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true }
   },
   "enemy": {
-    "mode": "outline",
-    "outline": { "enabled": true, "thickness": 2.0, "alpha": 0.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 },
-    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05, "renderOrder": 80 },
-    "wireframe": { "enabled": false, "alpha": 0.9, "color": [255, 255, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 120 }
+    "contrast": { "enabled": true, "brightness": 1.15, "tint": [255, 170, 90], "tintStrength": 0.1 },
+    "trail": { "enabled": true, "minSpeed": 5.0, "sampleIntervalSeconds": 0.1, "lifetimeSeconds": 0.4, "maxSamples": 16, "width": 0.55, "alpha": 0.9, "color": [255, 50, 45] },
+    "pointLight": { "enabled": false, "intensity": 2.0, "radius": 12.0, "heightOffset": 1.0, "color": [255, 110, 45] },
+    "outline": { "enabled": false, "thickness": 2.0, "alpha": 0.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true },
+    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05 },
+    "wireframe": { "enabled": false, "alpha": 0.9, "color": [255, 255, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true }
   },
   "teammate": {
-    "mode": "outline",
-    "outline": { "enabled": false, "thickness": 2.0, "alpha": 0.1, "color": [0, 255, 0], "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 100 },
-    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05, "renderOrder": 80 },
-    "wireframe": { "enabled": false, "alpha": 0.9, "color": [100, 200, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true, "renderOrder": 120 }
+    "pointLight": { "enabled": true, "intensity": 2.0, "radius": 12.0, "heightOffset": -91.0, "color": [255, 110, 45] },
+    "contrast": { "enabled": false, "brightness": 0.0, "tint": [255, 255, 255], "tintStrength": 0.0 },
+    "trail": { "enabled": false, "minSpeed": 3335.0, "sampleIntervalSeconds": 0.035, "lifetimeSeconds": 0.22, "maxSamples": 12, "width": 3.0, "alpha": 0.65, "color": [80, 200, 255] },
+    "outline": { "enabled": false, "thickness": 2.0, "alpha": 0.1, "color": [0, 255, 0], "visibleThroughWalls": false, "disappearOnDeath": true },
+    "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05 },
+    "wireframe": { "enabled": false, "alpha": 0.9, "color": [100, 200, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true }
   }
 }

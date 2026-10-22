@@ -11,6 +11,8 @@ struct PerfBreakdownEntry {
     double inclMs;
     uint32_t callCount;
     int depth;             // nesting depth for tree display
+    uint64_t allocCount = 0;
+    uint64_t allocBytes = 0;
 };
 
 static constexpr int MAX_BREAKDOWN_ENTRIES = 128;

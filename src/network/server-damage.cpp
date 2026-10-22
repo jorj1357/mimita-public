@@ -250,9 +250,8 @@ static ServerDamageResult applyPlayerDamageLegacy(
         // Honor the active gamemode's respawn rule. One-life modes set a
         // negative timer so the respawn pump never revives the actor and the
         // match state advances it to Spectating.
-        target.respawnSeconds = serverPlayerRespawnsEnabled(target.id)
-            ? serverMatchRespawnSeconds()
-            : -1.0f;
+        const bool respawnAllowed = serverPlayerRespawnsEnabled(target.id);
+        target.respawnSeconds = respawnAllowed ? serverMatchRespawnSeconds() : -1.0f;
         target.vel = glm::vec3(0.0f);
         target.movement.movementEnabled = false;
         target.movement.baseVelocity = glm::vec3(0.0f);
@@ -275,6 +274,10 @@ static ServerDamageResult applyPlayerDamageLegacy(
               {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
               {"damage_applied", clampedDamage}, {"source", damageSourceName(source)},
               {"spawn_generation", target.spawnGeneration},
+              {"respawn_allowed", respawnAllowed},
+              {"npc_waves", serverGamemodeState().npcWaves},
+              {"wave", serverGamemodeState().waveNumber},
+              {"wave_lives_remaining", serverGamemodeState().waveLivesRemaining},
               {"position", {target.pos.x, target.pos.y, target.pos.z}},
               {"respawn_seconds", target.respawnSeconds} },
             __FILE__, __LINE__, __FUNCTION__);

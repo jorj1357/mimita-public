@@ -269,7 +269,8 @@ void EffectPartSystem::render(const Camera& camera) const {
     texturedHitParticles.clear();
     texturedHitParticles.reserve(600);
     std::string texturedHitParticlePath;
-    for (const auto& effect : mPool) {
+    for (unsigned int slotIndex : mActiveSlots) {
+        const EffectPart& effect = mPool[slotIndex];
         if (!effect.alive) continue;
         if (effect.lifetime < 0.0f) continue;
         if (effect.debugVisual && !DebugVis::masterEnabled()) continue;
@@ -813,7 +814,8 @@ void EffectPartSystem::render(const Camera& camera) const {
 
 void EffectPartSystem::renderText(const Camera& camera) const {
     if (!mEffectsEnabled) return;
-    for (const auto& effect : mPool) {
+    for (unsigned int slotIndex : mActiveSlots) {
+        const EffectPart& effect = mPool[slotIndex];
         if (!effect.alive || effect.lifetime < 0.0f || !effect.billboardText || effect.label.empty())
             continue;
         if (effect.debugVisual && !DebugVis::masterEnabled()) continue;

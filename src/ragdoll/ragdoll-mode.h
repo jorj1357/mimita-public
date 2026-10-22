@@ -200,6 +200,9 @@ private:
         uint32_t updateCount = 0;
         uint32_t renderSubmissionCount = 0;
         uint32_t bloodEffectCount = 0;
+        uint32_t restTicks = 0;
+        bool sleeping = false;
+        bool sleepLogged = false;
         glm::vec3 lastBloodPos{0.0f};
     };
 

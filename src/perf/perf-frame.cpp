@@ -1,13 +1,16 @@
 #include "perf/perf-frame.h"
 #include "perf/perf-spike.h"
 #include "perf/perf.h"
+#include "perf/perf-gpu.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "config.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -23,6 +26,9 @@ struct WindowScopeStats {
     uint64_t calls = 0;
     double totalMs = 0.0;
     double maxMs = 0.0;
+    double selfMs = 0.0;
+    uint64_t allocCount = 0;
+    uint64_t allocBytes = 0;
 };
 
 struct ResourceWindow {
@@ -49,11 +55,38 @@ struct ResourceWindow {
     int maxUniqueTriangles = 0;
     int maxVisibleMeshes = 0;
     int maxVisibleTriangles = 0;
-    WindowScopeStats scopes[32];
+    std::array<double, 60> frameTimesMs{};
+    int framesOverBudget = 0;
+    double frameBudgetMs = 0.0;
+    double gpuFrameMsTotal = 0.0;
+    double gpuFrameMsMax = 0.0;
+    uint64_t gpuFrameSamples = 0;
+    uint64_t scopeEntriesDropped = 0;
+    uint64_t scopeCaptureCount = 0;
+    int maxScopeCaptures = 0;
+    int framesScopeCaptureSaturated = 0;
+    uint64_t mainThreadCpuStart100ns = 0;
+    bool mainThreadCpuAvailable = false;
+    WindowScopeStats scopes[128];
     int scopeCount = 0;
 };
 
 ResourceWindow gResourceWindow;
+
+uint64_t currentThreadCpu100ns(bool& available)
+{
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    available = GetThreadTimes(GetCurrentThread(), &creation, &exit, &kernel, &user) != 0;
+    if (!available)
+        return 0;
+    ULARGE_INTEGER kernelTime{};
+    ULARGE_INTEGER userTime{};
+    kernelTime.LowPart = kernel.dwLowDateTime;
+    kernelTime.HighPart = kernel.dwHighDateTime;
+    userTime.LowPart = user.dwLowDateTime;
+    userTime.HighPart = user.dwHighDateTime;
+    return kernelTime.QuadPart + userTime.QuadPart;
+}
 
 void resetResourceWindow()
 {
@@ -65,7 +98,9 @@ WindowScopeStats* scopeStatsFor(const char* name)
     for (int i = 0; i < gResourceWindow.scopeCount; ++i)
         if (std::strncmp(gResourceWindow.scopes[i].name, name, sizeof(gResourceWindow.scopes[i].name)) == 0)
             return &gResourceWindow.scopes[i];
-    if (gResourceWindow.scopeCount >= 32) return nullptr;
+    if (gResourceWindow.scopeCount >=
+        static_cast<int>(sizeof(gResourceWindow.scopes) / sizeof(gResourceWindow.scopes[0])))
+        return nullptr;
     WindowScopeStats& out = gResourceWindow.scopes[gResourceWindow.scopeCount++];
     std::snprintf(out.name, sizeof(out.name), "%s", name ? name : "?");
     return &out;
@@ -73,8 +108,22 @@ WindowScopeStats* scopeStatsFor(const char* name)
 
 void accumulateResourceFrame(const PerfFrame& frame)
 {
-    if (gResourceWindow.frames == 0) gResourceWindow.firstFrame = frame.frameNumber;
+    if (gResourceWindow.frames == 0) {
+        gResourceWindow.firstFrame = frame.frameNumber;
+        gResourceWindow.mainThreadCpuStart100ns = currentThreadCpu100ns(
+            gResourceWindow.mainThreadCpuAvailable);
+    }
     gResourceWindow.lastFrame = frame.frameNumber;
+    gResourceWindow.scopeCaptureCount += static_cast<uint64_t>(gPerfScopeCount);
+    gResourceWindow.maxScopeCaptures = std::max(
+        gResourceWindow.maxScopeCaptures, gPerfScopeCount);
+    if (gPerfScopeCount >= MAX_SCOPES_PER_FRAME)
+        ++gResourceWindow.framesScopeCaptureSaturated;
+    if (gResourceWindow.frames < static_cast<int>(gResourceWindow.frameTimesMs.size()))
+        gResourceWindow.frameTimesMs[gResourceWindow.frames] = frame.totalMs;
+    if (frame.totalMs > frame.budgetMs)
+        ++gResourceWindow.framesOverBudget;
+    gResourceWindow.frameBudgetMs += frame.budgetMs;
     ++gResourceWindow.frames;
     gResourceWindow.totalFrameMs += frame.totalMs;
     if (frame.totalMs > gResourceWindow.maxFrameMs) {
@@ -98,13 +147,37 @@ void accumulateResourceFrame(const PerfFrame& frame)
     gResourceWindow.maxUniqueTriangles = std::max(gResourceWindow.maxUniqueTriangles, frame.uniqueTriangles);
     gResourceWindow.maxVisibleMeshes = std::max(gResourceWindow.maxVisibleMeshes, frame.visibleMeshes);
     gResourceWindow.maxVisibleTriangles = std::max(gResourceWindow.maxVisibleTriangles, frame.visibleTriangles);
-    for (int i = 0; i < frame.entryCount; ++i) {
-        const PerfBreakdownEntry& in = frame.entries[i];
+    if (PerfGpu::enabled()) {
+        const double gpuFrameMs = PerfGpu::lastCompletedFrameMs();
+        if (gpuFrameMs > 0.0) {
+            gResourceWindow.gpuFrameMsTotal += gpuFrameMs;
+            gResourceWindow.gpuFrameMsMax = std::max(
+                gResourceWindow.gpuFrameMsMax, gpuFrameMs);
+            ++gResourceWindow.gpuFrameSamples;
+        }
+    }
+    double childMs[MAX_SCOPES_PER_FRAME] = {};
+    for (int i = 0; i < gPerfScopeCount; ++i) {
+        const PerfScopeCapture& scope = gPerfScopes[i];
+        if (scope.parentIndex >= 0 && scope.parentIndex < gPerfScopeCount)
+            childMs[scope.parentIndex] +=
+                static_cast<double>(scope.cyclesInclusive) / 1000000.0;
+    }
+    for (int i = 0; i < gPerfScopeCount; ++i) {
+        const PerfScopeCapture& in = gPerfScopes[i];
+        const double inclusiveMs = static_cast<double>(in.cyclesInclusive) / 1000000.0;
+        const double selfMs = std::max(0.0, inclusiveMs - childMs[i]);
         WindowScopeStats* out = scopeStatsFor(in.label);
-        if (!out) continue;
+        if (!out) {
+            ++gResourceWindow.scopeEntriesDropped;
+            continue;
+        }
         out->calls += in.callCount;
-        out->totalMs += in.inclMs;
-        out->maxMs = std::max(out->maxMs, in.inclMs);
+        out->totalMs += inclusiveMs;
+        out->maxMs = std::max(out->maxMs, inclusiveMs);
+        out->selfMs += selfMs;
+        out->allocCount += in.allocCount;
+        out->allocBytes += in.allocBytes;
     }
 }
 
@@ -117,13 +190,32 @@ void emitResourceWindowSummary()
         GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory),
         sizeof(memory)) != 0;
     const StructuredLogger::IoStats io = StructuredLogger::instance().ioStats(true);
+    std::array<double, 60> sortedFrameTimes = gResourceWindow.frameTimesMs;
+    const int measuredFrames = std::min(
+        gResourceWindow.frames, static_cast<int>(sortedFrameTimes.size()));
+    std::sort(sortedFrameTimes.begin(), sortedFrameTimes.begin() + measuredFrames);
+    const int p95Index = measuredFrames > 0
+        ? std::max(0, static_cast<int>(std::ceil(measuredFrames * 0.95)) - 1) : 0;
+    const int p99Index = measuredFrames > 0
+        ? std::max(0, static_cast<int>(std::ceil(measuredFrames * 0.99)) - 1) : 0;
+    bool mainThreadCpuEndAvailable = false;
+    const uint64_t mainThreadCpuEnd100ns = currentThreadCpu100ns(mainThreadCpuEndAvailable);
+    const bool mainThreadCpuMeasured = gResourceWindow.mainThreadCpuAvailable &&
+        mainThreadCpuEndAvailable &&
+        mainThreadCpuEnd100ns >= gResourceWindow.mainThreadCpuStart100ns;
+    const double mainThreadCpuMs = mainThreadCpuMeasured
+        ? static_cast<double>(mainThreadCpuEnd100ns -
+                              gResourceWindow.mainThreadCpuStart100ns) / 10000.0
+        : 0.0;
 
     nlohmann::json scopes = nlohmann::json::array();
     for (int i = 0; i < gResourceWindow.scopeCount; ++i) {
         const WindowScopeStats& s = gResourceWindow.scopes[i];
         scopes.push_back({
             {"name", s.name}, {"calls", s.calls},
-            {"total_ms", s.totalMs}, {"max_ms", s.maxMs}});
+            {"total_ms", s.totalMs}, {"max_ms", s.maxMs},
+            {"self_ms", s.selfMs},
+            {"alloc_count", s.allocCount}, {"alloc_bytes", s.allocBytes}});
     }
 
     nlohmann::json fields = {
@@ -134,6 +226,26 @@ void emitResourceWindowSummary()
         {"frame_average_ms", gResourceWindow.totalFrameMs / std::max(1, gResourceWindow.frames)},
         {"frame_max_ms", gResourceWindow.maxFrameMs},
         {"frame_max_number", gResourceWindow.maxFrame},
+        {"target_fps", gResourceWindow.frames > 0 && gResourceWindow.frameBudgetMs > 0.0
+            ? 1000.0 * gResourceWindow.frames / gResourceWindow.frameBudgetMs : 0.0},
+        {"frames_over_target_budget", gResourceWindow.framesOverBudget},
+        {"frames_over_target_budget_percent", 100.0 * gResourceWindow.framesOverBudget /
+            std::max(1, gResourceWindow.frames)},
+        {"frame_p95_ms", measuredFrames > 0 ? sortedFrameTimes[p95Index] : 0.0},
+        {"frame_p99_ms", measuredFrames > 0 ? sortedFrameTimes[p99Index] : 0.0},
+        {"gpu_timer_queries_enabled", PerfGpu::enabled()},
+        {"gpu_frame_samples", gResourceWindow.gpuFrameSamples},
+        {"gpu_captured_regions_ms_average", gResourceWindow.gpuFrameSamples > 0
+            ? gResourceWindow.gpuFrameMsTotal / gResourceWindow.gpuFrameSamples : 0.0},
+        {"gpu_captured_regions_ms_max", gResourceWindow.gpuFrameMsMax},
+        {"scope_entries_dropped", gResourceWindow.scopeEntriesDropped},
+        {"scope_capture_entries", gResourceWindow.scopeCaptureCount},
+        {"scope_capture_max_per_frame", gResourceWindow.maxScopeCaptures},
+        {"frames_scope_capture_saturated", gResourceWindow.framesScopeCaptureSaturated},
+        {"main_thread_cpu_measured", mainThreadCpuMeasured},
+        {"main_thread_cpu_ms_total", mainThreadCpuMs},
+        {"main_thread_cpu_ms_average", mainThreadCpuMs /
+            std::max(1, gResourceWindow.frames)},
         {"alloc_count", gResourceWindow.allocCount},
         {"alloc_bytes", gResourceWindow.allocBytes},
         {"max_npc_count", gResourceWindow.maxNpcCount},
@@ -208,6 +320,8 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
         e.selfMs = selfMs;
         e.inclMs = inclMs;
         e.callCount = cap.callCount;
+        e.allocCount = cap.allocCount;
+        e.allocBytes = cap.allocBytes;
         e.depth = 0;
 
         // Compute depth from parent chain

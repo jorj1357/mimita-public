@@ -242,6 +242,7 @@ void serverConsumeNpcWaveLife(uint32_t playerId)
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.npcWaves || d.waveLivesRemaining <= 0)
         return;
+    const int livesBefore = d.waveLivesRemaining;
     --d.waveLivesRemaining;
     auto actorIt = d.matchActors.find(playerId);
     if (actorIt != d.matchActors.end())
@@ -249,13 +250,23 @@ void serverConsumeNpcWaveLife(uint32_t playerId)
     Debug::log(Debug::Category::Duel,
         "[WAVES] player=%u died livesRemaining=%d wave=%u\n",
         playerId, d.waveLivesRemaining, d.waveNumber);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "gamemode.npc_waves.life_lost", std::to_string(playerId),
+        "player death consumed one NPC Waves life", d.currentServerTick,
+        nlohmann::json{{"actor_id", playerId},
+                       {"wave", d.waveNumber},
+                       {"lives_before", livesBefore},
+                       {"lives_after", d.waveLivesRemaining},
+                       {"respawn_allowed", d.waveLivesRemaining > 0}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 float serverMatchRespawnSeconds()
 {
     const ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return 0.01f;
-    return d.respawnSeconds >= 0.0f ? d.respawnSeconds : 0.01f;
+    return std::max(0.01f, d.respawnSeconds >= 0.0f ? d.respawnSeconds : 0.01f);
 }
 
 ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)

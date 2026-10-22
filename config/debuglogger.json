@@ -93,7 +93,7 @@
   },
 
   "performance": {
-    "target_fps": 60,
+    "target_fps": 240,
     "spike_threshold_ms": 20.0,
     "severe_spike_threshold_ms": 100.0,
     "catastrophic_spike_threshold_ms": 1000.0,

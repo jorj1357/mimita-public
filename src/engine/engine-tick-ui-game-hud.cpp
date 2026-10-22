@@ -276,7 +276,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         // Show Space hint only when instant respawn would actually work.
         // Local/offline duel only. Network duels are controlled by DuelQueue + server DuelStatePacket.
         const bool duelBlocksRespawn = gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
-        hudText("respawnHint", duelBlocksRespawn ? "" : "press space to respawn instantly",
+        hudText("respawnHint", duelBlocksRespawn ? "" : "press space to respawn instantly actually trolled it doesnt work as of 2026 10 21 lolllolloloolo -jorj1357 Hehhehehs",
                 deathPopupAlpha);
         }
     }

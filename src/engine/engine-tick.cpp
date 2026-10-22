@@ -76,18 +76,22 @@ extern bool gReplayExportRenderMode;
 
 void engineTick(Engine& engine)
 {
+    const auto tFrameStart = std::chrono::steady_clock::now();
     // Begin frame pacing and perf tracking BEFORE any scopes so the scope
     // stack is empty when perfResetScopes() runs.  This fixes the profiler
     // bug where Perf::beginFrame() was called inside two existing scopes,
     // corrupting the parent-child relationships.
     gFramePacer.beginFrame();
     Perf::beginFrame();
-    EffectPartSystem::instance().beginFrame();
+    float dt;
+    bool worldPassRan;
+    { MIMITA_PERF_SCOPE("EngineTick::Work");
 
-    // Note: No MIMITA_PERF_SCOPE("EngineTick") wrapper here.
-    // The sub-scopes (Setup, Audio, etc.) are the roots. The EngineTick scope
-    // was never recorded because its destructor ran AFTER Perf::endFrame().
+    // The pre-frame game tasks are measured separately; an EngineTick scope
+    // would end after Perf::endFrame() and therefore be recorded one frame late.
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
+    { MIMITA_PERF_SCOPE("EngineTick::Preamble");
+    EffectPartSystem::instance().beginFrame();
     const uint64_t rewardTicks = gChatUiTickClock.tick();
     updateChatTypingHeartbeat(gChatWindowState, gChatUiTickClock);
     NotificationSystem::instance().advanceTicks();
@@ -125,11 +129,9 @@ void engineTick(Engine& engine)
             NotificationSystem::instance().pushImportant("PUBLIC SERVER", message, 0);
         }
     }
-    auto tFrameStart = std::chrono::steady_clock::now();
+    }
     HEARTBEAT("FRAME START");
 
-    float dt;
-    bool worldPassRan;
     { MIMITA_PERF_SCOPE("Setup"); engineTickSetup(engine, dt, worldPassRan); }
     if (engine.renderer && engine.renderer->stretchesWholeFrame())
         PostFX::instance().bindFBO();
@@ -354,6 +356,7 @@ void engineTick(Engine& engine)
     { MIMITA_PERF_SCOPE("Sleep");
       Perf::ScopedTimer _pacerSleep("FramePacing::PacerSleep");
       gFramePacer.endFrame();
+    }
     }
 
     // Pass the current frame's actual wall-clock time so the profiler doesn't

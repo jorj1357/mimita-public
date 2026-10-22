@@ -29,6 +29,9 @@ void EffectPartSystem::init() {
     mSpawnCursor = 0;
     mFreeSlots.clear();
     mFreeSlots.reserve(POOL_SIZE);
+    mActiveSlots.clear();
+    mActiveSlots.reserve(POOL_SIZE);
+    mActiveSlotPositions.fill(-1);
     for (unsigned int i = 0; i < POOL_SIZE; ++i)
         mFreeSlots.push_back(i);
     mBloodParticles.clear();
@@ -52,7 +55,7 @@ void EffectPartSystem::update(float dt) {
     bool updatedByGameDLL = false;
     if (gameAPI && gameAPI->updateEffects) {
         std::array<GameEffectPartState, POOL_SIZE> states{};
-        for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+        for (unsigned int i : mActiveSlots) {
             const EffectPart& effect = mPool[i];
             GameEffectPartState& state = states[i];
             state.position[0] = effect.position.x;
@@ -73,11 +76,14 @@ void EffectPartSystem::update(float dt) {
         gameAPI->updateEffects(
             &HotReloadSystem::instance().gameMemory(), states.data(), POOL_SIZE, dt);
 
-        for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+        for (size_t activeIndex = 0; activeIndex < mActiveSlots.size();) {
+            const unsigned int i = mActiveSlots[activeIndex];
             EffectPart& effect = mPool[i];
             const GameEffectPartState& state = states[i];
-            if (!effect.alive)
+            if (!effect.alive) {
+                removeActiveSlot(i);
                 continue;
+            }
             effect.position = {state.position[0], state.position[1], state.position[2]};
             effect.velocity = {state.velocity[0], state.velocity[1], state.velocity[2]};
             effect.lifetime = state.lifetime;
@@ -86,21 +92,29 @@ void EffectPartSystem::update(float dt) {
                 effect.resetStrings();
                 --mActiveCount;
                 mFreeSlots.push_back(i);
+                removeActiveSlot(i);
+                continue;
             }
             if (glm::length(effect.angularVelocity) > 0.0f)
                 effect.rotation += effect.angularVelocity * dt;
+            ++activeIndex;
         }
         updatedByGameDLL = true;
     }
 
     if (!updatedByGameDLL) {
-        for (unsigned int i = 0; i < POOL_SIZE; ++i) {
+        for (size_t activeIndex = 0; activeIndex < mActiveSlots.size();) {
+            const unsigned int i = mActiveSlots[activeIndex];
             EffectPart& fx = mPool[i];
-            if (!fx.alive)
+            if (!fx.alive) {
+                removeActiveSlot(i);
                 continue;
+            }
             fx.lifetime += dt;
-            if (fx.lifetime < 0.0f)
+            if (fx.lifetime < 0.0f) {
+                ++activeIndex;
                 continue;
+            }
             if (!fx.sticky) {
                 fx.position += fx.velocity * dt;
                 if (fx.affectedByGravity)
@@ -124,7 +138,10 @@ void EffectPartSystem::update(float dt) {
                 fx.resetStrings();
                 --mActiveCount;
                 mFreeSlots.push_back(i);
+                removeActiveSlot(i);
+                continue;
             }
+            ++activeIndex;
         }
     }
 

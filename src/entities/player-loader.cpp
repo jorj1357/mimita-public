@@ -981,6 +981,7 @@ bool Player::loadModel(const char* path)
     {
         const CachedPlayerModel& cached = cacheIt->second;
         copyCachedModelIntoPlayer(cached, *this);
+        setRenderModelKeyFromPath(cacheKey);
 
         // Apply body part config overrides from config/bodyparts.json + avatar overrides
         applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
@@ -1047,6 +1048,7 @@ bool Player::loadModel(const char* path)
     cached.extraParts = physicalBody.extraParts;
     cached.extraPartMeshes = physicalBody.extraPartMeshes;
     cache[cacheKey] = std::move(cached);
+    setRenderModelKeyFromPath(cacheKey);
     printf("[AVATAR CACHE] model=%s result=miss (skeleton)\n", resolvedPath.c_str());
 
     updateModelWorldTransforms();
@@ -1067,6 +1069,7 @@ bool Player::loadModelColliders(const char* path)
     if (cacheIt != cache.end() && cacheIt->second.valid)
     {
         copyCachedModelIntoPlayer(cacheIt->second, *this);
+        setRenderModelKeyFromPath(cacheKey);
         applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
         syncPoseSkeletonFromRestLocal(*this);
         updateModelWorldTransforms();
@@ -1099,6 +1102,7 @@ bool Player::loadModelColliders(const char* path)
     applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
     syncPoseSkeletonFromRestLocal(*this);
     buildBodyPartCollidersFromModel(model, *this, /*buildRenderMeshes=*/false);
+    setRenderModelKeyFromPath(cacheKey);
     updateModelWorldTransforms();
 
     // Do not publish into the shared cache: this actor has no GL render mesh,
@@ -1279,6 +1283,7 @@ void Player::requestModelLoad(const std::string& filepath)
     data->useModelTransforms = gAvatarUseModelTransforms;
     data->canonicalizePlayerModel = gAvatarCanonicalizePlayerModel;
     data->rigExtraNodes = gAvatarRigExtraNodes;
+    data->renderModelKey = playerModelCacheKey(data->resolvedPath);
 
     mPendingModel = data;
     PendingPlayerModel* raw = mPendingModel.get();
@@ -1400,6 +1405,7 @@ void Player::finalizeModelIfReady()
 
     updateModelWorldTransforms();
     modelLoaded = true;
+    setRenderModelKeyFromPath(d->renderModelKey);
 
     // Avatar application can happen before this async model finishes. Complete
     // the per-player atlas, body overrides, and cosmetics at the ready boundary

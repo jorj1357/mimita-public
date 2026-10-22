@@ -29,6 +29,7 @@ void WeaponRegistry::registerWeapon(const WeaponDefinition& def) {
         printf("[WEAPON] WARNING: Overwriting existing weapon '%s'\n", normalized.id.c_str());
     }
     mWeapons[normalized.id] = normalized;
+    ++mRevision;
     printf("[WEAPON] Registered: %s (slot %d)\n", normalized.id.c_str(), normalized.slot);
 }
 
@@ -52,11 +53,13 @@ void WeaponRegistry::setActiveDefinitions(
     std::unordered_map<std::string, WeaponDefinition> definitions)
 {
     mActiveWeapons = std::move(definitions);
+    ++mRevision;
 }
 
 void WeaponRegistry::clearActiveDefinitions()
 {
     mActiveWeapons.clear();
+    ++mRevision;
 }
 
 std::vector<std::string> WeaponRegistry::getAllIds() const {

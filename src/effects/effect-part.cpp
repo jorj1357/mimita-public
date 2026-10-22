@@ -434,6 +434,7 @@ void EffectPartSystem::destroyOwner(unsigned int ownerId) {
             fx.resetStrings();
             --mActiveCount;
             mFreeSlots.push_back(i);
+            removeActiveSlot(i);
         }
     }
 }
@@ -493,6 +494,7 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
         mPool[idx] = effect;
         mPool[idx].alive = true;
         ++mActiveCount;
+        addActiveSlot(idx);
         mSpawnCursor = (idx + 1) % POOL_SIZE;
         if (gShotProfiler) {
             gShotProfiler->poolHits++;
@@ -507,6 +509,7 @@ EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
             mPool[idx] = effect;
             mPool[idx].alive = true;
             ++mActiveCount;
+            addActiveSlot(idx);
             mSpawnCursor = (idx + 1) % POOL_SIZE;
             if (gShotProfiler) {
                 gShotProfiler->poolHits++;
@@ -734,6 +737,9 @@ void EffectPartSystem::clear() {
     mActiveCount = 0;
     mFreeSlots.clear();
     mFreeSlots.reserve(POOL_SIZE);
+    mActiveSlots.clear();
+    mActiveSlots.reserve(POOL_SIZE);
+    mActiveSlotPositions.fill(-1);
     for (unsigned int i = 0; i < POOL_SIZE; ++i)
         mFreeSlots.push_back(i);
     mBloodParticles.clear();
@@ -746,7 +752,8 @@ void EffectPartSystem::clear() {
 int EffectPartSystem::collectAlive(PartSnapshot* out, int maxCount, float minAlpha) const
 {
     int count = 0;
-    for (const auto& e : mPool) {
+    for (unsigned int slotIndex : mActiveSlots) {
+        const EffectPart& e = mPool[slotIndex];
         if (!e.alive || e.lifetime < 0.0f) continue;
         float t = std::clamp(e.lifetime / e.maxLifetime, 0.0f, 1.0f);
         float alpha = e.alpha;

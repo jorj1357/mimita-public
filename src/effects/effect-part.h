@@ -188,7 +188,7 @@ public:
     int collectAlive(PartSnapshot* out, int maxCount, float minAlpha) const;
 
 private:
-    EffectPartSystem() = default;
+    EffectPartSystem() { mActiveSlotPositions.fill(-1); }
 
     void updateBloodParticles(float dt);
     void updateSurfaceDecals(float dt);
@@ -208,6 +208,28 @@ private:
 
     static constexpr unsigned int POOL_SIZE = 4096;
     static constexpr unsigned int MAX_BLOOD_PARTICLES = 2048;
+
+    void addActiveSlot(unsigned int idx)
+    {
+        if (idx >= POOL_SIZE || mActiveSlotPositions[idx] >= 0)
+            return;
+        mActiveSlotPositions[idx] = static_cast<int>(mActiveSlots.size());
+        mActiveSlots.push_back(idx);
+    }
+
+    void removeActiveSlot(unsigned int idx)
+    {
+        if (idx >= POOL_SIZE)
+            return;
+        const int pos = mActiveSlotPositions[idx];
+        if (pos < 0)
+            return;
+        const unsigned int last = mActiveSlots.back();
+        mActiveSlots[static_cast<size_t>(pos)] = last;
+        mActiveSlotPositions[last] = pos;
+        mActiveSlots.pop_back();
+        mActiveSlotPositions[idx] = -1;
+    }
     static constexpr unsigned int MAX_BLOOD_DEBUG_SEGMENTS = 256;
     static constexpr int DEFAULT_SPAWN_CAP = 64;
     static constexpr int DEFAULT_SOUND_CAP = 8;
@@ -237,6 +259,10 @@ private:
     const class World* mWorld = nullptr;
     std::array<EffectPart, POOL_SIZE> mPool{};
     std::vector<int> mFreeSlots;
+    // Compact list of live pool slots so per-frame update and render loops scale
+    // with active effects instead of scanning all 4096 slots.
+    std::vector<unsigned int> mActiveSlots;
+    std::array<int, POOL_SIZE> mActiveSlotPositions{};
     std::vector<BloodParticle> mBloodParticles;
     std::vector<SurfaceDecal> mSurfaceDecals;
     struct PendingBloodDecal { SurfaceDecal decal; int ageTicks = 0; };

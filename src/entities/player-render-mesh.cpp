@@ -1,6 +1,9 @@
 #include "player.h"
 
 #include <cstdio>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "config.h"
@@ -14,13 +17,44 @@ extern TextureStore gTextures;
 GLuint capsuleVAO = 0;
 GLuint capsuleVBO = 0;
 int    capsuleVertCount = 0;
-GLuint playerVAO = 0;
-GLuint playerVBO = 0;
-size_t playerUploadedVertCount = (size_t)-1;
-GLuint* bodyPartVAOs = nullptr;
-GLuint* bodyPartVBOs = nullptr;
-int bodyPartCount = 0;
-uint64_t* bodyPartUploadGenerations = nullptr;
+
+namespace {
+
+// Body geometry is immutable after load and shared by every actor using the
+// same model/avatar. Keeping the upload cache keyed by that identity means one
+// actor performs the upload and all replicas reuse the same VAO/VBO instead of
+// re-uploading their private mesh copies every frame.
+struct ModelUploadSet {
+    std::vector<GLuint> partVaos;
+    std::vector<GLuint> partVbos;
+    std::vector<uint64_t> partGenerations;
+    GLuint renderVao = 0;
+    GLuint renderVbo = 0;
+    uint64_t renderGeneration = ~0ull;
+};
+
+std::unordered_map<std::string, ModelUploadSet> gModelUploads;
+
+ModelUploadSet& uploadsFor(const std::string& modelKey)
+{
+    static const std::string fallback = "<unkeyed>";
+    return gModelUploads[modelKey.empty() ? fallback : modelKey];
+}
+
+uint64_t partGeometryGeneration(const Mesh& mesh, int partIndex)
+{
+    return reinterpret_cast<uint64_t>(mesh.verts.data()) ^
+        (static_cast<uint64_t>(mesh.verts.size()) << 1) ^
+        (static_cast<uint64_t>(partIndex) << 32);
+}
+
+uint64_t meshGeometryGeneration(const Mesh& mesh)
+{
+    return reinterpret_cast<uint64_t>(mesh.verts.data()) ^
+        (static_cast<uint64_t>(mesh.verts.size()) << 1);
+}
+
+} // namespace
 
 GLuint bodyPartVAO = 0;
 GLuint bodyPartVBO = 0;
@@ -192,34 +226,34 @@ void initCapsuleMesh()
     MIMITA_GL_CALL(glVertexAttribPointer(2,3,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,normal)));
 }
 
-void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex)
+void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& modelKey)
 {
     MIMITA_GL_CLEAR_STAGE("uploadBodyPartMeshPart");
-    if (!bodyPartVAOs) {
-        // 6 canonical physical parts plus headroom for rig render-only parts
-        // (wings, stingers, tails, centipede segments).
-        int count = 64;
-        bodyPartVAOs = new GLuint[count]();
-        bodyPartVBOs = new GLuint[count]();
-        bodyPartUploadGenerations = new uint64_t[count]();
-        bodyPartCount = count;
-    }
-    if (partIndex < 0 || partIndex >= bodyPartCount) return;
+    if (partIndex < 0 || mesh.verts.empty()) return;
 
-    uint64_t expectedGen = reinterpret_cast<uint64_t>(mesh.verts.data()) ^ mesh.verts.size();
-    if (bodyPartUploadGenerations[partIndex] == expectedGen)
+    ModelUploadSet& uploads = uploadsFor(modelKey);
+    const size_t required = static_cast<size_t>(partIndex) + 1;
+    if (uploads.partVaos.size() < required) {
+        uploads.partVaos.resize(required, 0);
+        uploads.partVbos.resize(required, 0);
+        uploads.partGenerations.resize(required, ~0ull);
+    }
+
+    const uint64_t expectedGen = partGeometryGeneration(mesh, partIndex);
+    if (uploads.partGenerations[partIndex] == expectedGen &&
+        uploads.partVaos[partIndex] != 0)
     {
-        MIMITA_GL_CALL(glBindVertexArray(bodyPartVAOs[partIndex]));
+        MIMITA_GL_CALL(glBindVertexArray(uploads.partVaos[partIndex]));
         return;
     }
 
-    if (!bodyPartVAOs[partIndex])
-        MIMITA_GL_CALL(glGenVertexArrays(1, &bodyPartVAOs[partIndex]));
-    if (!bodyPartVBOs[partIndex])
-        MIMITA_GL_CALL(glGenBuffers(1, &bodyPartVBOs[partIndex]));
+    if (!uploads.partVaos[partIndex])
+        MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.partVaos[partIndex]));
+    if (!uploads.partVbos[partIndex])
+        MIMITA_GL_CALL(glGenBuffers(1, &uploads.partVbos[partIndex]));
 
-    MIMITA_GL_CALL(glBindVertexArray(bodyPartVAOs[partIndex]));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBOs[partIndex]));
+    MIMITA_GL_CALL(glBindVertexArray(uploads.partVaos[partIndex]));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, uploads.partVbos[partIndex]));
     MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW));
 
     MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
@@ -229,7 +263,7 @@ void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex)
     MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
     MIMITA_GL_CALL(glEnableVertexAttribArray(2));
 
-    bodyPartUploadGenerations[partIndex] = expectedGen;
+    uploads.partGenerations[partIndex] = expectedGen;
 }
 
 void uploadBodyPartMesh(const Mesh& mesh)
@@ -250,17 +284,22 @@ void uploadBodyPartMesh(const Mesh& mesh)
     MIMITA_GL_CALL(glEnableVertexAttribArray(2));
 }
 
-void uploadPlayerMeshIfNeeded(const Mesh& mesh)
+GLuint uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey)
 {
-    if (playerVAO && playerUploadedVertCount == mesh.verts.size())
-        return;
+    ModelUploadSet& uploads = uploadsFor(modelKey);
+    const uint64_t expectedGen = meshGeometryGeneration(mesh);
+    if (uploads.renderVao && uploads.renderGeneration == expectedGen)
+    {
+        MIMITA_GL_CALL(glBindVertexArray(uploads.renderVao));
+        return uploads.renderVao;
+    }
 
     MIMITA_GL_CLEAR_STAGE("uploadPlayerMeshIfNeeded");
-    if (!playerVAO) MIMITA_GL_CALL(glGenVertexArrays(1, &playerVAO));
-    if (!playerVBO) MIMITA_GL_CALL(glGenBuffers(1, &playerVBO));
+    if (!uploads.renderVao) MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.renderVao));
+    if (!uploads.renderVbo) MIMITA_GL_CALL(glGenBuffers(1, &uploads.renderVbo));
 
-    MIMITA_GL_CALL(glBindVertexArray(playerVAO));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, playerVBO));
+    MIMITA_GL_CALL(glBindVertexArray(uploads.renderVao));
+    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, uploads.renderVbo));
     MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW));
 
     MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
@@ -272,7 +311,8 @@ void uploadPlayerMeshIfNeeded(const Mesh& mesh)
     MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
     MIMITA_GL_CALL(glEnableVertexAttribArray(2));
 
-    playerUploadedVertCount = mesh.verts.size();
-    printf("[PLAYER GLB] uploaded verts=%zu triangles=%zu batches=%zu\n",
-           mesh.verts.size(), mesh.verts.size() / 3, mesh.batches.size());
+    uploads.renderGeneration = expectedGen;
+    printf("[PLAYER GLB] uploaded model=%s verts=%zu triangles=%zu batches=%zu\n",
+           modelKey.c_str(), mesh.verts.size(), mesh.verts.size() / 3, mesh.batches.size());
+    return uploads.renderVao;
 }

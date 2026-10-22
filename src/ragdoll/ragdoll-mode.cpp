@@ -2478,8 +2478,18 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
     if (mCorpses.empty()) return;
     const auto& cfg = RagdollModeConfig::instance().data();
 
+    // Corpse physics is cosmetic and client-side. Bound how many corpses run
+    // the full solver per tick so a busy match cannot turn render-frame
+    // catch-up into a multi-tick corpse cost. Older corpses keep aging,
+    // fading, and rendering from their last simulated pose.
+    static constexpr size_t kMaxCorpseStepsPerTick = 12;
+    size_t simulatedCorpseStart = mCorpses.size() > kMaxCorpseStepsPerTick
+        ? mCorpses.size() - kMaxCorpseStepsPerTick : 0;
+    size_t corpseIndex = 0;
+
     for (auto it = mCorpses.begin(); it != mCorpses.end();) {
         RagdollCorpse& corpse = *it;
+        const bool simulateThisCorpse = corpseIndex >= simulatedCorpseStart;
         corpse.age += dt;
         ++corpse.lifeTicks;
         ++corpse.updateCount;
@@ -2491,6 +2501,8 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
                 { {"actor_id", corpse.actorId}, {"reason", "lifetime_expired"},
                   {"age_seconds", corpse.age}, {"active_corpses_before", mCorpses.size()} },
                 __FILE__, __LINE__, __FUNCTION__);
+            if (corpseIndex < simulatedCorpseStart)
+                --simulatedCorpseStart;
             it = mCorpses.erase(it);
             continue;
         }
@@ -2504,6 +2516,51 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
                 { {"actor_id", corpse.actorId}, {"age_seconds", corpse.age},
                   {"position", {corpse.actor.pos.x, corpse.actor.pos.y, corpse.actor.pos.z}} },
                 __FILE__, __LINE__, __FUNCTION__);
+        }
+
+        // Once a corpse has genuinely settled, keep its final pose for rendering
+        // and stop running the full joint/self-collision/world solver every tick.
+        // A falling or sliding corpse stays above these thresholds and continues
+        // to simulate normally.
+        float maxLinear2 = 0.0f;
+        float maxAngular2 = 0.0f;
+        for (const RagdollModePart& part : corpse.body.parts) {
+            maxLinear2 = std::max(maxLinear2,
+                glm::dot(part.body.linearVelocity, part.body.linearVelocity));
+            maxAngular2 = std::max(maxAngular2,
+                glm::dot(part.body.angularVelocity, part.body.angularVelocity));
+        }
+        if (corpse.age > 0.75f && maxLinear2 < 0.0025f && maxAngular2 < 0.0025f) {
+            if (++corpse.restTicks >= 30)
+                corpse.sleeping = true;
+        } else {
+            corpse.restTicks = 0;
+            corpse.sleeping = false;
+        }
+        if (corpse.sleeping) {
+            if (!corpse.sleepLogged) {
+                corpse.sleepLogged = true;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Ragdoll, StructuredLevel::Important,
+                    "ragdoll.corpse.settled", corpse.actorId,
+                    "corpse at rest; fixed-tick solver skipped until lifetime ends",
+                    static_cast<uint32_t>(corpse.actor.movementSimulationTick),
+                    { {"actor_id", corpse.actorId}, {"age_seconds", corpse.age},
+                      {"life_ticks", corpse.lifeTicks},
+                      {"max_linear_speed", std::sqrt(maxLinear2)},
+                      {"max_angular_speed", std::sqrt(maxAngular2)},
+                      {"active_corpses", mCorpses.size()} },
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            ++corpseIndex;
+            ++it;
+            continue;
+        }
+
+        if (!simulateThisCorpse) {
+            ++corpseIndex;
+            ++it;
+            continue;
         }
 
         if (corpse.lifeTicks % 60 == 0) {
@@ -2637,6 +2694,7 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
                 __FILE__, __LINE__, __FUNCTION__);
         }
 
+        ++corpseIndex;
         ++it;
     }
 }
