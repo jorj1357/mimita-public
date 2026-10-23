@@ -1,3 +1,8 @@
+2026 10 23 1814  dust 2 cberia v4 map, relates to map eidotr, npcs gettin gstuck in the  t spawn little beoxes, preformance seems better? idk 
+also , npcs need the heavy shotgun to  be the sound that they actuallt use 
+the heavt shotgun sound 
+also we need ESP 
+
 2026 10 21 0355 jorj  updateed this to just be  open gamepla issues bc its sick to have just 1 doc to  spawm all the ideas
 C:\mimita-v9\docs\jorj-docs\misc-bugs.md
 it was this but no not this dont use this  
