@@ -58,6 +58,7 @@
 #include "gamemode/match-roles.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/map-config.h"
+#include "map/map-authored-geometry.h"
 #include "gamemode/mode-pack-registry.h"
 #include "gamemode/action-graph.h"
 #include "gamemode/capability-registry.h"
@@ -1976,6 +1977,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = mapEntityConfigSelfTest(report);
         printf("[MAP ENTITY SELFTEST]\n%s", report.c_str());
         printf("[MAP ENTITY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--map-authored-geometry-selftest") {
+        std::string report;
+        const bool ok = authoredMapGeometrySelfTest(report);
+        printf("[MAP AUTHORED GEOMETRY SELFTEST]\n%s", report.c_str());
+        printf("[MAP AUTHORED GEOMETRY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

@@ -9,6 +9,7 @@
 #include "world-gltf-loader.h"
 #include "analytics/analytics-manager.h"
 #include "map/map_loader.h"
+#include "map/map-authored-geometry.h"
 #include "map/map-loader-collision.h"
 #include "combat/weapon-model-cache.h"
 #include "debug/debug-log.h"
@@ -115,6 +116,7 @@ bool loadWorldFromGLB(World& world, const char* path)
     const auto unloadStarted = std::chrono::steady_clock::now();
     releaseMeshGLResources(world.mesh);
     world = std::move(candidate);
+    applyAuthoredMapGeometry(world, mapIdFromAssetPath(path ? path : ""));
     const auto finished = std::chrono::steady_clock::now();
     timing.world_commit = std::chrono::duration<double, std::milli>(finished - unloadStarted).count();
     timing.total = std::chrono::duration<double, std::milli>(finished - loadStarted).count();

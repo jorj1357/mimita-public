@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <vector>
+#include <windows.h>
 
 // ── Global state ────────────────────────────────────────────
 
@@ -24,12 +25,147 @@ std::atomic<uint64_t> gPerfAllocCount{0};
 std::atomic<uint64_t> gPerfAllocBytes{0};
 std::atomic<uint64_t> gPerfLargestAlloc{0};
 const char* gPerfLargestAllocSite = nullptr;
+PerfThreadAllocationCounter gPerfThreadAllocations[PERF_THREAD_ALLOCATION_SLOT_COUNT];
+std::atomic<uint64_t> gPerfThreadAllocationUntracked{0};
+
+void perfRecordThreadAllocation(std::size_t size)
+{
+    constexpr std::size_t kUnassigned = PERF_THREAD_ALLOCATION_SLOT_COUNT;
+    constexpr std::size_t kUnavailable = PERF_THREAD_ALLOCATION_SLOT_COUNT + 1;
+    thread_local std::size_t slot = kUnassigned;
+    if (slot == kUnassigned) {
+        const uint32_t threadId = GetCurrentThreadId();
+        for (std::size_t i = 0; i < PERF_THREAD_ALLOCATION_SLOT_COUNT; ++i) {
+            uint32_t owner = gPerfThreadAllocations[i].threadId.load(
+                std::memory_order_relaxed);
+            if (owner == threadId) {
+                slot = i;
+                break;
+            }
+            if (owner == 0 && gPerfThreadAllocations[i].threadId.compare_exchange_strong(
+                    owner, threadId, std::memory_order_relaxed,
+                    std::memory_order_relaxed)) {
+                slot = i;
+                break;
+            }
+        }
+        if (slot == kUnassigned) {
+            slot = kUnavailable;
+            gPerfThreadAllocationUntracked.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    }
+    if (slot == kUnavailable) {
+        gPerfThreadAllocationUntracked.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    gPerfThreadAllocations[slot].allocationCount.fetch_add(
+        1, std::memory_order_relaxed);
+    gPerfThreadAllocations[slot].allocationBytes.fetch_add(
+        static_cast<uint64_t>(size), std::memory_order_relaxed);
+}
 
 char gPerfCorrelationStack[8][32] = {};
 int gPerfCorrelationDepth = 0;
 
 uint64_t gPerfFrameStartCycles = 0;
 uint32_t gPerfCurrentFrameId = 0;
+
+namespace {
+
+std::atomic<uint32_t> gActivePerfScopeMonitorThreadId{0};
+std::atomic<uint64_t> gActivePerfScopeSequence{0};
+std::atomic<const char*> gActivePerfScopeFile{nullptr};
+std::atomic<const char*> gActivePerfScopeFunction{nullptr};
+std::atomic<const char*> gActivePerfScopeLabel{nullptr};
+std::atomic<int> gActivePerfScopeLine{0};
+std::atomic<uint32_t> gActivePerfScopeFrameId{0};
+std::atomic<uint32_t> gActivePerfScopeThreadId{0};
+std::atomic<uint32_t> gActivePerfScopePublishedDepth{0};
+std::atomic<uint64_t> gActivePerfScopeStartNanoseconds{0};
+
+void publishActivePerfProgress(const PerfProgressSnapshot* snapshot)
+{
+    gActivePerfScopeSequence.fetch_add(1, std::memory_order_acq_rel);
+    gActivePerfScopeFile.store(snapshot ? snapshot->file : nullptr, std::memory_order_relaxed);
+    gActivePerfScopeFunction.store(snapshot ? snapshot->function : nullptr, std::memory_order_relaxed);
+    gActivePerfScopeLabel.store(snapshot ? snapshot->label : nullptr, std::memory_order_relaxed);
+    gActivePerfScopeLine.store(snapshot ? snapshot->line : 0, std::memory_order_relaxed);
+    gActivePerfScopeFrameId.store(snapshot ? snapshot->frameId : 0, std::memory_order_relaxed);
+    gActivePerfScopeThreadId.store(snapshot ? snapshot->threadId : 0, std::memory_order_relaxed);
+    gActivePerfScopePublishedDepth.store(snapshot ? snapshot->depth : 0, std::memory_order_relaxed);
+    gActivePerfScopeStartNanoseconds.store(
+        snapshot ? snapshot->startNanoseconds : 0, std::memory_order_relaxed);
+    gActivePerfScopeSequence.fetch_add(1, std::memory_order_release);
+}
+
+}
+
+void perfSetProgressMonitorThread(uint32_t threadId)
+{
+    const uint32_t previous = gActivePerfScopeMonitorThreadId.exchange(
+        threadId, std::memory_order_relaxed);
+    if (previous == threadId)
+        return;
+    perfStartResourceWatchdog(threadId);
+    publishActivePerfProgress(nullptr);
+}
+
+bool perfReadProgressSnapshot(PerfProgressSnapshot& snapshot)
+{
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        const uint64_t before = gActivePerfScopeSequence.load(std::memory_order_acquire);
+        if (before & 1)
+            continue;
+        PerfProgressSnapshot candidate;
+        candidate.file = gActivePerfScopeFile.load(std::memory_order_relaxed);
+        candidate.function = gActivePerfScopeFunction.load(std::memory_order_relaxed);
+        candidate.label = gActivePerfScopeLabel.load(std::memory_order_relaxed);
+        candidate.line = gActivePerfScopeLine.load(std::memory_order_relaxed);
+        candidate.frameId = gActivePerfScopeFrameId.load(std::memory_order_relaxed);
+        candidate.threadId = gActivePerfScopeThreadId.load(std::memory_order_relaxed);
+        candidate.depth = gActivePerfScopePublishedDepth.load(std::memory_order_relaxed);
+        candidate.startNanoseconds = gActivePerfScopeStartNanoseconds.load(
+            std::memory_order_relaxed);
+        const uint64_t after = gActivePerfScopeSequence.load(std::memory_order_acquire);
+        if (before == after) {
+            snapshot = candidate;
+            return candidate.label != nullptr;
+        }
+    }
+    return false;
+}
+
+PerfProgressGuard::PerfProgressGuard(
+    const char* file, int line, const char* function, const char* label)
+{
+    const uint32_t threadId = GetCurrentThreadId();
+    if (threadId != gActivePerfScopeMonitorThreadId.load(std::memory_order_relaxed))
+        return;
+
+    mTracked = true;
+    mHadPrevious = perfReadProgressSnapshot(mPrevious);
+    PerfProgressSnapshot current;
+    current.file = file;
+    current.function = function;
+    current.label = label;
+    current.line = line;
+    current.frameId = gPerfCurrentFrameId;
+    current.threadId = threadId;
+    current.depth = mHadPrevious ? mPrevious.depth + 1 : 1;
+    current.startNanoseconds = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    publishActivePerfProgress(&current);
+}
+
+PerfProgressGuard::~PerfProgressGuard()
+{
+    if (!mTracked || GetCurrentThreadId() !=
+            gActivePerfScopeMonitorThreadId.load(std::memory_order_relaxed))
+        return;
+    publishActivePerfProgress(mHadPrevious ? &mPrevious : nullptr);
+}
 
 // ── Cycle counter ──────────────────────────────────────────
 

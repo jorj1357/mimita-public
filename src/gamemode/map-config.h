@@ -61,11 +61,47 @@ struct MapEntity
     uint32_t lastActivationTick = 0;
 };
 
+struct AuthoredBlock
+{
+    std::string id;
+    std::string shape = "box";
+    glm::vec3 position{0.0f};
+    glm::vec3 size{1.0f};
+    glm::vec3 rotationEuler{0.0f};
+    std::string material;
+    bool enabled = true;
+    std::vector<std::string> tags;
+};
+
+struct PayloadRoutePoint
+{
+    std::string id;
+    glm::vec3 position{0.0f};
+    float radius = 2.0f;
+    int order = 0;
+    int waitTicks = 0;
+    bool enabled = true;
+};
+
+struct PayloadConfig
+{
+    bool present = false;
+    bool hasCartOrigin = false;
+    glm::vec3 cartOrigin{0.0f};
+    float cartYaw = 0.0f;
+    glm::vec3 interactionSize{3.0f, 2.25f, 1.5f};
+    glm::vec3 interactionOffset{0.0f};
+    glm::vec3 interactionRotationEuler{0.0f};
+    std::vector<PayloadRoutePoint> route;
+};
+
 struct MapObjectiveConfig
 {
     std::string mapId;
     std::vector<BombSite> bombSites;
     std::vector<MapEntity> entities;
+    std::vector<AuthoredBlock> blocks;
+    PayloadConfig payload;
     float plantSeconds = 3.0f;
     float defuseSeconds = 5.0f;
     float explosionSeconds = 40.0f;
@@ -112,6 +148,33 @@ public:
     void setEntityVisibility(bool visible);
     bool entityVisibility() const { return mEntityVisibility; }
     void setEntityVisibilityFor(const std::string& id, bool visible);
+
+    const AuthoredBlock* findBlock(const std::string& id) const;
+    AuthoredBlock* findBlockMutable(const std::string& id);
+    const std::vector<AuthoredBlock>& blocks() const { return mCurrent.blocks; }
+    std::vector<AuthoredBlock>& blocksMutable() { return mCurrent.blocks; }
+    std::string createBlock(const glm::vec3& position, const glm::vec3& size,
+                            const std::string& requestedId = "");
+    bool deleteBlock(const std::string& id);
+
+    const PayloadConfig& payload() const { return mCurrent.payload; }
+    PayloadConfig& payloadMutable() { return mCurrent.payload; }
+    const PayloadRoutePoint* findPayloadRoutePoint(const std::string& id) const;
+    PayloadRoutePoint* findPayloadRoutePointMutable(const std::string& id);
+    std::string createPayloadRoutePoint(const glm::vec3& position,
+                                        const std::string& requestedId = "");
+    bool deletePayloadRoutePoint(const std::string& id);
+    void renumberPayloadRoute();
+
+    // Monotonic authored-data revision. Editor history and dirty state compare
+    // this instead of polling pointers or timestamps.
+    uint64_t revision() const { return mRevision; }
+    uint64_t savedRevision() const { return mSavedRevision; }
+    bool dirty() const { return mRevision != mSavedRevision; }
+    void markChanged();
+    MapObjectiveConfig snapshotAuthored() const;
+    void restoreAuthored(const MapObjectiveConfig& snapshot);
+
     // Clear runtime activation state for a new run without reloading the file.
     void resetRuntimeState();
     const std::string& configPath() const { return mPath; }
@@ -122,11 +185,16 @@ public:
 private:
     MapConfigRegistry() = default;
     std::string resolveConfigPath() const;
+    std::string uniqueId(const std::string& prefix) const;
+    bool writeBackup();
+    void pruneBackups();
 
     MapObjectiveConfig mCurrent;
     bool mEntityVisibility = false;
     std::filesystem::file_time_type mLastWrite{};
     std::string mPath;
+    uint64_t mRevision = 0;
+    uint64_t mSavedRevision = 0;
 };
 
 // World-independent selftest for map objective config parsing + site lookup.

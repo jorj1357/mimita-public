@@ -11,6 +11,7 @@ void* operator new(std::size_t size)
 {
     gPerfAllocCount.fetch_add(1, std::memory_order_relaxed);
     gPerfAllocBytes.fetch_add(static_cast<uint64_t>(size), std::memory_order_relaxed);
+    perfRecordThreadAllocation(size);
 
     uint64_t oldLargest = gPerfLargestAlloc.load(std::memory_order_relaxed);
     const uint64_t size64 = static_cast<uint64_t>(size);
@@ -43,6 +44,7 @@ void* operator new(std::size_t size, const std::nothrow_t&) noexcept
 {
     gPerfAllocCount.fetch_add(1, std::memory_order_relaxed);
     gPerfAllocBytes.fetch_add(static_cast<uint64_t>(size), std::memory_order_relaxed);
+    perfRecordThreadAllocation(size);
 
     uint64_t oldLargest = gPerfLargestAlloc.load(std::memory_order_relaxed);
     const uint64_t size64 = static_cast<uint64_t>(size);

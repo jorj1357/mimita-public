@@ -33,6 +33,7 @@
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
 #include "gamemode/map-config.h"
+#include "map/map-authored-geometry.h"
 #include "gamemode/monster-pools.h"
 #include "gamemode/mode-pack-registry.h"
 #include "gamemode/deterministic-rng.h"
@@ -1900,6 +1901,7 @@ bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out)
         return false;
     if (candidate.spawnPoints.empty())
         return false;
+    applyAuthoredMapGeometry(candidate, mapId);
     out = std::move(candidate);
     return true;
 }

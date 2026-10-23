@@ -123,6 +123,10 @@ void World::clear()
     planes.clear();
     spawnPoints.clear();
     selectedSpawnIndex = -1;
+    authoredGeometryApplied = false;
+    authoredBaseVertexCount = 0;
+    authoredBaseBatchCount = 0;
+    authoredBaseCollisionCount = 0;
     mesh = Mesh{};
     skyMesh = Mesh{};
     collisionMesh.clear();

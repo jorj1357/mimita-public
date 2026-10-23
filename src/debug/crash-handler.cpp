@@ -115,7 +115,7 @@ uintptr_t modulePreferredBase(HMODULE module)
     return static_cast<uintptr_t>(nt->OptionalHeader.ImageBase);
 }
 
-void appendSymbolizedStack(char* out, DWORD size, CONTEXT* context)
+void appendSymbolizedStack(char* out, DWORD size, CONTEXT* context, HANDLE thread)
 {
     if (!context) return;
 
@@ -128,8 +128,6 @@ void appendSymbolizedStack(char* out, DWORD size, CONTEXT* context)
     }
 
     HANDLE process = GetCurrentProcess();
-    HANDLE thread = GetCurrentThread();
-
     STACKFRAME64 frame{};
     frame.AddrPC.Offset = context->Rip;
     frame.AddrPC.Mode = AddrModeFlat;
@@ -213,6 +211,42 @@ void appendSymbolizedStack(char* out, DWORD size, CONTEXT* context)
         used += (DWORD)n;
     }
 #endif
+}
+
+bool captureThreadStackTraceInternal(uint32_t threadId, char* out, size_t outSize)
+{
+    if (!out || outSize < 2)
+        return false;
+    out[0] = '\0';
+
+    HANDLE thread = OpenThread(THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION |
+                               THREAD_SUSPEND_RESUME, FALSE, threadId);
+    if (!thread) {
+        std::snprintf(out, outSize, "OpenThread failed: error=%lu",
+                      static_cast<unsigned long>(GetLastError()));
+        return false;
+    }
+
+    bool captured = false;
+    const DWORD suspendCount = SuspendThread(thread);
+    if (suspendCount != static_cast<DWORD>(-1)) {
+        CONTEXT context{};
+        context.ContextFlags = CONTEXT_FULL;
+        if (GetThreadContext(thread, &context)) {
+            ResumeThread(thread);
+            appendSymbolizedStack(out, static_cast<DWORD>(outSize), &context, thread);
+            captured = true;
+        } else {
+            std::snprintf(out, outSize, "GetThreadContext failed: error=%lu",
+                          static_cast<unsigned long>(GetLastError()));
+            ResumeThread(thread);
+        }
+    } else {
+        std::snprintf(out, outSize, "SuspendThread failed: error=%lu",
+                      static_cast<unsigned long>(GetLastError()));
+    }
+    CloseHandle(thread);
+    return captured;
 }
 
 // MinGW/GCC raises C++ exceptions through SEH with this code
@@ -620,7 +654,7 @@ LONG WINAPI crashHandler(EXCEPTION_POINTERS* ex)
     char crumbs[2048];
     formatBreadcrumbs(crumbs, sizeof(crumbs));
     char stack[4096] = "";
-    appendSymbolizedStack(stack, sizeof(stack), ex->ContextRecord);
+    appendSymbolizedStack(stack, sizeof(stack), ex->ContextRecord, GetCurrentThread());
 
     const char* cxxNote = (code == kStatusGccThrow)
         ? "Note: uncaught C++ exception (MinGW STATUS_GCC_THROW). The C++ type and\n"
@@ -690,7 +724,7 @@ void terminateHandler()
     CONTEXT context;
     RtlCaptureContext(&context);
     char stack[4096] = "";
-    appendSymbolizedStack(stack, sizeof(stack), &context);
+    appendSymbolizedStack(stack, sizeof(stack), &context, GetCurrentThread());
 
     SYSTEMTIME st;
     GetLocalTime(&st);
@@ -728,6 +762,11 @@ void terminateHandler()
 }
 
 } // namespace
+
+bool captureThreadStackTrace(uint32_t threadId, char* out, size_t outSize)
+{
+    return captureThreadStackTraceInternal(threadId, out, outSize);
+}
 
 void recordCrashBreadcrumb(const char* subsystem, const char* format, ...)
 {

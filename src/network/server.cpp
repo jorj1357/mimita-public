@@ -32,6 +32,7 @@
 #include "entities/player.h"
 #include "world/world.h"
 #include "map/map-catalog.h"
+#include "map/map-authored-geometry.h"
 #include "config/networking-config.h"
 #include "config/movement-config.h"
 #include "config/spawn-velocity-config.h"
@@ -495,6 +496,8 @@ int runServer(const LaunchOptions& options)
     HeadlessWorld world;
     if (!loadHeadlessWorld(mapPath.c_str(), world))
         printf("%s [SERVER WORLD] WARNING: headless GLB collision load failed; using floor fallback\n", serverTimestamp());
+    else
+        applyAuthoredMapGeometry(world, mapName);
 
     // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
     World npcWorld;
@@ -1205,6 +1208,8 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER MAP] mapId=%s path=%s\n", mapName.c_str(), mapPath.c_str());
     if (!loadHeadlessWorld(mapPath.c_str(), state.world))
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
+    else
+        applyAuthoredMapGeometry(state.world, mapName);
 
     // Load the standard player body shape headlessly for hit validation.
     if (gServerBodyTemplate.empty())

@@ -1,6 +1,7 @@
 #include "engine/engine-tick-replay.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include "mapeditor/map-editor.h"
 #include "gui/hud/chat-window.h"
 #include "gui/menus/pause-menu.h"
 #include <cstdio>
@@ -335,8 +336,11 @@ void engineTickReplay(Engine& engine, float dt)
             }
         }
 
-        // Run simulation for this tick
-        if (!freecamEnabled && !replayPlaybackActive)
+        // Run simulation for this tick. The map editor can keep its detached
+        // camera while optionally unfreezing the world for live observation.
+        const bool editorUnfrozen = MapEditor::instance().active() &&
+                                    !MapEditor::instance().freezeWorld();
+        if ((!freecamEnabled || editorUnfrozen) && !replayPlaybackActive)
             simulateTick(simContext, tickFrame);
         else if (freecamEnabled && !replayPlaybackActive && worldLoaded)
             // Spectator freecam skips normal gameplay simulation, but corpse

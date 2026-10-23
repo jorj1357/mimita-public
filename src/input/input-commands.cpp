@@ -13,6 +13,7 @@
 #include "gui/menus/pause-menu.h"
 #include "gui/password-popup.h"
 #include "avatar/avatar-editor.h"
+#include "mapeditor/map-editor.h"
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <sstream>
@@ -118,6 +119,11 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
             guiBindingsHandleKey(key, action, mods);
             return;
         }
+
+        // The map editor owns its shortcuts while active. Terminal, chat, and
+        // text fields above keep priority so typing never triggers editing.
+        if (MapEditor::instance().handleKey(key, mods, action))
+            return;
 
         // No text input active: forward to menu/keyboard handlers
         authPopupHandleKey(key, action);

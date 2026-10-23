@@ -11,6 +11,7 @@
 #include "engine/engine-tick-combat.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include "mapeditor/map-editor.h"
 #include "gui/hud/chat-window.h"
 #include <algorithm>
 #include <cstdio>
@@ -102,7 +103,7 @@ void engineTickCombat(Engine& engine, float dt)
     auto& gReplayPlayer = REPLAY_PLAYER;
     auto& gReplayFactory = REPLAY_FACTORY;
 
-    player.weaponAimDownSights =
+    player.weaponAimDownSights = !MapEditor::instance().active() &&
         glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
@@ -246,7 +247,8 @@ void engineTickCombat(Engine& engine, float dt)
         updateChatBubbles(kv.second);
 
     static bool mousePrev = false;
-    const bool gameplayInputAllowed = !PauseMenu::isOpen();
+    const bool gameplayInputAllowed = !PauseMenu::isOpen() &&
+                                      !MapEditor::instance().active();
     bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     // Local/offline duel only for DuelManager checks; also check DuelQueue for network duels.
     bool duelEndVisible = gDuelManager.phase() == DuelPhase::MatchEnd ||

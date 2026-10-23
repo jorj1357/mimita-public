@@ -4,6 +4,7 @@
 #include "perf/perf-gpu.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "debug/crash-handler.h"
 #include "config.h"
 
 #include <algorithm>
@@ -15,6 +16,8 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <atomic>
 #include <windows.h>
 #include <psapi.h>
 #include <nlohmann/json.hpp>
@@ -72,6 +75,118 @@ struct ResourceWindow {
 };
 
 ResourceWindow gResourceWindow;
+
+std::atomic<bool> gResourceWatchdogStop{false};
+std::atomic<uint32_t> gResourceWatchdogMainThreadId{0};
+std::atomic<uint32_t> gLastCompletedFrameNumber{0};
+std::atomic<uint64_t> gLastCompletedFrameNanoseconds{0};
+std::thread gResourceWatchdogThread;
+
+uint64_t steadyNowNanoseconds()
+{
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+double threadCpuMilliseconds(uint32_t threadId)
+{
+    HANDLE thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
+    if (!thread)
+        return -1.0;
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    const bool ok = GetThreadTimes(thread, &creation, &exit, &kernel, &user) != 0;
+    CloseHandle(thread);
+    if (!ok)
+        return -1.0;
+    ULARGE_INTEGER k{}, u{};
+    k.LowPart = kernel.dwLowDateTime; k.HighPart = kernel.dwHighDateTime;
+    u.LowPart = user.dwLowDateTime; u.HighPart = user.dwHighDateTime;
+    return static_cast<double>(k.QuadPart + u.QuadPart) / 10000.0;
+}
+
+void resourceWatchdogMain()
+{
+    bool stallReported = false;
+    bool stackAttempted = false;
+    uint64_t nextReportNs = 0;
+    while (!gResourceWatchdogStop.load(std::memory_order_relaxed)) {
+        Sleep(250);
+        const uint32_t threadId = gResourceWatchdogMainThreadId.load(
+            std::memory_order_relaxed);
+        const uint64_t lastFrameNs = gLastCompletedFrameNanoseconds.load(
+            std::memory_order_relaxed);
+        if (threadId == 0 || lastFrameNs == 0)
+            continue;
+        const uint64_t nowNs = steadyNowNanoseconds();
+        const uint64_t ageMs = nowNs >= lastFrameNs ? (nowNs - lastFrameNs) / 1000000 : 0;
+        if (ageMs < 1500) {
+            stallReported = false;
+            stackAttempted = false;
+            continue;
+        }
+        if (nowNs < nextReportNs)
+            continue;
+        nextReportNs = nowNs + 1000000000ULL;
+        PerfProgressSnapshot progress;
+        const bool hasProgress = perfReadProgressSnapshot(progress) &&
+            progress.threadId == threadId;
+        const double cpuMs = threadCpuMilliseconds(threadId);
+        const uint32_t frame = gLastCompletedFrameNumber.load(std::memory_order_relaxed);
+        StructuredLogger::instance().tryWriteEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "performance.stall-watchdog", "performance",
+            stallReported ? "main thread still has not completed a frame" :
+                            "main thread frame completion stalled",
+            frame,
+            nlohmann::json{
+                {"main_thread_id", threadId}, {"last_completed_frame", frame},
+                {"frame_heartbeat_age_ms", ageMs}, {"main_thread_cpu_ms", cpuMs},
+                {"progress_available", hasProgress},
+                {"progress_label", hasProgress && progress.label ? progress.label : ""},
+                {"progress_file", hasProgress && progress.file ? progress.file : ""},
+                {"progress_line", hasProgress ? progress.line : 0},
+                {"progress_function", hasProgress && progress.function ? progress.function : ""},
+                {"progress_frame_id", hasProgress ? progress.frameId : 0},
+                {"progress_depth", hasProgress ? progress.depth : 0},
+                {"progress_age_ms", hasProgress && nowNs >= progress.startNanoseconds
+                    ? (nowNs - progress.startNanoseconds) / 1000000 : 0}},
+            __FILE__, __LINE__, __FUNCTION__);
+        stallReported = true;
+        if (!stackAttempted) {
+            stackAttempted = true;
+            char stackTrace[4096] = {};
+            StructuredLogger::instance().tryWriteEvent(
+                StructuredCategory::Performance, StructuredLevel::Important,
+                "performance.stall-stack-capture", "performance",
+                "begin main-thread stack capture", frame,
+                nlohmann::json{{"phase", "begin"}, {"main_thread_id", threadId},
+                               {"frame_heartbeat_age_ms", ageMs},
+                               {"last_completed_frame", frame},
+                               {"main_thread_cpu_ms", cpuMs}},
+                __FILE__, __LINE__, __FUNCTION__);
+            const bool captured = captureThreadStackTrace(threadId, stackTrace,
+                                                           sizeof(stackTrace));
+            StructuredLogger::instance().tryWriteEvent(
+                StructuredCategory::Performance, StructuredLevel::Important,
+                "performance.stall-stack-capture", "performance",
+                "finished main-thread stack capture", frame,
+                nlohmann::json{{"phase", "end"}, {"main_thread_id", threadId},
+                               {"captured", captured}, {"stack", stackTrace}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+}
+
+void startResourceWatchdog(uint32_t mainThreadId)
+{
+    if (gResourceWatchdogThread.joinable())
+        return;
+    gResourceWatchdogMainThreadId.store(mainThreadId, std::memory_order_relaxed);
+    gLastCompletedFrameNanoseconds.store(steadyNowNanoseconds(),
+                                         std::memory_order_relaxed);
+    gResourceWatchdogStop.store(false, std::memory_order_relaxed);
+    gResourceWatchdogThread = std::thread(resourceWatchdogMain);
+}
 
 uint64_t currentThreadCpu100ns(bool& available)
 {
@@ -290,10 +405,28 @@ PerfFrame gFrameHistory[FRAME_HISTORY_CAPACITY];
 int gFrameHistoryIndex = 0;
 int gFrameHistoryCount = 0;
 
+void perfStartResourceWatchdog(uint32_t mainThreadId)
+{
+    startResourceWatchdog(mainThreadId);
+}
+
+void perfStopResourceWatchdog()
+{
+    gResourceWatchdogStop.store(true, std::memory_order_relaxed);
+    if (gResourceWatchdogThread.joinable())
+        gResourceWatchdogThread.join();
+}
+
 // ── Capture current frame ───────────────────────────────────
 
 void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
 {
+    gResourceWatchdogMainThreadId.store(GetCurrentThreadId(),
+                                        std::memory_order_relaxed);
+    gLastCompletedFrameNumber.store(static_cast<uint32_t>(frameNumber),
+                                    std::memory_order_relaxed);
+    gLastCompletedFrameNanoseconds.store(steadyNowNanoseconds(),
+                                         std::memory_order_relaxed);
     PerfFrame& frame = gFrameHistory[gFrameHistoryIndex % FRAME_HISTORY_CAPACITY];
     frame.frameNumber = frameNumber;
     frame.totalMs = totalMs;

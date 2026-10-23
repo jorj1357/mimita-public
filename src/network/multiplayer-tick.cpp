@@ -207,6 +207,8 @@ static void processSnapshotEntities(
     std::unordered_map<uint32_t, bool> seenPlayers;
     std::unordered_map<uint32_t, bool> seenNpcs;
 
+    {
+    MIMITA_PERF_SCOPE("Network::SnapshotApply::EntityLoop");
     for (uint32_t i = 0; i < entityCount; ++i)
     {
         const SnapshotEntity& entity = entities[i];
@@ -223,6 +225,7 @@ static void processSnapshotEntities(
              entity.networkEntityId == ctx.localPlayerId);
         if (isLocal)
         {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::LocalPlayerState");
             eraseLocalReplica(ctx, entity.networkEntityId, "authoritative-local-snapshot");
 
             const bool olderEpoch = entity.transformEpoch != 0 &&
@@ -349,6 +352,7 @@ static void processSnapshotEntities(
             interpolationMap = &ctx.remotePlayerInterpolation;
             seen = &seenPlayers;
             typeName = "Player";
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::PlayerRegistry");
             PlayerInfo& remoteInfo = ctx.playerRegistry[entity.networkEntityId];
             remoteInfo.name = entity.displayName;
             remoteInfo.id = entity.networkEntityId;
@@ -378,22 +382,34 @@ static void processSnapshotEntities(
             continue;
         }
 
-        bool existsBefore = replicas->find(entity.networkEntityId) != replicas->end();
+        bool existsBefore = false;
+        {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::ReplicaLookup");
+            existsBefore = replicas->find(entity.networkEntityId) != replicas->end();
+        }
         // A stale snapshot must never create new entities: creation implies
         // authoritative membership that only the newest complete snapshot
         // may assert. Existing entities may still receive interpolation
         // samples, which are independently freshness-rejected.
         if (!membershipAllowed && !existsBefore)
             continue;
-        Player& p = (*replicas)[entity.networkEntityId];
+        Player* replica = nullptr;
+        EntityInterpolationState* interpolationState = nullptr;
+        {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::ReplicaStateAccess");
+            replica = &(*replicas)[entity.networkEntityId];
+            interpolationState = &(*interpolationMap)[entity.networkEntityId];
+        }
+        Player& p = *replica;
         bool isNew = !existsBefore;
-        EntityInterpolationState& interpolation = (*interpolationMap)[entity.networkEntityId];
+        EntityInterpolationState& interpolation = *interpolationState;
         const bool npcNewLife = entity.entityType == ENTITY_NPC && existsBefore &&
             entity.transformEpoch != 0 &&
             interpolation.lastSnapshotTransformEpoch != 0 &&
             entity.transformEpoch != interpolation.lastSnapshotTransformEpoch;
         if (npcNewLife)
         {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcLifeReset");
             // A reused NPC id is a new life, not a continuation of the old
             // prediction. Drop old damage/death overlays before this snapshot
             // can render the respawned body.
@@ -408,8 +424,17 @@ static void processSnapshotEntities(
                 ? std::string(entity.avatarName)
                 : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
             if (!npcAvatar.empty()) {
-                if (!AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar))
-                    p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                bool avatarApplied = false;
+                {
+                    MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarApply");
+                    avatarApplied = AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar);
+                }
+                if (!avatarApplied) {
+                    {
+                        MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcFallbackModelLoad");
+                        p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                    }
+                }
                 p.setAvatarName(npcAvatar);
             }
             Debug::warn(Debug::Category::Networking,
@@ -420,6 +445,7 @@ static void processSnapshotEntities(
         }
         if (isNew)
         {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::ReplicaCreate");
             if (entity.entityType != ENTITY_NPC)
             {
                 std::string remoteAvatar(entity.avatarName);
@@ -436,20 +462,41 @@ static void processSnapshotEntities(
             }
             else
             {
-                p.username = entity.displayName;
-                std::string npcAvatar = entity.avatarName[0] != '\0'
-                    ? std::string(entity.avatarName)
-                    : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
+                {
+                    MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcUsernameAssign");
+                    p.username = entity.displayName;
+                }
+                std::string npcAvatar;
+                {
+                    MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarIdentity");
+                    npcAvatar = entity.avatarName[0] != '\0'
+                        ? std::string(entity.avatarName)
+                        : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
+                }
                 bool avatarApplied = false;
                 if (!npcAvatar.empty()) {
-                    avatarApplied = AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar);
+                    {
+                        MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarApply");
+                        avatarApplied = AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar);
+                    }
                     if (!avatarApplied) {
-                        p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                        {
+                            MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcFallbackModelLoad");
+                            p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                        }
                     }
                 } else {
-                    p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                    {
+                        MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcFallbackModelLoad");
+                        p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                    }
                 }
-                p.setAvatarName(npcAvatar);
+                {
+                    MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarNameAssign");
+                    p.setAvatarName(npcAvatar);
+                }
+                {
+                MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarBindLog");
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Avatar, StructuredLevel::Important,
                     "client.npc.avatar.bind", std::to_string(entity.networkEntityId),
@@ -468,23 +515,31 @@ static void processSnapshotEntities(
                             (npcAvatar.empty() ? "empty_identity" :
                              (AvatarSystem::instance().isAvatarLoadPending(npcAvatar)
                                   ? "avatar_async_pending" : "avatar_apply_failed"))}});
-                Debug::warn(Debug::Category::Avatar,
-                    "[NPC AVATAR CLIENT] entityId=%u avatar='%s' atlas=%u\n",
-                    entity.networkEntityId, npcAvatar.c_str(),
-                    p.avatarInstance ? p.avatarInstance->atlasTexture : 0);
+                {
+                    MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarConsoleLog");
+                    Debug::warn(Debug::Category::Avatar,
+                        "[NPC AVATAR CLIENT] entityId=%u avatar='%s' atlas=%u\n",
+                        entity.networkEntityId, npcAvatar.c_str(),
+                        p.avatarInstance ? p.avatarInstance->atlasTexture : 0);
+                }
+                }
             }
             interpolation.renderRegistered = true;
-            printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
-                   "mesh=%s position=(%.2f,%.2f,%.2f)\n",
-                   entity.networkEntityId, typeName, entity.ownerClientId,
-                   p.modelLoaded ? "player-glb" : "fallback-capsule",
-                   entity.px, entity.py, entity.pz);
+            {
+                MIMITA_PERF_SCOPE("Network::SnapshotApply::ReplicaCreateConsoleLog");
+                printf("[CLIENT ENTITY CREATE] entityId=%u type=%s ownerClientId=%u "
+                       "mesh=%s position=(%.2f,%.2f,%.2f)\n",
+                       entity.networkEntityId, typeName, entity.ownerClientId,
+                       p.modelLoaded ? "player-glb" : "fallback-capsule",
+                       entity.px, entity.py, entity.pz);
+            }
         }
 
         // Avatar identity can change while a replica is alive (for example
         // after an editor save or reconnect). Re-run the shared async avatar
         // application only when the network identity actually changes.
         if (!isNew && entity.entityType != ENTITY_NPC) {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::AvatarIdentitySync");
             const std::string networkAvatar(entity.avatarName);
             if (networkAvatar != p.avatarName()) {
                 if (!networkAvatar.empty())
@@ -510,6 +565,7 @@ static void processSnapshotEntities(
             p.avatarInstance == nullptr &&
             !AvatarSystem::instance().isAvatarLoadPending(entity.avatarName))
         {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarRebind");
             const std::string networkAvatar(entity.avatarName);
             const bool rebound =
                 AvatarSystem::instance().applyAvatarToPlayer(p, networkAvatar);
@@ -527,15 +583,26 @@ static void processSnapshotEntities(
                 __FILE__, __LINE__, __FUNCTION__);
         }
 
-        if (!pushInterpolationTarget(interpolation, entity, serverTick))
+        bool interpolationAccepted = false;
+        {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::InterpolationInsert");
+            interpolationAccepted = pushInterpolationTarget(
+                interpolation, entity, serverTick);
+        }
+        if (!interpolationAccepted)
             continue;
         p.spawnGeneration = entity.spawnGeneration;
         if (isNew)
         {
+            MIMITA_PERF_SCOPE("Network::SnapshotApply::NewReplicaPresentation");
             // Seed serial baselines so creating a replica does not replay
             // already-occurred presentation events (dash, jumps, freeze).
             baselinePresentationSerials(p, interpolation.target);
-            updateRenderedReplica(p, interpolation, ctx.interpolationRenderTick, dt, true);
+            {
+                MIMITA_PERF_SCOPE("Network::SnapshotApply::ReplicaInitialPose");
+                updateRenderedReplica(
+                    p, interpolation, ctx.interpolationRenderTick, dt, true);
+            }
         }
         if (membershipAllowed)
         {
@@ -555,6 +622,7 @@ static void processSnapshotEntities(
                 entity.px, entity.py, entity.pz, entity.yaw, entity.displayName);
         }
     }
+    }
 
     if (!membershipAllowed)
     {
@@ -564,6 +632,8 @@ static void processSnapshotEntities(
         return;
     }
 
+    {
+    MIMITA_PERF_SCOPE("Network::SnapshotApply::MembershipCleanup");
     ctx.latestAppliedMembershipTick = serverTick;
     const uint64_t nowMissingMs = nowMs();
 
@@ -645,6 +715,7 @@ static void processSnapshotEntities(
         }
         else
             ++it;
+    }
     }
 }
 

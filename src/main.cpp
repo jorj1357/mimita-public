@@ -267,6 +267,7 @@ void processAgentCommandQueue(const std::string& queuePath,
 #include "terminal/editor-commands.h"
 #include "terminal/network-commands.h"
 #include "perf/perf.h"
+#include "perf/perf-frame.h"
 #include "replay/replay-export.h"
 #include "effects/hitfx-commands.h"
 #include "effects/hit-effects.h"
@@ -552,9 +553,10 @@ int main(int argc, char** argv)
             gpMpContext ? gpMpContext->tick : 0);
     }
     AnalyticsManager::instance().shutdown();
-    StructuredLogger::instance().shutdown();
     HotReloadSystem::instance().unloadGameDLL();
     engine.shutdown();
+    perfStopResourceWatchdog();
+    StructuredLogger::instance().shutdown();
     LogManager::instance().shutdown();
     
     return 0;

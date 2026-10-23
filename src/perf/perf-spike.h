@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <chrono>
@@ -46,6 +47,17 @@ struct PerfScopeCapture {
     bool crossedBoundary = false;
 };
 
+struct PerfProgressSnapshot {
+    const char* file = nullptr;
+    const char* function = nullptr;
+    const char* label = nullptr;
+    int line = 0;
+    uint32_t frameId = 0;
+    uint32_t threadId = 0;
+    uint32_t depth = 0;
+    uint64_t startNanoseconds = 0;
+};
+
 // ── Budget config (loaded from debuglogger.json) ─────────────
 
 struct PerfBudgetConfig {
@@ -83,6 +95,16 @@ extern std::atomic<uint64_t> gPerfAllocBytes;
 extern std::atomic<uint64_t> gPerfLargestAlloc;
 extern const char* gPerfLargestAllocSite;
 
+constexpr std::size_t PERF_THREAD_ALLOCATION_SLOT_COUNT = 128;
+struct PerfThreadAllocationCounter {
+    std::atomic<uint32_t> threadId{0};
+    std::atomic<uint64_t> allocationCount{0};
+    std::atomic<uint64_t> allocationBytes{0};
+};
+extern PerfThreadAllocationCounter gPerfThreadAllocations[PERF_THREAD_ALLOCATION_SLOT_COUNT];
+extern std::atomic<uint64_t> gPerfThreadAllocationUntracked;
+void perfRecordThreadAllocation(std::size_t size);
+
 // Correlation ID stack
 extern char gPerfCorrelationStack[8][32];
 extern int gPerfCorrelationDepth;
@@ -111,16 +133,43 @@ private:
     static uint64_t readCycles();
 };
 
+class PerfProgressGuard {
+public:
+    PerfProgressGuard(const char* file, int line, const char* function, const char* label);
+    ~PerfProgressGuard();
+    PerfProgressGuard(const PerfProgressGuard&) = delete;
+    PerfProgressGuard& operator=(const PerfProgressGuard&) = delete;
+
+private:
+    PerfProgressSnapshot mPrevious;
+    bool mHadPrevious = false;
+    bool mTracked = false;
+};
+
 // ── Convenience macro ───────────────────────────────────────
 
-#define MIMITA_PERF_SCOPE(label) \
-    PerfScopeGuard MIMITA_PERF_GUARD_##__LINE__( \
+#define MIMITA_PERF_SCOPE_IMPL(label, uniqueId) \
+    PerfScopeGuard MIMITA_PERF_GUARD_##uniqueId( \
         __FILE__, __LINE__, __FUNCTION__, label)
+#define MIMITA_PERF_SCOPE_EXPAND(label, uniqueId) \
+    MIMITA_PERF_SCOPE_IMPL(label, uniqueId)
+#define MIMITA_PERF_SCOPE(label) \
+    MIMITA_PERF_SCOPE_EXPAND(label, __COUNTER__)
+
+#define MIMITA_PERF_PROGRESS_IMPL(label, uniqueId) \
+    PerfProgressGuard MIMITA_PERF_PROGRESS_GUARD_##uniqueId( \
+        __FILE__, __LINE__, __FUNCTION__, label)
+#define MIMITA_PERF_PROGRESS_EXPAND(label, uniqueId) \
+    MIMITA_PERF_PROGRESS_IMPL(label, uniqueId)
+#define MIMITA_PERF_PROGRESS(label) \
+    MIMITA_PERF_PROGRESS_EXPAND(label, __COUNTER__)
 
 // ── API ─────────────────────────────────────────────────────
 
 void perfAggregateScopes(double totalFrameMs, double budgetMs, int frameNumber);
 void perfWriteSpikeReport(double totalFrameMs, double budgetMs, int frameNumber);
+void perfSetProgressMonitorThread(uint32_t threadId);
+bool perfReadProgressSnapshot(PerfProgressSnapshot& snapshot);
 
 // Correlation ID management
 void perfSetCorrelation(const char* id);

@@ -183,6 +183,18 @@ public:
                     int sourceLine = 0,
                     const char* functionName = nullptr);
 
+    // Best-effort nonblocking event write for watchdogs that must not stall
+    // behind a possibly stuck frame thread or cross-process logger mutex.
+    bool tryWriteEvent(StructuredCategory category, StructuredLevel level,
+                       const std::string& eventName,
+                       const std::string& correlationId,
+                       const std::string& reason,
+                       uint32_t tick,
+                       const nlohmann::json& fields = nlohmann::json::object(),
+                       const char* sourceFile = nullptr,
+                       int sourceLine = 0,
+                       const char* functionName = nullptr);
+
     void writeFormatted(StructuredCategory category, StructuredLevel level,
                         const char* sourceFile, int sourceLine,
                         const char* functionName, const char* format, ...);
@@ -242,6 +254,7 @@ private:
     std::string timestamp() const;
     std::string runTimestamp() const;
     void writeJsonLine(const nlohmann::json& record, bool flush = true);
+    bool tryWriteJsonLine(const nlohmann::json& record, bool flush = true);
 
     StructuredLogConfig mConfig;
     bool mInitialized = false;
@@ -250,8 +263,8 @@ private:
     std::string mEventsPath;   // logs/yyyy-mm-dd/yyyymmdd_hhmmss/events.jsonl
     FILE* mEventsFile = nullptr;
     void* mRunLease = nullptr; // named event held while this run has a live process
-    uint64_t mSequence = 0;
-    uint64_t mEventCounters[(int)StructuredCategory::Count] = {};
+    std::atomic<uint64_t> mSequence{0};
+    std::atomic<uint64_t> mEventCounters[(int)StructuredCategory::Count]{};
 
     // Category file handles (nullptr = not open for this run)
     FILE* mCategoryFiles[(int)StructuredCategory::Count] = {};

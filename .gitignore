@@ -97,6 +97,10 @@ exports/
 Thumbs.db
 Desktop.ini
 
+# ── Map editor generated history ─────────────────────────────────────────────
+config/maps/backups/
+config/maps/editor-autosaves/
+
 # ── Editor ───────────────────────────────────────────────────────────────────
 .vscode/
 .idea/

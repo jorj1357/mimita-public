@@ -93,6 +93,8 @@ struct EntitySnapshot {
 
 // Capture current frame into the ring buffer
 void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber);
+void perfStartResourceWatchdog(uint32_t mainThreadId);
+void perfStopResourceWatchdog();
 
 // Dump spike context: N frames before → spike → N frames after
 void perfDumpSpikeContext(int spikeFrameIndex, int framesBefore, int framesAfter);

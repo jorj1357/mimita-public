@@ -174,6 +174,13 @@ struct World {
     int selectedSpawnIndex = -1;
     std::uint64_t renderRevision = 0;
 
+    // Derived authored-map geometry appended after the GLB base. The counts
+    // capture the base so an editor rebuild removes only its own tail.
+    bool authoredGeometryApplied = false;
+    size_t authoredBaseVertexCount = 0;
+    size_t authoredBaseBatchCount = 0;
+    size_t authoredBaseCollisionCount = 0;
+
     void clear();
     void rebuildChunks();
 

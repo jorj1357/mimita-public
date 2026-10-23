@@ -185,8 +185,69 @@ const char* disconnectPolicyName(DisconnectPolicy policy)
     }
 }
 
+static void logReconnectResourceProbe(const MultiplayerContext& ctx,
+                                      const char* phase,
+                                      const char* policyName = "not-applicable")
+{
+    uint64_t incomingAvatarDeclaredBytes = 0;
+    uint64_t incomingAvatarChunkBytes = 0;
+    for (const auto& item : ctx.incomingAvatarAssets) {
+        incomingAvatarDeclaredBytes += item.second.totalBytes;
+        for (const auto& chunk : item.second.chunks)
+            incomingAvatarChunkBytes += chunk.size();
+    }
+
+    uint64_t avatarManifestBytes = 0;
+    for (const auto& item : ctx.remoteAvatarManifests) {
+        avatarManifestBytes += item.second.avatarJson.size();
+        for (const auto& chunk : item.second.manifestChunks)
+            avatarManifestBytes += chunk.size();
+    }
+
+    uint64_t avatarUploadBytes = 0;
+    for (const auto& chunk : ctx.avatarNetworkUploadQueue)
+        avatarUploadBytes += chunk.size();
+
+    uint64_t snapshotChunkCount = 0;
+    for (const auto& item : ctx.snapshotChunkBuffers)
+        snapshotChunkCount += item.second.chunks.size();
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.reconnect.resource-probe",
+        "reconnect:" + std::to_string(ctx.localPlayerId),
+        phase, ctx.tick,
+        {{"phase", phase},
+         {"disconnect_policy", policyName},
+         {"connection_state", connectionStateName(ctx.connectionState)},
+         {"reconnect_attempts", ctx.reconnectAttempts},
+         {"remote_players", ctx.remotePlayers.size()},
+         {"remote_npcs", ctx.remoteNpcs.size()},
+         {"remote_player_interpolation", ctx.remotePlayerInterpolation.size()},
+         {"remote_npc_interpolation", ctx.remoteNpcInterpolation.size()},
+         {"player_registry", ctx.playerRegistry.size()},
+         {"remote_avatar_manifests", ctx.remoteAvatarManifests.size()},
+         {"remote_avatar_manifest_bytes", avatarManifestBytes},
+         {"incoming_avatar_assets", ctx.incomingAvatarAssets.size()},
+         {"incoming_avatar_declared_bytes", incomingAvatarDeclaredBytes},
+         {"incoming_avatar_chunk_bytes", incomingAvatarChunkBytes},
+         {"avatar_upload_queue_chunks", ctx.avatarNetworkUploadQueue.size()},
+         {"avatar_upload_queue_bytes", avatarUploadBytes},
+         {"snapshot_chunk_buffers", ctx.snapshotChunkBuffers.size()},
+         {"snapshot_chunks", snapshotChunkCount},
+         {"snapshot_chunk_payload_bytes",
+             snapshotChunkCount * sizeof(SnapshotChunkPacket)},
+         {"processed_reliable_events", ctx.processedReliableEventIds.size()},
+         {"pending_fire_requests", ctx.pendingFireRequests.size()},
+         {"pending_attack_requests", ctx.pendingAttackRequests.size()},
+         {"pending_hit_claims", ctx.pendingHitClaims.size()},
+         {"pending_reload_requests", ctx.pendingReloadRequests.size()}},
+        __FILE__, __LINE__, __func__);
+}
+
 void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
 {
+    logReconnectResourceProbe(ctx, "teardown-before", disconnectPolicyName(policy));
     // Log the teardown
     printf("[NET TEARDOWN] policy=%s reason=%s\n",
            disconnectPolicyName(policy),
@@ -345,6 +406,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
 
     // Log state after teardown
     printf("[NET TEARDOWN] complete policy=%s\n", disconnectPolicyName(policy));
+    logReconnectResourceProbe(ctx, "teardown-after", disconnectPolicyName(policy));
 }
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName)
@@ -1440,6 +1502,7 @@ void mpStartReconnect(MultiplayerContext& ctx)
         ++ctx.reconnectAttempts;
         ctx.lastReconnectAttemptMs = now;
     }
+    logReconnectResourceProbe(ctx, "attempt-start");
 
     Debug::warn(Debug::Category::Networking,
                 "[NET RECONNECT] starting player=%u graceDeadlineMs=%llu\n",
@@ -1472,11 +1535,14 @@ void mpTickReconnect(MultiplayerContext& ctx)
 
     if (!sendReconnectRequest(ctx))
     {
+        logReconnectResourceProbe(ctx, "attempt-send-failed");
         Debug::warn(Debug::Category::Networking,
                     "[NET RECONNECT] attempt=%d/%u failed to send (no transport)\n",
                     ctx.reconnectAttempts, (unsigned)retryCfg.reconnectMaxAttempts);
         return;
     }
+
+    logReconnectResourceProbe(ctx, "attempt-sent");
 
     mpNotifyReconnectAttempt(ctx);
 

@@ -49,6 +49,7 @@
 #include "network/server-browser.h"
 #include "gui/gui-main.h"
 #include "terminal/terminal-state.h"
+#include "mapeditor/map-editor.h"
 #include "gui/menus/pause-menu.h"
 #include "gui/password-popup.h"
 #include "effects/effect-part.h"
@@ -59,7 +60,8 @@ extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
 
 // Heartbeat: logs at most once per 0.5s, used to identify where the frame loop stops.
-#define HEARTBEAT(MSG) do { } while (0)
+#define HEARTBEAT(MSG) \
+    Debug::logThrottled(Debug::Category::General, "heartbeat", 0.5f, "[HB] " MSG "\n")
 
 // Spike detection: warns if a stage takes too long.
 #define CHECK_SPIKE(NAME, MS, THRESHOLD) \
@@ -75,6 +77,7 @@ extern bool gReplayExportRenderMode;
 
 void engineTick(Engine& engine)
 {
+    perfSetProgressMonitorThread(GetCurrentThreadId());
     const auto tFrameStart = std::chrono::steady_clock::now();
     // Begin frame pacing and perf tracking BEFORE any scopes so the scope
     // stack is empty when perfResetScopes() runs.  This fixes the profiler
@@ -84,12 +87,14 @@ void engineTick(Engine& engine)
     Perf::beginFrame();
     float dt;
     bool worldPassRan;
-    { MIMITA_PERF_SCOPE("EngineTick::Work");
+    { MIMITA_PERF_PROGRESS("EngineTick::Work");
+      MIMITA_PERF_SCOPE("EngineTick::Work");
 
     // The pre-frame game tasks are measured separately; an EngineTick scope
     // would end after Perf::endFrame() and therefore be recorded one frame late.
     // Step UI tick clock (60 Hz fixed step, independent of render FPS)
-    { MIMITA_PERF_SCOPE("EngineTick::Preamble");
+    { MIMITA_PERF_PROGRESS("EngineTick::Preamble");
+      MIMITA_PERF_SCOPE("EngineTick::Preamble");
     EffectPartSystem::instance().beginFrame();
     const uint64_t rewardTicks = gChatUiTickClock.tick();
     updateChatTypingHeartbeat(gChatWindowState, gChatUiTickClock);
@@ -131,19 +136,24 @@ void engineTick(Engine& engine)
     }
     HEARTBEAT("FRAME START");
 
-    { MIMITA_PERF_SCOPE("Setup"); engineTickSetup(engine, dt, worldPassRan); }
-    { MIMITA_PERF_SCOPE("PostFX::FrameBind");
+    { MIMITA_PERF_PROGRESS("Setup");
+      MIMITA_PERF_SCOPE("Setup"); engineTickSetup(engine, dt, worldPassRan); }
+    { MIMITA_PERF_PROGRESS("PostFX::FrameBind");
+      MIMITA_PERF_SCOPE("PostFX::FrameBind");
       if (engine.renderer && engine.renderer->stretchesWholeFrame())
           PostFX::instance().bindFBO(); }
-    { MIMITA_PERF_SCOPE("Audio"); engineTickAudio(dt); }
+    { MIMITA_PERF_PROGRESS("Audio");
+      MIMITA_PERF_SCOPE("Audio"); engineTickAudio(dt); }
     // Always tick listen server if hosting (receives packets, sends snapshots)
     {
+        MIMITA_PERF_PROGRESS("ListenServer");
         MIMITA_PERF_SCOPE("ListenServer");
         MimitaNet::ListenServerState* ls = getListenServerState();
         if (ls && ls->active)
             MimitaNet::tickListenServer(*ls, dt);
     }
-    { MIMITA_PERF_SCOPE("State"); engineTickState(engine, dt); }
+    { MIMITA_PERF_PROGRESS("State");
+      MIMITA_PERF_SCOPE("State"); engineTickState(engine, dt); }
     HEARTBEAT("after state");
 
     const bool replayExportForceRender =
@@ -152,26 +162,34 @@ void engineTick(Engine& engine)
 
     if (GAME_STATE == GAME_PLAYING || GAME_STATE == GAME_LOADING_MAP || replayExportForceRender)
     {
-        { MIMITA_PERF_SCOPE("Replay"); engineTickReplay(engine, dt); } HEARTBEAT("after replay");
-        { MIMITA_PERF_SCOPE("Networking"); engineTickNet(engine, dt); } HEARTBEAT("after net");
+        { MIMITA_PERF_PROGRESS("Replay");
+          MIMITA_PERF_SCOPE("Replay"); engineTickReplay(engine, dt); } HEARTBEAT("after replay");
+        { MIMITA_PERF_PROGRESS("Networking");
+          MIMITA_PERF_SCOPE("Networking"); engineTickNet(engine, dt); } HEARTBEAT("after net");
         if (GAME_STATE == GAME_PLAYING) {
-            { MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
-            { MIMITA_PERF_SCOPE("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
+            { MIMITA_PERF_PROGRESS("Camera");
+              MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
+            { MIMITA_PERF_PROGRESS("Combat");
+              MIMITA_PERF_SCOPE("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
             {
                 // Capture render prep (skybox/replay selection) together with
                 // the render pass so the scope tree has one Rendering owner.
+                MIMITA_PERF_PROGRESS("Rendering");
                 MIMITA_PERF_SCOPE("Rendering");
                 engineTickRender(engine, dt, worldPassRan);
             } HEARTBEAT("after render");
-            { MIMITA_PERF_SCOPE("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
+            { MIMITA_PERF_PROGRESS("UI");
+              MIMITA_PERF_SCOPE("UI"); engineTickUI(engine, dt, worldPassRan); } HEARTBEAT("after ui");
         }
+        MIMITA_PERF_PROGRESS("DevOverlay");
         { MIMITA_PERF_SCOPE("DevOverlay");
         if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay())
             DevOverlay::instance().render();
         }
     }
 
-    { MIMITA_PERF_SCOPE("Menus");
+    { MIMITA_PERF_PROGRESS("Menus");
+      MIMITA_PERF_SCOPE("Menus");
     uiUpdateMedia(dt);
 
     if (GAME_STATE == GAME_MENU && !isReplayExportActive())
@@ -180,7 +198,8 @@ void engineTick(Engine& engine)
     }
     }
 
-    { MIMITA_PERF_SCOPE("InputKeys");
+    { MIMITA_PERF_PROGRESS("InputKeys");
+      MIMITA_PERF_SCOPE("InputKeys");
     static bool escapePrev = false;
     bool escapeDown = glfwGetKey(engine.window(), GLFW_KEY_ESCAPE) == GLFW_PRESS;
     if (escapeDown && !escapePrev)
@@ -197,6 +216,8 @@ void engineTick(Engine& engine)
             glfwSetInputMode(engine.window(), GLFW_CURSOR,
                 GAME_STATE == GAME_PLAYING && !duelMatchOver && MouseLock::locked()
                     ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        } else if (MapEditor::instance().active() && !isChatOpen()) {
+            MapEditor::instance().handleEscape();
         } else if (REPLAY_PLAYER.isPlaying()) {
             printf("[MAINMENU] cleaning replay\n");
             REPLAY_PLAYER.stopPlayback();
@@ -334,19 +355,23 @@ void engineTick(Engine& engine)
     }
 
     HEARTBEAT("before terminal");
-    { MIMITA_PERF_SCOPE("Terminal"); Terminal::instance().render(); }
+    { MIMITA_PERF_PROGRESS("Terminal");
+      MIMITA_PERF_SCOPE("Terminal"); Terminal::instance().render(); }
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
 
     if (engine.renderer && engine.renderer->stretchesWholeFrame()) {
-        { MIMITA_PERF_SCOPE("PostFX::Unbind"); PostFX::instance().unbindFBO(); }
-        { MIMITA_PERF_SCOPE("PostFX");
+        { MIMITA_PERF_PROGRESS("PostFX::Unbind");
+          MIMITA_PERF_SCOPE("PostFX::Unbind"); PostFX::instance().unbindFBO(); }
+        { MIMITA_PERF_PROGRESS("PostFX");
+          MIMITA_PERF_SCOPE("PostFX");
           PerfGpu::beginRegion("GPU::PostFX");
           PostFX::instance().render();
           PerfGpu::endRegion(); }
     }
 
     HEARTBEAT("end frame");
-    { MIMITA_PERF_SCOPE("Swap");
+    { MIMITA_PERF_PROGRESS("Swap");
+      MIMITA_PERF_SCOPE("Swap");
       Perf::ScopedTimer _beforeSwap("FramePacing::BeforeSwap");
       { Perf::ScopedTimer _engineEndFrame("FramePacing::EngineEndFrame");
         engine.endFrame(); }
@@ -356,7 +381,8 @@ void engineTick(Engine& engine)
 
     // Sleep BEFORE Perf::endFrame() so the Sleep scope is measured and the
     // spike report sees the full frame time (work + sleep).
-    { MIMITA_PERF_SCOPE("Sleep");
+    { MIMITA_PERF_PROGRESS("Sleep");
+      MIMITA_PERF_SCOPE("Sleep");
       Perf::ScopedTimer _pacerSleep("FramePacing::PacerSleep");
       gFramePacer.endFrame();
     }

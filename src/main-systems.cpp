@@ -420,6 +420,7 @@ void registerAgentCommands()
 #include "terminal/duel-commands.h"
 #include "terminal/actor-commands.h"
 #include "terminal/editor-commands.h"
+#include "mapeditor/map-editor-commands.h"
 #include "terminal/network-commands.h"
 #include "terminal/badconn-commands.h"
 #include "terminal/vip-commands.h"
@@ -703,6 +704,7 @@ void gameInitSubsystems(Engine& engine)
     registerTransformDebugCommands();
 
     registerEditorCommands();
+    registerMapEditorCommands();
     registerNetworkCommands();
     badconn::loadConfig(badconn::configPath());
     registerBadConnCommands();

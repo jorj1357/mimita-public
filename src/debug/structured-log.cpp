@@ -1116,8 +1116,7 @@ void StructuredLogger::write(const Entry& e) {
     int idx = (int)e.category;
     if (idx < 0 || idx >= (int)StructuredCategory::Count) return;
 
-    uint64_t& counter = mEventCounters[idx];
-    counter++;
+    mEventCounters[idx].fetch_add(1, std::memory_order_relaxed);
 
     nlohmann::json fields = nlohmann::json::object();
     for (size_t i = 0; i < e.numericKeys.size(); ++i) {
@@ -1127,6 +1126,7 @@ void StructuredLogger::write(const Entry& e) {
                                     {"actual", actual},
                                     {"difference", actual - expected}};
     }
+    if (!e.message.empty()) fields["message"] = e.message;
     writeEvent(e.category, e.level,
                e.eventId.empty() ? "debug.log" : e.eventId,
                e.correlationId, e.reason, e.tick, fields,
@@ -1148,11 +1148,12 @@ void StructuredLogger::writeEvent(StructuredCategory category,
     const int idx = static_cast<int>(category);
     if (idx < 0 || idx >= static_cast<int>(StructuredCategory::Count)) return;
 
-    const uint64_t sequence = ++mEventCounters[idx];
+    const uint64_t sequence = mEventCounters[idx].fetch_add(
+        1, std::memory_order_relaxed) + 1;
     nlohmann::json record = {
         {"wall_time", wallTimestampUtc()},
         {"t", nowSeconds()},
-        {"seq", ++mSequence},
+        {"seq", mSequence.fetch_add(1, std::memory_order_relaxed) + 1},
         {"run_id", mRunId},
         {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
         {"process", processRole()},
@@ -1170,6 +1171,46 @@ void StructuredLogger::writeEvent(StructuredCategory category,
     if (!reason.empty()) record["reason"] = reason;
     writeJsonLine(record, static_cast<int>(level) <=
                            static_cast<int>(StructuredLevel::Important));
+}
+
+bool StructuredLogger::tryWriteEvent(StructuredCategory category,
+                                     StructuredLevel level,
+                                     const std::string& eventName,
+                                     const std::string& correlationId,
+                                     const std::string& reason,
+                                     uint32_t tick,
+                                     const nlohmann::json& fields,
+                                     const char* sourceFile,
+                                     int sourceLine,
+                                     const char* functionName)
+{
+    if (!mInitialized || !mConfig.enabled || !shouldLog(category, level)) return false;
+    const int idx = static_cast<int>(category);
+    if (idx < 0 || idx >= static_cast<int>(StructuredCategory::Count)) return false;
+
+    const uint64_t sequence = mEventCounters[idx].fetch_add(
+        1, std::memory_order_relaxed) + 1;
+    nlohmann::json record = {
+        {"wall_time", wallTimestampUtc()},
+        {"t", nowSeconds()},
+        {"seq", mSequence.fetch_add(1, std::memory_order_relaxed) + 1},
+        {"run_id", mRunId},
+        {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+        {"process", processRole()},
+        {"level", levelToString(level)},
+        {"category", categoryName(category)},
+        {"event", eventName},
+        {"event_id", categoryName(category) + "_" + std::to_string(sequence)},
+        {"tick", tick},
+        {"source", sourceFile ? sourceFile : ""},
+        {"line", sourceLine},
+        {"func", functionName ? functionName : ""},
+        {"fields", fields}
+    };
+    if (!correlationId.empty()) record["correlation_id"] = correlationId;
+    if (!reason.empty()) record["reason"] = reason;
+    return tryWriteJsonLine(record, static_cast<int>(level) <=
+                                  static_cast<int>(StructuredLevel::Important));
 }
 
 void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
@@ -1264,6 +1305,71 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
             std::memory_order_relaxed);
     }
     if (named) ReleaseMutex(named);
+}
+
+bool StructuredLogger::tryWriteJsonLine(const nlohmann::json& record, bool flush)
+{
+    if (!mEventsFile) return false;
+    static std::mutex writeMutex;
+    std::unique_lock<std::mutex> lock(writeMutex, std::try_to_lock);
+    if (!lock.owns_lock()) return false;
+    HANDLE named = eventsFileMutex();
+    if (!named) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    const DWORD wait = WaitForSingleObject(named, 0);
+    if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+
+    const auto root = logRootForEventsPath(mEventsPath);
+    SharedLogQuota& quota = sharedLogQuota(root);
+    if (!quota.state) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        ReleaseMutex(named);
+        return false;
+    }
+    initializeQuotaState(*quota.state, root);
+    nlohmann::json outputRecord = record;
+    const uint64_t previouslyDropped =
+        mQuotaDroppedRecords.load(std::memory_order_relaxed);
+    if (previouslyDropped)
+        outputRecord["quota_dropped_records_before_this"] = previouslyDropped;
+    const std::string line = outputRecord.dump() + "\n";
+    auto* fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+    if (line.size() > kMaxLogFileBytes || !fileEntry ||
+        fileEntry->bytes > kMaxLogFileBytes ||
+        line.size() > kMaxLogFileBytes - fileEntry->bytes ||
+        quota.state->totalBytes > kMaxLogTreeBytes ||
+        line.size() > kMaxLogTreeBytes - quota.state->totalBytes) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        ReleaseMutex(named);
+        return false;
+    }
+
+    const unsigned long long oldFileBytes = fileEntry->bytes;
+    const size_t written = std::fwrite(line.data(), 1, line.size(), mEventsFile);
+    if (written != line.size()) {
+        std::fflush(mEventsFile);
+        _chsize_s(_fileno(mEventsFile), oldFileBytes);
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        ReleaseMutex(named);
+        return false;
+    }
+    fileEntry->bytes += line.size();
+    quota.state->totalBytes += line.size();
+    if (previouslyDropped)
+        mQuotaDroppedRecords.fetch_sub(previouslyDropped, std::memory_order_relaxed);
+    mEventsWritten.fetch_add(1, std::memory_order_relaxed);
+    mBytesWritten.fetch_add(static_cast<uint64_t>(line.size()), std::memory_order_relaxed);
+    if (flush) {
+        std::fflush(mEventsFile);
+        mFlushCount.fetch_add(1, std::memory_order_relaxed);
+    }
+    ReleaseMutex(named);
+    return true;
 }
 
 void StructuredLogger::flushThrottled(int catIdx) {

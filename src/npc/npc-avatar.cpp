@@ -20,6 +20,7 @@
 #include "avatar/avatar.h"
 #include "debug/debug-log.h"
 #include "npc/npc.h"
+#include "perf/perf-spike.h"
 
 #include <GLFW/glfw3.h>
 
@@ -29,6 +30,9 @@ struct NpcAvatarConfig { bool forceAvatar = false; std::string forceAvatarPath; 
 NpcAvatarConfig gConfig;
 std::filesystem::file_time_type gLastWrite{};
 bool gLoaded = false;
+std::vector<std::string> gAvatarChoices;
+std::chrono::steady_clock::time_point gAvatarChoicesLastRefresh{};
+bool gAvatarChoicesLoaded = false;
 
 void loadConfig()
 {
@@ -73,7 +77,15 @@ std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
 {
     const std::string forced = forcedAvatarName();
     if (!forced.empty()) return forced;
-    const std::vector<std::string> avatars = AvatarSystem::instance().listAvatars();
+    const auto now = std::chrono::steady_clock::now();
+    if (!gAvatarChoicesLoaded ||
+        now - gAvatarChoicesLastRefresh >= std::chrono::seconds(1)) {
+        MIMITA_PERF_SCOPE("NpcAvatar::RefreshChoices");
+        gAvatarChoices = AvatarSystem::instance().listAvatars();
+        gAvatarChoicesLastRefresh = now;
+        gAvatarChoicesLoaded = true;
+    }
+    const std::vector<std::string>& avatars = gAvatarChoices;
     if (avatars.empty()) return {};
     // Deterministic: same NPC + same life (epoch) = same avatar.
     // New life (new epoch) produces a different but stable avatar.

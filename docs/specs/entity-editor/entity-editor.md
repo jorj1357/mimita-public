@@ -68,6 +68,113 @@ The editor has one registry owner, `MapConfigRegistry`. The map ID comes from
 the active server map when available, otherwise from the loaded map path. The
 editor does not silently edit an unrelated map file.
 
+## Map Editor v1 viewport mode (2026-10-23)
+
+The focused viewport editor is entered and left with:
+
+```text
+mapeditor 1
+mapeditor 0
+mapeditor status
+mapeditor save
+mapeditor reload
+mapeditor freeze <0|1>
+```
+
+`mapeditor 1` detaches the gameplay camera through the existing freecam path.
+The player and NPC simulation are frozen by default. `mapeditor freeze 0`
+leaves the detached editor camera active while the world simulation continues.
+
+Controls:
+
+```text
+WASD + Q/E       freecam move (Shift fast, Ctrl slow)
+RMB held         mouse look
+RMB released     free cursor
+LMB              select / drag
+Shift+LMB        add or remove from selection
+Ctrl+A           select all
+Ctrl+C/V/X       copy / paste / cut
+Ctrl+D           duplicate
+Delete or X      delete selection
+Ctrl+Z           undo
+Ctrl+Shift+Z/Y   redo
+Ctrl+S           save active map JSON
+V                toggle vertex snap
+G                toggle 1 m grid snap
+F                frame selection
+Esc              clear selection/drag, then leave editor
+```
+
+The editor selects entities, authored blocks, payload route points, and the
+payload cart origin. Selection uses stable IDs, not pointers. Dragging mutates
+the in-memory map data through the viewport; block collision and render geometry
+are rebuilt at drag release rather than once per mouse move.
+
+Copy and paste are internal to the editor and report the affected IDs in the
+terminal:
+
+```text
+[MAPEDIT] copied 2 objects: entity foo, block bar
+[MAPEDIT] pasted 2 objects: entity foo_2, block bar_2
+```
+
+Undo/redo is an in-memory authored-data history. Ctrl+S is still the explicit
+persistence action. Saves use a temporary file, validate the generated JSON,
+copy the previous valid file to:
+
+```text
+config/maps/backups/<mapId>/<mapId>_<yyyymmdd_hhmmss>_save.json
+```
+
+and keep the newest 50 backups. Generated backups and editor autosaves are
+untracked.
+
+### Authored blocks
+
+The viewport editor authors static box blocks in the same map JSON:
+
+```json
+"blocks": [
+  {
+    "id": "block_1",
+    "shape": "box",
+    "position": [12.0, 4.0, -31.0],
+    "size": [4.0, 4.0, 2.0],
+    "rotationEuler": [0.0, 0.0, 15.0],
+    "material": "",
+    "enabled": true,
+    "tags": ["blockout"]
+  }
+]
+```
+
+These are appended to the loaded GLB world as render geometry and collision
+triangles. The GLB remains the base map. The dedicated server applies the same
+blocks to its headless world so player and NPC collision/navigation see them.
+Arbitrary baked GLB triangles are not individually editable in v1.
+
+### Payload route authoring
+
+The editor can author ordered route points and a cart origin in map JSON:
+
+```json
+"payload": {
+  "cart_origin": { "position": [0, 0, 0], "yaw": 0.0 },
+  "interaction_box": {
+    "size": [3.0, 2.25, 1.5],
+    "offset": [0, 0, 0],
+    "rotationEuler": [0, 0, 0]
+  },
+  "route": [
+    { "id": "route_1", "position": [0, 0, 0], "radius": 2.0, "order": 0, "waitTicks": 0, "enabled": true }
+  ]
+}
+```
+
+Route editing only authors data. The Payload cart runtime contract remains in
+[`../gamemodes/payload.md`](../gamemodes/payload.md).
+
 ## Fast answer: add a spawn point
 
 Open the in-game terminal while Zombie Tower 4 is loaded and run:

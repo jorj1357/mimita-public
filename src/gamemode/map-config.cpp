@@ -5,8 +5,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <ctime>
 #include <fstream>
 #include <cctype>
+#include <sstream>
+#include <system_error>
 
 #include <nlohmann/json.hpp>
 
@@ -188,13 +192,120 @@ bool MapConfigRegistry::load(const std::string& mapId)
             }
         }
 
+        if (root.contains("blocks") && root["blocks"].is_array()) {
+            for (const auto& item : root["blocks"]) {
+                if (!item.is_object()) continue;
+                AuthoredBlock block;
+                block.id = item.value("id", std::string{});
+                if (block.id.empty()) continue;
+                block.shape = item.value("shape", std::string{"box"});
+                if (item.contains("position") && item["position"].is_array() &&
+                    item["position"].size() >= 3) {
+                    block.position = glm::vec3(
+                        item["position"][0].get<float>(),
+                        item["position"][1].get<float>(),
+                        item["position"][2].get<float>());
+                }
+                if (item.contains("size") && item["size"].is_array() &&
+                    item["size"].size() >= 3) {
+                    block.size = glm::vec3(
+                        item["size"][0].get<float>(),
+                        item["size"][1].get<float>(),
+                        item["size"][2].get<float>());
+                }
+                const json* rotation = nullptr;
+                if (item.contains("rotationEuler") && item["rotationEuler"].is_array())
+                    rotation = &item["rotationEuler"];
+                else if (item.contains("rotation_euler") && item["rotation_euler"].is_array())
+                    rotation = &item["rotation_euler"];
+                if (rotation && rotation->size() >= 3) {
+                    block.rotationEuler = glm::vec3(
+                        (*rotation)[0].get<float>(),
+                        (*rotation)[1].get<float>(),
+                        (*rotation)[2].get<float>());
+                }
+                block.material = item.value("material", std::string{});
+                block.enabled = item.value("enabled", true);
+                if (item.contains("tags") && item["tags"].is_array()) {
+                    for (const auto& tag : item["tags"])
+                        if (tag.is_string()) block.tags.push_back(tag.get<std::string>());
+                }
+                next.blocks.push_back(std::move(block));
+            }
+        }
+
+        if (root.contains("payload") && root["payload"].is_object()) {
+            const auto& payload = root["payload"];
+            next.payload.present = true;
+            if (payload.contains("cart_origin")) {
+                const auto& origin = payload["cart_origin"];
+                if (origin.is_array() && origin.size() >= 3) {
+                    next.payload.cartOrigin = glm::vec3(
+                        origin[0].get<float>(), origin[1].get<float>(), origin[2].get<float>());
+                    next.payload.hasCartOrigin = true;
+                } else if (origin.is_object()) {
+                    if (origin.contains("position") && origin["position"].is_array() &&
+                        origin["position"].size() >= 3) {
+                        next.payload.cartOrigin = glm::vec3(
+                            origin["position"][0].get<float>(),
+                            origin["position"][1].get<float>(),
+                            origin["position"][2].get<float>());
+                        next.payload.hasCartOrigin = true;
+                    }
+                    next.payload.cartYaw = origin.value("yaw", next.payload.cartYaw);
+                }
+            }
+            if (payload.contains("interaction_box") && payload["interaction_box"].is_object()) {
+                const auto& box = payload["interaction_box"];
+                auto readVec = [](const json& j, const glm::vec3& fallback) {
+                    if (!j.is_array() || j.size() < 3) return fallback;
+                    return glm::vec3(j[0].get<float>(), j[1].get<float>(), j[2].get<float>());
+                };
+                if (box.contains("size"))
+                    next.payload.interactionSize = readVec(box["size"], next.payload.interactionSize);
+                if (box.contains("offset"))
+                    next.payload.interactionOffset = readVec(box["offset"], next.payload.interactionOffset);
+                if (box.contains("rotationEuler"))
+                    next.payload.interactionRotationEuler = readVec(box["rotationEuler"], next.payload.interactionRotationEuler);
+                else if (box.contains("rotation_euler"))
+                    next.payload.interactionRotationEuler = readVec(box["rotation_euler"], next.payload.interactionRotationEuler);
+            }
+            if (payload.contains("route") && payload["route"].is_array()) {
+                for (const auto& item : payload["route"]) {
+                    if (!item.is_object()) continue;
+                    PayloadRoutePoint point;
+                    point.id = item.value("id", std::string{});
+                    if (point.id.empty()) continue;
+                    if (item.contains("position") && item["position"].is_array() &&
+                        item["position"].size() >= 3) {
+                        point.position = glm::vec3(
+                            item["position"][0].get<float>(),
+                            item["position"][1].get<float>(),
+                            item["position"][2].get<float>());
+                    }
+                    point.radius = std::max(0.1f, item.value("radius", point.radius));
+                    point.order = std::max(0, item.value("order", point.order));
+                    point.waitTicks = std::max(0, item.value("waitTicks", item.value("wait_ticks", point.waitTicks)));
+                    point.enabled = item.value("enabled", true);
+                    next.payload.route.push_back(std::move(point));
+                }
+                std::sort(next.payload.route.begin(), next.payload.route.end(),
+                    [](const PayloadRoutePoint& a, const PayloadRoutePoint& b) {
+                        return a.order < b.order;
+                    });
+            }
+        }
+
         Debug::warn(Debug::Category::Duel,
-            "[MAP CONFIG] loaded map=%s sites=%zu entities=%zu plant=%.1f defuse=%.1f explode=%.1f\n",
+            "[MAP CONFIG] loaded map=%s sites=%zu entities=%zu blocks=%zu route=%zu plant=%.1f defuse=%.1f explode=%.1f\n",
             mapId.c_str(), next.bombSites.size(), next.entities.size(),
+            next.blocks.size(), next.payload.route.size(),
             next.plantSeconds, next.defuseSeconds, next.explosionSeconds);
         mCurrent = std::move(next);
         mPath = nextPath;
         mLastWrite = getLastWrite(mPath);
+        ++mRevision;
+        mSavedRevision = mRevision;
         mEntityVisibility = std::any_of(
             mCurrent.entities.begin(), mCurrent.entities.end(),
             [](const MapEntity& entity) { return entity.visible; });
@@ -255,24 +366,39 @@ MapEntity* MapConfigRegistry::findEntityMutable(const std::string& id)
     return nullptr;
 }
 
+std::string MapConfigRegistry::uniqueId(const std::string& prefix) const
+{
+    std::string stem = prefix.empty() ? "object" : prefix;
+    for (char& c : stem) if (c == ' ') c = '_';
+    for (int i = 1;; ++i) {
+        const std::string id = stem + "_" + std::to_string(i);
+        bool used = findEntity(id) != nullptr;
+        if (!used) {
+            for (const auto& block : mCurrent.blocks) {
+                if (block.id == id) { used = true; break; }
+            }
+        }
+        if (!used) {
+            for (const auto& point : mCurrent.payload.route) {
+                if (point.id == id) { used = true; break; }
+            }
+        }
+        if (!used) return id;
+    }
+}
+
 std::string MapConfigRegistry::createEntity(const std::string& type, const glm::vec3& position,
                                             const std::string& requestedId)
 {
     std::string id = requestedId;
-    if (id.empty()) {
-        std::string stem = type;
-        for (char& c : stem) if (c == ' ') c = '_';
-        for (int i = 1;; ++i) {
-            id = stem + "_" + std::to_string(i);
-            if (!findEntity(id)) break;
-        }
-    }
+    if (id.empty()) id = uniqueId(type);
     if (findEntity(id)) return {};
     MapEntity entity;
     entity.id = id;
     entity.type = type;
     entity.position = position;
     mCurrent.entities.push_back(std::move(entity));
+    markChanged();
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "map-entity.created", id, "terminal authoring", 0,
@@ -288,6 +414,7 @@ bool MapConfigRegistry::deleteEntity(const std::string& id)
         [&](const MapEntity& entity) { return entity.id == id; });
     if (it == mCurrent.entities.end()) return false;
     mCurrent.entities.erase(it, mCurrent.entities.end());
+    markChanged();
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "map-entity.deleted", id, "terminal authoring", 0,
@@ -300,11 +427,153 @@ void MapConfigRegistry::setEntityVisibility(bool visible)
 {
     mEntityVisibility = visible;
     for (auto& entity : mCurrent.entities) entity.visible = visible;
+    markChanged();
 }
 
 void MapConfigRegistry::setEntityVisibilityFor(const std::string& id, bool visible)
 {
-    if (auto* entity = findEntityMutable(id)) entity->visible = visible;
+    if (auto* entity = findEntityMutable(id)) {
+        entity->visible = visible;
+        markChanged();
+    }
+}
+
+const AuthoredBlock* MapConfigRegistry::findBlock(const std::string& id) const
+{
+    for (const auto& block : mCurrent.blocks)
+        if (block.id == id) return &block;
+    return nullptr;
+}
+
+AuthoredBlock* MapConfigRegistry::findBlockMutable(const std::string& id)
+{
+    for (auto& block : mCurrent.blocks)
+        if (block.id == id) return &block;
+    return nullptr;
+}
+
+std::string MapConfigRegistry::createBlock(const glm::vec3& position, const glm::vec3& size,
+                                           const std::string& requestedId)
+{
+    std::string id = requestedId.empty() ? uniqueId("block") : requestedId;
+    if (findBlock(id)) return {};
+    AuthoredBlock block;
+    block.id = id;
+    block.position = position;
+    block.size = glm::vec3(std::max(0.05f, size.x), std::max(0.05f, size.y),
+                           std::max(0.05f, size.z));
+    mCurrent.blocks.push_back(std::move(block));
+    markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-block.created", id, "map editor authored block", 0,
+        nlohmann::json{{"map", mCurrent.mapId}, {"block_id", id},
+                       {"position", {position.x, position.y, position.z}},
+                       {"size", {size.x, size.y, size.z}},
+                       {"source", "map_editor"}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return id;
+}
+
+bool MapConfigRegistry::deleteBlock(const std::string& id)
+{
+    const auto it = std::remove_if(mCurrent.blocks.begin(), mCurrent.blocks.end(),
+        [&](const AuthoredBlock& block) { return block.id == id; });
+    if (it == mCurrent.blocks.end()) return false;
+    mCurrent.blocks.erase(it, mCurrent.blocks.end());
+    markChanged();
+    return true;
+}
+
+const PayloadRoutePoint* MapConfigRegistry::findPayloadRoutePoint(const std::string& id) const
+{
+    for (const auto& point : mCurrent.payload.route)
+        if (point.id == id) return &point;
+    return nullptr;
+}
+
+PayloadRoutePoint* MapConfigRegistry::findPayloadRoutePointMutable(const std::string& id)
+{
+    for (auto& point : mCurrent.payload.route)
+        if (point.id == id) return &point;
+    return nullptr;
+}
+
+std::string MapConfigRegistry::createPayloadRoutePoint(const glm::vec3& position,
+                                                       const std::string& requestedId)
+{
+    std::string id = requestedId.empty() ? uniqueId("route") : requestedId;
+    if (findPayloadRoutePoint(id)) return {};
+    PayloadRoutePoint point;
+    point.id = id;
+    point.position = position;
+    point.order = (int)mCurrent.payload.route.size();
+    mCurrent.payload.present = true;
+    mCurrent.payload.route.push_back(std::move(point));
+    renumberPayloadRoute();
+    markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-payload-route-point.created", id, "map editor authored route point", 0,
+        nlohmann::json{{"map", mCurrent.mapId}, {"route_id", id},
+                       {"position", {position.x, position.y, position.z}},
+                       {"source", "map_editor"}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return id;
+}
+
+bool MapConfigRegistry::deletePayloadRoutePoint(const std::string& id)
+{
+    const auto it = std::remove_if(mCurrent.payload.route.begin(), mCurrent.payload.route.end(),
+        [&](const PayloadRoutePoint& point) { return point.id == id; });
+    if (it == mCurrent.payload.route.end()) return false;
+    mCurrent.payload.route.erase(it, mCurrent.payload.route.end());
+    renumberPayloadRoute();
+    markChanged();
+    return true;
+}
+
+void MapConfigRegistry::renumberPayloadRoute()
+{
+    std::sort(mCurrent.payload.route.begin(), mCurrent.payload.route.end(),
+        [](const PayloadRoutePoint& a, const PayloadRoutePoint& b) {
+            if (a.order != b.order) return a.order < b.order;
+            return a.id < b.id;
+        });
+    for (size_t i = 0; i < mCurrent.payload.route.size(); ++i)
+        mCurrent.payload.route[i].order = (int)i;
+}
+
+void MapConfigRegistry::markChanged()
+{
+    ++mRevision;
+}
+
+MapObjectiveConfig MapConfigRegistry::snapshotAuthored() const
+{
+    MapObjectiveConfig snapshot = mCurrent;
+    for (auto& entity : snapshot.entities) {
+        entity.runtimeSpawned = 0;
+        entity.runtimeCleared = false;
+        entity.runtimeActivated = false;
+        entity.runtimePlayerActivated = false;
+        entity.lastActivationTick = 0;
+    }
+    return snapshot;
+}
+
+void MapConfigRegistry::restoreAuthored(const MapObjectiveConfig& snapshot)
+{
+    const std::string mapId = mCurrent.mapId;
+    const bool loaded = mCurrent.loaded;
+    mCurrent = snapshot;
+    mCurrent.mapId = mapId;
+    mCurrent.loaded = loaded;
+    resetRuntimeState();
+    mEntityVisibility = std::any_of(
+        mCurrent.entities.begin(), mCurrent.entities.end(),
+        [](const MapEntity& entity) { return entity.visible; });
+    markChanged();
 }
 
 const BombSite* MapConfigRegistry::findSite(const std::string& id) const
@@ -347,18 +616,80 @@ bool MapConfigRegistry::setSiteVisibility(const std::string& id, bool visible)
     return false;
 }
 
+bool MapConfigRegistry::writeBackup()
+{
+    if (mPath.empty() || mCurrent.mapId.empty()) return false;
+    std::error_code ec;
+    if (!std::filesystem::exists(mPath, ec) || ec) return false;
+
+    const std::filesystem::path source(mPath);
+    const std::filesystem::path dir = source.parent_path() / "backups" / mCurrent.mapId;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) return false;
+
+    const std::time_t now = std::time(nullptr);
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &now);
+#else
+    gmtime_r(&now, &utc);
+#endif
+    char stamp[32] = {};
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &utc);
+
+    std::filesystem::path target = dir / (mCurrent.mapId + "_" + stamp + "_save.json");
+    for (int suffix = 2; std::filesystem::exists(target, ec) && suffix < 100; ++suffix)
+        target = dir / (mCurrent.mapId + "_" + stamp + "_save_" + std::to_string(suffix) + ".json");
+
+    std::filesystem::copy_file(source, target,
+        std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        Debug::warn(Debug::Category::Duel,
+            "[MAP CONFIG] backup failed %s: %s\n", target.string().c_str(), ec.message().c_str());
+        return false;
+    }
+    pruneBackups();
+    Debug::warn(Debug::Category::Duel,
+        "[MAP CONFIG] backup %s\n", target.string().c_str());
+    return true;
+}
+
+void MapConfigRegistry::pruneBackups()
+{
+    constexpr size_t kMaxBackups = 50;
+    const std::filesystem::path dir =
+        std::filesystem::path(mPath).parent_path() / "backups" / mCurrent.mapId;
+    std::error_code ec;
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec) return;
+        if (entry.is_regular_file(ec) && entry.path().extension() == ".json")
+            files.push_back(entry.path());
+    }
+    if (files.size() <= kMaxBackups) return;
+    std::sort(files.begin(), files.end());
+    for (size_t i = 0; i + kMaxBackups < files.size(); ++i) {
+        std::error_code removeError;
+        std::filesystem::remove(files[i], removeError);
+    }
+}
+
 bool MapConfigRegistry::save()
 {
     if (mPath.empty()) return false;
-    // Start from the existing authored file so any top-level keys this owner
-    // does not understand (objectives, future sections, hand-authored notes)
-    // survive a save. Only the three sections below are owned and rewritten.
+    // Start from the existing authored file so top-level keys this owner does
+    // not understand survive a save. Only authored map sections are rewritten.
     json root = json::object();
+    std::string existingContents;
     {
-        std::ifstream existing(mPath);
+        std::ifstream existing(mPath, std::ios::binary);
         if (existing.is_open()) {
+            std::ostringstream buffer;
+            buffer << existing.rdbuf();
+            existingContents = buffer.str();
             try {
-                json parsed = parseJsonConfig(existing);
+                std::istringstream input(existingContents);
+                json parsed = parseJsonConfig(input);
                 if (parsed.is_object()) root = std::move(parsed);
             } catch (const std::exception&) {
                 // A malformed on-disk file is replaced by the in-memory state.
@@ -397,25 +728,111 @@ bool MapConfigRegistry::save()
             {"healthMultiplier", entity.healthMultiplier}
         });
     }
+    root["blocks"] = json::array();
+    for (const auto& block : mCurrent.blocks) {
+        json b = {
+            {"id", block.id}, {"shape", block.shape},
+            {"position", {block.position.x, block.position.y, block.position.z}},
+            {"size", {block.size.x, block.size.y, block.size.z}},
+            {"rotationEuler", {block.rotationEuler.x, block.rotationEuler.y, block.rotationEuler.z}},
+            {"material", block.material}, {"enabled", block.enabled}
+        };
+        b["tags"] = block.tags;
+        root["blocks"].push_back(std::move(b));
+    }
+    if (mCurrent.payload.present || mCurrent.payload.hasCartOrigin ||
+        !mCurrent.payload.route.empty()) {
+        json payload;
+        payload["cart_origin"] = {
+            {"position", {mCurrent.payload.cartOrigin.x,
+                          mCurrent.payload.cartOrigin.y,
+                          mCurrent.payload.cartOrigin.z}},
+            {"yaw", mCurrent.payload.cartYaw}
+        };
+        payload["interaction_box"] = {
+            {"size", {mCurrent.payload.interactionSize.x,
+                      mCurrent.payload.interactionSize.y,
+                      mCurrent.payload.interactionSize.z}},
+            {"offset", {mCurrent.payload.interactionOffset.x,
+                        mCurrent.payload.interactionOffset.y,
+                        mCurrent.payload.interactionOffset.z}},
+            {"rotationEuler", {mCurrent.payload.interactionRotationEuler.x,
+                               mCurrent.payload.interactionRotationEuler.y,
+                               mCurrent.payload.interactionRotationEuler.z}}
+        };
+        payload["route"] = json::array();
+        for (const auto& point : mCurrent.payload.route) {
+            payload["route"].push_back({
+                {"id", point.id},
+                {"position", {point.position.x, point.position.y, point.position.z}},
+                {"radius", point.radius}, {"order", point.order},
+                {"waitTicks", point.waitTicks}, {"enabled", point.enabled}
+            });
+        }
+        root["payload"] = std::move(payload);
+    }
 
-    // Preserve the directory if it already exists; create it otherwise.
+    const std::string contents = root.dump(2) + "\n";
+    if (!existingContents.empty() && existingContents == contents) {
+        mSavedRevision = mRevision;
+        return true;
+    }
+
     std::error_code ec;
     const std::filesystem::path p(mPath);
     if (!p.parent_path().empty())
         std::filesystem::create_directories(p.parent_path(), ec);
 
-    std::ofstream out(mPath);
-    if (!out.is_open()) {
-        Debug::error(Debug::Category::Duel, "[MAP CONFIG] cannot write %s\n", mPath.c_str());
+    const std::string tempPath = mPath + ".tmp";
+    {
+        std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
+        if (!out.is_open()) {
+            Debug::error(Debug::Category::Duel, "[MAP CONFIG] cannot write %s\n", tempPath.c_str());
+            return false;
+        }
+        out << contents;
+        if (!out.good()) {
+            Debug::error(Debug::Category::Duel, "[MAP CONFIG] write failed %s\n", tempPath.c_str());
+            return false;
+        }
+    }
+    {
+        std::ifstream verify(tempPath);
+        try {
+            parseJsonConfig(verify);
+        } catch (const std::exception& e) {
+            Debug::error(Debug::Category::Duel,
+                "[MAP CONFIG] generated JSON invalid: %s\n", e.what());
+            std::error_code cleanup;
+            std::filesystem::remove(tempPath, cleanup);
+            return false;
+        }
+    }
+
+    if (std::filesystem::exists(mPath, ec))
+        writeBackup();
+    std::filesystem::remove(mPath, ec);
+    std::filesystem::rename(tempPath, mPath, ec);
+    if (ec) {
+        Debug::error(Debug::Category::Duel,
+            "[MAP CONFIG] cannot replace %s: %s\n", mPath.c_str(), ec.message().c_str());
         return false;
     }
-    out << root.dump(2) << "\n";
+
     mLastWrite = getLastWrite(mPath);
-    Debug::warn(Debug::Category::Duel, "[MAP CONFIG] saved %s entities=%zu\n", mPath.c_str(), mCurrent.entities.size());
+    mSavedRevision = mRevision;
+    Debug::warn(Debug::Category::Duel,
+        "[MAP CONFIG] saved %s entities=%zu blocks=%zu route=%zu\n",
+        mPath.c_str(), mCurrent.entities.size(), mCurrent.blocks.size(),
+        mCurrent.payload.route.size());
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
-        "map-entity.saved", mCurrent.mapId, "terminal authoring", 0,
-        nlohmann::json{{"map", mCurrent.mapId}, {"entity_count", mCurrent.entities.size()}, {"config_path", mPath}, {"result", "success"}},
+        "map-entity.saved", mCurrent.mapId, "map editor save", 0,
+        nlohmann::json{{"map", mCurrent.mapId},
+                       {"entity_count", mCurrent.entities.size()},
+                       {"block_count", mCurrent.blocks.size()},
+                       {"route_count", mCurrent.payload.route.size()},
+                       {"config_path", mPath}, {"result", "success"}},
         __FILE__, __LINE__, __FUNCTION__);
     return true;
 }
@@ -546,8 +963,44 @@ bool mapEntityConfigSelfTest(std::string& report)
         }
     }
 
+    // Blocks and payload routes must round-trip through save/load.
+    {
+        std::ofstream out(path);
+        out << R"({
+  "blocks":[{"id":"b1","shape":"box","position":[1,2,3],"size":[4,5,6],
+             "rotationEuler":[0,0,15],"material":"","enabled":true,"tags":["a"]}],
+  "payload":{"cart_origin":{"position":[7,8,9],"yaw":45},
+             "route":[{"id":"r1","position":[1,1,1],"radius":2,"order":0},
+                      {"id":"r2","position":[2,2,2],"radius":3,"order":1}]}
+})";
+    }
+    if (!reg.load(mapId))
+        fail("block/route selftest map failed to load");
+    if (reg.current().blocks.size() != 1)
+        fail("block was not parsed");
+    if (reg.current().payload.route.size() != 2)
+        fail("payload route was not parsed");
+    if (reg.current().payload.route[1].id != "r2")
+        fail("payload route order was not applied");
+    if (!reg.save())
+        fail("block/route selftest map failed to save");
+    {
+        std::ifstream in(path);
+        try {
+            const json root = parseJsonConfig(in);
+            if (!root.contains("blocks") || root["blocks"].size() != 1)
+                fail("blocks missing after save");
+            if (!root.contains("payload") || root["payload"]["route"].size() != 2)
+                fail("payload route missing after save");
+        } catch (const std::exception& e) {
+            fail(std::string("block/route saved json unparsable: ") + e.what());
+        }
+    }
+
     std::error_code ec;
     std::filesystem::remove(path, ec);
+    std::filesystem::remove_all(
+        std::filesystem::path(path).parent_path() / "backups" / mapId, ec);
     reg.load("zombietower4");
 
     report += ok ? "PASS\n" : "FAIL\n";

@@ -48,6 +48,7 @@
 #include "game/duel.h"
 #include "game/gamemode-manager.h"
 #include "game/game-state.h"
+#include "mapeditor/map-editor.h"
 #include "network/multiplayer-context.h"
 
 #include "debug/debug-log.h"
@@ -139,6 +140,8 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
             "crosshair=1 healthbars=1 replayInfo=1 renderMode=%d\n",
             getReplayExportJob().capturedTicks, (int)gReplayExportRenderMode);
     }
+    MapEditor::instance().renderUI(engine.window());
+
     // The pause modal is deliberately last in the gameplay UI pass: it must
     // cover the HUD and world without relying on depth ordering.
     { MIMITA_PERF_SCOPE("UI::End");

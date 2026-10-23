@@ -473,7 +473,7 @@ struct MultiplayerContext
     bool connectFailed = false;
     bool serverIdentityMismatch = false;
     bool showPlayerList = false;
-    bool showDebugOverlay = true;
+    bool showDebugOverlay = false;
     std::vector<NetworkShotEvent> shotEvents;
     std::vector<NetworkShotEvent> pendingShotEvents;
     struct PendingPelletBlastEvent {

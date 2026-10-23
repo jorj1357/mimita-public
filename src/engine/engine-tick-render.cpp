@@ -11,6 +11,7 @@
 #include "engine/engine-tick-camera.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include "mapeditor/map-editor.h"
 #include <cstdio>
 #include <cstdint>
 #include <cmath>
@@ -905,12 +906,16 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     worldPassRan = true;
 
     if (gDebugVisEnabled) {
+        MIMITA_PERF_SCOPE("Rendering::Debug::NpcSceneOverlay");
         npcSystem.drawDebug(camera);
         drawDebugStuff(player, camera, world);
     }
 
+    MapEditor::instance().renderWorld(camera);
+
     if (mpContext.active && mpContext.showDebugOverlay)
     {
+        MIMITA_PERF_SCOPE("Rendering::Debug::NetworkOverlay");
         const glm::vec4 predictedColor{0.1f, 1.0f, 0.25f, 1.0f};
         const glm::vec4 serverColor{1.0f, 0.15f, 0.1f, 1.0f};
         const glm::vec4 remoteColor{0.15f, 0.55f, 1.0f, 1.0f};

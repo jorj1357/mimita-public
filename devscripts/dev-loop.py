@@ -2301,6 +2301,7 @@ class DevLoop:
         if (
             not map_override and not weapon_override
             and self.client_args and self.client_args[0] == str(exe)
+            and any(process.poll() is None for process in self.processes)
             and self.client_ready and self.builds_match
             and self.server_health()
             and self.server_matches_launch_configuration(exe, map_name)
@@ -2625,6 +2626,8 @@ class DevLoop:
                 process.kill()
         self.processes = []
         self.running_build = None
+        self.client_ready = False
+        self.builds_match = False
 
     def maintain_process(self) -> None:
         had_clients = bool(self.processes)
@@ -2632,6 +2635,9 @@ class DevLoop:
         live = [process for process in self.processes if process.poll() is None]
         self.processes = live
         if previous_client_pids != tuple(process.pid for process in live):
+            if not live:
+                self.client_ready = False
+                self.builds_match = False
             self.save_state("running" if live or self.server_health() else "stopped_waiting")
         # The external server has an independent lifetime: after the client
         # exits, keep it and verify it is still healthy.

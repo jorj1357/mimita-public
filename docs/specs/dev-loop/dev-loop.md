@@ -1,3 +1,9 @@
+2026 10 22 1645
+"
+idk can u explain simpler  how do we make it so we have totally evidence on what is making the issues happen  
+like its ver unlikely or  beuond a reasonable doub tthat for example  
+file A at line 532  a function is running like 999 times every frame  and thts making these issues etc i want to get that specific "
+
 2026 10 17 1236 jorj todo make htis doc better
 like
 the way i did networking doc was like AI asks me like 50 questins

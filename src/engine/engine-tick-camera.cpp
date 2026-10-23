@@ -1,6 +1,7 @@
 #include "engine/engine-tick-camera.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include "mapeditor/map-editor.h"
 #include <cmath>
 #include <functional>
 #include <GLFW/glfw3.h>
@@ -228,6 +229,8 @@ void engineTickCamera(Engine& engine, float dt)
     auto& gReplayCameraMgr = REPLAY_CAMERA_MGR;
     auto& gReplayChatStates = REPLAY_CHAT_STATES;
     auto& mpContext = MP_CONTEXT;
+
+    MapEditor::instance().updateInput(engine.window(), dt);
 
     if (InputCommandSystem::instance().isKeyboardEnabled())
         applyDebugMovement(player, engine.window(), camera, dt);
@@ -913,7 +916,8 @@ void engineTickCamera(Engine& engine, float dt)
     if (anyFreecam) {
         // Mouse look: rely on existing camera.updateMouse() callback
         const int cursorBefore = glfwGetInputMode(engine.window(), GLFW_CURSOR);
-        if (MouseLock::locked() && cursorBefore != GLFW_CURSOR_DISABLED) {
+        if (!MapEditor::instance().active() &&
+            MouseLock::locked() && cursorBefore != GLFW_CURSOR_DISABLED) {
             glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             camera.firstMouse = true;
             if (StructuredLogger::instance().shouldLog(
