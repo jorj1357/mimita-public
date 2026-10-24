@@ -236,6 +236,27 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
         MimitaNet::appendHeadlessWorldInstance(world, cube, blockTransform(block));
         ++added;
     }
+
+    // Authored spawnpoint entities extend the GLB spawn list. The base count
+    // keeps repeated map rebuilds from duplicating them.
+    if (!world.authoredSpawnPointsApplied) {
+        world.authoredSpawnPointBaseCount = world.spawnPoints.size();
+        world.authoredSpawnPointsApplied = true;
+    } else {
+        world.spawnPoints.resize(world.authoredSpawnPointBaseCount);
+    }
+    size_t spawnsAdded = 0;
+    for (const MapEntity& entity : config.entities) {
+        if (!entity.enabled || entity.type != "spawnpoint") continue;
+        if (!finiteVec(entity.position)) continue;
+        MimitaNet::ServerSpawnPoint spawn;
+        spawn.position = entity.position;
+        spawn.yaw = glm::radians(entity.yaw);
+        spawn.tag = entity.tag.empty() ? entity.id : entity.tag;
+        world.spawnPoints.push_back(std::move(spawn));
+        ++spawnsAdded;
+    }
+
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "map-authored-geometry.applied", mapId,
@@ -243,11 +264,14 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
         nlohmann::json{{"map", mapId},
                        {"block_count", config.blocks.size()},
                        {"applied_count", added},
+                       {"authored_spawn_count", spawnsAdded},
+                       {"spawn_points", world.spawnPoints.size()},
                        {"collision_triangles", world.triangles.size()},
                        {"headless", true}},
         __FILE__, __LINE__, __FUNCTION__);
-    printf("[MAP AUTHORED] headless map=%s blocks=%zu applied=%zu tris=%zu\n",
-           mapId.c_str(), config.blocks.size(), added, world.triangles.size());
+    printf("[MAP AUTHORED] headless map=%s blocks=%zu applied=%zu spawns=+%zu total_spawns=%zu tris=%zu\n",
+           mapId.c_str(), config.blocks.size(), added, spawnsAdded,
+           world.spawnPoints.size(), world.triangles.size());
     return true;
 }
 
@@ -267,6 +291,10 @@ bool authoredMapGeometrySelfTest(std::string& report)
   "blocks": [
     {"id":"b1","shape":"box","position":[2,3,4],"size":[2,2,2],
      "rotationEuler":[0,0,0],"material":"","enabled":true,"tags":["test"]}
+  ],
+  "entities": [
+    {"id":"sp1","type":"spawnpoint","tag":"attackers","position":[5,6,7],
+     "yaw":90,"enabled":true}
   ]
 })";
     }
@@ -299,6 +327,20 @@ bool authoredMapGeometrySelfTest(std::string& report)
 
     if (!applyAuthoredMapGeometry(world, mapId)) fail("authored rebuild failed");
     if (world.mesh.verts.size() != baseVerts + 36) fail("authored rebuild duplicated geometry");
+
+    // Authored spawnpoint entities extend the headless spawn list once per
+    // rebuild and never duplicate the GLB base entries.
+    {
+        MimitaNet::HeadlessWorld headless;
+        MimitaNet::ServerSpawnPoint baseSpawn;
+        baseSpawn.position = glm::vec3(0.0f);
+        baseSpawn.tag = "spawnpoint.base";
+        headless.spawnPoints.push_back(baseSpawn);
+        if (!applyAuthoredMapGeometry(headless, mapId)) fail("headless authored apply failed");
+        if (headless.spawnPoints.size() != 2) fail("authored spawnpoint not appended");
+        if (!applyAuthoredMapGeometry(headless, mapId)) fail("headless authored rebuild failed");
+        if (headless.spawnPoints.size() != 2) fail("authored spawnpoint duplicated on rebuild");
+    }
 
     std::error_code ec;
     std::filesystem::remove(path, ec);

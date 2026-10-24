@@ -181,6 +181,7 @@ void CommunityMatchClient::reset()
     mRoundSeconds = 0.0f;
     mRoundTimerLeft = 0.0f;
     mObjective = ReplicatedObjective{};
+    mPayload = ReplicatedPayloadHud{};
     mZtAttemptResult = false;
     mZtFinalResult = false;
     mZtRunWon = false;
@@ -417,6 +418,13 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         modeConfig.presentation.hasPlayerOutlines && modeConfig.presentation.playerOutlines);
     PlayerVisualsConfig::instance().setFriendlyOutlinesEnabled(
         modeConfig.presentation.hasFriendlyOutlines && modeConfig.presentation.friendlyOutlines);
+    if (modeConfig.presentation.hasPlayerWireframes)
+        PlayerVisualsConfig::instance().setPlayerWireframesEnabled(
+            modeConfig.presentation.playerWireframes);
+    else
+        PlayerVisualsConfig::instance().clearPlayerWireframesOverride();
+    PlayerVisualsConfig::instance().setFriendlyWireframesEnabled(
+        modeConfig.presentation.hasFriendlyWireframes && modeConfig.presentation.friendlyWireframes);
     if (modeConfig.presentation.hasHitFlinch)
         CamConfig::instance().setHitFlinchOverride(modeConfig.presentation.hitFlinch);
     else
@@ -427,6 +435,12 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             modeConfig.presentation.enemyOutlineColor);
     else
         PlayerVisualsConfig::instance().clearTeamOutlineColorsOverride();
+    if (modeConfig.presentation.hasTeamWireframeColors)
+        PlayerVisualsConfig::instance().setTeamWireframeColors(
+            modeConfig.presentation.friendlyWireframeColor,
+            modeConfig.presentation.enemyWireframeColor);
+    else
+        PlayerVisualsConfig::instance().clearTeamWireframeColorsOverride();
     if (modeConfig.presentation.hasEnemyOutlineAlpha)
         PlayerVisualsConfig::instance().setEnemyOutlineAlpha(modeConfig.presentation.enemyOutlineAlpha);
     else
@@ -506,6 +520,20 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mObjective.site = packet.objectiveSite;
     mObjective.progress = packet.objectiveProgress;
     mObjective.timerLeft = packet.objectiveTimerLeft;
+    mPayload.active = packet.payloadActive != 0;
+    mPayload.overtime = packet.payloadOvertime != 0;
+    mPayload.advancing = packet.payloadAdvancing != 0;
+    mPayload.blocked = packet.payloadBlocked != 0;
+    mPayload.rollingBack = packet.payloadRollingBack != 0;
+    mPayload.attackers = packet.payloadAttackers;
+    mPayload.defenders = packet.payloadDefenders;
+    mPayload.overtimeTicksLeft = packet.payloadOvertimeTicksLeft;
+    mPayload.overtimeTicksMax = packet.payloadOvertimeTicksMax;
+    mPayload.distance = packet.payloadDistance;
+    mPayload.totalDistance = packet.payloadTotalDistance;
+    mPayload.progress = packet.payloadProgress;
+    mPayload.cartPosition = glm::vec3(packet.payloadCartX, packet.payloadCartY,
+                                      packet.payloadCartZ);
     mObjective.progressKind = packet.objectiveProgressKind;
 
     mZtAttemptResult = packet.ztAttemptResult != 0;
@@ -583,9 +611,16 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         packet.phase == DUEL_PHASE_RESULTS && packet.winnerPlayerId == 0 &&
         packet.victoryType == 1 && modeConfig.timeLimitOutcome == "stalemate")
         winnerName = "STALEMATE";
+    bool hasWinner = packet.winnerPlayerId != 0;
+    if (mMode == "tdm" && packet.matchOver &&
+        packet.phase == DUEL_PHASE_RESULTS && packet.winnerTeam >= 0 &&
+        packet.winnerTeam < (int)modeConfig.teamNames.size()) {
+        winnerName = modeConfig.teamNames[(size_t)packet.winnerTeam] + " WINS";
+        hasWinner = true;
+    }
     hud.setWinner(winnerName,
         packet.matchOver != 0 && packet.phase == DUEL_PHASE_RESULTS,
-        packet.winnerPlayerId != 0);
+        hasWinner);
     if (newLocalScore > mLocalScore) hud.onConfirmedScoreGain();
     mLocalScore = newLocalScore;
 
@@ -600,6 +635,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         identity.team = packet.participantTeams[i];
         identity.roleIndex = packet.participantRoles[i];
         identity.state = packet.participantStates[i];
+        identity.actorPresetIndex = packet.participantActorPresets[i];
         mActors.push_back(identity);
     }
 
@@ -652,6 +688,21 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         }
     }
 
+    // A per-actor server preset takes precedence over the mode's shared preset
+    // for the local actor and follows the replicated match identity.
+    for (const auto& actor : mActors) {
+        if (actor.actorId != MP_CONTEXT.localPlayerId || actor.actorPresetIndex == 0)
+            continue;
+        const auto presets = MatchRoleRegistry::instance().actorPresets();
+        const size_t index = (size_t)actor.actorPresetIndex - 1;
+        if (index < presets.size() && mActorPresetId != presets[index]->id) {
+            if (mActorPresetApplied) resetActorPreset();
+            applyActorPreset(*presets[index]);
+            actorPreset = presets[index];
+        }
+        break;
+    }
+
     // Match-wide presentation must be applied after local role selection,
     // because applying a role rebuilds the active weapon presentation.
     ActorPresetWeapons::setModePresentationOverride(modeConfig.presentation);
@@ -687,9 +738,13 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         {"enemy_healthbars", p.hasEnemyHealthbars ? nlohmann::json(p.enemyHealthbars) : nlohmann::json(nullptr)},
         {"player_outlines", p.hasPlayerOutlines ? nlohmann::json(p.playerOutlines) : nlohmann::json(nullptr)},
         {"friendly_outlines", p.hasFriendlyOutlines ? nlohmann::json(p.friendlyOutlines) : nlohmann::json(nullptr)},
+        {"player_wireframes", p.hasPlayerWireframes ? nlohmann::json(p.playerWireframes) : nlohmann::json(nullptr)},
+        {"friendly_wireframes", p.hasFriendlyWireframes ? nlohmann::json(p.friendlyWireframes) : nlohmann::json(nullptr)},
         {"enemy_outline_alpha", p.hasEnemyOutlineAlpha ? nlohmann::json(p.enemyOutlineAlpha) : nlohmann::json(nullptr)},
         {"friendly_outline_color", p.hasTeamOutlineColors ? nlohmann::json::array({p.friendlyOutlineColor.x, p.friendlyOutlineColor.y, p.friendlyOutlineColor.z}) : nlohmann::json(nullptr)},
-        {"enemy_outline_color", p.hasTeamOutlineColors ? nlohmann::json::array({p.enemyOutlineColor.x, p.enemyOutlineColor.y, p.enemyOutlineColor.z}) : nlohmann::json(nullptr)}
+        {"enemy_outline_color", p.hasTeamOutlineColors ? nlohmann::json::array({p.enemyOutlineColor.x, p.enemyOutlineColor.y, p.enemyOutlineColor.z}) : nlohmann::json(nullptr)},
+        {"friendly_wireframe_color", p.hasTeamWireframeColors ? nlohmann::json::array({p.friendlyWireframeColor.x, p.friendlyWireframeColor.y, p.friendlyWireframeColor.z}) : nlohmann::json(nullptr)},
+        {"enemy_wireframe_color", p.hasTeamWireframeColors ? nlohmann::json::array({p.enemyWireframeColor.x, p.enemyWireframeColor.y, p.enemyWireframeColor.z}) : nlohmann::json(nullptr)}
     }.dump();
     if (presentationFingerprint != mPresentationFingerprint) {
         StructuredLogger::instance().writeEvent(

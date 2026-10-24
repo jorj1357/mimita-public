@@ -121,6 +121,14 @@
       "description": "Captain Falcon stocks. Knock opponents into the void. Four lives each.",
       "teams": 0,
       "score_limit": 0
+    },
+    {
+      "id": "payload",
+      "gamemode_id": "payload",
+      "name": "Payload",
+      "description": "Attackers push the cart up the tower; defenders contest until the clock or overtime expires.",
+      "teams": 2,
+      "score_limit": 0
     }
   ]
 }

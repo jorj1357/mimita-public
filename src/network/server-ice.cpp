@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-gamemode.h"
 #include "network/game-transport.h"
 #include "network/ice-transport.h"
 #include "network/ice/ice-config.h"
@@ -180,9 +181,28 @@ static IceAgentState tickAgentOnce(IceAgent& agent)
 bool initServerIceListener(ListenServerState& state)
 {
     printf("[SERVER ICE] initializing ICE listener\n");
+    const std::string startupCorrelationId =
+        std::to_string(GetCurrentProcessId());
+    auto logStartupStage = [&](const char* stage, uint64_t startedAtMs,
+                               bool ok, const char* detail) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.server-ice-startup.stage", startupCorrelationId,
+            detail, 0,
+            nlohmann::json{{"stage", stage},
+                           {"duration_ms", nowMs() - startedAtMs},
+                           {"ok", ok},
+                           {"map", state.mapName},
+                           {"mode", state.gameMode},
+                           {"server_pid", GetCurrentProcessId()}},
+            __FILE__, __LINE__, __func__);
+    };
 
     // Request TURN credentials from coordinator
+    const uint64_t turnRequestStartedMs = nowMs();
     TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
+    logStartupStage("turn_credentials", turnRequestStartedMs,
+                    turnCreds.ok, "TURN credential request completed");
     IceConfiguration iceConfig;
     if (turnCreds.ok)
         iceConfig = loadIceConfigWithTurn(turnCreds.host, turnCreds.port,
@@ -198,9 +218,12 @@ bool initServerIceListener(ListenServerState& state)
         printf("[SERVER ICE] FATAL: agent init failed\n");
         return false;
     }
+    const uint64_t gatherStartedMs = nowMs();
     if (!agent->gatherCandidates())
     {
         printf("[SERVER ICE] FATAL: gather failed\n");
+        logStartupStage("candidate_gather", gatherStartedMs, false,
+                        "ICE candidate gathering could not start");
         return false;
     }
 
@@ -214,6 +237,8 @@ bool initServerIceListener(ListenServerState& state)
                 break;
             if (s == IceAgentState::Failed) {
                 printf("[SERVER ICE] FATAL: gather failed\n");
+                logStartupStage("candidate_gather", gatherStartedMs, false,
+                                "ICE candidate gathering failed");
                 return false;
             }
             Sleep(50);
@@ -221,9 +246,13 @@ bool initServerIceListener(ListenServerState& state)
         }
         if (waited >= 15000) {
             printf("[SERVER ICE] FATAL: gather timeout\n");
+            logStartupStage("candidate_gather", gatherStartedMs, false,
+                            "ICE candidate gathering timed out");
             return false;
         }
     }
+    logStartupStage("candidate_gather", gatherStartedMs, true,
+                    "ICE candidates gathered");
 
     state.iceSessionId = "host_" + std::to_string(GetCurrentProcessId())
         + "_" + std::to_string(nowMs());
@@ -238,7 +267,10 @@ bool initServerIceListener(ListenServerState& state)
     metadata.hostPlayerName = state.hostPlayerName;
     metadata.port = state.port;
 
+    const uint64_t roomRegistrationStartedMs = nowMs();
     auto hostResult = coordinatorIceHost(state.iceSessionId, agent->localSdp(), metadata);
+    logStartupStage("coordinator_room_registration", roomRegistrationStartedMs,
+                    hostResult.ok, "coordinator room registration completed");
     if (!hostResult.ok)
     {
         printf("[SERVER ICE] FATAL: coordinatorIceHost failed\n");
@@ -250,19 +282,25 @@ bool initServerIceListener(ListenServerState& state)
     state.iceListenerAgent = std::move(agent);
     state.lastIceCoordinatorPollMs = nowMs();
 
-    hostedRoomSession().active = true;
-    hostedRoomSession().roomCode = hostResult.roomCode;
-    hostedRoomSession().hostToken = hostResult.joinToken;
-    hostedRoomSession().joinToken = hostResult.joinToken;
-    hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
-    hostedRoomSession().coordinatorRoomType = "ice";
-    hostedRoomSession().createdAtMs = nowMs();
-    setServerCoordinatorState(hostResult.roomCode, hostResult.joinToken);
-    setServerPasswordState(state.passwordProtected, state.password);
-
     printf("[SERVER ICE] listener registered: code=%s session=%s\n",
            hostResult.roomCode.c_str(), state.iceSessionId.c_str());
     return true;
+}
+
+void publishServerIceListener(const ListenServerState& state)
+{
+    if (state.serverCode.empty())
+        return;
+
+    hostedRoomSession().active = true;
+    hostedRoomSession().roomCode = state.serverCode;
+    hostedRoomSession().hostToken = state.joinToken;
+    hostedRoomSession().joinToken = state.joinToken;
+    hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
+    hostedRoomSession().coordinatorRoomType = "ice";
+    hostedRoomSession().createdAtMs = nowMs();
+    setServerCoordinatorState(state.serverCode, state.joinToken);
+    setServerPasswordState(state.passwordProtected, state.password);
 }
 
 // ── Poll coordinator for new requests + advance existing peers ───────
@@ -485,9 +523,17 @@ void tickServerIceTransports(SOCKET sock,
     // erasing from the map during iteration, avoiding iterator invalidation.
     std::vector<uint32_t> pendingRemovals;
 
-    for (auto& kv : players)
+    std::vector<uint32_t> playerIds;
+    playerIds.reserve(players.size());
+    for (const auto& kv : players)
+        playerIds.push_back(kv.first);
+
+    for (uint32_t playerId : playerIds)
     {
-        ServerPlayer& player = kv.second;
+        auto pit = players.find(playerId);
+        if (pit == players.end())
+            continue;
+        ServerPlayer& player = pit->second;
         if (!player.transport)
             continue;
         if (!player.hasConnectionId)
@@ -528,14 +574,22 @@ void tickServerIceTransports(SOCKET sock,
                 if (nowDrop - lastDropLog >= 1000)
                 {
                     printf("[ICE DROP] playerId=%u dropped=%zu total=%zu\n",
-                           player.id, pkts.size() - kMaxPacketsPerPoll, pkts.size());
+                           playerId, pkts.size() - kMaxPacketsPerPoll, pkts.size());
                     lastDropLog = nowDrop;
                 }
                 break;
             }
+            // Packet handlers may add or defer-remove players, invalidating the
+            // references captured above. Re-resolve before every packet.
+            pit = players.find(playerId);
+            if (pit == players.end())
+                break;
+            ServerPlayer& current = pit->second;
+            if (!current.transport)
+                break;
             TransportReceiveEvent event{};
-            event.connectionId = player.connectionId;
-            event.remoteEndpoint = player.addr;
+            event.connectionId = current.connectionId;
+            event.remoteEndpoint = current.addr;
             event.payload = rp.bytes.data();
             event.payloadBytes = (int)rp.bytes.size();
             event.receivedAtMs = rp.receivedAtMs;
@@ -543,9 +597,12 @@ void tickServerIceTransports(SOCKET sock,
             processServerPacket(sock, event, players, npcs, projectiles,
                                 nextPlayerId, nextEntityId, nextProjectileId,
                                 world, tick, totalPacketsIn, totalPacketsOut,
-                                stats, retransmitState, &player, nullptr,
+                                stats, retransmitState, &current, nullptr,
                                 &pendingRemovals);
             ++packetsProcessed;
+            if (std::find(pendingRemovals.begin(), pendingRemovals.end(),
+                          playerId) != pendingRemovals.end())
+                break;
         }
 
         // Empty poll results are normal transport work, not diagnostics.
@@ -563,6 +620,7 @@ void tickServerIceTransports(SOCKET sock,
         {
             printf("[DEFERRED REMOVE] removing id=%u — players left: %zu\n",
                    id, players.size() - 1);
+            serverClearActorPreset(id);
             players.erase(it);
         }
     }

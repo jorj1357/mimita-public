@@ -40,7 +40,8 @@ enum MovementReportFlags : uint32_t
     MOVEMENT_REPORT_DOWN_DASH_PRESSED = 1u << 14,
     MOVEMENT_REPORT_FREEZE_HELD = 1u << 15,
     MOVEMENT_REPORT_FLY_UP = 1u << 16,
-    MOVEMENT_REPORT_FLY_DOWN = 1u << 17
+    MOVEMENT_REPORT_FLY_DOWN = 1u << 17,
+    MOVEMENT_REPORT_FLY_FAST = 1u << 18
 };
 
 struct ClientMovementReport
@@ -237,7 +238,9 @@ bool crossesBlockingGeometry(const HeadlessWorld* world,
                              glm::vec3 from,
                              glm::vec3 to,
                              float tolerance,
-                             glm::vec3* outBlockingNormal = nullptr);
+                             glm::vec3* outBlockingNormal = nullptr,
+                             float* outHitDistance = nullptr,
+                             bool includeHorizontalSurfaces = false);
 
 MovementValidationResult validateClientMovementReport(
     const ServerPlayer& player,

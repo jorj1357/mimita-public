@@ -174,7 +174,7 @@ The desired resolution order is:
 2. The role explicitly names one actor preset.
 3. The actor preset supplies the reusable baseline for values it defines.
 4. Explicit values on the role override the preset only for that role assignment. Missing role fields inherit the preset value, then the shared system default.
-5. A mode-level or host override may supersede a role only when the mode schema explicitly declares that override and the server applies it authoritatively.
+5. A mode-level override may supersede a role only when the mode schema explicitly declares it. A server operator may also make a temporary per-actor override with `actor_preset_actor`; the server applies it authoritatively through that actor's spawn profile.
 
 All actors use the normal spawn and respawn lifecycle to apply the resolved setup. The server remains authoritative for team, health, inventory, attacks, and damage. Clients may apply the same selected preset for camera and presentation, but may not change server-owned gameplay by editing local JSON.
 
@@ -212,6 +212,19 @@ The desired contract above is broader and clearer than the current loader/runtim
 ## 8. Hot reload and safe application
 
 Configuration reload behavior must be stated per field. Camera and presentation may be applied to clients through their presentation owner. Match-critical team, health, movement, loadout, and monster identity must be applied by the server at a documented safe boundary, normally a spawn, respawn, or next run start. A reload must validate the whole candidate, retain the last valid version on error, and avoid half-applying a mixed actor setup. Do not claim every current actor-preset field hot-reloads merely because the registry watches files.
+
+### Temporary server assignment for one actor
+
+The server operator may list current match actors with `actor_list` and assign
+one loaded actor preset using
+`actor_preset_actor <actor-id> <preset-id|index>`. Numeric preset indices use
+the alphabetical order shown by `actor_preset_list`; stable preset IDs are
+preferred for saved instructions. The assignment is server-authoritative and
+overlays the selected actor's role at its next spawn or respawn. It remains
+attached to that actor through deaths and match-roster rebuilds, then is
+discarded when the actor is removed or disconnects. It does not write JSON or
+carry over to a later connection. Other actors retain their own role and
+preset resolution.
 
 ## 9. First monster design pass (behavior targets, not balance numbers)
 

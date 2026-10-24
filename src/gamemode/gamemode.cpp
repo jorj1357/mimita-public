@@ -276,6 +276,38 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         if (root.contains("victory") && root["victory"].is_object())
             next.victoryCondition = optString(root["victory"], "type", next.victoryCondition);
 
+        // ── Payload rules (optional). Map data owns the cart origin, route,
+        // interaction box, and checkpoints; this block owns mode-wide values. ──
+        if (root.contains("payload") && root["payload"].is_object()) {
+            const auto& p = root["payload"];
+            next.payload.configured = true;
+            next.payload.attackerTeam = optString(p, "attacker_team", next.payload.attackerTeam);
+            next.payload.defenderTeam = optString(p, "defender_team", next.payload.defenderTeam);
+            next.payload.overtimeSeconds = std::max(0.0f,
+                optFloat(p, "overtime_seconds", next.payload.overtimeSeconds));
+            next.payload.pushMetersPerSecondPerAttacker = std::max(0.0f,
+                optFloat(p, "push_meters_per_second_per_attacker",
+                         next.payload.pushMetersPerSecondPerAttacker));
+            next.payload.maxPushAttackers = std::max(1,
+                optInt(p, "max_push_attackers", next.payload.maxPushAttackers));
+            next.payload.unattendedRollbackDelaySeconds = std::max(0.0f,
+                optFloat(p, "unattended_rollback_delay_seconds",
+                         next.payload.unattendedRollbackDelaySeconds));
+            next.payload.rollbackMetersPerSecond = std::max(0.0f,
+                optFloat(p, "rollback_meters_per_second",
+                         next.payload.rollbackMetersPerSecond));
+            next.payload.healHpPer10Ticks = std::max(0,
+                optInt(p, "heal_hp_per_10_ticks", next.payload.healHpPer10Ticks));
+            next.payload.healDefenders = optBool(p, "heal_defenders",
+                                                next.payload.healDefenders);
+            next.payload.spawnProtectionTicks = std::max(0,
+                optInt(p, "spawn_protection_ticks", next.payload.spawnProtectionTicks));
+            next.payload.teamChangeCooldownSeconds = std::max(0.0f,
+                optFloat(p, "team_change_cooldown_seconds",
+                         next.payload.teamChangeCooldownSeconds));
+            next.payload.classPool = optStringArray(p, "class_pool");
+        }
+
         // ── Presentation policy (optional). Missing keys keep ordinary
         // behavior; the actor preset refines these where both exist. ──
         if (root.contains("presentation") && root["presentation"].is_object()) {
@@ -300,6 +332,8 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("enemy_healthbars", next.presentation.hasEnemyHealthbars, next.presentation.enemyHealthbars);
             readFlag("player_outlines", next.presentation.hasPlayerOutlines, next.presentation.playerOutlines);
             readFlag("friendly_outlines", next.presentation.hasFriendlyOutlines, next.presentation.friendlyOutlines);
+            readFlag("player_wireframes", next.presentation.hasPlayerWireframes, next.presentation.playerWireframes);
+            readFlag("friendly_wireframes", next.presentation.hasFriendlyWireframes, next.presentation.friendlyWireframes);
             if (p.contains("enemy_outline_alpha") && p["enemy_outline_alpha"].is_number()) {
                 next.presentation.enemyOutlineAlpha = std::clamp(p["enemy_outline_alpha"].get<float>(), 0.0f, 1.0f);
                 next.presentation.hasEnemyOutlineAlpha = true;
@@ -329,6 +363,20 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     p["enemy_outline_color"][2].get<float>()};
                 next.presentation.hasTeamOutlineColors = true;
             }
+            if (p.contains("friendly_wireframe_color") && p["friendly_wireframe_color"].is_array() && p["friendly_wireframe_color"].size() >= 3) {
+                next.presentation.friendlyWireframeColor = {
+                    p["friendly_wireframe_color"][0].get<float>(),
+                    p["friendly_wireframe_color"][1].get<float>(),
+                    p["friendly_wireframe_color"][2].get<float>()};
+                next.presentation.hasTeamWireframeColors = true;
+            }
+            if (p.contains("enemy_wireframe_color") && p["enemy_wireframe_color"].is_array() && p["enemy_wireframe_color"].size() >= 3) {
+                next.presentation.enemyWireframeColor = {
+                    p["enemy_wireframe_color"][0].get<float>(),
+                    p["enemy_wireframe_color"][1].get<float>(),
+                    p["enemy_wireframe_color"][2].get<float>()};
+                next.presentation.hasTeamWireframeColors = true;
+            }
         }
 
         // ── Bomb Tag specific fields ─────────────────────────────────
@@ -354,6 +402,8 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.features.torchLighting = optBool(f, "torch_lighting", next.features.torchLighting);
             next.features.freezeDuringCountdown =
                 optBool(f, "freeze_during_countdown", next.features.freezeDuringCountdown);
+            next.features.freezeDuringGo =
+                optBool(f, "freeze_during_go", next.features.freezeDuringGo);
         }
 
         // ── Visual/settings overrides ───────────────────────────────

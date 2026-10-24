@@ -27,6 +27,7 @@
 #include "procedural/procedural-world.h"
 #include "gamemode/action-graph.h"
 #include "gamemode/disaster-runtime.h"
+#include "gamemode/payload-runtime.h"
 
 namespace MimitaNet {
 
@@ -174,6 +175,12 @@ struct ServerGamemodeState
     // NPC), keyed by actor id. Assigned by assignMatchParticipants and updated
     // as actor state changes. Replicated (team/role/state) via DuelStatePacket.
     std::unordered_map<uint32_t, ActorMatchDescriptor> matchActors;
+    // Host-assigned presets outlive match roster rebuilds but are removed when
+    // the server actor leaves. Player IDs are server-session unique.
+    std::unordered_map<uint32_t, std::string> actorPresetOverridesByActorId;
+    // Preset currently applied to this life; a new assignment stays pending
+    // until the next authoritative spawn/respawn boundary.
+    std::unordered_map<uint32_t, std::string> actorPresetAppliedByActorId;
 
     // All participating player IDs (FFA/TDM can have >2 players)
     std::vector<uint32_t> participants;
@@ -225,6 +232,17 @@ struct ServerGamemodeState
     uint32_t objectiveNextCarrierScanTick = 0;
     uint32_t objectivePickupCounter = 0;
     uint32_t objectiveDropCounter = 0;
+    // ── Payload mode (attack/defend cart) ───────────────────────────
+    // The server owns the cart rules; map data supplies the route/box.
+    bool payloadMode = false;
+    MimitaGamemode::PayloadRuntime payloadRuntime;
+    uint32_t payloadCartEntityId = 0;
+    int payloadSessionWins[2] = {0, 0};
+    std::unordered_map<uint32_t, int> payloadSessionKills;
+    // Active-phase team changes are cooldown-gated for Payload.
+    std::unordered_map<uint32_t, uint32_t> teamChangeCooldownUntil;
+    int payloadLastCartState = -1;
+    int payloadSpawnProtectionTicks = 60;
     // ── Generic area effects (fire/smoke/dark-bang grenades) ────────
     // Server-authoritative; ticked at fixed 60 Hz. Damage is applied through
     // the shared damage path via the returned damage events.
@@ -239,7 +257,7 @@ struct ServerGamemodeState
 
     bool npcWaves = false;
     bool persistentNpcSpawns = false;
-    uint32_t teamRosterNpcId = 0; // single mode-owned opponent for solo team-roster matches
+    std::vector<uint32_t> teamRosterNpcIds; // mode-owned fillers for configured team capacities
     uint32_t waveNumber = 0;
     int waveStartCount = 1;
     int waveIncrement = 1;
@@ -425,6 +443,9 @@ struct ActorSpawnProfile
     std::unordered_map<std::string, std::pair<int, int>> weaponAmmo; // magazine, reserve
 };
 ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId);
+bool serverSetActorPreset(uint32_t actorId, const std::string& presetId);
+void serverClearActorPreset(uint32_t actorId);
+void serverMarkActorPresetApplied(uint32_t actorId, const std::string& presetId);
 bool serverActivateActorPreset(const std::string& presetId);
 void serverResetActorPreset();
 

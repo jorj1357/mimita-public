@@ -52,6 +52,15 @@ struct PhysicalEntity {
     // marked serverDriven so they are never simulated locally.
     uint32_t networkId = 0;
     bool serverDriven = false;
+    // Non-destructible gameplay bodies (the Payload cart) opt into replication
+    // explicitly. Destruction replication remains gated by destructible.enabled.
+    bool replicate = false;
+    // Render the authored modelPath as a static prop instead of the collision
+    // box or destructible geometry. Used by the Payload cart.
+    bool renderModel = false;
+    // Replicated model visuals may intentionally use the gameplay box for
+    // collision instead of the GLB's authored mesh.
+    bool collisionBox = false;
     PhysicalEntityMotion motion = PhysicalEntityMotion::Static;
     PhysicalEntityShape shape = PhysicalEntityShape::TriangleMesh;
     glm::mat4 previousTransform{1.0f};

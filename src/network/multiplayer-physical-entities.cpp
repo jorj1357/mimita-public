@@ -19,6 +19,7 @@
 #include "config/material-config.h"
 #include "debug/crash-handler.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "impact/destructible-mesh-loader.h"
 #include "impact/impact-system.h"
 #include "network/packets.h"
@@ -66,7 +67,8 @@ void mpProcessPhysicalEntitySpawnEventPacket(
     MimitaImpact::BooleanMesh baseMesh;
     bool haveMeshBase = false;
 
-    if (event->sourceKind == PHYSICAL_ENTITY_SOURCE_GLB && event->modelPath[0] != '\0')
+    if (event->sourceKind == PHYSICAL_ENTITY_SOURCE_GLB &&
+        event->modelPath[0] != '\0' && (event->reserved & 2u) == 0u)
     {
         const MimitaImpact::DestructibleMeshLoad load =
             MimitaImpact::loadDestructibleMeshFromGLB(event->modelPath);
@@ -111,6 +113,9 @@ void mpProcessPhysicalEntitySpawnEventPacket(
     if (!e)
         return;
     e->halfExtents = halfExtents;
+    e->renderModel = (event->reserved & 1u) != 0;
+    e->collisionBox = (event->reserved & 2u) != 0;
+    e->modelPath = event->modelPath;
     e->density = event->density > 0.0f ? event->density : 1.0f;
     e->velocity = glm::vec3(event->velocity[0], event->velocity[1],
                             event->velocity[2]);
@@ -118,6 +123,17 @@ void mpProcessPhysicalEntitySpawnEventPacket(
                                    event->angularVelocity[1],
                                    event->angularVelocity[2]);
     e->texturePath = event->texturePath;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "physical_entity.mirror_spawned", std::to_string(event->networkId),
+        "client created a replicated physical entity mirror", 0,
+        nlohmann::json{{"local_id", localId},
+                       {"network_id", event->networkId},
+                       {"source_kind", event->sourceKind},
+                       {"motion", event->motion},
+                       {"half_extents", {halfExtents.x, halfExtents.y, halfExtents.z}},
+                       {"position", {event->position[0], event->position[1],
+                                     event->position[2]}}});
 
     if (MimitaImpact::MaterialConfig::instance().revision() == 0)
         MimitaImpact::MaterialConfig::instance().load();

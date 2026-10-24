@@ -25,6 +25,7 @@
 #include "npc/npc-difficulty-config.h"
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
+#include "physics/movement/movement-step.h"
 
 #include <algorithm>
 #include <cctype>
@@ -493,7 +494,8 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             if (!std::isfinite(multiplier) || multiplier <= 0.0f)
                 throw std::invalid_argument("non-positive");
             it->second.flyEnabled = true;
-            it->second.flySpeedMultiplier = std::clamp(multiplier, 0.01f, 100.0f);
+            it->second.flySpeedMultiplier = std::clamp(
+                multiplier, 0.01f, movementMaxDeveloperFlightMultiplier());
             ack(true, "applied: fly");
         }
         catch (...)
@@ -582,6 +584,37 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
            serverTimestamp(), it->second.id, it->second.name.c_str(),
            commandStr.c_str());
 
+    constexpr const char* actorPresetCommand = "actor_preset_actor ";
+    if (commandStr.rfind(actorPresetCommand, 0) == 0) {
+        const std::string arguments = commandStr.substr(std::strlen(actorPresetCommand));
+        const size_t separator = arguments.find(' ');
+        if (separator == std::string::npos || separator == 0 || separator + 1 >= arguments.size() ||
+            arguments.find(' ', separator + 1) != std::string::npos) {
+            ack(false, "rejected: usage actor_preset_actor <actor-id> <preset-id>");
+            return;
+        }
+        try {
+            const std::string actorToken = arguments.substr(0, separator);
+            if (actorToken.find_first_not_of("0123456789") != std::string::npos)
+                throw std::invalid_argument("actor id");
+            const unsigned long long parsedId = std::stoull(actorToken);
+            if (parsedId > std::numeric_limits<uint32_t>::max())
+                throw std::out_of_range("actor id");
+            const uint32_t actorId = (uint32_t)parsedId;
+            const std::string presetId = arguments.substr(separator + 1);
+            if (!serverSetActorPreset(actorId, presetId)) {
+                ack(false, "rejected: actor not in active match or preset unavailable");
+                return;
+            }
+            const std::string status = "assigned: " + presetId + " to actor " +
+                std::to_string(actorId) + " (next spawn; persists until actor removal)";
+            ack(true, status.c_str());
+        } catch (...) {
+            ack(false, "rejected: invalid actor id");
+        }
+        return;
+    }
+
     ServerGameOverrides& ov = serverGameOverrides();
 
     if (commandStr == "modelist")
@@ -625,6 +658,23 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         // index of `melee` in config/onlinemodes.json.
         serverCommunityStartMatch(false, "melee");
         ack(true, "started at intermission: melee");
+    }
+    else if (commandStr.rfind("startnow ", 0) == 0 ||
+             commandStr.rfind("start ", 0) == 0)
+    {
+        // By-id launch/named transition, e.g. `start payload`.
+        const bool now = commandStr.rfind("startnow ", 0) == 0;
+        const std::string modeId = commandStr.substr(now ? 9 : 6);
+        auto& cfg = CommunityServerConfig::instance();
+        if (cfg.modes().empty()) cfg.load();
+        const CommunityMode* mode = cfg.modeById(modeId);
+        if (!mode || mode->id.empty()) {
+            ack(false, "rejected: unknown mode id");
+        } else {
+            serverCommunityStartMatch(now, mode->id);
+            ack(true, (std::string(now ? "started now: " : "started at intermission: ") +
+                       mode->id).c_str());
+        }
     }
     else if (commandStr.rfind("meleeattack", 0) == 0)
     {
@@ -712,6 +762,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         ServerGamemodeState& match = serverGamemodeState();
         for (uint32_t npcId : removedNpcIds)
         {
+            serverClearActorPreset(npcId);
             match.participants.erase(std::remove(match.participants.begin(), match.participants.end(), npcId),
                                      match.participants.end());
             match.participantNames.erase(npcId);
@@ -1002,8 +1053,10 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
         }
     }
 
-    for (uint32_t id : toRemove)
+    for (uint32_t id : toRemove) {
+        serverClearActorPreset(id);
         players.erase(id);
+    }
 }
 
 void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,

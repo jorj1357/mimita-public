@@ -140,8 +140,8 @@
     },
 
     "damageNumbers": {
-        // "enabled": true,
-        "enabled": false,
+        "enabled": true,
+        // "enabled": false,
         "depthMode": "always_on_top",
         "occluded": false,
         "fontSize": 0.96,
@@ -149,7 +149,9 @@
         "criticalDamageThreshold": 200,
         "criticalLifetimeTicks": 30,
         "startOpacity": 0.5,
+        // "startOpacity": 1.0,
         "endOpacity": 0.0,
+        // "endOpacity": 1.0,
         "fadeStart": 0.0,
         "fadeEnd": 1.0,
         "worldOffset": [0.0, 0.0, 2.20],
@@ -387,9 +389,9 @@
     },
 
     "hitmarkerVisual": {
-        // "enabled": true,
-        "enabled": false,
+        "enabled": true,
+        // "enabled": false,
         "duration": 0.5,
-        "size": 28.0
+        "size": 20.0
     }
 }

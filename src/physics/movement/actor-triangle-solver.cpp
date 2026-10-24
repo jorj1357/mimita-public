@@ -335,7 +335,8 @@ bool solveActorTriangleCollision(
     const glm::vec3& desiredMovement,
     ActorTriangleCollisionResult& result,
     const std::vector<PhysicalEntity>* entities,
-    float dt)
+    float dt,
+    bool slideOnly)
 {
     result = ActorTriangleCollisionResult{};
     result.startPos = player.pos;
@@ -571,6 +572,11 @@ bool solveActorTriangleCollision(
                                      &s_actorBroadphase);
         result.contactCollectMs += std::chrono::duration<float, std::milli>(
             std::chrono::steady_clock::now() - contactCollectStart).count();
+        if (gActorNarrowphase.budgetExceeded)
+        {
+            result.budgetExceeded = true;
+            break;
+        }
 
         // The weapon sphere/capsule collector uses the same world-triangle
         // contact facts and response owner, but only needs to run once per
@@ -632,6 +638,13 @@ bool solveActorTriangleCollision(
             correction *= maxCorrection / len;
 
         accumulated += correction;
+    }
+
+    if (result.budgetExceeded)
+    {
+        result.correctedPos = player.pos;
+        result.remainingMovement = glm::vec3(0.0f);
+        return false;
     }
 
     if (!s_allContacts.empty())
@@ -799,10 +812,13 @@ bool solveActorTriangleCollision(
                     break;
                 }
             }
-            respondVelocityAgainstNormal(player, responseNormal,
-                                         actorSweepVelocity(c.sweepDelta, dt), true,
-                                         c.penetration, c.label, c.triangleIndex,
-                                         bounceScale);
+            if (slideOnly)
+                projectVelocityAgainstNormal(player, responseNormal);
+            else
+                respondVelocityAgainstNormal(player, responseNormal,
+                                             actorSweepVelocity(c.sweepDelta, dt), true,
+                                             c.penetration, c.label, c.triangleIndex,
+                                             bounceScale);
         }
 
         // Sliding: strip the blocked component from the intended move.
@@ -893,8 +909,12 @@ bool runActorTriangleCollisionStep(
     Player& player,
     const World& world,
     bool& groundedThisFrame,
-    float dt)
+    float dt,
+    bool includeEntities,
+    bool slideOnly)
 {
+    const bool hasEntities = includeEntities &&
+        !PhysicalEntitySystem::instance().entities().empty();
     if (world.collisionMesh.triangles.empty())
         return false;
     // Without body triangles the solver has no geometry; let the legacy path
@@ -907,9 +927,7 @@ bool runActorTriangleCollisionStep(
     const GroundState groundBeforeSolve = player.ground;
     const bool groundedBeforeSolve = groundedThisFrame;
     glm::vec3 totalMove = (player.vel + player.externalImpulse) * dt;
-    const float maxZStep = PLAYER_RADIUS;
-    if (totalMove.z < -maxZStep)
-        totalMove.z = -maxZStep;
+    const glm::vec3 movementStartPosition = player.pos;
 
     // Initialize the JSON weapon collider before collecting actor meshes.
     // Without this call, weaponCollisionDebug.valid remains false for the
@@ -928,7 +946,43 @@ bool runActorTriangleCollisionStep(
     ActorTriangleCollisionResult result;
     const std::vector<PhysicalEntity>& entities =
         PhysicalEntitySystem::instance().entities();
-    solveActorTriangleCollision(player, world, totalMove, result, &entities, dt);
+    if (!includeEntities)
+    {
+        player.collision.supportEntityId = 0;
+        player.collision.supportVelocity = glm::vec3(0.0f);
+    }
+    solveActorTriangleCollision(player, world, totalMove, result,
+                                includeEntities ? &entities : nullptr, dt,
+                                slideOnly);
+
+    if (result.budgetExceeded)
+    {
+        player.pos = movementStartPosition;
+        player.vel = glm::vec3(0.0f);
+        player.updateModelWorldTransforms();
+        player.ground = groundBeforeSolve;
+        groundedThisFrame = groundedBeforeSolve;
+        player.collision.supportEntityId = 0;
+        player.collision.supportVelocity = glm::vec3(0.0f);
+
+        static auto lastBudgetStopLog = std::chrono::steady_clock::time_point{};
+        const auto budgetNow = std::chrono::steady_clock::now();
+        if (budgetNow - lastBudgetStopLog >= std::chrono::seconds(1))
+        {
+            lastBudgetStopLog = budgetNow;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.sweep.budget-stop", "actor-triangle-solver",
+                "stopped at the tick start because the complete world sweep exceeded its narrowphase budget",
+                static_cast<uint32_t>(player.movementSimulationTick),
+                {{"start_position", vec3Json(movementStartPosition)},
+                 {"requested_movement", vec3Json(totalMove)},
+                 {"triangle_tests", gActorNarrowphase.triangleTests},
+                 {"triangle_test_budget", 200000}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        return true;
+    }
 
     // The swept solve normally stops at the first contact and preserves
     // tangential movement. If its bounded correction iterations still leave a
@@ -1009,7 +1063,7 @@ bool runActorTriangleCollisionStep(
     }
 
     CollisionState& collisionState = player.collision;
-    if (collisionState.supportEntityId != 0 && supportId == 0)
+    if (hasEntities && collisionState.supportEntityId != 0 && supportId == 0)
         player.vel += collisionState.supportVelocity;
 
     if (supportId != 0 && glm::dot(supportVelocity, supportVelocity) > 0.0f)
@@ -1024,7 +1078,8 @@ bool runActorTriangleCollisionStep(
     // Dynamic physical entities receive the actor's horizontal contact impulse
     // after the actor manifold has been solved. This preserves one collision
     // owner while allowing a player to push a crate on the next fixed tick.
-    PhysicalEntitySystem::instance().applyPlayerPush(player, dt);
+    if (hasEntities)
+        PhysicalEntitySystem::instance().applyPlayerPush(player, dt);
 
     // Body-contact spark: same boundary as the legacy body phase, fed by the
     // solver's final contact point. The weapon label does not spawn a body spark.

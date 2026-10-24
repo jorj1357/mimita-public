@@ -40,6 +40,7 @@ struct GamemodeFeatures {
     bool rain = false;
     bool torchLighting = false;
     bool freezeDuringCountdown = false;
+    bool freezeDuringGo = true;
 };
 
 // One ordered team in a mode's roster. Team index (0-based) is the
@@ -137,6 +138,8 @@ struct GamemodePresentation {
     bool hasEnemyHealthbars = false;     bool enemyHealthbars = true;
     bool hasPlayerOutlines = false;      bool playerOutlines = true;
     bool hasFriendlyOutlines = false;     bool friendlyOutlines = false;
+    bool hasPlayerWireframes = false;     bool playerWireframes = false;
+    bool hasFriendlyWireframes = false;   bool friendlyWireframes = false;
     bool hasEnemyOutlineAlpha = false;   float enemyOutlineAlpha = 0.25f;
     float bloodScale = 1.0f;
     float bloodLifetimeScale = 1.0f;
@@ -148,6 +151,9 @@ struct GamemodePresentation {
     bool hasTeamOutlineColors = false;
     glm::vec3 friendlyOutlineColor{0.0f, 255.0f, 0.0f};
     glm::vec3 enemyOutlineColor{255.0f, 0.0f, 0.0f};
+    bool hasTeamWireframeColors = false;
+    glm::vec3 friendlyWireframeColor{0.0f, 255.0f, 0.0f};
+    glm::vec3 enemyWireframeColor{255.0f, 0.0f, 0.0f};
 };
 
 // Optional mode-level NPC targeting policy. When absent (configured=false) the
@@ -178,6 +184,26 @@ struct GamemodeAimFov {
     float multiplier = 0.5f;
     float duration = 0.5f;
     std::string easing = "ease_in_out";
+};
+
+// Optional Payload rules. Map data owns cart origin/route/interaction geometry;
+// this block owns mode-wide timing and movement rules.
+struct GamemodePayload {
+    bool configured = false;
+    std::string attackerTeam = "attackers";
+    std::string defenderTeam = "defenders";
+    int attackerTeamIndex = 0;
+    int defenderTeamIndex = 1;
+    float overtimeSeconds = 10.0f;
+    float pushMetersPerSecondPerAttacker = 0.2f;
+    int maxPushAttackers = 6;
+    float unattendedRollbackDelaySeconds = 30.0f;
+    float rollbackMetersPerSecond = 0.2f;
+    int healHpPer10Ticks = 1;
+    bool healDefenders = false;
+    int spawnProtectionTicks = 60;
+    float teamChangeCooldownSeconds = 300.0f;
+    std::vector<std::string> classPool;
 };
 
 struct Gamemode {
@@ -249,6 +275,7 @@ struct Gamemode {
     GamemodeNpcTargeting npcTargeting;
     GamemodeNpcTravel npcTravel;
     GamemodeAimFov aimFov;
+    GamemodePayload payload;
     // ── Elimination / win rules (optional) ──────────────────────────
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
     // when only one team (or, in FFA, one actor) still has an in-play actor.

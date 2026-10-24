@@ -164,6 +164,7 @@ bool MapConfigRegistry::load(const std::string& mapId)
                     entity.position = glm::vec3(item["position"][0].get<float>(), item["position"][1].get<float>(), item["position"][2].get<float>());
                 if (item.contains("size") && item["size"].is_array() && item["size"].size() >= 3)
                     entity.size = glm::vec3(item["size"][0].get<float>(), item["size"][1].get<float>(), item["size"][2].get<float>());
+                entity.yaw = item.value("yaw", entity.yaw);
                 entity.radius = std::max(0.1f, item.value("radius", entity.radius));
                 entity.enabled = item.value("enabled", entity.enabled);
                 entity.visible = item.value("visible", entity.visible);
@@ -237,6 +238,10 @@ bool MapConfigRegistry::load(const std::string& mapId)
         if (root.contains("payload") && root["payload"].is_object()) {
             const auto& payload = root["payload"];
             next.payload.present = true;
+            auto readVec = [](const json& j, const glm::vec3& fallback) {
+                if (!j.is_array() || j.size() < 3) return fallback;
+                return glm::vec3(j[0].get<float>(), j[1].get<float>(), j[2].get<float>());
+            };
             if (payload.contains("cart_origin")) {
                 const auto& origin = payload["cart_origin"];
                 if (origin.is_array() && origin.size() >= 3) {
@@ -257,10 +262,6 @@ bool MapConfigRegistry::load(const std::string& mapId)
             }
             if (payload.contains("interaction_box") && payload["interaction_box"].is_object()) {
                 const auto& box = payload["interaction_box"];
-                auto readVec = [](const json& j, const glm::vec3& fallback) {
-                    if (!j.is_array() || j.size() < 3) return fallback;
-                    return glm::vec3(j[0].get<float>(), j[1].get<float>(), j[2].get<float>());
-                };
                 if (box.contains("size"))
                     next.payload.interactionSize = readVec(box["size"], next.payload.interactionSize);
                 if (box.contains("offset"))
@@ -270,6 +271,10 @@ bool MapConfigRegistry::load(const std::string& mapId)
                 else if (box.contains("rotation_euler"))
                     next.payload.interactionRotationEuler = readVec(box["rotation_euler"], next.payload.interactionRotationEuler);
             }
+            if (payload.contains("cart_size"))
+                next.payload.cartSize = readVec(payload["cart_size"], next.payload.cartSize);
+            else if (payload.contains("cartSize"))
+                next.payload.cartSize = readVec(payload["cartSize"], next.payload.cartSize);
             if (payload.contains("route") && payload["route"].is_array()) {
                 for (const auto& item : payload["route"]) {
                     if (!item.is_object()) continue;
@@ -287,6 +292,11 @@ bool MapConfigRegistry::load(const std::string& mapId)
                     point.order = std::max(0, item.value("order", point.order));
                     point.waitTicks = std::max(0, item.value("waitTicks", item.value("wait_ticks", point.waitTicks)));
                     point.enabled = item.value("enabled", true);
+                    point.checkpoint = item.value("checkpoint", true);
+                    point.final = item.value("final", false);
+                    point.timeBonusSeconds = std::max(0.0f,
+                        item.value("time_bonus_seconds",
+                            item.value("timeBonusSeconds", point.timeBonusSeconds)));
                     next.payload.route.push_back(std::move(point));
                 }
                 std::sort(next.payload.route.begin(), next.payload.route.end(),
@@ -716,6 +726,7 @@ bool MapConfigRegistry::save()
             {"id", entity.id}, {"type", entity.type},
             {"position", {entity.position.x, entity.position.y, entity.position.z}},
             {"size", {entity.size.x, entity.size.y, entity.size.z}},
+            {"yaw", entity.yaw},
             {"radius", entity.radius}, {"enabled", entity.enabled}, {"visible", entity.visible},
             {"oneShot", entity.oneShot}, {"tag", entity.tag}, {"monsterPool", entity.monsterPool},
             {"pickupId", entity.pickupId}, {"bossId", entity.bossId}, {"damageType", entity.damageType},
@@ -749,6 +760,9 @@ bool MapConfigRegistry::save()
                           mCurrent.payload.cartOrigin.z}},
             {"yaw", mCurrent.payload.cartYaw}
         };
+        payload["cart_size"] = {mCurrent.payload.cartSize.x,
+                                mCurrent.payload.cartSize.y,
+                                mCurrent.payload.cartSize.z};
         payload["interaction_box"] = {
             {"size", {mCurrent.payload.interactionSize.x,
                       mCurrent.payload.interactionSize.y,
@@ -766,7 +780,9 @@ bool MapConfigRegistry::save()
                 {"id", point.id},
                 {"position", {point.position.x, point.position.y, point.position.z}},
                 {"radius", point.radius}, {"order", point.order},
-                {"waitTicks", point.waitTicks}, {"enabled", point.enabled}
+                {"waitTicks", point.waitTicks}, {"enabled", point.enabled},
+                {"checkpoint", point.checkpoint}, {"final", point.final},
+                {"time_bonus_seconds", point.timeBonusSeconds}
             });
         }
         root["payload"] = std::move(payload);
@@ -970,8 +986,10 @@ bool mapEntityConfigSelfTest(std::string& report)
   "blocks":[{"id":"b1","shape":"box","position":[1,2,3],"size":[4,5,6],
              "rotationEuler":[0,0,15],"material":"","enabled":true,"tags":["a"]}],
   "payload":{"cart_origin":{"position":[7,8,9],"yaw":45},
+             "cart_size":[2,1.5,1],
              "route":[{"id":"r1","position":[1,1,1],"radius":2,"order":0},
-                      {"id":"r2","position":[2,2,2],"radius":3,"order":1}]}
+                      {"id":"r2","position":[2,2,2],"radius":3,"order":1,
+                       "checkpoint":true,"final":true,"time_bonus_seconds":300}]}
 })";
     }
     if (!reg.load(mapId))
@@ -982,6 +1000,12 @@ bool mapEntityConfigSelfTest(std::string& report)
         fail("payload route was not parsed");
     if (reg.current().payload.route[1].id != "r2")
         fail("payload route order was not applied");
+    if (!reg.current().payload.route[1].final)
+        fail("payload final route flag was not parsed");
+    if (reg.current().payload.route[1].timeBonusSeconds != 300.0f)
+        fail("payload checkpoint time bonus was not parsed");
+    if (std::abs(reg.current().payload.cartSize.x - 2.0f) > 0.001f)
+        fail("payload cart size was not parsed");
     if (!reg.save())
         fail("block/route selftest map failed to save");
     {
@@ -992,6 +1016,10 @@ bool mapEntityConfigSelfTest(std::string& report)
                 fail("blocks missing after save");
             if (!root.contains("payload") || root["payload"]["route"].size() != 2)
                 fail("payload route missing after save");
+            if (!root["payload"]["route"][1].value("final", false))
+                fail("payload final flag missing after save");
+            if (!root["payload"].contains("cart_size"))
+                fail("payload cart size missing after save");
         } catch (const std::exception& e) {
             fail(std::string("block/route saved json unparsable: ") + e.what());
         }

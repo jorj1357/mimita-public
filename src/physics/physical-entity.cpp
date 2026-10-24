@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <unordered_map>
 #include <vector>
@@ -43,6 +44,7 @@
 #include "render/render-world.h"
 #include "world/texture-store.h"
 #include "map/map_common.h"
+#include "map/map_loader.h"
 
 extern Renderer* gRenderer;
 
@@ -1298,12 +1300,137 @@ void drawTexturedPhysicalBox(const Camera& camera, const PhysicalEntity& e)
 
 } // namespace
 
+namespace {
+
+struct CachedPropMesh
+{
+    Mesh mesh;
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    glm::vec3 boundsMin{0.0f};
+    glm::vec3 boundsMax{0.0f};
+    bool attempted = false;
+    bool ready = false;
+};
+
+std::unordered_map<std::string, CachedPropMesh> gPropMeshes;
+
+CachedPropMesh& propMeshFor(const std::string& path)
+{
+    CachedPropMesh& cached = gPropMeshes[path];
+    if (cached.attempted)
+        return cached;
+    cached.attempted = true;
+    cached.mesh = loadGLB(path, false);
+    if (cached.mesh.verts.empty())
+        return cached;
+
+    cached.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+    cached.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+    for (const Vertex& v : cached.mesh.verts)
+    {
+        cached.boundsMin = glm::min(cached.boundsMin, v.pos);
+        cached.boundsMax = glm::max(cached.boundsMax, v.pos);
+    }
+    if (cached.boundsMax.x <= cached.boundsMin.x ||
+        cached.boundsMax.y <= cached.boundsMin.y ||
+        cached.boundsMax.z <= cached.boundsMin.z)
+        return cached;
+
+    glGenVertexArrays(1, &cached.vao);
+    glGenBuffers(1, &cached.vbo);
+    glBindVertexArray(cached.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, cached.vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 (GLsizeiptr)(cached.mesh.verts.size() * sizeof(Vertex)),
+                 cached.mesh.verts.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, pos));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, uv));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, normal));
+    glBindVertexArray(0);
+    cached.ready = true;
+    return cached;
+}
+
+bool drawPropModel(const PhysicalEntity& e, const Camera& camera)
+{
+    if (e.modelPath.empty() || !gRenderer || !gRenderer->shaderProgram)
+        return false;
+    CachedPropMesh& cached = propMeshFor(e.modelPath);
+    if (!cached.ready)
+        return false;
+
+    const glm::vec3 nativeExtent = cached.boundsMax - cached.boundsMin;
+    const glm::vec3 targetExtent = e.halfExtents * 2.0f;
+    const glm::vec3 scale = targetExtent / nativeExtent;
+    const glm::vec3 nativeCenter = (cached.boundsMin + cached.boundsMax) * 0.5f;
+
+    const float alpha = PhysicalEntitySystem::instance().renderAlpha();
+    const glm::vec3 previousPosition(e.previousTransform[3]);
+    const glm::vec3 currentPosition(e.transform[3]);
+    const glm::quat previousOrientation =
+        glm::normalize(glm::quat_cast(glm::mat3(e.previousTransform)));
+    const glm::mat4 interp = glm::translate(
+        glm::mat4(1.0f), glm::mix(previousPosition, currentPosition, alpha)) *
+        glm::mat4_cast(glm::normalize(glm::slerp(
+            previousOrientation, e.orientation, alpha)));
+    const glm::mat4 model = interp * glm::scale(glm::mat4(1.0f), scale) *
+        glm::translate(glm::mat4(1.0f), -nativeCenter);
+
+    glUseProgram(gRenderer->shaderProgram);
+    const glm::mat4 view = camera.getView();
+    const glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth,
+                                          (float)gRenderer->sceneHeight);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"),
+                       1, GL_FALSE, &model[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"),
+                       1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"),
+                       1, GL_FALSE, &proj[0][0]);
+    setUniforms(gRenderer->shaderProgram, camera.pos);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+    GLint cullModeWas = GL_BACK;
+    glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(cached.vao);
+    for (const Mesh::Batch& batch : cached.mesh.batches)
+    {
+        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
+        glBindTexture(GL_TEXTURE_2D, tex);
+        if (batch.doubleSided)
+            glDisable(GL_CULL_FACE);
+        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        if (batch.doubleSided)
+            glEnable(GL_CULL_FACE);
+    }
+    glBindVertexArray(0);
+    if (!cullWasEnabled)
+        glDisable(GL_CULL_FACE);
+    glCullFace(cullModeWas);
+    return true;
+}
+
+} // namespace
+
 void drawPhysicalEntities(const Camera& camera)
 {
     const std::vector<PhysicalEntity>& entities =
         PhysicalEntitySystem::instance().entities();
     for (const PhysicalEntity& e : entities)
     {
+        if (e.renderModel && drawPropModel(e, camera))
+            continue;
         if (e.localTriangles.empty())
             continue;
         // Prefer the generated destructible mesh; fall back to the box.

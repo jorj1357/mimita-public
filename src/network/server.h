@@ -151,6 +151,10 @@ struct HeadlessWorld
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
     std::vector<ServerSpawnPoint> spawnPoints;
+    // Authored spawnpoint entities are appended after the GLB spawn list. Keep
+    // the base count so a rebuild removes only the previously appended entries.
+    size_t authoredSpawnPointBaseCount = 0;
+    bool authoredSpawnPointsApplied = false;
 
     // Uniform spatial grid for accelerating projectile-triangle queries
     float collisionChunkSize = 6.0f;
@@ -180,6 +184,7 @@ struct ServerInput
     bool reviveHeld = false;
     bool flyUp = false;
     bool flyDown = false;
+    bool flyFast = false;
     uint32_t tick = 0;
 };
 
@@ -1436,8 +1441,11 @@ struct ServerLaunchSettings
 // geometry revision grows, despawn when the entity disappears.
 struct PhysicalEntityReplicationState
 {
-    // networkId -> number of authoritative cuts already broadcast.
-    std::unordered_map<uint32_t, uint32_t> broadcastCuts;
+    // playerId -> (networkId -> number of cuts already sent to that client).
+    // Spawns are replayed to players who join after the entity existed, so the
+    // Payload cart is visible to the first client regardless of join order.
+    std::unordered_map<uint32_t,
+        std::unordered_map<uint32_t, uint32_t>> playerKnownCuts;
 };
 
 // ─── Listen Server (host runs server in same process) ──────────────────────
@@ -1526,6 +1534,7 @@ struct PendingIcePeer {
 extern std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
 
 bool initServerIceListener(ListenServerState& state);
+void publishServerIceListener(const ListenServerState& state);
 void shutdownIceCoordinatorPoller();
 void tickIceCoordinator(ListenServerState& state, size_t playerCount);
 void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId,

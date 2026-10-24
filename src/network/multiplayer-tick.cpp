@@ -150,6 +150,8 @@ uint32_t movementReportFlagsFromMpInput(const MpInput& input)
         flags |= MOVEMENT_REPORT_FLY_UP;
     if (input.flyDown)
         flags |= MOVEMENT_REPORT_FLY_DOWN;
+    if (input.flyFast)
+        flags |= MOVEMENT_REPORT_FLY_FAST;
     return flags;
 }
 
@@ -969,6 +971,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             else if (!connect.cancelled)
             {
                 printf("[ICE CONNECT] failed: %s\n", connect.message.c_str());
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Errors,
+                    "network.ice-join-failed", connect.roomCode,
+                    "client ICE join finished without a transport", ctx.tick,
+                    {{"room_code", connect.roomCode},
+                     {"reason", connect.message}},
+                    __FILE__, __LINE__, __FUNCTION__);
                 ctx.connectionStatus = connect.message;
                 ctx.connectionState = ConnectionState::Disconnected;
                 ctx.connectFailed = true;

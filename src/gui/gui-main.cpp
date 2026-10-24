@@ -348,6 +348,16 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
     printf("[ROOM CODE WAIT START] path=%s processId=%lu\n",
            gPendingServerRoomFilePath.c_str(),
            (unsigned long)gServerProcessInfo.dwProcessId);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.room-code.wait.started",
+        std::to_string(gServerProcessInfo.dwProcessId),
+        "waiting for dedicated server room registration", 0,
+        nlohmann::json{{"server_pid", gServerProcessInfo.dwProcessId},
+                       {"timeout_ms", 60000},
+                       {"map", settings.mapName},
+                       {"mode", settings.gameMode}},
+        __FILE__, __LINE__, __func__);
 
     return true;
 }
@@ -357,24 +367,21 @@ bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
     if (MP_CONTEXT.active)
         return false;
 
-    auto queueRoomJoin = [](const std::string& roomCode,
-                            const MimitaNet::ServerLaunchSettings& launchSettings) {
+    auto queueLocalJoin = [](const MimitaNet::ServerLaunchSettings& launchSettings) {
         gPendingConnect = {};
         gPendingConnect.shouldConnect = true;
-        gPendingConnect.roomCode = roomCode;
+        gPendingConnect.directAddress =
+            "127.0.0.1:" + std::to_string(launchSettings.port);
         gPendingConnect.mapName = launchSettings.mapName;
         gPendingConnect.serverName = launchSettings.serverName;
         GAME_STATE = GAME_PLAYING;
     };
 
-    // Match the GUI launch path: join only after the server has registered a
-    // room and supplied its coordinator room code. A running preset server is
-    // retained across client leave and reused rather than started a second time.
+    // Join the local authoritative UDP server as soon as it is available; its
+    // public coordinator room is registered independently in the background.
     if (gListenServer.active)
     {
-        if (gListenServer.serverCode.empty())
-            return false;
-        queueRoomJoin(gListenServer.serverCode, gServerLaunchSettings);
+        queueLocalJoin(gServerLaunchSettings);
         return true;
     }
 
@@ -391,21 +398,8 @@ bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
                 gServerLaunchSettings.port == settings.port;
             if (!samePreset)
                 return false;
-            if (!gServerLaunchSettings.serverCode.empty())
-            {
-                queueRoomJoin(gServerLaunchSettings.serverCode,
-                              gServerLaunchSettings);
-                return true;
-            }
-            if (gWaitingForServerRoomCode)
-            {
-                gPendingConnect = {};
-                gPendingConnect.mapName = gServerLaunchSettings.mapName;
-                gPendingConnect.serverName = gServerLaunchSettings.serverName;
-                GAME_STATE = GAME_PLAYING;
-                return true;
-            }
-            return false;
+            queueLocalJoin(gServerLaunchSettings);
+            return true;
         }
 
         CloseHandle(gServerProcessInfo.hProcess);
@@ -418,23 +412,20 @@ bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
     gServerLaunchSettings = settings;
     if (!launchServerProcess(gServerLaunchSettings))
     {
-        // Keep the GUI's listen-server fallback, but join by its registered
-        // room code just like the GUI button does.
+        // Keep the GUI's listen-server fallback and connect through its local
+        // authoritative socket.
         if (!MimitaNet::startListenServer(
                 gListenServer, gServerLaunchSettings.port, "", "",
-                &gServerLaunchSettings) || gListenServer.serverCode.empty())
+                &gServerLaunchSettings))
             return false;
-        queueRoomJoin(gListenServer.serverCode, gServerLaunchSettings);
+        queueLocalJoin(gServerLaunchSettings);
         return true;
     }
 
     gServerLaunchSettings.externalProcessLaunched = true;
-    // guiMain() polls the room-file handshake and then queues the room-code
-    // connection. Do not connect here before the coordinator has registered it.
-    gPendingConnect = {};
-    gPendingConnect.mapName = gServerLaunchSettings.mapName;
-    gPendingConnect.serverName = gServerLaunchSettings.serverName;
-    GAME_STATE = GAME_PLAYING;
+    // Start the local client immediately. The room-file handshake only updates
+    // the online listing; it is not a prerequisite for local gameplay.
+    queueLocalJoin(gServerLaunchSettings);
     return true;
 }
 
@@ -671,6 +662,19 @@ static bool pollPendingServerRoomCode()
             printf("[ROOM DISPLAY] source=headless-server code=%s\n",
                    content.c_str());
 
+            const uint64_t waitElapsedMs = now - gPendingServerRoomFileStartMs;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.room-code.wait.completed",
+                std::to_string(gServerProcessInfo.dwProcessId),
+                "dedicated server room code received", 0,
+                nlohmann::json{{"server_pid", gServerProcessInfo.dwProcessId},
+                               {"wait_elapsed_ms", waitElapsedMs},
+                               {"timeout_ms", 60000},
+                               {"map", gServerLaunchSettings.mapName},
+                               {"mode", gServerLaunchSettings.gameMode}},
+                __FILE__, __LINE__, __func__);
+
             DeleteFileA(gPendingServerRoomFilePath.c_str());
             gPendingServerRoomFilePath.clear();
             gWaitingForServerRoomCode = false;
@@ -678,9 +682,21 @@ static bool pollPendingServerRoomCode()
         }
     }
 
-    constexpr uint64_t ROOM_CODE_TIMEOUT_MS = 15000;
+    constexpr uint64_t ROOM_CODE_TIMEOUT_MS = 60000;
     if (now - gPendingServerRoomFileStartMs >= ROOM_CODE_TIMEOUT_MS)
     {
+        const uint64_t waitElapsedMs = now - gPendingServerRoomFileStartMs;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.room-code.wait.timed-out",
+            std::to_string(gServerProcessInfo.dwProcessId),
+            "dedicated server room was not registered before the wait deadline", 0,
+            nlohmann::json{{"server_pid", gServerProcessInfo.dwProcessId},
+                           {"wait_elapsed_ms", waitElapsedMs},
+                           {"timeout_ms", ROOM_CODE_TIMEOUT_MS},
+                           {"map", gServerLaunchSettings.mapName},
+                           {"mode", gServerLaunchSettings.gameMode}},
+            __FILE__, __LINE__, __func__);
         printf("[ROOM CODE WAIT TIMEOUT] path=%s elapsedMs=%llu\n",
                gPendingServerRoomFilePath.c_str(),
                (unsigned long long)(now - gPendingServerRoomFileStartMs));
@@ -707,18 +723,23 @@ void guiMain(GLFWwindow* win, GameState& state)
     // 7 22 2026 1230 no localhost 
     if (pollPendingServerRoomCode())
     {
-        Debug::log(
-            Debug::Category::Networking,
-            "[COMMUNITY AUTO CONNECT] room=%s\n",
-            gServerLaunchSettings.serverCode.c_str());
+        // The host joined directly when startup was requested. Preserve the
+        // room code for other players without replacing that local session.
+        if (!MP_CONTEXT.active)
+        {
+            Debug::log(
+                Debug::Category::Networking,
+                "[COMMUNITY AUTO CONNECT] room=%s source=coordinator-fallback\n",
+                gServerLaunchSettings.serverCode.c_str());
 
-        gPendingConnect = {};
-        gPendingConnect.shouldConnect = true;
-        gPendingConnect.roomCode = gServerLaunchSettings.serverCode;
+            gPendingConnect = {};
+            gPendingConnect.shouldConnect = true;
+            gPendingConnect.roomCode = gServerLaunchSettings.serverCode;
 
-        onlineMenuSetActive(false);
-        state = GAME_PLAYING;
-        return;
+            onlineMenuSetActive(false);
+            state = GAME_PLAYING;
+            return;
+        }
     }
 
     if (gGuiMenuState == GUI_MENU_AUTH)
@@ -1034,8 +1055,15 @@ void guiMain(GLFWwindow* win, GameState& state)
                         printf("[ONLINE MENU] External server process launched port=%u code=%s map=%s\n",
                                gServerLaunchSettings.port, gServerLaunchSettings.serverCode.c_str(),
                                gServerLaunchSettings.mapName.c_str());
-                        printf("[ONLINE MENU] Use 'Connect Localhost' or run: --client --connect 127.0.0.1:%u --name <name>\n",
-                               gServerLaunchSettings.port);
+                        printf("[ONLINE MENU] joining local server now; coordinator room registration continues in background\n");
+                        gPendingConnect = {};
+                        gPendingConnect.shouldConnect = true;
+                        gPendingConnect.directAddress =
+                            "127.0.0.1:" + std::to_string(gServerLaunchSettings.port);
+                        gPendingConnect.mapName = gServerLaunchSettings.mapName;
+                        gPendingConnect.serverName = gServerLaunchSettings.serverName;
+                        onlineMenuSetActive(false);
+                        state = GAME_PLAYING;
                     }
                     else
                     {
@@ -1054,7 +1082,10 @@ void guiMain(GLFWwindow* win, GameState& state)
 
                             gPendingConnect = {};
                             gPendingConnect.shouldConnect = true;
-                            gPendingConnect.roomCode = gListenServer.serverCode;
+                            gPendingConnect.directAddress =
+                                "127.0.0.1:" + std::to_string(gServerLaunchSettings.port);
+                            gPendingConnect.mapName = gServerLaunchSettings.mapName;
+                            gPendingConnect.serverName = gServerLaunchSettings.serverName;
 
                             onlineMenuSetActive(false);
                             state = GAME_PLAYING;

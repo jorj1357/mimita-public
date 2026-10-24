@@ -871,6 +871,7 @@ struct MpInput
     bool crouchHeld = false;
     bool flyUp = false;
     bool flyDown = false;
+    bool flyFast = false;
     int equippedSlot = 0;
     uint8_t weaponState = 0;
     float sizeScale = 1.0f;

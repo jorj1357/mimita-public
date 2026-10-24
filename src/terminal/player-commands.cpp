@@ -17,6 +17,7 @@
 #include "config/size-scaling-config.h"
 #include "network/packets.h"
 #include "network/multiplayer-context.h"
+#include "physics/movement/movement-step.h"
 #include "gui/hud/chat-bubble.h"
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-window.h"
@@ -175,7 +176,8 @@ void registerPlayerCommands()
                     return;
                 }
                 mp.flyEnabled = true;
-                mp.flySpeedMultiplier = std::clamp(multiplier, 0.01f, 100.0f);
+                mp.flySpeedMultiplier = std::clamp(
+                    multiplier, 0.01f, movementMaxDeveloperFlightMultiplier());
                 MimitaNet::mpSendServerCommand(
                     mp, "fly " + std::to_string(mp.flySpeedMultiplier));
                 Terminal::instance().addLog(

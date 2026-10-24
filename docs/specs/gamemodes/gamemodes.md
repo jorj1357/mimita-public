@@ -49,9 +49,10 @@ the active runtime.
 The configured countdown duration (three seconds for standard matches) uses
 monotonic wall time, even if server simulation stalls. Each match or round
 shows one forward-only `3 → 2 → 1 → GO` sequence. Pause simulation for all
-world NPCs during COUNTDOWN and GO while the server continues networking and
-phase processing; resume NPC simulation at ACTIVE. The server enters GO on the
-first available simulation tick after the wall-clock deadline.
+world NPCs during COUNTDOWN. By default, also hold them during GO and resume at
+ACTIVE. A mode may set `features.freeze_during_go` to `false` to resume actor
+movement, NPC simulation, and team AI as soon as GO is shown. The server enters
+GO on the first available simulation tick after the wall-clock deadline.
 
 `modelist` lists modes and their numeric IDs only. `modestart N` starts or live-
 switches to mode N through the results screen and then the new mode's default
@@ -64,11 +65,12 @@ no `modepick` command.
 `startmelee` is a named Melee launch action, not a numeric alias for
 `modestart`. If the local player is already connected, it requests the
 authoritative server to switch that room to the stable gamemode ID `melee`.
-If disconnected, it starts the configured Melee server preset and joins only
-after the server has registered a room code. The disconnected path must never
-fall back to sandbox or report that the player joined before the connection is
-confirmed. Its initial map comes from the Melee preset; the normal GUI map
-picker remains the way to choose another map. Command receipt, handler result,
+If disconnected, it starts the configured Melee server preset and connects the
+local host client as soon as that authoritative server is ready; coordinator
+registration continues in parallel so remote players can join by room code.
+The path must never fall back to sandbox or report joining before the
+connection is confirmed. Its initial map comes from the Melee preset; the
+normal GUI map picker remains the way to choose another map. Command receipt, handler result,
 server acceptance/rejection, room registration, connection transition, active
 mode, and actor roster are separate evidence; sending the command is not proof
 that the server applied it.
@@ -265,7 +267,8 @@ Commands, for host only, 9 2 2026 0922 move this into its own commands spec
     -   "description": "Red vs Blue. First team to 30 kills wins.",  
     -   "team\_names": \["RED", "BLUE"\],  
     -   "goal\_value": 30,  
-    -   "time\_limit\_seconds": 300,  
+-   "time\_limit\_seconds": 180,
+-   "time\_limit\_outcome": "stalemate",
     -   "respawn\_seconds": 0.01,  
     -   "kill\_heals": true,  
     -   "countdown\_seconds": 3,  
@@ -273,8 +276,8 @@ Commands, for host only, 9 2 2026 0922 move this into its own commands spec
     -   "rematch\_seconds": 5,  
     -   "spawn\_offset\_radius": 5.0,  
     -   "spawn\_strategy": "shared",  
-    -   "intermission\_seconds": 15,  
-    -   "results\_seconds": 8,  
+-   "intermission\_seconds": 10,
+-   "results\_seconds": 5,
     -   "maps": \["mimita-duels-map-v3", "atdm", "funworld"\]  
     - }  
 - “modestart”   

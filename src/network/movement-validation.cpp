@@ -24,6 +24,7 @@ namespace {
 constexpr float kTickSeconds = 1.0f / 60.0f;
 constexpr float kFinitePositionLimit = 100000.0f;
 constexpr float kFiniteVelocityLimit = 5000.0f;
+constexpr float kMaximumFlightSpeed = 9999.0f;
 
 bool hasFlag(uint32_t flags, MovementReportFlags flag)
 {
@@ -155,7 +156,9 @@ bool crossesBlockingGeometry(const HeadlessWorld* world,
                              glm::vec3 from,
                              glm::vec3 to,
                              float tolerance,
-                             glm::vec3* outBlockingNormal)
+                             glm::vec3* outBlockingNormal,
+                             float* outHitDistance,
+                             bool includeHorizontalSurfaces)
 {
     if (!world || world->triangles.empty())
         return false;
@@ -197,7 +200,7 @@ bool crossesBlockingGeometry(const HeadlessWorld* world,
         if (triangleIndex < 0 || triangleIndex >= static_cast<int>(world->triangles.size()))
             continue;
         const CollisionTriangle& tri = world->triangles[triangleIndex];
-        if (std::abs(tri.normal.z) > 0.85f)
+        if (!includeHorizontalSurfaces && std::abs(tri.normal.z) > 0.85f)
             continue;
         float hitDistance = 0.0f;
         if (!rayTriangle(from, direction, tri, maxDistance, hitDistance) ||
@@ -214,6 +217,8 @@ bool crossesBlockingGeometry(const HeadlessWorld* world,
         return false;
     if (outBlockingNormal)
         *outBlockingNormal = nearestNormal;
+    if (outHitDistance)
+        *outHitDistance = nearestHit;
     return true;
 }
 
@@ -591,8 +596,10 @@ MovementValidationResult validateClientMovementReport(
         movementIsFinite(result.acceptedState);
     if (!finiteState)
         return reject(MovementValidationReason::NonFinite);
+    const float maximumBaseVelocity = player.flyEnabled
+        ? kMaximumFlightSpeed : kFiniteVelocityLimit;
     if (!componentMagnitudeAllowed(report.position, kFinitePositionLimit) ||
-        !componentMagnitudeAllowed(report.baseVelocity, kFiniteVelocityLimit) ||
+        !componentMagnitudeAllowed(report.baseVelocity, maximumBaseVelocity) ||
         !componentMagnitudeAllowed(report.externalImpulse, kFiniteVelocityLimit) ||
         report.sizeScale <= 0.0f)
     {
@@ -676,7 +683,7 @@ MovementValidationResult validateClientMovementReport(
         }
     }
 
-    if (!insideBounds(report.position, config))
+    if (!player.flyEnabled && !insideBounds(report.position, config))
     {
         result.decision = MovementValidationDecision::Correct;
         result.reason = MovementValidationReason::OutOfBounds;
@@ -692,12 +699,15 @@ MovementValidationResult validateClientMovementReport(
                                 previousPosition,
                                 report.position,
                                 config.wallSweepTolerance,
-                                &blockingNormal))
+                                &blockingNormal,
+                                nullptr,
+                                player.flyEnabled))
     {
         // Skip the correction when the player is falling into the void below
         // the map. Void death handles the fall; snapping back up would
         // rubberband the player above the kill threshold forever.
-        if (!(context.world && report.position.z < context.world->boundsMin.z))
+        if (player.flyEnabled ||
+            !(context.world && report.position.z < context.world->boundsMin.z))
         {
             result.decision = MovementValidationDecision::Correct;
             result.reason = MovementValidationReason::BlockingGeometry;

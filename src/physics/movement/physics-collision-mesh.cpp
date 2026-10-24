@@ -110,35 +110,6 @@ bool segmentTriangleIntersect(const glm::vec3& p, const glm::vec3& q,
 // Same test as above, but reports only a crossing after the sweep has
 // actually started. A hit at t=0 belongs to the old pose and must not glue an
 // actor to a surface while it is leaving that surface.
-bool segmentTriangleIntersectAfterStart(const glm::vec3& p,
-                                        const glm::vec3& q,
-                                        const glm::vec3& a,
-                                        const glm::vec3& b,
-                                        const glm::vec3& c,
-                                        float& outT)
-{
-    const glm::vec3 n = glm::cross(b - a, c - a);
-    const float nLen = glm::length(n);
-    if (nLen < 1e-10f)
-        return false;
-    const glm::vec3 nn = n / nLen;
-    const float dp = glm::dot(p - a, nn);
-    const float dq = glm::dot(q - a, nn);
-    if (dp * dq > 0.0f)
-        return false;
-    const float denom = dp - dq;
-    if (std::fabs(denom) < 1e-12f)
-        return false;
-    const float t = dp / denom;
-    if (t <= 1e-4f || t > 1.0f + 1e-4f)
-        return false;
-    const glm::vec3 hit = p + (q - p) * t;
-    if (!pointInTriangle(hit, a, b, c))
-        return false;
-    outT = t;
-    return true;
-}
-
 // Triangle vs triangle: edges of each against the other, then containment.
 bool triangleTriangleIntersect(const glm::vec3& v0, const glm::vec3& v1,
                                const glm::vec3& v2, const glm::vec3& u0,
@@ -153,6 +124,89 @@ bool triangleTriangleIntersect(const glm::vec3& v0, const glm::vec3& v1,
     if (pointInTriangle(v0, u0, u1, u2)) return true;
     if (pointInTriangle(u0, v0, v1, v2)) return true;
     return false;
+}
+
+bool sweptTriangleTriangleIntersect(const glm::vec3& a0,
+                                    const glm::vec3& b0,
+                                    const glm::vec3& c0,
+                                    const glm::vec3& translation,
+                                    const glm::vec3& wa,
+                                    const glm::vec3& wb,
+                                    const glm::vec3& wc,
+                                    float shellRadius,
+                                    float& outTime,
+                                    glm::vec3& outNormal)
+{
+    const glm::vec3 actorEdges[] = {b0 - a0, c0 - b0, a0 - c0};
+    const glm::vec3 worldEdges[] = {wb - wa, wc - wb, wa - wc};
+    glm::vec3 axes[11];
+    int axisCount = 0;
+    axes[axisCount++] = glm::cross(actorEdges[0], actorEdges[1]);
+    axes[axisCount++] = glm::cross(worldEdges[0], worldEdges[1]);
+    for (const glm::vec3& actorEdge : actorEdges)
+        for (const glm::vec3& worldEdge : worldEdges)
+            axes[axisCount++] = glm::cross(actorEdge, worldEdge);
+
+    float enter = -std::numeric_limits<float>::infinity();
+    float leave = 1.0f;
+    glm::vec3 enterNormal(0.0f);
+    const glm::vec3 actorVertices[] = {a0, b0, c0};
+    const glm::vec3 worldVertices[] = {wa, wb, wc};
+    const glm::vec3 actorCenter = (a0 + b0 + c0) / 3.0f;
+    const glm::vec3 worldCenter = (wa + wb + wc) / 3.0f;
+    for (int axisIndex = 0; axisIndex < axisCount; ++axisIndex)
+    {
+        const float axisLength = glm::length(axes[axisIndex]);
+        if (axisLength <= 1e-7f)
+            continue;
+        const glm::vec3 axis = axes[axisIndex] / axisLength;
+        float actorMin = glm::dot(actorVertices[0], axis);
+        float actorMax = actorMin;
+        float worldMin = glm::dot(worldVertices[0], axis);
+        float worldMax = worldMin;
+        for (int vertex = 1; vertex < 3; ++vertex)
+        {
+            const float actorProjection = glm::dot(actorVertices[vertex], axis);
+            const float worldProjection = glm::dot(worldVertices[vertex], axis);
+            actorMin = std::min(actorMin, actorProjection);
+            actorMax = std::max(actorMax, actorProjection);
+            worldMin = std::min(worldMin, worldProjection);
+            worldMax = std::max(worldMax, worldProjection);
+        }
+        actorMin -= shellRadius;
+        actorMax += shellRadius;
+        const float axisSpeed = glm::dot(translation, axis);
+        if (std::fabs(axisSpeed) <= 1e-8f)
+        {
+            if (actorMax < worldMin || worldMax < actorMin)
+                return false;
+            continue;
+        }
+
+        float axisEnter = (worldMin - actorMax) / axisSpeed;
+        float axisLeave = (worldMax - actorMin) / axisSpeed;
+        if (axisEnter > axisLeave)
+            std::swap(axisEnter, axisLeave);
+        if (axisEnter >= enter - 1e-6f)
+        {
+            enter = axisEnter;
+            enterNormal = glm::dot(actorCenter - worldCenter, axis) >= 0.0f
+                ? axis : -axis;
+        }
+        leave = std::min(leave, axisLeave);
+        if (enter > leave)
+            return false;
+    }
+
+    // A contact that exists only at t=0 is the prior pose. Ignore it while
+    // moving away so touching a surface never glues the actor in place.
+    if (leave <= 1e-6f || enter > 1.0f || leave < 0.0f ||
+        glm::dot(enterNormal, enterNormal) < 1e-8f ||
+        (enter < 0.0f && glm::dot(translation, enterNormal) >= 0.0f))
+        return false;
+    outTime = glm::clamp(enter, 0.0f, 1.0f);
+    outNormal = enterNormal;
+    return true;
 }
 
 AABB transformedColliderAABB(const glm::vec3& localMin,
@@ -515,10 +569,10 @@ void collectActorMeshContactsInto(
             const glm::vec3 prevCentroid = (pa + pb + pc) / 3.0f;
             const glm::vec3 sweep = centroid - prevCentroid;
 
-            const float maxVertexTravel = std::max({
-                glm::length(a - pa), glm::length(b - pb), glm::length(c - pc)});
-            const int sweepSteps = std::clamp(
-                (int)std::ceil(maxVertexTravel / 0.08f), 1, 64);
+            const float deformationRadius = std::max({
+                glm::length((a - pa) - sweep),
+                glm::length((b - pb) - sweep),
+                glm::length((c - pc) - sweep)});
             AABB actorTriangleBounds;
             actorTriangleBounds.min = glm::min(glm::min(a, glm::min(b, c)),
                                                glm::min(pa, glm::min(pb, pc)));
@@ -550,7 +604,10 @@ void collectActorMeshContactsInto(
             for (size_t ci = 0; ci < scanCount; ++ci)
             {
                 if (triangleTests >= kMaxTriangleTests)
+                {
+                    gActorNarrowphase.budgetExceeded = true;
                     return;
+                }
                 const int wi = usePairCache ? pairRange.first[ci] : scan[ci];
                 if (wi < 0 || wi >= (int)world.collisionMesh.triangles.size())
                     continue;
@@ -580,6 +637,7 @@ void collectActorMeshContactsInto(
                 bool roundedFeatureHit = false;
                 RoundedFeaturePair roundedFeature;
                 float timeOfImpact = 0.0f;
+                glm::vec3 sweepNormal(0.0f);
                 bool currentOverlap = triangleTriangleIntersect(
                     a, b, c, wt.a, wt.b, wt.c);
                 ++triangleTests;
@@ -587,35 +645,41 @@ void collectActorMeshContactsInto(
                 if (currentOverlap) {
                     hitCentroid = centroid;
                     hit = true;
+                    sweepNormal = wt.normal;
                 } else if (glm::dot(sweep, sweep) > 1e-8f) {
-                    float crossingT = 0.0f;
-                    if (segmentTriangleIntersectAfterStart(
-                            pa, a, wt.a, wt.b, wt.c, crossingT) ||
-                        segmentTriangleIntersectAfterStart(
-                            pb, b, wt.a, wt.b, wt.c, crossingT) ||
-                        segmentTriangleIntersectAfterStart(
-                            pc, c, wt.a, wt.b, wt.c, crossingT)) {
-                        hitCentroid = prevCentroid + sweep * crossingT;
-                        timeOfImpact = crossingT;
+                    const float sweepPadding = deformationRadius +
+                        (roundedFeatures ? featureRadius : 0.0f);
+                    if (sweptTriangleTriangleIntersect(
+                            pa, pb, pc, sweep,
+                            wt.a, wt.b, wt.c, sweepPadding,
+                            timeOfImpact, sweepNormal)) {
+                        hitCentroid = prevCentroid + sweep * timeOfImpact;
                         hit = true;
                     }
-
-                    for (int si = 1; !hit && si < sweepSteps; ++si) {
-                        const float alpha = (float)si / (float)sweepSteps;
+                } else if (deformationRadius > 1e-5f) {
+                    // Pure pose rotation has no centroid translation. Retain a
+                    // bounded pose sweep for that narrow case; fast translation
+                    // is handled continuously above and never depends on steps.
+                    const int rotationSteps = std::clamp(
+                        (int)std::ceil(deformationRadius / 0.08f), 1, 64);
+                    for (int si = 1; !hit && si <= rotationSteps; ++si) {
+                        const float alpha = (float)si / (float)rotationSteps;
                         const glm::vec3 sa = pa + (a - pa) * alpha;
                         const glm::vec3 sb = pb + (b - pb) * alpha;
                         const glm::vec3 sc = pc + (c - pc) * alpha;
                         ++triangleTests;
-                ++gActorNarrowphase.triangleTests;
+                        ++gActorNarrowphase.triangleTests;
                         if (triangleTriangleIntersect(sa, sb, sc,
                                                        wt.a, wt.b, wt.c)) {
-                            hitCentroid = (sa + sb + sc) / 3.0f;
+                            hitCentroid = prevCentroid + sweep * alpha;
                             timeOfImpact = alpha;
+                            sweepNormal = wt.normal;
                             hit = true;
-                            break;
                         }
-                        if (triangleTests >= kMaxTriangleTests)
+                        if (triangleTests >= kMaxTriangleTests) {
+                            gActorNarrowphase.budgetExceeded = true;
                             return;
+                        }
                     }
                 }
                 if (!hit && roundedFeatures)
@@ -637,7 +701,8 @@ void collectActorMeshContactsInto(
                 if (!hit)
                     continue;
 
-                glm::vec3 n = wt.normal;
+                glm::vec3 n = !currentOverlap && glm::dot(sweepNormal, sweepNormal) > 1e-8f
+                    ? sweepNormal : wt.normal;
                 float penetration = 0.0f;
                 glm::vec3 roundedNormal = n;
                 if (roundedFeatureHit)

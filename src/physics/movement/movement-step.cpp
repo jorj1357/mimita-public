@@ -16,6 +16,10 @@
 
 namespace {
 
+constexpr float kDeveloperFlightBaseSpeed = 5.0f;
+constexpr float kDeveloperFlightMaximumSpeed = 9999.0f;
+constexpr float kDeveloperFlightFastMultiplier = 3.0f;
+
 float positiveOrDefault(float value, float fallback)
 {
     return value > 0.0f ? value : fallback;
@@ -480,6 +484,22 @@ void markContactEventKind(MovementStepEvents& events, MovementContactKind kind)
 }
 
 } // namespace
+
+float movementMaxDeveloperFlightMultiplier()
+{
+    return kDeveloperFlightMaximumSpeed / kDeveloperFlightBaseSpeed;
+}
+
+float movementDeveloperFlightSpeed(float multiplier, bool fast)
+{
+    if (!std::isfinite(multiplier))
+        multiplier = 1.0f;
+    const float safeMultiplier = std::clamp(
+        multiplier, 0.01f, movementMaxDeveloperFlightMultiplier());
+    const float speed = kDeveloperFlightBaseSpeed * safeMultiplier *
+        (fast ? kDeveloperFlightFastMultiplier : 1.0f);
+    return std::min(speed, kDeveloperFlightMaximumSpeed);
+}
 
 float movementClampStepDelta(float dt, const MovementConfig& config)
 {

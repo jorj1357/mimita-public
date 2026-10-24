@@ -94,14 +94,23 @@ public:
     std::string describe() const;
 
     // Temporary in-memory gamemode policy. It never writes
-    // config/playervisuals.json. While disabled, every configured player layer
-    // (outline/capsule/wireframe) is suppressed; configured enabled switches
-    // remain intact so clearing the policy restores the local presentation.
+    // config/playervisuals.json. An explicit mode wireframe policy can enable
+    // team wireframes while this outline policy suppresses local player layers.
+    // Clearing both policies restores the configured local presentation.
     void setPlayerOutlinesEnabled(bool enabled);
     void clearPlayerOutlinesOverride();
     void setTeamOutlineColors(const glm::vec3& friendly, const glm::vec3& enemy);
     void clearTeamOutlineColorsOverride();
     glm::vec3 effectiveOutlineColor(bool teammate, const glm::vec3& configured) const;
+    void setPlayerWireframesEnabled(bool enabled);
+    void clearPlayerWireframesOverride();
+    bool hasPlayerWireframesOverride() const { return mPlayerWireframesOverride; }
+    bool playerWireframesEnabled() const { return mPlayerWireframesEnabled; }
+    void setFriendlyWireframesEnabled(bool enabled) { mFriendlyWireframesEnabled = enabled; }
+    bool friendlyWireframesEnabled() const { return mFriendlyWireframesEnabled; }
+    void setTeamWireframeColors(const glm::vec3& friendly, const glm::vec3& enemy);
+    void clearTeamWireframeColorsOverride();
+    glm::vec3 effectiveWireframeColor(bool teammate, const glm::vec3& configured) const;
     void setFriendlyOutlinesEnabled(bool enabled);
     bool friendlyOutlinesEnabled() const { return mFriendlyOutlinesEnabled; }
     void setEnemyOutlineAlpha(float alpha);
@@ -127,4 +136,10 @@ private:
     bool mFriendlyOutlinesEnabled = false;
     bool mEnemyOutlineAlphaOverride = false;
     float mEnemyOutlineAlpha = 0.25f;
+    bool mPlayerWireframesOverride = false;
+    bool mPlayerWireframesEnabled = false;
+    bool mTeamWireframeColorsOverride = false;
+    glm::vec3 mFriendlyWireframeColor{0.0f, 255.0f, 0.0f};
+    glm::vec3 mEnemyWireframeColor{255.0f, 0.0f, 0.0f};
+    bool mFriendlyWireframesEnabled = false;
 };

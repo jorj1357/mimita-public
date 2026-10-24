@@ -301,6 +301,32 @@ glm::vec3 PlayerVisualsConfig::effectiveOutlineColor(bool teammate, const glm::v
     if (!mTeamOutlineColorsOverride) return configured;
     return teammate ? mFriendlyOutlineColor : mEnemyOutlineColor;
 }
+
+void PlayerVisualsConfig::setPlayerWireframesEnabled(bool enabled) {
+    mPlayerWireframesOverride = true;
+    mPlayerWireframesEnabled = enabled;
+}
+
+void PlayerVisualsConfig::clearPlayerWireframesOverride() {
+    mPlayerWireframesOverride = false;
+    mFriendlyWireframesEnabled = false;
+    mTeamWireframeColorsOverride = false;
+}
+
+void PlayerVisualsConfig::setTeamWireframeColors(const glm::vec3& friendly, const glm::vec3& enemy) {
+    mTeamWireframeColorsOverride = true;
+    mFriendlyWireframeColor = friendly;
+    mEnemyWireframeColor = enemy;
+}
+
+void PlayerVisualsConfig::clearTeamWireframeColorsOverride() {
+    mTeamWireframeColorsOverride = false;
+}
+
+glm::vec3 PlayerVisualsConfig::effectiveWireframeColor(bool teammate, const glm::vec3& configured) const {
+    if (!mTeamWireframeColorsOverride) return configured;
+    return teammate ? mFriendlyWireframeColor : mEnemyWireframeColor;
+}
 void PlayerVisualsConfig::setFriendlyOutlinesEnabled(bool enabled) { mFriendlyOutlinesEnabled = enabled; }
 void PlayerVisualsConfig::setEnemyOutlineAlpha(float alpha) {
     mEnemyOutlineAlphaOverride = true;

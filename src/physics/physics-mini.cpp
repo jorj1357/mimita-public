@@ -213,14 +213,15 @@ static void physicsMainUpdate_Internal(
         if (inputCommands.getState("down_dash").held) direction.z -= 1.0f;
         if (glm::length(direction) > 1.0f)
             direction = glm::normalize(direction);
-        float speed = 5.0f * std::clamp(MP_CONTEXT.flySpeedMultiplier, 0.01f, 100.0f);
-        if (inputCommands.getState("dash").held) speed *= 3.0f;
+        const bool fast = inputCommands.getState("dash").held;
+        const float speed = movementDeveloperFlightSpeed(
+            MP_CONTEXT.flySpeedMultiplier, fast);
         p.vel = direction * speed;
-        p.pos += p.vel * dt;
-        p.ground.onGround = false;
-        p.ground.stableOnGround = false;
-        p.ground.hasWorldContact = false;
-        p.ground.realWorldContactThisFrame = false;
+        bool groundedThisFrame = false;
+        doCollisions(p, world, groundedThisFrame, dt, false, true);
+        p.ground.onGround = groundedThisFrame;
+        p.ground.stableOnGround = groundedThisFrame;
+        p.ground.realWorldContactThisFrame = groundedThisFrame;
         ++p.movementSimulationTick;
         p.updateModelWorldTransforms();
         return;

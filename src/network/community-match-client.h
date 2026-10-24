@@ -85,6 +85,25 @@ public:
         uint8_t progressKind = 0;   // 0=none, 1=plant, 2=defuse
     };
     const ReplicatedObjective& objective() const { return mObjective; }
+
+    // ── Payload HUD ─────────────────────────────────────────────────
+    struct ReplicatedPayloadHud
+    {
+        bool active = false;
+        bool overtime = false;
+        bool advancing = false;
+        bool blocked = false;
+        bool rollingBack = false;
+        uint8_t attackers = 0;
+        uint8_t defenders = 0;
+        uint32_t overtimeTicksLeft = 0;
+        uint32_t overtimeTicksMax = 0;
+        float distance = 0.0f;
+        float totalDistance = 0.0f;
+        float progress = 0.0f;
+        glm::vec3 cartPosition{0.0f};
+    };
+    const ReplicatedPayloadHud& payloadHud() const { return mPayload; }
     bool applyActorPreset(const MatchRoleDefinition& preset);
     void refreshActorPreset();
     void resetActorPreset();
@@ -101,14 +120,15 @@ public:
     glm::vec3 bombPosition() const { return mBombPos; }
 
     // ── Replicated match-actor identity (team / role / state) ────────
-    // Mirrors the server's participantRoles/participantStates arrays. Role is a
-    // 1-based MatchRoleRegistry index (0 = none); state is an ActorState.
+    // Mirrors the server's participant identity arrays. Role and preset are
+    // 1-based registry indices (0 = none); state is an ActorState.
     struct ReplicatedActorIdentity
     {
         uint32_t actorId = 0;
         uint8_t team = 0xFF;
         uint8_t roleIndex = 0;
         uint8_t state = 0;
+        uint8_t actorPresetIndex = 0;
     };
     const std::vector<ReplicatedActorIdentity>& actorIdentities() const { return mActors; }
 
@@ -209,6 +229,7 @@ private:
     float mRoundSeconds = 0.0f;
     float mRoundTimerLeft = 0.0f;
     ReplicatedObjective mObjective;
+    ReplicatedPayloadHud mPayload;
 
     // ── ZT run presentation ─────────────────────────────────────────
     bool mZtAttemptResult = false;

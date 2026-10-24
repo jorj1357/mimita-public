@@ -13,6 +13,7 @@
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <cctype>
+#include <cmath>
 #include <algorithm>
 #include <GLFW/glfw3.h>
 #include "camera.h"
@@ -312,12 +313,18 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         };
 
         // Draw one row at the shared column offsets.
-        auto drawColumns = [&](float rowY, const std::string& idText,
+        auto drawColumns = [&](float rowY, uint32_t actorId, const std::string& idText,
                                const std::string& team, const std::string& state,
                                const std::string& name, const std::string& ping,
                                float scale, const glm::vec4& color) {
+            glm::vec4 teamColor = color;
+            if (hasTeams) {
+                const uint8_t t = tabMatch.teamForActor(actorId);
+                if (t == 0) teamColor = {1.0f, 0.3f, 0.3f, 1.0f};
+                else if (t == 1) teamColor = {0.35f, 0.55f, 1.0f, 1.0f};
+            }
             uiDrawText(idText.c_str(), listX + colId, rowY, scale, color);
-            uiDrawText(team.c_str(), listX + colTeam, rowY, scale, color);
+            uiDrawText(team.c_str(), listX + colTeam, rowY, scale, teamColor);
             uiDrawText(state.c_str(), listX + colState, rowY, scale, color);
             uiDrawText(name.c_str(), listX + colName, rowY, scale, color);
             uiDrawText(ping.c_str(), listX + colPing, rowY, scale, color);
@@ -337,7 +344,9 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             char pingBuf[48];
             snprintf(pingBuf, sizeof(pingBuf), "%dms you", mpContext.localPingMs);
             const std::string localName = player.username.empty() ? "you" : player.username;
-            drawColumns(y, idBuf, teamTag(mpContext.localPlayerId), stateText(mpContext.localPlayerId),
+            drawColumns(y, mpContext.localPlayerId, idBuf,
+                        teamTag(mpContext.localPlayerId),
+                        stateText(mpContext.localPlayerId),
                         localName, pingBuf, localScale, localColor);
             y += lineH;
         }
@@ -356,8 +365,9 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             snprintf(idBuf, sizeof(idBuf), "%u", kv.first);
             char pingBuf[32];
             snprintf(pingBuf, sizeof(pingBuf), "%dms", kv.second.pingMs);
-            drawColumns(y, idBuf, teamTag(kv.first), stateText(kv.first),
-                        kv.second.name, pingBuf, rowScale, rowColor);
+            drawColumns(y, kv.first, idBuf, teamTag(kv.first),
+                        stateText(kv.first), kv.second.name, pingBuf, rowScale,
+                        rowColor);
             y += lineH;
         }
 
@@ -374,8 +384,9 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             snprintf(idBuf, sizeof(idBuf), "%u", kv.first);
             const std::string npcName = npc.username.empty()
                 ? ("NPC-" + std::to_string(kv.first)) : npc.username;
-            drawColumns(y, idBuf, teamTag(kv.first), stateText(kv.first),
-                        npcName, "NPC", npcScale, npcColor);
+            drawColumns(y, kv.first, idBuf, teamTag(kv.first),
+                        stateText(kv.first), npcName, "NPC", npcScale,
+                        npcColor);
             y += lineH;
         }
     }
@@ -673,6 +684,13 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                     uiDrawText(text.c_str(), uiScreenW() * 0.5f - w * 0.5f,
                                uiScaleY(el->y), scale, el->getTextColorVec());
                 };
+                auto drawAt = [&](const char* id, const std::string& text) {
+                    const GuiElement* el = matchLayout.get(id);
+                    if (!el || !el->visible) return;
+                    const float scale = el->fontSize > 0.0f ? el->fontSize : 0.32f;
+                    uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y),
+                               scale, el->getTextColorVec());
+                };
                 auto textTemplate = [&](const char* id, const std::vector<std::pair<std::string, std::string>>& values) {
                     const GuiElement* el = matchLayout.get(id);
                     std::string text = el ? el->text : "";
@@ -889,6 +907,52 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                             {"{minutes}", std::to_string(left / 60)},
                             {"{seconds}", std::string(left % 60 < 10 ? "0" : "") + std::to_string(left % 60)}}));
                     }
+
+                    // ── Payload-specific HUD ────────────────────────
+                    const auto& payload = match.payloadHud();
+                    if (match.mode() == "payload" && payload.active) {
+                        const uint8_t localTeam = match.localTeam(mpContext.localPlayerId);
+                        const std::string redTeam =
+                            match.teamName(0).empty() ? "RED" : match.teamName(0);
+                        const std::string blueTeam =
+                            match.teamName(1).empty() ? "BLUE" : match.teamName(1);
+                        drawAt("payloadRedTeamText", textTemplate("payloadRedTeamText", {
+                            {"{team}", std::string(localTeam == 0 ? "YOUR TEAM - " : "ENEMY - ") + redTeam}}));
+                        drawAt("payloadBlueTeamText", textTemplate("payloadBlueTeamText", {
+                            {"{team}", std::string(localTeam == 1 ? "YOUR TEAM - " : "ENEMY - ") + blueTeam}}));
+
+                        if (payload.overtime &&
+                            (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE ||
+                             match.phase() == MimitaNet::DUEL_PHASE_GO)) {
+                            const float seconds = (float)payload.overtimeTicksLeft / 60.0f;
+                            const int whole = (int)std::floor(seconds);
+                            const int millis = (int)std::lround(
+                                (seconds - (float)whole) * 1000.0f);
+                            char millisText[8];
+                            std::snprintf(millisText, sizeof(millisText), "%03d", millis);
+                            drawCentered("payloadOvertimeText", textTemplate(
+                                "payloadOvertimeText", {
+                                    {"{seconds}", std::to_string(whole)},
+                                    {"{millis}", millisText}}));
+                        }
+
+                        if (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE ||
+                            match.phase() == MimitaNet::DUEL_PHASE_GO) {
+                            const int percent = (int)std::lround(payload.progress * 100.0f);
+                            drawCentered("payloadStatusText", textTemplate("payloadStatusText", {
+                                {"{percent}", std::to_string(percent)},
+                                {"{attackers}", std::to_string(payload.attackers)},
+                                {"{defenders}", std::to_string(payload.defenders)}}));
+                            const std::string status =
+                                payload.blocked ? "CONTESTED" :
+                                payload.advancing ? "ADVANCING" :
+                                payload.rollingBack ? "ROLLING BACK" :
+                                payload.attackers > 0 ? "WAITING" : "UNATTENDED";
+                            drawCentered("payloadCartStatusText", textTemplate(
+                                "payloadCartStatusText", {{"{status}", status}}));
+                        }
+                    }
+
                     if (matchLayout.get("roundText")) {
                         drawCentered("roundText", textTemplate("roundText", {
                             {"{round}", std::to_string(match.roundNumber())}}));

@@ -58,6 +58,7 @@
 #include "gamemode/match-roles.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/map-config.h"
+#include "gamemode/payload-runtime.h"
 #include "map/map-authored-geometry.h"
 #include "gamemode/mode-pack-registry.h"
 #include "gamemode/action-graph.h"
@@ -1985,6 +1986,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = authoredMapGeometrySelfTest(report);
         printf("[MAP AUTHORED GEOMETRY SELFTEST]\n%s", report.c_str());
         printf("[MAP AUTHORED GEOMETRY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--payload-selftest") {
+        std::string report;
+        const bool ok = MimitaGamemode::payloadRuntimeSelfTest(report);
+        printf("[PAYLOAD SELFTEST]\n%s", report.c_str());
+        printf("[PAYLOAD SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

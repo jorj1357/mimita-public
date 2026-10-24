@@ -493,6 +493,7 @@ struct ActorNarrowphaseStats {
     int bvhLeafPairs = 0;         // exact actor/world leaf pairs emitted
     int orientedBoxRejected = 0;   // AABB pairs rejected by triangle prism
     int worldObbRejected = 0;      // gathered map candidates rejected before BVH
+    bool budgetExceeded = false;   // incomplete sweep; caller must fail closed
 };
 extern ActorNarrowphaseStats gActorNarrowphase;
 
@@ -646,7 +647,9 @@ void doGLBTriangleCollisions(
     Player& p,
     const World& world,
     bool& groundedThisFrame,
-    float dt
+    float dt,
+    bool includePhysicalEntities = true,
+    bool slideOnly = false
 );
 
 std::vector<RecoveryContact> collectGLBRecoveryContacts(

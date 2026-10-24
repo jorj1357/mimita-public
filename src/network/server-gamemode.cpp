@@ -11,6 +11,7 @@
 #include "network/server-gamemode.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -42,6 +43,7 @@
 #include "persistence/persistence-emit.h"
 #include "config/spawn-velocity-config.h"
 #include "network/actor-lifecycle.h"
+#include "physics/physical-entity.h"
 
 namespace MimitaNet {
 
@@ -180,7 +182,7 @@ bool serverMeleeActorHasStocks(uint32_t actorId)
 bool serverMeleeActorProtected(uint32_t actorId)
 {
     const ServerGamemodeState& d = serverGamemodeState();
-    if (d.matchMode != "melee")
+    if (d.matchMode != "melee" && !d.payloadMode)
         return false;
     auto it = d.meleeSpawnProtectionUntilTick.find(actorId);
     return it != d.meleeSpawnProtectionUntilTick.end() &&
@@ -190,21 +192,27 @@ bool serverMeleeActorProtected(uint32_t actorId)
 void serverMeleeNoteSpawn(uint32_t actorId, uint32_t protectionTicks)
 {
     ServerGamemodeState& d = serverGamemodeState();
-    if (d.matchMode != "melee")
+    if (d.matchMode != "melee" && !d.payloadMode)
         return;
-    if (d.meleeStocks.find(actorId) == d.meleeStocks.end())
-        d.meleeStocks[actorId] = std::max(1, d.waveLives);
+    if (d.matchMode == "melee") {
+        if (d.meleeStocks.find(actorId) == d.meleeStocks.end())
+            d.meleeStocks[actorId] = std::max(1, d.waveLives);
+    }
+    if (protectionTicks == 0)
+        return;
     d.meleeSpawnProtectionUntilTick[actorId] = d.currentServerTick + protectionTicks;
     Debug::log(Debug::Category::Duel,
-        "[MELEE] actor=%u spawn protection until tick=%u stocks=%d\n",
-        actorId, d.meleeSpawnProtectionUntilTick[actorId], d.meleeStocks[actorId]);
+        "[SPAWN PROTECTION] mode=%s actor=%u until tick=%u ticks=%u\n",
+        d.matchMode.c_str(), actorId, d.meleeSpawnProtectionUntilTick[actorId],
+        protectionTicks);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
-        "melee.spawn_protection", std::to_string(actorId),
-        "melee spawn protection granted",
+        d.payloadMode ? "payload.spawn_protection" : "melee.spawn_protection",
+        std::to_string(actorId),
+        d.payloadMode ? "payload spawn protection granted"
+                      : "melee spawn protection granted",
         d.currentServerTick,
         nlohmann::json{{"actor", actorId},
-                       {"stocks", d.meleeStocks[actorId]},
                        {"until_tick", d.meleeSpawnProtectionUntilTick[actorId]},
                        {"protection_ticks", protectionTicks}});
 }
@@ -466,11 +474,86 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     // The movement policy is owned by the actor preset: a preset carries it
     // directly, a role references the preset that owns it. The live NPC
     // re-resolves the policy by id each tick so hot reload reaches it.
-    if (def->actorPreset)
-        out.actorPresetId = def->id;
-    else if (!def->actorPresetId.empty())
-        out.actorPresetId = def->actorPresetId;
+    const auto actorPresetOverride = d.actorPresetOverridesByActorId.find(actorId);
+    const bool hasActorPresetOverride = actorPresetOverride != d.actorPresetOverridesByActorId.end();
+    out.actorPresetId = hasActorPresetOverride
+        ? actorPresetOverride->second
+        : (def->actorPreset ? def->id : def->actorPresetId);
+    if (hasActorPresetOverride) {
+        if (const MatchRoleDefinition* preset =
+                MatchRoleRegistry::instance().getActorPreset(out.actorPresetId)) {
+            // A host assignment overlays this actor's role through the same
+            // server-owned profile used by initial spawn and respawn.
+            if (preset->health > 0) out.health = preset->health;
+            if (!preset->movementPreset.empty() &&
+                RoleMovementCache::instance().get(preset->movementPreset))
+                out.movementPreset = preset->movementPreset;
+            if (!preset->weaponSet.empty()) {
+                if (const CommunityWeaponSet* set =
+                        CommunityServerConfig::instance().weaponSetByKey(preset->weaponSet)) {
+                    out.weaponSetId = set->id;
+                    out.weapons = set->weapons;
+                }
+            }
+            if (!preset->startingWeapon.empty())
+                out.startingWeapon = preset->startingWeapon;
+            if (preset->avatarForced && !preset->avatarName.empty())
+                out.avatarName = preset->avatarName;
+            if (!preset->allowedAvatars.empty()) out.allowedAvatars = preset->allowedAvatars;
+            if (!preset->deniedAvatars.empty()) out.deniedAvatars = preset->deniedAvatars;
+            if (it->second.controller == ActorController::Npc &&
+                !preset->behaviorProfile.empty() &&
+                BehaviorProfileRegistry::instance().get(preset->behaviorProfile))
+                out.behaviorProfileId = preset->behaviorProfile;
+            out.weaponAmmo.clear();
+            for (const auto& entry : preset->weaponAmmo)
+                out.weaponAmmo[entry.first] = {entry.second.magazine, entry.second.reserve};
+        }
+    }
     return out;
+}
+
+bool serverSetActorPreset(uint32_t actorId, const std::string& presetId)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled || !MatchRoleRegistry::instance().getActorPreset(presetId))
+        return false;
+    auto actor = d.matchActors.find(actorId);
+    if (actor == d.matchActors.end() ||
+        std::find(d.participants.begin(), d.participants.end(), actorId) == d.participants.end())
+        return false;
+
+    d.actorPresetOverridesByActorId[actorId] = presetId;
+    d.stateVersion++;
+    d.stateBroadcastPending = true;
+    Debug::log(Debug::Category::Duel,
+        "[ACTOR PRESET] assigned actor=%u preset=%s; profile applies at next spawn\n",
+        actorId, presetId.c_str());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "actor.preset-assigned", std::to_string(actorId), "host-command",
+        d.currentServerTick,
+        nlohmann::json{{"actor_id", actorId}, {"preset", presetId},
+                       {"lifetime", "actor-present-in-match"}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return true;
+}
+
+void serverClearActorPreset(uint32_t actorId)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    d.actorPresetOverridesByActorId.erase(actorId);
+    d.actorPresetAppliedByActorId.erase(actorId);
+}
+
+void serverMarkActorPresetApplied(uint32_t actorId, const std::string& presetId)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    const auto overrideIt = d.actorPresetOverridesByActorId.find(actorId);
+    if (overrideIt != d.actorPresetOverridesByActorId.end() && overrideIt->second == presetId)
+        d.actorPresetAppliedByActorId[actorId] = presetId;
+    else
+        d.actorPresetAppliedByActorId.erase(actorId);
 }
 
 // ServerNpc is the snapshot-side health owner. Every path that starts a new
@@ -772,11 +855,47 @@ void serverCommunitySetMode(const std::string& modeId)
         "[COMMUNITY MODE] selected=%s\n", state.communityMode.c_str());
 }
 
+static void payloadRemoveCart(ServerGamemodeState& d)
+{
+    if (d.payloadCartEntityId == 0) return;
+    PhysicalEntitySystem::instance().remove(d.payloadCartEntityId);
+    d.payloadCartEntityId = 0;
+}
+
+static uint32_t payloadSpawnCart(ServerGamemodeState& d)
+{
+    payloadRemoveCart(d);
+    if (!d.payloadMode) return 0;
+    const glm::vec3 size = d.payloadRuntime.cartSize;
+    if (size.x <= 0.0f || size.y <= 0.0f || size.z <= 0.0f) return 0;
+
+    std::vector<CollisionTriangle> triangles;
+    buildBoxCollisionTriangles(triangles, glm::vec3(0.0f), size * 0.5f);
+    PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
+    const uint32_t id = system.add(triangles, d.payloadRuntime.cartTransform,
+                                   PhysicalEntityMotion::Kinematic, 0);
+    PhysicalEntity* entity = system.find(id);
+    if (!entity) return 0;
+    entity->networkId = id;
+    entity->replicate = true;
+    entity->renderModel = true;
+    entity->collisionBox = true;
+    entity->modelPath = "assets/objects/things/gamemode-objects/payload-payload.glb";
+    entity->shape = PhysicalEntityShape::Box;
+    entity->halfExtents = size * 0.5f;
+    entity->collidesWithActors = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "payload.cart-spawned", std::to_string(id),
+        "payload cart physical entity created", d.currentServerTick,
+        nlohmann::json{{"entity", id}, {"size", {size.x, size.y, size.z}}});
+    return id;
+}
+
 void serverCommunityStartMatch(bool skipIntermission, const std::string& requestedMode)
 {
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
-
     if (!requestedMode.empty())
         d.communityMode = requestedMode;
 
@@ -827,6 +946,9 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     const Gamemode& gm = GamemodeRegistry::instance().get(resolvedGamemodeId);
     // Durable match-configuration evidence: proves which mode/win condition
     // started without needing the server console.
+    nlohmann::json teamCapacities = nlohmann::json::array();
+    for (const GamemodeTeam& team : gm.teams)
+        teamCapacities.push_back({{"id", team.id}, {"capacity", team.capacity}});
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
         "gamemode.match.configured", resolvedGamemodeId,
@@ -835,6 +957,15 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
         nlohmann::json{{"mode", resolvedGamemodeId},
                        {"community_mode", d.communityMode},
                        {"win_condition", gm.winCondition},
+                       {"goal_value", gm.goalValue},
+                       {"time_limit_seconds", gm.timeLimitSeconds},
+                       {"time_limit_outcome", gm.timeLimitOutcome},
+                       {"countdown_seconds", gm.countdownSeconds},
+                       {"go_seconds", gm.goSeconds},
+                       {"intermission_seconds", gm.intermissionSeconds},
+                       {"results_seconds", gm.resultsSeconds},
+                       {"npc_spawn_policy", gm.npcSpawnPolicy},
+                       {"team_capacities", teamCapacities},
                        {"lives", gm.lives},
                        {"teams", gm.teams.size()},
                        {"run_mode", gm.runMode},
@@ -993,6 +1124,62 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
         d.objective.active = !def.id.empty();
         d.objective.state = ObjectiveState::Inactive;
         break;
+    }
+    // ── Payload mode setup ─────────────────────────────────────────
+    // Map data owns the cart origin/route/box; mode data owns the rules.
+    d.payloadMode = false;
+    payloadRemoveCart(d);
+    d.payloadSessionWins[0] = d.payloadSessionWins[1] = 0;
+    d.payloadSessionKills.clear();
+    d.teamChangeCooldownUntil.clear();
+    if (gm.payload.configured) {
+        if (MapConfigRegistry::instance().mapId() != d.mapId)
+            MapConfigRegistry::instance().load(d.mapId);
+        GamemodePayload rules = gm.payload;
+        rules.attackerTeamIndex = resolveTeamIndexFromId(gm, rules.attackerTeam);
+        if (rules.attackerTeamIndex < 0) rules.attackerTeamIndex = 0;
+        rules.defenderTeamIndex = resolveTeamIndexFromId(gm, rules.defenderTeam);
+        if (rules.defenderTeamIndex < 0) rules.defenderTeamIndex = 1;
+        const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
+        if (MimitaGamemode::payloadRuntimeInit(d.payloadRuntime, mapCfg.payload, rules)) {
+            d.payloadMode = true;
+            d.payloadCartEntityId = payloadSpawnCart(d);
+            // Payload always uses the shared round lifecycle. The mode's
+            // max_rounds=1 makes RESULTS return to INTERMISSION.
+            d.objectiveRounds = true;
+            d.winCondition = "payload";
+            d.roundSeconds = gm.rounds.roundSeconds;
+            d.payloadSpawnProtectionTicks = std::max(0, rules.spawnProtectionTicks);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "payload.configured", resolvedGamemodeId,
+                "payload cart route and rules resolved", d.currentServerTick,
+                nlohmann::json{{"mode", resolvedGamemodeId},
+                               {"map", d.mapId},
+                               {"attacker_team", rules.attackerTeamIndex},
+                               {"defender_team", rules.defenderTeamIndex},
+                               {"route_points", d.payloadRuntime.routePoints.size()},
+                               {"checkpoints", d.payloadRuntime.checkpoints.size()},
+                               {"total_distance", d.payloadRuntime.totalDistance},
+                               {"overtime_seconds", rules.overtimeSeconds},
+                               {"push_per_attacker", rules.pushMetersPerSecondPerAttacker},
+                               {"max_push_attackers", rules.maxPushAttackers}});
+            Debug::warn(Debug::Category::Duel,
+                "[PAYLOAD] configured map=%s route=%zu checkpoints=%zu distance=%.2f\n",
+                d.mapId.c_str(), d.payloadRuntime.routePoints.size(),
+                d.payloadRuntime.checkpoints.size(), d.payloadRuntime.totalDistance);
+        } else {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Errors,
+                "payload.config-invalid", resolvedGamemodeId,
+                "payload map config missing/invalid; running without cart", d.currentServerTick,
+                nlohmann::json{{"mode", resolvedGamemodeId}, {"map", d.mapId},
+                               {"payload_present", mapCfg.payload.present},
+                               {"has_cart_origin", mapCfg.payload.hasCartOrigin},
+                               {"route_points", mapCfg.payload.route.size()}});
+            Debug::error(Debug::Category::Duel,
+                "[PAYLOAD] map=%s has no usable payload cart/route\n", d.mapId.c_str());
+        }
     }
     // Round modes use their own configured countdown/intermission when set.
     if (d.objectiveRounds) {
@@ -1270,6 +1457,30 @@ void broadcastDuelState(SOCKET sock,
     pkt.objectiveTimerLeft = (d.objective.explosionDeadlineTick > d.currentServerTick)
         ? (float)(d.objective.explosionDeadlineTick - d.currentServerTick) / 60.0f : 0.0f;
 
+    // ── Payload HUD ────────────────────────────────────────────────
+    pkt.payloadActive = d.payloadMode ? 1 : 0;
+    if (d.payloadMode) {
+        const MimitaGamemode::PayloadRuntime& payload = d.payloadRuntime;
+        pkt.payloadOvertime = payload.overtimeActive ? 1 : 0;
+        pkt.payloadAdvancing = payload.advancing ? 1 : 0;
+        pkt.payloadBlocked = payload.blocked ? 1 : 0;
+        pkt.payloadRollingBack = payload.rollingBack ? 1 : 0;
+        pkt.payloadAttackers = (uint8_t)std::min(payload.attackers, 255);
+        pkt.payloadDefenders = (uint8_t)std::min(payload.defenders, 255);
+        pkt.payloadOvertimeTicksLeft =
+            (uint32_t)std::max(0, payload.overtimeTicksRemaining);
+        pkt.payloadOvertimeTicksMax =
+            (uint32_t)std::max(0, (int)std::lround(payload.overtimeSeconds * 60.0f));
+        pkt.payloadDistance = payload.distanceTravelled;
+        pkt.payloadTotalDistance = payload.totalDistance;
+        pkt.payloadProgress = payload.totalDistance > 0.0f
+            ? std::clamp(payload.distanceTravelled / payload.totalDistance, 0.0f, 1.0f)
+            : 0.0f;
+        pkt.payloadCartX = payload.cartPosition.x;
+        pkt.payloadCartY = payload.cartPosition.y;
+        pkt.payloadCartZ = payload.cartPosition.z;
+    }
+
     // ── Procedural world (Infinite Dungeon Slayer) ─────────────────
     pkt.procedural.enabled = d.procedural.enabled ? 1 : 0;
     pkt.procedural.roomState = (uint8_t)d.procedural.roomState;
@@ -1369,6 +1580,7 @@ void broadcastDuelState(SOCKET sock,
 
     // Participant IDs and teams
     pkt.participantCount = (uint8_t)std::min((size_t)64, d.participants.size());
+    const auto actorPresets = MatchRoleRegistry::instance().actorPresets();
     for (uint8_t i = 0; i < pkt.participantCount; ++i) {
         const uint32_t actorId = d.participants[i];
         pkt.participantIds[i] = actorId;
@@ -1379,9 +1591,19 @@ void broadcastDuelState(SOCKET sock,
             pkt.participantRoles[i] =
                 (uint8_t)MatchRoleRegistry::instance().indexOf(actorIt->second.roleId);
             pkt.participantStates[i] = (uint8_t)actorIt->second.state;
+            const auto actorPresetApplied = d.actorPresetAppliedByActorId.find(actorId);
+            const std::string presetId = actorPresetApplied == d.actorPresetAppliedByActorId.end()
+                ? std::string() : actorPresetApplied->second;
+            for (size_t presetIndex = 0; presetIndex < actorPresets.size() && presetIndex < 255; ++presetIndex) {
+                if (actorPresets[presetIndex]->id == presetId) {
+                    pkt.participantActorPresets[i] = (uint8_t)(presetIndex + 1);
+                    break;
+                }
+            }
         } else {
             pkt.participantRoles[i] = 0;
             pkt.participantStates[i] = (uint8_t)ActorState::Alive;
+            pkt.participantActorPresets[i] = 0;
         }
     }
 
@@ -1511,6 +1733,26 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
             "[DuelFallback] map=%s reason=no_spawn_points final=(%.3f,%.3f,%.3f)\n",
             d.mapId.c_str(), d.spawnA.x, d.spawnA.y, d.spawnA.z);
     }
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    if (gm.teams.size() >= 2) {
+        bool hasSeparatedClusters = !d.teamSpawnPoints[0].empty() &&
+                                    !d.teamSpawnPoints[1].empty();
+        for (const glm::vec3& red : d.teamSpawnPoints[0])
+            for (const glm::vec3& blue : d.teamSpawnPoints[1])
+                if (glm::length(red - blue) <= 0.01f)
+                    hasSeparatedClusters = false;
+        if (!hasSeparatedClusters) {
+            const float separation = std::max(2.0f, d.spawnOffsetRadius * 2.0f + 1.0f);
+            d.teamSpawnPoints[0] = {d.sharedAnchor + glm::vec3(-separation, 0.0f, 0.0f)};
+            d.teamSpawnPoints[1] = {d.sharedAnchor + glm::vec3(separation, 0.0f, 0.0f)};
+            d.spawnA = d.teamSpawnPoints[0].front();
+            d.spawnB = d.teamSpawnPoints[1].front();
+            d.teamSpawnsResolved = true;
+            Debug::warn(Debug::Category::Duel,
+                "[TEAM SPAWN] mode=%s map=%s reason=team groups missing or overlapping; derived separated team anchors separation=%.2f\n",
+                d.matchMode.c_str(), d.mapId.c_str(), separation);
+        }
+    }
     Debug::log(Debug::Category::Duel,
         "[DUEL SERVER] anchor=(%.1f %.1f %.1f) spawns=%zu\n",
         d.spawnA.x, d.spawnA.y, d.spawnA.z, world.spawnPoints.size());
@@ -1634,13 +1876,30 @@ glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
     {
         const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
         std::string group;
+        std::string opposingGroup;
         if (team >= 0 && team < (int)gm.teams.size())
             group = gm.teams[(size_t)team].spawnGroup;
+        const int opposingTeam = team == 0 ? 1 : (team == 1 ? 0 : -1);
+        if (opposingTeam >= 0 && opposingTeam < (int)gm.teams.size())
+            opposingGroup = gm.teams[(size_t)opposingTeam].spawnGroup;
+        std::vector<glm::vec3> opposingPositions;
+        if (!opposingGroup.empty()) {
+            for (const auto& e : MapConfigRegistry::instance().current().entities)
+                if (e.type == "spawnpoint" && e.enabled && e.tag == opposingGroup)
+                    opposingPositions.push_back(e.position);
+        }
+        if (opposingTeam >= 0 && opposingTeam < 2)
+            opposingPositions.insert(opposingPositions.end(),
+                d.teamSpawnPoints[opposingTeam].begin(), d.teamSpawnPoints[opposingTeam].end());
         std::vector<const MapEntity*> candidates;
         for (const auto& e : MapConfigRegistry::instance().current().entities) {
             if (e.type != "spawnpoint" || !e.enabled) continue;
-            if (e.tag.empty() || group.empty() || e.tag == group)
-                candidates.push_back(&e);
+            if (group.empty() ? e.tag.empty() : e.tag == group)
+                if (std::none_of(opposingPositions.begin(), opposingPositions.end(),
+                        [&](const glm::vec3& position) {
+                            return glm::length(e.position - position) <= 0.01f;
+                        }))
+                    candidates.push_back(&e);
         }
         if (!candidates.empty()) {
             std::uniform_int_distribution<size_t> pick(0, candidates.size() - 1);
@@ -1828,6 +2087,8 @@ void clearHeadlessWorld(HeadlessWorld& world)
     world.boundsMin = glm::vec3(0.0f);
     world.boundsMax = glm::vec3(0.0f);
     world.spawnPoints.clear();
+    world.authoredSpawnPointBaseCount = 0;
+    world.authoredSpawnPointsApplied = false;
     world.collisionChunks.clear();
     world.collisionLargeTriangles.clear();
     world.collisionSubGrids.clear();
@@ -1899,9 +2160,11 @@ bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out)
     HeadlessWorld candidate;
     if (!loadHeadlessWorld(path.c_str(), candidate))
         return false;
+    // Authored spawnpoint entities are part of the map, so apply them before
+    // deciding whether the map has any usable spawns.
+    applyAuthoredMapGeometry(candidate, mapId);
     if (candidate.spawnPoints.empty())
         return false;
-    applyAuthoredMapGeometry(candidate, mapId);
     out = std::move(candidate);
     return true;
 }
@@ -2229,28 +2492,29 @@ void buildObjectiveRoster(ServerGamemodeState& d,
         }
     }
 
-    // Find the human. Round modes are built around a single human actor.
-    uint32_t humanId = 0;
+    // Collect every active human. Payload needs up to 12 humans per team, not
+    // only the single-human Counter-Strike case.
+    std::vector<uint32_t> humans;
     for (const auto& kv : players) {
-        if (kv.second.spawnState == ServerPlayer::Active) { humanId = kv.first; break; }
+        if (kv.second.spawnState == ServerPlayer::Active) humans.push_back(kv.first);
     }
-    const bool headlessMatch = (humanId == 0) && headlessMatchAllowed();
-    if (humanId == 0 && !headlessMatch) return;
-
-    int humanTeam = 0;
-    if (humanId != 0) {
-        auto teamIt = d.matchTeams.find(humanId);
-        humanTeam = (teamIt != d.matchTeams.end()) ? teamIt->second : -1;
-        if (humanTeam < 0 || humanTeam > 1)
-            humanTeam = chooseFallbackTeam(players, d);
-        applyHumanRosterTeam(d, players, humanId, humanTeam);
-    }
+    std::sort(humans.begin(), humans.end());
+    const bool headlessMatch = humans.empty() && headlessMatchAllowed();
+    if (humans.empty() && !headlessMatch) return;
 
     if (npcs.empty() && d.roundNextNpcId == 0)
         d.roundNextNpcId = 100000;  // keep roster ids out of the human/NPC range
 
-    // Ensure the human's match actor exists with the team's role.
-    if (humanId != 0) {
+    int humanCounts[2] = {0, 0};
+    for (uint32_t humanId : humans) {
+        auto teamIt = d.matchTeams.find(humanId);
+        int humanTeam = (teamIt != d.matchTeams.end()) ? teamIt->second : -1;
+        if (humanTeam < 0 || humanTeam > 1)
+            humanTeam = chooseFallbackTeam(players, d);
+        applyHumanRosterTeam(d, players, humanId, humanTeam);
+        ++humanCounts[humanTeam];
+
+        // Ensure the human's match actor exists with the team's role.
         ActorMatchDescriptor& desc = d.matchActors[humanId];
         desc.controller = ActorController::Human;
         desc.state = ActorState::Alive;
@@ -2268,17 +2532,20 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             desc.movementProfileId = humanDef->movementPreset;
             desc.weaponProfileId = humanDef->weaponSet;
         }
+        if (std::find(d.participants.begin(), d.participants.end(), humanId) ==
+            d.participants.end()) {
+            d.participants.push_back(humanId);
+        }
+        d.participantNames[humanId] = players[humanId].name;
+        d.ffaKills[humanId] = 0;
+        d.ffaDeaths[humanId] = 0;
     }
 
     int npcCounts[2] = {0, 0};
-    if (humanId != 0) {
-        roundRosterNpcCounts(gm, humanTeam, npcCounts);
-    } else {
-        // Headless: fill both teams to capacity.
-        for (int team = 0; team < 2; ++team) {
-            const int capacity = roundTeamCapacity(gm, team);
-            npcCounts[team] = capacity > 0 ? capacity : 5;
-        }
+    for (int team = 0; team < 2; ++team) {
+        const int capacity = roundTeamCapacity(gm, team);
+        const int target = capacity > 0 ? capacity : 5;
+        npcCounts[team] = std::max(0, target - humanCounts[team]);
     }
     for (int team = 0; team < 2; ++team) {
         const int npcCount = npcCounts[team];
@@ -2339,20 +2606,12 @@ void buildObjectiveRoster(ServerGamemodeState& d,
         }
     }
 
-    // Include the human in the participant list if the generic path did not.
-    if (humanId != 0 &&
-        std::find(d.participants.begin(), d.participants.end(), humanId) == d.participants.end()) {
-        d.participants.insert(d.participants.begin(), humanId);
-        d.participantNames[humanId] = players[humanId].name;
-        d.ffaKills[humanId] = 0;
-        d.ffaDeaths[humanId] = 0;
-    }
     std::sort(d.participants.begin(), d.participants.end());
 
     Debug::warn(Debug::Category::Duel,
-        "[ROSTER] mode=%s human=%u team=%d npcs=%zu participants=%zu locked=%d\n",
-        d.matchMode.c_str(), humanId, humanTeam, npcs.size(), d.participants.size(),
-        (int)d.rosterLocked);
+        "[ROSTER] mode=%s humans=%zu teams=%d-%d npcs=%zu participants=%zu locked=%d\n",
+        d.matchMode.c_str(), humans.size(), humanCounts[0], humanCounts[1],
+        npcs.size(), d.participants.size(), (int)d.rosterLocked);
 }
 
 // Begin a fresh round: reset scores/actors/objective state, place actors at
@@ -2391,7 +2650,17 @@ void beginObjectiveRound(ServerGamemodeState& d,
     // the server NPC phase gate (the gate now pauses all NPC updates).
     d.roundCountdownFreeze = true;
     resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
-    assignObjectiveCarrier(d, players, npcs);
+    if (d.payloadMode) {
+        MimitaGamemode::payloadRuntimeReset(d.payloadRuntime);
+        if (d.payloadCartEntityId != 0) {
+            PhysicalEntitySystem::instance().moveKinematic(
+                d.payloadCartEntityId, d.payloadRuntime.cartTransform, 0.0f);
+        }
+        d.teamChangeCooldownUntil.clear();
+        d.payloadLastCartState = -1;
+    } else {
+        assignObjectiveCarrier(d, players, npcs);
+    }
     Debug::warn(Debug::Category::Duel,
         "[ROUND] begin mode=%s round=%u version=%u wins=%d-%d toWin=%d tick=%u\n",
         d.matchMode.c_str(), d.roundNumber, d.roundVersion,
@@ -2433,6 +2702,12 @@ void endObjectiveRound(ServerGamemodeState& d, int winnerTeam, int reason,
         // Round result screen, then the next round or intermission.
         d.phase = DUEL_PHASE_RESULTS;
         d.phaseTimer = d.resultsSeconds;
+    }
+    if (d.payloadMode && winnerTeam >= 0) {
+        // The shared round tally still counts, but Payload's displayed result
+        // and process-only session wins are owned here.
+        d.winnerTeam = winnerTeam;
+        if (winnerTeam < 2) ++d.payloadSessionWins[winnerTeam];
     }
     ++d.stateVersion;
     ++d.roundVersion;
@@ -2530,6 +2805,176 @@ int objectiveActorTeam(const ServerGamemodeState& d, uint32_t actorId)
 {
     auto it = d.matchTeams.find(actorId);
     return it != d.matchTeams.end() ? it->second : -1;
+}
+
+// ── Payload fixed-tick adapter ─────────────────────────────────────────
+// Builds actor snapshots, runs the pure cart rules, applies healing, and
+// performs the round transition. The cart itself is still driven here; client
+// presentation and the physical cart body are separate owners.
+static void serverPayloadTick(ServerGamemodeState& d,
+                              std::unordered_map<uint32_t, ServerPlayer>& players,
+                              std::unordered_map<uint32_t, ServerNpc>& npcs,
+                              NpcSystem& npcSystem,
+                              uint32_t tick)
+{
+    if (!d.payloadMode || d.phase != DUEL_PHASE_ACTIVE) return;
+
+    std::array<MimitaGamemode::PayloadActorView, 64> actors{};
+    int actorCount = 0;
+    auto addActor = [&](uint32_t id, int team, bool alive, const glm::vec3& pos,
+                        float radius, float height) {
+        if (actorCount >= (int)actors.size()) return;
+        MimitaGamemode::PayloadActorView& view = actors[(size_t)actorCount++];
+        view.id = id;
+        view.team = team;
+        view.alive = alive;
+        view.position = pos;
+        view.radius = radius;
+        view.height = height;
+    };
+    for (const auto& kv : players) {
+        addActor(kv.first, objectiveActorTeam(d, kv.first), !kv.second.dead,
+                 kv.second.pos, PLAYER_RADIUS, PLAYER_HEIGHT);
+    }
+    for (const auto& kv : npcs) {
+        addActor(kv.first, kv.second.matchTeam, kv.second.health > 0,
+                 kv.second.pos, PLAYER_RADIUS, PLAYER_HEIGHT);
+    }
+
+    MimitaGamemode::PayloadTickResult result;
+    MimitaGamemode::payloadRuntimeTick(d.payloadRuntime, actors.data(), actorCount,
+                                       tick, d.roundEndTick, result);
+
+    if (d.payloadCartEntityId != 0) {
+        PhysicalEntitySystem::instance().moveKinematic(
+            d.payloadCartEntityId, d.payloadRuntime.cartTransform, 1.0f / 60.0f);
+    }
+    for (auto& kv : players) {
+        ServerPlayer& player = kv.second;
+        if (player.dead) continue;
+        glm::vec3 resolvedPos;
+        glm::vec3 resolvedVel;
+        bool resolvedGround = player.onGround;
+        if (MimitaGamemode::payloadResolveActorAgainstCart(
+                d.payloadRuntime, player.pos, player.vel, player.onGround,
+                PLAYER_RADIUS, PLAYER_HEIGHT, resolvedPos, resolvedVel,
+                resolvedGround)) {
+            player.pos = resolvedPos;
+            player.vel = resolvedVel;
+            player.onGround = resolvedGround;
+            player.actorCollisionChanged = true;
+        }
+    }
+    for (Npc& npc : npcSystem.all()) {
+        if (npc.body.dead || npc.body.currentHp <= 0) continue;
+        const float scale = std::max(0.05f, npc.body.sizeScale);
+        glm::vec3 resolvedPos;
+        glm::vec3 resolvedVel;
+        bool resolvedGround = npc.body.ground.onGround;
+        if (!MimitaGamemode::payloadResolveActorAgainstCart(
+                d.payloadRuntime, npc.body.pos, npc.body.vel,
+                npc.body.ground.onGround, PLAYER_RADIUS * scale,
+                PLAYER_HEIGHT * scale, resolvedPos, resolvedVel,
+                resolvedGround)) {
+            continue;
+        }
+        npc.body.pos = resolvedPos;
+        npc.body.vel = resolvedVel;
+        npc.body.ground.onGround = resolvedGround;
+        npc.body.updateModelWorldTransforms();
+        auto snapshot = npcs.find(npc.id);
+        if (snapshot != npcs.end()) {
+            snapshot->second.pos = resolvedPos;
+            snapshot->second.vel = resolvedVel;
+            snapshot->second.onGround = resolvedGround;
+        }
+    }
+
+    // Apply the fixed-tick healing result through the existing health owners.
+    for (uint8_t i = 0; i < result.healedCount; ++i) {
+        const uint32_t id = result.healedIds[i];
+        auto pIt = players.find(id);
+        if (pIt != players.end()) {
+            const int maxHp = std::max(1, pIt->second.maxHealth);
+            pIt->second.health = std::min(maxHp,
+                pIt->second.health + d.payloadRuntime.healHpPer10Ticks);
+            continue;
+        }
+        auto nIt = npcs.find(id);
+        if (nIt != npcs.end()) {
+            const ActorSpawnProfile profile = serverResolveActorSpawnProfile(id);
+            const int maxHp = std::max(1, profile.hasRole && profile.health > 0
+                ? profile.health : std::max(nIt->second.health, 100));
+            nIt->second.health = std::min(maxHp,
+                nIt->second.health + d.payloadRuntime.healHpPer10Ticks);
+        }
+    }
+
+    if (result.checkpointReached) {
+        if (result.checkpointBonusSeconds > 0.0f && d.roundEndTick > 0) {
+            d.roundEndTick += (uint32_t)objectiveSecondsToTicks(result.checkpointBonusSeconds);
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "payload.checkpoint", std::to_string(d.duelId), "cart-checkpoint", tick,
+            nlohmann::json{{"route_index", result.checkpointRouteIndex},
+                           {"bonus_seconds", result.checkpointBonusSeconds},
+                           {"distance", d.payloadRuntime.distanceTravelled},
+                           {"round_end_tick", d.roundEndTick}});
+        Debug::warn(Debug::Category::Duel,
+            "[PAYLOAD] checkpoint route=%d bonus=%.1fs distance=%.2f endTick=%u tick=%u\n",
+            result.checkpointRouteIndex, result.checkpointBonusSeconds,
+            d.payloadRuntime.distanceTravelled, d.roundEndTick, tick);
+    }
+
+    if (result.overtimeStarted) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "payload.overtime-start", std::to_string(d.duelId), "clock-expired", tick,
+            nlohmann::json{{"overtime_seconds", d.payloadRuntime.overtimeSeconds},
+                           {"attackers", result.attackers},
+                           {"defenders", result.defenders}});
+    }
+    if (result.overtimeExpired) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "payload.overtime-expired", std::to_string(d.duelId), "no-attacker-in-box", tick,
+            nlohmann::json{{"distance", d.payloadRuntime.distanceTravelled}});
+        endObjectiveRound(d, d.payloadRuntime.defenderTeam, 3, tick);
+        d.stateBroadcastPending = true;
+        return;
+    }
+    if (result.finished) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "payload.finished", std::to_string(d.duelId), "cart-reached-final", tick,
+            nlohmann::json{{"distance", d.payloadRuntime.distanceTravelled},
+                           {"total_distance", d.payloadRuntime.totalDistance},
+                           {"attackers", result.attackers},
+                           {"defenders", result.defenders}});
+        endObjectiveRound(d, d.payloadRuntime.attackerTeam, 2, tick);
+        d.stateBroadcastPending = true;
+        return;
+    }
+
+    // Change-edge cart status diagnostics (not per-tick spam).
+    const int state = result.attackers > 0 && result.defenders > 0 ? 1
+        : d.payloadRuntime.blocked ? 2
+        : d.payloadRuntime.advancing ? 3
+        : d.payloadRuntime.rollingBack ? 4 : 0;
+    if (state != d.payloadLastCartState) {
+        d.payloadLastCartState = state;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "payload.cart-state", std::to_string(d.duelId), "cart-state-changed", tick,
+            nlohmann::json{{"state", state},
+                           {"attackers", result.attackers},
+                           {"defenders", result.defenders},
+                           {"distance", d.payloadRuntime.distanceTravelled},
+                           {"overtime", d.payloadRuntime.overtimeActive}});
+    }
 }
 
 // The generic objective tick: keep the bomb on a valid living carrier, drop it
@@ -2966,6 +3411,26 @@ void assignMatchParticipants(ServerGamemodeState& d,
         const uint32_t id = d.participants[i];
         ActorMatchDescriptor& desc = d.matchActors[id];
         int team = desc.teamId;
+        if (gm.npcSpawnPolicy == "team_roster" && gm.teams.size() >= 2) {
+            int rosterTeamCounts[2];
+            rosterTeamCounts[0] = rosterTeamCounts[1] = 0;
+            for (size_t assigned = 0; assigned < i; ++assigned) {
+                const auto previous = d.matchActors.find(d.participants[assigned]);
+                if (previous != d.matchActors.end() && previous->second.teamId >= 0 &&
+                    previous->second.teamId < 2)
+                    ++rosterTeamCounts[previous->second.teamId];
+            }
+            if (team < 0 && players.find(id) != players.end())
+                team = players.at(id).matchTeam;
+            if (team < 0 && npcs) {
+                const auto npc = npcs->find(id);
+                if (npc != npcs->end()) team = npc->second.matchTeam;
+            }
+            if (team < 0 || team > 1 ||
+                (gm.teams[(size_t)team].capacity > 0 &&
+                 rosterTeamCounts[team] >= gm.teams[(size_t)team].capacity))
+                team = rosterTeamCounts[0] <= rosterTeamCounts[1] ? 0 : 1;
+        }
         if (d.npcWaves)
             team = players.find(id) != players.end() ? 0 : 1;
         else if (team < 0) {
@@ -3086,13 +3551,33 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
                                    NpcSystem& npcSystem,
                                    std::unordered_set<uint32_t>& npcIdsAlive)
 {
-    if (d.winCondition != "first_to_score" ||
-        GamemodeRegistry::instance().get(d.matchMode).npcSpawnPolicy != "team_roster")
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    if (gm.npcSpawnPolicy != "team_roster") {
+        if (!d.teamRosterNpcIds.empty()) {
+            for (uint32_t id : d.teamRosterNpcIds) {
+                npcs.erase(id);
+                npcIdsAlive.erase(id);
+                d.matchActors.erase(id);
+                d.matchTeams.erase(id);
+                d.participantNames.erase(id);
+                d.ffaKills.erase(id);
+                d.ffaDeaths.erase(id);
+            }
+            npcSystem.destroySelected(d.teamRosterNpcIds);
+            d.teamRosterNpcIds.clear();
+        }
         return;
+    }
+
+    d.teamRosterNpcIds.erase(
+        std::remove_if(d.teamRosterNpcIds.begin(), d.teamRosterNpcIds.end(),
+            [&](uint32_t id) { return npcs.find(id) == npcs.end(); }),
+        d.teamRosterNpcIds.end());
 
     std::vector<uint32_t> unrelatedNpcIds;
     for (const auto& entry : npcs)
-        if (entry.first != d.teamRosterNpcId) unrelatedNpcIds.push_back(entry.first);
+        if (std::find(d.teamRosterNpcIds.begin(), d.teamRosterNpcIds.end(), entry.first) ==
+            d.teamRosterNpcIds.end()) unrelatedNpcIds.push_back(entry.first);
     if (!unrelatedNpcIds.empty()) {
         for (uint32_t id : unrelatedNpcIds) {
             npcs.erase(id);
@@ -3101,58 +3586,104 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
         npcSystem.destroySelected(unrelatedNpcIds);
     }
 
-    size_t humans = 0;
-    for (const auto& entry : players)
-        if (entry.second.spawnState == ServerPlayer::Active) ++humans;
-
-    if (humans == 1 && d.teamRosterNpcId == 0) {
-        uint32_t npcId = 200000;
-        while (npcs.find(npcId) != npcs.end() || players.find(npcId) != players.end()) ++npcId;
-        const glm::vec3 spawn = gamemodeSpawnPoint(d, 1);
-        ServerNpc npc;
-        npc.entityId = npcId;
-        npc.name = "Juggernaut Opponent";
-        npc.pos = spawn;
-        npc.yaw = 3.14159265f;
-        npc.health = 3500;
-        npc.matchTeam = 1;
-        npcs.emplace(npcId, npc);
-        d.teamRosterNpcId = npcId;
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Duel, StructuredLevel::Important,
-            "gamemode.team-roster-npc.created", std::to_string(npcId),
-            "solo-opponent", d.currentServerTick,
-            nlohmann::json{{"actor", npcId}, {"team", 1}, {"mode", d.matchMode},
-                           {"human_count", humans}},
-            __FILE__, __LINE__, __FUNCTION__);
-    } else if (humans == 1) {
-        auto opponent = npcs.find(d.teamRosterNpcId);
-        if (opponent != npcs.end()) {
-            opponent->second.health = 3500;
-            opponent->second.pos = gamemodeSpawnPoint(d, 1);
-            opponent->second.matchTeam = 1;
+    const size_t teamCount = std::min<size_t>(2, gm.teams.size());
+    if (teamCount == 0) return;
+    int humanCounts[2] = {0, 0};
+    for (auto& entry : players) {
+        ServerPlayer& player = entry.second;
+        if (player.spawnState != ServerPlayer::Active) continue;
+        int team = player.matchTeam;
+        if (team < 0 || team >= (int)teamCount ||
+            (gm.teams[(size_t)team].capacity > 0 &&
+             humanCounts[team] >= gm.teams[(size_t)team].capacity)) {
+            team = humanCounts[0] <= humanCounts[1] ? 0 : 1;
+            if (team >= (int)teamCount) team = 0;
         }
-    } else if (humans != 1 && d.teamRosterNpcId != 0) {
-        const uint32_t npcId = d.teamRosterNpcId;
-        npcs.erase(npcId);
-        npcIdsAlive.erase(npcId);
-        npcSystem.destroySelected({npcId});
-        d.matchActors.erase(npcId);
-        d.matchTeams.erase(npcId);
-        d.participantNames.erase(npcId);
-        d.ffaKills.erase(npcId);
-        d.ffaDeaths.erase(npcId);
-        d.participants.erase(std::remove(d.participants.begin(), d.participants.end(), npcId),
-                             d.participants.end());
-        d.teamRosterNpcId = 0;
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Duel, StructuredLevel::Important,
-            "gamemode.team-roster-npc.removed", std::to_string(npcId),
-            "human-roster-changed", d.currentServerTick,
-            nlohmann::json{{"actor", npcId}, {"mode", d.matchMode},
-                           {"human_count", humans}},
-            __FILE__, __LINE__, __FUNCTION__);
+        player.matchTeam = team;
+        d.matchTeams[entry.first] = team;
+        ++humanCounts[team];
     }
+
+    uint32_t nextId = 200000;
+    for (size_t team = 0; team < teamCount; ++team) {
+        const int capacity = gm.teams[team].capacity;
+        const int target = capacity > 0 ? capacity : humanCounts[team];
+        const int needed = std::max(0, target - humanCounts[team]);
+        int have = 0;
+        for (uint32_t id : d.teamRosterNpcIds) {
+            const auto it = npcs.find(id);
+            if (it != npcs.end() && it->second.matchTeam == (int)team) ++have;
+        }
+        while (have > needed) {
+            auto rosterIt = std::find_if(d.teamRosterNpcIds.rbegin(), d.teamRosterNpcIds.rend(),
+                [&](uint32_t id) {
+                    const auto npc = npcs.find(id);
+                    return npc != npcs.end() && npc->second.matchTeam == (int)team;
+                });
+            if (rosterIt == d.teamRosterNpcIds.rend()) break;
+            const uint32_t id = *rosterIt;
+            d.teamRosterNpcIds.erase(std::next(rosterIt).base());
+            npcs.erase(id);
+            npcIdsAlive.erase(id);
+            d.matchActors.erase(id);
+            d.matchTeams.erase(id);
+            d.participantNames.erase(id);
+            d.ffaKills.erase(id);
+            d.ffaDeaths.erase(id);
+            npcSystem.destroySelected({id});
+            serverClearActorPreset(id);
+            --have;
+        }
+        while (have < needed) {
+            while (npcs.find(nextId) != npcs.end() || players.find(nextId) != players.end()) ++nextId;
+            ServerNpc npc;
+            npc.entityId = nextId;
+            npc.name = gm.teams[team].displayName + " " + std::to_string(humanCounts[team] + have + 1);
+            npc.pos = gamemodeSpawnPoint(d, (int)team);
+            npc.yaw = team == 0 ? 0.0f : 3.14159265f;
+            npc.health = 3500;
+            npc.matchTeam = (int)team;
+            npcs.emplace(nextId, npc);
+            d.teamRosterNpcIds.push_back(nextId);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "gamemode.team-roster-npc.created", std::to_string(nextId),
+                "configured-team-capacity", d.currentServerTick,
+                nlohmann::json{{"actor", nextId}, {"team", team}, {"mode", d.matchMode},
+                               {"team_capacity", capacity}, {"human_count", humanCounts[team]}},
+                __FILE__, __LINE__, __FUNCTION__);
+            ++nextId;
+            ++have;
+        }
+        for (uint32_t id : d.teamRosterNpcIds) {
+            auto it = npcs.find(id);
+            if (it != npcs.end() && it->second.matchTeam == (int)team) {
+                it->second.health = 3500;
+                it->second.pos = gamemodeSpawnPoint(d, (int)team);
+            }
+        }
+    }
+    nlohmann::json expectedCounts = nlohmann::json::array();
+    nlohmann::json actualCounts = nlohmann::json::array();
+    for (size_t team = 0; team < teamCount; ++team) {
+        const int capacity = gm.teams[team].capacity;
+        const int expected = capacity > 0 ? capacity : humanCounts[team];
+        int actual = humanCounts[team];
+        for (uint32_t id : d.teamRosterNpcIds) {
+            const auto npc = npcs.find(id);
+            if (npc != npcs.end() && npc->second.matchTeam == (int)team) ++actual;
+        }
+        expectedCounts.push_back(expected);
+        actualCounts.push_back(actual);
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "gamemode.team-roster.resolved", d.matchMode,
+        "configured team capacities reconciled", d.currentServerTick,
+        nlohmann::json{{"mode", d.matchMode}, {"expected_per_team", expectedCounts},
+                       {"actual_per_team", actualCounts},
+                       {"generated_npcs", d.teamRosterNpcIds.size()}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 // Advance each participant's authoritative match lifecycle state. This is the
@@ -3315,6 +3846,7 @@ void resetGamemodeActorsAtMapSpawn(
             npc.body.respawnTimer = 0.0f;
             npc.movementProfileId = profile.movementPreset;
             npc.actorPresetId = profile.actorPresetId;
+            serverMarkActorPresetApplied(npc.id, profile.actorPresetId);
             if (!profile.avatarName.empty())
                 npc.avatarName = profile.avatarName;
             npc.navigator.reset();
@@ -3424,6 +3956,8 @@ void beginMatchCountdown(ServerGamemodeState& d,
     d.lastBroadcastTick = currentTick;
     resetMatchScores(d);
     d.phase = DUEL_PHASE_COUNTDOWN;
+    d.roundCountdownFreeze =
+        GamemodeRegistry::instance().get(d.matchMode).features.freezeDuringCountdown;
     resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
     if (d.zombieTower) {
         const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
@@ -3496,6 +4030,7 @@ static void removeZombieTowerNpc(ServerGamemodeState& d,
     d.participantNames.erase(id);
     d.matchTeams.erase(id);
     d.matchActors.erase(id);
+    serverClearActorPreset(id);
     d.ffaKills.erase(id);
     d.ffaDeaths.erase(id);
     d.ztStats.erase(id);
@@ -4527,8 +5062,7 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
         d.phase = DUEL_PHASE_RESULTS;
         d.victoryType = 1;  // TimeLimit
         d.phaseTimer = d.resultsSeconds;
-        if (d.winCondition == "first_to_score" &&
-            GamemodeRegistry::instance().get(d.matchMode).timeLimitOutcome == "stalemate") {
+        if (GamemodeRegistry::instance().get(d.matchMode).timeLimitOutcome == "stalemate") {
             d.winnerPlayerId = 0;
             d.winnerTeam = -1;
             StructuredLogger::instance().writeEvent(
@@ -4890,6 +5424,13 @@ void serverTeamBrainTick(ServerGamemodeState& d,
 
     if (!d.objectiveRounds) return;
 
+    // Payload NPCs use the same utility objective slot as Bomb: attackers and
+    // defenders both receive the live cart position, so they contest the cart
+    // instead of wandering. Physical contact still comes from the shared actor
+    // and cart collision paths.
+    const bool payloadObjective = d.payloadMode && d.payloadRuntime.active &&
+        d.phase == DUEL_PHASE_ACTIVE;
+
     // Push objective context onto each NPC's utility brain. objectivePos points
     // at the bomb/site the NPC's team should care about.
     for (Npc& npc : npcSystem.all()) {
@@ -4897,12 +5438,27 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         TeamBrain& brain = (team == 0) ? d.teamBrainA : d.teamBrainB;
         const TeamAssignment assignment = brain.assignmentFor(npc.id);
         glm::vec3 objPos;
-        const bool hasObj = brain.objectiveTargetPosition(npc.id, npc.body.pos, objPos);
+        bool hasObj = false;
+        if (payloadObjective) {
+            hasObj = true;
+            objPos = d.payloadRuntime.cartPosition;
+            // MoveToObjective stops 4 m before its target. Aim at a point just
+            // past the cart so attackers and defenders actually enter the
+            // interaction box instead of holding outside it.
+            glm::vec3 toCart = objPos - npc.body.pos;
+            const float flat = glm::length(glm::vec2(toCart.x, toCart.y));
+            if (flat > 0.1f)
+                objPos += glm::vec3(toCart.x / flat, toCart.y / flat, 0.0f) * 2.0f;
+        } else {
+            hasObj = brain.objectiveTargetPosition(npc.id, npc.body.pos, objPos);
+        }
 
         UtilityContext& ctx = npc.utilityContext;
         ctx.objectiveKnown = hasObj;
         if (hasObj) ctx.objectivePos = objPos;
-        ctx.onDefense = (team == 0);
+        ctx.onDefense = payloadObjective
+            ? (team == d.payloadRuntime.defenderTeam)
+            : (team == 0);
         // Team's best estimate of where enemies are, so an NPC with no visible
         // target can travel toward the enemy area instead of wandering.
         glm::vec3 enemyAreaPos;
@@ -4917,18 +5473,20 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             glm::length(npc.body.pos - objPos) <= 3.0f;
         // A Terrorist carrying the bomb can plant inside a site.
         const int actorSiteIndex = MapConfigRegistry::instance().siteIndexAt(npc.body.pos);
-        const float objectiveDistance = glm::length(npc.body.pos - d.objective.position);
-        ctx.canPlant = (team == 1) &&
+        const glm::vec3 objectiveAnchor =
+            payloadObjective ? objPos : d.objective.position;
+        const float objectiveDistance = glm::length(npc.body.pos - objectiveAnchor);
+        ctx.canPlant = !payloadObjective && (team == 1) &&
             d.objective.state == ObjectiveState::Carried &&
             d.objective.carrierActorId == npc.id &&
             actorSiteIndex >= 0;
         // A Counter-Terrorist at a planted bomb can defuse.
-        ctx.canDefuse = (team == 0) &&
+        ctx.canDefuse = !payloadObjective && (team == 0) &&
             d.objective.state == ObjectiveState::Planted &&
             glm::length(npc.body.pos - d.objective.position) <= d.objective.interactionRange;
         const int objectiveContextKey = (hasObj ? 1 : 0) |
             (ctx.atObjective ? 2 : 0) | (ctx.canPlant ? 4 : 0) |
-            (ctx.canDefuse ? 8 : 0);
+            (ctx.canDefuse ? 8 : 0) | (payloadObjective ? 16 : 0);
         if (objectiveContextKey != npc.lastObjectiveContextKey) {
             npc.lastObjectiveContextKey = objectiveContextKey;
             StructuredLogger::instance().writeEvent(
@@ -4937,6 +5495,7 @@ void serverTeamBrainTick(ServerGamemodeState& d,
                 "context_changed", tick,
                 nlohmann::json{{"actor", npc.id}, {"team", team},
                                {"assignment", (int)assignment},
+                               {"payload", payloadObjective},
                                {"objective_state", (int)d.objective.state},
                                {"objective_known", hasObj},
                                {"at_objective", ctx.atObjective},
@@ -4948,7 +5507,9 @@ void serverTeamBrainTick(ServerGamemodeState& d,
                                {"distance_to_objective", objectiveDistance},
                                {"interaction_range", d.objective.interactionRange},
                                {"eligibility_reason",
-                                ctx.canPlant ? "plant_eligible" :
+                                payloadObjective
+                                    ? (ctx.atObjective ? "at_payload_cart" : "travel_to_payload_cart")
+                                    : ctx.canPlant ? "plant_eligible" :
                                 ctx.canDefuse ? "defuse_eligible" :
                                 (team == 1 && d.objective.state == ObjectiveState::Carried
                                     ? (d.objective.carrierActorId != npc.id ? "not_bomb_carrier"
@@ -4976,6 +5537,15 @@ void serverGamemodeTick(SOCKET sock,
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;
     d.currentServerTick = tick;
+    for (auto it = d.actorPresetOverridesByActorId.begin();
+         it != d.actorPresetOverridesByActorId.end(); ) {
+        if (players.find(it->first) == players.end() && npcs.find(it->first) == npcs.end()) {
+            d.actorPresetAppliedByActorId.erase(it->first);
+            it = d.actorPresetOverridesByActorId.erase(it);
+        }
+        else
+            ++it;
+    }
     static std::string loadedMapConfigId;
     static uint64_t lastMapConfigPollMs = 0;
     const uint64_t mapPollNow = nowMs();
@@ -5017,7 +5587,10 @@ void serverGamemodeTick(SOCKET sock,
     serverAreaEffectTick(d, sock, players, npcs, tick, totalPacketsOut);
     // Team assignments and objective context are NPC decision inputs. Keep
     // them frozen with movement/AI until the countdown and GO phase finish.
-    if (d.phase != DUEL_PHASE_COUNTDOWN && d.phase != DUEL_PHASE_GO)
+    const Gamemode& activeModeRules = GamemodeRegistry::instance().get(d.matchMode);
+    const bool pauseTeamBrain = d.phase == DUEL_PHASE_COUNTDOWN ||
+        (d.phase == DUEL_PHASE_GO && activeModeRules.features.freezeDuringGo);
+    if (!pauseTeamBrain)
         serverTeamBrainTick(d, players, npcs, npcSystem, npcWorld, tick);
     if (!d.mapOnly && d.appliedCommunityWeaponSetId != d.communityWeaponSetId)
     {
@@ -5403,6 +5976,9 @@ void serverGamemodeTick(SOCKET sock,
         // Score only counts during the active phase, and never for a suicide.
         if (d.phase == DUEL_PHASE_ACTIVE && !d.matchOver && killerId != victimId)
         {
+            if (d.payloadMode) {
+                ++d.payloadSessionKills[killerId];
+            }
             // Duel 1v1 scoring (original behavior)
             if (d.matchMode == "duel" && d.winCondition != "first_to_score") {
                 if (killerId == d.playerAId)
@@ -5463,6 +6039,17 @@ void serverGamemodeTick(SOCKET sock,
                     if (victimTeam >= 0 && teamIt->second != victimTeam) {
                         if (teamIt->second == 0) ++d.redTeamKills;
                         else ++d.blueTeamKills;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Duel, StructuredLevel::Important,
+                            "tdm.team-score.updated", d.matchMode,
+                            "confirmed opposing-team kill scored", tick,
+                            nlohmann::json{{"killer", killerId}, {"victim", victimId},
+                                           {"killer_team", teamIt->second},
+                                           {"victim_team", victimTeam},
+                                           {"red_score", d.redTeamKills},
+                                           {"blue_score", d.blueTeamKills},
+                                           {"goal", d.goalValue}},
+                            __FILE__, __LINE__, __FUNCTION__);
                     }
                 }
             }
@@ -5624,8 +6211,12 @@ void serverGamemodeTick(SOCKET sock,
             break;
 
         case DUEL_PHASE_ACTIVE:
-            serverObjectiveTick(d, players, npcs, tick);
-            checkObjectiveRoundEnd(d, tick);
+            if (d.payloadMode) {
+                serverPayloadTick(d, players, npcs, npcSystem, tick);
+            } else {
+                serverObjectiveTick(d, players, npcs, tick);
+                checkObjectiveRoundEnd(d, tick);
+            }
             if (d.phase != DUEL_PHASE_ACTIVE)
             {
                 broadcastDuelState(sock, d, players, totalPacketsOut);
@@ -5739,7 +6330,8 @@ void serverGamemodeTick(SOCKET sock,
     switch (d.phase)
     {
         case DUEL_PHASE_WAITING:
-            if (((d.npcWaves || d.persistentNpcSpawns || d.winCondition == "first_to_score") &&
+            if (((d.npcWaves || d.persistentNpcSpawns || d.winCondition == "first_to_score" ||
+                  GamemodeRegistry::instance().get(d.matchMode).npcSpawnPolicy == "team_roster") &&
                  countActivePlayers(players) >= 1) ||
                 (!d.npcWaves && (countActivePlayers(players) >= 2 ||
                 (countActivePlayers(players) >= 1 && !npcs.empty()))))
@@ -5748,7 +6340,9 @@ void serverGamemodeTick(SOCKET sock,
                 if (world.spawnPoints.empty())
                     rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                 assignGamemodeSpawns(d, world);
-                if (d.winCondition == "first_to_score" && !d.startCountdownImmediately) {
+                if ((d.winCondition == "first_to_score" ||
+                     GamemodeRegistry::instance().get(d.matchMode).npcSpawnPolicy == "team_roster") &&
+                    !d.startCountdownImmediately) {
                     d.phase = DUEL_PHASE_INTERMISSION;
                     d.phaseTimer = d.intermissionSeconds;
                     ++d.stateVersion;
@@ -5789,8 +6383,10 @@ void serverGamemodeTick(SOCKET sock,
                     ? tick + (uint32_t)std::ceil(d.waveBannerSeconds * 60.0f) : 0;
                 if (d.npcWaves)
                     spawnNpcWaveBatch(d, npcs);
-                if (d.zombieTower) {
+                const Gamemode& goMode = GamemodeRegistry::instance().get(d.matchMode);
+                if (!goMode.features.freezeDuringGo)
                     d.roundCountdownFreeze = false;
+                if (d.zombieTower) {
                     if (d.ztRunStartTick == 0) d.ztRunStartTick = tick;
                     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
                     d.ztMusicTrack = gm.musicOnGoTrack;
@@ -5824,6 +6420,7 @@ void serverGamemodeTick(SOCKET sock,
             if (d.phaseTimer <= 0.0f)
             {
                 d.phase = DUEL_PHASE_ACTIVE;
+                d.roundCountdownFreeze = false;
                 d.waveBannerVisible = false;
                 d.matchStartTick = tick;
                 if (d.persistentNpcSpawns)
@@ -6022,7 +6619,9 @@ void serverGamemodeTick(SOCKET sock,
             d.phaseTimer -= SERVER_DT;
             if (d.phaseTimer <= 0.0f)
             {
-                if (d.winCondition == "first_to_score" && countActivePlayers(players) == 0) {
+                if ((d.winCondition == "first_to_score" ||
+                     GamemodeRegistry::instance().get(d.matchMode).npcSpawnPolicy == "team_roster") &&
+                    countActivePlayers(players) == 0) {
                     d.phase = DUEL_PHASE_WAITING;
                     d.phaseTimer = 0.0f;
                     ++d.stateVersion;
@@ -6408,12 +7007,28 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
     const Gamemode& gm = GamemodeRegistry::instance().get(id);
     const bool hostOverride = playerIt->second.isHost;
     const bool allowMidrun = d.zombieTower && gm.allowMidrunTeamChange;
-    // Team selection is a pre-round decision. The host may override this lock
-    // because the host is also responsible for resolving a full target team.
-    if (!hostOverride && !allowMidrun && d.phase != DUEL_PHASE_WAITING &&
-        d.phase != DUEL_PHASE_INTERMISSION && d.phase != DUEL_PHASE_RESULTS) {
-        message = "team selection locked";
-        return false;
+    const bool payloadActive = d.payloadMode &&
+        (d.phase == DUEL_PHASE_COUNTDOWN || d.phase == DUEL_PHASE_GO ||
+         d.phase == DUEL_PHASE_ACTIVE);
+    const bool hasPlayingTeam = playerIt->second.matchTeam >= 0 &&
+        playerIt->second.matchTeam < 2;
+    // Team selection is a pre-round decision. Payload allows active changes
+    // after its configured cooldown; joining from no team/spectator is always
+    // allowed. The host may override either rule.
+    if (!hostOverride && !allowMidrun) {
+        if (payloadActive && hasPlayingTeam) {
+            const auto cooldownIt = d.teamChangeCooldownUntil.find(playerId);
+            if (cooldownIt != d.teamChangeCooldownUntil.end() &&
+                tick < cooldownIt->second) {
+                message = "team change cooldown";
+                return false;
+            }
+        } else if (d.phase != DUEL_PHASE_WAITING &&
+                   d.phase != DUEL_PHASE_INTERMISSION &&
+                   d.phase != DUEL_PHASE_RESULTS) {
+            message = "team selection locked";
+            return false;
+        }
     }
     const size_t configuredTeamCount = !gm.teams.empty() ? gm.teams.size() : gm.teamNames.size();
     if (requestedTeam < 0 || requestedTeam >= static_cast<int>(configuredTeamCount)) {
@@ -6457,6 +7072,7 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
                     d.participantNames.erase(victimId);
                     d.matchTeams.erase(victimId);
                     d.matchActors.erase(victimId);
+                    serverClearActorPreset(victimId);
                     d.ffaKills.erase(victimId);
                     d.ffaDeaths.erase(victimId);
                 } else if (!humanVictims.empty()) {
@@ -6509,6 +7125,11 @@ bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
     }
     if (d.zombieTower)
         reconcileZombieTowerParty(d, players, npcs);
+    if (d.payloadMode && payloadActive && !hostOverride && requestedTeam < 2) {
+        const float cooldownSeconds = std::max(0.0f, gm.payload.teamChangeCooldownSeconds);
+        d.teamChangeCooldownUntil[playerId] =
+            tick + (uint32_t)std::lround(cooldownSeconds * 60.0f);
+    }
     message = "switched to " + roundTeamName(gm, requestedTeam);
     if (hostOverride) message += " (host override)";
     broadcastServerChatMessage(sock, players, tick, totalPacketsOut,

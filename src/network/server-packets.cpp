@@ -302,6 +302,8 @@ void applyAcceptedInputPresentation(ServerPlayer& player,
         (report.movementFlags & MOVEMENT_REPORT_FLY_UP) != 0;
     player.input.flyDown =
         (report.movementFlags & MOVEMENT_REPORT_FLY_DOWN) != 0;
+    player.input.flyFast =
+        (report.movementFlags & MOVEMENT_REPORT_FLY_FAST) != 0;
 
     player.weaponState = input.weaponState;
     applyEquipIntentFromInput(player, input, "accepted-input");
@@ -1355,6 +1357,7 @@ void handleDisconnect(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& p
         }
         else
         {
+            serverClearActorPreset(header->playerId);
             players.erase(it);
             printf("%s [SERVER POST-LEAVE] players=%zu — server continuing\n",
                    serverTimestamp(), players.size());

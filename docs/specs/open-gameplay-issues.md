@@ -1,7 +1,49 @@
-2026 10 23 1814  dust 2 cberia v4 map, relates to map eidotr, npcs gettin gstuck in the  t spawn little beoxes, preformance seems better? idk 
-also , npcs need the heavy shotgun to  be the sound that they actuallt use 
-the heavt shotgun sound 
-also we need ESP 
+## New intake — 2026-10-23, 18:14
+
+Player report from Dust 2 Cyberia V4 (`dust2cyberiav4`):
+
+- **NPC navigation:** NPCs are getting stuck in the small boxes at T spawn.
+  The report relates this to the map editor; the cause has not been traced.
+- **Performance:** Performance seemed better during this session, but the
+  player was unsure. No measurement or comparison was recorded.
+- **Heavy shotgun audio:** When NPCs use the heavy shotgun, they should play
+  the heavy shotgun sound that belongs to that weapon.
+- **Admin ESP:** Admins with high privileges should be able to see NPCs,
+  players, and other actors through walls, including their health bars. The
+  exact permission level, display details, and mode policy remain open.
+- **Mode-specific map limits:** Some modes, such as Zombie Tower, should limit
+  which maps can be selected. The allowed-map rules and where to configure
+  them remain open.
+- **Map preview:** Map selection should include a visual preview so players
+  can see the map instead of choosing from text alone. The preview format and
+  selection-screen details remain open.
+- **Room creation and auto-join:** Starting a Zombie Tower server can take
+  long enough that the client reports a room-creation timeout and does not
+  auto-join. The GUI's room-file wait was 15 seconds; the requested wait is
+  60 seconds. In the live run recorded below, the dedicated server took about
+  32.94 seconds from startup entry to coordinator room registration
+  (`server.process.started` at `2026-10-23T22:20:47.066Z`, then
+  `network.room.registered` at `2026-10-23T22:21:20.002Z`; see
+  `logs/2026-10-23/20261023_221303/events.jsonl`). That confirms a long
+  registration delay in this run, but does not by itself prove that the GUI
+  timed out or failed to join. The same journal records about 10.93 seconds
+  for headless map loading, then an NPC navmesh prepare/bake failure with
+  `recast_grid_out_of_bounds` at about 16.48 seconds. Room registration came
+  about 16.46 seconds after that. ICE candidate gathering and coordinator
+  requests happen later in startup, but their individual durations were not
+  captured in that run. The GUI wait is now 60 seconds in build 2908; a live
+  auto-join attempt with that build is still needed.
+
+The navigation, audio, ESP, and map-selection items are user-reported and have
+not been reproduced or accepted as implementation requirements. Candidate
+owners:
+[`entity-editor/entity-editor.md`](entity-editor/entity-editor.md),
+[`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md),
+[`gamemodes/juggernaut.md`](gamemodes/juggernaut.md),
+[`gamemodes/zombie-tower/zombie-tower.md`](gamemodes/zombie-tower/zombie-tower.md),
+[`gui/guiv2.md`](gui/guiv2.md),
+[`moderation/moderation.md`](moderation/moderation.md), and
+[`networking/networking.md`](networking/networking.md).
 
 2026 10 21 0355 jorj  updateed this to just be  open gamepla issues bc its sick to have just 1 doc to  spawm all the ideas
 C:\mimita-v9\docs\jorj-docs\misc-bugs.md

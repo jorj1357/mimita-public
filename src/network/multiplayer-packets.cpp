@@ -862,7 +862,14 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
     iceConnectSetMessage(job, "Checking room...");
     {
         CoordinatorLookupResult lookup = coordinatorIceLookup(roomCode);
-        if (!lookup.exists)
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.ice-room-lookup", roomCode,
+            "client checked room before ICE join", 0,
+            {{"room_code", roomCode}, {"reachable", lookup.reachable},
+             {"exists", lookup.exists}, {"status", lookup.status}},
+            __FILE__, __LINE__, __FUNCTION__);
+        if (lookup.reachable && !lookup.exists)
         {
             printf("[ICE CONNECT] room=%s not found on coordinator\n", roomCode.c_str());
             iceConnectFinish(job, false, "Room not found");
@@ -1094,9 +1101,13 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
 
     // Check if room still exists — helps user understand the failure
     CoordinatorLookupResult lookup = coordinatorIceLookup(roomCode);
-    if (!lookup.exists)
+    if (lookup.reachable && !lookup.exists)
     {
         iceConnectFinish(job, false, "Room not found");
+    }
+    else if (!lookup.reachable)
+    {
+        iceConnectFinish(job, false, "Coordinator unreachable");
     }
     else
     {

@@ -1,0 +1,112 @@
+{
+  "id": "payload",
+  "name": "Payload",
+  "description": "Attackers push the cart up the tower; defenders contest it until the clock or overtime expires.",
+  "maps": ["payload1"],
+  "teams": [
+    {
+      "id": "attackers",
+      "display_name": "Offense",
+      "capacity": 12,
+      "role": "payload_attacker",
+      "spawn_group": "attacker_spawn",
+      "spawn_tag_contains": "attacker",
+      "players": true,
+      "npcs": true,
+      "prefer_humans": true
+    },
+    {
+      "id": "defenders",
+      "display_name": "Defense",
+      "capacity": 12,
+      "role": "payload_defender",
+      "spawn_group": "defender_spawn",
+      "spawn_tag_contains": "defender",
+      "players": true,
+      "npcs": true,
+      "prefer_humans": true
+    },
+    {
+      "id": "spec",
+      "display_name": "Spectator",
+      "capacity": 0,
+      "role": "spectator"
+    }
+  ],
+  "spawn_groups": {
+    "attacker_spawn": { "team": "attackers", "points": [] },
+    "defender_spawn": { "team": "defenders", "points": [] }
+  },
+  "victory": { "type": "rounds" },
+  "victory_condition": "rounds",
+  "win_condition": "payload",
+  "goal_value": 0,
+  "time_limit_seconds": 0,
+  "respawn_seconds": 0.01,
+  "kill_heals": true,
+  "friendly_fire": false,
+  "countdown_seconds": 3.0,
+  "go_seconds": 1.0,
+  "intermission_seconds": 30,
+  "results_seconds": 8,
+  "spawn_offset_radius": 0.5,
+  "rounds": {
+    "max_rounds": 1,
+    "rounds_to_win": 0,
+    "endless_rounds": false,
+    "round_seconds": 300,
+    "freeze_seconds": 0,
+    "countdown_seconds": 3,
+    "intermission_seconds": 30,
+    "results_seconds": 8
+  },
+  "payload": {
+    "attacker_team": "attackers",
+    "defender_team": "defenders",
+    "overtime_seconds": 10,
+    "push_meters_per_second_per_attacker": 0.2,
+    "max_push_attackers": 6,
+    "unattended_rollback_delay_seconds": 30,
+    "rollback_meters_per_second": 0.2,
+    "heal_hp_per_10_ticks": 1,
+    "heal_defenders": false,
+    "spawn_protection_ticks": 60,
+    "team_change_cooldown_seconds": 300,
+    "class_pool": [
+      "payload_scout",
+      "payload_soldier",
+      "payload_demoman",
+      "payload_heavy",
+      "payload_melee",
+      "payload_sword",
+      "payload_chainsaw"
+    ]
+  },
+  "features": {
+    "freeze_during_countdown": true
+  },
+  "npc_behavior_profile": "balanced",
+  "npc_targeting": {
+    "mode": "opposite_team",
+    "include_players": true,
+    "include_npcs": true
+  },
+  "npc_travel": {
+    "objective_bias": 1.5,
+    "hunt_bias": 0.5,
+    "explore_bias": 0.3
+  },
+  "hide_healthbars": false,
+  "ragdoll_enabled": true,
+  "blood_enabled": true,
+  "presentation": {
+    "damage_numbers": true,
+    "hit_effects": true,
+    "world_impact_effects": true,
+    "hit_markers": true,
+    "hit_sounds": true,
+    "hit_flinch": true,
+    "killfeed": true,
+    "player_outlines": false
+  }
+}

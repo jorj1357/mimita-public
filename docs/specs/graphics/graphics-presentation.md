@@ -49,6 +49,9 @@ controllable choices:
 | `player_outlines` | Show player team/enemy outlines. |
 | `friendly_outlines` | Show outlines for known teammates; defaults to false when the mode enables outlines. |
 | `friendly_outline_color`, `enemy_outline_color` | Set the respective outline colors when outlines are enabled. |
+| `player_wireframes` | Force the player mesh wireframe layer for known hostile players. |
+| `friendly_wireframes` | Also force the player mesh wireframe layer for known teammates. |
+| `friendly_wireframe_color`, `enemy_wireframe_color` | Set the respective forced team wireframe colors. |
 | `enemy_outline_alpha` | Set hostile outline opacity from 0.0 (transparent) to 1.0 (opaque). |
 
 Each switch is independent: turning one off must not silently disable another.

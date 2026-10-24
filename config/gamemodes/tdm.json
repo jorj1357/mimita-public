@@ -1,24 +1,63 @@
 {
   "id": "tdm",
   "name": "Team Deathmatch",
-  "description": "Red vs Blue. First team to 30 kills wins.",
+  "description": "RED vs BLUE. First team to 30 kills wins; a tied match at three minutes is a stalemate.",
   "team_names": ["RED", "BLUE"],
   "goal_value": 30,
   "weapon_set_id": 1,
-  "time_limit_seconds": 300,
+  "time_limit_seconds": 180,
+  "time_limit_outcome": "stalemate",
   "respawn_seconds": 0.01,
   "kill_heals": true,
+  "friendly_fire": false,
   "countdown_seconds": 3,
-  "go_seconds": 1.0,
-  "rematch_seconds": 5,
+  "go_seconds": 0.75,
   "spawn_offset_radius": 5.0,
-  "spawn_strategy": "shared",
-  "intermission_seconds": 15,
-  "results_seconds": 8,
+  "spawn_strategy": "team_shared",
+  "intermission_seconds": 10,
+  "results_seconds": 5,
   "ragdoll_enabled": false,
-  "roles": {
-    "hunter": 8,
-    "juggernaut": 4
+  "teams": [
+    {
+      "id": "red",
+      "display_name": "RED",
+      "capacity": 5,
+      "players": true,
+      "npcs": true,
+      "prefer_humans": true,
+      "spawn_group": "red_spawn",
+      "spawn_tag_contains": "red"
+    },
+    {
+      "id": "blue",
+      "display_name": "BLUE",
+      "capacity": 5,
+      "players": true,
+      "npcs": true,
+      "prefer_humans": true,
+      "spawn_group": "blue_spawn",
+      "spawn_tag_contains": "blue"
+    }
+  ],
+  "npc_spawn": {
+    "policy": "team_roster"
+  },
+  "npc_targeting": {
+    "mode": "opposite_team",
+    "include_players": true,
+    "include_npcs": true
+  },
+  "features": {
+    "freeze_during_countdown": true,
+    "freeze_during_go": false
+  },
+  "hide_healthbars": false,
+  "presentation": {
+    "enemy_healthbars": true,
+    "player_wireframes": true,
+    "friendly_wireframes": true,
+    "friendly_wireframe_color": [0, 255, 0],
+    "enemy_wireframe_color": [255, 0, 0]
   },
   "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
 }

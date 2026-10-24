@@ -337,6 +337,7 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                 }
                 n.movementProfileId = profile.movementPreset;
                 n.actorPresetId = profile.actorPresetId;
+                serverMarkActorPresetApplied(n.id, profile.actorPresetId);
                 if (!profile.avatarName.empty())
                     n.avatarName = profile.avatarName;
                 n.behaviorProfileId = profile.behaviorProfileId;
@@ -448,8 +449,13 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     npc.body.dead = false;
     npc.body.respawnTimer = 0.0f;
     serverMeleeResetNpcForSpawn(npc.id);
-    // Melee: an NPC fighter receives 60 server ticks of spawn protection.
-    serverMeleeNoteSpawn(npc.id, 60);
+    // Melee/Payload: grant the mode's spawn protection on NPC respawn.
+    {
+        const ServerGamemodeState& mode = serverGamemodeState();
+        const uint32_t protection = mode.payloadMode
+            ? (uint32_t)std::max(0, mode.payloadSpawnProtectionTicks) : 60u;
+        serverMeleeNoteSpawn(npc.id, protection);
+    }
     npc.body.syncLegacyStateToLayers();
     npc.body.updateModelWorldTransforms();
 }
@@ -476,6 +482,7 @@ static void respawnServerNpc(Npc& npc)
     npc.body.currentHp = maxHp;
     npc.movementProfileId = profile.movementPreset;
     npc.actorPresetId = profile.actorPresetId;
+    serverMarkActorPresetApplied(npc.id, profile.actorPresetId);
     npc.navigator.reset();
     npc.traversal.reset();
     npc.prevHadTarget = false;
@@ -1238,9 +1245,10 @@ void simulateSharedNpcs(SOCKET sock,
     // Keep the authoritative roster and health mirrors synchronized, but skip
     // all NPC decision, movement, physics, and actor-pair work until ACTIVE.
     const ServerGamemodeState& matchState = serverGamemodeState();
+    const Gamemode& matchMode = GamemodeRegistry::instance().get(matchState.matchMode);
     const bool pauseNpcSimulation =
         matchState.phase == DUEL_PHASE_COUNTDOWN ||
-        matchState.phase == DUEL_PHASE_GO;
+        (matchState.phase == DUEL_PHASE_GO && matchMode.features.freezeDuringGo);
     static bool npcSimulationPaused = false;
     static uint64_t npcSimulationPauseStartedMs = 0;
     if (pauseNpcSimulation)

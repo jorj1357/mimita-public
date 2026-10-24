@@ -175,6 +175,62 @@
       "description": "Placeholder Charger contact attack.",
       "role_only": true,
       "weapons": ["zombie_charger_claw", "nothing"]
+    },
+    {
+      "id": 21,
+      "key": "payload_scout",
+      "name": "Payload Scout (role)",
+      "description": "Payload Scout: Revolver, Shotgun.",
+      "role_only": true,
+      "weapons": ["revolver", "shotgun", "nothing"]
+    },
+    {
+      "id": 22,
+      "key": "payload_soldier",
+      "name": "Payload Soldier (role)",
+      "description": "Payload Soldier: Rocket Launcher, Shotgun.",
+      "role_only": true,
+      "weapons": ["rocket_launcher", "shotgun", "nothing"]
+    },
+    {
+      "id": 23,
+      "key": "payload_demoman",
+      "name": "Payload Demoman (role)",
+      "description": "Payload Demoman: Grenade Launcher, Shotgun.",
+      "role_only": true,
+      "weapons": ["grenade_launcher", "shotgun", "nothing"]
+    },
+    {
+      "id": 24,
+      "key": "payload_heavy",
+      "name": "Payload Heavy (role)",
+      "description": "Payload Heavy: Large Machine Gun, Shotgun.",
+      "role_only": true,
+      "weapons": ["large_machine_gun", "shotgun", "nothing"]
+    },
+    {
+      "id": 25,
+      "key": "payload_melee",
+      "name": "Payload Melee (role)",
+      "description": "Payload Melee: Force Punch, Spyknife.",
+      "role_only": true,
+      "weapons": ["force_punch", "spyknife", "nothing"]
+    },
+    {
+      "id": 26,
+      "key": "payload_sword",
+      "name": "Payload Sword (role)",
+      "description": "Payload Sword: Swordsword, Revolver.",
+      "role_only": true,
+      "weapons": ["swordsword", "revolver", "nothing"]
+    },
+    {
+      "id": 27,
+      "key": "payload_chainsaw",
+      "name": "Payload Chainsaw placeholder (role)",
+      "description": "Chainsaw placeholder: Spyknife, Force Punch until a dedicated weapon exists.",
+      "role_only": true,
+      "weapons": ["spyknife", "force_punch", "nothing"]
     }
   ]
 }

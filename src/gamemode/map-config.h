@@ -30,6 +30,8 @@ struct MapEntity
     std::string type;
     glm::vec3 position{0.0f};
     glm::vec3 size{1.0f};
+    // Optional spawn yaw for authored spawnpoint entities (degrees).
+    float yaw = 0.0f;
     float radius = 1.0f;
     bool enabled = true;
     bool visible = true;
@@ -81,6 +83,12 @@ struct PayloadRoutePoint
     int order = 0;
     int waitTicks = 0;
     bool enabled = true;
+    // A route point is a checkpoint unless explicitly authored otherwise.
+    bool checkpoint = true;
+    // The final route point wins the round for the attacking team.
+    bool final = false;
+    // Extra clock time awarded once when this checkpoint is reached.
+    float timeBonusSeconds = 0.0f;
 };
 
 struct PayloadConfig
@@ -89,6 +97,9 @@ struct PayloadConfig
     bool hasCartOrigin = false;
     glm::vec3 cartOrigin{0.0f};
     float cartYaw = 0.0f;
+    // Physical/visual cart box dimensions (meters), separate from the
+    // gameplay interaction box so the GLB model size never changes the area.
+    glm::vec3 cartSize{2.0f, 1.5f, 1.0f};
     glm::vec3 interactionSize{3.0f, 2.25f, 1.5f};
     glm::vec3 interactionOffset{0.0f};
     glm::vec3 interactionRotationEuler{0.0f};

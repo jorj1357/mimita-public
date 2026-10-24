@@ -102,7 +102,9 @@ void doCollisions(
     Player& p,
     const World& world,
     bool& groundedThisFrame,
-    float dt
+    float dt,
+    bool includePhysicalEntities,
+    bool slideOnly
 )
 {
     Perf::ScopedTimer _colTimer("Collision");
@@ -112,7 +114,9 @@ void doCollisions(
     p.collision.bounceCooldown = std::max(0.0f, p.collision.bounceCooldown - dt);
     if (!world.collisionMesh.empty())
     {
-        doGLBTriangleCollisions(p, world, groundedThisFrame, dt);
+        doGLBTriangleCollisions(
+            p, world, groundedThisFrame, dt,
+            includePhysicalEntities, slideOnly);
         recoverInvalidPlayerCollisionState(p, frameStart, "glb");
 
         // TODO-DELETE: legacy capsule/body-sample debug report. Depends on

@@ -163,6 +163,21 @@
       ],
       "client_args": [],
       "map": "xxity2"
+    },
+    "15": {
+      "name": "payload",
+      "server_args": [
+        "--mode",
+        "payload",
+        "--gamemode",
+        "payload",
+        "--no-npcs"
+      ],
+      "client_args": [
+        "--startup-command",
+        "start payload"
+      ],
+      "map": "payload1"
     }
   }
 }

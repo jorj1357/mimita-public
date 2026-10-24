@@ -13,6 +13,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -24,7 +25,8 @@ namespace {
 
 bool entityIsReplicable(const PhysicalEntity& e)
 {
-    return !e.serverDriven && e.destructible.enabled && e.networkId != 0;
+    return !e.serverDriven && (e.destructible.enabled || e.replicate) &&
+           e.networkId != 0;
 }
 
 void copyPath(char* out, size_t capacity, const std::string& value)
@@ -42,6 +44,7 @@ void fillSpawnPacket(const PhysicalEntity& e,
     pkt.header.tick = tick;
     pkt.networkId = e.networkId;
     pkt.motion = (uint8_t)e.motion;
+    pkt.reserved = (e.renderModel ? 1u : 0u) | (e.collisionBox ? 2u : 0u);
     pkt.materialId = e.destructible.materialId != 0 ? e.destructible.materialId
                                                     : e.materialId;
     pkt.halfExtents[0] = e.halfExtents.x;
@@ -106,60 +109,80 @@ void serverReplicatePhysicalEntities(SOCKET sock,
 {
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
 
-    uint32_t spawnCount = 0;
-    uint32_t cutCount = 0;
-
+    std::vector<const PhysicalEntity*> replicable;
     for (const PhysicalEntity& e : system.entities())
     {
-        if (!entityIsReplicable(e))
-            continue;
+        if (entityIsReplicable(e))
+            replicable.push_back(&e);
+    }
 
-        auto known = state.broadcastCuts.find(e.networkId);
-        if (known == state.broadcastCuts.end())
+    uint32_t spawnCount = 0;
+    uint32_t cutCount = 0;
+    const uint32_t session = serverReliableEventSessionId();
+    for (auto& kv : players)
+    {
+        ServerPlayer& player = kv.second;
+        if (!player.spawned)
+            continue;
+        auto& known = state.playerKnownCuts[player.id];
+        for (const PhysicalEntity* e : replicable)
         {
-            PhysicalEntitySpawnEventPacket spawn{};
-            fillSpawnPacket(e, spawn, tick);
-            const uint32_t eventId = nextReliableGameplayEventId();
-            const uint32_t session = serverReliableEventSessionId();
-            queueReliableGameplayEventToAll(sock, players, &spawn, sizeof(spawn),
-                                            eventId, session, totalPacketsOut);
-            known = state.broadcastCuts.emplace(e.networkId, 0u).first;
-            ++spawnCount;
+            auto it = known.find(e->networkId);
+            if (it == known.end())
+            {
+                PhysicalEntitySpawnEventPacket spawn{};
+                fillSpawnPacket(*e, spawn, tick);
+                const uint32_t eventId = nextReliableGameplayEventId();
+                queueReliableGameplayEventToPlayer(sock, player, &spawn,
+                                                   sizeof(spawn), eventId,
+                                                   session, totalPacketsOut);
+                it = known.emplace(e->networkId, 0u).first;
+                ++spawnCount;
+            }
+            uint32_t& alreadySent = it->second;
+            while (alreadySent < e->destructible.cuts.size())
+            {
+                PhysicalEntityCutEventPacket cut{};
+                fillCutPacket(*e, e->destructible.cuts[alreadySent], cut, tick);
+                const uint32_t eventId = nextReliableGameplayEventId();
+                queueReliableGameplayEventToPlayer(sock, player, &cut,
+                                                   sizeof(cut), eventId,
+                                                   session, totalPacketsOut);
+                ++alreadySent;
+                ++cutCount;
+            }
         }
 
-        uint32_t& alreadySent = known->second;
-        while (alreadySent < e.destructible.cuts.size())
+        // Despawn anything this player knows about that no longer replicates.
+        for (auto it = known.begin(); it != known.end(); )
         {
-            PhysicalEntityCutEventPacket cut{};
-            fillCutPacket(e, e.destructible.cuts[alreadySent], cut, tick);
+            const PhysicalEntity* live = system.find(it->first);
+            if (live && entityIsReplicable(*live))
+            {
+                ++it;
+                continue;
+            }
+            PhysicalEntityDespawnEventPacket despawn{};
+            despawn.header.type = PACKET_PHYSICAL_ENTITY_DESPAWN;
+            despawn.header.tick = tick;
+            despawn.networkId = it->first;
             const uint32_t eventId = nextReliableGameplayEventId();
-            const uint32_t session = serverReliableEventSessionId();
-            queueReliableGameplayEventToAll(sock, players, &cut, sizeof(cut),
-                                            eventId, session, totalPacketsOut);
-            ++alreadySent;
-            ++cutCount;
+            queueReliableGameplayEventToPlayer(sock, player, &despawn,
+                                               sizeof(despawn), eventId,
+                                               session, totalPacketsOut);
+            it = known.erase(it);
         }
     }
 
-    for (auto it = state.broadcastCuts.begin(); it != state.broadcastCuts.end(); )
+    // Drop knowledge for players that disconnected or are no longer spawned.
+    for (auto it = state.playerKnownCuts.begin();
+         it != state.playerKnownCuts.end(); )
     {
-        // Server entities use their runtime id as the network id.
-        PhysicalEntity* e = system.find(it->first);
-        const bool stillHere = e && entityIsReplicable(*e);
-        if (stillHere)
-        {
+        auto pit = players.find(it->first);
+        if (pit == players.end() || !pit->second.spawned)
+            it = state.playerKnownCuts.erase(it);
+        else
             ++it;
-            continue;
-        }
-        PhysicalEntityDespawnEventPacket despawn{};
-        despawn.header.type = PACKET_PHYSICAL_ENTITY_DESPAWN;
-        despawn.header.tick = tick;
-        despawn.networkId = it->first;
-        const uint32_t eventId = nextReliableGameplayEventId();
-        const uint32_t session = serverReliableEventSessionId();
-        queueReliableGameplayEventToAll(sock, players, &despawn, sizeof(despawn),
-                                        eventId, session, totalPacketsOut);
-        it = state.broadcastCuts.erase(it);
     }
 
     // Transform broadcast at 30 Hz (every other 60 Hz tick). The reliable
@@ -171,28 +194,26 @@ void serverReplicatePhysicalEntities(SOCKET sock,
     statePkt.header.type = PACKET_PHYSICAL_ENTITY_STATE;
     statePkt.header.tick = tick;
     uint16_t count = 0;
-    for (const PhysicalEntity& e : system.entities())
+    for (const PhysicalEntity* e : replicable)
     {
-        if (!entityIsReplicable(e))
-            continue;
         if (count >= MAX_PHYSICAL_ENTITY_STATE_ENTRIES)
             break;
         PhysicalEntityStateEntry& entry = statePkt.entities[count++];
-        entry.networkId = e.networkId;
-        const glm::vec3 position(e.transform[3]);
+        entry.networkId = e->networkId;
+        const glm::vec3 position(e->transform[3]);
         entry.position[0] = position.x;
         entry.position[1] = position.y;
         entry.position[2] = position.z;
-        entry.orientation[0] = e.orientation.w;
-        entry.orientation[1] = e.orientation.x;
-        entry.orientation[2] = e.orientation.y;
-        entry.orientation[3] = e.orientation.z;
-        entry.velocity[0] = e.velocity.x;
-        entry.velocity[1] = e.velocity.y;
-        entry.velocity[2] = e.velocity.z;
-        entry.angularVelocity[0] = e.angularVelocity.x;
-        entry.angularVelocity[1] = e.angularVelocity.y;
-        entry.angularVelocity[2] = e.angularVelocity.z;
+        entry.orientation[0] = e->orientation.w;
+        entry.orientation[1] = e->orientation.x;
+        entry.orientation[2] = e->orientation.y;
+        entry.orientation[3] = e->orientation.z;
+        entry.velocity[0] = e->velocity.x;
+        entry.velocity[1] = e->velocity.y;
+        entry.velocity[2] = e->velocity.z;
+        entry.angularVelocity[0] = e->angularVelocity.x;
+        entry.angularVelocity[1] = e->angularVelocity.y;
+        entry.angularVelocity[2] = e->angularVelocity.z;
     }
     if (count == 0)
         return;
@@ -209,7 +230,7 @@ void serverReplicatePhysicalEntities(SOCKET sock,
     if ((spawnCount > 0 || cutCount > 0) && (tick % 60u) == 0u)
     {
         printf("[PHYS REPL] tick=%u spawned=%u cuts=%u tracked=%zu\n",
-               tick, spawnCount, cutCount, state.broadcastCuts.size());
+               tick, spawnCount, cutCount, state.playerKnownCuts.size());
     }
 }
 

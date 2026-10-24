@@ -1,0 +1,282 @@
+{
+  "blocks": [],
+  "bomb": {
+    "defuse_seconds": 5.0,
+    "explosion_seconds": 40.0,
+    "plant_seconds": 3.0
+  },
+  "bomb_sites": [],
+  "entities": [
+    {
+      "activationRadius": 0.0,
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "healthMultiplier": 1.0,
+      "id": "payload_attacker_spawn",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "order": 0,
+      "pickupId": "",
+      "position": [
+        -312.589,
+        -28.124,
+        1150.356
+      ],
+      "radius": 2.0,
+      "required": false,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "attacker_spawn",
+      "type": "spawnpoint",
+      "visible": false,
+      "yaw": 180.0
+    },
+    {
+      "activationRadius": 0.0,
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "healthMultiplier": 1.0,
+      "id": "payload_defender_spawn",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "order": 0,
+      "pickupId": "",
+      "position": [
+        -292.559,
+        -64.828,
+        2256.304
+      ],
+      "radius": 2.0,
+      "required": false,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "defender_spawn",
+      "type": "spawnpoint",
+      "visible": false,
+      "yaw": 180.0
+    },
+    {
+      "activationRadius": 0.0,
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
+      "enabled": true,
+      "healthMultiplier": 1.0,
+      "id": "spawnpoint_1",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "order": 0,
+      "pickupId": "",
+      "position": [
+        -314.6566162109375,
+        -32.0257453918457,
+        1140.465087890625
+      ],
+      "radius": 1.0,
+      "required": false,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "",
+      "type": "spawnpoint",
+      "visible": true,
+      "yaw": 0.0
+    }
+  ],
+  "payload": {
+    "cart_origin": {
+      "position": [
+        -234.0,
+        -22.0,
+        1429.0
+      ],
+      "yaw": 180.0
+    },
+    "cart_size": [
+      3.0,
+      3.0,
+      2.0
+    ],
+    "interaction_box": {
+      "offset": [
+        0.0,
+        0.0,
+        1.5
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        4.5,
+        4.5,
+        3.0
+      ]
+    },
+    "route": [
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "cp1",
+        "order": 0,
+        "position": [
+          -234.0,
+          -22.0,
+          1429.0
+        ],
+        "radius": 6.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": false,
+        "enabled": true,
+        "final": false,
+        "id": "r1",
+        "order": 1,
+        "position": [
+          -304.0,
+          -32.0,
+          2242.0
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": false,
+        "enabled": true,
+        "final": false,
+        "id": "r2",
+        "order": 2,
+        "position": [
+          -404.0,
+          -32.0,
+          1462.0
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "cp2",
+        "order": 3,
+        "position": [
+          -504.0,
+          -32.0,
+          1482.0
+        ],
+        "radius": 6.0,
+        "time_bonus_seconds": 300.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": false,
+        "enabled": true,
+        "final": false,
+        "id": "r3",
+        "order": 4,
+        "position": [
+          -604.0,
+          -32.0,
+          1502.0
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": false,
+        "enabled": true,
+        "final": false,
+        "id": "r4",
+        "order": 5,
+        "position": [
+          -674.0,
+          -102.0,
+          1522.0
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "cp3",
+        "order": 6,
+        "position": [
+          -674.0,
+          -202.0,
+          1542.0
+        ],
+        "radius": 6.0,
+        "time_bonus_seconds": 300.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": false,
+        "enabled": true,
+        "final": false,
+        "id": "r5",
+        "order": 7,
+        "position": [
+          -674.0,
+          -302.0,
+          1562.0
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": true,
+        "id": "cp4",
+        "order": 8,
+        "position": [
+          -674.0,
+          -402.0,
+          1582.0
+        ],
+        "radius": 6.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      }
+    ]
+  }
+}

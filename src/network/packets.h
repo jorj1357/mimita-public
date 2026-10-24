@@ -23,7 +23,9 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 41: WelcomePacket carries the dev-loop run/build identity so a new client
 //      cannot silently attach to an older persistent server.
 // 43: snapshots carry stable equipped identity and generic weapon action state.
-constexpr uint16_t PROTOCOL_VERSION = 43;
+// 44: DuelStatePacket replicates each participant's actor-preset index.
+// 45: DuelStatePacket appends Payload cart, overtime, and progress HUD state.
+constexpr uint16_t PROTOCOL_VERSION = 45;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -1242,6 +1244,8 @@ struct DuelStatePacket
     // Actor identity: 1-based MatchRoleRegistry index (0 = none), and ActorState.
     uint8_t participantRoles[64] = {};
     uint8_t participantStates[64] = {};
+    // 1-based index for the actor-specific preset applied to this life; 0 = none.
+    uint8_t participantActorPresets[64] = {};
     // ── Gamemode visual overrides ───────────────────────────────────
     float cameraFov = 0.0f;         // 0 = no override
     uint8_t ragdollEnabled = 0;     // 0=no override, 1=disabled, 2=enabled
@@ -1301,6 +1305,25 @@ struct DuelStatePacket
     char ztCheckpointName[64] = {};
     uint32_t ztMusicSerial = 0;
     char ztMusicTrack[260] = {};
+    // ── Payload HUD (protocol 45) ──────────────────────────────────
+    // Overtime is stored in server ticks; the client formats seconds and
+    // milliseconds. Progress is 0..1 along the authored route.
+    uint8_t payloadActive = 0;
+    uint8_t payloadOvertime = 0;
+    uint8_t payloadAdvancing = 0;
+    uint8_t payloadBlocked = 0;
+    uint8_t payloadRollingBack = 0;
+    uint8_t payloadAttackers = 0;
+    uint8_t payloadDefenders = 0;
+    uint8_t payloadReserved = 0;
+    uint32_t payloadOvertimeTicksLeft = 0;
+    uint32_t payloadOvertimeTicksMax = 0;
+    float payloadDistance = 0.0f;
+    float payloadTotalDistance = 0.0f;
+    float payloadProgress = 0.0f;
+    float payloadCartX = 0.0f;
+    float payloadCartY = 0.0f;
+    float payloadCartZ = 0.0f;
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a

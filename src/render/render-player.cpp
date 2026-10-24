@@ -351,6 +351,9 @@ void renderPlayerInternal(
     const bool modeForcesTeamOutline = !isLocal && teamIdentityKnown &&
         visualsConfig.hasPlayerOutlinesOverride() && visualsConfig.playerOutlinesEnabled() &&
         (!teammate || visualsConfig.friendlyOutlinesEnabled());
+    const bool modeForcesTeamWireframe = !isLocal && teamIdentityKnown &&
+        visualsConfig.hasPlayerWireframesOverride() && visualsConfig.playerWireframesEnabled() &&
+        (!teammate || visualsConfig.friendlyWireframesEnabled());
 
     const bool visualLayersAllowed = !visualsConfig.hasPlayerOutlinesOverride();
     const bool outlineAllowed = visualLayersAllowed || modeForcesTeamOutline ||
@@ -446,15 +449,17 @@ void renderPlayerInternal(
     };
 
     auto drawWireframe = [&]() {
-    if (visualLayersAllowed && wireframe->enabled && wireframe->alpha != 0.0f &&
+    if ((visualLayersAllowed || modeForcesTeamWireframe) &&
+        (modeForcesTeamWireframe || wireframe->enabled) && wireframe->alpha != 0.0f &&
         !(player.dead && wireframe->disappearOnDeath)) {
         const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
         if (wireframe->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glLineWidth(wireframe->lineWidth);
-        const glm::vec4 wireColor(wireframe->color.r / 255.0f, wireframe->color.g / 255.0f,
-                                  wireframe->color.b / 255.0f, wireframe->alpha);
+        const glm::vec3 wireRgb = visualsConfig.effectiveWireframeColor(friendlyActor, wireframe->color);
+        const glm::vec4 wireColor(wireRgb.r / 255.0f, wireRgb.g / 255.0f,
+                                  wireRgb.b / 255.0f, wireframe->alpha);
         player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
                                  true, 0.0f, wireColor);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);

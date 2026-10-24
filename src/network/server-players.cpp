@@ -64,6 +64,45 @@ void syncServerMovementRuntime(ServerPlayer& player, bool movementEnabled)
     player.movement.dash.dashAvailable = player.dashAvailable;
 }
 
+glm::vec3 resolveDeveloperFlightWorldMove(const HeadlessWorld& world,
+                                          glm::vec3 start,
+                                          glm::vec3 movement,
+                                          glm::vec3& velocity)
+{
+    constexpr float kWallTolerance = 0.35f;
+    glm::vec3 position = start;
+    glm::vec3 remaining = movement;
+    for (int contact = 0; contact < 3; ++contact)
+    {
+        const float distance = glm::length(remaining);
+        if (distance <= 1e-5f)
+            break;
+        glm::vec3 normal(0.0f);
+        float hitDistance = 0.0f;
+        const glm::vec3 target = position + remaining;
+        if (!crossesBlockingGeometry(&world, position, target,
+                                     kWallTolerance, &normal, &hitDistance,
+                                     true))
+        {
+            position = target;
+            break;
+        }
+
+        const glm::vec3 direction = remaining / distance;
+        const float advance = std::clamp(
+            hitDistance - kWallTolerance, 0.0f, distance);
+        position += direction * advance;
+        remaining -= direction * advance;
+        const float intoSurface = glm::dot(remaining, normal);
+        if (intoSurface < 0.0f)
+            remaining -= normal * intoSurface;
+        const float velocityIntoSurface = glm::dot(velocity, normal);
+        if (velocityIntoSurface < 0.0f)
+            velocity -= normal * velocityIntoSurface;
+    }
+    return position;
+}
+
 // Packet-out counter for reliable spawn-sync delivery (stats only; the
 // reliable-event queue increments it while enqueueing/sending).
 uint64_t gSpawnSyncTotalPacketsOut = 0;
@@ -490,6 +529,7 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     // Role movement identity persists for this life; used by the shared kernel.
     player.movementProfileId = profile.movementPreset;
     player.actorPresetId = profile.actorPresetId;
+    serverMarkActorPresetApplied(player.id, profile.actorPresetId);
     player.actorCollisionPreviousPos = player.pos;
     player.hasActorCollisionPreviousPos = true;
     player.actorCollisionSupportKey = 0;
@@ -941,8 +981,13 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             // resetPlayerForSpawn is called by completeAuthoritativeSpawn
             // which is triggered by justRespawned flag in the server pump.
             p.justRespawned = true;  // signal caller to send spawn sync
-            // Melee: grant 60 server ticks of spawn protection on respawn.
-            serverMeleeNoteSpawn(p.id, 60);
+            // Melee/Payload: grant the mode's spawn protection on respawn.
+            {
+                const ServerGamemodeState& mode = serverGamemodeState();
+                const uint32_t protection = mode.payloadMode
+                    ? (uint32_t)std::max(0, mode.payloadSpawnProtectionTicks) : 60u;
+                serverMeleeNoteSpawn(p.id, protection);
+            }
             p.input = {};
             p.attackQueued = false;
             p.dashAvailable = true;
@@ -1009,9 +1054,11 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         if (p.input.flyDown) direction.z -= 1.0f;
         if (glm::length(direction) > 1.0f)
             direction = glm::normalize(direction);
-        const float speed = 5.0f * std::clamp(p.flySpeedMultiplier, 0.01f, 100.0f);
+        const float speed = movementDeveloperFlightSpeed(
+            p.flySpeedMultiplier, p.input.flyFast);
         p.vel = direction * speed;
-        p.pos += p.vel * SERVER_DT;
+        p.pos = resolveDeveloperFlightWorldMove(
+            world, p.pos, p.vel * SERVER_DT, p.vel);
         p.onGround = false;
         p.movement.externalImpulse = glm::vec3(0.0f);
         p.clientStateUpdated = false;

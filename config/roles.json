@@ -360,6 +360,100 @@
       "behavior_profile": "balanced",
       "avatar": "monstertest1",
       "avatar_forced": true
+    },
+    {
+      "id": "payload_attacker",
+      "display_name": "Payload Offense",
+      "team": 0,
+      "team_id": "attackers",
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "payload_scout",
+      "starting_weapon": "revolver",
+      "behavior_profile": "balanced",
+      "spawn_group": "attacker_spawn"
+    },
+    {
+      "id": "payload_defender",
+      "display_name": "Payload Defense",
+      "team": 1,
+      "team_id": "defenders",
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "payload_scout",
+      "starting_weapon": "revolver",
+      "behavior_profile": "balanced",
+      "spawn_group": "defender_spawn"
+    },
+    {
+      "id": "payload_scout",
+      "display_name": "Payload Scout",
+      "team": 0,
+      "health": 100,
+      "movement_preset": "sourcefast",
+      "weapon_set": "payload_scout",
+      "starting_weapon": "revolver",
+      "behavior_profile": "balanced"
+    },
+    {
+      "id": "payload_soldier",
+      "display_name": "Payload Soldier",
+      "team": 0,
+      "health": 125,
+      "movement_preset": "source",
+      "weapon_set": "payload_soldier",
+      "starting_weapon": "rocket_launcher",
+      "behavior_profile": "balanced"
+    },
+    {
+      "id": "payload_demoman",
+      "display_name": "Payload Demoman",
+      "team": 0,
+      "health": 125,
+      "movement_preset": "source",
+      "weapon_set": "payload_demoman",
+      "starting_weapon": "grenade_launcher",
+      "behavior_profile": "balanced"
+    },
+    {
+      "id": "payload_heavy",
+      "display_name": "Payload Heavy",
+      "team": 0,
+      "health": 175,
+      "movement_preset": "heavy",
+      "weapon_set": "payload_heavy",
+      "starting_weapon": "large_machine_gun",
+      "behavior_profile": "balanced"
+    },
+    {
+      "id": "payload_melee",
+      "display_name": "Payload Melee",
+      "team": 0,
+      "health": 125,
+      "movement_preset": "source",
+      "weapon_set": "payload_melee",
+      "starting_weapon": "force_punch",
+      "behavior_profile": "balanced"
+    },
+    {
+      "id": "payload_sword",
+      "display_name": "Payload Sword",
+      "team": 0,
+      "health": 125,
+      "movement_preset": "source",
+      "weapon_set": "payload_sword",
+      "starting_weapon": "swordsword",
+      "behavior_profile": "balanced"
+    },
+    {
+      "id": "payload_chainsaw",
+      "display_name": "Payload Chainsaw (placeholder)",
+      "team": 0,
+      "health": 150,
+      "movement_preset": "source",
+      "weapon_set": "payload_chainsaw",
+      "starting_weapon": "spyknife",
+      "behavior_profile": "aggressive"
     }
   ]
 }

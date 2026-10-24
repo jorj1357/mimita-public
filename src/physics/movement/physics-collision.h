@@ -108,7 +108,9 @@ void doCollisions(
     Player& p,
     const World& world,
     bool& groundedThisFrame,
-    float dt
+    float dt,
+    bool includePhysicalEntities = true,
+    bool slideOnly = false
 );
 
 std::string collisionLastTraceSummary();

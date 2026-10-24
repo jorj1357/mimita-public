@@ -14,5 +14,5 @@
   "host_player_name": "",
   "client_name": "NPC Dev",
   "server_name": "NPC Dev Server",
-  "server_bind": "127.0.0.1:1357"
+  "server_bind": "127.0.0.1:0"
 }

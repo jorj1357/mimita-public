@@ -157,15 +157,19 @@ void doGLBTriangleCollisions(
     Player& p,
     const World& world,
     bool& groundedThisFrame,
-    float dt
+    float dt,
+    bool includePhysicalEntities,
+    bool slideOnly
 ) {
     // ── Single actor-triangle owner (opt-in, hot-reloadable) ─────────────
     // When enabled, every living actor that has a physical body uses the one
     // triangle solver. NPCs intentionally share this owner; their navigation
     // code only supplies movement intent and must not select a legacy solver.
-    if (CollisionConfig::instance().actorTriangleSolver())
+    if (slideOnly || CollisionConfig::instance().actorTriangleSolver())
     {
-        if (runActorTriangleCollisionStep(p, world, groundedThisFrame, dt))
+        if (runActorTriangleCollisionStep(
+                p, world, groundedThisFrame, dt,
+                includePhysicalEntities, slideOnly))
         {
             if (isCurrentEntityNpc()) {
                 uint64_t ignored = 0;
@@ -212,9 +216,6 @@ void doGLBTriangleCollisions(
     constexpr float MAX_CORRECTION = 2.0f;
 
     glm::vec3 totalMove = (p.vel + p.externalImpulse) * dt;
-    const float maxZStep = PLAYER_RADIUS;
-    if (totalMove.z < -maxZStep)
-        totalMove.z = -maxZStep;
     glm::vec3 remainingMove;
     CollisionTraceSnapshot trace;
     std::vector<int> candidates;

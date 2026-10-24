@@ -323,6 +323,29 @@ void registerCrateCommands()
     });
 
     Terminal::instance().registerCommand({
+        "physical_entity_list",
+        "List every physical entity, including replicated server mirrors",
+        "physical_entity_list",
+        [](const std::vector<std::string>&) {
+            const auto& entities = PhysicalEntitySystem::instance().entities();
+            Terminal::instance().addLog("[PHYS] count=" +
+                std::to_string(entities.size()));
+            for (const PhysicalEntity& e : entities) {
+                const glm::vec3 pos = glm::vec3(e.transform[3]);
+                const glm::vec3 dim = e.halfExtents * 2.0f;
+                char buf[320];
+                std::snprintf(buf, sizeof(buf),
+                    "[PHYS] id=%u net=%u serverDriven=%d replicate=%d shape=%u "
+                    "pos=(%.2f %.2f %.2f) dim=(%.2f %.2f %.2f)",
+                    e.id, e.networkId, (int)e.serverDriven, (int)e.replicate,
+                    (unsigned)e.shape, pos.x, pos.y, pos.z,
+                    dim.x, dim.y, dim.z);
+                Terminal::instance().addLog(buf);
+            }
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "crate_clear",
         "Remove all spawned crates",
         "crate_clear",

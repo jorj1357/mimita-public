@@ -9,14 +9,18 @@
 #include "terminal/actor-commands.h"
 
 #include <cstdio>
+#include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
 #include "network/server-gamemode.h"
+#include "network/server.h"
 #include "network/community-match-client.h"
+#include "network/multiplayer-context.h"
 #include "gamemode/match-roles.h"
 #include "gamemode/gamemode.h"
 #include "config/player-settings.h"
@@ -44,8 +48,12 @@ const MatchRoleDefinition* resolvePreset(const std::vector<std::string>& args)
     }
     const std::string& token = args[0];
     if (!token.empty() && token.find_first_not_of("0123456789") == std::string::npos) {
-        const int index = std::stoi(token);
-        return index >= 1 && index <= (int)presets.size() ? presets[index - 1] : nullptr;
+        try {
+            const unsigned long long index = std::stoull(token);
+            return index >= 1 && index <= presets.size() ? presets[(size_t)index - 1] : nullptr;
+        } catch (...) {
+            return nullptr;
+        }
     }
     const MatchRoleDefinition* preset = MatchRoleRegistry::instance().getActorPreset(token);
     if (!preset) {
@@ -92,10 +100,12 @@ void registerActorCommands()
                     if (it == d.matchActors.end()) continue;
                     const ActorMatchDescriptor& a = it->second;
                     snprintf(buf, sizeof(buf),
-                        "actor=%u controller=%s role=%s team=%d state=%s movement=%s",
+                        "actor=%u controller=%s role=%s preset_override=%s team=%d state=%s movement=%s",
                         id,
                         a.controller == ActorController::Npc ? "npc" : "human",
                         a.roleId.empty() ? "none" : a.roleId.c_str(),
+                        d.actorPresetOverridesByActorId.count(id)
+                            ? d.actorPresetOverridesByActorId.at(id).c_str() : "none",
                         a.teamId,
                         actorStateName(a.state),
                         a.movementProfileId.empty() ? "none" : a.movementProfileId.c_str());
@@ -115,15 +125,75 @@ void registerActorCommands()
             for (const auto& a : actors) {
                 const std::string& role = MatchRoleRegistry::instance().idForIndex(a.roleIndex);
                 snprintf(buf, sizeof(buf),
-                    "actor=%u controller=replicated role=%s team=%d state=%s",
+                    "actor=%u controller=replicated role=%s preset_index=%u team=%d state=%s",
                     a.actorId,
                     role.empty() ? "none" : role.c_str(),
+                    a.actorPresetIndex,
                     a.team == 0xFF ? -1 : (int)a.team,
                     actorStateName((ActorState)a.state));
                 Terminal::instance().addLog(buf);
             }
         },
         "2026-09-10",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "actor_list",
+        "List match actors with controller, role, team, state, and movement profile",
+        "actor_list",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().execute("actorlist");
+        },
+        "2026-10-23",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "actor_preset_actor",
+        "Assign an actor preset to one match actor until that actor leaves",
+        "actor_preset_actor <actor-id> <preset-id|index>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2 || args[0].empty() ||
+                args[0].find_first_not_of("0123456789") != std::string::npos) {
+                Terminal::instance().addLog("usage: actor_preset_actor <actor-id> <preset-id|index>");
+                return;
+            }
+            uint32_t actorId = 0;
+            try {
+                const unsigned long long parsed = std::stoull(args[0]);
+                if (parsed > std::numeric_limits<uint32_t>::max()) throw std::out_of_range("actor id");
+                actorId = (uint32_t)parsed;
+            } catch (...) {
+                Terminal::instance().addLog("actor_preset_actor: invalid actor id");
+                return;
+            }
+            const std::vector<std::string> presetArgs{args[1]};
+            const MatchRoleDefinition* preset = resolvePreset(presetArgs);
+            if (!preset) {
+                Terminal::instance().addLog("actor_preset_actor: unknown preset or index");
+                return;
+            }
+            if (MimitaNet::isServerHost()) {
+                if (!MimitaNet::serverSetActorPreset(actorId, preset->id)) {
+                    Terminal::instance().addLog(
+                        "actor_preset_actor: actor not in active server match or preset unavailable");
+                    return;
+                }
+                Terminal::instance().addLog(
+                    "actor_preset_actor: assigned " + preset->id + " to actor " +
+                    std::to_string(actorId) + "; applies on next spawn and persists until actor removal");
+                return;
+            }
+            if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext,
+                    "actor_preset_actor " + std::to_string(actorId) + " " + preset->id);
+                Terminal::instance().addLog("actor_preset_actor: sent to server host for validation");
+                return;
+            }
+            Terminal::instance().addLog("actor_preset_actor: connect to a server or run this on the host");
+        },
+        "2026-10-23",
         CommandCategory::Debug
     });
 

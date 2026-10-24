@@ -19,9 +19,11 @@ available simulation tick after the deadline; clients advance the displayed
 countdown from the authoritative remaining duration and never move it backward
 when a delayed state packet arrives.
 
-Pause simulation for every NPC in the world from COUNTDOWN through GO. Keep the
-server network and match lifecycle running, and resume NPC simulation when the
-match enters ACTIVE.
+Pause simulation for every NPC in the world during COUNTDOWN. By default, keep
+NPCs paused through GO and resume them in ACTIVE. A gamemode may set
+`features.freeze_during_go` to `false`; in that mode, release player input,
+NPC simulation, and team AI as soon as GO is shown. Keep networking and phase
+processing running throughout the countdown.
 
 2026 10 20 1800
 SERVE DISAGREEMENT ISSUES THE THING WHERE ITS LIKE IT CHDKCS IF THER IS SMTH BETERWEN UR CURRENT POS AND THE  NEW POS UR AT AND THEN IT DOESNT LET U 
@@ -4132,8 +4134,11 @@ join. A terminal alias may expand to that preset command. For example,
 
 The short command is meant to perform the same setup as the GUI buttons for
 starting a server: apply the selected JSON preset's settings, launch the
-registered dedicated server, wait for its room code, then put the client into
-that game. It must not require menu navigation or manual room-code copying.
+dedicated server, connect the local host client as soon as the local gameplay
+server is ready, and register the room with the coordinator in parallel. The
+room code appears when registration finishes and is used by remote clients; it
+does not gate the local host's gameplay. It must not require menu navigation or
+manual room-code copying.
 The command is a shortcut through the GUI's server setup behavior, not a
 separate local-only server path. It must not require the player to repeat
 Leave to recover from stale state.
@@ -4146,16 +4151,18 @@ follow this contract:
 1. If the player is connected to any server, host or client, do nothing and
    print a clear message such as `You're already in a game.`
 2. If the player is disconnected and the existing `ss` sandbox server is
-   healthy, registered, and has the expected identity, rejoin that server.
-3. If no suitable sandbox server exists, start one and wait until it is ready
-   and registered before joining.
-4. When starting a new server, use the same server setup and room-registration
-   flow as the GUI buttons, apply the selected preset settings, and wait for
-   the registered room code. When reusing a server, verify its existing room
-   and identity. Then join exactly once as a client through coordinator/ICE.
-   Do not use a hard-coded `127.0.0.1` gameplay address or loopback-only
-   server bind for this path. The server stays authoritative; player gameplay
-   commands travel from the client to it through the normal network protocol.
+   healthy and has the expected identity, rejoin it whether its coordinator
+   room code is already published or still pending.
+3. If no suitable sandbox server exists, start one and connect the local host
+   client as soon as its local gameplay loop is ready. Coordinator registration
+   proceeds in parallel and must not block local gameplay.
+4. When starting a new server, apply the selected preset settings and register
+   it with the coordinator in the background. The local host may use the
+   existing direct UDP client/server protocol to reach that same machine; this
+   does not replace coordinator registration or remote room-code/ICE joins.
+   When reusing a server, verify its process and preset identity, then connect
+   locally without waiting for a fresh room lookup. The server remains
+   authoritative and gameplay commands use the normal network protocol.
 5. If a server has the wrong identity or ownership is unclear, do not join,
    disable identity checks, or stop that process. Explain the conflict.
 6. Report success only after the client is connected. If disconnect is still
@@ -4169,42 +4176,37 @@ reuse it when it is still healthy and registered, so it remains joinable.
 
 ### Shared start and existing-server reuse path
 
-Preset commands and GUI start buttons must share the same server settings,
-room-registration handshake, and client room-code connection. On a new server,
-wait for the server's registered room code before connecting the client. On
-reuse, verify the server is still running and matches the selected preset, then
-join its registered room code. In both cases, the client uses the normal
-room-code/coordinator/ICE flow; do not use a hard-coded localhost gameplay
-address.
+Preset commands and GUI start buttons share server settings and coordinator
+registration. A local host client connects directly over the normal UDP game
+protocol as soon as the local server loop is ready. Room registration and room
+code publication continue independently so remote clients can join through
+coordinator/ICE. Reuse verifies that the server is still running and matches
+the selected preset before connecting locally.
 
-Implementation status (2026-10-16): `launchServerPresetAndJoin()` in
-`src/gui/gui-main.cpp` now queues the same room-code path used by the GUI.
-For a new external server, it leaves the connection pending while
-`pollPendingServerRoomCode()` waits for the room-file result; that GUI owner
-then queues the room-code join. For an existing external server, the helper
-checks that its process is alive and compares map, mode, server name, and port
-before reusing its published room code. The in-process listen-server fallback
-also joins with its room code. An active multiplayer connection is left alone
-and the terminal reports that the player is already in a game.
+Implementation status (2026-10-24): `launchServerPresetAndJoin()` and the GUI
+Start Server button queue the local direct UDP connection immediately. The
+dedicated server runs its authoritative loop while TURN credentials,
+candidates, and coordinator room registration finish on a background worker.
+The room-file handshake publishes the room code for remote joins without
+replacing an active local connection. Server reuse still checks that its
+process is alive and matches the selected map, mode, name, and port.
 
 This implementation does not yet prove live join/rejoin behavior. The reuse
 comparison is the currently available local preset identity; it does not
-independently verify coordinator health or a remote server identity before
-queueing the room code. Keep those checks as follow-up acceptance if a live
-rejoin shows the room is stale or mismatched. The user-visible `ss` sequence
-must still be exercised once in a real client and journal before claiming it
-works end to end.
+independently verify coordinator health before attempting a local join. The
+user-visible `ss` sequence must still be exercised once in a real client and
+journal before claiming it works end to end.
 
 A localhost address means “this same computer.” It can connect a separate
 client process to a separate server process using the client/server packet
-protocol; it is not the old single-player architecture. But that route does
-not prove that another computer can reach the server. For `ss`, start the
-server through the same room-registration flow as the GUI, then join by room
-code through coordinator/ICE. A localhost-only test can still isolate local
-packet behavior, but it cannot count as online or multiplayer acceptance. This
-matches the intent clarified in section 48.4 and the regression
-`docs/regressions/2026-09-27/dev-loop-bypassed-room-code-REG.md`. Keep room
-lookup failure separate from a wrong run/build identity. The exact
+protocol; it is not the old single-player architecture. The local host may use
+that route for immediate gameplay while coordinator registration continues.
+This does not prove that another computer can reach the server: remote clients
+still use the registered room through coordinator/ICE. A localhost-only test
+cannot count as external multiplayer acceptance. The regression
+`docs/regressions/2026-09-27/dev-loop-bypassed-room-code-REG.md` still applies
+to dev-loop scenarios that claim to validate remote room-code/ICE joins. Keep
+room lookup failure separate from a wrong run/build identity. The exact
 user-reported text “room identity not found” was not found as a literal in the
 inspected command/network owners; capture the exact text and journal event
 during reproduction.

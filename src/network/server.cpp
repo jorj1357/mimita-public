@@ -51,6 +51,7 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <mutex>
 #include <random>
 #include <system_error>
 #include <thread>
@@ -670,8 +671,13 @@ int runServer(const LaunchOptions& options)
                serverTimestamp(), (int)options.npcsEnabled, npcCount, npcs.size());
     }
 
-    // ── Register server with coordinator (ICE only) ──
+    // ── Register server with coordinator in the background ──
     std::string serverCode;
+    std::mutex registrationMutex;
+    bool registrationFinished = false;
+    bool registrationSucceeded = false;
+    ListenServerState registrationResult;
+    std::thread registrationThread;
     {
         if (hostedRoomSession().active)
         {
@@ -679,47 +685,36 @@ int runServer(const LaunchOptions& options)
                    hostedRoomSession().roomCode.c_str(), serverCode.c_str());
         }
 
-        if (!initServerIceListener(dedicatedIceState))
-        {
-            printf("%s [SERVER ICE] init failed — aborting. Check STUN/TURN connectivity to %s:3478\n",
-                   serverTimestamp(), getCoordinatorUrl().c_str());
-            logServerExit(1, "coordinator_ice_registration_failed", "", 0);
-            ::StructuredLogger::instance().shutdown();
-            return 1;
-        }
-        serverCode = dedicatedIceState.serverCode;
-        printf("%s [SERVER ICE] registered: code=%s\n",
-               serverTimestamp(), serverCode.c_str());
-        std::vector<uint32_t> startupNpcIds;
-        startupNpcIds.reserve(npcs.size());
-        for (const auto& entry : npcs)
-            startupNpcIds.push_back(entry.first);
-        std::sort(startupNpcIds.begin(), startupNpcIds.end());
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Network, StructuredLevel::Important,
-            "network.room.registered", serverCode,
-            "dedicated server room registered with coordinator", 0,
-            nlohmann::json{{"room_code", serverCode},
-                           {"server_name", options.name},
-                           {"mode", options.gameMode},
-                           {"map", options.mapName},
-                           {"max_players", options.maxPlayers},
-                           {"startup_npc_count", startupNpcIds.size()},
-                           {"startup_npc_ids", startupNpcIds}},
-            __FILE__, __LINE__, __func__);
+        registrationThread = std::thread([&]() {
+            registrationResult.serverName = dedicatedIceState.serverName;
+            registrationResult.hostPlayerName = dedicatedIceState.hostPlayerName;
+            registrationResult.mapName = dedicatedIceState.mapName;
+            registrationResult.gameMode = dedicatedIceState.gameMode;
+            registrationResult.maxPlayers = dedicatedIceState.maxPlayers;
+            registrationResult.discordNotification = dedicatedIceState.discordNotification;
+            registrationResult.passwordProtected = dedicatedIceState.passwordProtected;
+            registrationResult.password = dedicatedIceState.password;
+            registrationResult.port = dedicatedIceState.port;
+            const bool ok = initServerIceListener(registrationResult);
+            {
+                std::lock_guard<std::mutex> lock(registrationMutex);
+                registrationSucceeded = ok;
+                registrationFinished = true;
+            }
+            if (!ok)
+                printf("%s [SERVER ICE] registration failed; local server remains available\n",
+                       serverTimestamp());
+        });
     }
-
-    // ── Write room code to --room-file (after registration) ──
-    if (!options.roomFilePath.empty() && !serverCode.empty())
-    {
-        FILE* rf = fopen(options.roomFilePath.c_str(), "w");
-        if (rf)
-        {
-            fprintf(rf, "%s\n", serverCode.c_str());
-            fclose(rf);
-            printf("[SERVER] wrote room code %s to %s\n", serverCode.c_str(), options.roomFilePath.c_str());
-        }
-    }
+    ::StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.server.local-gameplay-ready", "server",
+        "authoritative UDP loop can start before coordinator registration", 0,
+        nlohmann::json{{"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+                       {"port", actualPort}, {"map", mapName},
+                       {"mode", options.gameMode},
+                       {"coordinator_registration", "pending"}},
+        __FILE__, __LINE__, __func__);
 
     uint64_t lastCoordinatorHb = 0;
     uint64_t iceCoordinatorPollCount = 0;
@@ -746,6 +741,62 @@ int runServer(const LaunchOptions& options)
     while (true)
     {
         auto loopStart = std::chrono::steady_clock::now();
+        bool registrationReady = false;
+        bool registrationOk = false;
+        {
+            std::lock_guard<std::mutex> lock(registrationMutex);
+            registrationReady = registrationFinished;
+            registrationOk = registrationSucceeded;
+            if (registrationReady)
+                registrationFinished = false;
+        }
+        if (registrationReady && registrationOk)
+        {
+            registrationThread.join();
+            dedicatedIceState.iceListenerAgent =
+                std::move(registrationResult.iceListenerAgent);
+            dedicatedIceState.iceSessionId =
+                std::move(registrationResult.iceSessionId);
+            dedicatedIceState.serverCode =
+                std::move(registrationResult.serverCode);
+            dedicatedIceState.joinToken =
+                std::move(registrationResult.joinToken);
+            dedicatedIceState.lastIceCoordinatorPollMs =
+                registrationResult.lastIceCoordinatorPollMs;
+            serverCode = dedicatedIceState.serverCode;
+            publishServerIceListener(dedicatedIceState);
+            printf("%s [SERVER ICE] registered: code=%s\n",
+                   serverTimestamp(), serverCode.c_str());
+            std::vector<uint32_t> startupNpcIds;
+            startupNpcIds.reserve(npcs.size());
+            for (const auto& entry : npcs)
+                startupNpcIds.push_back(entry.first);
+            std::sort(startupNpcIds.begin(), startupNpcIds.end());
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.room.registered", serverCode,
+                "dedicated server room registered with coordinator", tick,
+                nlohmann::json{{"room_code", serverCode},
+                               {"server_name", options.name},
+                               {"mode", options.gameMode},
+                               {"map", options.mapName},
+                               {"max_players", options.maxPlayers},
+                               {"startup_npc_count", startupNpcIds.size()},
+                               {"startup_npc_ids", startupNpcIds},
+                               {"local_gameplay_started_first", true}},
+                __FILE__, __LINE__, __func__);
+            if (!options.roomFilePath.empty())
+            {
+                FILE* rf = fopen(options.roomFilePath.c_str(), "w");
+                if (rf)
+                {
+                    fprintf(rf, "%s\n", serverCode.c_str());
+                    fclose(rf);
+                    printf("[SERVER] wrote room code %s to %s\n",
+                           serverCode.c_str(), options.roomFilePath.c_str());
+                }
+            }
+        }
         // Auto-exit when --timeout is set (for CI/agent testing)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
         {
@@ -1120,6 +1171,8 @@ int runServer(const LaunchOptions& options)
         }
     }
 
+    if (registrationThread.joinable())
+        registrationThread.join();
     PersistenceQueue::instance().flushBlocking();
     shutdownIceCoordinatorPoller();
     logServerExit(0, serverExitReason, serverCode, tick);
@@ -1324,6 +1377,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
             netShutdown();
             return false;
         }
+        publishServerIceListener(state);
         printf("[LISTEN SERVER] ICE registered: code=%s\n", state.serverCode.c_str());
         hostedRoomSession().coordinatorRoomType = "ice";
     }

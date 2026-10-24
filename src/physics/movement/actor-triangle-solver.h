@@ -44,6 +44,7 @@ struct ActorTriangleCollisionResult {
     std::vector<ActorWorldContact> contacts;
     bool grounded = false;
     bool anyImpact = false;
+    bool budgetExceeded = false;
     float maxPenetration = 0.0f;
     int candidates = 0;
     // Candidate triangles whose AABB exceeds kMaxChunksPerTriangle chunks, i.e.
@@ -77,7 +78,8 @@ bool solveActorTriangleCollision(
     const glm::vec3& desiredMovement,
     ActorTriangleCollisionResult& result,
     const std::vector<PhysicalEntity>* entities = nullptr,
-    float dt = 1.0f / 60.0f);
+    float dt = 1.0f / 60.0f,
+    bool slideOnly = false);
 
 // Deterministic Phase 3 test: synthetic box actor vs floor, wall, corner, and a
 // leaving-old-contact case.
@@ -92,4 +94,6 @@ bool runActorTriangleCollisionStep(
     Player& player,
     const World& world,
     bool& groundedThisFrame,
-    float dt);
+    float dt,
+    bool includeEntities = true,
+    bool slideOnly = false);

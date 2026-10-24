@@ -25,6 +25,8 @@ struct MovementCollisionFeedback {
 };
 
 float movementClampStepDelta(float dt, const MovementConfig& config);
+float movementDeveloperFlightSpeed(float multiplier, bool fast);
+float movementMaxDeveloperFlightMultiplier();
 float movementSafeSizeScale(float sizeScale);
 float movementSizeScaleFactor(float sizeScale, float exponent);
 float movementScaledGroundSpeed(const MovementConfig& config, float sizeScale);
