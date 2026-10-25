@@ -181,6 +181,7 @@ void walkNode(
                 : node.name;
             object.nodeIndex = nodeIndex;
             object.transform = world;
+            object.basePosition = glm::vec3(world[3]);
             object.vertexFirst = firstVertex;
             object.vertexCount = target.verts.size() - firstVertex;
             object.boundsMin = glm::vec3(std::numeric_limits<float>::max());

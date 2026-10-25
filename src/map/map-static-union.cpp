@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/structured-log.h"
+#include "impact/boolean-mesh.h"
 #include "physics/physical-entity.h"
 
 namespace {
@@ -275,6 +276,99 @@ void appendTestBox(std::vector<CollisionTriangle>& triangles,
         solidIds[i] = solidId;
 }
 
+double signedTriangleVolume(const std::vector<CollisionTriangle>& triangles)
+{
+    double volume = 0.0;
+    for (const CollisionTriangle& triangle : triangles)
+        volume += static_cast<double>(
+            glm::dot(triangle.a, glm::cross(triangle.b, triangle.c))) / 6.0;
+    return volume;
+}
+
+bool buildManifoldMesh(const std::vector<CollisionTriangle>& triangles,
+                       bool flipWinding,
+                       MimitaImpact::BooleanMesh& out,
+                       std::string& reason)
+{
+    out = MimitaImpact::BooleanMesh{};
+    std::unordered_map<glm::ivec3, uint32_t, IVec3KeyHash> vertexIds;
+    vertexIds.reserve(triangles.size() * 3);
+    const auto vertexId = [&](const glm::vec3& p, const glm::vec3& n) {
+        const glm::ivec3 key(
+            (int)std::lround(p.x * 4096.0f),
+            (int)std::lround(p.y * 4096.0f),
+            (int)std::lround(p.z * 4096.0f));
+        auto found = vertexIds.find(key);
+        if (found != vertexIds.end())
+            return found->second;
+        const uint32_t id = static_cast<uint32_t>(out.vertices.size());
+        vertexIds.emplace(key, id);
+        MimitaImpact::BooleanMeshVertex vertex;
+        vertex.position = p;
+        vertex.normal = n;
+        out.vertices.push_back(vertex);
+        return id;
+    };
+
+    out.indices.reserve(triangles.size() * 3);
+    for (const CollisionTriangle& triangle : triangles)
+    {
+        glm::vec3 a = triangle.a;
+        glm::vec3 b = triangle.b;
+        glm::vec3 c = triangle.c;
+        if (flipWinding)
+            std::swap(b, c);
+        glm::vec3 normal = glm::cross(b - a, c - a);
+        const float length = glm::length(normal);
+        if (length <= 1.0e-8f)
+        {
+            reason = "degenerate_solid_triangle";
+            return false;
+        }
+        normal /= length;
+        const uint32_t ia = vertexId(a, normal);
+        const uint32_t ib = vertexId(b, normal);
+        const uint32_t ic = vertexId(c, normal);
+        if (ia == ib || ib == ic || ia == ic)
+        {
+            reason = "collapsed_solid_triangle";
+            return false;
+        }
+        out.indices.push_back(ia);
+        out.indices.push_back(ib);
+        out.indices.push_back(ic);
+    }
+
+    std::string validation;
+    const MimitaImpact::BooleanError error =
+        MimitaImpact::booleanValidate(out, &validation);
+    if (error != MimitaImpact::BooleanError::None)
+    {
+        reason = validation.empty() ? "manifold_validation_failed" : validation;
+        return false;
+    }
+    return true;
+}
+
+void logUnionStats(const StaticUnionStats& stats)
+{
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.collision.static-solid-union", "static-collision-union",
+        stats.unionFallback ? "fallback" : "completed", 0,
+        nlohmann::json{
+            {"input_triangles", stats.inputTriangles},
+            {"output_triangles", stats.outputTriangles},
+            {"union_solids", stats.unionSolids},
+            {"union_input_triangles", stats.unionInputTriangles},
+            {"union_output_triangles", stats.unionOutputTriangles},
+            {"union_raw_triangles", stats.unionRawTriangles},
+            {"union_ms", stats.unionMs},
+            {"union_fallback", stats.unionFallback},
+            {"union_fallback_reason", stats.unionFallbackReason}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 } // namespace
 
 bool isClosedSolidTriangleRange(const std::vector<CollisionTriangle>& triangles,
@@ -374,6 +468,217 @@ bool isClosedSolidTriangleRange(const std::vector<CollisionTriangle>& triangles,
             return false;
     }
 
+    return true;
+}
+
+bool unionStaticSolidGroups(
+    std::vector<CollisionTriangle>& triangles,
+    std::vector<uint32_t>& solidIds,
+    uint32_t maxOutputTriangles,
+    StaticUnionStats* outStats,
+    uint32_t maxSolids)
+{
+    const auto started = std::chrono::steady_clock::now();
+    StaticUnionStats stats;
+    stats.inputTriangles = static_cast<uint32_t>(triangles.size());
+
+    if (triangles.empty())
+    {
+        stats.outputTriangles = 0;
+        stats.elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        if (outStats)
+            *outStats = stats;
+        return true;
+    }
+
+    if (solidIds.size() != triangles.size())
+    {
+        stats.unionFallback = true;
+        stats.unionFallbackReason = "solid_ids_size_mismatch";
+        stats.outputTriangles = static_cast<uint32_t>(triangles.size());
+        stats.elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        if (outStats)
+            *outStats = stats;
+        logUnionStats(stats);
+        return false;
+    }
+
+    struct SolidGroup
+    {
+        uint32_t id = 0;
+        std::vector<CollisionTriangle> triangles;
+    };
+    std::vector<SolidGroup> groups;
+    std::unordered_map<uint32_t, size_t> groupIndex;
+    std::vector<std::pair<CollisionTriangle, uint32_t>> raw;
+    raw.reserve(triangles.size());
+
+    for (size_t i = 0; i < triangles.size(); ++i)
+    {
+        const uint32_t solidId = solidIds[i];
+        if (solidId == 0)
+        {
+            raw.emplace_back(triangles[i], 0);
+            continue;
+        }
+        auto inserted = groupIndex.emplace(solidId, groups.size());
+        if (inserted.second)
+        {
+            SolidGroup group;
+            group.id = solidId;
+            groups.push_back(std::move(group));
+        }
+        groups[inserted.first->second].triangles.push_back(triangles[i]);
+    }
+
+    if (maxSolids > 0 && groups.size() > maxSolids)
+    {
+        stats.unionFallback = true;
+        stats.unionFallbackReason = "solid_count_cap";
+        stats.unionSolids = static_cast<uint32_t>(groups.size());
+        stats.unionOutputTriangles = 0;
+        stats.outputTriangles = static_cast<uint32_t>(triangles.size());
+        stats.elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        if (outStats)
+            *outStats = stats;
+        logUnionStats(stats);
+        return false;
+    }
+
+    std::vector<MimitaImpact::BooleanMesh> unionMeshes;
+    unionMeshes.reserve(groups.size());
+    const auto unionStarted = std::chrono::steady_clock::now();
+
+    for (SolidGroup& group : groups)
+    {
+        if (!isClosedSolidTriangleRange(
+                group.triangles, 0, group.triangles.size()))
+        {
+            for (const CollisionTriangle& triangle : group.triangles)
+                raw.emplace_back(triangle, group.id);
+            continue;
+        }
+
+        const double volume = signedTriangleVolume(group.triangles);
+        MimitaImpact::BooleanMesh mesh;
+        std::string reason;
+        if (!buildManifoldMesh(group.triangles, volume < 0.0, mesh, reason))
+        {
+            for (const CollisionTriangle& triangle : group.triangles)
+                raw.emplace_back(triangle, group.id);
+            continue;
+        }
+
+        stats.unionInputTriangles +=
+            static_cast<uint32_t>(group.triangles.size());
+        unionMeshes.push_back(std::move(mesh));
+    }
+
+    stats.unionSolids = static_cast<uint32_t>(unionMeshes.size());
+    if (unionMeshes.empty())
+    {
+        stats.unionOutputTriangles = static_cast<uint32_t>(triangles.size());
+        stats.unionRawTriangles = static_cast<uint32_t>(raw.size());
+        stats.unionMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - unionStarted).count();
+        stats.outputTriangles = static_cast<uint32_t>(triangles.size());
+        stats.elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        if (outStats)
+            *outStats = stats;
+        logUnionStats(stats);
+        return true;
+    }
+
+    MimitaImpact::BooleanMesh united =
+        MimitaImpact::booleanUnion(unionMeshes, 0);
+    stats.unionMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - unionStarted).count();
+
+    if (united.empty() || united.triangleCount() == 0)
+    {
+        stats.unionFallback = true;
+        stats.unionFallbackReason = "manifold_union_empty";
+        stats.unionOutputTriangles = 0;
+        stats.outputTriangles = static_cast<uint32_t>(triangles.size());
+        stats.elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        if (outStats)
+            *outStats = stats;
+        logUnionStats(stats);
+        return false;
+    }
+
+    if (maxOutputTriangles > 0 &&
+        united.triangleCount() > maxOutputTriangles)
+    {
+        stats.unionFallback = true;
+        stats.unionFallbackReason = "union_output_triangle_cap";
+        stats.unionOutputTriangles = united.triangleCount();
+        stats.outputTriangles = static_cast<uint32_t>(triangles.size());
+        stats.elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        if (outStats)
+            *outStats = stats;
+        logUnionStats(stats);
+        return false;
+    }
+
+    constexpr uint32_t kUnionSolidId = 0xFFFFFFFFu;
+    std::vector<CollisionTriangle> out;
+    std::vector<uint32_t> outSolidIds;
+    out.reserve(united.triangleCount() + raw.size());
+    outSolidIds.reserve(united.triangleCount() + raw.size());
+
+    for (uint32_t triangleIndex = 0; triangleIndex < united.triangleCount();
+         ++triangleIndex)
+    {
+        const uint32_t base = triangleIndex * 3u;
+        if (base + 2u >= united.indices.size())
+            break;
+        const uint32_t ia = united.indices[base + 0];
+        const uint32_t ib = united.indices[base + 1];
+        const uint32_t ic = united.indices[base + 2];
+        if (ia >= united.vertices.size() || ib >= united.vertices.size() ||
+            ic >= united.vertices.size())
+            continue;
+        const glm::vec3 a = united.vertices[ia].position;
+        const glm::vec3 b = united.vertices[ib].position;
+        const glm::vec3 c = united.vertices[ic].position;
+        glm::vec3 normal = glm::cross(b - a, c - a);
+        const float length = glm::length(normal);
+        if (length <= 1.0e-8f)
+            continue;
+        normal /= length;
+        CollisionTriangle triangle;
+        triangle.a = a;
+        triangle.b = b;
+        triangle.c = c;
+        triangle.normal = normal;
+        out.push_back(triangle);
+        outSolidIds.push_back(kUnionSolidId);
+    }
+
+    for (const auto& entry : raw)
+    {
+        out.push_back(entry.first);
+        outSolidIds.push_back(entry.second);
+    }
+
+    stats.unionOutputTriangles = united.triangleCount();
+    stats.unionRawTriangles = static_cast<uint32_t>(raw.size());
+    stats.outputTriangles = static_cast<uint32_t>(out.size());
+    stats.elapsedMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+
+    triangles = std::move(out);
+    solidIds = std::move(outSolidIds);
+    if (outStats)
+        *outStats = stats;
+    logUnionStats(stats);
     return true;
 }
 
@@ -690,6 +995,135 @@ bool staticFaceRemovalSelfTest(std::string& report)
         appendTestBox(triangles, ids, glm::vec3(-0.5f), glm::vec3(0.5f), 0);
         appendTestBox(triangles, ids, glm::vec3(0.5f), glm::vec3(0.5f), 0);
         run("unknown", std::move(triangles), std::move(ids), 24);
+    }
+
+    report += ok ? "PASS\n" : "FAIL\n";
+    return ok;
+}
+bool staticSolidUnionSelfTest(std::string& report)
+{
+    bool ok = true;
+    auto check = [&](bool condition, const char* label) {
+        if (!condition)
+        {
+            ok = false;
+            report += "FAIL: ";
+            report += label;
+            report += "\n";
+        }
+    };
+
+    auto run = [&](const char* label,
+                   std::vector<CollisionTriangle> triangles,
+                   std::vector<uint32_t> solidIds,
+                   double expectedVolume,
+                   size_t expectedTriangles = 1) {
+        StaticUnionStats stats;
+        const bool applied =
+            unionStaticSolidGroups(triangles, solidIds, 200000, &stats);
+        check(applied, "union applied");
+        if (!applied || stats.unionFallback)
+        {
+            report += "FAIL: ";
+            report += label;
+            report += " union fallback=";
+            report += stats.unionFallbackReason;
+            report += "\n";
+            ok = false;
+            return;
+        }
+        const double volume = std::fabs(signedTriangleVolume(triangles));
+        if (std::fabs(volume - expectedVolume) > 1.0e-2)
+        {
+            report += "FAIL: ";
+            report += label;
+            report += " volume expected=";
+            report += std::to_string(expectedVolume);
+            report += " actual=";
+            report += std::to_string(volume);
+            report += "\n";
+            ok = false;
+        }
+        if (triangles.size() < expectedTriangles)
+        {
+            report += "FAIL: ";
+            report += label;
+            report += " triangle count=";
+            report += std::to_string(triangles.size());
+            report += "\n";
+            ok = false;
+        }
+        if (solidIds.size() != triangles.size())
+        {
+            report += "FAIL: ";
+            report += label;
+            report += " solid ids misaligned\n";
+            ok = false;
+        }
+        report += label;
+        report += " volume=" + std::to_string(volume);
+        report += " tris=" + std::to_string(triangles.size());
+        report += " union_solids=" + std::to_string(stats.unionSolids);
+        report += " union_ms=" + std::to_string(stats.unionMs);
+        report += "\n";
+    };
+
+    {
+        std::vector<CollisionTriangle> triangles;
+        std::vector<uint32_t> ids;
+        appendTestBox(triangles, ids, glm::vec3(-0.5f, 0.0f, 0.0f), glm::vec3(0.5f), 1);
+        appendTestBox(triangles, ids, glm::vec3(0.5f, 0.0f, 0.0f), glm::vec3(0.5f), 2);
+        run("touch", std::move(triangles), std::move(ids), 2.0);
+    }
+
+    {
+        std::vector<CollisionTriangle> triangles;
+        std::vector<uint32_t> ids;
+        appendTestBox(triangles, ids, glm::vec3(0.0f), glm::vec3(0.5f), 1);
+        appendTestBox(triangles, ids, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.5f), 2);
+        run("stack", std::move(triangles), std::move(ids), 2.0);
+    }
+
+    {
+        std::vector<CollisionTriangle> triangles;
+        std::vector<uint32_t> ids;
+        appendTestBox(triangles, ids, glm::vec3(-0.6f, 0.0f, 0.0f), glm::vec3(0.5f), 1);
+        appendTestBox(triangles, ids, glm::vec3(0.6f, 0.0f, 0.0f), glm::vec3(0.5f), 2);
+        run("gap", std::move(triangles), std::move(ids), 2.0);
+    }
+
+    {
+        std::vector<CollisionTriangle> triangles;
+        std::vector<uint32_t> ids;
+        appendTestBox(triangles, ids, glm::vec3(0.0f), glm::vec3(1.0f), 1);
+        appendTestBox(triangles, ids, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(1.0f), 2);
+        run("overlap", std::move(triangles), std::move(ids), 12.0);
+    }
+
+    {
+        std::vector<CollisionTriangle> triangles;
+        std::vector<uint32_t> ids;
+        appendTestBox(triangles, ids, glm::vec3(0.0f), glm::vec3(0.5f), 1);
+        run("single", std::move(triangles), std::move(ids), 1.0);
+    }
+
+    {
+        std::vector<CollisionTriangle> triangles;
+        std::vector<uint32_t> ids;
+        CollisionTriangle triangle;
+        triangle.a = glm::vec3(0.0f);
+        triangle.b = glm::vec3(1.0f, 0.0f, 0.0f);
+        triangle.c = glm::vec3(0.0f, 1.0f, 0.0f);
+        triangle.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        triangles.push_back(triangle);
+        ids.push_back(7);
+        StaticUnionStats stats;
+        const bool applied =
+            unionStaticSolidGroups(triangles, ids, 200000, &stats);
+        check(applied, "raw-only union applied");
+        check(!stats.unionFallback, "raw-only union did not fall back");
+        check(triangles.size() == 1, "raw-only triangle retained");
+        check(ids.size() == 1 && ids[0] == 7, "raw-only solid id retained");
     }
 
     report += ok ? "PASS\n" : "FAIL\n";

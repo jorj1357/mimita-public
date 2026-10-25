@@ -145,10 +145,21 @@ struct HeadlessSubGrid
     std::unordered_map<glm::ivec3, std::vector<int>, HeadlessIVec3Hash> cells;
 };
 
+struct HeadlessGLBObject
+{
+    std::string id;
+    std::string name;
+    glm::vec3 basePosition{0.0f};
+    glm::vec3 position{0.0f};
+    size_t triangleFirst = 0;
+    size_t triangleCount = 0;
+};
+
 struct HeadlessWorld
 {
     std::vector<CollisionTriangle> triangles;
     std::vector<uint32_t> solidIds;
+    std::vector<HeadlessGLBObject> glbObjects;
     uint32_t nextSolidId = 1;
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};

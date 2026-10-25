@@ -75,3 +75,8 @@ int uiTextInputCharacterIndexFromX(const std::string& displayText,
 
 bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
                        UITextInputState& state, const UITextInputOptions& opts);
+
+// Same widget drawn from framebuffer-pixel coordinates. Use this when the
+// surrounding UI already uses raw screen coordinates (for example the map editor).
+bool uiTextInputRenderScreen(GLFWwindow* window, const char* id, UIRect screenRect,
+                             UITextInputState& state, const UITextInputOptions& opts);

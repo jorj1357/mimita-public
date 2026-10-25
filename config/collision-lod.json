@@ -2,6 +2,9 @@
   "enabled": true,
   "cellSize": 0.5,
   "static_face_removal": true,
+  "static_solid_union": true,
+  "static_solid_union_max_triangles": 200000,
+  "static_solid_union_max_solids": 256,
   "_future": {
     "perMeshOverrides": {},
     "renderLod": { "enabled": false, "distance": 60.0 }

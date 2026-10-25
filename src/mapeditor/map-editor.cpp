@@ -3,8 +3,11 @@
 #include "mapeditor/map-editor-config.h"
 
 #include <algorithm>
+#include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -41,9 +44,9 @@ extern Renderer* gRenderer;
 
 namespace {
 
-constexpr float kHandleLength = 1.6f;
-constexpr float kHandlePickPixels = 14.0f;
 constexpr float kVertexSnapRadius = 0.85f;
+constexpr float kOutlinerHeaderHeight = 68.0f;
+constexpr float kOutlinerListGap = 8.0f;
 constexpr size_t kMaxHistory = 60;
 
 std::string activeMapId()
@@ -103,6 +106,12 @@ glm::vec2 cursorScreen(GLFWwindow* window, double mouseX, double mouseY)
         (float)mouseX * w / (float)std::max(1, winW),
         (float)mouseY * h / (float)std::max(1, winH)
     };
+}
+
+bool isNumberChar(unsigned int codepoint)
+{
+    return (codepoint >= '0' && codepoint <= '9') || codepoint == '.' ||
+           codepoint == '-' || codepoint == '+';
 }
 
 float pointSegmentDistance(float px, float py, float ax, float ay, float bx, float by)
@@ -202,6 +211,8 @@ bool MapEditor::setActive(bool enabled)
     }
 
     endDrag(false);
+    if (dirty()) autosave();
+    flushCollisionNow();
     mActive = false;
     mLooking = false;
     mHoverValid = false;
@@ -224,6 +235,8 @@ void MapEditor::toggle()
 
 void MapEditor::setFreezeWorld(bool freeze)
 {
+    if (!freeze)
+        flushCollisionNow();
     mFreezeWorld = freeze;
     notify(std::string("world ") + (freeze ? "frozen" : "unfrozen"));
 }
@@ -333,6 +346,8 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
         object->transform[3] += glm::vec4(delta, 0.0f);
         object->boundsMin += delta;
         object->boundsMax += delta;
+        reg.setGLBObjectOverride(object->id, object->name, position);
+        mGeometryDirty = true;
         return;
     }
     if (ref.kind == EditorObjectKind::Entity) {
@@ -401,9 +416,10 @@ void MapEditor::applyGLBOverridesToWorld()
         newBounds.min = glm::min(newBounds.min, object.boundsMin);
         newBounds.max = glm::max(newBounds.max, object.boundsMax);
     }
-    updateCollisionForMovedObject(*gpWorld, oldBounds, newBounds);
+    const bool collisionUpdated =
+        updateCollisionForMovedObject(*gpWorld, oldBounds, newBounds);
     mGeometryDirty = false;
-    mCollisionDirty = false;
+    mCollisionDirty = !collisionUpdated;
 }
 glm::vec3 MapEditor::selectionCenter() const
 {
@@ -613,11 +629,12 @@ bool MapEditor::handleAtCursor(EditorObjectRef& out, int& axis) const
     };
     (void)colors;
 
+    const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
     int bestAxis = -1;
-    float bestDistance = kHandlePickPixels;
+    float bestDistance = cfg.handlePickPixels;
     for (int i = 0; i < 3; ++i) {
         float ex = 0.0f, ey = 0.0f;
-        if (!DebugVis::projectToScreen(THE_CAMERA, center + axes[i] * kHandleLength, ex, ey))
+        if (!DebugVis::projectToScreen(THE_CAMERA, center + axes[i] * cfg.handleLength, ex, ey))
             continue;
         const float distance = pointSegmentDistance(px, py, cx, cy, ex, ey);
         if (distance < bestDistance) {
@@ -690,6 +707,7 @@ void MapEditor::beginDrag(const EditorObjectRef& primary, DragMode mode,
     mDrag.primary = primary;
     mDrag.startPoint = startPoint;
     mDrag.startCenter = selectionCenter();
+    mDrag.startMouse = cursorScreen(glfwGetCurrentContext(), mMouseX, mMouseY);
     mDrag.refs = mSelection;
     if (mDrag.refs.empty()) mDrag.refs.push_back(primary);
     for (const auto& ref : mDrag.refs) {
@@ -699,6 +717,8 @@ void MapEditor::beginDrag(const EditorObjectRef& primary, DragMode mode,
         else
             mDrag.originalRotations.push_back(glm::vec3(0.0f));
     }
+    if (primary.kind == EditorObjectKind::MapGLBObject)
+        syncGLBOverridesFromWorld();
     mDrag.pendingUndo = MapConfigRegistry::instance().snapshotAuthored();
     mDrag.hasPendingUndo = true;
     mDrag.moved = false;
@@ -707,25 +727,34 @@ void MapEditor::beginDrag(const EditorObjectRef& primary, DragMode mode,
 void MapEditor::updateDrag()
 {
     if (mDrag.mode == DragMode::None) return;
-    glm::vec3 origin{0.0f};
-    glm::vec3 direction{0.0f};
-    if (!rayFromCursor(origin, direction)) return;
+    const glm::vec2 cursor = cursorScreen(glfwGetCurrentContext(), mMouseX, mMouseY);
+    const glm::vec2 mouseDelta = cursor - mDrag.startMouse;
+    const float viewDepth = std::max(0.1f,
+        glm::dot(mDrag.startCenter - THE_CAMERA.pos, THE_CAMERA.front));
+    const float halfFov = glm::radians(std::max(1.0f, THE_CAMERA.fov) * 0.5f);
+    const float unitsPerPixel = 2.0f * viewDepth * std::tan(halfFov) /
+        std::max(1.0f, screenHeight());
 
     glm::vec3 delta(0.0f);
     if (mDrag.mode == DragMode::ObjectPlane) {
-        const glm::vec3 normal = THE_CAMERA.front;
-        const float denom = glm::dot(normal, direction);
-        if (std::abs(denom) < 1e-5f) return;
-        const float t = glm::dot(mDrag.startCenter - origin, normal) / denom;
-        if (t < 0.0f) return;
-        const glm::vec3 point = origin + direction * t;
-        delta = point - mDrag.startPoint;
+        delta = THE_CAMERA.right * (mouseDelta.x * unitsPerPixel) +
+                THE_CAMERA.up * (-mouseDelta.y * unitsPerPixel);
     } else {
         const glm::vec3 axis = mDrag.mode == DragMode::AxisX ? glm::vec3(1, 0, 0) :
                                mDrag.mode == DragMode::AxisY ? glm::vec3(0, 1, 0) :
                                                                glm::vec3(0, 0, 1);
-        const glm::vec3 point = rayAxisPoint(origin, direction, mDrag.startCenter, axis);
-        delta = axis * glm::dot(point - mDrag.startPoint, axis);
+        float cx = 0.0f, cy = 0.0f, ex = 0.0f, ey = 0.0f;
+        const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
+        if (DebugVis::projectToScreen(THE_CAMERA, mDrag.startCenter, cx, cy) &&
+            DebugVis::projectToScreen(THE_CAMERA,
+                mDrag.startCenter + axis * cfg.handleLength, ex, ey)) {
+            const glm::vec2 axisScreen(ex - cx, ey - cy);
+            const float axisScreenLength = glm::length(axisScreen);
+            if (axisScreenLength > 1.0f) {
+                const float alongPixels = glm::dot(mouseDelta, axisScreen / axisScreenLength);
+                delta = axis * (alongPixels * cfg.handleLength / axisScreenLength);
+            }
+        }
     }
 
     glm::vec3 targetCenter = mDrag.startCenter + delta;
@@ -757,17 +786,50 @@ void MapEditor::endDrag(bool commit)
         mRedoLabels.clear();
     } else if (!commit && mDrag.hasPendingUndo) {
         MapConfigRegistry::instance().restoreAuthored(mDrag.pendingUndo);
-        rebuildGeometry();
+        if (selectionHasGLBObjects())
+            applyGLBOverridesToWorld();
+        if (selectionHasBlocks()) {
+            rebuildAuthoredRenderGeometry();
+            mCollisionDirty = true;
+        }
     }
+
+    AABB movedOldBounds;
+    AABB movedNewBounds;
+    bool movedGLB = false;
+    movedOldBounds.min = movedNewBounds.min = glm::vec3(std::numeric_limits<float>::max());
+    movedOldBounds.max = movedNewBounds.max = glm::vec3(std::numeric_limits<float>::lowest());
+    if (moved && commit && gpWorld) {
+        for (size_t i = 0; i < mDrag.refs.size() && i < mDrag.originalPositions.size(); ++i) {
+            const EditorObjectRef& ref = mDrag.refs[i];
+            if (ref.kind != EditorObjectKind::MapGLBObject) continue;
+            const MapGLBObject* object = mapObjectFor(ref);
+            if (!object) continue;
+            const glm::vec3 delta = glm::vec3(object->transform[3]) - mDrag.originalPositions[i];
+            movedOldBounds.min = glm::min(movedOldBounds.min, object->boundsMin - delta);
+            movedOldBounds.max = glm::max(movedOldBounds.max, object->boundsMax - delta);
+            movedNewBounds.min = glm::min(movedNewBounds.min, object->boundsMin);
+            movedNewBounds.max = glm::max(movedNewBounds.max, object->boundsMax);
+            movedGLB = true;
+        }
+    }
+
     mDrag = DragState{};
     if (moved && commit) {
-        if (selectionHasBlocksOrRoutes()) rebuildGeometry();
+        if (movedGLB)
+            updateCollisionForMovedObject(*gpWorld, movedOldBounds, movedNewBounds);
+        if (selectionHasBlocks()) {
+            rebuildAuthoredRenderGeometry();
+            mCollisionDirty = true;
+        }
+        mLastEditTime = glfwGetTime();
         notify("moved " + std::to_string(mSelection.size()) + " object(s)");
     }
 }
 
 void MapEditor::pushUndo(const std::string& label)
 {
+    mLastEditTime = glfwGetTime();
     mUndo.push_back(MapConfigRegistry::instance().snapshotAuthored());
     mUndoLabels.push_back(label);
     if (mUndo.size() > kMaxHistory) {
@@ -800,7 +862,12 @@ void MapEditor::undo()
                 return MapConfigRegistry::instance().findPayloadRoutePoint(ref.id) == nullptr;
             return false;
         }), mSelection.end());
-    rebuildGeometry();
+    applyGLBOverridesToWorld();
+    if (!MapConfigRegistry::instance().blocks().empty()) {
+        rebuildAuthoredRenderGeometry();
+        mCollisionDirty = true;
+    }
+    mLastEditTime = glfwGetTime();
     notify("undo: " + label);
 }
 
@@ -816,7 +883,12 @@ void MapEditor::redo()
     MapConfigRegistry::instance().restoreAuthored(mRedo.back());
     mRedo.pop_back();
     mRedoLabels.pop_back();
-    rebuildGeometry();
+    applyGLBOverridesToWorld();
+    if (!MapConfigRegistry::instance().blocks().empty()) {
+        rebuildAuthoredRenderGeometry();
+        mCollisionDirty = true;
+    }
+    mLastEditTime = glfwGetTime();
     notify("redo: " + label);
 }
 
@@ -939,6 +1011,7 @@ void MapEditor::pasteClipboard()
     }
     pushUndo("paste " + std::to_string(mClipboard.size()) + " object(s)");
     std::vector<EditorObjectRef> pasted;
+    bool addedBlock = false;
     const glm::vec3 offset(1.0f, 0.0f, 0.0f);
     for (const auto& item : mClipboard) {
         if (item.hasEntity) {
@@ -968,6 +1041,7 @@ void MapEditor::pasteClipboard()
                 created->id = keptId;
             }
             pasted.push_back({EditorObjectKind::Block, id});
+            addedBlock = true;
         } else if (item.hasRoute) {
             PayloadRoutePoint route = item.route;
             route.position += offset;
@@ -1021,73 +1095,190 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
 {
     out.clear();
     const auto& config = MapConfigRegistry::instance().current();
-    if (const auto& payload = config.payload; payload.hasCartOrigin)
+    std::string filter = mOutlinerFilter;
+    std::transform(filter.begin(), filter.end(), filter.begin(),
+        [](unsigned char c) { return (char)std::tolower(c); });
+    auto matches = [&](const std::string& text) {
+        if (filter.empty()) return true;
+        std::string haystack = text;
+        std::transform(haystack.begin(), haystack.end(), haystack.begin(),
+            [](unsigned char c) { return (char)std::tolower(c); });
+        return haystack.find(filter) != std::string::npos;
+    };
+    if (const auto& payload = config.payload; payload.hasCartOrigin &&
+        matches("cart_origin cart"))
         out.push_back({EditorObjectKind::PayloadCartOrigin, "cart_origin"});
-    for (const auto& route : config.payload.route)
-        out.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
-    if (gpWorld)
-        for (const auto& object : gpWorld->mesh.objects)
-            out.push_back({EditorObjectKind::MapGLBObject, object.id});
-    for (const auto& entity : config.entities)
-        if (entity.enabled)
+    for (const auto& route : config.payload.route) {
+        if (matches(route.id + " route"))
+            out.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
+    }
+    if (gpWorld) {
+        for (const auto& object : gpWorld->mesh.objects) {
+            if (matches(object.id + " " + object.name + " glb"))
+                out.push_back({EditorObjectKind::MapGLBObject, object.id});
+        }
+    }
+    for (const auto& entity : config.entities) {
+        if (entity.enabled &&
+            matches(entity.id + " " + entity.type + " " + entity.tag + " entity"))
             out.push_back({EditorObjectKind::Entity, entity.id});
-    for (const auto& block : config.blocks)
-        if (block.enabled)
+    }
+    for (const auto& block : config.blocks) {
+        if (block.enabled && matches(block.id + " block"))
             out.push_back({EditorObjectKind::Block, block.id});
+    }
 }
 
 int MapEditor::outlinerRowAt(double screenX, double screenY) const
 {
     GLFWwindow* window = glfwGetCurrentContext();
     const glm::vec2 cursor = cursorScreen(window, screenX, screenY);
-    const float x = uiScreenW() - 360.0f;
-    const float y = 120.0f;
-    constexpr float kRowHeight = 22.0f;
-    constexpr float kHeaderHeight = 44.0f;
-    if (cursor.x < x || cursor.x > x + 340.0f ||
-        cursor.y < y + kHeaderHeight || cursor.y > uiScreenH() - 48.0f)
+    const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
+    const float x = uiScreenW() - cfg.outlinerWidth;
+    const float y = cfg.outlinerTop;
+    const float panelHeight = uiScreenH() - y - cfg.outlinerBottomPadding;
+    const float listY = y + kOutlinerHeaderHeight;
+    const float listH = std::max(40.0f,
+        panelHeight - kOutlinerHeaderHeight - cfg.propertiesHeight - kOutlinerListGap);
+    if (cursor.x < x + 4.0f || cursor.x > x + cfg.outlinerWidth - 12.0f ||
+        cursor.y < listY || cursor.y > listY + listH)
         return -1;
     std::vector<EditorObjectRef> objects;
     collectEditorObjects(objects);
-    const int row = (int)std::floor((cursor.y - (y + kHeaderHeight)) / kRowHeight);
-    const int index = row + mOutlinerOffset;
-    return (index >= 0 && index < (int)objects.size()) ? row : -1;
+    const int row = (int)std::floor(
+        (cursor.y - listY + mOutlinerScroll.scrollY) / cfg.rowHeight);
+    return (row >= 0 && row < (int)objects.size()) ? row : -1;
 }
 
 bool MapEditor::wantsTextInput() const
 {
-    return mActive && mOutlinerSearchFocused;
+    if (!mActive) return false;
+    if (mOutlinerSearchFocused) return true;
+    for (const UITextInputState& field : mPropertyPosition)
+        if (field.focused) return true;
+    return false;
 }
 
 bool MapEditor::handleChar(unsigned int codepoint)
 {
-    if (!mActive || !mOutlinerSearchFocused) return false;
-    UITextInputOptions options;
-    options.maxLength = 80;
-    options.placeholder = "search objects";
-    options.submitOnEnter = false;
-    if (!uiTextInputHandleChar(mOutlinerSearch, codepoint, options)) return true;
-    mOutlinerFilter = mOutlinerSearch.value;
-    mOutlinerScroll.scrollY = 0.0f;
-    return true;
+    if (!mActive) return false;
+    if (mOutlinerSearchFocused) {
+        UITextInputOptions options;
+        options.maxLength = 80;
+        options.placeholder = "search objects";
+        options.submitOnEnter = false;
+        if (!uiTextInputHandleChar(mOutlinerSearch, codepoint, options)) return true;
+        mOutlinerFilter = mOutlinerSearch.value;
+        mOutlinerScroll.scrollY = 0.0f;
+        return true;
+    }
+    for (UITextInputState& field : mPropertyPosition) {
+        if (!field.focused) continue;
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleChar(field, codepoint, options);
+        return true;
+    }
+    return false;
 }
 
 bool MapEditor::handleTextKey(int key, int mods, int action)
 {
-    if (!mActive || !mOutlinerSearchFocused) return false;
+    if (!mActive) return false;
     const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
-        mOutlinerSearchFocused = false;
-        mOutlinerSearch.focused = false;
+    if (mOutlinerSearchFocused) {
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+            mOutlinerSearchFocused = false;
+            mOutlinerSearch.focused = false;
+            return true;
+        }
+        UITextInputOptions options;
+        options.maxLength = 80;
+        options.placeholder = "search objects";
+        uiTextInputHandleKey(glfwGetCurrentContext(), mOutlinerSearch, key, action, mods, options);
+        mOutlinerFilter = mOutlinerSearch.value;
+        mOutlinerScroll.scrollY = 0.0f;
         return true;
     }
-    UITextInputOptions options;
-    options.maxLength = 80;
-    options.placeholder = "search objects";
-    uiTextInputHandleKey(glfwGetCurrentContext(), mOutlinerSearch, key, action, mods, options);
-    mOutlinerFilter = mOutlinerSearch.value;
-    mOutlinerScroll.scrollY = 0.0f;
-    return true;
+    for (UITextInputState& field : mPropertyPosition) {
+        if (!field.focused) continue;
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+            field.focused = false;
+            return true;
+        }
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods, options);
+        if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
+            action == GLFW_PRESS) {
+            for (UITextInputState& other : mPropertyPosition) other.focused = false;
+            applyPropertyPosition();
+        }
+        return true;
+    }
+    return false;
+}
+
+void MapEditor::syncPropertyPositionFields()
+{
+    if (mSelection.empty()) {
+        if (mPropertyOwnerValid) {
+            mPropertyOwnerValid = false;
+            for (UITextInputState& field : mPropertyPosition) field.focused = false;
+        }
+        return;
+    }
+    const EditorObjectRef& ref = mSelection.front();
+    const bool ownerChanged = !mPropertyOwnerValid || !(mPropertyOwner == ref);
+    if (ownerChanged) {
+        mPropertyOwner = ref;
+        mPropertyOwnerValid = true;
+        for (UITextInputState& field : mPropertyPosition) field.focused = false;
+    }
+    if (!ownerChanged) {
+        bool anyFocused = false;
+        for (const UITextInputState& field : mPropertyPosition)
+            anyFocused = anyFocused || field.focused;
+        if (anyFocused) return;
+    }
+    const glm::vec3 position = objectPosition(ref);
+    for (int i = 0; i < 3; ++i) {
+        UITextInputState& field = mPropertyPosition[i];
+        if (field.focused) continue;
+        char value[32];
+        std::snprintf(value, sizeof(value), "%.3f", position[i]);
+        if (field.value != value) {
+            field.value = value;
+            field.cursorPos = (int)field.value.size();
+            field.selectionStart = -1;
+        }
+    }
+}
+
+void MapEditor::applyPropertyPosition()
+{
+    if (mSelection.empty() || !mPropertyOwnerValid ||
+        !(mPropertyOwner == mSelection.front())) {
+        notify("position edit has no owner");
+        return;
+    }
+    glm::vec3 position = objectPosition(mSelection.front());
+    for (int i = 0; i < 3; ++i) {
+        const std::string& text = mPropertyPosition[i].value;
+        if (text.empty()) continue;
+        try {
+            position[i] = std::stof(text);
+        } catch (const std::exception&) {
+            notify("invalid position value");
+            return;
+        }
+    }
+    setSelectedPosition(position);
+    syncPropertyPositionFields();
 }
 
 void MapEditor::tick(float dt)
@@ -1109,10 +1300,22 @@ bool MapEditor::autosave()
 {
     if (!MapConfigRegistry::instance().dirty()) return true;
     mLastAutosaveAttempt = glfwGetTime();
+    const auto started = std::chrono::steady_clock::now();
     const bool ok = MapConfigRegistry::instance().save(false);
+    const double ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
     if (ok) {
         mStatus = "autosaved " + MapConfigRegistry::instance().configPath();
         mLastMessageTime = glfwGetTime();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.autosaved", MapConfigRegistry::instance().mapId(),
+            "debounced autosave wrote map JSON", 0,
+            {{"map", MapConfigRegistry::instance().mapId()},
+             {"path", MapConfigRegistry::instance().configPath()},
+             {"duration_ms", ms},
+             {"revision", MapConfigRegistry::instance().revision()}},
+            __FILE__, __LINE__, __FUNCTION__);
     } else {
         notify("autosave failed: " + MapConfigRegistry::instance().configPath());
     }
@@ -1217,21 +1420,25 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
             return;
         }
     }
+    if (left && !mLeftPrev) {
+        const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
+        const bool overTopPanel = mMouseX >= 16.0 && mMouseX <= 716.0 &&
+                                  mMouseY >= 16.0 && mMouseY <= 120.0;
+        const bool overOutliner = mMouseX >= uiScreenW() - cfg.outlinerWidth &&
+                                  mMouseY >= cfg.outlinerTop;
+        const bool overHelp = mMouseY >= uiScreenH() - 30.0;
+        if (overTopPanel || overOutliner || overHelp) {
+            mLeftPrev = left;
+            return;
+        }
+    }
     if (left && !mLeftPrev && mDrag.mode == DragMode::None) {
         EditorObjectRef handleRef;
         int axis = -1;
         if (handleAtCursor(handleRef, axis)) {
-            glm::vec3 origin{0.0f}, direction{0.0f};
-            if (rayFromCursor(origin, direction)) {
-                const glm::vec3 axisDir = axis == 0 ? glm::vec3(1, 0, 0) :
-                                          axis == 1 ? glm::vec3(0, 1, 0) :
-                                                      glm::vec3(0, 0, 1);
-                const glm::vec3 start = rayAxisPoint(origin, direction,
-                                                     selectionCenter(), axisDir);
-                beginDrag(handleRef, axis == 0 ? DragMode::AxisX :
-                                  axis == 1 ? DragMode::AxisY : DragMode::AxisZ,
-                          start);
-            }
+            beginDrag(handleRef, axis == 0 ? DragMode::AxisX :
+                              axis == 1 ? DragMode::AxisY : DragMode::AxisZ,
+                      selectionCenter());
         } else {
             EditorObjectRef hit;
             float distance = 0.0f;
@@ -1240,19 +1447,9 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
             if (pickAtCursor(hit, distance)) {
                 if (shift) toggleSelection(hit);
                 else if (!isSelected(hit)) selectOnly(hit);
-                if (!mSelection.empty()) {
-                    glm::vec3 origin{0.0f}, direction{0.0f};
-                    if (rayFromCursor(origin, direction)) {
-                        const glm::vec3 normal = THE_CAMERA.front;
-                        const float denom = glm::dot(normal, direction);
-                        if (std::abs(denom) > 1e-5f) {
-                            const float t = glm::dot(selectionCenter() - origin, normal) / denom;
-                            const glm::vec3 start = t >= 0.0f
-                                ? origin + direction * t : selectionCenter();
-                            beginDrag(mSelection.front(), DragMode::ObjectPlane, start);
-                        }
-                    }
-                }
+                if (!mSelection.empty())
+                    beginDrag(mSelection.front(), DragMode::ObjectPlane,
+                              selectionCenter());
             } else if (!shift) {
                 clearSelection();
             }
@@ -1317,17 +1514,20 @@ bool MapEditor::handleKey(int key, int mods, int action)
         return true;
     }
     if (key == GLFW_KEY_F && !ctrl) {
-        if (!mSelection.empty()) {
-            const glm::vec3 center = selectionCenter();
-            THE_CAMERA.pos = center - THE_CAMERA.front * 8.0f;
-            THE_CAMERA.firstMouse = true;
-            notify("framed " + describeSelection());
-        }
+        focusSelection();
         return true;
     }
     if (key == GLFW_KEY_ESCAPE) { handleEscape(); return true; }
-    if (key == GLFW_KEY_PAGE_UP) { mOutlinerOffset = std::max(0, mOutlinerOffset - 20); return true; }
-    if (key == GLFW_KEY_PAGE_DOWN) { mOutlinerOffset += 20; return true; }
+    if (key == GLFW_KEY_PAGE_UP) {
+        mOutlinerScroll.scrollY = std::max(0.0f,
+            mOutlinerScroll.scrollY - (float)MapEditorConfig::instance().data().rowHeight * 10.0f);
+        return true;
+    }
+    if (key == GLFW_KEY_PAGE_DOWN) {
+        mOutlinerScroll.scrollY +=
+            (float)MapEditorConfig::instance().data().rowHeight * 10.0f;
+        return true;
+    }
     return false;
 }
 
@@ -1373,9 +1573,9 @@ void MapEditor::handleEscape()
     setActive(false);
 }
 
-bool MapEditor::save()
+bool MapEditor::save(bool writeBackup)
 {
-    const bool ok = MapConfigRegistry::instance().save();
+    const bool ok = MapConfigRegistry::instance().save(writeBackup);
     if (ok) {
         const std::string validation = validatePayloadRoute();
         notify(validation.empty()
@@ -1416,10 +1616,22 @@ bool MapEditor::reload()
 void MapEditor::rebuildGeometry()
 {
     if (!gpWorld) return;
-    if (gpWorld->authoredGeometryApplied)
-        clearAuthoredMapGeometry(*gpWorld);
-    gpWorld->authoredGeometryApplied = false;
-    applyAuthoredMapGeometry(*gpWorld, mapId());
+    AuthoredGeometryOptions options;
+    options.rebuildCollision = true;
+    options.staticFaceRemoval = true;
+    applyAuthoredMapGeometry(*gpWorld, mapId(), options);
+    mGeometryDirty = false;
+    mCollisionDirty = false;
+}
+
+void MapEditor::rebuildAuthoredRenderGeometry()
+{
+    if (!gpWorld) return;
+    AuthoredGeometryOptions options;
+    options.rebuildCollision = false;
+    options.staticFaceRemoval = false;
+    applyAuthoredMapGeometry(*gpWorld, mapId(), options);
+    mGeometryDirty = false;
 }
 
 std::string MapEditor::addEntity(const std::string& type, const std::string& id)
@@ -1659,18 +1871,181 @@ std::string MapEditor::validatePayloadRoute() const
     return report;
 }
 
+bool MapEditor::selectObject(const std::string& id)
+{
+    std::vector<EditorObjectRef> objects;
+    collectEditorObjects(objects);
+    for (const EditorObjectRef& ref : objects) {
+        if (ref.id == id) {
+            selectOnly(ref);
+            notify("selected " + describeRef(ref));
+            return true;
+        }
+    }
+    notify("no object with id " + id);
+    return false;
+}
+
+bool MapEditor::selectKind(const std::string& kind)
+{
+    std::string normalized = kind;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+        [](unsigned char c) { return (char)std::tolower(c); });
+    if (normalized == "all") {
+        selectAllEdit();
+        return true;
+    }
+    EditorObjectKind want;
+    if (normalized == "entity") want = EditorObjectKind::Entity;
+    else if (normalized == "block") want = EditorObjectKind::Block;
+    else if (normalized == "route" || normalized == "payload")
+        want = EditorObjectKind::PayloadRoutePoint;
+    else if (normalized == "cart") want = EditorObjectKind::PayloadCartOrigin;
+    else if (normalized == "glb") want = EditorObjectKind::MapGLBObject;
+    else {
+        notify("select_kind expects entity, block, route, cart, glb, or all");
+        return false;
+    }
+    std::vector<EditorObjectRef> objects;
+    collectEditorObjects(objects);
+    mSelection.clear();
+    for (const EditorObjectRef& ref : objects)
+        if (ref.kind == want) mSelection.push_back(ref);
+    if (mSelection.empty()) {
+        notify("no " + kind + " objects to select");
+        return false;
+    }
+    notify("selected " + std::to_string(mSelection.size()) + " " + kind + " object(s)");
+    return true;
+}
+
+bool MapEditor::setSelectedPosition(const glm::vec3& position)
+{
+    if (mSelection.empty()) {
+        notify("select an object first");
+        return false;
+    }
+    const glm::vec3 delta = position - objectPosition(mSelection.front());
+    if (glm::length(delta) <= 0.0001f) return true;
+    nudgeSelection(delta);
+    notify("position set to " + std::to_string(position.x) + " " +
+        std::to_string(position.y) + " " + std::to_string(position.z));
+    return true;
+}
+
+void MapEditor::nudgeSelection(const glm::vec3& delta)
+{
+    if (mSelection.empty() || !gpWorld) {
+        notify("select an object first");
+        return;
+    }
+    pushUndo("nudge selection");
+    AABB oldBounds;
+    AABB newBounds;
+    oldBounds.min = newBounds.min = glm::vec3(std::numeric_limits<float>::max());
+    oldBounds.max = newBounds.max = glm::vec3(std::numeric_limits<float>::lowest());
+    bool movedGLB = false;
+    bool movedBlocks = false;
+    for (const EditorObjectRef& ref : mSelection) {
+        const glm::vec3 before = objectPosition(ref);
+        if (ref.kind == EditorObjectKind::MapGLBObject) {
+            const MapGLBObject* object = mapObjectFor(ref);
+            if (!object) continue;
+            oldBounds.min = glm::min(oldBounds.min, object->boundsMin);
+            oldBounds.max = glm::max(oldBounds.max, object->boundsMax);
+            movedGLB = true;
+        }
+        setObjectPosition(ref, before + delta);
+        if (ref.kind == EditorObjectKind::MapGLBObject) {
+            const MapGLBObject* object = mapObjectFor(ref);
+            if (object) {
+                newBounds.min = glm::min(newBounds.min, object->boundsMin);
+                newBounds.max = glm::max(newBounds.max, object->boundsMax);
+            }
+        }
+        if (ref.kind == EditorObjectKind::Block) movedBlocks = true;
+    }
+    if (movedGLB) {
+        const bool collisionUpdated =
+            updateCollisionForMovedObject(*gpWorld, oldBounds, newBounds);
+        mCollisionDirty = !collisionUpdated;
+    }
+    if (movedBlocks) {
+        rebuildAuthoredRenderGeometry();
+        mCollisionDirty = true;
+    }
+    mLastEditTime = glfwGetTime();
+    notify("nudged selection");
+}
+bool MapEditor::cartOriginToRouteStart()
+{
+    auto& reg = MapConfigRegistry::instance();
+    const PayloadConfig& payload = reg.payload();
+    const PayloadRoutePoint* first = nullptr;
+    for (const PayloadRoutePoint& point : payload.route) {
+        if (!point.enabled) continue;
+        first = &point;
+        break;
+    }
+    if (!first || !payload.hasCartOrigin) {
+        notify("needs a cart origin and an enabled route point");
+        return false;
+    }
+    pushUndo("cart origin to route start");
+    auto& mutablePayload = reg.payloadMutable();
+    mutablePayload.cartOrigin = first->position;
+    reg.markChanged();
+    notify("cart origin moved to route start");
+    return true;
+}
+
+bool MapEditor::routeStartToCartOrigin()
+{
+    auto& reg = MapConfigRegistry::instance();
+    const PayloadConfig& payload = reg.payload();
+    const PayloadRoutePoint* first = nullptr;
+    for (const PayloadRoutePoint& point : payload.route) {
+        if (!point.enabled) continue;
+        first = &point;
+        break;
+    }
+    if (!first || !payload.hasCartOrigin) {
+        notify("needs a cart origin and an enabled route point");
+        return false;
+    }
+    const glm::vec3 delta = payload.cartOrigin - first->position;
+    if (glm::length(delta) <= 0.0001f) {
+        notify("route start already matches the cart origin");
+        return false;
+    }
+    pushUndo("route start to cart origin");
+    auto& mutablePayload = reg.payloadMutable();
+    for (PayloadRoutePoint& point : mutablePayload.route)
+        point.position += delta;
+    reg.markChanged();
+    notify("route translated to the cart origin");
+    return true;
+}
 void MapEditor::renderWorld(Camera& camera)
 {
     if (!mActive) return;
     auto& reg = MapConfigRegistry::instance();
     const auto& config = reg.current();
+    const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
+    auto showLabel = [&](const EditorObjectRef& ref, bool hovered) {
+        if (cfg.labelMode == "all") return true;
+        if (cfg.labelMode == "off") return false;
+        if (cfg.labelMode == "hovered") return hovered;
+        return isSelected(ref) || hovered;
+    };
 
     if (config.payload.hasCartOrigin) {
         const bool selected = isSelected({EditorObjectKind::PayloadCartOrigin, "cart_origin"});
         DebugVis::drawWireSphere(camera, config.payload.cartOrigin, 0.65f,
             selected ? glm::vec4(1, 0.9f, 0.2f, 1) : glm::vec4(1, 0.55f, 0.1f, 1));
-        DebugVis::drawWorldLabel(config.payload.cartOrigin + glm::vec3(0, 0, 1),
-            "CART ORIGIN", selected ? glm::vec4(1, 0.9f, 0.2f, 1) : glm::vec4(1, 0.55f, 0.1f, 1));
+        if (showLabel({EditorObjectKind::PayloadCartOrigin, "cart_origin"}, false))
+            DebugVis::drawWorldLabel(config.payload.cartOrigin + glm::vec3(0, 0, 1),
+                "CART ORIGIN", selected ? glm::vec4(1, 0.9f, 0.2f, 1) : glm::vec4(1, 0.55f, 0.1f, 1));
     }
 
     if (!config.payload.route.empty()) {
@@ -1694,7 +2069,8 @@ void MapEditor::renderWorld(Camera& camera)
                 point.radius, point.waitTicks,
                 point.final ? " FINAL" : "",
                 point.timeBonusSeconds);
-            DebugVis::drawWorldLabel(point.position + glm::vec3(0, 0, 0.7f), label, color);
+            if (showLabel({EditorObjectKind::PayloadRoutePoint, point.id}, false))
+                DebugVis::drawWorldLabel(point.position + glm::vec3(0, 0, 0.7f), label, color);
             if (i + 1 < config.payload.route.size())
                 DebugVis::drawLine(camera, point.position,
                     config.payload.route[i + 1].position, color);
@@ -1722,7 +2098,7 @@ void MapEditor::renderWorld(Camera& camera)
         if (!block.enabled) continue;
         const bool selected = isSelected({EditorObjectKind::Block, block.id});
         const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
-                                         : glm::vec4(0.3f, 0.85f, 1, 1);
+            : glm::vec4(0.3f, 0.85f, 1, cfg.blockWireAlpha);
         drawOrientedBox(camera, block.position, block.size, block.rotationEuler, color);
         DebugVis::drawWorldLabel(block.position + glm::vec3(0, 0, block.size.z * 0.5f + 0.4f),
             block.id.c_str(), color);
@@ -1751,9 +2127,10 @@ void MapEditor::renderWorld(Camera& camera)
             const glm::vec4 color = (mHoverAxis == i || mDrag.mode ==
                 (i == 0 ? DragMode::AxisX : i == 1 ? DragMode::AxisY : DragMode::AxisZ))
                 ? glm::vec4(1, 1, 1, 1) : colors[i];
-            const glm::vec3 end = center + axes[i] * kHandleLength;
-            DebugVis::drawLine(camera, center, end, color);
-            DebugVis::drawWireSphere(camera, end, 0.09f, color);
+            const glm::vec3 end = center + axes[i] * cfg.handleLength;
+            DebugVis::drawFilledCylinder(camera, center + axes[i] * (cfg.handleLength * 0.5f),
+                axes[i], cfg.handleThickness, cfg.handleLength, color);
+            DebugVis::drawFilledSphere(camera, end, cfg.handleRadius, color);
         }
     }
 
@@ -1803,27 +2180,55 @@ void MapEditor::renderUI(GLFWwindow* window)
     searchOptions.placeholder = "search id / name / kind";
     searchOptions.placeholderWhileFocused = true;
     searchOptions.submitOnEnter = false;
-    mOutlinerSearchFocused = uiTextInputRender(
+    mOutlinerSearchFocused = uiTextInputRenderScreen(
         window, "mapeditor_search", searchRect, mOutlinerSearch, searchOptions);
     mOutlinerSearch.focused = mOutlinerSearchFocused;
     mOutlinerFilter = mOutlinerSearch.value;
 
-    const float listY = py + 66.0f;
-    const float listH = std::max(40.0f, ph - 70.0f - 62.0f);
-    const UIRect listRect{px + 4.0f, listY, pw - 18.0f, listH};
-    const float contentHeight = std::max(listH, (float)objects.size() * cfg.rowHeight + 4.0f);
-    uiBeginScrollArea(window, listRect, contentHeight, mOutlinerScroll);
+    syncPropertyPositionFields();
+
+    const float listY = py + kOutlinerHeaderHeight;
+    const float listH = std::max(40.0f,
+        ph - kOutlinerHeaderHeight - cfg.propertiesHeight - kOutlinerListGap);
+    const UIRect listRect{px + 4.0f, listY, pw - 8.0f, listH};
+    const float scrollbarSpace = cfg.scrollbarWidth + cfg.scrollbarInset + 6.0f;
+    const float contentHeight = std::max(listH,
+        (float)objects.size() * cfg.rowHeight + 4.0f);
+    const double now = glfwGetTime();
+    if (now - mLastLayoutLogTime >= 5.0 ||
+        (int)objects.size() != mLastLayoutObjectCount) {
+        mLastLayoutLogTime = now;
+        mLastLayoutObjectCount = (int)objects.size();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.outliner_layout", mapId(),
+            "screen-space outliner layout and visible object count", 0,
+            {{"screen_w", w}, {"screen_h", h},
+             {"panel_x", px}, {"panel_y", py}, {"panel_w", pw}, {"panel_h", ph},
+             {"list_x", listRect.x}, {"list_y", listRect.y},
+             {"list_w", listRect.w}, {"list_h", listRect.h},
+             {"object_count", objects.size()},
+             {"scroll_y", mOutlinerScroll.scrollY},
+             {"scrollbar_width", cfg.scrollbarWidth},
+             {"scrollbar_inset", cfg.scrollbarInset},
+             {"properties_height", cfg.propertiesHeight}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+    uiBeginScreenScrollArea(window, listRect, contentHeight, mOutlinerScroll,
+        cfg.scrollbarWidth, cfg.scrollbarInset);
     const int firstRow = std::max(0, (int)(mOutlinerScroll.scrollY / cfg.rowHeight) - 1);
     const int visibleRows = (int)(listH / cfg.rowHeight) + 3;
     for (int row = firstRow; row < firstRow + visibleRows; ++row) {
         if (row < 0 || row >= (int)objects.size()) break;
         const EditorObjectRef& ref = objects[(size_t)row];
         const bool selected = isSelected(ref);
-        const float rowY = listY + row * cfg.rowHeight;
+        const float rowY = listY + row * cfg.rowHeight - mOutlinerScroll.scrollY;
         if (selected) {
-            uiDrawRect({px + 8.0f, rowY, pw - 28.0f, cfg.rowHeight - 2.0f},
+            uiDrawRect({px + 8.0f, rowY, listRect.w - scrollbarSpace - 8.0f,
+                cfg.rowHeight - 2.0f},
                 {0.24f, 0.42f, 0.68f, 0.9f}, "map-editor-row-selected");
-            uiDrawRectOutline({px + 8.0f, rowY, pw - 28.0f, cfg.rowHeight - 2.0f},
+            uiDrawRectOutline({px + 8.0f, rowY, listRect.w - scrollbarSpace - 8.0f,
+                cfg.rowHeight - 2.0f},
                 {0.65f, 0.85f, 1.0f, 1.0f}, "map-editor-row-selected-outline");
         }
         glm::vec4 color = selected ? glm::vec4(1, 0.95f, 0.55f, 1) : text;
@@ -1847,26 +2252,80 @@ void MapEditor::renderUI(GLFWwindow* window)
         }
         uiDrawText(rowText, px + 12.0f, rowY + 5.0f, cfg.rowScale, color);
     }
-    uiEndScrollArea(listRect, contentHeight, mOutlinerScroll);
+    uiEndScreenScrollArea(listRect, contentHeight, mOutlinerScroll,
+        cfg.scrollbarWidth, cfg.scrollbarInset);
 
-    if (!mSelection.empty()) {
+    const float propY = listY + listH + kOutlinerListGap;
+    const float propH = std::max(0.0f, py + ph - propY);
+    uiDrawRect({px + 4.0f, propY, pw - 8.0f, propH},
+        {0.03f, 0.04f, 0.06f, 0.9f}, "map-editor-properties");
+    if (mSelection.empty()) {
+        uiDrawText("select an object to edit properties", px + 10.0f, propY + 10.0f,
+            cfg.rowScale, dim);
+        uiDrawText("search filters the list; Ctrl+click multi-selects",
+            px + 10.0f, propY + 32.0f, cfg.rowScale, dim);
+    } else {
         const EditorObjectRef& ref = mSelection.front();
-        const glm::vec3 p = objectPosition(ref);
-        std::snprintf(line, sizeof(line), "SELECTED %s", describeRef(ref).c_str());
-        uiDrawText(line, px + 10.0f, py + ph - 60.0f, cfg.bodyScale, text);
-        std::snprintf(line, sizeof(line), "pos %.2f %.2f %.2f", p.x, p.y, p.z);
-        uiDrawText(line, px + 10.0f, py + ph - 36.0f, cfg.rowScale, dim);
-        if (const MapGLBObject* object = mapObjectFor(ref)) {
-            const glm::vec3 size = object->boundsMax - object->boundsMin;
-            std::snprintf(line, sizeof(line), "glb %s  size %.2f %.2f %.2f  verts %zu",
-                object->name.c_str(), size.x, size.y, size.z, object->vertexCount);
-            uiDrawText(line, px + 10.0f, py + ph - 14.0f, cfg.rowScale, dim);
+        std::snprintf(line, sizeof(line), "SELECTED  %s", describeRef(ref).c_str());
+        uiDrawText(line, px + 10.0f, propY + 8.0f, cfg.rowScale, text);
+
+        const glm::vec3 position = objectPosition(ref);
+        uiDrawText("pos", px + 12.0f, propY + 33.0f, cfg.rowScale, dim);
+        const float fieldW = std::max(54.0f, (pw - 88.0f) / 3.0f);
+        for (int i = 0; i < 3; ++i) {
+            char id[48];
+            std::snprintf(id, sizeof(id), "mapeditor_pos_%d", i);
+            UITextInputOptions options;
+            options.maxLength = 24;
+            options.submitOnEnter = false;
+            options.characterFilter = isNumberChar;
+            UIRect field{px + 46.0f + i * (fieldW + 4.0f), propY + 28.0f, fieldW, 26.0f};
+            mPropertyPosition[i].focused = uiTextInputRenderScreen(
+                window, id, field, mPropertyPosition[i], options);
         }
+
+        glm::vec3 rotation(0.0f);
+        glm::vec3 scale(1.0f);
+        std::string details;
+        if (const AuthoredBlock* block = blockFor(ref)) {
+            rotation = block->rotationEuler;
+            scale = block->size;
+            details = block->shape + " material=" +
+                (block->material.empty() ? "default" : block->material);
+        } else if (const MapEntity* entity = entityFor(ref)) {
+            rotation.z = entity->yaw;
+            scale = entity->size;
+            details = entity->type + " tag=" + entity->tag +
+                " radius=" + std::to_string(entity->radius);
+        } else if (const PayloadRoutePoint* route = routeFor(ref)) {
+            scale = glm::vec3(route->radius);
+            details = "order=" + std::to_string(route->order) +
+                (route->checkpoint ? " checkpoint" : "") +
+                (route->final ? " final" : "") +
+                " wait=" + std::to_string(route->waitTicks) +
+                " bonus=" + std::to_string(route->timeBonusSeconds);
+        } else if (ref.kind == EditorObjectKind::PayloadCartOrigin) {
+            rotation.z = MapConfigRegistry::instance().payload().cartYaw;
+            details = "payload cart origin";
+        } else if (const MapGLBObject* object = mapObjectFor(ref)) {
+            const glm::mat4& t = object->transform;
+            const glm::mat3 basis(t);
+            scale = glm::vec3(glm::length(basis[0]), glm::length(basis[1]),
+                glm::length(basis[2]));
+            glm::mat3 rotationBasis = basis;
+            for (int i = 0; i < 3; ++i)
+                if (scale[i] > 1e-5f) rotationBasis[i] /= scale[i];
+            rotation = glm::degrees(glm::eulerAngles(glm::quat_cast(rotationBasis)));
+            details = object->name + " verts=" + std::to_string(object->vertexCount);
+        }
+        std::snprintf(line, sizeof(line), "rot %.1f %.1f %.1f   scale %.2f %.2f %.2f",
+            rotation.x, rotation.y, rotation.z, scale.x, scale.y, scale.z);
+        uiDrawText(line, px + 10.0f, propY + 64.0f, cfg.rowScale, dim);
+        uiDrawText(details.c_str(), px + 10.0f, propY + 88.0f, cfg.rowScale, dim);
+        uiDrawText("Enter applies | Ctrl+Z undo", px + 10.0f, propY + 112.0f,
+            cfg.rowScale, dim);
     }
 
-    const char* help =
-        "RMB look  LMB select/drag  Shift+click multi  Ctrl+C/V/X  Ctrl+D duplicate  "
-        "Del delete  Ctrl+Z undo  Ctrl+Shift+Z redo  Ctrl+S save  V vertex snap  G grid snap  F frame  Esc back";
-    uiDrawRect({16.0f, h - 38.0f, w - 32.0f, 24.0f}, panel, "map-editor-help-bg");
-    uiDrawText(help, 26.0f, h - 34.0f, cfg.helpScale, dim);
+    uiDrawText("Commands are in docs/specs/entity-editor/entity-editor.md",
+        16.0f, h - 22.0f, cfg.helpScale, dim);
 }

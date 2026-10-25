@@ -73,6 +73,15 @@ struct UIScrollState {
 void uiBeginScrollArea(GLFWwindow* win, UIRect area, float contentHeight, UIScrollState& scroll);
 void uiEndScrollArea(UIRect area, float contentHeight, UIScrollState& scroll);
 
+// Screen-space variants for callers whose UI is already in framebuffer pixels.
+// They skip designToScreen and do not push a design-space translation; callers
+// offset their own rows by scroll.scrollY.
+void uiBeginScreenScrollArea(GLFWwindow* win, UIRect area, float contentHeight,
+                             UIScrollState& scroll, float scrollbarWidth = 8.0f,
+                             float scrollbarInset = 4.0f);
+void uiEndScreenScrollArea(UIRect area, float contentHeight, UIScrollState& scroll,
+                           float scrollbarWidth = 8.0f, float scrollbarInset = 4.0f);
+
 float uiScaleX(float px);
 float uiScaleY(float px);
 

@@ -199,6 +199,7 @@ void gameInit(int argc, char** argv, Engine& engine)
         serverInfoMenuHandleChar(codepoint);
         onlineMenuHandleChar(codepoint);
         handleChatWindowChar(gChatWindowState, codepoint);
+        if (MapEditor::instance().handleChar(codepoint)) return;
         guiBindingsHandleChar(codepoint);
         Terminal::instance().handleChar(codepoint);
         GuiEditor::instance().handleChar(codepoint);

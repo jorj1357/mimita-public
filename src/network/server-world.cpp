@@ -158,6 +158,14 @@ void walkNode(const tinygltf::Model& model, int nodeIndex, const glm::mat4& pare
         if (world.triangles.size() > firstTriangle)
         {
             const size_t count = world.triangles.size() - firstTriangle;
+            HeadlessGLBObject object;
+            object.id = "node:" + std::to_string(nodeIndex);
+            object.name = node.name.empty() ? object.id : node.name;
+            object.triangleFirst = firstTriangle;
+            object.triangleCount = count;
+            object.basePosition = glm::vec3(transform[3]);
+            object.position = object.basePosition;
+            world.glbObjects.push_back(std::move(object));
             if (isClosedSolidTriangleRange(
                     world.triangles, firstTriangle, world.triangles.size()))
             {
@@ -231,6 +239,7 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
 
     world.triangles.clear();
     world.solidIds.clear();
+    world.glbObjects.clear();
     world.nextSolidId = 1;
     world.boundsMin = glm::vec3(0.0f);
     world.boundsMax = glm::vec3(0.0f);
@@ -289,6 +298,13 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
     decimateCollisionTriangleList(world.triangles,
                                   CollisionLodConfig::instance().cellSize(),
                                   &world.solidIds);
+    StaticUnionStats unionStats;
+    if (CollisionLodConfig::instance().staticSolidUnion())
+        unionStaticSolidGroups(
+            world.triangles, world.solidIds,
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+            &unionStats,
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
     StaticUnionStats staticStats;
     if (CollisionLodConfig::instance().staticFaceRemoval())
         removeFullyCoveredStaticTriangles(
@@ -310,6 +326,10 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
             {"source_exists", sourceBytes > 0},
             {"source_bytes", sourceBytes},
             {"collision_triangles", world.triangles.size()},
+            {"static_union_solids", unionStats.unionSolids},
+            {"static_union_output_triangles", unionStats.unionOutputTriangles},
+            {"static_union_ms", unionStats.unionMs},
+            {"static_union_fallback", unionStats.unionFallback},
             {"static_removed_triangles", staticStats.removedTriangles},
             {"static_removal_fallback", staticStats.fallback},
             {"spawn_points", world.spawnPoints.size()},
@@ -436,6 +456,16 @@ void truncateHeadlessWorld(HeadlessWorld& target, size_t baseTriangleCount)
         target.solidIds.resize(baseTriangleCount);
     if (target.solidIds.size() != target.triangles.size())
         target.solidIds.assign(target.triangles.size(), 0);
+    for (HeadlessGLBObject& object : target.glbObjects)
+    {
+        if (object.triangleFirst >= baseTriangleCount)
+        {
+            object.triangleCount = 0;
+            continue;
+        }
+        object.triangleCount = std::min(
+            object.triangleCount, baseTriangleCount - object.triangleFirst);
+    }
 
     if (target.triangles.empty())
     {

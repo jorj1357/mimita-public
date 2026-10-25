@@ -186,29 +186,37 @@ origin, and solve position correction). This keeps
 collision-source diagnostics available in `events.jsonl` without enabling
 per-tick trace output.
 
-## Static hidden-face removal — 2026-10-25
+## Static hidden-face removal and solid union — 2026-10-25
 
-`src/map/map-static-union.cpp` owns the first static-map seam pass. Before the
-world broadphase is built, it removes a collision triangle only when the entire
-triangle is covered by an opposing coplanar face from a different validated
-solid.
+`src/map/map-static-union.cpp` owns the static-map collision surface cleanup.
+Before the world broadphase is built it runs two passes:
+
+1. `unionStaticSolidGroups` unions validated convex closed solids through the
+   existing Manifold wrapper (`MimitaImpact::booleanUnion`). This removes hidden
+   internal faces and handles partial overlaps and containment. Vertices are
+   welded before import and inward-wound solids are re-oriented. Non-solid,
+   concave, or failed groups keep their raw triangles.
+2. `removeFullyCoveredStaticTriangles` is the conservative fallback pass. It
+   removes a triangle only when its entire area is covered by an opposing
+   coplanar face from a different validated solid.
+
+Rules:
 
 - A source solid participates only when its triangle range is closed,
   consistently wound, has nonzero volume, and is convex. Boxes, wedges, and
   ramps qualify; decorative planes and concave shells remain raw collision.
-- Fully covered triangles are deleted from both sides of a shared seam. Exposed
-  floor, wall, and slope triangles remain.
-- The pass runs for the client GLB load, authored block rebuilds, collision LOD
-  re-decimation, and the dedicated server headless world. Client and server use
-  the same validation and coverage rules.
+- `static_solid_union` and `static_solid_union_max_solids` bound the union cost.
+  If a map exceeds the solid cap, union is skipped and the face-removal pass
+  still runs. `static_solid_union_max_triangles` bounds union output.
 - Any size mismatch or invalid input leaves the original triangles in place and
-  records `map.collision.static-face-removal` with `fallback=true`.
-- The pass does not change the render mesh, weapon collision, dynamic entities,
+  records `map.collision.static-solid-union` or
+  `map.collision.static-face-removal` with fallback details.
+- The passes run for the client GLB load, authored block rebuilds, collision LOD
+  re-decimation, and the dedicated server headless world. Client and server use
+  the same validation, union, and coverage rules.
+- The passes do not change the render mesh, weapon collision, dynamic entities,
   or actor meshes.
 
-This removes touching-block internal faces, but it does not perform a full
-boolean union of partially overlapping solids. Manifold union of validated
-convex solids is the planned next phase and must preserve every exposed surface.
 
 
 ---

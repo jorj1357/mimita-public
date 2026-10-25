@@ -4,6 +4,7 @@
 #include "world/world-gltf-loader.h"
 #include "physics/physics-types.h"
 #include "config/collision-lod-config.h"
+#include "debug/structured-log.h"
 #include <cstdio>
 #include <cmath>
 #include <unordered_map>
@@ -253,11 +254,19 @@ bool boxOverlaps(const AABB& a, const AABB& b)
 bool updateCollisionForMovedObject(World& world, const AABB& oldBounds,
                                    const AABB& newBounds)
 {
+    const auto started = std::chrono::steady_clock::now();
     const size_t previousTriangles = world.collisionMesh.triangles.size();
     buildCollisionMeshFromRenderMesh(world);
     if (world.collisionMesh.triangles.empty() ||
         world.collisionMesh.triangles.size() != previousTriangles) {
-        buildCollisionChunks(world, nullptr);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "map-editor.collision-refresh", "map-editor",
+            "collision refresh deferred after object move", 0,
+            {{"incremental", false}, {"deferred", true},
+             {"triangles", world.collisionMesh.triangles.size()},
+             {"duration_ms", std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - started).count()}});
         return false;
     }
     rebuildCollisionTriangleCaches(world);
@@ -271,16 +280,58 @@ bool updateCollisionForMovedObject(World& world, const AABB& oldBounds,
         for (int z = c0.z; z <= c1.z; ++z)
             affected.insert(glm::ivec3(x, y, z));
     };
+    auto boundsChunkCount = [&](const AABB& bounds) {
+        const glm::ivec3 c0 = collisionChunkCoord(bounds.min, world.collisionChunkSize);
+        const glm::ivec3 c1 = collisionChunkCoord(bounds.max, world.collisionChunkSize);
+        return (int64_t)(c1.x - c0.x + 1) * (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
+    };
+    constexpr int64_t kMaxIncrementalCandidateChunks = 4096;
+    if (boundsChunkCount(oldBounds) > kMaxIncrementalCandidateChunks ||
+        boundsChunkCount(newBounds) > kMaxIncrementalCandidateChunks) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "map-editor.collision-refresh", "map-editor",
+            "collision refresh deferred for map-spanning object", 0,
+            {{"incremental", false}, {"deferred", true},
+             {"duration_ms", std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - started).count()}});
+        return false;
+    }
+
     addBoundsChunks(oldBounds);
     addBoundsChunks(newBounds);
+
+    // A large or map-spanning node can touch thousands of chunks. The set
+    // maintenance would then cost more than one full chunk rebuild, so bail to
+    // the bounded full path.
+    constexpr size_t kMaxIncrementalChunks = 512;
+    if (affected.size() > kMaxIncrementalChunks) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "map-editor.collision-refresh", "map-editor",
+            "collision refresh deferred for large affected chunk set", 0,
+            {{"incremental", false}, {"deferred", true},
+             {"affected_chunks", affected.size()},
+             {"duration_ms", std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - started).count()}});
+        return false;
+    }
 
     if (!world.collisionLargeTriangles.empty()) {
         for (int index : world.collisionLargeTriangles) {
             if (index < 0 || index >= (int)world.collisionMesh.triangleAABBs.size())
                 continue;
             const AABB& bounds = world.collisionMesh.triangleAABBs[(size_t)index];
-            if (boxOverlaps(bounds, oldBounds) || boxOverlaps(bounds, newBounds))
+            if (boxOverlaps(bounds, oldBounds) || boxOverlaps(bounds, newBounds)) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Performance, StructuredLevel::Important,
+                    "map-editor.collision-refresh", "map-editor",
+                    "collision refresh deferred for large triangle", 0,
+                    {{"incremental", false}, {"deferred", true},
+                     {"duration_ms", std::chrono::duration<double, std::milli>(
+                         std::chrono::steady_clock::now() - started).count()}});
                 return false;
+            }
         }
     }
 
@@ -312,6 +363,15 @@ bool updateCollisionForMovedObject(World& world, const AABB& oldBounds,
     // Sub-grids are an optional second-level optimization; invalidate them
     // rather than rebuilding every chunk on a single-object edit.
     world.collisionSubGrids.clear();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Important,
+        "map-editor.collision-refresh", "map-editor",
+        "incremental collision refresh after object move", 0,
+        {{"incremental", true},
+         {"affected_chunks", affected.size()},
+         {"triangles", world.collisionMesh.triangles.size()},
+         {"duration_ms", std::chrono::duration<double, std::milli>(
+             std::chrono::steady_clock::now() - started).count()}});
     return true;
 }
 void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
@@ -511,6 +571,12 @@ void redecimateCollision(World& world)
         return;
 
     buildCollisionMeshFromRenderMesh(world);
+    if (CollisionLodConfig::instance().staticSolidUnion())
+        unionStaticSolidGroups(
+            world.collisionMesh.triangles, world.collisionMesh.solidIds,
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+            nullptr,
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
     if (CollisionLodConfig::instance().staticFaceRemoval())
         removeFullyCoveredStaticTriangles(
             world.collisionMesh.triangles, world.collisionMesh.solidIds);

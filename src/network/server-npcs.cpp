@@ -1414,8 +1414,7 @@ void simulateSharedNpcs(SOCKET sock,
                 }
             }
         }
-        else if (n.behavior.active &&
-                 targeting.mode != NpcTargetingMode::OppositeTeam)
+        else if (n.behavior.active)
         {
             // Scored target selection. Weights come only from the behavior
             // profile; the legacy nearest-hostile path is used without one.

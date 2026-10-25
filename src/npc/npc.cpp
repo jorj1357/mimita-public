@@ -251,6 +251,8 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
     if (npc.behavior.active && npc.behavior.predictionSeconds >= 0.0f)
         tuning.predictionSeconds = npc.behavior.predictionSeconds;
     tuning.predictionErrorMeters = cfg.perceptionPredictionErrorMeters;
+    if (npc.behavior.active && npc.behavior.predictionErrorMeters >= 0.0f)
+        tuning.predictionErrorMeters = npc.behavior.predictionErrorMeters;
 
     // Candidate is a live hostile actor. FOV/range/LOS are applied by the
     // perception module so acquisition can never skip those gates.
@@ -2459,7 +2461,16 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npc.body.matchTeam >= 0 && player.matchTeam >= 0 &&
         npc.body.matchTeam == player.matchTeam;
 
-    if (npc.sensors.hasTarget)
+    // Aggression guarantee: a visible, legal target is enough to shoot. The
+    // state machine normally requests attack, but an elite squad must not stand
+    // idle because the current movement state forgot to set the flag.
+    if (!attack && npc.sensors.hasTarget && !npc.cachedLoSBlocked &&
+        npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)
+        attack = true;
+
+    if (npc.sensors.hasTarget &&
+        (!attack || sameTeamTarget || npc.attackCooldown > 0.0f ||
+         npc.reactionTimer > 0.0f))
         emitAttackGate(npc, attack, sameTeamTarget);
 
     if (attack && !sameTeamTarget &&

@@ -430,3 +430,28 @@ executor that requests existing shared actor actions.
 These are useful approximations and tuning controls. The exact requested
 weapon cycle and authored movement recipes need the profile fields, move-library
 JSON, and sequence executor specified above.
+
+## 7. Elite skill tier implementation — 2026-10-25
+
+The default strong behavior is now a code-owned `skill_tier` baseline. JSON is
+the tuning surface: `elite` starts from the strongest complete behavior set and
+explicit profile fields override it; `advanced`, `intermediate`, `beginner`, and
+`idle` scale the same capability set down. Profiles without `skill_tier` keep
+their previous explicit values.
+
+The elite baseline enables squad focus and swarm, Recast navigation, fast
+target tracking, small aim error, target leading, persistent pursuit, and short
+movement commitments in C++ rather than requiring JSON to opt in. Duel, TDM, and
+Payload now select the `elite_squad` profile through their mode/team roles.
+
+A visible legal target is sufficient to request attack in code, independent of
+the current movement state; firing still requires the shared line-of-sight,
+weapon, ammo, cooldown, and reaction gates. Bounded `npc.fire-blocked`,
+`npc.attack-gate`, and per-shot diagnostics name the exact gate or shot state in
+the runtime journal.
+
+This is source and configuration behavior. Runtime acceptance still requires a
+real Duel/TDM playtest and human review; the 50/50 top-one-percent Duel target
+and the approximately 3-kill player result against 20 NPC kills remain
+calibration aspirations, not verified outcomes. Team focus is movement
+knowledge only: it never grants aim or fire permission through cover.

@@ -27,6 +27,7 @@ struct MapGLBObject {
     std::string name;               // authored GLB node name
     int nodeIndex = -1;
     glm::mat4 transform{1.0f};      // current world transform (translation used by editor)
+    glm::vec3 basePosition{0.0f};   // original GLB translation before editor overrides
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
     size_t vertexFirst = 0;

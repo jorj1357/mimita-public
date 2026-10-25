@@ -1,3 +1,13 @@
+// NPC global tuning knobs (hot-reloaded).
+// Skill and combat capability come from the behavior profile/code skill tier.
+// This file owns global limits that apply to every NPC:
+//   perception* / aim* / turnSpeed*  sight, reaction, prediction, turn rate
+//   fireDelay* / spawnFireDelay*     shot pacing and first-shot delay
+//   navGraph* / explore* / search*   exploration and long-range fallback
+//   wall* / areaEscape* / lowObstacle* / jump*  local recovery and traversal
+//   *Chance / jukeFrequency / movementNoiseScale  movement personality (0-1+)
+//   weaponLoadout / startingWeapon / switch*  fallback loadout only
+// Elite behavior profiles override the per-actor values in this file.
 {
   "aggressionBonus": 0.20000000298023224,
   "aimAtTargetMax": 10.0,

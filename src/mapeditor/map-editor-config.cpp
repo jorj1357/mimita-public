@@ -75,10 +75,20 @@ bool MapEditorConfig::load(const std::string& path)
         next.outlinerBottomPadding =
             readFloat(root, "outliner_bottom_padding", next.outlinerBottomPadding, 0.0f, 400.0f);
         next.rowHeight = readFloat(root, "row_height", next.rowHeight, 14.0f, 80.0f);
-        next.handleLength = readFloat(root, "handle_length", next.handleLength, 0.2f, 20.0f);
+        next.propertiesHeight =
+            readFloat(root, "properties_height", next.propertiesHeight, 80.0f, 500.0f);
+        next.scrollbarWidth =
+            readFloat(root, "scrollbar_width", next.scrollbarWidth, 6.0f, 40.0f);
+        next.scrollbarInset =
+            readFloat(root, "scrollbar_inset", next.scrollbarInset, 0.0f, 40.0f);
+        next.handleLength = readFloat(root, "handle_length", next.handleLength, 0.2f, 40.0f);
         next.handlePickPixels =
-            readFloat(root, "handle_pick_pixels", next.handlePickPixels, 4.0f, 80.0f);
-        next.handleRadius = readFloat(root, "handle_radius", next.handleRadius, 0.01f, 2.0f);
+            readFloat(root, "handle_pick_pixels", next.handlePickPixels, 4.0f, 160.0f);
+        next.handleRadius = readFloat(root, "handle_radius", next.handleRadius, 0.01f, 3.0f);
+        next.handleThickness =
+            readFloat(root, "handle_thickness", next.handleThickness, 0.01f, 2.0f);
+        next.blockWireAlpha =
+            readFloat(root, "block_wire_alpha", next.blockWireAlpha, 0.0f, 1.0f);
         next.focusMinDistance =
             readFloat(root, "focus_min_distance", next.focusMinDistance, 0.1f, 100.0f);
         next.focusPadding = readFloat(root, "focus_padding", next.focusPadding, 0.5f, 5.0f);

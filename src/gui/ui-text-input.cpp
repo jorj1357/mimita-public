@@ -328,11 +328,12 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
 
 // ── Render ───────────────────────────────────────────────────────────
 
-bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
-                       UITextInputState& state, const UITextInputOptions& opts)
+static bool renderTextInput(GLFWwindow* window, const char* id,
+                            UIRect designRect, UIRect screenRect,
+                            UITextInputState& state, const UITextInputOptions& opts,
+                            bool designSpace)
 {
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
-    UIRect screenRect = cs.designToScreen(designRect);
 
     clampCursor(state);
 
@@ -346,17 +347,17 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
         : glm::vec4(0.2f, 0.22f, 0.28f, 0.6f);
     uiDrawRectOutline(screenRect, borderColor, id);
 
-    // Padding inside the box
-    const float padX = 10.0f;
-    const float padY = 6.0f;
+    // Padding inside the box. Screen-space callers already provide pixels.
+    const float padX = designSpace ? cs.designToScreenX(10.0f) : 10.0f;
+    const float padY = designSpace ? cs.designToScreenY(6.0f) : 6.0f;
     const float textScale = 0.34f;
     const float textH = (float)fontLineHeight * textScale;
 
     // Clipping for text area
-    float clipX = screenRect.x + cs.designToScreenX(padX);
-    float clipY = screenRect.y + cs.designToScreenY(padY);
-    float clipW = screenRect.w - cs.designToScreenX(padX * 2.0f);
-    float clipH = screenRect.h - cs.designToScreenY(padY * 2.0f);
+    float clipX = screenRect.x + padX;
+    float clipY = screenRect.y + padY;
+    float clipW = screenRect.w - padX * 2.0f;
+    float clipH = screenRect.h - padY * 2.0f;
 
     // Compute display text (mask password)
     std::string displayText = state.value;
@@ -371,8 +372,8 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     float beforeW = uiMeasureText(beforeCursor.c_str(), textScale);
 
     // Auto-scroll: keep caret visible
-    float textOriginX = screenRect.x + cs.designToScreenX(padX);
-    float rightEdge = screenRect.x + screenRect.w - cs.designToScreenX(padX);
+    float textOriginX = screenRect.x + padX;
+    float rightEdge = screenRect.x + screenRect.w - padX;
     float caretX = textOriginX - state.horizontalScrollPx + beforeW;
     if (caretX > rightEdge)
         state.horizontalScrollPx += caretX - rightEdge + 20.0f;
@@ -527,4 +528,18 @@ bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
     }
 
     return state.focused;
+}
+
+bool uiTextInputRender(GLFWwindow* window, const char* id, UIRect designRect,
+                       UITextInputState& state, const UITextInputOptions& opts)
+{
+    const UIRect screenRect =
+        GuiCoordinateSystem::instance().designToScreen(designRect);
+    return renderTextInput(window, id, designRect, screenRect, state, opts, true);
+}
+
+bool uiTextInputRenderScreen(GLFWwindow* window, const char* id, UIRect screenRect,
+                             UITextInputState& state, const UITextInputOptions& opts)
+{
+    return renderTextInput(window, id, screenRect, screenRect, state, opts, false);
 }

@@ -1144,6 +1144,8 @@ bool handleGameCLI(int argc, char** argv)
               "elite navigation backend is recast");
         check(elite.predictionSeconds >= 0.0f && elite.predictionSeconds < 0.1f,
               "elite prediction horizon is tight");
+        check(elite.predictionErrorMeters >= 0.0f && elite.predictionErrorMeters < 0.05f,
+              "elite prediction error is near zero");
         check(idle.active && idle.skillTier == "idle" && !idle.focusEnabled,
               "idle tier resolves as the low-skill control");
         printf("[NPC BEHAVIOR PROFILE SELFTEST]\n%s", report.c_str());
@@ -2021,6 +2023,14 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--static-solid-union-selftest") {
+        std::string report;
+        const bool ok = staticSolidUnionSelfTest(report);
+        printf("[STATIC SOLID UNION SELFTEST]\n%s", report.c_str());
+        printf("[STATIC SOLID UNION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--payload-selftest") {
         std::string report;
         const bool ok = MimitaGamemode::payloadRuntimeSelfTest(report);
@@ -2223,7 +2233,18 @@ bool handleGameCLI(int argc, char** argv)
         printf("[GAMEMODE SELFTEST] objective_visual enabled=%d radius=%.2f amp=%.2f period=%.2f\n",
                (int)cs.objectives[0].visual.enabled, cs.objectives[0].visual.radius,
                cs.objectives[0].visual.pulseAmplitude, cs.objectives[0].visual.periodSeconds);
-        const bool ok = teamsOk && rolesOk && roundsOk && objOk && visualOk;
+        const Gamemode& tdm = registry.get("tdm");
+        const bool tdmOk = tdm.id == "tdm" && tdm.teams.size() >= 2 &&
+            tdm.teams[0].role == "elite_fighter" &&
+            tdm.teams[1].role == "elite_fighter" &&
+            tdm.npcBehaviorProfile == "elite_squad" &&
+            tdm.npcSpawnPolicy == "team_roster";
+        printf("[GAMEMODE SELFTEST] tdm profile=%s roleA=%s roleB=%s policy=%s\n",
+               tdm.npcBehaviorProfile.c_str(),
+               tdm.teams.size() > 0 ? tdm.teams[0].role.c_str() : "-",
+               tdm.teams.size() > 1 ? tdm.teams[1].role.c_str() : "-",
+               tdm.npcSpawnPolicy.c_str());
+        const bool ok = teamsOk && rolesOk && roundsOk && objOk && visualOk && tdmOk;
         printf("[GAMEMODE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }

@@ -13,7 +13,7 @@ void registerMapEditorCommands()
     auto& terminal = Terminal::instance();
     terminal.registerCommand({
         "mapeditor", "Enter/leave the freecam map editor or run an editor action",
-        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|route|cart> [id]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
+        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|route|cart> [id]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|select <id>|select_kind <entity|block|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
         [](const std::vector<std::string>& args) {
             MapEditor& editor = MapEditor::instance();
             if (args.empty()) {
@@ -52,6 +52,68 @@ void registerMapEditorCommands()
             }
             if (command == "autosave") {
                 editor.autosave();
+                return;
+            }
+            if (command == "cart_origin_to_route_start") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.cartOriginToRouteStart();
+                return;
+            }
+            if (command == "route_start_to_cart_origin") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.routeStartToCartOrigin();
+                return;
+            }
+            if (command == "select") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 2) {
+                    Terminal::instance().addLog("[MAPEDIT] select <id>");
+                    return;
+                }
+                editor.selectObject(args[1]);
+                return;
+            }
+            if (command == "select_kind") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 2) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] select_kind <entity|block|route|cart|glb|all>");
+                    return;
+                }
+                editor.selectKind(args[1]);
+                return;
+            }
+            if (command == "select_route") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.selectKind("route");
+                return;
+            }
+            if (command == "set_position" || command == "set_pos") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 4) {
+                    Terminal::instance().addLog("[MAPEDIT] set_position <x> <y> <z>");
+                    return;
+                }
+                try {
+                    editor.setSelectedPosition(glm::vec3(std::stof(args[1]),
+                        std::stof(args[2]), std::stof(args[3])));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid position");
+                }
+                return;
+            }
+            if (command == "nudge") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 4) {
+                    Terminal::instance().addLog("[MAPEDIT] nudge <dx> <dy> <dz>");
+                    return;
+                }
+                try {
+                    editor.nudgeSelection(glm::vec3(std::stof(args[1]),
+                        std::stof(args[2]), std::stof(args[3])));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid nudge");
+                }
                 return;
             }
             if (command == "focus") {
@@ -196,7 +258,9 @@ void registerMapEditorCommands()
                 Terminal::instance().addLog("[MAPEDIT] mapeditor add entity <type> [id] | add block [id] | add route [id] | add cart");
                 Terminal::instance().addLog("[MAPEDIT] select route: route_checkpoint/final/enabled <0|1> | route_radius <m>");
                 Terminal::instance().addLog("[MAPEDIT] route_bonus <sec> | route_wait <ticks> | route_move <up|down> | route_validate");
-                Terminal::instance().addLog("[MAPEDIT] mapeditor selectall | copy | paste | cut | duplicate | delete | undo | redo");
+                Terminal::instance().addLog("[MAPEDIT] mapeditor selectall | select_kind route | select_route | copy | paste | cut | duplicate | delete | undo | redo");
+                Terminal::instance().addLog("[MAPEDIT] mapeditor set_position <x> <y> <z> | nudge <dx> <dy> <dz>");
+                Terminal::instance().addLog("[MAPEDIT] properties: click an outliner row; edit X/Y/Z fields, Enter applies");
                 return;
             }
             Terminal::instance().addLog("[MAPEDIT] unknown action " + command);

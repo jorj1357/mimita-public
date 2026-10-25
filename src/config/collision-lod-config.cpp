@@ -54,14 +54,33 @@ bool CollisionLodConfig::load(const std::string& path)
         }
         if (j.contains("static_face_removal"))
             mStaticFaceRemoval = j.value("static_face_removal", true);
+        if (j.contains("static_solid_union"))
+            mStaticSolidUnion = j.value("static_solid_union", true);
+        if (j.contains("static_solid_union_max_triangles"))
+        {
+            const unsigned long long v =
+                j.value("static_solid_union_max_triangles", 200000ull);
+            mStaticSolidUnionMaxTriangles = static_cast<uint32_t>(
+                std::clamp<unsigned long long>(v, 1000ull, 2000000ull));
+        }
+        if (j.contains("static_solid_union_max_solids"))
+        {
+            const unsigned long long v =
+                j.value("static_solid_union_max_solids", 256ull);
+            mStaticSolidUnionMaxSolids = static_cast<uint32_t>(
+                std::clamp<unsigned long long>(v, 1ull, 10000ull));
+        }
         ++mRevision;
 
         std::error_code ec;
         mLastWrite = std::filesystem::last_write_time(path, ec);
         mLastCheck = std::chrono::steady_clock::now();
 
-        printf("[COLLISION LOD] loaded cellSize=%.2f enabled=%d static_face_removal=%d revision=%u\n",
-               mCellSize, (int)mEnabled, (int)mStaticFaceRemoval, mRevision);
+        printf("[COLLISION LOD] loaded cellSize=%.2f enabled=%d static_face_removal=%d "
+               "static_solid_union=%d max_union_tris=%u max_union_solids=%u revision=%u\n",
+               mCellSize, (int)mEnabled, (int)mStaticFaceRemoval,
+               (int)mStaticSolidUnion, mStaticSolidUnionMaxTriangles,
+               mStaticSolidUnionMaxSolids, mRevision);
         return true;
     }
     catch (const std::exception& e)

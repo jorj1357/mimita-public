@@ -11,6 +11,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -25,6 +26,9 @@ public:
     bool enabled() const { return mEnabled; }
     float cellSize() const { return mCellSize; }
     bool staticFaceRemoval() const { return mStaticFaceRemoval; }
+    bool staticSolidUnion() const { return mStaticSolidUnion; }
+    uint32_t staticSolidUnionMaxTriangles() const { return mStaticSolidUnionMaxTriangles; }
+    uint32_t staticSolidUnionMaxSolids() const { return mStaticSolidUnionMaxSolids; }
     unsigned revision() const { return mRevision; }
 
 private:
@@ -33,6 +37,9 @@ private:
     bool mEnabled = true;
     float mCellSize = 0.5f;
     bool mStaticFaceRemoval = true;
+    bool mStaticSolidUnion = true;
+    uint32_t mStaticSolidUnionMaxTriangles = 200000;
+    uint32_t mStaticSolidUnionMaxSolids = 256;
     unsigned mRevision = 0;
 
     std::string mPath;

@@ -293,14 +293,14 @@
       "name": "tdm npc elite",
       "server_args": [
         "--mode",
-        "tdm",
+        "team_deathmatch",
         "--gamemode",
         "tdm",
         "--weapon-set",
         "1"
       ],
       "client_args": [],
-      "map": "funworld3"
+      "map": "atdm"
     },
     "32": {
       "name": "duel npc elite",

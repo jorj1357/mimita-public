@@ -180,7 +180,7 @@ public:
     // Runtime editing (writes back to the JSON file so positions persist).
     bool setSitePosition(const std::string& id, const glm::vec3& position);
     bool setSiteVisibility(const std::string& id, bool visible);
-    bool save(bool writeBackup = true);
+    bool save(bool withBackup = true);
 
     const MapEntity* findEntity(const std::string& id) const;
     MapEntity* findEntityMutable(const std::string& id);

@@ -122,6 +122,8 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
 
         // The map editor owns its shortcuts while active. Terminal, chat, and
         // text fields above keep priority so typing never triggers editing.
+        if (MapEditor::instance().handleTextKey(key, mods, action))
+            return;
         if (MapEditor::instance().handleKey(key, mods, action))
             return;
 

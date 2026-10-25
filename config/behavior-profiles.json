@@ -4,6 +4,12 @@
 * Combat, target-selection, and weapon-selection tuning. Missing values fall
 * back to NpcDifficultyConfig / neutral defaults.
 * Does NOT contain role/team/health/loadout/movement data.
+*
+* skill_tier is the code-owned difficulty baseline:
+*   idle < beginner < intermediate < advanced < elite
+* elite enables the strongest complete behavior (aim, tracking, prediction,
+* squad focus, Recast navigation) in C++. Any explicit field below overrides
+* the tier value, so JSON is the tuning surface and the code owns competence.
 */
 {
   // Every profile uses the same fields. The comments in the balanced profile

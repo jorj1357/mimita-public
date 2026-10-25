@@ -76,6 +76,7 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.turnSpeedDegPerSec = 1800.0f;
         out.aimLeadSeconds = 0.10f;
         out.predictionSeconds = 0.04f;
+        out.predictionErrorMeters = 0.02f;
         out.targetStickiness = 0.85f;
         out.targetSwitchThreshold = 0.05f;
         out.lowHealthTargetBias = 0.35f;
@@ -134,6 +135,7 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.turnSpeedDegPerSec = 900.0f;
         out.aimLeadSeconds = 0.06f;
         out.predictionSeconds = 0.08f;
+        out.predictionErrorMeters = 0.08f;
         out.targetStickiness = 0.65f;
         out.targetSwitchThreshold = 0.2f;
         out.lowHealthTargetBias = 0.3f;
@@ -165,6 +167,7 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.turnSpeedDegPerSec = 450.0f;
         out.aimLeadSeconds = 0.03f;
         out.predictionSeconds = 0.12f;
+        out.predictionErrorMeters = 0.2f;
         out.targetStickiness = 0.3f;
         out.targetSwitchThreshold = 0.3f;
         out.focusEnabled = true;
@@ -184,6 +187,7 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.turnSpeedDegPerSec = 240.0f;
         out.aimLeadSeconds = 0.0f;
         out.predictionSeconds = 0.15f;
+        out.predictionErrorMeters = 0.4f;
         out.targetStickiness = 0.1f;
         out.targetSwitchThreshold = 0.5f;
         out.pursuitMode = "forget_when_hidden";
@@ -205,6 +209,7 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.turnSpeedDegPerSec = 120.0f;
         out.aimLeadSeconds = 0.0f;
         out.predictionSeconds = 0.2f;
+        out.predictionErrorMeters = 0.6f;
         out.targetStickiness = 0.0f;
         out.targetSwitchThreshold = 1.0f;
         out.pursuitMode = "forget_when_hidden";
@@ -236,6 +241,9 @@ void readProfile(const json& j, const std::string& fallbackId,
         j, "aim_lead_seconds", 0.0f, 1.0f, out.aimLeadSeconds, out.id);
     out.predictionSeconds = clampWarn(
         j, "prediction_seconds", 0.0f, 2.0f, out.predictionSeconds, out.id);
+    out.predictionErrorMeters = clampWarn(
+        j, "prediction_error_meters", 0.0f, 10.0f,
+        out.predictionErrorMeters, out.id);
     out.targetStickiness = j.value("target_stickiness", out.targetStickiness);
     out.targetSwitchThreshold = j.value("target_switch_threshold", out.targetSwitchThreshold);
     out.lowHealthTargetBias = j.value("low_health_target_bias", out.lowHealthTargetBias);
@@ -471,6 +479,8 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     out.aimLeadSeconds = def->aimLeadSeconds >= 0.0f ? def->aimLeadSeconds : -1.0f;
     out.predictionSeconds = def->predictionSeconds >= 0.0f
         ? def->predictionSeconds : -1.0f;
+    out.predictionErrorMeters = def->predictionErrorMeters >= 0.0f
+        ? def->predictionErrorMeters : -1.0f;
     // Target selection: only override when the profile sets the field (>= 0).
     if (def->targetStickiness >= 0.0f) out.targetStickiness = def->targetStickiness;
     if (def->targetSwitchThreshold >= 0.0f) out.targetSwitchThreshold = def->targetSwitchThreshold;

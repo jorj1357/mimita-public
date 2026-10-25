@@ -51,8 +51,14 @@ so that a spawn volume is done and then it doenst spawn antthing else just spawn
 
 ## What this is
 
-The Map Entity Editor is the first map-authoring slice of the future unified
-MiMITA editor. It edits authored map entities stored in:
+The Map Entity Editor is the terminal and command-level subset of the unified
+map editor. The in-game Map Editor v1 viewport is the visual superset: it lists
+and edits authored entities, blocks, payload route points, the payload cart
+origin, and loaded GLB nodes. The `entity_*` commands remain available for
+bounded scripting and for editing the entity subset without opening the
+viewport.
+
+All of it edits authored map data stored in:
 
 ```text
 config/maps/<active-map-id>.json
@@ -99,17 +105,89 @@ Ctrl+D           duplicate
 Delete or X      delete selection
 Ctrl+Z           undo
 Ctrl+Shift+Z/Y   redo
-Ctrl+S           save active map JSON
+Ctrl+S           save active map JSON (writes a backup)
+autosave         debounced map JSON write after edits (no backup)
 V                toggle vertex snap
 G                toggle 1 m grid snap
-F                frame selection
+F                frame selection from its bounds
 Esc              clear selection/drag, then leave editor
+PgUp/PgDn        scroll the outliner
+wheel            scroll the outliner under the cursor
+Ctrl+click row   add or remove that row from the selection
+Shift+click row  select the range from the anchor row
+Enter            apply the focused position field
 ```
 
-The editor selects entities, authored blocks, payload route points, and the
-payload cart origin. Selection uses stable IDs, not pointers. Dragging mutates
-the in-memory map data through the viewport; block collision and render geometry
-are rebuilt at drag release rather than once per mouse move.
+The bottom help strip is intentionally removed. The only persistent hint is:
+
+```text
+Commands are in docs/specs/entity-editor/entity-editor.md
+```
+
+The editor selects entities, authored blocks, payload route points, the payload
+cart origin, and loaded GLB nodes. Selection uses stable IDs, not pointers.
+Runtime actors such as NPCs, players, projectiles, and physics props are not in
+this list yet; the list covers authored map data and loaded GLB nodes. Dragging
+mutates the in-memory map data through the viewport. Route, entity, and
+cart-origin edits do not rebuild collision. GLB translations update collision
+incrementally when the affected chunk set is small; map-spanning objects defer
+the full rebuild until editor exit or `mapeditor rebuild_collision` so the drag
+stays responsive. Explicit Ctrl+S writes a backup; debounced autosave updates
+the active map JSON without creating a backup.
+
+### Outliner, search, and properties (2026-10-25)
+
+The outliner occupies the right side of the screen and is drawn in framebuffer
+pixels. It has:
+
+- an `OBJECTS <count>` header and a search field;
+- a scrollbar inside the outliner, 14 px wide by default, inset 6 px from the
+  panel edge;
+- PgUp/PgDn and mouse-wheel scrolling;
+- row colors by kind and a highlighted selected row with an outline;
+- rows for cart origin, payload route points, GLB nodes, entities, and blocks.
+
+Search matches case-insensitive ID, GLB node name, entity type, and kind words
+such as `route`, `block`, `glb`, `entity`, and `cart`. Search results are the
+same list rows used for clicking, Shift-range selection, and Ctrl-multi-select.
+
+The properties panel below the list shows the primary selection:
+
+```text
+SELECTED  <kind> <id>
+pos       [x] [y] [z]
+rot       <x> <y> <z>       scale <x> <y> <z>
+<type, name, material, radius, route flags, or GLB details>
+```
+
+The three position fields are editable. Click a field, type a number, and press
+Enter to apply the position. The edit uses the same undo, collision refresh, and
+autosave path as a handle drag. `Esc` cancels the text focus. Rotation and scale
+are displayed for blocks, entities, routes, the cart origin, and GLB nodes;
+editable rotation/scale overrides for GLB nodes are the next slice. GLB
+overrides currently persist position only.
+
+### Drag handles
+
+The selection handle is a filled, camera-facing axis gizmo. The default values
+live in `config/mapeditor.json`:
+
+- `handle_length: 12.0` (about 5x the old 2.4 m)
+- `handle_pick_pixels: 60.0`
+- `handle_radius: 0.80` for the end sphere
+- `handle_thickness: 0.48` for the shaft
+
+All object types use the same handle size. Axis and plane drags are projected
+through screen space: dragging toward the visible handle tip moves the object in
+that axis's positive direction, regardless of camera pitch or roll. The
+selection center moves all selected objects together; Ctrl-multi-select is the
+intended way to move a whole payload route.
+
+### Block wireframes
+
+Authored block wireframes use `block_wire_alpha` from `config/mapeditor.json`,
+default `0.5`. Selected blocks use full opacity. Set it to `1.0` to return to
+the old fully opaque look.
 
 Copy and paste are internal to the editor and report the affected IDs in the
 terminal:
@@ -129,6 +207,70 @@ config/maps/backups/<mapId>/<mapId>_<yyyymmdd_hhmmss>_save.json
 
 and keep the newest 50 backups. Generated backups and editor autosaves are
 untracked.
+
+### Editor settings and autosave
+
+`config/mapeditor.json` owns editor-only presentation and interaction values and
+hot reloads:
+
+```json
+{
+  "title_scale": 0.42,
+  "body_scale": 0.30,
+  "row_scale": 0.28,
+  "help_scale": 0.24,
+  "outliner_width": 380.0,
+  "outliner_top": 112.0,
+  "outliner_bottom_padding": 32.0,
+  "row_height": 26.0,
+  "properties_height": 156.0,
+  "scrollbar_width": 14.0,
+  "scrollbar_inset": 6.0,
+  "handle_length": 12.0,
+  "handle_pick_pixels": 60.0,
+  "handle_radius": 0.80,
+  "handle_thickness": 0.48,
+  "block_wire_alpha": 0.5,
+  "focus_min_distance": 1.5,
+  "focus_padding": 1.35,
+  "camera_speed_multiplier": 1.0,
+  "autosave_delay_ms": 400,
+  "label_mode": "selected"
+}
+```
+
+`label_mode` is `all`, `selected`, `hovered`, or `off`. Font scales are
+`title_scale`, `body_scale`, `row_scale`, and `help_scale`; the last one now
+sizes the small documentation-path line. The editor also exposes
+`mapeditor_camspeed <multiplier>`, `mapeditor select <id>`,
+`mapeditor select_kind <kind>`, `mapeditor set_position <x> <y> <z>`,
+`mapeditor nudge <dx> <dy> <dz>`, `mapeditor autosave`,
+`mapeditor rebuild_collision`, and the cart/route authoring commands.
+
+Debounced autosave writes the active map JSON after an idle delay; it does not
+create a backup. Ctrl+S is the explicit save and still creates a backup. The
+JSON write is atomic and the server's map-config poll reads it.
+
+### GLB object overrides
+
+Loaded GLB nodes can be translated and persisted without editing the GLB:
+
+```json
+"glb_objects": [
+  { "id": "node:12", "name": "Cube.6450", "position": [12.0, 4.0, -31.0] }
+]
+```
+
+`id` is the loader's stable `node:<index>` id and `name` is diagnostic. The
+client and dedicated server apply the translation to that node's vertex/triangle
+range. Removing the override restores the original GLB translation; undo,
+cancel, and reload use the same path.
+
+Position is the only persisted GLB property in this slice. The properties panel
+also displays the GLB base rotation and scale for inspection. Editable GLB
+rotation/scale overrides require storing base vertex positions and a delta
+transform, and are the next slice. The old override matrix path remains intact
+for loading existing files.
 
 ### Authored blocks
 
@@ -197,6 +339,52 @@ mapeditor route_move <up|down>
 mapeditor route_validate
 ```
 
+### Select and move the whole payload path
+
+The easiest path-editing workflow is:
+
+```text
+mapeditor select_route
+mapeditor nudge 5 0 0
+```
+
+`select_route` is an alias for `select_kind route`; both select every route
+point and nothing else. With the whole route selected, drag the single
+selection-center handle, or use `mapeditor nudge <dx> <dy> <dz>` /
+`mapeditor set_position <x> <y> <z>` for exact movement. Ctrl+click individual
+outliner rows to build a custom subset, then drag or nudge the same way.
+
+Add and remove points:
+
+```text
+mapeditor add route [id]     append a route point at the camera-forward point
+mapeditor duplicate          duplicate the selected route point(s)
+mapeditor delete             delete the selected route point(s)
+mapeditor route_move up      move a selected point earlier in the route
+mapeditor route_move down    move a selected point later in the route
+```
+
+Adding a route point renumbers the route and keeps the JSON order field in sync.
+Deleting a route point renumbers the remaining points. Both operations use the
+same undo/autosave path as a drag.
+
+### Direct JSON authoring
+
+`config/maps/<map>.json` remains authoritative and is safe to edit directly.
+The live workflow is:
+
+1. Save pending editor changes, or leave the editor with a clean state.
+2. Stop editing in-game so autosave cannot overwrite the external file.
+3. Edit `payload.route[]` or `payload.cart_origin` in the map JSON.
+4. Save the file.
+5. Run `mapeditor reload` or let the map-config poll pick it up.
+6. Run `mapeditor route_validate` and inspect the route in the editor.
+
+If the editor has unsaved changes and the file changes externally, reload first.
+Otherwise the next autosave can replace the external edit with the in-memory
+editor state. Autosave writes without a backup; Ctrl+S is the explicit save and
+writes a backup.
+
 `route_validate` reports duplicate ids, too few points, a cart-origin/route-start
 mismatch, long or steep segments, a missing final flag, zero checkpoint bonuses,
 and tiny radii. Ctrl+S saves and re-runs the same validation.
@@ -243,7 +431,48 @@ entity_list
 entity_info tower4_start
 ```
 
-## Command reference
+## Map editor command reference
+
+Run `mapeditor help` in the game for the compact list.
+
+| Command | Usage | Purpose |
+|---|---|---|
+| `mapeditor` | `mapeditor` | Toggle the viewport editor. |
+| `mapeditor` | `mapeditor <0\|1\|on\|off>` | Leave or enter the editor. |
+| `mapeditor` | `mapeditor status` | Print active, map, dirty, freeze, and selection count. |
+| `mapeditor` | `mapeditor save` | Save the active map JSON with a backup. |
+| `mapeditor` | `mapeditor reload` | Reload the active map JSON. |
+| `mapeditor` | `mapeditor freeze <0\|1>` | Keep the editor camera but continue world simulation. |
+| `mapeditor` | `mapeditor autosave` | Force the debounced no-backup map save. |
+| `mapeditor` | `mapeditor rebuild_collision` | Flush a deferred collision rebuild. |
+| `mapeditor` | `mapeditor focus` | Frame the current selection. |
+| `mapeditor` | `mapeditor add entity <type> [id]` | Add an authored entity. |
+| `mapeditor` | `mapeditor add block [id]` | Add a 1 m authored block. |
+| `mapeditor` | `mapeditor add route [id]` | Append a payload route point. |
+| `mapeditor` | `mapeditor add cart` | Add the payload cart origin. |
+| `mapeditor` | `mapeditor select <id>` | Select the first object with that ID. |
+| `mapeditor` | `mapeditor select_kind <entity\|block\|route\|cart\|glb\|all>` | Replace the selection with one object kind. |
+| `mapeditor` | `mapeditor select_route` | Select every payload route point. |
+| `mapeditor` | `mapeditor selectall` | Select all authored entities, blocks, routes, and GLB nodes. |
+| `mapeditor` | `mapeditor set_position <x> <y> <z>` | Move the primary selection to an exact position and apply the delta to the rest. |
+| `mapeditor` | `mapeditor nudge <dx> <dy> <dz>` | Move the whole selection by a delta. |
+| `mapeditor` | `mapeditor route_checkpoint <0\|1>` | Set the checkpoint flag on selected route points. |
+| `mapeditor` | `mapeditor route_final <0\|1>` | Set the final flag. |
+| `mapeditor` | `mapeditor route_enabled <0\|1>` | Enable or disable selected route points. |
+| `mapeditor` | `mapeditor route_radius <m>` | Set arrival radius. |
+| `mapeditor` | `mapeditor route_bonus <sec>` | Set checkpoint time bonus. |
+| `mapeditor` | `mapeditor route_wait <ticks>` | Set arrival wait in 60 Hz ticks. |
+| `mapeditor` | `mapeditor route_move <up\|down>` | Reorder selected route points. |
+| `mapeditor` | `mapeditor route_validate` | Validate route ids, order, flags, distances, radii, and bonuses. |
+| `mapeditor` | `mapeditor cart_origin_to_route_start` | Move the cart origin to the first enabled route point. |
+| `mapeditor` | `mapeditor route_start_to_cart_origin` | Translate the whole route to the cart origin. |
+| `mapeditor` | `mapeditor copy\|paste\|cut\|duplicate\|delete\|undo\|redo` | Clipboard and history actions. |
+| `mapeditor_camspeed` | `mapeditor_camspeed <multiplier>` | Set camera speed relative to the configured default. |
+
+`mapeditor selectall` does not select the cart origin; use `select_kind cart`
+when the cart origin must move with the selection.
+
+## Entity command reference
 
 Run `entity_help` in the game for the compact in-game list.
 
@@ -367,13 +596,21 @@ entity state. It does not apply half of a broken edit.
 The directions are explicit:
 
 ```text
-terminal command -> in-memory registry immediately
-entity_save      -> JSON file
-JSON file edit   -> live registry after polling, or entity_reload
+entity command      -> in-memory registry immediately
+entity_save         -> JSON file
+map editor edit     -> in-memory registry + debounced autosave
+Ctrl+S in editor    -> JSON file with a backup
+JSON file edit      -> live registry after polling, or entity_reload/mapeditor reload
 ```
 
-The editor does not overwrite JSON after every command. Use `entity_save` when
-the current in-game state should become the authored file.
+`entity_*` commands do not write JSON after every command; use `entity_save` when
+the current in-game state should become the authored file. The map editor is
+different: viewport edits mark the registry dirty and the map editor autosaves
+without a backup after `autosave_delay_ms`. Use Ctrl+S when a backup is wanted.
+
+When editing JSON externally while the map editor holds unsaved changes, save or
+reload first. A later autosave can otherwise replace the external edit with the
+in-memory editor state.
 
 ## Current gameplay scope
 

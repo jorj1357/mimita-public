@@ -3,7 +3,7 @@
 - **Time UTC:** `2026-10-25T18:47:00Z`
 - **Display time:** `2026-10-25 14:47:00 EDT` (`America/New_York`)
 - **Branch:** `20261011zt`
-- **HEAD:** `63e34fe4`
+- **HEAD:** `51f274ba`
 - **Result:** `PASS_WITH_HUMAN_REVIEW`
 
 ## Request
@@ -87,25 +87,108 @@ Build `3257` (final source incl. convexity guard):
 
 ## Limits and open evidence
 
-- Phase B (Manifold union of partially overlapping convex solids) is not
-  implemented; Phase A handles fully covered coincident faces.
-- Only convex closed solids participate. Concave shells and non-solid
-  decoration remain raw.
+- Only convex closed solids participate in union. Concave shells and non-solid
+  decoration remain raw for the conservative face-removal pass.
+- Maps above `static_solid_union_max_solids` skip union and use face removal;
+  this is intentional to bound map-load cost.
 - The final build was not launched through the dev loop because `.dev/current`
   is held by the pre-existing GUI server PID `12648` from the original recording
   session. That process was preserved. The final build's server map-load parity
   and selftest were verified; client gameplay feel needs human review.
-- An external commit (`63e34fe4`) captured most Phase A changes while this
-  session was running. The remaining source diff in this session is the
-  convexity/volume guard and temporary-debug cleanup. The AI did not commit.
+- External commits (`cfae20a5`, `63e34fe4`, `51f274ba`) captured Phase A and the
+  human's parallel NPC/map-editor work while this session was running. The AI
+  did not commit.
 - Human visual, bounce-feel, and multiplayer acceptance remain pending.
 
 ## Validation summary
 
 - Source: reviewed map load, authored rebuild, editor rebuild, collision LOD
   re-decimation, server headless load, and decimation paths.
-- Build: dev-loop builds `3249`, `3257`, and `3258` published successfully.
-- Tests: new static-face selftest PASS.
-- Runtime: tdmtest3 client/server triangle parity; targeted seam cross with
-  floor-only contacts; no rollbacks or below-bounds positions.
+- Build: dev-loop builds `3249`, `3257`, `3258`, `3262`, `3272`, and `3273`
+  published successfully.
+- Tests: static-face, solid-union, authored-geometry, and map-config selftests
+  PASS.
+- Runtime: tdmtest3 client/server union parity; targeted seam cross; full replay
+  completed with no below-bounds positions.
 - Deployment: none.
+
+## Phase B — convex solid union
+
+`unionStaticSolidGroups` now unions validated convex closed solids through
+`MimitaImpact::booleanUnion`, appends raw triangles for skipped groups, and falls
+back without changing geometry on failure or output-cap overflow. It welds
+vertices before Manifold import and reverses inward-wound solids.
+
+- Added `static_solid_union`, `static_solid_union_max_triangles`, and
+  `static_solid_union_max_solids` to `config/collision-lod.json` /
+  `CollisionLodConfig`.
+- Client GLB load, authored rebuild, LOD re-decimation, server headless load, and
+  authored headless apply call union before the Phase A pass.
+- Added `--static-solid-union-selftest`.
+
+### Phase B runtime evidence
+
+Build `3273`, run `20261025_193211_01`,
+journal `C:\mimita-v9\logs6-10-2561025_193211_01\events.jsonl`.
+
+tdmtest3:
+
+```text
+input triangles   1364
+union solids      122
+union output      1280
+union_ms          74.4 server / 78.9 client
+union_fallback    false
+client/server     1280 / 1280
+```
+
+dust2cyberiav4 (cap path):
+
+```text
+union solids      485 > static_solid_union_max_solids (256)
+union fallback    solid_count_cap
+face removal      7442 -> 5469 (1973 removed, 21-23 ms)
+```
+
+The solid cap prevents the ~1.2 s full union seen before the cap was added.
+
+Selftests on build `3273`:
+
+- `--static-face-removal-selftest` PASS
+- `--static-solid-union-selftest` PASS: touch `volume=2.0`, stack `2.0`,
+  gap `2.0`, overlap `12.0`, single `1.0`
+- `--map-authored-geometry-selftest` PASS
+- `--map-config-selftest` PASS
+
+Targeted tdmtest3 seam probe (headless server/client):
+
+```text
+before [1546.00, -1850.50, 2349.64]
+after  [1541.86, -1838.22, 2349.64]
+crossed y = -1845.62 at floor height
+```
+
+Full recorded-input replay completed all `4858` frames. The original scenario
+header was rejected with `weapon_set_mismatch` because the current community
+weapon set is `6`; a temporary copy with `weapon_set=0` was used for the
+collision replay and then deleted.
+
+Replay observations:
+
+- `313` collision summaries, `0` below-bounds positions.
+- minimum player `z = 2319.04`; map bounds minimum `z = 2304.09`.
+- `6` seam summaries at `y ~= -1845.62`; all had floor-only contact normals.
+- `0` non-floor contacts at that seam.
+- one post-replay head rollback at `core_penetration = 0.1023 m` on a steep
+  contact (threshold `0.1 m`); this is a residual limb-rollback observation, not
+  a fall-through, and needs human review.
+- Playback divergence is expected because the collision surface changed; the
+  recorded input is not a deterministic world replay.
+
+Minimal compatibility fixes were required to unblock the human's in-progress map
+editor refactor: `MapConfigRegistry::save(bool)` signature alignment,
+`HeadlessGLBObject` tracking for headless GLB overrides, `basePosition`
+population on loaded GLB objects, and removal of the stray headless `options`
+field. These preserve the editor refactor intent; they are not Phase B behavior.
+
+

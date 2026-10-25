@@ -747,7 +747,7 @@ void MapConfigRegistry::pruneBackups()
     }
 }
 
-bool MapConfigRegistry::save()
+bool MapConfigRegistry::save(bool withBackup)
 {
     if (mPath.empty()) return false;
     // Start from the existing authored file so top-level keys this owner does
@@ -896,7 +896,7 @@ bool MapConfigRegistry::save()
         }
     }
 
-    if (std::filesystem::exists(mPath, ec))
+    if (withBackup && std::filesystem::exists(mPath, ec))
         writeBackup();
     std::filesystem::remove(mPath, ec);
     std::filesystem::rename(tempPath, mPath, ec);
@@ -1220,6 +1220,7 @@ bool mapEntityConfigSelfTest(std::string& report)
     {
         std::ofstream out(path);
         out << R"({
+  "glb_objects":[{"id":"node:2","name":"TestNode","position":[4,5,6]}],
   "blocks":[{"id":"b1","shape":"box","position":[1,2,3],"size":[4,5,6],
              "rotationEuler":[0,0,15],"material":"","enabled":true,"tags":["a"]}],
   "payload":{"cart_origin":{"position":[7,8,9],"yaw":45},
@@ -1233,6 +1234,11 @@ bool mapEntityConfigSelfTest(std::string& report)
         fail("block/route selftest map failed to load");
     if (reg.current().blocks.size() != 1)
         fail("block was not parsed");
+    if (reg.current().glbObjects.size() != 1)
+        fail("glb object override was not parsed");
+    else if (reg.current().glbObjects[0].id != "node:2" ||
+             std::abs(reg.current().glbObjects[0].position.z - 6.0f) > 0.001f)
+        fail("glb object override fields were not parsed");
     if (reg.current().payload.route.size() != 2)
         fail("payload route was not parsed");
     if (reg.current().payload.route[1].id != "r2")
@@ -1257,6 +1263,8 @@ bool mapEntityConfigSelfTest(std::string& report)
                 fail("payload final flag missing after save");
             if (!root["payload"].contains("cart_size"))
                 fail("payload cart size missing after save");
+            if (!root.contains("glb_objects") || root["glb_objects"].size() != 1)
+                fail("glb object override missing after save");
         } catch (const std::exception& e) {
             fail(std::string("block/route saved json unparsable: ") + e.what());
         }

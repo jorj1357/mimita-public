@@ -98,6 +98,12 @@ public:
     bool setSelectedRouteWaitTicks(int ticks);
     bool moveSelectedRoute(int direction);
     std::string validatePayloadRoute() const;
+    bool cartOriginToRouteStart();
+    bool routeStartToCartOrigin();
+    void nudgeSelection(const glm::vec3& delta);
+    bool selectObject(const std::string& id);
+    bool selectKind(const std::string& kind);
+    bool setSelectedPosition(const glm::vec3& position);
 
 private:
     MapEditor() = default;
@@ -128,6 +134,7 @@ private:
         EditorObjectRef primary;
         glm::vec3 startPoint{0.0f};
         glm::vec3 startCenter{0.0f};
+        glm::vec2 startMouse{0.0f};
         float startDistance = 0.0f;
         std::vector<EditorObjectRef> refs;
         std::vector<glm::vec3> originalPositions;
@@ -160,8 +167,13 @@ private:
     std::vector<EditorObjectRef> mOutlinerObjects;
     std::string mOutlinerFilter;
     UIScrollState mOutlinerScroll;
+    double mLastLayoutLogTime = 0.0;
+    int mLastLayoutObjectCount = -1;
     UITextInputState mOutlinerSearch;
     bool mOutlinerSearchFocused = false;
+    UITextInputState mPropertyPosition[3];
+    bool mPropertyOwnerValid = false;
+    EditorObjectRef mPropertyOwner;
     float mCameraSpeedMultiplier = -1.0f;
     bool mCollisionDirty = false;
     bool mGeometryDirty = false;
@@ -181,6 +193,8 @@ private:
 
     void collectEditorObjects(std::vector<EditorObjectRef>& out) const;
     int outlinerRowAt(double screenX, double screenY) const;
+    void syncPropertyPositionFields();
+    void applyPropertyPosition();
 
     void clearSelection();
     void selectOnly(const EditorObjectRef& ref);

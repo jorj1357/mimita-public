@@ -436,6 +436,32 @@ bool teamBrainSelfTest(std::string& report)
         report += "objective_target=ok\n";
     }
 
+    // Focus selection prefers the enemy closest to the squad centroid, not the
+    // first report inserted, and records the chosen actor id.
+    {
+        TeamBrain brain(0);
+        brain.reportEnemySighting(90, glm::vec3(80, 0, 0), 1.0f, false);
+        brain.reportEnemySighting(91, glm::vec3(10, 0, 0), 1.0f, false);
+        glm::vec3 focus;
+        uint32_t focusId = 0;
+        float confidence = 0.0f;
+        if (!brain.selectFocus(glm::vec3(0.0f), focus, focusId, confidence))
+            fail("focus should resolve with reports present");
+        if (focusId != 91) fail("focus should choose the nearest reported enemy");
+        SquadTuning tuning;
+        tuning.enabled = true;
+        tuning.swarm = true;
+        std::vector<SquadMember> members = {
+            {1, glm::vec3(0, 0, 0)}, {2, glm::vec3(2, 0, 0)}};
+        brain.updateSquad(members, focus, true, tuning, focusId);
+        if (brain.squad().focusActorId != focusId)
+            fail("squad focus actor id should be recorded");
+        glm::vec3 slot, anchor;
+        if (!brain.squadSlotFor(1, slot, anchor))
+            fail("squad members should receive slots");
+        report += "focus_select=ok\n";
+    }
+
     // A bomb-carrying Terrorist is sent to a site, not to its own position.
     {
         TeamBrain brain(1);

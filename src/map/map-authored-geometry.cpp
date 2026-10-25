@@ -162,7 +162,7 @@ void applyGLBObjectOverrides(World& world,
 void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
                              const std::vector<MapGLBObjectOverride>& overrides)
 {
-    for (HeadlessGLBObject& object : world.glbObjects) {
+    for (MimitaNet::HeadlessGLBObject& object : world.glbObjects) {
         glm::vec3 target = object.basePosition;
         for (const MapGLBObjectOverride& override : overrides) {
             if (override.id == object.id) {
@@ -236,11 +236,19 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
     }
 
     StaticUnionStats unionStats;
+    StaticUnionStats removalStats;
     if (options.rebuildCollision) {
         buildCollisionMeshFromRenderMesh(world);
+        if (CollisionLodConfig::instance().staticSolidUnion())
+            unionStaticSolidGroups(
+                world.collisionMesh.triangles, world.collisionMesh.solidIds,
+                CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+                &unionStats,
+                CollisionLodConfig::instance().staticSolidUnionMaxSolids());
         if (options.staticFaceRemoval && CollisionLodConfig::instance().staticFaceRemoval())
             removeFullyCoveredStaticTriangles(
-                world.collisionMesh.triangles, world.collisionMesh.solidIds, &unionStats);
+                world.collisionMesh.triangles, world.collisionMesh.solidIds,
+                &removalStats);
         buildCollisionChunks(world, nullptr);
     }
     world.renderRevision++;
@@ -253,8 +261,12 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
                        {"applied_count", added},
                        {"render_vertices", world.mesh.verts.size()},
                        {"collision_triangles", world.collisionMesh.triangles.size()},
-                       {"static_removed_triangles", unionStats.removedTriangles},
-                       {"static_removal_fallback", unionStats.fallback},
+                       {"static_union_solids", unionStats.unionSolids},
+                       {"static_union_output_triangles", unionStats.unionOutputTriangles},
+                       {"static_union_ms", unionStats.unionMs},
+                       {"static_union_fallback", unionStats.unionFallback},
+                       {"static_removed_triangles", removalStats.removedTriangles},
+                       {"static_removal_fallback", removalStats.fallback},
                        {"rebuild_collision", options.rebuildCollision},
                        {"render_revision", world.renderRevision}},
         __FILE__, __LINE__, __FUNCTION__);
@@ -269,6 +281,7 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
 {
     if (!ensureMapLoaded(mapId)) return false;
     const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
+    applyGLBObjectOverrides(world, config.glbObjects);
     size_t added = 0;
     for (const AuthoredBlock& block : config.blocks) {
         if (!block.enabled || !finiteVec(block.position) || !finiteVec(block.size))
@@ -282,9 +295,16 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
     }
 
     StaticUnionStats unionStats;
+    if (CollisionLodConfig::instance().staticSolidUnion())
+        unionStaticSolidGroups(
+            world.triangles, world.solidIds,
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+            &unionStats,
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
+    StaticUnionStats removalStats;
     if (CollisionLodConfig::instance().staticFaceRemoval())
         removeFullyCoveredStaticTriangles(
-            world.triangles, world.solidIds, &unionStats);
+            world.triangles, world.solidIds, &removalStats);
     MimitaNet::buildHeadlessCollisionChunks(world);
 
     // Authored spawnpoint entities extend the GLB spawn list. The base count
@@ -318,8 +338,7 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
                        {"spawn_points", world.spawnPoints.size()},
                        {"collision_triangles", world.triangles.size()},
                        {"static_removed_triangles", unionStats.removedTriangles},
-                       {"static_removal_fallback", unionStats.fallback},
-                       {"rebuild_collision", options.rebuildCollision},
+                       {"static_removal_fallback", removalStats.fallback},
                        {"headless", true}},
         __FILE__, __LINE__, __FUNCTION__);
     printf("[MAP AUTHORED] headless map=%s blocks=%zu applied=%zu spawns=+%zu total_spawns=%zu tris=%zu\n",
@@ -395,6 +414,45 @@ bool authoredMapGeometrySelfTest(std::string& report)
         if (headless.spawnPoints.size() != 2) fail("authored spawnpoint duplicated on rebuild");
     }
 
+    // GLB object translation overrides must apply, drive an incremental
+    // collision refresh, and restore when the override is removed (undo).
+    {
+        World glbWorld;
+        glbWorld.mesh.verts.push_back({{0, 0, 0}, {0, 0, 1}, {0, 0}});
+        glbWorld.mesh.verts.push_back({{1, 0, 0}, {0, 0, 1}, {1, 0}});
+        glbWorld.mesh.verts.push_back({{0, 1, 0}, {0, 0, 1}, {0, 1}});
+        Mesh::Batch batch;
+        batch.first = 0;
+        batch.count = 3;
+        glbWorld.mesh.batches.push_back(batch);
+        MapGLBObject object;
+        object.id = "node:0";
+        object.name = "SyntheticNode";
+        object.transform = glm::mat4(1.0f);
+        object.basePosition = glm::vec3(0.0f);
+        object.boundsMin = glm::vec3(0.0f);
+        object.boundsMax = glm::vec3(1.0f, 1.0f, 0.0f);
+        object.vertexFirst = 0;
+        object.vertexCount = 3;
+        glbWorld.mesh.objects.push_back(object);
+        buildCollisionMeshFromRenderMesh(glbWorld);
+        buildCollisionChunks(glbWorld, nullptr);
+        const AABB oldBounds{object.boundsMin, object.boundsMax};
+        std::vector<MapGLBObjectOverride> overrides;
+        overrides.push_back({"node:0", "SyntheticNode", glm::vec3(5.0f, 0.0f, 0.0f)});
+        applyGLBObjectOverrides(glbWorld, overrides);
+        if (std::abs(glbWorld.mesh.verts[0].pos.x - 5.0f) > 0.001f)
+            fail("glb override did not translate render vertices");
+        const AABB movedBounds{glbWorld.mesh.objects[0].boundsMin,
+                               glbWorld.mesh.objects[0].boundsMax};
+        updateCollisionForMovedObject(glbWorld, oldBounds, movedBounds);
+        if (glbWorld.collisionMesh.triangles.empty() ||
+            std::abs(glbWorld.collisionMesh.triangles[0].a.x - 5.0f) > 0.001f)
+            fail("glb override did not update collision");
+        applyGLBObjectOverrides(glbWorld, {});
+        if (std::abs(glbWorld.mesh.verts[0].pos.x) > 0.001f)
+            fail("removing glb override did not restore the base position");
+    }
     std::error_code ec;
     std::filesystem::remove(path, ec);
     registry.load("zombietower4");

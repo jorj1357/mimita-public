@@ -345,6 +345,35 @@ Evidence inspected: `src/gamemode/payload-runtime.cpp::payloadRuntimeReset`,
 The runtime placement explanation is source evidence, not live visual
 acceptance. The player’s editor usability and freeze reports remain unmeasured.
 
+**Implementation update — 2026-10-25 19:59 UTC:**
+
+- Outliner now uses the shared scroll area (`uiBeginScrollArea`/`uiEndScrollArea`), keeps PgUp/PgDn, and adds mouse-wheel scrolling, a search field, and a highlighted selected row.
+- `F` focuses the outliner-selected object using its bounds and the camera FOV instead of a fixed 8 m.
+- Editor text scale, outliner width/row height, handle length/pick radius, focus padding, camera speed, autosave delay, and label mode live in `config/mapeditor.json` and hot reload.
+- `mapeditor_camspeed <multiplier>` sets the editor camera speed multiplier.
+- Drag handles are larger (defaults `2.4 m`, `22 px` pick radius, `0.16 m` end sphere).
+- Route/entity/cart-origin moves no longer rebuild collision. GLB translations use an incremental collision refresh. Map-spanning or large affected objects defer the full collision rebuild until editor exit or `mapeditor rebuild_collision`, so the move itself stays responsive.
+- GLB object translation overrides persist in map JSON as `glb_objects` and are restored by Ctrl+Z/cancel.
+- Autosave writes the active map JSON after a debounced idle period without creating a backup; explicit Ctrl+S still writes a backup. Runtime proof: `payload2.json` changed live after a route add/nudge and returned to `glb_objects: []` after undo.
+- Cart-origin clarity: the editor draws the cart-origin to first-route-point offset and provides `mapeditor cart_origin_to_route_start` / `route_start_to_cart_origin` plus `mapeditor nudge <dx> <dy> <dz>` and `mapeditor select <id>`.
+
+Remaining: human review of the new outliner/search/handle feel, larger-object collision deferral behavior, and the Payload route/bonus pacing.
+
+**Implementation update — 2026-10-25 20:55 UTC:**
+
+- Fixed the outliner/search/scrollbar coordinate mismatch. `uiTextInputRender` and `uiBeginScrollArea`/`uiEndScrollArea` convert design coordinates to screen pixels, while the map editor already uses screen pixels. The map editor now uses explicit screen-space text-input and scroll-area APIs, so rows are no longer clipped by a double-scaled scissor and the scrollbar is inside the outliner.
+- Scrollbar width and inset are configurable (`scrollbar_width`, `scrollbar_inset`, defaults 14 px and 6 px). PgUp/PgDn and mouse-wheel scrolling remain.
+- The large bottom help strip is removed. A small line now points to `docs/specs/entity-editor/entity-editor.md`.
+- Selection handles use `handle_length: 12.0`, `handle_pick_pixels: 60.0`, `handle_radius: 0.80`, and `handle_thickness: 0.48`; they are drawn as filled cylinders/spheres for all object types.
+- Axis and plane dragging now use screen-projected movement instead of the old ray-axis delta. Dragging toward the visible handle tip moves in the positive axis direction regardless of camera pitch/roll.
+- Added a properties panel below the object list with editable position X/Y/Z fields (Enter applies, Esc cancels), plus read-only rotation/scale/name/type details. Runtime actors are intentionally not listed yet.
+- Added `mapeditor select_kind <entity|block|route|cart|glb|all>`, `mapeditor select_route`, and `mapeditor set_position <x> <y> <z>`. Selecting every route point and using one handle or `mapeditor nudge` moves the whole payload path.
+- Added `block_wire_alpha` (default 0.5) for authored block wireframes.
+- GLB overrides remain position-only. Editable GLB rotation/scale are explicitly next; the properties panel displays their base values read-only.
+- Documentation now lists the complete map editor and entity command surfaces, the payload path add/remove/bulk-move workflow, direct JSON editing, autosave-versus-Ctrl+S semantics, and the outliner/properties behavior.
+
+Remaining: human visual acceptance of row visibility, scrollbar placement/thickness, handle feel, drag direction, and property-field interaction. Route/bonus pacing and larger-object collision deferral also still need human review.
+
 ## New intake — 2026-10-21
 
 These are player reports from a play session. They are recorded as observed or

@@ -69,6 +69,7 @@ made hot-reloadable over time.
 | Avatars and actors | `config/bodyparts.json`, `config/player-procedural.json`, `config/npc-avatar.json`, `config/npc-difficulty.json`, `config/npcpresets/` | body layout, cosmetics, NPC difficulty, actor presentation, procedural values |
 | Authored animation | `assets/avatars/<avatar>/animations.json`, files included from `config/animations/` | clip keyframes, states, and authored pose data; live presentation tuning |
 | Replay | `config/replay/`, `config/replayexport.json` | recording, playback, export, camera, event and effect capture |
+| Map editor | `config/mapeditor.json` | editor font scales, outliner/search/scrollbar/properties geometry, handle sizes and thickness, block wireframe alpha, focus distance, camera speed, label mode, autosave delay |
 | Debugging and testing | `config/debug/`, `config/debuglogger.json`, `config/hotreload.json`, `config/analytics.json` | debug categories, logging, profiling, reload diagnostics, test switches |
 
 The inventory is a starting map, not proof that every file currently has the

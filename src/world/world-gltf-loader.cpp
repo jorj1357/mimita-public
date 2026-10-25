@@ -74,6 +74,7 @@ bool loadWorldFromGLB(World& world, const char* path)
     World candidate;
     candidate.renderRevision = world.renderRevision + 1;
     StaticUnionStats topStaticStats;
+    StaticUnionStats topUnionStats;
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] before loadGLB\n");
 
@@ -104,6 +105,12 @@ bool loadWorldFromGLB(World& world, const char* path)
 
     tStart = std::chrono::steady_clock::now();
     buildCollisionMeshFromRenderMesh(candidate);
+    if (CollisionLodConfig::instance().staticSolidUnion())
+        unionStaticSolidGroups(
+            candidate.collisionMesh.triangles, candidate.collisionMesh.solidIds,
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+            &topUnionStats,
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
     topStaticStats.inputTriangles = static_cast<uint32_t>(candidate.collisionMesh.triangles.size());
     if (CollisionLodConfig::instance().staticFaceRemoval())
         removeFullyCoveredStaticTriangles(
@@ -188,6 +195,10 @@ bool loadWorldFromGLB(World& world, const char* path)
             {"render_triangles", metrics.renderTriangleCount},
             {"collision_triangles", world.collisionMesh.triangles.size()},
             {"collision_triangles_initial", topStaticStats.inputTriangles},
+            {"static_union_solids", topUnionStats.unionSolids},
+            {"static_union_output_triangles", topUnionStats.unionOutputTriangles},
+            {"static_union_ms", topUnionStats.unionMs},
+            {"static_union_fallback", topUnionStats.unionFallback},
             {"static_removed_triangles", topStaticStats.removedTriangles},
             {"static_removal_fallback", topStaticStats.fallback},
             {"collision_chunks", metrics.collisionChunkCount},
@@ -341,6 +352,12 @@ bool loadWorldTemplate(const char* path, World& outTemplate)
     }
 
     buildCollisionMeshFromRenderMesh(candidate);
+    if (CollisionLodConfig::instance().staticSolidUnion())
+        unionStaticSolidGroups(
+            candidate.collisionMesh.triangles, candidate.collisionMesh.solidIds,
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+            nullptr,
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
     if (CollisionLodConfig::instance().staticFaceRemoval())
         removeFullyCoveredStaticTriangles(
             candidate.collisionMesh.triangles, candidate.collisionMesh.solidIds);
