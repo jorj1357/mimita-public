@@ -25,7 +25,28 @@
       "skill_tier": "elite",
       "focus_enabled": true,
       "swarm": true,
-      "navigation_backend": "recast"
+      "navigation_backend": "recast",
+      // Weapon visits: fire this many accepted attacks, then switch.
+      "weapon_cycle": [
+        "shotgun", "revolver", "rocket_launcher", "projectile_rifle",
+        "hitscan_rifle", "big_shotgun", "large_machine_gun", "force_punch",
+        "spyknife"
+      ],
+      "weapon_visit_shots": {
+        "shotgun": 2,
+        "revolver": 6,
+        "rocket_launcher": 1,
+        "projectile_rifle": 2,
+        "hitscan_rifle": 6,
+        "big_shotgun": 1,
+        "large_machine_gun": 12,
+        "force_punch": 1,
+        "spyknife": 1
+      },
+      "weapon_visit_jitter_shots": 0,
+      "weapon_switch_delay_min": 0.02,
+      "weapon_switch_delay_max": 0.1,
+      "weapon_cycle_include_melee": true
     },
     {
       // Low-skill control profile for validating the tier range.

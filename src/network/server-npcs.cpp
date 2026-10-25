@@ -513,6 +513,11 @@ static void respawnServerNpc(Npc& npc)
     npc.grenadeAvailabilityLogged = false;
     npc.lastLoggedGrenadeWeapon.clear();
     npc.jumpCooldown = 0.0f;
+    npc.cycleWeapon.clear();
+    npc.cycleVisitShotsRemaining = 0;
+    npc.cycleVisitShotsTotal = 0;
+    npc.cycleVisitSerial = 0;
+    npc.cycleVisitComplete = false;
     npc.hasDecisionGoalDistance = false;
     npc.lastDecisionGoalDistance = 0.0f;
     // Reapply the role behavior profile for the new life.

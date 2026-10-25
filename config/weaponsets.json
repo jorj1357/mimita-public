@@ -65,6 +65,18 @@
       "weapons": ["revolver", "shotgun", "spyknife", "nothing"]
     },
     {
+      "id": 28,
+      "key": "elite_arsenal",
+      "name": "Elite Arsenal (NPC role)",
+      "description": "Elite Duel/TDM NPCs: every attack weapon available in the mode.",
+      "role_only": true,
+      "weapons": [
+        "revolver", "shotgun", "rocket_launcher", "projectile_rifle",
+        "hitscan_rifle", "big_shotgun", "large_machine_gun", "spyknife",
+        "force_punch", "nothing"
+      ]
+    },
+    {
       "id": 7,
       "key": "juggernaut",
       "name": "Juggernaut (role)",

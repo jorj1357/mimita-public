@@ -10,8 +10,10 @@
 #include "config/player-visuals-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "notifications/notifications.h"
 #include <fstream>
 #include <cmath>
+#include <chrono>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <algorithm>
@@ -251,12 +253,23 @@ bool PlayerVisualsConfig::load() {
     if (!parseAndValidate(ss.str(), candidate)) {
         mLastAttemptedWrite = writeTime(mPath);
         StructuredLogger::instance().writeEvent(
-            StructuredCategory::Rendering, StructuredLevel::Errors,
+            StructuredCategory::General, StructuredLevel::Errors,
             "player_visuals.config.rejected", mPath.string(),
             "invalid player visuals config; previous settings remain active", 0,
             {{"path", mPath.string()}, {"error", mLastError}},
             __FILE__, __LINE__, __FUNCTION__);
         Debug::warn(Debug::Category::Render, "[PLAYER VISUALS] reload failed path=%s reason=%s; keeping previous valid state", mPath.string().c_str(), mLastError.c_str());
+        {
+            static std::chrono::steady_clock::time_point sLastTip{};
+            const auto now = std::chrono::steady_clock::now();
+            if (sLastTip.time_since_epoch().count() == 0 ||
+                now - sLastTip >= std::chrono::seconds(1)) {
+                sLastTip = now;
+                NotificationSystem::instance().pushImportant(
+                    "CONFIG ERROR",
+                    mPath.string() + " -> " + mLastError, 0);
+            }
+        }
         return false;
     }
     mData = std::move(candidate); mLastWrite = writeTime(mPath); mLastAttemptedWrite = mLastWrite; mLastError.clear();
@@ -339,6 +352,34 @@ void PlayerVisualsConfig::setEnemyOutlineAlpha(float alpha) {
 void PlayerVisualsConfig::clearEnemyOutlineAlphaOverride() { mEnemyOutlineAlphaOverride = false; }
 float PlayerVisualsConfig::effectiveEnemyOutlineAlpha(float configured) const {
     return mEnemyOutlineAlphaOverride ? mEnemyOutlineAlpha : configured;
+}
+
+void PlayerVisualsConfig::setEnemyTrailOverride(const PlayerTrailSettings& settings) {
+    mEnemyTrailOverride = true;
+    mEnemyTrail = settings;
+}
+void PlayerVisualsConfig::clearEnemyTrailOverride() {
+    mEnemyTrailOverride = false;
+}
+PlayerTrailSettings PlayerVisualsConfig::effectiveEnemyTrail(
+    const PlayerTrailSettings& configured) const {
+    return mEnemyTrailOverride ? mEnemyTrail : configured;
+}
+void PlayerVisualsConfig::setTeammateTrailOverride(const PlayerTrailSettings& settings) {
+    mTeammateTrailOverride = true;
+    mTeammateTrail = settings;
+}
+void PlayerVisualsConfig::clearTeammateTrailOverride() {
+    mTeammateTrailOverride = false;
+}
+PlayerTrailSettings PlayerVisualsConfig::effectiveTeammateTrail(
+    const PlayerTrailSettings& configured) const {
+    return mTeammateTrailOverride ? mTeammateTrail : configured;
+}
+PlayerTrailSettings PlayerVisualsConfig::effectiveTrail(
+    bool teammate, const PlayerTrailSettings& configured) const {
+    return teammate ? effectiveTeammateTrail(configured)
+                    : effectiveEnemyTrail(configured);
 }
 std::string PlayerVisualsConfig::describe() const {
     std::ostringstream s; s << "player visuals enemy=" << (mData.enemy.enabled ? "on" : "off")

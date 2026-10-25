@@ -151,6 +151,12 @@ public:
     bool dashCommandConsumed = false;
     float attackCooldown = 0.0f;
     float weaponSwitchCooldown = 0.0f;
+    // Weapon visit cycle (elite profiles only). Visits count accepted shots.
+    std::string cycleWeapon;
+    int cycleVisitShotsRemaining = 0;
+    int cycleVisitShotsTotal = 0;
+    uint32_t cycleVisitSerial = 0;
+    bool cycleVisitComplete = false;
     float lastTargetLogDistance = -1.0f;
     glm::vec3 previousPosition{0.0f};
     glm::vec2 lastMoveInput{0.0f};

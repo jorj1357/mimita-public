@@ -136,6 +136,22 @@ struct CollisionTriangleOBB
     bool valid = false;
 };
 
+struct CollisionSmoothEdge
+{
+    int triangleA = -1;
+    int edgeA = -1;
+    int triangleB = -1;
+    int edgeB = -1;
+    glm::vec3 normalA{0.0f};
+    glm::vec3 normalB{0.0f};
+};
+
+struct CollisionSmoothVertex
+{
+    glm::vec3 normal{0.0f};
+    float minAlignment = 1.0f;
+};
+
 struct CollisionMeshCache
 {
     std::vector<CollisionTriangle> triangles;
@@ -148,6 +164,12 @@ struct CollisionMeshCache
     // recomputes a world triangle's bounds inside a per-pair loop.
     std::vector<AABB> triangleAABBs;
     std::vector<CollisionTriangleOBB> triangleOBBs;
+    // Static smooth-seam topology. Three edge/vertex slots per triangle; -1
+    // means no manifold neighbour in that slot.
+    std::vector<int> smoothEdgeIndex;
+    std::vector<int> smoothVertexIndex;
+    std::vector<CollisionSmoothEdge> smoothEdges;
+    std::vector<CollisionSmoothVertex> smoothVertices;
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
 
@@ -158,6 +180,10 @@ struct CollisionMeshCache
         solidIds.clear();
         triangleAABBs.clear();
         triangleOBBs.clear();
+        smoothEdgeIndex.clear();
+        smoothVertexIndex.clear();
+        smoothEdges.clear();
+        smoothVertices.clear();
         boundsMin = glm::vec3(0.0f);
         boundsMax = glm::vec3(0.0f);
     }

@@ -352,6 +352,97 @@ void considerSegmentPair(RoundedFeaturePair& best,
     considerRoundedFeature(best, a0 + d1 * s, b0 + d2 * t);
 }
 
+glm::vec3 closestPointOnSegment(const glm::vec3& p,
+                                const glm::vec3& a,
+                                const glm::vec3& b)
+{
+    const glm::vec3 ab = b - a;
+    const float lengthSq = glm::dot(ab, ab);
+    if (lengthSq <= 1.0e-10f)
+        return a;
+    const float t = glm::clamp(glm::dot(p - a, ab) / lengthSq, 0.0f, 1.0f);
+    return a + ab * t;
+}
+
+bool smoothSeamResponseNormal(const CollisionMeshCache& mesh,
+                              int triangleIndex,
+                              const glm::vec3& point,
+                              glm::vec3& outNormal)
+{
+    if (triangleIndex < 0 ||
+        mesh.smoothEdgeIndex.size() != mesh.triangles.size() * 3 ||
+        mesh.smoothVertexIndex.size() != mesh.triangles.size() * 3)
+        return false;
+    const CollisionTriangle& triangle = mesh.triangles[triangleIndex];
+    const glm::vec3 vertices[3] = {triangle.a, triangle.b, triangle.c};
+    const float tolerance = 2.0e-3f;
+
+    float bestVertexDistance = std::numeric_limits<float>::max();
+    int bestVertex = -1;
+    for (int i = 0; i < 3; ++i)
+    {
+        const float distance = glm::length(point - vertices[i]);
+        if (distance < bestVertexDistance)
+        {
+            bestVertexDistance = distance;
+            bestVertex = i;
+        }
+    }
+    if (bestVertex >= 0 && bestVertexDistance <= tolerance)
+    {
+        const int smoothIndex =
+            mesh.smoothVertexIndex[(size_t)triangleIndex * 3 + bestVertex];
+        if (smoothIndex >= 0 && smoothIndex < (int)mesh.smoothVertices.size())
+        {
+            const CollisionSmoothVertex& vertex = mesh.smoothVertices[smoothIndex];
+            if (vertex.minAlignment >= CollisionConfig::instance().smoothSeamDot())
+            {
+                const float length = glm::length(vertex.normal);
+                if (length > 1.0e-6f)
+                {
+                    outNormal = vertex.normal / length;
+                    return true;
+                }
+            }
+        }
+    }
+
+    float bestEdgeDistance = std::numeric_limits<float>::max();
+    int bestEdge = -1;
+    for (int edge = 0; edge < 3; ++edge)
+    {
+        const glm::vec3 closest = closestPointOnSegment(
+            point, vertices[edge], vertices[(edge + 1) % 3]);
+        const float distance = glm::length(point - closest);
+        if (distance < bestEdgeDistance)
+        {
+            bestEdgeDistance = distance;
+            bestEdge = edge;
+        }
+    }
+    if (bestEdge >= 0 && bestEdgeDistance <= tolerance)
+    {
+        const int smoothIndex =
+            mesh.smoothEdgeIndex[(size_t)triangleIndex * 3 + bestEdge];
+        if (smoothIndex >= 0 && smoothIndex < (int)mesh.smoothEdges.size())
+        {
+            const CollisionSmoothEdge& smooth = mesh.smoothEdges[smoothIndex];
+            if (glm::dot(smooth.normalA, smooth.normalB) >=
+                CollisionConfig::instance().smoothSeamDot())
+            {
+                const glm::vec3 blended = smooth.normalA + smooth.normalB;
+                const float length = glm::length(blended);
+                if (length > 1.0e-6f)
+                {
+                    outNormal = blended / length;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 RoundedFeaturePair closestRoundedTriangleFeatures(
     const glm::vec3& a, const glm::vec3& b, const glm::vec3& c,
     const glm::vec3& w0, const glm::vec3& w1, const glm::vec3& w2)
@@ -374,6 +465,13 @@ RoundedFeaturePair closestRoundedTriangleFeatures(
 }
 
 } // namespace
+
+bool smoothSeamNormalAt(const World& world, int triangleIndex,
+                        const glm::vec3& point, glm::vec3& outNormal)
+{
+    return smoothSeamResponseNormal(world.collisionMesh, triangleIndex,
+                                    point, outNormal);
+}
 
 // Local-space bounds of a mesh's triangles. Body parts carry collider localMin/
 // localMax, but the generic actor mesh only guarantees triangles, so derive a
@@ -730,6 +828,11 @@ void collectActorMeshContactsInto(
                         roundedNormal = separation / separationLength;
                     else if (glm::dot(sweep, n) > 0.0f)
                         roundedNormal = -n;
+                    glm::vec3 smoothNormal;
+                    if (smoothSeamResponseNormal(world.collisionMesh, wi,
+                                                 roundedFeature.worldPoint,
+                                                 smoothNormal))
+                        roundedNormal = smoothNormal;
                     n = roundedNormal;
                     penetration = featureRadius - roundedFeature.distance;
                 }
@@ -835,6 +938,14 @@ void collectActorMeshContactsInto(
                 else
                 {
                     rc.responseNormal = n;
+                }
+                if (roundedFeatureHit)
+                {
+                    glm::vec3 smoothNormal;
+                    if (smoothSeamResponseNormal(world.collisionMesh, wi,
+                                                 roundedFeature.worldPoint,
+                                                 smoothNormal))
+                        rc.responseNormal = smoothNormal;
                 }
                 contacts.push_back(rc);
                 ++partContacts;

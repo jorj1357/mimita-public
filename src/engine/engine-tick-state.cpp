@@ -159,16 +159,21 @@ void engineTickState(Engine& engine, float dt)
                         std::uniform_int_distribution<size_t> dist(0, world.spawnPoints.size() - 1);
                         world.selectedSpawnIndex = (int)dist(rng);
                         const SpawnPoint& spawn = world.spawnPoints[world.selectedSpawnIndex];
-                        player.pos = spawn.position;
-                        player.respawnPosition = spawn.position;
-                        printf("[SANDBOX SPAWN] selected index=%d name=%s world=(%.3f %.3f %.3f)\n",
+                        const glm::vec3 safe = resolveSafeStandingSpawn(
+                            world, spawn.position,
+                            0.65f * player.sizeScale, 3.5f * player.sizeScale);
+                        player.pos = safe;
+                        player.respawnPosition = safe;
+                        printf("[SANDBOX SPAWN] selected index=%d name=%s requested=(%.3f %.3f %.3f) safe=(%.3f %.3f %.3f)\n",
                                world.selectedSpawnIndex, spawn.tag.c_str(), spawn.position.x,
-                               spawn.position.y, spawn.position.z);
+                               spawn.position.y, spawn.position.z, safe.x, safe.y, safe.z);
                     }
                     else
                     {
                         world.selectedSpawnIndex = -1;
-                        const glm::vec3 fallback = FALLBACK_SPAWN_POS;
+                        const glm::vec3 fallback = resolveSafeStandingSpawn(
+                            world, FALLBACK_SPAWN_POS,
+                            0.65f * player.sizeScale, 3.5f * player.sizeScale);
                         player.pos = fallback;
                         player.respawnPosition = fallback;
                         printf("[SANDBOX SPAWN WARNING] no GLB spawns; fallback=(%.1f %.1f %.1f)\n",

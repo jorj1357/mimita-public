@@ -102,6 +102,11 @@ MovementContact movementContactFromSweepHit(
     const glm::vec3& surfaceVelocity = glm::vec3(0.0f),
     uint32_t materialId = 0);
 
+// Test/diagnostic access to the static smooth-seam response normal at a
+// world contact point. Returns false when the point is not on a smooth seam.
+bool smoothSeamNormalAt(const World& world, int triangleIndex,
+                        const glm::vec3& point, glm::vec3& outNormal);
+
 // Resolves ALL solid block collisions (no slopes)
 // - Mutates player position & velocity
 // - Sets groundedThisFrame if standing on something

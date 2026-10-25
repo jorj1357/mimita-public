@@ -102,6 +102,9 @@ void validateSchema(const json& value, const json& schema,
     if (schema.is_boolean()) return;
     if (!schema.is_object()) return;
 
+    if (value.is_null() && schema.value("nullable", false))
+        return;
+
     const std::string type = schema.value("type", "");
     if (!type.empty() && type != "any") {
         bool ok = false;
@@ -524,15 +527,17 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         }
         if (root.contains("victory") && root["victory"].is_object())
             next.victoryCondition = optString(root["victory"], "type", next.victoryCondition);
-        // Legacy alias. The nested victory.type is canonical when both exist.
-        if (!root.contains("victory"))
+        // Legacy alias. The nested victory.type is canonical when it is set;
+        // an empty value falls back to victory_condition so the canonical
+        // migration cannot silently drop a legacy-only mode.
+        if (next.victoryCondition.empty())
             next.victoryCondition = optString(
                 root, "victory_condition", next.victoryCondition);
 
         // ── Mode-wide avatar policy (optional). ─────────────────────
         if (root.contains("avatar") && root["avatar"].is_object()) {
             const auto& a = root["avatar"];
-            next.avatar.configured = true;
+            next.avatar.configured = optBool(a, "enabled", true);
             next.avatar.forced = optBool(a, "forced", next.avatar.forced);
             next.avatar.name = optString(a, "name", next.avatar.name);
             next.avatar.group = optString(a, "group", next.avatar.group);
@@ -551,7 +556,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         // interaction box, and checkpoints; this block owns mode-wide values. ──
         if (root.contains("payload") && root["payload"].is_object()) {
             const auto& p = root["payload"];
-            next.payload.configured = true;
+            next.payload.configured = optBool(p, "enabled", true);
             next.payload.attackerTeam = optString(p, "attacker_team", next.payload.attackerTeam);
             next.payload.defenderTeam = optString(p, "defender_team", next.payload.defenderTeam);
             next.payload.overtimeSeconds = std::max(0.0f,
@@ -648,6 +653,47 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     p["enemy_wireframe_color"][2].get<float>()};
                 next.presentation.hasTeamWireframeColors = true;
             }
+
+            auto readTrail = [&p](const char* key, bool& has,
+                                  GamemodeTrailSettings& out) {
+                if (!p.contains(key) || !p[key].is_object()) return;
+                const auto& t = p[key];
+                bool any = false;
+                auto readBool = [&](const char* k, bool& dst) {
+                    if (t.contains(k) && t[k].is_boolean()) {
+                        dst = t[k].get<bool>();
+                        any = true;
+                    }
+                };
+                auto readFloat = [&](const char* k, float& dst) {
+                    if (t.contains(k) && t[k].is_number()) {
+                        dst = t[k].get<float>();
+                        any = true;
+                    }
+                };
+                readBool("enabled", out.enabled);
+                readFloat("minSpeed", out.minSpeed);
+                readFloat("sampleIntervalSeconds", out.sampleIntervalSeconds);
+                readFloat("lifetimeSeconds", out.lifetimeSeconds);
+                readFloat("alpha", out.alpha);
+                readFloat("width", out.width);
+                if (t.contains("maxSamples") && t["maxSamples"].is_number_integer()) {
+                    out.maxSamples = t["maxSamples"].get<int>();
+                    any = true;
+                }
+                if (t.contains("color") && t["color"].is_array() &&
+                    t["color"].size() >= 3) {
+                    out.color = {t["color"][0].get<float>(),
+                                 t["color"][1].get<float>(),
+                                 t["color"][2].get<float>()};
+                    any = true;
+                }
+                has = any;
+            };
+            readTrail("enemy_trail", next.presentation.hasEnemyTrail,
+                      next.presentation.enemyTrail);
+            readTrail("teammate_trail", next.presentation.hasTeammateTrail,
+                      next.presentation.teammateTrail);
         }
 
         // ── Bomb Tag specific fields ─────────────────────────────────
@@ -681,11 +727,11 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.cameraFov = std::max(0.0f, optFloat(root, "camera_fov", next.cameraFov));
         next.forceFirstPerson = optBool(root, "force_first_person", next.forceFirstPerson);
         next.hideHealthbars = optBool(root, "hide_healthbars", next.hideHealthbars);
-        if (root.contains("ragdoll_enabled")) {
+        if (root.contains("ragdoll_enabled") && root["ragdoll_enabled"].is_boolean()) {
             next.ragdollExplicit = true;
             next.ragdollEnabled = root["ragdoll_enabled"].get<bool>();
         }
-        if (root.contains("blood_enabled")) {
+        if (root.contains("blood_enabled") && root["blood_enabled"].is_boolean()) {
             next.bloodExplicit = true;
             next.bloodEnabled = root["blood_enabled"].get<bool>();
         }
@@ -721,7 +767,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         // ── Mode-level NPC targeting (optional) ─────────────────────
         if (root.contains("npc_targeting") && root["npc_targeting"].is_object()) {
             const auto& t = root["npc_targeting"];
-            next.npcTargeting.configured = true;
+            next.npcTargeting.configured = optBool(t, "enabled", true);
             next.npcTargeting.mode = optString(t, "mode", next.npcTargeting.mode);
             next.npcTargeting.includePlayers =
                 optBool(t, "include_players", next.npcTargeting.includePlayers);
@@ -740,7 +786,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         // ── Mode-level NPC travel weighting (optional) ──────────────
         if (root.contains("npc_travel") && root["npc_travel"].is_object()) {
             const auto& tw = root["npc_travel"];
-            next.npcTravel.configured = true;
+            next.npcTravel.configured = optBool(tw, "enabled", true);
             next.npcTravel.objectiveBias = std::clamp(
                 optFloat(tw, "objective_bias", next.npcTravel.objectiveBias), 0.0f, 5.0f);
             next.npcTravel.huntBias = std::clamp(

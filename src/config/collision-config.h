@@ -53,6 +53,11 @@ public:
     // contact, not as a penetrating blocking surface.
     float edgeTouchTolerance() const { return mEdgeTouchTolerance; }
 
+    // Adjacent triangle normals at least this aligned are treated as one
+    // smooth static surface at their shared edge/vertex. 0.9999 is coplanar;
+    // lower values also smooth shallow ramp creases. Hot-reloadable.
+    float smoothSeamDot() const { return mSmoothSeamDot; }
+
     // Anti-tunneling: the local player's fixed tick is split into enough
     // collision sub-steps that each sub-step moves at most this many world
     // units. Keeps the swept actor narrowphase bounded at extreme speeds.
@@ -78,6 +83,7 @@ private:
     bool mActorCollisionComparison = false;
     float mCollisionSkin = 0.05f;
     float mEdgeTouchTolerance = 0.002f;
+    float mSmoothSeamDot = 0.9999f;
     float mMaxSubStepDistance = 0.35f;
     int mMaxSubSteps = 128;
 

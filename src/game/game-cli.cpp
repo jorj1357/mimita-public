@@ -1146,6 +1146,17 @@ bool handleGameCLI(int argc, char** argv)
               "elite prediction horizon is tight");
         check(elite.predictionErrorMeters >= 0.0f && elite.predictionErrorMeters < 0.05f,
               "elite prediction error is near zero");
+        check(!elite.weaponCycle.empty() &&
+                  elite.weaponVisitShots.count("shotgun") &&
+                  elite.weaponVisitShots.at("shotgun") == 2 &&
+                  elite.weaponVisitShots.count("revolver") &&
+                  elite.weaponVisitShots.at("revolver") == 6 &&
+                  elite.weaponVisitShots.count("rocket_launcher") &&
+                  elite.weaponVisitShots.at("rocket_launcher") == 1,
+              "elite weapon cycle visits are authored");
+        check(elite.weaponSwitchDelayMin >= 0.0f &&
+                  elite.weaponSwitchDelayMax >= elite.weaponSwitchDelayMin,
+              "elite weapon switch delay is valid");
         check(idle.active && idle.skillTier == "idle" && !idle.focusEnabled,
               "idle tier resolves as the low-skill control");
         printf("[NPC BEHAVIOR PROFILE SELFTEST]\n%s", report.c_str());
@@ -2028,6 +2039,22 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = staticSolidUnionSelfTest(report);
         printf("[STATIC SOLID UNION SELFTEST]\n%s", report.c_str());
         printf("[STATIC SOLID UNION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--smooth-seam-selftest") {
+        std::string report;
+        const bool ok = smoothSeamSelfTest(report);
+        printf("[SMOOTH SEAM SELFTEST]\n%s", report.c_str());
+        printf("[SMOOTH SEAM SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--spawn-safety-selftest") {
+        std::string report;
+        const bool ok = MimitaNet::serverSpawnSafetySelfTest(report);
+        printf("[SPAWN SAFETY SELFTEST]\n%s", report.c_str());
+        printf("[SPAWN SAFETY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

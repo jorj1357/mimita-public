@@ -45,3 +45,4 @@ bool isClosedSolidTriangleRange(
 
 bool staticFaceRemovalSelfTest(std::string& report);
 bool staticSolidUnionSelfTest(std::string& report);
+bool smoothSeamSelfTest(std::string& report);

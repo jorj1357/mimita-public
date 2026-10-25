@@ -939,6 +939,7 @@ void completeAuthoritativeSpawn(SOCKET sock, ServerPlayer& player, bool isInitia
 // must surface the refusal instead of using a stale/out-of-world coordinate.
 bool serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
                          glm::vec3& outPos, float& outYaw, size_t* outIndex = nullptr);
+bool serverSpawnSafetySelfTest(std::string& report);
 void tickWeaponRuntimes(std::unordered_map<uint32_t, ServerPlayer>& players, uint32_t currentTick);
 void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
                      std::unordered_map<uint32_t, ServerPlayer>& players,

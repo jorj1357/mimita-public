@@ -14,9 +14,11 @@
 #include "network/community-server-config.h"
 #include "network/network-weapons.h"
 #include "gamemode/match-roles.h"
+#include "map/map-authored-geometry.h"
 #include "physics/movement/movement-conversion.h"
 #include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/ray-utils.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
@@ -249,6 +251,22 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
     // void-death threshold.  Actual collision triangles handle platforms.
 }
 
+static bool serverPointInsideWorld(const HeadlessWorld& world,
+                                   const glm::vec3& point)
+{
+    const glm::vec3 direction =
+        glm::normalize(glm::vec3(1.0f, 0.3713907f, 0.193f));
+    int hits = 0;
+    for (const CollisionTriangle& triangle : world.triangles)
+    {
+        float distance = 0.0f;
+        if (rayTriangle(point, direction, triangle, distance) &&
+            distance > 1.0e-4f)
+            ++hits;
+    }
+    return (hits % 2) != 0;
+}
+
 // Returns true when a player capsule centered at `pos` does not penetrate any
 // world triangle. Uses the same sample-based capsule check as
 // resolveWorldCollision, so a spawn spot passes iff the real collision solver
@@ -262,6 +280,8 @@ static bool serverCapsuleFits(const HeadlessWorld& world, const glm::vec3& pos)
     };
     for (glm::vec3 sample : samples)
     {
+        if (serverPointInsideWorld(world, sample))
+            return false;
         AABB queryBounds;
         queryBounds.min = sample - glm::vec3(PLAYER_RADIUS + 0.1f);
         queryBounds.max = sample + glm::vec3(PLAYER_RADIUS + 0.1f);
@@ -290,21 +310,62 @@ static bool serverCapsuleFits(const HeadlessWorld& world, const glm::vec3& pos)
 static bool serverValidateStandingSpot(const HeadlessWorld& world, const glm::vec3& cand,
                                        glm::vec3& outStanding)
 {
-    glm::vec3 hit, nrm;
-    const glm::vec3 origin = cand + glm::vec3(0.0f, 0.0f, 0.5f);
-    // Tall arenas (for example atdm) place spawns hundreds of units above the
-    // floor, so the drop distance must scale with the world, not stay fixed.
-    const float maxDist = std::max(200.0f, (world.boundsMax.z - world.boundsMin.z) + 64.0f);
-    if (!serverRaycastWorld(origin, glm::vec3(0.0f, 0.0f, -1.0f), maxDist, world, hit, nrm))
-        return false;  // no ground below (void)
-    // Lift by a hair so the capsule's bottom sample is not exactly on the floor
-    // plane (the shared capsule check rejects exact contact). Gravity settles
-    // the actor immediately afterward.
-    const glm::vec3 standing(cand.x, cand.y, hit.z + PLAYER_HEIGHT * 0.5f + 0.02f);
-    if (!serverCapsuleFits(world, standing))
-        return false;
-    outStanding = standing;
-    return true;
+    const float maxDist =
+        std::max(200.0f, (world.boundsMax.z - world.boundsMin.z) + 64.0f);
+
+    glm::vec3 upHit;
+    glm::vec3 upNormal;
+    const bool hasCeiling =
+        serverRaycastWorld(cand + glm::vec3(0.0f, 0.0f, 0.1f),
+                           glm::vec3(0.0f, 0.0f, 1.0f), 64.0f, world,
+                           upHit, upNormal);
+    const float ceilingZ = hasCeiling ? upHit.z : cand.z + 64.0f;
+
+    const float lifts[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f,
+                           3.0f, 4.0f, 6.0f, 8.0f, 12.0f, 16.0f};
+    const float rings[] = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f};
+    for (float ring : rings)
+    {
+        const int directions = ring <= 0.0f ? 1 : 8;
+        for (int directionIndex = 0; directionIndex < directions; ++directionIndex)
+        {
+            const float angle = directions == 1
+                ? 0.0f : (float)directionIndex * 0.7853981634f;
+            const glm::vec3 offset(std::cos(angle) * ring,
+                                   std::sin(angle) * ring, 0.0f);
+            for (float lift : lifts)
+            {
+                if (lift > 0.0f && cand.z + lift >= ceilingZ - 0.05f)
+                    break;
+                const glm::vec3 candidate = cand + offset +
+                    glm::vec3(0.0f, 0.0f, lift);
+                if (serverPointInsideWorld(world, candidate))
+                    continue;
+
+                glm::vec3 hit;
+                glm::vec3 normal;
+                if (!serverRaycastWorld(
+                        candidate + glm::vec3(0.0f, 0.0f, 0.5f),
+                        glm::vec3(0.0f, 0.0f, -1.0f), maxDist, world,
+                        hit, normal))
+                    continue;
+
+                const glm::vec3 standing(
+                    candidate.x, candidate.y,
+                    hit.z + PLAYER_HEIGHT * 0.5f + 0.02f);
+                if (standing.z + PLAYER_HEIGHT * 0.5f >= ceilingZ - 0.05f)
+                    continue;
+                if (serverPointInsideWorld(world, standing))
+                    continue;
+                if (!serverCapsuleFits(world, standing))
+                    continue;
+
+                outStanding = standing;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Derives a validated standing spawn by probing the collision world on a grid
@@ -328,7 +389,7 @@ static bool serverProbeSafeStanding(const HeadlessWorld& world, const glm::vec3&
     {
         for (float y = mn.y + stepY * 0.5f; y <= mx.y; y += stepY)
         {
-            const glm::vec3 origin(x, y, mx.z + 2.0f);
+            const glm::vec3 origin(x, y, std::max(mn.z, mx.z - 0.5f));
             glm::vec3 hit, nrm;
             if (!serverRaycastWorld(origin, glm::vec3(0.0f, 0.0f, -1.0f), maxDrop, world, hit, nrm))
                 continue;
@@ -409,16 +470,21 @@ bool serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
             emit("authored", (long)idx, true);
             return true;
         }
-        // The map authored spawn points but none passed the standing check. The
-        // authored data is still the best available intent, so use the default
-        // authored point rather than refusing a map that does have spawns.
-        const ServerSpawnPoint& fb = points[defaultIdx];
-        outPos = fb.position;
-        outYaw = fb.yaw;
-        if (outIndex)
-            *outIndex = defaultIdx;
-        emit("authored-default", (long)defaultIdx, false);
-        return true;
+        // No authored point validated. Search the collision surface near the
+        // authored anchor instead of returning a point that may be embedded in
+        // a ramp or wall.
+        glm::vec3 probePos;
+        float probeYaw = 0.0f;
+        if (serverProbeSafeStanding(*world, points[defaultIdx].position,
+                                    probePos, probeYaw))
+        {
+            outPos = probePos;
+            outYaw = probeYaw;
+            if (outIndex)
+                *outIndex = (size_t)-1;
+            emit("derived-authored-probe", (long)defaultIdx, true);
+            return true;
+        }
     }
 
     // Derive a validated standing position from collision geometry. This covers
@@ -1900,6 +1966,70 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     out.godballVy = player.godballVy;
     out.godballVz = player.godballVz;
     return out;
+}
+
+
+bool serverSpawnSafetySelfTest(std::string& report)
+{
+    bool ok = true;
+    HeadlessWorld world;
+    if (!loadHeadlessWorld("assets/maps/tdmtest3.glb", world))
+    {
+        report += "FAIL: tdmtest3 headless collision did not load\n";
+        return false;
+    }
+    applyAuthoredMapGeometry(world, "tdmtest3");
+
+    for (const ServerSpawnPoint& raw : world.spawnPoints)
+    {
+        glm::vec3 standing;
+        if (serverValidateStandingSpot(world, raw.position, standing))
+        {
+            if (serverPointInsideWorld(world, standing))
+            {
+                ok = false;
+                report += "FAIL: validated spawn is inside a solid\n";
+            }
+            if (!serverCapsuleFits(world, standing))
+            {
+                ok = false;
+                report += "FAIL: validated spawn capsule does not fit\n";
+            }
+        }
+    }
+
+    for (uint32_t playerId = 1; playerId <= 2; ++playerId)
+    {
+        glm::vec3 position(0.0f);
+        float yaw = 0.0f;
+        size_t index = 0;
+        if (!serverPickSafeSpawn(&world, playerId, position, yaw, &index))
+        {
+            ok = false;
+            report += "FAIL: no safe spawn for player " + std::to_string(playerId) + "\n";
+            continue;
+        }
+        if (serverPointInsideWorld(world, position))
+        {
+            ok = false;
+            report += "FAIL: selected spawn is inside a solid for player " +
+                      std::to_string(playerId) + "\n";
+        }
+        if (!serverCapsuleFits(world, position))
+        {
+            ok = false;
+            report += "FAIL: selected spawn capsule does not fit for player " +
+                      std::to_string(playerId) + "\n";
+        }
+        report += "player=" + std::to_string(playerId) +
+                  " position=(" + std::to_string(position.x) + "," +
+                  std::to_string(position.y) + "," +
+                  std::to_string(position.z) + ") index=" +
+                  std::to_string(index) + "\n";
+    }
+
+    report += ok ? "PASS\n" : "FAIL\n";
+    return ok;
 }
 
 } // namespace MimitaNet

@@ -455,3 +455,23 @@ real Duel/TDM playtest and human review; the 50/50 top-one-percent Duel target
 and the approximately 3-kill player result against 20 NPC kills remain
 calibration aspirations, not verified outcomes. Team focus is movement
 knowledge only: it never grants aim or fire permission through cover.
+
+## 8. Weapon visit cycle implementation — 2026-10-25
+
+The elite profile now authors a `weapon_cycle` and `weapon_visit_shots`.
+Accepted attacks decrement the current visit; the next legal tick switches to
+the next usable attack-capable weapon when the visit is complete, the magazine
+is empty, or the weapon becomes unusable. Background reload continues while a
+weapon is holstered, so the authored example works as:
+
+```text
+2 accepted shotgun attacks -> 6 revolver attacks -> 1 rocket attack
+-> 2 projectile-rifle attacks -> 6 hitscan-rifle attacks
+-> 1 big-shotgun attack -> 12 machine-gun attacks -> repeat when loaded
+```
+
+Duel and TDM NPCs use the `elite_npc` role and `elite_arsenal` weapon set so
+the cycle can use every attack weapon available in the mode. Payload keeps its
+class-specific role loadouts. Non-attack items are skipped. Melee-class items
+that the shared NPC attack path cannot execute yet are skipped rather than
+wasting a visit; the `npc.weapon-cycle` journal record names the reason.

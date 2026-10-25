@@ -445,6 +445,33 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         PlayerVisualsConfig::instance().setEnemyOutlineAlpha(modeConfig.presentation.enemyOutlineAlpha);
     else
         PlayerVisualsConfig::instance().clearEnemyOutlineAlphaOverride();
+    {
+        auto applyTrail = [](const GamemodeTrailSettings& src,
+                             PlayerTrailSettings& dst) {
+            dst.enabled = src.enabled;
+            dst.minSpeed = src.minSpeed;
+            dst.sampleIntervalSeconds = src.sampleIntervalSeconds;
+            dst.lifetimeSeconds = src.lifetimeSeconds;
+            dst.maxSamples = src.maxSamples;
+            dst.alpha = src.alpha;
+            dst.width = src.width;
+            dst.color = src.color;
+        };
+        if (modeConfig.presentation.hasEnemyTrail) {
+            PlayerTrailSettings trail;
+            applyTrail(modeConfig.presentation.enemyTrail, trail);
+            PlayerVisualsConfig::instance().setEnemyTrailOverride(trail);
+        } else {
+            PlayerVisualsConfig::instance().clearEnemyTrailOverride();
+        }
+        if (modeConfig.presentation.hasTeammateTrail) {
+            PlayerTrailSettings trail;
+            applyTrail(modeConfig.presentation.teammateTrail, trail);
+            PlayerVisualsConfig::instance().setTeammateTrailOverride(trail);
+        } else {
+            PlayerVisualsConfig::instance().clearTeammateTrailOverride();
+        }
+    }
     if (mForceFirstPerson && !mFirstPersonApplied) {
         mPreviousThirdPerson = THE_CAMERA.thirdPerson;
         THE_CAMERA.thirdPerson = false;
@@ -741,6 +768,10 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         {"player_wireframes", p.hasPlayerWireframes ? nlohmann::json(p.playerWireframes) : nlohmann::json(nullptr)},
         {"friendly_wireframes", p.hasFriendlyWireframes ? nlohmann::json(p.friendlyWireframes) : nlohmann::json(nullptr)},
         {"enemy_outline_alpha", p.hasEnemyOutlineAlpha ? nlohmann::json(p.enemyOutlineAlpha) : nlohmann::json(nullptr)},
+        {"enemy_trail_enabled", p.hasEnemyTrail ? nlohmann::json(p.enemyTrail.enabled) : nlohmann::json(nullptr)},
+        {"enemy_trail_width", p.hasEnemyTrail ? nlohmann::json(p.enemyTrail.width) : nlohmann::json(nullptr)},
+        {"enemy_trail_alpha", p.hasEnemyTrail ? nlohmann::json(p.enemyTrail.alpha) : nlohmann::json(nullptr)},
+        {"teammate_trail_enabled", p.hasTeammateTrail ? nlohmann::json(p.teammateTrail.enabled) : nlohmann::json(nullptr)},
         {"friendly_outline_color", p.hasTeamOutlineColors ? nlohmann::json::array({p.friendlyOutlineColor.x, p.friendlyOutlineColor.y, p.friendlyOutlineColor.z}) : nlohmann::json(nullptr)},
         {"enemy_outline_color", p.hasTeamOutlineColors ? nlohmann::json::array({p.enemyOutlineColor.x, p.enemyOutlineColor.y, p.enemyOutlineColor.z}) : nlohmann::json(nullptr)},
         {"friendly_wireframe_color", p.hasTeamWireframeColors ? nlohmann::json::array({p.friendlyWireframeColor.x, p.friendlyWireframeColor.y, p.friendlyWireframeColor.z}) : nlohmann::json(nullptr)},

@@ -5,6 +5,7 @@
     "bodyMeshCollision": true,
     "collisionSkin": 0.0,
     "edgeTouchTolerance": 0.0,
+    "smoothSeamDot": 0.9999,
     // Anti-tunneling (mitigation). Split the fixed tick into enough collision
     // sub-steps that no single sub-step moves the actor more than this many
     // world units. Lower = safer at extreme speed, higher = cheaper. 0 disables

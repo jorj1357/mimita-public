@@ -17,6 +17,9 @@
 #include "debug/structured-log.h"
 #include "impact/boolean-mesh.h"
 #include "physics/physical-entity.h"
+#include "physics/movement/physics-collision.h"
+#include "map/map-loader-collision.h"
+#include "world/world.h"
 
 namespace {
 
@@ -1124,6 +1127,51 @@ bool staticSolidUnionSelfTest(std::string& report)
         check(!stats.unionFallback, "raw-only union did not fall back");
         check(triangles.size() == 1, "raw-only triangle retained");
         check(ids.size() == 1 && ids[0] == 7, "raw-only solid id retained");
+    }
+
+    report += ok ? "PASS\n" : "FAIL\n";
+    return ok;
+}
+
+bool smoothSeamSelfTest(std::string& report)
+{
+    bool ok = true;
+    World world;
+    CollisionTriangle first;
+    first.a = glm::vec3(-1.0f, -0.5f, 0.5f);
+    first.b = glm::vec3(0.0f, -0.5f, 0.5f);
+    first.c = glm::vec3(0.0f, 0.5f, 0.5f);
+    first.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+    CollisionTriangle second;
+    second.a = glm::vec3(-1.0f, -0.5f, 0.5f);
+    second.b = glm::vec3(0.0f, 0.5f, 0.5f);
+    second.c = glm::vec3(-1.0f, 0.5f, 0.5f);
+    second.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+    world.collisionMesh.triangles.push_back(first);
+    world.collisionMesh.triangles.push_back(second);
+    buildCollisionChunks(world, nullptr);
+
+    glm::vec3 normal(0.0f);
+    const bool smooth = smoothSeamNormalAt(
+        world, 0, glm::vec3(-0.5f, 0.0f, 0.5f), normal);
+    if (!smooth || normal.z < 0.99f)
+    {
+        ok = false;
+        report += "FAIL: shared coplanar edge did not produce an upward smooth normal\n";
+    }
+    else
+    {
+        report += "shared edge normal=(" + std::to_string(normal.x) + "," +
+                  std::to_string(normal.y) + "," + std::to_string(normal.z) + ")\n";
+    }
+
+    glm::vec3 interiorNormal(0.0f);
+    const bool interiorSmooth = smoothSeamNormalAt(
+        world, 0, glm::vec3(-0.8f, -0.25f, 0.5f), interiorNormal);
+    if (interiorSmooth)
+    {
+        ok = false;
+        report += "FAIL: face interior was classified as a seam\n";
     }
 
     report += ok ? "PASS\n" : "FAIL\n";

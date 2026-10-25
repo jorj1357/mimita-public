@@ -2,6 +2,7 @@
 #include "combat/weapon-runtime.h"
 #include "config/ragdoll-death-config.h"
 #include "config/spawn-velocity-config.h"
+#include "game/spawn-utils.h"
 
 
 #include <algorithm>
@@ -299,8 +300,11 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     } else {
         SpawnPoint* sp = const_cast<World&>(world).pickSpawnPoint();
         if (sp) {
-            actor.pos = sp->position;
-            actor.respawnPosition = sp->position;
+            const glm::vec3 safe = resolveSafeStandingSpawn(
+                world, sp->position,
+                0.65f * actor.sizeScale, 3.5f * actor.sizeScale);
+            actor.pos = safe;
+            actor.respawnPosition = safe;
             for (size_t i = 0; i < world.spawnPoints.size(); ++i) {
                 if (&world.spawnPoints[i] == sp) { spawnIndex = (int)i; break; }
             }

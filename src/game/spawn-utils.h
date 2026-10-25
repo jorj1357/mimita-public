@@ -19,6 +19,15 @@ constexpr glm::vec3 FALLBACK_SPAWN_POS = glm::vec3(0.0f, 0.0f, 100.0f);
 // If no spawnpoints exist, returns FALLBACK_SPAWN_POS.
 glm::vec3 getSpawnPosition(const World& world, int entityIndex = 0);
 
+// Returns true when `point` lies inside the closed static collision surface.
+bool worldPointInsideSolid(const World& world, const glm::vec3& point);
+
+// Resolves a spawn point into a validated standing capsule position:
+// rejects inside-solid points, ground-snaps, and checks capsule clearance.
+// Falls back to `desired` only when no candidate validates.
+glm::vec3 resolveSafeStandingSpawn(const World& world, const glm::vec3& desired,
+                                   float radius = 0.65f, float height = 3.5f);
+
 // Spawn an NPC at a valid position using shared spawn logic.
 // Returns the NPC's spawn position (for logging).
 glm::vec3 spawnNpcAtSafePosition(NpcSystem& npcs, uint32_t npcId, float difficulty,

@@ -1216,6 +1216,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         if (!npc.behaviorProfileId.empty() && npc.behaviorRevision != revision) {
             npc.behavior = resolveNpcBehavior(npc.behaviorProfileId);
             npc.behaviorRevision = revision;
+            npc.cycleWeapon.clear();
+            npc.cycleVisitShotsRemaining = 0;
+            npc.cycleVisitShotsTotal = 0;
+            npc.cycleVisitComplete = false;
             if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
                 npc.tuning.aggression = npc.behavior.aggression;
         }
@@ -1334,9 +1338,172 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             npc.stateMachine.nextDecisionTime = 0.0f;
     }
 
-    // Weapon switching: pick best weapon for current distance
-    if (npc.sensors.hasTarget && npc.weaponSwitchCooldown <= 0.0f)
+    // ── Elite weapon visit cycle ───────────────────────────────────
+    // While a target exists, elite profiles rotate through every usable
+    // attack-capable weapon in their resolved loadout. A visit ends after the
+    // configured number of accepted shots or an empty magazine; the next visit
+    // starts on the following legal tick. This is the shotgun -> revolver ->
+    // rocket -> reloaded-shotgun rhythm.
+    const bool cycleEnabled = npc.behavior.active &&
+        !npc.behavior.weaponCycle.empty() && npc.sensors.hasTarget;
+    if (cycleEnabled && npc.weaponSwitchCooldown <= 0.0f)
     {
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
+        const std::vector<std::string>& loadout =
+            npc.loadoutOverride.empty() ? cfg.weaponLoadout : npc.loadoutOverride;
+        auto defFor = [](const std::string& wid) {
+            return WeaponRegistry::instance().get(wid);
+        };
+        auto isAttackCapable = [&](const WeaponDefinition& def) {
+            switch (def.behaviorType) {
+                case WeaponBehaviorType::Hitscan:
+                case WeaponBehaviorType::Projectile:
+                case WeaponBehaviorType::RocketLauncher:
+                case WeaponBehaviorType::GrenadeLauncher:
+                case WeaponBehaviorType::Godball:
+                    return true;
+                case WeaponBehaviorType::Melee:
+                    return npc.behavior.weaponCycleIncludeMelee;
+                default:
+                    return false;
+            }
+        };
+        auto ammoReady = [&](const std::string& wid) {
+            auto it = npc.body.weaponRuntimes.find(wid);
+            return it != npc.body.weaponRuntimes.end() && it->second.currentAmmo > 0;
+        };
+        auto visitCountFor = [&](const WeaponDefinition& def) {
+            auto it = npc.behavior.weaponVisitShots.find(def.id);
+            if (it != npc.behavior.weaponVisitShots.end())
+                return std::max(1, it->second);
+            const int magazine = std::max(1, def.magazineSize);
+            return std::clamp(magazine, 1, 12);
+        };
+        auto beginVisit = [&](const std::string& wid) {
+            const WeaponDefinition* def = defFor(wid);
+            if (!def) return;
+            int shots = visitCountFor(*def);
+            if (npc.behavior.weaponVisitJitterShots > 0) {
+                const int j = npc.behavior.weaponVisitJitterShots;
+                const int jitter = (int)(random01(npc.rngState) * (float)(j * 2 + 1)) - j;
+                shots = std::max(1, shots + jitter);
+            }
+            npc.cycleWeapon = wid;
+            npc.cycleVisitShotsTotal = shots;
+            npc.cycleVisitShotsRemaining = shots;
+            npc.cycleVisitComplete = false;
+            ++npc.cycleVisitSerial;
+        };
+        auto finishVisit = [&](const char* reason,
+                               const std::string& previous,
+                               const std::string& selected) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.weapon-cycle", std::to_string(npc.id), reason,
+                (uint32_t)(npc.sensors.time * 60.0f),
+                nlohmann::json{
+                    {"actor", npc.id},
+                    {"team", npc.body.matchTeam},
+                    {"profile", npc.behaviorProfileId},
+                    {"previous_weapon", previous},
+                    {"next_weapon", selected},
+                    {"visit_shots_total", npc.cycleVisitShotsTotal},
+                    {"visit_shots_remaining", npc.cycleVisitShotsRemaining},
+                    {"visit_serial", npc.cycleVisitSerial},
+                    {"reason", reason},
+                    {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        };
+
+        std::vector<std::string> order = npc.behavior.weaponCycle;
+        for (const std::string& wid : loadout)
+            if (std::find(order.begin(), order.end(), wid) == order.end())
+                order.push_back(wid);
+
+        const WeaponDefinition* curDef = defFor(npc.body.equippedWeaponId);
+        const bool currentUsable = curDef && isAttackCapable(*curDef) &&
+            ammoReady(npc.body.equippedWeaponId) &&
+            npc.cycleVisitShotsRemaining > 0;
+        bool needSwitch = npc.cycleWeapon.empty() ||
+            npc.cycleWeapon != npc.body.equippedWeaponId || !currentUsable;
+
+        // A fresh cycle normally starts at the authored first weapon (the
+        // shotgun example). If the actor already holds that weapon, start the
+        // visit instead of switching away from it.
+        if (needSwitch && npc.cycleWeapon.empty() && currentUsable) {
+            std::string firstReady;
+            for (const std::string& wid : order) {
+                const WeaponDefinition* d = defFor(wid);
+                if (!d || !isAttackCapable(*d) || !ammoReady(wid)) continue;
+                firstReady = wid;
+                break;
+            }
+            if (firstReady == npc.body.equippedWeaponId) {
+                beginVisit(npc.body.equippedWeaponId);
+                needSwitch = false;
+            }
+        }
+
+        if (needSwitch) {
+            const char* reason = npc.cycleWeapon.empty() ? "cycle_start" :
+                (npc.cycleVisitShotsRemaining <= 0 ? "visit_complete" :
+                 (!curDef || !isAttackCapable(*curDef) ? "unsupported" :
+                  !ammoReady(npc.body.equippedWeaponId) ? "empty" : "not_equipped"));
+            size_t start = 0;
+            const auto currentIt = std::find(order.begin(), order.end(),
+                                             npc.body.equippedWeaponId);
+            if (currentIt != order.end())
+                start = (size_t)(currentIt - order.begin()) + 1;
+            if (npc.cycleWeapon.empty())
+                start = 0;  // fresh cycle starts at the authored first weapon
+            std::string next;
+            for (size_t i = 0; i < order.size(); ++i) {
+                const std::string& wid = order[(start + i) % order.size()];
+                if (wid == npc.body.equippedWeaponId) continue;
+                const WeaponDefinition* d = defFor(wid);
+                if (!d || !isAttackCapable(*d) || !ammoReady(wid)) continue;
+                next = wid;
+                break;
+            }
+            if (!next.empty()) {
+                const float delayMin = npc.behavior.weaponSwitchDelayMin >= 0.0f
+                    ? npc.behavior.weaponSwitchDelayMin : cfg.switchCooldown;
+                const float delayMax = npc.behavior.weaponSwitchDelayMax >= 0.0f
+                    ? std::max(delayMin, npc.behavior.weaponSwitchDelayMax)
+                    : std::max(delayMin, cfg.switchCooldown);
+                const std::string previous = npc.body.equippedWeaponId;
+                if (npcSwitchWeapon(npc, next)) {
+                    npc.weaponSwitchCooldown =
+                        delayMin + random01(npc.rngState) * (delayMax - delayMin);
+                    beginVisit(next);
+                    finishVisit(reason, previous, next);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::NpcCombat, StructuredLevel::Important,
+                        "npc.weapon-switched", std::to_string(npc.id), "weapon_cycle",
+                        (uint32_t)(npc.sensors.time * 60.0f),
+                        nlohmann::json{
+                            {"actor", npc.id}, {"team", npc.body.matchTeam},
+                            {"profile", npc.behaviorProfileId},
+                            {"weapon", next}, {"previous_weapon", previous},
+                            {"target_distance", npc.sensors.targetDistance},
+                            {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            } else if (curDef && isAttackCapable(*curDef) &&
+                       ammoReady(npc.body.equippedWeaponId) &&
+                       npc.cycleWeapon != npc.body.equippedWeaponId) {
+                // No other ready weapon: keep firing the current one.
+                beginVisit(npc.body.equippedWeaponId);
+            }
+        }
+        // The cycle owns switching while a target exists. The legacy/scored
+        // distance switch below is skipped.
+    }
+    else if (!cycleEnabled && npc.sensors.hasTarget &&
+             npc.weaponSwitchCooldown <= 0.0f)
+    {
+        // Legacy/scored weapon switching: preserve existing behavior for
+        // profiles that do not author a weapon cycle.
         const auto& cfg = NpcDifficultyConfig::instance().settings();
         const std::vector<std::string>& loadout =
             npc.loadoutOverride.empty() ? cfg.weaponLoadout : npc.loadoutOverride;

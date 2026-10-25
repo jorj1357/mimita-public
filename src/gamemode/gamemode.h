@@ -121,6 +121,19 @@ struct GamemodeRounds {
     float resultsSeconds = 0.0f;
 };
 
+// Optional mode-level trail override. A null/absent field inherits the local
+// config/playervisuals.json value.
+struct GamemodeTrailSettings {
+    bool enabled = false;
+    float minSpeed = 35.0f;
+    float sampleIntervalSeconds = 0.035f;
+    float lifetimeSeconds = 0.22f;
+    int maxSamples = 12;
+    float alpha = 0.65f;
+    float width = 3.0f;
+    glm::vec3 color{255.0f, 80.0f, 40.0f};
+};
+
 // Mode-level presentation policy. Most missing keys mean "no policy";
 // player_outlines is opt-in during community matches. Actor-preset
 // presentation refines other settings where both exist.
@@ -155,6 +168,12 @@ struct GamemodePresentation {
     bool hasTeamWireframeColors = false;
     glm::vec3 friendlyWireframeColor{0.0f, 255.0f, 0.0f};
     glm::vec3 enemyWireframeColor{255.0f, 0.0f, 0.0f};
+    // Trail policy. has* stays false when the mode provided no concrete value,
+    // so the local playervisuals.json settings remain authoritative.
+    bool hasEnemyTrail = false;
+    GamemodeTrailSettings enemyTrail;
+    bool hasTeammateTrail = false;
+    GamemodeTrailSettings teammateTrail;
 };
 
 // Optional mode-level NPC targeting policy. When absent (configured=false) the

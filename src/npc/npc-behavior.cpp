@@ -124,6 +124,19 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.focusReacquireSeconds = 1.5f;
         out.slotStickiness = 0.95f;
         out.navigationBackend = "recast";
+        out.weaponCycle = {"shotgun", "revolver", "rocket_launcher",
+                           "projectile_rifle", "hitscan_rifle",
+                           "big_shotgun", "large_machine_gun", "force_punch",
+                           "spyknife"};
+        out.weaponVisitShots = {
+            {"shotgun", 2}, {"revolver", 6}, {"rocket_launcher", 1},
+            {"projectile_rifle", 2}, {"hitscan_rifle", 6},
+            {"big_shotgun", 1}, {"large_machine_gun", 12},
+            {"force_punch", 1}, {"spyknife", 1}};
+        out.weaponVisitJitterShots = 0;
+        out.weaponSwitchDelayMin = 0.02f;
+        out.weaponSwitchDelayMax = 0.10f;
+        out.weaponCycleIncludeMelee = true;
         return;
     }
     if (tier == "advanced") {
@@ -244,6 +257,33 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.predictionErrorMeters = clampWarn(
         j, "prediction_error_meters", 0.0f, 10.0f,
         out.predictionErrorMeters, out.id);
+    if (j.contains("weapon_cycle") && j["weapon_cycle"].is_array()) {
+        out.weaponCycle.clear();
+        for (const auto& item : j["weapon_cycle"])
+            if (item.is_string() && !item.get<std::string>().empty())
+                out.weaponCycle.push_back(item.get<std::string>());
+    }
+    if (j.contains("weapon_visit_shots") && j["weapon_visit_shots"].is_object()) {
+        out.weaponVisitShots.clear();
+        for (auto it = j["weapon_visit_shots"].begin();
+             it != j["weapon_visit_shots"].end(); ++it) {
+            if (it.value().is_number_integer())
+                out.weaponVisitShots[it.key()] = std::clamp(
+                    it.value().get<int>(), 1, 999);
+        }
+    }
+    out.weaponVisitJitterShots = std::max(0, std::min(8, static_cast<int>(
+        j.value("weapon_visit_jitter_shots", out.weaponVisitJitterShots))));
+    out.weaponSwitchDelayMin = clampWarn(
+        j, "weapon_switch_delay_min", 0.0f, 2.0f,
+        out.weaponSwitchDelayMin, out.id);
+    out.weaponSwitchDelayMax = clampWarn(
+        j, "weapon_switch_delay_max", 0.0f, 2.0f,
+        out.weaponSwitchDelayMax, out.id);
+    if (out.weaponSwitchDelayMax < out.weaponSwitchDelayMin)
+        out.weaponSwitchDelayMax = out.weaponSwitchDelayMin;
+    out.weaponCycleIncludeMelee = boolOr(
+        j, "weapon_cycle_include_melee", out.weaponCycleIncludeMelee);
     out.targetStickiness = j.value("target_stickiness", out.targetStickiness);
     out.targetSwitchThreshold = j.value("target_switch_threshold", out.targetSwitchThreshold);
     out.lowHealthTargetBias = j.value("low_health_target_bias", out.lowHealthTargetBias);
@@ -481,6 +521,12 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
         ? def->predictionSeconds : -1.0f;
     out.predictionErrorMeters = def->predictionErrorMeters >= 0.0f
         ? def->predictionErrorMeters : -1.0f;
+    out.weaponCycle = def->weaponCycle;
+    out.weaponVisitShots = def->weaponVisitShots;
+    out.weaponVisitJitterShots = std::max(0, def->weaponVisitJitterShots);
+    out.weaponSwitchDelayMin = def->weaponSwitchDelayMin;
+    out.weaponSwitchDelayMax = def->weaponSwitchDelayMax;
+    out.weaponCycleIncludeMelee = def->weaponCycleIncludeMelee;
     // Target selection: only override when the profile sets the field (>= 0).
     if (def->targetStickiness >= 0.0f) out.targetStickiness = def->targetStickiness;
     if (def->targetSwitchThreshold >= 0.0f) out.targetSwitchThreshold = def->targetSwitchThreshold;

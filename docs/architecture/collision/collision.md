@@ -221,3 +221,25 @@ Rules:
 
 ---
 
+## Smooth static seams — 2026-10-25
+
+Static collision topology is built after union/face removal, before the
+broadphase. `CollisionMeshCache` stores welded edge and vertex adjacency with
+the incident face normals. `src/physics/movement/physics-collision-mesh.cpp`
+uses a blended normal when a rounded contact lands on an edge/vertex whose
+incident faces align within `smoothSeamDot` from `config/collision.json`.
+The exact depenetration normal and authored surface normal remain authoritative
+for recovery and walkability.
+
+`0.9999` smooths only exactly coplanar seams. Lower values also smooth shallow
+ramp creases; this is hot-reloadable but should be tuned by human feel review.
+
+## Safe spawn placement — 2026-10-25
+
+`resolveSafeStandingSpawn` in `src/game/spawn-utils.cpp` rejects inside-solid
+points, ground-snaps with a downward ray, checks headroom, and validates capsule
+clearance. Server spawn selection uses the same inside/capsule/ceiling checks and
+searches lifts plus horizontal rings. An authored spawn point that fails
+validation is not used raw; the server derives a standing position or refuses
+the spawn. This prevents spawning inside ramps or walls and falling through the
+map at spawn.

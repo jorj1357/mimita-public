@@ -558,6 +558,15 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         npc.lastShotNormal = shotNormal;
         npc.hasLastShot = true;
         npc.lastShotHitWorld = shotHitWorld;
+        // Only accepted attacks shorten an authored weapon visit. A rejected
+        // shot or a blocked trigger does not skip to the next weapon.
+        if (npc.behavior.active && !npc.behavior.weaponCycle.empty() &&
+            npc.cycleWeapon == npc.body.equippedWeaponId &&
+            npc.cycleVisitShotsRemaining > 0) {
+            --npc.cycleVisitShotsRemaining;
+            if (npc.cycleVisitShotsRemaining <= 0)
+                npc.cycleVisitComplete = true;
+        }
     }
 
     // Variable fire delay: blend between min and max based on aggression + rhythm.

@@ -100,6 +100,80 @@ Build `3257` (final source incl. convexity guard):
   did not commit.
 - Human visual, bounce-feel, and multiplayer acceptance remain pending.
 
+
+## Spawn safety and smooth seams — 2026-10-25
+
+### User report
+
+- Player (not items/NPCs) sometimes falls through tdmtest3 geometry near spawn.
+- Spawning places the player inside a ramp near the authored spawn points.
+- Slopes/block seams still feel sharp even after union.
+
+Recording: `devscripts/scenarios/user/scenario-20261025_220409-slope.jsonl`.
+
+### Spawn fixes
+
+- Added `worldPointInsideSolid` and `resolveSafeStandingSpawn` in
+  `src/game/spawn-utils.cpp`.
+  - rejects points inside the closed collision surface;
+  - ground-snaps with a downward ray;
+  - rejects no-headroom placements under a ceiling;
+  - checks capsule clearance with body-radius samples;
+  - lifts and then searches horizontal rings around the requested point.
+- Sandbox spawn selection and `DeathSystem::respawn` use the resolver.
+- Server spawn validation now:
+  - tests `serverPointInsideWorld` for the candidate, standing pose, and capsule
+    samples;
+  - searches lifts and horizontal rings;
+  - rejects placements that would put the player above the local ceiling;
+  - no longer returns the raw authored spawn point when all validated points
+    fail. It uses a derived probe or refuses the spawn.
+
+### Smooth-seam fixes
+
+- Added static smooth-seam topology to `CollisionMeshCache`:
+  - quantized vertex weld;
+  - manifold edge adjacency with both face normals;
+  - per-vertex average normal and minimum alignment.
+- `buildCollisionChunks` rebuilds the topology before broadphase.
+- The rounded-feature narrowphase now uses the blended normal for smooth
+  edges/vertices while keeping the exact normal for depenetration and
+  walkability.
+- Added `smoothSeamDot` to `config/collision.json`:
+  - `0.9999` default = only coplanar seams;
+  - lower values (for example `0.995`, ~5.7 degrees) also smooth shallow ramp
+    creases. Hot-reloadable.
+
+### Evidence
+
+Build `3352`:
+
+- `--spawn-safety-selftest` PASS. It loads real tdmtest3 collision and reports
+  both player spawns on the floor at `z=2349.730957`, not inside the ramp:
+  ```text
+  player=1 position=(1531.765015,-1844.120850,2349.730957) index=derived
+  player=2 position=(1801.765015,-1827.120850,2349.730957) index=derived
+  ```
+- `--smooth-seam-selftest` PASS:
+  ```text
+  shared coplanar edge normal=(0,0,1)
+  face interior is not a seam
+  ```
+- `--static-solid-union-selftest` PASS.
+- `--static-face-removal-selftest` PASS.
+- Earlier server run `20261025_221735_01` already selected
+  `spawn.server-selected` with `source=derived-authored-probe`,
+  `validated=true`, position `(1531.765, -1844.121, 2349.731)`.
+
+### Limits
+
+- The final slope recording was not replayed end-to-end after these fixes
+  because the dev-loop stable path `.dev/current` is held by stale
+  user-owned GUI servers and the direct server/client test did not complete the
+  join handshake (`hello` without `join`). The spawn and smooth-seam owners are
+  covered by deterministic selftests on the real tdmtest3 collision data.
+- Human review is still required for ramp feel and the exact fall location.
+
 ## Validation summary
 
 - Source: reviewed map load, authored rebuild, editor rebuild, collision LOD

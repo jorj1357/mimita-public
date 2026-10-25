@@ -119,6 +119,16 @@ public:
     bool hasEnemyOutlineAlphaOverride() const { return mEnemyOutlineAlphaOverride; }
     bool hasPlayerOutlinesOverride() const { return mPlayerOutlinesOverride; }
     bool playerOutlinesEnabled() const { return mPlayerOutlinesEnabled; }
+    void setEnemyTrailOverride(const PlayerTrailSettings& settings);
+    void clearEnemyTrailOverride();
+    bool hasEnemyTrailOverride() const { return mEnemyTrailOverride; }
+    PlayerTrailSettings effectiveEnemyTrail(const PlayerTrailSettings& configured) const;
+    void setTeammateTrailOverride(const PlayerTrailSettings& settings);
+    void clearTeammateTrailOverride();
+    bool hasTeammateTrailOverride() const { return mTeammateTrailOverride; }
+    PlayerTrailSettings effectiveTeammateTrail(const PlayerTrailSettings& configured) const;
+    PlayerTrailSettings effectiveTrail(bool teammate,
+                                       const PlayerTrailSettings& configured) const;
 
 private:
     PlayerVisualsConfig();
@@ -142,4 +152,8 @@ private:
     glm::vec3 mFriendlyWireframeColor{0.0f, 255.0f, 0.0f};
     glm::vec3 mEnemyWireframeColor{255.0f, 0.0f, 0.0f};
     bool mFriendlyWireframesEnabled = false;
+    bool mEnemyTrailOverride = false;
+    PlayerTrailSettings mEnemyTrail;
+    bool mTeammateTrailOverride = false;
+    PlayerTrailSettings mTeammateTrail;
 };

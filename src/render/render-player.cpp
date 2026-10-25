@@ -60,8 +60,47 @@ void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityI
 {
     if (entityId == 0) return;
     using Clock = std::chrono::steady_clock;
+    struct TrailDiagState {
+        std::string state;
+        std::chrono::steady_clock::time_point emitted{};
+    };
+    auto emitTrailState = [&](const char* state, float speed, size_t points) {
+        static std::unordered_map<uint32_t, TrailDiagState> sLastTrailState;
+        const auto now = Clock::now();
+        auto& last = sLastTrailState[entityId];
+        if (last.state == state) return;
+        // Trail point collection naturally oscillates while the actor moves.
+        // Keep the first useful evidence and rate-limit repeats instead of
+        // writing a journal line whenever the history drops below two points.
+        const auto elapsed = last.emitted.time_since_epoch().count() == 0
+            ? std::chrono::seconds(999) : now - last.emitted;
+        if (last.state == "drawn" && std::string(state) == "collecting" &&
+            elapsed < std::chrono::seconds(10))
+            return;
+        if (std::string(state) == "drawn" && elapsed < std::chrono::seconds(3))
+            return;
+        last.state = state;
+        last.emitted = now;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "player_visuals.trail", std::to_string(entityId), state, 0,
+            nlohmann::json{
+                {"actor_id", entityId},
+                {"enabled", settings.enabled},
+                {"state", state},
+                {"speed", speed},
+                {"min_speed", settings.minSpeed},
+                {"points", points},
+                {"max_samples", settings.maxSamples},
+                {"width", settings.width},
+                {"alpha", settings.alpha},
+                {"lifetime_seconds", settings.lifetimeSeconds},
+                {"dead", player.dead}},
+            __FILE__, __LINE__, __FUNCTION__);
+    };
     if (!settings.enabled || player.dead) {
         gTrailHistories.erase(entityId);
+        emitTrailState(!settings.enabled ? "disabled" : "dead", 0.0f, 0);
         return;
     }
     const auto now = Clock::now();
@@ -70,6 +109,8 @@ void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityI
     const glm::vec3 trailPosition = player.pos + glm::vec3(0.0f, 0.0f,
         std::max(0.25f, player.sizeScale * 0.9f));
     const float speed = glm::length(player.vel);
+    if (speed < settings.minSpeed)
+        emitTrailState("below_min_speed", speed, history.points.size());
     const auto interval = std::chrono::duration<float>(settings.sampleIntervalSeconds);
     if (speed >= settings.minSpeed &&
         (history.lastSample.time_since_epoch().count() == 0 || now - history.lastSample >= interval)) {
@@ -88,8 +129,10 @@ void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityI
     while (history.points.size() > static_cast<size_t>(settings.maxSamples))
         history.points.pop_front();
 
-    if (history.points.size() < 2)
+    if (history.points.size() < 2) {
+        emitTrailState("collecting", speed, history.points.size());
         return;
+    }
 
     const glm::vec3 rgb = settings.color / 255.0f;
     const float halfWidth = settings.width * std::max(0.25f, player.sizeScale) * 0.5f;
@@ -118,6 +161,7 @@ void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityI
         gTrailBatch.push_back({endRight, color});
         gTrailBatch.push_back({endLeft, color});
     }
+    emitTrailState("drawn", speed, history.points.size());
 
     static auto lastPrune = Clock::now();
     if (now - lastPrune >= std::chrono::seconds(1)) {
@@ -337,6 +381,11 @@ void renderPlayerInternal(
         trail = teammate ? &visuals.teammateTrail : &visuals.enemyTrail;
         pointLight = teammate ? &visuals.teammatePointLight : &visuals.enemyPointLight;
     }
+    PlayerTrailSettings effectiveTrailSettings;
+    if (trail) {
+        effectiveTrailSettings = visualsConfig.effectiveTrail(teammate, *trail);
+        trail = &effectiveTrailSettings;
+    }
     const bool teamIdentityKnown = isLocal ||
         (localTeam >= 0 && resolvedActorTeam >= 0);
     // Do not guess an unknown actor is hostile for a gamemode-forced outline.
@@ -418,33 +467,90 @@ void renderPlayerInternal(
     const float outlineAlpha = !friendlyActor && visualsConfig.hasEnemyOutlineAlphaOverride()
         ? visualsConfig.effectiveEnemyOutlineAlpha(outline->alpha) : outline->alpha;
     auto drawOutline = [&]() {
-    if (outlineAllowed && outlineEnabled && outline->thickness > 0.0f && outlineAlpha != 0.0f &&
-        !(player.dead && outline->disappearOnDeath)) {
+    const bool drawable = outlineAllowed && outlineEnabled &&
+        outline->thickness > 0.0f && outlineAlpha != 0.0f &&
+        !(player.dead && outline->disappearOnDeath);
+    // The mode-authored outline must be visible on the server-client path. The
+    // old path passed 0.0 world thickness into the shader, which made the
+    // expanded shell identical to the body and effectively invisible. Use a
+    // small world-space shell scaled from the authored thickness, and render
+    // the expanded back faces instead of a driver-dependent 1 px line.
+    const float worldThickness = std::clamp(
+        outline->thickness * 0.015f, 0.01f, 0.15f);
+    {
+        static std::unordered_map<uint32_t, std::string> sLastOutlineState;
+        if (!isLocal && networkEntityId != 0 &&
+            visualsConfig.hasPlayerOutlinesOverride()) {
+            const std::string state = drawable
+                ? (std::string("drawn:") + std::to_string(outline->thickness))
+                : (std::string("skipped:") +
+                   (!teamIdentityKnown ? "team_identity_unknown" :
+                    !outlineAllowed ? "layers_disabled" :
+                    !outlineEnabled ? "mode_layer_off" :
+                    outline->thickness <= 0.0f ? "zero_thickness" :
+                    outlineAlpha == 0.0f ? "zero_alpha" :
+                    player.dead && outline->disappearOnDeath ? "dead" :
+                    "unknown"));
+            auto it = sLastOutlineState.find(networkEntityId);
+            if (it == sLastOutlineState.end() || it->second != state) {
+                sLastOutlineState[networkEntityId] = state;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::General, StructuredLevel::Important,
+                    "player_visuals.outline", std::to_string(networkEntityId),
+                    drawable ? "mode_outline_drawn" : state.c_str(), 0,
+                    nlohmann::json{
+                        {"actor_id", networkEntityId},
+                        {"is_local", isLocal},
+                        {"teammate", teammate},
+                        {"team_identity_known", teamIdentityKnown},
+                        {"local_team", localTeam},
+                        {"actor_team", resolvedActorTeam},
+                        {"model_loaded", player.modelLoaded},
+                        {"mode_forced", modeForcesTeamOutline},
+                        {"outline_enabled", outlineEnabled},
+                        {"outline_allowed", outlineAllowed},
+                        {"thickness", outline->thickness},
+                        {"world_thickness", worldThickness},
+                        {"alpha", outlineAlpha},
+                        {"visible_through_walls", outline->visibleThroughWalls},
+                        {"drawn", drawable},
+                        {"reason", state}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+    }
+    if (drawable) {
         const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
         const GLboolean blendWas = glIsEnabled(GL_BLEND);
+        const GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
         GLint depthFuncWas = GL_LESS;
+        GLint cullModeWas = GL_BACK;
         glGetIntegerv(GL_DEPTH_FUNC, &depthFuncWas);
+        if (cullWas) glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         if (outline->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glLineWidth(outline->thickness);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
         const glm::vec3 outlineRgb = PlayerVisualsConfig::instance().effectiveOutlineColor(friendlyActor, outline->color);
         const glm::vec4 color(outlineRgb.r / 255.0f, outlineRgb.g / 255.0f,
                               outlineRgb.b / 255.0f, outlineAlpha);
         { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerOutline");
           player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
-                                   true, 0.0f, color); }
+                                   true, worldThickness, color); }
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDepthMask(GL_TRUE);
         glDepthFunc(depthFuncWas);
+        if (cullWas) { glEnable(GL_CULL_FACE); glCullFace(cullModeWas); }
+        else glDisable(GL_CULL_FACE);
         if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
         if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
         Debug::logThrottled(Debug::Category::Render, "player_visuals_outline", 1.0f,
-            "[PLAYER VISUALS] outline entity=%u category=%s throughWalls=%d thickness=%.2f",
+            "[PLAYER VISUALS] outline entity=%u category=%s throughWalls=%d thickness=%.2f world=%.3f",
             networkEntityId, isLocal ? "self" : (teammate ? "teammate" : "enemy"),
-            outline->visibleThroughWalls ? 1 : 0, outline->thickness);
+            outline->visibleThroughWalls ? 1 : 0, outline->thickness, worldThickness);
     }
     };
 

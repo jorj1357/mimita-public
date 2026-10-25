@@ -1,8 +1,14 @@
+// Mode values. Schema, defaults, ranges, and field order:
+// config/gamemodes/masterlist/gamemode-masterlist.json
+// null means inherit the shared config/playervisuals.json value.
 {
   "id": "tdm",
   "name": "Team Deathmatch",
   "description": "RED vs BLUE. First team to 50 kills wins; a tied match at three minutes is a stalemate.",
-  "team_names": ["RED", "BLUE"],
+  "team_names": [
+    "RED",
+    "BLUE"
+  ],
   "goal_value": 50,
   "weapon_set_id": 1,
   "time_limit_seconds": 180,
@@ -12,87 +18,244 @@
   "friendly_fire": false,
   "countdown_seconds": 3,
   "go_seconds": 0.75,
+  "rematch_seconds": 5.0,
+  "spawn_tracer_seconds": 1.5,
+  "allow_rematch": true,
   "spawn_offset_radius": 5.0,
   "spawn_strategy": "team_shared",
   "intermission_seconds": 10,
   "results_seconds": 5,
-  "ragdoll_enabled": true,
-  // 2026 10 25 1307 does this go here idk
-    "avatar": {
-    "forced": false,
-    "allowed": [
-      "abusiveboy", "abusivegirl", "abusivegirl2", "abusivegirl3",
-      "abusivegirlheadless", "abusivegirlheadless2", "abusivegirlheadless3",
-      "abusivegirlheadless4", "boiledboy", "headless", "headlessgirl",
-      "headlessgirl2", "headlessgirl3", "headlessredux", "headlessredux2",
-      "jason", "jasonheadless"
-    ]
-  },
+  "maps": [
+    "mimita-duels-map-v3",
+    "atdm",
+    "funworld"
+  ],
   "teams": [
     {
       "id": "red",
       "display_name": "RED",
       "capacity": 5,
       "role": "elite_fighter",
-      "npc_role": "elite_fighter",
+      "npc_role": "elite_npc",
+      "spawn_group": "red_spawn",
+      "spawn_tag_contains": "red",
+      "spawn_tag_excludes": "",
+      "attackers_per_site": 0,
+      "defenders_per_site": 0,
+      "one_rotator": null,
       "players": true,
       "npcs": true,
-      "prefer_humans": true,
-      "spawn_group": "red_spawn",
-      "spawn_tag_contains": "red"
+      "prefer_humans": true
     },
     {
       "id": "blue",
       "display_name": "BLUE",
       "capacity": 5,
       "role": "elite_fighter",
-      "npc_role": "elite_fighter",
+      "npc_role": "elite_npc",
+      "spawn_group": "blue_spawn",
+      "spawn_tag_contains": "blue",
+      "spawn_tag_excludes": "",
+      "attackers_per_site": 0,
+      "defenders_per_site": 0,
+      "one_rotator": null,
       "players": true,
       "npcs": true,
-      "prefer_humans": true,
-      "spawn_group": "blue_spawn",
-      "spawn_tag_contains": "blue"
+      "prefer_humans": true
     }
   ],
-  "npc_behavior_profile": "elite_squad",
-  "npc_spawn": {
-    "policy": "team_roster"
+  "spawn_groups": {},
+  "objectives": [],
+  "rounds": {
+    "max_rounds": 0,
+    "rounds_to_win": 0,
+    "endless_rounds": false,
+    "round_seconds": 0.0,
+    "freeze_seconds": 0.0,
+    "countdown_seconds": 0.0,
+    "intermission_seconds": 0.0,
+    "results_seconds": 0.0
   },
-  "npc_targeting": {
-    "mode": "opposite_team",
-    "include_players": true,
-    "include_npcs": true
+  "victory": {
+    "type": ""
   },
-  "npc_travel": {
-    "objective_bias": 1.0,
-    "hunt_bias": 1.2,
-    "explore_bias": 0.2
+  "victory_condition": "",
+  "win_condition": "",
+  "payload": {
+    "enabled": false,
+    "attacker_team": "attackers",
+    "defender_team": "defenders",
+    "overtime_seconds": 10.0,
+    "push_meters_per_second_per_attacker": 0.2,
+    "max_push_attackers": 6,
+    "unattended_rollback_delay_seconds": 30.0,
+    "rollback_meters_per_second": 0.2,
+    "heal_hp_per_10_ticks": 1,
+    "heal_defenders": false,
+    "spawn_protection_ticks": 60,
+    "team_change_cooldown_seconds": 300.0,
+    "class_pool": []
   },
-  "features": {
-    "freeze_during_countdown": true,
-    "freeze_during_go": false
-  },
-  "hide_healthbars": false,
   "presentation": {
+    "damage_numbers": null,
+    "hit_effects": null,
+    "world_impact_effects": null,
+    "world_impact_decals": null,
+    "world_hit_effects": null,
+    "hit_markers": null,
+    "hit_sounds": null,
+    "hit_flinch": null,
+    "blood": null,
+    "killfeed": null,
+    "ragdolls": null,
     "enemy_healthbars": true,
+    "player_outlines": true,
+    "friendly_outlines": true,
     "player_wireframes": true,
-    // "player_wireframes": false,
     "friendly_wireframes": true,
-    // "friendly_wireframes": false,
-    "friendly_wireframe_color": [0, 255, 0],
-    "enemy_wireframe_color": [255, 0, 0],
-    // how come  it doenst edit the alpha? 2026 10 25 1303
-    //  C:\mimita-v9\config\playervisuals.json im editing this
-    // and its not making the alhpa go up or down etc 
-    "enemy_outline_alpha": 0.01,
+    "enemy_outline_alpha": 1.0,
     "blood_scale": 1.0,
     "blood_lifetime_scale": 0.2,
     "world_impact_decal_scale": 1.0,
     "world_impact_decal_lifetime_scale": 0.2,
     "world_impact_decal_alpha_scale": 1.0,
     "world_hit_effect_scale": 1.0,
-    "world_hit_effect_lifetime_scale": 0.2
-
+    "world_hit_effect_lifetime_scale": 0.2,
+    "friendly_outline_color": [
+      0.0,
+      255.0,
+      0.0
+    ],
+    "enemy_outline_color": [
+      255.0,
+      0.0,
+      0.0
+    ],
+    "friendly_wireframe_color": [
+      0,
+      255,
+      0
+    ],
+    "enemy_wireframe_color": [
+      255,
+      0,
+      0
+    ],
+    "enemy_trail": {
+      "enabled": null,
+      "minSpeed": null,
+      "sampleIntervalSeconds": null,
+      "lifetimeSeconds": null,
+      "maxSamples": null,
+      "alpha": null,
+      "width": null,
+      "color": null
+    },
+    "teammate_trail": {
+      "enabled": null,
+      "minSpeed": null,
+      "sampleIntervalSeconds": null,
+      "lifetimeSeconds": null,
+      "maxSamples": null,
+      "alpha": null,
+      "width": null,
+      "color": null
+    }
   },
-  "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
+  "features": {
+    "world_timer": false,
+    "bomb_holder_text": false,
+    "bomb_blink": false,
+    "infinite_rounds": false,
+    "no_weapons_except_bomb": false,
+    "boss_healthbar": false,
+    "world_text": false,
+    "timer_above_entity": false,
+    "percent_above_head": false,
+    "fog": false,
+    "rain": false,
+    "torch_lighting": false,
+    "freeze_during_countdown": true,
+    "freeze_during_go": false
+  },
+  "camera_fov": 0.0,
+  "force_first_person": false,
+  "hide_healthbars": false,
+  "ragdoll_enabled": true,
+  "blood_enabled": null,
+  "roles": {},
+  "actor_preset": "",
+  "movement_preset": "",
+  "npc_behavior_profile": "elite_squad",
+  "npc_targeting": {
+    "enabled": true,
+    "mode": "opposite_team",
+    "include_players": true,
+    "include_npcs": true
+  },
+  "npc_travel": {
+    "enabled": true,
+    "objective_bias": 1.0,
+    "hunt_bias": 1.2,
+    "explore_bias": 0.2
+  },
+  "camera": {
+    "aim_fov": {
+      "enabled": false,
+      "input": "right_mouse",
+      "multiplier": 0.5,
+      "duration": 0.5,
+      "easing": "ease_in_out"
+    }
+  },
+  "bomb_timer_ticks": 900,
+  "inactive_ticks": 60,
+  "blink_ticks": 30,
+  "max_pass_sanity_distance": 3.0,
+  "wave_start_count": 1,
+  "wave_increment": 1,
+  "npcs_per_wave": 0,
+  "lives": 3,
+  "wave_banner_seconds": 3.0,
+  "wave_stagger_enabled": true,
+  "wave_npcs_per_tick": 10,
+  "run_attempts": 3,
+  "allow_midrun_team_change": false,
+  "run_mode": false,
+  "music": {
+    "on_go_track": "",
+    "random_pool": []
+  },
+  "npc_spawn": {
+    "policy": "team_roster",
+    "max_count": 0,
+    "interval_ticks": 60,
+    "per_interval": 1
+  },
+  "avatar": {
+    "enabled": true,
+    "forced": false,
+    "name": "",
+    "allowed": [
+      "abusiveboy",
+      "abusivegirl",
+      "abusivegirl2",
+      "abusivegirl3",
+      "abusivegirlheadless",
+      "abusivegirlheadless2",
+      "abusivegirlheadless3",
+      "abusivegirlheadless4",
+      "boiledboy",
+      "headless",
+      "headlessgirl",
+      "headlessgirl2",
+      "headlessgirl3",
+      "headlessredux",
+      "headlessredux2",
+      "jason",
+      "jasonheadless"
+    ],
+    "denied": [],
+    "group": ""
+  }
 }

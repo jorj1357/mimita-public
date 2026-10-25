@@ -1,25 +1,235 @@
+// Mode values. Schema, defaults, ranges, and field order:
+// config/gamemodes/masterlist/gamemode-masterlist.json
+// null means inherit the shared config/playervisuals.json value.
 {
   "id": "juggernaut_duel",
   "name": "Juggernaut Duel",
   "description": "Two Juggernauts. First to 20 kills wins.",
-  "actor_preset": "juggernaut_arcade",
-  "weapon_set_id": 11,
+  "team_names": [
+    "RED",
+    "BLUE"
+  ],
   "goal_value": 20,
+  "weapon_set_id": 11,
   "time_limit_seconds": 0,
+  "time_limit_outcome": "high_score",
   "respawn_seconds": 0.01,
   "kill_heals": false,
   "friendly_fire": false,
   "countdown_seconds": 3,
   "go_seconds": 0.75,
-  "intermission_seconds": 3,
-  "results_seconds": 3,
+  "rematch_seconds": 5.0,
+  "spawn_tracer_seconds": 1.5,
+  "allow_rematch": true,
   "spawn_offset_radius": 5.0,
   "spawn_strategy": "team_shared",
-  "win_condition": "first_to_score",
-  "teams": [
-    { "id": "jason", "display_name": "Jason", "capacity": 1, "role": "juggernaut_duel_jason" },
-    { "id": "clown", "display_name": "Clown", "capacity": 1, "role": "juggernaut_duel_clown" }
+  "intermission_seconds": 3,
+  "results_seconds": 3,
+  "maps": [
+    "mimita-duels-map-v3",
+    "atdm",
+    "funworld"
   ],
-  "npc_spawn": { "policy": "team_roster", "max_count": 1 },
-  "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
+  "teams": [
+    {
+      "id": "jason",
+      "display_name": "Jason",
+      "capacity": 1,
+      "role": "juggernaut_duel_jason",
+      "npc_role": "",
+      "spawn_group": "",
+      "spawn_tag_contains": "",
+      "spawn_tag_excludes": "",
+      "attackers_per_site": 0,
+      "defenders_per_site": 0,
+      "one_rotator": null,
+      "players": false,
+      "npcs": false,
+      "prefer_humans": false
+    },
+    {
+      "id": "clown",
+      "display_name": "Clown",
+      "capacity": 1,
+      "role": "juggernaut_duel_clown",
+      "npc_role": "",
+      "spawn_group": "",
+      "spawn_tag_contains": "",
+      "spawn_tag_excludes": "",
+      "attackers_per_site": 0,
+      "defenders_per_site": 0,
+      "one_rotator": null,
+      "players": false,
+      "npcs": false,
+      "prefer_humans": false
+    }
+  ],
+  "spawn_groups": {},
+  "objectives": [],
+  "rounds": {
+    "max_rounds": 0,
+    "rounds_to_win": 0,
+    "endless_rounds": false,
+    "round_seconds": 0.0,
+    "freeze_seconds": 0.0,
+    "countdown_seconds": 0.0,
+    "intermission_seconds": 0.0,
+    "results_seconds": 0.0
+  },
+  "victory": {
+    "type": ""
+  },
+  "victory_condition": "",
+  "win_condition": "first_to_score",
+  "payload": {
+    "enabled": false,
+    "attacker_team": "attackers",
+    "defender_team": "defenders",
+    "overtime_seconds": 10.0,
+    "push_meters_per_second_per_attacker": 0.2,
+    "max_push_attackers": 6,
+    "unattended_rollback_delay_seconds": 30.0,
+    "rollback_meters_per_second": 0.2,
+    "heal_hp_per_10_ticks": 1,
+    "heal_defenders": false,
+    "spawn_protection_ticks": 60,
+    "team_change_cooldown_seconds": 300.0,
+    "class_pool": []
+  },
+  "presentation": {
+    "damage_numbers": null,
+    "hit_effects": null,
+    "world_impact_effects": null,
+    "world_impact_decals": null,
+    "world_hit_effects": null,
+    "hit_markers": null,
+    "hit_sounds": null,
+    "hit_flinch": null,
+    "blood": null,
+    "killfeed": null,
+    "ragdolls": null,
+    "enemy_healthbars": null,
+    "player_outlines": true,
+    "friendly_outlines": true,
+    "player_wireframes": null,
+    "friendly_wireframes": null,
+    "enemy_outline_alpha": 1.0,
+    "blood_scale": null,
+    "blood_lifetime_scale": null,
+    "world_impact_decal_scale": null,
+    "world_impact_decal_lifetime_scale": null,
+    "world_impact_decal_alpha_scale": null,
+    "world_hit_effect_scale": null,
+    "world_hit_effect_lifetime_scale": null,
+    "friendly_outline_color": [
+      0.0,
+      255.0,
+      0.0
+    ],
+    "enemy_outline_color": [
+      255.0,
+      0.0,
+      0.0
+    ],
+    "friendly_wireframe_color": null,
+    "enemy_wireframe_color": null,
+    "enemy_trail": {
+      "enabled": null,
+      "minSpeed": null,
+      "sampleIntervalSeconds": null,
+      "lifetimeSeconds": null,
+      "maxSamples": null,
+      "alpha": null,
+      "width": null,
+      "color": null
+    },
+    "teammate_trail": {
+      "enabled": null,
+      "minSpeed": null,
+      "sampleIntervalSeconds": null,
+      "lifetimeSeconds": null,
+      "maxSamples": null,
+      "alpha": null,
+      "width": null,
+      "color": null
+    }
+  },
+  "features": {
+    "world_timer": false,
+    "bomb_holder_text": false,
+    "bomb_blink": false,
+    "infinite_rounds": false,
+    "no_weapons_except_bomb": false,
+    "boss_healthbar": false,
+    "world_text": false,
+    "timer_above_entity": false,
+    "percent_above_head": false,
+    "fog": false,
+    "rain": false,
+    "torch_lighting": false,
+    "freeze_during_countdown": false,
+    "freeze_during_go": true
+  },
+  "camera_fov": 0.0,
+  "force_first_person": false,
+  "hide_healthbars": false,
+  "ragdoll_enabled": null,
+  "blood_enabled": null,
+  "roles": {},
+  "actor_preset": "juggernaut_arcade",
+  "movement_preset": "",
+  "npc_behavior_profile": "",
+  "npc_targeting": {
+    "enabled": false,
+    "mode": "closest",
+    "include_players": true,
+    "include_npcs": true
+  },
+  "npc_travel": {
+    "enabled": false,
+    "objective_bias": 1.0,
+    "hunt_bias": 0.0,
+    "explore_bias": 1.0
+  },
+  "camera": {
+    "aim_fov": {
+      "enabled": false,
+      "input": "right_mouse",
+      "multiplier": 0.5,
+      "duration": 0.5,
+      "easing": "ease_in_out"
+    }
+  },
+  "bomb_timer_ticks": 900,
+  "inactive_ticks": 60,
+  "blink_ticks": 30,
+  "max_pass_sanity_distance": 3.0,
+  "wave_start_count": 1,
+  "wave_increment": 1,
+  "npcs_per_wave": 0,
+  "lives": 3,
+  "wave_banner_seconds": 3.0,
+  "wave_stagger_enabled": true,
+  "wave_npcs_per_tick": 10,
+  "run_attempts": 3,
+  "allow_midrun_team_change": false,
+  "run_mode": false,
+  "music": {
+    "on_go_track": "",
+    "random_pool": []
+  },
+  "npc_spawn": {
+    "policy": "team_roster",
+    "max_count": 1,
+    "interval_ticks": 60,
+    "per_interval": 1
+  },
+  "avatar": {
+    "enabled": false,
+    "forced": false,
+    "name": "",
+    "allowed": [],
+    "denied": [],
+    "group": ""
+  }
 }

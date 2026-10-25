@@ -243,6 +243,8 @@ def _json_type_ok(value, expected):
 def _validate_schema(value, schema, path, errors):
     if not isinstance(schema, dict):
         return
+    if value is None and schema.get("nullable", False):
+        return
     expected = schema.get("type", "")
     if not _json_type_ok(value, expected):
         errors.append(f"{path}: expected {expected}")
@@ -325,6 +327,19 @@ def main():
     avatar_count = validate_avatars(errors)
     validate_npc_avatar(errors)
     gamemode_count = validate_gamemode_configs(errors)
+    # Canonical field completeness/order check uses the same masterlist as the
+    # runtime loader. It is offline-only; runtime never rewrites mode files.
+    try:
+        import subprocess
+        sync = subprocess.run(
+            [sys.executable, str(ROOT / "devscripts/gamemode_json_sync.py"), "--check"],
+            capture_output=True, text=True)
+        if sync.returncode != 0:
+            detail = (sync.stdout or sync.stderr).strip().splitlines()
+            errors.append("gamemode JSON is not canonical: " +
+                          (detail[-1] if detail else "check failed"))
+    except Exception as exc:
+        errors.append(f"gamemode canonical check failed: {exc}")
 
     print("[CONFIG SELFTEST] weapons:", weapon_count)
     print("[CONFIG SELFTEST] animation clips:", clip_count)

@@ -2,13 +2,15 @@
   "schema_version": 1,
   "readme": [
     "This file is the single contributor guide and validation contract for config/gamemodes/*.json.",
-    "Each mode file may contain any setting listed under settings. Unknown keys are rejected.",
+    "Each mode file contains every setting listed under settings, in the same order.",
     "required=true means every mode file must contain the setting. required=false means the loader uses the documented default when the key is absent.",
+    "null means inherit the shared config/playervisuals.json value (used by presentation layers and trails).",
+    "Optional policy blocks (payload, npc_targeting, npc_travel, avatar) contain enabled:false when the mode does not use them; the loader then ignores the block and preserves its previous behavior.",
     "Nested object schemas use fields. Arrays use item. Objects whose keys are arbitrary use additional.",
-    "Names in enum are the only accepted string values. min/max are inclusive numeric limits.",
-    "A mode may omit an optional feature block (for example payload) when that feature does not apply to the mode.",
-    "vendor defaults are the runtime values used when a key is absent; keeping a mode file complete is preferred but not required for optional keys.",
-    "avatar_groups are named allow/deny policies. A mode may set avatar.group instead of repeating the lists."
+    "enum lists the only accepted string values. min/max are inclusive numeric limits.",
+    "avatar_groups are named allow/deny policies. A mode may set avatar.group instead of repeating the lists.",
+    "Run: python devscripts/gamemode_json_sync.py --check  (reports missing/unknown/out-of-order fields)",
+    "Run: python devscripts/gamemode_json_sync.py --write  (explicit canonical migration)"
   ],
   "settings": {
     "id": {
@@ -31,8 +33,13 @@
     "team_names": {
       "type": "array",
       "required": false,
-      "default": ["RED", "BLUE"],
-      "item": {"type": "string"},
+      "default": [
+        "RED",
+        "BLUE"
+      ],
+      "item": {
+        "type": "string"
+      },
       "description": "Legacy team display names. Ordered teams inside teams override this."
     },
     "goal_value": {
@@ -60,7 +67,10 @@
       "type": "string",
       "required": false,
       "default": "high_score",
-      "enum": ["high_score", "stalemate"],
+      "enum": [
+        "high_score",
+        "stalemate"
+      ],
       "description": "Result when the time limit expires before the score goal."
     },
     "respawn_seconds": {
@@ -127,7 +137,12 @@
       "type": "string",
       "required": false,
       "default": "shared",
-      "enum": ["shared", "team_shared", "distributed", "random"],
+      "enum": [
+        "shared",
+        "team_shared",
+        "distributed",
+        "random"
+      ],
       "description": "Spawn point selection strategy."
     },
     "intermission_seconds": {
@@ -147,8 +162,11 @@
     "maps": {
       "type": "array",
       "required": false,
-      "item": {"type": "string"},
-      "description": "Maps this mode may select."
+      "item": {
+        "type": "string"
+      },
+      "description": "Maps this mode may select.",
+      "default": []
     },
     "teams": {
       "type": "array",
@@ -156,23 +174,83 @@
       "item": {
         "type": "object",
         "fields": {
-          "id": {"type": "string", "required": true},
-          "display_name": {"type": "string", "required": false},
-          "capacity": {"type": "integer", "required": false, "default": 0, "min": 0},
-          "role": {"type": "string", "required": false},
-          "npc_role": {"type": "string", "required": false},
-          "spawn_group": {"type": "string", "required": false},
-          "spawn_tag_contains": {"type": "string", "required": false},
-          "spawn_tag_excludes": {"type": "string", "required": false},
-          "attackers_per_site": {"type": "integer", "required": false, "default": 0, "min": 0},
-          "defenders_per_site": {"type": "integer", "required": false, "default": 0, "min": 0},
-          "one_rotator": {"type": "boolean", "required": false},
-          "players": {"type": "boolean", "required": false, "default": false},
-          "npcs": {"type": "boolean", "required": false, "default": false},
-          "prefer_humans": {"type": "boolean", "required": false, "default": false}
+          "id": {
+            "type": "string",
+            "required": true
+          },
+          "display_name": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "capacity": {
+            "type": "integer",
+            "required": false,
+            "default": 0,
+            "min": 0
+          },
+          "role": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "npc_role": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "spawn_group": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "spawn_tag_contains": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "spawn_tag_excludes": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "attackers_per_site": {
+            "type": "integer",
+            "required": false,
+            "default": 0,
+            "min": 0
+          },
+          "defenders_per_site": {
+            "type": "integer",
+            "required": false,
+            "default": 0,
+            "min": 0
+          },
+          "one_rotator": {
+            "type": "boolean",
+            "required": false,
+            "default": null,
+            "nullable": true
+          },
+          "players": {
+            "type": "boolean",
+            "required": false,
+            "default": false
+          },
+          "npcs": {
+            "type": "boolean",
+            "required": false,
+            "default": false
+          },
+          "prefer_humans": {
+            "type": "boolean",
+            "required": false,
+            "default": false
+          }
         }
       },
-      "description": "Ordered team roster. Index is the authoritative team number."
+      "description": "Ordered team roster. Index is the authoritative team number.",
+      "default": []
     },
     "spawn_groups": {
       "type": "object",
@@ -180,15 +258,26 @@
       "additional": {
         "type": "object",
         "fields": {
-          "team": {"type": "string", "required": false},
+          "team": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
           "points": {
             "type": "array",
             "required": false,
-            "item": {"type": "array", "item": {"type": "number"}}
+            "item": {
+              "type": "array",
+              "item": {
+                "type": "number"
+              }
+            },
+            "default": []
           }
         }
       },
-      "description": "Named team spawn groups."
+      "description": "Named team spawn groups.",
+      "default": {}
     },
     "objectives": {
       "type": "array",
@@ -196,75 +285,247 @@
       "item": {
         "type": "object",
         "fields": {
-          "id": {"type": "string", "required": true},
-          "kind": {"type": "string", "required": false},
-          "carrier_team": {"type": "string", "required": false},
-          "site_group": {"type": "string", "required": false},
-          "plant_seconds": {"type": "number", "required": false, "default": 0.0, "min": 0.0},
-          "defuse_seconds": {"type": "number", "required": false, "default": 0.0, "min": 0.0},
-          "explosion_seconds": {"type": "number", "required": false, "default": 0.0, "min": 0.0},
+          "id": {
+            "type": "string",
+            "required": true
+          },
+          "kind": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "carrier_team": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "site_group": {
+            "type": "string",
+            "required": false,
+            "default": ""
+          },
+          "plant_seconds": {
+            "type": "number",
+            "required": false,
+            "default": 0.0,
+            "min": 0.0
+          },
+          "defuse_seconds": {
+            "type": "number",
+            "required": false,
+            "default": 0.0,
+            "min": 0.0
+          },
+          "explosion_seconds": {
+            "type": "number",
+            "required": false,
+            "default": 0.0,
+            "min": 0.0
+          },
           "visual": {
             "type": "object",
             "required": false,
             "fields": {
-              "pulse": {"type": "boolean", "required": false, "default": false},
-              "radius": {"type": "number", "required": false, "default": 0.35, "min": 0.0},
-              "pulse_amplitude": {"type": "number", "required": false, "default": 0.15, "min": 0.0},
-              "period_seconds": {"type": "number", "required": false, "default": 1.5, "min": 0.0},
-              "color": {"type": "array", "required": false, "min_items": 3, "max_items": 4, "item": {"type": "number"}}
+              "pulse": {
+                "type": "boolean",
+                "required": false,
+                "default": false
+              },
+              "radius": {
+                "type": "number",
+                "required": false,
+                "default": 0.35,
+                "min": 0.0
+              },
+              "pulse_amplitude": {
+                "type": "number",
+                "required": false,
+                "default": 0.15,
+                "min": 0.0
+              },
+              "period_seconds": {
+                "type": "number",
+                "required": false,
+                "default": 1.5,
+                "min": 0.0
+              },
+              "color": {
+                "type": "array",
+                "required": false,
+                "min_items": 3,
+                "max_items": 4,
+                "item": {
+                  "type": "number"
+                },
+                "default": [
+                  1.0,
+                  0.25,
+                  0.1
+                ]
+              }
             }
           }
         }
       },
-      "description": "Objective definitions owned by the mode."
+      "description": "Objective definitions owned by the mode.",
+      "default": []
     },
     "rounds": {
       "type": "object",
       "required": false,
       "fields": {
-        "max_rounds": {"type": "integer", "required": false, "default": 0, "min": 0},
-        "rounds_to_win": {"type": "integer", "required": false, "default": 0, "min": 0},
-        "endless_rounds": {"type": "boolean", "required": false, "default": false},
-        "round_seconds": {"type": "number", "required": false, "default": 0.0, "min": 0.0},
-        "freeze_seconds": {"type": "number", "required": false, "default": 0.0, "min": 0.0},
-        "countdown_seconds": {"type": "number", "required": false, "default": 0.0, "min": 0.0},
-        "intermission_seconds": {"type": "number", "required": false, "default": 0.0, "min": 0.0},
-        "results_seconds": {"type": "number", "required": false, "default": 0.0, "min": 0.0}
+        "max_rounds": {
+          "type": "integer",
+          "required": false,
+          "default": 0,
+          "min": 0
+        },
+        "rounds_to_win": {
+          "type": "integer",
+          "required": false,
+          "default": 0,
+          "min": 0
+        },
+        "endless_rounds": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "round_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 0.0,
+          "min": 0.0
+        },
+        "freeze_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 0.0,
+          "min": 0.0
+        },
+        "countdown_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 0.0,
+          "min": 0.0
+        },
+        "intermission_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 0.0,
+          "min": 0.0
+        },
+        "results_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 0.0,
+          "min": 0.0
+        }
       }
     },
     "victory": {
       "type": "object",
       "required": false,
       "fields": {
-        "type": {"type": "string", "required": false}
+        "type": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        }
       }
     },
     "victory_condition": {
       "type": "string",
       "required": false,
-      "description": "Legacy alias for victory.type. victory.type wins when both are present."
+      "description": "Legacy alias for victory.type. victory.type wins when both are present.",
+      "default": ""
     },
     "win_condition": {
       "type": "string",
       "required": false,
-      "description": "Win-condition owner (for example last_team_standing or payload)."
+      "description": "Win-condition owner (for example last_team_standing or payload).",
+      "default": ""
     },
     "payload": {
       "type": "object",
       "required": false,
       "fields": {
-        "attacker_team": {"type": "string", "required": false, "default": "attackers"},
-        "defender_team": {"type": "string", "required": false, "default": "defenders"},
-        "overtime_seconds": {"type": "number", "required": false, "default": 10.0, "min": 0.0},
-        "push_meters_per_second_per_attacker": {"type": "number", "required": false, "default": 0.2, "min": 0.0},
-        "max_push_attackers": {"type": "integer", "required": false, "default": 6, "min": 1},
-        "unattended_rollback_delay_seconds": {"type": "number", "required": false, "default": 30.0, "min": 0.0},
-        "rollback_meters_per_second": {"type": "number", "required": false, "default": 0.2, "min": 0.0},
-        "heal_hp_per_10_ticks": {"type": "integer", "required": false, "default": 1, "min": 0},
-        "heal_defenders": {"type": "boolean", "required": false, "default": false},
-        "spawn_protection_ticks": {"type": "integer", "required": false, "default": 60, "min": 0},
-        "team_change_cooldown_seconds": {"type": "number", "required": false, "default": 300.0, "min": 0.0},
-        "class_pool": {"type": "array", "required": false, "item": {"type": "string"}}
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "false = inherit/ignore this block without changing behavior"
+        },
+        "attacker_team": {
+          "type": "string",
+          "required": false,
+          "default": "attackers"
+        },
+        "defender_team": {
+          "type": "string",
+          "required": false,
+          "default": "defenders"
+        },
+        "overtime_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 10.0,
+          "min": 0.0
+        },
+        "push_meters_per_second_per_attacker": {
+          "type": "number",
+          "required": false,
+          "default": 0.2,
+          "min": 0.0
+        },
+        "max_push_attackers": {
+          "type": "integer",
+          "required": false,
+          "default": 6,
+          "min": 1
+        },
+        "unattended_rollback_delay_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 30.0,
+          "min": 0.0
+        },
+        "rollback_meters_per_second": {
+          "type": "number",
+          "required": false,
+          "default": 0.2,
+          "min": 0.0
+        },
+        "heal_hp_per_10_ticks": {
+          "type": "integer",
+          "required": false,
+          "default": 1,
+          "min": 0
+        },
+        "heal_defenders": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "spawn_protection_ticks": {
+          "type": "integer",
+          "required": false,
+          "default": 60,
+          "min": 0
+        },
+        "team_change_cooldown_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 300.0,
+          "min": 0.0
+        },
+        "class_pool": {
+          "type": "array",
+          "required": false,
+          "item": {
+            "type": "string"
+          }
+        }
       },
       "description": "Payload rules. Map data owns the cart route and geometry."
     },
@@ -272,34 +533,343 @@
       "type": "object",
       "required": false,
       "fields": {
-        "damage_numbers": {"type": "boolean", "required": false, "default": true},
-        "hit_effects": {"type": "boolean", "required": false, "default": true},
-        "world_impact_effects": {"type": "boolean", "required": false, "default": true},
-        "world_impact_decals": {"type": "boolean", "required": false, "default": true},
-        "world_hit_effects": {"type": "boolean", "required": false, "default": true},
-        "hit_markers": {"type": "boolean", "required": false, "default": true},
-        "hit_sounds": {"type": "boolean", "required": false, "default": true},
-        "hit_flinch": {"type": "boolean", "required": false, "default": true},
-        "blood": {"type": "boolean", "required": false, "default": true},
-        "killfeed": {"type": "boolean", "required": false, "default": true},
-        "ragdolls": {"type": "boolean", "required": false, "default": true},
-        "enemy_healthbars": {"type": "boolean", "required": false, "default": true},
-        "player_outlines": {"type": "boolean", "required": false, "default": true},
-        "friendly_outlines": {"type": "boolean", "required": false, "default": false},
-        "player_wireframes": {"type": "boolean", "required": false, "default": false},
-        "friendly_wireframes": {"type": "boolean", "required": false, "default": false},
-        "enemy_outline_alpha": {"type": "number", "required": false, "default": 0.25, "min": 0.0, "max": 1.0},
-        "blood_scale": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 4.0},
-        "blood_lifetime_scale": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 4.0},
-        "world_impact_decal_scale": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 4.0},
-        "world_impact_decal_lifetime_scale": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 4.0},
-        "world_impact_decal_alpha_scale": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 4.0},
-        "world_hit_effect_scale": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 4.0},
-        "world_hit_effect_lifetime_scale": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 4.0},
-        "friendly_outline_color": {"type": "array", "required": false, "min_items": 3, "item": {"type": "number"}},
-        "enemy_outline_color": {"type": "array", "required": false, "min_items": 3, "item": {"type": "number"}},
-        "friendly_wireframe_color": {"type": "array", "required": false, "min_items": 3, "item": {"type": "number"}},
-        "enemy_wireframe_color": {"type": "array", "required": false, "min_items": 3, "item": {"type": "number"}}
+        "damage_numbers": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "hit_effects": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "world_impact_effects": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "world_impact_decals": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "world_hit_effects": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "hit_markers": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "hit_sounds": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "hit_flinch": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "blood": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "killfeed": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "ragdolls": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "enemy_healthbars": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "player_outlines": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "friendly_outlines": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "player_wireframes": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "friendly_wireframes": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "enemy_outline_alpha": {
+          "type": "number",
+          "required": false,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "blood_scale": {
+          "type": "number",
+          "required": false,
+          "default": null,
+          "min": 0.0,
+          "max": 4.0,
+          "nullable": true
+        },
+        "blood_lifetime_scale": {
+          "type": "number",
+          "required": false,
+          "default": null,
+          "min": 0.0,
+          "max": 4.0,
+          "nullable": true
+        },
+        "world_impact_decal_scale": {
+          "type": "number",
+          "required": false,
+          "default": null,
+          "min": 0.0,
+          "max": 4.0,
+          "nullable": true
+        },
+        "world_impact_decal_lifetime_scale": {
+          "type": "number",
+          "required": false,
+          "default": null,
+          "min": 0.0,
+          "max": 4.0,
+          "nullable": true
+        },
+        "world_impact_decal_alpha_scale": {
+          "type": "number",
+          "required": false,
+          "default": null,
+          "min": 0.0,
+          "max": 4.0,
+          "nullable": true
+        },
+        "world_hit_effect_scale": {
+          "type": "number",
+          "required": false,
+          "default": null,
+          "min": 0.0,
+          "max": 4.0,
+          "nullable": true
+        },
+        "world_hit_effect_lifetime_scale": {
+          "type": "number",
+          "required": false,
+          "default": null,
+          "min": 0.0,
+          "max": 4.0,
+          "nullable": true
+        },
+        "friendly_outline_color": {
+          "type": "array",
+          "required": false,
+          "min_items": 3,
+          "item": {
+            "type": "number"
+          },
+          "default": [
+            0.0,
+            255.0,
+            0.0
+          ]
+        },
+        "enemy_outline_color": {
+          "type": "array",
+          "required": false,
+          "min_items": 3,
+          "item": {
+            "type": "number"
+          },
+          "default": [
+            255.0,
+            0.0,
+            0.0
+          ]
+        },
+        "friendly_wireframe_color": {
+          "type": "array",
+          "required": false,
+          "min_items": 3,
+          "item": {
+            "type": "number"
+          },
+          "nullable": true,
+          "default": null
+        },
+        "enemy_wireframe_color": {
+          "type": "array",
+          "required": false,
+          "min_items": 3,
+          "item": {
+            "type": "number"
+          },
+          "nullable": true,
+          "default": null
+        },
+        "enemy_trail": {
+          "type": "object",
+          "required": false,
+          "fields": {
+            "enabled": {
+              "type": "boolean",
+              "required": false,
+              "nullable": true,
+              "default": null
+            },
+            "minSpeed": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.0,
+              "default": null
+            },
+            "sampleIntervalSeconds": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.001,
+              "default": null
+            },
+            "lifetimeSeconds": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.001,
+              "default": null
+            },
+            "maxSamples": {
+              "type": "integer",
+              "required": false,
+              "nullable": true,
+              "min": 2,
+              "default": null
+            },
+            "alpha": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.0,
+              "max": 1.0,
+              "default": null
+            },
+            "width": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.01,
+              "max": 10.0,
+              "default": null
+            },
+            "color": {
+              "type": "array",
+              "required": false,
+              "nullable": true,
+              "min_items": 3,
+              "max_items": 3,
+              "item": {
+                "type": "number"
+              },
+              "default": null
+            }
+          }
+        },
+        "teammate_trail": {
+          "type": "object",
+          "required": false,
+          "fields": {
+            "enabled": {
+              "type": "boolean",
+              "required": false,
+              "nullable": true,
+              "default": null
+            },
+            "minSpeed": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.0,
+              "default": null
+            },
+            "sampleIntervalSeconds": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.001,
+              "default": null
+            },
+            "lifetimeSeconds": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.001,
+              "default": null
+            },
+            "maxSamples": {
+              "type": "integer",
+              "required": false,
+              "nullable": true,
+              "min": 2,
+              "default": null
+            },
+            "alpha": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.0,
+              "max": 1.0,
+              "default": null
+            },
+            "width": {
+              "type": "number",
+              "required": false,
+              "nullable": true,
+              "min": 0.01,
+              "max": 10.0,
+              "default": null
+            },
+            "color": {
+              "type": "array",
+              "required": false,
+              "nullable": true,
+              "min_items": 3,
+              "max_items": 3,
+              "item": {
+                "type": "number"
+              },
+              "default": null
+            }
+          }
+        }
       },
       "description": "Mode presentation overrides. Missing values use shared playervisuals/hitfx settings."
     },
@@ -307,52 +877,194 @@
       "type": "object",
       "required": false,
       "fields": {
-        "world_timer": {"type": "boolean", "required": false, "default": false},
-        "bomb_holder_text": {"type": "boolean", "required": false, "default": false},
-        "bomb_blink": {"type": "boolean", "required": false, "default": false},
-        "infinite_rounds": {"type": "boolean", "required": false, "default": false},
-        "no_weapons_except_bomb": {"type": "boolean", "required": false, "default": false},
-        "boss_healthbar": {"type": "boolean", "required": false, "default": false},
-        "world_text": {"type": "boolean", "required": false, "default": false},
-        "timer_above_entity": {"type": "boolean", "required": false, "default": false},
-        "percent_above_head": {"type": "boolean", "required": false, "default": false},
-        "fog": {"type": "boolean", "required": false, "default": false},
-        "rain": {"type": "boolean", "required": false, "default": false},
-        "torch_lighting": {"type": "boolean", "required": false, "default": false},
-        "freeze_during_countdown": {"type": "boolean", "required": false, "default": false},
-        "freeze_during_go": {"type": "boolean", "required": false, "default": true}
+        "world_timer": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "bomb_holder_text": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "bomb_blink": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "infinite_rounds": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "no_weapons_except_bomb": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "boss_healthbar": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "world_text": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "timer_above_entity": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "percent_above_head": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "fog": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "rain": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "torch_lighting": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "freeze_during_countdown": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "freeze_during_go": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        }
       }
     },
-    "camera_fov": {"type": "number", "required": false, "default": 0.0, "min": 0.0},
-    "force_first_person": {"type": "boolean", "required": false, "default": false},
-    "hide_healthbars": {"type": "boolean", "required": false, "default": false},
-    "ragdoll_enabled": {"type": "boolean", "required": false, "default": false},
-    "blood_enabled": {"type": "boolean", "required": false, "default": false},
+    "camera_fov": {
+      "type": "number",
+      "required": false,
+      "default": 0.0,
+      "min": 0.0
+    },
+    "force_first_person": {
+      "type": "boolean",
+      "required": false,
+      "default": false
+    },
+    "hide_healthbars": {
+      "type": "boolean",
+      "required": false,
+      "default": false
+    },
+    "ragdoll_enabled": {
+      "type": "boolean",
+      "required": false,
+      "default": null,
+      "nullable": true
+    },
+    "blood_enabled": {
+      "type": "boolean",
+      "required": false,
+      "default": null,
+      "nullable": true
+    },
     "roles": {
       "type": "object",
       "required": false,
-      "additional": {"type": "integer", "min": 0},
-      "description": "Role id to participant count."
+      "additional": {
+        "type": "integer",
+        "min": 0
+      },
+      "description": "Role id to participant count.",
+      "default": {}
     },
-    "actor_preset": {"type": "string", "required": false},
-    "movement_preset": {"type": "string", "required": false},
-    "npc_behavior_profile": {"type": "string", "required": false},
+    "actor_preset": {
+      "type": "string",
+      "required": false,
+      "default": ""
+    },
+    "movement_preset": {
+      "type": "string",
+      "required": false,
+      "default": ""
+    },
+    "npc_behavior_profile": {
+      "type": "string",
+      "required": false,
+      "default": ""
+    },
     "npc_targeting": {
       "type": "object",
       "required": false,
       "fields": {
-        "mode": {"type": "string", "required": false, "default": "closest", "enum": ["player", "closest", "opposite_team"]},
-        "include_players": {"type": "boolean", "required": false, "default": true},
-        "include_npcs": {"type": "boolean", "required": false, "default": true}
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "false = inherit/ignore this block without changing behavior"
+        },
+        "mode": {
+          "type": "string",
+          "required": false,
+          "default": "closest",
+          "enum": [
+            "player",
+            "closest",
+            "opposite_team"
+          ]
+        },
+        "include_players": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "include_npcs": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        }
       }
     },
     "npc_travel": {
       "type": "object",
       "required": false,
       "fields": {
-        "objective_bias": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 5.0},
-        "hunt_bias": {"type": "number", "required": false, "default": 0.0, "min": 0.0, "max": 5.0},
-        "explore_bias": {"type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 5.0}
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "false = inherit/ignore this block without changing behavior"
+        },
+        "objective_bias": {
+          "type": "number",
+          "required": false,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "hunt_bias": {
+          "type": "number",
+          "required": false,
+          "default": 0.0,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "explore_bias": {
+          "type": "number",
+          "required": false,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 5.0
+        }
       }
     },
     "camera": {
@@ -363,79 +1075,269 @@
           "type": "object",
           "required": false,
           "fields": {
-            "enabled": {"type": "boolean", "required": false, "default": false},
-            "input": {"type": "string", "required": false, "default": "right_mouse"},
-            "multiplier": {"type": "number", "required": false, "default": 0.5, "min": 0.05, "max": 1.0},
-            "duration": {"type": "number", "required": false, "default": 0.5, "min": 0.01, "max": 10.0},
-            "easing": {"type": "string", "required": false, "default": "ease_in_out"}
+            "enabled": {
+              "type": "boolean",
+              "required": false,
+              "default": false
+            },
+            "input": {
+              "type": "string",
+              "required": false,
+              "default": "right_mouse"
+            },
+            "multiplier": {
+              "type": "number",
+              "required": false,
+              "default": 0.5,
+              "min": 0.05,
+              "max": 1.0
+            },
+            "duration": {
+              "type": "number",
+              "required": false,
+              "default": 0.5,
+              "min": 0.01,
+              "max": 10.0
+            },
+            "easing": {
+              "type": "string",
+              "required": false,
+              "default": "ease_in_out"
+            }
           }
         }
       }
     },
-    "bomb_timer_ticks": {"type": "integer", "required": false, "default": 900, "min": 60},
-    "inactive_ticks": {"type": "integer", "required": false, "default": 60, "min": 0},
-    "blink_ticks": {"type": "integer", "required": false, "default": 30, "min": 1},
-    "max_pass_sanity_distance": {"type": "number", "required": false, "default": 3.0, "min": 0.5},
-    "wave_start_count": {"type": "integer", "required": false, "default": 1, "min": 1},
-    "wave_increment": {"type": "integer", "required": false, "default": 1, "min": 0},
-    "npcs_per_wave": {"type": "integer", "required": false, "default": 0, "min": 0},
-    "lives": {"type": "integer", "required": false, "default": 3, "min": 1},
-    "wave_banner_seconds": {"type": "number", "required": false, "default": 3.0, "min": 0.0},
-    "wave_stagger_enabled": {"type": "boolean", "required": false, "default": true},
-    "wave_npcs_per_tick": {"type": "integer", "required": false, "default": 10, "min": 1},
-    "run_attempts": {"type": "integer", "required": false, "default": 3, "min": 1},
-    "allow_midrun_team_change": {"type": "boolean", "required": false, "default": false},
-    "run_mode": {"type": "boolean", "required": false, "default": false},
+    "bomb_timer_ticks": {
+      "type": "integer",
+      "required": false,
+      "default": 900,
+      "min": 60
+    },
+    "inactive_ticks": {
+      "type": "integer",
+      "required": false,
+      "default": 60,
+      "min": 0
+    },
+    "blink_ticks": {
+      "type": "integer",
+      "required": false,
+      "default": 30,
+      "min": 1
+    },
+    "max_pass_sanity_distance": {
+      "type": "number",
+      "required": false,
+      "default": 3.0,
+      "min": 0.5
+    },
+    "wave_start_count": {
+      "type": "integer",
+      "required": false,
+      "default": 1,
+      "min": 1
+    },
+    "wave_increment": {
+      "type": "integer",
+      "required": false,
+      "default": 1,
+      "min": 0
+    },
+    "npcs_per_wave": {
+      "type": "integer",
+      "required": false,
+      "default": 0,
+      "min": 0
+    },
+    "lives": {
+      "type": "integer",
+      "required": false,
+      "default": 3,
+      "min": 1
+    },
+    "wave_banner_seconds": {
+      "type": "number",
+      "required": false,
+      "default": 3.0,
+      "min": 0.0
+    },
+    "wave_stagger_enabled": {
+      "type": "boolean",
+      "required": false,
+      "default": true
+    },
+    "wave_npcs_per_tick": {
+      "type": "integer",
+      "required": false,
+      "default": 10,
+      "min": 1
+    },
+    "run_attempts": {
+      "type": "integer",
+      "required": false,
+      "default": 3,
+      "min": 1
+    },
+    "allow_midrun_team_change": {
+      "type": "boolean",
+      "required": false,
+      "default": false
+    },
+    "run_mode": {
+      "type": "boolean",
+      "required": false,
+      "default": false
+    },
     "music": {
       "type": "object",
       "required": false,
       "fields": {
-        "on_go_track": {"type": "string", "required": false},
-        "random_pool": {"type": "array", "required": false, "item": {"type": "string"}}
+        "on_go_track": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        },
+        "random_pool": {
+          "type": "array",
+          "required": false,
+          "item": {
+            "type": "string"
+          },
+          "default": []
+        }
       }
     },
     "npc_spawn": {
       "type": "object",
       "required": false,
       "fields": {
-        "policy": {"type": "string", "required": false, "enum": ["", "persistent", "team_roster", "round_roster"]},
-        "max_count": {"type": "integer", "required": false, "default": 0, "min": 0},
-        "interval_ticks": {"type": "integer", "required": false, "default": 60, "min": 1},
-        "per_interval": {"type": "integer", "required": false, "default": 1, "min": 1}
+        "policy": {
+          "type": "string",
+          "required": false,
+          "enum": [
+            "",
+            "persistent",
+            "team_roster",
+            "round_roster"
+          ],
+          "default": ""
+        },
+        "max_count": {
+          "type": "integer",
+          "required": false,
+          "default": 0,
+          "min": 0
+        },
+        "interval_ticks": {
+          "type": "integer",
+          "required": false,
+          "default": 60,
+          "min": 1
+        },
+        "per_interval": {
+          "type": "integer",
+          "required": false,
+          "default": 1,
+          "min": 1
+        }
       }
     },
     "avatar": {
       "type": "object",
       "required": false,
       "fields": {
-        "forced": {"type": "boolean", "required": false, "default": false},
-        "name": {"type": "string", "required": false},
-        "allowed": {"type": "array", "required": false, "item": {"type": "string"}},
-        "denied": {"type": "array", "required": false, "item": {"type": "string"}},
-        "group": {"type": "string", "required": false, "enum": ["", "all", "gameplay_safe", "counterstrike", "competitive"]}
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "false = inherit/ignore this block without changing behavior"
+        },
+        "forced": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "name": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        },
+        "allowed": {
+          "type": "array",
+          "required": false,
+          "item": {
+            "type": "string"
+          }
+        },
+        "denied": {
+          "type": "array",
+          "required": false,
+          "item": {
+            "type": "string"
+          }
+        },
+        "group": {
+          "type": "string",
+          "required": false,
+          "enum": [
+            "",
+            "all",
+            "gameplay_safe",
+            "counterstrike",
+            "competitive"
+          ],
+          "default": ""
+        }
       },
       "description": "Mode-wide avatar policy. Role/actor-preset policy refines it per actor."
     }
   },
   "avatar_groups": {
-    "all": {"allowed": [], "denied": []},
+    "all": {
+      "allowed": [],
+      "denied": []
+    },
     "gameplay_safe": {
       "allowed": [],
-      "denied": ["headless", "headlessgirl", "headlessgirl2", "headlessgirl3", "headlessredux", "headlessredux2"]
+      "denied": [
+        "headless",
+        "headlessgirl",
+        "headlessgirl2",
+        "headlessgirl3",
+        "headlessredux",
+        "headlessredux2"
+      ]
     },
     "counterstrike": {
-      "allowed": ["abusiveboy", "abusivegirl", "jason", "boiledboy"],
+      "allowed": [
+        "abusiveboy",
+        "abusivegirl",
+        "jason",
+        "boiledboy"
+      ],
       "denied": []
     },
     "competitive": {
       "allowed": [
-        "abusiveboy", "abusivegirl", "abusivegirl2", "abusivegirl3",
-        "boiledboy", "jason"
+        "abusiveboy",
+        "abusivegirl",
+        "abusivegirl2",
+        "abusivegirl3",
+        "boiledboy",
+        "jason"
       ],
       "denied": [
-        "headless", "headlessgirl", "headlessgirl2", "headlessgirl3",
-        "headlessredux", "headlessredux2", "abusivegirlheadless",
-        "abusivegirlheadless2", "abusivegirlheadless3", "abusivegirlheadless4",
+        "headless",
+        "headlessgirl",
+        "headlessgirl2",
+        "headlessgirl3",
+        "headlessredux",
+        "headlessredux2",
+        "abusivegirlheadless",
+        "abusivegirlheadless2",
+        "abusivegirlheadless3",
+        "abusivegirlheadless4",
         "jasonheadless"
       ]
     }

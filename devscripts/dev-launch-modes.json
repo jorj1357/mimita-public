@@ -328,6 +328,20 @@
         "start payload"
       ],
       "map": "payload1"
+    },
+    "34": {
+      "name": "tdmtest3 sandbox collision repro",
+      "server_args": [
+        "--mode",
+        "sandbox",
+        "--gamemode",
+        "sandbox",
+        "--weapon-set",
+        "6",
+        "--no-npcs"
+      ],
+      "client_args": [],
+      "map": "tdmtest3"
     }
   }
 }

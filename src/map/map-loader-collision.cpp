@@ -23,6 +23,14 @@ glm::ivec3 collisionChunkCoord(const glm::vec3& p, float size)
     );
 }
 
+glm::vec3 normalizedCollisionNormal(const CollisionTriangle& triangle)
+{
+    const float length = glm::length(triangle.normal);
+    if (length < 1.0e-6f)
+        return glm::vec3(0.0f);
+    return triangle.normal / length;
+}
+
 } // anonymous namespace
 
 void buildCollisionMeshFromRenderMesh(World& world)
@@ -374,8 +382,146 @@ bool updateCollisionForMovedObject(World& world, const AABB& oldBounds,
              std::chrono::steady_clock::now() - started).count()}});
     return true;
 }
+void buildSmoothSeamTopology(World& world)
+{
+    CollisionMeshCache& mesh = world.collisionMesh;
+    const size_t triangleCount = mesh.triangles.size();
+    mesh.smoothEdgeIndex.assign(triangleCount * 3, -1);
+    mesh.smoothVertexIndex.assign(triangleCount * 3, -1);
+    mesh.smoothEdges.clear();
+    mesh.smoothVertices.clear();
+    if (triangleCount == 0)
+        return;
+
+    std::vector<std::array<int, 3>> triangleVerts(triangleCount);
+    std::unordered_map<glm::ivec3, uint32_t, IVec3Hash> vertexIds;
+    std::vector<glm::vec3> uniqueVertices;
+    vertexIds.reserve(triangleCount * 2);
+    uniqueVertices.reserve(triangleCount * 2);
+
+    const auto vertexId = [&](const glm::vec3& p) {
+        const glm::ivec3 key(
+            (int)std::lround(p.x * 4096.0f),
+            (int)std::lround(p.y * 4096.0f),
+            (int)std::lround(p.z * 4096.0f));
+        auto found = vertexIds.find(key);
+        if (found != vertexIds.end())
+            return found->second;
+        const uint32_t id = static_cast<uint32_t>(uniqueVertices.size());
+        uniqueVertices.push_back(p);
+        vertexIds.emplace(key, id);
+        return id;
+    };
+
+    std::unordered_map<uint64_t, std::array<int, 4>> edges;
+    edges.reserve(triangleCount * 3);
+    std::unordered_map<uint32_t, std::vector<int>> vertexTriangles;
+    vertexTriangles.reserve(uniqueVertices.size());
+
+    for (size_t i = 0; i < triangleCount; ++i)
+    {
+        const CollisionTriangle& triangle = mesh.triangles[i];
+        const uint32_t ia = vertexId(triangle.a);
+        const uint32_t ib = vertexId(triangle.b);
+        const uint32_t ic = vertexId(triangle.c);
+        triangleVerts[i] = {static_cast<int>(ia), static_cast<int>(ib),
+                            static_cast<int>(ic)};
+        if (ia == ib || ib == ic || ia == ic)
+            continue;
+
+        const uint32_t ids[3] = {ia, ib, ic};
+        for (int edge = 0; edge < 3; ++edge)
+        {
+            const uint32_t from = ids[edge];
+            const uint32_t to = ids[(edge + 1) % 3];
+            const uint64_t key =
+                (static_cast<uint64_t>(std::min(from, to)) << 32) |
+                std::max(from, to);
+            auto found = edges.find(key);
+            if (found == edges.end())
+            {
+                edges.emplace(key, std::array<int, 4>{static_cast<int>(i), edge, -1, -1});
+            }
+            else if (found->second[2] < 0 && found->second[2] != -2)
+            {
+                found->second[2] = static_cast<int>(i);
+                found->second[3] = edge;
+            }
+            else
+            {
+                found->second[2] = -2;
+            }
+        }
+
+        vertexTriangles[ia].push_back(static_cast<int>(i));
+        vertexTriangles[ib].push_back(static_cast<int>(i));
+        vertexTriangles[ic].push_back(static_cast<int>(i));
+    }
+
+    mesh.smoothEdges.reserve(edges.size());
+    for (const auto& entry : edges)
+    {
+        const std::array<int, 4>& value = entry.second;
+        if (value[2] < 0 || value[3] < 0)
+            continue;
+        CollisionSmoothEdge smooth;
+        smooth.triangleA = value[0];
+        smooth.edgeA = value[1];
+        smooth.triangleB = value[2];
+        smooth.edgeB = value[3];
+        smooth.normalA = normalizedCollisionNormal(mesh.triangles[value[0]]);
+        smooth.normalB = normalizedCollisionNormal(mesh.triangles[value[2]]);
+        if (glm::length(smooth.normalA) < 0.5f || glm::length(smooth.normalB) < 0.5f)
+            continue;
+        const int index = static_cast<int>(mesh.smoothEdges.size());
+        mesh.smoothEdges.push_back(smooth);
+        mesh.smoothEdgeIndex[static_cast<size_t>(value[0]) * 3 + value[1]] = index;
+        mesh.smoothEdgeIndex[static_cast<size_t>(value[2]) * 3 + value[3]] = index;
+    }
+
+    mesh.smoothVertices.resize(uniqueVertices.size());
+    for (const auto& entry : vertexTriangles)
+    {
+        const uint32_t vertex = entry.first;
+        if (vertex >= mesh.smoothVertices.size() || entry.second.empty())
+            continue;
+        glm::vec3 sum(0.0f);
+        std::vector<glm::vec3> normals;
+        normals.reserve(entry.second.size());
+        for (int triangleIndex : entry.second)
+        {
+            const glm::vec3 normal = normalizedCollisionNormal(mesh.triangles[triangleIndex]);
+            if (glm::length(normal) < 0.5f)
+                continue;
+            normals.push_back(normal);
+            sum += normal;
+        }
+        if (normals.empty())
+            continue;
+        const glm::vec3 average = glm::normalize(sum);
+        float minAlignment = 1.0f;
+        for (const glm::vec3& normal : normals)
+            minAlignment = std::min(minAlignment, glm::dot(average, normal));
+        mesh.smoothVertices[vertex].normal = average;
+        mesh.smoothVertices[vertex].minAlignment = minAlignment;
+        for (int triangleIndex : entry.second)
+        {
+            for (int edge = 0; edge < 3; ++edge)
+            {
+                if (triangleVerts[triangleIndex][edge] == static_cast<int>(vertex))
+                {
+                    mesh.smoothVertexIndex[static_cast<size_t>(triangleIndex) * 3 + edge] =
+                        static_cast<int>(vertex);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
 {
+    buildSmoothSeamTopology(world);
     world.collisionChunks.clear();
     world.collisionLargeTriangles.clear();
 
