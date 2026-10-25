@@ -17,6 +17,7 @@
 #include "game/spawn-override.h"
 #include "duel/duel-queue.h"
 #include "network/multiplayer-context.h"
+#include "network/net_common.h"
 #include "network/net_mode.h"
 #include "network/server.h"
 #include "input/mouse-lock.h"
@@ -28,9 +29,11 @@
 #include "devtools/dev-npc-selection.h"
 #include "notifications/notifications.h"
 #include "gui/password-popup.h"
+#include "mapeditor/map-editor.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
@@ -50,6 +53,11 @@ void engineTickState(Engine& engine, float dt)
     bool& editorMode = EDITOR_MODE;
     std::string& activeGameMode = ACTIVE_GAME_MODE;
     std::string& activeMapPath = ACTIVE_MAP_PATH;
+
+    // Death is a gameplay boundary. Never keep the editor camera on a dead
+    // player; restore the normal player camera and mouse capture.
+    if (player.dead && MapEditor::instance().active())
+        MapEditor::instance().setActive(false);
 
     // Log gameState during export subprocess (first 5 ticks)
     if (isReplayExportActive()) {
@@ -244,113 +252,9 @@ void engineTickState(Engine& engine, float dt)
                     clearPendingBombTagConfig();
                 }
             }
-            {
-                MultiplayerConnectInfo mci = getPendingMultiplayerConnect();
-                if (mci.shouldConnect) {
-                    // Don't force-load default map. If a sandbox map was loaded, keep it.
-                    // The server's map identity will arrive via Welcome/JoinAccept.
-                    // If no world at all, load a minimal default so the client can start.
-                    if (!worldLoaded)
-                    {
-                        std::string connectMap = defaultMapPath;
-                        // Prefer the map the launch/join requested even without a
-                        // direct address (dev-loop room joins), instead of the
-                        // hardcoded fallback, until the server Welcome arrives.
-                        if (!mci.mapName.empty())
-                            connectMap = "assets/maps/" + mci.mapName + ".glb";
-                        if (loadWorldFromGLB(world, connectMap.c_str()))
-                        {
-                            activeMapPath = connectMap;
-                            worldLoaded = true;
-                            Debug::log(Debug::Category::Networking,
-                                       "[MAIN NET] loaded map for connecting path=%s\n",
-                                       connectMap.c_str());
-                        }
-                    }
-                    else
-                    {
-                        Debug::log(Debug::Category::Networking,
-                                   "[MAIN NET] keeping current world=%s for connecting\n",
-                                   activeMapPath.c_str());
-                    }
-
-                    player.username = mci.playerName.empty()
-                        ? AuthSystem::instance().displayName()
-                        : mci.playerName;
-                    player.reset();
-                    // 7 22 2026 1227 attempting fix 
-                    // no more local host 
-
-                    if (!mci.directAddress.empty())
-                    {
-                        Debug::log(
-                            Debug::Category::Networking,
-                            "[DIRECT JOIN START] address=%s\n",
-                            mci.directAddress.c_str());
-
-                        const bool connectionStarted = MimitaNet::mpInit(
-                            mpContext,
-                            mci.directAddress,
-                            player.username);
-                        if (connectionStarted)
-                        {
-                            Debug::log(
-                                Debug::Category::Networking,
-                                "[CONNECT STARTED] address=%s room=%s\n",
-                                mci.directAddress.c_str(),
-                                mci.roomCode.c_str());
-                        }
-                        else
-                        {
-                            Debug::warn(
-                                Debug::Category::Networking,
-                                "[CONNECT FAILED] address=%s room=%s reason=start-failed\n",
-                                mci.directAddress.c_str(),
-                                mci.roomCode.c_str());
-                        }
-                    }
-                    else if (mci.roomCode.empty())
-                    {
-                        Debug::warn(
-                            Debug::Category::Networking,
-                            "[ROOM JOIN FAILED] reason=empty-room-code\n");
-                    }
-                    else
-                    {
-                        mpContext.currentRoomCode = mci.roomCode;
-                        mpContext.serverName = mci.serverName;
-                        if (mci.passwordProtected && mci.password.empty()) {
-                            PasswordPopup::open(mci.roomCode, mci.serverName);
-                            clearPendingMultiplayerConnect();
-                            return;
-                        }
-                        if (!mci.password.empty())
-                            mpContext.serverPassword = mci.password;
-
-                        Debug::log(
-                            Debug::Category::Networking,
-                            "[ROOM JOIN START] room=%s\n",
-                            mci.roomCode.c_str());
-
-                        // Async ICE connect: returns immediately, runs on a
-                        // background thread, and is polled in mpTick. The game
-                        // never blocks during ICE negotiation.
-                        const bool started = MimitaNet::mpIceConnectStart(
-                            mpContext,
-                            mci.roomCode,
-                            player.username);
-                        if (!started) {
-                            NotificationSystem::instance().pushCritical(
-                                "Server join failed",
-                                "Could not start joining " +
-                                    (mci.serverName.empty() ? mci.roomCode : mci.serverName) +
-                                    ".", 240);
-                        }
-                    }
-
-                    clearPendingMultiplayerConnect();
-                    }
-            }
+        }
+        if (gameState != prevState)
+        {
             if (gameState == GAME_PLAYING && worldLoaded &&
                 !gReplayRecorder.isRecording()) {
                 Terminal::instance().execute("replay.record");
@@ -371,6 +275,159 @@ void engineTickState(Engine& engine, float dt)
         }
         prevState = gameState;
     }
+
+    {
+            MultiplayerConnectInfo mci = getPendingMultiplayerConnect();
+            if (mci.shouldConnect) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "network.client.pending-connect-dispatched", "",
+                    "consuming queued multiplayer connection request", 0,
+                    {{"direct_address", mci.directAddress},
+                     {"room_code", mci.roomCode},
+                     {"map", mci.mapName},
+                     {"game_state", static_cast<int>(gameState)}},
+                    __FILE__, __LINE__, __func__);
+                // Load the requested session map before connecting. Keeping a
+                // stale menu/practice map until Welcome makes the connection
+                // screen show one map and the live game show another.
+                std::string requestedMapPath = defaultMapPath;
+                if (!mci.mapName.empty())
+                    requestedMapPath = "assets/maps/" + mci.mapName + ".glb";
+                const bool requestedMapLoaded =
+                    worldLoaded && !mci.mapName.empty() &&
+                    MimitaNet::mapIdsReferToSameMap(activeMapPath, mci.mapName);
+                if (!worldLoaded || (!mci.mapName.empty() && !requestedMapLoaded))
+                {
+                    const std::string oldMap = activeMapPath;
+                    if (loadWorldFromGLB(world, requestedMapPath.c_str()))
+                    {
+                        activeMapPath = requestedMapPath;
+                        worldLoaded = true;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Network, StructuredLevel::Important,
+                            "network.client.requested-map-loaded", "",
+                            "loaded requested join map before connecting",
+                            mpContext.tick,
+                            {{"requested_map", mci.mapName},
+                             {"previous_map_path", oldMap},
+                             {"loaded_map_path", requestedMapPath}},
+                            __FILE__, __LINE__, __func__);
+                        Debug::log(Debug::Category::Networking,
+                                   "[MAIN NET] loaded requested map for connecting path=%s\n",
+                                   requestedMapPath.c_str());
+                    }
+                    else
+                    {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Network, StructuredLevel::Errors,
+                            "network.client.requested-map-load-failed", "",
+                            "requested join map failed to load before connecting",
+                            mpContext.tick,
+                            {{"requested_map", mci.mapName},
+                             {"requested_map_path", requestedMapPath},
+                             {"previous_map_path", oldMap}},
+                            __FILE__, __LINE__, __func__);
+                    }
+                }
+                else
+                {
+                    Debug::log(Debug::Category::Networking,
+                               "[MAIN NET] requested map already active=%s\n",
+                               activeMapPath.c_str());
+                }
+
+                player.username = mci.playerName.empty()
+                    ? AuthSystem::instance().displayName()
+                    : mci.playerName;
+                player.reset();
+                // 7 22 2026 1227 attempting fix
+                // no more local host
+
+                if (!mci.directAddress.empty())
+                {
+                    Debug::log(
+                        Debug::Category::Networking,
+                        "[DIRECT JOIN START] address=%s\n",
+                        mci.directAddress.c_str());
+
+                    const bool connectionStarted = MimitaNet::mpInit(
+                        mpContext,
+                        mci.directAddress,
+                        player.username);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network,
+                        connectionStarted ? StructuredLevel::Important
+                                          : StructuredLevel::Errors,
+                        "network.client.direct-connect-started", "",
+                        connectionStarted
+                            ? "direct UDP connection initialized"
+                            : "direct UDP connection initialization failed",
+                        mpContext.tick,
+                        {{"address", mci.directAddress},
+                         {"map", mci.mapName},
+                         {"started", connectionStarted}},
+                        __FILE__, __LINE__, __func__);
+                    if (connectionStarted)
+                    {
+                        Debug::log(
+                            Debug::Category::Networking,
+                            "[CONNECT STARTED] address=%s room=%s\n",
+                            mci.directAddress.c_str(),
+                            mci.roomCode.c_str());
+                    }
+                    else
+                    {
+                        Debug::warn(
+                            Debug::Category::Networking,
+                            "[CONNECT FAILED] address=%s room=%s reason=start-failed\n",
+                            mci.directAddress.c_str(),
+                            mci.roomCode.c_str());
+                    }
+                }
+                else if (mci.roomCode.empty())
+                {
+                    Debug::warn(
+                        Debug::Category::Networking,
+                        "[ROOM JOIN FAILED] reason=empty-room-code\n");
+                }
+                else
+                {
+                    mpContext.currentRoomCode = mci.roomCode;
+                    mpContext.serverName = mci.serverName;
+                    if (mci.passwordProtected && mci.password.empty()) {
+                        PasswordPopup::open(mci.roomCode, mci.serverName);
+                        clearPendingMultiplayerConnect();
+                        return;
+                    }
+                    if (!mci.password.empty())
+                        mpContext.serverPassword = mci.password;
+
+                    Debug::log(
+                        Debug::Category::Networking,
+                        "[ROOM JOIN START] room=%s\n",
+                        mci.roomCode.c_str());
+
+                    // Async ICE connect: returns immediately, runs on a
+                    // background thread, and is polled in mpTick. The game
+                    // never blocks during ICE negotiation.
+                    const bool started = MimitaNet::mpIceConnectStart(
+                        mpContext,
+                        mci.roomCode,
+                        player.username);
+                    if (!started) {
+                        NotificationSystem::instance().pushCritical(
+                            "Server join failed",
+                            "Could not start joining " +
+                                (mci.serverName.empty() ? mci.roomCode : mci.serverName) +
+                                ".", 240);
+                    }
+                }
+
+                clearPendingMultiplayerConnect();
+                }
+    }
+
 
     {
         static DuelPhase prevDuelPhase = DuelPhase::Off;

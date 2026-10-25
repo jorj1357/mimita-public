@@ -6,6 +6,7 @@
 #include <functional>
 #include <GLFW/glfw3.h>
 #include "camera.h"
+#include "input/scenario-input.h"
 #include "world/world.h"
 #include "entities/player.h"
 #include "entities/aimbody-config.h"
@@ -1030,7 +1031,8 @@ void engineTickCamera(Engine& engine, float dt)
     // held", independent of the physical aim-body mode; otherwise the
     // config/aimbody.json right-arm FOV values apply. Apply it after camera
     // mode selection so every camera mode uses the camconfig base FOV.
-    if (!replayPlaybackActive && !gReplayEditor.isLoaded()) {
+    if (!replayPlaybackActive && !gReplayEditor.isLoaded() &&
+        !MapEditor::instance().active()) {
         const MimitaNet::CommunityMatchClient& fovMatch =
             MimitaNet::CommunityMatchClient::instance();
         const Gamemode& fovMode = GamemodeRegistry::instance().get(fovMatch.mode());
@@ -1052,7 +1054,7 @@ void engineTickCamera(Engine& engine, float dt)
         aimFovLastActive = matchActive;
 
         const bool rmbHeld =
-            glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+            ScenarioInput::mouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT);
         bool held = false;
         float multiplier = 1.0f;
         float duration = 0.5f;

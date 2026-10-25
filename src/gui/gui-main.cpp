@@ -139,6 +139,8 @@ static std::string gPendingServerRoomFilePath;
 static uint64_t gPendingServerRoomFileStartMs = 0;
 static uint64_t gLastServerRoomFilePollMs = 0;
 static bool gWaitingForServerRoomCode = false;
+static std::string gPendingLocalJoinFallbackRoomCode;
+static uint64_t gPendingLocalJoinFallbackStartMs = 0;
 
 // Resolve the online menu's map selection to the actual map file stem.
 // The dropdown stores display names (e.g. "Mimita Memorial"); the engine,
@@ -240,8 +242,63 @@ static void readServerSettingsFromBindings()
         gServerLaunchSettings.startupNpcCount);
 }
 
-static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
+static uint16_t selectServerPort(uint16_t preferredPort)
 {
+    if (!MimitaNet::netStartup())
+        return 0;
+
+    auto probe = [](uint16_t requestedPort, uint16_t& selectedPort) {
+        SOCKET socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (socketHandle == INVALID_SOCKET)
+            return false;
+
+        BOOL exclusive = TRUE;
+        const bool exclusiveSet = setsockopt(
+            socketHandle, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+            reinterpret_cast<const char*>(&exclusive), sizeof(exclusive)) == 0;
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_ANY);
+        address.sin_port = htons(requestedPort);
+        bool available = exclusiveSet &&
+            bind(socketHandle, reinterpret_cast<sockaddr*>(&address),
+                 sizeof(address)) == 0;
+        if (available && requestedPort == 0)
+        {
+            int addressLength = sizeof(address);
+            available = getsockname(
+                socketHandle, reinterpret_cast<sockaddr*>(&address),
+                &addressLength) == 0;
+        }
+        if (available)
+            selectedPort = ntohs(address.sin_port);
+        closesocket(socketHandle);
+        return available;
+    };
+
+    uint16_t selectedPort = 0;
+    if (!probe(preferredPort, selectedPort) && !probe(0, selectedPort))
+        selectedPort = 0;
+    MimitaNet::netShutdown();
+    return selectedPort;
+}
+
+static bool launchServerProcess(MimitaNet::ServerLaunchSettings& settings)
+{
+    gPendingLocalJoinFallbackRoomCode.clear();
+    gPendingLocalJoinFallbackStartMs = 0;
+    const uint16_t requestedPort = settings.port;
+    settings.port = selectServerPort(requestedPort);
+    if (settings.port == 0)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "network.gui-server.port-selection-failed", "",
+            "could not select an exclusive UDP port for the new server", 0,
+            {{"requested_port", requestedPort}}, __FILE__, __LINE__, __func__);
+        return false;
+    }
+
     char exePath[MAX_PATH];
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
 
@@ -320,6 +377,14 @@ static bool launchServerProcess(const MimitaNet::ServerLaunchSettings& settings)
 
     printf("[SERVER LAUNCH] launched server process pid=%lu\n",
            (unsigned long)gServerProcessInfo.dwProcessId);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.gui-server.launch", std::to_string(gServerProcessInfo.dwProcessId),
+        "launched local authoritative server on an exclusive UDP port", 0,
+        {{"server_pid", gServerProcessInfo.dwProcessId},
+         {"requested_port", requestedPort}, {"selected_port", settings.port},
+         {"map", settings.mapName}, {"mode", settings.gameMode}},
+        __FILE__, __LINE__, __func__);
 
     // The client created the shared events path and exported it; the child
     // inherits the parent environment (CreateProcess lpEnvironment=nullptr) and
@@ -366,6 +431,8 @@ bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
 {
     if (MP_CONTEXT.active)
         return false;
+    gPendingLocalJoinFallbackRoomCode.clear();
+    gPendingLocalJoinFallbackStartMs = 0;
 
     auto queueLocalJoin = [](const MimitaNet::ServerLaunchSettings& launchSettings) {
         gPendingConnect = {};
@@ -374,7 +441,32 @@ bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
             "127.0.0.1:" + std::to_string(launchSettings.port);
         gPendingConnect.mapName = launchSettings.mapName;
         gPendingConnect.serverName = launchSettings.serverName;
+        THE_PLAYER.username = launchSettings.hostPlayerName.empty()
+            ? AuthSystem::instance().displayName()
+            : launchSettings.hostPlayerName;
+        THE_PLAYER.reset();
         GAME_STATE = GAME_PLAYING;
+        const std::string directAddress = gPendingConnect.directAddress;
+        const bool directConnectStarted = MimitaNet::mpInit(
+            MP_CONTEXT, directAddress, THE_PLAYER.username);
+        if (directConnectStarted)
+            gPendingConnect = {};
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network,
+            directConnectStarted ? StructuredLevel::Important
+                                 : StructuredLevel::Errors,
+            "network.gui-server.local-join-queued", "",
+            directConnectStarted
+                ? "started direct local UDP join independently of room registration"
+                : "direct local UDP join failed to initialize; queued retry",
+            MP_CONTEXT.tick,
+            {{"address", directAddress},
+             {"map", launchSettings.mapName},
+             {"connect_started", directConnectStarted},
+             {"server_pid", gServerProcessLaunched &&
+                                gServerProcessInfo.hProcess
+                            ? gServerProcessInfo.dwProcessId : 0}},
+            __FILE__, __LINE__, __func__);
     };
 
     // Join the local authoritative UDP server as soon as it is available; its
@@ -452,6 +544,8 @@ static void stopServerProcess()
     gWaitingForServerRoomCode = false;
     gLastServerRoomFilePollMs = 0;
     gPendingServerRoomFileStartMs = 0;
+    gPendingLocalJoinFallbackRoomCode.clear();
+    gPendingLocalJoinFallbackStartMs = 0;
     gServerLaunchSettings.serverCode.clear();
 }
 
@@ -658,6 +752,18 @@ static bool pollPendingServerRoomCode()
 
             gServerLaunchSettings.serverCode = content;
             onlineMenuSetServerCode(content);
+            if (MP_CONTEXT.currentRoomCode != content)
+            {
+                MP_CONTEXT.currentRoomCode = content;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "network.room-code.hud-source-updated", content,
+                    "newly registered local server code was applied to the gameplay HUD",
+                    MP_CONTEXT.tick,
+                    {{"room_code", content},
+                     {"source", "gui-server-room-file"}},
+                    __FILE__, __LINE__, __func__);
+            }
 
             printf("[ROOM DISPLAY] source=headless-server code=%s\n",
                    content.c_str());
@@ -710,21 +816,32 @@ static bool pollPendingServerRoomCode()
     return false;
 }
 
-void guiMain(GLFWwindow* win, GameState& state)
+void guiTickPendingServerRoomCode(GameState& state)
 {
-    AuthSystem& auth = AuthSystem::instance();
-    AuthController& authCtrl = AuthController::instance();
-
-    if (auth.state() == AuthState::Checking)
-        auth.tickValidate();
-
-    // Poll for room code from external server process (non-blocking).
-    // Returns true when the room code file was successfully read.
-    // 7 22 2026 1230 no localhost 
     if (pollPendingServerRoomCode())
     {
-        // The host joined directly when startup was requested. Preserve the
-        // room code for other players without replacing that local session.
+        const bool localDirectJoinPending =
+            MP_CONTEXT.active && !MP_CONTEXT.connected &&
+            MP_CONTEXT.serverAddress.rfind("127.0.0.1:", 0) == 0;
+        if (localDirectJoinPending)
+        {
+            constexpr uint64_t LOCAL_JOIN_GRACE_MS = 1500;
+            gPendingLocalJoinFallbackRoomCode = gServerLaunchSettings.serverCode;
+            gPendingLocalJoinFallbackStartMs = MimitaNet::nowMs();
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.gui-server.local-join-grace-started",
+                gServerLaunchSettings.serverCode,
+                "room registration completed; allowing local UDP handshake retries before coordinator fallback",
+                MP_CONTEXT.tick,
+                {{"server_address", MP_CONTEXT.serverAddress},
+                 {"room_code", gServerLaunchSettings.serverCode},
+                 {"wait_elapsed_ms", MimitaNet::nowMs() - gPendingServerRoomFileStartMs},
+                 {"local_join_grace_ms", LOCAL_JOIN_GRACE_MS}},
+                __FILE__, __LINE__, __func__);
+            return;
+        }
+
         if (!MP_CONTEXT.active)
         {
             Debug::log(
@@ -741,6 +858,58 @@ void guiMain(GLFWwindow* win, GameState& state)
             return;
         }
     }
+
+    if (gPendingLocalJoinFallbackRoomCode.empty())
+        return;
+
+    if (MP_CONTEXT.connected ||
+        (MP_CONTEXT.active &&
+         MP_CONTEXT.serverAddress.rfind("127.0.0.1:", 0) != 0))
+    {
+        gPendingLocalJoinFallbackRoomCode.clear();
+        gPendingLocalJoinFallbackStartMs = 0;
+        return;
+    }
+
+    constexpr uint64_t LOCAL_JOIN_GRACE_MS = 1500;
+    if (MimitaNet::nowMs() - gPendingLocalJoinFallbackStartMs <
+        LOCAL_JOIN_GRACE_MS)
+        return;
+
+    if (MP_CONTEXT.active)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.gui-server.local-join-fallback",
+            gPendingLocalJoinFallbackRoomCode,
+            "local UDP handshake did not connect during its retry window; joining through coordinator",
+            MP_CONTEXT.tick,
+            {{"server_address", MP_CONTEXT.serverAddress},
+             {"room_code", gPendingLocalJoinFallbackRoomCode},
+             {"grace_elapsed_ms", MimitaNet::nowMs() - gPendingLocalJoinFallbackStartMs}},
+            __FILE__, __LINE__, __func__);
+        MimitaNet::mpShutdown(MP_CONTEXT);
+    }
+
+    if (!MP_CONTEXT.active)
+    {
+        gPendingConnect = {};
+        gPendingConnect.shouldConnect = true;
+        gPendingConnect.roomCode = gPendingLocalJoinFallbackRoomCode;
+        onlineMenuSetActive(false);
+        state = GAME_PLAYING;
+    }
+    gPendingLocalJoinFallbackRoomCode.clear();
+    gPendingLocalJoinFallbackStartMs = 0;
+}
+
+void guiMain(GLFWwindow* win, GameState& state)
+{
+    AuthSystem& auth = AuthSystem::instance();
+    AuthController& authCtrl = AuthController::instance();
+
+    if (auth.state() == AuthState::Checking)
+        auth.tickValidate();
 
     if (gGuiMenuState == GUI_MENU_AUTH)
     {
@@ -1125,12 +1294,42 @@ void guiMain(GLFWwindow* win, GameState& state)
                     {
                         gPendingConnect = {};
                         gPendingConnect.shouldConnect = true;
-                        gPendingConnect.roomCode = r.roomCode;
+                        DWORD ownServerExitCode = 0;
+                        const bool ownExternalServerAlive =
+                            gServerProcessLaunched && gServerProcessInfo.hProcess &&
+                            GetExitCodeProcess(gServerProcessInfo.hProcess,
+                                               &ownServerExitCode) &&
+                            ownServerExitCode == STILL_ACTIVE;
+                        const bool joiningOwnExternalServer =
+                            ownExternalServerAlive &&
+                            r.roomCode == gServerLaunchSettings.serverCode &&
+                            !gServerLaunchSettings.passwordProtected;
+                        const bool joiningOwnListenServer =
+                            gListenServer.active &&
+                            r.roomCode == gListenServer.serverCode &&
+                            !gListenServer.passwordProtected;
+                        if (joiningOwnExternalServer || joiningOwnListenServer)
+                        {
+                            const uint16_t localPort = joiningOwnExternalServer
+                                ? gServerLaunchSettings.port : gListenServer.port;
+                            const std::string& localMap = joiningOwnExternalServer
+                                ? gServerLaunchSettings.mapName : gListenServer.mapName;
+                            const std::string& localName = joiningOwnExternalServer
+                                ? gServerLaunchSettings.serverName : gListenServer.serverName;
+                            gPendingConnect.directAddress =
+                                "127.0.0.1:" + std::to_string(localPort);
+                            gPendingConnect.mapName = localMap;
+                            gPendingConnect.serverName = localName;
+                        }
+                        else
+                            gPendingConnect.roomCode = r.roomCode;
 
                         Debug::log(
                             Debug::Category::Networking,
-                            "[ROOM JOIN REQUEST] room=%s transport=room-code\n",
-                            r.roomCode.c_str());
+                            "[ROOM JOIN REQUEST] room=%s transport=%s\n",
+                            r.roomCode.c_str(),
+                            gPendingConnect.directAddress.empty()
+                                ? "room-code" : gPendingConnect.directAddress.c_str());
 
                         onlineMenuSetActive(false);
 

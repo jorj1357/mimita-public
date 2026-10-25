@@ -28,7 +28,12 @@ Status: current first-version behavior
   separated map spawn points; if fewer than two distinct points exist, it
   derives two fallback anchors around the map anchor.
 - TDM keeps health bars visible and requests green teammate and red enemy
-  player mesh wireframes through its JSON presentation settings.
+  player mesh wireframes through its JSON presentation settings. Death
+  ragdolls are enabled for TDM.
+
+Death ragdolls are shown by default through the global ragdoll-death setting.
+A gamemode may explicitly set `ragdoll_enabled: false` to suppress them; TDM
+explicitly enables them so its mode override cannot turn off the default.
 
 ## Runtime ownership
 

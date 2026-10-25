@@ -66,6 +66,8 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
             options.npcsEnabled = false;
         else if (std::strcmp(argv[i], "--room-file") == 0 && i + 1 < argc)
             options.roomFilePath = argv[++i];
+        else if (std::strcmp(argv[i], "--room-code-file") == 0 && i + 1 < argc)
+            options.roomCodeFilePath = argv[++i];
         else if (std::strcmp(argv[i], "--timeout") == 0 && i + 1 < argc)
             options.timeoutSecs = (uint32_t)std::max(0, std::atoi(argv[++i]));
         else if (std::strcmp(argv[i], "--duel") == 0)

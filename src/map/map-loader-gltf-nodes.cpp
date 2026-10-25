@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <algorithm>
+#include <limits>
 #include <unordered_set>
 #include <string>
 #include <vector>
@@ -167,8 +168,31 @@ void walkNode(
         if (&target == skyMesh)
             GLB_LOG("[GLB] ROUTING TO SKY MESH node=%d name=%s\n", nodeIndex, node.name.c_str());
 
+        const size_t firstVertex = target.verts.size();
         for (int primIndex = 0; primIndex < (int)gltfMesh.primitives.size(); ++primIndex)
             appendGLBMeshPrimitive(model, node.mesh, primIndex, gltfMesh.primitives[primIndex], world, materialTextures, target);
+        if (&target != skyMesh && target.verts.size() > firstVertex)
+        {
+            MapGLBObject object;
+            object.id = "node:" + std::to_string(nodeIndex);
+            object.name = node.name.empty()
+                ? (gltfMesh.name.empty()
+                    ? "node_" + std::to_string(nodeIndex) : gltfMesh.name)
+                : node.name;
+            object.nodeIndex = nodeIndex;
+            object.transform = world;
+            object.vertexFirst = firstVertex;
+            object.vertexCount = target.verts.size() - firstVertex;
+            object.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+            object.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+            for (size_t i = firstVertex; i < target.verts.size(); ++i)
+            {
+                object.boundsMin = glm::min(object.boundsMin, target.verts[i].pos);
+                object.boundsMax = glm::max(object.boundsMax, target.verts[i].pos);
+            }
+            if (object.boundsMax.x >= object.boundsMin.x)
+                target.objects.push_back(std::move(object));
+        }
     }
     else if (node.mesh >= 0)
     {

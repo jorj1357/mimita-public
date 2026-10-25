@@ -373,6 +373,26 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
                    event->shooterPlayerId, event->npcEntityId, event->damage);
         }
     }
+    else if (event->damage > 0)
+    {
+        // Remote/AI shooter: the prediction path never ran here, so present the
+        // same blood, impact decals, and damage number every observer should
+        // see. Hitmarkers and hit sounds remain local-attacker-only.
+        HitEvent ev;
+        ev.position = hitPos;
+        ev.normal = glm::length(hitNml) > 0.001f
+            ? glm::normalize(hitNml) : glm::vec3(0.0f, 0.0f, 1.0f);
+        ev.direction = glm::length(hitDir) > 0.001f
+            ? glm::normalize(hitDir) : -ev.normal;
+        ev.hitEntity = true;
+        ev.damage = event->damage;
+        ev.attacker = shooterName;
+        ev.victim = npcName;
+        ev.weaponSource = weaponId;
+        HitEffects::onHit(ev);
+        printf("[NET NPC HIT PRESENT] shooter=%u npc=%u damage=%d remote=1\n",
+               event->shooterPlayerId, event->npcEntityId, event->damage);
+    }
 
     // Server says 0 damage (miss) but client predicted a hit: show disagreement
     if (isLocalShooter && event->damage == 0 && (predicted || authMode))

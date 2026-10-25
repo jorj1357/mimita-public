@@ -1703,3 +1703,22 @@ run again
         ↓
 verify numeric success conditions
 
+
+## Scenario input recording and playback events
+
+The scenario input recorder/player emits these GENERAL-level events:
+
+- `scenario.record.started` — path, map, mode, weapon set, tick rate.
+- `scenario.record.stopped` — path, frames, stop reason.
+- `scenario.playback.started` — path, map, mode, weapon set, frame count, start position.
+- `scenario.playback.start_ready` — start restored flag, position/server/teleport/reconcile readiness, wait time.
+- `scenario.playback.divergence` — first frame and positions whose distance exceeds 1 m.
+- `scenario.playback.completed` — frames played, completion flag, max position error, first divergence.
+- `scenario.playback.rejected` — path and reason (schema, map, mode, weapon set, path, active state).
+- `scenario.playback.stopped` — cancellation reason.
+
+The contract is in `docs/specs/dev-loop/scenario-input-recording.md`.
+
+`scenario.playback.snap` records a >=5 m drift correction to the next recorded
+position. `scenario.playback.equipment` records a per-tick recorded weapon
+change applied during playback.

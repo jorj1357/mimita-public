@@ -414,9 +414,13 @@ void DeathSystem::update(
         // authoritative, so local DeathSystem must never auto-respawn them.
         bool networkDuelActive = DuelQueue::instance().inDuel() ||
             MimitaNet::CommunityMatchClient::instance().active();
+        // Any live networked session owns respawn. Sandbox included: the
+        // server already publishes an authoritative new life, and a second
+        // local respawn makes death state race the server generation.
+        const bool networkedSession = gpMpContext && gpMpContext->active;
 
         bool shouldRespawn =
-            !duelModeActive && !networkDuelActive;
+            !duelModeActive && !networkDuelActive && !networkedSession;
 
         if (shouldRespawn)
         {
@@ -446,9 +450,10 @@ void DeathSystem::update(
             gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
         bool networkDuelActive = DuelQueue::instance().inDuel() ||
             MimitaNet::CommunityMatchClient::instance().active();
+        const bool networkedSession = gpMpContext && gpMpContext->active;
 
         bool shouldRespawn =
-            !duelModeActive && !networkDuelActive;
+            !duelModeActive && !networkDuelActive && !networkedSession;
 
         if (shouldRespawn)
         {

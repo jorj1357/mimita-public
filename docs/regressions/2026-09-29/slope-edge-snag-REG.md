@@ -1,9 +1,11 @@
 # Walkable Slope and Edge Snag
 
 Time created: 2026-09-29T12:43:57Z
-Time last updated: 2026-09-29T19:35:00Z
+Time last updated: 2026-10-24T20:35:50Z
 
 Status: ATTEMPTED FIX (6) — NOT FIXED
+
+Current status update (2026-10-24T20:35:50Z): ATTEMPTED FIX (8) — partial code-level correction; uphill route still stops at vertical map face triangle 2440; geometry intent and human acceptance unresolved. The original header status is retained as historical text.
 
 Related specification:
 `docs/specs/movement/movement.md`
@@ -279,3 +281,102 @@ Result:
 
 The source-level change and deterministic self-test are pending the cold build
 and live slope/down-dash review. This is not yet a confirmed live fix.
+
+## Reproduction 2 — 2026-10-24 live cardinal walk and trace
+
+Time: `2026-10-24T20:08:00Z` through `2026-10-24T20:09:55Z`
+
+The real dev-loop launched build `3094` in mode 1 Sandbox on
+`dust2cyberiav4`, run `20261024_200800`. The temporary collision logger level
+was set to `trace`; the dev-launch profile remained loopback and Sandbox. The
+exact journal was `logs/2026-10-24/20261024_200800/events.jsonl`.
+
+The live scenario applied 600 movement simulation ticks for each requested
+camera-relative direction. The idle 60-tick spawn-settle phase is separate.
+The measured segments were:
+
+- Forward, world direction approximately `(0, -1)`: from `(-592.029, 28.228,
+  2361.132)` to `(-592.034, -26.160, 2360.895)`. It hit opposing wall contacts
+  on triangle `1868`, then repeatedly contacted triangle `2595` (422 contact
+  records) with +Y response against -Y input.
+- Left, world direction approximately `(+1, 0)`: from `(-592.034, -25.887,
+  2361.109)` to `(-592.018, -25.909, 2360.875)`. It made effectively no
+  forward progress. The left arm repeatedly contacted triangles `2554` and
+  `2555` (586 blocking records total) with -X normals against +X input.
+- Back, world direction approximately `(0, +1)`: from `(-592.099, -25.891,
+  2361.147)` to `(-592.593, 91.024, 2360.831)`. Contacts included triangle
+  `2548` (191 records).
+- Right, world direction approximately `(-1, 0)`: from `(-592.596, 90.640,
+  2361.052)` to `(-620.939, 94.461, 2355.612)`. It contacted vertical wall
+  triangle `1730` (426 records) and adjacent slope triangle `1729` (278
+  records); the route made contact with the wall/slope junction and ended
+  against the wall.
+
+### First confirmed code-level mismatch
+
+On tick `6004`, actor part `rightLeg` contacted world triangle `1730`, whose
+surface normal was `(1, 0, 0)` (vertical wall). The diagnostic marked
+`walkable_ground_response_flattened=true` and used response normal `(0, 0, 1)`.
+The surface normal did not describe a walkable face; the rounded feature normal
+had caused a wall contact to be treated as grounded support. On slope triangle
+`1729`, the actual face normal `(0, 0.2425, 0.9701)` was also replaced by
+`(0, 0, 1)`. At tick `5999`, the pre-response velocity was approximately
+`(-20, 0, -18.13)` and post-response velocity approximately
+`(-20, 0, 6.36)`, so the response removed the slope-normal component and
+reversed vertical velocity instead of responding along the authored slope.
+
+This establishes an incorrect support classification and a slope-normal
+response mismatch in the current solver. The recorded movement route does not
+prove that each hard stop was a false seam collision: triangles `2554/2555`
+and `1730` produced consistent vertical-wall normals, and those can represent
+real map walls. It does show that a rounded response normal can promote a
+vertical face into a false walkable contact where it meets the slope.
+
+### Attempted Fix 8
+
+The current solver is being changed to classify map grounding from the oriented
+world-face normal, retain actual slope normals, canonicalize only numerically
+flat floors, and preserve the configured response on grounded body contacts.
+No live result is claimed until the same four 600-tick segments are repeated on
+a newly published dev-loop executable and the trace is checked for the false
+wall-as-floor classification.
+
+### Diagnostic volume and cleanup
+
+The complete journal contains 9,128 `collision.contact.before_response`,
+7,931 `collision.contact.after_response`, 7,601 `collision.solve.frame`, and
+4,774 `collision.solve.summary` records. It reached 100,045,615 bytes; unrelated
+performance windows accounted for approximately 37.47 MB. Temporary trace and
+map settings were restored after the capture. No far-across-map contact was
+confirmed. The maximum recorded contact point distance from the player origin
+was about 3.91 m; because this is measured from the root and not the visible
+contacting body part, it is a lead to compare with the actor-part mesh, not
+proof of an off-body collision.
+
+### Fix 8 live retest (2026-10-24)
+
+Build 3099 was launched through the dev-loop in mode 1 Sandbox on
+`dust2cyberiav4`. Runtime journal:
+`logs/2026-10-24/20261024_202809/events.jsonl`. The four cardinal-direction
+scenarios each applied 600 ticks. The focused uphill test applied 600 movement
+ticks after settling at the slope/block junction.
+
+The post-change trace recorded zero vertical map faces misclassified as
+walkable or flattened in each cardinal segment; the baseline had 80 such
+records in the rightward segment. Slope triangle 1729 retained its authored
+normal `(0, 0.2425, 0.9701)` as the response normal. In the uphill run the actor
+moved about 20.6 m uphill and gained about 5.38 m elevation before stopping at
+map triangle 2440, whose face normal was `(0, 1, 0)` and opposed the uphill
+direction. This is a real vertical map-face contact in the collision mesh; the
+trace alone cannot establish whether that face is intended geometry or an
+authored seam. The route therefore remains blocked and is not accepted as
+fixed. No human visual or feel acceptance was performed.
+
+The four cardinal runs did not satisfy the requested 99.9% straight-line
+criterion: routes encountered map walls and slopes. This is not evidence that
+the code change failed to correct the specific false wall-as-floor response;
+it means the broad route is not a clean seam acceptance path. Trace settings
+were temporarily raised for capture and restored afterward. This journal is
+78,485,523 bytes with performance logging disabled for the capture. The
+earlier baseline journal exceeded 100 MB, so these diagnostic captures are
+bounded by temporarily disabling unrelated performance logging.

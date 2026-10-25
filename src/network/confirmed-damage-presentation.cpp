@@ -84,12 +84,17 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     if (ctx.presentedDamageEventIds.count(key))
         return false;
 
-    if (event.attackerPlayerId != ctx.localPlayerId)
+    const bool localAttacker = event.attackerPlayerId == ctx.localPlayerId;
+    const bool localVictim = event.targetPlayerId == ctx.localPlayerId;
+    // Local-victim presentation is owned by the projectile damage path so it
+    // can attach blood/flinch to the local body once. Remote observers still
+    // need the same damage numbers and hit effects as the attacker.
+    if (!localAttacker && localVictim)
         return false;
-    if (event.attackerSpawnGeneration != 0 &&
+    if (localAttacker && event.attackerSpawnGeneration != 0 &&
         event.attackerSpawnGeneration != ctx.lastKnownSpawnGeneration)
         return false;
-    if (!hasMatchingVictimSpawn(ctx, event))
+    if (localAttacker && !hasMatchingVictimSpawn(ctx, event))
         return false;
 
     const char* weaponId = networkWeaponTypeName(event.weapon);
@@ -100,18 +105,13 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
         ActorPresetWeapons::PresentationFlag::HitSounds);
     const auto modeDamageNumbers = ActorPresetWeapons::modePresentationOverride(
         ActorPresetWeapons::PresentationFlag::DamageNumbers);
-    if (!presentation.enabled && !modeHitmarkers && !modeHitSounds && !modeDamageNumbers)
+    if (localAttacker && !presentation.enabled && !modeHitmarkers &&
+        !modeHitSounds && !modeDamageNumbers)
         return false;
     if (event.attackerPlayerId == event.targetPlayerId && !presentation.selfDamageFeedback)
         return false;
 
     rememberPresentedDamage(ctx, key);
-
-    // Server confirmed a hit the local attacker predicted.
-    ++ctx.confirmedHits;
-
-    const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
-    const bool authMode = netCfg.serverAuthoritativeHits.enabled;
 
     HitEvent hit;
     hit.position = {event.hitX, event.hitY, event.hitZ};
@@ -124,6 +124,25 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     hit.attacker = playerNameFor(ctx, event.attackerPlayerId);
     hit.victim = playerNameFor(ctx, event.targetPlayerId);
     hit.weaponSource = weaponId;
+    hit.spawnDamageNumber = true;
+
+    if (!localAttacker)
+    {
+        // Remote attacker: the prediction path never ran on this client, so
+        // spawn the shared confirmed hit effects (blood, decals, damage number)
+        // locally. No hitmarker or hit sound; those stay attacker-owned.
+        HitEffects::onHit(hit);
+        printf("[NET DAMAGE PRESENT] eventId=%u attacker=%u target=%u damage=%d weapon=%u remote=1\n",
+               event.eventId, event.attackerPlayerId, event.targetPlayerId,
+               event.damage, (unsigned)event.weapon);
+        return true;
+    }
+
+    // Server confirmed a hit the local attacker predicted.
+    ++ctx.confirmedHits;
+
+    const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
+    const bool authMode = netCfg.serverAuthoritativeHits.enabled;
 
     // In server-authoritative mode, always show confirmed feedback.
     // In prediction-only mode, only show if the individual flags are set.

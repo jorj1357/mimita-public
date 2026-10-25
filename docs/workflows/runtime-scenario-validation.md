@@ -69,3 +69,25 @@ Always separate:
 - runtime scenario inputs and exit status;
 - JSONL records and first divergence or success condition; and
 - human visual/multiplayer acceptance, if required.
+
+## Record and replay player input
+
+For movement, dash, edge, and weapon-collision investigations, record the real
+input once and replay it after a code change:
+
+```text
+scenario_startrecord coolplace_edge
+# play the exact route normally
+scenario_endrecord
+scenario_play devscripts/scenarios/user/scenario-YYYYMMDD_HHMMSS-coolplace_edge.jsonl
+```
+
+The recording is local-only under `devscripts/scenarios/user/`. The player
+auto-restores the recorded start position, aim, weapon, and start velocity, runs
+at fixed 60 Hz, and reports `scenario.playback.completed` with
+`max_position_error_m` and the first divergence. A checked-in template is
+`devscripts/scenarios/recorded_input_playback.example.json`.
+
+Input playback is not a full deterministic world replay. Run it on the same
+map, mode, weapon set, and local dev server; NPC and remote-player state can
+differ.

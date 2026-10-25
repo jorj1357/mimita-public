@@ -417,6 +417,10 @@ struct MultiplayerContext
     uint64_t proceduralTeleportSentMs = 0;
     bool proceduralTeleportPending = false;
     bool awaitingExplodeDeath = false;
+    // Life identity when the explode request was sent. The server can respawn
+    // within the same tick it processes the request, so a health<=0 snapshot
+    // may never arrive; a generation change is the authoritative ack.
+    uint32_t explodeRequestStartSpawnGeneration = 0;
     bool flyEnabled = false;
     float flySpeedMultiplier = 1.0f;
     uint64_t explodeRequestLastSendMs = 0;
@@ -463,6 +467,7 @@ struct MultiplayerContext
         uint64_t applyAtMs = 0;       // max-hold wall-clock fallback
         uint32_t shooterId = 0;       // attacker entity (for the visual gate)
         uint32_t eventServerTick = 0; // shot's server tick (lastServerTick)
+        uint32_t spawnGeneration = 0; // life the damage belongs to
         uint64_t receivedMs = 0;
     };
     std::vector<PendingVictimHealth> pendingVictimHealth;

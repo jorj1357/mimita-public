@@ -1107,7 +1107,7 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!def || !rt) return result;
 
-    if (rt->fireCooldown > 0.0f && !rt->isReloading) {
+    if (rt->fireCooldown > 0.0f) {
         playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
         return result;
     }
@@ -1121,8 +1121,6 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
             reload(player);
             result.autoReloadTriggered = true;
         }
-        return result;
-    } else if (rt->fireCooldown > 0.0f) {
         return result;
     }
 

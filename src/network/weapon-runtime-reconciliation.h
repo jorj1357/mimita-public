@@ -21,7 +21,8 @@ bool reconcileAuthoritativeWeaponRuntime(
     uint32_t spawnGeneration,
     const char* source,
     bool applyAmmo = true,
-    bool allowReloadStateOverride = true);
+    bool allowReloadStateOverride = true,
+    uint32_t resultServerTick = 0);
 
 // Fire-and-forget reload request for a SPECIFIC weapon (holstered or not).
 // Used when a weapon starts its background reload on unequip/switch-away so

@@ -1,3 +1,72 @@
+## New intake — 2026-10-25, 00:21 UTC
+
+- **Event-driven completion for AI-run gameplay scenarios:** Running the game
+  through a fixed long timeout (for example, 180 seconds) makes AI workflows
+  such as DeepSeek wait even when the scenario's desired outcome has already
+  occurred. Make scenario execution wait for meaningful game/runtime events
+  and finish as soon as the configured success or failure condition is
+  observed, while retaining a bounded timeout as a fallback for missing
+  events or hangs. Define the supported stop conditions and how scenario
+  results are reported. This is an intake item; implementation and exact event
+  contract remain open.
+
+## New intake — 2026-10-24, 20:15 UTC
+
+Player report from the run presented as TDM mode 1 on `funworld3`:
+
+- **TDM config and run identity:** `config/gamemodes/tdm.json` currently
+  specifies five actors per team, a 30-point goal, a 180-second limit,
+  10-second intermission, three-second countdown, five-second results,
+  separate `red_spawn` / `blue_spawn` groups, visible health bars, and green /
+  red player wireframes. This matches the requested defaults in the file.
+  The supplied run does not prove those settings ran: dev launch profile 1
+  (`current`) is configured in `devscripts/dev-launch-modes.json` with
+  `--mode sandbox`, `--gamemode sandbox`, and `--no-npcs`. The journal also
+  shows the final server arguments include those values and starts with
+  `mode=sandbox`; the earlier `--mode melee` argument is superseded. Current
+  dev-loop status identifies runtime build 3091 while build 3093 is latest.
+  Select or configure a launch profile that uses `--gamemode tdm` and does not
+  disable NPCs, then confirm the server journal says `mode=tdm` and records
+  the intended executable before
+  evaluating TDM phases, roster, scoring, spawns, or presentation.
+- **NPC death followed by apparent server failure:** The player reports that
+  killing an NPC is followed by a “last packet X seconds ago” indication and
+  what looks like a server crash. In
+  `logs/2026-10-24/20261024_192228/events.jsonl`, the client records
+  `death.kill.enter` for `NPC Dev` at `2026-10-24T19:28:05.557Z`, with
+  `actor_type=player`, `killer=void_death`, and Z = -500.08; another death
+  event follows 50 ms later with an unknown killer. The launch arguments name
+  the host player `NPC Dev` and include `--no-npcs`, matching the death record's
+  `actor_type=player`; this does not show an NPC being killed. The server continues
+  sending snapshots through `19:28:29.006Z` and logs another event at
+  `19:28:30.530Z`. Dev-loop status later showed server PID 4808 alive and no
+  client PID; at `20:08:00.883Z` its journal records a successful supervised
+  server stop (`stopped=true`). The evidence does not show a server crash after
+  the reported death. It does show the intended TDM run was logged as Sandbox,
+  and the client death record is not an authoritative NPC kill record. Next,
+  reproduce on the intended build and confirmed TDM mode, then correlate the
+  actor's server-side death, score/respawn events, last server tick/snapshot,
+  client disconnect, and process exit/stop result. Keep crash, server stall,
+  and client/network disconnect as separate outcomes.
+- **NPC aggression:** The player wants NPCs to engage more aggressively. This
+  run has no TDM NPC behavior evidence (`npc_count=0` in the relevant server
+  snapshot summaries), so it cannot identify a TDM profile or prove a tuning
+  failure. First confirm the TDM role-to-behavior-profile selection and record
+  target acquisition, first legal shot, accepted shots, weapon changes, and
+  pursuit. Then tune the selected profile in JSON while preserving shared
+  weapon cooldowns and legal attack rules.
+- **Position correction around map geometry:** At
+  `2026-10-24T19:25:51.299Z`, the dev-loop delivered the client command
+  `teleport 73.639,20.781,355.618`. The server logged
+  `movement.server-position-corrected` with reason `blocking-geometry` and a
+  50.05 m correction; the client applied the authoritative position with a
+  48.72 m error, then subsequent corrections were about 0.011 m. This run
+  shows a correction after an explicit teleport into blocking geometry. It
+  does not establish a correction during ordinary movement far from geometry.
+  Reproduce the ordinary movement case separately and compare client
+  prediction, server-accepted position, collision contacts, and correction
+  reason.
+
 ## New intake — 2026-10-23, 18:14
 
 Player report from Dust 2 Cyberia V4 (`dust2cyberiav4`):
@@ -131,6 +200,7 @@ shards with heavy overlap. The original shape defects were traced to randomized 
 | Blood and world-impact marks | Effects should appear consistently when any actor hits another actor, including NPC-to-player hits. Blood, bullet holes, and world cracks should preserve the complete authored PNG shape and alpha, with only uniform size changes and in-plane rotation. | Shape fix implemented and built as 2741: blood spray has equal billboard axes, and a world crack renders once as the complete square PNG (configured diameter 2 world units), with uniform sizing and in-plane rotation. The render summary records visible blood/crack aspect ratios. Gameplay visual acceptance remains pending because the active Duel session is still build 2733. Large red/transparent geometry in the screenshots is a separate unidentified artifact. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md), [`weapons/weapons.md`](weapons/weapons.md); code owners: `src/effects/hit-effects.cpp::HitEffects::onHit()`, `src/effects/effect-part-blood.cpp::EffectPartSystem::spawnBloodEffect()`, `src/ragdoll/ragdoll-mode.cpp::RagdollModeSystem::sprayCorpseBlood()`, `src/effects/effect-part.cpp::EffectPartSystem::spawnWorldCracks()`, `src/effects/effect-part-render.cpp` crack decal batching |
 | Shotgun pellet direction | Each pellet from an NPC shotgun shot should travel along its own shot direction; the player reports pellets appearing aligned to world axes. | User-reported; not reproduced. | [`weapons/weapons.md`](weapons/weapons.md), [`networking/networking.md`](networking/networking.md) |
 | Performance / frame pacing | Play felt somewhat choppy; turning OBS off seemed to help, but the player is unsure whether the difference was real. | Unconfirmed impression; no measured frame-time or controlled comparison yet. Do not treat OBS as the cause without measurement. | [`performance/performance.md`](performance/performance.md) |
+| Fullscreen drawing and shadow depth | The player reports fullscreen mode 6 looked choppy and depth/shadow presentation was wrong, despite mode 6 previously looking fine. Current shadow update selection is mode 1 (update every rendered frame) as of 2026-10-24 18:11 EDT / 2026-10-24T22:11:00Z, selected because of fullscreen drawing issues. Mode 2 retains the every-other-frame shadow update optimization. Runtime visual confirmation remains pending. | Restore mode 1 as the current default and compare the same fullscreen scene after publishing the new build; record frame pacing and visual acceptance separately. | [`performance/performance.md`](performance/performance.md), [`graphics/graphics-resolution.md`](graphics/graphics-resolution.md) |
 | Rocket Launcher presentation | The rocket needs a more complete explosion animation and presentation. | Desired improvement; exact animation/effect and timing are open. | [`weapons/weapons.md`](weapons/weapons.md), [`visuals/visuals.md`](visuals/visuals.md) |
 | World-hit sound | World-hit sounds should scale with impact force and choose from multiple sounds instead of always using one. The player pointed to `assets/sound/hitworld2.mp3` and said ricochet already has a related precedent. | User-reported desired behavior. Current ricochet behavior and how force should affect loudness, pitch, or sample choice were not verified or specified. | [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md), [`weapons/weapons.md`](weapons/weapons.md), `config/audio-recipes.json` |
 | Sound asset organization | Make sound files easier to find using meaningful folders and short event names, for example `assets/sound/entity/general/death1.wav`, instead of loose, long descriptive filenames. | Organization proposal; confirm naming, variant numbering, and how recipes refer to files before migrating assets. | [`../operations/asset-management/asset-management.md`](../operations/asset-management/asset-management.md), [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md) |

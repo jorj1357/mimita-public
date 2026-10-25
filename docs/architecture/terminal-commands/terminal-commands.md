@@ -124,3 +124,16 @@ formats, and failure handling. They must be labeled by what they actually
 exercise and must not be presented as proof of live gameplay. New behavior
 should receive a runtime scenario and structured JSONL evidence before a new
 synthetic self-test is considered.
+
+## Scenario input recording commands
+
+| Command | Purpose |
+|---|---|
+| scenario_startrecord [name] | Start per-tick input recording under devscripts/scenarios/user/. |
+| scenario_endrecord | Stop recording and write the footer. |
+| scenario_status | Show recording/playback path and frame counts. |
+| scenario_play <path.jsonl> | Validate, restore the recorded start state, and play the input. |
+| scenario_stop | Cancel playback. |
+
+The recording/playback contract is
+[docs/specs/dev-loop/scenario-input-recording.md](../../specs/dev-loop/scenario-input-recording.md).

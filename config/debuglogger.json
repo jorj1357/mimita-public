@@ -27,8 +27,7 @@
       "level": "important",
       "file_output": false
     },
-    "collision": {
-      "level": "important",
+    "collision": { "level": "important",
       "file_output": false
     },
     "npc_combat": { "level": "off", "file_output": false },

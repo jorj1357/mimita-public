@@ -37,4 +37,8 @@ bool peekScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted = n
 bool consumeScheduledTerminalMove(float& moveX, float& moveY,
                                   bool* justStarted = nullptr,
                                   bool* justEnded = nullptr);
+bool advanceScheduledTerminalMoveFixedTick(bool* justStarted = nullptr,
+                                           bool* justEnded = nullptr);
+bool consumeScheduledTerminalMoveForNetwork(float& moveX, float& moveY);
+int scheduledTerminalMoveTotalTicks();
 const std::string& scheduledTerminalMoveRequestId();

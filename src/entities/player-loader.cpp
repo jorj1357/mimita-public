@@ -969,6 +969,9 @@ static void buildBodyPartCollidersFromModel(const tinygltf::Model& model, Player
 bool Player::loadModel(const char* path)
 {
     const std::string resolvedPath = resolveAssetPath(path);
+    // A new model starts with raw GLB UVs; avatar atlas application marks the
+    // upload identity again after it rewrites UVs.
+    avatarAtlasUvs = false;
     auto& cache = playerModelCache();
     const std::string cacheKey = playerModelCacheKey(resolvedPath);
 
@@ -1405,6 +1408,7 @@ void Player::finalizeModelIfReady()
 
     updateModelWorldTransforms();
     modelLoaded = true;
+    avatarAtlasUvs = false;
     setRenderModelKeyFromPath(d->renderModelKey);
 
     // Avatar application can happen before this async model finishes. Complete

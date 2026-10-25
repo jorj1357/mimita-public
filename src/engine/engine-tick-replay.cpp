@@ -22,9 +22,14 @@
 #include "combat/death-system.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
+#include "network/multiplayer-context.h"
 #include "devtools/terminal.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/npc-spawn-commands.h"
+#include "devtools/scenario-player.h"
+#include "devtools/scenario-recorder.h"
+#include "input/scenario-input.h"
 #include "replay/replay.h"
 #include "replay/replay-editor.h"
 #include "replay/replay-export.h"
@@ -231,8 +236,27 @@ void engineTickReplay(Engine& engine, float dt)
     int simTicksRun = 0;
     while (simAccumulator >= SIM_DT && simTicksRun < gSimMaxCatchupTicks) {
         InputFrame tickFrame;
+        const bool scenarioPlaybackActive = ScenarioPlayer::instance().active();
 
-        if (!replayPlaybackActive) {
+        if (scenarioPlaybackActive) {
+            freecamEnabled = false;
+            tickFrame = ScenarioPlayer::instance().currentFrame();
+            // Set the recorded aim before local simulation so dash direction,
+            // movement response, and weapon collision use the same camera the
+            // recording used. Combat re-applies it after the camera tick.
+            camera.yaw = tickFrame.lookYaw;
+            camera.pitch = tickFrame.lookPitch;
+            if (glm::length(tickFrame.camForward) > 0.001f)
+            {
+                camera.front = glm::normalize(tickFrame.camForward);
+                camera.right = glm::normalize(
+                    glm::cross(camera.front, glm::vec3(0.0f, 0.0f, 1.0f)));
+                camera.up = glm::normalize(
+                    glm::cross(camera.right, camera.front));
+            }
+            if (tickFrame.reloadPressed)
+                Terminal::instance().execute("reload");
+        } else if (!replayPlaybackActive) {
             InputCommandSystem::instance().setKeyboardEnabled(
                 !Terminal::instance().isOpen() && !isChatOpen() &&
                 !PauseMenu::isOpen());
@@ -340,9 +364,49 @@ void engineTickReplay(Engine& engine, float dt)
         // camera while optionally unfreezing the world for live observation.
         const bool editorUnfrozen = MapEditor::instance().active() &&
                                     !MapEditor::instance().freezeWorld();
-        if ((!freecamEnabled || editorUnfrozen) && !replayPlaybackActive)
+        if ((!freecamEnabled || editorUnfrozen) && !replayPlaybackActive) {
+            bool moveStarted = false;
+            bool moveEnded = false;
+            float scheduledSide = 0.0f;
+            float scheduledForward = 0.0f;
+            const bool hasScheduledMove = peekScheduledTerminalMove(
+                scheduledSide, scheduledForward);
+            const bool scheduledMoveTick =
+                advanceScheduledTerminalMoveFixedTick(&moveStarted, &moveEnded);
+            const glm::vec3 positionBeforeTick = player.pos;
+            if (!scenarioPlaybackActive)
+                ScenarioRecorder::instance().captureTick(tickFrame, player, camera);
             simulateTick(simContext, tickFrame);
-        else if (freecamEnabled && !replayPlaybackActive && worldLoaded)
+            if (scheduledMoveTick && (moveStarted || moveEnded)) {
+                const std::string& requestId = scheduledTerminalMoveRequestId();
+                const glm::vec3& moveDirection = player.pos - positionBeforeTick;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "agent.move.applied",
+                    requestId.empty() ? "agent-move" : requestId,
+                    moveEnded ? "scheduled move reached fixed-tick duration"
+                              : "scheduled move applied on first fixed tick",
+                    static_cast<uint32_t>(player.movementSimulationTick),
+                    {{"request_id", requestId}, {"command", "agent.move"},
+                     {"phase", moveEnded ? "end" : "start"},
+                     {"move_x", hasScheduledMove ? scheduledSide : 0.0f},
+                     {"move_y", hasScheduledMove ? scheduledForward : 0.0f},
+                     {"world_move_x", tickFrame.moveX},
+                     {"world_move_y", tickFrame.moveY},
+                     {"duration_ticks", scheduledTerminalMoveTotalTicks()},
+                     {"applied_ticks", moveEnded ? scheduledTerminalMoveTotalTicks() : 1},
+                     {"movement_simulation_tick", player.movementSimulationTick},
+                     {"server_tick", mpContext.active ? mpContext.latestServerTick : 0},
+                     {"player_position_before_tick", {positionBeforeTick.x, positionBeforeTick.y, positionBeforeTick.z}},
+                     {"player_position", {player.pos.x, player.pos.y, player.pos.z}},
+                     {"tick_displacement", {moveDirection.x, moveDirection.y, moveDirection.z}},
+                     {"player_velocity", {player.vel.x, player.vel.y, player.vel.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+
+            if (scenarioPlaybackActive)
+                ScenarioPlayer::instance().advance(player, camera);
+        } else if (freecamEnabled && !replayPlaybackActive && worldLoaded)
             // Spectator freecam skips normal gameplay simulation, but corpse
             // ragdolls must keep their own fixed-tick physics and heartbeat.
             RagdollModeSystem::instance().updateCorpses(

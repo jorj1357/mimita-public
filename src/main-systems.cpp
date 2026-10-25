@@ -69,6 +69,7 @@
 #include "devtools/terminal.h"
 #include "devtools/account-config.h"
 #include "devtools/npc-spawn-commands.h"
+#include "devtools/scenario-commands.h"
 #include "devtools/dev-log-commands.h"
 #include "devtools/dev-overlay-commands.h"
 #include "ui/hitmarker.h"
@@ -281,6 +282,9 @@ void registerAgentCommands()
                 {"command", "agent.snapshot"}, {"label", label},
                 {"player", gpPlayer->username},
                 {"fixed_tick", gpMpContext ? gpMpContext->tick : 0},
+                {"movement_simulation_tick", gpPlayer->movementSimulationTick},
+                {"server_tick", gpMpContext && gpMpContext->active
+                    ? gpMpContext->latestServerTick : 0},
                 {"player_position", {gpPlayer->pos.x, gpPlayer->pos.y, gpPlayer->pos.z}},
                 {"player_velocity", {gpPlayer->vel.x, gpPlayer->vel.y, gpPlayer->vel.z}},
                 {"camera_position", {gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z}},
@@ -722,6 +726,7 @@ void gameInitSubsystems(Engine& engine)
     }
     registerAvatarCommands(player);
     registerAgentCommands();
+    RegisterScenarioCommands();
     registerVoidDeathCommands();
     registerHitmarkerAudioCommands();
     registerOutroCommands();

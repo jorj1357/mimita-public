@@ -62,7 +62,8 @@ bool payloadRuntimeInit(PayloadRuntime& runtime,
 
     runtime.active = true;
     runtime.cartOrigin = mapPayload.cartOrigin;
-    runtime.cartYaw = mapPayload.cartYaw;
+    runtime.cartYaw = glm::radians(mapPayload.cartYaw);
+    runtime.cartFixedFacing = mapPayload.cartFixedFacing;
     runtime.cartSize = glm::max(mapPayload.cartSize, glm::vec3(0.1f));
     runtime.interactionSize = glm::max(mapPayload.interactionSize, glm::vec3(0.1f));
     runtime.interactionOffset = mapPayload.interactionOffset;
@@ -181,17 +182,26 @@ void payloadRuntimeUpdateTransforms(PayloadRuntime& runtime)
     const glm::vec3 direction = routeDirectionAt(runtime, runtime.distanceTravelled);
     const float planarLength =
         std::sqrt(direction.x * direction.x + direction.y * direction.y);
-    const float yaw = planarLength > kDistanceEpsilon
-        ? std::atan2(direction.y, direction.x)
-        : runtime.cartYaw;
-    const float pitch = std::atan2(direction.z, std::max(planarLength, kDistanceEpsilon));
+    if (runtime.cartFixedFacing) {
+        const glm::quat yawRotation = glm::angleAxis(
+            runtime.cartYaw, glm::vec3(0.0f, 0.0f, 1.0f));
+        runtime.cartOrientation = glm::normalize(yawRotation);
+        runtime.cartTransform =
+            glm::translate(glm::mat4(1.0f), runtime.cartPosition) *
+            glm::mat4_cast(runtime.cartOrientation);
+    } else {
+        const float yaw = planarLength > kDistanceEpsilon
+            ? std::atan2(direction.y, direction.x)
+            : runtime.cartYaw;
+        const float pitch = std::atan2(direction.z, std::max(planarLength, kDistanceEpsilon));
 
-    const glm::quat yawRotation = glm::angleAxis(yaw, glm::vec3(0.0f, 0.0f, 1.0f));
-    const glm::quat pitchRotation = glm::angleAxis(-pitch, glm::vec3(0.0f, 1.0f, 0.0f));
-    runtime.cartOrientation = glm::normalize(yawRotation * pitchRotation);
-    runtime.cartTransform =
-        glm::translate(glm::mat4(1.0f), runtime.cartPosition) *
-        glm::mat4_cast(runtime.cartOrientation);
+        const glm::quat yawRotation = glm::angleAxis(yaw, glm::vec3(0.0f, 0.0f, 1.0f));
+        const glm::quat pitchRotation = glm::angleAxis(-pitch, glm::vec3(0.0f, 1.0f, 0.0f));
+        runtime.cartOrientation = glm::normalize(yawRotation * pitchRotation);
+        runtime.cartTransform =
+            glm::translate(glm::mat4(1.0f), runtime.cartPosition) *
+            glm::mat4_cast(runtime.cartOrientation);
+    }
 
     glm::mat4 box = glm::translate(glm::mat4(1.0f), runtime.interactionOffset);
     box = glm::rotate(box, glm::radians(runtime.interactionRotationEuler.z),

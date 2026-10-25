@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "coolplace_walk_grid_v1",
+  "description": "Teleport to three reported coolplace positions, walk forward/left/right for 100 fixed ticks each, wait 60 ticks, and capture position plus collision evidence.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "16",
+    "map": "coolplace",
+    "weapon_set": "3",
+    "visibility": "visible"
+  },
+  "setup": [
+    {"id": "equip_nothing", "label": "equip nothing (no hafs)", "command": "equipweapon", "args": ["nothing"], "delay_ms_after": 500}
+  ],
+  "steps": [
+    {"id": "p1_teleport", "label": "pos1 teleport", "command": "teleport", "args": ["156.786", "-313.237", "74.535"], "delay_ms_after": 500},
+    {"id": "p1_equip_nothing", "label": "pos1 keep nothing equipped", "command": "equipweapon", "args": ["nothing"], "delay_ms_after": 300},
+    {"id": "p1_aim", "label": "pos1 aim", "command": "agent.aim", "args": ["146.186", "-411.937", "62.735"], "delay_ms_after": 300},
+    {"id": "p1_forward", "label": "pos1 forward 100", "command": "agent.move", "args": ["1", "0", "100"], "delay_ms_after": 2200},
+    {"id": "p1_snapshot_forward", "label": "pos1 after forward", "command": "agent.snapshot", "args": ["coolplace_p1_forward"], "delay_ms_after": 300},
+    {"id": "p1_left", "label": "pos1 left 100", "command": "agent.move", "args": ["0", "1", "100"], "delay_ms_after": 2200},
+    {"id": "p1_snapshot_left", "label": "pos1 after left", "command": "agent.snapshot", "args": ["coolplace_p1_left"], "delay_ms_after": 300},
+    {"id": "p1_right", "label": "pos1 right 100", "command": "agent.move", "args": ["0", "-1", "100"], "delay_ms_after": 2200},
+    {"id": "p1_snapshot_right", "label": "pos1 after right", "command": "agent.snapshot", "args": ["coolplace_p1_right"], "delay_ms_after": 1000},
+
+    {"id": "p2_teleport", "label": "pos2 teleport", "command": "teleport", "args": ["169.371", "-183.246", "74.132"], "delay_ms_after": 500},
+    {"id": "p2_equip_nothing", "label": "pos2 keep nothing equipped", "command": "equipweapon", "args": ["nothing"], "delay_ms_after": 300},
+    {"id": "p2_aim", "label": "pos2 aim", "command": "agent.aim", "args": ["70.471", "-196.246", "66.732"], "delay_ms_after": 300},
+    {"id": "p2_forward", "label": "pos2 forward 100", "command": "agent.move", "args": ["1", "0", "100"], "delay_ms_after": 2200},
+    {"id": "p2_snapshot_forward", "label": "pos2 after forward", "command": "agent.snapshot", "args": ["coolplace_p2_forward"], "delay_ms_after": 300},
+    {"id": "p2_left", "label": "pos2 left 100", "command": "agent.move", "args": ["0", "1", "100"], "delay_ms_after": 2200},
+    {"id": "p2_snapshot_left", "label": "pos2 after left", "command": "agent.snapshot", "args": ["coolplace_p2_left"], "delay_ms_after": 300},
+    {"id": "p2_right", "label": "pos2 right 100", "command": "agent.move", "args": ["0", "-1", "100"], "delay_ms_after": 2200},
+    {"id": "p2_snapshot_right", "label": "pos2 after right", "command": "agent.snapshot", "args": ["coolplace_p2_right"], "delay_ms_after": 1000},
+
+    {"id": "p3_teleport", "label": "pos3 teleport", "command": "teleport", "args": ["181.932", "12.718", "38.118"], "delay_ms_after": 500},
+    {"id": "p3_equip_nothing", "label": "pos3 keep nothing equipped", "command": "equipweapon", "args": ["nothing"], "delay_ms_after": 300},
+    {"id": "p3_aim", "label": "pos3 aim", "command": "agent.aim", "args": ["179.632", "-86.982", "30.218"], "delay_ms_after": 300},
+    {"id": "p3_forward", "label": "pos3 forward 100", "command": "agent.move", "args": ["1", "0", "100"], "delay_ms_after": 2200},
+    {"id": "p3_snapshot_forward", "label": "pos3 after forward", "command": "agent.snapshot", "args": ["coolplace_p3_forward"], "delay_ms_after": 300},
+    {"id": "p3_left", "label": "pos3 left 100", "command": "agent.move", "args": ["0", "1", "100"], "delay_ms_after": 2200},
+    {"id": "p3_snapshot_left", "label": "pos3 after left", "command": "agent.snapshot", "args": ["coolplace_p3_left"], "delay_ms_after": 300},
+    {"id": "p3_right", "label": "pos3 right 100", "command": "agent.move", "args": ["0", "-1", "100"], "delay_ms_after": 2200},
+    {"id": "p3_snapshot_right", "label": "pos3 after right", "command": "agent.snapshot", "args": ["coolplace_p3_right"], "delay_ms_after": 1000}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "agent.move.applied"},
+    {"type": "event_present", "event": "avatar.pose.sample"},
+    {"type": "event_field_equals", "event": "weapon.equip.command_accepted", "field": "weapon_id", "equals": "nothing"},
+    {"type": "event_absent", "event": "weapon.equip.command_rejected"}
+  ],
+  "timeout_seconds": 180
+}

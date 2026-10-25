@@ -13,6 +13,7 @@
 #include "network/packets.h"
 #include "network/coordinator-client.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <atomic>
 #include <mutex>
@@ -35,6 +36,7 @@ bool gWsaStarted = false;
 std::string gOwnRoomCode;
 std::unordered_set<std::string> gKnownCodes;
 std::vector<ServerAnnouncement> gAnnouncements;
+bool gInitialSnapshotReceived = false;
 
 // Probe one server with a raw PING packet; unreachable hosts time out.
 ServerBrowserPing probeServerPing(const ServerListEntry& e)
@@ -110,7 +112,6 @@ void refreshWorker()
         be.uptimeSeconds = e.uptimeSeconds;
         be.publicIp = e.publicIp;
         be.port = e.port;
-        be.ping = probeServerPing(e);
         fresh.push_back(std::move(be));
     }
     {
@@ -119,7 +120,8 @@ void refreshWorker()
         currentCodes.reserve(fresh.size());
         for (const ServerBrowserEntry& entry : fresh) {
             currentCodes.insert(entry.code);
-            if (gKnownCodes.find(entry.code) == gKnownCodes.end()) {
+            if (gInitialSnapshotReceived &&
+                gKnownCodes.find(entry.code) == gKnownCodes.end()) {
                 ServerAnnouncement announcement;
                 announcement.code = entry.code;
                 announcement.serverName = entry.serverName;
@@ -131,6 +133,17 @@ void refreshWorker()
                 announcement.passwordProtected = entry.passwordProtected;
                 announcement.ping = entry.ping;
                 gAnnouncements.push_back(std::move(announcement));
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "network.server-announcement.queued", entry.code,
+                    "coordinator server list reported one newly started public room",
+                    0,
+                    {{"room_code", entry.code},
+                     {"server_name", entry.serverName},
+                     {"host_player", entry.hostPlayerName},
+                     {"map", entry.map}, {"mode", entry.gamemode},
+                     {"source", "coordinator-server-list"}},
+                    __FILE__, __LINE__, __func__);
                 Debug::log(Debug::Category::Networking,
                     "[SERVER DISCOVERY] new room=%s host=%s name=%s mode=%s map=%s ping=%s\n",
                     entry.code.c_str(), entry.hostPlayerName.c_str(), entry.serverName.c_str(),
@@ -138,11 +151,17 @@ void refreshWorker()
                     entry.ping.reachable ? std::to_string(entry.ping.pingMs).c_str() : "unknown");
             }
         }
-        for (auto it = gKnownCodes.begin(); it != gKnownCodes.end();) {
-            if (currentCodes.find(*it) == currentCodes.end()) it = gKnownCodes.erase(it);
-            else ++it;
-        }
-        gKnownCodes = std::move(currentCodes);
+        gKnownCodes.insert(currentCodes.begin(), currentCodes.end());
+        gInitialSnapshotReceived = true;
+    }
+
+    // Queue API-discovered starts before the optional per-server ping probes;
+    // an unreachable listing must not delay its one-time announcement.
+    for (size_t i = 0; i < raw.size(); ++i)
+        fresh[i].ping = probeServerPing(raw[i]);
+
+    {
+        std::lock_guard<std::mutex> lock(gMutex);
         gEntries = std::move(fresh);
     }
     gRefreshRunning = false;

@@ -26,6 +26,7 @@
 #include <thread>
 #include <chrono>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <random>
 #include <filesystem>
@@ -150,76 +151,116 @@ void processAgentCommandQueue(const std::string& queuePath,
 {
     static std::string activePath;
     static std::streamoff offset = 0;
-    if (queuePath.empty() || !gameplayReady)
+    static std::vector<std::string> deferredLines;
+    static std::unordered_set<std::string> reportedDeferredRequests;
+    if (queuePath.empty())
         return;
     if (activePath != queuePath)
     {
         activePath = queuePath;
         offset = 0;
+        deferredLines.clear();
+        reportedDeferredRequests.clear();
     }
 
     std::ifstream queue(queuePath, std::ios::binary);
-    if (!queue.is_open())
-        return;
-    queue.seekg(offset);
-    std::string line;
-    while (std::getline(queue, line))
+    if (queue.is_open())
     {
-        const std::streamoff lineStart = offset;
-        const std::streampos next = queue.tellg();
-        if (next >= 0)
-            offset = static_cast<std::streamoff>(next);
-        else
+        queue.seekg(offset);
+        std::string line;
+        while (std::getline(queue, line))
         {
-            std::error_code error;
-            offset = static_cast<std::streamoff>(
-                std::filesystem::file_size(queuePath, error));
+            const std::streampos next = queue.tellg();
+            if (next >= 0)
+                offset = static_cast<std::streamoff>(next);
+            else
+            {
+                std::error_code error;
+                offset = static_cast<std::streamoff>(
+                    std::filesystem::file_size(queuePath, error));
+            }
+            if (!line.empty())
+                deferredLines.push_back(std::move(line));
         }
-        if (line.empty())
-            continue;
+    }
 
+    std::vector<std::string> remaining;
+    std::unordered_set<std::string> blockedScenarios;
+    for (const std::string& deferredLine : deferredLines)
+    {
         try
         {
-            const nlohmann::json request = nlohmann::json::parse(line);
+            const nlohmann::json request = nlohmann::json::parse(deferredLine);
             const std::string requestId = request.value("request_id", "");
             const std::string command = request.value("command", "");
+            const std::string scenarioId = request.value("scenario_id", "");
             if (requestId.empty() || command.empty())
             {
                 writeAgentQueueEvent(
                     "dev-loop.command.invalid", requestId,
                     "agent queue entry missing request_id or command", tick,
-                    {{"queue_path", queuePath}, {"line", line}});
+                    {{"queue_path", queuePath}, {"line", deferredLine}});
                 continue;
             }
 
+            if (!scenarioId.empty() &&
+                blockedScenarios.find(scenarioId) != blockedScenarios.end())
+            {
+                remaining.push_back(deferredLine);
+                continue;
+            }
+
+            // Server lifecycle commands must remain available after leaving a
+            // room, even while gameplay-only requests wait for a world.
+            const bool startsLocalServer =
+                command == "server_start_preset" ||
+                command.rfind("server_start_preset ", 0) == 0;
+            const bool gameplayIndependent =
+                startsLocalServer || command == "server_leave";
             const uint64_t notBeforeMs = request.value("not_before_ms", uint64_t{0});
             const uint64_t nowMs = static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count());
+            const char* deferredReason = nullptr;
             if (notBeforeMs > nowMs)
+                deferredReason = "not_before_time";
+            else if (!gameplayReady && !gameplayIndependent)
+                deferredReason = "gameplay_not_ready";
+
+            if (deferredReason)
             {
-                // Leave the file offset at this record. The next fixed loop
-                // will retry it after the scenario's requested observation
-                // delay, without blocking the client thread.
-                offset = lineStart;
-                break;
+                if (reportedDeferredRequests.insert(requestId).second)
+                    writeAgentQueueEvent(
+                        "dev-loop.command.deferred", requestId,
+                        "queued command is waiting for its required runtime state",
+                        tick,
+                        {{"command", command}, {"scenario_id", scenarioId},
+                         {"reason", deferredReason},
+                         {"gameplay_ready", gameplayReady},
+                         {"not_before_ms", notBeforeMs}});
+                remaining.push_back(deferredLine);
+                if (!scenarioId.empty())
+                    blockedScenarios.insert(scenarioId);
+                continue;
             }
 
             nlohmann::json received = {
                 {"request_id", requestId}, {"command", command},
                 {"queue_path", queuePath}, {"client_tick", tick},
-                {"scenario_id", request.value("scenario_id", "")},
+                {"scenario_id", scenarioId},
                 {"step_id", request.value("step_id", "")},
                 {"step_index", request.value("step_index", -1)},
                 {"step_count", request.value("step_count", -1)},
+                {"gameplay_ready", gameplayReady},
                 {"not_before_ms", notBeforeMs}};
             writeAgentQueueEvent(
                 "dev-loop.command.delivered", requestId,
                 "client consumed queued command", tick, received);
+            reportedDeferredRequests.erase(requestId);
 
             Terminal::instance().executeWithRequestId(command, requestId);
 
-            if (!request.value("scenario_id", "").empty())
+            if (!scenarioId.empty())
             {
                 writeAgentQueueEvent(
                     "scenario.step", requestId,
@@ -246,9 +287,11 @@ void processAgentCommandQueue(const std::string& queuePath,
             writeAgentQueueEvent(
                 "dev-loop.command.invalid", "",
                 "agent queue JSON parse failed", tick,
-                {{"queue_path", queuePath}, {"error", error.what()}});
+                {{"queue_path", queuePath}, {"error", error.what()},
+                 {"line", deferredLine}});
         }
     }
+    deferredLines = std::move(remaining);
 }
 
 } // namespace
@@ -459,6 +502,7 @@ int main(int argc, char** argv)
 
     Engine engine;
     gameInit(argc, argv, engine);
+    engineSetRoomCodeFilePath(launchOptions.roomCodeFilePath);
 
     bool startupCommandsExecuted = false;
 

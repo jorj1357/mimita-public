@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <string>
 #include <shellapi.h>
 #include <windows.h>
 #include "engine/engine.h"
@@ -58,6 +59,15 @@ extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
 extern bool gReplayExportRenderMode;
+
+static std::string gRoomCodeFilePath;
+static uint64_t gLastRoomCodeFilePollMs = 0;
+
+void engineSetRoomCodeFilePath(const std::string& path)
+{
+    gRoomCodeFilePath = path;
+    gLastRoomCodeFilePollMs = 0;
+}
 
 // Heartbeat: logs at most once per 0.5s, used to identify where the frame loop stops.
 #define HEARTBEAT(MSG) \
@@ -153,7 +163,35 @@ void engineTick(Engine& engine)
             MimitaNet::tickListenServer(*ls, dt);
     }
     { MIMITA_PERF_PROGRESS("State");
-      MIMITA_PERF_SCOPE("State"); engineTickState(engine, dt); }
+      MIMITA_PERF_SCOPE("State");
+      if (!gRoomCodeFilePath.empty()) {
+          const uint64_t now = MimitaNet::nowMs();
+          if (now - gLastRoomCodeFilePollMs >= 100) {
+              gLastRoomCodeFilePollMs = now;
+              FILE* roomFile = fopen(gRoomCodeFilePath.c_str(), "r");
+              if (roomFile) {
+                  char code[128]{};
+                  const bool read = fgets(code, sizeof(code), roomFile) != nullptr;
+                  fclose(roomFile);
+                  std::string roomCode = read ? code : "";
+                  while (!roomCode.empty() &&
+                         (roomCode.back() == '\n' || roomCode.back() == '\r'))
+                      roomCode.pop_back();
+                  if (!roomCode.empty() && MP_CONTEXT.currentRoomCode != roomCode) {
+                      MP_CONTEXT.currentRoomCode = roomCode;
+                      StructuredLogger::instance().writeEvent(
+                          StructuredCategory::Network, StructuredLevel::Important,
+                          "network.room-code.hud-source-updated", roomCode,
+                          "registered room code became available to the gameplay HUD", 0,
+                          {{"room_code", roomCode}}, __FILE__, __LINE__, __func__);
+                  }
+                  if (!roomCode.empty())
+                      gRoomCodeFilePath.clear();
+              }
+          }
+      }
+      guiTickPendingServerRoomCode(GAME_STATE);
+      engineTickState(engine, dt); }
     HEARTBEAT("after state");
 
     const bool replayExportForceRender =

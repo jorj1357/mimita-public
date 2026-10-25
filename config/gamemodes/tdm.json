@@ -16,7 +16,7 @@
   "spawn_strategy": "team_shared",
   "intermission_seconds": 10,
   "results_seconds": 5,
-  "ragdoll_enabled": false,
+  "ragdoll_enabled": true,
   "teams": [
     {
       "id": "red",

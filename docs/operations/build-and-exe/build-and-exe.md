@@ -14,6 +14,14 @@ on one worker while continuing to accept launch and status requests. Pressing
 it is older than the source currently building; build completion publishes a
 new artifact but does not launch it automatically.
 
+On Windows, `[1]` launches the selected numbered build through the fixed
+`.dev/current/mimita.exe` path. The numbered directory remains the versioned,
+immutable record; the fixed path is a hardlinked runtime bundle that DevLoop
+updates after stopping the previous server. Firewall rules should target this
+fixed executable path so later numbered builds keep the same app identity.
+Status and event metadata must show both the fixed launch path and the numbered
+artifact path/build identity.
+
 `build_agent.py`, `buildv2.py`, and setup entry points are compatibility
 wrappers that submit to this same dev-loop. `build.py build-only` and
 `build_game_dll.py` are internal compiler steps. A checkout-wide OS lock makes

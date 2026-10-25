@@ -124,3 +124,7 @@ release/
 # ── Overseer / Dev tools ────────────────────────────────────────────────────
 overseer_test.py
 
+
+# -- User scenario input recordings (local-only) ---------------------------
+devscripts/scenarios/user/*.jsonl
+!devscripts/scenarios/user/README.md

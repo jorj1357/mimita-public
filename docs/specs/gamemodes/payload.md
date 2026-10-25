@@ -14,11 +14,200 @@ but expand this
 
 # MiMITA Payload v1.0 — Working Design Specification
 
-**Status:** Design draft, not yet approved for implementation  
+**Status:** Implemented vertical slice; active bug-fix/handoff phase  
 **Target:** 12v12 objective-based combat, including NPC fills  
 **Design philosophy:** Make the game playable first, then improve it through repeated testing. Preserve the freedom of MiMITA's movement system.
 
 ---
+
+## 0. Implementation snapshot (2026-10-25)
+
+This section is the handoff source of truth for a fresh agent. It describes what the code does now, what was verified, and what is still wrong. The design sections below remain the desired behavior where they do not conflict with this snapshot.
+
+### 0.1 Current status
+
+- A playable Payload vertical slice exists for `payload1`.
+- `payload2` is now listed as a Payload map and has a starting `config/maps/payload2.json` copied from Payload 1. Its authored route/spawns still need map-specific review.
+- The cart, route/checkpoints, overtime, healing, HUD, and NPC cart objective are server-authoritative.
+- The cart renders the authored GLB and uses a separate gameplay collision box.
+- The client HUD shows intermission, countdown/GO, red/blue team labels, timer, cart progress/status, and overtime.
+- Remote/AI damage presentation was expanded to show damage numbers and hit effects for hits the local client did not predict.
+- A map-editor outliner lists authored entities, blocks, route points, cart origin, and all mesh-bearing GLB nodes from the loaded map.
+- Last verified build: `3172` (debug). Build success is not gameplay acceptance.
+- The dev loop later entered `launch_failed` with `server_build_identity`; manual server startup from the same build remained healthy. Treat that as an open tooling issue, not proof that the game cannot start.
+
+### 0.2 Authoritative owners and data flow
+
+Server:
+
+1. `src/network/server-gamemode.cpp` owns phases, roster, round clock, checkpoints, overtime, cart result, and team statistics.
+2. `src/gamemode/payload-runtime.*` owns cart distance, push/block/rollback, healing remainder, checkpoint crossing, and overtime ticks.
+3. `src/network/server-npcs.cpp` owns NPC bodies, role/team assignment, respawn, and snapshots.
+4. `src/physics/physical-entity.*` owns the cart body and actor support/carry.
+5. `src/network/physical-entity-replication.cpp` replays physical-entity spawns to late joiners.
+6. `src/network/packets.h` protocol `45` carries Payload HUD fields in `DuelStatePacket`.
+
+Client:
+
+1. `src/network/community-match-client.*` applies replicated Payload HUD state.
+2. `src/engine/engine-tick-ui-overlays.cpp` draws Payload HUD elements from `config/gui/gamemode-meta-gui.json`.
+3. `src/map/map-editor.*` edits map JSON and loaded GLB object selections.
+4. `src/map/map-loader-gltf-nodes.cpp` records `MapGLBObject` metadata during GLB loading.
+5. `src/network/confirmed-damage-presentation.cpp` and `src/network/multiplayer-shots.cpp` present remote damage feedback.
+
+Map/mode data:
+
+- `config/gamemodes/payload.json` owns mode rules, teams, class pool, map list, and presentation.
+- `config/maps/payload1.json` and `config/maps/payload2.json` own spawnpoints, cart origin, cart size, interaction box, facing, and route/checkpoints.
+- `config/roles.json` and `config/weaponsets.json` own Payload classes/loadouts.
+- `config/gui/gamemode-meta-gui.json` owns the Payload HUD layout.
+
+### 0.3 Current cart behavior
+
+- Cart origin comes from map JSON `payload.cart_origin.position`.
+- Cart size comes from `payload.cart_size`; current authored size is `3 x 3 x 2` world units.
+- Cart model is `assets/objects/things/gamemode-objects/payload-payload.glb`; it is scaled to the gameplay size and rendered separately from collision.
+- `payload.facing_mode` is `"fixed"` or `"route"`.
+  - `"fixed"` uses `cart_origin.yaw` as `cart_yaw`, with no route pitch.
+  - `"route"` follows the route tangent and pitch.
+  - Payload 1 currently uses `"fixed"`; the authored yaw is `180`.
+- The cart moves only on the server's fixed 60 Hz tick.
+- A living Team A actor whose capsule intersects the transformed interaction box contributes to push speed.
+- A living Team B actor in the box blocks forward movement.
+- Standing on the cart top is supported and carried by the cart delta.
+- Cart facing/yaw is hot-reloaded from map JSON each active Payload tick.
+
+### 0.4 Current route and checkpoint behavior
+
+- `payload.route[]` is ordered; each point has `id`, `position`, `radius`, `order`, `enabled`, `checkpoint`, `final`, and `time_bonus_seconds`.
+- The cart position is interpolated along the authored route by `distanceTravelled`; it is not a free-moving physics cart.
+- Checkpoints are once-only. Intermediate checkpoints add their configured seconds to the round clock.
+- The final point ends the round for Team A.
+- Unattended rollback is clamped to the last reached checkpoint distance.
+- Route points and cart origin are visible/selectable in the map editor.
+- `payload2.json` is currently a copy of Payload 1 and must be re-authored against Payload 2 geometry before calling it playable content.
+
+### 0.5 Current spawn behavior and the open spawn bug
+
+Current code path:
+
+- `gamemodeSpawnPointForActor` → `gamemodeSpawnPoint(d, team)`.
+- Team identity comes from `actorTeamOf`: `matchTeams` → `matchActors.teamId` → `ServerPlayer/ServerNpc.matchTeam`.
+- `gamemodeSpawnPoint` prefers authored spawnpoint entities whose `tag` matches the team's `spawn_group`.
+- If no authored candidates exist, it falls back to `teamSpawnPoints`, then `spawnA`/`spawnB`, then the shared anchor.
+- Payload teams declare `spawn_group: "attacker_spawn"` and `"defender_spawn"`.
+- Payload 1 map entities declare `tag: "attacker_spawn"` and `tag: "defender_spawn"`.
+
+Reported defect: NPCs can appear to all spawn at the same location. This is not yet proven at runtime. Investigate in this order:
+
+1. Verify `ServerNpc.matchTeam`, `matchTeams`, and `matchActors.teamId` for every roster NPC before `resetGamemodeActorsAtMapSpawn`.
+2. Log `gamemodeSpawnPoint` for each actor: team, role, resolved spawn group, candidate count, chosen position, and fallback reason.
+3. Compare attacker and defender cluster centroids. If both clusters are within a small radius, the spawn resolution is collapsing teams.
+4. Check whether both spawnpoint entities resolve to the same tag/position after editor save or JSON copy.
+5. Check whether NPCs are being created before roster team assignment and then skipped by the reset path.
+6. Add a Payload spawn selftest using the real mode/map JSON.
+7. Add a runtime invariant log if Team A and Team B spawn clusters are not separated.
+
+Do not “fix” this by adding a Payload-name branch. The one owner is the shared spawn resolver.
+
+### 0.6 Open NPC invisibility investigation
+
+Current evidence is ambiguous:
+
+- Payload 1 runtime: 23 remote NPCs, 23 models loaded, and samples with `in_view` 1–5.
+- Payload 2 runtime: 23 remote NPCs, 23 models loaded, `in_view` 0 at one spawn sample.
+- Therefore “invisible” is not explained by missing snapshot entries or missing models alone.
+
+Diagnostic fields already emitted by `client.npc.viewport-window`:
+
+- `remote_npcs`
+- `alive`
+- `model_loaded`
+- `in_view`
+- `active_map`
+- `required_map`
+- `camera_position`
+- `sample_npc_position`
+- `sample_npc_size_scale`
+
+Investigation order:
+
+1. Confirm client and server are on the same map and the NPCs are near the camera.
+2. If `remote_npcs == 0` (no `in_view` possible), trace snapshot membership and chunk application.
+3. If `model_loaded == 0`, trace `client.npc.avatar.bind`, `client.npc.avatar.rebind`, `AvatarSystem::applyAvatarToPlayer`, and model cache readiness.
+4. If `model_loaded > 0` but nothing draws, add a one-time per-actor draw diagnostic from `renderNetworkPlayer` including `submitted`, `modelLoaded`, part-mesh count, world position, and camera distance.
+5. Check whether spawn camera yaw points away from the team spawn cluster; “invisible” may be a spawn-facing problem rather than a render problem.
+6. Check `sizeScale`, model bounds, and whether NPCs are below/above the floor.
+7. Verify the actual draw call, not only `modelLoaded`.
+
+Do not add a second NPC renderer. Fix the existing remote NPC snapshot/render path.
+
+### 0.7 Current HUD behavior
+
+- HUD layout: `config/gui/gamemode-meta-gui.json`, `gamemodes.payload`.
+- Intermission text uses `match.phaseTimer()`.
+- Countdown shows 3, 2, 1, then `GO!!!`.
+- Top timer uses replicated `roundTimerLeft`.
+- Overtime shows whole seconds plus milliseconds, derived from replicated server ticks.
+- Red/blue team labels show “YOUR TEAM” / “ENEMY”.
+- Tab scoreboard team tags are red/blue.
+- Cart progress, nearby attacker/defender counts, and cart state are replicated.
+- `DuelStatePacket` protocol is `45`.
+
+### 0.8 Current damage and hit-effect behavior
+
+- Confirmed hits are broadcast to all clients.
+- Local attacker: hitmarker, hit sound, damage number, predicted effects remain attacker-owned.
+- Remote attacker/AI: damage number, blood, decals, and hit burst are presented locally through `HitEffects::onHit`.
+- Local victim: existing local-victim presentation path remains.
+- NPC damage events now present the same effects to observers, not only to the local shooter.
+- Decal opacity still comes from `config/impact_decals.json`; there is no separate NPC opacity path in the current code.
+- If visual opacity still differs, compare the actual effect source (predicted local hit vs confirmed remote hit) before changing config.
+
+### 0.9 Current map-editor behavior
+
+- Outliner lists cart origin, route points, all loaded GLB mesh objects, entities, and blocks.
+- World picking supports GLB objects via their world bounds.
+- Ctrl+click toggles selection; Shift+click selects a range in the outliner.
+- PgUp/PgDn scroll the outliner.
+- Moving a selected GLB object translates its vertex range and rebuilds collision through `buildCollisionMeshFromRenderMesh` plus authored geometry.
+- Selected-object position/name/size/vertex count is displayed live.
+- GLB object copy/cut/delete/paste and JSON persistence of GLB transform overrides are **not implemented**.
+- RMB aim-FOV is disabled while the editor is active.
+- Local death deactivates the editor and restores the player camera.
+
+### 0.10 Verification commands and evidence
+
+Canonical build/test:
+
+```text
+python devscripts/dev-loop.py --request build --wait-for-build
+.dev/builds/<build>/mimita.exe --payload-selftest
+.dev/builds/<build>/mimita.exe --map-config-selftest
+.dev/builds/<build>/mimita.exe --map-authored-geometry-selftest
+.dev/builds/<build>/mimita.exe --npc-utility-selftest
+.dev/builds/<build>/mimita.exe --team-brain-selftest
+```
+
+Runtime journals to inspect:
+
+- `logs/2026-10-25/20261025_020711` — Payload 1, build 3165, 23 NPCs/model loaded.
+- `logs/2026-10-25/20261025_020848` — Payload 2, build 3166, cart configured, 23 NPCs/model loaded.
+- `logs/2026-10-24/20261024_032221` — earlier GLB cart mirror and push evidence.
+
+### 0.11 Next todos, in order
+
+1. Finish the NPC invisibility investigation with the draw-submission diagnostic; do not assume the model is missing.
+2. Fix the Payload team-spawn collapse and add spawn-cluster diagnostics/invariant.
+3. Author Payload 2 route/spawns against its actual geometry; do not ship the copied Payload 1 route as final content.
+4. Make GLB object transforms persist as map JSON overrides and add duplicate/delete/paste coverage.
+5. Fix the dev-loop `launch_failed` / `server_build_identity` regression so live verification is reliable.
+6. Re-run the Payload acceptance sequence with human visual review.
+7. Add remote-damage and decal-opacity visual checks to the acceptance list.
+8. Add `payload2` to the allowed dev map pool only after its config is real.
+
+---
+
 
 ## 1. Core game rules
 
@@ -433,6 +622,11 @@ The authoritative server handles:
 
 The server decides cart movement and all match results. Clients may ask to push, but the server checks the actor's team, collision body, and overlap with the configured interaction area before changing the cart.
 
+Current implementation uses two replication paths:
+
+- The cart body is a replicated kinematic `PhysicalEntity`; late joiners receive a spawn replay.
+- Cart progress, contest counts, overtime ticks, cart state, and team HUD data travel in `DuelStatePacket` protocol 45.
+
 This client/server rule also applies when one person plays alone on one computer: the game client still sends normal gameplay requests to a local server process, and that server still owns NPC decisions, navigation, movement, cart state, collision, and match results. There must not be a separate offline-only gameplay implementation whose rules differ from multiplayer. Clients may predict presentation where the general networking design permits it, but the server's accepted state is authoritative and is what clients render or reconcile to. See `../networking/networking.md` for the shared connection and authority contract.
 
 ### Host handoff and session statistics
@@ -507,6 +701,17 @@ Avoid one enormous weapon-definition file. Prefer independently managed weapon d
 
 The files listed by the JSON architecture document are a map of configuration families, not proof that Payload settings already have a loader. Before adding a setting, identify the active file and the code that reads it. Do not create a second copy of the same setting in both a map file and a game-mode file without deciding which one owns it.
 
+### Current Payload JSON files
+
+| File | Owner | Current keys |
+|---|---|---|
+| `config/gamemodes/payload.json` | Gamemode loader | `teams`, `spawn_groups`, `rounds`, `payload.*`, `npc_targeting`, `npc_travel`, `presentation` |
+| `config/maps/payload1.json` | Map config loader | spawnpoint entities, `payload.cart_origin`, `cart_size`, `facing_mode`, `interaction_box`, `route[]` |
+| `config/maps/payload2.json` | Map config loader | starting copy of Payload 1; needs map-specific authoring |
+| `config/gui/gamemode-meta-gui.json` | GUI layout loader | `gamemodes.payload` HUD elements |
+| `config/roles.json` | Role registry | `payload_attacker`, `payload_defender`, and class roles |
+| `config/weaponsets.json` | Weapon set registry | `payload_*` sets |
+
 ## 18. Map-building philosophy
 
 The tower ramp is the main Payload map idea, but this document does not pretend the finished map already exists. First build a simple blockout so people can try the route, fight around the choke point, and test whether the cart is fun to defend and push. Then replace the plain boxes with finished shapes while keeping the useful routes and fighting spaces.
@@ -545,6 +750,14 @@ A successful v1 should support this playable sequence:
 20. A new round begins automatically.
 
 The same sequence should work in repeated tests without accumulating incorrect state or breaking existing MiMITA modes.
+
+### Current acceptance status (2026-10-25)
+
+- Implemented in code: start, roster, phases, countdown/GO, server timer, cart movement, contest, carry, class weapons, instant respawn, NPC cart objective, checkpoints, rollback, overtime, win/loss, results.
+- Reproduced in runtime: cart config/spawn/push, late-join cart mirror, 23 remote NPCs with models loaded, Payload 2 map identity.
+- Not yet accepted: NPC visual visibility, team-separated spawn clusters, remote damage-number visibility, decal-opacity parity, ragdoll appearance, Payload 2 content correctness, and the full 20-step sequence on one journal.
+- The provided acceptance list is intentionally not marked fully passed until a human watches the sequence and the open defects in Section 0 are closed.
+
 
 ## 21. Follow-up files to review
 
@@ -605,7 +818,71 @@ This is a source-level ownership audit, not proof of live Payload behavior. The 
 5. Feed the current cart position and team-specific jobs to NPC planning. Keep behavior choices in NPC behavior and route following/traversal in NPC movement/navigation; do not duplicate navigation in Payload code.
 6. Keep v1 statistics in server process memory and keep them out of the persistent match-result path. A server shutdown ends the match and discards those values.
 
-`config/gamemodes/payload.json` does not exist in the current configuration list. It is a possible future data file, not a decided path. Confirm the game-mode loader and ownership first. The same rule applies to any new cart or map JSON file.
+`config/gamemodes/payload.json`, `config/maps/payload1.json`, and `config/maps/payload2.json` now exist and are loaded by the shared gamemode/map-config owners. Payload-specific behavior still belongs in those shared owners; do not add a parallel cart/map loader. See Section 0 for the current implementation handoff.
+
+---
+
+## 22. Handoff checklist — next implementation pass
+
+### P0 — NPCs are still reported invisible
+
+Acceptance: a human stands in each team spawn area and sees allied and enemy NPCs at the expected positions.
+
+Investigate with:
+
+- `client.npc.viewport-window` (`remote_npcs`, `alive`, `model_loaded`, `in_view`, map, camera, sample NPC).
+- A one-time `renderNetworkPlayer` submission log with modelLoaded, part-mesh count, position, camera distance.
+- Snapshot membership if `remote_npcs` is lower than the server roster.
+
+Do not assume the model is missing. Current evidence shows 23 remote NPCs and 23 models loaded.
+
+### P0 — Team A and Team B spawn separation
+
+Acceptance: attacker and defender NPC clusters are separated by the authored spawn groups; no actor with a valid team falls back to the shared anchor.
+
+Add diagnostics to `gamemodeSpawnPoint`/`gamemodeSpawnPointForActor`:
+
+- actor id, role, resolved team
+- spawn group
+- candidate count
+- chosen position
+- fallback reason
+
+Add a Payload spawn selftest using the real mode and map JSON. Do not add mode-name branches.
+
+### P1 — Payload path authoring for Payload 2
+
+- Re-author `config/maps/payload2.json` against Payload 2 geometry.
+- Verify `cart_origin`, `cart_size`, `facing_mode`, interaction box, and every route point.
+- Add route points through the map editor and save them to JSON.
+- Keep route points visible in the editor.
+
+### P1 — GLB object editing persistence
+
+- Persist selected GLB object transforms as map JSON overrides.
+- Add duplicate/cut/delete/paste coverage.
+- Keep using `buildCollisionMeshFromRenderMesh` and `buildCollisionChunks`; do not add a second GLB collision path.
+
+### P1 — Remote damage and opacity visual acceptance
+
+- Observe AI-vs-AI and remote-player-vs-AI hits.
+- Confirm damage numbers appear for hits the local player did not fire.
+- Compare NPC and player decal opacity at the same distance and weapon.
+
+### P2 — Dev-loop launch reliability
+
+The dev loop entered `launch_failed` with `server_build_identity`; manual server startup worked. Fix the preflight/identity path before using the dev loop as the only runtime evidence source.
+
+### P2 — Full acceptance run
+
+Run Section 20 end to end on the requested map, one journal, and record:
+
+- requested map vs server map vs client map
+- red/blue team rosters
+- spawn cluster positions
+- cart route completion or overtime result
+- NPC visibility and combat behavior
+- human visual acceptance
 
 ---
 

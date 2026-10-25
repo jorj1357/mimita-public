@@ -23,6 +23,7 @@ InputFrame gTerminalInputOverride;
 namespace {
 int gScheduledMoveTicks = 0;
 int gScheduledMoveTotal = 0;
+bool gScheduledMoveNetworkReleasePending = false;
 float gScheduledMoveX = 0.0f;
 float gScheduledMoveY = 0.0f;
 std::string gScheduledMoveRequestId;
@@ -36,6 +37,7 @@ void scheduleTerminalMove(float moveX, float moveY, int durationTicks,
     gScheduledMoveY = moveY;
     gScheduledMoveTicks = durationTicks > 0 ? durationTicks : 0;
     gScheduledMoveTotal = gScheduledMoveTicks;
+    gScheduledMoveNetworkReleasePending = false;
     gScheduledMoveRequestId = requestId;
 }
 
@@ -62,6 +64,35 @@ bool consumeScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted,
     if (justEnded)
         *justEnded = (gScheduledMoveTicks == 0);
     return true;
+}
+
+bool advanceScheduledTerminalMoveFixedTick(bool* justStarted, bool* justEnded)
+{
+    if (gScheduledMoveTicks <= 0)
+        return false;
+    if (justStarted)
+        *justStarted = (gScheduledMoveTicks == gScheduledMoveTotal);
+    --gScheduledMoveTicks;
+    if (justEnded)
+        *justEnded = (gScheduledMoveTicks == 0);
+    if (gScheduledMoveTicks == 0)
+        gScheduledMoveNetworkReleasePending = true;
+    return true;
+}
+
+bool consumeScheduledTerminalMoveForNetwork(float& moveX, float& moveY)
+{
+    if (gScheduledMoveTicks <= 0 && !gScheduledMoveNetworkReleasePending)
+        return false;
+    moveX = gScheduledMoveX;
+    moveY = gScheduledMoveY;
+    gScheduledMoveNetworkReleasePending = false;
+    return true;
+}
+
+int scheduledTerminalMoveTotalTicks()
+{
+    return gScheduledMoveTotal;
 }
 
 bool peekScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted)
@@ -287,6 +318,26 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     frame.fisterFistHeld = frame.extendLeftMouse;
     frame.fisterParryHeld = frame.extendRightMouse;
     frame.fisterGrabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
+
+    // Camera-relative axes for the authoritative input packet. moveX/moveY
+    // remain the world-space movement consumed by local simulation.
+    frame.wishForward = frame.moveX * f.x + frame.moveY * f.y;
+    frame.wishSide = frame.moveX * r.x + frame.moveY * r.y;
+    frame.camForward = cam.front;
+
+    frame.primaryHeld =
+        glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    frame.secondaryHeld =
+        glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    frame.shieldHeld = glfwGetKey(win, GLFW_KEY_Q) == GLFW_PRESS;
+    frame.grabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
+    frame.slotHeldMask = 0;
+    for (int slot = 0; slot <= 9; ++slot)
+    {
+        const int key = slot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + slot;
+        if (glfwGetKey(win, key) == GLFW_PRESS)
+            frame.slotHeldMask |= static_cast<uint16_t>(1u << slot);
+    }
 
     // agent.action evidence: prove the requested jump/dash edge reached the
     // fixed-tick input frame, not merely that the command handler accepted it.

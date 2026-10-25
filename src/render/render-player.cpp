@@ -64,13 +64,6 @@ void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityI
         return;
     }
     const auto now = Clock::now();
-    if (gTrailHistories.find(entityId) == gTrailHistories.end() &&
-        gTrailHistories.size() >= 128) {
-        auto oldest = gTrailHistories.begin();
-        for (auto it = gTrailHistories.begin(); it != gTrailHistories.end(); ++it)
-            if (it->second.lastSeen < oldest->second.lastSeen) oldest = it;
-        gTrailHistories.erase(oldest);
-    }
     auto& history = gTrailHistories[entityId];
     history.lastSeen = now;
     const glm::vec3 trailPosition = player.pos + glm::vec3(0.0f, 0.0f,

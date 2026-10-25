@@ -583,6 +583,7 @@ bool AvatarSystem::applyAtlasToPlayer(Player& player) {
 
     printf("[AVATAR ATLAS] bodyPartMeshes copied (%zu parts)\n", player.physicalBody.partMeshes.size());
     player.bodyPartMeshes = player.physicalBody.partMeshes;
+    player.markAvatarAtlasUvsApplied();
     Terminal::instance().addLog("[AVATAR] Applied atlas to player");
     return true;
 }
@@ -840,6 +841,7 @@ bool AvatarSystem::applyAtlasFromInstance(AvatarInstance& inst, Player& player) 
     }
 
     player.bodyPartMeshes = player.physicalBody.partMeshes;
+    player.markAvatarAtlasUvsApplied();
     return true;
 }
 

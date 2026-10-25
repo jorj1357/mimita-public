@@ -377,7 +377,8 @@
     },
 
     "bodyContactSpark": {
-        "enabled": true,
+        // "enabled": true,
+        "enabled": false,
         // "color": [1.0, 1.0, 0.9],
         "color": [0.0, 0.0, 0.0],
         "alpha": 1.0,

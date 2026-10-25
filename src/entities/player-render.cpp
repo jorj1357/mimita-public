@@ -297,7 +297,7 @@ void Player::renderCurrentPose(unsigned int shader,
             drawableBatches += mesh.batches.size();
             drawableVertices += mesh.verts.size();
 
-            uploadBodyPartMeshPart(mesh, (int)i, renderModelKey());
+            uploadBodyPartMeshPart(mesh, (int)i, renderUploadKey());
 
             const glm::mat4& model = part.worldTransform;
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
@@ -386,7 +386,7 @@ void Player::renderCurrentPose(unsigned int shader,
             drawableBatches += mesh.batches.size();
             drawableVertices += mesh.verts.size();
 
-            uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i), renderModelKey());
+            uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i), renderUploadKey());
 
             const glm::mat4& model = part.worldTransform;
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
@@ -469,7 +469,7 @@ void Player::renderCurrentPose(unsigned int shader,
                 {{"actor_id", username}, {"path", "render_mesh"},
                  {"vertices", renderMesh.verts.size()}, {"batches", renderMesh.batches.size()},
                  {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
-        const GLuint meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderModelKey());
+        const GLuint meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderUploadKey());
 
         glm::mat4 model =
             glm::translate(glm::mat4(1.0f), pos) *
@@ -552,7 +552,7 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
             if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
                 continue;
 
-            uploadBodyPartMeshPart(mesh, (int)i, renderModelKey());
+            uploadBodyPartMeshPart(mesh, (int)i, renderUploadKey());
 
             const glm::mat4& model = part.worldTransform;
             glm::mat4 mvp = lightViewProj * model;
@@ -568,7 +568,7 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
 
     if (modelLoaded && !renderMesh.verts.empty())
     {
-        const GLuint meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderModelKey());
+        const GLuint meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderUploadKey());
 
         glm::mat4 modelMat =
             glm::translate(glm::mat4(1.0f), pos) *

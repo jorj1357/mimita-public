@@ -28,7 +28,8 @@ bool reconcileAuthoritativeWeaponRuntime(
     uint32_t spawnGeneration,
     const char* source,
     bool applyAmmo,
-    bool allowReloadStateOverride)
+    bool allowReloadStateOverride,
+    uint32_t resultServerTick)
 {
     // ── 1. Validate weapon ID before any mutation ─────────────────────
     const std::string* weaponId = weaponIdForDefNetworkId(weaponDefNetworkId);
@@ -136,6 +137,11 @@ bool reconcileAuthoritativeWeaponRuntime(
     // When no valid server tick exists, preserve the predicted timer.
     // isReloading=false always zeros the timer (authoritative override).
     uint32_t estimatedServerTick = ctx.latestServerTick;
+    // The result carries the tick the server actually processed the action.
+    // Using only the latest snapshot tick lets a delayed snapshot stretch the
+    // cooldown far beyond what the server asked for.
+    if (resultServerTick > estimatedServerTick)
+        estimatedServerTick = resultServerTick;
     bool hasServerTick = estimatedServerTick > 0;
 
     if (hasServerTick && nextAllowedFireTick > 0)

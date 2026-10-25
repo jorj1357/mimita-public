@@ -26,6 +26,7 @@ struct LaunchOptions
     std::string bind = "0.0.0.0:1357";
     bool bindExplicit = false;
     std::string roomFilePath;
+    std::string roomCodeFilePath;
     std::string name;
     std::string sessionToken;
     std::string mapName;

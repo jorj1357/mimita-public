@@ -401,6 +401,20 @@ published artifact must include:
 - source generation and source snapshot identity;
 - build result and timestamp.
 
+For Windows launches, DevLoop keeps that numbered artifact immutable and
+starts its server and client through the fixed path
+`.dev/current/mimita.exe`. It stages the executable and runtime DLLs as
+hardlinks from the selected numbered artifact, then swaps the fixed directory
+only after any older server using it has stopped. The fixed path is the
+Windows Firewall app identity; a one-time app-specific allow rule therefore
+covers future numbered builds. The process arguments and run metadata record
+the fixed launch path, while `build_identity.path`, `artifact_executable`,
+build number, and build ID continue to identify the selected numbered artifact.
+Before reusing a server, DevLoop must compare its persisted build ID as well as
+its launch path and effective arguments. Persist the room code and local
+gameplay port with the server owner marker so a daemon restart can reconnect
+without treating a same-path server from another build as current.
+
 The last successfully published valid artifact remains selectable while a
 newer build is pending, running, or has failed. An explicit `[1]` request may
 launch that artifact immediately as specified in §7; the dashboard and run
@@ -2226,3 +2240,21 @@ and also
 i press 1 in teh dev loop script
 and as of 2026 10 18 1148 like while its building with build_agent it wont  open the gam
 iw ant it to open the game even regardless like even if its building, bc its like it shouldnt eevn nee to be building it should just be built already so we dont need to do  a build_agent script run 
+
+## Scenario input recording and playback
+
+Per-tick input can be recorded locally and replayed through the normal fixed-tick
+client path. See [scenario-input-recording.md](scenario-input-recording.md).
+
+```text
+scenario_startrecord [name]
+scenario_endrecord
+scenario_status
+scenario_play <path.jsonl>
+scenario_stop
+```
+
+Recordings are local-only under `devscripts/scenarios/user/*.jsonl`. A scenario
+may use a first-class `input_playback` step; the runner reads the recording
+header, launches the recorded map/weapon set, and waits for
+`scenario.playback.completed`.

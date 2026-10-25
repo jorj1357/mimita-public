@@ -23,6 +23,8 @@
 #include "npc/npc-combat.h"
 #include "world/world.h"
 #include "input/input-commands.h"
+#include "input/input-frame.h"
+#include "input/scenario-input.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
 #include "combat/weapon-system.h"
@@ -103,8 +105,24 @@ void engineTickCombat(Engine& engine, float dt)
     auto& gReplayPlayer = REPLAY_PLAYER;
     auto& gReplayFactory = REPLAY_FACTORY;
 
+    if (ScenarioInput::active())
+    {
+        if (const InputFrame* recorded = ScenarioInput::frame())
+        {
+            camera.yaw = recorded->lookYaw;
+            camera.pitch = recorded->lookPitch;
+            if (glm::length(recorded->camForward) > 0.001f)
+            {
+                camera.front = glm::normalize(recorded->camForward);
+                camera.right = glm::normalize(
+                    glm::cross(camera.front, glm::vec3(0.0f, 0.0f, 1.0f)));
+                camera.up = glm::normalize(glm::cross(camera.right, camera.front));
+            }
+        }
+    }
+
     player.weaponAimDownSights = !MapEditor::instance().active() &&
-        glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+        ScenarioInput::mouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT);
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
@@ -247,9 +265,15 @@ void engineTickCombat(Engine& engine, float dt)
         updateChatBubbles(kv.second);
 
     static bool mousePrev = false;
-    const bool gameplayInputAllowed = !PauseMenu::isOpen() &&
-                                      !MapEditor::instance().active();
-    bool mouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    const bool scenarioInputActive = ScenarioInput::active();
+    const bool gameplayInputAllowed = scenarioInputActive ||
+        (!PauseMenu::isOpen() && !MapEditor::instance().active());
+    const bool inputEnabled = scenarioInputActive ||
+        InputCommandSystem::instance().isKeyboardEnabled();
+    const bool cursorCaptured = scenarioInputActive ||
+        glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
+    bool mouseDown = ScenarioInput::mouseButton(
+        engine.window(), GLFW_MOUSE_BUTTON_LEFT);
     // Local/offline duel only for DuelManager checks; also check DuelQueue for network duels.
     bool duelEndVisible = gDuelManager.phase() == DuelPhase::MatchEnd ||
         DuelQueue::instance().matchOver();
@@ -268,13 +292,13 @@ void engineTickCombat(Engine& engine, float dt)
     bool meleeSecondaryPressed = false;
     if (meleeEquipped) {
         if (!replayPlaybackActive && gameplayInputAllowed &&
-            InputCommandSystem::instance().isKeyboardEnabled() && mouseDown && !mousePrev &&
-            glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+            inputEnabled && mouseDown && !mousePrev &&
+            cursorCaptured)
             meleePrimaryPressed = true;
     } else if (!replayPlaybackActive && !duelEndVisible && !duelCountdown &&
         !bombTagEndVisible && !bombTagCountdown &&
-        gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && mouseDown &&
-        glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+        gameplayInputAllowed && inputEnabled && mouseDown &&
+        cursorCaptured) {
         const WeaponDefinition* curDef = weapons.getCurrentDef(player);
         bool isAuto = curDef && curDef->fireMode == WeaponFireMode::Automatic;
         bool shouldFire = isAuto || (!isAuto && mouseDown && !mousePrev);
@@ -292,16 +316,17 @@ void engineTickCombat(Engine& engine, float dt)
     mousePrev = mouseDown;
 
     static bool rightMousePrev = false;
-    bool rightMouseDown = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    bool rightMouseDown = ScenarioInput::mouseButton(
+        engine.window(), GLFW_MOUSE_BUTTON_RIGHT);
     if (meleeEquipped) {
         if (!replayPlaybackActive && gameplayInputAllowed &&
-            InputCommandSystem::instance().isKeyboardEnabled() &&
+            inputEnabled &&
             rightMouseDown && !rightMousePrev &&
-            glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+            cursorCaptured)
             meleeSecondaryPressed = true;
     } else if (!replayPlaybackActive && !duelCountdown &&
-        gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && rightMouseDown && !rightMousePrev &&
-        glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+        gameplayInputAllowed && inputEnabled && rightMouseDown && !rightMousePrev &&
+        cursorCaptured) {
         if (!editorMode) {
             RevolverShotResult altResult = weapons.fireAlt(camera, player, npcSystem, world);
             // For Swordsword lunge in online mode, send attack-start
@@ -330,9 +355,11 @@ void engineTickCombat(Engine& engine, float dt)
     // Publish crouch intent for Melee actors for the authored `crouch` state
     // clip, independent of the driver's move-set equip gate.
     if (player.usesMeleeAuthoredPose()) {
-        player.crouching =
-            InputCommandSystem::instance().isCrouchHeld() ||
-            MimitaMelee::debugCrouchHeld();
+        const InputFrame* recorded = ScenarioInput::frame();
+        player.crouching = scenarioInputActive && recorded
+            ? recorded->crouchHeld
+            : (InputCommandSystem::instance().isCrouchHeld() ||
+               MimitaMelee::debugCrouchHeld());
     }
 
     // Captain Falcon Melee: sample the Melee controls and drive the local
@@ -342,30 +369,34 @@ void engineTickCombat(Engine& engine, float dt)
     // cursor) so agent.melee live tests can force actions.
     if (meleeEquipped && !replayPlaybackActive && gameplayInputAllowed) {
         MimitaMelee::ClientInput meleeInput;
-        if (glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+        if (cursorCaptured) {
             static bool grabPrev = false;
             const bool grabDown =
-                glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS;
+                ScenarioInput::keyDown(engine.window(), GLFW_KEY_E);
             meleeInput.primaryPressed = meleePrimaryPressed;
             meleeInput.secondaryPressed = meleeSecondaryPressed;
             meleeInput.secondaryHeld = rightMouseDown;
             meleeInput.grabPressed = grabDown && !grabPrev;
             meleeInput.shieldHeld =
-                glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS;
+                ScenarioInput::keyDown(engine.window(), GLFW_KEY_Q);
             meleeInput.jumpHeld =
-                glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
-            meleeInput.crouchHeld =
-                InputCommandSystem::instance().isCrouchHeld() ||
-                MimitaMelee::debugCrouchHeld();
+                ScenarioInput::keyDown(engine.window(), GLFW_KEY_SPACE);
+            const InputFrame* recorded = ScenarioInput::frame();
+            meleeInput.crouchHeld = scenarioInputActive && recorded
+                ? recorded->crouchHeld
+                : (InputCommandSystem::instance().isCrouchHeld() ||
+                   MimitaMelee::debugCrouchHeld());
             grabPrev = grabDown;
         }
         MimitaMelee::clientTick(player, camera, weapons, mpContext, meleeInput,
                                 g_clientSimulationTick);
         // Publish crouch intent for the authored `crouch` state clip, independent
         // of the driver's move-set check and the cursor gate.
-        player.crouching =
-            InputCommandSystem::instance().isCrouchHeld() ||
-            MimitaMelee::debugCrouchHeld();
+        const InputFrame* recordedCrouch = ScenarioInput::frame();
+        player.crouching = scenarioInputActive && recordedCrouch
+            ? recordedCrouch->crouchHeld
+            : (InputCommandSystem::instance().isCrouchHeld() ||
+               MimitaMelee::debugCrouchHeld());
     } else {
         MimitaMelee::reset();
     }
@@ -375,9 +406,10 @@ void engineTickCombat(Engine& engine, float dt)
         mpContext.active && matchClient.mode() == "juggernaut" &&
         matchClient.localTeam(mpContext.localPlayerId) == 0;
     if (isJuggernautFighter && !replayPlaybackActive && gameplayInputAllowed &&
-        InputCommandSystem::instance().isKeyboardEnabled()) {
+        inputEnabled) {
         for (int choice = 0; choice < 4; ++choice) {
-            const bool down = glfwGetKey(engine.window(), GLFW_KEY_1 + choice) == GLFW_PRESS;
+            const bool down = ScenarioInput::keyDown(
+                engine.window(), GLFW_KEY_1 + choice);
             if (down && !slotPrev[choice + 1] &&
                 matchClient.fighterWeaponChoiceVisible(mpContext.localPlayerId)) {
                 Terminal::instance().execute("equipslot" + std::to_string(choice + 1));
@@ -387,12 +419,12 @@ void engineTickCombat(Engine& engine, float dt)
     }
     for (int keySlot = 0; keySlot <= 9; ++keySlot) {
         int key = keySlot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + keySlot;
-        bool down = glfwGetKey(engine.window(), key) == GLFW_PRESS;
+        bool down = ScenarioInput::keyDown(engine.window(), key);
         const bool pickerLocked = isJuggernautFighter &&
             matchClient.fighterWeaponChoiceVisible(mpContext.localPlayerId) &&
             keySlot >= 1 && keySlot <= 4;
         if (!pickerLocked && !replayPlaybackActive && !duelCountdown &&
-            gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled() && down && !slotPrev[keySlot]) {
+            gameplayInputAllowed && inputEnabled && down && !slotPrev[keySlot]) {
             Terminal::instance().execute("equipslot" + std::to_string(keySlot));
         }
         slotPrev[keySlot] = down;

@@ -748,6 +748,16 @@ public:
     // actor's part upload is reused by every replica instead of re-uploading
     // each actor's private mesh copy every frame.
     const std::string& renderModelKey() const { return mRenderModelKey; }
+    // Upload identity for the vertex buffers. The model path alone is not
+    // enough: avatar atlas application rewrites UVs in place, so raw GLB UVs
+    // and atlas UVs must never share one VBO/VAO.
+    std::string renderUploadKey() const
+    {
+        std::string key = mRenderModelKey;
+        key += avatarAtlasUvs ? "|atlas" : "|raw";
+        return key;
+    }
+    void markAvatarAtlasUvsApplied() { avatarAtlasUvs = true; }
     void setRenderModelKeyFromPath(const std::string& resolvedPath)
     {
         // Key by immutable model geometry only. Per-actor avatar names and
@@ -786,6 +796,7 @@ public:
     std::string mCharacterName = "DefaultGuy";
     std::string mAvatarName;
     std::string mRenderModelKey;
+    bool avatarAtlasUvs = false;
     struct AvatarInstance* avatarInstance = nullptr;
     std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
 

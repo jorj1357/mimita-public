@@ -16,12 +16,14 @@
 
 struct GLFWwindow;
 class Camera;
+struct MapGLBObject;
 
 enum class EditorObjectKind {
     Entity,
     Block,
     PayloadRoutePoint,
-    PayloadCartOrigin
+    PayloadCartOrigin,
+    MapGLBObject
 };
 
 struct EditorObjectRef {
@@ -144,6 +146,11 @@ private:
     DragState mDrag;
     glm::vec3 mSnapTarget{0.0f};
     bool mSnapTargetValid = false;
+    int mOutlinerOffset = 0;
+    EditorObjectRef mOutlinerAnchor;
+
+    void collectEditorObjects(std::vector<EditorObjectRef>& out) const;
+    int outlinerRowAt(double screenX, double screenY) const;
 
     void clearSelection();
     void selectOnly(const EditorObjectRef& ref);
@@ -152,6 +159,7 @@ private:
     const MapEntity* entityFor(const EditorObjectRef& ref) const;
     const AuthoredBlock* blockFor(const EditorObjectRef& ref) const;
     const PayloadRoutePoint* routeFor(const EditorObjectRef& ref) const;
+    MapGLBObject* mapObjectFor(const EditorObjectRef& ref) const;
 
     glm::vec3 objectPosition(const EditorObjectRef& ref) const;
     void setObjectPosition(const EditorObjectRef& ref, const glm::vec3& position);

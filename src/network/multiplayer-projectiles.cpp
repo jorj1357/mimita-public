@@ -1560,6 +1560,8 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         ph.applyAtMs = nowMs() + (uint64_t)std::max(16.0, maxHoldMs);
         ph.shooterId = event->attackerPlayerId;
         ph.eventServerTick = event->header.tick;
+        ph.spawnGeneration = event->targetSpawnGeneration != 0
+            ? event->targetSpawnGeneration : ctx.lastKnownSpawnGeneration;
         ph.receivedMs = nowMs();
         ctx.pendingVictimHealth.push_back(ph);
     }

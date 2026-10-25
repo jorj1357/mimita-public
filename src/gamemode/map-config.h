@@ -97,6 +97,9 @@ struct PayloadConfig
     bool hasCartOrigin = false;
     glm::vec3 cartOrigin{0.0f};
     float cartYaw = 0.0f;
+    // "route" follows the route tangent; "fixed" keeps cart_yaw for the whole
+    // round and is hot-reloadable.
+    bool cartFixedFacing = false;
     // Physical/visual cart box dimensions (meters), separate from the
     // gameplay interaction box so the GLB model size never changes the area.
     glm::vec3 cartSize{2.0f, 1.5f, 1.0f};

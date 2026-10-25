@@ -181,6 +181,7 @@ bool loadWorldFromGLB(World& world, const char* path)
             {"collision_triangles", metrics.collisionTriangleCount},
             {"collision_chunks", metrics.collisionChunkCount},
             {"spawn_points", world.spawnPoints.size()},
+            {"glb_objects", world.mesh.objects.size()},
             {"render_revision", world.renderRevision},
             {"bounds_min", {world.collisionMesh.boundsMin.x,
                              world.collisionMesh.boundsMin.y,

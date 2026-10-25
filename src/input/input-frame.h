@@ -16,6 +16,9 @@
 struct InputFrame {
     float moveX = 0.0f;
     float moveY = 0.0f;
+    // Camera-relative axes fed to the authoritative movement packet.
+    float wishSide = 0.0f;
+    float wishForward = 0.0f;
     bool jump = false;
     bool jumpPressed = false;
     bool dashPressed = false;
@@ -29,6 +32,15 @@ struct InputFrame {
     bool crouchHeld = false;
     float lookYaw = 0.0f;
     float lookPitch = 0.0f;
+    glm::vec3 camForward{0.0f, 1.0f, 0.0f};
+
+    // Weapon/combat intent for recording and deterministic playback.
+    bool primaryHeld = false;
+    bool secondaryHeld = false;
+    bool shieldHeld = false;
+    bool grabHeld = false;
+    // Bit 0 = slot 0, bit 9 = slot 9. Held state, not edge state.
+    uint16_t slotHeldMask = 0;
 
     // Ragdoll mode
     bool ragdollTogglePressed = false;

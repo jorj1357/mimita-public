@@ -2,7 +2,7 @@
   "id": "payload",
   "name": "Payload",
   "description": "Attackers push the cart up the tower; defenders contest it until the clock or overtime expires.",
-  "maps": ["payload1"],
+  "maps": ["payload1", "payload2"],
   "teams": [
     {
       "id": "attackers",
@@ -107,6 +107,8 @@
     "hit_sounds": true,
     "hit_flinch": true,
     "killfeed": true,
+    "ragdolls": true,
+    "blood": true,
     "player_outlines": false
   }
 }

@@ -411,6 +411,17 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
 
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName)
 {
+    if (ctx.active || ctx.transport || ctx.sock != INVALID_SOCKET)
+    {
+        printf("[NET CONNECT] replacing stale session before direct join address=%s\n",
+               address.c_str());
+        mpIceConnectCancel();
+        const bool ownedUdpSocket = ctx.sock != INVALID_SOCKET;
+        teardownPreviousSession(ctx, DisconnectPolicy::NewConnection);
+        if (ownedUdpSocket)
+            netShutdown();
+    }
+
     // A new connection may target a server whose match IDs restarted at a
     // lower value. Reset cached community state before packet ordering starts.
     CommunityMatchClient::instance().reset();
@@ -604,6 +615,7 @@ void mpRequestExplode(MultiplayerContext& ctx)
     request.header.tick = ctx.tick;
     request.header.playerId = ctx.localPlayerId;
     ctx.awaitingExplodeDeath = true;
+    ctx.explodeRequestStartSpawnGeneration = ctx.lastKnownSpawnGeneration;
     ctx.explodeRequestLastSendMs = 0;
     mpSendPacket(ctx, &request, sizeof(request));
     ctx.explodeRequestLastSendMs = nowMs();
@@ -857,24 +869,23 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
 
     auto cancelled = [&]() { return job->cancel.load(std::memory_order_relaxed); };
 
-    // Fast-fail: if the room no longer exists on the coordinator, report it
-    // immediately instead of burning through the retry attempts.
+    // A newly registered room can take a moment to appear on every coordinator
+    // read path. Treat this lookup as diagnostic; begin-join retries below are
+    // authoritative, so a transient propagation delay must not fail the join.
     iceConnectSetMessage(job, "Checking room...");
     {
         CoordinatorLookupResult lookup = coordinatorIceLookup(roomCode);
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Important,
             "network.ice-room-lookup", roomCode,
-            "client checked room before ICE join", 0,
+            lookup.exists
+                ? "client confirmed room before ICE join"
+                : "room is not visible yet; ICE join will retry registration propagation",
+            0,
             {{"room_code", roomCode}, {"reachable", lookup.reachable},
-             {"exists", lookup.exists}, {"status", lookup.status}},
+             {"exists", lookup.exists}, {"status", lookup.status},
+             {"join_will_retry", lookup.reachable && !lookup.exists}},
             __FILE__, __LINE__, __FUNCTION__);
-        if (lookup.reachable && !lookup.exists)
-        {
-            printf("[ICE CONNECT] room=%s not found on coordinator\n", roomCode.c_str());
-            iceConnectFinish(job, false, "Room not found");
-            return;
-        }
     }
     if (cancelled()) { iceConnectFinish(job, false, "Cancelled"); return; }
 
@@ -1130,6 +1141,7 @@ bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
     if (ctx.active)
         mpShutdown(ctx);
 
+    ctx.currentRoomCode = roomCode;
     ctx.connectFailed = false;
     ctx.connectionStatus = "Connecting...";
 
@@ -1261,7 +1273,8 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.processedDisagreementIds.clear();
     ctx.processedDisagreementOrder.clear();
     ctx.hasPendingServerPositionCorrection = false;
-    ctx.currentRoomCode = status.roomCode;
+    if (!status.roomCode.empty())
+        ctx.currentRoomCode = status.roomCode;
 }
 
 // ── Migration: disagreement processing ────────────────────────────────
@@ -1475,6 +1488,7 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
          {"active", ctx.active},
          {"connected", ctx.connected},
          {"room_code", ctx.roomCode},
+         {"hud_room_code", ctx.currentRoomCode},
          {"server_name", ctx.serverName},
          {"server_address", ctx.serverAddress},
          {"local_player_id", ctx.localPlayerId},

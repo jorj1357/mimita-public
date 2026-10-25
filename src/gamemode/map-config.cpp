@@ -260,6 +260,10 @@ bool MapConfigRegistry::load(const std::string& mapId)
                     next.payload.cartYaw = origin.value("yaw", next.payload.cartYaw);
                 }
             }
+            if (payload.contains("facing_mode") && payload["facing_mode"].is_string()) {
+                const std::string mode = payload["facing_mode"].get<std::string>();
+                next.payload.cartFixedFacing = mode == "fixed";
+            }
             if (payload.contains("interaction_box") && payload["interaction_box"].is_object()) {
                 const auto& box = payload["interaction_box"];
                 if (box.contains("size"))
@@ -763,6 +767,7 @@ bool MapConfigRegistry::save()
         payload["cart_size"] = {mCurrent.payload.cartSize.x,
                                 mCurrent.payload.cartSize.y,
                                 mCurrent.payload.cartSize.z};
+        payload["facing_mode"] = mCurrent.payload.cartFixedFacing ? "fixed" : "route";
         payload["interaction_box"] = {
             {"size", {mCurrent.payload.interactionSize.x,
                       mCurrent.payload.interactionSize.y,

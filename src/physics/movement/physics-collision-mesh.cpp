@@ -646,39 +646,55 @@ void collectActorMeshContactsInto(
                     hitCentroid = centroid;
                     hit = true;
                     sweepNormal = wt.normal;
-                } else if (glm::dot(sweep, sweep) > 1e-8f) {
-                    const float sweepPadding = deformationRadius +
-                        (roundedFeatures ? featureRadius : 0.0f);
-                    if (sweptTriangleTriangleIntersect(
-                            pa, pb, pc, sweep,
-                            wt.a, wt.b, wt.c, sweepPadding,
-                            timeOfImpact, sweepNormal)) {
-                        hitCentroid = prevCentroid + sweep * timeOfImpact;
-                        hit = true;
+                } else if (glm::dot(sweep, sweep) > 1e-8f ||
+                           deformationRadius > 1e-5f) {
+                    // Keep translation continuous, but subdivide only pose
+                    // deformation. Padding by the entire tick's limb motion
+                    // makes a rotating triangle collide from a large distance.
+                    constexpr float kMaximumPoseDeformationPerSweep = 0.08f;
+                    constexpr int kMaximumPoseSweepSegments = 64;
+                    const int poseSegments = std::max(
+                        1, (int)std::ceil(
+                            deformationRadius / kMaximumPoseDeformationPerSweep));
+                    if (poseSegments > kMaximumPoseSweepSegments) {
+                        gActorNarrowphase.budgetExceeded = true;
+                        return;
                     }
-                } else if (deformationRadius > 1e-5f) {
-                    // Pure pose rotation has no centroid translation. Retain a
-                    // bounded pose sweep for that narrow case; fast translation
-                    // is handled continuously above and never depends on steps.
-                    const int rotationSteps = std::clamp(
-                        (int)std::ceil(deformationRadius / 0.08f), 1, 64);
-                    for (int si = 1; !hit && si <= rotationSteps; ++si) {
-                        const float alpha = (float)si / (float)rotationSteps;
-                        const glm::vec3 sa = pa + (a - pa) * alpha;
-                        const glm::vec3 sb = pb + (b - pb) * alpha;
-                        const glm::vec3 sc = pc + (c - pc) * alpha;
-                        ++triangleTests;
-                        ++gActorNarrowphase.triangleTests;
-                        if (triangleTriangleIntersect(sa, sb, sc,
-                                                       wt.a, wt.b, wt.c)) {
-                            hitCentroid = prevCentroid + sweep * alpha;
-                            timeOfImpact = alpha;
-                            sweepNormal = wt.normal;
-                            hit = true;
-                        }
+                    for (int si = 0; !hit && si < poseSegments; ++si) {
+                        const float alpha0 =
+                            (float)si / (float)poseSegments;
+                        const float alpha1 =
+                            (float)(si + 1) / (float)poseSegments;
+                        const glm::vec3 sa = pa + (a - pa) * alpha0;
+                        const glm::vec3 sb = pb + (b - pb) * alpha0;
+                        const glm::vec3 sc = pc + (c - pc) * alpha0;
+                        const glm::vec3 ea = pa + (a - pa) * alpha1;
+                        const glm::vec3 eb = pb + (b - pb) * alpha1;
+                        const glm::vec3 ec = pc + (c - pc) * alpha1;
+                        const glm::vec3 segmentStart = (sa + sb + sc) / 3.0f;
+                        const glm::vec3 segmentEnd = (ea + eb + ec) / 3.0f;
+                        const glm::vec3 segmentSweep = segmentEnd - segmentStart;
+                        const float segmentDeformation = std::max({
+                            glm::length((ea - sa) - segmentSweep),
+                            glm::length((eb - sb) - segmentSweep),
+                            glm::length((ec - sc) - segmentSweep)});
+                        const float sweepPadding = segmentDeformation +
+                            (roundedFeatures ? featureRadius : 0.0f);
                         if (triangleTests >= kMaxTriangleTests) {
                             gActorNarrowphase.budgetExceeded = true;
                             return;
+                        }
+                        ++triangleTests;
+                        ++gActorNarrowphase.triangleTests;
+                        float segmentTime = 0.0f;
+                        if (sweptTriangleTriangleIntersect(
+                                sa, sb, sc, segmentSweep,
+                                wt.a, wt.b, wt.c, sweepPadding,
+                                segmentTime, sweepNormal)) {
+                            timeOfImpact = alpha0 +
+                                (alpha1 - alpha0) * segmentTime;
+                            hitCentroid = prevCentroid + sweep * timeOfImpact;
+                            hit = true;
                         }
                     }
                 }
@@ -731,8 +747,14 @@ void collectActorMeshContactsInto(
                 const float s0 = glm::dot(a - wt.a, n);
                 const float s1 = glm::dot(b - wt.a, n);
                 const float s2 = glm::dot(c - wt.a, n);
-                const float rawPenetration =
-                    std::max(0.0f, -std::min({s0, s1, s2}));
+                // Plane depth is meaningful only when the final finite
+                // triangles still intersect. A swept crossing can intersect
+                // at an edge while another actor vertex lies far behind the
+                // triangle's infinite plane; its recovery is computed from
+                // post-hit travel below instead.
+                const float rawPenetration = currentOverlap
+                    ? std::max(0.0f, -std::min({s0, s1, s2}))
+                    : 0.0f;
                 // A triangle intersection at exactly a block edge can be a
                 // touching seam with no physical penetration. Do not inflate
                 // that into a full skin-sized blocking contact: that is what

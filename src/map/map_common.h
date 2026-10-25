@@ -19,9 +19,24 @@ struct Face {
     int texID = 0; // NEW — random texture index
 };
 
+// One authored mesh-bearing GLB node. The loader bakes the node transform into
+// renderVertices, so the editor can move the object by applying a delta to this
+// contiguous vertex range and still reuse the normal map collision builder.
+struct MapGLBObject {
+    std::string id;                 // stable per map: "node:<index>"
+    std::string name;               // authored GLB node name
+    int nodeIndex = -1;
+    glm::mat4 transform{1.0f};      // current world transform (translation used by editor)
+    glm::vec3 boundsMin{0.0f};
+    glm::vec3 boundsMax{0.0f};
+    size_t vertexFirst = 0;
+    size_t vertexCount = 0;
+};
+
 struct Mesh {
     std::vector<Face> faces;
     std::vector<Vertex> verts; // keep legacy for VAO creation
+    std::vector<MapGLBObject> objects;
 
     struct Batch {
         int materialIndex = -1;

@@ -193,6 +193,16 @@ chainsaw boss
 
 charger 
 
+2026 10 24 2122 jorj here is the attacks anims for each
+idle, walk, attack, hurt
+
+i also think we nede much better more aggressive npc behavior than we have right now for this mode to work 
+bc ur so fast inthis game 
+need to be like super pro monsters
+and do more of that like sliding stuff in lethal ape thats sick
+and ver verlethal monsters 
+
+but its doable 
 
 2026 10 13 2102 
 crwaler needs its own aniatmions

@@ -1172,6 +1172,10 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
         }
     } else {
         gAvatarUseModelTransforms = false;
+        // The default model is authored for the legacy frame. Leaving a prior
+        // avatar's canonicalization flag set rotates/bakes the default GLB and
+        // changes its cache identity.
+        gAvatarCanonicalizePlayerModel = false;
         gAvatarBodypartOverrides = nullptr;
         gAvatarRigExtraNodes.clear();
         mAvatar.bodyTransformSource = "legacy_overrides";

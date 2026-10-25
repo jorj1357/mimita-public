@@ -371,6 +371,9 @@ static void renderReplayActors(
 
 void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 {
+    // Mode 1 restores the original per-frame shadow map update. Mode 2 keeps
+    // the later alternating-frame optimization available for future use.
+    constexpr int kShadowUpdateMode = 1;
     Player& player = THE_PLAYER;
     Camera& camera = THE_CAMERA;
     World& world = THE_WORLD;
@@ -432,11 +435,20 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     {
     diagRenderFrameBegin(dt);
     { MIMITA_PERF_SCOPE("Rendering::Shadows");
-      // Shadow depth is reused from the previous frame on alternating frames.
-      // At high render rates this halves shadow-pass cost while keeping shadow
-      // updates at 60+ Hz for camera motion and actor shadows.
       static uint32_t shadowFrameCounter = 0;
-      const bool renderShadowThisFrame = (shadowFrameCounter++ & 1u) == 0u;
+      static bool shadowModeLogged = false;
+      if (!shadowModeLogged) {
+          StructuredLogger::instance().writeEvent(
+              StructuredCategory::Rendering, StructuredLevel::Important,
+              "render.shadow_update_mode", "shadow-update-mode",
+              "selected shadow map update cadence", 0,
+              {{"mode", kShadowUpdateMode},
+               {"updates_every_frame", kShadowUpdateMode == 1}},
+              __FILE__, __LINE__, __func__);
+          shadowModeLogged = true;
+      }
+      const bool renderShadowThisFrame = kShadowUpdateMode == 1 ||
+          (kShadowUpdateMode == 2 && (shadowFrameCounter++ & 1u) == 0u);
       if (renderShadowThisFrame) {
           Perf::ScopedTimer _shadowDraw("Rendering::Shadows::Draw");
           PerfGpu::beginRegion("GPU::Shadows");
@@ -655,6 +667,13 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 uint32_t inViewMoving = 0;
                 uint32_t alive = 0;
                 uint32_t modelLoaded = 0;
+                glm::vec3 sampleNpcPos{0.0f};
+                float sampleNpcScale = 0.0f;
+                if (!mpContext.remoteNpcs.empty()) {
+                    const Player& sample = mpContext.remoteNpcs.begin()->second;
+                    sampleNpcPos = sample.pos;
+                    sampleNpcScale = sample.sizeScale;
+                }
                 for (const auto& kv : mpContext.remoteNpcs) {
                     const Player& npc = kv.second;
                     if (!npc.dead) ++alive;
@@ -675,7 +694,12 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     static_cast<uint32_t>(mpContext.tick),
                     {{"remote_npcs", mpContext.remoteNpcs.size()},
                      {"alive", alive}, {"model_loaded", modelLoaded},
-                     {"in_view", inView}, {"in_view_moving", inViewMoving}},
+                     {"in_view", inView}, {"in_view_moving", inViewMoving},
+                     {"active_map", ACTIVE_MAP_PATH},
+                     {"required_map", mpContext.requiredMapId},
+                     {"camera_position", {camera.pos.x, camera.pos.y, camera.pos.z}},
+                     {"sample_npc_position", {sampleNpcPos.x, sampleNpcPos.y, sampleNpcPos.z}},
+                     {"sample_npc_size_scale", sampleNpcScale}},
                     __FILE__, __LINE__, __FUNCTION__);
             }
             { Perf::ScopedTimer _networkProjectiles("Rendering::Actors::NetworkProjectiles");

@@ -404,6 +404,19 @@ void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
     for (auto it = ctx.pendingVictimHealth.begin();
          it != ctx.pendingVictimHealth.end(); )
     {
+        // A delayed damage event belongs to the life that produced it. Once
+        // the server has published a newer spawn generation, applying that
+        // lethal hit would re-kill the freshly spawned player.
+        if (it->spawnGeneration != 0 &&
+            ctx.lastKnownSpawnGeneration != 0 &&
+            it->spawnGeneration != ctx.lastKnownSpawnGeneration)
+        {
+            Debug::log(Debug::Category::Networking,
+                "[NET VICTIM HEALTH DROP] stale life gen=%u current=%u killed=%d\n",
+                it->spawnGeneration, ctx.lastKnownSpawnGeneration, (int)it->killed);
+            it = ctx.pendingVictimHealth.erase(it);
+            continue;
+        }
         // Apply in the same frame the shot visual plays: the attacker's body
         // must have rendered past the shot's server tick (or the max-hold
         // wall-clock fallback must have elapsed) so the HP drop is never out

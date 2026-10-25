@@ -251,9 +251,15 @@ void serverConsumeNpcWaveLife(uint32_t playerId)
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.npcWaves || d.waveLivesRemaining <= 0)
         return;
+    auto actorIt = d.matchActors.find(playerId);
+    // One death costs one life. The lethal-damage path and the actor-state
+    // transition both call this helper in the same tick; the actor is already
+    // Dead after the first call.
+    if (actorIt != d.matchActors.end() &&
+        actorIt->second.state == ActorState::Dead)
+        return;
     const int livesBefore = d.waveLivesRemaining;
     --d.waveLivesRemaining;
-    auto actorIt = d.matchActors.find(playerId);
     if (actorIt != d.matchActors.end())
         actorIt->second.state = ActorState::Dead;
     Debug::log(Debug::Category::Duel,
@@ -1163,7 +1169,9 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
                                {"total_distance", d.payloadRuntime.totalDistance},
                                {"overtime_seconds", rules.overtimeSeconds},
                                {"push_per_attacker", rules.pushMetersPerSecondPerAttacker},
-                               {"max_push_attackers", rules.maxPushAttackers}});
+                               {"max_push_attackers", rules.maxPushAttackers},
+                               {"facing_mode", d.payloadRuntime.cartFixedFacing ? "fixed" : "route"},
+                               {"cart_yaw_degrees", mapCfg.payload.cartYaw}});
             Debug::warn(Debug::Category::Duel,
                 "[PAYLOAD] configured map=%s route=%zu checkpoints=%zu distance=%.2f\n",
                 d.mapId.c_str(), d.payloadRuntime.routePoints.size(),
@@ -2818,6 +2826,11 @@ static void serverPayloadTick(ServerGamemodeState& d,
                               uint32_t tick)
 {
     if (!d.payloadMode || d.phase != DUEL_PHASE_ACTIVE) return;
+
+    // Cart facing is authored map data and may be hot-reloaded live.
+    const MapObjectiveConfig& payloadMap = MapConfigRegistry::instance().current();
+    d.payloadRuntime.cartYaw = glm::radians(payloadMap.payload.cartYaw);
+    d.payloadRuntime.cartFixedFacing = payloadMap.payload.cartFixedFacing;
 
     std::array<MimitaGamemode::PayloadActorView, 64> actors{};
     int actorCount = 0;

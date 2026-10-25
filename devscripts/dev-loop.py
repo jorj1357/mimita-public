@@ -49,6 +49,8 @@ from jsonc import load as load_jsonc
 
 DEV_ROOT = ROOT / ".dev"
 BUILD_ROOT = DEV_ROOT / "builds"
+STABLE_LAUNCH_DIR = DEV_ROOT / "current"
+STABLE_LAUNCH_EXE = STABLE_LAUNCH_DIR / "mimita.exe"
 STATE_PATH = DEV_ROOT / "state.json"
 CURRENT_RUN_PATH = DEV_ROOT / "current-run.json"
 SERVER_MARKER_PATH = DEV_ROOT / "server-owner.json"
@@ -914,6 +916,85 @@ def _copy_verified_executable(source: Path, destination: Path) -> None:
     raise RuntimeError(f"refusing to publish unstable executable: {last_reason}")
 
 
+def stable_launch_matches(build_exe: Path) -> bool:
+    """Return true when the fixed launch path is the exact published bundle."""
+    try:
+        if not os.path.samefile(STABLE_LAUNCH_EXE, build_exe):
+            return False
+        return all(
+            os.path.samefile(STABLE_LAUNCH_DIR / name, build_exe.parent / name)
+            for name in RUNTIME_DLLS
+        )
+    except OSError:
+        return False
+
+
+def stage_stable_launch(build_exe: Path, expected_sha256: str) -> Path:
+    """Stage hardlinks from one immutable numbered artifact for stable-path launch."""
+    source_root = BUILD_ROOT.resolve()
+    resolved_exe = build_exe.resolve()
+    if not resolved_exe.is_relative_to(source_root):
+        raise RuntimeError(f"refusing stable launch from outside numbered builds: {build_exe}")
+
+    valid, reason, digest = _executable_snapshot_is_valid(resolved_exe)
+    if not valid or digest != expected_sha256:
+        raise RuntimeError(
+            f"numbered artifact changed before stable launch staging ({reason})"
+        )
+
+    DEV_ROOT.mkdir(parents=True, exist_ok=True)
+    stage_dir = DEV_ROOT / f".current-stage-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    stage_dir.mkdir()
+    try:
+        os.link(resolved_exe, stage_dir / "mimita.exe")
+        for name in RUNTIME_DLLS:
+            source_dll = resolved_exe.parent / name
+            if not source_dll.is_file():
+                raise RuntimeError(f"numbered artifact is missing runtime DLL: {source_dll}")
+            os.link(source_dll, stage_dir / name)
+
+        staged_identity = executable_identity(stage_dir / "mimita.exe")
+        if not staged_identity.get("valid") or staged_identity.get("sha256") != expected_sha256:
+            raise RuntimeError("stable launch staging failed executable identity verification")
+        return stage_dir
+    except Exception:
+        try:
+            if stage_dir.resolve().parent == DEV_ROOT.resolve():
+                shutil.rmtree(stage_dir, ignore_errors=True)
+        except OSError:
+            pass
+        raise
+
+
+def activate_stable_launch(stage_dir: Path) -> Path:
+    """Atomically point the constant firewall path at a staged numbered build."""
+    resolved_dev_root = DEV_ROOT.resolve()
+    resolved_stage = stage_dir.resolve()
+    if resolved_stage.parent != resolved_dev_root:
+        raise RuntimeError(f"refusing to activate launch staging outside {DEV_ROOT}")
+    if STABLE_LAUNCH_DIR.is_symlink() or (
+            STABLE_LAUNCH_DIR.exists() and
+            STABLE_LAUNCH_DIR.resolve().parent != resolved_dev_root):
+        raise RuntimeError(f"refusing to replace unexpected stable launch path: {STABLE_LAUNCH_DIR}")
+
+    backup_dir = DEV_ROOT / f".current-previous-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    moved_old = False
+    try:
+        if STABLE_LAUNCH_DIR.exists():
+            os.replace(STABLE_LAUNCH_DIR, backup_dir)
+            moved_old = True
+        os.replace(stage_dir, STABLE_LAUNCH_DIR)
+    except Exception:
+        if moved_old and backup_dir.exists() and not STABLE_LAUNCH_DIR.exists():
+            os.replace(backup_dir, STABLE_LAUNCH_DIR)
+        raise
+
+    _EXECUTABLE_IDENTITY_CACHE.pop(str(STABLE_LAUNCH_EXE), None)
+    if moved_old and backup_dir.resolve().parent == resolved_dev_root:
+        shutil.rmtree(backup_dir, ignore_errors=True)
+    return STABLE_LAUNCH_EXE
+
+
 def publish_build(number: int) -> Path:
     source_exe = ROOT / "mimita.exe"
     if not source_exe.is_file():
@@ -998,6 +1079,8 @@ class DevLoop:
         self.server_process: subprocess.Popen | None = None
         self.server_pid: int | None = None
         self.server_exe: str | None = None
+        self.server_build_id = ""
+        self.server_local_port = 0
         self.server_args: list[str] = []
         self.server_adopted = False
         self.build_mismatch_reason = ""
@@ -1089,7 +1172,17 @@ class DevLoop:
             return
         self.server_pid = pid
         self.server_exe = expected_exe
+        self.server_build_id = str(marker.get("build_id", ""))
+        self.server_local_port = int(marker.get("local_port", 0) or 0)
+        self.room_code = str(marker.get("room_code", "")) or None
         self.server_args = list(marker.get("args", []))
+        for index, value in enumerate(self.server_args[:-1]):
+            if value == "--room-file":
+                self.room_file_path = Path(self.server_args[index + 1])
+                break
+        persisted_metadata = marker.get("run_metadata")
+        if isinstance(persisted_metadata, dict):
+            self.run_metadata = dict(persisted_metadata)
         self.server_adopted = True
         self.server_ready = bool(marker.get("server_ready", False))
         self.server_launch_ms = float(marker.get("launch_ms", 0.0) or 0.0)
@@ -1115,6 +1208,12 @@ class DevLoop:
             "executable": self.server_exe,
             "args": list(self.server_args),
             "build_id": self.run_metadata.get("build_id", ""),
+            "build_identity": self.run_metadata.get("build_identity", {}),
+            "build_number": self.run_metadata.get("build_number"),
+            "source_generation": self.run_metadata.get("source_generation"),
+            "run_metadata": dict(self.run_metadata),
+            "local_port": self.server_local_port,
+            "room_code": self.room_code or "",
             "run_id": self.run_id,
             "events_path": self.events_path,
             "server_ready": self.server_ready,
@@ -1162,6 +1261,7 @@ class DevLoop:
             os.path.normcase(self.server_exe) == os.path.normcase(client_executable) and
             self.run_metadata.get("build_id") == self.run_metadata.get("client_build_id") and
             self.run_metadata.get("build_id") == self.run_metadata.get("server_build_id") and
+            self.server_build_id == self.run_metadata.get("server_build_id") and
             runtime_identity.get("valid")
         )
         mismatch_reason = self.build_mismatch_reason
@@ -1230,6 +1330,8 @@ class DevLoop:
             "control_token": self.control_token if self.control_port else None,
             "server_pid": self.server_pid,
             "server_executable": self.server_exe,
+            "server_build_id": self.server_build_id,
+            "room_code": self.room_code or "",
             "server_adopted": self.server_adopted,
             "server_args": list(self.server_args),
             "server_alive": server_alive,
@@ -2196,6 +2298,8 @@ class DevLoop:
         self.server_process = None
         self.server_pid = None
         self.server_exe = None
+        self.server_build_id = ""
+        self.server_local_port = 0
         self.server_args = []
         self.server_unavailable = True
         self.server_ready = False
@@ -2240,6 +2344,33 @@ class DevLoop:
             time.sleep(0.1)
         return False
 
+    def wait_for_server_local_gameplay(self, pid: int, timeout: float = 60.0) -> int:
+        """Return the bound UDP port as soon as authoritative local play is ready."""
+        if not self.events_path:
+            return 0
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            process = self.server_process
+            if process is not None and process.poll() is not None:
+                return 0
+            try:
+                with open(self.events_path, "r", encoding="utf-8") as journal:
+                    for line in journal:
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if (event.get("event") != "network.server.local-gameplay-ready" or
+                                event.get("pid") != pid):
+                            continue
+                        port = int(event.get("fields", {}).get("port", 0) or 0)
+                        if 0 < port <= 65535:
+                            return port
+            except OSError:
+                pass
+            time.sleep(0.05)
+        return 0
+
     def server_matches_executable(self, exe: Path) -> bool:
         if not self.server_health():
             self.build_mismatch_reason = "server_not_alive"
@@ -2270,9 +2401,14 @@ class DevLoop:
             index += 1
         return normalized
 
-    def server_matches_launch_configuration(self, exe: Path, map_name: str) -> bool:
+    def server_matches_launch_configuration(
+        self, exe: Path, map_name: str, expected_build_id: str = ""
+    ) -> bool:
         """Ensure a durable server belongs to the currently selected mode/profile."""
         if not self.server_matches_executable(exe):
+            return False
+        if expected_build_id and self.server_build_id != expected_build_id:
+            self.build_mismatch_reason = "server_build_identity"
             return False
         desired = self.build_server_args(exe, map_name, Path("<room-file>"))
         matches = self._normalized_server_args(self.server_args) == self._normalized_server_args(desired)
@@ -2303,6 +2439,8 @@ class DevLoop:
         self.server_process = None
         self.server_pid = None
         self.server_exe = None
+        self.server_build_id = ""
+        self.server_local_port = 0
         self.server_args = []
         self.room_code = None
         self.server_unavailable = True
@@ -2324,6 +2462,8 @@ class DevLoop:
         if not exe.is_file():
             print(f"[DEV] missing published executable: {exe}")
             return False
+        build_id = self.build_id(identity)
+        launch_exe = STABLE_LAUNCH_EXE
 
         map_override = self.override_map
         weapon_override = self.override_weapon_set
@@ -2334,11 +2474,13 @@ class DevLoop:
         self.override_map = ""
         if (
             not map_override and not weapon_override
-            and self.client_args and self.client_args[0] == str(exe)
+            and self.client_args and self.client_args[0] == str(launch_exe)
             and any(process.poll() is None for process in self.processes)
             and self.client_ready and self.builds_match
+            and self.server_build_id == build_id
+            and stable_launch_matches(exe)
             and self.server_health()
-            and self.server_matches_launch_configuration(exe, map_name)
+            and self.server_matches_launch_configuration(launch_exe, map_name, build_id)
         ):
             self.last_message = f"last successful build {selected_build} is already running"
             self.save_state("launch_reused")
@@ -2347,6 +2489,13 @@ class DevLoop:
 
         print(f"[DEV] selected allowed map: {map_name}")
         if not self.validate_firewall_policy():
+            return False
+        try:
+            staged_launch = stage_stable_launch(exe, str(identity.get("sha256", "")))
+        except (OSError, RuntimeError) as error:
+            self.last_message = f"could not stage stable launch path: {error}"
+            self.save_state("stable_launch_stage_failed")
+            print(f"[DEV] {self.last_message}")
             return False
         # Reject an unsafe launch configuration before stopping the current
         # client. A failed preflight must not turn a launch request into a game
@@ -2358,7 +2507,8 @@ class DevLoop:
         self.builds_match = False
         running_map = self.server_map_name()
         prelaunch_windows = self.observe_launch_windows("before_server_launch")
-        if self.server_health() and not self.server_matches_launch_configuration(exe, map_name):
+        if self.server_health() and not self.server_matches_launch_configuration(
+                launch_exe, map_name, build_id):
             print(f"[DEV SERVER] launch configuration changed; replacing old server "
                   f"pid={self.server_pid} old_map={running_map} new_map={map_name}")
             self.record_runtime_event(
@@ -2367,16 +2517,47 @@ class DevLoop:
                     "role": "server",
                     "pid": self.server_pid,
                     "old_executable": self.server_exe,
-                    "new_executable": str(exe),
+                    "new_executable": str(launch_exe),
+                    "new_build_id": build_id,
                     "reason": self.build_mismatch_reason,
                 },
                 "owned server does not match the selected build or launch configuration",
             )
             if not self.stop_server():
+                shutil.rmtree(staged_launch, ignore_errors=True)
                 self.save_state("server_stop_failed")
                 return False
-        if self.server_health() and bool(self.room_code):
+        if not self.server_health() and not stable_launch_matches(exe):
+            try:
+                activate_stable_launch(staged_launch)
+            except (OSError, RuntimeError) as error:
+                shutil.rmtree(staged_launch, ignore_errors=True)
+                self.last_message = f"could not activate stable launch path: {error}"
+                self.save_state("stable_launch_activate_failed")
+                print(f"[DEV] {self.last_message}")
+                return False
+        else:
+            if stable_launch_matches(exe):
+                shutil.rmtree(staged_launch, ignore_errors=True)
+        if self.server_health() and not self.room_code and not self.server_local_port:
+            print(f"[DEV SERVER] live server has no saved room or local port; replacing pid={self.server_pid}")
+            if not self.stop_server():
+                shutil.rmtree(staged_launch, ignore_errors=True)
+                self.save_state("server_stop_failed")
+                return False
+            if not stable_launch_matches(exe):
+                try:
+                    activate_stable_launch(staged_launch)
+                except (OSError, RuntimeError) as error:
+                    shutil.rmtree(staged_launch, ignore_errors=True)
+                    self.last_message = f"could not activate stable launch path: {error}"
+                    self.save_state("stable_launch_activate_failed")
+                    print(f"[DEV] {self.last_message}")
+                    return False
+        if self.server_health() and (bool(self.room_code) or self.server_local_port):
+            shutil.rmtree(staged_launch, ignore_errors=True)
             room_code = self.room_code
+            local_server_port = self.server_local_port
             print(
                 f"[DEV SERVER] reusing pid={self.server_pid} room={room_code} alive=1"
             )
@@ -2390,6 +2571,8 @@ class DevLoop:
             self.server_process = None
             self.server_pid = None
             self.server_exe = None
+            self.server_build_id = ""
+            self.server_local_port = 0
             self.server_args = []
             self.server_adopted = False
             self.room_code = None
@@ -2399,7 +2582,7 @@ class DevLoop:
             os.close(room_fd)
             self.room_file_path = Path(room_file_name)
             self.room_file_path.write_text("", encoding="utf-8")
-            server_args = self.build_server_args(exe, map_name, self.room_file_path)
+            server_args = self.build_server_args(launch_exe, map_name, self.room_file_path)
             # One shared canonical events.jsonl for this server and its client.
             self.events_path = create_shared_events_path()
             self.command_queue_path = None
@@ -2413,7 +2596,6 @@ class DevLoop:
             self.server_ready = False
             self.client_ready = False
             self.builds_match = False
-            build_id = self.build_id(identity)
             metadata = {
                 "run_id": self.run_id,
                 "build_number": selected_build,
@@ -2427,7 +2609,8 @@ class DevLoop:
                 "launch_mode_name": self.launch_mode.get("name", "unnamed"),
                 "map": map_name,
                 "events_path": self.events_path,
-                "executable": str(exe),
+                "executable": str(launch_exe),
+                "artifact_executable": str(exe),
                 "started_utc": self.run_started_utc,
             }
             self.run_metadata = metadata
@@ -2443,7 +2626,7 @@ class DevLoop:
             version_env = {**common_env, "MIMITA_PROCESS_ROLE": "preflight"}
             try:
                 version = run_hidden(
-                    [str(exe), "--versioninfo"], cwd=ROOT, env=version_env,
+                    [str(launch_exe), "--versioninfo"], cwd=ROOT, env=version_env,
                     capture_output=True, text=True, timeout=20, check=False,
                 )
                 print(f"[DEV] versioninfo exit={version.returncode}")
@@ -2462,7 +2645,7 @@ class DevLoop:
                 "dev-loop.launch.args",
                 {
                     "role": "server",
-                    "executable": str(exe),
+                    "executable": str(launch_exe),
                     "args": list(server_args),
                     "console_policy": "CREATE_NO_WINDOW",
                     "server_bind": next(
@@ -2481,7 +2664,8 @@ class DevLoop:
             )
             self.server_process = server
             self.server_pid = server.pid
-            self.server_exe = str(exe)
+            self.server_exe = str(launch_exe)
+            self.server_build_id = build_id
             self.server_args = list(server_args)
             self.server_adopted = False
             self.server_launch_ms = time.time() * 1000.0
@@ -2500,7 +2684,8 @@ class DevLoop:
                     "dev-loop.server.startup_failed",
                     {
                         "pid": server.pid,
-                        "executable": str(exe),
+                        "executable": str(launch_exe),
+                        "artifact_executable": str(exe),
                         "exit_code": server.returncode,
                         "failure": self.last_message,
                         "journal_path": self.events_path,
@@ -2513,63 +2698,35 @@ class DevLoop:
                 return False
             print(f"[DEV SERVER] launched pid={server.pid} args={' '.join(server_args[1:])}")
             self.write_server_marker()
-
-            # The dedicated server registers with the coordinator, then writes
-            # the room code. This is the same handshake the GUI uses before it
-            # starts the client join.
-            deadline = time.time() + 20.0
-            room_code = ""
-            while time.time() < deadline:
-                if server.poll() is not None:
-                    self.last_message = (
-                        f"server exited before room-code handshake: {server.returncode}"
-                    )
-                    self.save_state("server_failed")
-                    print(f"[DEV SERVER] unexpected exit code={server.returncode} "
-                          f"pid={server.pid} before room handshake")
-                    self.server_process = None
-                    self.server_pid = None
-                    self.cleanup_room_file()
-                    self.print_status()
-                    return False
-                try:
-                    room_code = self.room_file_path.read_text(encoding="utf-8").strip()
-                except OSError:
-                    room_code = ""
-                if room_code:
-                    break
-                time.sleep(0.1)
-
-            if not room_code:
-                self.last_message = "server did not publish a room code within 20 seconds"
-                self.save_state("server_failed")
-                print(f"[DEV] {self.last_message}")
-                self.server_process = None
-                self.server_pid = None
-                self.cleanup_room_file()
-                self.print_status()
-                return False
-
-            self.room_code = room_code
-            # The server has consumed the room-file handshake. Remove the
-            # temporary file like the GUI does, but retain room_code for reuse.
-            self.cleanup_room_file(clear_code=False)
             self.server_ready = True
-            print(f"[DEV SERVER] room={room_code} alive=1")
-            print(f"[DEV] ROOM CODE: {room_code}")
+            local_server_port = self.wait_for_server_local_gameplay(server.pid)
+            if not local_server_port:
+                self.last_message = "server did not become locally playable before the readiness timeout"
+                self.save_state("server_local_gameplay_timeout")
+                print(f"[DEV] {self.last_message}")
+                self.stop_server()
+                return False
+            self.server_local_port = local_server_port
+            self.write_server_marker()
+            room_code = ""
 
-        client_args = [
-            str(exe), "--room", room_code,
+        client_args = [str(launch_exe)]
+        if room_code:
+            client_args.extend(["--room", room_code])
+        else:
+            client_args.extend(["--connect", f"127.0.0.1:{local_server_port}"])
+            if self.room_file_path is not None:
+                client_args.extend(["--room-code-file", str(self.room_file_path)])
+        client_args.extend([
             "--map", map_name,
             "--name", str(self.profile.get("client_name", "NPC Dev")),
             "--unlock-cursor",
-        ]
+        ])
         client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
         if not self.events_path:
             self.events_path = create_shared_events_path()
         if not self.run_id:
             self.run_id = Path(self.events_path).parent.name
-        build_id = self.build_id(identity)
         if self.run_metadata.get("build_id") != build_id:
             self.run_started_utc = self.run_started_utc or utc_now()
             self.run_metadata = {
@@ -2585,13 +2742,16 @@ class DevLoop:
                 "launch_mode_name": self.launch_mode.get("name", "unnamed"),
                 "map": map_name,
                 "events_path": self.events_path,
-                "executable": str(exe),
+                "executable": str(launch_exe),
+                "artifact_executable": str(exe),
                 "started_utc": self.run_started_utc,
             }
         else:
             self.run_metadata["server_build_id"] = build_id
             self.run_metadata["client_build_id"] = build_id
             self.run_metadata["build_identity"] = identity
+            self.run_metadata["executable"] = str(launch_exe)
+            self.run_metadata["artifact_executable"] = str(exe)
         if not self.command_queue_path:
             run_key = self.run_id or Path(self.events_path).parent.name
             self.command_queue_path = str(DEV_ROOT / f"agent-command-{run_key}.jsonl")
@@ -2617,7 +2777,8 @@ class DevLoop:
             "dev-loop.launch.args",
             {
                 "role": "client",
-                "executable": str(exe),
+                "executable": str(launch_exe),
+                "artifact_executable": str(exe),
                 "args": list(client_args),
                 "console_policy": "CREATE_NO_WINDOW",
                 "window_policy": self.launch_visibility,
@@ -2638,8 +2799,9 @@ class DevLoop:
         self.run_metadata["client_build_id"] = build_id
         self.client_ready = self.wait_for_logger_started("client", client.pid)
         self.builds_match = bool(self.server_ready and self.client_ready and
-                                 self.server_exe == str(exe) and
+                                 self.server_exe == str(launch_exe) and
                                  identity.get("valid") and
+                                 self.server_build_id == build_id and
                                  self.run_metadata.get("server_build_id") == build_id)
         if self.builds_match:
             self.build_mismatch_reason = ""
@@ -2650,7 +2812,48 @@ class DevLoop:
             self.monitor_launch_windows()
         self.save_state("running" if self.client_ready else "client_logger_missing")
         self.print_status()
+        if self.client_ready and not room_code and self.room_file_path is not None:
+            threading.Thread(
+                target=self.wait_for_registered_room_code,
+                args=(self.server_pid, self.room_file_path),
+                daemon=True,
+                name="dev-loop-room-code",
+            ).start()
         return bool(self.client_ready and self.builds_match)
+
+    def wait_for_registered_room_code(self, server_pid: int | None,
+                                      room_file_path: Path) -> None:
+        """Publish the coordinator code after the client is already playing."""
+        deadline = time.time() + 120.0
+        while time.time() < deadline:
+            if self.server_pid != server_pid or not self.server_health():
+                return
+            try:
+                room_code = room_file_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                room_code = ""
+            if room_code:
+                self.room_code = room_code
+                self.server_ready = True
+                self.write_server_marker()
+                self.record_runtime_event(
+                    "dev-loop.room-code.published",
+                    {"server_pid": server_pid, "room_code": room_code,
+                     "room_file": str(room_file_path)},
+                    "coordinator room code arrived after immediate local client launch",
+                )
+                print(f"[DEV SERVER] room={room_code} alive=1")
+                print(f"[DEV] ROOM CODE: {room_code}")
+                self.save_state("running")
+                return
+            time.sleep(0.1)
+
+        self.record_runtime_event(
+            "dev-loop.room-code.timeout",
+            {"server_pid": server_pid, "room_file": str(room_file_path),
+             "timeout_ms": 120000},
+            "local gameplay continued but the coordinator room code did not arrive",
+        )
 
     def stop_processes(self) -> None:
         for process in self.processes:
@@ -2753,6 +2956,7 @@ class DevLoop:
             f"[DEV STATUS] RUNTIME BUILD: {snapshot.get('running_build') or '-'} match={snapshot.get('builds_match')}",
             f"[DEV STATUS] RUN: {'RUNNING' if running else 'NOT RUNNING'} uptime={self._duration_text(snapshot.get('run_uptime_seconds'))} visibility={snapshot.get('launch_visibility')}",
             f"[DEV STATUS] PIDS: server={snapshot.get('server_pid') or '-'} client={client_pids or '-'}",
+            f"[DEV STATUS] ROOM CODE: {snapshot.get('room_code') or 'waiting for coordinator'}",
             f"[DEV STATUS] EVENTS: {_terminal_file_link(snapshot.get('events_path'))}",
             "[DEV STATUS] CONTROLS: [1] launch latest  [2] mode  [V] visible/headless  [A] auto-start  [Q] quit",
         ]
@@ -2882,6 +3086,63 @@ def _scenario_load(path_text: str) -> dict:
     value = json.loads(text.strip())
     if not isinstance(value, dict) or not value.get("id"):
         raise ValueError("scenario must be an object with a non-empty id")
+    return value
+
+
+def _scenario_input_path(scenario: dict) -> str:
+    value = scenario.get("playback")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    for step in scenario.get("setup", []) + scenario.get("steps", []):
+        if not isinstance(step, dict):
+            continue
+        if step.get("type") == "input_playback" or step.get("playback"):
+            path = step.get("path", step.get("playback", ""))
+            if isinstance(path, str) and path.strip():
+                return path.strip()
+    return ""
+
+
+def _read_input_header(path_text: str) -> dict:
+    path = Path(path_text).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                value = json.loads(line)
+                if isinstance(value, dict) and value.get("kind") == "header":
+                    return value
+                break
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {}
+
+
+def _map_basename(value: str) -> str:
+    text = str(value or "").strip().replace("\\", "/")
+    if not text:
+        return ""
+    name = text.rsplit("/", 1)[-1]
+    if name.lower().endswith(".glb"):
+        name = name[:-4]
+    return name
+
+
+def _server_weapon_set(current: dict):
+    args = current.get("server_args")
+    if not isinstance(args, list):
+        return None
+    value = None
+    for index, arg in enumerate(args):
+        text = str(arg)
+        if text == "--weapon-set" and index + 1 < len(args):
+            value = str(args[index + 1])
+        elif text.startswith("--weapon-set="):
+            value = text.split("=", 1)[1]
     return value
 
 
@@ -3102,13 +3363,37 @@ def run_scenario_file(args: argparse.Namespace) -> int:
     desired_map = str(launch_cfg.get("map", "") or "").strip()
     desired_mode = launch_cfg.get("launch_mode")
     desired_set = launch_cfg.get("weapon_set")
-    need_launch = not current.get("run_alive") or not current.get("events_path")
+    playback_path = _scenario_input_path(scenario)
+    if playback_path:
+        recorded_header = _read_input_header(playback_path)
+        recorded_map = _map_basename(str(recorded_header.get("map", "")))
+        if recorded_map:
+            desired_map = recorded_map
+        recorded_set = recorded_header.get("weapon_set")
+        if recorded_set:
+            desired_set = recorded_set
+    need_launch = (
+        not current.get("run_alive")
+        or not current.get("events_path")
+        or not current.get("client_ready")
+        or not current.get("client_pids")
+    )
     if desired_map and str(current.get("map", "")) != desired_map:
         need_launch = True
-    # A weapon-set override cannot be verified from the status record, so a
-    # scenario that requests one always (re)launches to guarantee the set.
-    if desired_set is not None:
+    if desired_mode is not None and str(current.get("launch_mode", "")) != str(desired_mode):
         need_launch = True
+    # A scenario must not run against a stale binary or an older published build.
+    if current.get("latest_build_stale"):
+        need_launch = True
+    if (current.get("latest_successful_build")
+            and current.get("running_build") != current.get("latest_successful_build")):
+        need_launch = True
+    # A requested weapon set must match the live server. Reuse the current run
+    # when it already has that set; otherwise relaunch.
+    if desired_set is not None:
+        current_set = _server_weapon_set(current)
+        if current_set is None or str(current_set) != str(desired_set):
+            need_launch = True
     if need_launch:
         previous_run_id = str(current.get("run_id", ""))
         payload = {"token": token, "action": "launch", "request_id": request_id + "-launch"}
@@ -3247,6 +3532,36 @@ def run_scenario_file(args: argparse.Namespace) -> int:
                 "scenario_id": scenario_id, "step_id": step_id, "step_index": index,
                 "operation": "wait_seconds", "seconds": seconds, "result": "waited",
             }, "scenario pacing recorded", f"{request_id}:{index}")
+        elif step.get("type") == "input_playback" or step.get("playback"):
+            path = str(step.get("path", step.get("playback", ""))).strip()
+            rid = f"{request_id}:{index}"
+            ok, detail = queue_command("scenario_play " + path, rid, time.time() + 15.0)
+            if ok:
+                step_timeout = float(step.get("timeout_seconds", timeout) or timeout)
+                ok, record = wait_for_event(
+                    {"wait_for_event": "scenario.playback.completed",
+                     "where": {"path": path}},
+                    time.time() + step_timeout)
+                if ok:
+                    detail = "playback completed"
+                else:
+                    pump()
+                    rejected = next(
+                        (r for r in records if r.get("event") == "scenario.playback.rejected"),
+                        None)
+                    detail = ("playback rejected: " + json.dumps(
+                        (rejected or {}).get("fields", {}), separators=(",", ":"))
+                        if rejected else "playback timeout")
+            _append_journal_event(events_path, "scenario.step", {
+                "scenario_id": scenario_id, "step_id": step_id, "step_index": index,
+                "operation": "input_playback", "path": path,
+                "result": "executed" if ok else "failed", "detail": detail,
+            }, "scenario playback recorded", rid)
+            if not ok:
+                execution_ok = False
+                step_failures.append({"step_id": step_id, "kind": "playback_failed",
+                                      "path": path, "detail": detail})
+                break
         elif step.get("command"):
             command_text = " ".join(
                 [str(step["command"]), *(str(value) for value in step.get("args", []))]).strip()
@@ -3524,8 +3839,10 @@ def _duration_text(seconds) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def _build_label(executable) -> str:
-    """Show the published build number for a `.dev/builds/<n>/mimita.exe` path."""
+def _build_label(executable, build_number=None) -> str:
+    """Show the immutable build number even when launched through a stable path."""
+    if build_number is not None:
+        return str(build_number)
     if not executable:
         return "-"
     parts = Path(str(executable)).parts
@@ -3610,7 +3927,8 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"Runtime  : build={state.get('running_build') or '-'}  match={state.get('builds_match')}",
         f"Server   : {'alive' if server_alive else 'dead'}  pid={state.get('server_pid') or '-'}  "
         f"uptime={_duration_text(state.get('server_uptime_seconds'))}  "
-        f"build={_build_label(state.get('server_executable'))}",
+        f"build={_build_label(state.get('server_executable'), (state.get('run_metadata') or {}).get('build_number'))}  "
+        f"room={state.get('room_code') or 'waiting'}",
         f"Client   : {'alive' if client_pids else 'dead'}  pids={client_pids or '-'}  "
         f"uptime={_duration_text(state.get('client_uptime_seconds'))}",
         f"Run      : id={run_id}  mode={state.get('launch_mode')}({state.get('launch_mode_name') or '-'})  "

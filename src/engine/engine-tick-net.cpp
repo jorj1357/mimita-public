@@ -20,6 +20,7 @@
 #include "input/input-frame.h"
 #include "input/input-poll.h"
 #include "input/input-commands.h"
+#include "input/scenario-input.h"
 #include "audio/audio.h"
 #include "config/weapon-hitfx-config.h"
 #include "audio/hitmarker-audio.h"
@@ -103,34 +104,9 @@ void engineTickNet(Engine& engine, float dt)
         if (cmd.getState("walkright").held)   mpInput.wishX += 1.0f;
         float scheduledSide = 0.0f;
         float scheduledForward = 0.0f;
-        bool scheduledJustStarted = false;
-        bool scheduledJustEnded = false;
-        if (consumeScheduledTerminalMove(scheduledSide, scheduledForward,
-                                         &scheduledJustStarted, &scheduledJustEnded)) {
+        if (consumeScheduledTerminalMoveForNetwork(scheduledSide, scheduledForward)) {
             mpInput.wishX = scheduledSide;
             mpInput.wishY = scheduledForward;
-            // Bounded applied evidence: one event when the scheduled move first
-            // reaches the fixed-tick input owner and one when it is released.
-            // This proves applied axes and the release boundary without logging
-            // every tick of a long scheduled move.
-            if (scheduledJustStarted || scheduledJustEnded) {
-                const std::string& requestId = scheduledTerminalMoveRequestId();
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Avatar, StructuredLevel::Important,
-                    "agent.move.applied",
-                    requestId.empty() ? "agent-move" : requestId,
-                    scheduledJustEnded ? "scheduled move released"
-                                       : "scheduled axes applied",
-                    0,
-                    nlohmann::json{{"request_id", requestId},
-                                   {"command", "agent.move"},
-                                   {"phase", scheduledJustEnded ? "end" : "start"},
-                                   {"move_x", scheduledSide},
-                                   {"move_y", scheduledForward},
-                                   {"player_position", {player.pos.x, player.pos.y, player.pos.z}},
-                                   {"player_velocity", {player.vel.x, player.vel.y, player.vel.z}}},
-                    __FILE__, __LINE__, __FUNCTION__);
-            }
         }
         // Roll prediction is owned by the fixed-tick shared roll kernel in
         // physicsMainUpdate (see physics/movement/roll-movement.h). This render
@@ -205,12 +181,35 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.sizeScale = player.sizeScale;
         {
             const auto& gb = weapons.godballPhysics();
-            mpInput.godballPosition = gb.position;
-            mpInput.godballVelocity = gb.velocity;
-            mpInput.godballActive = gb.active;
-        }
+        mpInput.godballPosition = gb.position;
+        mpInput.godballVelocity = gb.velocity;
+        mpInput.godballActive = gb.active;
+    }
 
-        // Detect canonical gameplay events and increment serials.
+    // Recorded scenario playback feeds the same authoritative input packet as
+    // live play. Only intent fields are replaced; current player state stays
+    // live so server validation sees the real predicted position.
+    if (ScenarioInput::active())
+    {
+        if (const InputFrame* recorded = ScenarioInput::frame())
+        {
+            mpInput.jumpHeld = recorded->jump;
+            mpInput.dashPressed = recorded->dashPressed;
+            mpInput.downDashPressed = recorded->downDashPressed;
+            mpInput.freezeHeld = recorded->freezeHeld;
+            mpInput.shieldHeld = recorded->shieldHeld;
+            mpInput.crouchHeld = recorded->crouchHeld;
+            mpInput.attackPressed = recorded->primaryHeld;
+            mpInput.wishX = recorded->wishSide;
+            mpInput.wishY = recorded->wishForward;
+            mpInput.yaw = recorded->lookYaw;
+            mpInput.lookPitch = recorded->lookPitch;
+            mpInput.camForward = recorded->camForward;
+            mpInput.equippedSlot = player.equippedSlot;
+        }
+    }
+
+    // Detect canonical gameplay events and increment serials.
         // These flags are set by physicsMainUpdate() -> physicsMainUpdate_Internal()
         // in simulateTick (called from engineTickReplay, which runs before this tick).
         // They remain true until player.updateAudio() consumes them in engineTickCombat.
@@ -401,7 +400,8 @@ void engineTickNet(Engine& engine, float dt)
                 rr.spawnGeneration,
                 "reload-result",
                 /*applyAmmo=*/false,
-                /*allowReloadStateOverride=*/false);
+                /*allowReloadStateOverride=*/false,
+                rr.header.tick);
 
             auto pendingIt = mpContext.pendingReloadRequests.find(rr.requestId);
             if (pendingIt != mpContext.pendingReloadRequests.end())
@@ -432,7 +432,9 @@ void engineTickNet(Engine& engine, float dt)
                 ar.stateRevision,
                 ar.spawnGeneration,
                 ar.accepted ? "attack-result-accepted" : "attack-result-rejected",
-                /*applyAmmo=*/false);
+                /*applyAmmo=*/false,
+                /*allowReloadStateOverride=*/true,
+                ar.serverTick);
         }
         mpContext.pendingAttackResults.clear();
 
@@ -459,6 +461,51 @@ void engineTickNet(Engine& engine, float dt)
             MimitaNet::mpApplyAuthoritativeTransform(mpContext, player);
             mpContext.lastAppliedEpoch = mpContext.localServerEpoch;
             mpContext.localPlayerReconciled = true;
+
+            // The authoritative spawn packet is the single client-side new-life
+            // boundary. Clear every local death/presentation flag here so a
+            // fast server respawn cannot leave the render gate dead, and so a
+            // delayed damage event from the previous life cannot re-kill it.
+            {
+                const bool wasDead = player.dead;
+                const bool hadDeathState = player.dead || player.netPredictedDead ||
+                    player.networkDeathPresented || player.currentHp <= 0;
+                mpContext.pendingVictimHealth.clear();
+                player.currentHp = spawn.health;
+                if (spawn.health > player.maxHp)
+                    player.maxHp = spawn.health;
+                player.dead = false;
+                player.netPredictedDead = false;
+                player.networkDeathPresented = false;
+                player.proceduralFrozen = false;
+                player.deathAnim = Player::DeathAnimState{};
+                player.respawnTimer = 0.0f;
+                player.voidDeathTriggered = false;
+                player.killedBy.clear();
+                player.spawnGeneration = spawn.spawnGeneration;
+                if (mpContext.awaitingExplodeDeath &&
+                    mpContext.lastKnownSpawnGeneration !=
+                        mpContext.explodeRequestStartSpawnGeneration)
+                {
+                    mpContext.awaitingExplodeDeath = false;
+                    mpContext.explodeRequestLastSendMs = 0;
+                }
+                if (hadDeathState)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "client.local.spawn_applied", std::to_string(mpContext.localPlayerId),
+                        "authoritative spawn packet cleared local death state",
+                        mpContext.tick,
+                        nlohmann::json{{"actor_id", mpContext.localPlayerId},
+                                       {"spawn_generation", spawn.spawnGeneration},
+                                       {"transform_epoch", spawn.transformEpoch},
+                                       {"health", player.currentHp},
+                                       {"dead_before", wasDead},
+                                       {"dead_after", player.dead}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
 
             // Process every valid authoritative weapon entry via the canonical reconciler
             for (uint8_t i = 0; i < spawn.weaponCount; ++i)

@@ -46,6 +46,7 @@ enum GuiMenuState
 extern GuiMenuState gGuiMenuState;
 
 void guiMain(GLFWwindow* win, GameState& state);
+void guiTickPendingServerRoomCode(GameState& state);
 DuelConfigResult getPendingDuelConfig();
 void clearPendingDuelConfig();
 

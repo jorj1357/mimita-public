@@ -502,7 +502,7 @@ int runServer(const LaunchOptions& options)
 
     // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
     World npcWorld;
-    buildNpcWorldCollision(npcWorld, world);
+    bool npcWorldCollisionReady = false;
     NpcSystem npcSystem;
     Player mirrorPlayer;
     std::unordered_set<uint32_t> npcIdsAlive;
@@ -526,9 +526,19 @@ int runServer(const LaunchOptions& options)
     }
     disableUdpConnReset(sock);
 
-    int reuseAddr = 1;
-    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR)
-        printf("%s [SERVER] WARNING: setsockopt SO_REUSEADDR failed error=%d (non-fatal)\n", serverTimestamp(), WSAGetLastError());
+    BOOL exclusiveAddressUse = TRUE;
+    if (setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                   (const char*)&exclusiveAddressUse,
+                   sizeof(exclusiveAddressUse)) == SOCKET_ERROR)
+    {
+        printf("%s [SERVER] FATAL: setsockopt SO_EXCLUSIVEADDRUSE failed error=%d\n",
+               serverTimestamp(), WSAGetLastError());
+        logServerExit(1, "exclusive_bind_policy_failed", "", 0);
+        closesocket(sock);
+        netShutdown();
+        ::StructuredLogger::instance().shutdown();
+        return 1;
+    }
 
     const bool nonBlockingOk = setNonBlocking(sock);
 
@@ -948,6 +958,24 @@ int runServer(const LaunchOptions& options)
             // the entire NpcSystem; looping over npcs here would advance every
             // NPC once per NPC and make them move N× faster.
             const auto npcStart = std::chrono::steady_clock::now();
+            if (!npcWorldCollisionReady && !npcs.empty())
+            {
+                const auto npcWorldBuildStart = std::chrono::steady_clock::now();
+                buildNpcWorldCollision(npcWorld, world);
+                npcWorldCollisionReady = true;
+                const auto buildMs = std::chrono::duration_cast<
+                    std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - npcWorldBuildStart).count();
+                ::StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    "server.npc-collision-world.lazy-built", "server",
+                    "built NPC collision/navigation data when the first NPC became active",
+                    tick,
+                    nlohmann::json{{"npc_count", npcs.size()},
+                                   {"triangle_count", npcWorld.collisionMesh.triangles.size()},
+                                   {"build_ms", buildMs}},
+                    __FILE__, __LINE__, __func__);
+            }
             simulateSharedNpcs(sock, players, npcs, npcSystem, world, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
@@ -1218,8 +1246,18 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     }
     disableUdpConnReset(state.sock);
 
-    int reuseAddr = 1;
-    setsockopt(state.sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddr, sizeof(reuseAddr));
+    BOOL exclusiveAddressUse = TRUE;
+    if (setsockopt(state.sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                   (const char*)&exclusiveAddressUse,
+                   sizeof(exclusiveAddressUse)) == SOCKET_ERROR)
+    {
+        printf("[LISTEN SERVER] FATAL: SO_EXCLUSIVEADDRUSE failed error=%d\n",
+               WSAGetLastError());
+        closesocket(state.sock);
+        state.sock = INVALID_SOCKET;
+        netShutdown();
+        return false;
+    }
     setNonBlocking(state.sock);
 
     const bool localOnly = settings && settings->startLocalServer;

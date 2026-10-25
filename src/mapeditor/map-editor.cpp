@@ -25,6 +25,7 @@
 #include "gui/ui-system.h"
 #include "input/mouse-lock.h"
 #include "map/map-authored-geometry.h"
+#include "map/map-loader-collision.h"
 #include "network/multiplayer-context.h"
 #include "network/server-gamemode.h"
 #include "physics/movement/physics-collision.h"
@@ -284,10 +285,21 @@ const PayloadRoutePoint* MapEditor::routeFor(const EditorObjectRef& ref) const
         ? MapConfigRegistry::instance().findPayloadRoutePoint(ref.id) : nullptr;
 }
 
+MapGLBObject* MapEditor::mapObjectFor(const EditorObjectRef& ref) const
+{
+    if (ref.kind != EditorObjectKind::MapGLBObject || !gpWorld)
+        return nullptr;
+    for (MapGLBObject& object : gpWorld->mesh.objects)
+        if (object.id == ref.id)
+            return &object;
+    return nullptr;
+}
+
 glm::vec3 MapEditor::objectPosition(const EditorObjectRef& ref) const
 {
     if (ref.kind == EditorObjectKind::PayloadCartOrigin)
         return MapConfigRegistry::instance().payload().cartOrigin;
+    if (const auto* object = mapObjectFor(ref)) return glm::vec3(object->transform[3]);
     if (const auto* entity = entityFor(ref)) return entity->position;
     if (const auto* block = blockFor(ref)) return block->position;
     if (const auto* route = routeFor(ref)) return route->position;
@@ -303,6 +315,21 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
         payload.hasCartOrigin = true;
         payload.cartOrigin = position;
         reg.markChanged();
+        return;
+    }
+    if (ref.kind == EditorObjectKind::MapGLBObject) {
+        MapGLBObject* object = mapObjectFor(ref);
+        if (!object || !gpWorld) return;
+        const glm::vec3 oldPosition(object->transform[3]);
+        const glm::vec3 delta = position - oldPosition;
+        if (glm::dot(delta, delta) <= 1e-10f) return;
+        const size_t last = std::min(object->vertexFirst + object->vertexCount,
+                                     gpWorld->mesh.verts.size());
+        for (size_t i = object->vertexFirst; i < last; ++i)
+            gpWorld->mesh.verts[i].pos += delta;
+        object->transform[3] += glm::vec4(delta, 0.0f);
+        object->boundsMin += delta;
+        object->boundsMax += delta;
         return;
     }
     if (ref.kind == EditorObjectKind::Entity) {
@@ -340,7 +367,8 @@ bool MapEditor::selectionHasBlocksOrRoutes() const
     for (const auto& ref : mSelection) {
         if (ref.kind == EditorObjectKind::Block ||
             ref.kind == EditorObjectKind::PayloadRoutePoint ||
-            ref.kind == EditorObjectKind::PayloadCartOrigin)
+            ref.kind == EditorObjectKind::PayloadCartOrigin ||
+            ref.kind == EditorObjectKind::MapGLBObject)
             return true;
     }
     return false;
@@ -486,6 +514,17 @@ bool MapEditor::pickAtCursor(EditorObjectRef& out, float& outDistance) const
             best = distance;
             bestRef = {EditorObjectKind::PayloadCartOrigin, "cart_origin"};
             found = true;
+        }
+    }
+    if (gpWorld) {
+        for (const auto& object : gpWorld->mesh.objects) {
+            float distance = 0.0f;
+            if (rayAABB(origin, direction, object.boundsMin, object.boundsMax,
+                        distance) && distance < best) {
+                best = distance;
+                bestRef = {EditorObjectKind::MapGLBObject, object.id};
+                found = true;
+            }
         }
     }
     if (!found) return false;
@@ -727,6 +766,7 @@ std::string MapEditor::kindName(EditorObjectKind kind)
         case EditorObjectKind::Block: return "block";
         case EditorObjectKind::PayloadRoutePoint: return "route";
         case EditorObjectKind::PayloadCartOrigin: return "cart";
+        case EditorObjectKind::MapGLBObject: return "glb";
     }
     return "object";
 }
@@ -916,6 +956,44 @@ void MapEditor::duplicateSelection()
     mClipboard = savedClipboard;
 }
 
+void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
+{
+    out.clear();
+    const auto& config = MapConfigRegistry::instance().current();
+    if (const auto& payload = config.payload; payload.hasCartOrigin)
+        out.push_back({EditorObjectKind::PayloadCartOrigin, "cart_origin"});
+    for (const auto& route : config.payload.route)
+        if (route.enabled)
+            out.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
+    if (gpWorld)
+        for (const auto& object : gpWorld->mesh.objects)
+            out.push_back({EditorObjectKind::MapGLBObject, object.id});
+    for (const auto& entity : config.entities)
+        if (entity.enabled)
+            out.push_back({EditorObjectKind::Entity, entity.id});
+    for (const auto& block : config.blocks)
+        if (block.enabled)
+            out.push_back({EditorObjectKind::Block, block.id});
+}
+
+int MapEditor::outlinerRowAt(double screenX, double screenY) const
+{
+    GLFWwindow* window = glfwGetCurrentContext();
+    const glm::vec2 cursor = cursorScreen(window, screenX, screenY);
+    const float x = uiScreenW() - 360.0f;
+    const float y = 120.0f;
+    constexpr float kRowHeight = 22.0f;
+    constexpr float kHeaderHeight = 44.0f;
+    if (cursor.x < x || cursor.x > x + 340.0f ||
+        cursor.y < y + kHeaderHeight || cursor.y > uiScreenH() - 48.0f)
+        return -1;
+    std::vector<EditorObjectRef> objects;
+    collectEditorObjects(objects);
+    const int row = (int)std::floor((cursor.y - (y + kHeaderHeight)) / kRowHeight);
+    const int index = row + mOutlinerOffset;
+    return (index >= 0 && index < (int)objects.size()) ? row : -1;
+}
+
 void MapEditor::updateInput(GLFWwindow* window, float dt)
 {
     (void)dt;
@@ -959,6 +1037,42 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     }
 
     const bool left = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    if (left && !mLeftPrev) {
+        const int row = outlinerRowAt(mMouseX, mMouseY);
+        if (row >= 0) {
+            std::vector<EditorObjectRef> objects;
+            collectEditorObjects(objects);
+            const int index = row + mOutlinerOffset;
+            if (index >= 0 && index < (int)objects.size()) {
+                const bool ctrl = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                                  glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+                const bool shift = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                                   glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+                if (shift) {
+                    int anchorIndex = -1;
+                    for (size_t i = 0; i < objects.size(); ++i)
+                        if (objects[i] == mOutlinerAnchor) { anchorIndex = (int)i; break; }
+                    if (anchorIndex >= 0) {
+                        const int lo = std::min(anchorIndex, index);
+                        const int hi = std::max(anchorIndex, index);
+                        mSelection.assign(objects.begin() + lo, objects.begin() + hi + 1);
+                    } else {
+                        selectOnly(objects[(size_t)index]);
+                        mOutlinerAnchor = objects[(size_t)index];
+                    }
+                } else if (ctrl) {
+                    toggleSelection(objects[(size_t)index]);
+                    mOutlinerAnchor = objects[(size_t)index];
+                } else {
+                    selectOnly(objects[(size_t)index]);
+                    mOutlinerAnchor = objects[(size_t)index];
+                }
+                notify("selected " + std::to_string(mSelection.size()) + " object(s)");
+            }
+            mLeftPrev = left;
+            return;
+        }
+    }
     if (left && !mLeftPrev && mDrag.mode == DragMode::None) {
         EditorObjectRef handleRef;
         int axis = -1;
@@ -1027,6 +1141,9 @@ void MapEditor::selectAllEdit()
         if (block.enabled) mSelection.push_back({EditorObjectKind::Block, block.id});
     for (const auto& route : MapConfigRegistry::instance().current().payload.route)
         if (route.enabled) mSelection.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
+    if (gpWorld)
+        for (const auto& object : gpWorld->mesh.objects)
+            mSelection.push_back({EditorObjectKind::MapGLBObject, object.id});
     notify("selected " + std::to_string(mSelection.size()) + " objects");
 }
 
@@ -1065,6 +1182,8 @@ bool MapEditor::handleKey(int key, int mods, int action)
         return true;
     }
     if (key == GLFW_KEY_ESCAPE) { handleEscape(); return true; }
+    if (key == GLFW_KEY_PAGE_UP) { mOutlinerOffset = std::max(0, mOutlinerOffset - 20); return true; }
+    if (key == GLFW_KEY_PAGE_DOWN) { mOutlinerOffset += 20; return true; }
     return false;
 }
 
@@ -1113,6 +1232,13 @@ bool MapEditor::reload()
 void MapEditor::rebuildGeometry()
 {
     if (!gpWorld) return;
+    // Drop authored geometry first, then rebuild base collision from the current
+    // render vertices. This keeps moved GLB objects on the same collision path
+    // as authored blocks instead of truncating the rebuilt base count.
+    if (gpWorld->authoredGeometryApplied)
+        clearAuthoredMapGeometry(*gpWorld);
+    gpWorld->authoredGeometryApplied = false;
+    buildCollisionMeshFromRenderMesh(*gpWorld);
     applyAuthoredMapGeometry(*gpWorld, mapId());
 }
 
@@ -1206,6 +1332,23 @@ void MapEditor::renderWorld(Camera& camera)
         }
     }
 
+    if (gpWorld) {
+        for (const auto& object : gpWorld->mesh.objects) {
+            const bool selected = isSelected({EditorObjectKind::MapGLBObject, object.id});
+            const bool hovered = mHoverValid && mHover.kind == EditorObjectKind::MapGLBObject &&
+                                 mHover.id == object.id;
+            const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
+                                             : hovered ? glm::vec4(0.4f, 1, 1, 1)
+                                                       : glm::vec4(0.45f, 0.8f, 0.45f, 1);
+            const glm::vec3 center = (object.boundsMin + object.boundsMax) * 0.5f;
+            const glm::vec3 half = glm::max(
+                (object.boundsMax - object.boundsMin) * 0.5f, glm::vec3(0.05f));
+            DebugVis::drawWireBox(camera, center, half, color);
+            DebugVis::drawWorldLabel(object.boundsMax + glm::vec3(0, 0, 0.3f),
+                ("GLB " + object.name).c_str(), color);
+        }
+    }
+
     for (const auto& block : config.blocks) {
         if (!block.enabled) continue;
         const bool selected = isSelected({EditorObjectKind::Block, block.id});
@@ -1272,6 +1415,61 @@ void MapEditor::renderUI(GLFWwindow* window)
     uiDrawText(line, 26.0f, 48.0f, 0.26f, dim);
     uiDrawText(mStatus.c_str(), 26.0f, 70.0f, 0.24f,
         glm::vec4(0.55f, 1.0f, 0.7f, 1.0f));
+
+    std::vector<EditorObjectRef> objects;
+    collectEditorObjects(objects);
+    const float px = w - 360.0f;
+    const float py = 120.0f;
+    const float pw = 340.0f;
+    const float ph = h - 180.0f;
+    uiDrawRect({px, py, pw, ph}, panel, "map-editor-outliner");
+    std::snprintf(line, sizeof(line), "OBJECTS %zu   PgUp/PgDn", objects.size());
+    uiDrawText(line, px + 10.0f, py + 10.0f, 0.3f, text);
+    constexpr float rowH = 22.0f;
+    const int maxRows = std::max(1, (int)((ph - 76.0f) / rowH));
+    mOutlinerOffset = std::clamp(mOutlinerOffset, 0,
+        std::max(0, (int)objects.size() - maxRows));
+    for (int row = 0; row < maxRows; ++row) {
+        const int index = mOutlinerOffset + row;
+        if (index < 0 || index >= (int)objects.size()) break;
+        const EditorObjectRef& ref = objects[(size_t)index];
+        const bool selected = isSelected(ref);
+        glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1) : text;
+        if (!selected) {
+            switch (ref.kind) {
+                case EditorObjectKind::MapGLBObject: color = {0.55f, 0.9f, 0.6f, 1}; break;
+                case EditorObjectKind::PayloadRoutePoint: color = {1, 0.55f, 0.2f, 1}; break;
+                case EditorObjectKind::PayloadCartOrigin: color = {1, 0.75f, 0.2f, 1}; break;
+                case EditorObjectKind::Block: color = {0.4f, 0.8f, 1, 1}; break;
+                case EditorObjectKind::Entity: color = {0.7f, 0.8f, 1, 1}; break;
+            }
+        }
+        char rowText[256];
+        if (ref.kind == EditorObjectKind::MapGLBObject) {
+            MapGLBObject* object = mapObjectFor(ref);
+            std::snprintf(rowText, sizeof(rowText), "%s  %s",
+                ref.id.c_str(), object ? object->name.c_str() : "");
+        } else {
+            std::snprintf(rowText, sizeof(rowText), "%s  %s",
+                kindName(ref.kind).c_str(), ref.id.c_str());
+        }
+        uiDrawText(rowText, px + 10.0f, py + 36.0f + row * rowH, 0.24f, color);
+    }
+
+    if (!mSelection.empty()) {
+        const EditorObjectRef& ref = mSelection.front();
+        const glm::vec3 p = objectPosition(ref);
+        std::snprintf(line, sizeof(line), "SELECTED %s", describeRef(ref).c_str());
+        uiDrawText(line, px + 10.0f, py + ph - 66.0f, 0.26f, text);
+        std::snprintf(line, sizeof(line), "pos %.2f %.2f %.2f", p.x, p.y, p.z);
+        uiDrawText(line, px + 10.0f, py + ph - 44.0f, 0.24f, dim);
+        if (MapGLBObject* object = mapObjectFor(ref)) {
+            const glm::vec3 size = object->boundsMax - object->boundsMin;
+            std::snprintf(line, sizeof(line), "glb %s  size %.2f %.2f %.2f  verts %zu",
+                object->name.c_str(), size.x, size.y, size.z, object->vertexCount);
+            uiDrawText(line, px + 10.0f, py + ph - 24.0f, 0.21f, dim);
+        }
+    }
 
     const char* help =
         "RMB look  LMB select/drag  Shift+click multi  Ctrl+C/V/X  Ctrl+D duplicate  "

@@ -96,8 +96,8 @@ bool readTrail(const json& value, PlayerTrailSettings& settings, const std::stri
     if (!finite(settings.minSpeed) || !finite(settings.sampleIntervalSeconds) ||
         !finite(settings.lifetimeSeconds) || !finite(settings.alpha) || !finite(settings.width) ||
         settings.minSpeed < 0.0f || settings.sampleIntervalSeconds <= 0.0f ||
-        settings.lifetimeSeconds <= 0.0f || settings.maxSamples < 2 || settings.maxSamples > 64 ||
-        settings.alpha < 0.0f || settings.alpha > 1.0f || settings.width < 0.01f || settings.width > 4.0f) {
+        settings.lifetimeSeconds <= 0.0f || settings.maxSamples < 2 ||
+        settings.alpha < 0.0f || settings.alpha > 1.0f || settings.width <= 0.0f) {
         err = name + " has an invalid range"; return false;
     }
     return true;
@@ -131,9 +131,8 @@ bool readPointLight(const json& value, PlayerPointLightSettings& settings,
     settings.color = readColor(value, "color", settings.color);
     if (!finite(settings.intensity) || !finite(settings.radius) || !finite(settings.heightOffset) ||
         settings.intensity < 0.0f || settings.intensity > 10.0f ||
-        settings.radius < 0.1f || settings.radius > 1000.0f ||
-        std::abs(settings.heightOffset) > 100.0f) {
-        err = name + " intensity must be 0..10, radius 0.1..1000, and heightOffset -100..100";
+        settings.radius < 0.1f || settings.radius > 1000.0f) {
+        err = name + " intensity must be 0..10 and radius 0.1..1000";
         return false;
     }
     return true;
@@ -269,6 +268,11 @@ bool PlayerVisualsConfig::load() {
         "player_visuals.config.applied", mPath.string(),
         "validated player visuals config installed for existing actors", 0,
         {{"path", mPath.string()}, {"enemy_trail_enabled", mData.enemyTrail.enabled},
+         {"enemy_trail_min_speed", mData.enemyTrail.minSpeed},
+         {"enemy_trail_sample_interval_seconds", mData.enemyTrail.sampleIntervalSeconds},
+         {"enemy_trail_lifetime_seconds", mData.enemyTrail.lifetimeSeconds},
+         {"enemy_trail_max_samples", mData.enemyTrail.maxSamples},
+         {"enemy_trail_width", mData.enemyTrail.width},
          {"enemy_point_light_enabled", mData.enemyPointLight.enabled},
          {"enemy_contrast_enabled", mData.enemyContrast.enabled},
          {"render_order", mData.renderOrder}},

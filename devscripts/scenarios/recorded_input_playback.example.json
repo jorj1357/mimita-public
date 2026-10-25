@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "recorded_input_playback_example",
+  "description": "Template: copy this file, point path at a local recording under devscripts/scenarios/user/, then run it with the dev loop.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "19",
+    "map": "funworld3",
+    "weapon_set": "1",
+    "visibility": "headless"
+  },
+  "setup": [],
+  "steps": [
+    {
+      "id": "play_recording",
+      "type": "input_playback",
+      "path": "devscripts/scenarios/user/scenario-YYYYMMDD_HHMMSS-name.jsonl",
+      "timeout_seconds": 120
+    }
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "scenario.playback.started"},
+    {"type": "event_present", "event": "scenario.playback.start_ready"},
+    {"type": "event_present", "event": "scenario.playback.completed"},
+    {"type": "event_field_equals", "event": "scenario.playback.completed",
+     "field": "completed", "equals": true}
+  ],
+  "timeout_seconds": 180
+}

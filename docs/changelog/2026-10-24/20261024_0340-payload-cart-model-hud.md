@@ -136,3 +136,64 @@
 
 - Route pacing remains a tuning note per user direction: 2,213 units is too long for the spec speed and current round/checkpoint bonuses.
 - Checkpoint authoring is JSON-only (map `payload.route`); no in-game placement command was added.
+
+# Follow-up — 2026-10-25
+
+## Requested behavior
+
+- Payload NPCs visible.
+- Damage numbers and hit effects from other actors/NPCs, not only local hits.
+- NPC/player decal opacity parity.
+- Payload ragdolls enabled.
+- Editable Payload route/facing JSON.
+- Requested map must be the map used.
+- One loading path; no unrelated map before the requested map.
+- Payload path points visible in the entity editor.
+- Map editor outliner for all GLB objects with multi-select/properties.
+- No RMB aim-FOV in map editor; restore player camera on death.
+- Reuse normal GLB/map collision for objects.
+
+## Implementation
+
+- `src/network/confirmed-damage-presentation.cpp`: removed the local-attacker-only gate. Remote confirmed damage now presents damage numbers plus blood/decals through `HitEffects::onHit`; local attacker keeps hitmarker/sound ownership; local-victim presentation remains on its existing path.
+- `src/network/multiplayer-shots.cpp`: remote/AI NPC damage now presents the same hit effects and damage numbers to observers; hitmarker/sound remain local-shooter-only.
+- `src/engine/engine-tick-state.cpp`: the requested join map is loaded before connecting instead of keeping a stale menu/practice map; added `network.client.requested-map-loaded` / `requested-map-load-failed`.
+- `src/engine/engine-tick-render.cpp`: NPC viewport diagnostics now include active map, required map, camera position, sample NPC position, and sample size scale.
+- `src/engine/engine-tick-camera.cpp`: RMB aim-FOV is disabled while the map editor is active.
+- `src/engine/engine-tick-state.cpp`: local death deactivates the map editor so the camera returns to the player.
+- `src/gamemode/map-config.h/.cpp`: Payload map config supports `facing_mode: "fixed"|"route"`; save emits it.
+- `src/gamemode/payload-runtime.h/.cpp`: fixed facing uses `cart_yaw` and no route pitch; yaw is converted from authored degrees.
+- `src/network/server-gamemode.cpp`: cart facing/yaw hot-reloads from map JSON; `payload.configured` logs facing and yaw; Payload roster still resolves the cart objective.
+- `config/gamemodes/payload.json`: added `payload2` to the map list; added explicit `ragdolls`/`blood` presentation flags.
+- `config/maps/payload1.json`: added `facing_mode: "fixed"`.
+- `config/maps/payload2.json`: new map config copied from Payload 1 as a starting authoring point (spawnpoints, cart origin, interaction box, route).
+- `devscripts/dev-launch-modes.json`: added mode `20` for `payload2`.
+- `src/map/map_common.h`: added `MapGLBObject` metadata and `Mesh::objects` with per-node vertex range, bounds, and transform.
+- `src/map/map-loader-gltf-nodes.cpp`: records every mesh-bearing GLB node as an object while retaining the flattened render mesh.
+- `src/map/map-editor.h/.cpp`: added `MapGLBObject` selection, world picking/rendering, movement, outliner rows, Ctrl-click toggle, Shift-click range, PgUp/PgDn scrolling, selected-object property readout, and GLB collision rebuild through the shared map collision builder.
+- `src/map/map-editor.cpp`: geometry rebuild clears authored geometry, rebuilds base collision from current render vertices, then reapplies authored blocks.
+- `src/world/world-gltf-loader.cpp`: `map.load-success` reports `glb_objects`.
+
+## Validation
+
+- Build `3172` success.
+- `--payload-selftest` PASS.
+- `--map-config-selftest` PASS.
+- `--map-authored-geometry-selftest` PASS.
+- `--npc-utility-selftest` PASS.
+- Payload 1 runtime (build 3165): 23 remote NPCs, 23 models loaded, `in_view` 5 in one sample; active map/required map both `payload1`.
+- Payload 2 runtime (build 3166): active map/required map `payload2`, cart spawned, round active, 23 remote NPCs with 23 models loaded.
+- Manual payload2 server load (build 3170): map collision loaded, 3 authored spawnpoints, Payload cart config valid.
+- Not claimed: final human visual acceptance of NPC visibility, remote damage numbers, decal opacity, ragdolls, or outliner interactions. The dev-loop server launch later entered `launch_failed` / `server_build_identity`; manual server startup remained healthy.
+
+## Known gaps
+
+- GLB object duplicate/cut/delete persistence is not implemented; outliner selection, live move, properties display, and collision rebuild are implemented.
+- GLB object transforms are live in-session but are not yet persisted as map JSON overrides.
+- The dev-loop launch failure needs a separate investigation; it is not a server binary startup failure.
+
+## Documentation handoff
+
+- Updated `docs/specs/gamemodes/payload.md` with Section 0 (current implementation snapshot), current cart/route/HUD/damage/editor behavior, the NPC visibility and team-spawn investigations, verification journals, and a prioritized P0/P1/P2 handoff checklist.
+
+

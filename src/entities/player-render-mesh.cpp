@@ -344,13 +344,14 @@ struct MergedBodyVertex {
 
 bool ensureCombinedBodyParts(const Player& player)
 {
-    const std::string& modelKey = player.renderModelKey();
-    ModelUploadSet& uploads = uploadsFor(modelKey);
+    const std::string uploadKey = player.renderUploadKey();
+    ModelUploadSet& uploads = uploadsFor(uploadKey);
     const auto& parts = player.physicalBody.partMeshes;
     const auto& extras = player.physicalBody.extraPartMeshes;
-    // Geometry is immutable per model key; every actor using this model has a
-    // private mesh copy but identical vertex layout. Never rebuild per actor.
-    const uint64_t gen = static_cast<uint64_t>(std::hash<std::string>{}(modelKey));
+    // Geometry and UV space are immutable per upload key; every actor using
+    // this model + UV mode has a private mesh copy but identical layout.
+    // Never rebuild per actor.
+    const uint64_t gen = static_cast<uint64_t>(std::hash<std::string>{}(uploadKey));
     if (uploads.combinedVao && uploads.combinedGeneration == gen)
         return true;
 
@@ -408,7 +409,7 @@ bool ensureCombinedBodyParts(const Player& player)
     uploads.combinedPartCount = shaderPartIndex;
     uploads.combinedBatches = std::move(batches);
     printf("[PLAYER GLB] combined body model=%s parts=%d verts=%zu batches=%zu\n",
-           modelKey.c_str(), shaderPartIndex, verts.size(), uploads.combinedBatches.size());
+           uploadKey.c_str(), shaderPartIndex, verts.size(), uploads.combinedBatches.size());
     return true;
 }
 
@@ -438,7 +439,7 @@ bool drawCombinedBodyParts(const Player& player, unsigned int shader)
     if (!ensureCombinedBodyParts(player))
         return false;
 
-    ModelUploadSet& uploads = uploadsFor(player.renderModelKey());
+    ModelUploadSet& uploads = uploadsFor(player.renderUploadKey());
     if (uploads.combinedPartCount <= 0 ||
         uploads.combinedPartCount > 32 ||
         uploads.combinedBatches.empty())

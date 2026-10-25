@@ -115,6 +115,7 @@ void WeaponRuntimeHelper::tickReload(WeaponRuntime& rt, const WeaponDefinition& 
         } else {
             rt.isReloading = false;
             rt.reloadTimer = 0.0f;
+            rt.fireCooldown = 0.0f;
             printf("[WEAPON] Reload complete: ammo=%d reserve=%d\n",
                    rt.currentAmmo, rt.reserveAmmo);
         }
@@ -125,6 +126,9 @@ void WeaponRuntimeHelper::tickReload(WeaponRuntime& rt, const WeaponDefinition& 
         rt.reserveAmmo -= loaded;
         rt.isReloading = false;
         rt.reloadTimer = 0.0f;
+        // A locally completed reload is ready to fire immediately; the server
+        // still validates its own cooldown.
+        rt.fireCooldown = 0.0f;
         printf("[WEAPON] Reload complete: ammo=%d reserve=%d\n",
                rt.currentAmmo, rt.reserveAmmo);
     }

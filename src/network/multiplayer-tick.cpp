@@ -68,6 +68,17 @@ constexpr uint32_t POST_GAP_RESYNC_TICKS = 30;
 // How long the post-gap resync stays armed after the gap is detected.
 constexpr uint64_t POST_GAP_RESYNC_WINDOW_MS = 1000;
 
+void rejectUnexpectedServer(MultiplayerContext& ctx)
+{
+    const bool ownedUdpSocket = ctx.sock != INVALID_SOCKET;
+    teardownPreviousSession(ctx, DisconnectPolicy::Rejected);
+    if (ownedUdpSocket)
+        netShutdown();
+    ctx.serverIdentityMismatch = true;
+    ctx.connectFailed = true;
+    ctx.connectionStatus = "Server identity mismatch";
+}
+
 void logClientSnapshotDiagnostics(MultiplayerContext& ctx,
                                   uint32_t snapshotTick,
                                   uint64_t tickGap,
@@ -307,7 +318,11 @@ static void processSnapshotEntities(
                        ctx.localServerPosition.x, ctx.localServerPosition.y,
                        ctx.localServerPosition.z);
             }
-            if (ctx.awaitingExplodeDeath && entity.health <= 0)
+            if (ctx.awaitingExplodeDeath &&
+                (entity.health <= 0 ||
+                 (ctx.lastKnownSpawnGeneration != 0 &&
+                  ctx.lastKnownSpawnGeneration !=
+                      ctx.explodeRequestStartSpawnGeneration)))
             {
                 ctx.awaitingExplodeDeath = false;
                 ctx.explodeRequestLastSendMs = 0;
@@ -1001,6 +1016,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
     // Explode is a client request, but it must survive badconn loss. The
     // server operation is idempotent: retries are ignored once already dead.
+    if (ctx.awaitingExplodeDeath &&
+        ctx.lastKnownSpawnGeneration != 0 &&
+        ctx.lastKnownSpawnGeneration != ctx.explodeRequestStartSpawnGeneration)
+    {
+        // The server already published a new life. Never re-send explode into
+        // it; the request has been acknowledged by the generation change.
+        ctx.awaitingExplodeDeath = false;
+        ctx.explodeRequestLastSendMs = 0;
+    }
     if (ctx.awaitingExplodeDeath && ctx.localPlayerId)
     {
         const uint64_t now = nowMs();
@@ -1100,6 +1124,17 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 std::memset(hello.avatarName, 0, sizeof(hello.avatarName));
                 std::strncpy(hello.avatarName, GetPlayerSettings().avatarName.c_str(), sizeof(hello.avatarName) - 1);
                 mpSendPacket(ctx, &hello, sizeof(hello));
+                if (ctx.lastHelloMs == 0)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network,
+                        StructuredLevel::Important,
+                        "network.client.hello-sent", "",
+                        "sent first handshake hello to server", ctx.tick,
+                        {{"server_address", ctx.serverAddress},
+                         {"transport", ctx.transport ? "active" : "missing"}},
+                        __FILE__, __LINE__, __func__);
+                }
             }
             ctx.lastHelloMs = currentMs;
         }
@@ -1142,11 +1177,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                              sizeof(welcome->runtimeBuildId)) != 0;
             if (runMismatch || buildMismatch)
             {
-                ctx.serverIdentityMismatch = true;
-                ctx.connected = false;
-                ctx.connectFailed = true;
-                ctx.connectionState = ConnectionState::Disconnected;
-                ctx.connectionStatus = "Server identity mismatch";
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Network, StructuredLevel::Errors,
                     "network.server-identity-mismatch", "", "server rejected by runtime identity", ctx.tick,
@@ -1159,6 +1189,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 printf("[NET CONNECT] rejected server identity expectedRun=%s actualRun=%s expectedBuild=%s actualBuild=%s\n",
                        expectedRunId ? expectedRunId : "", welcome->runtimeRunId,
                        expectedBuildId ? expectedBuildId : "", welcome->runtimeBuildId);
+                rejectUnexpectedServer(ctx);
                 return;
             }
             ctx.localPlayerId = welcome->assignedPlayerId;
@@ -1219,11 +1250,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 (expectedBuildId && *expectedBuildId && std::strncmp(expectedBuildId, accept->runtimeBuildId, sizeof(accept->runtimeBuildId)) != 0);
             if (identityMismatch)
             {
-                ctx.serverIdentityMismatch = true;
-                ctx.connected = false;
-                ctx.connectFailed = true;
-                ctx.connectionState = ConnectionState::Disconnected;
-                ctx.connectionStatus = "Server identity mismatch";
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Network, StructuredLevel::Errors,
                     "network.server-identity-mismatch", "", "join accepted by unexpected runtime", ctx.tick,
@@ -1232,6 +1258,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                      {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
                      {"actual_build_id", accept->runtimeBuildId}},
                     __FILE__, __LINE__, __FUNCTION__);
+                rejectUnexpectedServer(ctx);
                 return;
             }
             ctx.localPlayerId = accept->assignedPlayerId;
@@ -1309,11 +1336,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 (expectedBuildId && *expectedBuildId && std::strncmp(expectedBuildId, accept->runtimeBuildId, sizeof(accept->runtimeBuildId)) != 0);
             if (identityMismatch)
             {
-                ctx.serverIdentityMismatch = true;
-                ctx.connected = false;
-                ctx.connectFailed = true;
-                ctx.connectionState = ConnectionState::Disconnected;
-                ctx.connectionStatus = "Server identity mismatch";
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Network, StructuredLevel::Errors,
                     "network.server-identity-mismatch", "", "reconnected to unexpected runtime", ctx.tick,
@@ -1322,6 +1344,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                      {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
                      {"actual_build_id", accept->runtimeBuildId}},
                     __FILE__, __LINE__, __FUNCTION__);
+                rejectUnexpectedServer(ctx);
                 return;
             }
             ctx.localPlayerId = accept->assignedPlayerId;

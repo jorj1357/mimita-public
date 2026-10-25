@@ -25,6 +25,9 @@ struct PhysicalEntity;
 // One triangle contact between an actor part and the world.
 struct ActorWorldContact {
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    // Authored world-triangle face normal, separate from the rounded feature
+    // normal. Used for seam/walkability classification and diagnostics.
+    glm::vec3 surfaceNormal{0.0f, 0.0f, 1.0f};
     glm::vec3 point{0.0f};
     glm::vec3 impactVelocity{0.0f};   // part displacement this tick (sweepDelta)
     float penetration = 0.0f;

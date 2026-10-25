@@ -124,6 +124,7 @@
       3.0,
       2.0
     ],
+    "facing_mode": "fixed",
     "interaction_box": {
       "offset": [
         0.0,

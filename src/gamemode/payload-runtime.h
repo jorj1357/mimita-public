@@ -47,6 +47,7 @@ struct PayloadRuntime
     // Authored data copied at match start so a live map edit applies next round.
     glm::vec3 cartOrigin{0.0f};
     float cartYaw = 0.0f;
+    bool cartFixedFacing = false;
     glm::vec3 cartSize{4.0f, 3.0f, 2.0f};
     glm::vec3 interactionSize{6.0f, 4.5f, 3.0f};
     glm::vec3 interactionOffset{0.0f};

@@ -2,8 +2,7 @@
   "modes": {
     "1": {
       "name": "current",
-      "server_args": [],
-      "client_args": []
+      "server_args": ["--mode","sandbox","--gamemode","sandbox","--no-npcs","--bind","127.0.0.1:24632"], "client_args": ["--connect","127.0.0.1:24632"], "map": "funworld3"
     },
     "2": {
       "name": "infinite_dungeon_slayer",
@@ -28,12 +27,13 @@
       "4": {
       "name": "funworld3nothing",
       "server_args": [
+        "--mode",
+        "sandbox",
+        "--gamemode",
+        "sandbox",
         "--no-npcs"
       ],
-      "client_args": [
-        "--startup-command",
-        "help"
-      ],
+      "client_args": [],
       "map": "funworld3"
     },
     "5": {
@@ -178,6 +178,70 @@
         "start payload"
       ],
       "map": "payload1"
+    },
+    "20": {
+      "name": "payload2",
+      "server_args": [
+        "--mode",
+        "payload",
+        "--gamemode",
+        "payload",
+        "--no-npcs"
+      ],
+      "client_args": [
+        "--startup-command",
+        "start payload"
+      ],
+      "map": "payload2"
+    },
+    "16": {
+      "name": "collision_coolplace_trace",
+      "server_args": [
+        "--mode",
+        "sandbox",
+        "--gamemode",
+        "sandbox",
+        "--no-npcs"
+      ],
+      "client_args": [],
+      "map": "coolplace"
+    },
+    "17": {
+      "name": "npc_waves_respawn_test",
+      "server_args": [
+        "--mode",
+        "npc_waves",
+        "--gamemode",
+        "npc_waves"
+      ],
+      "client_args": [],
+      "map": "npcwavesv2"
+    },
+    "18": {
+      "name": "sandbox_respawn_test",
+      "server_args": [
+        "--mode",
+        "sandbox",
+        "--gamemode",
+        "sandbox",
+        "--no-npcs"
+      ],
+      "client_args": [],
+      "map": "funworld3"
+    },
+    "19": {
+      "name": "rocket_reload_test",
+      "server_args": [
+        "--mode",
+        "sandbox",
+        "--gamemode",
+        "sandbox",
+        "--no-npcs",
+        "--weapon-set",
+        "1"
+      ],
+      "client_args": [],
+      "map": "funworld3"
     }
   }
 }

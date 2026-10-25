@@ -146,17 +146,45 @@ an internal block seam, and only the blocking/deeper side is retained. This is
 separate from `collisionSkin` and `edgeTouchTolerance`; those values must not
 be used to fake a topological weld.
 
+Opposing contacts on the same world triangle are also merged within 2.5 times
+the rounded-feature radius (0.25 m). This handles actor features that straddle
+one face and report opposing normals; the filter runs before position recovery
+and again before movement response. It does not merge contacts across
+different triangles or change triangle geometry.
+
 For a single actor part at a connected slope-to-wall edge, the manifold also
 collapses nearby non-opposing feature contacts and retains the normal that
 blocks the current movement direction. This avoids turning one geometric edge
 into an artificial two-normal wedge while preserving separate contacts at
-real corners.
+real corners. Nearby opposing feature contacts on that same actor part are
+collapsed only when one surface blocks the intended move and the other does
+not; two blocking faces at a real corner remain separate.
 
-Walkable finite slopes additionally retain their oriented original face normal
-for actor movement response. Their rounded edge normal remains available for
-non-walkable edge safety and exact depenetration, but the end of a walkable
-slope is not allowed to become a radial invisible wall.
-not create a separate collision universe.
+Triangle contact and depenetration retain the exact walkable face and rounded
+feature geometry. Grounding on map triangles is classified from the oriented
+world-face normal, not from a rounded feature response normal; a rounded edge
+on a vertical wall cannot turn that wall into a floor. Walkable slopes retain
+their oriented face normal for movement response and configured bounce. Only a
+numerically flat near-feet floor canonicalizes to world-up. If a near-feet
+feature normal points below a walkable face while the actor root is above that
+contact, recovery orients the normal toward the actor before solving
+penetration. For every near-feet contact on a walkable map face, position
+recovery uses the oriented vertical support direction instead of the rounded
+feature or sloped face normal, preventing a radial edge or cross-slope normal
+from pushing the actor sideways off its supporting surface. The triangle
+contact still determines whether support exists and how deep recovery must be.
+Grounded near-feet body contacts retain their configured response; collision
+contacts and their presentation remain active. Non-grounded body impacts and
+weapon contacts keep their configured response. This does not create a
+separate collision universe.
+
+The important-level `collision.solve.summary` event is sampled at most once per
+simulation thread per second. It includes the player position plus up to three
+leading contacts (actor part, world triangle or entity, world-space point,
+depenetration/surface/response normals, penetration, distance from the player
+origin, and solve position correction). This keeps
+collision-source diagnostics available in `events.jsonl` without enabling
+per-tick trace output.
 
 ---
 

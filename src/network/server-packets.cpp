@@ -939,6 +939,17 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
 
     if (!existingId)
     {
+        const char* runtimeRunId = std::getenv("MIMITA_RUN_ID");
+        const char* runtimeBuildId = std::getenv("MIMITA_BUILD_ID");
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.server.client-hello-accepted", std::to_string(id),
+            "accepted a new client hello and sent authoritative welcome", tick,
+            {{"player_id", id}, {"player_name", p.name},
+             {"map", gServerMapId},
+             {"run_id", runtimeRunId ? runtimeRunId : ""},
+             {"build_id", runtimeBuildId ? runtimeBuildId : ""}},
+            __FILE__, __LINE__, __func__);
         // One authoritative safe-spawn policy for every entry path; it derives
         // a validated position when the map has no authored spawn points.
         glm::vec3 spawnPos;
