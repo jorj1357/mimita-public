@@ -1263,6 +1263,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.roundVersion = 0;
     d.roundWins[0] = d.roundWins[1] = 0;
     d.roundNextNpcId = 0;
+    d.objectiveRosterNpcIds.clear();
     d.rosterLocked = false;
     ++d.stateVersion;
     ++d.duelId;

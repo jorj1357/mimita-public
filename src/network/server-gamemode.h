@@ -219,6 +219,9 @@ struct ServerGamemodeState
     float freezeSeconds = 0.0f;        // freeze time before each round
     bool rosterLocked = false;         // true once team selection closes
     uint32_t roundNextNpcId = 0;       // next id for roster NPC mirror entries
+    // Roster NPC ids owned by the objective roster. Tracked so a rebuild can
+    // retire exactly its own actors without touching startup/map NPCs.
+    std::unordered_set<uint32_t> objectiveRosterNpcIds;
     // Warmup: during a round mode's intermission the roster is spawned and
     // actors move/fight freely with infinite lives. Warmup ends at countdown.
     bool warmup = false;

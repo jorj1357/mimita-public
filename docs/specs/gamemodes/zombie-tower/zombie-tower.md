@@ -176,22 +176,88 @@ and stuff
 heres all the mosnters for v1
 
 boomer:
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. spits acid at u, area denial and gross, poison dmg
+2. slashes at u withclaws? or idk, spyknie damage, touch = dmg 
 
 stabber: 
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. stabs u , spyknife touch = damage logic , scale with force
 
 crawler: 
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. touches u or bites u , spyknife touch = damage logic , scale with force
 
 mutant wasp: 
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. stings u  , spyknife touch = damage logic , scale with force
 
 griever
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. puncutres u  , spyknife touch = damage logic , scale with force
 
 brute
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. SPECIAL WITH ANIM: ground slam, like 5-10 dmg and knocks u into the air
+2. punch/slash?   , spyknife touch = damage logic , scale with force
 
 normal zombie 
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. claws at u , spyknife touch = damage logic , scale with force
 
 chainsaw boss
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. swings chainsaw at u , spyknife touch = damage logic , scale with force
+2. dashes forward, reuse cahrger logic? special anim: touched while charging = damage and knockback, if touching chainsaw then damaegd there too
 
 charger 
+- anims
+1. idle
+2. walk
+3. attack
+4. hurt
+- attack
+1. chargres forward, big knockback and some dmaage: spyknief logic, touch = dmg , sclae with force 
 
 2026 10 24 2122 jorj here is the attacks anims for each
 idle, walk, attack, hurt
@@ -203,6 +269,11 @@ and do more of that like sliding stuff in lethal ape thats sick
 and ver verlethal monsters 
 
 but its doable 
+
+2026 10 15 1028
+we also need
+idle, walk, attack, hurt sounds
+and each one has its own attack 
 
 2026 10 13 2102 
 crwaler needs its own aniatmions
