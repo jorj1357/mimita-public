@@ -1997,6 +1997,14 @@ bool handleGameCLI(int argc, char** argv)
         std::exit(ok ? 0 : 1);
     }
 
+    if (std::string(argv[1]) == "--payload-authoring-selftest") {
+        std::string report;
+        const bool ok = payloadAuthoringSelfTest(report);
+        printf("[PAYLOAD AUTHORING SELFTEST]\n%s", report.c_str());
+        printf("[PAYLOAD AUTHORING SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
     if (std::string(argv[1]) == "--objective-selftest") {
         std::string report;
         const bool ok = objectiveSelfTest(report);

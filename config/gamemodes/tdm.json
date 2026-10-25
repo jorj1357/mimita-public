@@ -3,7 +3,7 @@
   "name": "Team Deathmatch",
   "description": "RED vs BLUE. First team to 30 kills wins; a tied match at three minutes is a stalemate.",
   "team_names": ["RED", "BLUE"],
-  "goal_value": 30,
+  "goal_value": 50,
   "weapon_set_id": 1,
   "time_limit_seconds": 180,
   "time_limit_outcome": "stalemate",
@@ -17,6 +17,17 @@
   "intermission_seconds": 10,
   "results_seconds": 5,
   "ragdoll_enabled": true,
+  // 2026 10 25 1307 does this go here idk
+    "avatar": {
+    "forced": false,
+    "allowed": [
+      "abusiveboy", "abusivegirl", "abusivegirl2", "abusivegirl3",
+      "abusivegirlheadless", "abusivegirlheadless2", "abusivegirlheadless3",
+      "abusivegirlheadless4", "boiledboy", "headless", "headlessgirl",
+      "headlessgirl2", "headlessgirl3", "headlessredux", "headlessredux2",
+      "jason", "jasonheadless"
+    ]
+  },
   "teams": [
     {
       "id": "red",
@@ -55,9 +66,23 @@
   "presentation": {
     "enemy_healthbars": true,
     "player_wireframes": true,
+    // "player_wireframes": false,
     "friendly_wireframes": true,
+    // "friendly_wireframes": false,
     "friendly_wireframe_color": [0, 255, 0],
-    "enemy_wireframe_color": [255, 0, 0]
+    "enemy_wireframe_color": [255, 0, 0],
+    // how come  it doenst edit the alpha? 2026 10 25 1303
+    //  C:\mimita-v9\config\playervisuals.json im editing this
+    // and its not making the alhpa go up or down etc 
+    "enemy_outline_alpha": 0.01,
+    "blood_scale": 1.0,
+    "blood_lifetime_scale": 0.2,
+    "world_impact_decal_scale": 1.0,
+    "world_impact_decal_lifetime_scale": 0.2,
+    "world_impact_decal_alpha_scale": 1.0,
+    "world_hit_effect_scale": 1.0,
+    "world_hit_effect_lifetime_scale": 0.2
+
   },
   "maps": ["mimita-duels-map-v3", "atdm", "funworld"]
 }

@@ -1515,8 +1515,24 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             }
 
             std::vector<CompactEntityData> outEntities;
-            if (!reassembleSnapshotChunks(sorted, outEntities))
+            std::string reassemblyError;
+            if (!reassembleSnapshotChunks(sorted, outEntities, &reassemblyError))
             {
+                static uint64_t lastReassemblyFailMs = 0;
+                const uint64_t nowReassemblyFailMs = nowMs();
+                if (nowReassemblyFailMs - lastReassemblyFailMs >= 1000) {
+                    lastReassemblyFailMs = nowReassemblyFailMs;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Errors,
+                        "client.snapshot.reassemble-failed", "snapshot-chunk",
+                        "snapshot discarded during chunk reassembly",
+                        chunk.header.tick,
+                        {{"snapshot_tick", chunk.header.tick},
+                         {"chunk_count", chunk.chunkCount},
+                         {"entity_count", outEntities.size()},
+                         {"reason", reassemblyError.empty() ? "unknown" : reassemblyError}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
                 ctx.snapshotChunkBuffers.erase(chunk.header.tick);
                 return;
             }

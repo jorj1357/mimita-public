@@ -81,11 +81,17 @@ bool payloadRuntimeInit(PayloadRuntime& runtime,
     runtime.healHpPer10Ticks = std::max(0, rules.healHpPer10Ticks);
     runtime.healDefenders = rules.healDefenders;
 
+    std::vector<float> routeRadii;
+    std::vector<int> routeWaitTicks;
     runtime.routePoints.reserve(mapPayload.route.size());
     runtime.cumulativeDistances.reserve(mapPayload.route.size());
+    routeRadii.reserve(mapPayload.route.size());
+    routeWaitTicks.reserve(mapPayload.route.size());
     for (const PayloadRoutePoint& point : mapPayload.route) {
         if (!point.enabled) continue;
         runtime.routePoints.push_back(point.position);
+        routeRadii.push_back(std::max(0.1f, point.radius));
+        routeWaitTicks.push_back(std::max(0, point.waitTicks));
     }
     if (runtime.routePoints.size() < 2)
         return false;
@@ -100,6 +106,16 @@ bool payloadRuntimeInit(PayloadRuntime& runtime,
     if (runtime.totalDistance <= kDistanceEpsilon)
         return false;
 
+    runtime.waypoints.reserve(runtime.routePoints.size());
+    for (size_t i = 0; i < runtime.routePoints.size(); ++i) {
+        PayloadWaypoint waypoint;
+        waypoint.routeIndex = (int)i;
+        waypoint.distance = runtime.cumulativeDistances[i];
+        waypoint.radius = routeRadii[i];
+        waypoint.waitTicks = routeWaitTicks[i];
+        runtime.waypoints.push_back(waypoint);
+    }
+
     // Route point order matches the filtered runtime route. Build the milestone
     // list from the authored flags, always treating the last point as final.
     size_t authoredIndex = 0;
@@ -112,6 +128,8 @@ bool payloadRuntimeInit(PayloadRuntime& runtime,
             PayloadCheckpoint cp;
             cp.routeIndex = (int)authoredIndex;
             cp.distance = runtime.cumulativeDistances[authoredIndex];
+            cp.radius = routeRadii[authoredIndex];
+            cp.waitTicks = routeWaitTicks[authoredIndex];
             cp.timeBonusSeconds = point.final ? 0.0f : point.timeBonusSeconds;
             cp.final = point.final || (!hasFinal && isLast);
             if (cp.final) hasFinal = true;
@@ -135,6 +153,10 @@ void payloadRuntimeReset(PayloadRuntime& runtime)
     runtime.overtimeActive = false;
     runtime.finished = false;
     runtime.unattendedSeconds = 0.0f;
+    runtime.waitTicksRemaining = 0;
+    runtime.waiting = false;
+    for (PayloadWaypoint& waypoint : runtime.waypoints)
+        waypoint.reached = false;
     runtime.attackers = 0;
     runtime.defenders = 0;
     runtime.advancing = false;
@@ -357,8 +379,15 @@ void payloadRuntimeTick(PayloadRuntime& runtime,
     runtime.advancing = false;
     runtime.blocked = false;
     runtime.rollingBack = false;
+    runtime.waiting = runtime.waitTicksRemaining > 0;
 
-    if (runtime.defenders > 0) {
+    if (runtime.waiting) {
+        // Authored wait: the cart holds its current route distance. Attackers
+        // inside the box still count for overtime below; they just cannot move
+        // the cart until the pause expires.
+        --runtime.waitTicksRemaining;
+        runtime.unattendedSeconds = 0.0f;
+    } else if (runtime.defenders > 0) {
         runtime.blocked = true;
         runtime.unattendedSeconds = 0.0f;
     } else if (runtime.attackers > 0) {
@@ -385,13 +414,41 @@ void payloadRuntimeTick(PayloadRuntime& runtime,
     runtime.previousCartTransform = oldCartTransform;
     runtime.cartDelta = runtime.cartPosition - oldCartPosition;
 
+    // Route points have a real world-space arrival radius. Entering the sphere
+    // triggers the point; `waitTicks` pauses the cart once on first entry.
+    for (PayloadWaypoint& waypoint : runtime.waypoints) {
+        if (waypoint.reached || waypoint.routeIndex < 0 ||
+            waypoint.routeIndex >= (int)runtime.routePoints.size())
+            continue;
+        const glm::vec3 waypointWorld = payloadRoutePositionAtDistance(
+            runtime, waypoint.distance);
+        const float distanceToPoint = glm::distance(runtime.cartPosition, waypointWorld);
+        if (distanceToPoint > waypoint.radius) continue;
+        waypoint.reached = true;
+        if (waypoint.waitTicks > 0) {
+            runtime.waitTicksRemaining = waypoint.waitTicks;
+            runtime.waiting = true;
+            result.waitStarted = true;
+        }
+    }
     // Checkpoints are once-only. A final point ends the round; a checkpoint
-    // extends the server clock by its configured bonus.
+    // extends the server clock by its configured bonus. The same authored radius
+    // governs when the checkpoint triggers.
     for (size_t i = 0; i < runtime.checkpoints.size(); ++i) {
         if (runtime.reachedCheckpoints[i]) continue;
         const PayloadCheckpoint& cp = runtime.checkpoints[i];
-        if (runtime.distanceTravelled + kDistanceEpsilon < cp.distance) continue;
+        if (cp.routeIndex < 0 || cp.routeIndex >= (int)runtime.routePoints.size())
+            continue;
+        const glm::vec3 checkpointWorld = payloadRoutePositionAtDistance(
+            runtime, cp.distance);
+        const float distanceToPoint = glm::distance(runtime.cartPosition, checkpointWorld);
+        if (distanceToPoint > cp.radius) continue;
         runtime.reachedCheckpoints[i] = 1;
+        if (cp.waitTicks > 0 && runtime.waitTicksRemaining <= 0) {
+            runtime.waitTicksRemaining = cp.waitTicks;
+            runtime.waiting = true;
+            result.waitStarted = true;
+        }
         if (cp.final) {
             runtime.finished = true;
             runtime.advancing = false;
@@ -406,14 +463,18 @@ void payloadRuntimeTick(PayloadRuntime& runtime,
         result.checkpointReached = true;
         result.checkpointRouteIndex = cp.routeIndex;
         result.checkpointBonusSeconds += cp.timeBonusSeconds;
-        runtime.lastCheckpointDistance =
-            std::max(runtime.lastCheckpointDistance, cp.distance);
+        // A radius may trigger before the authored distance. The stable rollback
+        // boundary is where the cart actually was, never a forward snap.
+        runtime.lastCheckpointDistance = std::max(
+            runtime.lastCheckpointDistance,
+            std::min(cp.distance, runtime.distanceTravelled));
         if (runtime.overtimeActive) {
             runtime.overtimeActive = false;
             runtime.overtimeTicksRemaining = 0;
             result.checkpointEndedOvertime = true;
         }
     }
+    result.waitTicksRemaining = runtime.waitTicksRemaining;
 
     if (!runtime.finished && roundEndTick > 0) {
         if (!runtime.overtimeActive && tick >= roundEndTick) {
@@ -573,6 +634,38 @@ bool payloadRuntimeSelfTest(std::string& report)
     payloadRuntimeTick(runtime, nullptr, 0, 2, 0, tickResult);
     if (tickResult.checkpointReached)
         fail("checkpoint bonus should not repeat");
+
+    // Arrival radius is real: the cart triggers the point when it enters the
+    // authored sphere, not only when it reaches the exact route distance.
+    payloadRuntimeReset(runtime);
+    runtime.distanceTravelled = 16.0f;
+    payloadRuntimeUpdateTransforms(runtime);
+    payloadRuntimeTick(runtime, nullptr, 0, 1, 0, tickResult);
+    if (!tickResult.checkpointReached || tickResult.checkpointBonusSeconds != 300.0f)
+        fail("checkpoint radius should trigger before the exact route distance");
+
+    // waitTicks is real: the cart holds still for the authored pause.
+    payloadRuntimeReset(runtime);
+    runtime.checkpoints[1].waitTicks = 5;
+    runtime.distanceTravelled = 20.0f;
+    payloadRuntimeUpdateTransforms(runtime);
+    payloadRuntimeTick(runtime, &attacker, 1, 1, 0, tickResult);
+    if (!tickResult.waitStarted || runtime.waitTicksRemaining <= 0)
+        fail("a checkpoint waitTicks pause should start on entry");
+    const float distanceBeforeWait = runtime.distanceTravelled;
+    payloadRuntimeTick(runtime, &attacker, 1, 2, 0, tickResult);
+    if (!runtime.waiting ||
+        std::abs(runtime.distanceTravelled - distanceBeforeWait) > 0.0001f)
+        fail("the cart should hold its distance during waitTicks");
+
+    // A non-checkpoint waypoint can also pause the cart.
+    payloadRuntimeReset(runtime);
+    runtime.waypoints[1].waitTicks = 3;
+    runtime.distanceTravelled = 10.0f;
+    payloadRuntimeUpdateTransforms(runtime);
+    payloadRuntimeTick(runtime, nullptr, 0, 1, 0, tickResult);
+    if (!tickResult.waitStarted || runtime.waitTicksRemaining != 3)
+        fail("a non-checkpoint waypoint waitTicks should start on entry");
 
     payloadRuntimeReset(runtime);
     runtime.distanceTravelled = runtime.totalDistance;

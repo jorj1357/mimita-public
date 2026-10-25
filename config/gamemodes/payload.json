@@ -49,6 +49,7 @@
   "go_seconds": 1.0,
   "intermission_seconds": 30,
   "results_seconds": 8,
+  "spawn_strategy": "team_shared",
   "spawn_offset_radius": 0.5,
   "rounds": {
     "max_rounds": 1,
@@ -109,6 +110,6 @@
     "killfeed": true,
     "ragdolls": true,
     "blood": true,
-    "player_outlines": false
+    "player_outlines": true
   }
 }

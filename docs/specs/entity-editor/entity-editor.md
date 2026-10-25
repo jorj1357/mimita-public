@@ -167,12 +167,43 @@ The editor can author ordered route points and a cart origin in map JSON:
     "rotationEuler": [0, 0, 0]
   },
   "route": [
-    { "id": "route_1", "position": [0, 0, 0], "radius": 2.0, "order": 0, "waitTicks": 0, "enabled": true }
+    {
+      "id": "route_1",
+      "position": [0, 0, 0],
+      "radius": 2.0,
+      "order": 0,
+      "waitTicks": 0,
+      "enabled": true,
+      "checkpoint": true,
+      "final": false,
+      "time_bonus_seconds": 0.0
+    }
   ]
 }
 ```
 
-Route editing only authors data. The Payload cart runtime contract remains in
+Route points are selectable and draggable, and their world label shows `CP`,
+`FINAL`, `OFF`, radius, wait ticks, and time bonus. With a route point selected,
+the terminal authors the remaining fields:
+
+```text
+mapeditor route_checkpoint <0|1>
+mapeditor route_final <0|1>
+mapeditor route_enabled <0|1>
+mapeditor route_radius <meters>
+mapeditor route_bonus <seconds>
+mapeditor route_wait <ticks>
+mapeditor route_move <up|down>
+mapeditor route_validate
+```
+
+`route_validate` reports duplicate ids, too few points, a cart-origin/route-start
+mismatch, long or steep segments, a missing final flag, zero checkpoint bonuses,
+and tiny radii. Ctrl+S saves and re-runs the same validation.
+
+`radius` is the cart's world-space arrival sphere: entering it triggers the
+point/checkpoint. `waitTicks` pauses the cart for that many server ticks when
+the point is first entered. The Payload cart runtime contract remains in
 [`../gamemodes/payload.md`](../gamemodes/payload.md).
 
 ## Fast answer: add a spawn point

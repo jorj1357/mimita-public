@@ -35,8 +35,22 @@ struct PayloadCheckpoint
 {
     int routeIndex = -1;
     float distance = 0.0f;
+    float radius = 2.0f;
+    int waitTicks = 0;
     float timeBonusSeconds = 0.0f;
     bool final = false;
+};
+
+// One authored route point used for arrival radius and authored cart pauses.
+// Checkpoints own clock/final rules; waypoints own the shared radius/wait rule
+// so a non-checkpoint waypoint can also pause the cart.
+struct PayloadWaypoint
+{
+    int routeIndex = -1;
+    float distance = 0.0f;
+    float radius = 2.0f;
+    int waitTicks = 0;
+    bool reached = false;
 };
 
 // Public cart state. The server owns the instance; the client never simulates it.
@@ -55,6 +69,7 @@ struct PayloadRuntime
     std::vector<glm::vec3> routePoints;
     std::vector<float> cumulativeDistances;
     std::vector<PayloadCheckpoint> checkpoints;
+    std::vector<PayloadWaypoint> waypoints;
 
     // Match rules.
     int attackerTeam = 0;
@@ -84,6 +99,8 @@ struct PayloadRuntime
     bool overtimeActive = false;
     bool finished = false;
     float unattendedSeconds = 0.0f;
+    int waitTicksRemaining = 0;
+    bool waiting = false;
 
     int attackers = 0;
     int defenders = 0;
@@ -107,6 +124,8 @@ struct PayloadTickResult
     bool overtimeRefreshed = false;
     bool overtimeExpired = false;
     bool checkpointEndedOvertime = false;
+    bool waitStarted = false;
+    int waitTicksRemaining = 0;
     int attackers = 0;
     int defenders = 0;
     float distanceMoved = 0.0f;

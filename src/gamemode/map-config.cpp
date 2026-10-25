@@ -11,11 +11,13 @@
 #include <cctype>
 #include <sstream>
 #include <system_error>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "gamemode/gamemode.h"
 #include "utils/json-comments.h"
 #include "utils/path_utils.h"
 
@@ -856,6 +858,172 @@ bool MapConfigRegistry::save()
                        {"config_path", mPath}, {"result", "success"}},
         __FILE__, __LINE__, __FUNCTION__);
     return true;
+}
+
+bool validatePayloadAuthoring(const PayloadConfig& payload,
+                              std::vector<PayloadAuthoringIssue>& issues)
+{
+    issues.clear();
+    auto add = [&](const char* severity, const char* code, const std::string& message) {
+        issues.push_back({severity, code, message});
+    };
+
+    if (!payload.present) {
+        add("error", "payload-missing", "map has no payload section");
+        return false;
+    }
+    if (!payload.hasCartOrigin) {
+        add("error", "cart-origin-missing", "payload.cart_origin.position is required");
+    }
+
+    std::vector<const PayloadRoutePoint*> enabled;
+    std::unordered_set<std::string> ids;
+    for (const PayloadRoutePoint& point : payload.route) {
+        if (point.id.empty()) {
+            add("error", "route-id-empty", "route point has no id");
+        } else if (!ids.insert(point.id).second) {
+            add("error", "route-id-duplicate",
+                "duplicate route point id '" + point.id + "'");
+        }
+        if (!point.enabled) continue;
+        enabled.push_back(&point);
+        if (point.radius < 0.1f) {
+            add("warning", "route-radius-tiny",
+                "route point '" + point.id + "' radius is below 0.1 m");
+        }
+    }
+
+    if (enabled.size() < 2) {
+        add("error", "route-too-short",
+            "payload route needs at least two enabled points");
+        return false;
+    }
+
+    if (payload.hasCartOrigin) {
+        const float startDistance = glm::length(enabled.front()->position - payload.cartOrigin);
+        if (startDistance > 0.75f) {
+            add("warning", "route-start-mismatch",
+                "first enabled route point is " + std::to_string(startDistance) +
+                " m from payload.cart_origin; move the cart origin with the route start");
+        }
+    }
+
+    float totalDistance = 0.0f;
+    bool hasFinal = false;
+    int finalCount = 0;
+    int checkpointCount = 0;
+    for (size_t i = 0; i < enabled.size(); ++i) {
+        const PayloadRoutePoint& point = *enabled[i];
+        if (i > 0) {
+            const float segment =
+                glm::length(point.position - enabled[i - 1]->position);
+            totalDistance += segment;
+            if (segment > 250.0f) {
+                add("warning", "route-long-segment",
+                    "route segment into '" + point.id + "' is " +
+                    std::to_string(segment) + " m; check for a misplaced point");
+            }
+            const float rise = std::abs(point.position.z - enabled[i - 1]->position.z);
+            if (rise > 150.0f) {
+                add("warning", "route-steep-segment",
+                    "route segment into '" + point.id + "' rises/falls " +
+                    std::to_string(rise) + " m; check for a misplaced point");
+            }
+        }
+        if (point.final) hasFinal = true;
+        if (point.checkpoint) ++checkpointCount;
+        if (point.checkpoint && !point.final && point.timeBonusSeconds <= 0.0f &&
+            i != 0 && i + 1 != enabled.size()) {
+            add("warning", "checkpoint-zero-bonus",
+                "checkpoint '" + point.id + "' awards no time bonus");
+        }
+        if (point.waitTicks > 0) {
+            // Informational only; wait ticks are a valid authored pause.
+            add("info", "route-wait",
+                "route point '" + point.id + "' pauses the cart for " +
+                std::to_string(point.waitTicks) + " ticks");
+        }
+    }
+
+    if (totalDistance <= 0.1f) {
+        add("error", "route-distance-zero", "payload route has no usable length");
+    }
+    if (!hasFinal) {
+        add("warning", "route-final-implicit",
+            "no route point is marked final; the runtime treats the last enabled point as final");
+    }
+    if (checkpointCount < 2) {
+        add("warning", "route-no-checkpoints",
+            "fewer than two checkpoints are authored");
+    }
+
+    for (const PayloadAuthoringIssue& issue : issues) {
+        if (issue.severity == "error") return false;
+    }
+    return true;
+}
+
+bool payloadAuthoringSelfTest(std::string& report)
+{
+    bool ok = true;
+    auto fail = [&](const std::string& why) {
+        ok = false;
+        report += "FAIL: " + why + "\n";
+    };
+
+    auto& modes = GamemodeRegistry::instance();
+    if (!modes.has("payload"))
+        modes.loadDirectory("config/gamemodes");
+    const Gamemode& mode = modes.get("payload");
+    if (mode.id != "payload")
+        fail("payload gamemode did not load");
+    else {
+        if (mode.spawnStrategy == "shared")
+            fail("payload spawn_strategy must not be shared");
+        if (mode.teams.size() < 2) {
+            fail("payload must declare two playing teams");
+        } else {
+            if (mode.teams[0].spawnGroup != "attacker_spawn")
+                fail("payload team 0 spawn_group != attacker_spawn");
+            if (mode.teams[1].spawnGroup != "defender_spawn")
+                fail("payload team 1 spawn_group != defender_spawn");
+            if (mode.teams[0].spawnTagContains.empty() ||
+                mode.teams[1].spawnTagContains.empty())
+                fail("payload teams must declare spawn_tag_contains");
+        }
+    }
+
+    for (const char* mapId : {"payload1", "payload2"}) {
+        MapConfigRegistry& registry = MapConfigRegistry::instance();
+        if (!registry.load(mapId)) {
+            report += std::string("FAIL: ") + mapId + " map config did not load\n";
+            ok = false;
+            continue;
+        }
+        std::vector<PayloadAuthoringIssue> issues;
+        const bool valid = validatePayloadAuthoring(registry.current().payload, issues);
+        report += std::string(mapId) + ": " + (valid ? "valid" : "invalid") +
+                  " route=" + std::to_string(registry.current().payload.route.size()) +
+                  " issues=" + std::to_string(issues.size()) + "\n";
+        for (const PayloadAuthoringIssue& issue : issues) {
+            report += "  " + issue.severity + " " + issue.code + ": " + issue.message + "\n";
+        }
+        ok = ok && valid;
+
+        auto hasSpawnTag = [&](const std::string& tag) {
+            for (const MapEntity& entity : registry.current().entities) {
+                if (entity.type == "spawnpoint" && entity.enabled && entity.tag == tag)
+                    return true;
+            }
+            return false;
+        };
+        if (!hasSpawnTag("attacker_spawn"))
+            fail(std::string(mapId) + " has no enabled attacker_spawn entity");
+        if (!hasSpawnTag("defender_spawn"))
+            fail(std::string(mapId) + " has no enabled defender_spawn entity");
+    }
+    report += ok ? "PASS\n" : "FAIL\n";
+    return ok;
 }
 
 bool mapConfigSelfTest(std::string& report)

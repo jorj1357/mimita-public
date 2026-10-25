@@ -33,7 +33,7 @@ This section is the handoff source of truth for a fresh agent. It describes what
 - The client HUD shows intermission, countdown/GO, red/blue team labels, timer, cart progress/status, and overtime.
 - Remote/AI damage presentation was expanded to show damage numbers and hit effects for hits the local client did not predict.
 - A map-editor outliner lists authored entities, blocks, route points, cart origin, and all mesh-bearing GLB nodes from the loaded map.
-- Last verified build: `3172` (debug). Build success is not gameplay acceptance.
+- Last verified build: `3212` (debug). Runtime NPC/spawn proof was captured on `3197`; build success is not gameplay acceptance.
 - The dev loop later entered `launch_failed` with `server_build_identity`; manual server startup from the same build remained healthy. Treat that as an open tooling issue, not proof that the game cannot start.
 
 ### 0.2 Authoritative owners and data flow
@@ -79,13 +79,17 @@ Map/mode data:
 
 ### 0.4 Current route and checkpoint behavior
 
-- `payload.route[]` is ordered; each point has `id`, `position`, `radius`, `order`, `enabled`, `checkpoint`, `final`, and `time_bonus_seconds`.
+- `payload.route[]` is ordered; each point has `id`, `position`, `radius`, `order`, `waitTicks`, `enabled`, `checkpoint`, `final`, and `time_bonus_seconds`.
 - The cart position is interpolated along the authored route by `distanceTravelled`; it is not a free-moving physics cart.
+- `radius` is a real arrival sphere in cart world space. The cart triggers a route point/checkpoint when its position enters that radius, so a large radius can fire slightly before the exact route distance.
+- `waitTicks` is a real authored pause. The cart holds its current distance for that many server ticks when the point is first entered. Attackers in the box still refresh overtime during the pause; they just cannot move the cart.
 - Checkpoints are once-only. Intermediate checkpoints add their configured seconds to the round clock.
 - The final point ends the round for Team A.
-- Unattended rollback is clamped to the last reached checkpoint distance.
-- Route points and cart origin are visible/selectable in the map editor.
-- `payload2.json` is currently a copy of Payload 1 and must be re-authored against Payload 2 geometry before calling it playable content.
+- Unattended rollback is clamped to the last reached checkpoint distance (the cart's actual trigger distance, not a forward snap).
+- Route points and cart origin are visible/selectable in the map editor. Selected points show checkpoint/final/off/radius/wait/bonus state in their label.
+- The editor exposes route-point authoring through terminal commands (`route_checkpoint`, `route_final`, `route_enabled`, `route_radius`, `route_bonus`, `route_wait`, `route_move`, `route_validate`) and shows the same data in labels. A mouse property panel is later work.
+- Authored-data validation reports long/steep segments, cart-origin/route-start mismatch, missing final, zero checkpoint bonuses, duplicate ids, and tiny radii. Warnings keep the map playable; errors are logged as `payload.authoring-validated` with `valid=false`.
+- `payload2.json` is still a copy of Payload 1 and must be re-authored against Payload 2 geometry before calling it playable content.
 
 ### 0.5 Current spawn behavior and the open spawn bug
 
@@ -98,50 +102,46 @@ Current code path:
 - Payload teams declare `spawn_group: "attacker_spawn"` and `"defender_spawn"`.
 - Payload 1 map entities declare `tag: "attacker_spawn"` and `tag: "defender_spawn"`.
 
-Reported defect: NPCs can appear to all spawn at the same location. This is not yet proven at runtime. Investigate in this order:
+Resolved 2026-10-25. Root cause: `config/gamemodes/payload.json` did not declare `spawn_strategy`, and `Gamemode::spawnStrategy` defaults to `"shared"`. The shared strategy returns the single map anchor before the resolver can read team spawn groups, so both teams collapsed onto the untagged `spawnpoint_1`.
 
-1. Verify `ServerNpc.matchTeam`, `matchTeams`, and `matchActors.teamId` for every roster NPC before `resetGamemodeActorsAtMapSpawn`.
-2. Log `gamemodeSpawnPoint` for each actor: team, role, resolved spawn group, candidate count, chosen position, and fallback reason.
-3. Compare attacker and defender cluster centroids. If both clusters are within a small radius, the spawn resolution is collapsing teams.
-4. Check whether both spawnpoint entities resolve to the same tag/position after editor save or JSON copy.
-5. Check whether NPCs are being created before roster team assignment and then skipped by the reset path.
-6. Add a Payload spawn selftest using the real mode/map JSON.
-7. Add a runtime invariant log if Team A and Team B spawn clusters are not separated.
+Current behavior:
 
-Do not “fix” this by adding a Payload-name branch. The one owner is the shared spawn resolver.
+- `payload.json` declares `"spawn_strategy": "team_shared"`.
+- `gamemodeSpawnPointForActor` now logs `gamemode.spawn-resolved` with actor, role, team, spawn group, tag filter, candidate count, position, fallback, reason, mode, and map.
+- `assignGamemodeSpawns` logs `gamemode.spawn-groups-resolved` with both team cluster counts, positions, separation, and resolution state.
+- The resolver refuses untagged spawnpoints for a team that declares spawn tagging.
+- `serverSpawnTagSelfTest` now checks that Payload does not use the shared strategy and that both Payload maps contain enabled `attacker_spawn`/`defender_spawn` entities.
 
-### 0.6 Open NPC invisibility investigation
+Runtime proof (2026-10-25, payload1, build 3197):
+- `gamemode.spawn-groups-resolved`: team A `(-312.59,-28.12,1150.36)`, team B `(-292.56,-64.83,2256.30)`, separation `1106.74`.
+- `gamemode.spawn-resolved` for the player: `candidate_count=1`, `fallback=authored-team-group`.
+- Human observation: all NPCs spawned and were visible.
 
-Current evidence is ambiguous:
+Do not add a Payload-name branch. The one owner remains the shared spawn resolver plus the mode's spawn strategy.
 
-- Payload 1 runtime: 23 remote NPCs, 23 models loaded, and samples with `in_view` 1–5.
-- Payload 2 runtime: 23 remote NPCs, 23 models loaded, `in_view` 0 at one spawn sample.
-- Therefore “invisible” is not explained by missing snapshot entries or missing models alone.
+### 0.6 NPC invisibility — resolved 2026-10-25
 
-Diagnostic fields already emitted by `client.npc.viewport-window`:
+The reported invisibility had two code causes, both now fixed:
 
-- `remote_npcs`
-- `alive`
-- `model_loaded`
-- `in_view`
-- `active_map`
-- `required_map`
-- `camera_position`
-- `sample_npc_position`
-- `sample_npc_size_scale`
+1. **Roster ids could collide with player ids.** `buildObjectiveRoster` only reserved the `100000+` range when the NPC mirror map was empty. A normal GUI server starts with one startup NPC, so roster ids began at `0`. A roster NPC with id `1` collided with the host player id, and the client rejects an entire snapshot whose entity ids repeat (`snapshot-chunks.cpp`, `duplicate-entity`). Roster NPCs therefore never replicated. The old cleanup also only erased ids `>=100000`, so low-id roster bodies accumulated every rebuild.
+2. **Shared spawn strategy bypassed team spawns.** `payload.json` had no `spawn_strategy`; the default is `"shared"`, which returns the map anchor before reading `attacker_spawn`/`defender_spawn`. Both teams and all roster NPCs spawned at the untagged `spawnpoint_1`, fought, died, and respawned there.
 
-Investigation order:
+Current behavior:
 
-1. Confirm client and server are on the same map and the NPCs are near the camera.
-2. If `remote_npcs == 0` (no `in_view` possible), trace snapshot membership and chunk application.
-3. If `model_loaded == 0`, trace `client.npc.avatar.bind`, `client.npc.avatar.rebind`, `AvatarSystem::applyAvatarToPlayer`, and model cache readiness.
-4. If `model_loaded > 0` but nothing draws, add a one-time per-actor draw diagnostic from `renderNetworkPlayer` including `submitted`, `modelLoaded`, part-mesh count, world position, and camera distance.
-5. Check whether spawn camera yaw points away from the team spawn cluster; “invisible” may be a spawn-facing problem rather than a render problem.
-6. Check `sizeScale`, model bounds, and whether NPCs are below/above the floor.
-7. Verify the actual draw call, not only `modelLoaded`.
+- Objective roster ids always start at `100000`, never use a player/startup/map id, are tracked in `objectiveRosterNpcIds`, and are reused after the previous roster is retired.
+- The server drops and logs a duplicate snapshot id instead of sending an invalid snapshot. The client logs `client.snapshot.reassemble-failed` with the reason if reassembly still fails.
+- `client.npc.viewport-window` now reports `dead`, `sample_npc_alive`, and `model_loaded`.
+- `client.actor.draw-submission` records one-time render evidence per remote actor: alive, model loaded, valid parts/batches, tint, world position, and camera distance.
+- Payload uses `team_shared` spawns and the resolver prefers authored team groups.
 
-Do not add a second NPC renderer. Fix the existing remote NPC snapshot/render path.
+Runtime proof (2026-10-25, payload1 with `--npcs 1`, build 3197, journal `logs/2026-10-25/20261025_151724/events.jsonl`):
 
+- roster ids `100000..100022`; no duplicate snapshot ids; no client reassembly failures.
+- `remote_npcs=24`, `alive=24`, `dead=0`, `model_loaded=24`, `in_view` up to `10`.
+- team spawns resolved to separate authored clusters.
+- Human observation: all NPCs spawned and were visible.
+
+Do not add a second NPC renderer. The shared remote NPC snapshot/render path remains the owner.
 ### 0.7 Current HUD behavior
 
 - HUD layout: `config/gui/gamemode-meta-gui.json`, `gamemodes.payload`.
@@ -183,6 +183,7 @@ Canonical build/test:
 ```text
 python devscripts/dev-loop.py --request build --wait-for-build
 .dev/builds/<build>/mimita.exe --payload-selftest
+.dev/builds/<build>/mimita.exe --payload-authoring-selftest
 .dev/builds/<build>/mimita.exe --map-config-selftest
 .dev/builds/<build>/mimita.exe --map-authored-geometry-selftest
 .dev/builds/<build>/mimita.exe --npc-utility-selftest
@@ -705,7 +706,7 @@ The files listed by the JSON architecture document are a map of configuration fa
 
 | File | Owner | Current keys |
 |---|---|---|
-| `config/gamemodes/payload.json` | Gamemode loader | `teams`, `spawn_groups`, `rounds`, `payload.*`, `npc_targeting`, `npc_travel`, `presentation` |
+| `config/gamemodes/payload.json` | Gamemode loader | `teams`, `spawn_groups`, `spawn_strategy`, `rounds`, `payload.*`, `npc_targeting`, `npc_travel`, `presentation` |
 | `config/maps/payload1.json` | Map config loader | spawnpoint entities, `payload.cart_origin`, `cart_size`, `facing_mode`, `interaction_box`, `route[]` |
 | `config/maps/payload2.json` | Map config loader | starting copy of Payload 1; needs map-specific authoring |
 | `config/gui/gamemode-meta-gui.json` | GUI layout loader | `gamemodes.payload` HUD elements |

@@ -1,3 +1,19 @@
+2026 10 25 1107 there is a  list of songs i want to do edits to in the mimta plan i think v38
+
+btu
+guerlain also
+
+and absoltuelt do  edits 
+to sngs
+in thsi  game
+like it lokos so feraking sick
+and we can do like
+tick perfect tihngs
+its not even an actual fight well
+i think it should be as good as an actual fight
+but
+ok wahtever 
+
 2026 10 19 1800 JORJ TODO - 
 
 REPLAY

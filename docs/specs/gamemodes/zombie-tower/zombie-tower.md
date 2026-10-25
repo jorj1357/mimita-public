@@ -178,9 +178,17 @@ heres all the mosnters for v1
 boomer:
 - anims
 1. idle
+2026 10 25 1052
 2. walk
-3. attack
+2026 10 25 1053
+3. attack spit
+2026 10 25 1111
+3.1. attack arm
+2026 10 25 1108
+
+
 4. hurt
+2026 10 25 1116
 - attack
 1. spits acid at u, area denial and gross, poison dmg
 2. slashes at u withclaws? or idk, spyknie damage, touch = dmg 
@@ -188,6 +196,7 @@ boomer:
 stabber: 
 - anims
 1. idle
+2026 10 25 1123
 2. walk
 3. attack
 4. hurt

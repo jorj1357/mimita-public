@@ -1,6 +1,7 @@
 // 2026-10-23
 #include "mapeditor/map-editor-commands.h"
 
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -12,7 +13,7 @@ void registerMapEditorCommands()
     auto& terminal = Terminal::instance();
     terminal.registerCommand({
         "mapeditor", "Enter/leave the freecam map editor or run an editor action",
-        "mapeditor [0|1|status|save|reload|freeze <0|1>|add <entity <type>|block|route|cart> [id]|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
+        "mapeditor [0|1|status|save|reload|freeze <0|1>|add <entity <type>|block|route|cart> [id]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
         [](const std::vector<std::string>& args) {
             MapEditor& editor = MapEditor::instance();
             if (args.empty()) {
@@ -88,6 +89,62 @@ void registerMapEditorCommands()
                 }
                 return;
             }
+            if (command == "route_checkpoint" || command == "route_final" ||
+                command == "route_enabled") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 2) {
+                    Terminal::instance().addLog("[MAPEDIT] " + command + " <0|1>");
+                    return;
+                }
+                const bool value = args[1] != "0";
+                if (command == "route_checkpoint") editor.setSelectedRouteCheckpoint(value);
+                else if (command == "route_final") editor.setSelectedRouteFinal(value);
+                else editor.setSelectedRouteEnabled(value);
+                return;
+            }
+            if (command == "route_radius" || command == "route_bonus" ||
+                command == "route_wait") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 2) {
+                    Terminal::instance().addLog("[MAPEDIT] " + command + " <value>");
+                    return;
+                }
+                try {
+                    const float value = std::stof(args[1]);
+                    if (command == "route_radius") editor.setSelectedRouteRadius(value);
+                    else if (command == "route_bonus") editor.setSelectedRouteTimeBonus(value);
+                    else editor.setSelectedRouteWaitTicks((int)value);
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid number " + args[1]);
+                }
+                return;
+            }
+            if (command == "route_move") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 2 || (args[1] != "up" && args[1] != "down")) {
+                    Terminal::instance().addLog("[MAPEDIT] route_move <up|down>");
+                    return;
+                }
+                editor.moveSelectedRoute(args[1] == "up" ? -1 : 1);
+                return;
+            }
+            if (command == "route_validate") {
+                const std::string report = editor.validatePayloadRoute();
+                if (report.empty()) {
+                    Terminal::instance().addLog("[MAPEDIT] no payload route on this map");
+                    return;
+                }
+                size_t start = 0;
+                while (start <= report.size()) {
+                    const size_t end = report.find('\n', start);
+                    const std::string line = report.substr(start,
+                        end == std::string::npos ? std::string::npos : end - start);
+                    Terminal::instance().addLog("[MAPEDIT] " + line);
+                    if (end == std::string::npos) break;
+                    start = end + 1;
+                }
+                return;
+            }
             if (command == "selectall") {
                 if (!editor.active() && !editor.setActive(true)) return;
                 editor.selectAllEdit();
@@ -124,6 +181,8 @@ void registerMapEditorCommands()
                 Terminal::instance().addLog("[MAPEDIT] Ctrl+Z undo | Ctrl+Shift+Z redo | Ctrl+S save");
                 Terminal::instance().addLog("[MAPEDIT] V vertex snap | G grid snap | F frame | Esc back");
                 Terminal::instance().addLog("[MAPEDIT] mapeditor add entity <type> [id] | add block [id] | add route [id] | add cart");
+                Terminal::instance().addLog("[MAPEDIT] select route: route_checkpoint/final/enabled <0|1> | route_radius <m>");
+                Terminal::instance().addLog("[MAPEDIT] route_bonus <sec> | route_wait <ticks> | route_move <up|down> | route_validate");
                 Terminal::instance().addLog("[MAPEDIT] mapeditor selectall | copy | paste | cut | duplicate | delete | undo | redo");
                 return;
             }

@@ -1394,9 +1394,12 @@ class DevLoop:
         except OSError as error:
             print(f"[DEV CONTROL] unable to record journal event: {error}")
 
-    def record_runtime_event(self, event: str, fields: dict, reason: str) -> None:
+    def record_runtime_event(self, event: str, fields: dict, reason: str,
+                             events_path: str | None = None,
+                             run_id: str | None = None) -> None:
         """Append bounded dev-loop launch evidence to the canonical journal."""
-        if not self.events_path:
+        journal_path = events_path or self.events_path
+        if not journal_path:
             return
         record = {
             "category": "GENERAL",
@@ -1408,12 +1411,12 @@ class DevLoop:
             "process": "dev-loop",
             "process_role": "dev-loop",
             "reason": reason,
-            "run_id": self.run_id or "",
+            "run_id": run_id or self.run_id or "",
             "wall_time": utc_now(),
         }
         try:
             with self.control_event_lock:
-                with open(self.events_path, "a", encoding="utf-8", newline="\n") as journal:
+                with open(journal_path, "a", encoding="utf-8", newline="\n") as journal:
                     journal.write(json.dumps(record, separators=(",", ":")) + "\n")
         except OSError as error:
             print(f"[DEV RUNTIME] unable to record launch evidence: {error}")
@@ -1758,6 +1761,9 @@ class DevLoop:
             action = str(request.get("action", "")).strip().lower()
             request_id = str(request.get("request_id", ""))
             print(f"[DEV CONTROL] request={request_id or '(none)'} action={action}")
+            if action in ("launch", "build-or-launch") and not self.events_path:
+                self.events_path = create_shared_events_path()
+                self.run_id = Path(self.events_path).parent.name
             if action == "launch":
                 requested_mode = request.get("launch_mode")
                 if requested_mode is not None:
@@ -1779,10 +1785,10 @@ class DevLoop:
                     self.record_control_event(request, "accepted", self.last_message)
                     self.save_state("launch_waiting_for_build")
                 else:
-                    launched = self.launch_latest()
+                    launched = self.launch_latest(request_id=request_id)
                     self.last_message = (
                         f"AI launched last successful build {self.latest_build}"
-                        if launched else f"AI launch failed for last successful build {self.latest_build}"
+                        if launched else self.last_message or f"AI launch failed for last successful build {self.latest_build}"
                     )
                     self.record_control_event(
                         request, "completed" if launched else "failed", self.last_message
@@ -1806,11 +1812,11 @@ class DevLoop:
                     self.record_control_event(request, "accepted", self.last_message)
                     self.save_state("launch_waiting_for_build")
                 else:
-                    launched = self.launch_latest()
+                    launched = self.launch_latest(request_id=request_id)
                     self.last_message = (
                         f"dashboard launched last successful build {self.latest_build}"
                         + (" (stale while newer build runs)" if self.latest_stale else "")
-                        if launched else f"dashboard launch failed for build {self.latest_build}"
+                        if launched else self.last_message or f"dashboard launch failed for build {self.latest_build}"
                     )
                     self.record_control_event(
                         request, "completed" if launched else "failed", self.last_message
@@ -2447,23 +2453,90 @@ class DevLoop:
         self.cleanup_room_file()
         self.save_state("server_exited")
 
-    def launch_latest(self) -> bool:
+    def launch_latest(self, request_id: str = "") -> bool:
+        launch_started = time.monotonic()
+        self.last_message = ""
+        if not self.server_health():
+            self.events_path = create_shared_events_path()
+            self.run_id = Path(self.events_path).parent.name
+            self.run_started_utc = utc_now()
+            self.run_metadata = {}
+        elif not self.events_path:
+            self.events_path = str(self.run_metadata.get("events_path") or "") or None
+            if not self.events_path:
+                self.events_path = create_shared_events_path()
+                self.run_id = Path(self.events_path).parent.name
+        launch_journal_path = self.events_path
+        launch_run_id = self.run_id or Path(launch_journal_path).parent.name
+        build_id = ""
+        map_name = ""
+
+        def stage(name: str, result: str, reason: str = "",
+                  stage_started: float | None = None, **details) -> None:
+            now = time.monotonic()
+            self.record_runtime_event(
+                "dev-loop.launch.stage",
+                {
+                    "stage": name,
+                    "result": result,
+                    "request_id": request_id,
+                    "run_id": launch_run_id,
+                    "build_number": selected_build,
+                    "build_id": build_id,
+                    "launch_mode": self.launch_mode_id,
+                    "map": map_name,
+                    "elapsed_ms": round((now - launch_started) * 1000.0, 1),
+                    "stage_elapsed_ms": round(
+                        (now - (stage_started if stage_started is not None else launch_started))
+                        * 1000.0, 1),
+                    **details,
+                },
+                reason or f"dev-loop launch stage {name} {result}",
+                events_path=launch_journal_path,
+                run_id=launch_run_id,
+            )
+
+        def stop_server_for_launch() -> bool:
+            stopped = self.stop_server()
+            # stop_server resets its active-run state for standalone stop
+            # requests. Keep this attempt's journal alive through replacement.
+            self.events_path = launch_journal_path
+            self.run_id = launch_run_id
+            return stopped
+
         selected_build = self.latest_build
         if selected_build is None:
+            self.last_message = "no successfully published build is available to launch"
+            stage("artifact_selection", "failed", self.last_message)
+            stage("complete", "failed", self.last_message)
             return False
         build_dir = BUILD_ROOT / f"{selected_build:04d}"
         exe = build_dir / "mimita.exe"
         identity = self.latest_build_identity()
         if not identity or not identity.get("valid"):
             self.last_message = f"last successful build {selected_build} failed artifact validation"
+            stage("artifact_validation", "failed", self.last_message)
+            stage("complete", "failed", self.last_message)
             self.save_state("launch_artifact_invalid")
             print(f"[DEV] {self.last_message}")
             return False
         if not exe.is_file():
-            print(f"[DEV] missing published executable: {exe}")
+            self.last_message = f"published executable is missing: {exe}"
+            stage("artifact_validation", "failed", self.last_message,
+                  artifact_executable=str(exe))
+            stage("complete", "failed", self.last_message)
+            self.save_state("launch_artifact_missing")
+            print(f"[DEV] {self.last_message}")
             return False
         build_id = self.build_id(identity)
         launch_exe = STABLE_LAUNCH_EXE
+        stage("artifact_selection", "selected", "last successfully published artifact selected",
+              artifact_executable=str(exe), launch_executable=str(launch_exe),
+              source_generation=self.latest_generation,
+              source_current=self.latest_generation == self.generation,
+              build_pending=bool(self.build_pending or self.active_build_generation is not None))
+        stage("artifact_validation", "succeeded", "published artifact identity is valid",
+              artifact_executable=str(exe), sha256=identity.get("sha256", ""))
 
         map_override = self.override_map
         weapon_override = self.override_weapon_set
@@ -2472,6 +2545,8 @@ class DevLoop:
             map_override or str(self.launch_mode.get("map", "")),
         )
         self.override_map = ""
+        stage("launch_configuration", "resolved", "launch mode and map resolved",
+              mode_name=self.launch_mode.get("name", "unnamed"))
         if (
             not map_override and not weapon_override
             and self.client_args and self.client_args[0] == str(launch_exe)
@@ -2483,26 +2558,40 @@ class DevLoop:
             and self.server_matches_launch_configuration(launch_exe, map_name, build_id)
         ):
             self.last_message = f"last successful build {selected_build} is already running"
+            stage("process_reuse", "reused", self.last_message,
+                  server_pid=self.server_pid,
+                  client_pids=[p.pid for p in self.processes if p.poll() is None])
+            stage("complete", "succeeded", self.last_message)
             self.save_state("launch_reused")
             self.print_status()
             return True
 
         print(f"[DEV] selected allowed map: {map_name}")
+        stage_started = time.monotonic()
         if not self.validate_firewall_policy():
+            stage("firewall_preflight", "failed", self.last_message or self.firewall_result,
+                  stage_started, firewall_result=self.firewall_result)
             return False
+        stage("firewall_preflight", "passed", self.firewall_result, stage_started,
+              firewall_result=self.firewall_result)
+        stage_started = time.monotonic()
         try:
             staged_launch = stage_stable_launch(exe, str(identity.get("sha256", "")))
         except (OSError, RuntimeError) as error:
             self.last_message = f"could not stage stable launch path: {error}"
+            stage("stable_launch_stage", "failed", self.last_message, stage_started)
             self.save_state("stable_launch_stage_failed")
             print(f"[DEV] {self.last_message}")
             return False
+        stage("stable_launch_stage", "succeeded", "stable launch bundle staged",
+              stage_started, staged_path=str(staged_launch))
         # Reject an unsafe launch configuration before stopping the current
         # client. A failed preflight must not turn a launch request into a game
         # shutdown with no replacement.
         # Capture one immutable published artifact. A worker may publish a newer
         # build concurrently, but this launch keeps one server/client identity.
         self.stop_processes()
+        stage("client_reconciliation", "completed", "previous dev-loop clients stopped")
         self.client_ready = False
         self.builds_match = False
         running_map = self.server_map_name()
@@ -2523,25 +2612,34 @@ class DevLoop:
                 },
                 "owned server does not match the selected build or launch configuration",
             )
-            if not self.stop_server():
+            if not stop_server_for_launch():
+                self.last_message = self.last_message or "could not stop the previous owned server"
+                stage("server_reconciliation", "failed", self.last_message,
+                      server_pid=self.server_pid)
                 shutil.rmtree(staged_launch, ignore_errors=True)
                 self.save_state("server_stop_failed")
                 return False
+            stage("server_reconciliation", "completed", "previous owned server stopped")
         if not self.server_health() and not stable_launch_matches(exe):
             try:
                 activate_stable_launch(staged_launch)
             except (OSError, RuntimeError) as error:
                 shutil.rmtree(staged_launch, ignore_errors=True)
                 self.last_message = f"could not activate stable launch path: {error}"
+                stage("stable_launch_activation", "failed", self.last_message)
                 self.save_state("stable_launch_activate_failed")
                 print(f"[DEV] {self.last_message}")
                 return False
+            stage("stable_launch_activation", "succeeded", "stable launch path activated")
         else:
             if stable_launch_matches(exe):
                 shutil.rmtree(staged_launch, ignore_errors=True)
         if self.server_health() and not self.room_code and not self.server_local_port:
             print(f"[DEV SERVER] live server has no saved room or local port; replacing pid={self.server_pid}")
-            if not self.stop_server():
+            if not stop_server_for_launch():
+                self.last_message = self.last_message or "could not stop server without a saved room or local port"
+                stage("server_reconciliation", "failed", self.last_message,
+                      server_pid=self.server_pid)
                 shutil.rmtree(staged_launch, ignore_errors=True)
                 self.save_state("server_stop_failed")
                 return False
@@ -2551,13 +2649,18 @@ class DevLoop:
                 except (OSError, RuntimeError) as error:
                     shutil.rmtree(staged_launch, ignore_errors=True)
                     self.last_message = f"could not activate stable launch path: {error}"
+                    stage("stable_launch_activation", "failed", self.last_message)
                     self.save_state("stable_launch_activate_failed")
                     print(f"[DEV] {self.last_message}")
                     return False
+                stage("stable_launch_activation", "succeeded", "stable launch path activated")
         if self.server_health() and (bool(self.room_code) or self.server_local_port):
             shutil.rmtree(staged_launch, ignore_errors=True)
             room_code = self.room_code
             local_server_port = self.server_local_port
+            stage("server_reuse", "reused", "owned server already matches launch configuration",
+                  server_pid=self.server_pid, local_port=local_server_port,
+                  room_code_available=bool(room_code))
             print(
                 f"[DEV SERVER] reusing pid={self.server_pid} room={room_code} alive=1"
             )
@@ -2584,7 +2687,11 @@ class DevLoop:
             self.room_file_path.write_text("", encoding="utf-8")
             server_args = self.build_server_args(launch_exe, map_name, self.room_file_path)
             # One shared canonical events.jsonl for this server and its client.
-            self.events_path = create_shared_events_path()
+            if not self.events_path:
+                self.events_path = create_shared_events_path()
+                self.run_id = Path(self.events_path).parent.name
+            launch_journal_path = self.events_path
+            launch_run_id = self.run_id or Path(self.events_path).parent.name
             self.command_queue_path = None
             self.run_id = Path(self.events_path).parent.name
             # The first prelaunch snapshot above may predate creation of the
@@ -2625,17 +2732,24 @@ class DevLoop:
             self.save_state("launching_server")
             version_env = {**common_env, "MIMITA_PROCESS_ROLE": "preflight"}
             try:
+                stage_started = time.monotonic()
                 version = run_hidden(
                     [str(launch_exe), "--versioninfo"], cwd=ROOT, env=version_env,
                     capture_output=True, text=True, timeout=20, check=False,
                 )
                 print(f"[DEV] versioninfo exit={version.returncode}")
+                stage("versioninfo", "succeeded" if version.returncode == 0 else "failed",
+                      f"versioninfo exited with code {version.returncode}", stage_started,
+                      return_code=version.returncode, journal_path=self.events_path)
                 if version.stdout:
                     print(version.stdout, end="")
                 if version.stderr:
                     print(version.stderr, end="", file=sys.stderr)
             except (OSError, subprocess.TimeoutExpired) as error:
                 self.last_message = f"versioninfo failed: {error}"
+                stage("versioninfo", "failed", self.last_message,
+                      journal_path=self.events_path)
+                stage("complete", "failed", self.last_message)
                 self.save_state("versioninfo_failed")
                 print(f"[DEV] {self.last_message}")
                 return False
@@ -2656,12 +2770,20 @@ class DevLoop:
                 },
                 "dev-loop launching dedicated server with hidden console policy",
             )
-            server = subprocess.Popen(
-                server_args,
-                cwd=ROOT,
-                env=server_env,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
+            stage_started = time.monotonic()
+            try:
+                server = subprocess.Popen(
+                    server_args,
+                    cwd=ROOT,
+                    env=server_env,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except OSError as error:
+                self.last_message = f"could not start server process: {error}"
+                stage("server_process_start", "failed", self.last_message, stage_started)
+                stage("complete", "failed", self.last_message)
+                self.save_state("server_process_start_failed")
+                return False
             self.server_process = server
             self.server_pid = server.pid
             self.server_exe = str(launch_exe)
@@ -2670,8 +2792,15 @@ class DevLoop:
             self.server_adopted = False
             self.server_launch_ms = time.time() * 1000.0
             self.server_unavailable = False
+            stage("server_process_start", "started", "server process created",
+                  stage_started, server_pid=server.pid)
+            stage_started = time.monotonic()
             self.server_ready = self.wait_for_logger_started(
                 "server", server.pid, process=server)
+            stage("server_logger_readiness", "ready" if self.server_ready else "failed",
+                  self.last_message if not self.server_ready else "server logger.started observed",
+                  stage_started, server_pid=server.pid, exit_code=server.returncode,
+                  timeout_seconds=20)
             self.observe_launch_windows("server_ready" if self.server_ready else "server_logger_missing")
             if not self.server_ready:
                 if not self.last_message or not self.last_message.startswith(
@@ -2692,8 +2821,9 @@ class DevLoop:
                     },
                     "server failed the logger.started readiness check",
                 )
+                stage("complete", "failed", self.last_message, server_pid=server.pid)
                 self.save_state("server_logger_missing")
-                if not self.stop_server():
+                if not stop_server_for_launch():
                     print(f"[DEV SERVER] {self.last_message}; server could not be stopped")
                 return False
             print(f"[DEV SERVER] launched pid={server.pid} args={' '.join(server_args[1:])}")
@@ -2702,11 +2832,16 @@ class DevLoop:
             local_server_port = self.wait_for_server_local_gameplay(server.pid)
             if not local_server_port:
                 self.last_message = "server did not become locally playable before the readiness timeout"
+                stage("server_gameplay_readiness", "failed", self.last_message,
+                      server_pid=server.pid, timeout_seconds=60)
+                stage("complete", "failed", self.last_message, server_pid=server.pid)
                 self.save_state("server_local_gameplay_timeout")
                 print(f"[DEV] {self.last_message}")
-                self.stop_server()
+                stop_server_for_launch()
                 return False
             self.server_local_port = local_server_port
+            stage("server_gameplay_readiness", "ready", "server bound a local gameplay port",
+                  server_pid=server.pid, local_port=local_server_port)
             self.write_server_marker()
             room_code = ""
 
@@ -2786,18 +2921,39 @@ class DevLoop:
             },
             "dev-loop launching client with hidden console and unlocked-cursor policy",
         )
-        client = subprocess.Popen(
-            client_args,
-            cwd=ROOT,
-            env=client_env,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
+        stage_started = time.monotonic()
+        try:
+            client = subprocess.Popen(
+                client_args,
+                cwd=ROOT,
+                env=client_env,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError as error:
+            self.last_message = f"could not start client process: {error}"
+            stage("client_process_start", "failed", self.last_message, stage_started)
+            stage("complete", "failed", self.last_message, server_pid=self.server_pid)
+            self.save_state("client_process_start_failed")
+            return False
         self.processes.append(client)
         self.client_args = list(client_args)
         self.client_launch_ms = time.time() * 1000.0
         self.running_build = selected_build
         self.run_metadata["client_build_id"] = build_id
-        self.client_ready = self.wait_for_logger_started("client", client.pid)
+        stage("client_process_start", "started", "client process created",
+              stage_started, client_pid=client.pid)
+        stage_started = time.monotonic()
+        self.client_ready = self.wait_for_logger_started("client", client.pid,
+                                                         process=client)
+        if not self.client_ready and not self.last_message:
+            self.last_message = (
+                f"client pid={client.pid} stayed alive but did not write logger.started "
+                "before the readiness timeout"
+            )
+        stage("client_logger_readiness", "ready" if self.client_ready else "failed",
+              self.last_message if not self.client_ready else "client logger.started observed",
+              stage_started, client_pid=client.pid, exit_code=client.returncode,
+              timeout_seconds=20, journal_path=self.events_path)
         self.builds_match = bool(self.server_ready and self.client_ready and
                                  self.server_exe == str(launch_exe) and
                                  identity.get("valid") and
@@ -2805,6 +2961,11 @@ class DevLoop:
                                  self.run_metadata.get("server_build_id") == build_id)
         if self.builds_match:
             self.build_mismatch_reason = ""
+        if not self.builds_match and self.client_ready:
+            self.build_mismatch_reason = self.build_mismatch_reason or (
+                "server/client readiness or build identity did not match"
+            )
+            self.last_message = self.build_mismatch_reason
         self.observe_launch_windows("client_ready" if self.client_ready else "client_logger_missing")
         if self.client_ready:
             self.apply_launch_visibility()
@@ -2812,6 +2973,16 @@ class DevLoop:
             self.monitor_launch_windows()
         self.save_state("running" if self.client_ready else "client_logger_missing")
         self.print_status()
+        launch_succeeded = bool(self.client_ready and self.builds_match)
+        stage("build_identity_match", "matched" if self.builds_match else "mismatch",
+              self.build_mismatch_reason or "server and client use the selected build",
+              server_pid=self.server_pid, client_pid=client.pid,
+              server_build_id=self.server_build_id, selected_build_id=build_id,
+              client_ready=self.client_ready, server_ready=self.server_ready)
+        stage("complete", "succeeded" if launch_succeeded else "failed",
+              "launch completed with matching ready server/client" if launch_succeeded
+              else self.last_message or "launch did not reach a matching ready server/client",
+              client_pid=client.pid, server_pid=self.server_pid)
         if self.client_ready and not room_code and self.room_file_path is not None:
             threading.Thread(
                 target=self.wait_for_registered_room_code,
@@ -2819,7 +2990,7 @@ class DevLoop:
                 daemon=True,
                 name="dev-loop-room-code",
             ).start()
-        return bool(self.client_ready and self.builds_match)
+        return launch_succeeded
 
     def wait_for_registered_room_code(self, server_pid: int | None,
                                       room_file_path: Path) -> None:

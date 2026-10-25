@@ -1114,6 +1114,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.roundEndTick = 0;
     d.rosterLocked = false;
     d.roundNextNpcId = 0;
+    d.objectiveRosterNpcIds.clear();
     // ── Mode objective item ─────────────────────────────────────────
     // Reset, then adopt the first valid objective definition from the mode.
     d.objective = ObjectiveInstance{};
@@ -1150,6 +1151,30 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
         if (MimitaGamemode::payloadRuntimeInit(d.payloadRuntime, mapCfg.payload, rules)) {
             d.payloadMode = true;
             d.payloadCartEntityId = payloadSpawnCart(d);
+            std::vector<PayloadAuthoringIssue> authoringIssues;
+            const bool authoringValid =
+                validatePayloadAuthoring(mapCfg.payload, authoringIssues);
+            nlohmann::json authoringReport = nlohmann::json::array();
+            for (const PayloadAuthoringIssue& issue : authoringIssues)
+                authoringReport.push_back({{"severity", issue.severity},
+                                           {"code", issue.code},
+                                           {"message", issue.message}});
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel,
+                authoringValid ? StructuredLevel::Important : StructuredLevel::Errors,
+                "payload.authoring-validated", d.mapId,
+                authoringValid ? "payload authoring valid" : "payload authoring has errors",
+                d.currentServerTick,
+                nlohmann::json{{"map", d.mapId},
+                               {"valid", authoringValid},
+                               {"issue_count", authoringIssues.size()},
+                               {"issues", authoringReport}},
+                __FILE__, __LINE__, __FUNCTION__);
+            for (const PayloadAuthoringIssue& issue : authoringIssues) {
+                Debug::warn(Debug::Category::Duel,
+                    "[PAYLOAD AUTHORING] %s %s: %s\n",
+                    issue.severity.c_str(), issue.code.c_str(), issue.message.c_str());
+            }
             // Payload always uses the shared round lifecycle. The mode's
             // max_rounds=1 makes RESULTS return to INTERMISSION.
             d.objectiveRounds = true;
@@ -1762,6 +1787,21 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
                 d.matchMode.c_str(), d.mapId.c_str(), separation);
         }
     }
+    const glm::vec3 teamA = d.teamSpawnPoints[0].empty() ? d.spawnA : d.teamSpawnPoints[0].front();
+    const glm::vec3 teamB = d.teamSpawnPoints[1].empty() ? d.spawnB : d.teamSpawnPoints[1].front();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "gamemode.spawn-groups-resolved", d.matchMode,
+        "team spawn clusters resolved", d.currentServerTick,
+        nlohmann::json{{"mode", d.matchMode}, {"map", d.mapId},
+                       {"world_spawn_points", world.spawnPoints.size()},
+                       {"team_a_count", d.teamSpawnPoints[0].size()},
+                       {"team_b_count", d.teamSpawnPoints[1].size()},
+                       {"team_a", {teamA.x, teamA.y, teamA.z}},
+                       {"team_b", {teamB.x, teamB.y, teamB.z}},
+                       {"separation", glm::length(teamA - teamB)},
+                       {"resolved", d.teamSpawnsResolved}},
+        __FILE__, __LINE__, __FUNCTION__);
     Debug::log(Debug::Category::Duel,
         "[DUEL SERVER] anchor=(%.1f %.1f %.1f) spawns=%zu\n",
         d.spawnA.x, d.spawnA.y, d.spawnA.z, world.spawnPoints.size());
@@ -1864,30 +1904,45 @@ static glm::vec3 zombieTowerSpawnPointForActor(
     return gamemodeSpawnPoint(d, team);
 }
 
+// Evidence for one spawn decision. The caller logs this, so a spawn failure is
+// diagnosable as "no authored tag", "team cluster missing", or a real fallback
+// instead of appearing as an unexplained wrong position.
+struct SpawnResolutionInfo
+{
+    std::string group;
+    std::string spawnTagContains;
+    int candidateCount = 0;
+    const char* fallback = "none";
+    bool teamTaggedMode = false;
+};
+
 // Team-aware spawn point: uses the team's tagged spawn cluster when resolved,
-// otherwise falls back to the shared anchor. The random XY offset spreads
-// squadmates around their spawn so they are not stacked.
-glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
+// otherwise falls back to the team cluster, then the team anchor. The random XY
+// offset spreads squadmates around their spawn so they are not stacked.
+static glm::vec3 resolveGamemodeSpawnPoint(const ServerGamemodeState& d, int team,
+                                           SpawnResolutionInfo& info)
 {
     static std::mt19937 rng(std::random_device{}());
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    if (team >= 0 && team < (int)gm.teams.size()) {
+        info.group = gm.teams[(size_t)team].spawnGroup;
+        info.spawnTagContains = gm.teams[(size_t)team].spawnTagContains;
+        info.teamTaggedMode = !info.group.empty() || !info.spawnTagContains.empty();
+    }
+
     // A mode may declare a shared spawn strategy (e.g. a 1v1 brawl): every actor
     // starts at the single map anchor so the fighters begin on the same level.
-    {
-        const Gamemode& spawnMode = GamemodeRegistry::instance().get(d.matchMode);
-        if (spawnMode.spawnStrategy == "shared") {
-            std::uniform_real_distribution<float> off(-d.spawnOffsetRadius, d.spawnOffsetRadius);
-            return d.sharedAnchor + glm::vec3(off(rng), off(rng), 0.0f);
-        }
+    if (gm.spawnStrategy == "shared") {
+        info.fallback = "spawn-strategy-shared";
+        std::uniform_real_distribution<float> off(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+        return d.sharedAnchor + glm::vec3(off(rng), off(rng), 0.0f);
     }
-    // Prefer authored spawnpoint entities for the active map when present. An
-    // entity with no tag matches any team; otherwise its tag must equal the
-    // team's spawn_group, so an NPC never spawns on a human-only point.
+
+    // Prefer authored spawnpoint entities for the active map when present. A
+    // team with spawn tagging configured must never fall through to untagged
+    // points: doing so collapses both teams onto an unrelated editor spawn.
     {
-        const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
-        std::string group;
         std::string opposingGroup;
-        if (team >= 0 && team < (int)gm.teams.size())
-            group = gm.teams[(size_t)team].spawnGroup;
         const int opposingTeam = team == 0 ? 1 : (team == 1 ? 0 : -1);
         if (opposingTeam >= 0 && opposingTeam < (int)gm.teams.size())
             opposingGroup = gm.teams[(size_t)opposingTeam].spawnGroup;
@@ -1900,23 +1955,32 @@ glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
         if (opposingTeam >= 0 && opposingTeam < 2)
             opposingPositions.insert(opposingPositions.end(),
                 d.teamSpawnPoints[opposingTeam].begin(), d.teamSpawnPoints[opposingTeam].end());
+
         std::vector<const MapEntity*> candidates;
+        const bool allowUntagged = !info.teamTaggedMode;
         for (const auto& e : MapConfigRegistry::instance().current().entities) {
             if (e.type != "spawnpoint" || !e.enabled) continue;
-            if (group.empty() ? e.tag.empty() : e.tag == group)
-                if (std::none_of(opposingPositions.begin(), opposingPositions.end(),
-                        [&](const glm::vec3& position) {
-                            return glm::length(e.position - position) <= 0.01f;
-                        }))
-                    candidates.push_back(&e);
+            if (info.group.empty()) {
+                if (!e.tag.empty() || !allowUntagged) continue;
+            } else if (e.tag != info.group) {
+                continue;
+            }
+            if (std::none_of(opposingPositions.begin(), opposingPositions.end(),
+                    [&](const glm::vec3& position) {
+                        return glm::length(e.position - position) <= 0.01f;
+                    }))
+                candidates.push_back(&e);
         }
+        info.candidateCount = (int)candidates.size();
         if (!candidates.empty()) {
             std::uniform_int_distribution<size_t> pick(0, candidates.size() - 1);
             const MapEntity* chosen = candidates[pick(rng)];
             std::uniform_real_distribution<float> off(-d.spawnOffsetRadius, d.spawnOffsetRadius);
+            info.fallback = "authored-team-group";
             return chosen->position + glm::vec3(off(rng), off(rng), 0.0f);
         }
     }
+
     std::uniform_real_distribution<float> dist(-d.spawnOffsetRadius, d.spawnOffsetRadius);
     // A teamless request (team < 0) uses the neutral map anchor, never a team
     // cluster, so an unknown team cannot silently land on the CT spawn.
@@ -1924,15 +1988,27 @@ glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
     if (team == 0 && !d.teamSpawnPoints[0].empty()) {
         std::uniform_int_distribution<size_t> pick(0, d.teamSpawnPoints[0].size() - 1);
         base = d.teamSpawnPoints[0][pick(rng)];
+        info.fallback = "team-cluster";
     } else if (team == 1 && !d.teamSpawnPoints[1].empty()) {
         std::uniform_int_distribution<size_t> pick(0, d.teamSpawnPoints[1].size() - 1);
         base = d.teamSpawnPoints[1][pick(rng)];
+        info.fallback = "team-cluster";
     } else if (team == 0) {
         base = d.spawnA;
+        info.fallback = "team-anchor-a";
     } else if (team == 1) {
         base = d.spawnB;
+        info.fallback = "team-anchor-b";
+    } else {
+        info.fallback = "neutral-anchor";
     }
     return base + glm::vec3(dist(rng), dist(rng), 0.0f);
+}
+
+glm::vec3 gamemodeSpawnPoint(const ServerGamemodeState& d, int team)
+{
+    SpawnResolutionInfo info;
+    return resolveGamemodeSpawnPoint(d, team, info);
 }
 
 // Legacy single-argument spawn (shared anchor, no team). Kept for callers that
@@ -2004,22 +2080,55 @@ glm::vec3 gamemodeSpawnPointForActor(
     auto aIt = d.matchActors.find(actorId);
     if (aIt != d.matchActors.end()) roleId = aIt->second.roleId;
 
-    if ((d.objectiveRounds || d.npcWaves || d.persistentNpcSpawns) && !isValidPlayingTeam(d, team)) {
+    const bool managedTeamMode = d.objectiveRounds || d.npcWaves || d.persistentNpcSpawns;
+    if (managedTeamMode && !isValidPlayingTeam(d, team)) {
         Debug::error(Debug::Category::Duel,
             "[RESPAWN] actor=%u role=%s team=%d reason=%s mode=%s: unknown team; using neutral anchor (refusing team-spawn fallback)\n",
             actorId, roleId.empty() ? "none" : roleId.c_str(), team, reason,
             d.matchMode.c_str());
-        return gamemodeSpawnPoint(d);
+        SpawnResolutionInfo info;
+        const glm::vec3 spawn = resolveGamemodeSpawnPoint(d, -1, info);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Errors,
+            "gamemode.spawn-resolved", std::to_string(actorId), reason,
+            d.currentServerTick,
+            nlohmann::json{{"actor", actorId}, {"role", roleId},
+                           {"team", team}, {"mode", d.matchMode}, {"map", d.mapId},
+                           {"spawn_group", info.group},
+                           {"spawn_tag_contains", info.spawnTagContains},
+                           {"team_tagged_mode", info.teamTaggedMode},
+                           {"candidate_count", info.candidateCount},
+                           {"fallback", info.fallback},
+                           {"position", {spawn.x, spawn.y, spawn.z}},
+                           {"reason", reason}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return spawn;
     }
 
-    if (d.objectiveRounds || d.npcWaves || d.persistentNpcSpawns) {
-        const std::string group = spawnGroupForTeam(d, team);
+    SpawnResolutionInfo info;
+    const glm::vec3 spawn = resolveGamemodeSpawnPoint(d, team, info);
+    if (managedTeamMode) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "gamemode.spawn-resolved", std::to_string(actorId), reason,
+            d.currentServerTick,
+            nlohmann::json{{"actor", actorId}, {"role", roleId},
+                           {"team", team}, {"mode", d.matchMode}, {"map", d.mapId},
+                           {"spawn_group", info.group},
+                           {"spawn_tag_contains", info.spawnTagContains},
+                           {"team_tagged_mode", info.teamTaggedMode},
+                           {"candidate_count", info.candidateCount},
+                           {"fallback", info.fallback},
+                           {"position", {spawn.x, spawn.y, spawn.z}},
+                           {"reason", reason}},
+            __FILE__, __LINE__, __FUNCTION__);
         Debug::log(Debug::Category::Duel,
-            "[RESPAWN] actor=%u role=%s team=%d spawn_group=%s reason=%s\n",
+            "[RESPAWN] actor=%u role=%s team=%d spawn_group=%s candidates=%d fallback=%s pos=(%.2f,%.2f,%.2f) reason=%s\n",
             actorId, roleId.empty() ? "none" : roleId.c_str(), team,
-            group.empty() ? "none" : group.c_str(), reason);
+            info.group.empty() ? "none" : info.group.c_str(), info.candidateCount,
+            info.fallback, spawn.x, spawn.y, spawn.z, reason);
     }
-    return gamemodeSpawnPoint(d, team);
+    return spawn;
 }
 
 void assignGamemodeParticipants(ServerGamemodeState& d,
@@ -2484,10 +2593,23 @@ void buildObjectiveRoster(ServerGamemodeState& d,
 {
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
 
-    // Clear any previous roster NPCs (ids >= 100000) so rebuilding for a new
-    // round/warmup does not duplicate the squad.
+    // Reserve the roster id range. A startup/map NPC may already exist, so the
+    // old "seed only when npcs is empty" rule let roster ids start at 0 and
+    // collide with player ids (the client rejects a whole snapshot whose entity
+    // ids repeat). Always keep objective-roster ids above the startup range.
+    static constexpr uint32_t kObjectiveRosterNpcIdBase = 100000;
+    if (d.roundNextNpcId < kObjectiveRosterNpcIdBase)
+        d.roundNextNpcId = kObjectiveRosterNpcIdBase;
+
+    // Clear exactly the previous objective roster (plus the historical
+    // >=100000 range) so rebuilding for a new round/warmup never duplicates or
+    // leaks the squad. Startup/map NPCs keep their ids and bodies.
     for (auto it = npcs.begin(); it != npcs.end(); ) {
-        if (it->first >= 100000) {
+        const bool ownedRosterNpc =
+            it->first >= kObjectiveRosterNpcIdBase ||
+            d.objectiveRosterNpcIds.count(it->first) != 0;
+        if (ownedRosterNpc) {
+            d.objectiveRosterNpcIds.erase(it->first);
             d.matchTeams.erase(it->first);
             d.matchActors.erase(it->first);
             d.participantNames.erase(it->first);
@@ -2500,6 +2622,9 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             ++it;
         }
     }
+    // Reuse the reserved roster range after retiring the previous roster. Any
+    // still-live id (startup/map NPC) is skipped by the allocation loop below.
+    d.roundNextNpcId = kObjectiveRosterNpcIdBase;
 
     // Collect every active human. Payload needs up to 12 humans per team, not
     // only the single-human Counter-Strike case.
@@ -2510,9 +2635,6 @@ void buildObjectiveRoster(ServerGamemodeState& d,
     std::sort(humans.begin(), humans.end());
     const bool headlessMatch = humans.empty() && headlessMatchAllowed();
     if (humans.empty() && !headlessMatch) return;
-
-    if (npcs.empty() && d.roundNextNpcId == 0)
-        d.roundNextNpcId = 100000;  // keep roster ids out of the human/NPC range
 
     int humanCounts[2] = {0, 0};
     for (uint32_t humanId : humans) {
@@ -2569,7 +2691,16 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             }
         }
         for (int i = 0; i < npcCount; ++i) {
-            while (npcs.find(d.roundNextNpcId) != npcs.end()) ++d.roundNextNpcId;
+            // Never reuse an id already owned by a player, startup/map NPC, or
+            // roster descriptor. Duplicate ids invalidate an entire client
+            // snapshot, which makes every roster NPC disappear.
+            auto idInUse = [&](uint32_t id) {
+                return npcs.find(id) != npcs.end() ||
+                       players.find(id) != players.end() ||
+                       d.matchTeams.find(id) != d.matchTeams.end() ||
+                       d.matchActors.find(id) != d.matchActors.end();
+            };
+            while (idInUse(d.roundNextNpcId)) ++d.roundNextNpcId;
             ServerNpc npc;
             npc.entityId = d.roundNextNpcId++;
             npc.name = roundTeamName(gm, team) + " " + std::to_string(i + 1);
@@ -2594,6 +2725,18 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             d.participantNames[npc.entityId] = npc.name;
             d.ffaKills[npc.entityId] = 0;
             d.ffaDeaths[npc.entityId] = 0;
+            d.objectiveRosterNpcIds.insert(npc.entityId);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "npc.roster-id.allocated", std::to_string(npc.entityId),
+                "objective roster id reserved above startup range",
+                d.currentServerTick,
+                nlohmann::json{{"actor", npc.entityId},
+                               {"team", team},
+                               {"base", kObjectiveRosterNpcIdBase},
+                               {"next", d.roundNextNpcId},
+                               {"player_id_collision", players.find(npc.entityId) != players.end()}},
+                __FILE__, __LINE__, __FUNCTION__);
             const ActorMatchDescriptor& rosterDesc = d.matchActors[npc.entityId];
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
@@ -2924,6 +3067,17 @@ static void serverPayloadTick(ServerGamemodeState& d,
         }
     }
 
+    if (result.waitStarted) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "payload.cart-wait", std::to_string(d.duelId), "authored-wait", tick,
+            nlohmann::json{{"wait_ticks_remaining", result.waitTicksRemaining},
+                           {"distance", d.payloadRuntime.distanceTravelled}});
+        Debug::warn(Debug::Category::Duel,
+            "[PAYLOAD] cart wait started ticks=%d distance=%.2f tick=%u\n",
+            result.waitTicksRemaining, d.payloadRuntime.distanceTravelled, tick);
+    }
+
     if (result.checkpointReached) {
         if (result.checkpointBonusSeconds > 0.0f && d.roundEndTick > 0) {
             d.roundEndTick += (uint32_t)objectiveSecondsToTicks(result.checkpointBonusSeconds);
@@ -2974,7 +3128,8 @@ static void serverPayloadTick(ServerGamemodeState& d,
     }
 
     // Change-edge cart status diagnostics (not per-tick spam).
-    const int state = result.attackers > 0 && result.defenders > 0 ? 1
+    const int state = d.payloadRuntime.waiting ? 5
+        : result.attackers > 0 && result.defenders > 0 ? 1
         : d.payloadRuntime.blocked ? 2
         : d.payloadRuntime.advancing ? 3
         : d.payloadRuntime.rollingBack ? 4 : 0;
@@ -6838,6 +6993,42 @@ bool serverSpawnTagSelfTest(std::string& report)
     if (zombie.npcSpawnMax < 1) fail("zombie_tower max_count should be at least 1");
     if (zombie.npcSpawnIntervalTicks != 60) fail("zombie_tower interval_ticks should be 60");
     if (zombie.npcSpawnPerInterval != 1) fail("zombie_tower per_interval should be 1");
+
+    // Payload must declare real team spawn groups, and both authored maps must
+    // contain enabled spawnpoint entities carrying those exact tags. This is the
+    // data contract the spawn resolver depends on; it does not prove runtime
+    // positioning (see game-loop spawn evidence).
+    const Gamemode& payload = GamemodeRegistry::instance().get("payload");
+    if (payload.id != "payload" || payload.teams.size() < 2) {
+        fail("payload gamemode should load with two teams");
+    } else {
+        if (payload.spawnStrategy == "shared")
+            fail("payload must not use the shared spawn strategy (both teams would collapse)");
+        if (payload.teams[0].spawnGroup != "attacker_spawn")
+            fail("payload team 0 spawn_group != attacker_spawn");
+        if (payload.teams[1].spawnGroup != "defender_spawn")
+            fail("payload team 1 spawn_group != defender_spawn");
+        if (payload.teams[0].spawnTagContains.empty() ||
+            payload.teams[1].spawnTagContains.empty())
+            fail("payload teams should declare spawn_tag_contains");
+        for (const char* mapId : {"payload1", "payload2"}) {
+            if (!MapConfigRegistry::instance().load(mapId)) {
+                report += std::string("payload spawn map missing: ") + mapId + "\n";
+                continue;
+            }
+            auto hasSpawnTag = [&](const std::string& tag) {
+                for (const MapEntity& entity : MapConfigRegistry::instance().current().entities) {
+                    if (entity.type == "spawnpoint" && entity.enabled && entity.tag == tag)
+                        return true;
+                }
+                return false;
+            };
+            if (!hasSpawnTag("attacker_spawn"))
+                fail(std::string(mapId) + " has no enabled attacker_spawn entity");
+            if (!hasSpawnTag("defender_spawn"))
+                fail(std::string(mapId) + " has no enabled defender_spawn entity");
+        }
+    }
 
     report += ok ? "PASS\n" : "FAIL\n";
     return ok;

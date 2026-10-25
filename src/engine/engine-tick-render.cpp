@@ -666,17 +666,21 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 uint32_t inView = 0;
                 uint32_t inViewMoving = 0;
                 uint32_t alive = 0;
+                uint32_t dead = 0;
                 uint32_t modelLoaded = 0;
                 glm::vec3 sampleNpcPos{0.0f};
                 float sampleNpcScale = 0.0f;
+                bool sampleNpcAlive = false;
                 if (!mpContext.remoteNpcs.empty()) {
                     const Player& sample = mpContext.remoteNpcs.begin()->second;
                     sampleNpcPos = sample.pos;
                     sampleNpcScale = sample.sizeScale;
+                    sampleNpcAlive = !sample.dead;
                 }
                 for (const auto& kv : mpContext.remoteNpcs) {
                     const Player& npc = kv.second;
                     if (!npc.dead) ++alive;
+                    else ++dead;
                     if (npc.modelLoaded) ++modelLoaded;
                     const glm::vec4 clip = viewProjection *
                         glm::vec4(npc.pos + glm::vec3(0.0f, 0.0f, 1.0f), 1.0f);
@@ -692,13 +696,14 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     "client.npc.viewport-window", "juggernaut-performance",
                     "remote NPC centers inside camera projection",
                     static_cast<uint32_t>(mpContext.tick),
-                    {{"remote_npcs", mpContext.remoteNpcs.size()},
-                     {"alive", alive}, {"model_loaded", modelLoaded},
+                    {                     {"remote_npcs", mpContext.remoteNpcs.size()},
+                     {"alive", alive}, {"dead", dead}, {"model_loaded", modelLoaded},
                      {"in_view", inView}, {"in_view_moving", inViewMoving},
                      {"active_map", ACTIVE_MAP_PATH},
                      {"required_map", mpContext.requiredMapId},
                      {"camera_position", {camera.pos.x, camera.pos.y, camera.pos.z}},
                      {"sample_npc_position", {sampleNpcPos.x, sampleNpcPos.y, sampleNpcPos.z}},
+                     {"sample_npc_alive", sampleNpcAlive},
                      {"sample_npc_size_scale", sampleNpcScale}},
                     __FILE__, __LINE__, __FUNCTION__);
             }

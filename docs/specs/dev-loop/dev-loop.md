@@ -724,11 +724,18 @@ changes.
   build after debounce.
 - Background builds publish numbered artifacts but do not replace the running
   client or server unless an explicit launch request is pending.
-- Current source behavior differs from the desired §7 behavior: [1] queues a
-  build when the artifact is missing or stale, and its synchronous build path
-  prevents the daemon from processing control requests until that build ends.
-  The desired behavior—launch the last successful artifact immediately while
-  a newer build continues—is not implemented yet.
+- `[1]` selects the last successfully published artifact immediately, including
+  while a newer build is pending or running. If no successful artifact exists,
+  the request waits for the first successful build. A missing or invalid latest
+  artifact fails with a reason; the loop does not search backward for an older
+  artifact in that case.
+- Launch transitions are appended to the selected run's shared `events.jsonl`
+  as `dev-loop.launch.stage` records. Each record identifies the request,
+  selected build, mode/map, stage result/reason, and stage/total elapsed time.
+  Early artifact and firewall failures therefore still have a journal entry.
+- Failed launch status preserves the stage's specific reason. Client readiness
+  checks the exact child process so an already-exited client does not consume
+  the full logger-readiness timeout.
 - The loop records `.dev/server-owner.json` after a newly launched server has
   written `logger.started`.
 - On Windows startup, the loop may adopt that server only when the marker's

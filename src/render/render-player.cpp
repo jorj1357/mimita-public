@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <deque>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <glad/glad.h>
 
@@ -364,6 +365,46 @@ void renderPlayerInternal(
         const glm::vec3 tintColor = contrast->tint / 255.0f;
         playerTint = glm::mix(glm::vec3(1.0f), tintColor, contrast->tintStrength) * contrast->brightness;
         playerTint = glm::clamp(playerTint, glm::vec3(0.0f), glm::vec3(4.0f));
+    }
+
+    // One-time per network actor: prove that the render path is about to submit
+    // real geometry, not only that a model name was loaded. This separates a
+    // replication/spawn problem from a body-draw or tint problem.
+    {
+        static std::unordered_set<uint32_t> drawEvidenceLogged;
+        if (networkEntityId != 0 && !isLocal && player.modelLoaded &&
+            drawEvidenceLogged.insert(networkEntityId).second) {
+            uint32_t validParts = 0;
+            uint32_t validBatches = 0;
+            for (size_t i = 0; i < player.physicalBody.parts.size() &&
+                               i < player.physicalBody.partMeshes.size(); ++i) {
+                const PhysicalBodyPart& part = player.physicalBody.parts[i];
+                const Mesh& mesh = player.physicalBody.partMeshes[i];
+                if (part.nodeIndex < 0 ||
+                    part.nodeIndex >= (int)player.perfectPoseSkeleton.nodes.size() ||
+                    mesh.verts.empty())
+                    continue;
+                ++validParts;
+                validBatches += (uint32_t)mesh.batches.size();
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "client.actor.draw-submission", std::to_string(networkEntityId),
+                "remote actor body submission", 0,
+                {{"actor_id", networkEntityId},
+                 {"is_local", isLocal},
+                 {"alive", !player.dead},
+                 {"model_loaded", player.modelLoaded},
+                 {"avatar", player.avatarName()},
+                 {"part_count", player.physicalBody.parts.size()},
+                 {"valid_parts", validParts},
+                 {"valid_batches", validBatches},
+                 {"fallback_batches", player.renderMesh.batches.size()},
+                 {"tint", {playerTint.r, playerTint.g, playerTint.b}},
+                 {"position", {player.pos.x, player.pos.y, player.pos.z}},
+                 {"camera_distance", glm::length(player.pos - cam.pos)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
     const bool hideHead = isLocal && !cam.thirdPerson;
     { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerBody");

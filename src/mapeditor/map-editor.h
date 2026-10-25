@@ -78,6 +78,14 @@ public:
     std::string addBlock(const std::string& id = {});
     std::string addRoutePoint(const std::string& id = {});
     void addCartOrigin();
+    bool setSelectedRouteCheckpoint(bool checkpoint);
+    bool setSelectedRouteFinal(bool final);
+    bool setSelectedRouteEnabled(bool enabled);
+    bool setSelectedRouteRadius(float radius);
+    bool setSelectedRouteTimeBonus(float seconds);
+    bool setSelectedRouteWaitTicks(int ticks);
+    bool moveSelectedRoute(int direction);
+    std::string validatePayloadRoute() const;
 
 private:
     MapEditor() = default;

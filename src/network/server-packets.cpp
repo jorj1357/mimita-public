@@ -38,6 +38,7 @@
 #include <chrono>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 #include <nlohmann/json.hpp>
 
 namespace MimitaNet {
@@ -2410,6 +2411,23 @@ void buildAndSendSnapshot(SOCKET sock,
     // Build compact entity list
     CompactEntityData entities[MAX_SNAPSHOT_ENTITIES];
     uint32_t entityCount = 0;
+    std::unordered_set<uint32_t> snapshotEntityIds;
+    uint32_t duplicateEntityIds = 0;
+    uint32_t duplicateEntityIdSample = 0;
+    uint8_t duplicateEntityTypeSample = ENTITY_NONE;
+
+    auto claimSnapshotId = [&](uint32_t entityId, uint8_t entityType) {
+        if (entityId == 0)
+            return true;
+        if (!snapshotEntityIds.insert(entityId).second) {
+            if (duplicateEntityIds++ == 0) {
+                duplicateEntityIdSample = entityId;
+                duplicateEntityTypeSample = entityType;
+            }
+            return false;
+        }
+        return true;
+    };
 
     for (const auto& kv : players)
     {
@@ -2431,13 +2449,39 @@ void buildAndSendSnapshot(SOCKET sock,
             }
             continue;
         }
+        if (!claimSnapshotId(kv.first, ENTITY_PLAYER))
+            continue;
         entities[entityCount++] = compactEntityFromSnapshot(makePlayerEntity(kv.second));
     }
     for (const auto& kv : npcs)
     {
         if (entityCount >= MAX_SNAPSHOT_ENTITIES)
             break;
+        if (!claimSnapshotId(kv.first, ENTITY_NPC))
+            continue;
         entities[entityCount++] = compactEntityFromSnapshot(makeNpcEntity(kv.second));
+    }
+    if (duplicateEntityIds > 0)
+    {
+        static uint64_t lastDuplicateReportMs = 0;
+        const uint64_t nowDuplicateMs = nowMs();
+        if (nowDuplicateMs - lastDuplicateReportMs >= 1000) {
+            lastDuplicateReportMs = nowDuplicateMs;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Errors,
+                "server.snapshot.duplicate-entity", "snapshot-build",
+                "duplicate snapshot entity id dropped to keep the snapshot valid",
+                tick,
+                {{"duplicate_count", duplicateEntityIds},
+                 {"entity_id", duplicateEntityIdSample},
+                 {"entity_type", duplicateEntityTypeSample},
+                 {"snapshot_entity_count", entityCount}},
+                __FILE__, __LINE__, __FUNCTION__);
+            Debug::error(Debug::Category::Networking,
+                "[SNAPSHOT DUPLICATE] tick=%u dropped=%u first_id=%u type=%u\n",
+                tick, duplicateEntityIds, duplicateEntityIdSample,
+                (unsigned)duplicateEntityTypeSample);
+        }
     }
 
     if (tick % 120 == 0)

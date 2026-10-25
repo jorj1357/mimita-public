@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <vector>
@@ -17,6 +18,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "gamemode/map-config.h"
 #include "game/game-state.h"
@@ -498,7 +500,6 @@ bool MapEditor::pickAtCursor(EditorObjectRef& out, float& outDistance) const
         }
     }
     for (const auto& route : config.payload.route) {
-        if (!route.enabled) continue;
         float distance = 0.0f;
         if (raySphere(origin, direction, route.position,
                       std::max(0.35f, route.radius), distance) && distance < best) {
@@ -963,8 +964,7 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
     if (const auto& payload = config.payload; payload.hasCartOrigin)
         out.push_back({EditorObjectKind::PayloadCartOrigin, "cart_origin"});
     for (const auto& route : config.payload.route)
-        if (route.enabled)
-            out.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
+        out.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
     if (gpWorld)
         for (const auto& object : gpWorld->mesh.objects)
             out.push_back({EditorObjectKind::MapGLBObject, object.id});
@@ -1140,7 +1140,7 @@ void MapEditor::selectAllEdit()
     for (const auto& block : MapConfigRegistry::instance().current().blocks)
         if (block.enabled) mSelection.push_back({EditorObjectKind::Block, block.id});
     for (const auto& route : MapConfigRegistry::instance().current().payload.route)
-        if (route.enabled) mSelection.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
+        mSelection.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
     if (gpWorld)
         for (const auto& object : gpWorld->mesh.objects)
             mSelection.push_back({EditorObjectKind::MapGLBObject, object.id});
@@ -1205,10 +1205,23 @@ void MapEditor::handleEscape()
 bool MapEditor::save()
 {
     const bool ok = MapConfigRegistry::instance().save();
-    if (ok)
-        notify("saved " + MapConfigRegistry::instance().configPath());
-    else
+    if (ok) {
+        const std::string validation = validatePayloadRoute();
+        notify(validation.empty()
+            ? "saved " + MapConfigRegistry::instance().configPath()
+            : "saved " + MapConfigRegistry::instance().configPath() + "\n" + validation);
+        if (!validation.empty()) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map-payload-route.validated", MapConfigRegistry::instance().mapId(),
+                "map editor save validation", 0,
+                {{"map", MapConfigRegistry::instance().mapId()},
+                 {"report", validation}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    } else {
         notify("save failed: " + MapConfigRegistry::instance().configPath());
+    }
     return ok;
 }
 
@@ -1300,6 +1313,185 @@ void MapEditor::addCartOrigin()
     notify("added cart origin");
 }
 
+bool MapEditor::setSelectedRouteCheckpoint(bool checkpoint)
+{
+    auto& reg = MapConfigRegistry::instance();
+    std::vector<PayloadRoutePoint*> points;
+    for (const EditorObjectRef& ref : mSelection) {
+        if (ref.kind != EditorObjectKind::PayloadRoutePoint) continue;
+        if (PayloadRoutePoint* point = reg.findPayloadRoutePointMutable(ref.id))
+            points.push_back(point);
+    }
+    if (points.empty()) {
+        notify("select a route point first");
+        return false;
+    }
+    pushUndo("route checkpoint");
+    for (PayloadRoutePoint* point : points)
+        point->checkpoint = checkpoint;
+    reg.markChanged();
+    notify(std::string("route checkpoint=") + (checkpoint ? "1" : "0"));
+    return true;
+}
+
+bool MapEditor::setSelectedRouteFinal(bool final)
+{
+    auto& reg = MapConfigRegistry::instance();
+    std::vector<PayloadRoutePoint*> points;
+    for (const EditorObjectRef& ref : mSelection) {
+        if (ref.kind != EditorObjectKind::PayloadRoutePoint) continue;
+        if (PayloadRoutePoint* point = reg.findPayloadRoutePointMutable(ref.id))
+            points.push_back(point);
+    }
+    if (points.empty()) {
+        notify("select a route point first");
+        return false;
+    }
+    pushUndo("route final");
+    if (final) {
+        for (PayloadRoutePoint& point : reg.payloadMutable().route)
+            point.final = false;
+        // A route has exactly one final point. Multiple selected points still
+        // resolve to the first selection so authoring cannot create two finals.
+        points.front()->final = true;
+    } else {
+        for (PayloadRoutePoint* point : points)
+            point->final = false;
+    }
+    reg.markChanged();
+    notify(std::string("route final=") + (final ? "1" : "0"));
+    return true;
+}
+
+bool MapEditor::setSelectedRouteEnabled(bool enabled)
+{
+    auto& reg = MapConfigRegistry::instance();
+    bool changed = false;
+    for (const EditorObjectRef& ref : mSelection) {
+        if (ref.kind != EditorObjectKind::PayloadRoutePoint) continue;
+        if (PayloadRoutePoint* point = reg.findPayloadRoutePointMutable(ref.id)) {
+            point->enabled = enabled;
+            changed = true;
+        }
+    }
+    if (!changed) {
+        notify("select a route point first");
+        return false;
+    }
+    pushUndo("route enabled");
+    reg.markChanged();
+    notify(std::string("route enabled=") + (enabled ? "1" : "0"));
+    return true;
+}
+
+bool MapEditor::setSelectedRouteRadius(float radius)
+{
+    auto& reg = MapConfigRegistry::instance();
+    bool changed = false;
+    for (const EditorObjectRef& ref : mSelection) {
+        if (ref.kind != EditorObjectKind::PayloadRoutePoint) continue;
+        if (PayloadRoutePoint* point = reg.findPayloadRoutePointMutable(ref.id)) {
+            point->radius = std::max(0.1f, radius);
+            changed = true;
+        }
+    }
+    if (!changed) {
+        notify("select a route point first");
+        return false;
+    }
+    pushUndo("route radius");
+    reg.markChanged();
+    notify("route radius=" + std::to_string(std::max(0.1f, radius)));
+    return true;
+}
+
+bool MapEditor::setSelectedRouteTimeBonus(float seconds)
+{
+    auto& reg = MapConfigRegistry::instance();
+    bool changed = false;
+    for (const EditorObjectRef& ref : mSelection) {
+        if (ref.kind != EditorObjectKind::PayloadRoutePoint) continue;
+        if (PayloadRoutePoint* point = reg.findPayloadRoutePointMutable(ref.id)) {
+            point->timeBonusSeconds = std::max(0.0f, seconds);
+            changed = true;
+        }
+    }
+    if (!changed) {
+        notify("select a route point first");
+        return false;
+    }
+    pushUndo("route time bonus");
+    reg.markChanged();
+    notify("route time_bonus_seconds=" + std::to_string(std::max(0.0f, seconds)));
+    return true;
+}
+
+bool MapEditor::setSelectedRouteWaitTicks(int ticks)
+{
+    auto& reg = MapConfigRegistry::instance();
+    bool changed = false;
+    for (const EditorObjectRef& ref : mSelection) {
+        if (ref.kind != EditorObjectKind::PayloadRoutePoint) continue;
+        if (PayloadRoutePoint* point = reg.findPayloadRoutePointMutable(ref.id)) {
+            point->waitTicks = std::max(0, ticks);
+            changed = true;
+        }
+    }
+    if (!changed) {
+        notify("select a route point first");
+        return false;
+    }
+    pushUndo("route wait");
+    reg.markChanged();
+    notify("route waitTicks=" + std::to_string(std::max(0, ticks)));
+    return true;
+}
+
+bool MapEditor::moveSelectedRoute(int direction)
+{
+    auto& reg = MapConfigRegistry::instance();
+    PayloadRoutePoint* point = nullptr;
+    for (const EditorObjectRef& ref : mSelection) {
+        if (ref.kind != EditorObjectKind::PayloadRoutePoint) continue;
+        point = reg.findPayloadRoutePointMutable(ref.id);
+        if (point) break;
+    }
+    if (!point) {
+        notify("select one route point first");
+        return false;
+    }
+    auto& route = reg.payloadMutable().route;
+    auto it = std::find_if(route.begin(), route.end(),
+        [&](const PayloadRoutePoint& candidate) { return candidate.id == point->id; });
+    if (it == route.end()) return false;
+    const int index = (int)std::distance(route.begin(), it);
+    const int target = std::clamp(index + (direction < 0 ? -1 : 1), 0,
+                                  (int)route.size() - 1);
+    if (target == index) {
+        notify("route point is already at the edge");
+        return false;
+    }
+    pushUndo("route order");
+    std::swap(route[(size_t)index].order, route[(size_t)target].order);
+    reg.renumberPayloadRoute();
+    reg.markChanged();
+    notify("route moved " + std::string(direction < 0 ? "up" : "down"));
+    return true;
+}
+
+std::string MapEditor::validatePayloadRoute() const
+{
+    const PayloadConfig& payload = MapConfigRegistry::instance().payload();
+    if (!payload.present && payload.route.empty() && !payload.hasCartOrigin)
+        return {};
+    std::vector<PayloadAuthoringIssue> issues;
+    const bool valid = validatePayloadAuthoring(payload, issues);
+    std::string report = valid ? "payload authoring valid" : "payload authoring invalid";
+    for (const PayloadAuthoringIssue& issue : issues)
+        report += "\n  " + issue.severity + " " + issue.code + ": " + issue.message;
+    return report;
+}
+
 void MapEditor::renderWorld(Camera& camera)
 {
     if (!mActive) return;
@@ -1319,12 +1511,22 @@ void MapEditor::renderWorld(Camera& camera)
             const auto& point = config.payload.route[i];
             const bool selected = isSelected({EditorObjectKind::PayloadRoutePoint, point.id});
             const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
-                                             : glm::vec4(1, 0.45f, 0.1f, 1);
+                : (!point.enabled ? glm::vec4(0.45f, 0.45f, 0.45f, 1)
+                : (point.final ? glm::vec4(1.0f, 0.25f, 0.2f, 1)
+                : (point.checkpoint ? glm::vec4(1.0f, 0.85f, 0.25f, 1)
+                                    : glm::vec4(1, 0.45f, 0.1f, 1))));
             DebugVis::drawWireSphere(camera, point.position,
                 std::max(0.3f, point.radius * 0.25f), color);
             DebugVis::drawPointCross(camera, point.position, 0.6f, color);
-            char label[128];
-            std::snprintf(label, sizeof(label), "ROUTE %d %s", point.order, point.id.c_str());
+            char label[192];
+            std::snprintf(label, sizeof(label),
+                "ROUTE %d %s%s%s r%.1f w%d%s%.0fs",
+                point.order, point.id.c_str(),
+                point.enabled ? "" : " OFF",
+                point.checkpoint ? " CP" : "",
+                point.radius, point.waitTicks,
+                point.final ? " FINAL" : "",
+                point.timeBonusSeconds);
             DebugVis::drawWorldLabel(point.position + glm::vec3(0, 0, 0.7f), label, color);
             if (i + 1 < config.payload.route.size())
                 DebugVis::drawLine(camera, point.position,

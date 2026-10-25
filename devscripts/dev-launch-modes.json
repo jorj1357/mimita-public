@@ -194,6 +194,38 @@
       ],
       "map": "payload2"
     },
+    "21": {
+      "name": "payload1 startup npc",
+      "server_args": [
+        "--mode",
+        "payload",
+        "--gamemode",
+        "payload",
+        "--npcs",
+        "1"
+      ],
+      "client_args": [
+        "--startup-command",
+        "start payload"
+      ],
+      "map": "payload1"
+    },
+    "22": {
+      "name": "payload2 startup npc",
+      "server_args": [
+        "--mode",
+        "payload",
+        "--gamemode",
+        "payload",
+        "--npcs",
+        "1"
+      ],
+      "client_args": [
+        "--startup-command",
+        "start payload"
+      ],
+      "map": "payload2"
+    },
     "16": {
       "name": "collision_coolplace_trace",
       "server_args": [
@@ -242,6 +274,20 @@
       ],
       "client_args": [],
       "map": "funworld3"
+    },
+    "30": {
+      "name": "tdmtest3 collision repro",
+      "server_args": [
+        "--mode",
+        "team_deathmatch",
+        "--gamemode",
+        "team_deathmatch",
+        "--weapon-set",
+        "1",
+        "--no-npcs"
+      ],
+      "client_args": [],
+      "map": "tdmtest3"
     }
   }
 }

@@ -91,6 +91,27 @@ struct PayloadRoutePoint
     float timeBonusSeconds = 0.0f;
 };
 
+// One authored-data problem found by validatePayloadAuthoring. Warnings keep the
+// map playable but describe data the author should fix; errors mean the runtime
+// cannot build a usable cart route.
+struct PayloadAuthoringIssue
+{
+    std::string severity;   // "error" | "warning" | "info"
+    std::string code;
+    std::string message;
+};
+
+struct PayloadConfig;
+
+// Validate cart origin, route ordering, checkpoint/final flags, segment length,
+// radius, wait ticks, and time bonuses. Returns false when any error exists.
+bool validatePayloadAuthoring(const PayloadConfig& payload,
+                              std::vector<PayloadAuthoringIssue>& issues);
+
+// Load the configured Payload maps and report authoring issues. Checks data and
+// ownership only; it is not gameplay or visual acceptance.
+bool payloadAuthoringSelfTest(std::string& report);
+
 struct PayloadConfig
 {
     bool present = false;
