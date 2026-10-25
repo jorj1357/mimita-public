@@ -86,7 +86,7 @@
   "features": {
     "freeze_during_countdown": true
   },
-  "npc_behavior_profile": "balanced",
+  "npc_behavior_profile": "elite_squad",
   "npc_targeting": {
     "mode": "opposite_team",
     "include_players": true,

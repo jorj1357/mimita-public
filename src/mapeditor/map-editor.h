@@ -13,6 +13,8 @@
 #include <glm/glm.hpp>
 
 #include "gamemode/map-config.h"
+#include "gui/ui-system.h"
+#include "gui/ui-text-input.h"
 
 struct GLFWwindow;
 class Camera;
@@ -47,6 +49,13 @@ public:
     void setFreezeWorld(bool freeze);
 
     void updateInput(GLFWwindow* window, float dt);
+    void tick(float dt);
+    bool handleChar(unsigned int codepoint);
+    bool handleTextKey(int key, int mods, int action);
+    bool wantsTextInput() const;
+    float cameraSpeedMultiplier() const;
+    void setCameraSpeedMultiplier(float multiplier);
+    void focusSelection();
     void renderWorld(Camera& camera);
     void renderUI(GLFWwindow* window);
     bool handleKey(int key, int mods, int action);
@@ -56,9 +65,12 @@ public:
     const std::string& statusMessage() const { return mStatus; }
     const std::string& lastAction() const { return mLastAction; }
 
-    bool save();
+    bool save(bool writeBackup = true);
+    bool autosave();
     bool reload();
+    void flushCollisionNow();
     void rebuildGeometry();
+    void rebuildAuthoredRenderGeometry();
     void undoEdit() { undo(); }
     void redoEdit() { redo(); }
     void copyEdit() { copySelection(); }
@@ -145,6 +157,16 @@ private:
     double mLastMessageTime = 0.0;
 
     std::vector<EditorObjectRef> mSelection;
+    std::vector<EditorObjectRef> mOutlinerObjects;
+    std::string mOutlinerFilter;
+    UIScrollState mOutlinerScroll;
+    UITextInputState mOutlinerSearch;
+    bool mOutlinerSearchFocused = false;
+    float mCameraSpeedMultiplier = -1.0f;
+    bool mCollisionDirty = false;
+    bool mGeometryDirty = false;
+    double mLastEditTime = 0.0;
+    double mLastAutosaveAttempt = 0.0;
     std::vector<ClipboardItem> mClipboard;
     std::vector<MapObjectiveConfig> mUndo;
     std::vector<MapObjectiveConfig> mRedo;
@@ -173,6 +195,10 @@ private:
     void setObjectPosition(const EditorObjectRef& ref, const glm::vec3& position);
     glm::vec3 selectionCenter() const;
     bool selectionHasBlocksOrRoutes() const;
+    bool selectionHasBlocks() const;
+    bool selectionHasGLBObjects() const;
+    void syncGLBOverridesFromWorld();
+    void applyGLBOverridesToWorld();
 
     bool pickAtCursor(EditorObjectRef& out, float& outDistance) const;
     bool handleAtCursor(EditorObjectRef& out, int& axis) const;

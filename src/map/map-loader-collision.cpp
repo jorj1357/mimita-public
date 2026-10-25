@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cmath>
 #include <unordered_map>
+#include <unordered_set>
 #include <glm/glm.hpp>
 #include <glm/geometric.hpp>
 
@@ -191,6 +192,128 @@ void buildCollisionMeshFromRenderMesh(World& world)
     }
 }
 
+namespace {
+
+void rebuildCollisionTriangleCaches(World& world)
+{
+    const size_t count = world.collisionMesh.triangles.size();
+    world.collisionMesh.triangleAABBs.resize(count);
+    world.collisionMesh.triangleOBBs.resize(count);
+    for (size_t i = 0; i < count; ++i) {
+        const CollisionTriangle& tri = world.collisionMesh.triangles[i];
+        const glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
+        const glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+        world.collisionMesh.triangleAABBs[i] = AABB{mn, mx};
+        CollisionTriangleOBB obb;
+        obb.origin = tri.a;
+        const glm::vec3 uRaw = tri.b - tri.a;
+        const glm::vec3 nRaw = glm::cross(tri.b - tri.a, tri.c - tri.a);
+        const float uLen = glm::length(uRaw);
+        const float nLen = glm::length(nRaw);
+        if (uLen > 1e-6f && nLen > 1e-6f) {
+            obb.axisU = uRaw / uLen;
+            obb.axisN = nRaw / nLen;
+            obb.axisV = glm::normalize(glm::cross(obb.axisN, obb.axisU));
+            obb.localMin = glm::vec3(std::numeric_limits<float>::max());
+            obb.localMax = glm::vec3(std::numeric_limits<float>::lowest());
+            for (const glm::vec3& p : {tri.a, tri.b, tri.c}) {
+                const glm::vec3 d = p - obb.origin;
+                const glm::vec3 q(glm::dot(d, obb.axisU),
+                                  glm::dot(d, obb.axisV),
+                                  glm::dot(d, obb.axisN));
+                obb.localMin = glm::min(obb.localMin, q);
+                obb.localMax = glm::max(obb.localMax, q);
+            }
+            obb.valid = true;
+        }
+        world.collisionMesh.triangleOBBs[i] = obb;
+    }
+    if (count == 0) {
+        world.collisionMesh.boundsMin = glm::vec3(0.0f);
+        world.collisionMesh.boundsMax = glm::vec3(0.0f);
+        return;
+    }
+    world.collisionMesh.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+    world.collisionMesh.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+    for (const AABB& bounds : world.collisionMesh.triangleAABBs) {
+        world.collisionMesh.boundsMin = glm::min(world.collisionMesh.boundsMin, bounds.min);
+        world.collisionMesh.boundsMax = glm::max(world.collisionMesh.boundsMax, bounds.max);
+    }
+}
+
+bool boxOverlaps(const AABB& a, const AABB& b)
+{
+    return a.min.x <= b.max.x && a.max.x >= b.min.x &&
+           a.min.y <= b.max.y && a.max.y >= b.min.y &&
+           a.min.z <= b.max.z && a.max.z >= b.min.z;
+}
+
+} // namespace
+
+bool updateCollisionForMovedObject(World& world, const AABB& oldBounds,
+                                   const AABB& newBounds)
+{
+    const size_t previousTriangles = world.collisionMesh.triangles.size();
+    buildCollisionMeshFromRenderMesh(world);
+    if (world.collisionMesh.triangles.empty() ||
+        world.collisionMesh.triangles.size() != previousTriangles) {
+        buildCollisionChunks(world, nullptr);
+        return false;
+    }
+    rebuildCollisionTriangleCaches(world);
+
+    std::unordered_set<glm::ivec3, IVec3Hash> affected;
+    auto addBoundsChunks = [&](const AABB& bounds) {
+        const glm::ivec3 c0 = collisionChunkCoord(bounds.min, world.collisionChunkSize);
+        const glm::ivec3 c1 = collisionChunkCoord(bounds.max, world.collisionChunkSize);
+        for (int x = c0.x; x <= c1.x; ++x)
+        for (int y = c0.y; y <= c1.y; ++y)
+        for (int z = c0.z; z <= c1.z; ++z)
+            affected.insert(glm::ivec3(x, y, z));
+    };
+    addBoundsChunks(oldBounds);
+    addBoundsChunks(newBounds);
+
+    if (!world.collisionLargeTriangles.empty()) {
+        for (int index : world.collisionLargeTriangles) {
+            if (index < 0 || index >= (int)world.collisionMesh.triangleAABBs.size())
+                continue;
+            const AABB& bounds = world.collisionMesh.triangleAABBs[(size_t)index];
+            if (boxOverlaps(bounds, oldBounds) || boxOverlaps(bounds, newBounds))
+                return false;
+        }
+    }
+
+    for (const glm::ivec3& coord : affected)
+        world.collisionChunks.erase(coord);
+
+    for (size_t i = 0; i < world.collisionMesh.triangles.size(); ++i) {
+        const AABB& bounds = world.collisionMesh.triangleAABBs[i];
+        const glm::ivec3 c0 = collisionChunkCoord(bounds.min, world.collisionChunkSize);
+        const glm::ivec3 c1 = collisionChunkCoord(bounds.max, world.collisionChunkSize);
+        const int64_t touched = (int64_t)(c1.x - c0.x + 1) *
+            (c1.y - c0.y + 1) * (c1.z - c0.z + 1);
+        if (touched > kMaxChunksPerTriangle)
+            continue;
+        for (int x = c0.x; x <= c1.x; ++x)
+        for (int y = c0.y; y <= c1.y; ++y)
+        for (int z = c0.z; z <= c1.z; ++z) {
+            const glm::ivec3 coord(x, y, z);
+            if (affected.count(coord) != 0)
+                world.collisionChunks[coord].push_back((int)i);
+        }
+    }
+
+    world.collisionTree.clear();
+    std::vector<int> allTriangleIds(world.collisionMesh.triangles.size());
+    for (size_t i = 0; i < allTriangleIds.size(); ++i)
+        allTriangleIds[i] = (int)i;
+    world.collisionTree.build(allTriangleIds, world.collisionMesh.triangleAABBs);
+    // Sub-grids are an optional second-level optimization; invalidate them
+    // rather than rebuilding every chunk on a single-object edit.
+    world.collisionSubGrids.clear();
+    return true;
+}
 void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
 {
     world.collisionChunks.clear();

@@ -140,6 +140,7 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
             "crosshair=1 healthbars=1 replayInfo=1 renderMode=%d\n",
             getReplayExportJob().capturedTicks, (int)gReplayExportRenderMode);
     }
+    MapEditor::instance().tick(dt);
     MapEditor::instance().renderUI(engine.window());
 
     // The pause modal is deliberately last in the gameplay UI pass: it must

@@ -6,9 +6,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -291,6 +288,8 @@ bool isClosedSolidTriangleRange(const std::vector<CollisionTriangle>& triangles,
 
     std::unordered_map<glm::ivec3, uint32_t, IVec3KeyHash> vertexIds;
     vertexIds.reserve((last - first) / 2);
+    std::vector<glm::vec3> uniqueVertices;
+    uniqueVertices.reserve((last - first) / 2);
     std::unordered_map<uint64_t, uint32_t> undirectedEdges;
     std::unordered_map<uint64_t, uint32_t> directedEdges;
     double volume = 0.0;
@@ -306,6 +305,7 @@ bool isClosedSolidTriangleRange(const std::vector<CollisionTriangle>& triangles,
             return found->second;
         const uint32_t id = static_cast<uint32_t>(vertexIds.size());
         vertexIds.emplace(key, id);
+        uniqueVertices.push_back(p);
         return id;
     };
 
@@ -339,6 +339,25 @@ bool isClosedSolidTriangleRange(const std::vector<CollisionTriangle>& triangles,
 
     if (triangleCount < 4 || std::fabs(volume) <= 1.0e-6)
         return false;
+
+    const float convexitySign = volume > 0.0 ? 1.0f : -1.0f;
+    for (size_t i = first; i < last; ++i)
+    {
+        const glm::vec3& a = triangles[i].a;
+        const glm::vec3& b = triangles[i].b;
+        const glm::vec3& c = triangles[i].c;
+        const glm::vec3 normal = glm::cross(b - a, c - a);
+        const float normalLength = glm::length(normal);
+        if (normalLength <= 1.0e-8f)
+            return false;
+        const glm::vec3 unitNormal = normal / normalLength;
+        for (const glm::vec3& point : uniqueVertices)
+        {
+            const float side = glm::dot(unitNormal, point - a) * convexitySign;
+            if (side > 1.0e-4f)
+                return false;
+        }
+    }
 
     for (const auto& entry : undirectedEdges)
     {
@@ -505,11 +524,6 @@ bool removeFullyCoveredStaticTriangles(
                 candidates.push_back(candidate);
             }
 
-            if (std::getenv("MIMITA_STATIC_UNION_DEBUG"))
-                std::fprintf(stderr,
-                    "[SFR] i=%u solid=%u normal=(%.2f %.2f %.2f) d=%.2f area=%.4f overlap=%.4f candidates=%zu\n",
-                    i, solidI, group.normal.x, group.normal.y, group.normal.z,
-                    group.d, areaI, overlapArea, candidates.size());
             if (candidates.empty() || overlapArea < areaI * kFullCoverageFraction)
                 continue;
 

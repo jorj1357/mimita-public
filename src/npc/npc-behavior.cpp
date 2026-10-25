@@ -54,15 +54,188 @@ bool boolOr(const json& j, const char* key, bool def)
     return (j.contains(key) && j[key].is_boolean()) ? j[key].get<bool>() : def;
 }
 
+std::string lowercaseCopy(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+// Code-owned skill baselines. Elite is deliberately the strongest complete
+// behavior set; JSON exists to tune downward, not to enable basic competence.
+void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
+{
+    const std::string tier = lowercaseCopy(tierId);
+    out.skillTier = tier;
+    if (tier == "elite") {
+        out.aimErrorDeg = 0.06f;
+        out.reactionDelay = 0.01f;
+        out.fireCadenceMultiplier = 1.35f;
+        out.aggression = 1.0f;
+        out.preferredRange = 7.0f;
+        out.turnSpeedDegPerSec = 1800.0f;
+        out.aimLeadSeconds = 0.10f;
+        out.predictionSeconds = 0.04f;
+        out.targetStickiness = 0.85f;
+        out.targetSwitchThreshold = 0.05f;
+        out.lowHealthTargetBias = 0.35f;
+        out.threatBias = 0.9f;
+        out.distanceTargetBias = 0.7f;
+        out.weaponRangeBias = 0.5f;
+        out.weaponDamageBias = 1.0f;
+        out.weaponSafetyBias = 0.05f;
+        out.weaponSwitchThreshold = 0.01f;
+        out.pursuitMode = "persistent";
+        out.continueThroughCover = true;
+        out.pursueLastKnownPosition = true;
+        out.pursuitSearchTicks = 900;
+        out.afterReachingLastKnown = "continue_pursuit";
+        out.informationMode = "memory";
+        out.radarMemoryMode = "normal";
+        out.radarMemoryTicks = 1800;
+        out.rememberedPathPoints = 32;
+        out.continuePredictedPath = true;
+        out.repathIntervalSeconds = 0.35f;
+        out.goalMoveThresholdMeters = 1.25f;
+        out.commitmentEnabled = true;
+        out.commitmentDirectionSeconds = 2.5f;
+        out.commitmentProgressCheckSeconds = 0.5f;
+        out.commitmentMinimumProgressMeters = 0.5f;
+        out.commitmentCandidateDistanceMeters = 24.0f;
+        out.commitmentAllowReverse = false;
+        out.commitmentAvoidRecentPath = true;
+        out.commitmentRecentPathAvoidRadius = 4.0f;
+        out.commitmentVisibleEnemyAllowsCombatMovement = true;
+        out.commitmentForwardBias = 1.0f;
+        out.commitmentTargetProgressBias = 8.0f;
+        out.commitmentOpenDistanceBias = 4.0f;
+        out.commitmentReversePenalty = 10.0f;
+        out.travelTargetDistanceMeters = 80.0f;
+        out.travelTargetReachedMeters = 3.0f;
+        out.focusEnabled = true;
+        out.focusMode = "hostile_team";
+        out.swarm = true;
+        out.cohesion = 0.5f;
+        out.spreadRadiusMeters = 5.0f;
+        out.approachStyle = "arc";
+        out.maxAttackersPerTarget = 3;
+        out.rallyDistanceMeters = 7.0f;
+        out.focusReacquireSeconds = 1.5f;
+        out.slotStickiness = 0.95f;
+        out.navigationBackend = "recast";
+        return;
+    }
+    if (tier == "advanced") {
+        out.aimErrorDeg = 1.0f;
+        out.reactionDelay = 0.10f;
+        out.fireCadenceMultiplier = 1.15f;
+        out.aggression = 0.9f;
+        out.preferredRange = 10.0f;
+        out.turnSpeedDegPerSec = 900.0f;
+        out.aimLeadSeconds = 0.06f;
+        out.predictionSeconds = 0.08f;
+        out.targetStickiness = 0.65f;
+        out.targetSwitchThreshold = 0.2f;
+        out.lowHealthTargetBias = 0.3f;
+        out.threatBias = 0.5f;
+        out.distanceTargetBias = 0.9f;
+        out.pursuitMode = "persistent";
+        out.continueThroughCover = true;
+        out.pursueLastKnownPosition = true;
+        out.afterReachingLastKnown = "look_around";
+        out.informationMode = "memory";
+        out.repathIntervalSeconds = 0.6f;
+        out.goalMoveThresholdMeters = 2.0f;
+        out.commitmentDirectionSeconds = 5.0f;
+        out.focusEnabled = true;
+        out.swarm = true;
+        out.cohesion = 0.4f;
+        out.spreadRadiusMeters = 6.0f;
+        out.maxAttackersPerTarget = 4;
+        out.rallyDistanceMeters = 9.0f;
+        out.navigationBackend = "recast";
+        return;
+    }
+    if (tier == "intermediate") {
+        out.aimErrorDeg = 4.0f;
+        out.reactionDelay = 0.22f;
+        out.fireCadenceMultiplier = 1.0f;
+        out.aggression = 0.65f;
+        out.preferredRange = 12.0f;
+        out.turnSpeedDegPerSec = 450.0f;
+        out.aimLeadSeconds = 0.03f;
+        out.predictionSeconds = 0.12f;
+        out.targetStickiness = 0.3f;
+        out.targetSwitchThreshold = 0.3f;
+        out.focusEnabled = true;
+        out.swarm = false;
+        out.cohesion = 0.3f;
+        out.spreadRadiusMeters = 7.0f;
+        out.maxAttackersPerTarget = 5;
+        out.navigationBackend = "custom";
+        return;
+    }
+    if (tier == "beginner") {
+        out.aimErrorDeg = 12.0f;
+        out.reactionDelay = 0.8f;
+        out.fireCadenceMultiplier = 0.75f;
+        out.aggression = 0.25f;
+        out.preferredRange = 18.0f;
+        out.turnSpeedDegPerSec = 240.0f;
+        out.aimLeadSeconds = 0.0f;
+        out.predictionSeconds = 0.15f;
+        out.targetStickiness = 0.1f;
+        out.targetSwitchThreshold = 0.5f;
+        out.pursuitMode = "forget_when_hidden";
+        out.continueThroughCover = false;
+        out.pursueLastKnownPosition = false;
+        out.afterReachingLastKnown = "patrol";
+        out.informationMode = "none";
+        out.focusEnabled = false;
+        out.swarm = false;
+        out.navigationBackend = "custom";
+        return;
+    }
+    if (tier == "idle") {
+        out.aimErrorDeg = 45.0f;
+        out.reactionDelay = 2.0f;
+        out.fireCadenceMultiplier = 0.4f;
+        out.aggression = 0.0f;
+        out.preferredRange = 30.0f;
+        out.turnSpeedDegPerSec = 120.0f;
+        out.aimLeadSeconds = 0.0f;
+        out.predictionSeconds = 0.2f;
+        out.targetStickiness = 0.0f;
+        out.targetSwitchThreshold = 1.0f;
+        out.pursuitMode = "forget_when_hidden";
+        out.continueThroughCover = false;
+        out.pursueLastKnownPosition = false;
+        out.afterReachingLastKnown = "stop";
+        out.informationMode = "none";
+        out.focusEnabled = false;
+        out.swarm = false;
+        out.navigationBackend = "custom";
+    }
+}
+
 void readProfile(const json& j, const std::string& fallbackId,
                  BehaviorProfileDefinition& out)
 {
     out.id = j.value("id", fallbackId);
+    if (j.contains("skill_tier") && j["skill_tier"].is_string())
+        applySkillTier(j["skill_tier"].get<std::string>(), out);
     out.aimErrorDeg = j.value("aim_error_deg", out.aimErrorDeg);
     out.reactionDelay = j.value("reaction_delay", out.reactionDelay);
     out.fireCadenceMultiplier = j.value("fire_cadence_multiplier", out.fireCadenceMultiplier);
     out.aggression = j.value("aggression", out.aggression);
     out.preferredRange = j.value("preferred_range", out.preferredRange);
+    out.turnSpeedDegPerSec = clampWarn(
+        j, "turn_speed_deg_per_sec", 30.0f, 3600.0f,
+        out.turnSpeedDegPerSec, out.id);
+    out.aimLeadSeconds = clampWarn(
+        j, "aim_lead_seconds", 0.0f, 1.0f, out.aimLeadSeconds, out.id);
+    out.predictionSeconds = clampWarn(
+        j, "prediction_seconds", 0.0f, 2.0f, out.predictionSeconds, out.id);
     out.targetStickiness = j.value("target_stickiness", out.targetStickiness);
     out.targetSwitchThreshold = j.value("target_switch_threshold", out.targetSwitchThreshold);
     out.lowHealthTargetBias = j.value("low_health_target_bias", out.lowHealthTargetBias);
@@ -288,11 +461,16 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
         return out;
 
     out.active = true;
+    out.skillTier = def->skillTier;
     out.aimErrorDeg = def->aimErrorDeg;
     out.reactionDelay = std::max(0.0f, def->reactionDelay);
     out.fireCadenceMultiplier = std::max(0.1f, def->fireCadenceMultiplier);
     out.aggression = def->aggression;
     out.preferredRange = def->preferredRange;
+    out.turnSpeedDegPerSec = def->turnSpeedDegPerSec;
+    out.aimLeadSeconds = def->aimLeadSeconds >= 0.0f ? def->aimLeadSeconds : -1.0f;
+    out.predictionSeconds = def->predictionSeconds >= 0.0f
+        ? def->predictionSeconds : -1.0f;
     // Target selection: only override when the profile sets the field (>= 0).
     if (def->targetStickiness >= 0.0f) out.targetStickiness = def->targetStickiness;
     if (def->targetSwitchThreshold >= 0.0f) out.targetSwitchThreshold = def->targetSwitchThreshold;

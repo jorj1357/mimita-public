@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
+#include <unordered_map>
 #include <glm/gtc/constants.hpp>
 
 #include "audio/audio.h"
@@ -79,6 +81,39 @@ float effectiveRange(const WeaponDefinition& def)
     return 150.0f;
 }
 
+static void emitFireBlocked(const Npc& npc, const char* reason)
+{
+    // Change-edge diagnostic: a sustained block does not flood the journal, but
+    // the first failing reason is always visible. This is how a "target visible
+    // but never shoots" report becomes traceable to the exact gate.
+    static std::unordered_map<uint32_t, std::pair<std::string, float>> sLast;
+    const auto it = sLast.find(npc.id);
+    const float now = npc.sensors.time;
+    if (it != sLast.end() && it->second.first == reason &&
+        now - it->second.second < 1.0f)
+        return;
+    sLast[npc.id] = {reason, now};
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcCombat, StructuredLevel::Important,
+        "npc.fire-blocked", std::to_string(npc.id), reason,
+        (uint32_t)(npc.sensors.time * 60.0f),
+        nlohmann::json{
+            {"actor", npc.id},
+            {"team", npc.body.matchTeam},
+            {"profile", npc.behaviorProfileId},
+            {"skill_tier", npc.behavior.skillTier},
+            {"state", npcStateName(npc.stateMachine.currentState)},
+            {"reason", reason},
+            {"attack_cooldown", npc.attackCooldown},
+            {"reaction_timer", npc.reactionTimer},
+            {"target_distance", npc.sensors.targetDistance},
+            {"target_visible", npc.sensors.hasTarget},
+            {"cached_los_blocked", npc.cachedLoSBlocked},
+            {"equipped", npc.body.equippedWeaponId},
+            {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
                          const glm::vec3& idealDir,
                          const glm::vec3& finalDir,
@@ -100,6 +135,7 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
             {"actor", npc.id},
             {"team", npc.body.matchTeam},
             {"profile", npc.behaviorProfileId},
+            {"skill_tier", npc.behavior.skillTier},
             {"weapon", def.id},
             {"target_id", npc.serverTargetId},
             {"target_distance", npc.sensors.targetDistance},
@@ -237,16 +273,16 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 {
     // Never fire at a dead/unconscious target. Stops the post-death shot/sound
     // spam where NPCs kept shooting the corpse every frame.
-    if (player.dead || player.currentHp <= 0)
+    if (player.dead || player.currentHp <= 0) {
+        emitFireBlocked(npc, "target_dead");
         return false;
+    }
 
     const int hpBeforeShot = player.currentHp;
 
     if (npc.attackCooldown > 0.0f)
     {
-        Debug::logThrottled(Debug::Category::NpcCombat, "npc-cd",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: attackCooldown=%.2f\n",
-            npc.id, npc.attackCooldown);
+        emitFireBlocked(npc, "cooldown");
         return false;
     }
 
@@ -261,8 +297,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
     if (!def)
     {
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC] id=%u fire blocked: no weapon equipped\n", npc.id);
+        emitFireBlocked(npc, "no_weapon");
         return false;
     }
 
@@ -276,9 +311,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     // weapon range, so damage only lands within reach; the NPC always fires.
     if (npcFiringRangeBlocked(dist))
     {
-        Debug::logThrottled(Debug::Category::NpcCombat, "npc-range",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: dist=%.1f > cap=%.1f\n",
-            npc.id, dist, NpcCombat::kNpcFiringRangeCap);
+        emitFireBlocked(npc, "range_cap");
         return false;
     }
 
@@ -287,9 +320,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     // No ammo and no reserve — can't fire
     if (rt.currentAmmo <= 0 && rt.reserveAmmo <= 0)
     {
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC] id=%u fire blocked: no ammo (current=%d reserve=%d)\n",
-            npc.id, rt.currentAmmo, rt.reserveAmmo);
+        emitFireBlocked(npc, "no_ammo");
         return false;
     }
 
@@ -301,24 +332,21 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         Debug::log(Debug::Category::NpcCombat,
             "[NPC RELOAD] npc=%u weapon=%s started reload=%.2fs ammo=%d reserve=%d",
             npc.id, def->id.c_str(), def->reloadTime, rt.currentAmmo, rt.reserveAmmo);
+        emitFireBlocked(npc, "start_reload");
         return false;
     }
 
     // Currently reloading
     if (rt.isReloading)
     {
-        Debug::logThrottled(Debug::Category::NpcCombat, "npc-reloading",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: reloading %.2fs left\n",
-            npc.id, rt.reloadTimer);
+        emitFireBlocked(npc, "reloading");
         return false;
     }
 
     // No ammo in magazine
     if (rt.currentAmmo <= 0)
     {
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC] id=%u fire blocked: magazine empty but reserve=%d (should have triggered reload)\n",
-            npc.id, rt.reserveAmmo);
+        emitFireBlocked(npc, "magazine_empty");
         return false;
     }
 
@@ -333,9 +361,7 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     // Use cached LOS from updateOneNpc (avoids redundant gather + triangle loop)
     if (npc.cachedLoSBlocked)
     {
-        Debug::logThrottled(Debug::Category::NpcCombat, "npc-los",
-            DebugConfig::PRINT_INTERVAL, "[NPC] id=%u fire blocked: no line of sight (cached)\n",
-            npc.id);
+        emitFireBlocked(npc, "no_line_of_sight");
         return false;
     }
 
@@ -344,7 +370,23 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     // must actually aim its gun at the target to hit; while the gun is still
     // turning, shots go where it points (wide). No snap: the model is not
     // teleported to the shot direction.
-    glm::vec3 toChest = (npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f)) - npcPos;
+    // Aim point: hitscan uses the perception prediction (small, latency-sized
+    // lead). Projectiles additionally lead by their real travel time so an
+    // elite NPC does not fire at where a moving target used to be.
+    glm::vec3 aimPoint = npc.sensors.predictedTarget;
+    const bool projectile = def->projectileSpeed > 0.0f &&
+        (def->behaviorType == WeaponBehaviorType::Projectile ||
+         def->behaviorType == WeaponBehaviorType::RocketLauncher ||
+         def->behaviorType == WeaponBehaviorType::GrenadeLauncher ||
+         def->behaviorType == WeaponBehaviorType::Godball);
+    if (projectile) {
+        const float travel = dist / std::max(1.0f, def->projectileSpeed);
+        const float extraLead = npc.behavior.active && npc.behavior.aimLeadSeconds > 0.0f
+            ? npc.behavior.aimLeadSeconds : 0.0f;
+        aimPoint = npc.sensors.targetPos +
+            npc.sensors.targetVel * (travel + extraLead);
+    }
+    glm::vec3 toChest = (aimPoint + glm::vec3(0.0f, 0.0f, 0.8f)) - npcPos;
     float horizDist = glm::length(glm::vec2(toChest.x, toChest.y));
     float pitch = horizDist > 0.001f ? std::atan2(toChest.z, horizDist) : 0.0f;
     aimDir = glm::normalize(glm::vec3(

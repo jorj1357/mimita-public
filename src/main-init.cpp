@@ -40,6 +40,7 @@
 #include "gui/ui-system.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-editor.h"
+#include "mapeditor/map-editor.h"
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/font-stuff/font-loader.h"

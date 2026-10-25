@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string>
+#include <unordered_map>
 
 #include <glm/gtc/constants.hpp>
 
@@ -246,6 +248,8 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
     tuning.reactionDelayTicks = cfg.perceptionReactionTicks;
     tuning.memoryTicks = cfg.perceptionMemoryTicks;
     tuning.predictionSeconds = cfg.perceptionPredictionSeconds;
+    if (npc.behavior.active && npc.behavior.predictionSeconds >= 0.0f)
+        tuning.predictionSeconds = npc.behavior.predictionSeconds;
     tuning.predictionErrorMeters = cfg.perceptionPredictionErrorMeters;
 
     // Candidate is a live hostile actor. FOV/range/LOS are applied by the
@@ -403,6 +407,8 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
                 {"actor", npc.id}, {"team", npc.body.matchTeam},
                 {"goal", utilityGoalName(npc.utility.currentGoal)},
                 {"action", utilityActionName(utilityAction)},
+                {"profile", npc.behaviorProfileId},
+                {"skill_tier", npc.behavior.skillTier},
                 {"target_id", npc.serverTargetId},
                 {"target_visible", npc.belief.hasVisibleTarget},
                 {"target_remembered", npc.belief.hasTarget && !npc.belief.hasVisibleTarget},
@@ -722,9 +728,11 @@ InputState buildInputState(Npc& npc, glm::vec3 moveDir, bool jump, bool dash, bo
         desiredFwd = npc.currentFacing;
     }
 
-    // Apply turn speed limiting: smoothly rotate currentFacing toward desiredFwd
-    // The config turnSpeed overrides the per-difficulty tuning value when > 0.
+    // Apply turn speed limiting: smoothly rotate currentFacing toward desiredFwd.
+    // Precedence: behavior profile > live difficulty config > per-difficulty.
     float turnSpeed = facingCfg.turnSpeed > 0.0f ? facingCfg.turnSpeed : npc.tuning.turnSpeed;
+    if (npc.behavior.active && npc.behavior.turnSpeedDegPerSec > 0.0f)
+        turnSpeed = npc.behavior.turnSpeedDegPerSec;
     float maxTurnAngle = turnSpeed * dt;  // degrees this frame
     float angleDiff = glm::degrees(std::acos(
         std::clamp(glm::dot(npc.currentFacing, desiredFwd), -1.0f, 1.0f)));
@@ -1069,6 +1077,37 @@ static const char* jumpReasonName(NpcJumpReason reason)
 // Emit the once-per-second movement-decision snapshot after all overrides and
 // physics have run. This is the one complete record that explains what the
 // actor wanted, what it finally did, and how far it actually moved.
+static void emitAttackGate(const Npc& npc, bool attack, bool sameTeam)
+{
+    static std::unordered_map<uint32_t, float> sLast;
+    const float now = npc.sensors.time;
+    auto it = sLast.find(npc.id);
+    if (it != sLast.end() && now - it->second < 1.0f)
+        return;
+    sLast[npc.id] = now;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcCombat, StructuredLevel::Important,
+        "npc.attack-gate", std::to_string(npc.id),
+        attack ? "attack_true" : "attack_false",
+        (uint32_t)(npc.sensors.time * 60.0f),
+        nlohmann::json{
+            {"actor", npc.id},
+            {"team", npc.body.matchTeam},
+            {"profile", npc.behaviorProfileId},
+            {"skill_tier", npc.behavior.skillTier},
+            {"state", npcStateName(npc.stateMachine.currentState)},
+            {"attack", attack},
+            {"same_team_target", sameTeam},
+            {"target_visible", npc.sensors.hasTarget},
+            {"cached_los_blocked", npc.cachedLoSBlocked},
+            {"attack_cooldown", npc.attackCooldown},
+            {"reaction_timer", npc.reactionTimer},
+            {"target_distance", npc.sensors.targetDistance},
+            {"equipped", npc.body.equippedWeaponId},
+            {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 static void emitMovementDecision(Npc& npc, const char* replanReason,
                                  NpcJumpReason jumpReason, float dt)
 {
@@ -1584,15 +1623,55 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             ? glm::normalize(committedPlanar)
             : (glm::length(facingPlanar) > 0.001f
                 ? glm::normalize(facingPlanar) : glm::vec3(1.0f, 0.0f, 0.0f));
-        glm::vec3 targetDir{0.0f};
-        if (!npc.sensors.hasTarget &&
+        // The committed direction must follow the CURRENT goal, not the old
+        // heading. Previously only combat pursuit supplied a target direction,
+        // so a newly selected objective/focus could be ignored for the whole
+        // 10 s commit window.
+        glm::vec3 targetPoint{0.0f};
+        bool haveTargetPoint = false;
+        switch (npc.utility.currentGoal) {
+            case UtilityGoalKind::MoveToObjective:
+            case UtilityGoalKind::RetakeSite:
+            case UtilityGoalKind::RotateToSite:
+            case UtilityGoalKind::DefendSite:
+            case UtilityGoalKind::PlantObjective:
+            case UtilityGoalKind::DefuseObjective:
+                if (npc.utilityContext.objectiveKnown) {
+                    targetPoint = npc.utilityContext.objectivePos;
+                    haveTargetPoint = true;
+                }
+                break;
+            case UtilityGoalKind::FocusTarget:
+                if (npc.utilityContext.squadSlotKnown) {
+                    targetPoint = npc.utilityContext.squadSlot;
+                    haveTargetPoint = true;
+                } else if (npc.utilityContext.focusKnown) {
+                    targetPoint = npc.utilityContext.focusPos;
+                    haveTargetPoint = true;
+                }
+                break;
+            case UtilityGoalKind::HuntArea:
+                if (npc.utilityContext.enemyAreaKnown) {
+                    targetPoint = npc.utilityContext.enemyAreaPos;
+                    haveTargetPoint = true;
+                }
+                break;
+            default:
+                break;
+        }
+        if (!haveTargetPoint && !npc.sensors.hasTarget &&
             (npc.stateMachine.currentState == NpcState::Chase ||
              npc.stateMachine.pursuitSearchActive ||
-             npc.stateMachine.currentState == NpcState::Recover)) {
-            const glm::vec3 known = npc.targetMemory.hasMemory
+             npc.stateMachine.currentState == NpcState::Recover ||
+             npc.targetMemory.hasMemory)) {
+            targetPoint = npc.targetMemory.hasMemory
                 ? npc.targetMemory.lastKnownPosition : npc.stateMachine.lastKnownTarget;
-            targetDir = glm::vec3(known.x - npc.body.pos.x,
-                                  known.y - npc.body.pos.y, 0.0f);
+            haveTargetPoint = true;
+        }
+        glm::vec3 targetDir{0.0f};
+        if (haveTargetPoint) {
+            targetDir = glm::vec3(targetPoint.x - npc.body.pos.x,
+                                  targetPoint.y - npc.body.pos.y, 0.0f);
         }
         const NpcCommitmentUpdate cu = npc.navigator.updateCommitment(
             npc, forwardDir, targetDir, npc.sensors.hasTarget, world, nearCandidates,
@@ -2379,6 +2458,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     const bool sameTeamTarget =
         npc.body.matchTeam >= 0 && player.matchTeam >= 0 &&
         npc.body.matchTeam == player.matchTeam;
+
+    if (npc.sensors.hasTarget)
+        emitAttackGate(npc, attack, sameTeamTarget);
 
     if (attack && !sameTeamTarget &&
         npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)

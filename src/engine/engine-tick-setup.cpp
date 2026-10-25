@@ -42,6 +42,7 @@
 #include "gamemode/gamemode-map-pool.h"
 #include "gamemode/map-config.h"
 #include "hot-reload/hot-reload-system.h"
+#include "mapeditor/map-editor-config.h"
 #include "config/player-visuals-config.h"
 #include "notifications/notifications.h"
 #include "gui/gui-layout.h"
@@ -107,6 +108,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         RewardPopupConfig::instance().load();
         KillfeedConfig::instance().load();
         KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
+        MapEditorConfig::instance().load();
         sFirstFrame = false;
     }
 
@@ -141,6 +143,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
             HitEffects::pollReload();
             MuzzleFlashConfig::instance().pollReload();
             DynamicLightConfig::instance().pollReload();
+            MapEditorConfig::instance().pollReload();
             break;
         case 1:
             MimitaNet::pollDisagreementReload();

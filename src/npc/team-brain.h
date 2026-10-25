@@ -87,6 +87,7 @@ struct SquadTuning
     float cohesion = 0.0f;
     float spreadRadiusMeters = 6.0f;
     int maxAttackersPerTarget = 6;
+    float rallyDistanceMeters = 8.0f;
     std::string approachStyle = "arc";
 };
 
@@ -142,6 +143,10 @@ public:
     // Highest-confidence enemy report anywhere on the team (the team's best
     // estimate of where enemies are). Returns false when there are none.
     bool bestTeamReport(glm::vec3& outPosition, float& outConfidence) const;
+    // Choose the focus actor the squad should converge on: highest score by
+    // proximity to `origin` and confidence, with a stable actor-id tiebreak.
+    bool selectFocus(const glm::vec3& origin, glm::vec3& outPosition,
+                     uint32_t& outActorId, float& outConfidence) const;
 
     // Recompute assignments for the given living actors (ids + teams). Roles are
     // apportioned from the policy. Deterministic for a given state.
@@ -155,7 +160,7 @@ public:
     // enemy report. Deterministic for a given input. Produces suggestions only.
     void updateSquad(const std::vector<SquadMember>& living,
                      const glm::vec3& focusPos, bool focusActive,
-                     const SquadTuning& tuning);
+                     const SquadTuning& tuning, uint32_t focusActorId = 0);
     // Slot + anchor for an actor. False when the actor has no squad slot.
     bool squadSlotFor(uint32_t actorId, glm::vec3& outSlot,
                       glm::vec3& outAnchor) const;

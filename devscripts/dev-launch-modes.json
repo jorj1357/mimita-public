@@ -288,6 +288,46 @@
       ],
       "client_args": [],
       "map": "tdmtest3"
+    },
+    "31": {
+      "name": "tdm npc elite",
+      "server_args": [
+        "--mode",
+        "tdm",
+        "--gamemode",
+        "tdm",
+        "--weapon-set",
+        "1"
+      ],
+      "client_args": [],
+      "map": "funworld3"
+    },
+    "32": {
+      "name": "duel npc elite",
+      "server_args": [
+        "--mode",
+        "duel",
+        "--gamemode",
+        "duel",
+        "--weapon-set",
+        "1"
+      ],
+      "client_args": [],
+      "map": "xxity2"
+    },
+    "33": {
+      "name": "payload npc elite",
+      "server_args": [
+        "--mode",
+        "payload",
+        "--gamemode",
+        "payload"
+      ],
+      "client_args": [
+        "--startup-command",
+        "start payload"
+      ],
+      "map": "payload1"
     }
   }
 }

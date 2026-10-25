@@ -78,6 +78,32 @@ bool TeamBrain::bestTeamReport(glm::vec3& outPosition, float& outConfidence) con
     return true;
 }
 
+bool TeamBrain::selectFocus(const glm::vec3& origin, glm::vec3& outPosition,
+                            uint32_t& outActorId, float& outConfidence) const
+{
+    const EnemyReport* best = nullptr;
+    float bestScore = -1.0f;
+    for (const auto& report : mState.enemyReports) {
+        if (report.confidence <= 0.0f) continue;
+        const float dx = report.lastKnownPosition.x - origin.x;
+        const float dy = report.lastKnownPosition.y - origin.y;
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        // Confidence dominates; proximity breaks ties. The actor id keeps the
+        // choice deterministic when two enemies are otherwise equal.
+        const float score = report.confidence / (1.0f + dist * 0.02f)
+                          - (float)report.actorId * 1e-9f;
+        if (!best || score > bestScore) {
+            best = &report;
+            bestScore = score;
+        }
+    }
+    if (!best) return false;
+    outPosition = best->lastKnownPosition;
+    outActorId = best->actorId;
+    outConfidence = best->confidence;
+    return true;
+}
+
 void TeamBrain::updateAssignments(
     const std::vector<std::pair<uint32_t, int>>& livingActors,
     bool objectiveRounds)
@@ -159,13 +185,13 @@ TeamAssignment TeamBrain::assignmentFor(uint32_t actorId) const
 
 void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
                             const glm::vec3& focusPos, bool focusActive,
-                            const SquadTuning& tuning)
+                            const SquadTuning& tuning, uint32_t focusActorId)
 {
     mState.squadSlots.clear();
     SquadState& sq = mState.squad;
     sq.memberCount = (int)living.size();
     sq.focusPos = focusPos;
-    sq.focusActorId = 0;
+    sq.focusActorId = focusActive ? focusActorId : 0;
 
     if (living.empty()) {
         sq.active = false;
@@ -216,9 +242,26 @@ void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
     const int count = (int)ordered.size();
     const int attackers = hasFocus
         ? std::min(count, std::max(1, tuning.maxAttackersPerTarget)) : 0;
+    // High cohesion pulls a member back toward the squad anchor sooner. This
+    // is the behavior that stops one NPC from running off alone across the map.
+    const float rallyLimit = std::max(
+        tuning.spreadRadiusMeters * 1.25f,
+        tuning.rallyDistanceMeters * (1.0f + tuning.cohesion));
     for (int i = 0; i < count; ++i) {
+        const glm::vec2 memberXy(ordered[i].pos.x, ordered[i].pos.y);
+        const glm::vec2 anchorXy(sq.anchor.x, sq.anchor.y);
+        const float anchorDist = glm::length(memberXy - anchorXy);
+        const bool needsRally = anchorDist > rallyLimit;
+
         glm::vec3 slot;
-        if (hasFocus && i < attackers) {
+        if (needsRally) {
+            // Regroup first: head to the squad anchor, maintaining a small
+            // offset so members do not occupy the exact same point.
+            const float step = 6.2831853f / static_cast<float>(std::max(1, count));
+            const float angle = step * static_cast<float>(i);
+            slot = sq.anchor + glm::vec3(std::cos(angle), std::sin(angle), 0.0f) *
+                                   (tuning.spreadRadiusMeters * 0.45f);
+        } else if (hasFocus && i < attackers && tuning.swarm) {
             // Ring around the focus; approach from the squad's own side by
             // default so members do not cross the target to the far side.
             const float baseAngle = (tuning.approachStyle == "flank") ? 0.0f

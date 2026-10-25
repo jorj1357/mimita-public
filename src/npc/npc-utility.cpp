@@ -148,10 +148,13 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
         case UtilityGoalKind::FocusTarget:
             // Group focus: advance to the squad slot around the shared focus.
             // Travels toward a focus actor/area but is NOT an aim permission.
-            s.relevance = ctx.focusKnown ? 1.2f : 0.0f;
+            // A genuinely visible enemy always outranks slot movement: elite
+            // NPCs must shoot, not sightsee at their formation point.
+            s.relevance = ctx.focusKnown ? 0.85f : 0.0f;
             s.teamInformation = ctx.focusKnown ? 1.0f : 0.0f;
             s.distance = (ctx.squadSlotKnown && !ctx.atSquadSlot) ? 1.0f : 0.5f;
             s.total = s.relevance * (ctx.atSquadSlot ? 0.2f : 1.0f) *
+                      (ctx.hasVisibleTarget ? 0.35f : 1.0f) *
                       (0.5f + 0.5f * teamFactor);
             break;
 

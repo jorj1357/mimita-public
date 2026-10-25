@@ -134,6 +134,66 @@ std::string mapIdFromAssetPath(const std::string& path)
     return std::filesystem::path(path).stem().string();
 }
 
+void applyGLBObjectOverrides(World& world,
+                             const std::vector<MapGLBObjectOverride>& overrides)
+{
+    for (MapGLBObject& object : world.mesh.objects) {
+        glm::vec3 target = object.basePosition;
+        for (const MapGLBObjectOverride& override : overrides) {
+            if (override.id == object.id) {
+                target = override.position;
+                break;
+            }
+        }
+        const glm::vec3 current(object.transform[3]);
+        const glm::vec3 delta = target - current;
+        if (glm::dot(delta, delta) <= 1e-10f) continue;
+        const size_t first = std::min(object.vertexFirst, world.mesh.verts.size());
+        const size_t last = std::min(object.vertexFirst + object.vertexCount,
+                                     world.mesh.verts.size());
+        for (size_t i = first; i < last; ++i)
+            world.mesh.verts[i].pos += delta;
+        object.transform[3] += glm::vec4(delta, 0.0f);
+        object.boundsMin += delta;
+        object.boundsMax += delta;
+    }
+}
+
+void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
+                             const std::vector<MapGLBObjectOverride>& overrides)
+{
+    for (HeadlessGLBObject& object : world.glbObjects) {
+        glm::vec3 target = object.basePosition;
+        for (const MapGLBObjectOverride& override : overrides) {
+            if (override.id == object.id) {
+                target = override.position;
+                break;
+            }
+        }
+        const glm::vec3 delta = target - object.position;
+        if (glm::dot(delta, delta) <= 1e-10f) continue;
+        const size_t first = std::min(object.triangleFirst, world.triangles.size());
+        const size_t last = std::min(object.triangleFirst + object.triangleCount,
+                                     world.triangles.size());
+        for (size_t i = first; i < last; ++i) {
+            CollisionTriangle& triangle = world.triangles[i];
+            triangle.a += delta;
+            triangle.b += delta;
+            triangle.c += delta;
+        }
+        object.position = target;
+    }
+    if (!world.triangles.empty()) {
+        world.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+        world.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+        for (const CollisionTriangle& triangle : world.triangles) {
+            const glm::vec3 mn = glm::min(glm::min(triangle.a, triangle.b), triangle.c);
+            const glm::vec3 mx = glm::max(glm::max(triangle.a, triangle.b), triangle.c);
+            world.boundsMin = glm::min(world.boundsMin, mn);
+            world.boundsMax = glm::max(world.boundsMax, mx);
+        }
+    }
+}
 void clearAuthoredMapGeometry(World& world)
 {
     if (!world.authoredGeometryApplied) return;
@@ -146,11 +206,11 @@ void clearAuthoredMapGeometry(World& world)
     world.mesh.batches.resize(world.authoredBaseBatchCount);
     world.authoredObjects.clear();
     world.collisionMesh.clear();
-    buildCollisionChunks(world, nullptr);
     world.renderRevision++;
 }
 
-bool applyAuthoredMapGeometry(World& world, const std::string& mapId)
+bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
+                              const AuthoredGeometryOptions& options)
 {
     if (!ensureMapLoaded(mapId)) return false;
     const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
@@ -163,6 +223,8 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId)
         world.authoredGeometryApplied = true;
     }
 
+    applyGLBObjectOverrides(world, config.glbObjects);
+
     size_t added = 0;
     for (const AuthoredBlock& block : config.blocks) {
         if (!block.enabled || !finiteVec(block.position) || !finiteVec(block.size))
@@ -173,12 +235,14 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId)
         ++added;
     }
 
-    buildCollisionMeshFromRenderMesh(world);
     StaticUnionStats unionStats;
-    if (CollisionLodConfig::instance().staticFaceRemoval())
-        removeFullyCoveredStaticTriangles(
-            world.collisionMesh.triangles, world.collisionMesh.solidIds, &unionStats);
-    buildCollisionChunks(world, nullptr);
+    if (options.rebuildCollision) {
+        buildCollisionMeshFromRenderMesh(world);
+        if (options.staticFaceRemoval && CollisionLodConfig::instance().staticFaceRemoval())
+            removeFullyCoveredStaticTriangles(
+                world.collisionMesh.triangles, world.collisionMesh.solidIds, &unionStats);
+        buildCollisionChunks(world, nullptr);
+    }
     world.renderRevision++;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
@@ -191,6 +255,7 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId)
                        {"collision_triangles", world.collisionMesh.triangles.size()},
                        {"static_removed_triangles", unionStats.removedTriangles},
                        {"static_removal_fallback", unionStats.fallback},
+                       {"rebuild_collision", options.rebuildCollision},
                        {"render_revision", world.renderRevision}},
         __FILE__, __LINE__, __FUNCTION__);
     printf("[MAP AUTHORED] map=%s blocks=%zu applied=%zu verts=%zu tris=%zu revision=%llu\n",
@@ -254,6 +319,7 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
                        {"collision_triangles", world.triangles.size()},
                        {"static_removed_triangles", unionStats.removedTriangles},
                        {"static_removal_fallback", unionStats.fallback},
+                       {"rebuild_collision", options.rebuildCollision},
                        {"headless", true}},
         __FILE__, __LINE__, __FUNCTION__);
     printf("[MAP AUTHORED] headless map=%s blocks=%zu applied=%zu spawns=+%zu total_spawns=%zu tris=%zu\n",

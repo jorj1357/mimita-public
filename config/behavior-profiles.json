@@ -11,6 +11,27 @@
   // meanings with different numbers.
   "profiles": [
     {
+      // Elite baseline: the C++ skill tier owns the strong defaults. These
+      // fields are only the durable mode-facing squad choices and intentional
+      // overrides. Tune downward by selecting a lower skill_tier or editing a
+      // field here.
+      "id": "elite_squad",
+      "skill_tier": "elite",
+      "focus_enabled": true,
+      "swarm": true,
+      "navigation_backend": "recast"
+    },
+    {
+      // Low-skill control profile for validating the tier range.
+      "id": "beginner",
+      "skill_tier": "beginner"
+    },
+    {
+      // Inert control profile: never pursues or fights well.
+      "id": "idle",
+      "skill_tier": "idle"
+    },
+    {
       // Aiming: smaller aim_error_deg = more accurate shooting.
       "id": "balanced",
       "aim_error_deg": 5.0,

@@ -15,6 +15,7 @@
 #include <filesystem>
 
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 struct DuelConfig;
 
@@ -186,6 +187,17 @@ struct GamemodeAimFov {
     std::string easing = "ease_in_out";
 };
 
+// Optional mode-wide avatar policy. Role and actor-preset policies still refine
+// this per actor; the mode policy is the shared outer filter.
+struct GamemodeAvatarPolicy {
+    bool configured = false;
+    bool forced = false;
+    std::string name;
+    std::vector<std::string> allowed;
+    std::vector<std::string> denied;
+    std::string group;
+};
+
 // Optional Payload rules. Map data owns cart origin/route/interaction geometry;
 // this block owns mode-wide timing and movement rules.
 struct GamemodePayload {
@@ -275,6 +287,7 @@ struct Gamemode {
     GamemodeNpcTargeting npcTargeting;
     GamemodeNpcTravel npcTravel;
     GamemodeAimFov aimFov;
+    GamemodeAvatarPolicy avatar;
     GamemodePayload payload;
     // ── Elimination / win rules (optional) ──────────────────────────
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
@@ -311,6 +324,16 @@ public:
     void loadDirectory(const std::string& dir);
     void pollReload();
 
+    // Strict validation against config/gamemodes/masterlist/gamemode-masterlist.json.
+    // The registry loads the masterlist with the mode directory. Returns true and
+    // fills `errors` with file/setting-path messages when validation is available
+    // and the JSON is invalid.
+    bool validateFileJson(const std::string& path,
+                          const nlohmann::json& root,
+                          std::vector<std::string>& errors) const;
+    bool masterlistLoaded() const { return mMasterlistLoaded; }
+    const std::vector<std::string>& validationErrors() const { return mValidationErrors; }
+
     const Gamemode& get(const std::string& id) const;
     bool has(const std::string& id) const;
     std::vector<std::string> ids() const;
@@ -324,12 +347,18 @@ private:
         Gamemode mode;
     };
 
-    void loadFile(const std::string& path, LoadedMode& slot);
+    bool loadFile(const std::string& path, LoadedMode& slot);
+    bool loadMasterlist();
+    void reportInvalidFile(const std::string& path, const std::vector<std::string>& errors);
+    void applyAvatarGroup(GamemodeAvatarPolicy& policy) const;
     LoadedMode* findSlot(const std::string& id);
     const LoadedMode* findSlot(const std::string& id) const;
 
     std::vector<LoadedMode> modes_;
     std::string directory_;
+    nlohmann::json mMasterlist;
+    bool mMasterlistLoaded = false;
+    std::vector<std::string> mValidationErrors;
 };
 
 void applyGamemodeToDuelConfig(DuelConfig& cfg, const Gamemode& gm);

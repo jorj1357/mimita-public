@@ -10,15 +10,20 @@
 #include "gamemode/gamemode.h"
 
 #include <algorithm>
-#include <fstream>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <set>
+#include <unordered_map>
 
 #include <nlohmann/json.hpp>
 
 #include "game/duel.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "utils/json-comments.h"
 #include "npc/npc-targeting.h"
+#include "notifications/notifications.h"
 
 using json = nlohmann::json;
 
@@ -76,12 +81,241 @@ std::vector<std::string> optStringArray(const json& root, const char* key)
     return out;
 }
 
+std::string joinPath(const std::string& base, const std::string& key)
+{
+    return base.empty() ? key : base + "." + key;
+}
+
+std::string joinIndex(const std::string& base, size_t index)
+{
+    return base + "[" + std::to_string(index) + "]";
+}
+
+bool isIntegerJson(const json& value)
+{
+    return value.is_number_integer() || value.is_number_unsigned();
+}
+
+void validateSchema(const json& value, const json& schema,
+                    const std::string& path, std::vector<std::string>& errors)
+{
+    if (schema.is_boolean()) return;
+    if (!schema.is_object()) return;
+
+    const std::string type = schema.value("type", "");
+    if (!type.empty() && type != "any") {
+        bool ok = false;
+        if (type == "object") ok = value.is_object();
+        else if (type == "array") ok = value.is_array();
+        else if (type == "string") ok = value.is_string();
+        else if (type == "boolean") ok = value.is_boolean();
+        else if (type == "number") ok = value.is_number();
+        else if (type == "integer") ok = isIntegerJson(value);
+        else ok = true;
+        if (!ok) {
+            errors.push_back(path + ": expected " + type);
+            return;
+        }
+    }
+
+    if (value.is_number()) {
+        if (schema.contains("min") && value.get<double>() < schema["min"].get<double>())
+            errors.push_back(path + ": " + std::to_string(value.get<double>()) +
+                             " is below minimum " + std::to_string(schema["min"].get<double>()));
+        if (schema.contains("max") && value.get<double>() > schema["max"].get<double>())
+            errors.push_back(path + ": " + std::to_string(value.get<double>()) +
+                             " is above maximum " + std::to_string(schema["max"].get<double>()));
+    }
+    if (value.is_string() && schema.contains("enum") && schema["enum"].is_array()) {
+        bool found = false;
+        for (const auto& allowed : schema["enum"])
+            if (allowed.is_string() && allowed.get<std::string>() == value.get<std::string>())
+                found = true;
+        if (!found)
+            errors.push_back(path + ": \"" + value.get<std::string>() +
+                             "\" is not one of the allowed values");
+    }
+    if (value.is_array()) {
+        if (schema.contains("min_items") && value.size() < schema["min_items"].get<size_t>())
+            errors.push_back(path + ": expected at least " +
+                             std::to_string(schema["min_items"].get<size_t>()) + " items");
+        if (schema.contains("max_items") && value.size() > schema["max_items"].get<size_t>())
+            errors.push_back(path + ": expected at most " +
+                             std::to_string(schema["max_items"].get<size_t>()) + " items");
+        if (schema.contains("item")) {
+            for (size_t i = 0; i < value.size(); ++i)
+                validateSchema(value[i], schema["item"], joinIndex(path, i), errors);
+        }
+    }
+    if (value.is_object()) {
+        if (schema.contains("fields") && schema["fields"].is_object()) {
+            const json& fields = schema["fields"];
+            for (auto it = fields.begin(); it != fields.end(); ++it) {
+                if (it.value().value("required", false) && !value.contains(it.key()))
+                    errors.push_back(joinPath(path, it.key()) + ": required setting is missing");
+            }
+            for (auto it = value.begin(); it != value.end(); ++it) {
+                if (!fields.contains(it.key())) {
+                    errors.push_back(joinPath(path, it.key()) + ": unknown setting");
+                    continue;
+                }
+                validateSchema(it.value(), fields[it.key()],
+                               joinPath(path, it.key()), errors);
+            }
+        } else if (schema.contains("additional")) {
+            for (auto it = value.begin(); it != value.end(); ++it)
+                validateSchema(it.value(), schema["additional"],
+                               joinPath(path, it.key()), errors);
+        }
+    }
+}
+
+std::string modeDisplayName(const json& root)
+{
+    if (root.contains("id") && root["id"].is_string())
+        return root["id"].get<std::string>();
+    return "gamemode";
+}
+
 } // namespace
 
 GamemodeRegistry& GamemodeRegistry::instance()
 {
     static GamemodeRegistry registry;
     return registry;
+}
+
+bool GamemodeRegistry::loadMasterlist()
+{
+    mMasterlistLoaded = false;
+    mMasterlist = json{};
+    if (directory_.empty()) return false;
+
+    const std::filesystem::path path =
+        std::filesystem::path(directory_) / "masterlist" / "gamemode-masterlist.json";
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        Debug::warn(Debug::Category::Duel,
+            "[GAMEMODE] Missing masterlist %s; using permissive legacy loading.\n",
+            path.string().c_str());
+        return false;
+    }
+    try {
+        json root = parseJsonConfig(file);
+        if (!root.is_object() || !root.contains("settings") ||
+            !root["settings"].is_object()) {
+            Debug::warn(Debug::Category::Duel,
+                "[GAMEMODE] Masterlist %s has no settings object; using permissive legacy loading.\n",
+                path.string().c_str());
+            return false;
+        }
+        mMasterlist = std::move(root);
+        mMasterlistLoaded = true;
+        Debug::warn(Debug::Category::Duel,
+            "[GAMEMODE] Loaded masterlist %s (%zu settings)\n",
+            path.string().c_str(), mMasterlist["settings"].size());
+        return true;
+    } catch (const std::exception& e) {
+        Debug::error(Debug::Category::Duel,
+            "[GAMEMODE] Masterlist parse error in %s: %s; using permissive legacy loading.\n",
+            path.string().c_str(), e.what());
+        return false;
+    }
+}
+
+bool GamemodeRegistry::validateFileJson(const std::string& path,
+                                        const json& root,
+                                        std::vector<std::string>& errors) const
+{
+    errors.clear();
+    if (!mMasterlistLoaded || !mMasterlist.contains("settings"))
+        return false;
+
+    if (!root.is_object()) {
+        errors.push_back("root: expected an object");
+        return true;
+    }
+
+    const json& settings = mMasterlist["settings"];
+    for (auto it = settings.begin(); it != settings.end(); ++it) {
+        if (it.value().value("required", false) && !root.contains(it.key()))
+            errors.push_back(it.key() + ": required setting is missing");
+    }
+    for (auto it = root.begin(); it != root.end(); ++it) {
+        if (!settings.contains(it.key())) {
+            errors.push_back(it.key() + ": unknown setting");
+            continue;
+        }
+        validateSchema(it.value(), settings[it.key()], it.key(), errors);
+    }
+
+    // The file identity must match its filename. A renamed/copied mode file
+    // that still declares another id is a configuration error, not a new mode.
+    if (root.contains("id") && root["id"].is_string()) {
+        const std::string id = root["id"].get<std::string>();
+        const std::string stem = std::filesystem::path(path).stem().string();
+        if (id != stem)
+            errors.push_back("id: \"" + id + "\" does not match filename stem \"" + stem + "\"");
+    }
+    return !errors.empty();
+}
+
+void GamemodeRegistry::applyAvatarGroup(GamemodeAvatarPolicy& policy) const
+{
+    if (policy.group.empty() || !mMasterlistLoaded) return;
+    if (!mMasterlist.contains("avatar_groups") ||
+        !mMasterlist["avatar_groups"].is_object())
+        return;
+    const auto& groups = mMasterlist["avatar_groups"];
+    if (!groups.contains(policy.group) || !groups[policy.group].is_object())
+        return;
+    const auto& group = groups[policy.group];
+    if (group.contains("allowed") && group["allowed"].is_array()) {
+        for (const auto& item : group["allowed"])
+            if (item.is_string()) policy.allowed.push_back(item.get<std::string>());
+    }
+    if (group.contains("denied") && group["denied"].is_array()) {
+        for (const auto& item : group["denied"])
+            if (item.is_string()) policy.denied.push_back(item.get<std::string>());
+    }
+}
+
+void GamemodeRegistry::reportInvalidFile(const std::string& path,
+                                         const std::vector<std::string>& errors)
+{
+    if (errors.empty()) return;
+    const std::string fileName = fileNameOf(path);
+    for (size_t i = 0; i < errors.size() && i < 24; ++i) {
+        const std::string message = fileName + " -> " + errors[i];
+        mValidationErrors.push_back(message);
+        Debug::error(Debug::Category::Duel, "[GAMEMODE CONFIG] %s\n", message.c_str());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Errors,
+            "config.gamemode.invalid", fileName, errors[i], 0,
+            json{{"file", path}, {"setting_path", errors[i]},
+                 {"error", "invalid_gamemode_setting"}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+    if (errors.size() > 24) {
+        Debug::error(Debug::Category::Duel,
+            "[GAMEMODE CONFIG] %s has %zu more errors (truncated)\n",
+            fileName.c_str(), errors.size() - 24);
+    }
+
+    // Player-facing tip: one per file per second, naming the exact setting.
+    static std::unordered_map<std::string, std::chrono::steady_clock::time_point> sLastTip;
+    const auto now = std::chrono::steady_clock::now();
+    auto it = sLastTip.find(path);
+    if (it != sLastTip.end() &&
+        now - it->second < std::chrono::seconds(1))
+        return;
+    sLastTip[path] = now;
+
+    std::string message = fileName + " -> " + errors.front();
+    if (errors.size() > 1)
+        message += " (+" + std::to_string(errors.size() - 1) + " more)";
+    NotificationSystem::instance().pushImportant(
+        "CONFIG ERROR", message, 0);
 }
 
 void GamemodeRegistry::loadDirectory(const std::string& dir)
@@ -94,7 +328,10 @@ void GamemodeRegistry::loadDirectory(const std::string& dir)
         return;
     }
 
+    loadMasterlist();
     modes_.clear();
+    mValidationErrors.clear();
+    std::set<std::string> seenIds;
     for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) break;
         if (!entry.is_regular_file(ec)) continue;
@@ -103,9 +340,14 @@ void GamemodeRegistry::loadDirectory(const std::string& dir)
         LoadedMode slot;
         slot.path = entry.path().string();
         slot.writeTime = getLastWrite(slot.path);
-        loadFile(slot.path, slot);
-        if (!slot.mode.id.empty())
-            modes_.push_back(std::move(slot));
+        if (!loadFile(slot.path, slot))
+            continue;
+        if (!seenIds.insert(slot.mode.id).second) {
+            reportInvalidFile(slot.path,
+                {"id: duplicate mode id \"" + slot.mode.id + "\""});
+            continue;
+        }
+        modes_.push_back(std::move(slot));
     }
 
     Debug::warn(Debug::Category::Duel, "[GAMEMODE] Loaded %zu gamemode(s) from %s\n", modes_.size(), dir.c_str());
@@ -130,20 +372,27 @@ void GamemodeRegistry::pollReload()
         Debug::warn(Debug::Category::Duel, "[GAMEMODE] Reload complete\n");
 }
 
-void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
+bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
 {
     std::ifstream file(path);
     if (!file.is_open()) {
-        Debug::warn(Debug::Category::Duel, "[GAMEMODE] Missing %s; using defaults.\n", path.c_str());
-        return;
+        reportInvalidFile(path, {"file: cannot open"});
+        return false;
     }
 
     try {
         json root;
         root = parseJsonConfig(file);
         if (!root.is_object() || !root.contains("id") || !root["id"].is_string()) {
-            Debug::warn(Debug::Category::Duel, "[GAMEMODE] %s has no string \"id\"; skipped.\n", fileNameOf(path).c_str());
-            return;
+            reportInvalidFile(path, {"id: required string setting is missing"});
+            return false;
+        }
+        {
+            std::vector<std::string> errors;
+            if (validateFileJson(path, root, errors)) {
+                reportInvalidFile(path, errors);
+                return false;
+            }
         }
 
         Gamemode next;
@@ -275,6 +524,28 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         }
         if (root.contains("victory") && root["victory"].is_object())
             next.victoryCondition = optString(root["victory"], "type", next.victoryCondition);
+        // Legacy alias. The nested victory.type is canonical when both exist.
+        if (!root.contains("victory"))
+            next.victoryCondition = optString(
+                root, "victory_condition", next.victoryCondition);
+
+        // ── Mode-wide avatar policy (optional). ─────────────────────
+        if (root.contains("avatar") && root["avatar"].is_object()) {
+            const auto& a = root["avatar"];
+            next.avatar.configured = true;
+            next.avatar.forced = optBool(a, "forced", next.avatar.forced);
+            next.avatar.name = optString(a, "name", next.avatar.name);
+            next.avatar.group = optString(a, "group", next.avatar.group);
+            if (a.contains("allowed") && a["allowed"].is_array()) {
+                for (const auto& item : a["allowed"])
+                    if (item.is_string()) next.avatar.allowed.push_back(item.get<std::string>());
+            }
+            if (a.contains("denied") && a["denied"].is_array()) {
+                for (const auto& item : a["denied"])
+                    if (item.is_string()) next.avatar.denied.push_back(item.get<std::string>());
+            }
+            applyAvatarGroup(next.avatar);
+        }
 
         // ── Payload rules (optional). Map data owns the cart origin, route,
         // interaction box, and checkpoints; this block owns mode-wide values. ──
@@ -525,13 +796,13 @@ void GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             (int)next.bloodEnabled, (int)next.bloodExplicit,
             next.winCondition.empty() ? "default" : next.winCondition.c_str(),
             next.teams.size(), next.rounds.roundsToWin, next.objectives.size());
+        return true;
     } catch (const json::parse_error& e) {
-        Debug::error(Debug::Category::Duel, "[GAMEMODE] Parse error in %s: %s. Keeping previous valid data.\n",
-                     path.c_str(), e.what());
+        reportInvalidFile(path, {std::string("json: parse error: ") + e.what()});
     } catch (const std::exception& e) {
-        Debug::error(Debug::Category::Duel, "[GAMEMODE] Error loading %s: %s. Keeping previous valid data.\n",
-                     path.c_str(), e.what());
+        reportInvalidFile(path, {std::string("json: load error: ") + e.what()});
     }
+    return false;
 }
 
 GamemodeRegistry::LoadedMode* GamemodeRegistry::findSlot(const std::string& id)

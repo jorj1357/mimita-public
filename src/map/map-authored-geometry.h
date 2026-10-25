@@ -8,13 +8,29 @@
 #pragma once
 
 #include <string>
+#include <vector>
+
+#include "gamemode/map-config.h"
 
 struct World;
 namespace MimitaNet { struct HeadlessWorld; }
 
+struct AuthoredGeometryOptions
+{
+    bool rebuildCollision = true;
+    bool staticFaceRemoval = true;
+};
+
+// Applies GLB node translation overrides authored by the map editor.
+void applyGLBObjectOverrides(World& world,
+                             const std::vector<MapGLBObjectOverride>& overrides);
+void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
+                             const std::vector<MapGLBObjectOverride>& overrides);
+
 // Applies the authored block list for `mapId` on top of an already loaded GLB
 // world. Repeated calls rebuild only the authored tail.
-bool applyAuthoredMapGeometry(World& world, const std::string& mapId);
+bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
+                              const AuthoredGeometryOptions& options = {});
 
 // Applies authored blocks to a headless server world (initial load only).
 bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string& mapId);

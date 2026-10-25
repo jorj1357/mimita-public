@@ -1122,7 +1122,30 @@ bool handleGameCLI(int argc, char** argv)
 
     if (std::string(argv[1]) == "--npc-behavior-profile-selftest") {
         std::string report;
-        const bool ok = behaviorProfileSelfTest(report);
+        bool ok = behaviorProfileSelfTest(report);
+        // Prove the shipped elite profile actually resolves the code-owned
+        // top-tier baseline, not just that arbitrary JSON parses.
+        BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
+        const NpcBehaviorTuning elite = resolveNpcBehavior("elite_squad");
+        const NpcBehaviorTuning idle = resolveNpcBehavior("idle");
+        auto check = [&](bool cond, const char* what) {
+            report += std::string(cond ? "  ok   " : "  FAIL ") + what + "\n";
+            ok = ok && cond;
+        };
+        check(elite.active, "elite_squad resolves");
+        check(elite.skillTier == "elite", "elite_squad uses the elite tier");
+        check(elite.aimErrorDeg >= 0.0f && elite.aimErrorDeg < 1.0f,
+              "elite aim error is top-tier");
+        check(elite.turnSpeedDegPerSec >= 1000.0f,
+              "elite turn speed is top-tier");
+        check(elite.focusEnabled && elite.swarm,
+              "elite squad focus and swarm are enabled in code");
+        check(elite.navigationBackend == "recast",
+              "elite navigation backend is recast");
+        check(elite.predictionSeconds >= 0.0f && elite.predictionSeconds < 0.1f,
+              "elite prediction horizon is tight");
+        check(idle.active && idle.skillTier == "idle" && !idle.focusEnabled,
+              "idle tier resolves as the low-skill control");
         printf("[NPC BEHAVIOR PROFILE SELFTEST]\n%s", report.c_str());
         printf("[NPC BEHAVIOR PROFILE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
@@ -2135,6 +2158,20 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = MimitaNet::serverCounterStrikeRoundSelfTest(report);
         printf("[CS ROUND SELFTEST]\n%s", report.c_str());
         printf("[CS ROUND SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--gamemode-config-validate") {
+        auto& registry = GamemodeRegistry::instance();
+        registry.loadDirectory(argc > 2 ? argv[2] : "config/gamemodes");
+        const auto& errors = registry.validationErrors();
+        printf("[GAMEMODE CONFIG] masterlist=%d loaded=%zu errors=%zu\n",
+               registry.masterlistLoaded() ? 1 : 0, registry.ids().size(),
+               errors.size());
+        for (const std::string& error : errors)
+            printf("[GAMEMODE CONFIG] %s\n", error.c_str());
+        const bool ok = registry.masterlistLoaded() && errors.empty();
+        printf("[GAMEMODE CONFIG] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

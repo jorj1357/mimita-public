@@ -130,12 +130,20 @@ struct PayloadConfig
     std::vector<PayloadRoutePoint> route;
 };
 
+struct MapGLBObjectOverride
+{
+    std::string id;
+    std::string name;
+    glm::vec3 position{0.0f};
+};
+
 struct MapObjectiveConfig
 {
     std::string mapId;
     std::vector<BombSite> bombSites;
     std::vector<MapEntity> entities;
     std::vector<AuthoredBlock> blocks;
+    std::vector<MapGLBObjectOverride> glbObjects;
     PayloadConfig payload;
     float plantSeconds = 3.0f;
     float defuseSeconds = 5.0f;
@@ -172,7 +180,7 @@ public:
     // Runtime editing (writes back to the JSON file so positions persist).
     bool setSitePosition(const std::string& id, const glm::vec3& position);
     bool setSiteVisibility(const std::string& id, bool visible);
-    bool save();
+    bool save(bool writeBackup = true);
 
     const MapEntity* findEntity(const std::string& id) const;
     MapEntity* findEntityMutable(const std::string& id);
@@ -191,6 +199,14 @@ public:
     std::string createBlock(const glm::vec3& position, const glm::vec3& size,
                             const std::string& requestedId = "");
     bool deleteBlock(const std::string& id);
+
+    const std::vector<MapGLBObjectOverride>& glbObjects() const { return mCurrent.glbObjects; }
+    std::vector<MapGLBObjectOverride>& glbObjectsMutable() { return mCurrent.glbObjects; }
+    const MapGLBObjectOverride* findGLBObjectOverride(const std::string& id) const;
+    MapGLBObjectOverride* findGLBObjectOverrideMutable(const std::string& id);
+    void setGLBObjectOverride(const std::string& id, const std::string& name,
+                              const glm::vec3& position);
+    void removeGLBObjectOverride(const std::string& id);
 
     const PayloadConfig& payload() const { return mCurrent.payload; }
     PayloadConfig& payloadMutable() { return mCurrent.payload; }

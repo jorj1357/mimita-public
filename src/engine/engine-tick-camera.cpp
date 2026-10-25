@@ -955,6 +955,8 @@ void engineTickCamera(Engine& engine, float dt)
         glm::vec3 flatRight = glm::normalize(glm::cross(flatForward, glm::vec3(0,0,1)));
         glm::vec3 move(0.0f);
         float speed = GetPlayerSettings().freecamSpeed;
+        if (MapEditor::instance().active())
+            speed *= MapEditor::instance().cameraSpeedMultiplier();
         if (glfwGetKey(engine.window(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
             glfwGetKey(engine.window(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) speed *= 3.0f;
         if (glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||

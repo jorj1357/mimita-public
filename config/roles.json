@@ -28,6 +28,16 @@
       "behavior_profile": "aggressive"
     },
     {
+      "id": "elite_fighter",
+      "display_name": "Elite Fighter",
+      "team": 0,
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "standard",
+      "starting_weapon": "revolver",
+      "behavior_profile": "elite_squad"
+    },
+    {
       "id": "juggernaut_fighter",
       "display_name": "Juggernaut Fighter",
       "team": 0,

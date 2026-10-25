@@ -1,5 +1,6 @@
 // 2026-10-23
 #include "mapeditor/map-editor.h"
+#include "mapeditor/map-editor-config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -356,6 +357,54 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
     }
 }
 
+void MapEditor::syncGLBOverridesFromWorld()
+{
+    if (!gpWorld) return;
+    auto& reg = MapConfigRegistry::instance();
+    for (const MapGLBObject& object : gpWorld->mesh.objects) {
+        const glm::vec3 current(object.transform[3]);
+        if (glm::length(current - object.basePosition) <= 0.0001f)
+            reg.removeGLBObjectOverride(object.id);
+        else
+            reg.setGLBObjectOverride(object.id, object.name, current);
+    }
+}
+
+void MapEditor::applyGLBOverridesToWorld()
+{
+    if (!gpWorld) return;
+    bool changed = false;
+    AABB oldBounds;
+    oldBounds.min = glm::vec3(std::numeric_limits<float>::max());
+    oldBounds.max = glm::vec3(std::numeric_limits<float>::lowest());
+    for (const MapGLBObject& object : gpWorld->mesh.objects) {
+        glm::vec3 target = object.basePosition;
+        for (const MapGLBObjectOverride& override :
+             MapConfigRegistry::instance().glbObjects()) {
+            if (override.id == object.id) {
+                target = override.position;
+                break;
+            }
+        }
+        if (glm::length(target - glm::vec3(object.transform[3])) <= 0.0001f)
+            continue;
+        changed = true;
+        oldBounds.min = glm::min(oldBounds.min, object.boundsMin);
+        oldBounds.max = glm::max(oldBounds.max, object.boundsMax);
+    }
+    if (!changed) return;
+    applyGLBObjectOverrides(*gpWorld, MapConfigRegistry::instance().glbObjects());
+    AABB newBounds;
+    newBounds.min = glm::vec3(std::numeric_limits<float>::max());
+    newBounds.max = glm::vec3(std::numeric_limits<float>::lowest());
+    for (const MapGLBObject& object : gpWorld->mesh.objects) {
+        newBounds.min = glm::min(newBounds.min, object.boundsMin);
+        newBounds.max = glm::max(newBounds.max, object.boundsMax);
+    }
+    updateCollisionForMovedObject(*gpWorld, oldBounds, newBounds);
+    mGeometryDirty = false;
+    mCollisionDirty = false;
+}
 glm::vec3 MapEditor::selectionCenter() const
 {
     if (mSelection.empty()) return glm::vec3(0.0f);
@@ -376,6 +425,17 @@ bool MapEditor::selectionHasBlocksOrRoutes() const
     return false;
 }
 
+bool MapEditor::selectionHasBlocks() const
+{
+    return std::any_of(mSelection.begin(), mSelection.end(),
+        [](const EditorObjectRef& ref) { return ref.kind == EditorObjectKind::Block; });
+}
+
+bool MapEditor::selectionHasGLBObjects() const
+{
+    return std::any_of(mSelection.begin(), mSelection.end(),
+        [](const EditorObjectRef& ref) { return ref.kind == EditorObjectKind::MapGLBObject; });
+}
 bool MapEditor::rayFromCursor(glm::vec3& origin, glm::vec3& direction) const
 {
     if (!gRenderer) return false;
@@ -994,6 +1054,90 @@ int MapEditor::outlinerRowAt(double screenX, double screenY) const
     return (index >= 0 && index < (int)objects.size()) ? row : -1;
 }
 
+bool MapEditor::wantsTextInput() const
+{
+    return mActive && mOutlinerSearchFocused;
+}
+
+bool MapEditor::handleChar(unsigned int codepoint)
+{
+    if (!mActive || !mOutlinerSearchFocused) return false;
+    UITextInputOptions options;
+    options.maxLength = 80;
+    options.placeholder = "search objects";
+    options.submitOnEnter = false;
+    if (!uiTextInputHandleChar(mOutlinerSearch, codepoint, options)) return true;
+    mOutlinerFilter = mOutlinerSearch.value;
+    mOutlinerScroll.scrollY = 0.0f;
+    return true;
+}
+
+bool MapEditor::handleTextKey(int key, int mods, int action)
+{
+    if (!mActive || !mOutlinerSearchFocused) return false;
+    const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+        mOutlinerSearchFocused = false;
+        mOutlinerSearch.focused = false;
+        return true;
+    }
+    UITextInputOptions options;
+    options.maxLength = 80;
+    options.placeholder = "search objects";
+    uiTextInputHandleKey(glfwGetCurrentContext(), mOutlinerSearch, key, action, mods, options);
+    mOutlinerFilter = mOutlinerSearch.value;
+    mOutlinerScroll.scrollY = 0.0f;
+    return true;
+}
+
+void MapEditor::tick(float dt)
+{
+    (void)dt;
+    if (!mActive) return;
+    const double now = glfwGetTime();
+    if (mLastEditTime <= 0.0) mLastEditTime = now;
+    const int delayMs = MapEditorConfig::instance().data().autosaveDelayMs;
+    if (delayMs <= 0) return;
+    if (mDrag.mode != DragMode::None || mOutlinerSearchFocused) return;
+    if (!MapConfigRegistry::instance().dirty()) return;
+    if (now - mLastEditTime < (double)delayMs / 1000.0) return;
+    if (now - mLastAutosaveAttempt < (double)delayMs / 1000.0) return;
+    autosave();
+}
+
+bool MapEditor::autosave()
+{
+    if (!MapConfigRegistry::instance().dirty()) return true;
+    mLastAutosaveAttempt = glfwGetTime();
+    const bool ok = MapConfigRegistry::instance().save(false);
+    if (ok) {
+        mStatus = "autosaved " + MapConfigRegistry::instance().configPath();
+        mLastMessageTime = glfwGetTime();
+    } else {
+        notify("autosave failed: " + MapConfigRegistry::instance().configPath());
+    }
+    return ok;
+}
+
+void MapEditor::flushCollisionNow()
+{
+    if (!mCollisionDirty || !gpWorld) return;
+    rebuildGeometry();
+    notify("collision rebuilt");
+}
+
+float MapEditor::cameraSpeedMultiplier() const
+{
+    return mCameraSpeedMultiplier > 0.0f
+        ? mCameraSpeedMultiplier
+        : MapEditorConfig::instance().data().cameraSpeedMultiplier;
+}
+
+void MapEditor::setCameraSpeedMultiplier(float multiplier)
+{
+    mCameraSpeedMultiplier = std::clamp(multiplier, 0.01f, 1000.0f);
+}
+
 void MapEditor::updateInput(GLFWwindow* window, float dt)
 {
     (void)dt;
@@ -1042,7 +1186,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         if (row >= 0) {
             std::vector<EditorObjectRef> objects;
             collectEditorObjects(objects);
-            const int index = row + mOutlinerOffset;
+            const int index = row;
             if (index >= 0 && index < (int)objects.size()) {
                 const bool ctrl = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
                                   glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
@@ -1185,6 +1329,33 @@ bool MapEditor::handleKey(int key, int mods, int action)
     if (key == GLFW_KEY_PAGE_UP) { mOutlinerOffset = std::max(0, mOutlinerOffset - 20); return true; }
     if (key == GLFW_KEY_PAGE_DOWN) { mOutlinerOffset += 20; return true; }
     return false;
+}
+
+void MapEditor::focusSelection()
+{
+    if (mSelection.empty()) return;
+    const glm::vec3 center = selectionCenter();
+    float radius = 1.0f;
+    const EditorObjectRef& ref = mSelection.front();
+    if (ref.kind == EditorObjectKind::MapGLBObject) {
+        if (const MapGLBObject* object = mapObjectFor(ref)) {
+            const glm::vec3 extent = (object->boundsMax - object->boundsMin) * 0.5f;
+            radius = std::max({extent.x, extent.y, extent.z, 0.5f});
+        }
+    } else if (const AuthoredBlock* block = blockFor(ref)) {
+        radius = std::max({block->size.x, block->size.y, block->size.z, 0.5f}) * 0.5f;
+    } else if (const MapEntity* entity = entityFor(ref)) {
+        radius = std::max({entity->size.x, entity->size.y, entity->size.z, entity->radius, 0.5f});
+    } else if (const PayloadRoutePoint* route = routeFor(ref)) {
+        radius = std::max(route->radius, 0.5f);
+    }
+    const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
+    const float halfFov = glm::radians(std::max(1.0f, THE_CAMERA.fov) * 0.5f);
+    const float distance = std::max(cfg.focusMinDistance,
+        radius / std::max(0.01f, std::tan(halfFov)) * cfg.focusPadding);
+    THE_CAMERA.pos = center - THE_CAMERA.front * distance;
+    THE_CAMERA.firstMouse = true;
+    notify("framed " + describeSelection());
 }
 
 void MapEditor::handleEscape()
@@ -1592,47 +1763,70 @@ void MapEditor::renderWorld(Camera& camera)
 
 void MapEditor::renderUI(GLFWwindow* window)
 {
-    (void)window;
     if (!mActive) return;
+    const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
     const float w = uiScreenW();
     const float h = uiScreenH();
-    const glm::vec4 panel(0.04f, 0.05f, 0.08f, 0.78f);
+    const glm::vec4 panel(0.04f, 0.05f, 0.08f, 0.82f);
     const glm::vec4 text(0.9f, 0.95f, 1.0f, 1.0f);
     const glm::vec4 dim(0.65f, 0.72f, 0.82f, 1.0f);
 
-    uiDrawRect({16.0f, 16.0f, 640.0f, 92.0f}, panel, "map-editor-panel");
+    uiDrawRect({16.0f, 16.0f, 700.0f, 104.0f}, panel, "map-editor-panel");
     char line[512];
-    std::snprintf(line, sizeof(line), "MAP EDITOR  %s%s  freeze=%s",
+    std::snprintf(line, sizeof(line), "MAP EDITOR  %s%s  freeze=%s%s",
         mapId().c_str(), dirty() ? " *" : "",
-        mFreezeWorld ? "on" : "off");
-    uiDrawText(line, 26.0f, 24.0f, 0.34f, text);
-    std::snprintf(line, sizeof(line), "selected %zu  blocks=%zu  routes=%zu  entities=%zu",
+        mFreezeWorld ? "on" : "off",
+        mCollisionDirty ? "  collision pending" : "");
+    uiDrawText(line, 26.0f, 24.0f, cfg.titleScale, text);
+    std::snprintf(line, sizeof(line), "selected %zu  blocks=%zu  routes=%zu  entities=%zu  glb=%zu",
         mSelection.size(), MapConfigRegistry::instance().current().blocks.size(),
         MapConfigRegistry::instance().current().payload.route.size(),
-        MapConfigRegistry::instance().current().entities.size());
-    uiDrawText(line, 26.0f, 48.0f, 0.26f, dim);
-    uiDrawText(mStatus.c_str(), 26.0f, 70.0f, 0.24f,
+        MapConfigRegistry::instance().current().entities.size(),
+        gpWorld ? gpWorld->mesh.objects.size() : 0);
+    uiDrawText(line, 26.0f, 52.0f, cfg.bodyScale, dim);
+    uiDrawText(mStatus.c_str(), 26.0f, 78.0f, cfg.bodyScale,
         glm::vec4(0.55f, 1.0f, 0.7f, 1.0f));
 
     std::vector<EditorObjectRef> objects;
     collectEditorObjects(objects);
-    const float px = w - 360.0f;
-    const float py = 120.0f;
-    const float pw = 340.0f;
-    const float ph = h - 180.0f;
+    const float px = w - cfg.outlinerWidth;
+    const float py = cfg.outlinerTop;
+    const float pw = cfg.outlinerWidth;
+    const float ph = h - py - cfg.outlinerBottomPadding;
     uiDrawRect({px, py, pw, ph}, panel, "map-editor-outliner");
-    std::snprintf(line, sizeof(line), "OBJECTS %zu   PgUp/PgDn", objects.size());
-    uiDrawText(line, px + 10.0f, py + 10.0f, 0.3f, text);
-    constexpr float rowH = 22.0f;
-    const int maxRows = std::max(1, (int)((ph - 76.0f) / rowH));
-    mOutlinerOffset = std::clamp(mOutlinerOffset, 0,
-        std::max(0, (int)objects.size() - maxRows));
-    for (int row = 0; row < maxRows; ++row) {
-        const int index = mOutlinerOffset + row;
-        if (index < 0 || index >= (int)objects.size()) break;
-        const EditorObjectRef& ref = objects[(size_t)index];
+    std::snprintf(line, sizeof(line), "OBJECTS %zu", objects.size());
+    uiDrawText(line, px + 10.0f, py + 8.0f, cfg.bodyScale, text);
+
+    UIRect searchRect{px + 8.0f, py + 32.0f, pw - 20.0f, 26.0f};
+    UITextInputOptions searchOptions;
+    searchOptions.maxLength = 80;
+    searchOptions.placeholder = "search id / name / kind";
+    searchOptions.placeholderWhileFocused = true;
+    searchOptions.submitOnEnter = false;
+    mOutlinerSearchFocused = uiTextInputRender(
+        window, "mapeditor_search", searchRect, mOutlinerSearch, searchOptions);
+    mOutlinerSearch.focused = mOutlinerSearchFocused;
+    mOutlinerFilter = mOutlinerSearch.value;
+
+    const float listY = py + 66.0f;
+    const float listH = std::max(40.0f, ph - 70.0f - 62.0f);
+    const UIRect listRect{px + 4.0f, listY, pw - 18.0f, listH};
+    const float contentHeight = std::max(listH, (float)objects.size() * cfg.rowHeight + 4.0f);
+    uiBeginScrollArea(window, listRect, contentHeight, mOutlinerScroll);
+    const int firstRow = std::max(0, (int)(mOutlinerScroll.scrollY / cfg.rowHeight) - 1);
+    const int visibleRows = (int)(listH / cfg.rowHeight) + 3;
+    for (int row = firstRow; row < firstRow + visibleRows; ++row) {
+        if (row < 0 || row >= (int)objects.size()) break;
+        const EditorObjectRef& ref = objects[(size_t)row];
         const bool selected = isSelected(ref);
-        glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1) : text;
+        const float rowY = listY + row * cfg.rowHeight;
+        if (selected) {
+            uiDrawRect({px + 8.0f, rowY, pw - 28.0f, cfg.rowHeight - 2.0f},
+                {0.24f, 0.42f, 0.68f, 0.9f}, "map-editor-row-selected");
+            uiDrawRectOutline({px + 8.0f, rowY, pw - 28.0f, cfg.rowHeight - 2.0f},
+                {0.65f, 0.85f, 1.0f, 1.0f}, "map-editor-row-selected-outline");
+        }
+        glm::vec4 color = selected ? glm::vec4(1, 0.95f, 0.55f, 1) : text;
         if (!selected) {
             switch (ref.kind) {
                 case EditorObjectKind::MapGLBObject: color = {0.55f, 0.9f, 0.6f, 1}; break;
@@ -1644,28 +1838,29 @@ void MapEditor::renderUI(GLFWwindow* window)
         }
         char rowText[256];
         if (ref.kind == EditorObjectKind::MapGLBObject) {
-            MapGLBObject* object = mapObjectFor(ref);
+            const MapGLBObject* object = mapObjectFor(ref);
             std::snprintf(rowText, sizeof(rowText), "%s  %s",
                 ref.id.c_str(), object ? object->name.c_str() : "");
         } else {
             std::snprintf(rowText, sizeof(rowText), "%s  %s",
                 kindName(ref.kind).c_str(), ref.id.c_str());
         }
-        uiDrawText(rowText, px + 10.0f, py + 36.0f + row * rowH, 0.24f, color);
+        uiDrawText(rowText, px + 12.0f, rowY + 5.0f, cfg.rowScale, color);
     }
+    uiEndScrollArea(listRect, contentHeight, mOutlinerScroll);
 
     if (!mSelection.empty()) {
         const EditorObjectRef& ref = mSelection.front();
         const glm::vec3 p = objectPosition(ref);
         std::snprintf(line, sizeof(line), "SELECTED %s", describeRef(ref).c_str());
-        uiDrawText(line, px + 10.0f, py + ph - 66.0f, 0.26f, text);
+        uiDrawText(line, px + 10.0f, py + ph - 60.0f, cfg.bodyScale, text);
         std::snprintf(line, sizeof(line), "pos %.2f %.2f %.2f", p.x, p.y, p.z);
-        uiDrawText(line, px + 10.0f, py + ph - 44.0f, 0.24f, dim);
-        if (MapGLBObject* object = mapObjectFor(ref)) {
+        uiDrawText(line, px + 10.0f, py + ph - 36.0f, cfg.rowScale, dim);
+        if (const MapGLBObject* object = mapObjectFor(ref)) {
             const glm::vec3 size = object->boundsMax - object->boundsMin;
             std::snprintf(line, sizeof(line), "glb %s  size %.2f %.2f %.2f  verts %zu",
                 object->name.c_str(), size.x, size.y, size.z, object->vertexCount);
-            uiDrawText(line, px + 10.0f, py + ph - 24.0f, 0.21f, dim);
+            uiDrawText(line, px + 10.0f, py + ph - 14.0f, cfg.rowScale, dim);
         }
     }
 
@@ -1673,5 +1868,5 @@ void MapEditor::renderUI(GLFWwindow* window)
         "RMB look  LMB select/drag  Shift+click multi  Ctrl+C/V/X  Ctrl+D duplicate  "
         "Del delete  Ctrl+Z undo  Ctrl+Shift+Z redo  Ctrl+S save  V vertex snap  G grid snap  F frame  Esc back";
     uiDrawRect({16.0f, h - 38.0f, w - 32.0f, 24.0f}, panel, "map-editor-help-bg");
-    uiDrawText(help, 26.0f, h - 34.0f, 0.20f, dim);
+    uiDrawText(help, 26.0f, h - 34.0f, cfg.helpScale, dim);
 }

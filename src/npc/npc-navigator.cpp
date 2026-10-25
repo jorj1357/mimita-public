@@ -1062,6 +1062,11 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     const bool routeFinished = !path.empty() && pathIndex >= (int)path.size();
     const bool targetMoved = hasLastGoal &&
         glm::length(glm::vec3(dest - lastGoal)) > goalThreshold;
+    // A materially new destination invalidates the old forward commitment.
+    // Otherwise a newly selected objective/focus can be ignored for the whole
+    // commit window and the actor keeps running the previous way.
+    if (targetMoved && !justRetryDelay)
+        forceRecommit();
     // Replan on real lack of progress, not on the instantaneous "wall within
     // probe" flag (which would rebuild the route almost every tick).
     const bool blockedNow = NpcNavigation::isStuck(npc);

@@ -288,6 +288,17 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
 {
     ActorSpawnProfile out;
     const ServerGamemodeState& d = serverGamemodeState();
+    // Mode-wide avatar policy is the shared outer filter. Role/actor-preset
+    // policy may refine it below; explicit role lists still win.
+    {
+        const Gamemode& modeAvatar = GamemodeRegistry::instance().get(d.matchMode);
+        if (modeAvatar.avatar.configured) {
+            out.allowedAvatars = modeAvatar.avatar.allowed;
+            out.deniedAvatars = modeAvatar.avatar.denied;
+            if (modeAvatar.avatar.forced && !modeAvatar.avatar.name.empty())
+                out.avatarName = modeAvatar.avatar.name;
+        }
+    }
     // Melee first match: force both the human and the NPC onto the Captain
     // Falcon profile so the mode's exclusive authored poses and move clips apply
     // to every actor, regardless of role assignment or any random NPC avatar.
@@ -382,9 +393,9 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     out.roleId = def->id;
     out.health = def->health;
     out.startingWeapon = def->startingWeapon;
-    out.avatarName = def->avatarName;
-    out.allowedAvatars = def->allowedAvatars;
-    out.deniedAvatars = def->deniedAvatars;
+    if (!def->avatarName.empty()) out.avatarName = def->avatarName;
+    if (!def->allowedAvatars.empty()) out.allowedAvatars = def->allowedAvatars;
+    if (!def->deniedAvatars.empty()) out.deniedAvatars = def->deniedAvatars;
     if (!def->actorPresetId.empty()) {
         if (const MatchRoleDefinition* preset = MatchRoleRegistry::instance().getActorPreset(def->actorPresetId)) {
             out.allowedAvatars = preset->allowedAvatars;
@@ -5520,6 +5531,7 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         tun.cohesion = npc.behavior.cohesion;
         tun.spreadRadiusMeters = npc.behavior.spreadRadiusMeters;
         tun.maxAttackersPerTarget = npc.behavior.maxAttackersPerTarget;
+        tun.rallyDistanceMeters = npc.behavior.rallyDistanceMeters;
         tun.approachStyle = npc.behavior.approachStyle;
         set = true;
     }
@@ -5533,12 +5545,26 @@ void serverTeamBrainTick(ServerGamemodeState& d,
     std::vector<SquadMember> membersA, membersB;
     gatherMembers(0, membersA);
     gatherMembers(1, membersB);
+    auto centroidOf = [](const std::vector<SquadMember>& members) {
+        glm::vec3 c(0.0f);
+        for (const SquadMember& m : members) c += m.pos;
+        if (!members.empty()) c /= static_cast<float>(members.size());
+        return c;
+    };
+    const glm::vec3 centroidA = centroidOf(membersA);
+    const glm::vec3 centroidB = centroidOf(membersB);
     glm::vec3 focusA{0.0f}, focusB{0.0f};
+    uint32_t focusActorA = 0, focusActorB = 0;
     float focusConfA = 0.0f, focusConfB = 0.0f;
-    const bool hasFocusA = d.teamBrainA.bestTeamReport(focusA, focusConfA);
-    const bool hasFocusB = d.teamBrainB.bestTeamReport(focusB, focusConfB);
-    d.teamBrainA.updateSquad(membersA, focusA, hasFocusA, tuningA);
-    d.teamBrainB.updateSquad(membersB, focusB, hasFocusB, tuningB);
+    // Focus the enemy nearest the squad's own centroid, not whichever report
+    // happened to be inserted first. This is what makes a squad converge as a
+    // unit instead of splitting toward unrelated enemies.
+    const bool hasFocusA = d.teamBrainA.selectFocus(
+        centroidA, focusA, focusActorA, focusConfA);
+    const bool hasFocusB = d.teamBrainB.selectFocus(
+        centroidB, focusB, focusActorB, focusConfB);
+    d.teamBrainA.updateSquad(membersA, focusA, hasFocusA, tuningA, focusActorA);
+    d.teamBrainB.updateSquad(membersB, focusB, hasFocusB, tuningB, focusActorB);
 
     // Bounded, change-edge focus/squad diagnostics.
     auto reportSquad = [&](TeamBrain& brain) {

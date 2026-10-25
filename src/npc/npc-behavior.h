@@ -21,11 +21,19 @@
 struct BehaviorProfileDefinition
 {
     std::string id;
+    // Code-owned difficulty baseline. When set, the tier fills every capability
+    // knob before explicit JSON fields override it. Empty = legacy profile that
+    // only uses the values written in JSON.
+    std::string skillTier;
     float aimErrorDeg = -1.0f;           // <0 = no override
     float reactionDelay = -1.0f;         // <0 = no override
     float fireCadenceMultiplier = 1.0f;  // >1 = faster, <1 = slower
     float aggression = -1.0f;            // <0 = no override
     float preferredRange = -1.0f;        // <0 = no override
+    // Elite tracking knobs. <0 = no override (use legacy difficulty values).
+    float turnSpeedDegPerSec = -1.0f;    // gun/model turn rate
+    float aimLeadSeconds = -1.0f;        // projectile lead time
+    float predictionSeconds = -1.0f;     // perception aim prediction horizon
     // Target selection weights (<0 = no override).
     float targetStickiness = -1.0f;      // bonus for keeping the current target
     float targetSwitchThreshold = -1.0f; // required score margin to switch
@@ -107,11 +115,15 @@ struct BehaviorProfileDefinition
 struct NpcBehaviorTuning
 {
     bool active = false;
+    std::string skillTier;
     float aimErrorDeg = -1.0f;
     float reactionDelay = 0.0f;
     float fireCadenceMultiplier = 1.0f;
     float aggression = -1.0f;
     float preferredRange = -1.0f;
+    float turnSpeedDegPerSec = -1.0f;
+    float aimLeadSeconds = -1.0f;
+    float predictionSeconds = -1.0f;
     // Target selection (neutral defaults reproduce nearest-target behavior).
     float targetStickiness = 0.0f;
     float targetSwitchThreshold = 0.0f;

@@ -222,6 +222,101 @@ def validate_npc_avatar(errors):
     expect_file(normalized, "config/npc-avatar.json forceAvatarPath", errors)
 
 
+def _json_type_ok(value, expected):
+    if expected in ("any", ""):
+        return True
+    if expected == "object":
+        return isinstance(value, dict)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    return True
+
+
+def _validate_schema(value, schema, path, errors):
+    if not isinstance(schema, dict):
+        return
+    expected = schema.get("type", "")
+    if not _json_type_ok(value, expected):
+        errors.append(f"{path}: expected {expected}")
+        return
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "min" in schema and value < schema["min"]:
+            errors.append(f"{path}: {value} is below minimum {schema['min']}")
+        if "max" in schema and value > schema["max"]:
+            errors.append(f"{path}: {value} is above maximum {schema['max']}")
+    if isinstance(value, str) and "enum" in schema:
+        if value not in schema["enum"]:
+            errors.append(f"{path}: \"{value}\" is not one of the allowed values")
+    if isinstance(value, list):
+        if "min_items" in schema and len(value) < schema["min_items"]:
+            errors.append(f"{path}: expected at least {schema['min_items']} items")
+        if "max_items" in schema and len(value) > schema["max_items"]:
+            errors.append(f"{path}: expected at most {schema['max_items']} items")
+        if "item" in schema:
+            for index, item in enumerate(value):
+                _validate_schema(item, schema["item"], f"{path}[{index}]", errors)
+    if isinstance(value, dict):
+        fields = schema.get("fields")
+        if isinstance(fields, dict):
+            for key, field_schema in fields.items():
+                if field_schema.get("required") and key not in value:
+                    errors.append(f"{path}.{key}: required setting is missing")
+            for key, item in value.items():
+                if key not in fields:
+                    errors.append(f"{path}.{key}: unknown setting")
+                    continue
+                _validate_schema(item, fields[key], f"{path}.{key}", errors)
+        elif isinstance(schema.get("additional"), dict):
+            for key, item in value.items():
+                _validate_schema(item, schema["additional"], f"{path}.{key}", errors)
+
+
+def validate_gamemode_configs(errors):
+    masterlist_path = ROOT / "config/gamemodes/masterlist/gamemode-masterlist.json"
+    masterlist = load_json(masterlist_path, errors)
+    if not isinstance(masterlist, dict) or not isinstance(masterlist.get("settings"), dict):
+        errors.append("config/gamemodes/masterlist/gamemode-masterlist.json: missing settings object")
+        return 0
+    settings = masterlist["settings"]
+    seen = {}
+    count = 0
+    for path in sorted((ROOT / "config/gamemodes").glob("*.json")):
+        source = rel(path)
+        root = load_json(path, errors)
+        if not isinstance(root, dict):
+            errors.append(f"{source}: root must be an object")
+            continue
+        count += 1
+        for key, schema in settings.items():
+            if schema.get("required") and key not in root:
+                errors.append(f"{source}: {key}: required setting is missing")
+        for key, value in root.items():
+            if key not in settings:
+                errors.append(f"{source}: {key}: unknown setting")
+                continue
+            _validate_schema(value, settings[key], f"{source}: {key}", errors)
+        mode_id = root.get("id")
+        if isinstance(mode_id, str):
+            if mode_id != path.stem:
+                errors.append(f"{source}: id \"{mode_id}\" does not match filename stem \"{path.stem}\"")
+            if mode_id in seen:
+                errors.append(f"{source}: duplicate mode id \"{mode_id}\" also used by {seen[mode_id]}")
+            else:
+                seen[mode_id] = source
+        for team_index, team in enumerate(root.get("teams", []) if isinstance(root.get("teams"), list) else []):
+            if not isinstance(team, dict):
+                errors.append(f"{source}: teams[{team_index}]: expected an object")
+    return count
+
+
 def main():
     errors = []
     validate_procedural(errors)
@@ -229,11 +324,13 @@ def main():
     clip_count, weapon_anim_count = validate_animations(errors)
     avatar_count = validate_avatars(errors)
     validate_npc_avatar(errors)
+    gamemode_count = validate_gamemode_configs(errors)
 
     print("[CONFIG SELFTEST] weapons:", weapon_count)
     print("[CONFIG SELFTEST] animation clips:", clip_count)
     print("[CONFIG SELFTEST] animated weapons:", weapon_anim_count)
     print("[CONFIG SELFTEST] avatars:", avatar_count)
+    print("[CONFIG SELFTEST] gamemodes:", gamemode_count)
 
     if errors:
         print("[CONFIG SELFTEST] FAIL")

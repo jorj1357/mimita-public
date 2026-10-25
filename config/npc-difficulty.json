@@ -71,7 +71,7 @@
   "targetMode": "player",
   "turnSideBias": 0.75,
   "turnSpeed": 270.0,
-  "useNavGraph": false,
+  "useNavGraph": true,
   "wallAvoidMinProbe": 10.0,
   "wallAvoidanceEnabled": true,
   "wallBacktrackDistance": 0.5,

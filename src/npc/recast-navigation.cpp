@@ -25,6 +25,7 @@
 #include "physics/physics-types.h"
 #include "world/world.h"
 #include "perf/perf.h"
+#include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
 namespace {
@@ -194,8 +195,8 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         return false;
     }
 
-    const float cellSize = 0.25f;
-    const float cellHeight = 0.20f;
+    float cellSize = 0.25f;
+    float cellHeight = 0.20f;
     const float agentHeight = std::max(0.2f, profile.height);
     const float agentRadius = std::max(0.05f, profile.radius);
     const float stepHeight = std::max(0.01f, profile.stepHeight);
@@ -217,6 +218,24 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
     if (!(bmin.x < bmax.x && bmin.y < bmax.y && bmin.z < bmax.z)) {
         error = "collision_bounds_invalid";
         return false;
+    }
+
+    // A single Recast grid is capped at 8192 cells per axis. Large MiMITA maps
+    // exceed that at the 0.25 m default and previously failed the entire bake
+    // (recast_grid_out_of_bounds), forcing every elite NPC back to the weak
+    // local planner. Scale the cell size to the world instead so the bake stays
+    // bounded and navigation remains available. The scale is logged so the
+    // precision tradeoff is explicit rather than silent.
+    const float maxAxisExtent = std::max(bmax.x - bmin.x, bmax.y - bmin.y);
+    const float requiredCell = maxAxisExtent / 8192.0f;
+    if (requiredCell > cellSize) {
+        const float scale = std::ceil((requiredCell / cellSize) * 4.0f) / 4.0f;
+        cellSize = 0.25f * scale;
+        cellHeight = 0.20f * scale;
+        Debug::warn(Debug::Category::NpcMovement,
+            "[RECAST] world extent %.1f m exceeds the 8192-cell grid at 0.25 m; "
+            "using cellSize=%.2f cellHeight=%.2f\n",
+            maxAxisExtent, cellSize, cellHeight);
     }
 
     std::vector<float> verts;

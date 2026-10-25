@@ -13,7 +13,7 @@ void registerMapEditorCommands()
     auto& terminal = Terminal::instance();
     terminal.registerCommand({
         "mapeditor", "Enter/leave the freecam map editor or run an editor action",
-        "mapeditor [0|1|status|save|reload|freeze <0|1>|add <entity <type>|block|route|cart> [id]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
+        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|route|cart> [id]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
         [](const std::vector<std::string>& args) {
             MapEditor& editor = MapEditor::instance();
             if (args.empty()) {
@@ -44,6 +44,19 @@ void registerMapEditorCommands()
             }
             if (command == "reload") {
                 editor.reload();
+                return;
+            }
+            if (command == "rebuild_collision") {
+                editor.flushCollisionNow();
+                return;
+            }
+            if (command == "autosave") {
+                editor.autosave();
+                return;
+            }
+            if (command == "focus") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.focusSelection();
                 return;
             }
             if (command == "undo") {
@@ -189,6 +202,28 @@ void registerMapEditorCommands()
             Terminal::instance().addLog("[MAPEDIT] unknown action " + command);
         },
         "2026-10-23",
+        CommandCategory::Editor
+    });
+
+    terminal.registerCommand({
+        "mapeditor_camspeed", "Set the map-editor camera speed multiplier",
+        "mapeditor_camspeed <multiplier>",
+        [](const std::vector<std::string>& args) {
+            MapEditor& editor = MapEditor::instance();
+            if (args.empty()) {
+                Terminal::instance().addLog("[MAPEDIT] camspeed=" +
+                    std::to_string(editor.cameraSpeedMultiplier()));
+                return;
+            }
+            try {
+                editor.setCameraSpeedMultiplier(std::stof(args[0]));
+                Terminal::instance().addLog("[MAPEDIT] camspeed=" +
+                    std::to_string(editor.cameraSpeedMultiplier()));
+            } catch (const std::exception&) {
+                Terminal::instance().addLog("[MAPEDIT] invalid multiplier " + args[0]);
+            }
+        },
+        "2026-10-25",
         CommandCategory::Editor
     });
 

@@ -237,6 +237,24 @@ bool MapConfigRegistry::load(const std::string& mapId)
             }
         }
 
+        if (root.contains("glb_objects") && root["glb_objects"].is_array()) {
+            for (const auto& item : root["glb_objects"]) {
+                if (!item.is_object()) continue;
+                MapGLBObjectOverride object;
+                object.id = item.value("id", std::string{});
+                if (object.id.empty()) continue;
+                object.name = item.value("name", std::string{});
+                if (item.contains("position") && item["position"].is_array() &&
+                    item["position"].size() >= 3) {
+                    object.position = glm::vec3(
+                        item["position"][0].get<float>(),
+                        item["position"][1].get<float>(),
+                        item["position"][2].get<float>());
+                }
+                next.glbObjects.push_back(std::move(object));
+            }
+        }
+
         if (root.contains("payload") && root["payload"].is_object()) {
             const auto& payload = root["payload"];
             next.payload.present = true;
@@ -501,6 +519,45 @@ bool MapConfigRegistry::deleteBlock(const std::string& id)
     return true;
 }
 
+const MapGLBObjectOverride* MapConfigRegistry::findGLBObjectOverride(
+    const std::string& id) const
+{
+    for (const auto& object : mCurrent.glbObjects)
+        if (object.id == id) return &object;
+    return nullptr;
+}
+
+MapGLBObjectOverride* MapConfigRegistry::findGLBObjectOverrideMutable(
+    const std::string& id)
+{
+    for (auto& object : mCurrent.glbObjects)
+        if (object.id == id) return &object;
+    return nullptr;
+}
+
+void MapConfigRegistry::setGLBObjectOverride(const std::string& id,
+                                             const std::string& name,
+                                             const glm::vec3& position)
+{
+    if (id.empty()) return;
+    if (MapGLBObjectOverride* object = findGLBObjectOverrideMutable(id)) {
+        object->name = name;
+        object->position = position;
+    } else {
+        mCurrent.glbObjects.push_back({id, name, position});
+    }
+    markChanged();
+}
+
+void MapConfigRegistry::removeGLBObjectOverride(const std::string& id)
+{
+    const auto it = std::remove_if(mCurrent.glbObjects.begin(), mCurrent.glbObjects.end(),
+        [&](const MapGLBObjectOverride& object) { return object.id == id; });
+    if (it == mCurrent.glbObjects.end()) return;
+    mCurrent.glbObjects.erase(it, mCurrent.glbObjects.end());
+    markChanged();
+}
+
 const PayloadRoutePoint* MapConfigRegistry::findPayloadRoutePoint(const std::string& id) const
 {
     for (const auto& point : mCurrent.payload.route)
@@ -756,6 +813,13 @@ bool MapConfigRegistry::save()
         };
         b["tags"] = block.tags;
         root["blocks"].push_back(std::move(b));
+    }
+    root["glb_objects"] = json::array();
+    for (const auto& object : mCurrent.glbObjects) {
+        root["glb_objects"].push_back({
+            {"id", object.id}, {"name", object.name},
+            {"position", {object.position.x, object.position.y, object.position.z}}
+        });
     }
     if (mCurrent.payload.present || mCurrent.payload.hasCartOrigin ||
         !mCurrent.payload.route.empty()) {

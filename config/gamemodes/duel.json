@@ -2,8 +2,6 @@
   "id": "duel",
   "name": "Duel",
   "description": "Competitive 1v1. First to 20 kills or a three-minute stalemate.",
-  // "actor_preset": "duel_standard",
-  "actor_preset": "juggernaut_swarm",
   "team_names": ["RED", "BLUE"],
   "goal_value": 20,
   "weapon_set_id": 1,
@@ -48,9 +46,9 @@
       "display_name": "RED",
       "capacity": 1,
       // "role": "duel_monster_test_red",
-      "role": "juggernaut_fighter",
+      "role": "elite_fighter",
       // "npc_role": "duel_monster_test_red_npc",
-      "npc_role": "juggernaut_fighter",
+      "npc_role": "elite_fighter",
       "players": true,
       "npcs": true
     },
@@ -59,13 +57,14 @@
       "display_name": "BLUE",
       "capacity": 1,
       // "role": "duel_monster_test_blue",
-      "role": "juggernaut_fighter",
+      "role": "elite_fighter",
       // "npc_role": "duel_monster_test_blue_npc",
-      "npc_role": "juggernaut_fighter",
+      "npc_role": "elite_fighter",
       "players": true,
       "npcs": true
     }
   ],
+  "npc_behavior_profile": "elite_squad",
   "npc_targeting": {
     "mode": "opposite_team",
     "include_players": true,
